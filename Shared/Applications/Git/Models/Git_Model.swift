@@ -29,7 +29,7 @@ extension Git {
     var id: String { commit }
     let commit: String
     var merge = ""
-    var date = ""
+    var date = Date()
     var author = ""
     var message = [String]()
   }
@@ -168,7 +168,7 @@ extension Git {
       // look at --oneline
       // loot at --graph without parent
       logs.removeAll()
-      try? run(.git, command: ["-C", selectedRepository.path, "log", "--graph", "--abbrev-commit", "--decorate", "--first-parent", branch.replacingOccurrences(of: "*", with: "").trimmingCharacters(in: .whitespacesAndNewlines)]) { [self] in
+      try? run(.git, command: ["-C", selectedRepository.path, "log", "--graph", "--abbrev-commit", "--decorate", "--first-parent", "--date=iso-strict", branch.replacingOccurrences(of: "*", with: "").trimmingCharacters(in: .whitespacesAndNewlines)]) { [self] in
         switch $0 {
         case .complete(_, let array):
           var logEntry: LogEntry?
@@ -178,6 +178,9 @@ extension Git {
             case let str where str.starts(with: "*"):
               if logEntry != nil { logs.append(logEntry!) }
               logEntry = LogEntry(commit: String($0.split(separator: " ")[2]))
+            case let str where str.starts(with: "| Date:"):
+              let dateFormatter = ISO8601DateFormatter()
+              logEntry?.date = dateFormatter.date(from: String($0.dropFirst(7))) ?? Date()
             case let str where str.starts(with: "| Merge:"):
               logEntry?.merge = $0
             case let str where str.starts(with: "| Author:"):

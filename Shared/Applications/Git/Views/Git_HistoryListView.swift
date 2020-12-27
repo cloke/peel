@@ -27,6 +27,10 @@ extension Git {
                 .onTapGesture {
                   viewModel.selectedCommit = log
                 }
+                .padding(.vertical, 0)
+                .padding(.horizontal, 2)
+              Divider()
+                .padding(0)
             }
           }
         }
