@@ -19,6 +19,7 @@ extension Git {
           TextEditor(text: $commitMessage)
           Button("Commit Changes") {
             viewModel.commit(message: commitMessage) {
+              commitMessage = ""
               viewModel.status()
             }
           }

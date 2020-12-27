@@ -47,7 +47,7 @@ extension Brew.DetailView {
           DispatchQueue.main.async {
             outputStream.append(buffer)
           }
-        case .complete(_):
+        case .complete(_, _):
           print("Do nothing")
         }
       }
@@ -61,7 +61,7 @@ extension Brew.DetailView {
           DispatchQueue.main.async {
             outputStream.append(buffer)
           }
-        case .complete(_):
+        case .complete(_, _):
           print("Do nothing")
         }
       }
@@ -76,7 +76,7 @@ extension Brew {
     var additionalCommand: [String] = []
     
     var body: some View {
-      #if targetEnvironment(macCatalyst)
+      #if os(macOS)
       VSplitView {
         VStack {
           HStack {

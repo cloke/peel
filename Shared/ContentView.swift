@@ -44,7 +44,6 @@ struct ContentView: View {
         Brew.RootView()
       case .git:
         Git.RootView()
-      default: EmptyView()
       }
     }
   }

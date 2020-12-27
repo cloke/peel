@@ -66,7 +66,7 @@ extension Brew.SidebarNavigationView {
         switch $0 {
         case .buffer(let string):
           outputStream.append(string)
-        case.complete(let data):
+        case.complete(let data, _):
           print(data)
         }
       }
@@ -78,7 +78,7 @@ extension Brew.SidebarNavigationView {
         switch $0 {
         case .buffer(let string):
           outputStream.append(string)
-        case.complete(let data):
+        case.complete(let data, _):
           print(data)
         }
       }
