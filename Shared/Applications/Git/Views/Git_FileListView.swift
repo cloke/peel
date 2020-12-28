@@ -21,6 +21,25 @@ struct CheckboxToggleStyle: ToggleStyle {
 }
 
 extension Git {
+  struct FileListItemView: View {
+    var path: String
+    @State var toggleState: Bool
+
+    var body: some View {
+      HStack {
+        Toggle(isOn: $toggleState) { EmptyView() }
+          .onChange(of: toggleState) {
+            let path = String(self.path.dropFirst(2)).trimmingCharacters(in: .whitespacesAndNewlines)
+            $0 ? ViewModel.shared.add(path: path) : ViewModel.shared.unadd(path: path)
+          }
+        Text(path)
+          .truncationMode(.head)
+          .lineLimit(1)
+        Spacer()
+      }
+    }
+  }
+  
   struct FileListView: View {
     @ObservedObject private var viewModel = ViewModel()
     @State private var commitOrPath: String = ""
@@ -30,6 +49,7 @@ extension Git {
       NavigationView {
         List {
           TextEditor(text: $commitMessage)
+            .frame(height: 100)
           Button("Commit Changes") {
             viewModel.commit(message: commitMessage) {
               commitMessage = ""
@@ -37,23 +57,17 @@ extension Git {
             }
           }
           ForEach(viewModel.changes, id: \.self) { string in
-            Toggle(isOn: .constant(true)) {
-              Text(string)
-                .truncationMode(.head)
-                .lineLimit(1)
-                .clipped()
-                .background(color(string: string))
-                .contentShape(Rectangle())
-                .onTapGesture {
-                  var file = string.split(separator: " ")
-                  file.removeFirst()
-                  print(file)
-                  DispatchQueue.main.async {
-                    self.commitOrPath = file.joined(separator: "")
-                    
-                  }
+            FileListItemView(path: string, toggleState: string.starts(with: "??") ? false : true)
+              .contentShape(Rectangle())
+              .background(color(string: string))
+              .onTapGesture {
+                var file = string.split(separator: " ")
+                file.removeFirst()
+                print(file)
+                DispatchQueue.main.async {
+                  self.commitOrPath = file.joined(separator: "")
                 }
-            }
+              }
           }
         }
         if commitOrPath != "" {

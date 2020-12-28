@@ -128,16 +128,7 @@ extension Git {
         case .complete(_, let lines):
           var diffLines = [DiffLine]()
           for line in lines {
-            if isReportingDiff {
-              let status = String(line.first ?? Character(""))
-              diffLines.append(DiffLine(line: line, status: status))
-              continue
-            }
-
-            if line.prefix(2) == "@@" {
-              isReportingDiff = true
-              continue
-            }
+            diffLines.append(DiffLine(line: line, status: String(line.first ?? Character(""))))
           }
           callback?(diffLines)
         default: ()
@@ -160,6 +151,14 @@ extension Git {
       try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "commit", "-am", message]) { _ in
         callback?()
       }
+    }
+    
+    func add(path: String) {
+      try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "add", path])
+    }
+    
+    func unadd(path: String) {
+      try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "reset", "HEAD", path])
     }
     
     func open(callback: ((URL) -> ())? = nil) {
@@ -216,9 +215,9 @@ extension Git {
             case let str where str.starts(with: "| Merge:"):
               logEntry?.merge = $0
             case let str where str.starts(with: "| Author:"):
-              logEntry?.author = $0
+              logEntry?.author = String($0.dropFirst(9)).trimmingCharacters(in: .whitespacesAndNewlines)
             case let str where str.starts(with: "|     "):
-              logEntry?.message.append($0)
+              logEntry?.message.append(String($0.dropFirst(6)).trimmingCharacters(in: .whitespacesAndNewlines))
             default: ()
             }
           }

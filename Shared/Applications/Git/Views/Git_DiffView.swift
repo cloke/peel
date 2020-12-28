@@ -19,6 +19,9 @@ extension Git {
         ScrollView([.horizontal, .vertical]) {
           LazyVStack(alignment: .leading) {
             ForEach(diffLines) { diffLine in
+              if diffLine.line.starts(with: "diff --git") {
+                Divider()
+              }
               HStack {
                 Text(diffLine.line)
                   .padding(.horizontal)
@@ -26,7 +29,6 @@ extension Git {
               }
               .background(lineColor(diffLine.status))
             }
-            
           }
           .frame(width: geometry.size.width)
           .frame(minHeight: geometry.size.height)
