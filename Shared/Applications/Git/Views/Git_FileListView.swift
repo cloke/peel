@@ -7,6 +7,19 @@
 
 import SwiftUI
 
+struct CheckboxToggleStyle: ToggleStyle {
+  func makeBody(configuration: Configuration) -> some View {
+    return HStack {
+      configuration.label
+      Spacer()
+      Image(systemName: configuration.isOn ? "checkmark.square" : "square")
+        .resizable()
+        .frame(width: 22, height: 22)
+        .onTapGesture { configuration.isOn.toggle() }
+    }
+  }
+}
+
 extension Git {
   struct FileListView: View {
     @ObservedObject private var viewModel = ViewModel()
@@ -24,26 +37,25 @@ extension Git {
             }
           }
           ForEach(viewModel.changes, id: \.self) { string in
-            Text(string)
-              .truncationMode(.head)
-              .lineLimit(1)
-              .clipped()
-              .background(color(string: string))
-              .contentShape(Rectangle())
-              .onTapGesture {
-                var file = string.split(separator: " ")
-                file.removeFirst()
-                print(file)
-                DispatchQueue.main.async {
-                  self.commitOrPath = file.joined(separator: "")
-
+            Toggle(isOn: .constant(true)) {
+              Text(string)
+                .truncationMode(.head)
+                .lineLimit(1)
+                .clipped()
+                .background(color(string: string))
+                .contentShape(Rectangle())
+                .onTapGesture {
+                  var file = string.split(separator: " ")
+                  file.removeFirst()
+                  print(file)
+                  DispatchQueue.main.async {
+                    self.commitOrPath = file.joined(separator: "")
+                    
+                  }
                 }
-              }
+            }
           }
         }
-        .onReceive(viewModel.$changes, perform: {
-          print($0)
-        })
         if commitOrPath != "" {
           DiffView(commitOrPath: commitOrPath)
         }

@@ -10,30 +10,45 @@
 import SwiftUI
 import Combine
 
+/// A global container for all functions related to Git
 struct Git {
+  /// Green color as found on github.com
   static let green = Color.init(.sRGB, red: 0.157, green: 0.655, blue: 0.271, opacity: 1.0)
-  
 }
 
 extension Git {
+  /// Identifiable container for single git line diff
   struct DiffLine: Identifiable {
     var id = UUID()
+    /// The raw output of the line from the command
     var line = ""
+    /// The line status. +/- for added / deleted
     var status = ""
   }
   
+  /** Identifiable container for single git branch
+ 
+    git branch -l
+  */
   struct Branch: Identifiable {
     var id = UUID()
+    /// Name of the branch
     var name: String
+    /// Status of branch from branch command. ie. result started with "*"
     var isActive = false
   }
   
+  /// Identifiable container for single git repository
   struct Repository: Codable, Identifiable {
     var id = UUID()
     var name: String
     var path: String
   }
   
+  /** Identifiable container for single git log entry
+
+    git log --abbrev-commit --graph --decorate --first-parent --date=iso8601-strict
+  */
   struct LogEntry: Identifiable {
     var id: String { commit }
     let commit: String
@@ -51,12 +66,12 @@ extension Git {
     @AppStorage(wrappedValue: Data(), "repositories") var repositoriesPersisted: Data
     @AppStorage(wrappedValue: Data(), "selected-repository") var selectedRepositoryPersisted: Data
 
-    @Published var logs = [LogEntry]()
     @Published var repositories = [Repository]()
     @Published var selectedRepository = Repository(name: "Add Repository", path: "")
+    
+    @Published var logs = [LogEntry]()
     @Published var changes = [String]()
     
-    @Published var selectedBranch = ""
     @Published var selectedCommit: LogEntry = LogEntry(commit: "")
     
     private var disposables = Set<AnyCancellable>()
