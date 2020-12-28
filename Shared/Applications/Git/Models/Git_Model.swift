@@ -112,10 +112,10 @@ extension Git {
     }
     
     func status() {
-      changes.removeAll()
       try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "status", "--porcelain"]) { [self] in
         switch $0 {
         case .complete(_, let array):
+          changes.removeAll()
           changes.append(contentsOf: array)
         default: ()
         }
