@@ -1,5 +1,5 @@
 //
-//  GitHistoryListView.swift
+//  Git_HistoryListView.swift
 //  KitchenSink
 //
 //  Created by Cory Loken on 12/25/20.
@@ -21,7 +21,7 @@ extension Git {
               Git.LogEntryRowView(log: log)
                 .frame(height: 100)
                 .clipped()
-                .background(viewModel.selectedCommit.id == log.id ? Color.green : Color.clear)
+                .background(viewModel.selectedCommit.id == log.id ? Git.green : Color.clear)
                 .contentShape(Rectangle())
                 .padding(.bottom, 0)
                 .onTapGesture {

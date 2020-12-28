@@ -10,13 +10,22 @@
 import SwiftUI
 import Combine
 
-struct Git {}
+struct Git {
+  static let green = Color.init(.sRGB, red: 0.157, green: 0.655, blue: 0.271, opacity: 1.0)
+  
+}
 
 extension Git {
   struct DiffLine: Identifiable {
     var id = UUID()
     var line = ""
     var status = ""
+  }
+  
+  struct Branch: Identifiable {
+    var id = UUID()
+    var name: String
+    var isActive = false
   }
   
   struct Repository: Codable, Identifiable {
@@ -51,6 +60,7 @@ extension Git {
     @Published var selectedCommit: LogEntry = LogEntry(commit: "")
     
     private var disposables = Set<AnyCancellable>()
+    
     init() {
       if let repositoriesDecoded = try? JSONDecoder().decode([Repository].self, from: repositoriesPersisted) {
         repositories = repositoriesDecoded
@@ -87,10 +97,11 @@ extension Git {
     }
     
     func status() {
-      try? run(.git, command: ["-C", selectedRepository.path, "status", "--porcelain"]) { [self] in
+      changes.removeAll()
+      try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "status", "--porcelain"]) { [self] in
         switch $0 {
         case .complete(_, let array):
-          changes = array
+          changes.append(contentsOf: array)
         default: ()
         }
       }
@@ -98,7 +109,7 @@ extension Git {
     
     func diff(commit: String, callback: (([DiffLine]) -> ())? = nil) {
       var isReportingDiff = false
-      try? run(.git, command: ["-C", selectedRepository.path, "diff", commit]) {
+      try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "diff", commit]) {
         switch $0 {
         case .complete(_, let lines):
           var diffLines = [DiffLine]()
@@ -124,8 +135,15 @@ extension Git {
       
     }
     
+    func checkout(branch: String, callback: (() -> ())? = nil) {
+      try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "checkout", branch]) {
+        print($0)
+        callback?()
+      }
+    }
+    
     func commit(message: String, callback: (() -> ())? = nil) {
-      try? run(.git, command: ["-C", selectedRepository.path, "commit", "-am", message]) { _ in
+      try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "commit", "-am", message]) { _ in
         callback?()
       }
     }
@@ -168,7 +186,7 @@ extension Git {
       // look at --oneline
       // loot at --graph without parent
       logs.removeAll()
-      try? run(.git, command: ["-C", selectedRepository.path, "log", "--graph", "--abbrev-commit", "--decorate", "--first-parent", "--date=iso-strict", branch.replacingOccurrences(of: "*", with: "").trimmingCharacters(in: .whitespacesAndNewlines)]) { [self] in
+      try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "log", "--graph", "--abbrev-commit", "--decorate", "--first-parent", "--date=iso-strict", branch.replacingOccurrences(of: "*", with: "").trimmingCharacters(in: .whitespacesAndNewlines)]) { [self] in
         switch $0 {
         case .complete(_, let array):
           var logEntry: LogEntry?
@@ -202,12 +220,17 @@ extension Git {
     // git log --pretty=short
     // git shortlog
     // git shortlog -scen
-    func showBranches(from location: String = "-r", callback: (([String]) -> ())? = nil) {
-      try? run(.git, command: ["-C", selectedRepository.path, "branch", location]) {
+    func showBranches(from location: String = "-r", callback: (([Branch]) -> ())? = nil) {
+      try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "branch", location]) {
         switch $0 {
         case .complete(_, let array):
-          callback?(array)
-        default: print("Do nothing")
+          callback?(array.map {
+            return Branch(
+              name: $0.replacingOccurrences(of: "*", with: "").trimmingCharacters(in: .whitespacesAndNewlines),
+              isActive: $0.starts(with: "*")
+            )
+          })
+        default: ()
         }
       }
     }

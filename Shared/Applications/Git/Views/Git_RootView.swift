@@ -8,74 +8,15 @@
 import SwiftUI
 
 extension Git {
-  struct FileListView: View {
-    @ObservedObject private var viewModel = ViewModel()
-    @State private var commitOrPath: String? = nil
-    @State private var commitMessage: String = ""
-    
-    var body: some View {
-      NavigationView {
-        List {
-          TextEditor(text: $commitMessage)
-          Button("Commit Changes") {
-            viewModel.commit(message: commitMessage) {
-              commitMessage = ""
-              viewModel.status()
-            }
-          }
-          ForEach(viewModel.changes, id: \.self) { string in
-            Text(string)
-              .truncationMode(.head)
-              .lineLimit(1)
-              .clipped()
-              .background(Color.green)
-              .contentShape(Rectangle())
-              
-              .onTapGesture {
-                var file = string.split(separator: " ")
-                file.removeFirst()
-                commitOrPath = file.joined(separator: "")
-              }
-          }
-        }
-        if commitOrPath != nil {
-          DiffView(commitOrPath: commitOrPath!)
-        }
-      }
-      .onAppear {
-        viewModel.status()
-      }
-    }
-  }
-  
-  struct LocalChangesListView: View {
-    @ObservedObject private var viewModel = ViewModel()
-    var repository: Repository
-    
-    var body: some View {
-      NavigationLink(destination: FileListView()) {
-        HStack {
-          Text("Local Changes")
-          Spacer()
-          Button {
-            viewModel.status()
-          } label: {
-            Image(systemName: "arrow.counterclockwise.icloud")
-          }
-        }
-      }
-    }
-  }
-  
   struct ColumnOneView: View {
-    var repository: Repository
+    @Binding var repository: Repository
     
     var body: some View {
       VStack() {
         List {
           LocalChangesListView(repository: repository)
-          BranchListView(repository: repository, label: "Local Branches", location: "-l")
-          BranchListView(repository: repository, label: "Remove Branches", location: "-r")
+          BranchListView(label: "Local Branches", location: "-l")
+          BranchListView(label: "Remove Branches", location: "-r")
         }
         Spacer()
       }
@@ -88,7 +29,7 @@ extension Git {
     @ObservedObject private var viewModel: ViewModel = .shared
     @State private var repoNotFoundError = false
     @State private var selectedRepositoryLabel = "Repositories"
-    @State private var selectedRepository: Repository? = nil
+    @State private var selectedRepository = Repository(name: "N/A", path: ".")
     
     var body: some View {
       VStack {
@@ -127,11 +68,11 @@ extension Git {
         .font(.caption)
         .padding()
         Divider()
-        if selectedRepository == nil {
+        if selectedRepository.name == "N/A" {
           Text("No repo selected")
         } else {
           NavigationView {
-            ColumnOneView(repository: selectedRepository!)
+            ColumnOneView(repository: self.$selectedRepository)
           }
         }
       }

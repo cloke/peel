@@ -9,6 +9,10 @@
 /* Begin PBXBuildFile section */
 		042DF7C72599004B00F3ACAA /* Git_DiffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 042DF7C62599004B00F3ACAA /* Git_DiffView.swift */; };
 		042DF7C82599004B00F3ACAA /* Git_DiffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 042DF7C62599004B00F3ACAA /* Git_DiffView.swift */; };
+		043A5308259955EF00980BE2 /* Git_LocalChangesListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043A5307259955EF00980BE2 /* Git_LocalChangesListView.swift */; };
+		043A5309259955EF00980BE2 /* Git_LocalChangesListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043A5307259955EF00980BE2 /* Git_LocalChangesListView.swift */; };
+		043A530F2599589B00980BE2 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043A530E2599589B00980BE2 /* SettingsView.swift */; };
+		043A53102599589B00980BE2 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043A530E2599589B00980BE2 /* SettingsView.swift */; };
 		04A7BD7F258E77D8000E55A8 /* Tests_iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD7E258E77D8000E55A8 /* Tests_iOS.swift */; };
 		04A7BD8A258E77D8000E55A8 /* Tests_macOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */; };
 		04A7BD8C258E77D8000E55A8 /* KitchenSinkApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD63258E77D7000E55A8 /* KitchenSinkApp.swift */; };
@@ -27,6 +31,8 @@
 		04A7BDD7258EC44F000E55A8 /* TaskRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BDD1258EC42F000E55A8 /* TaskRunner.swift */; };
 		04A7BDDF258EC83A000E55A8 /* SearchBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BDDE258EC83A000E55A8 /* SearchBarView.swift */; };
 		04A7BDE4258EC856000E55A8 /* SearchBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BDDE258EC83A000E55A8 /* SearchBarView.swift */; };
+		04D02C16259A37F000BF81B2 /* Git_FileListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04D02C15259A37F000BF81B2 /* Git_FileListView.swift */; };
+		04D02C17259A37F000BF81B2 /* Git_FileListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04D02C15259A37F000BF81B2 /* Git_FileListView.swift */; };
 		04F4F929259024C2005B30B4 /* Brew_ResultDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F4F928259024C2005B30B4 /* Brew_ResultDetailView.swift */; };
 		04F4F92A259024C2005B30B4 /* Brew_ResultDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F4F928259024C2005B30B4 /* Brew_ResultDetailView.swift */; };
 		04F4F93C25903A72005B30B4 /* Brew_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F4F93B25903A72005B30B4 /* Brew_RootView.swift */; };
@@ -62,6 +68,9 @@
 
 /* Begin PBXFileReference section */
 		042DF7C62599004B00F3ACAA /* Git_DiffView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Git_DiffView.swift; sourceTree = "<group>"; };
+		043A5307259955EF00980BE2 /* Git_LocalChangesListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Git_LocalChangesListView.swift; sourceTree = "<group>"; };
+		043A530E2599589B00980BE2 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		043A532125998D1E00980BE2 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		04A7BD63258E77D7000E55A8 /* KitchenSinkApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KitchenSinkApp.swift; sourceTree = "<group>"; };
 		04A7BD64258E77D7000E55A8 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		04A7BD65258E77D8000E55A8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -81,6 +90,7 @@
 		04A7BDC6258EC14F000E55A8 /* Brew_SidebarNavigationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brew_SidebarNavigationView.swift; sourceTree = "<group>"; };
 		04A7BDD1258EC42F000E55A8 /* TaskRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskRunner.swift; sourceTree = "<group>"; };
 		04A7BDDE258EC83A000E55A8 /* SearchBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchBarView.swift; sourceTree = "<group>"; };
+		04D02C15259A37F000BF81B2 /* Git_FileListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Git_FileListView.swift; sourceTree = "<group>"; };
 		04F4F928259024C2005B30B4 /* Brew_ResultDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brew_ResultDetailView.swift; sourceTree = "<group>"; };
 		04F4F93B25903A72005B30B4 /* Brew_RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brew_RootView.swift; sourceTree = "<group>"; };
 		04F4F94825903F4C005B30B4 /* Git_Model.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Git_Model.swift; sourceTree = "<group>"; };
@@ -126,6 +136,7 @@
 		04A7BD5D258E77D7000E55A8 = {
 			isa = PBXGroup;
 			children = (
+				043A532125998D1E00980BE2 /* README.md */,
 				04F4F9772596AAD7005B30B4 /* KitchenSink.entitlements */,
 				04A7BD62258E77D7000E55A8 /* Shared */,
 				04A7BD6C258E77D8000E55A8 /* iOS */,
@@ -145,6 +156,7 @@
 				04A7BD65258E77D8000E55A8 /* Assets.xcassets */,
 				04A7BDD1258EC42F000E55A8 /* TaskRunner.swift */,
 				04A7BDDE258EC83A000E55A8 /* SearchBarView.swift */,
+				043A530E2599589B00980BE2 /* SettingsView.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -198,10 +210,10 @@
 		04A7BDA4258EBABA000E55A8 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				04F4F93B25903A72005B30B4 /* Brew_RootView.swift */,
 				04A7BDA7258EBB42000E55A8 /* Brew_DetailView.swift */,
 				04A7BDC6258EC14F000E55A8 /* Brew_SidebarNavigationView.swift */,
 				04F4F928259024C2005B30B4 /* Brew_ResultDetailView.swift */,
-				04F4F93B25903A72005B30B4 /* Brew_RootView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -257,6 +269,8 @@
 				04F4F98325978335005B30B4 /* Git_LogEntryRowView.swift */,
 				04F4F98A2597B30C005B30B4 /* Git_BranchListView.swift */,
 				042DF7C62599004B00F3ACAA /* Git_DiffView.swift */,
+				043A5307259955EF00980BE2 /* Git_LocalChangesListView.swift */,
+				04D02C15259A37F000BF81B2 /* Git_FileListView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -423,12 +437,15 @@
 				04F4F929259024C2005B30B4 /* Brew_ResultDetailView.swift in Sources */,
 				04A7BD8E258E77D8000E55A8 /* ContentView.swift in Sources */,
 				04A7BD8C258E77D8000E55A8 /* KitchenSinkApp.swift in Sources */,
+				043A530F2599589B00980BE2 /* SettingsView.swift in Sources */,
 				04F4F97D2596DD3C005B30B4 /* Git_HistoryListView.swift in Sources */,
 				042DF7C72599004B00F3ACAA /* Git_DiffView.swift in Sources */,
+				043A5308259955EF00980BE2 /* Git_LocalChangesListView.swift in Sources */,
 				04A7BDD2258EC42F000E55A8 /* TaskRunner.swift in Sources */,
 				04A7BDDF258EC83A000E55A8 /* SearchBarView.swift in Sources */,
 				04F4F94925903F4C005B30B4 /* Git_Model.swift in Sources */,
 				04F4F93C25903A72005B30B4 /* Brew_RootView.swift in Sources */,
+				04D02C16259A37F000BF81B2 /* Git_FileListView.swift in Sources */,
 				04F4F98425978335005B30B4 /* Git_LogEntryRowView.swift in Sources */,
 				04A7BDC7258EC14F000E55A8 /* Brew_SidebarNavigationView.swift in Sources */,
 				04A7BDA8258EBB42000E55A8 /* Brew_DetailView.swift in Sources */,
@@ -445,12 +462,15 @@
 				04F4F92A259024C2005B30B4 /* Brew_ResultDetailView.swift in Sources */,
 				04A7BD8F258E77D8000E55A8 /* ContentView.swift in Sources */,
 				04A7BD8D258E77D8000E55A8 /* KitchenSinkApp.swift in Sources */,
+				043A53102599589B00980BE2 /* SettingsView.swift in Sources */,
 				04F4F97E2596DD3C005B30B4 /* Git_HistoryListView.swift in Sources */,
 				042DF7C82599004B00F3ACAA /* Git_DiffView.swift in Sources */,
+				043A5309259955EF00980BE2 /* Git_LocalChangesListView.swift in Sources */,
 				04A7BDD7258EC44F000E55A8 /* TaskRunner.swift in Sources */,
 				04A7BDE4258EC856000E55A8 /* SearchBarView.swift in Sources */,
 				04F4F94A25903F4C005B30B4 /* Git_Model.swift in Sources */,
 				04F4F93D25903A72005B30B4 /* Brew_RootView.swift in Sources */,
+				04D02C17259A37F000BF81B2 /* Git_FileListView.swift in Sources */,
 				04F4F98525978335005B30B4 /* Git_LogEntryRowView.swift in Sources */,
 				04A7BDCC258EC190000E55A8 /* Brew_SidebarNavigationView.swift in Sources */,
 				04A7BDB1258EBBAA000E55A8 /* Brew_DetailView.swift in Sources */,

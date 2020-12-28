@@ -1,5 +1,5 @@
 //
-//  GitDiffView.swift
+//  Git_DiffView.swift
 //  KitchenSink
 //
 //  Created by Cory Loken on 12/27/20.
@@ -32,16 +32,15 @@ extension Git {
           .frame(minHeight: geometry.size.height)
         }
         .onAppear {
-          loadDiff()
+          loadDiff(commitOrPath: commitOrPath)
         }
-        .onChange(of: commitOrPath, perform: { _ in
-          loadDiff()
+        .onChange(of: commitOrPath, perform: {
+          loadDiff(commitOrPath: $0)
         })
       }
     }
     
-    func loadDiff() {
-      print("Load diff from Git.DiffView \(commitOrPath)")
+    func loadDiff(commitOrPath: String) {
       diffLines.removeAll()
       viewModel.diff(commit: commitOrPath) {
         diffLines = $0
@@ -50,7 +49,7 @@ extension Git {
     
     func lineColor(_ symbol: String) -> Color {
       switch symbol {
-      case "+": return .green
+      case "+": return Git.green
       case "-": return .red
       default: return .clear
       }
