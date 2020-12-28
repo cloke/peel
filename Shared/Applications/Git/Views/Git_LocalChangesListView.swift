@@ -9,7 +9,6 @@ import SwiftUI
 
 extension Git {
   struct LocalChangesListView: View {
-    @ObservedObject private var viewModel = ViewModel()
     var repository: Repository
     
     var body: some View {
@@ -26,7 +25,7 @@ extension Git {
     }
     
     func refreshView() {
-      viewModel.status()
+      ViewModel.shared.status()
     }
   }
 }

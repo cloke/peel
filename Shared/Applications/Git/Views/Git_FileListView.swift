@@ -41,9 +41,9 @@ extension Git {
   }
   
   struct FileListView: View {
-    @ObservedObject private var viewModel = ViewModel()
     @State private var commitOrPath: String = ""
     @State private var commitMessage: String = ""
+    @State private var changes = [String]()
     
     var body: some View {
       NavigationView {
@@ -51,12 +51,14 @@ extension Git {
           TextEditor(text: $commitMessage)
             .frame(height: 100)
           Button("Commit Changes") {
-            viewModel.commit(message: commitMessage) {
+            ViewModel.shared.commit(message: commitMessage) {
               commitMessage = ""
-              viewModel.status()
+              ViewModel.shared.status() {
+                changes = $0
+              }
             }
           }
-          ForEach(viewModel.changes, id: \.self) { string in
+          ForEach(changes, id: \.self) { string in
             FileListItemView(path: string, toggleState: string.starts(with: "??") ? false : true)
               .contentShape(Rectangle())
               .background(color(string: string))
@@ -75,7 +77,9 @@ extension Git {
         }
       }
       .onAppear {
-        viewModel.status()
+        ViewModel.shared.status() {
+          changes = $0
+        }
       }
     }
     

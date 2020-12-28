@@ -9,7 +9,6 @@ import SwiftUI
 
 extension Git {
   struct DiffView: View {
-    @ObservedObject private var viewModel = ViewModel()
     @State private var diffLines = [DiffLine]()
     
     var commitOrPath: String
@@ -44,7 +43,8 @@ extension Git {
     
     func loadDiff(commitOrPath: String) {
       diffLines.removeAll()
-      viewModel.diff(commit: commitOrPath) {
+      ViewModel.shared.diff(commit: commitOrPath) {
+        print($0)
         diffLines = $0
       }
     }

@@ -9,7 +9,6 @@ import SwiftUI
 
 extension Git {
   struct BranchListView: View {
-    @ObservedObject private var viewModel = ViewModel()
     @State private var list = [Branch]()
     @State var selection: String?
     
@@ -33,8 +32,8 @@ extension Git {
                 TapGesture(count: 2)
                   .onEnded({
                     selection = branch.name
-                    viewModel.checkout(branch: branch.name) {
-                      viewModel.showBranches(from: location) {
+                    ViewModel.shared.checkout(branch: branch.name) {
+                      ViewModel.shared.showBranches(from: location) {
                         list = $0
                       }
                     }
@@ -47,7 +46,7 @@ extension Git {
           Text(label)
           Spacer()
           Button {
-            viewModel.showBranches(from: location) {
+            ViewModel.shared.showBranches(from: location) {
               list = $0
             }
           } label: {

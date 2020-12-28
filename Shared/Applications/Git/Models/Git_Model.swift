@@ -68,12 +68,7 @@ extension Git {
 
     @Published var repositories = [Repository]()
     @Published var selectedRepository = Repository(name: "Add Repository", path: "")
-    
-    @Published var logs = [LogEntry]()
-    @Published var changes = [String]()
-    
-    @Published var selectedCommit: LogEntry = LogEntry(commit: "")
-    
+        
     private var disposables = Set<AnyCancellable>()
     
     init() {
@@ -111,19 +106,18 @@ extension Git {
       selectedRepository = Repository(name: "Add Repository", path: "")
     }
     
-    func status() {
-      try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "status", "--porcelain"]) { [self] in
+    func status(callback: (([String]) -> ())? = nil) {
+      try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "status", "--porcelain"]) {
         switch $0 {
         case .complete(_, let array):
-          changes = array
+          callback?(array)
         default: ()
         }
       }
     }
     
     func diff(commit: String, callback: (([DiffLine]) -> ())? = nil) {
-      var isReportingDiff = false
-      try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "diff", commit]) {
+      try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "diff", "\(commit)~", commit]) {
         switch $0 {
         case .complete(_, let lines):
           var diffLines = [DiffLine]()
@@ -195,10 +189,11 @@ extension Git {
       }
     }
     
-    func log(branch: String) {
+    func log(branch: String, callack: (([LogEntry]) -> ())? = nil) {
       // look at --oneline
       // loot at --graph without parent
-      logs.removeAll()
+//      logs.removeAll()
+      var logs = [LogEntry]()
       try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "log", "--graph", "--abbrev-commit", "--decorate", "--first-parent", "--date=iso-strict", branch.replacingOccurrences(of: "*", with: "").trimmingCharacters(in: .whitespacesAndNewlines)]) { [self] in
         switch $0 {
         case .complete(_, let array):
@@ -225,6 +220,7 @@ extension Git {
             // Handle when only a single log is in the repository
             logs.append(logEntry!)
           }
+          callack?(logs)
           default: ()
         }
       }

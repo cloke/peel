@@ -9,7 +9,8 @@ import SwiftUI
 
 extension Git {
   struct HistoryListView: View {
-    @ObservedObject private var viewModel: ViewModel = .shared
+    @State private var commits = [LogEntry]()
+    @State private var selectedCommit = LogEntry(commit: "")
     
     var branch: String
     
@@ -17,15 +18,15 @@ extension Git {
       NavigationView {
         ScrollView {
           LazyVStack(alignment: .leading) {
-            ForEach(viewModel.logs) { log in
-              Git.LogEntryRowView(log: log)
+            ForEach(commits) { commit in
+              Git.LogEntryRowView(log: commit)
                 .frame(height: 100)
                 .clipped()
-                .background(viewModel.selectedCommit.id == log.id ? Git.green : Color.clear)
+                .background(selectedCommit.id == commit.id ? Git.green : Color.clear)
                 .contentShape(Rectangle())
                 .padding(.bottom, 0)
                 .onTapGesture {
-                  viewModel.selectedCommit = log
+                  selectedCommit = commit
                 }
                 .padding(.vertical, 0)
                 .padding(.horizontal, 2)
@@ -35,10 +36,12 @@ extension Git {
           }
         }
         .onAppear {
-          viewModel.log(branch: branch)
+          ViewModel.shared.log(branch: branch) {
+            commits = $0
+          }
         }
-        if viewModel.selectedCommit.commit != "" {
-          Git.DiffView(commitOrPath: viewModel.selectedCommit.commit)
+        if selectedCommit.commit != "" {
+          Git.DiffView(commitOrPath: selectedCommit.commit)
         }
       }
     }
