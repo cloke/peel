@@ -115,8 +115,7 @@ extension Git {
       try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "status", "--porcelain"]) { [self] in
         switch $0 {
         case .complete(_, let array):
-          changes.removeAll()
-          changes.append(contentsOf: array)
+          changes = array
         default: ()
         }
       }
