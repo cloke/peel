@@ -36,7 +36,7 @@ extension TaskRunnerProtocol {
     
     process.standardOutput = pipe
     process.standardError = pipe
-    var debuglog = DebugLog(label: "\(url.rawValue) \(command.joined(separator: " "))")
+    let debuglog = DebugLog(label: "\(url.rawValue) \(command.joined(separator: " "))")
     DebugViewModel.shared.debugLogs.append(debuglog)
     /// Starts the external process.
     // (This does the same as ”launch()“, but it is a more modern API.)

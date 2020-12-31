@@ -21,7 +21,7 @@ extension Brew.DetailView {
       // This seems messy. Need to think though complex argument strings.
       var cmd = Command.BrewInfo
       cmd.append(_name)
-      
+
       try? run(.brew, command: cmd) { [self] in
         switch $0 {
         case .buffer(_):

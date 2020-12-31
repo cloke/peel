@@ -20,6 +20,17 @@ struct CheckboxToggleStyle: ToggleStyle {
   }
 }
 
+extension Color {
+  var isDarkColor: Bool {
+    var r, g, b, a: CGFloat
+    (r, g, b, a) = (0, 0, 0, 0)
+    var color = NSColor(self)
+    color.usingColorSpace(.extendedSRGB)?.getRed(&r, green: &g, blue: &b, alpha: &a)
+    let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    return  lum < 0.50
+  }
+}
+
 extension Git {
   struct FileListItemView: View {
     var path: String
@@ -41,10 +52,10 @@ extension Git {
   }
   
   struct FileListView: View {
-    @State private var commitOrPath: String = ""
     @State private var commitMessage: String = ""
     @State private var changes = [String]()
-    
+    @State private var diff = [DiffLine]()
+
     var body: some View {
       NavigationView {
         List {
@@ -62,19 +73,19 @@ extension Git {
             FileListItemView(path: string, toggleState: string.starts(with: "??") ? false : true)
               .contentShape(Rectangle())
               .background(color(string: string))
+              .foregroundColor(color(string: string).isDarkColor == true ? .white : .black)
               .onTapGesture {
                 var file = string.split(separator: " ")
                 file.removeFirst()
-                print(file)
                 DispatchQueue.main.async {
-                  self.commitOrPath = file.joined(separator: "")
+                  ViewModel.shared.diff(path: file.joined(separator: "")) {
+                    diff = $0
+                  }
                 }
               }
           }
         }
-        if commitOrPath != "" {
-          DiffView(commitOrPath: commitOrPath)
-        }
+        DiffView(diff: diff)
       }
       .onAppear {
         ViewModel.shared.status() {

@@ -26,7 +26,7 @@ extension Git {
 
 extension Git {
   struct RootView: View {
-    @ObservedObject private var viewModel: ViewModel = .shared
+    @StateObject private var viewModel: ViewModel = .shared
     @State private var repoNotFoundError = false
     @State private var selectedRepositoryLabel = "Repositories"
     @State private var selectedRepository = Repository(name: "N/A", path: ".")
@@ -37,6 +37,7 @@ extension Git {
           Menu(selectedRepositoryLabel) {
             ForEach(viewModel.repositories) { repository in
               Button(repository.name) {
+                
                 selectedRepository = repository
                 selectedRepositoryLabel = repository.name
                 viewModel.selectedRepository = repository

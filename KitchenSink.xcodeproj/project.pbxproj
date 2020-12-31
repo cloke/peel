@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 50;
+	objectVersion = 54;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -91,6 +91,7 @@
 		04A7BDD1258EC42F000E55A8 /* TaskRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskRunner.swift; sourceTree = "<group>"; };
 		04A7BDDE258EC83A000E55A8 /* SearchBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchBarView.swift; sourceTree = "<group>"; };
 		04D02C15259A37F000BF81B2 /* Git_FileListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Git_FileListView.swift; sourceTree = "<group>"; };
+		04D7B885259CEE720056BC3E /* AppKitGlue.bundle */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AppKitGlue.bundle; sourceTree = BUILT_PRODUCTS_DIR; };
 		04F4F928259024C2005B30B4 /* Brew_ResultDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brew_ResultDetailView.swift; sourceTree = "<group>"; };
 		04F4F93B25903A72005B30B4 /* Brew_RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brew_RootView.swift; sourceTree = "<group>"; };
 		04F4F94825903F4C005B30B4 /* Git_Model.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Git_Model.swift; sourceTree = "<group>"; };
@@ -124,6 +125,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		04A7BD82258E77D8000E55A8 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		04D7B882259CEE720056BC3E /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -168,6 +176,7 @@
 				04A7BD72258E77D8000E55A8 /* KitchenSink.app */,
 				04A7BD7A258E77D8000E55A8 /* Tests iOS.xctest */,
 				04A7BD85258E77D8000E55A8 /* Tests macOS.xctest */,
+				04D7B885259CEE720056BC3E /* AppKitGlue.bundle */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -348,6 +357,23 @@
 			productReference = 04A7BD85258E77D8000E55A8 /* Tests macOS.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		04D7B884259CEE720056BC3E /* AppKitGlue */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 04D7B88A259CEE720056BC3E /* Build configuration list for PBXNativeTarget "AppKitGlue" */;
+			buildPhases = (
+				04D7B881259CEE720056BC3E /* Sources */,
+				04D7B882259CEE720056BC3E /* Frameworks */,
+				04D7B883259CEE720056BC3E /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AppKitGlue;
+			productName = AppKitGlue;
+			productReference = 04D7B885259CEE720056BC3E /* AppKitGlue.bundle */;
+			productType = "com.apple.product-type.bundle";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -371,10 +397,14 @@
 						CreatedOnToolsVersion = 12.3;
 						TestTargetID = 04A7BD71258E77D8000E55A8;
 					};
+					04D7B884259CEE720056BC3E = {
+						CreatedOnToolsVersion = 12.3;
+						LastSwiftMigration = 1230;
+					};
 				};
 			};
 			buildConfigurationList = 04A7BD61258E77D7000E55A8 /* Build configuration list for PBXProject "KitchenSink" */;
-			compatibilityVersion = "Xcode 9.3";
+			compatibilityVersion = "Xcode 12.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -390,6 +420,7 @@
 				04A7BD71258E77D8000E55A8 /* KitchenSink (macOS) */,
 				04A7BD79258E77D8000E55A8 /* Tests iOS */,
 				04A7BD84258E77D8000E55A8 /* Tests macOS */,
+				04D7B884259CEE720056BC3E /* AppKitGlue */,
 			);
 		};
 /* End PBXProject section */
@@ -419,6 +450,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		04A7BD83258E77D8000E55A8 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		04D7B883259CEE720056BC3E /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -491,6 +529,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				04A7BD8A258E77D8000E55A8 /* Tests_macOS.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		04D7B881259CEE720056BC3E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -811,6 +856,57 @@
 			};
 			name = Release;
 		};
+		04D7B888259CEE720056BC3E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = UNX9FJDDXV;
+				INFOPLIST_FILE = AppKitGlue/Info.plist;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Bundles";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 11.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.AppKitGlue";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "AppKitGlue/AppKitGlue-Bridging-Header.h";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				WRAPPER_EXTENSION = bundle;
+			};
+			name = Debug;
+		};
+		04D7B889259CEE720056BC3E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = UNX9FJDDXV;
+				INFOPLIST_FILE = AppKitGlue/Info.plist;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Bundles";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 11.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.AppKitGlue";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "AppKitGlue/AppKitGlue-Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+				WRAPPER_EXTENSION = bundle;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -855,6 +951,15 @@
 			buildConfigurations = (
 				04A7BD9E258E77D8000E55A8 /* Debug */,
 				04A7BD9F258E77D8000E55A8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		04D7B88A259CEE720056BC3E /* Build configuration list for PBXNativeTarget "AppKitGlue" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				04D7B888259CEE720056BC3E /* Debug */,
+				04D7B889259CEE720056BC3E /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

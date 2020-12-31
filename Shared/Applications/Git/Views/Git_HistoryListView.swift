@@ -11,6 +11,7 @@ extension Git {
   struct HistoryListView: View {
     @State private var commits = [LogEntry]()
     @State private var selectedCommit = LogEntry(commit: "")
+    @State private var diff = [DiffLine]()
     
     var branch: String
     
@@ -21,15 +22,18 @@ extension Git {
             ForEach(commits) { commit in
               Git.LogEntryRowView(log: commit)
                 .frame(height: 100)
-                .clipped()
-                .background(selectedCommit.id == commit.id ? Git.green : Color.clear)
                 .contentShape(Rectangle())
-                .padding(.bottom, 0)
-                .onTapGesture {
-                  selectedCommit = commit
-                }
                 .padding(.vertical, 0)
                 .padding(.horizontal, 2)
+                .background(selectedCommit.id == commit.id ? Git.green : Color.clear)
+                .clipped()
+                .onTapGesture {
+                  selectedCommit = commit
+                  ViewModel.shared.diff(commit: commit.commit) {
+                    diff = $0
+                  }
+                }
+
               Divider()
                 .padding(0)
             }
@@ -40,9 +44,7 @@ extension Git {
             commits = $0
           }
         }
-        if selectedCommit.commit != "" {
-          Git.DiffView(commitOrPath: selectedCommit.commit)
-        }
+        Git.DiffView(diff: diff)
       }
     }
   }

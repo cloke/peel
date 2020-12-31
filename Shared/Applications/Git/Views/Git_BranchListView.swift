@@ -14,7 +14,6 @@ extension Git {
     
     var label: String
     var location: String = "-r"
-    var callback: ((String) -> ())? = nil
     
     var body: some View {
       DisclosureGroup {

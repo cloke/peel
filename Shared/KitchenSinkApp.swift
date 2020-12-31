@@ -38,7 +38,7 @@ struct TaskDebugDisclosureContentView: View {
     DisclosureGroup {
       ForEach(log.entries) { entry in
         HStack {
-        Text(entry.entry)
+          Text(entry.entry)
           Spacer()
         }
       }
@@ -48,6 +48,13 @@ struct TaskDebugDisclosureContentView: View {
         Text(log.label)
         Spacer()
         Text("(\(log.entries.count))")
+        Button {
+          let pasteboard = NSPasteboard.general
+          pasteboard.declareTypes([.string], owner: nil)
+          pasteboard.setString(log.label, forType: .string)
+        } label: {
+          Image(systemName: "doc.on.doc")
+        }
       }
     }
     

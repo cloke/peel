@@ -9,19 +9,20 @@ import SwiftUI
 
 extension Git {
   struct DiffView: View {
-    @State private var diffLines = [DiffLine]()
-    
-    var commitOrPath: String
+    var diff: [DiffLine]
     
     var body: some View {
       GeometryReader { geometry in
         ScrollView([.horizontal, .vertical]) {
           LazyVStack(alignment: .leading) {
-            ForEach(diffLines) { diffLine in
+            ForEach(diff) { diffLine in
               if diffLine.line.starts(with: "diff --git") {
                 Divider()
               }
               HStack {
+                if diffLine.lineNumber != 0 {
+                  Text(diffLine.lineNumber.description)
+                }
                 Text(diffLine.line)
                   .padding(.horizontal)
                 Spacer()
@@ -32,20 +33,6 @@ extension Git {
           .frame(width: geometry.size.width)
           .frame(minHeight: geometry.size.height)
         }
-        .onAppear {
-          loadDiff(commitOrPath: commitOrPath)
-        }
-        .onChange(of: commitOrPath, perform: {
-          loadDiff(commitOrPath: $0)
-        })
-      }
-    }
-    
-    func loadDiff(commitOrPath: String) {
-      diffLines.removeAll()
-      ViewModel.shared.diff(commit: commitOrPath) {
-        print($0)
-        diffLines = $0
       }
     }
     
@@ -59,8 +46,18 @@ extension Git {
   }
 }
 
+internal extension NSTextCheckingResult {
+  func group(_ group: Int, in string: String) -> String? {
+    let nsRange = range(at: group)
+    if range.location != NSNotFound {
+      return Range(nsRange, in: string)
+        .map { range in String(string[range]) }
+    }
+    return nil
+  }
+}
 struct Git_DiffView_Previews: PreviewProvider {
   static var previews: some View {
-    Git.DiffView(commitOrPath: "Test")
+    Git.DiffView(diff: [Git.DiffLine]())
   }
 }

@@ -24,6 +24,7 @@ extension Git {
     var line = ""
     /// The line status. +/- for added / deleted
     var status = ""
+    var lineNumber = 0
   }
   
   /** Identifiable container for single git branch
@@ -116,15 +117,68 @@ extension Git {
       }
     }
     
+    /// - Group 1: The header old file line start.
+    /// - Group 2: The header old file line span. If not present it defaults to 1.
+    /// - Group 3: The header new file line start.
+    /// - Group 4: The header new file line span. If not present it defaults to 1.
+    
+    // Huge help from https://github.com/guillermomuntaner/GitDiff/
+
+    func processDiff(lines: [String]) -> [DiffLine] {
+      var diffLines = [DiffLine]()
+      let regex = try! NSRegularExpression(
+              pattern: "^(?:(?:@@ -(\\d+),?(\\d+)? \\+(\\d+),?(\\d+)? @@)|([-+\\s])(.*))",
+              options: [])
+      var lineNumber = 0
+      var numberingLines = false
+      var lineOffset = 0
+      
+      for line in lines {
+        if line.starts(with: "@@") {
+          let range = NSRange(location: 0, length: line.utf16.count)
+          let match = regex.firstMatch(in: line, options: [], range: range)
+          lineNumber = (Int(match?.group(1, in: line) ?? "0") ?? 0) - 1
+          lineOffset = 0
+          numberingLines = true
+        } else if line.starts(with: "diff --git") {
+          lineNumber = 0
+          lineOffset = 0
+          numberingLines = false
+        }
+        
+        if line.trimmingCharacters(in: .whitespaces).starts(with: "-") && numberingLines {
+          lineOffset -= 1
+        }
+        
+        if (line.trimmingCharacters(in: .whitespaces).starts(with: "+") || line.starts(with: " "))
+            && numberingLines {
+          lineNumber += lineOffset
+          lineOffset = 0
+        }
+
+        diffLines.append(DiffLine(line: line, status: String(line.first ?? Character("")), lineNumber: lineNumber))
+        if numberingLines {
+          lineNumber += 1
+        }
+      }
+      return diffLines
+    }
+    
+    func diff(path: String, callback: (([DiffLine]) -> ())? = nil) {
+      try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "diff", path]) {
+        switch $0 {
+        case .complete(_, let lines):
+          callback?(self.processDiff(lines: lines))
+        default: ()
+        }
+      }
+    }
+    
     func diff(commit: String, callback: (([DiffLine]) -> ())? = nil) {
       try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "diff", "\(commit)~", commit]) {
         switch $0 {
         case .complete(_, let lines):
-          var diffLines = [DiffLine]()
-          for line in lines {
-            diffLines.append(DiffLine(line: line, status: String(line.first ?? Character(""))))
-          }
-          callback?(diffLines)
+          callback?(self.processDiff(lines: lines))
         default: ()
         }
       }
@@ -156,23 +210,23 @@ extension Git {
     }
     
     func open(callback: ((URL) -> ())? = nil) {
-      let dialog = NSOpenPanel();
-      
-      dialog.title                   = "Choose single directory | Our Code World";
-      dialog.showsResizeIndicator    = true;
-      dialog.showsHiddenFiles        = false;
-      dialog.canChooseFiles = false;
-      dialog.canChooseDirectories = true;
-      
-      if (dialog.runModal() ==  NSApplication.ModalResponse.OK) {
-        let result = dialog.url
-        if (result != nil) {
-          callback?(result!)
-        }
-      } else {
-        // User clicked on "Cancel"
-        return
-      }
+//      let dialog = NSOpenPanel();
+//      
+//      dialog.title                   = "Choose single directory | Our Code World";
+//      dialog.showsResizeIndicator    = true;
+//      dialog.showsHiddenFiles        = false;
+//      dialog.canChooseFiles = false;
+//      dialog.canChooseDirectories = true;
+//      
+//      if (dialog.runModal() ==  NSApplication.ModalResponse.OK) {
+//        let result = dialog.url
+//        if (result != nil) {
+//          callback?(result!)
+//        }
+//      } else {
+//        // User clicked on "Cancel"
+//        return
+//      }
     }
     
     func addRepository(callack: (() -> ())? = nil) {
@@ -192,9 +246,8 @@ extension Git {
     func log(branch: String, callack: (([LogEntry]) -> ())? = nil) {
       // look at --oneline
       // loot at --graph without parent
-//      logs.removeAll()
       var logs = [LogEntry]()
-      try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "log", "--graph", "--abbrev-commit", "--decorate", "--first-parent", "--date=iso-strict", branch.replacingOccurrences(of: "*", with: "").trimmingCharacters(in: .whitespacesAndNewlines)]) { [self] in
+      try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "log", "--graph", "--abbrev-commit", "--decorate", "--first-parent", "--date=iso-strict", branch.replacingOccurrences(of: "*", with: "").trimmingCharacters(in: .whitespacesAndNewlines)]) {
         switch $0 {
         case .complete(_, let array):
           var logEntry: LogEntry?
