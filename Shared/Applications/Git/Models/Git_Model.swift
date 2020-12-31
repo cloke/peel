@@ -184,20 +184,37 @@ extension Git {
       }
     }
     
-    func pull() {
+    func pull(branch: String) {
       
+    }
+    
+    func push(branch: String, callback: (() -> ())? = nil) {
+      try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "push", "origin \(branch)"]) {
+        switch $0 {
+        case .complete(_, _):
+        callback?()
+        default: ()
+        }
+      }
     }
     
     func checkout(branch: String, callback: (() -> ())? = nil) {
       try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "checkout", branch]) {
-        print($0)
+        switch $0 {
+        case .complete(_, _):
         callback?()
+        default: ()
+        }
       }
     }
     
     func commit(message: String, callback: (() -> ())? = nil) {
-      try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "commit", "-am", message]) { _ in
+      try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "commit", "-am", message]) {
+        switch $0 {
+        case .complete(_, _):
         callback?()
+        default: ()
+        }
       }
     }
     

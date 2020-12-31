@@ -38,6 +38,13 @@ extension Git {
                     }
                 })
               )
+            Button {
+              ViewModel.shared.push(branch: branch.name) {
+                ViewModel.shared.showBranches(from: location) {
+                  list = $0
+                }
+              }
+            } label: { Image(systemName: "square.and.arrow.up") }
           }
         }
       } label: {
