@@ -36,12 +36,15 @@ struct TaskDebugDisclosureContentView: View {
   
   var body: some View {
     DisclosureGroup {
+      ScrollView {
+      LazyVStack {
       ForEach(log.entries) { entry in
         HStack {
           Text(entry.entry)
           Spacer()
         }
       }
+      }}.frame(maxHeight: 400)
     }
     label: {
       HStack {
@@ -76,12 +79,12 @@ struct TaskDebugWindow: View {
 @main
 struct KitchenSinkApp: App {
   @Environment(\.openURL) var openURL
-  
   var body: some Scene {
     WindowGroup {
       ContentView()
     }
-    //    Leaving as example if we want new menus
+    
+      //    Leaving as example if we want new menus
     //    .commands {
     //      CommandGroup(after: .newItem) {
     //        Button(action: {

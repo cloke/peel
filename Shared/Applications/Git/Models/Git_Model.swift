@@ -189,7 +189,7 @@ extension Git {
     }
     
     func push(branch: String, callback: (() -> ())? = nil) {
-      try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "push", "origin \(branch)"]) {
+      try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "push", "origin", branch]) {
         switch $0 {
         case .complete(_, _):
         callback?()

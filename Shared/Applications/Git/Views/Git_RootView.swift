@@ -20,6 +20,7 @@ extension Git {
         }
         Spacer()
       }
+      .frame(minWidth: 100)
     }
   }
 }
@@ -33,38 +34,34 @@ extension Git {
     
     var body: some View {
       VStack {
-        HStack {
-          Menu(selectedRepositoryLabel) {
-            ForEach(viewModel.repositories) { repository in
-              Button(repository.name) {
-                
-                selectedRepository = repository
-                selectedRepositoryLabel = repository.name
-                viewModel.selectedRepository = repository
-              }
+        Menu(selectedRepositoryLabel) {
+          ForEach(viewModel.repositories) { repository in
+            Button(repository.name) {
+              selectedRepository = repository
+              selectedRepositoryLabel = repository.name
+              viewModel.selectedRepository = repository
             }
           }
-          .onReceive(viewModel.$selectedRepository) {
-            selectedRepositoryLabel = $0.name
-          }
-          VStack {
-            Button {
-              viewModel.addRepository() {
-                repoNotFoundError = true
-              }
-            } label : {
-              Image(systemName: "folder.badge.plus")
+        }
+        .onReceive(viewModel.$selectedRepository) {
+          selectedRepositoryLabel = $0.name
+        }
+        VStack {
+          Button {
+            viewModel.addRepository() {
+              repoNotFoundError = true
             }
-            .alert(isPresented: $repoNotFoundError) {
-              Alert(
-                title: Text("Repository Not Found!"),
-                message: Text("A git repository could not be found."),
-                dismissButton: .default(Text("Ok"))
-              )
-            }
-            Text("Open Repository")
+          } label : {
+            Image(systemName: "folder.badge.plus")
           }
-          Spacer()
+          .alert(isPresented: $repoNotFoundError) {
+            Alert(
+              title: Text("Repository Not Found!"),
+              message: Text("A git repository could not be found."),
+              dismissButton: .default(Text("Ok"))
+            )
+          }
+          Text("Open Repository")
         }
         .font(.caption)
         .padding()
@@ -72,15 +69,13 @@ extension Git {
         if selectedRepository.name == "N/A" {
           Text("No repo selected")
         } else {
-          NavigationView {
-            ColumnOneView(repository: self.$selectedRepository)
-          }
+          ColumnOneView(repository: self.$selectedRepository)
         }
       }
       .onReceive(viewModel.$selectedRepository) {
         selectedRepository = $0
       }
-      .frame(idealHeight: 200)
+      .frame(idealHeight: 400)
     }
   }
 }

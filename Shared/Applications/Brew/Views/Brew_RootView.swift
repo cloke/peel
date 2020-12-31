@@ -10,9 +10,7 @@ import SwiftUI
 extension Brew {
   struct RootView: View {
     var body: some View {
-      NavigationView {
-        Brew.SidebarNavigationView()
-      }
+      Brew.SidebarNavigationView()
     }
   }
 }
