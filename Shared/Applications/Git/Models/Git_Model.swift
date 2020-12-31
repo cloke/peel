@@ -210,23 +210,23 @@ extension Git {
     }
     
     func open(callback: ((URL) -> ())? = nil) {
-//      let dialog = NSOpenPanel();
-//      
-//      dialog.title                   = "Choose single directory | Our Code World";
-//      dialog.showsResizeIndicator    = true;
-//      dialog.showsHiddenFiles        = false;
-//      dialog.canChooseFiles = false;
-//      dialog.canChooseDirectories = true;
-//      
-//      if (dialog.runModal() ==  NSApplication.ModalResponse.OK) {
-//        let result = dialog.url
-//        if (result != nil) {
-//          callback?(result!)
-//        }
-//      } else {
-//        // User clicked on "Cancel"
-//        return
-//      }
+      let dialog = NSOpenPanel();
+      
+      dialog.title                   = "Choose single directory";
+      dialog.showsResizeIndicator    = true;
+      dialog.showsHiddenFiles        = false;
+      dialog.canChooseFiles = false;
+      dialog.canChooseDirectories = true;
+      
+      if (dialog.runModal() ==  NSApplication.ModalResponse.OK) {
+        let result = dialog.url
+        if (result != nil) {
+          callback?(result!)
+        }
+      } else {
+        // User clicked on "Cancel"
+        return
+      }
     }
     
     func addRepository(callack: (() -> ())? = nil) {
