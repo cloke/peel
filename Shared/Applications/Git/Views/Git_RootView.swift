@@ -9,10 +9,10 @@ import SwiftUI
 
 extension Git {
   struct ColumnOneView: View {
-    @Binding var repository: Repository
+    let repository: Repository
     
     var body: some View {
-      VStack() {
+      VStack {
         List {
           LocalChangesListView(repository: repository)
           BranchListView(label: "Local Branches", location: "-l")
@@ -26,61 +26,79 @@ extension Git {
 }
 
 extension Git {
+  struct RepositorySelectionToolbarItem: ToolbarContent {
+    let repositories: [Repository]
+    @Binding var selectedRepository: Repository
+    
+    var body: some ToolbarContent {
+      ToolbarItem {
+        Menu(selectedRepository.name) {
+          ForEach(repositories) { repository in
+            Button(repository.name) {
+              selectedRepository = repository
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+struct ToggleSidebarToolbarItem: ToolbarContent {
+  let placement: ToolbarItemPlacement
+  
+  func toggleSidebar() {
+    NSApp.keyWindow?.firstResponder?.tryToPerform(#selector(NSSplitViewController.toggleSidebar(_:)), with: nil)
+  }
+  
+  var body: some ToolbarContent {
+    ToolbarItem(placement: placement) {
+      Button { toggleSidebar() }
+        label: { Image(systemName: "sidebar.left") }
+        .help(Text("Toggle Sidebar"))
+    }
+  }
+}
+
+extension Git {
   struct RootView: View {
     @StateObject private var viewModel: ViewModel = .shared
     @State private var repoNotFoundError = false
-    @State private var selectedRepositoryLabel = "Repositories"
-    @State private var selectedRepository = Repository(name: "N/A", path: ".")
-    
+
     var body: some View {
       VStack {
         VStack {
-          Button {
-            viewModel.addRepository() {
-              repoNotFoundError = true
+          if viewModel.selectedRepository.name == "N/A" {
+            Text("No repo selected")
+          } else {
+            ColumnOneView(repository: viewModel.selectedRepository)
+          }
+        }
+        .frame(idealHeight: 400)
+        .toolbar {
+          ToolSelectionToolbar()
+          RepositorySelectionToolbarItem(repositories: viewModel.repositories, selectedRepository: $viewModel.selectedRepository)
+          ToggleSidebarToolbarItem(placement: .navigation)
+          
+          ToolbarItem(placement: .navigation) {
+            Button {
+              viewModel.addRepository() {
+                repoNotFoundError = true
+              }
+            } label : {
+              Image(systemName: "folder.badge.plus")
             }
-          } label : {
-            Image(systemName: "folder.badge.plus")
-          }
-          .alert(isPresented: $repoNotFoundError) {
-            Alert(
-              title: Text("Repository Not Found!"),
-              message: Text("A git repository could not be found."),
-              dismissButton: .default(Text("Ok"))
-            )
-          }
-          Text("Open Repository")
-        }
-        .font(.caption)
-        .padding()
-        Divider()
-        if selectedRepository.name == "N/A" {
-          Text("No repo selected")
-        } else {
-          ColumnOneView(repository: self.$selectedRepository)
-        }
-      }
-      .onReceive(viewModel.$selectedRepository) {
-        selectedRepository = $0
-      }
-      .frame(idealHeight: 400)
-      .toolbar {
-        Menu(selectedRepositoryLabel) {
-          ForEach(viewModel.repositories) { repository in
-            Button(repository.name) {
-              selectedRepository = repository
-              selectedRepositoryLabel = repository.name
-              viewModel.selectedRepository = repository
+            .alert(isPresented: $repoNotFoundError) {
+              Alert(
+                title: Text("Repository Not Found!"),
+                message: Text("A git repository could not be found."),
+                dismissButton: .default(Text("Ok"))
+              )
             }
-          }
-        }
-        .onReceive(viewModel.$selectedRepository) { repository in
-          DispatchQueue.main.async {
-            selectedRepositoryLabel = repository.name
+            .help(Text("Open Repository"))
           }
         }
       }
-      .disabled(viewModel.repositories.count > 0 ? false : true)
     }
   }
 }

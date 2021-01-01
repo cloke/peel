@@ -9,9 +9,11 @@ import SwiftUI
 
 extension Git {
   struct LocalChangesListView: View {
-    var repository: Repository
+    let repository: Repository
     
     var body: some View {
+      // TODO: add counts
+      // git rev-list --left-right --count origin/main...main
       NavigationLink(destination: FileListView()) {
         HStack {
           Text("Local Changes")

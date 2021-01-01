@@ -13,6 +13,8 @@
 		043A5309259955EF00980BE2 /* Git_LocalChangesListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043A5307259955EF00980BE2 /* Git_LocalChangesListView.swift */; };
 		043A530F2599589B00980BE2 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043A530E2599589B00980BE2 /* SettingsView.swift */; };
 		043A53102599589B00980BE2 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043A530E2599589B00980BE2 /* SettingsView.swift */; };
+		04678655259FC75700D5E87F /* CommonToolbarItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04678654259FC75700D5E87F /* CommonToolbarItems.swift */; };
+		04678656259FC75700D5E87F /* CommonToolbarItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04678654259FC75700D5E87F /* CommonToolbarItems.swift */; };
 		04A7BD7F258E77D8000E55A8 /* Tests_iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD7E258E77D8000E55A8 /* Tests_iOS.swift */; };
 		04A7BD8A258E77D8000E55A8 /* Tests_macOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */; };
 		04A7BD8C258E77D8000E55A8 /* KitchenSinkApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD63258E77D7000E55A8 /* KitchenSinkApp.swift */; };
@@ -71,6 +73,7 @@
 		043A5307259955EF00980BE2 /* Git_LocalChangesListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Git_LocalChangesListView.swift; sourceTree = "<group>"; };
 		043A530E2599589B00980BE2 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		043A532125998D1E00980BE2 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		04678654259FC75700D5E87F /* CommonToolbarItems.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonToolbarItems.swift; sourceTree = "<group>"; };
 		04A7BD63258E77D7000E55A8 /* KitchenSinkApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KitchenSinkApp.swift; sourceTree = "<group>"; };
 		04A7BD64258E77D7000E55A8 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		04A7BD65258E77D8000E55A8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -165,6 +168,7 @@
 				04A7BDD1258EC42F000E55A8 /* TaskRunner.swift */,
 				04A7BDDE258EC83A000E55A8 /* SearchBarView.swift */,
 				043A530E2599589B00980BE2 /* SettingsView.swift */,
+				04678654259FC75700D5E87F /* CommonToolbarItems.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -476,6 +480,7 @@
 				04A7BD8E258E77D8000E55A8 /* ContentView.swift in Sources */,
 				04A7BD8C258E77D8000E55A8 /* KitchenSinkApp.swift in Sources */,
 				043A530F2599589B00980BE2 /* SettingsView.swift in Sources */,
+				04678655259FC75700D5E87F /* CommonToolbarItems.swift in Sources */,
 				04F4F97D2596DD3C005B30B4 /* Git_HistoryListView.swift in Sources */,
 				042DF7C72599004B00F3ACAA /* Git_DiffView.swift in Sources */,
 				043A5308259955EF00980BE2 /* Git_LocalChangesListView.swift in Sources */,
@@ -501,6 +506,7 @@
 				04A7BD8F258E77D8000E55A8 /* ContentView.swift in Sources */,
 				04A7BD8D258E77D8000E55A8 /* KitchenSinkApp.swift in Sources */,
 				043A53102599589B00980BE2 /* SettingsView.swift in Sources */,
+				04678656259FC75700D5E87F /* CommonToolbarItems.swift in Sources */,
 				04F4F97E2596DD3C005B30B4 /* Git_HistoryListView.swift in Sources */,
 				042DF7C82599004B00F3ACAA /* Git_DiffView.swift in Sources */,
 				043A5309259955EF00980BE2 /* Git_LocalChangesListView.swift in Sources */,

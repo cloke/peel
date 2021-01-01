@@ -11,6 +11,9 @@ extension Brew {
   struct RootView: View {
     var body: some View {
       Brew.SidebarNavigationView()
+        .toolbar(content: {
+          ToolSelectionToolbar()
+        })
     }
   }
 }
