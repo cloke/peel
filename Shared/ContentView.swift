@@ -31,19 +31,21 @@ struct Command {
 
 struct ContentView: View {
   @AppStorage(wrappedValue: .brew, "current-tool") private var currentTool: CurrentTool
-
-  func toggleSidebar() { NSApp.keyWindow?.firstResponder?.tryToPerform(#selector(NSSplitViewController.toggleSidebar(_:)), with: nil)}
-
+  
+  func toggleSidebar() {
+    NSApp.keyWindow?.firstResponder?.tryToPerform(#selector(NSSplitViewController.toggleSidebar(_:)), with: nil)
+  }
+  
   var body: some View {
     NavigationView {
-    VStack {
-      switch currentTool {
-      case .brew:
-        Brew.RootView()
-      case .git:
-        Git.RootView()
+      VStack {
+        switch currentTool {
+        case .brew:
+          Brew.RootView()
+        case .git:
+          Git.RootView()
+        }
       }
-    }
     }
     .toolbar {
       ToolbarItem(placement: .navigation){

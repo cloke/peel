@@ -34,18 +34,6 @@ extension Git {
     
     var body: some View {
       VStack {
-        Menu(selectedRepositoryLabel) {
-          ForEach(viewModel.repositories) { repository in
-            Button(repository.name) {
-              selectedRepository = repository
-              selectedRepositoryLabel = repository.name
-              viewModel.selectedRepository = repository
-            }
-          }
-        }
-        .onReceive(viewModel.$selectedRepository) {
-          selectedRepositoryLabel = $0.name
-        }
         VStack {
           Button {
             viewModel.addRepository() {
@@ -76,6 +64,23 @@ extension Git {
         selectedRepository = $0
       }
       .frame(idealHeight: 400)
+      .toolbar {
+        Menu(selectedRepositoryLabel) {
+          ForEach(viewModel.repositories) { repository in
+            Button(repository.name) {
+              selectedRepository = repository
+              selectedRepositoryLabel = repository.name
+              viewModel.selectedRepository = repository
+            }
+          }
+        }
+        .onReceive(viewModel.$selectedRepository) { repository in
+          DispatchQueue.main.async {
+            selectedRepositoryLabel = repository.name
+          }
+        }
+      }
+      .disabled(viewModel.repositories.count > 0 ? false : true)
     }
   }
 }
