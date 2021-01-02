@@ -6,8 +6,39 @@
 //
 
 import Foundation
+import Combine
 
-enum TaskStatus {
+// Shoule the debug window be its own package?
+public struct DebugLogEntry: Identifiable {
+  public let id = UUID()
+  public var entry = ""
+}
+
+public class DebugLog: ObservableObject, Identifiable {
+  public var id = UUID()
+  public let label: String!
+  
+  @Published public var entries = [DebugLogEntry]()
+  
+  init(label: String) {
+    self.label = label
+  }
+}
+
+public class DebugViewModel: ObservableObject {
+  @Published public var debugLogs = [DebugLog]()
+  private var disposables = Set<AnyCancellable>()
+  
+  public static let shared = DebugViewModel()
+}
+
+public enum Executable: String {
+  case brew = "/usr/local/bin/brew"
+  case archetecture = "/usr/bin/arch"
+  case git = "/usr/bin/git"
+}
+
+public enum TaskStatus {
   // Not super thrilled with complete having two arguments. Is there a better way?
   // data is needed for JSON deserialization. [String] is used for things like porcelain
   case complete(Data, [String])
@@ -18,15 +49,15 @@ enum TaskError: Error {
   case unknownRunError(Error)
 }
 
-protocol TaskRunnerProtocol {
+public protocol TaskRunnerProtocol {
   func run(_ url: Executable, command: [String], callback: ((TaskStatus) -> ())?) throws
 }
 
-extension TaskRunnerProtocol {
+public extension TaskRunnerProtocol {
   // Help from Ray Wenderlich Forum
   // Method issues a callback on each line of data from process.
   // It will also return the entire output at the end of the process.
-  // This is useful when we want the entire output to parse (JSON) versus line by line output for basic commands  
+  // This is useful when we want the entire output to parse (JSON) versus line by line output for basic commands
   func run(_ url: Executable, command: [String], callback: ((TaskStatus) -> ())? = nil) throws {
     let process = Process()
     let pipe = Pipe()

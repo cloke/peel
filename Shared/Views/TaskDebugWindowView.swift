@@ -7,29 +7,7 @@
 
 import SwiftUI
 import Combine
-
-struct DebugLogEntry: Identifiable {
-  let id = UUID()
-  var entry = ""
-}
-
-class DebugLog: ObservableObject, Identifiable {
-  var id = UUID()
-  let label: String!
-  
-  @Published var entries = [DebugLogEntry]()
-  
-  init(label: String) {
-    self.label = label
-  }
-}
-
-class DebugViewModel: ObservableObject {
-  @Published var debugLogs = [DebugLog]()
-  private var disposables = Set<AnyCancellable>()
-  
-  static let shared = DebugViewModel()
-}
+import TaskRunner
 
 struct TaskDebugDisclosureContentView: View {
   @ObservedObject var log: DebugLog

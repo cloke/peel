@@ -20,3 +20,18 @@ struct ToolSelectionToolbar: ToolbarContent {
   }
 }
 
+struct ToggleSidebarToolbarItem: ToolbarContent {
+  let placement: ToolbarItemPlacement
+  
+  func toggleSidebar() {
+    NSApp.keyWindow?.firstResponder?.tryToPerform(#selector(NSSplitViewController.toggleSidebar(_:)), with: nil)
+  }
+  
+  var body: some ToolbarContent {
+    ToolbarItem(placement: placement) {
+      Button { toggleSidebar() }
+        label: { Image(systemName: "sidebar.left") }
+        .help(Text("Toggle Sidebar"))
+    }
+  }
+}

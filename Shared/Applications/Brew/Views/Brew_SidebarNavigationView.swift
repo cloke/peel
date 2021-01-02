@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Combine
+import TaskRunner
 
 class SearchResults: ObservableObject {
   let objectWillChange = PassthroughSubject<SearchResults, Never>()

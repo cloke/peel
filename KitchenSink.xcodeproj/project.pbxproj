@@ -7,16 +7,16 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		042DF7C72599004B00F3ACAA /* Git_DiffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 042DF7C62599004B00F3ACAA /* Git_DiffView.swift */; };
-		042DF7C82599004B00F3ACAA /* Git_DiffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 042DF7C62599004B00F3ACAA /* Git_DiffView.swift */; };
-		043A5308259955EF00980BE2 /* Git_LocalChangesListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043A5307259955EF00980BE2 /* Git_LocalChangesListView.swift */; };
-		043A5309259955EF00980BE2 /* Git_LocalChangesListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043A5307259955EF00980BE2 /* Git_LocalChangesListView.swift */; };
+		042AE13F25A0E17700B905E4 /* Git in Frameworks */ = {isa = PBXBuildFile; productRef = 042AE13E25A0E17700B905E4 /* Git */; };
+		042AE16F25A0E96200B905E4 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 042AE16E25A0E96200B905E4 /* RootView.swift */; };
+		042AE17025A0E96200B905E4 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 042AE16E25A0E96200B905E4 /* RootView.swift */; };
 		043A530F2599589B00980BE2 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043A530E2599589B00980BE2 /* SettingsView.swift */; };
 		043A53102599589B00980BE2 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043A530E2599589B00980BE2 /* SettingsView.swift */; };
 		04678655259FC75700D5E87F /* CommonToolbarItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04678654259FC75700D5E87F /* CommonToolbarItems.swift */; };
 		04678656259FC75700D5E87F /* CommonToolbarItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04678654259FC75700D5E87F /* CommonToolbarItems.swift */; };
 		0467865D259FEEF100D5E87F /* TaskDebugWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0467865C259FEEF100D5E87F /* TaskDebugWindowView.swift */; };
 		0467865E259FEEF100D5E87F /* TaskDebugWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0467865C259FEEF100D5E87F /* TaskDebugWindowView.swift */; };
+		0467868225A0DBE400D5E87F /* Git in Frameworks */ = {isa = PBXBuildFile; productRef = 0467868125A0DBE400D5E87F /* Git */; };
 		04A7BD7F258E77D8000E55A8 /* Tests_iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD7E258E77D8000E55A8 /* Tests_iOS.swift */; };
 		04A7BD8A258E77D8000E55A8 /* Tests_macOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */; };
 		04A7BD8C258E77D8000E55A8 /* KitchenSinkApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD63258E77D7000E55A8 /* KitchenSinkApp.swift */; };
@@ -31,26 +31,12 @@
 		04A7BDC1258EBC40000E55A8 /* Brew_Model.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BDB7258EBC13000E55A8 /* Brew_Model.swift */; };
 		04A7BDC7258EC14F000E55A8 /* Brew_SidebarNavigationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BDC6258EC14F000E55A8 /* Brew_SidebarNavigationView.swift */; };
 		04A7BDCC258EC190000E55A8 /* Brew_SidebarNavigationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BDC6258EC14F000E55A8 /* Brew_SidebarNavigationView.swift */; };
-		04A7BDD2258EC42F000E55A8 /* TaskRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BDD1258EC42F000E55A8 /* TaskRunner.swift */; };
-		04A7BDD7258EC44F000E55A8 /* TaskRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BDD1258EC42F000E55A8 /* TaskRunner.swift */; };
 		04A7BDDF258EC83A000E55A8 /* SearchBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BDDE258EC83A000E55A8 /* SearchBarView.swift */; };
 		04A7BDE4258EC856000E55A8 /* SearchBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BDDE258EC83A000E55A8 /* SearchBarView.swift */; };
-		04D02C16259A37F000BF81B2 /* Git_FileListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04D02C15259A37F000BF81B2 /* Git_FileListView.swift */; };
-		04D02C17259A37F000BF81B2 /* Git_FileListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04D02C15259A37F000BF81B2 /* Git_FileListView.swift */; };
 		04F4F929259024C2005B30B4 /* Brew_ResultDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F4F928259024C2005B30B4 /* Brew_ResultDetailView.swift */; };
 		04F4F92A259024C2005B30B4 /* Brew_ResultDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F4F928259024C2005B30B4 /* Brew_ResultDetailView.swift */; };
 		04F4F93C25903A72005B30B4 /* Brew_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F4F93B25903A72005B30B4 /* Brew_RootView.swift */; };
 		04F4F93D25903A72005B30B4 /* Brew_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F4F93B25903A72005B30B4 /* Brew_RootView.swift */; };
-		04F4F94925903F4C005B30B4 /* Git_Model.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F4F94825903F4C005B30B4 /* Git_Model.swift */; };
-		04F4F94A25903F4C005B30B4 /* Git_Model.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F4F94825903F4C005B30B4 /* Git_Model.swift */; };
-		04F4F9692590402F005B30B4 /* Git_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F4F9682590402F005B30B4 /* Git_RootView.swift */; };
-		04F4F96A2590402F005B30B4 /* Git_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F4F9682590402F005B30B4 /* Git_RootView.swift */; };
-		04F4F97D2596DD3C005B30B4 /* Git_HistoryListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F4F97C2596DD3C005B30B4 /* Git_HistoryListView.swift */; };
-		04F4F97E2596DD3C005B30B4 /* Git_HistoryListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F4F97C2596DD3C005B30B4 /* Git_HistoryListView.swift */; };
-		04F4F98425978335005B30B4 /* Git_LogEntryRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F4F98325978335005B30B4 /* Git_LogEntryRowView.swift */; };
-		04F4F98525978335005B30B4 /* Git_LogEntryRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F4F98325978335005B30B4 /* Git_LogEntryRowView.swift */; };
-		04F4F98B2597B30D005B30B4 /* Git_BranchListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F4F98A2597B30C005B30B4 /* Git_BranchListView.swift */; };
-		04F4F98C2597B30D005B30B4 /* Git_BranchListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F4F98A2597B30C005B30B4 /* Git_BranchListView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -71,12 +57,13 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		042DF7C62599004B00F3ACAA /* Git_DiffView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Git_DiffView.swift; sourceTree = "<group>"; };
-		043A5307259955EF00980BE2 /* Git_LocalChangesListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Git_LocalChangesListView.swift; sourceTree = "<group>"; };
+		042AE13525A0DF8200B905E4 /* TaskRunner */ = {isa = PBXFileReference; lastKnownFileType = folder; path = TaskRunner; sourceTree = "<group>"; };
+		042AE16E25A0E96200B905E4 /* RootView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; name = RootView.swift; path = ../../../../../../.Trash/RootView.swift; sourceTree = "<group>"; };
 		043A530E2599589B00980BE2 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		043A532125998D1E00980BE2 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		04678654259FC75700D5E87F /* CommonToolbarItems.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonToolbarItems.swift; sourceTree = "<group>"; };
 		0467865C259FEEF100D5E87F /* TaskDebugWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDebugWindowView.swift; sourceTree = "<group>"; };
+		0467867425A0DB4F00D5E87F /* Git */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Git; sourceTree = "<group>"; };
 		04A7BD63258E77D7000E55A8 /* KitchenSinkApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KitchenSinkApp.swift; sourceTree = "<group>"; };
 		04A7BD64258E77D7000E55A8 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		04A7BD65258E77D8000E55A8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -94,18 +81,10 @@
 		04A7BDA7258EBB42000E55A8 /* Brew_DetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brew_DetailView.swift; sourceTree = "<group>"; };
 		04A7BDB7258EBC13000E55A8 /* Brew_Model.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brew_Model.swift; sourceTree = "<group>"; };
 		04A7BDC6258EC14F000E55A8 /* Brew_SidebarNavigationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brew_SidebarNavigationView.swift; sourceTree = "<group>"; };
-		04A7BDD1258EC42F000E55A8 /* TaskRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskRunner.swift; sourceTree = "<group>"; };
 		04A7BDDE258EC83A000E55A8 /* SearchBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchBarView.swift; sourceTree = "<group>"; };
-		04D02C15259A37F000BF81B2 /* Git_FileListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Git_FileListView.swift; sourceTree = "<group>"; };
-		04D7B885259CEE720056BC3E /* AppKitGlue.bundle */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AppKitGlue.bundle; sourceTree = BUILT_PRODUCTS_DIR; };
 		04F4F928259024C2005B30B4 /* Brew_ResultDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brew_ResultDetailView.swift; sourceTree = "<group>"; };
 		04F4F93B25903A72005B30B4 /* Brew_RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brew_RootView.swift; sourceTree = "<group>"; };
-		04F4F94825903F4C005B30B4 /* Git_Model.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Git_Model.swift; sourceTree = "<group>"; };
-		04F4F9682590402F005B30B4 /* Git_RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Git_RootView.swift; sourceTree = "<group>"; };
 		04F4F9772596AAD7005B30B4 /* KitchenSink.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = KitchenSink.entitlements; sourceTree = "<group>"; };
-		04F4F97C2596DD3C005B30B4 /* Git_HistoryListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Git_HistoryListView.swift; sourceTree = "<group>"; };
-		04F4F98325978335005B30B4 /* Git_LogEntryRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Git_LogEntryRowView.swift; sourceTree = "<group>"; };
-		04F4F98A2597B30C005B30B4 /* Git_BranchListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Git_BranchListView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -113,6 +92,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0467868225A0DBE400D5E87F /* Git in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -120,6 +100,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				042AE13F25A0E17700B905E4 /* Git in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -131,13 +112,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		04A7BD82258E77D8000E55A8 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		04D7B882259CEE720056BC3E /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -157,17 +131,35 @@
 			path = Views;
 			sourceTree = "<group>";
 		};
+		0467867A25A0DB9000D5E87F /* Local Packages */ = {
+			isa = PBXGroup;
+			children = (
+				042AE13525A0DF8200B905E4 /* TaskRunner */,
+				0467867425A0DB4F00D5E87F /* Git */,
+			);
+			path = "Local Packages";
+			sourceTree = "<group>";
+		};
+		0467868025A0DBE400D5E87F /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		04A7BD5D258E77D7000E55A8 = {
 			isa = PBXGroup;
 			children = (
+				04A7BD62258E77D7000E55A8 /* Shared */,
 				043A532125998D1E00980BE2 /* README.md */,
 				04F4F9772596AAD7005B30B4 /* KitchenSink.entitlements */,
-				04A7BD62258E77D7000E55A8 /* Shared */,
+				0467867A25A0DB9000D5E87F /* Local Packages */,
 				04A7BD6C258E77D8000E55A8 /* iOS */,
 				04A7BD73258E77D8000E55A8 /* macOS */,
 				04A7BD7D258E77D8000E55A8 /* Tests iOS */,
 				04A7BD88258E77D8000E55A8 /* Tests macOS */,
 				04A7BD6B258E77D8000E55A8 /* Products */,
+				0467868025A0DBE400D5E87F /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};
@@ -175,7 +167,6 @@
 			isa = PBXGroup;
 			children = (
 				04A7BDA5258EBAC4000E55A8 /* Applications */,
-				04A7BDD1258EC42F000E55A8 /* TaskRunner.swift */,
 				0467866E259FEFAD00D5E87F /* Views */,
 				04678654259FC75700D5E87F /* CommonToolbarItems.swift */,
 				04A7BD64258E77D7000E55A8 /* ContentView.swift */,
@@ -192,7 +183,6 @@
 				04A7BD72258E77D8000E55A8 /* KitchenSink.app */,
 				04A7BD7A258E77D8000E55A8 /* Tests iOS.xctest */,
 				04A7BD85258E77D8000E55A8 /* Tests macOS.xctest */,
-				04D7B885259CEE720056BC3E /* AppKitGlue.bundle */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -272,30 +262,15 @@
 		04F4F94225903AE7005B30B4 /* Git */ = {
 			isa = PBXGroup;
 			children = (
-				04F4F94325903AF4005B30B4 /* Models */,
 				04F4F96725904019005B30B4 /* Views */,
 			);
 			path = Git;
 			sourceTree = "<group>";
 		};
-		04F4F94325903AF4005B30B4 /* Models */ = {
-			isa = PBXGroup;
-			children = (
-				04F4F94825903F4C005B30B4 /* Git_Model.swift */,
-			);
-			path = Models;
-			sourceTree = "<group>";
-		};
 		04F4F96725904019005B30B4 /* Views */ = {
 			isa = PBXGroup;
 			children = (
-				04F4F9682590402F005B30B4 /* Git_RootView.swift */,
-				04F4F97C2596DD3C005B30B4 /* Git_HistoryListView.swift */,
-				04F4F98325978335005B30B4 /* Git_LogEntryRowView.swift */,
-				04F4F98A2597B30C005B30B4 /* Git_BranchListView.swift */,
-				042DF7C62599004B00F3ACAA /* Git_DiffView.swift */,
-				043A5307259955EF00980BE2 /* Git_LocalChangesListView.swift */,
-				04D02C15259A37F000BF81B2 /* Git_FileListView.swift */,
+				042AE16E25A0E96200B905E4 /* RootView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -316,6 +291,9 @@
 			dependencies = (
 			);
 			name = "KitchenSink (iOS)";
+			packageProductDependencies = (
+				0467868125A0DBE400D5E87F /* Git */,
+			);
 			productName = "KitchenSink (iOS)";
 			productReference = 04A7BD6A258E77D8000E55A8 /* KitchenSink.app */;
 			productType = "com.apple.product-type.application";
@@ -333,6 +311,9 @@
 			dependencies = (
 			);
 			name = "KitchenSink (macOS)";
+			packageProductDependencies = (
+				042AE13E25A0E17700B905E4 /* Git */,
+			);
 			productName = "KitchenSink (macOS)";
 			productReference = 04A7BD72258E77D8000E55A8 /* KitchenSink.app */;
 			productType = "com.apple.product-type.application";
@@ -373,23 +354,6 @@
 			productReference = 04A7BD85258E77D8000E55A8 /* Tests macOS.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
-		04D7B884259CEE720056BC3E /* AppKitGlue */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 04D7B88A259CEE720056BC3E /* Build configuration list for PBXNativeTarget "AppKitGlue" */;
-			buildPhases = (
-				04D7B881259CEE720056BC3E /* Sources */,
-				04D7B882259CEE720056BC3E /* Frameworks */,
-				04D7B883259CEE720056BC3E /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = AppKitGlue;
-			productName = AppKitGlue;
-			productReference = 04D7B885259CEE720056BC3E /* AppKitGlue.bundle */;
-			productType = "com.apple.product-type.bundle";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -413,10 +377,6 @@
 						CreatedOnToolsVersion = 12.3;
 						TestTargetID = 04A7BD71258E77D8000E55A8;
 					};
-					04D7B884259CEE720056BC3E = {
-						CreatedOnToolsVersion = 12.3;
-						LastSwiftMigration = 1230;
-					};
 				};
 			};
 			buildConfigurationList = 04A7BD61258E77D7000E55A8 /* Build configuration list for PBXProject "KitchenSink" */;
@@ -436,7 +396,6 @@
 				04A7BD71258E77D8000E55A8 /* KitchenSink (macOS) */,
 				04A7BD79258E77D8000E55A8 /* Tests iOS */,
 				04A7BD84258E77D8000E55A8 /* Tests macOS */,
-				04D7B884259CEE720056BC3E /* AppKitGlue */,
 			);
 		};
 /* End PBXProject section */
@@ -472,13 +431,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		04D7B883259CEE720056BC3E /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -486,23 +438,15 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				04F4F9692590402F005B30B4 /* Git_RootView.swift in Sources */,
-				04F4F98B2597B30D005B30B4 /* Git_BranchListView.swift in Sources */,
 				04F4F929259024C2005B30B4 /* Brew_ResultDetailView.swift in Sources */,
 				04A7BD8E258E77D8000E55A8 /* ContentView.swift in Sources */,
 				04A7BD8C258E77D8000E55A8 /* KitchenSinkApp.swift in Sources */,
 				043A530F2599589B00980BE2 /* SettingsView.swift in Sources */,
 				04678655259FC75700D5E87F /* CommonToolbarItems.swift in Sources */,
-				04F4F97D2596DD3C005B30B4 /* Git_HistoryListView.swift in Sources */,
-				042DF7C72599004B00F3ACAA /* Git_DiffView.swift in Sources */,
-				043A5308259955EF00980BE2 /* Git_LocalChangesListView.swift in Sources */,
-				04A7BDD2258EC42F000E55A8 /* TaskRunner.swift in Sources */,
 				04A7BDDF258EC83A000E55A8 /* SearchBarView.swift in Sources */,
-				04F4F94925903F4C005B30B4 /* Git_Model.swift in Sources */,
 				04F4F93C25903A72005B30B4 /* Brew_RootView.swift in Sources */,
-				04D02C16259A37F000BF81B2 /* Git_FileListView.swift in Sources */,
-				04F4F98425978335005B30B4 /* Git_LogEntryRowView.swift in Sources */,
 				04A7BDC7258EC14F000E55A8 /* Brew_SidebarNavigationView.swift in Sources */,
+				042AE16F25A0E96200B905E4 /* RootView.swift in Sources */,
 				04A7BDA8258EBB42000E55A8 /* Brew_DetailView.swift in Sources */,
 				0467865D259FEEF100D5E87F /* TaskDebugWindowView.swift in Sources */,
 				04A7BDB8258EBC13000E55A8 /* Brew_Model.swift in Sources */,
@@ -513,23 +457,15 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				04F4F96A2590402F005B30B4 /* Git_RootView.swift in Sources */,
-				04F4F98C2597B30D005B30B4 /* Git_BranchListView.swift in Sources */,
 				04F4F92A259024C2005B30B4 /* Brew_ResultDetailView.swift in Sources */,
 				04A7BD8F258E77D8000E55A8 /* ContentView.swift in Sources */,
 				04A7BD8D258E77D8000E55A8 /* KitchenSinkApp.swift in Sources */,
 				043A53102599589B00980BE2 /* SettingsView.swift in Sources */,
 				04678656259FC75700D5E87F /* CommonToolbarItems.swift in Sources */,
-				04F4F97E2596DD3C005B30B4 /* Git_HistoryListView.swift in Sources */,
-				042DF7C82599004B00F3ACAA /* Git_DiffView.swift in Sources */,
-				043A5309259955EF00980BE2 /* Git_LocalChangesListView.swift in Sources */,
-				04A7BDD7258EC44F000E55A8 /* TaskRunner.swift in Sources */,
 				04A7BDE4258EC856000E55A8 /* SearchBarView.swift in Sources */,
-				04F4F94A25903F4C005B30B4 /* Git_Model.swift in Sources */,
 				04F4F93D25903A72005B30B4 /* Brew_RootView.swift in Sources */,
-				04D02C17259A37F000BF81B2 /* Git_FileListView.swift in Sources */,
-				04F4F98525978335005B30B4 /* Git_LogEntryRowView.swift in Sources */,
 				04A7BDCC258EC190000E55A8 /* Brew_SidebarNavigationView.swift in Sources */,
+				042AE17025A0E96200B905E4 /* RootView.swift in Sources */,
 				04A7BDB1258EBBAA000E55A8 /* Brew_DetailView.swift in Sources */,
 				0467865E259FEEF100D5E87F /* TaskDebugWindowView.swift in Sources */,
 				04A7BDC1258EBC40000E55A8 /* Brew_Model.swift in Sources */,
@@ -549,13 +485,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				04A7BD8A258E77D8000E55A8 /* Tests_macOS.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		04D7B881259CEE720056BC3E /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -876,57 +805,6 @@
 			};
 			name = Release;
 		};
-		04D7B888259CEE720056BC3E /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_STYLE = Automatic;
-				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = UNX9FJDDXV;
-				INFOPLIST_FILE = AppKitGlue/Info.plist;
-				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Bundles";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-					"@loader_path/../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 11.1;
-				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.AppKitGlue";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = macosx;
-				SKIP_INSTALL = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "AppKitGlue/AppKitGlue-Bridging-Header.h";
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-				SWIFT_VERSION = 5.0;
-				WRAPPER_EXTENSION = bundle;
-			};
-			name = Debug;
-		};
-		04D7B889259CEE720056BC3E /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CLANG_ENABLE_MODULES = YES;
-				CODE_SIGN_STYLE = Automatic;
-				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = UNX9FJDDXV;
-				INFOPLIST_FILE = AppKitGlue/Info.plist;
-				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Bundles";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-					"@loader_path/../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 11.1;
-				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.AppKitGlue";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = macosx;
-				SKIP_INSTALL = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "AppKitGlue/AppKitGlue-Bridging-Header.h";
-				SWIFT_VERSION = 5.0;
-				WRAPPER_EXTENSION = bundle;
-			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -975,16 +853,18 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		04D7B88A259CEE720056BC3E /* Build configuration list for PBXNativeTarget "AppKitGlue" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				04D7B888259CEE720056BC3E /* Debug */,
-				04D7B889259CEE720056BC3E /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 /* End XCConfigurationList section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		042AE13E25A0E17700B905E4 /* Git */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Git;
+		};
+		0467868125A0DBE400D5E87F /* Git */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Git;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 04A7BD5E258E77D7000E55A8 /* Project object */;
 }

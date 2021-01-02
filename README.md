@@ -3,7 +3,8 @@
 
 #  TODO GIT
 ### General
-- [ ] Switch branch while file list is selected does not refresh list. Ideally the entire view hiarachy would be redrawn and selection removed. 
+- [ ] Switch branch while file list is selected does not refresh list. Ideally the entire view hiarachy would be repainted and selection removed. 
+- [ ] Switch branch and branches should refresh. Again full repaint would be ideal
 - [ ] When a file is moved the commit view shows errors on removed files. Status "AD" and "R" are not taken into account.
 
 ### Commits

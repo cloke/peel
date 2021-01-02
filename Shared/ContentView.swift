@@ -6,17 +6,12 @@
 //
 
 import SwiftUI
+import Git
 
 enum CurrentTool: String, Identifiable, CaseIterable {
   case brew = "brew", git = "git"
   
   var id: String { rawValue }
-}
-
-enum Executable: String {
-  case brew = "/usr/local/bin/brew"
-  case archetecture = "/usr/bin/arch"
-  case git = "/usr/bin/git"
 }
 
 struct Command {
@@ -38,7 +33,7 @@ struct ContentView: View {
         case .brew:
           Brew.RootView()
         case .git:
-          Git.RootView()
+          Git_RootView()
         }
       }
     }

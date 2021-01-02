@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Combine
+import TaskRunner
 
 extension Brew.DetailView {
   class ViewModel: TaskRunnerProtocol, ObservableObject {
