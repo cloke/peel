@@ -15,6 +15,8 @@
 		043A53102599589B00980BE2 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043A530E2599589B00980BE2 /* SettingsView.swift */; };
 		04678655259FC75700D5E87F /* CommonToolbarItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04678654259FC75700D5E87F /* CommonToolbarItems.swift */; };
 		04678656259FC75700D5E87F /* CommonToolbarItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04678654259FC75700D5E87F /* CommonToolbarItems.swift */; };
+		0467865D259FEEF100D5E87F /* TaskDebugWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0467865C259FEEF100D5E87F /* TaskDebugWindowView.swift */; };
+		0467865E259FEEF100D5E87F /* TaskDebugWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0467865C259FEEF100D5E87F /* TaskDebugWindowView.swift */; };
 		04A7BD7F258E77D8000E55A8 /* Tests_iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD7E258E77D8000E55A8 /* Tests_iOS.swift */; };
 		04A7BD8A258E77D8000E55A8 /* Tests_macOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */; };
 		04A7BD8C258E77D8000E55A8 /* KitchenSinkApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD63258E77D7000E55A8 /* KitchenSinkApp.swift */; };
@@ -74,6 +76,7 @@
 		043A530E2599589B00980BE2 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		043A532125998D1E00980BE2 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		04678654259FC75700D5E87F /* CommonToolbarItems.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonToolbarItems.swift; sourceTree = "<group>"; };
+		0467865C259FEEF100D5E87F /* TaskDebugWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDebugWindowView.swift; sourceTree = "<group>"; };
 		04A7BD63258E77D7000E55A8 /* KitchenSinkApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KitchenSinkApp.swift; sourceTree = "<group>"; };
 		04A7BD64258E77D7000E55A8 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		04A7BD65258E77D8000E55A8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -144,6 +147,16 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		0467866E259FEFAD00D5E87F /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				04A7BDDE258EC83A000E55A8 /* SearchBarView.swift */,
+				043A530E2599589B00980BE2 /* SettingsView.swift */,
+				0467865C259FEEF100D5E87F /* TaskDebugWindowView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
 		04A7BD5D258E77D7000E55A8 = {
 			isa = PBXGroup;
 			children = (
@@ -162,13 +175,12 @@
 			isa = PBXGroup;
 			children = (
 				04A7BDA5258EBAC4000E55A8 /* Applications */,
-				04A7BD63258E77D7000E55A8 /* KitchenSinkApp.swift */,
-				04A7BD64258E77D7000E55A8 /* ContentView.swift */,
-				04A7BD65258E77D8000E55A8 /* Assets.xcassets */,
 				04A7BDD1258EC42F000E55A8 /* TaskRunner.swift */,
-				04A7BDDE258EC83A000E55A8 /* SearchBarView.swift */,
-				043A530E2599589B00980BE2 /* SettingsView.swift */,
+				0467866E259FEFAD00D5E87F /* Views */,
 				04678654259FC75700D5E87F /* CommonToolbarItems.swift */,
+				04A7BD64258E77D7000E55A8 /* ContentView.swift */,
+				04A7BD63258E77D7000E55A8 /* KitchenSinkApp.swift */,
+				04A7BD65258E77D8000E55A8 /* Assets.xcassets */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -492,6 +504,7 @@
 				04F4F98425978335005B30B4 /* Git_LogEntryRowView.swift in Sources */,
 				04A7BDC7258EC14F000E55A8 /* Brew_SidebarNavigationView.swift in Sources */,
 				04A7BDA8258EBB42000E55A8 /* Brew_DetailView.swift in Sources */,
+				0467865D259FEEF100D5E87F /* TaskDebugWindowView.swift in Sources */,
 				04A7BDB8258EBC13000E55A8 /* Brew_Model.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -518,6 +531,7 @@
 				04F4F98525978335005B30B4 /* Git_LogEntryRowView.swift in Sources */,
 				04A7BDCC258EC190000E55A8 /* Brew_SidebarNavigationView.swift in Sources */,
 				04A7BDB1258EBBAA000E55A8 /* Brew_DetailView.swift in Sources */,
+				0467865E259FEEF100D5E87F /* TaskDebugWindowView.swift in Sources */,
 				04A7BDC1258EBC40000E55A8 /* Brew_Model.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

@@ -22,6 +22,7 @@ extension Git {
             label: {
               Image(systemName: "arrow.counterclockwise.icloud")
             }
+            
         }
       }
     }

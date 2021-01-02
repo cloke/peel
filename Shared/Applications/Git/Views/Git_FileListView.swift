@@ -61,7 +61,7 @@ extension Git {
           TextEditor(text: $commitMessage)
             .frame(height: 100)
           Button("Commit Changes") {
-            ViewModel.shared.commit(message: commitMessage) {
+            ViewModel.shared.commit(message: commitMessage) { _, _ in 
               commitMessage = ""
               ViewModel.shared.status() {
                 changes = $0

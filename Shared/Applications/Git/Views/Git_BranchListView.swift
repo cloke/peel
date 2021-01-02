@@ -11,7 +11,8 @@ extension Git {
   struct BranchListView: View {
     @State private var list = [Branch]()
     @State var selection: String?
-    
+    @State private var upDown = ""
+
     var label: String
     var location: String = "-r"
     
@@ -45,6 +46,12 @@ extension Git {
                 }
               }
             } label: { Image(systemName: "square.and.arrow.up") }
+            Text(upDown)
+            .onAppear {
+              ViewModel.shared.revList(branchA: "origin/\(branch.name)", branchB: branch.name) {
+                upDown = "(\($0) / \($1))"
+              }
+            }
           }
         }
       } label: {

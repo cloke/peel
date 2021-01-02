@@ -19,7 +19,6 @@ enum Executable: String {
   case git = "/usr/bin/git"
 }
 
-
 struct Command {
   static let BrewInstalled = ["list", "--formula"]
   static let BrewAvailable = ["search", "--formula"]

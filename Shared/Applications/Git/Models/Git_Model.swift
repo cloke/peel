@@ -58,6 +58,10 @@ extension Git {
     var author = ""
     var message = [String]()
   }
+  
+  enum GitError: Error {
+    case Unknown
+  }
 }
 
 extension Git {
@@ -81,6 +85,7 @@ extension Git {
         selectedRepository = selectedRepositoryEncoded
       }
       
+      /// Transforms a compalex data type to data which is appropriate for storage properties
       $repositories
         .dropFirst()
         .receive(on: DispatchQueue.main)
@@ -90,7 +95,7 @@ extension Git {
           }
         }
         .store(in: &disposables)
-      
+      /// Transforms a compalex data type to data which is appropriate for storage properties
       $selectedRepository
         .dropFirst()
         .receive(on: DispatchQueue.main)
@@ -188,6 +193,19 @@ extension Git {
       
     }
     
+    func revList(branchA: String, branchB: String, callback: ((Int, Int) -> ())? = nil) {
+      try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "rev-list", "--left-right", "--count", "\(branchA)...\(branchB)"]) {
+        switch $0 {
+        case .complete(_, let lines):
+          /// tab separated to left and right value
+          if let t = lines.first?.split(separator: "\t"), let l = Int(t.first ?? "0"), let r = Int(t.last ?? "0") {
+            callback?(l, r)
+          }
+        default: ()
+        }
+      }
+    }
+    
     func push(branch: String, callback: (() -> ())? = nil) {
       try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "push", "origin", branch]) {
         switch $0 {
@@ -208,42 +226,33 @@ extension Git {
       }
     }
     
-    func commit(message: String, callback: (() -> ())? = nil) {
+    func commit(message: String, callback: (([String], Error? ) -> ())? = nil) {
       try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "commit", "-am", message]) {
         switch $0 {
-        case .complete(_, _):
-        callback?()
+        case .complete(_, let array):
+        callback?(array, nil)
         default: ()
         }
       }
     }
     
-    func add(path: String) {
-      try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "add", path])
-    }
-    
-    func unadd(path: String) {
-      try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "reset", "HEAD", path])
-    }
-    
-    func open(callback: ((URL) -> ())? = nil) {
-      let dialog = NSOpenPanel();
-      
-      dialog.title                   = "Choose single directory";
-      dialog.showsResizeIndicator    = true;
-      dialog.showsHiddenFiles        = false;
-      dialog.canChooseFiles = false;
-      dialog.canChooseDirectories = true;
-      
-      if (dialog.runModal() ==  NSApplication.ModalResponse.OK) {
-        let result = dialog.url
-        if (result != nil) {
-          callback?(result!)
+    func add(path: String, callack: (([String], GitError?) -> ())? = nil) {
+      do {
+      try run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "add", path]) {
+        switch $0 {
+        case .complete(_, let array):
+          callack?(array, nil)
+        default: ()
         }
-      } else {
-        // User clicked on "Cancel"
-        return
       }
+      } catch {
+        callack?([], .Unknown)
+
+      }
+    }
+    
+    func unadd(path: String, callack: (() -> ())? = nil) {
+      try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "reset", "HEAD", path])
     }
     
     func addRepository(callack: (() -> ())? = nil) {
@@ -311,6 +320,26 @@ extension Git {
           })
         default: ()
         }
+      }
+    }
+    
+    func open(callback: ((URL) -> ())? = nil) {
+      let dialog = NSOpenPanel();
+      
+      dialog.title = "Choose single directory";
+      dialog.showsResizeIndicator = true;
+      dialog.showsHiddenFiles = false;
+      dialog.canChooseFiles = false;
+      dialog.canChooseDirectories = true;
+      
+      if (dialog.runModal() ==  NSApplication.ModalResponse.OK) {
+        let result = dialog.url
+        if (result != nil) {
+          callback?(result!)
+        }
+      } else {
+        // User clicked on "Cancel"
+        return
       }
     }
   }

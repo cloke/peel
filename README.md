@@ -1,8 +1,48 @@
-#  TODO
+# TODO GENERAL
+- [ ] Look at organizing tool specific code into local packages
+
+#  TODO GIT
+### General
+- [ ] Switch branch while file list is selected does not refresh list. Ideally the entire view hiarachy would be redrawn and selection removed. 
+- [ ] When a file is moved the commit view shows errors on removed files. Status "AD" and "R" are not taken into account.
+
+### Commits
+- [ ] Require commit message before button is enabled
+- [ ] Stage files
+- [ ] Unstage files
+
+### Pull
+- [ ] Pull remote into checked out branch
+- [ ] Pull any remore into checked out branch
+- [ ] Show upstream has changes
+
+### Push
+- [ ] We can't just do git push "main" it would need to be git push "origin main". "branch -la provides better detail"
+
+### Conflicts
+- [ ] Show files in conflict 
+- [ ] Choose which file to pick
+- [ ] Look into built in merge conflict resolution (track under diff view features)
+
+### Diff View
+- [ ] Add dislosure to each file
+- [ ] Could use Apple merge tool by default
+
+### Cherry Pick
+- [ ] Cherry pick from branch
+- [ ] Cherry pick from stash
+
+### Stash 
+- [ ] Create stash
+- [ ] Delete stash
+### Fetch
+
+### Branch
 - [ ] Use a property for selected branch and not the asterix in the name
-- [ ] Add abliity to add file from repo
-- [ ] Figure out git push. We can't just do git push "main" it would need to be git push "origin main". "branch -la provides better detail"
+- [ ] Figure out git push. 
 - [ ] On fresh install there might be an issue with adding a repo. They seem to only work after app restart. 
+
+# TODO BREW
 
 # Ideas
   - Add a better git ignore editor

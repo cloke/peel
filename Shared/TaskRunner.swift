@@ -107,21 +107,5 @@ extension TaskRunnerProtocol {
         callback?(.complete(outputData, outputArray))
       }
     }
-    /// Stall until the external process is done, even if it closed its pipes early.
-    //    while process.isRunning {}
-    //
-    //    /// Check whether it ended with success or an error.
-    //    if process.terminationStatus == 0 {
-    //      // It succeeded.
-    //      // Return the output.
-    //      return output
-    //    } else {
-    //      // It failed.
-    ////      throw ExternalProcessError.processErrored(
-    ////        exitCode: Int(process.terminationStatus),
-    ////        output: output)
-    //      return output
-    //    }
-    //    }
   }
 }
