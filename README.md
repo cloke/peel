@@ -12,7 +12,8 @@
 - [X] Stage files
 - [X] Unstage files
 - [ ] Amend
- 
+- [ ] The file list of commits shows quotes
+
 ### Pull
 - [ ] Pull remote into checked out branch
 - [ ] Pull any remore into checked out branch

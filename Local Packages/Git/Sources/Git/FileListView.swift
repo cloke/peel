@@ -61,10 +61,10 @@ struct FileListView: View {
             .foregroundColor(color(string: string).isDarkColor == true ? .white : .black)
             .onTapGesture {
               DispatchQueue.main.async {
-                var str = String(string.dropFirst(3))
-                str = str.replacingOccurrences(of: " ", with: "\\ ")
-                str = str.replacingOccurrences(of: "\"", with: "")
-
+                let str = String(string.dropFirst(3))
+                  .replacingOccurrences(of: " ", with: "\\ ")
+                  .replacingOccurrences(of: "\"", with: "")
+                
                 ViewModel.shared.diff(path: str) {
                   diff = $0
                 }
