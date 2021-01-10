@@ -10,7 +10,7 @@ import SwiftUI
 struct HistoryListView: View {
   @State private var commits = [LogEntry]()
   @State private var selectedCommit = LogEntry(commit: "")
-  @State private var diff = [DiffLine]()
+  @State private var diff = Diff()
   
   var branch: String
   

@@ -10,6 +10,74 @@ import TaskRunner
 import SwiftUI
 import Combine
 
+/// A global container for all functions related to Git
+struct Git {
+  /// Green color as found on github.com
+  static let green = Color.init(.sRGB, red: 0.157, green: 0.655, blue: 0.271, opacity: 1.0)
+}
+
+struct Diff: Identifiable {
+  var id = UUID()
+  var files = [File]()
+  
+  struct File: Identifiable {
+    var id = UUID()
+    var label = ""
+    var chunks = [Chunk]()
+    
+    struct Chunk: Identifiable {
+      var id = UUID()
+      var chunk = ""
+      var lines = [Line]()
+
+      /// Identifiable container for single git line diff
+      struct Line: Identifiable {
+        var id = UUID()
+        /// The raw output of the line from the command
+        var line = ""
+        /// The line status. +/- for added / deleted
+        var status = ""
+        var lineNumber = 0
+      }
+    }
+  }
+}
+/** Identifiable container for single git branch
+
+  git branch -l
+*/
+struct Branch: Identifiable {
+  var id = UUID()
+  /// Name of the branch
+  var name: String
+  /// Status of branch from branch command. ie. result started with "*"
+  var isActive = false
+}
+
+/// Identifiable container for single git repository
+public struct Repository: Codable, Identifiable {
+  public var id = UUID()
+  public var name: String
+  public var path: String
+}
+
+/** Identifiable container for single git log entry
+
+  git log --abbrev-commit --graph --decorate --first-parent --date=iso8601-strict
+*/
+struct LogEntry: Identifiable {
+  var id: String { commit }
+  let commit: String
+  var merge = ""
+  var date = Date()
+  var author = ""
+  var message = [String]()
+}
+
+enum GitError: Error {
+  case Unknown
+}
+
 internal extension NSTextCheckingResult {
   func group(_ group: Int, in string: String) -> String? {
     let nsRange = range(at: group)
@@ -85,47 +153,88 @@ public class ViewModel: TaskRunnerProtocol, ObservableObject {
   
   // Huge help from https://github.com/guillermomuntaner/GitDiff/
 
-  func processDiff(lines: [String]) -> [DiffLine] {
-    var diffLines = [DiffLine]()
+  func processDiff(lines: [String]) -> Diff {
+    var diff = Diff()
     let regex = try! NSRegularExpression(
             pattern: "^(?:(?:@@ -(\\d+),?(\\d+)? \\+(\\d+),?(\\d+)? @@)|([-+\\s])(.*))",
             options: [])
     var lineNumber = 0
-    var numberingLines = false
     var lineOffset = 0
-    
-    for line in lines {
-      if line.starts(with: "@@") {
-        let range = NSRange(location: 0, length: line.utf16.count)
-        let match = regex.firstMatch(in: line, options: [], range: range)
-        lineNumber = (Int(match?.group(1, in: line) ?? "0") ?? 0) - 1
-        lineOffset = 0
-        numberingLines = true
-      } else if line.starts(with: "diff --git") {
-        lineNumber = 0
+    var numberingLines = false
+
+    var currentFile: Diff.File? = nil
+    var currentChunk: Diff.File.Chunk? = nil
+        
+    for var line in lines {
+      switch line {
+      // Start of new file
+      case let string where line.starts(with: "diff --git"):
+        // Save all data if there was a file in process
+        if var file = currentFile {
+          if let chunk = currentChunk {
+            file.chunks.append(chunk)
+          }
+          diff.files.append(file)
+        }
+        currentChunk = nil
+        currentFile = Diff.File(label: string)
+        lineNumber = 1 // Probably not the right place
         lineOffset = 0
         numberingLines = false
-      }
+        continue
       
-      if line.trimmingCharacters(in: .whitespaces).starts(with: "-") && numberingLines {
+      // Process a chunk of the file
+      case let string where line.starts(with: "@@"):
+        let range = NSRange(location: 0, length: string.utf16.count)
+        let match = regex.firstMatch(in: line, options: [], range: range)
+
+        if let chunk = currentChunk {
+          currentFile?.chunks.append(chunk)
+        }
+        
+        currentChunk = Diff.File.Chunk()
+        currentChunk?.chunk = match?.group(0, in: line) ?? ""
+        
+        lineNumber = Int(match?.group(3, in: line) ?? "0") ?? 0
+        line = line.replacingOccurrences(of: (match?.group(0, in: line) ?? ""), with: "")
+        if line.count > 0 {
+          currentChunk?.lines.append(Diff.File.Chunk.Line(line: line, status: String(line.first ?? Character(" ")), lineNumber: lineNumber))
+        }
+        lineOffset = 0
+        numberingLines = true
+      
+      // Ignore these lines. Do we need them?
+      case _ where line.trimmingCharacters(in: .whitespaces).starts(with: "---"): ()
+      case _ where line.trimmingCharacters(in: .whitespaces).starts(with: "+++"): ()
+
+      // Build up actual line diffs
+      case _ where line.trimmingCharacters(in: .whitespaces).starts(with: "-") && numberingLines:
         lineOffset -= 1
-      }
-      
-      if (line.trimmingCharacters(in: .whitespaces).starts(with: "+") || line.starts(with: " "))
-          && numberingLines {
+        currentChunk?.lines.append(Diff.File.Chunk.Line(line: line, status: String(line.first ?? Character(" ")), lineNumber: lineNumber))
+        lineNumber += 1
+
+      case _ where (line.trimmingCharacters(in: .whitespaces).starts(with: "+") || line.starts(with: " ")) && numberingLines:
         lineNumber += lineOffset
         lineOffset = 0
-      }
-
-      diffLines.append(DiffLine(line: line, status: String(line.first ?? Character("")), lineNumber: lineNumber))
-      if numberingLines {
+        currentChunk?.lines.append(Diff.File.Chunk.Line(line: line, status: String(line.first ?? Character(" ")), lineNumber: lineNumber))
         lineNumber += 1
+
+      default:
+        print("WTF: \(line)")
       }
     }
-    return diffLines
+    // This handles the last file in the loop
+    if var file = currentFile {
+      if let chunk = currentChunk {
+        file.chunks.append(chunk)
+      }
+      diff.files.append(file)
+    }
+    
+    return diff
   }
   
-  func diff(path: String, callback: (([DiffLine]) -> ())? = nil) {
+  func diff(path: String, callback: ((Diff) -> ())? = nil) {
     try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "diff", path]) {
       switch $0 {
       case .complete(_, let lines):
@@ -135,7 +244,7 @@ public class ViewModel: TaskRunnerProtocol, ObservableObject {
     }
   }
   
-  func diff(commit: String, callback: (([DiffLine]) -> ())? = nil) {
+  func diff(commit: String, callback: ((Diff) -> ())? = nil) {
     try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "diff", "\(commit)~", commit]) {
       switch $0 {
       case .complete(_, let lines):

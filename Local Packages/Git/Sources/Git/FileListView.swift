@@ -39,7 +39,7 @@ struct FileListItemView: View {
 struct FileListView: View {
   @State private var commitMessage: String = ""
   @State private var changes = [String]()
-  @State private var diff = [DiffLine]()
+  @State private var diff = Diff()
   
   var body: some View {
     NavigationView {
@@ -60,10 +60,12 @@ struct FileListView: View {
             .background(color(string: string))
             .foregroundColor(color(string: string).isDarkColor == true ? .white : .black)
             .onTapGesture {
-              var file = string.split(separator: " ")
-              file.removeFirst()
               DispatchQueue.main.async {
-                ViewModel.shared.diff(path: file.joined(separator: "")) {
+                var str = String(string.dropFirst(3))
+                str = str.replacingOccurrences(of: " ", with: "\\ ")
+                str = str.replacingOccurrences(of: "\"", with: "")
+
+                ViewModel.shared.diff(path: str) {
                   diff = $0
                 }
               }

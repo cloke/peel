@@ -9,9 +9,10 @@
 
 ### Commits
 - [ ] Require commit message before button is enabled
-- [ ] Stage files
-- [ ] Unstage files
-
+- [X] Stage files
+- [X] Unstage files
+- [ ] Amend
+ 
 ### Pull
 - [ ] Pull remote into checked out branch
 - [ ] Pull any remore into checked out branch

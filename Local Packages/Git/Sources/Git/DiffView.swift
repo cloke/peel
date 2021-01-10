@@ -8,25 +8,29 @@
 import SwiftUI
 
 struct DiffView: View {
-  var diff: [DiffLine]
+  var diff: Diff
   
   var body: some View {
     GeometryReader { geometry in
       ScrollView([.horizontal, .vertical]) {
-        LazyVStack(alignment: .leading) {
-          ForEach(diff) { diffLine in
-            if diffLine.line.starts(with: "diff --git") {
-              Divider()
-            }
-            HStack {
-              if diffLine.lineNumber != 0 {
-                Text(diffLine.lineNumber.description)
+        VStack(alignment: .leading) {
+          ForEach(diff.files) { file in
+            DisclosureGroup(file.label) {
+              ForEach(file.chunks) { chunk in
+                Text(chunk.chunk)
+                ForEach(chunk.lines) { line in
+                HStack {
+                  if line.lineNumber != 0 {
+                    Text(line.lineNumber.description)
+                  }
+                  Text(line.line)
+                    .padding(.horizontal)
+                  Spacer()
+                }
+                .background(lineColor(line.status))
               }
-              Text(diffLine.line)
-                .padding(.horizontal)
-              Spacer()
+              }
             }
-            .background(lineColor(diffLine.status))
           }
         }
         .frame(width: geometry.size.width)
@@ -47,6 +51,6 @@ struct DiffView: View {
 
 struct DiffView_Previews: PreviewProvider {
   static var previews: some View {
-    DiffView(diff: [DiffLine]())
+    DiffView(diff: Diff())
   }
 }
