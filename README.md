@@ -44,12 +44,20 @@
 ### Fetch
 
 ### Branch
+- [ ] Add ability to create a branch
+- [ ] Add ability to delete a branch
 - [ ] Use a property for selected branch and not the asterix in the name
 - [ ] Figure out git push. 
 - [ ] On fresh install there might be an issue with adding a repo. They seem to only work after app restart. 
+- [ ] Handle errors when switching a branch results in conflict
 
 ### Log
 - [ ] Only show first 1000 (or whatever is fast and then add a show more button). 74k takes like 30 seconds. 
+
+### Ignore
+- [ ] Implement basic contexual menu. 
+- [ ] Create UI for ignore type. file, path, pattern.
+
 # TODO BREW
 
 # Ideas

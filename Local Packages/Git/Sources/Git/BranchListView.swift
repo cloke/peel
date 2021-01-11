@@ -36,7 +36,7 @@ public struct BranchListView: View {
               TapGesture(count: 2)
                 .onEnded({
                   selection = branch.name
-                  ViewModel.shared.checkout(branch: branch.name) {
+                  ViewModel.shared.checkout(branch: branch.name) { _ in
                     ViewModel.shared.showBranches(from: location) {
                       list = $0
                     }
@@ -45,7 +45,7 @@ public struct BranchListView: View {
             )
           Spacer()
           Button {
-            ViewModel.shared.push(branch: branch.name) {
+            ViewModel.shared.push(branch: branch.name) { _ in
               ViewModel.shared.showBranches(from: location) {
                 list = $0
               }

@@ -33,7 +33,7 @@ public class DebugViewModel: ObservableObject {
 }
 
 public enum Executable: String {
-  case brew = "/usr/local/bin/brew"
+  case brew = "/opt/homebrew/bin/brew"
   case archetecture = "/usr/bin/arch"
   case git = "/usr/bin/git"
 }

@@ -271,48 +271,40 @@ public class ViewModel: TaskRunnerProtocol, ObservableObject {
     }
   }
   
-  func push(branch: String, callback: (() -> ())? = nil) {
-    try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "push", "origin", branch]) {
-      switch $0 {
-      case .complete(_, _):
-      callback?()
-      default: ()
-      }
-    }
-  }
-  
-  func checkout(branch: String, callback: (() -> ())? = nil) {
-    try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "checkout", branch]) {
-      switch $0 {
-      case .complete(_, _):
-      callback?()
-      default: ()
-      }
-    }
-  }
-  
-  func commit(message: String, callback: (([String], Error? ) -> ())? = nil) {
-    try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "commit", "-am", message]) {
+  /// Provides a single point for commands that just execture a command and return data
+  func simpleCommand(command: [String], callback: (([String]) -> ())? = nil) {
+    try? run(.git, command: command) {
       switch $0 {
       case .complete(_, let array):
-      callback?(array, nil)
+      callback?(array)
       default: ()
       }
     }
+  }
+  
+  func push(branch: String, callback: (([String]) -> ())? = nil) {
+    simpleCommand(command: ["-C", ViewModel.shared.selectedRepository.path, "push", "origin", branch], callback: callback)
+  }
+  
+  func checkout(branch: String, callback: (([String]) -> ())? = nil) {
+    simpleCommand(command: ["-C", ViewModel.shared.selectedRepository.path, "checkout", branch], callback: callback)
+  }
+  
+  func commit(message: String, callback: (([String]) -> ())? = nil) {
+    simpleCommand(command: ["-C", ViewModel.shared.selectedRepository.path, "commit", "-am", message], callback: callback)
   }
   
   func add(path: String, callack: (([String], GitError?) -> ())? = nil) {
     do {
-    try run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "add", path]) {
-      switch $0 {
-      case .complete(_, let array):
-        callack?(array, nil)
-      default: ()
+      try run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "add", path]) {
+        switch $0 {
+        case .complete(_, let array):
+          callack?(array, nil)
+        default: ()
+        }
       }
-    }
     } catch {
       callack?([], .Unknown)
-
     }
   }
   
@@ -335,16 +327,12 @@ public class ViewModel: TaskRunnerProtocol, ObservableObject {
   }
   
   func log(branch: String, callack: (([LogEntry]) -> ())? = nil) {
-    // look at --oneline
     // loot at --graph without parent
     var logs = [LogEntry]()
-    print(1)
     // git --no-pager log --pretty=tformat:"%ad<•>%t<•>%an<•>%d<•>%s" --date=format:"%Y-%m-%d %H:%M"
     try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "--no-pager", "log", "--pretty=tformat:%ad<•>%h<•>%an<•>%d<•>%s", "--date=iso-strict", "--first-parent", branch.replacingOccurrences(of: "*", with: "").trimmingCharacters(in: .whitespacesAndNewlines)]) {
       switch $0 {
       case .complete(_, let array):
-//        var logEntry: LogEntry?
-//        print(2)
         let dateFormatter = ISO8601DateFormatter()
         array.forEach {
           let components = $0.components(separatedBy: "<•>")
@@ -357,26 +345,7 @@ public class ViewModel: TaskRunnerProtocol, ObservableObject {
               message: components[4]
             )
           )
-//          switch $0 {
-//          case let str where str.starts(with: "*"):
-//            if logEntry != nil { logs.append(logEntry!) }
-//            logEntry = LogEntry(commit: String($0.split(separator: " ")[2]))
-//          case let str where str.starts(with: "| Date:"):
-//            let dateFormatter = ISO8601DateFormatter()
-//            logEntry?.date = dateFormatter.date(from: String($0.dropFirst(7))) ?? Date()
-//          case let str where str.starts(with: "| Merge:"):
-//            logEntry?.merge = $0
-//          case let str where str.starts(with: "| Author:"):
-//            logEntry?.author = String($0.dropFirst(9)).trimmingCharacters(in: .whitespacesAndNewlines)
-//          case let str where str.starts(with: "|     "):
-//            logEntry?.message.append(String($0.dropFirst(6)).trimmingCharacters(in: .whitespacesAndNewlines))
-//          default: ()
-//          }
         }
-//        if logEntry != nil {
-          // Handle when only a single log is in the repository
-//          logs.append(logEntry!)
-//        }
         callack?(logs)
         default: ()
       }

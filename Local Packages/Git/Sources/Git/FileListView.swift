@@ -47,7 +47,7 @@ struct FileListView: View {
         TextEditor(text: $commitMessage)
           .frame(height: 100)
         Button("Commit Changes") {
-          ViewModel.shared.commit(message: commitMessage) { _, _ in
+          ViewModel.shared.commit(message: commitMessage) { _ in
             commitMessage = ""
             ViewModel.shared.status() {
               changes = $0
@@ -69,6 +69,18 @@ struct FileListView: View {
                   diff = $0
                 }
               }
+            }
+            .contextMenu {
+              Button {}
+                label: {
+                  Text("Ignore")
+                  Image(systemName: "pencil.slash")
+                }
+              Button {}
+                label: {
+                  Text("Move to trash")
+                  Image(systemName: "trash")
+                }
             }
         }
       }
