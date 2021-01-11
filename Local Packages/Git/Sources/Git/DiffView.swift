@@ -32,6 +32,7 @@ struct DiffView: View {
               }
             }
           }
+          Spacer()
         }
         .frame(width: geometry.size.width)
         .frame(minHeight: geometry.size.height)

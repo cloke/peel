@@ -28,16 +28,19 @@
 - [ ] Look into built in merge conflict resolution (track under diff view features)
 
 ### Diff View
-- [ ] Add dislosure to each file
+- [X] Add dislosure to each file
 - [ ] Could use Apple merge tool by default
+- [ ] Push line number to top of cell. For a very long wrapped line they can be hard to find.
 
 ### Cherry Pick
 - [ ] Cherry pick from branch
 - [ ] Cherry pick from stash
 
 ### Stash 
+- [ ] Show stashes
 - [ ] Create stash
 - [ ] Delete stash
+
 ### Fetch
 
 ### Branch
@@ -45,6 +48,8 @@
 - [ ] Figure out git push. 
 - [ ] On fresh install there might be an issue with adding a repo. They seem to only work after app restart. 
 
+### Log
+- [ ] Only show first 1000 (or whatever is fast and then add a show more button). 74k takes like 30 seconds. 
 # TODO BREW
 
 # Ideas

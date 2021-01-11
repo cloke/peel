@@ -71,7 +71,7 @@ struct LogEntry: Identifiable {
   var merge = ""
   var date = Date()
   var author = ""
-  var message = [String]()
+  var message = ""
 }
 
 enum GitError: Error {
@@ -338,32 +338,45 @@ public class ViewModel: TaskRunnerProtocol, ObservableObject {
     // look at --oneline
     // loot at --graph without parent
     var logs = [LogEntry]()
-    try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "log", "--graph", "--abbrev-commit", "--decorate", "--first-parent", "--date=iso-strict", branch.replacingOccurrences(of: "*", with: "").trimmingCharacters(in: .whitespacesAndNewlines)]) {
+    print(1)
+    // git --no-pager log --pretty=tformat:"%ad<•>%t<•>%an<•>%d<•>%s" --date=format:"%Y-%m-%d %H:%M"
+    try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "--no-pager", "log", "--pretty=tformat:%ad<•>%h<•>%an<•>%d<•>%s", "--date=iso-strict", "--first-parent", branch.replacingOccurrences(of: "*", with: "").trimmingCharacters(in: .whitespacesAndNewlines)]) {
       switch $0 {
       case .complete(_, let array):
-        var logEntry: LogEntry?
-        
+//        var logEntry: LogEntry?
+//        print(2)
+        let dateFormatter = ISO8601DateFormatter()
         array.forEach {
-          switch $0 {
-          case let str where str.starts(with: "*"):
-            if logEntry != nil { logs.append(logEntry!) }
-            logEntry = LogEntry(commit: String($0.split(separator: " ")[2]))
-          case let str where str.starts(with: "| Date:"):
-            let dateFormatter = ISO8601DateFormatter()
-            logEntry?.date = dateFormatter.date(from: String($0.dropFirst(7))) ?? Date()
-          case let str where str.starts(with: "| Merge:"):
-            logEntry?.merge = $0
-          case let str where str.starts(with: "| Author:"):
-            logEntry?.author = String($0.dropFirst(9)).trimmingCharacters(in: .whitespacesAndNewlines)
-          case let str where str.starts(with: "|     "):
-            logEntry?.message.append(String($0.dropFirst(6)).trimmingCharacters(in: .whitespacesAndNewlines))
-          default: ()
-          }
+          let components = $0.components(separatedBy: "<•>")
+          logs.append(
+            // This feels like a crash waiting to happen. Probably need to create a safe index extension.
+            LogEntry(
+              commit: components[1],
+              date: dateFormatter.date(from: components[0]) ?? Date(),
+              author: components[2],
+              message: components[4]
+            )
+          )
+//          switch $0 {
+//          case let str where str.starts(with: "*"):
+//            if logEntry != nil { logs.append(logEntry!) }
+//            logEntry = LogEntry(commit: String($0.split(separator: " ")[2]))
+//          case let str where str.starts(with: "| Date:"):
+//            let dateFormatter = ISO8601DateFormatter()
+//            logEntry?.date = dateFormatter.date(from: String($0.dropFirst(7))) ?? Date()
+//          case let str where str.starts(with: "| Merge:"):
+//            logEntry?.merge = $0
+//          case let str where str.starts(with: "| Author:"):
+//            logEntry?.author = String($0.dropFirst(9)).trimmingCharacters(in: .whitespacesAndNewlines)
+//          case let str where str.starts(with: "|     "):
+//            logEntry?.message.append(String($0.dropFirst(6)).trimmingCharacters(in: .whitespacesAndNewlines))
+//          default: ()
+//          }
         }
-        if logEntry != nil {
+//        if logEntry != nil {
           // Handle when only a single log is in the repository
-          logs.append(logEntry!)
-        }
+//          logs.append(logEntry!)
+//        }
         callack?(logs)
         default: ()
       }

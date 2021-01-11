@@ -17,7 +17,7 @@ struct LogEntryRowView: View {
         Spacer()
         Text(relativeDate(date: log.date))
       }
-      Text(log.message.first ?? "")
+      Text(log.message)
         .lineLimit(2)
         .truncationMode(.tail)
         .padding(.top, 5)
