@@ -329,7 +329,6 @@ public class ViewModel: TaskRunnerProtocol, ObservableObject {
   func log(branch: String, callack: (([LogEntry]) -> ())? = nil) {
     // loot at --graph without parent
     var logs = [LogEntry]()
-    // git --no-pager log --pretty=tformat:"%ad<•>%t<•>%an<•>%d<•>%s" --date=format:"%Y-%m-%d %H:%M"
     try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "--no-pager", "log", "--pretty=tformat:%ad<•>%h<•>%an<•>%d<•>%s", "--date=iso-strict", "--first-parent", branch.replacingOccurrences(of: "*", with: "").trimmingCharacters(in: .whitespacesAndNewlines)]) {
       switch $0 {
       case .complete(_, let array):
