@@ -81,6 +81,20 @@ struct FileListView: View {
                   Text("Move to trash")
                   Image(systemName: "trash")
                 }
+              Button {
+                let str = String(string.dropFirst(3))
+                  .replacingOccurrences(of: " ", with: "\\ ")
+                  .replacingOccurrences(of: "\"", with: "")
+                ViewModel.shared.restore(path: str) { _ in
+                  ViewModel.shared.status() {
+                    changes = $0
+                  }
+                }
+              }
+              label: {
+                Text("Revert file")
+                Image(systemName: "arrow.uturn.backward")
+              }
             }
         }
       }

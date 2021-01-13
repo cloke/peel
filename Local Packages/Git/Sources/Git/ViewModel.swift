@@ -294,22 +294,16 @@ public class ViewModel: TaskRunnerProtocol, ObservableObject {
     simpleCommand(command: ["-C", ViewModel.shared.selectedRepository.path, "commit", "-am", message], callback: callback)
   }
   
-  func add(path: String, callack: (([String], GitError?) -> ())? = nil) {
-    do {
-      try run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "add", path]) {
-        switch $0 {
-        case .complete(_, let array):
-          callack?(array, nil)
-        default: ()
-        }
-      }
-    } catch {
-      callack?([], .Unknown)
-    }
+  func add(path: String, callack: (([String]) -> ())? = nil) {
+    simpleCommand(command:  ["-C", ViewModel.shared.selectedRepository.path, "add", path], callback: callack)
   }
   
-  func unadd(path: String, callack: (() -> ())? = nil) {
-    try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "reset", "HEAD", path])
+  func unadd(path: String, callack: (([String]) -> ())? = nil) {
+    simpleCommand(command: ["-C", ViewModel.shared.selectedRepository.path, "reset", "HEAD", path], callback: callack)
+  }
+  
+  func restore(path: String, callack: (([String]) -> ())? = nil) {
+    simpleCommand(command: ["-C", ViewModel.shared.selectedRepository.path, "restore", path], callback: callack)
   }
   
   public func addRepository(callack: (() -> ())? = nil) {
