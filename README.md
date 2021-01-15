@@ -8,6 +8,8 @@
 - [ ] When a file is moved the commit view shows errors on removed files. Status "AD" and "R" are not taken into account.
 - [ ] Convert file change list to an object that includes status changes and escaped path.
 - [ ] Training wheels mode. When a destructive action takes place show an "are you sure" modal, but then allow to not show again.
+- [ ] Add a timed mechanism for checking for local and remote changes
+- [ ] Set a check for minimum git version (>2.23 is required). 
 
 ### Commits
 - [ ] Require commit message before button is enabled
@@ -57,12 +59,14 @@
 
 ### Log
 - [ ] Only show first 1000 (or whatever is fast and then add a show more button). 74k takes like 30 seconds. 
+  - [ ] Look into using an optimized logger output
 
 ### Ignore
 - [ ] Implement basic contexual menu. 
 - [ ] Create UI for ignore type. file, path, pattern.
 
 # TODO BREW
+- [ ] Detect where brew is install (/opt or /local)
 - [ ] Show installed tools
 - [ ] Show available tools
 - [ ] Install tool
@@ -77,5 +81,8 @@
   - Project focus. So rather than a git view why not a project view that includes git, yarn, bundle, etc. Some tools would be an exception like brew or when yarn wants to be global
 
 # Notes
+- Look into making this a catalyst app. Since we rely heavily on AppKit this isn't straight forward, but moving items to bundles would help.
+The reasoning would be that many high level UI features are easier in catalyst and I think Apple will continue that trend. It would also give us
+the ability to make some features available on iPad.
 - Arguments are escaped via process. This means an argument like "origin main" will fail because the command line sees that as
 a single argumnet. Each argument needs to be passed into the array separately. 

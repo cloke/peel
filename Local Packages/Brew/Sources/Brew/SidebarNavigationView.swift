@@ -55,7 +55,7 @@ class SearchResults: ObservableObject {
   }
 }
 
-extension Brew.SidebarNavigationView {
+extension SidebarNavigationView {
   class ViewModel: TaskRunnerProtocol {
     @Published var outputStream = [String]()
     
@@ -87,14 +87,15 @@ extension Brew.SidebarNavigationView {
   }
 }
 
-extension Brew {
-  struct SidebarNavigationView: View {
-    @ObservedObject private var results = SearchResults()
-    
-    var viewModel = ViewModel()
-    
-    var body: some View {
-      VStack {
+public struct SidebarNavigationView: View {
+  @ObservedObject private var results = SearchResults()
+  
+  var viewModel = ViewModel()
+  
+  public init() {}
+  
+  public var body: some View {
+    VStack {
       HStack {
         Button("Installed") {
           results.items = []
@@ -124,13 +125,12 @@ extension Brew {
           Text(name)
         }
       }
-      }
     }
   }
 }
 
-struct Brew_SidebarNavigationView_Previews: PreviewProvider {
+struct SidebarNavigationView_Previews: PreviewProvider {
   static var previews: some View {
-    Brew.SidebarNavigationView()
+    SidebarNavigationView()
   }
 }

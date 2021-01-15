@@ -286,8 +286,9 @@ public class ViewModel: TaskRunnerProtocol, ObservableObject {
     simpleCommand(command: ["-C", ViewModel.shared.selectedRepository.path, "push", "origin", branch], callback: callback)
   }
   
+  // Would have preferred to name method switch, but that is a reserved word
   func checkout(branch: String, callback: (([String]) -> ())? = nil) {
-    simpleCommand(command: ["-C", ViewModel.shared.selectedRepository.path, "checkout", branch], callback: callback)
+    simpleCommand(command: ["-C", ViewModel.shared.selectedRepository.path, "switch", branch], callback: callback)
   }
   
   func commit(message: String, callback: (([String]) -> ())? = nil) {

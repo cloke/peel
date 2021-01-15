@@ -8,8 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		042AE13F25A0E17700B905E4 /* Git in Frameworks */ = {isa = PBXBuildFile; productRef = 042AE13E25A0E17700B905E4 /* Git */; };
-		042AE16F25A0E96200B905E4 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 042AE16E25A0E96200B905E4 /* RootView.swift */; };
-		042AE17025A0E96200B905E4 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 042AE16E25A0E96200B905E4 /* RootView.swift */; };
 		043A530F2599589B00980BE2 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043A530E2599589B00980BE2 /* SettingsView.swift */; };
 		043A53102599589B00980BE2 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043A530E2599589B00980BE2 /* SettingsView.swift */; };
 		04678655259FC75700D5E87F /* CommonToolbarItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04678654259FC75700D5E87F /* CommonToolbarItems.swift */; };
@@ -25,17 +23,8 @@
 		04A7BD8F258E77D8000E55A8 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD64258E77D7000E55A8 /* ContentView.swift */; };
 		04A7BD90258E77D8000E55A8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 04A7BD65258E77D8000E55A8 /* Assets.xcassets */; };
 		04A7BD91258E77D8000E55A8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 04A7BD65258E77D8000E55A8 /* Assets.xcassets */; };
-		04A7BDA8258EBB42000E55A8 /* Brew_DetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BDA7258EBB42000E55A8 /* Brew_DetailView.swift */; };
-		04A7BDB1258EBBAA000E55A8 /* Brew_DetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BDA7258EBB42000E55A8 /* Brew_DetailView.swift */; };
-		04A7BDB8258EBC13000E55A8 /* Brew_Model.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BDB7258EBC13000E55A8 /* Brew_Model.swift */; };
-		04A7BDC1258EBC40000E55A8 /* Brew_Model.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BDB7258EBC13000E55A8 /* Brew_Model.swift */; };
-		04A7BDC7258EC14F000E55A8 /* Brew_SidebarNavigationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BDC6258EC14F000E55A8 /* Brew_SidebarNavigationView.swift */; };
-		04A7BDCC258EC190000E55A8 /* Brew_SidebarNavigationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BDC6258EC14F000E55A8 /* Brew_SidebarNavigationView.swift */; };
-		04A7BDDF258EC83A000E55A8 /* SearchBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BDDE258EC83A000E55A8 /* SearchBarView.swift */; };
-		04A7BDE4258EC856000E55A8 /* SearchBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BDDE258EC83A000E55A8 /* SearchBarView.swift */; };
-		04F4F929259024C2005B30B4 /* Brew_ResultDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F4F928259024C2005B30B4 /* Brew_ResultDetailView.swift */; };
-		04F4F92A259024C2005B30B4 /* Brew_ResultDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F4F928259024C2005B30B4 /* Brew_ResultDetailView.swift */; };
-		04F4F93C25903A72005B30B4 /* Brew_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F4F93B25903A72005B30B4 /* Brew_RootView.swift */; };
+		04AC312325B200A2009A10E7 /* Git_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04AC311E25B20085009A10E7 /* Git_RootView.swift */; };
+		04AC313E25B201AE009A10E7 /* Brew in Frameworks */ = {isa = PBXBuildFile; productRef = 04AC313D25B201AE009A10E7 /* Brew */; };
 		04F4F93D25903A72005B30B4 /* Brew_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F4F93B25903A72005B30B4 /* Brew_RootView.swift */; };
 /* End PBXBuildFile section */
 
@@ -58,7 +47,6 @@
 
 /* Begin PBXFileReference section */
 		042AE13525A0DF8200B905E4 /* TaskRunner */ = {isa = PBXFileReference; lastKnownFileType = folder; path = TaskRunner; sourceTree = "<group>"; };
-		042AE16E25A0E96200B905E4 /* RootView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; name = RootView.swift; path = ../../../../../../.Trash/RootView.swift; sourceTree = "<group>"; };
 		043A530E2599589B00980BE2 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		043A532125998D1E00980BE2 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		04678654259FC75700D5E87F /* CommonToolbarItems.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonToolbarItems.swift; sourceTree = "<group>"; };
@@ -78,11 +66,8 @@
 		04A7BD85258E77D8000E55A8 /* Tests macOS.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Tests macOS.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests_macOS.swift; sourceTree = "<group>"; };
 		04A7BD8B258E77D8000E55A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		04A7BDA7258EBB42000E55A8 /* Brew_DetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brew_DetailView.swift; sourceTree = "<group>"; };
-		04A7BDB7258EBC13000E55A8 /* Brew_Model.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brew_Model.swift; sourceTree = "<group>"; };
-		04A7BDC6258EC14F000E55A8 /* Brew_SidebarNavigationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brew_SidebarNavigationView.swift; sourceTree = "<group>"; };
-		04A7BDDE258EC83A000E55A8 /* SearchBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchBarView.swift; sourceTree = "<group>"; };
-		04F4F928259024C2005B30B4 /* Brew_ResultDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brew_ResultDetailView.swift; sourceTree = "<group>"; };
+		04AC311E25B20085009A10E7 /* Git_RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Git_RootView.swift; sourceTree = "<group>"; };
+		04AC312825B200DC009A10E7 /* Brew */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Brew; sourceTree = "<group>"; };
 		04F4F93B25903A72005B30B4 /* Brew_RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brew_RootView.swift; sourceTree = "<group>"; };
 		04F4F9772596AAD7005B30B4 /* KitchenSink.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = KitchenSink.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -100,6 +85,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				04AC313E25B201AE009A10E7 /* Brew in Frameworks */,
 				042AE13F25A0E17700B905E4 /* Git in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -124,7 +110,6 @@
 		0467866E259FEFAD00D5E87F /* Views */ = {
 			isa = PBXGroup;
 			children = (
-				04A7BDDE258EC83A000E55A8 /* SearchBarView.swift */,
 				043A530E2599589B00980BE2 /* SettingsView.swift */,
 				0467865C259FEEF100D5E87F /* TaskDebugWindowView.swift */,
 			);
@@ -134,6 +119,7 @@
 		0467867A25A0DB9000D5E87F /* Local Packages */ = {
 			isa = PBXGroup;
 			children = (
+				04AC312825B200DC009A10E7 /* Brew */,
 				042AE13525A0DF8200B905E4 /* TaskRunner */,
 				0467867425A0DB4F00D5E87F /* Git */,
 			);
@@ -222,57 +208,13 @@
 			path = "Tests macOS";
 			sourceTree = "<group>";
 		};
-		04A7BDA4258EBABA000E55A8 /* Views */ = {
-			isa = PBXGroup;
-			children = (
-				04F4F93B25903A72005B30B4 /* Brew_RootView.swift */,
-				04A7BDA7258EBB42000E55A8 /* Brew_DetailView.swift */,
-				04A7BDC6258EC14F000E55A8 /* Brew_SidebarNavigationView.swift */,
-				04F4F928259024C2005B30B4 /* Brew_ResultDetailView.swift */,
-			);
-			path = Views;
-			sourceTree = "<group>";
-		};
 		04A7BDA5258EBAC4000E55A8 /* Applications */ = {
 			isa = PBXGroup;
 			children = (
-				04A7BDA6258EBADF000E55A8 /* Brew */,
-				04F4F94225903AE7005B30B4 /* Git */,
+				04AC311E25B20085009A10E7 /* Git_RootView.swift */,
+				04F4F93B25903A72005B30B4 /* Brew_RootView.swift */,
 			);
 			path = Applications;
-			sourceTree = "<group>";
-		};
-		04A7BDA6258EBADF000E55A8 /* Brew */ = {
-			isa = PBXGroup;
-			children = (
-				04A7BDB6258EBC00000E55A8 /* Models */,
-				04A7BDA4258EBABA000E55A8 /* Views */,
-			);
-			path = Brew;
-			sourceTree = "<group>";
-		};
-		04A7BDB6258EBC00000E55A8 /* Models */ = {
-			isa = PBXGroup;
-			children = (
-				04A7BDB7258EBC13000E55A8 /* Brew_Model.swift */,
-			);
-			path = Models;
-			sourceTree = "<group>";
-		};
-		04F4F94225903AE7005B30B4 /* Git */ = {
-			isa = PBXGroup;
-			children = (
-				04F4F96725904019005B30B4 /* Views */,
-			);
-			path = Git;
-			sourceTree = "<group>";
-		};
-		04F4F96725904019005B30B4 /* Views */ = {
-			isa = PBXGroup;
-			children = (
-				042AE16E25A0E96200B905E4 /* RootView.swift */,
-			);
-			path = Views;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -313,6 +255,7 @@
 			name = "KitchenSink (macOS)";
 			packageProductDependencies = (
 				042AE13E25A0E17700B905E4 /* Git */,
+				04AC313D25B201AE009A10E7 /* Brew */,
 			);
 			productName = "KitchenSink (macOS)";
 			productReference = 04A7BD72258E77D8000E55A8 /* KitchenSink.app */;
@@ -438,18 +381,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				04F4F929259024C2005B30B4 /* Brew_ResultDetailView.swift in Sources */,
 				04A7BD8E258E77D8000E55A8 /* ContentView.swift in Sources */,
 				04A7BD8C258E77D8000E55A8 /* KitchenSinkApp.swift in Sources */,
 				043A530F2599589B00980BE2 /* SettingsView.swift in Sources */,
 				04678655259FC75700D5E87F /* CommonToolbarItems.swift in Sources */,
-				04A7BDDF258EC83A000E55A8 /* SearchBarView.swift in Sources */,
-				04F4F93C25903A72005B30B4 /* Brew_RootView.swift in Sources */,
-				04A7BDC7258EC14F000E55A8 /* Brew_SidebarNavigationView.swift in Sources */,
-				042AE16F25A0E96200B905E4 /* RootView.swift in Sources */,
-				04A7BDA8258EBB42000E55A8 /* Brew_DetailView.swift in Sources */,
 				0467865D259FEEF100D5E87F /* TaskDebugWindowView.swift in Sources */,
-				04A7BDB8258EBC13000E55A8 /* Brew_Model.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -457,18 +393,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				04F4F92A259024C2005B30B4 /* Brew_ResultDetailView.swift in Sources */,
 				04A7BD8F258E77D8000E55A8 /* ContentView.swift in Sources */,
 				04A7BD8D258E77D8000E55A8 /* KitchenSinkApp.swift in Sources */,
 				043A53102599589B00980BE2 /* SettingsView.swift in Sources */,
 				04678656259FC75700D5E87F /* CommonToolbarItems.swift in Sources */,
-				04A7BDE4258EC856000E55A8 /* SearchBarView.swift in Sources */,
 				04F4F93D25903A72005B30B4 /* Brew_RootView.swift in Sources */,
-				04A7BDCC258EC190000E55A8 /* Brew_SidebarNavigationView.swift in Sources */,
-				042AE17025A0E96200B905E4 /* RootView.swift in Sources */,
-				04A7BDB1258EBBAA000E55A8 /* Brew_DetailView.swift in Sources */,
+				04AC312325B200A2009A10E7 /* Git_RootView.swift in Sources */,
 				0467865E259FEEF100D5E87F /* TaskDebugWindowView.swift in Sources */,
-				04A7BDC1258EBC40000E55A8 /* Brew_Model.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -863,6 +794,10 @@
 		0467868125A0DBE400D5E87F /* Git */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = Git;
+		};
+		04AC313D25B201AE009A10E7 /* Brew */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Brew;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

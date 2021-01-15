@@ -9,12 +9,12 @@ import SwiftUI
 import Combine
 import TaskRunner
 
-extension Brew.DetailView {
+extension DetailView {
   class ViewModel: TaskRunnerProtocol, ObservableObject {
     @Published var outputStream = [String]()
     @Published var desciption = ""
-    @Published var installed: Brew.InfoInstalled? = nil
-    @Published var versions: Brew.AvailableVersion? = nil
+    @Published var installed: InfoInstalled? = nil
+    @Published var versions: AvailableVersion? = nil
     @Published var homepage = ""
     @Published var name = ""
     
@@ -22,13 +22,13 @@ extension Brew.DetailView {
       // This seems messy. Need to think though complex argument strings.
       var cmd = Command.BrewInfo
       cmd.append(_name)
-
+      
       try? run(.brew, command: cmd) { [self] in
         switch $0 {
         case .buffer(_):
           print("Do Nothing")
         case.complete(let data, _):
-          guard let decoded = try? JSONDecoder().decode([Brew.Info].self, from: data).first else { return }
+          guard let decoded = try? JSONDecoder().decode([Info].self, from: data).first else { return }
           DispatchQueue.main.async {
             name = decoded.name ?? ""
             desciption = decoded.description ?? ""
@@ -70,61 +70,59 @@ extension Brew.DetailView {
   }
 }
 
-extension Brew {
-  struct DetailView: View {
-    @ObservedObject private var viewModel = ViewModel()
-    var name: String
-    var additionalCommand: [String] = []
-    
-    var body: some View {
-      #if os(macOS)
-      VSplitView {
-        VStack {
-          HStack {
-            if viewModel.installed != nil {
-              Button("Uninstall") {
-                viewModel.uninstall(target: "-x86_64", name: viewModel.name)
-              }
-            } else if viewModel.versions != nil {
-              Button("Install x86_64 (Intel)") {
-                viewModel.install(target: "-x86_64", name: viewModel.name)
-              }
-              Button("Install arm (Apple Silicon)") {
-                viewModel.install(target: "-arm64", name: viewModel.name)
-              }
+struct DetailView: View {
+  @ObservedObject private var viewModel = ViewModel()
+  var name: String
+  var additionalCommand: [String] = []
+  
+  var body: some View {
+    #if os(macOS)
+    VSplitView {
+      VStack {
+        HStack {
+          if viewModel.installed != nil {
+            Button("Uninstall") {
+              viewModel.uninstall(target: "-x86_64", name: viewModel.name)
+            }
+          } else if viewModel.versions != nil {
+            Button("Install x86_64 (Intel)") {
+              viewModel.install(target: "-x86_64", name: viewModel.name)
+            }
+            Button("Install arm (Apple Silicon)") {
+              viewModel.install(target: "-arm64", name: viewModel.name)
             }
           }
-          Text(viewModel.name)
-          Text(viewModel.desciption)
-          if !viewModel.homepage.isEmpty {
-            Link("Project Homepge", destination: URL(string: viewModel.homepage)!)
-          }
-          if viewModel.installed != nil {
-            Text(viewModel.installed?.version ?? "")
-          } else if viewModel.versions != nil {
-            Text("Stable: \(viewModel.versions?.stable ?? "unknown")")
-          }
         }
-        Divider()
-        ScrollView(.vertical) {
-        Brew.ResultDetailView(resultStream: $viewModel.outputStream)
+        Text(viewModel.name)
+        Text(viewModel.desciption)
+        if !viewModel.homepage.isEmpty {
+          Link("Project Homepge", destination: URL(string: viewModel.homepage)!)
+        }
+        if viewModel.installed != nil {
+          Text(viewModel.installed?.version ?? "")
+        } else if viewModel.versions != nil {
+          Text("Stable: \(viewModel.versions?.stable ?? "unknown")")
+        }
+      }
+      Divider()
+      ScrollView(.vertical) {
+        ResultDetailView(resultStream: $viewModel.outputStream)
           .frame(idealHeight: 100)
           .background(Color.green)
       }
-      }
-      .onAppear {
-        viewModel.details(of: name)
-      }
-      #else
-        Text("This view is not for iOS")
-      #endif
     }
+    .onAppear {
+      viewModel.details(of: name)
+    }
+    #else
+    Text("This view is not for iOS")
+    #endif
   }
 }
 
 struct Brew_DetailView_Previews: PreviewProvider {
   static var previews: some View {
-    Brew.DetailView(name: "apsx")
+    DetailView(name: "apsx")
   }
 }
 

@@ -31,7 +31,7 @@ struct ContentView: View {
       VStack {
         switch currentTool {
         case .brew:
-          Brew.RootView()
+          Brew_RootView()
         case .git:
           Git_RootView()
         }
