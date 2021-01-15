@@ -1,5 +1,5 @@
 # TODO GENERAL
-- [ ] Look at organizing tool specific code into local packages
+- [X] Look at organizing tool specific code into local packages
 
 #  TODO GIT
 ### General
@@ -63,10 +63,13 @@
 - [ ] Create UI for ignore type. file, path, pattern.
 
 # TODO BREW
+- [ ] Show installed tools
+- [ ] Show available tools
+- [ ] Install tool
+- [ ] Uninstall tool
+- [ ] Show architecture (arm / x86)
 
 # Ideas
-  - Add a better git ignore editor
-  - Cherry pick
   - Direct code edits for minor changes. Similar to how website allows. 
   - Yarn tools
   - Project templates
