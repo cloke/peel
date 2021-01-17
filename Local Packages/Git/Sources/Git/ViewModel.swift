@@ -162,7 +162,12 @@ public class ViewModel: TaskRunnerProtocol, ObservableObject {
             )
           case "2": return nil
           case "u": return nil
-          case "?": return nil
+          case "?":
+            let path = line.dropFirst(2)
+            return FileStatus(
+              path: path.description,
+              status: "??"
+            )
           default: return nil
           }
         })
