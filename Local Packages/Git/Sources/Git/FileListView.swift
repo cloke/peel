@@ -52,7 +52,7 @@ struct FileListView: View {
           }
         }
         ForEach(changes) { change in
-          FileListItemView(path: change.path, toggleState: change.status != "??" ? false : true)
+          FileListItemView(path: change.path, toggleState: false) //change.status != "??" ? false : true)
             .contentShape(Rectangle())
             .background(color(string: change.status))
             .foregroundColor(color(string: change.status).isDarkColor == true ? .white : .black)
