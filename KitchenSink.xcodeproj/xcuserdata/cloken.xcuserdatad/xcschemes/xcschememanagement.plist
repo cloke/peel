@@ -7,7 +7,7 @@
 		<key>KitchenSink (iOS).xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
-			<integer>3</integer>
+			<integer>2</integer>
 		</dict>
 		<key>KitchenSink (macOS).xcscheme_^#shared#^_</key>
 		<dict>
@@ -22,7 +22,17 @@
 	</dict>
 	<key>SuppressBuildableAutocreation</key>
 	<dict>
+		<key>04A7BD69258E77D8000E55A8</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
 		<key>04A7BD71258E77D8000E55A8</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
+		<key>04A7BD79258E77D8000E55A8</key>
 		<dict>
 			<key>primary</key>
 			<true/>

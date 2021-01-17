@@ -25,7 +25,6 @@ struct FileListItemView: View {
     HStack {
       Toggle(isOn: $toggleState) { EmptyView() }
         .onChange(of: toggleState) {
-          let path = String(self.path.dropFirst(2)).trimmingCharacters(in: .whitespacesAndNewlines)
           $0 ? ViewModel.shared.add(path: path) : ViewModel.shared.unadd(path: path)
         }
       Text(path)
@@ -38,7 +37,7 @@ struct FileListItemView: View {
 
 struct FileListView: View {
   @State private var commitMessage: String = ""
-  @State private var changes = [String]()
+  @State private var changes = [FileStatus]()
   @State private var diff = Diff()
   
   var body: some View {
@@ -49,25 +48,21 @@ struct FileListView: View {
         Button("Commit Changes") {
           ViewModel.shared.commit(message: commitMessage) { _ in
             commitMessage = ""
-            ViewModel.shared.status() {
-              changes = $0
-            }
+            ViewModel.shared.status() { changes = $0 }
           }
         }
-        ForEach(changes, id: \.self) { string in
-          FileListItemView(path: string, toggleState: string.starts(with: "??") ? false : true)
+        ForEach(changes) { change in
+          FileListItemView(path: change.path, toggleState: change.status != "??" ? false : true)
             .contentShape(Rectangle())
-            .background(color(string: string))
-            .foregroundColor(color(string: string).isDarkColor == true ? .white : .black)
+            .background(color(string: change.status))
+            .foregroundColor(color(string: change.status).isDarkColor == true ? .white : .black)
             .onTapGesture {
               DispatchQueue.main.async {
-                let str = String(string.dropFirst(3))
+                let str = change.path
                   .replacingOccurrences(of: " ", with: "\\ ")
-                  .replacingOccurrences(of: "\"", with: "")
+//                  .replacingOccurrences(of: "\"", with: "")
                 
-                ViewModel.shared.diff(path: str) {
-                  diff = $0
-                }
+                ViewModel.shared.diff(path: str) { diff = $0 }
               }
             }
             .contextMenu {
@@ -82,13 +77,11 @@ struct FileListView: View {
                   Image(systemName: "trash")
                 }
               Button {
-                let str = String(string.dropFirst(3))
+                let str = change.path
                   .replacingOccurrences(of: " ", with: "\\ ")
-                  .replacingOccurrences(of: "\"", with: "")
+//                  .replacingOccurrences(of: "\"", with: "")
                 ViewModel.shared.restore(path: str) { _ in
-                  ViewModel.shared.status() {
-                    changes = $0
-                  }
+                  ViewModel.shared.status() { changes = $0 }
                 }
               }
               label: {
@@ -101,17 +94,15 @@ struct FileListView: View {
       DiffView(diff: diff)
     }
     .onAppear {
-      ViewModel.shared.status() {
-        changes = $0
-      }
+      ViewModel.shared.status() { changes = $0 }
     }
   }
   
   func color(string: String) -> Color {
     switch string {
     case let str where str.starts(with: "AM"): return .blue
-    case let str where str.starts(with: "A"): return Git.green
-    case let str where str.starts(with: " M"): return .yellow
+    case let str where str.starts(with: ".A"): return Git.green
+    case let str where str.starts(with: ".M"): return .yellow
     case let str where str.starts(with: "??"): return .purple
     default: return .clear
     }

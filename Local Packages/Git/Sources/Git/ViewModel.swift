@@ -16,6 +16,12 @@ struct Git {
   static let green = Color.init(.sRGB, red: 0.157, green: 0.655, blue: 0.271, opacity: 1.0)
 }
 
+struct FileStatus: Identifiable {
+  let id = UUID()
+  let path: String
+  let status: String
+}
+
 struct Diff: Identifiable {
   var id = UUID()
   var files = [File]()
@@ -42,8 +48,9 @@ struct Diff: Identifiable {
     }
   }
 }
-/** Identifiable container for single git branch
 
+/** Identifiable container for single git branch
+ 
   git branch -l
 */
 struct Branch: Identifiable {
@@ -90,14 +97,14 @@ internal extension NSTextCheckingResult {
 }
 
 public class ViewModel: TaskRunnerProtocol, ObservableObject {
-  public static let shared = ViewModel()
-
   @AppStorage(wrappedValue: Data(), "repositories") var repositoriesPersisted: Data
   @AppStorage(wrappedValue: Data(), "selected-repository") var selectedRepositoryPersisted: Data
 
   @Published public var repositories = [Repository]()
   @Published public var selectedRepository = Repository(name: "Add Repository", path: "")
       
+  public static let shared = ViewModel()
+
   private var disposables = Set<AnyCancellable>()
   
   init() {
@@ -135,12 +142,31 @@ public class ViewModel: TaskRunnerProtocol, ObservableObject {
     repositories = []
     selectedRepository = Repository(name: "Add Repository", path: "")
   }
+  // .M Modified
+  // M. Staged for commit
   
-  func status(callback: (([String]) -> ())? = nil) {
-    try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "status", "--porcelain"]) {
+
+  
+  func status(callback: (([FileStatus]) -> ())? = nil) {
+    try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "--no-optional-locks", "status", "--porcelain=2"]) {
       switch $0 {
       case .complete(_, let array):
-        callback?(array)
+        callback?(array.compactMap { line in
+          switch line.first {
+          case "1":
+            let parts = line.split(separator: " ")
+            let path = parts[8..<parts.count]
+            return FileStatus(
+              path: path.joined(separator: " "),
+              status: parts[1].description
+            )
+          case "2": return nil
+          case "u": return nil
+          case "?": return nil
+          default: return nil
+          }
+        })
+//        callback?(array)
       default: ()
       }
     }
@@ -292,7 +318,7 @@ public class ViewModel: TaskRunnerProtocol, ObservableObject {
   }
   
   func commit(message: String, callback: (([String]) -> ())? = nil) {
-    simpleCommand(command: ["-C", ViewModel.shared.selectedRepository.path, "commit", "-am", message], callback: callback)
+    simpleCommand(command: ["-C", ViewModel.shared.selectedRepository.path, "commit", "-m", message], callback: callback)
   }
   
   func add(path: String, callack: (([String]) -> ())? = nil) {

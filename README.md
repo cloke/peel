@@ -6,7 +6,8 @@
 - [ ] Switch branch while file list is selected does not refresh list. Ideally the entire view hiarachy would be repainted and selection removed. 
 - [ ] Switch branch and branches should refresh. Again full repaint would be ideal
 - [ ] When a file is moved the commit view shows errors on removed files. Status "AD" and "R" are not taken into account.
-- [ ] Convert file change list to an object that includes status changes and escaped path.
+- [X] Convert file change list to an object that includes status changes and escaped path.
+  - [ ] COnvert staus to an enum that outlines mod types
 - [ ] Training wheels mode. When a destructive action takes place show an "are you sure" modal, but then allow to not show again.
 - [ ] Add a timed mechanism for checking for local and remote changes
 - [ ] Set a check for minimum git version (>2.23 is required). 
@@ -15,8 +16,9 @@
 - [ ] Require commit message before button is enabled
 - [X] Stage files
 - [X] Unstage files
+- [ ] Unstaged files are still committed
 - [ ] Amend
-- [ ] The file list of commits shows quotes
+- [X] The file list of commits shows quotes
 - [ ] Revert file
 - [ ] Revert all files
 
