@@ -37,7 +37,7 @@ struct FileListItemView: View {
 
 struct FileListView: View {
   @State private var commitMessage: String = ""
-  @State private var changes = [FileStatus]()
+  @State private var changes = [FileDescriptor]()
   @State private var diff = Diff()
   
   var body: some View {
@@ -54,8 +54,8 @@ struct FileListView: View {
         ForEach(changes) { change in
           FileListItemView(path: change.path, toggleState: false) //change.status != "??" ? false : true)
             .contentShape(Rectangle())
-            .background(color(string: change.status))
-            .foregroundColor(color(string: change.status).isDarkColor == true ? .white : .black)
+            .background(color(status: change.status))
+            .foregroundColor(color(status: change.status).isDarkColor == true ? .white : .black)
             .onTapGesture {
               DispatchQueue.main.async {
                 let str = change.path
@@ -98,12 +98,12 @@ struct FileListView: View {
     }
   }
   
-  func color(string: String) -> Color {
-    switch string {
-    case let str where str.starts(with: "AM"): return .blue
-    case let str where str.starts(with: ".A"): return Git.green
-    case let str where str.starts(with: ".M"): return .yellow
-    case let str where str.starts(with: "??"): return .purple
+  func color(status: FileStatus) -> Color {
+    switch status {
+    case .staged: return .blue
+//    case let str where str.starts(with: ".A"): return Git.green
+    case .modifiedMe: return .yellow
+    case .untracked: return .purple
     default: return .clear
     }
   }

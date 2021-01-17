@@ -16,10 +16,19 @@ struct Git {
   static let green = Color.init(.sRGB, red: 0.157, green: 0.655, blue: 0.271, opacity: 1.0)
 }
 
-struct FileStatus: Identifiable {
+enum FileStatus: String {
+  case modifiedMe = ".M"
+  case staged = "M."
+  case untracked = "?"
+  case renamedMe = "R."
+  case ignored = "!"
+  case unknown = "**"
+}
+
+struct FileDescriptor: Identifiable {
   let id = UUID()
   let path: String
-  let status: String
+  let status: FileStatus
 }
 
 struct Diff: Identifiable {
@@ -145,9 +154,7 @@ public class ViewModel: TaskRunnerProtocol, ObservableObject {
   // .M Modified
   // M. Staged for commit
   
-
-  
-  func status(callback: (([FileStatus]) -> ())? = nil) {
+  func status(callback: (([FileDescriptor]) -> ())? = nil) {
     try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "--no-optional-locks", "status", "--porcelain=2"]) {
       switch $0 {
       case .complete(_, let array):
@@ -156,17 +163,17 @@ public class ViewModel: TaskRunnerProtocol, ObservableObject {
           case "1":
             let parts = line.split(separator: " ")
             let path = parts[8..<parts.count]
-            return FileStatus(
+            return FileDescriptor(
               path: path.joined(separator: " "),
-              status: parts[1].description
+              status: FileStatus(rawValue: parts[1].description) ?? .unknown
             )
           case "2": return nil
           case "u": return nil
           case "?":
             let path = line.dropFirst(2)
-            return FileStatus(
+            return FileDescriptor(
               path: path.description,
-              status: "??"
+              status: FileStatus(rawValue: "??") ?? .unknown
             )
           default: return nil
           }
@@ -250,8 +257,7 @@ public class ViewModel: TaskRunnerProtocol, ObservableObject {
         currentChunk?.lines.append(Diff.File.Chunk.Line(line: line, status: String(line.first ?? Character(" ")), lineNumber: lineNumber))
         lineNumber += 1
 
-      default:
-        print("WTF: \(line)")
+      default: ()
       }
     }
     // This handles the last file in the loop
