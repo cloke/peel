@@ -1,0 +1,31 @@
+//
+//  File.swift
+//  
+//
+//  Created by Cory Loken on 1/30/21.
+//
+
+import SwiftUI
+
+/// The container application will use this to inject custom controls into the window UI.
+public struct RepositoriesToolbarItem: ToolbarContent {
+  @Binding private var selectedRepository: Repository
+  private let repositories: [Repository]
+  
+  public init(repositories: [Repository], selectedRepository: Binding<Repository>) {
+    self.repositories = repositories
+    self._selectedRepository = selectedRepository
+  }
+  
+  public var body: some ToolbarContent {
+    ToolbarItem(placement: ToolbarItemPlacement.primaryAction) {
+      Menu(selectedRepository.name) {
+        ForEach(repositories) { repository in
+          Button(repository.name) {
+            selectedRepository = repository
+          }
+        }
+      }
+    }
+  }
+}

@@ -7,20 +7,21 @@
 - [ ] Switch branch and branches should refresh. Again full repaint would be ideal
 - [ ] When a file is moved the commit view shows errors on removed files. Status "AD" and "R" are not taken into account.
 - [X] Convert file change list to an object that includes status changes and escaped path.
-  - [ ] COnvert staus to an enum that outlines mod types
+  - [ ] Convert staus to an enum that outlines mod types
 - [ ] Training wheels mode. When a destructive action takes place show an "are you sure" modal, but then allow to not show again.
 - [ ] Add a timed mechanism for checking for local and remote changes
 - [ ] Set a check for minimum git version (>2.23 is required). 
+- [ ] Bundle git into project
 
 ### Commits
-- [ ] Require commit message before button is enabled
+- [X] Require commit message before button is enabled
 - [X] Stage files
 - [X] Unstage files
 - [ ] Unstaged files are still committed
 - [ ] Amend
 - [X] The file list of commits shows quotes
-- [ ] Revert file
-- [ ] Revert all files
+- [X] Revert file
+- [ ] Revert all files (requires multiselect support to be added)
 
 ### Pull
 - [ ] Pull remote into checked out branch

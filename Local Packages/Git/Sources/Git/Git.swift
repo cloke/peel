@@ -19,25 +19,3 @@ public struct ColumnOneView: View {
     .frame(minWidth: 100)
   }
 }
-
-public struct RepositoriesToolbarItem: ToolbarContent {
-  public let repositories: [Repository]
-  @Binding public var selectedRepository: Repository
-  
-  public init(repositories: [Repository], selectedRepository: Binding<Repository>) {
-    self.repositories = repositories
-    self._selectedRepository = selectedRepository
-  }
-  
-  public var body: some ToolbarContent {
-    ToolbarItem(placement: ToolbarItemPlacement.primaryAction) {
-      Menu(selectedRepository.name) {
-        ForEach(repositories) { repository in
-          Button(repository.name) {
-            selectedRepository = repository
-          }
-        }
-      }
-    }
-  }
-}
