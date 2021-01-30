@@ -7,16 +7,6 @@
 
 import SwiftUI
 
-extension Color {
-  var isDarkColor: Bool {
-    var r, g, b, a: CGFloat
-    (r, g, b, a) = (0, 0, 0, 0)
-    NSColor(self).usingColorSpace(.extendedSRGB)?.getRed(&r, green: &g, blue: &b, alpha: &a)
-    let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
-    return  lum < 0.50
-  }
-}
-
 struct FileListItemView: View {
   var path: String
   @State var toggleState: Bool
@@ -50,7 +40,7 @@ struct FileListView: View {
             commitMessage = ""
             ViewModel.shared.status() { changes = $0 }
           }
-        }
+        }.disabled(commitMessage.count == 0)
         ForEach(changes) { change in
           FileListItemView(path: change.path, toggleState: false) //change.status != "??" ? false : true)
             .contentShape(Rectangle())
