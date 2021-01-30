@@ -14,37 +14,36 @@ struct Git_RootView: View {
   
   var body: some View {
     VStack {
-      VStack {
-        if viewModel.selectedRepository.name == "N/A" {
-          Text("No repo selected")
-        } else {
-          ColumnOneView(repository: viewModel.selectedRepository)
-        }
+      if viewModel.selectedRepository.name == "N/A" {
+        Text("No repo selected")
+      } else {
+        ColumnOneView(repository: viewModel.selectedRepository)
       }
-      .frame(idealHeight: 400)
-      .toolbar {
-        ToolSelectionToolbar()
-        RepositoriesToolbarItem(repositories: viewModel.repositories, selectedRepository: $viewModel.selectedRepository)
-        ToggleSidebarToolbarItem(placement: .navigation)
-        
-        ToolbarItem(placement: .navigation) {
-          Button {
-            viewModel.addRepository() {
-              repoNotFoundError = true
-            }
-          } label : {
-            Image(systemName: "folder.badge.plus")
+    }
+    .frame(idealHeight: 400)
+    .toolbar {
+      ToolSelectionToolbar()
+      RepositoriesToolbarItem(repositories: viewModel.repositories, selectedRepository: $viewModel.selectedRepository)
+      ToggleSidebarToolbarItem(placement: .navigation)
+      
+      ToolbarItem(placement: .navigation) {
+        Button {
+          viewModel.addRepository() {
+            repoNotFoundError = true
           }
-          .alert(isPresented: $repoNotFoundError) {
-            Alert(
-              title: Text("Repository Not Found!"),
-              message: Text("A git repository could not be found."),
-              dismissButton: .default(Text("Ok"))
-            )
-          }
-          .help(Text("Open Repository"))
+        } label : {
+          Image(systemName: "folder.badge.plus")
         }
+        .alert(isPresented: $repoNotFoundError) {
+          Alert(
+            title: Text("Repository Not Found!"),
+            message: Text("A git repository could not be found."),
+            dismissButton: .default(Text("Ok"))
+          )
+        }
+        .help(Text("Open Repository"))
       }
+
     }
   }
 }

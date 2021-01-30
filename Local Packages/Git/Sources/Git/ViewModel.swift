@@ -71,10 +71,15 @@ struct Branch: Identifiable {
 }
 
 /// Identifiable container for single git repository
-public struct Repository: Codable, Identifiable {
+public class Repository: Codable, Identifiable, ObservableObject {
   public var id = UUID()
   public var name: String
   public var path: String
+  
+  init(name: String, path: String) {
+    self.name = name
+    self.path = path
+  }
 }
 
 /** Identifiable container for single git log entry

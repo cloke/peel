@@ -29,7 +29,8 @@ struct FileListView: View {
   @State private var commitMessage: String = ""
   @State private var changes = [FileDescriptor]()
   @State private var diff = Diff()
-  
+  @StateObject private var viewModel: ViewModel = .shared
+
   var body: some View {
     NavigationView {
       List {
@@ -83,8 +84,10 @@ struct FileListView: View {
       }
       DiffView(diff: diff)
     }
-    .onAppear {
-      ViewModel.shared.status() { changes = $0 }
+    .onReceive(viewModel.$selectedRepository) { _ in
+      DispatchQueue.main.async {
+        ViewModel.shared.status() { changes = $0 }
+      }
     }
   }
   
