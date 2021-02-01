@@ -60,13 +60,14 @@ public extension TaskRunnerProtocol {
   // This is useful when we want the entire output to parse (JSON) versus line by line output for basic commands
   func run(_ url: Executable, command: [String], callback: ((TaskStatus) -> ())? = nil) throws {
     let process = Process()
-    let pipe = Pipe()
-    
+    let pipeOutput = Pipe()
+    let pipeError = Pipe()
+
     process.executableURL = URL(fileURLWithPath: url.rawValue)
     process.arguments = command
     
-    process.standardOutput = pipe
-    process.standardError = pipe
+    process.standardOutput = pipeOutput
+    process.standardError = pipeError
     let debuglog = DebugLog(label: "\(url.rawValue) \(command.joined(separator: " "))")
     DebugViewModel.shared.debugLogs.append(debuglog)
     /// Starts the external process.
@@ -88,7 +89,7 @@ public extension TaskRunnerProtocol {
         /// The data in the pipe.
         ///
         /// This will only be empty if the pipe is finished. Otherwise the pipe will stall until it has more. (See the documentation for `availableData`.)
-        let newData = pipe.fileHandleForReading.availableData
+        let newData = pipeOutput.fileHandleForReading.availableData
         // If the new data is empty, the pipe was indicating that it is finished. `nil` is a better indicator of that, so we return `nil`.
         // If there actually is data, we return it.
         return newData.isEmpty ? nil : newData
