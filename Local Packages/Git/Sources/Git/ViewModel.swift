@@ -349,6 +349,10 @@ public class ViewModel: TaskRunnerProtocol, ObservableObject {
     simpleCommand(command: ["-C", ViewModel.shared.selectedRepository.path, "restore", path], callback: callack)
   }
   
+  func stashList(callack: (([String]) -> ())? = nil) {
+    simpleCommand(command: ["-C", ViewModel.shared.selectedRepository.path, "stash", "list"], callback: callack)
+  }
+  
   public func addRepository(callack: (() -> ())? = nil) {
     open() { [self] in
       // Check to see if this is a git folder.
