@@ -14,6 +14,10 @@
 - [ ] Set a check for minimum git version (>2.23 is required). 
 - [ ] Bundle git into project
 
+### Clone
+- [ ] ssh
+- [ ] https
+
 ### Commits
 - [X] Require commit message before button is enabled
 - [X] Stage files
