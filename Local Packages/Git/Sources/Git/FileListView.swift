@@ -43,7 +43,7 @@ struct FileListView: View {
           }
         }.disabled(commitMessage.count == 0)
         ForEach(changes) { change in
-          FileListItemView(path: change.path, toggleState: false) //change.status != "??" ? false : true)
+          FileListItemView(path: change.path, toggleState: ![.modifiedMe, .untracked].contains(change.status)) //change.status != "??" ? false : true)
             .contentShape(Rectangle())
             .background(color(status: change.status))
             .foregroundColor(color(status: change.status).isDarkColor == true ? .white : .black)
@@ -51,8 +51,6 @@ struct FileListView: View {
               DispatchQueue.main.async {
                 let str = change.path
                   .replacingOccurrences(of: " ", with: "\\ ")
-//                  .replacingOccurrences(of: "\"", with: "")
-                
                 ViewModel.shared.diff(path: str) { diff = $0 }
               }
             }
@@ -70,7 +68,6 @@ struct FileListView: View {
               Button {
                 let str = change.path
                   .replacingOccurrences(of: " ", with: "\\ ")
-//                  .replacingOccurrences(of: "\"", with: "")
                 ViewModel.shared.restore(path: str) { _ in
                   ViewModel.shared.status() { changes = $0 }
                 }
@@ -93,10 +90,11 @@ struct FileListView: View {
   
   func color(status: FileStatus) -> Color {
     switch status {
+    case .new: return .green
     case .staged: return .blue
-//    case let str where str.starts(with: ".A"): return Git.green
     case .modifiedMe: return .yellow
     case .untracked: return .purple
+    case .deleted: return .red
     default: return .clear
     }
   }

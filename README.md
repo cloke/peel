@@ -27,7 +27,8 @@
 - [X] The file list of commits shows quotes
 - [X] Revert file
 - [ ] Revert all files (requires multiselect support to be added)
-- [ ] Add a way to check all files to be committed (ie changes should have the checkbox enabled)
+- [X] Add a way to check all files to be committed (ie changes should have the checkbox enabled)
+- [ ] Continue to look at what is considered staged or unstaged and fix check boxes as needed
 
 ### Pull
 - [ ] Pull remote into checked out branch
@@ -54,6 +55,7 @@
 
 ### Stash 
 - [ ] Show stashes
+  - [ ] Show seems to get called 3 times on disclosure
 - [ ] Create stash
 - [ ] Delete stash
 

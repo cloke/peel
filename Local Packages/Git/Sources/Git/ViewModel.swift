@@ -18,6 +18,8 @@ struct Git {
 
 enum FileStatus: String {
   case modifiedMe = ".M"
+  case new = "AM"
+  case deleted = "D."
   case staged = "M."
   case untracked = "?"
   case renamedMe = "R."
@@ -172,13 +174,20 @@ public class ViewModel: TaskRunnerProtocol, ObservableObject {
               path: path.joined(separator: " "),
               status: FileStatus(rawValue: parts[1].description) ?? .unknown
             )
-          case "2": return nil
+          case "2":
+            let parts = line.split(separator: " ")
+            let path = parts[9..<parts.count]
+              
+            return FileDescriptor(
+              path: path.joined(separator: " ").components(separatedBy: "\t").first ?? "",
+              status: FileStatus(rawValue: parts[1].description) ?? .unknown
+            )
           case "u": return nil
           case "?":
             let path = line.dropFirst(2)
             return FileDescriptor(
               path: path.description,
-              status: FileStatus(rawValue: "??") ?? .unknown
+              status: FileStatus(rawValue: "?") ?? .unknown
             )
           default: return nil
           }
