@@ -15,7 +15,7 @@ struct Git_RootView: View {
   var body: some View {
     VStack {
       if viewModel.selectedRepository.name == "N/A" {
-        Text("No repo selected")
+        Text("No repository selected")
       } else {
         ColumnOneView(repository: viewModel.selectedRepository)
       }
@@ -23,7 +23,7 @@ struct Git_RootView: View {
     .frame(idealHeight: 400)
     .toolbar {
       ToolSelectionToolbar()
-      RepositoriesToolbarItem(repositories: viewModel.repositories, selectedRepository: $viewModel.selectedRepository)
+      RepositoriesMenuToolbarItem(repositories: viewModel.repositories, selectedRepository: $viewModel.selectedRepository)
       ToggleSidebarToolbarItem(placement: .navigation)
       
       ToolbarItem(placement: .navigation) {
@@ -31,9 +31,7 @@ struct Git_RootView: View {
           viewModel.addRepository() {
             repoNotFoundError = true
           }
-        } label : {
-          Image(systemName: "folder.badge.plus")
-        }
+        } label : { Image(systemName: "folder.badge.plus") }
         .alert(isPresented: $repoNotFoundError) {
           Alert(
             title: Text("Repository Not Found!"),
@@ -42,6 +40,11 @@ struct Git_RootView: View {
           )
         }
         .help(Text("Open Repository"))
+      }
+      ToolbarItem(placement: .navigation){
+        Button {
+          // TODO add view go get remote repo url. Then show folder select for destination
+        } label: { Image(systemName: "folder.badge.gear") }
       }
 
     }

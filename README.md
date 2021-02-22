@@ -29,6 +29,7 @@
 - [ ] Revert all files (requires multiselect support to be added)
 - [X] Add a way to check all files to be committed (ie changes should have the checkbox enabled)
 - [ ] Continue to look at what is considered staged or unstaged and fix check boxes as needed
+- [ ] Ensure at least on file is staged before commit
 
 ### Pull
 - [ ] Pull remote into checked out branch
