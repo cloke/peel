@@ -15,7 +15,7 @@
 - [ ] Bundle git into project
 
 ### Clone
-- [ ] ssh
+- [X] ssh
 - [ ] https
 
 ### Commits
@@ -30,6 +30,7 @@
 - [X] Add a way to check all files to be committed (ie changes should have the checkbox enabled)
 - [ ] Continue to look at what is considered staged or unstaged and fix check boxes as needed
 - [ ] Ensure at least on file is staged before commit
+- [ ] Stage all files
 
 ### Pull
 - [ ] Pull remote into checked out branch
@@ -55,8 +56,8 @@
 - [ ] Cherry pick from stash
 
 ### Stash 
-- [ ] Show stashes
-  - [ ] Show seems to get called 3 times on disclosure
+- [X] Show stashes
+  - [X] Show seems to get called 3 times on disclosure
 - [ ] Create stash
 - [ ] Delete stash
 

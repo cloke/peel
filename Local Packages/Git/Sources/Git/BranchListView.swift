@@ -28,27 +28,21 @@ public struct BranchListView: View {
             .fontWeight(branch.isActive ? .bold : .regular)
             .gesture(
               TapGesture(count: 1)
-                .onEnded({
-                  selection = branch.name
-                })
+                .onEnded({ selection = branch.name })
             )
             .highPriorityGesture(
               TapGesture(count: 2)
                 .onEnded({
                   selection = branch.name
                   ViewModel.shared.checkout(branch: branch.name) { _ in
-                    ViewModel.shared.showBranches(from: location) {
-                      list = $0
-                    }
+                    ViewModel.shared.showBranches(from: location) { list = $0 }
                   }
                 })
             )
           Spacer()
           Button {
             ViewModel.shared.push(branch: branch.name) { _ in
-              ViewModel.shared.showBranches(from: location) {
-                list = $0
-              }
+              ViewModel.shared.showBranches(from: location) { list = $0 }
             }
           } label: { Image(systemName: "square.and.arrow.up") }
           Text(upDown)
@@ -64,9 +58,7 @@ public struct BranchListView: View {
         Text(label)
         Spacer()
         Button {
-          ViewModel.shared.showBranches(from: location) {
-            list = $0
-          }
+          ViewModel.shared.showBranches(from: location) { list = $0 }
         } label: {
           Image(systemName: "arrow.counterclockwise.icloud")
         }

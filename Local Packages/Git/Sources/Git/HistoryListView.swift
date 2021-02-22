@@ -32,7 +32,6 @@ struct HistoryListView: View {
                   diff = $0
                 }
               }
-            
             Divider()
               .padding(0)
           }

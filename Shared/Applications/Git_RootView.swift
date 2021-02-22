@@ -39,7 +39,7 @@ struct Git_RootView: View {
       ToolbarItem(placement: .navigation){
         Button {
           isCloning = true
-          // TODO add view go get remote repo url. Then show folder select for destination
+          // TODO: add view go get remote repo url. Then show folder select for destination
         } label: { Image(systemName: "folder.badge.gear") }
       }
     }
