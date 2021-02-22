@@ -362,6 +362,20 @@ public class ViewModel: TaskRunnerProtocol, ObservableObject {
     simpleCommand(command: ["-C", ViewModel.shared.selectedRepository.path, "stash", "list"], callback: callack)
   }
   
+  public func cloneRepository(with url: String, callack: (() -> ())? = nil) {
+    // TODO: - Refactor most of these to use a state on the callback
+    guard let repositoryName = url.components(separatedBy: "/").last?.dropLast(4).description else { return }
+    
+    open() { [self] destination in
+     
+      simpleCommand(command: ["clone", url.description, [destination.path, repositoryName].joined(separator: "/")]) { _ in
+        let repository = Repository(name: repositoryName, path: destination.path)
+        repositories.append(repository)
+        selectedRepository = repository
+      }
+    }
+  }
+  
   public func addRepository(callack: (() -> ())? = nil) {
     open() { [self] in
       // Check to see if this is a git folder.

@@ -11,6 +11,8 @@ import Git
 struct Git_RootView: View {
   @StateObject private var viewModel: ViewModel = .shared
   @State private var repoNotFoundError = false
+  @State private var cloneUrl = ""
+  @State private var isCloning = false
   
   var body: some View {
     VStack {
@@ -32,21 +34,40 @@ struct Git_RootView: View {
             repoNotFoundError = true
           }
         } label : { Image(systemName: "folder.badge.plus") }
-        .alert(isPresented: $repoNotFoundError) {
-          Alert(
-            title: Text("Repository Not Found!"),
-            message: Text("A git repository could not be found."),
-            dismissButton: .default(Text("Ok"))
-          )
-        }
         .help(Text("Open Repository"))
       }
       ToolbarItem(placement: .navigation){
         Button {
+          isCloning = true
           // TODO add view go get remote repo url. Then show folder select for destination
         } label: { Image(systemName: "folder.badge.gear") }
       }
-
+    }
+    .alert(isPresented: $repoNotFoundError) {
+      Alert(
+        title: Text("Repository Not Found!"),
+        message: Text("A git repository could not be found."),
+        dismissButton: .default(Text("Ok"))
+      )
+    }
+    .sheet(isPresented: $isCloning) {
+      Form {
+        Section(header: Text("Repository Url")) {
+          TextField("", text: $cloneUrl)
+          HStack {
+            Button { isCloning = false }
+              label: { Text("Cancel") }
+            Spacer()
+            Button {
+              viewModel.cloneRepository(with: cloneUrl) {
+                isCloning = false
+              }
+            } label: { Text("Clone") }
+          }
+        }
+      }
+      .padding()
+      .frame(width: 300, height: 100)
     }
   }
 }

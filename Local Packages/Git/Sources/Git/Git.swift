@@ -10,11 +10,9 @@ struct StashListView: View {
   
   var body: some View {
     DisclosureGroup {
-      
       List(stashes, id: \.self) {
         Text($0)
       }
-      
       .onChange(of: repository.id, perform: { value in
         ViewModel.shared.stashList() {
           self.stashes = $0
