@@ -15,7 +15,7 @@ struct FileListItemView: View {
     HStack {
       Toggle(isOn: $toggleState) { EmptyView() }
         .onChange(of: toggleState) {
-          $0 ? ViewModel.shared.add(path: path) : ViewModel.shared.unadd(path: path)
+          $0 ? ViewModel.shared.add(path: path) : ViewModel.shared.reset(path: path)
         }
       Text(path)
         .truncationMode(.head)
