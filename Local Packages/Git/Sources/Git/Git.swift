@@ -1,6 +1,5 @@
 import SwiftUI
 
-
 public struct ColumnOneView: View {
   let repository: Repository
   

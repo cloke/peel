@@ -11,9 +11,8 @@ import Git
 struct Git_RootView: View {
   @StateObject private var viewModel: ViewModel = .shared
   @State private var repoNotFoundError = false
-  @State private var cloneUrl = ""
-  @State private var isCloning = false
-  
+  @State public var isCloning = false
+
   var body: some View {
     VStack {
       if viewModel.selectedRepository.name == "N/A" {
@@ -51,26 +50,13 @@ struct Git_RootView: View {
       )
     }
     .sheet(isPresented: $isCloning) {
-      Form {
-        Section(header: Text("Repository Url")) {
-          TextField("", text: $cloneUrl)
-          HStack {
-            Button { isCloning = false }
-              label: { Text("Cancel") }
-            Spacer()
-            Button {
-              viewModel.cloneRepository(with: cloneUrl) {
-                isCloning = false
-              }
-            } label: { Text("Clone") }
-          }
-        }
-      }
+      CloneRepositoryView(isCloning: $isCloning)
       .padding()
       .frame(width: 300, height: 100)
     }
   }
 }
+
 
 struct Git_RootView_Previews: PreviewProvider {
   static var previews: some View {

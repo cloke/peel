@@ -50,7 +50,6 @@ struct FileListView: View {
             .onTapGesture {
               DispatchQueue.main.async {
                 let str = change.path
-                  .replacingOccurrences(of: " ", with: "\\ ")
                 ViewModel.shared.diff(path: str) { diff = $0 }
               }
             }

@@ -337,6 +337,10 @@ public class ViewModel: TaskRunnerProtocol, ObservableObject {
     simpleCommand(command: ["-C", ViewModel.shared.selectedRepository.path, "push", "origin", branch], callback: callback)
   }
   
+  func branch(name: String, callback: (([String]) -> ())? = nil) {
+    simpleCommand(command: ["-C", ViewModel.shared.selectedRepository.path, "checkout", "-b", name], callback: callback)
+  }
+  
   // Would have preferred to name method switch, but that is a reserved word
   func checkout(branch: String, callback: (([String]) -> ())? = nil) {
     simpleCommand(command: ["-C", ViewModel.shared.selectedRepository.path, "switch", branch], callback: callback)
@@ -366,7 +370,7 @@ public class ViewModel: TaskRunnerProtocol, ObservableObject {
     // TODO: Refactor most of these to use a state on the callback
     guard let url = URL(string: url) else { return }
     // TODO: Add https support
-    if (url.scheme != "git") { return }
+    if (url.scheme == "https") { return }
     
     guard let repositoryName = url.path.components(separatedBy: "/").last?.dropLast(4).description else { return }
     
