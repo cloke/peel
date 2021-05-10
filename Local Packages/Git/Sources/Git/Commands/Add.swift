@@ -9,7 +9,7 @@
 /// https://git-scm.com/docs/git-add
 
 extension ViewModel {
-  func add(path: String, callack: (([String]) -> ())? = nil) {
-    simpleCommand(command:  ["-C", Self.shared.selectedRepository.path, "add", path], callback: callack)
+  func add(path: String, callback: (([String]) -> ())? = nil) {
+    simpleCommand(command:  ["-C", Self.shared.selectedRepository.path, "add", path], callback: callback)
   }
 }

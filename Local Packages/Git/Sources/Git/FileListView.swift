@@ -30,7 +30,7 @@ struct FileListView: View {
   @State private var changes = [FileDescriptor]()
   @State private var diff = Diff()
   @StateObject private var viewModel: ViewModel = .shared
-
+  
   var body: some View {
     NavigationView {
       List {

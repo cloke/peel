@@ -11,7 +11,7 @@ import Foundation
 /// https://git-scm.com/docs/git-log
 
 extension ViewModel {
-  func log(branch: String, callack: (([LogEntry]) -> ())? = nil) {
+  func log(branch: String, callback: (([LogEntry]) -> ())? = nil) {
     // loot at --graph without parent
     var logs = [LogEntry]()
     try? run(.git, command: ["-C", Self.shared.selectedRepository.path, "--no-pager", "log", "--pretty=tformat:%ad<•>%h<•>%an<•>%d<•>%s", "--date=iso-strict", "--first-parent", branch.replacingOccurrences(of: "*", with: "").trimmingCharacters(in: .whitespacesAndNewlines)]) {
@@ -30,7 +30,7 @@ extension ViewModel {
             )
           )
         }
-        callack?(logs)
+        callback?(logs)
         default: ()
       }
     }

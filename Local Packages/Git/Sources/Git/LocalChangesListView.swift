@@ -21,13 +21,21 @@ public struct LocalChangesListView: View {
       HStack {
         Text("Local Changes")
         Spacer()
-        Button { refreshView() }
+        Button { ViewModel.Stash.push() }
           label: {
-            Image(systemName: "arrow.counterclockwise.icloud")
+            Image(systemName: "square.stack.3d.up")
           }
-        
       }
     }
+    .contextMenu(ContextMenu(menuItems: {
+      
+      Button { refreshView() }
+        label: {
+          Image(systemName: "arrow.counterclockwise.icloud")
+          Text("Refresh")
+        }
+      
+    }))
   }
   
   func refreshView() {

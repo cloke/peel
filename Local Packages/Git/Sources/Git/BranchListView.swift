@@ -87,20 +87,20 @@ public struct BranchListView: View {
 struct BranchRepositoryView: View {
   @State private var name = ""
   
-  public var callack: (() -> ())? = nil
+  public var callback: (() -> ())? = nil
   
-//  init(callack: (() -> ())? = nil) {
-//    self.callack = callack
+//  init(callback: (() -> ())? = nil) {
+//    self.callback = callback
 //  }
   
   var body: some View {
     TextField("Branch Name", text: $name)
     HStack {
-      Button { callack?() }
+      Button { callback?() }
         label: { Text("Cancel") }
       Spacer()
       Button {
-        ViewModel.shared.branch(name: name) { _ in callack?() }
+        ViewModel.shared.branch(name: name) { _ in callback?() }
       }
         label: { Text("Create") }
     }

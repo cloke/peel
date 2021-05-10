@@ -9,7 +9,7 @@
 /// https://git-scm.com/docs/git-restore
 
 extension ViewModel {
-  func restore(path: String, callack: (([String]) -> ())? = nil) {
-    simpleCommand(command: ["-C", Self.shared.selectedRepository.path, "restore", path], callback: callack)
+  func restore(path: String, callback: (([String]) -> ())? = nil) {
+    simpleCommand(command: ["-C", Self.shared.selectedRepository.path, "restore", path], callback: callback)
   }
 }

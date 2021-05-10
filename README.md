@@ -40,6 +40,7 @@
 ### Push
 - [ ] Push locks up the UI. Needs a status indicator and ensure task is on background thread.
 - [ ] We can't just do git push "main" it would need to be git push "origin main". "branch -la provides better detail"
+- [ ] The push icon seems to only reflect the status of the main branch.
 
 ### Conflicts
 - [ ] Show files in conflict 

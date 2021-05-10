@@ -132,7 +132,7 @@ public class ViewModel: TaskRunnerProtocol, ObservableObject {
       selectedRepository = selectedRepositoryEncoded
     }
     
-    /// Transforms a compalex data type to data which is appropriate for storage properties
+    /// Transforms a complex data type to data which is appropriate for storage properties
     $repositories
       .dropFirst()
       .receive(on: DispatchQueue.main)
@@ -142,7 +142,7 @@ public class ViewModel: TaskRunnerProtocol, ObservableObject {
         }
       }
       .store(in: &disposables)
-    /// Transforms a compalex data type to data which is appropriate for storage properties
+    /// Transforms a complex data type to data which is appropriate for storage properties
     $selectedRepository
       .dropFirst()
       .receive(on: DispatchQueue.main)
@@ -152,11 +152,6 @@ public class ViewModel: TaskRunnerProtocol, ObservableObject {
         }
       }
       .store(in: &disposables)
-  }
-  
-  public func resetSettings() {
-    repositories = []
-    selectedRepository = Repository(name: "Add Repository", path: "")
   }
   
   /// Provides a single point for commands that just execture a command and return data
@@ -170,35 +165,22 @@ public class ViewModel: TaskRunnerProtocol, ObservableObject {
     }
   }
   
-  public func addRepository(callack: (() -> ())? = nil) {
+  public func resetSettings() {
+    repositories = []
+    selectedRepository = Repository(name: "Add Repository", path: "")
+  }
+  
+  public func addRepository(callback: (() -> ())? = nil) {
     open() { [self] in
       // Check to see if this is a git folder.
       if !FileManager().fileExists(atPath: $0.appendingPathComponent(".git").path) {
-        callack?()
+        callback?()
         return
       }
       
       let repository = Repository(name: $0.path.components(separatedBy: "/").last ?? "Unknown Name", path: $0.path)
       repositories.append(repository)
       selectedRepository = repository
-    }
-  }
-  
-  // git log --pretty=short
-  // git shortlog
-  // git shortlog -scen
-  func showBranches(from location: String = "-r", callback: (([Branch]) -> ())? = nil) {
-    try? run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "branch", location]) {
-      switch $0 {
-      case .complete(_, let array):
-        callback?(array.map {
-          return Branch(
-            name: $0.replacingOccurrences(of: "*", with: "").trimmingCharacters(in: .whitespacesAndNewlines),
-            isActive: $0.starts(with: "*")
-          )
-        })
-      default: ()
-      }
     }
   }
   

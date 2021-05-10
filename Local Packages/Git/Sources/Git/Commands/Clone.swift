@@ -11,7 +11,7 @@ import Foundation
 /// https://git-scm.com/docs/git-clone
 
 extension ViewModel {
-  public func clone(with url: String, callack: (() -> ())? = nil) {
+  public func clone(with url: String, callback: (() -> ())? = nil) {
     // TODO: Refactor most of these to use a state on the callback
     guard let url = URL(string: url) else { return }
     // TODO: Add https support

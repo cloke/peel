@@ -12,21 +12,17 @@ struct StashListView: View {
   @State private var stashes = [String]()
   @State private var isExpanded = false
   
-  public init(repository: Repository) {
-    self.repository = repository
-  }
-  
   var body: some View {
     DisclosureGroup(isExpanded: $isExpanded) {
       List(stashes, id: \.self) {
         Text($0)
       }
       .onChange(of: repository.id, perform: { value in
-        ViewModel.shared.stashList() { self.stashes = $0 }
+        ViewModel.Stash.list() { self.stashes = $0 }
       })
       .onChange(of: isExpanded, perform:  { value in
         if isExpanded == true {
-          ViewModel.shared.stashList() { self.stashes = $0 }
+          ViewModel.Stash.list() { self.stashes = $0 }
         }
       })
     } label: {
@@ -34,7 +30,7 @@ struct StashListView: View {
         Text("Stash")
         Spacer()
         Button {
-          ViewModel.shared.stashList() { self.stashes = $0 }
+          ViewModel.Stash.list() { self.stashes = $0 }
         } label: {
           Image(systemName: "arrow.counterclockwise.icloud")
         }

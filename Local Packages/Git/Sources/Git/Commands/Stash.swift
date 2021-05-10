@@ -9,7 +9,13 @@
 /// https://git-scm.com/docs/git-stash
 
 extension ViewModel {
-  func stashList(callack: (([String]) -> ())? = nil) {
-    simpleCommand(command: ["-C", Self.shared.selectedRepository.path, "stash", "list"], callback: callack)
+  struct Stash {
+    static func list(callback: (([String]) -> ())? = nil) {
+      ViewModel.shared.simpleCommand(command: ["-C", ViewModel.shared.selectedRepository.path, "stash", "list"], callback: callback)
+    }
+    
+    static func push(message: String = "", callback: (([String]) -> ())? = nil) {
+      ViewModel.shared.simpleCommand(command: ["-C", ViewModel.shared.selectedRepository.path, "stash", "push", "-m", message], callback: callback)
+    }
   }
 }
