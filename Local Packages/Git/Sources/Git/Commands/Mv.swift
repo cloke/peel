@@ -8,6 +8,6 @@
 /// Functions that are defined in the git reference
 /// https://git-scm.com/docs/git-mv
 
-extension ViewModel {
+extension Commands {
   /// Placeholder for git mv
 }

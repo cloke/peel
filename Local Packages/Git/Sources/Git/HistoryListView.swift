@@ -8,8 +8,8 @@
 import SwiftUI
 
 struct HistoryListView: View {
-  @State private var commits = [LogEntry]()
-  @State private var selectedCommit = LogEntry(commit: "")
+  @State private var commits = [Model.LogEntry]()
+  @State private var selectedCommit = Model.LogEntry(commit: "")
   @State private var diff = Diff()
   
   var branch: String
@@ -24,11 +24,11 @@ struct HistoryListView: View {
               .contentShape(Rectangle())
               .padding(.vertical, 0)
               .padding(.horizontal, 2)
-              .background(selectedCommit.id == commit.id ? Git.green : Color.clear)
+              .background(selectedCommit.id == commit.id ? Color.gitGreen : Color.clear)
               .clipped()
               .onTapGesture {
                 selectedCommit = commit
-                ViewModel.shared.diff(commit: commit.commit) {
+                Commands.diff(commit: commit.commit, on: ViewModel.shared.selectedRepository) {
                   diff = $0
                 }
               }
@@ -38,7 +38,7 @@ struct HistoryListView: View {
         }
       }
       .onAppear {
-        ViewModel.shared.log(branch: branch) {
+        Commands.log(branch: branch, on: ViewModel.shared.selectedRepository) {
           commits = $0
         }
       }

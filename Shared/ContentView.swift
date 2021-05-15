@@ -25,15 +25,13 @@ struct Command {
 
 struct ContentView: View {
   @AppStorage(wrappedValue: .brew, "current-tool") private var currentTool: CurrentTool
-
+  
   var body: some View {
     NavigationView {
       VStack {
         switch currentTool {
-        case .brew:
-          Brew_RootView()
-        case .git:
-          Git_RootView()
+        case .brew: Brew_RootView()
+        case .git: Git_RootView()
         }
       }
     }

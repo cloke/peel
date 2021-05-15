@@ -5,16 +5,8 @@
 //  Created by Cory Loken on 1/2/21.
 //
 
-import Foundation
-import TaskRunner
 import SwiftUI
 import Combine
-
-/// A global container for all functions related to Git
-struct Git {
-  /// Green color as found on github.com
-  static let green = Color.init(.sRGB, red: 0.157, green: 0.655, blue: 0.271, opacity: 1.0)
-}
 
 enum FileStatus: String {
   case modifiedMe = ".M"
@@ -60,41 +52,49 @@ struct Diff: Identifiable {
   }
 }
 
+public struct Model {}
+
 /** Identifiable container for single git branch
  
   git branch -l
 */
-struct Branch: Identifiable {
-  var id = UUID()
-  /// Name of the branch
-  var name: String
-  /// Status of branch from branch command. ie. result started with "*"
-  var isActive = false
-}
-
-/// Identifiable container for single git repository
-public class Repository: Codable, Identifiable, ObservableObject {
-  public var id = UUID()
-  public var name: String
-  public var path: String
-  
-  init(name: String, path: String) {
-    self.name = name
-    self.path = path
+extension Model {
+  struct Branch: Identifiable {
+    var id = UUID()
+    /// Name of the branch
+    var name: String
+    /// Status of branch from branch command. ie. result started with "*"
+    var isActive = false
   }
 }
 
-/** Identifiable container for single git log entry
+extension Model {
+  /// Identifiable container for single git repository
+  public class Repository: Codable, Identifiable, ObservableObject {
+    public var id = UUID()
+    public var name: String
+    public var path: String
+    
+    init(name: String, path: String) {
+      self.name = name
+      self.path = path
+    }
+  }
+}
 
-  git log --abbrev-commit --graph --decorate --first-parent --date=iso8601-strict
-*/
-struct LogEntry: Identifiable {
-  var id: String { commit }
-  let commit: String
-  var merge = ""
-  var date = Date()
-  var author = ""
-  var message = ""
+extension Model {
+  /** Identifiable container for single git log entry
+
+    git log --abbrev-commit --graph --decorate --first-parent --date=iso8601-strict
+  */
+  struct LogEntry: Identifiable {
+    var id: String { commit }
+    let commit: String
+    var merge = ""
+    var date = Date()
+    var author = ""
+    var message = ""
+  }
 }
 
 enum GitError: Error {
@@ -112,23 +112,23 @@ internal extension NSTextCheckingResult {
   }
 }
 
-public class ViewModel: TaskRunnerProtocol, ObservableObject {
+public class ViewModel: ObservableObject {
   @AppStorage(wrappedValue: Data(), "repositories") var repositoriesPersisted: Data
   @AppStorage(wrappedValue: Data(), "selected-repository") var selectedRepositoryPersisted: Data
 
-  @Published public var repositories = [Repository]()
-  @Published public var selectedRepository = Repository(name: "Add Repository", path: "")
+  @Published public var repositories = [Model.Repository]()
+  @Published public var selectedRepository = Model.Repository(name: "Add Repository", path: "")
       
   public static let shared = ViewModel()
 
   private var disposables = Set<AnyCancellable>()
   
   init() {
-    if let repositoriesDecoded = try? JSONDecoder().decode([Repository].self, from: repositoriesPersisted) {
+    if let repositoriesDecoded = try? JSONDecoder().decode([Model.Repository].self, from: repositoriesPersisted) {
       repositories = repositoriesDecoded
     }
     
-    if let selectedRepositoryEncoded = try? JSONDecoder().decode(Repository.self, from: selectedRepositoryPersisted) {
+    if let selectedRepositoryEncoded = try? JSONDecoder().decode(Model.Repository.self, from: selectedRepositoryPersisted) {
       selectedRepository = selectedRepositoryEncoded
     }
     
@@ -154,20 +154,9 @@ public class ViewModel: TaskRunnerProtocol, ObservableObject {
       .store(in: &disposables)
   }
   
-  /// Provides a single point for commands that just execture a command and return data
-  func simpleCommand(command: [String], callback: (([String]) -> ())? = nil) {
-    try? run(.git, command: command) {
-      switch $0 {
-      case .complete(_, let array):
-      callback?(array)
-      default: ()
-      }
-    }
-  }
-  
   public func resetSettings() {
     repositories = []
-    selectedRepository = Repository(name: "Add Repository", path: "")
+    selectedRepository = Model.Repository(name: "Add Repository", path: "")
   }
   
   public func addRepository(callback: (() -> ())? = nil) {
@@ -178,7 +167,7 @@ public class ViewModel: TaskRunnerProtocol, ObservableObject {
         return
       }
       
-      let repository = Repository(name: $0.path.components(separatedBy: "/").last ?? "Unknown Name", path: $0.path)
+      let repository = Model.Repository(name: $0.path.components(separatedBy: "/").last ?? "Unknown Name", path: $0.path)
       repositories.append(repository)
       selectedRepository = repository
     }

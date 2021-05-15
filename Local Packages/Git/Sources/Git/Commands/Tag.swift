@@ -8,6 +8,6 @@
 /// Functions that are defined in the git reference
 /// https://git-scm.com/docs/git-tag
 
-extension ViewModel {
+extension Commands {
   /// Placeholder for tag
 }

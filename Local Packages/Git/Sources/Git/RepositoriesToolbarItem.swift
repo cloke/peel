@@ -9,10 +9,10 @@ import SwiftUI
 
 /// The container application will use this to inject custom controls into the window UI.
 public struct RepositoriesMenuToolbarItem: ToolbarContent {
-  @Binding private var selectedRepository: Repository
-  private let repositories: [Repository]
+  @Binding private var selectedRepository: Model.Repository
+  private let repositories: [Model.Repository]
   
-  public init(repositories: [Repository], selectedRepository: Binding<Repository>) {
+  public init(repositories: [Model.Repository], selectedRepository: Binding<Model.Repository>) {
     self.repositories = repositories
     self._selectedRepository = selectedRepository
   }

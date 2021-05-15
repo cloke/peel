@@ -8,7 +8,7 @@
 /// Functions that are defined in the git reference
 /// https://git-scm.com/docs/git-pull
 
-extension ViewModel {
+extension Commands {
   func pull(branch: String) {
     
   }

@@ -42,7 +42,7 @@ struct DiffView: View {
   
   func lineColor(_ symbol: String) -> Color {
     switch symbol {
-    case "+": return Git.green
+    case "+": return .gitGreen
     case "-": return .red
     default: return .clear
     }

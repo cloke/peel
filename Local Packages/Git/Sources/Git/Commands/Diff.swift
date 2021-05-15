@@ -17,10 +17,10 @@ import Foundation
 /// Functions that are defined in the git reference
 /// https://git-scm.com/docs/git-add
 
-extension ViewModel {
+extension Commands {
   /// Processes a diff based on direct file paths
-  func diff(path: String, callback: ((Diff) -> ())? = nil) {
-    try? run(.git, command: ["-C", Self.shared.selectedRepository.path, "diff", path]) {
+  static func diff(path: String, callback: ((Diff) -> ())? = nil) {
+    try? Commands.run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "diff", path]) {
       switch $0 {
       case .complete(_, let lines):
         callback?(self.processDiff(lines: lines))
@@ -30,8 +30,8 @@ extension ViewModel {
   }
   
   /// Processes a diff based on specific commits
-  func diff(commit: String, callback: ((Diff) -> ())? = nil) {
-    try? run(.git, command: ["-C", Self.shared.selectedRepository.path, "diff", "\(commit)~", commit]) {
+  static func diff(commit: String, on respository: Model.Repository, callback: ((Diff) -> ())? = nil) {
+    try? Commands.run(.git, command: ["-C", respository.path, "diff", "\(commit)~", commit]) {
       switch $0 {
       case .complete(_, let lines):
         callback?(self.processDiff(lines: lines))
@@ -40,7 +40,7 @@ extension ViewModel {
     }
   }
   
-  fileprivate func processDiff(lines: [String]) -> Diff {
+  fileprivate static func processDiff(lines: [String]) -> Diff {
     var diff = Diff()
     let regex = try! NSRegularExpression(
       pattern: "^(?:(?:@@ -(\\d+),?(\\d+)? \\+(\\d+),?(\\d+)? @@)|([-+\\s])(.*))",

@@ -15,7 +15,7 @@ struct FileListItemView: View {
     HStack {
       Toggle(isOn: $toggleState) { EmptyView() }
         .onChange(of: toggleState) {
-          $0 ? ViewModel.shared.add(path: path) : ViewModel.shared.reset(path: path)
+          $0 ? Commands.add(to: ViewModel.shared.selectedRepository, path: path) : Commands.reset(path: path, on: ViewModel.shared.selectedRepository)
         }
       Text(path)
         .truncationMode(.head)
@@ -26,10 +26,10 @@ struct FileListItemView: View {
 }
 
 struct FileListView: View {
+  @StateObject private var viewModel: ViewModel = .shared
   @State private var commitMessage: String = ""
   @State private var changes = [FileDescriptor]()
   @State private var diff = Diff()
-  @StateObject private var viewModel: ViewModel = .shared
   
   var body: some View {
     NavigationView {
@@ -37,9 +37,9 @@ struct FileListView: View {
         TextEditor(text: $commitMessage)
           .frame(height: 100)
         Button("Commit Changes") {
-          ViewModel.shared.commit(message: commitMessage) { _ in
+          Commands.commit(message: commitMessage) { _ in
             commitMessage = ""
-            ViewModel.shared.status() { changes = $0 }
+            Commands.status(on: viewModel.selectedRepository) { changes = $0 }
           }
         }.disabled(commitMessage.count == 0)
         ForEach(changes) { change in
@@ -50,7 +50,7 @@ struct FileListView: View {
             .onTapGesture {
               DispatchQueue.main.async {
                 let str = change.path
-                ViewModel.shared.diff(path: str) { diff = $0 }
+                Commands.diff(path: str) { diff = $0 }
               }
             }
             .contextMenu {
@@ -67,8 +67,8 @@ struct FileListView: View {
               Button {
                 let str = change.path
                   .replacingOccurrences(of: " ", with: "\\ ")
-                ViewModel.shared.restore(path: str) { _ in
-                  ViewModel.shared.status() { changes = $0 }
+                Commands.restore(path: str, on: viewModel.selectedRepository) { _ in
+                  Commands.status(on: viewModel.selectedRepository) { changes = $0 }
                 }
               }
               label: {
@@ -82,7 +82,7 @@ struct FileListView: View {
     }
     .onReceive(viewModel.$selectedRepository) { _ in
       DispatchQueue.main.async {
-        ViewModel.shared.status() { changes = $0 }
+        Commands.status(on: viewModel.selectedRepository) { changes = $0 }
       }
     }
   }

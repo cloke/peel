@@ -8,8 +8,8 @@
 /// Functions that are defined in the git reference
 /// https://git-scm.com/docs/git-add
 
-extension ViewModel {
-  func add(path: String, callback: (([String]) -> ())? = nil) {
-    simpleCommand(command:  ["-C", Self.shared.selectedRepository.path, "add", path], callback: callback)
+extension Commands {
+  static func add(to repository: Model.Repository, path: String, callback: (([String]) -> ())? = nil) {
+    Self.simple(command:  ["-C", repository.path, "add", path], callback: callback)
   }
 }

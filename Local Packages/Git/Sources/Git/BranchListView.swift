@@ -8,7 +8,7 @@
 import SwiftUI
 
 public struct BranchListView: View {
-  @State private var list = [Branch]()
+  @State private var list = [Model.Branch]()
   @State private var upDown = ""
   
   @State public private(set) var selection: String?
@@ -36,20 +36,20 @@ public struct BranchListView: View {
               TapGesture(count: 2)
                 .onEnded({
                   selection = branch.name
-                  ViewModel.shared.checkout(branch: branch.name) { _ in
-                    ViewModel.shared.showBranches(from: location) { list = $0 }
+                  Commands.checkout(branch: branch.name, from: ViewModel.shared.selectedRepository) { _ in
+                    Commands.Branch.show(from: location, on: ViewModel.shared.selectedRepository) { list = $0 }
                   }
                 })
             )
           Spacer()
           Button {
-            ViewModel.shared.push(branch: branch.name) { _ in
-              ViewModel.shared.showBranches(from: location) { list = $0 }
+            Commands.push(branch: branch.name, to: ViewModel.shared.selectedRepository) { _ in
+              Commands.Branch.show(from: location, on: ViewModel.shared.selectedRepository) { list = $0 }
             }
           } label: { Image(systemName: "square.and.arrow.up") }
           Text(upDown)
             .onAppear {
-              ViewModel.shared.revList(branchA: "origin/\(branch.name)", branchB: branch.name) {
+              Commands.revList(branchA: "origin/\(branch.name)", branchB: branch.name) {
                 upDown = "(⇣\($0) / \($1) ⇡)"
               }
             }
@@ -57,7 +57,7 @@ public struct BranchListView: View {
         .sheet(isPresented: $isShowing) {
           BranchRepositoryView() { [self] in
             isShowing = false
-            ViewModel.shared.showBranches(from: location) { list = $0 }
+            Commands.Branch.show(from: location, on: ViewModel.shared.selectedRepository) { list = $0 }
           }
             .padding()
             .frame(width: 300, height: 100)
@@ -77,7 +77,7 @@ public struct BranchListView: View {
         Text(label)
         Spacer()
         Button {
-          ViewModel.shared.showBranches(from: location) { list = $0 }
+          Commands.Branch.show(from: location, on: ViewModel.shared.selectedRepository) { list = $0 }
         } label: { Image(systemName: "arrow.counterclockwise.icloud") }
       }
     }
@@ -89,10 +89,6 @@ struct BranchRepositoryView: View {
   
   public var callback: (() -> ())? = nil
   
-//  init(callback: (() -> ())? = nil) {
-//    self.callback = callback
-//  }
-  
   var body: some View {
     TextField("Branch Name", text: $name)
     HStack {
@@ -100,7 +96,7 @@ struct BranchRepositoryView: View {
         label: { Text("Cancel") }
       Spacer()
       Button {
-        ViewModel.shared.branch(name: name) { _ in callback?() }
+        Commands.Branch.create(name: name, on: ViewModel.shared.selectedRepository) { _ in callback?() }
       }
         label: { Text("Create") }
     }

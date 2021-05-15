@@ -25,8 +25,10 @@ public struct CloneRepositoryView: View {
             label: { Text("Cancel") }
           Spacer()
           Button {
-            viewModel.clone(with: cloneUrl) {
-              isCloning = false
+            viewModel.open() { destination in
+              Commands.clone(with: cloneUrl, to: destination) {
+                isCloning = false
+              }
             }
           } label: { Text("Clone") }
         }

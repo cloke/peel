@@ -8,8 +8,8 @@
 /// Functions that are defined in the git reference
 /// https://git-scm.com/docs/git-reset
 
-extension ViewModel {
-  func reset(path: String, callback: (([String]) -> ())? = nil) {
-    simpleCommand(command: ["-C", Self.shared.selectedRepository.path, "reset", "HEAD", path], callback: callback)
+extension Commands {
+  static func reset(path: String, on repository: Model.Repository, callback: (([String]) -> ())? = nil) {
+    Commands.simple(command: ["-C", repository.path, "reset", "HEAD", path], callback: callback)
   }
 }

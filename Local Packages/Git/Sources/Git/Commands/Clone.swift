@@ -10,8 +10,8 @@ import Foundation
 /// Functions that are defined in the git reference
 /// https://git-scm.com/docs/git-clone
 
-extension ViewModel {
-  public func clone(with url: String, callback: (() -> ())? = nil) {
+extension Commands {
+  static func clone(with url: String, to destination: URL, callback: (() -> ())? = nil) {
     // TODO: Refactor most of these to use a state on the callback
     guard let url = URL(string: url) else { return }
     // TODO: Add https support
@@ -19,12 +19,10 @@ extension ViewModel {
     
     guard let repositoryName = url.path.components(separatedBy: "/").last?.dropLast(4).description else { return }
     
-    open() { [self] destination in
-      simpleCommand(command: ["clone", url.description, [destination.path, repositoryName].joined(separator: "/")]) { _ in
-        let repository = Repository(name: repositoryName, path: destination.path)
-        repositories.append(repository)
-        selectedRepository = repository
-      }
-    }
+    Commands.simple(command: ["clone", url.description, [destination.path, repositoryName].joined(separator: "/")]) { _ in
+      let repository = Model.Repository(name: repositoryName, path: destination.path)
+      ViewModel.shared.repositories.append(repository)
+      ViewModel.shared.selectedRepository = repository
+    }    
   }
 }

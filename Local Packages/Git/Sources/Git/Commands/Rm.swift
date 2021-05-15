@@ -8,6 +8,13 @@
 /// Functions that are defined in the git reference
 /// https://git-scm.com/docs/git-rm
 
-extension ViewModel {
-  /// Placeholder for git rm
+extension Commands {
+  // Rm is such a basic command it might not need sub commands. 
+  static func rm() {
+    
+  }
+  
+  struct Rm {
+    /// Placeholder for git rm
+  }
 }

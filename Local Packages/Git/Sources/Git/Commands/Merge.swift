@@ -8,6 +8,6 @@
 /// Functions that are defined in the git reference
 /// https://git-scm.com/docs/git-merge
 
-extension ViewModel {
+extension Commands {
   /// Placeholder for merge
 }

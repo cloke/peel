@@ -8,9 +8,9 @@
 /// Functions that are defined in the git reference
 /// https://git-scm.com/docs/git-status
 
-extension ViewModel {
-  func status(callback: (([FileDescriptor]) -> ())? = nil) {
-    try? run(.git, command: ["-C", Self.shared.selectedRepository.path, "--no-optional-locks", "status", "--porcelain=2"]) {
+extension Commands {
+  static func status(on repository: Model.Repository, callback: (([FileDescriptor]) -> ())? = nil) {
+    try? Commands.run(.git, command: ["-C", repository.path, "--no-optional-locks", "status", "--porcelain=2"]) {
       switch $0 {
       case .complete(_, let array):
         callback?(array.compactMap { line in

@@ -1,9 +1,9 @@
 import SwiftUI
 
 public struct ColumnOneView: View {
-  let repository: Repository
+  let repository: Model.Repository
   
-  public init(repository: Repository) {
+  public init(repository: Model.Repository) {
     self.repository = repository
   }
   

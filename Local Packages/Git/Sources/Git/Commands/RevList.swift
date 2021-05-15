@@ -8,9 +8,9 @@
 /// Functions that are defined in the git reference
 /// https://git-scm.com/docs/git-log
 
-extension ViewModel {
-  func revList(branchA: String, branchB: String, callback: ((Int, Int) -> ())? = nil) {
-    try? run(.git, command: ["-C", Self.shared.selectedRepository.path, "rev-list", "--left-right", "--count", "\(branchA)...\(branchB)"]) {
+extension Commands {
+  static func revList(branchA: String, branchB: String, callback: ((Int, Int) -> ())? = nil) {
+    try? Commands.run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "rev-list", "--left-right", "--count", "\(branchA)...\(branchB)"]) {
       switch $0 {
       case .complete(_, let lines):
         /// tab separated to left and right value

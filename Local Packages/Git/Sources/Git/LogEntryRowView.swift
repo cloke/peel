@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct LogEntryRowView: View {
-  let log: LogEntry
+  let log: Model.LogEntry
   
   var body: some View {
     VStack(alignment: .leading) {
@@ -39,6 +39,6 @@ struct LogEntryRowView: View {
 
 struct LogEntryRowView_Previews: PreviewProvider {
   static var previews: some View {
-    LogEntryRowView(log: LogEntry(commit: "123"))
+    LogEntryRowView(log: Model.LogEntry(commit: "123"))
   }
 }

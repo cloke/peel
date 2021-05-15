@@ -8,9 +8,9 @@
 /// Functions that are defined in the git reference
 /// https://git-scm.com/docs/git-push
 
-extension ViewModel {
-  func push(branch: String, callback: (([String]) -> ())? = nil) {
-    simpleCommand(command: ["-C", ViewModel.shared.selectedRepository.path, "push", "origin", branch], callback: callback)
+extension Commands {
+  static func push(branch: String, to repository: Model.Repository, callback: (([String]) -> ())? = nil) {
+    Commands.simple(command: ["-C", repository.path, "push", "origin", branch], callback: callback)
   }
 }
 

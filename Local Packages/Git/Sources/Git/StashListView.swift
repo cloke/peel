@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct StashListView: View {
-  public let repository: Repository
+  public let repository: Model.Repository
   @State private var stashes = [String]()
   @State private var isExpanded = false
   
@@ -18,11 +18,11 @@ struct StashListView: View {
         Text($0)
       }
       .onChange(of: repository.id, perform: { value in
-        ViewModel.Stash.list() { self.stashes = $0 }
+        Commands.Stash.list(on: repository) { self.stashes = $0 }
       })
       .onChange(of: isExpanded, perform:  { value in
         if isExpanded == true {
-          ViewModel.Stash.list() { self.stashes = $0 }
+          Commands.Stash.list(on: repository) { self.stashes = $0 }
         }
       })
     } label: {
@@ -30,7 +30,7 @@ struct StashListView: View {
         Text("Stash")
         Spacer()
         Button {
-          ViewModel.Stash.list() { self.stashes = $0 }
+          Commands.Stash.list(on: repository) { self.stashes = $0 }
         } label: {
           Image(systemName: "arrow.counterclockwise.icloud")
         }

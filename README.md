@@ -4,6 +4,7 @@
 
 #  TODO GIT
 ### General
+- [ ] The view model struct should not be a singleton, but rather a top level object to the scene. This will allow each window to have its own repo. 
 - [X] Switch branch while file list is selected does not refresh list. Ideally the entire view hiarachy would be repainted and selection removed. 
 - [ ] Switch branch and branches should refresh. Again full repaint would be ideal
 - [ ] When a file is moved the commit view shows errors on removed files. Status "AD" and "R" are not taken into account.
