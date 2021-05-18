@@ -18,7 +18,7 @@ struct Git_RootView: View {
       if viewModel.selectedRepository.name == "N/A" {
         Text("No repository selected")
       } else {
-        ColumnOneView(repository: viewModel.selectedRepository)
+        GitRootView(repository: viewModel.selectedRepository)
       }
     }
     .frame(idealHeight: 400)

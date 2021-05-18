@@ -17,9 +17,6 @@ struct StashListView: View {
       List(stashes, id: \.self) {
         Text($0)
       }
-      .onChange(of: repository.id, perform: { value in
-        Commands.Stash.list(on: repository) { self.stashes = $0 }
-      })
       .onChange(of: isExpanded, perform:  { value in
         if isExpanded == true {
           Commands.Stash.list(on: repository) { self.stashes = $0 }
@@ -29,10 +26,12 @@ struct StashListView: View {
       HStack {
         Text("Stash")
         Spacer()
-        Button {
-          Commands.Stash.list(on: repository) { self.stashes = $0 }
-        } label: {
-          Image(systemName: "arrow.counterclockwise.icloud")
+        if isExpanded {
+          Button {
+            Commands.Stash.list(on: repository) { self.stashes = $0 }
+          } label: {
+            Image(systemName: "arrow.counterclockwise.icloud")
+          }
         }
       }
     }

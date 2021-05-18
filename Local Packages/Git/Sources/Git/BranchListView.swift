@@ -13,6 +13,7 @@ public struct BranchListView: View {
   
   @State public private(set) var selection: String?
   @State private var isShowing = false
+  @State private var isExpanded = false
   
   public var label: String
   public var location: String = "-r"
@@ -23,7 +24,7 @@ public struct BranchListView: View {
   }
   
   public var body: some View {
-    DisclosureGroup {
+    DisclosureGroup(isExpanded: $isExpanded) {
       ForEach(list) { branch in
         NavigationLink(destination: HistoryListView(branch: branch.name), tag: branch.name, selection: self.$selection) {
           Text(branch.name)
@@ -59,8 +60,8 @@ public struct BranchListView: View {
             isShowing = false
             Commands.Branch.show(from: location, on: ViewModel.shared.selectedRepository) { list = $0 }
           }
-            .padding()
-            .frame(width: 300, height: 100)
+          .padding()
+          .frame(width: 300, height: 100)
         }
         .contextMenu(ContextMenu(menuItems: {
           Button {
@@ -76,11 +77,18 @@ public struct BranchListView: View {
       HStack {
         Text(label)
         Spacer()
-        Button {
-          Commands.Branch.show(from: location, on: ViewModel.shared.selectedRepository) { list = $0 }
-        } label: { Image(systemName: "arrow.counterclockwise.icloud") }
+        if isExpanded {
+          Button {
+            Commands.Branch.show(from: location, on: ViewModel.shared.selectedRepository) { list = $0 }
+          } label: { Image(systemName: "arrow.counterclockwise.icloud") }
+        }
       }
     }
+    .onChange(of: isExpanded, perform:  { value in
+      if isExpanded == true {
+        Commands.Branch.show(from: location, on: ViewModel.shared.selectedRepository) { list = $0 }
+      }
+    })
   }
 }
 
@@ -98,7 +106,7 @@ struct BranchRepositoryView: View {
       Button {
         Commands.Branch.create(name: name, on: ViewModel.shared.selectedRepository) { _ in callback?() }
       }
-        label: { Text("Create") }
+      label: { Text("Create") }
     }
   }
 }

@@ -18,6 +18,7 @@ public struct LocalChangesListView: View {
         Button { Commands.Stash.push(repository: repository) }
           label: {
             Image(systemName: "square.stack.3d.up")
+            Text("Stash")
           }
       }
     }

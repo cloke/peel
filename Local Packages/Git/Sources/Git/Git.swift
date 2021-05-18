@@ -1,6 +1,6 @@
 import SwiftUI
 
-public struct ColumnOneView: View {
+public struct GitRootView: View {
   let repository: Model.Repository
   
   public init(repository: Model.Repository) {
@@ -10,8 +10,8 @@ public struct ColumnOneView: View {
   public var body: some View {
     VStack {
       List {
-        StashListView(repository: repository)
         LocalChangesListView(repository: repository)
+        StashListView(repository: repository)
         BranchListView(label: "Local Branches", location: "-l")
         BranchListView(label: "Remote Branches", location: "-r")
       }
