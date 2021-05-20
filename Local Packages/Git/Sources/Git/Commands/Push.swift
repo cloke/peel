@@ -9,8 +9,8 @@
 /// https://git-scm.com/docs/git-push
 
 extension Commands {
-  static func push(branch: String, to repository: Model.Repository, callback: (([String]) -> ())? = nil) {
-    Commands.simple(command: ["-C", repository.path, "push", "origin", branch], callback: callback)
+  static func push(branch: Model.Branch, to repository: Model.Repository, callback: (([String]) -> ())? = nil) {
+    Commands.simple(command: ["-C", repository.path, "push", "origin", branch.name], callback: callback)
   }
 }
 

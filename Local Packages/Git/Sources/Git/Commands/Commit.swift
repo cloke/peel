@@ -9,7 +9,7 @@
 /// https://git-scm.com/docs/git-commit
 
 extension Commands {
-  static func commit(message: String, callback: (([String]) -> ())? = nil) {
-    Self.simple(command: ["-C", ViewModel.shared.selectedRepository.path, "commit", "-m", message], callback: callback)
+  static func commit(repository: Model.Repository, message: String, callback: (([String]) -> ())? = nil) {
+    Self.simple(command: ["-C", repository.path, "commit", "-m", message], callback: callback)
   }
 }

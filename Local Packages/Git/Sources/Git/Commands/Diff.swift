@@ -19,8 +19,8 @@ import Foundation
 
 extension Commands {
   /// Processes a diff based on direct file paths
-  static func diff(path: String, callback: ((Diff) -> ())? = nil) {
-    try? Commands.run(.git, command: ["-C", ViewModel.shared.selectedRepository.path, "diff", path]) {
+  static func diff(repository: Model.Repository, path: String, callback: ((Diff) -> ())? = nil) {
+    try? Commands.run(.git, command: ["-C", repository.path, "diff", path]) {
       switch $0 {
       case .complete(_, let lines):
         callback?(self.processDiff(lines: lines))

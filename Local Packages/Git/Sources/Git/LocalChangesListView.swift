@@ -8,12 +8,12 @@
 import SwiftUI
 
 public struct LocalChangesListView: View {
-  public let repository: Model.Repository
+  @EnvironmentObject var repository: Model.Repository
 
   public var body: some View {
-    NavigationLink(destination: FileListView()) {
+    NavigationLink(destination: FileListView(repository: repository)) {
       HStack {
-        Text("Local Changes")
+        Text("Local Changes (\(repository.status.count))")
         Spacer()
         Button { Commands.Stash.push(repository: repository) }
           label: {
@@ -32,8 +32,8 @@ public struct LocalChangesListView: View {
   }
 }
 
-struct LocalChangesListView_Previews: PreviewProvider {
-  static var previews: some View {
-    LocalChangesListView(repository: Model.Repository(name: "blah", path: "."))
-  }
-}
+//struct LocalChangesListView_Previews: PreviewProvider {
+//  static var previews: some View {
+//    LocalChangesListView(repository: Model.Repository(name: "blah", path: "."))
+//  }
+//}

@@ -8,6 +8,14 @@
 import SwiftUI
 import Combine
 
+extension Array where Element: Equatable{
+  mutating func remove (element: Element) {
+    if let i = self.firstIndex(of: element) {
+      self.remove(at: i)
+    }
+  }
+}
+
 enum FileStatus: String {
   case modifiedMe = ".M"
   case new = "AM"
@@ -38,7 +46,7 @@ struct Diff: Identifiable {
       var id = UUID()
       var chunk = ""
       var lines = [Line]()
-
+      
       /// Identifiable container for single git line diff
       struct Line: Identifiable {
         var id = UUID()
@@ -56,15 +64,26 @@ public struct Model {}
 
 /** Identifiable container for single git branch
  
-  git branch -l
-*/
+ git branch -l
+ */
 extension Model {
-  struct Branch: Identifiable {
-    var id = UUID()
+  public enum BranchType: String {
+    case local = "-l", remote = "-r"
+  }
+  
+  public class Branch: Identifiable, ObservableObject {
+    public var id = UUID()
     /// Name of the branch
     var name: String
     /// Status of branch from branch command. ie. result started with "*"
-    var isActive = false
+    @Published var isActive: Bool
+    var type: BranchType
+    
+    init(name: String, isActive: Bool, type: BranchType) {
+      self.name = name
+      self.isActive = isActive
+      self.type = type
+    }
   }
 }
 
@@ -75,18 +94,64 @@ extension Model {
     public var name: String
     public var path: String
     
+    @Published var branches = [Model.Branch]()
+    @Published var status = [FileDescriptor]()
+    
     init(name: String, path: String) {
       self.name = name
       self.path = path
+    }
+    
+    func loadBranches(branchType: Model.BranchType) {
+      // TODO - The array should be built in one pass to reduce weird graphic errors.
+      // Maybe wait for swift 6 and use async calls to simplify
+      print("Load branches in \(name)")
+      Commands.Branch.list(from: branchType, on: self) { [self] list in
+        print("load type: \(branchType)")
+        branches.removeAll(where: { $0.type == branchType })
+        branches.append(contentsOf: list)
+      }
+    }
+    
+    func load() {
+      loadBranches(branchType: .local)
+      loadBranches(branchType: .remote)
+      refreshStatus()
+    }
+    
+    func refreshStatus() {
+      Commands.status(on: self) { self.status = $0 }
+    }
+    
+    func activate(branch: Model.Branch) {
+      branches.forEach { $0.isActive = $0.id == branch.id ? true : false }
+    }
+    
+    func push(branch: Model.Branch) {
+      Commands.push(branch: branch, to: self) { _ in
+        self.refreshStatus()
+      }
+    }
+    
+    func delete(branch: Model.Branch) {
+      Commands.Branch.delete(name: branch.name, on: self) { [self] _ in
+        if let index = branches.firstIndex(where: { $0.id == branch.id }) {
+          branches.remove(at: index)
+        }
+      }
+    }
+    
+    enum CodingKeys: String, CodingKey {
+      case id, name, path
     }
   }
 }
 
 extension Model {
   /** Identifiable container for single git log entry
-
-    git log --abbrev-commit --graph --decorate --first-parent --date=iso8601-strict
-  */
+   
+   git log --abbrev-commit --graph --decorate --first-parent --date=iso8601-strict
+   */
   struct LogEntry: Identifiable {
     var id: String { commit }
     let commit: String
@@ -115,15 +180,15 @@ internal extension NSTextCheckingResult {
 public class ViewModel: ObservableObject {
   @AppStorage(wrappedValue: Data(), "repositories") var repositoriesPersisted: Data
   @AppStorage(wrappedValue: Data(), "selected-repository") var selectedRepositoryPersisted: Data
-
+  
   @Published public var repositories = [Model.Repository]()
   @Published public var selectedRepository = Model.Repository(name: "Add Repository", path: "")
-      
-  public static let shared = ViewModel()
-
-  private var disposables = Set<AnyCancellable>()
   
-  init() {
+  public static let shared = ViewModel()
+  
+  var disposables = Set<AnyCancellable>()
+  
+  public init() {
     if let repositoriesDecoded = try? JSONDecoder().decode([Model.Repository].self, from: repositoriesPersisted) {
       repositories = repositoriesDecoded
     }
@@ -146,9 +211,9 @@ public class ViewModel: ObservableObject {
     $selectedRepository
       .dropFirst()
       .receive(on: DispatchQueue.main)
-      .sink {
+      .sink { [self] in
         if let selectedRepositoryEncoded = try? JSONEncoder().encode($0) {
-          self.selectedRepositoryPersisted = selectedRepositoryEncoded
+          selectedRepositoryPersisted = selectedRepositoryEncoded
         }
       }
       .store(in: &disposables)

@@ -1,22 +1,24 @@
 import SwiftUI
 
 public struct GitRootView: View {
-  let repository: Model.Repository
+  @ObservedObject public var repository: Model.Repository
   
   public init(repository: Model.Repository) {
+    print("Switched to repository: \(repository.name)")
     self.repository = repository
+    self.repository.load()
   }
   
   public var body: some View {
     VStack {
       List {
-        LocalChangesListView(repository: repository)
+        LocalChangesListView()
         StashListView(repository: repository)
-        BranchListView(label: "Local Branches", location: "-l")
-        BranchListView(label: "Remote Branches", location: "-r")
+        BranchListView(branches: repository.branches.filter { $0.type == .local }, label: "Local Branches", location: .local)
+        BranchListView(branches: repository.branches.filter { $0.type == .remote }, label: "Remote Branches", location: .remote)
       }
       Spacer()
     }
-    .frame(minWidth: 100)
+    .environmentObject(repository)
   }
 }

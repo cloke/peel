@@ -11,7 +11,7 @@ import Foundation
 /// https://git-scm.com/docs/git-clone
 
 extension Commands {
-  static func clone(with url: String, to destination: URL, callback: (() -> ())? = nil) {
+  static func clone(with url: String, to destination: URL, callback: ((Model.Repository) -> ())? = nil) {
     // TODO: Refactor most of these to use a state on the callback
     guard let url = URL(string: url) else { return }
     // TODO: Add https support
@@ -20,9 +20,7 @@ extension Commands {
     guard let repositoryName = url.path.components(separatedBy: "/").last?.dropLast(4).description else { return }
     
     Commands.simple(command: ["clone", url.description, [destination.path, repositoryName].joined(separator: "/")]) { _ in
-      let repository = Model.Repository(name: repositoryName, path: destination.path)
-      ViewModel.shared.repositories.append(repository)
-      ViewModel.shared.selectedRepository = repository
+      callback?(Model.Repository(name: repositoryName, path: destination.path))
     }    
   }
 }

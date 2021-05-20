@@ -10,6 +10,7 @@ import Git
 
 struct Git_RootView: View {
   @StateObject private var viewModel: ViewModel = .shared
+  
   @State private var repoNotFoundError = false
   @State public var isCloning = false
 
@@ -19,6 +20,7 @@ struct Git_RootView: View {
         Text("No repository selected")
       } else {
         GitRootView(repository: viewModel.selectedRepository)
+          .frame(minWidth: 100)
       }
     }
     .frame(idealHeight: 400)

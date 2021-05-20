@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct FileListItemView: View {
+  @EnvironmentObject var repository: Model.Repository
   var path: String
   @State var toggleState: Bool
   
@@ -15,7 +16,7 @@ struct FileListItemView: View {
     HStack {
       Toggle(isOn: $toggleState) { EmptyView() }
         .onChange(of: toggleState) {
-          $0 ? Commands.add(to: ViewModel.shared.selectedRepository, path: path) : Commands.reset(path: path, on: ViewModel.shared.selectedRepository)
+          $0 ? Commands.add(to: repository, path: path) : Commands.reset(path: path, on: repository)
         }
       Text(path)
         .truncationMode(.head)
@@ -26,9 +27,8 @@ struct FileListItemView: View {
 }
 
 struct FileListView: View {
-  @StateObject private var viewModel: ViewModel = .shared
+  @ObservedObject var repository: Model.Repository
   @State private var commitMessage: String = ""
-  @State private var changes = [FileDescriptor]()
   @State private var diff = Diff()
   
   var body: some View {
@@ -37,12 +37,12 @@ struct FileListView: View {
         TextEditor(text: $commitMessage)
           .frame(height: 100)
         Button("Commit Changes") {
-          Commands.commit(message: commitMessage) { _ in
+          Commands.commit(repository: repository, message: commitMessage) { _ in
             commitMessage = ""
-            Commands.status(on: viewModel.selectedRepository) { changes = $0 }
+            repository.refreshStatus()
           }
         }.disabled(commitMessage.count == 0)
-        ForEach(changes) { change in
+        ForEach(repository.status) { change in
           FileListItemView(path: change.path, toggleState: ![.modifiedMe, .untracked].contains(change.status)) //change.status != "??" ? false : true)
             .contentShape(Rectangle())
             .background(color(status: change.status))
@@ -50,7 +50,7 @@ struct FileListView: View {
             .onTapGesture {
               DispatchQueue.main.async {
                 let str = change.path
-                Commands.diff(path: str) { diff = $0 }
+                Commands.diff(repository: repository, path: str) { diff = $0 }
               }
             }
             .contextMenu {
@@ -67,8 +67,8 @@ struct FileListView: View {
               Button {
                 let str = change.path
                   .replacingOccurrences(of: " ", with: "\\ ")
-                Commands.restore(path: str, on: viewModel.selectedRepository) { _ in
-                  Commands.status(on: viewModel.selectedRepository) { changes = $0 }
+                Commands.restore(path: str, on: repository) { _ in
+                  repository.refreshStatus()
                 }
               }
               label: {
@@ -80,10 +80,9 @@ struct FileListView: View {
       }
       DiffView(diff: diff)
     }
-    .onReceive(viewModel.$selectedRepository) { _ in
-      DispatchQueue.main.async {
-        Commands.status(on: viewModel.selectedRepository) { changes = $0 }
-      }
+    .onAppear {
+      print("Refresh status on: \(repository.name)")
+        repository.refreshStatus()
     }
   }
   
@@ -99,8 +98,8 @@ struct FileListView: View {
   }
 }
 
-struct FileListView_Previews: PreviewProvider {
-  static var previews: some View {
-    FileListView()
-  }
-}
+//struct FileListView_Previews: PreviewProvider {
+//  static var previews: some View {
+//    FileListView()
+//  }
+//}
