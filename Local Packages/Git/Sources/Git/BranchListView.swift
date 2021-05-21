@@ -34,7 +34,7 @@ struct BranchListItemView: View {
     } label: { Image(systemName: "square.and.arrow.up") }
     Text(upDown)
       .onAppear {
-        Commands.revList(branchA: "origin/\(name)", branchB: name) {
+        Commands.revList(repository: repository, branchA: "origin/\(name)", branchB: name) {
           upDown = "(⇣\($0) / \($1) ⇡)"
         }
       }
@@ -46,6 +46,7 @@ public struct BranchListView: View {
   
   @State public private(set) var selection: String?
   @State private var isShowing = false
+  // TODO: Should we persist this as state?
   @State private var isExpanded = false
   
   public var branches: [Model.Branch]
@@ -114,11 +115,6 @@ public struct BranchListView: View {
         }
       }
     }
-    .onChange(of: isExpanded, perform:  { value in
-      if isExpanded == true {
-        repository.load()
-      }
-    })
   }
 }
 

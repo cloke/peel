@@ -8,9 +8,9 @@
 import SwiftUI
 
 public struct CloneRepositoryView: View {
-//  @StateObject private var viewModel: ViewModel = .shared
+  @StateObject private var viewModel: ViewModel = .shared
   @State private var cloneUrl = ""
-  @Binding private var isCloning: Bool
+  @Binding var isCloning: Bool
   
   public init(isCloning: Binding<Bool>) {
     self._isCloning = isCloning
@@ -25,13 +25,13 @@ public struct CloneRepositoryView: View {
             label: { Text("Cancel") }
           Spacer()
           Button {
-//            viewModel.open() { destination in
-//              Commands.clone(with: cloneUrl, to: destination) {
-//                isCloning = false
-//                  ViewModel.shared.repositories.append(repository)
-//                  ViewModel.shared.selectedRepository = repository
-//              }
-//            }
+            viewModel.open() { destination in
+              Commands.clone(with: cloneUrl, to: destination) {
+                isCloning = false
+                  viewModel.repositories.append($0)
+                  viewModel.selectedRepository = $0
+              }
+            }
           } label: { Text("Clone") }
         }
       }
