@@ -14,12 +14,6 @@ public struct LocalChangesListView: View {
     NavigationLink(destination: FileListView(repository: repository)) {
       HStack {
         Text("Local Changes (\(repository.status.count))")
-        Spacer()
-        Button { Commands.Stash.push(repository: repository) }
-          label: {
-            Image(systemName: "square.stack.3d.up")
-            Text("Stash")
-          }
       }
     }
     .contextMenu(ContextMenu(menuItems: {

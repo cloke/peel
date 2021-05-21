@@ -36,12 +36,20 @@ struct FileListView: View {
       List {
         TextEditor(text: $commitMessage)
           .frame(height: 100)
-        Button("Commit Changes") {
-          Commands.commit(repository: repository, message: commitMessage) { _ in
-            commitMessage = ""
-            repository.refreshStatus()
-          }
-        }.disabled(commitMessage.count == 0)
+        HStack {
+          Button("Commit") {
+            Commands.commit(repository: repository, message: commitMessage) { _ in
+              commitMessage = ""
+              repository.refreshStatus()
+            }
+          }.disabled(commitMessage.count == 0)
+          Spacer()
+          Button { Commands.Stash.push(repository: repository) }
+            label: {
+              Image(systemName: "square.stack.3d.up")
+              Text("Stash")
+            }
+        }
         ForEach(repository.status) { change in
           FileListItemView(path: change.path, toggleState: ![.modifiedMe, .untracked].contains(change.status)) //change.status != "??" ? false : true)
             .contentShape(Rectangle())
@@ -82,7 +90,7 @@ struct FileListView: View {
     }
     .onAppear {
       print("Refresh status on: \(repository.name)")
-        repository.refreshStatus()
+      repository.refreshStatus()
     }
   }
   
@@ -101,5 +109,6 @@ struct FileListView: View {
 //struct FileListView_Previews: PreviewProvider {
 //  static var previews: some View {
 //    FileListView()
+//      .environmentObject(Model.Repository())
 //  }
 //}
