@@ -19,16 +19,16 @@ struct DiffView: View {
               ForEach(file.chunks) { chunk in
                 Text(chunk.chunk)
                 ForEach(chunk.lines) { line in
-                HStack {
-                  if line.lineNumber != 0 {
-                    Text(line.lineNumber.description)
+                  HStack {
+                    if line.lineNumber != 0 {
+                      Text(line.lineNumber.description)
+                    }
+                    Text(line.line)
+                      .padding(.horizontal)
+                    Spacer()
                   }
-                  Text(line.line)
-                    .padding(.horizontal)
-                  Spacer()
+                  .background(lineColor(line.status))
                 }
-                .background(lineColor(line.status))
-              }
               }
             }
           }

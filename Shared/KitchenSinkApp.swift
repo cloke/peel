@@ -6,24 +6,28 @@
 //
 
 import SwiftUI
+import OAuthSwift
 
-/// This was used in catalyst to make toggles look like checkboxes on MacOS
-//struct CheckboxToggleStyle: ToggleStyle {
-//  func makeBody(configuration: Configuration) -> some View {
-//    return HStack {
-//      configuration.label
-//      Spacer()
-//      Image(systemName: configuration.isOn ? "checkmark.square" : "square")
-//        .resizable()
-//        .frame(width: 22, height: 22)
-//        .onTapGesture { configuration.isOn.toggle() }
-//    }
-//  }
-//}
+//let config = OAuthConfiguration(token: "5839b088c4fed070f6e4", secret: "e8cf6fbbb3f25d8671938e3fc375f631c97aa4d4", scopes: ["repo", "read:org"])
+//let url = config.authenticate()
+
+class AppDelegate: NSObject, NSApplicationDelegate {
+  func applicationDidFinishLaunching(_ aNotification: Notification) {
+    NSAppleEventManager.shared().setEventHandler(self, andSelector:#selector(AppDelegate.handleGetURL(event:withReplyEvent:)), forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
+  }
+  
+  @objc func handleGetURL(event: NSAppleEventDescriptor!, withReplyEvent: NSAppleEventDescriptor!) {
+    if let urlString = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue, let url = URL(string: urlString) {
+      OAuthSwift.handle(url: url)
+    }
+  }
+}
 
 @main
 struct KitchenSinkApp: App {
-  @Environment(\.openURL) var openURL
+  @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+  
+  //  @Environment(\.openURL) var openURL
   var body: some Scene {
     WindowGroup {
       ContentView()

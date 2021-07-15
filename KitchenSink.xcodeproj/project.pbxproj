@@ -14,6 +14,8 @@
 		04678656259FC75700D5E87F /* CommonToolbarItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04678654259FC75700D5E87F /* CommonToolbarItems.swift */; };
 		0467865D259FEEF100D5E87F /* TaskDebugWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0467865C259FEEF100D5E87F /* TaskDebugWindowView.swift */; };
 		0467865E259FEEF100D5E87F /* TaskDebugWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0467865C259FEEF100D5E87F /* TaskDebugWindowView.swift */; };
+		0495D214269F34F8008B5148 /* Alamofire in Frameworks */ = {isa = PBXBuildFile; productRef = 0495D213269F34F8008B5148 /* Alamofire */; };
+		0495D216269F5277008B5148 /* Github_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0495D215269F5277008B5148 /* Github_RootView.swift */; };
 		04A3CA2E25E46BA700EB520C /* Color.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A3CA2D25E46BA700EB520C /* Color.swift */; };
 		04A7BD7F258E77D8000E55A8 /* Tests_iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD7E258E77D8000E55A8 /* Tests_iOS.swift */; };
 		04A7BD8A258E77D8000E55A8 /* Tests_macOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */; };
@@ -25,7 +27,9 @@
 		04A7BD91258E77D8000E55A8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 04A7BD65258E77D8000E55A8 /* Assets.xcassets */; };
 		04AC312325B200A2009A10E7 /* Git_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04AC311E25B20085009A10E7 /* Git_RootView.swift */; };
 		04AC313E25B201AE009A10E7 /* Brew in Frameworks */ = {isa = PBXBuildFile; productRef = 04AC313D25B201AE009A10E7 /* Brew */; };
+		04DD2F4B269E6AED000994E1 /* OAuthSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 04DD2F4A269E6AED000994E1 /* OAuthSwift */; };
 		04F4F93D25903A72005B30B4 /* Brew_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F4F93B25903A72005B30B4 /* Brew_RootView.swift */; };
+		04F582A8269FD4AD003A8403 /* Github in Frameworks */ = {isa = PBXBuildFile; productRef = 04F582A7269FD4AD003A8403 /* Github */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -52,6 +56,7 @@
 		04678654259FC75700D5E87F /* CommonToolbarItems.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonToolbarItems.swift; sourceTree = "<group>"; };
 		0467865C259FEEF100D5E87F /* TaskDebugWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDebugWindowView.swift; sourceTree = "<group>"; };
 		0467867425A0DB4F00D5E87F /* Git */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Git; sourceTree = "<group>"; };
+		0495D215269F5277008B5148 /* Github_RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Github_RootView.swift; sourceTree = "<group>"; };
 		04A3CA2D25E46BA700EB520C /* Color.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Color.swift; sourceTree = "<group>"; };
 		04A7BD63258E77D7000E55A8 /* KitchenSinkApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KitchenSinkApp.swift; sourceTree = "<group>"; };
 		04A7BD64258E77D7000E55A8 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -71,6 +76,7 @@
 		04AC312825B200DC009A10E7 /* Brew */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Brew; sourceTree = "<group>"; };
 		04F4F93B25903A72005B30B4 /* Brew_RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brew_RootView.swift; sourceTree = "<group>"; };
 		04F4F9772596AAD7005B30B4 /* KitchenSink.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = KitchenSink.entitlements; sourceTree = "<group>"; };
+		04F582A6269FD388003A8403 /* Github */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Github; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -85,8 +91,11 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				04F582A8269FD4AD003A8403 /* Github in Frameworks */,
 				04AC313E25B201AE009A10E7 /* Brew in Frameworks */,
+				0495D214269F34F8008B5148 /* Alamofire in Frameworks */,
 				042AE13F25A0E17700B905E4 /* Git in Frameworks */,
+				04DD2F4B269E6AED000994E1 /* OAuthSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -119,6 +128,7 @@
 		0467867A25A0DB9000D5E87F /* Local Packages */ = {
 			isa = PBXGroup;
 			children = (
+				04F582A6269FD388003A8403 /* Github */,
 				042AE13525A0DF8200B905E4 /* TaskRunner */,
 				04AC312825B200DC009A10E7 /* Brew */,
 				0467867425A0DB4F00D5E87F /* Git */,
@@ -222,6 +232,7 @@
 			children = (
 				04AC311E25B20085009A10E7 /* Git_RootView.swift */,
 				04F4F93B25903A72005B30B4 /* Brew_RootView.swift */,
+				0495D215269F5277008B5148 /* Github_RootView.swift */,
 			);
 			path = Applications;
 			sourceTree = "<group>";
@@ -264,6 +275,9 @@
 			packageProductDependencies = (
 				042AE13E25A0E17700B905E4 /* Git */,
 				04AC313D25B201AE009A10E7 /* Brew */,
+				04DD2F4A269E6AED000994E1 /* OAuthSwift */,
+				0495D213269F34F8008B5148 /* Alamofire */,
+				04F582A7269FD4AD003A8403 /* Github */,
 			);
 			productName = "KitchenSink (macOS)";
 			productReference = 04A7BD72258E77D8000E55A8 /* KitchenSink.app */;
@@ -339,6 +353,11 @@
 				Base,
 			);
 			mainGroup = 04A7BD5D258E77D7000E55A8;
+			packageReferences = (
+				04DD2F49269E6AED000994E1 /* XCRemoteSwiftPackageReference "OAuthSwift" */,
+				0495D212269F34F8008B5148 /* XCRemoteSwiftPackageReference "Alamofire" */,
+				04D7336326A0C4250039EC0B /* XCRemoteSwiftPackageReference "Kingfisher" */,
+			);
 			productRefGroup = 04A7BD6B258E77D8000E55A8 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -403,6 +422,7 @@
 			files = (
 				04A7BD8F258E77D8000E55A8 /* ContentView.swift in Sources */,
 				04A7BD8D258E77D8000E55A8 /* KitchenSinkApp.swift in Sources */,
+				0495D216269F5277008B5148 /* Github_RootView.swift in Sources */,
 				043A53102599589B00980BE2 /* SettingsView.swift in Sources */,
 				04678656259FC75700D5E87F /* CommonToolbarItems.swift in Sources */,
 				04F4F93D25903A72005B30B4 /* Brew_RootView.swift in Sources */,
@@ -797,14 +817,55 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		0495D212269F34F8008B5148 /* XCRemoteSwiftPackageReference "Alamofire" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/Alamofire/Alamofire.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 5.4.3;
+			};
+		};
+		04D7336326A0C4250039EC0B /* XCRemoteSwiftPackageReference "Kingfisher" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/onevcat/Kingfisher";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 6.0.0;
+			};
+		};
+		04DD2F49269E6AED000994E1 /* XCRemoteSwiftPackageReference "OAuthSwift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/OAuthSwift/OAuthSwift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.2.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		042AE13E25A0E17700B905E4 /* Git */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = Git;
 		};
+		0495D213269F34F8008B5148 /* Alamofire */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0495D212269F34F8008B5148 /* XCRemoteSwiftPackageReference "Alamofire" */;
+			productName = Alamofire;
+		};
 		04AC313D25B201AE009A10E7 /* Brew */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = Brew;
+		};
+		04DD2F4A269E6AED000994E1 /* OAuthSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 04DD2F49269E6AED000994E1 /* XCRemoteSwiftPackageReference "OAuthSwift" */;
+			productName = OAuthSwift;
+		};
+		04F582A7269FD4AD003A8403 /* Github */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Github;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

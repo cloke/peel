@@ -9,7 +9,7 @@ import SwiftUI
 import Git
 
 enum CurrentTool: String, Identifiable, CaseIterable {
-  case brew = "brew", git = "git"
+  case brew = "brew", git = "git", github = "github"
   
   var id: String { rawValue }
 }
@@ -32,6 +32,7 @@ struct ContentView: View {
         switch currentTool {
         case .brew: Brew_RootView()
         case .git: Git_RootView()
+        case .github: Github_RootView()
         }
       }
     }

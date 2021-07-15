@@ -81,6 +81,9 @@
 - [ ] Implement basic contexual menu. 
 - [ ] Create UI for ignore type. file, path, pattern.
 
+### Checkout
+- [ ] Checkout remote branch
+
 # TODO BREW
 - [ ] Detect where brew is install (/opt or /local)
 - [ ] Show installed tools
