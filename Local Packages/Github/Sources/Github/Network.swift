@@ -58,6 +58,14 @@ extension Github {
     load(url: "https://api.github.com/user", success: success, error: error)
   }
   
+  public static func members(from organization: Organization,
+                             success: (([Github.User]) -> Void)? = nil,
+                             error: ((AFError) -> Void)? = nil) {
+    /// Git adds /{member} to the url, but we want just the array url.
+    let url = "\(organization.members_url[..<organization.members_url.index(organization.members_url.endIndex, offsetBy: -9)])"
+    loadMany(url: url, success: success, error: error)
+  }
+  
   /// Used when the expected response will be a single of codable object.
   private static func load<T: Codable>(url: String,
                                        success: ((T) -> Void)? = nil,

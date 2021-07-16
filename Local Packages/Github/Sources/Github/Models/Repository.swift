@@ -88,6 +88,6 @@ extension Github {
     public var open_issues: Int
     public var watchers: Int
     public var default_branch: String
-    public var permissions: Permissions
+    public var permissions: Permissions?
   }
 }

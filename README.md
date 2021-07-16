@@ -2,6 +2,10 @@
 - [X] Look at organizing tool specific code into local packages
 - [ ] TaskRunner should handle stdError and report back to the user
 
+#  TODO GITHUB
+### General
+- [ ] Use generated links from organization object. This would future proof changes in the git api assuming the property names don't change.
+
 #  TODO GIT
 ### General
 - [ ] The view model struct should not be a singleton, but rather a top level object to the scene. This will allow each window to have its own repo. 
