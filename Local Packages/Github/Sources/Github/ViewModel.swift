@@ -7,11 +7,11 @@
 
 import SwiftUI
 extension Github {
-  public class GithubViewModel: ObservableObject {
+  public class ViewModel: ObservableObject {
     @Published public var me: Github.User?
-  }
+    
+    public init() {
   
-  public init() {
-//    self.me = me
+    }
   }
 }
