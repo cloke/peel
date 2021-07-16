@@ -18,6 +18,6 @@ extension Github {
     public var members_url: String
     public var public_members_url: String
     public var avatar_url: String
-    public var description: String
+    public var description: String?
   }
 }

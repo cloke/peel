@@ -28,7 +28,18 @@ public struct Github {
               }
             })
           }
-          
+//          Link("Review", destination: URL(string: "https://github.com/settings/connections/applications/5839b088c4fed070f6e4")!)
+          Divider()
+          Button("Relink") {
+            Github.reauthorize(success:  {
+              Github.me {
+                viewModel.me = $0
+              }
+              Github.loadOrganizations() {
+                organizations = $0
+              }
+            })
+          }
           ForEach(organizations) { organization in
             OrganizationRepositoryView(organization: organization)
           }

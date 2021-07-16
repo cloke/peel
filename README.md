@@ -1,11 +1,46 @@
 # TODO GENERAL
 - [X] Look at organizing tool specific code into local packages
 - [ ] TaskRunner should handle stdError and report back to the user
+- [ ] Hook github view into debugger window
 
 #  TODO GITHUB
 ### General
 - [ ] Use generated links from organization object. This would future proof changes in the git api assuming the property names don't change.
+- [ ] Add the ability to add / remove organizations by removing token and reauthorizing.
+- [ ] Create view that is responsible for loading review status. It should cancel on unload and have a delay in the request to minimize queries to git.
+- [ ] Add a counter to the UI that shows request count. Ideally this would somehow show with a trailing 1 hour count so we can see how much we hit the github api. Need to stay under 5000 an hour. 
+- [ ] Remove need to click the login button if a token exists.
+- [ ] Add error checking.
+  - [ ] Handle token expiration.
+- [ ] Add navigation for PRs, Issues
+- [ ] Figure out how to allow decodable to use the private key name that indicates a repo is private. If it requires opting all keys into a Coding Keys enum maybe we handle this at the repoonse layer?
+- [ ] Display all of my repositories on personal account
+- [ ] Show watching
+- [ ] Show starred
 
+### Pull Requests
+- [ ] Pull request view
+- [ ] Display comments
+- [ ] Reviewer status
+- [ ] Diff view (use common git code)
+- [ ] Research approver flow. This will be a huge undertaking since it requires direct comments on diff lines.
+
+### Issues
+- [ ] Issues view
+- [ ] Ability to see issues
+  - [ ] Ability to see issues across repos
+  - [ ] Ability to see issues across orgs
+- [ ] Create issues
+  - [ ] Turn this document into issues and use app to manage them
+
+### Actions
+- [ ] Actions view
+- [ ] Can we show some of the billing / usage information in this view? I'd like to know how many minutes I've used. 
+- [ ] Browse artifacts
+- [ ] Download artifacts
+- [ ] Show running actions
+- [ ] Show completed actions
+  
 #  TODO GIT
 ### General
 - [ ] The view model struct should not be a singleton, but rather a top level object to the scene. This will allow each window to have its own repo. 
@@ -46,6 +81,7 @@
 - [ ] Push locks up the UI. Needs a status indicator and ensure task is on background thread.
 - [ ] We can't just do git push "main" it would need to be git push "origin main". "branch -la provides better detail"
 - [ ] The push icon seems to only reflect the status of the main branch.
+- [ ] The status does not update after a push to indicate there is nothing to push. 
 
 ### Conflicts
 - [ ] Show files in conflict 

@@ -120,8 +120,8 @@ extension Github {
     oauthswift.authorizeURLHandler = OAuthSwiftOpenURLExternally.sharedInstance
     
     let state = generateState(withLength: 20)
-    let _ = oauthswift.authorize(
-      withCallbackURL: URL(string: "crunchy-kitchen-sink://oauth-callback/github")!, scope: "user,repo,admin:org,org", state: state) { result in
+    oauthswift.authorize(
+      withCallbackURL: URL(string: "crunchy-kitchen-sink://")!, scope: "user,repo,admin:org,org", state: state) { result in
         switch result {
         case .success(let (credential, _, _)):
           config.githubToken = credential.oauthToken
@@ -132,5 +132,17 @@ extension Github {
           error?()
         }
       }
+  }
+  
+  public static func reauthorize(success: (() -> Void)? = nil, error: (() -> Void)? = nil)  {
+    config.githubToken = ""
+//    authorize(
+//      success: {
+//        success?()
+//      },
+//      error: {
+//        error?()
+//      }
+//    )
   }
 }
