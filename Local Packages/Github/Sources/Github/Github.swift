@@ -10,18 +10,18 @@ import SwiftUI
 public struct Github {
   public struct RootView: View {
     @State private var organizations = [Organization]()
-    @ObservedObject var githubViewModel = ViewModel()
+    @ObservedObject var viewModel = ViewModel()
     
     public init() {}
     
     public var body: some View {
       VStack {
         List {
-          Text(githubViewModel.me?.name ?? "")
+          Text(viewModel.me?.name ?? "")
           Button("Login") {
             Github.authorize(success:  {
               Github.me {
-                githubViewModel.me = $0
+                viewModel.me = $0
               }
               Github.loadOrganizations() {
                 organizations = $0
@@ -35,7 +35,7 @@ public struct Github {
         }
         Spacer()
       }
-      .environmentObject(githubViewModel)
+      .environmentObject(viewModel)
     }
   }
 }

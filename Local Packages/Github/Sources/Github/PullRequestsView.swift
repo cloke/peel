@@ -55,19 +55,12 @@ extension Github {
     public let organization: String
     public let repository: String
     
-    @EnvironmentObject var githubViewModel: ViewModel
+    @EnvironmentObject var viewModel: ViewModel
     @State private var pullRequests = [Github.PullRequest]()
     
     public init(organization: String, repository: String) {
       self.organization = organization
       self.repository = repository
-    }
-    
-    func isMe(reviewers: [User]) -> Bool {
-      guard let me = githubViewModel.me?.login,
-            let _ = reviewers.first(where: { $0.login == me })
-      else { return false }
-      return true
     }
     
     public var body: some View {
@@ -79,7 +72,7 @@ extension Github {
               Text(pullRequest.title)
               Spacer()
             }
-            if isMe(reviewers: pullRequest.requested_reviewers),
+            if viewModel.hasMe(in: pullRequest.requested_reviewers),
                let url = URL(string: pullRequest.html_url) {
               HStack {
                 Link("Review Requested of Me", destination: url)
