@@ -38,7 +38,7 @@ public struct Github {
                                        error: ((AFError) -> Void)? = nil) {
     loadMany(url: "https://api.github.com/user/orgs", success: success, error: error)
   }
-
+  
   public static func loadReviews(organization: String, repository: String, pullNumber: Int,
                                  success: (([Github.Review]) -> Void)? = nil,
                                  error: ((AFError) -> Void)? = nil) {
@@ -46,13 +46,13 @@ public struct Github {
   }
   
   public static func me(success: ((Github.User) -> Void)? = nil,
-                                       error: ((AFError) -> Void)? = nil) {
+                        error: ((AFError) -> Void)? = nil) {
     load(url: "https://api.github.com/user", success: success, error: error)
   }
   
   private static func load<T: Codable>(url: String,
-                                           success: ((T) -> Void)? = nil,
-                                           error: ((AFError) -> Void)? = nil) {
+                                       success: ((T) -> Void)? = nil,
+                                       error: ((AFError) -> Void)? = nil) {
     AF.request(URL(string: url)!, method: .get, headers: headers)
       .responseDecodable { (response: DataResponse<T, AFError>) in
         switch response.result {
@@ -104,15 +104,71 @@ public struct Github {
     let state = generateState(withLength: 20)
     let _ = oauthswift.authorize(
       withCallbackURL: URL(string: "crunchy-kitchen-sink://oauth-callback/github")!, scope: "user,repo,admin:org,org", state: state) { result in
-      switch result {
-      case .success(let (credential, _, _)):
-        config.githubToken = credential.oauthToken
-        print(credential.oauthToken)
-        success?()
-      case .failure(let err):
-        print(err.description)
-        error?()
+        switch result {
+        case .success(let (credential, _, _)):
+          config.githubToken = credential.oauthToken
+          print(credential.oauthToken)
+          success?()
+        case .failure(let err):
+          print(err.description)
+          error?()
+        }
       }
+  }
+  
+  struct OrganizationRepositoryView: View {
+    let organization: Organization
+    @State var isExpanded = false
+    @State private var repositories = [Repository]()
+    
+    var body: some View {
+      DisclosureGroup(isExpanded: $isExpanded) {
+        ForEach(repositories) { repository in
+          NavigationLink(destination: Github.PullRequestsView(organization: organization.login, repository: repository.name)) {
+            Text(repository.name)
+          }
+        }
+      } label: {
+        HStack {
+          Text(organization.login)
+        }
+        .onAppear {
+          Github.loadRepositories(organization: organization.login) {
+            repositories = $0
+          }
+        }
+      }
+    }
+  }
+  
+  public struct RootView: View {
+    @State private var organizations = [Organization]()
+    @ObservedObject var githubViewModel = ViewModel()
+    
+    public init() {}
+    
+    public var body: some View {
+      VStack {
+        List {
+          Text(githubViewModel.me?.name ?? "")
+          Button("Login") {
+            Github.authorize(success:  {
+              Github.me {
+                githubViewModel.me = $0
+              }
+              Github.loadOrganizations() {
+                organizations = $0
+              }
+            })
+          }
+          
+          ForEach(organizations) { organization in
+            OrganizationRepositoryView(organization: organization)
+          }
+        }
+        Spacer()
+      }
+      .environmentObject(githubViewModel)
     }
   }
 }
