@@ -33,7 +33,7 @@ extension Github {
     public var updated_at: String
     public var closed_at: String?
     public var merged_at: String?
-    public var merge_commit_sha: String
+    public var merge_commit_sha: String?
     public var assignee: User?
     public var assignees: [User]
     public var requested_reviewers: [User]

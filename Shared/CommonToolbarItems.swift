@@ -16,7 +16,6 @@ struct ToolSelectionToolbar: ToolbarContent {
         Button(CurrentTool.brew.rawValue.capitalized) { currentTool = .brew }
         Button(CurrentTool.git.rawValue.capitalized) { currentTool = .git }
         Button(CurrentTool.github.rawValue.capitalized) { currentTool = .github }
-
       }
     }
   }

@@ -21,6 +21,15 @@ struct RepositoriesView: View {
   }
 }
 
+struct VerticalLabelStyle: LabelStyle {
+  func makeBody(configuration: Configuration) -> some View {
+    VStack {
+      configuration.icon.font(.headline)
+      configuration.title.font(.subheadline)
+    }
+  }
+}
+
 struct Github_RootView: View {
   var body: some View {
     VStack {
@@ -30,6 +39,18 @@ struct Github_RootView: View {
     .frame(idealHeight: 400)
     .toolbar {
       ToolSelectionToolbar()
+      ToolbarItem(placement: .navigation) {
+        Menu {
+          Button {
+            Github.reauthorize()
+          } label: {
+            Text("Logout")
+            Image(systemName: "figure.wave")
+          }
+        } label: {
+          Image(systemName: "gear")
+        }
+      }
     }
   }
 }

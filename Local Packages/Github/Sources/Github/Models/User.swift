@@ -7,7 +7,7 @@
 
 extension Github {
   public struct User: Codable, Identifiable {
-    public var login: String
+    var login: String?
     public var id: Int
     public var node_id: String
     public var avatar_url: String
@@ -47,6 +47,10 @@ extension Github {
     public var disk_usage: Int?
     public var collaborators: Int?
     public var two_factor_authentication: Bool?
+    
+    public var publicName: String {
+      login ?? "Unknown Login"
+    }
 //    "plan": {
 //      "name": "free",
 //      "space": 976562499,

@@ -27,6 +27,10 @@ extension Github {
     ]
   }
   
+  public static var hasToken: Bool {
+    !config.githubToken.isEmpty
+  }
+  
   /// Returns an array of pull requests from the specified repository
   /// - parameter organization: The github organization or personal repository name
   public static func loadPullRequests(organization: String, repository: String,
@@ -66,6 +70,12 @@ extension Github {
     loadMany(url: url, success: success, error: error)
   }
   
+  public static func commits(from repository: Repository,
+                             success: (([Github.Commit]) -> Void)? = nil,
+                             error: ((AFError) -> Void)? = nil) {
+    let url = "\(repository.commits_url[..<repository.commits_url.index(repository.commits_url.endIndex, offsetBy: -6)])"
+    loadMany(url: url, success: success, error: error)
+  }
   /// Used when the expected response will be a single of codable object.
   private static func load<T: Codable>(url: String,
                                        success: ((T) -> Void)? = nil,

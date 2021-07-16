@@ -60,7 +60,7 @@ extension Github {
             VStack {
               HStack {
                 Text(pullRequest.head.repo.name)
-                Text(pullRequest.user.login)
+                Text(pullRequest.user.publicName)
                 Text(pullRequest.title)
                 Spacer()
                 Link(destination: URL(string: pullRequest.html_url)!) {
@@ -77,7 +77,7 @@ extension Github {
               }
               if pullRequest.requested_reviewers.count > 0 {
                 HStack {
-                  Text("Reviewers: \(pullRequest.requested_reviewers.map {$0.login }.joined(separator: ", "))")
+                  Text("Reviewers: \(pullRequest.requested_reviewers.map { $0.publicName }.joined(separator: ", "))")
                   Spacer()
                 }
               }
@@ -110,7 +110,7 @@ extension Github {
     var body: some View {
       DisclosureGroup(isExpanded: $isExpanded) {
         ForEach(repositories) { repository in
-          NavigationLink(destination: Github.PullRequestsView(organization: organization.login, repository: repository.name)) {
+          NavigationLink(destination: RepositoryView(organization: organization.login, repository: repository)) {
             Text(repository.name)
           }
         }

@@ -9,7 +9,6 @@ public struct GitRootView: View {
     self.repository.load()
   }
   
-
   public var body: some View {
     VStack {
       List {

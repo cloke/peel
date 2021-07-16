@@ -21,7 +21,7 @@ extension Github {
         ForEach(reviews) { review in
           HStack {
             Spacer()
-            Text(review.user.login)
+            Text(review.user.login ?? "Unknown Login")
             Text(review.state)
               .background(review.state == "APPROVED" ? Color.green : Color.clear)
             if let url = URL(string: review.user.avatar_url) {
@@ -84,7 +84,7 @@ extension Github {
           Spacer()
           if pullRequest.requested_reviewers.count > 0 {
             HStack {
-              Text("Reviewers: \(pullRequest.requested_reviewers.map {$0.login }.joined(separator: ", "))")
+              Text("Reviewers: \(pullRequest.requested_reviewers.map { $0.publicName }.joined(separator: ", "))")
               Spacer()
             }
             PullRequestReviewRowView(organization: organization, repository: repository, pullNumber: pullRequest.number)

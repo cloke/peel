@@ -17,8 +17,10 @@ public struct Github {
     public var body: some View {
       VStack {
         List {
-          Text(viewModel.me?.name ?? "")
-          Button("Login") {
+          if hasToken {
+            Text(viewModel.me?.name ?? "")
+          } else {
+            Button("Login") {
             Github.authorize(success:  {
               Github.me {
                 viewModel.me = $0
@@ -28,23 +30,24 @@ public struct Github {
               }
             })
           }
-//          Link("Review", destination: URL(string: "https://github.com/settings/connections/applications/5839b088c4fed070f6e4")!)
-          Divider()
-          Button("Relink") {
-            Github.reauthorize(success:  {
-              Github.me {
-                viewModel.me = $0
-              }
-              Github.loadOrganizations() {
-                organizations = $0
-              }
-            })
           }
           ForEach(organizations) { organization in
             OrganizationRepositoryView(organization: organization)
           }
         }
         Spacer()
+      }
+      .onAppear {
+        if hasToken {
+          Github.authorize(success:  {
+            Github.me {
+              viewModel.me = $0
+            }
+            Github.loadOrganizations() {
+              organizations = $0
+            }
+          })
+        }
       }
       .environmentObject(viewModel)
     }
