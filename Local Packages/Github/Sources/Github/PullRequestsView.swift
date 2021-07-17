@@ -57,6 +57,7 @@ extension Github {
     
     @EnvironmentObject var viewModel: ViewModel
     @State private var pullRequests = [Github.PullRequest]()
+    @State private var isLoading = true
     
     public init(organization: String, repository: String) {
       self.organization = organization
@@ -64,36 +65,47 @@ extension Github {
     }
     
     public var body: some View {
-      List(pullRequests) { pullRequest in
-        VStack {
-          VStack {
-            HStack(alignment: .top) {
-              Text(pullRequest.state)
-              Text(pullRequest.title)
-              Spacer()
-            }
-            if viewModel.hasMe(in: pullRequest.requested_reviewers),
-               let url = URL(string: pullRequest.html_url) {
-              HStack {
-                Link("Review Requested of Me", destination: url)
-                  .foregroundColor(.yellow)
+      List {
+        if isLoading {
+          ProgressView()
+        } else {
+          if pullRequests.count == 0 {
+            Text("No Pull Requests Found")
+          } else {
+            ForEach(pullRequests) { pullRequest in
+              VStack {
+                VStack {
+                  HStack(alignment: .top) {
+                    Text(pullRequest.state)
+                    Text(pullRequest.title)
+                    Spacer()
+                  }
+                  if viewModel.hasMe(in: pullRequest.requested_reviewers),
+                     let url = URL(string: pullRequest.html_url) {
+                    HStack {
+                      Link("Review Requested of Me", destination: url)
+                        .foregroundColor(.yellow)
+                      Spacer()
+                    }
+                  }
+                }
                 Spacer()
+                if pullRequest.requested_reviewers.count > 0 {
+                  HStack {
+                    Text("Reviewers: \(pullRequest.requested_reviewers.map { $0.publicName }.joined(separator: ", "))")
+                    Spacer()
+                  }
+                  PullRequestReviewRowView(organization: organization, repository: repository, pullNumber: pullRequest.number)
+                }
+                Divider()
               }
             }
           }
-          Spacer()
-          if pullRequest.requested_reviewers.count > 0 {
-            HStack {
-              Text("Reviewers: \(pullRequest.requested_reviewers.map { $0.publicName }.joined(separator: ", "))")
-              Spacer()
-            }
-            PullRequestReviewRowView(organization: organization, repository: repository, pullNumber: pullRequest.number)
-          }
-          Divider()
         }
       }
       .onAppear {
         loadPullRequests(organization: organization, repository: repository) {
+          isLoading = false
           pullRequests = $0
         } error: {
           print($0)

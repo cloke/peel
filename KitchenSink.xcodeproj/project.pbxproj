@@ -56,6 +56,7 @@
 		04678654259FC75700D5E87F /* CommonToolbarItems.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonToolbarItems.swift; sourceTree = "<group>"; };
 		0467865C259FEEF100D5E87F /* TaskDebugWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDebugWindowView.swift; sourceTree = "<group>"; };
 		0467867425A0DB4F00D5E87F /* Git */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Git; sourceTree = "<group>"; };
+		0473C0AE26A24FC100A8FE23 /* CrunchyCommon */ = {isa = PBXFileReference; lastKnownFileType = folder; path = CrunchyCommon; sourceTree = "<group>"; };
 		0495D215269F5277008B5148 /* Github_RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Github_RootView.swift; sourceTree = "<group>"; };
 		04A3CA2D25E46BA700EB520C /* Color.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Color.swift; sourceTree = "<group>"; };
 		04A7BD63258E77D7000E55A8 /* KitchenSinkApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KitchenSinkApp.swift; sourceTree = "<group>"; };
@@ -128,6 +129,7 @@
 		0467867A25A0DB9000D5E87F /* Local Packages */ = {
 			isa = PBXGroup;
 			children = (
+				0473C0AE26A24FC100A8FE23 /* CrunchyCommon */,
 				04F582A6269FD388003A8403 /* Github */,
 				042AE13525A0DF8200B905E4 /* TaskRunner */,
 				04AC312825B200DC009A10E7 /* Brew */,

@@ -6,12 +6,25 @@
 //
 
 import SwiftUI
+import Combine
+
 extension Github {
   public class ViewModel: ObservableObject {
+    @AppStorage("github-token") var githubTokenPersisted = ""
+
     @Published public var me: Github.User?
-    
+    @Published public var token: String = ""
+
+    var disposables = Set<AnyCancellable>()
+
     public init() {
-  
+      $token
+        .dropFirst()
+        .receive(on: DispatchQueue.main)
+        .sink {
+          self.githubTokenPersisted = $0
+        }
+        .store(in: &disposables)
     }
     
     /// Checks to see if the current user is contained in the list of reviewers

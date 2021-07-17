@@ -4,29 +4,26 @@
 import PackageDescription
 
 let package = Package(
-  name: "Github",
+  name: "CrunchyCommon",
   platforms: [.macOS(.v11)],
   products: [
     // Products define the executables and libraries a package produces, and make them visible to other packages.
     .library(
-      name: "Github",
-      targets: ["Github"]),
+      name: "CrunchyCommon",
+      targets: ["CrunchyCommon"]),
   ],
   dependencies: [
     // Dependencies declare other packages that this package depends on.
-    .package(name: "Kingfisher", url: "https://github.com/onevcat/Kingfisher.git", from: "6.0.0"),
-    .package(name: "Alamofire", url: "https://github.com/Alamofire/Alamofire.git", from: "5.4.3"),
-    .package(name: "OAuthSwift", url: "https://github.com/OAuthSwift/OAuthSwift.git", .upToNextMajor(from: "2.2.0")),
-    .package(name: "CrunchyCommon", path: "../CrunchyCommon")
+    // .package(url: /* package url */, from: "1.0.0"),
   ],
   targets: [
     // Targets are the basic building blocks of a package. A target can define a module or a test suite.
     // Targets can depend on other targets in this package, and on products in packages this package depends on.
     .target(
-      name: "Github",
-      dependencies: ["Kingfisher", "Alamofire", "OAuthSwift", "CrunchyCommon"]),
+      name: "CrunchyCommon",
+      dependencies: []),
     .testTarget(
-      name: "GithubTests",
-      dependencies: ["Github"]),
+      name: "CrunchyCommonTests",
+      dependencies: ["CrunchyCommon"]),
   ]
 )

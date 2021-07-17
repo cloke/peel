@@ -5,11 +5,33 @@
 //  Created by Cory Loken on 7/16/21.
 //
 
+import Foundation
+
 extension Github {
+  public struct CommitUser: Codable {
+    var name: String
+    var email: String
+    var date: String
+    
+    // TODO: This code should go into crunchy common as "relative date style". Could it be a modifier? Text("something").relativeDate()
+    var dateFormated: String {
+      let formatter = DateFormatter()
+      formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZ"
+      if let date = formatter.date(from: date) {
+        formatter.doesRelativeDateFormatting = true
+        formatter.locale = Locale(identifier: "en_US")
+        formatter.dateStyle = .long
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+      }
+      return ""
+    }
+  }
+  
   public struct CommitSnapshot: Codable {
-    // TODO: These are stripped down users. If we use the user property we'd have to make everything optional
-//    public var author: User?
-//    public var committer: User?
+    public var author: CommitUser
+    public var committer: CommitUser
+    
     public var message: String
 //      "tree": {
 //        "sha": "f77d0873d3e95f7e19cd74715b9f7333b1fc04af",
@@ -35,5 +57,6 @@ extension Github {
     public var author: User?
     public var committer: User?
 //    "parents": []
+    
   }
 }

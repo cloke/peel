@@ -36,7 +36,7 @@ extension Github {
         case "Pulls":
           PullRequestsView(organization: organization, repository: repository.name)
         case "Commits":
-          CommitsView(organization: organization, repository: repository)
+          CommitsListView(organization: organization, repository: repository)
         default:
           Text("Something is wrong")
         }
@@ -44,37 +44,6 @@ extension Github {
       Spacer()
     }
   }
-  
-  struct CommitsView: View {
-    public let organization: String
-    public let repository: Repository
-    
-    @EnvironmentObject var viewModel: ViewModel
-    @State private var commits = [Github.Commit]()
-    
-    var body: some View {
-      List(commits, id: \.sha) { commit in
-        VStack {
-          VStack {
-            HStack(alignment: .top) {
-              Text(commit.author?.login ?? "Unknown Login")
-              Text(commit.commit.message)
-              Spacer()
-            }
-          }
-          Divider()
-        }
-      }
-      .onAppear {
-        Github.commits(from: repository) {
-          commits = $0
-        } error: {
-          print($0)
-        }
-      }
-    }
-  }
-  
 }
 
 //struct RepositoryView_Previews: PreviewProvider {
