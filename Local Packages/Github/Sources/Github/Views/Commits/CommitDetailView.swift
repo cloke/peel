@@ -1,6 +1,6 @@
 //
-//  CommitsListView.swift
-//  CommitsListView
+//  CommitDetailView.swift
+//  CommitDetailView
 //
 //  Created by Cory Loken on 7/16/21.
 //

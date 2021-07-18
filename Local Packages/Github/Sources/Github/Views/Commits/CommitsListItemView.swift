@@ -1,20 +1,33 @@
 //
-//  SwiftUIView.swift
-//  SwiftUIView
+//  CommitsListItemView.swift
+//  CommitsListItemView
 //
 //  Created by Cory Loken on 7/18/21.
 //
 
 import SwiftUI
 
-struct SwiftUIView: View {
-    var body: some View {
-        Text(/*@START_MENU_TOKEN@*/"Hello, World!"/*@END_MENU_TOKEN@*/)
+struct CommitsListItemView: View {
+  let commit: Github.Commit
+  
+  var body: some View {
+    VStack(alignment: .leading) {
+      HStack(alignment: .top) {
+        Text(commit.author?.login ?? "Unknown Author")
+          .font(.headline)
+        Spacer()
+        Text(commit.commit.author.dateFormated)
+          .font(.subheadline)
+      }
+      Text(commit.commit.message)
     }
+  }
 }
 
-struct SwiftUIView_Previews: PreviewProvider {
-    static var previews: some View {
-        SwiftUIView()
-    }
-}
+//struct CommitsListItemView_Previews: PreviewProvider {
+//  static let decoder = JSONDecoder()
+//  static let commit = try! decoder.decode(Github.Commit.self, from: Fixtures.commit)
+//  static var previews: some View {
+//    CommitsListItemView(commit: commit)
+//  }
+//}
