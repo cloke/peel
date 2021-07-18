@@ -7,10 +7,14 @@
 
 import SwiftUI
 
-struct DiffView: View {
-  var diff: Diff
+public struct DiffView: View {
+  public var diff: Diff
+
+  public init(diff: Diff) {
+    self.diff = diff
+  }
   
-  var body: some View {
+  public var body: some View {
     GeometryReader { geometry in
       ScrollView([.horizontal, .vertical]) {
         VStack(alignment: .leading) {

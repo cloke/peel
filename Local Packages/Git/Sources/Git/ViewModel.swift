@@ -33,28 +33,33 @@ struct FileDescriptor: Identifiable {
   let status: FileStatus
 }
 
-struct Diff: Identifiable {
-  var id = UUID()
-  var files = [File]()
+public struct Diff: Identifiable {
+  public init(id: UUID = UUID(), files: [Diff.File] = [File]()) {
+    self.id = id
+    self.files = files
+  }
   
-  struct File: Identifiable {
-    var id = UUID()
-    var label = ""
-    var chunks = [Chunk]()
+  public var id = UUID()
+  public var files = [File]()
+  
+  public struct File: Identifiable {
+    public var id = UUID()
+    public var label = ""
+    public var chunks = [Chunk]()
     
-    struct Chunk: Identifiable {
-      var id = UUID()
-      var chunk = ""
-      var lines = [Line]()
+    public struct Chunk: Identifiable {
+      public var id = UUID()
+      public var chunk = ""
+      public var lines = [Line]()
       
       /// Identifiable container for single git line diff
-      struct Line: Identifiable {
-        var id = UUID()
+      public struct Line: Identifiable {
+        public var id = UUID()
         /// The raw output of the line from the command
-        var line = ""
+        public var line = ""
         /// The line status. +/- for added / deleted
-        var status = ""
-        var lineNumber = 0
+        public var status = ""
+        public var lineNumber = 0
       }
     }
   }

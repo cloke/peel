@@ -40,7 +40,7 @@ extension Commands {
     }
   }
   
-  fileprivate static func processDiff(lines: [String]) -> Diff {
+  public static func processDiff(lines: [String]) -> Diff {
     var diff = Diff()
     let regex = try! NSRegularExpression(
       pattern: "^(?:(?:@@ -(\\d+),?(\\d+)? \\+(\\d+),?(\\d+)? @@)|([-+\\s])(.*))",

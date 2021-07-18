@@ -76,6 +76,15 @@ extension Github {
     let url = "\(repository.commits_url[..<repository.commits_url.index(repository.commits_url.endIndex, offsetBy: -6)])"
     loadMany(url: url, success: success, error: error)
   }
+  
+  /// Get the details of a single commit
+  static func commitDetail(from commit: Commit,
+                           success: ((Github.CommitDetail) -> Void)? = nil,
+                           error: ((AFError) -> Void)? = nil) {
+    print(commit.url)
+    load(url: commit.url, success: success, error: error)
+
+  }
   /// Used when the expected response will be a single of codable object.
   private static func load<T: Codable>(url: String,
                                        success: ((T) -> Void)? = nil,

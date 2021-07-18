@@ -8,6 +8,46 @@
 import Foundation
 
 extension Github {
+  public struct CommitStats: Codable {
+    public var total: Int
+    public var additions: Int
+    public var deletions: Int
+  }
+  
+  public struct CommitFile: Codable, Identifiable {
+    public var id: String { sha }
+    public var sha: String
+    public var filename: String
+    public var status: String
+    public var additions: Int
+    public var deletions: Int
+    public var changes: Int
+    public var blob_url: String
+    public var raw_url: String
+    public var contents_url: String
+    public var patch: String
+  }
+  
+  public struct CommitDetail: Codable {
+    public var sha: String
+    public var node_id: String
+    public var commit: CommitSnapshot
+    public var url: String
+    public var html_url: String
+    public var comments_url: String
+    public var author: User
+    public var committer: User
+//      "parents": [
+//        {
+//          "sha": "80f1266591ebc5fdf2cb031eaca6ff7781f4df17",
+//          "url": "https://api.github.com/repos/tuitionio/tio-projection/commits/80f1266591ebc5fdf2cb031eaca6ff7781f4df17",
+//          "html_url": "https://github.com/tuitionio/tio-projection/commit/80f1266591ebc5fdf2cb031eaca6ff7781f4df17"
+//        }
+//      ],
+    public var stats: CommitStats
+    public var files: [CommitFile]
+  }
+  
   public struct CommitUser: Codable {
     var name: String
     var email: String

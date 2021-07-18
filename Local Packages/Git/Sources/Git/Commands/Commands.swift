@@ -7,7 +7,7 @@
 
 import TaskRunner
 
-struct Commands: TaskRunnerProtocol {
+public struct Commands: TaskRunnerProtocol {
   private static let shared = Commands()
 
   static func run(_ url: Executable, command: [String], callback: ((TaskStatus) -> ())? = nil) throws {
