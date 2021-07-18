@@ -30,6 +30,13 @@ extension Github {
             Text("Commits")
               .fontWeight(currentTab == "Commits" ? .bold : .none)
           }
+          Button {
+            currentTab = "Issues"
+          } label: {
+            Text("Issues")
+              .fontWeight(currentTab == "Issues" ? .bold : .none)
+          }
+          
         }
         .buttonStyle(.borderless)
         switch currentTab {
@@ -37,11 +44,32 @@ extension Github {
           PullRequestsView(organization: organization, repository: repository.name)
         case "Commits":
           CommitsListView(organization: organization, repository: repository)
+        case "Issues":
+          IssuesLisView(repository: repository)
         default:
           Text("Something is wrong")
         }
       }
       Spacer()
+    }
+  }
+}
+
+struct IssuesLisView: View {
+  let repository: Github.Repository
+  
+  @State private var issues = [Github.Issue]()
+  
+  var body: some View {
+    List(issues) { issue in
+      Text(issue.title)
+    }
+    .onAppear {
+      Github.issues(from: repository) {
+        issues = $0
+      } error: {
+        print($0)
+      }
     }
   }
 }

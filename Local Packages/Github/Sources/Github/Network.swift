@@ -81,10 +81,18 @@ extension Github {
   static func commitDetail(from commit: Commit,
                            success: ((Github.CommitDetail) -> Void)? = nil,
                            error: ((AFError) -> Void)? = nil) {
-    print(commit.url)
     load(url: commit.url, success: success, error: error)
 
   }
+  
+  static func issues(from repository: Repository,
+                     success: (([Github.Issue]) -> Void)? = nil,
+                     error: ((AFError) -> Void)? = nil) {
+    let url = "\(repository.issues_url[..<repository.issues_url.index(repository.issues_url.endIndex, offsetBy: -9)])"
+
+    loadMany(url: url, success: success, error: error)
+  }
+  
   /// Used when the expected response will be a single of codable object.
   private static func load<T: Codable>(url: String,
                                        success: ((T) -> Void)? = nil,
