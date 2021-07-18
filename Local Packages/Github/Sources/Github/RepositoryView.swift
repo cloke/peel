@@ -6,6 +6,9 @@
 //
 
 import SwiftUI
+// Used for hex color
+import CrunchyCommon
+
 extension Github {
   struct RepositoryView: View {
     public let organization: String
@@ -63,6 +66,12 @@ struct IssuesLisView: View {
   var body: some View {
     List(issues) { issue in
       Text(issue.title)
+      HStack {
+        ForEach(issue.labels) { label in
+          Text(label.name)
+            .background(Color.init(hex: label.color))
+        }
+      }
     }
     .onAppear {
       Github.issues(from: repository) {

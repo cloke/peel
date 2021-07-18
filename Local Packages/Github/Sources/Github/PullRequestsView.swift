@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Kingfisher
+import CrunchyCommon
 
 extension Github {
   struct PullRequestReviewRowView: View {
@@ -80,6 +81,13 @@ extension Github {
                     Text(pullRequest.title)
                     Spacer()
                   }
+                  HStack {
+                    ForEach(pullRequest.labels) { label in
+                      Text(label.name)
+                        .background(Color.init(hex: label.color))
+                    }
+                  }
+
                   if viewModel.hasMe(in: pullRequest.requested_reviewers),
                      let url = URL(string: pullRequest.html_url) {
                     HStack {

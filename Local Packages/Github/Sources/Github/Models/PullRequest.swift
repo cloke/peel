@@ -38,7 +38,7 @@ extension Github {
     public var assignees: [User]
     public var requested_reviewers: [User]
     //      "requested_teams": [],
-    //      var labels: [String]
+    public var labels: [Label]
     //      "milestone": null,
     public var draft: Bool
     public var commits_url: String

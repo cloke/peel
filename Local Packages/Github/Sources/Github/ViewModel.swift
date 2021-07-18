@@ -11,12 +11,12 @@ import Combine
 extension Github {
   public class ViewModel: ObservableObject {
     @AppStorage("github-token") var githubTokenPersisted = ""
-
+    
     @Published public var me: Github.User?
     @Published public var token: String = ""
-
+    
     var disposables = Set<AnyCancellable>()
-
+    
     public init() {
       $token
         .dropFirst()
