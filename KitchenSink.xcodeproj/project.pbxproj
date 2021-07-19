@@ -53,6 +53,7 @@
 		042AE13525A0DF8200B905E4 /* TaskRunner */ = {isa = PBXFileReference; lastKnownFileType = folder; path = TaskRunner; sourceTree = "<group>"; };
 		043A530E2599589B00980BE2 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		043A532125998D1E00980BE2 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		04425FD926A5CEAD0017C788 /* test.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = test.swift; sourceTree = "<group>"; };
 		04678654259FC75700D5E87F /* CommonToolbarItems.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonToolbarItems.swift; sourceTree = "<group>"; };
 		0467865C259FEEF100D5E87F /* TaskDebugWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDebugWindowView.swift; sourceTree = "<group>"; };
 		0467867425A0DB4F00D5E87F /* Git */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Git; sourceTree = "<group>"; };
@@ -156,6 +157,7 @@
 		04A7BD5D258E77D7000E55A8 = {
 			isa = PBXGroup;
 			children = (
+				04425FD926A5CEAD0017C788 /* test.swift */,
 				043A532125998D1E00980BE2 /* README.md */,
 				04A7BD62258E77D7000E55A8 /* Shared */,
 				04F4F9772596AAD7005B30B4 /* KitchenSink.entitlements */,

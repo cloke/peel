@@ -51,7 +51,7 @@ struct FileListView: View {
             }
         }
         ForEach(repository.status) { change in
-          FileListItemView(path: change.path, toggleState: ![.modifiedMe, .untracked].contains(change.status)) //change.status != "??" ? false : true)
+          FileListItemView(path: change.path, toggleState: ![.modifiedMe, .untracked, .unknown].contains(change.status)) //change.status != "??" ? false : true)
             .contentShape(Rectangle())
             .background(color(status: change.status))
             .foregroundColor(color(status: change.status).isDarkColor == true ? .white : .black)
