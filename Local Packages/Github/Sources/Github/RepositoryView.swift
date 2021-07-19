@@ -58,31 +58,6 @@ extension Github {
   }
 }
 
-struct IssuesLisView: View {
-  let repository: Github.Repository
-  
-  @State private var issues = [Github.Issue]()
-  
-  var body: some View {
-    List(issues) { issue in
-      Text(issue.title)
-      HStack {
-        ForEach(issue.labels) { label in
-          Text(label.name)
-            .background(Color.init(hex: label.color))
-        }
-      }
-    }
-    .onAppear {
-      Github.issues(from: repository) {
-        issues = $0
-      } error: {
-        print($0)
-      }
-    }
-  }
-}
-
 //struct RepositoryView_Previews: PreviewProvider {
 //  static var previews: some View {
 //    Github.RepositorView(organization: "Test", repository: "Test")
