@@ -73,9 +73,11 @@ extension SidebarNavigationView {
       }
     }
     
-    func available() {
+    func available(term: String) {
+      var command = Command.BrewAvailable
+      command.append(term)
       outputStream = []
-      try? run(.brew, command: Command.BrewAvailable) { [self] in
+      try? run(.brew, command: command) { [self] in
         switch $0 {
         case .buffer(let string):
           outputStream.append(string)
@@ -103,7 +105,7 @@ public struct SidebarNavigationView: View {
         }
         Button("Available") {
           results.items = []
-          viewModel.available()
+          viewModel.available(term: results.searchText)
         }
       }
       .onReceive(viewModel.$outputStream) { data in

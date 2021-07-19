@@ -41,7 +41,7 @@ extension Github {
           }
           
         }
-        .buttonStyle(.borderless)
+//        .buttonStyle(.borderless)
         switch currentTab {
         case "Pulls":
           PullRequestsView(organization: organization, repository: repository.name)

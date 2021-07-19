@@ -26,6 +26,7 @@ public struct DiffView: View {
                   HStack {
                     if line.lineNumber != 0 {
                       Text(line.lineNumber.description)
+                        .padding(.leading)
                     }
                     Text(line.line)
                       .padding(.horizontal)
@@ -34,6 +35,7 @@ public struct DiffView: View {
                   .background(lineColor(line.status))
                 }
               }
+              
             }
           }
           Spacer()

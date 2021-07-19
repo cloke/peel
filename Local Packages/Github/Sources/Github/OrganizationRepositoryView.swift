@@ -116,7 +116,8 @@ extension Github {
         }
       } label: {
         HStack {
-          NavigationLink(destination: { OrganizationDetailView(organization: organization) }, label: { Text(organization.login) })
+          NavigationLink(destination:  OrganizationDetailView(organization: organization),
+                         label: { Text(organization.login) })
         }
         .onAppear {
           Github.loadRepositories(organization: organization.login) {

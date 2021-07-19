@@ -5,6 +5,9 @@
 
 #  TODO GITHUB
 ### General
+- [ ] Notification badges. 
+  - [ ] On the dock icon
+  - [ ] Determine where inside the app?
 - [ ] Use generated links from organization object. This would future proof changes in the git api assuming the property names don't change.
 - [ ] Add the ability to add / remove organizations by removing token and reauthorizing.
 - [ ] Create view that is responsible for loading review status. It should cancel on unload and have a delay in the request to minimize queries to git.
