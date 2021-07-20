@@ -1,20 +1,41 @@
 //
-//  SwiftUIView.swift
-//  SwiftUIView
+//  OrganizationRepositoryView.swift
+//  OrganizationRepositoryView
 //
 //  Created by Cory Loken on 7/19/21.
 //
 
 import SwiftUI
 
-struct SwiftUIView: View {
-    var body: some View {
-        Text(/*@START_MENU_TOKEN@*/"Hello, World!"/*@END_MENU_TOKEN@*/)
+struct OrganizationRepositoryView: View {
+  let organization: Github.Organization
+  
+  @State var isExpanded = false
+  @State private var repositories = [Github.Repository]()
+  
+  var body: some View {
+    DisclosureGroup(isExpanded: $isExpanded) {
+      ForEach(repositories) { repository in
+        NavigationLink(destination: RepositoryView(organization: organization.login, repository: repository)) {
+          Text(repository.name)
+        }
+      }
+    } label: {
+      HStack {
+        NavigationLink(destination:  OrganizationDetailView(organization: organization),
+                       label: { Text(organization.login) })
+      }
+      .onAppear {
+        Github.loadRepositories(organization: organization.login) {
+          repositories = $0
+        }
+      }
     }
+  }
 }
 
-struct SwiftUIView_Previews: PreviewProvider {
-    static var previews: some View {
-        SwiftUIView()
-    }
-}
+//struct OrganizationRepositoryView_Previews: PreviewProvider {
+//  static var previews: some View {
+//    OrganizationRepositoryView(organization: Github.Organization())
+//  }
+//}

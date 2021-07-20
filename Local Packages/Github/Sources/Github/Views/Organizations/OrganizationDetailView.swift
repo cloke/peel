@@ -9,12 +9,12 @@ import SwiftUI
 import Kingfisher
 
 struct OrganizationDetailView: View {
-  let organization: Organization
+  let organization: Github.Organization
   
-  @EnvironmentObject var viewModel: ViewModel
-  @State private var members = [User]()
-  @State private var repositories = [Repository]()
-  @State private var pullRequests = [PullRequest]()
+  @EnvironmentObject var viewModel: Github.ViewModel
+  @State private var members = [Github.User]()
+  @State private var repositories = [Github.Repository]()
+  @State private var pullRequests = [Github.PullRequest]()
   
   var body: some View {
     VStack {
