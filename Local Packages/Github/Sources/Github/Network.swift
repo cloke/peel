@@ -82,7 +82,6 @@ extension Github {
                            success: ((Github.CommitDetail) -> Void)? = nil,
                            error: ((AFError) -> Void)? = nil) {
     load(url: commit.url, success: success, error: error)
-
   }
   
   static func issues(from repository: Repository,

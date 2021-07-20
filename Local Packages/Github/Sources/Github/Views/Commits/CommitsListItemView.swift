@@ -19,15 +19,17 @@ struct CommitsListItemView: View {
         Text(commit.commit.author.dateFormated)
           .font(.subheadline)
       }
+      
       Text(commit.commit.message)
+        .padding()
     }
   }
 }
 
-//struct CommitsListItemView_Previews: PreviewProvider {
-//  static let decoder = JSONDecoder()
-//  static let commit = try! decoder.decode(Github.Commit.self, from: Fixtures.commit)
-//  static var previews: some View {
-//    CommitsListItemView(commit: commit)
-//  }
-//}
+struct CommitsListItemView_Previews: PreviewProvider {
+  static let decoder = JSONDecoder()
+  static let commit = try! decoder.decode(Github.Commit.self, from: Fixtures.commit)
+  static var previews: some View {
+    CommitsListItemView(commit: commit)
+  }
+}

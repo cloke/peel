@@ -14,7 +14,7 @@ struct RepositoriesView: View {
   
   var body: some View {
     ForEach(repositories) { repository in
-      NavigationLink(destination: Github.PullRequestsView(organization: organization, repository: repository.name)) {
+      NavigationLink(destination: PullRequestsView(organization: organization, repository: repository.name)) {
         Text(repository.name)
       }
     }
