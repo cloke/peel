@@ -28,6 +28,12 @@ extension Github {
     public var patch: String
   }
   
+  public struct CommitParent: Codable {
+    public var sha: String
+    public var url: String
+    public var html_url: String
+  }
+  
   public struct CommitDetail: Codable, Identifiable {
     public var id: String { sha }
     public var sha: String
@@ -38,13 +44,7 @@ extension Github {
     public var comments_url: String
     public var author: User
     public var committer: User
-//      "parents": [
-//        {
-//          "sha": "80f1266591ebc5fdf2cb031eaca6ff7781f4df17",
-//          "url": "https://api.github.com/repos/tuitionio/tio-projection/commits/80f1266591ebc5fdf2cb031eaca6ff7781f4df17",
-//          "html_url": "https://github.com/tuitionio/tio-projection/commit/80f1266591ebc5fdf2cb031eaca6ff7781f4df17"
-//        }
-//      ],
+    public var parents: [CommitParent]
     public var stats: CommitStats
     public var files: [CommitFile]
   }
@@ -75,25 +75,27 @@ extension Github {
     }
   }
   
+  public struct CommitVerification: Codable {
+    public var verified: Bool?
+    public var reason: String
+    public var signature: String?
+    public var payload: String?
+  }
+  
+  public struct CommitTree: Codable {
+    public var sha: String
+    public var url: String
+  }
+  
   public struct CommitSnapshot: Codable {
     public var author: CommitUser
     public var committer: CommitUser
-    
     public var message: String
-//      "tree": {
-//        "sha": "f77d0873d3e95f7e19cd74715b9f7333b1fc04af",
-//        "url": "https://api.github.com/repos/tuitionio/vue-tio-modal/git/trees/f77d0873d3e95f7e19cd74715b9f7333b1fc04af"
-//      },
-//      "url": "https://api.github.com/repos/tuitionio/vue-tio-modal/git/commits/118c129254390c203c3e778569a7880eeb212645",
-//      "comment_count": 0,
-//      "verification": {
-//        "verified": true,
-//        "reason": "valid",
-//        "signature": "-----BEGIN PGP SIGNATURE-----\n\nwsBcBAABCAAQBQJbGwWOCRBK7hj4Ov3rIwAAdHIIAA9UkscE1YPkXb/vIdZ7xnww\nV01eYvbC1tifTZeS61HnKy345xCq7dHvCNfU+AyGcD+pcY7YcOR2fJTmT0hYkFyb\nFrxe4I71yBOhmSI3Pjzzr2pepvvR2zYfN+qPs7GuYajyijQWI2Ia/AtoagB583LT\nsTAh1aPddWUDK/9pVX/VKznVCCQ92n6vOfsr2Mhb+x5S5D8cuUvHMaHCVXnPEe7u\nMrXaLFvdYohucq4LzwfsmYkcq2UA2ZfIWaCT3Q+m4GgMaiiHM2I4P/7oRaHyqAba\nvuvraa9mKJQxdm2IrdDlFjZmEKQD/7ASHXwzCmWO125d7+FFZLmaSU2ejezhd/o=\n=/UBD\n-----END PGP SIGNATURE-----\n",
-//        "payload": "tree f77d0873d3e95f7e19cd74715b9f7333b1fc04af\nauthor Artur Grigio <fsastudent@yahoo.com> 1528497550 -0700\ncommitter GitHub <noreply@github.com> 1528497550 -0700\n\nInitial commit"
-//      }
-
+    public var url: String
+    public var commentCount: Int?
+    public var verification: CommitVerification?
   }
+
   public struct Commit: Codable {
     public var sha: String
     public var node_id: String
@@ -103,7 +105,6 @@ extension Github {
     public var comments_url: String
     public var author: User?
     public var committer: User?
-//    "parents": []
-    
+    public var parents: [CommitParent]
   }
 }
