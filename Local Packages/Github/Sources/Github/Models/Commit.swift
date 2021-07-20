@@ -28,7 +28,8 @@ extension Github {
     public var patch: String
   }
   
-  public struct CommitDetail: Codable {
+  public struct CommitDetail: Codable, Identifiable {
+    public var id: String { sha }
     public var sha: String
     public var node_id: String
     public var commit: CommitSnapshot
@@ -48,7 +49,7 @@ extension Github {
     public var files: [CommitFile]
   }
   
-  public struct CommitUser: Codable {
+  public struct CommitUser: Codable, Equatable {
     var name: String
     var email: String
     var date: String
@@ -65,6 +66,12 @@ extension Github {
         return formatter.string(from: date)
       }
       return ""
+    }
+    
+    public static func == (lhs: Github.CommitUser, rhs: Github.CommitUser) -> Bool {
+      return lhs.name == rhs.name &&
+      lhs.email == rhs.email &&
+      lhs.date == rhs.date
     }
   }
   
