@@ -33,10 +33,10 @@ extension Github {
   
   /// Returns an array of pull requests from the specified repository
   /// - parameter organization: The github organization or personal repository name
-  public static func loadPullRequests(organization: String, repository: String,
+  public static func loadPullRequests(organization: Github.Organization, repository: Github.Repository,
                                       success: (([Github.PullRequest]) -> Void)? = nil,
                                       error: ((AFError) -> Void)? = nil) {
-    loadMany(url: "https://api.github.com/repos/\(organization)/\(repository)/pulls", success: success, error: error)
+    loadMany(url: "https://api.github.com/repos/\(organization.login)/\(repository.name)/pulls", success: success, error: error)
   }
   
   public static func loadRepositories(organization: String,
@@ -92,6 +92,33 @@ extension Github {
     loadMany(url: url, success: success, error: error)
   }
   
+  static func createIssue(for repository: Repository, title: String, body: String, owner: String,
+                     success: ((Github.Issue) -> Void)? = nil,
+                     error: ((AFError) -> Void)? = nil) {
+    let json = [
+      "title": title,
+      "body": body,
+      "owner": owner
+    ]
+    
+    guard let organization = repository.owner.login,
+          let url = URL(string: "https://api.github.com/repos/\(organization)/\(repository.name)/issues") else {
+            print("Issue generating url for repository")
+            error?(.invalidURL(url: ""))
+            return
+          }
+    AF.request(url, method: .post, parameters: json, encoder: JSONParameterEncoder.default, headers: headers)
+      .responseDecodable { (response: DataResponse<Issue, AFError>) in
+        switch response.result {
+        case .success(let value):
+          success?(value)
+        case .failure(let err):
+          print(err)
+          error?(err)
+        }
+      }
+    print(json)
+  }
   /// Used when the expected response will be a single of codable object.
   private static func load<T: Codable>(url: String,
                                        success: ((T) -> Void)? = nil,

@@ -10,7 +10,7 @@ import SwiftUI
 import CrunchyCommon
 
 struct RepositoryView: View {
-  public let organization: String
+  public let organization: Github.Organization
   public let repository: Github.Repository
   
   // TODO: make this reference an enum
@@ -43,9 +43,9 @@ struct RepositoryView: View {
       //        .buttonStyle(.borderless)
       switch currentTab {
       case "Pulls":
-        PullRequestsView(organization: organization, repository: repository.name)
+        PullRequestsView(organization: organization, repository: repository)
       case "Commits":
-        CommitsListView(organization: organization, repository: repository)
+        CommitsListView(repository: repository)
       case "Issues":
         IssuesLisView(repository: repository)
       default:

@@ -9,12 +9,12 @@ import SwiftUI
 import Github
 
 struct RepositoriesView: View {
-  let organization: String
+  let organization: Github.Organization
   var repositories = [Github.Repository]()
   
   var body: some View {
     ForEach(repositories) { repository in
-      NavigationLink(destination: PullRequestsView(organization: organization, repository: repository.name)) {
+      NavigationLink(destination: PullRequestsView(organization: organization, repository: repository)) {
         Text(repository.name)
       }
     }

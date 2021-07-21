@@ -6,6 +6,13 @@
 //
 
 extension Github {
+  // TODO: Should we combine with main model? It would require almost all props to be optional. Or do we even worry about a codable?
+  public struct NewIssue: Codable {
+    public var title: String
+    public var body: String
+    public var owner: String
+  }
+  
   public struct Issue: Codable, Identifiable {
     public var id: Int
     public var url: String

@@ -7,6 +7,12 @@
 
 import SwiftUI
 
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
+
 extension Color {
   public init(hex string: String) {
     var string: String = string.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
@@ -79,5 +85,20 @@ extension Color {
     } else {
       self.init(.sRGB, red: 1, green: 1, blue: 1, opacity: 1)
     }
+  }
+  
+  public var isDarkColor: Bool {
+    var r, g, b, a: CGFloat
+    (r, g, b, a) = (0, 0, 0, 0)
+    
+    #if canImport(UIKit)
+    typealias NativeColor = UIColor
+    #elseif canImport(AppKit)
+    typealias NativeColor = NSColor
+    #endif
+    
+    NativeColor(self).usingColorSpace(.extendedSRGB)?.getRed(&r, green: &g, blue: &b, alpha: &a)
+    let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    return  lum < 0.50
   }
 }

@@ -16,7 +16,7 @@ struct OrganizationRepositoryView: View {
   var body: some View {
     DisclosureGroup(isExpanded: $isExpanded) {
       ForEach(repositories) { repository in
-        NavigationLink(destination: RepositoryView(organization: organization.login, repository: repository)) {
+        NavigationLink(destination: RepositoryView(organization: organization, repository: repository)) {
           Text(repository.name)
         }
       }

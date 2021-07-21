@@ -51,5 +51,12 @@ extension Github {
     public var author_association: String
     public var auto_merge: String?
     public var active_lock_reason: String?
+    public var comments: Int?
+    public var review_comments: Int?
+    public var maintainer_can_modify: Bool?
+    public var commits: Int?
+    public var additions: Int?
+    public var deletions: Int?
+    public var changed_files: Int?
   }
 }

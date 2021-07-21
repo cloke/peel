@@ -8,7 +8,6 @@
 import SwiftUI
 
 struct CommitsListView: View {
-  public let organization: String
   public let repository: Github.Repository
   
   @EnvironmentObject var viewModel: Github.ViewModel

@@ -92,7 +92,7 @@ struct OrganizationDetailView: View {
       Github.loadRepositories(organization: organization.login, success: {
         repositories = $0
         for repository in repositories {
-          Github.loadPullRequests(organization: organization.login, repository: repository.name) {
+          Github.loadPullRequests(organization: organization, repository: repository) {
             pullRequests.append(contentsOf: $0)
           }
         }

@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import CrunchyCommon
 
 struct FileListItemView: View {
   @EnvironmentObject var repository: Model.Repository

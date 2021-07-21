@@ -2,6 +2,8 @@
 - [X] Look at organizing tool specific code into local packages
 - [ ] TaskRunner should handle stdError and report back to the user
 - [ ] Hook github view into debugger window
+- [ ] Figure out what would make sense for iOS / iPad
+  - [ ] Most of the github view will work on mobile, but the git package needs to be reworked to not require MacOS and optionally provide views not tied to system calls.
 
 #  TODO GITHUB
 ### General
@@ -22,20 +24,24 @@
 - [ ] Show starred
 
 ### Pull Requests
-- [ ] Pull request view
+- [X] Pull request view
 - [ ] Display comments
 - [ ] Reviewer status
 - [ ] Diff view (use common git code)
 - [ ] Research approver flow. This will be a huge undertaking since it requires direct comments on diff lines.
 
 ### Issues
-- [ ] Issues view
+- [X] Issues view
 - [ ] Ability to see issues
   - [ ] Ability to see issues across repos
   - [ ] Ability to see issues across orgs
 - [ ] Create issues
   - [ ] Turn this document into issues and use app to manage them
-
+  - [X] Create with title, body, and reporter
+    - [ ] Add validations
+    - [ ] See if delay in render is slow api or our response?
+  - [ ] Add image support. There is no way to do this in the api, but we can host the files or use base64 encoded images. 
+    
 ### Actions
 - [ ] Actions view
 - [ ] Can we show some of the billing / usage information in this view? I'd like to know how many minutes I've used. 

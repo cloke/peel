@@ -1,0 +1,74 @@
+//
+//  PullRequestsView.swift
+//  PullRequestsView
+//
+//  Created by Cory Loken on 7/15/21.
+//
+
+import SwiftUI
+import CrunchyCommon
+
+struct PullRequestDetailView: View {
+  let organization: Github.Organization
+  let repository: Github.Repository
+  let pullRequest: Github.PullRequest
+  
+  var body: some View {
+    VStack(alignment: .leading) {
+      Text(pullRequest.title)
+        .font(.title)
+      Divider()
+      Text("Description")
+        .font(.headline)
+      Text(pullRequest.body)
+        .font(.body)
+      PullRequestReviewRowView(organization: organization, repository: repository, pullNumber: pullRequest.number)
+      Spacer()
+    }
+    .padding()
+  }
+}
+
+public struct PullRequestsView: View {
+  public let organization: Github.Organization
+  public let repository: Github.Repository
+  
+  @EnvironmentObject var viewModel: Github.ViewModel
+  @State private var pullRequests = [Github.PullRequest]()
+  @State private var state: LoadingState = .loading
+  
+  public init(organization: Github.Organization, repository: Github.Repository) {
+    self.organization = organization
+    self.repository = repository
+  }
+  
+  public var body: some View {
+    VStack {
+      switch state {
+      case .loading:
+        ProgressView()
+      case .loaded:
+        NavigationView {
+          List {
+            ForEach(pullRequests) { pullRequest in
+              NavigationLink(destination: PullRequestDetailView(organization: organization, repository: repository, pullRequest: pullRequest)) {
+                PullRequestsListItemView(pullRequest: pullRequest, organization: organization, repository: repository)
+              }
+              Divider()
+            }
+          }
+        }
+      case .empty:
+        Text("No Pull Requests Found")
+      }
+    }
+    .onAppear {
+      Github.loadPullRequests(organization: organization, repository: repository) {
+        pullRequests = $0
+        state = $0.count == 0 ? .empty : .loaded
+      } error: {
+        print($0)
+      }
+    }
+  }
+}
