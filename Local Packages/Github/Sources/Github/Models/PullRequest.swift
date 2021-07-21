@@ -5,6 +5,8 @@
 //  Created by Cory Loken on 7/14/21.
 //
 
+import Foundation
+
 extension Github {
   /// WTF is this data type? PullSnapshot is a placeholder until I can research more
   public struct PullSnapshot: Codable {
@@ -58,5 +60,19 @@ extension Github {
     public var additions: Int?
     public var deletions: Int?
     public var changed_files: Int?
+  
+    // TODO: This code should go into crunchy common as "relative date style". Could it be a modifier? Text("something").relativeDate()
+    var dateFormated: String {
+      let formatter = DateFormatter()
+      formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZ"
+      if let date = formatter.date(from: updated_at) {
+        formatter.doesRelativeDateFormatting = true
+        formatter.locale = Locale(identifier: "en_US")
+        formatter.dateStyle = .long
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+      }
+      return ""
+    }
   }
 }

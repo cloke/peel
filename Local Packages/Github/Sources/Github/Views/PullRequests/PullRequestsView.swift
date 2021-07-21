@@ -7,12 +7,12 @@
 
 import SwiftUI
 import CrunchyCommon
+import MarkdownUI
 
 struct PullRequestDetailView: View {
   let organization: Github.Organization
   let repository: Github.Repository
   let pullRequest: Github.PullRequest
-  
   var body: some View {
     VStack(alignment: .leading) {
       Text(pullRequest.title)
@@ -20,8 +20,9 @@ struct PullRequestDetailView: View {
       Divider()
       Text("Description")
         .font(.headline)
-      Text(pullRequest.body)
-        .font(.body)
+      ScrollView {
+        Markdown(Document(stringLiteral: pullRequest.body))
+      }
       PullRequestReviewRowView(organization: organization, repository: repository, pullNumber: pullRequest.number)
       Spacer()
     }

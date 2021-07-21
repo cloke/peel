@@ -38,8 +38,10 @@ struct PullRequestsListItemView: View {
     VStack {
       HStack(alignment: .top) {
         Text(prState)
+          .font(.headline)
         Spacer()
-        Text(pullRequest.created_at)
+        Text(pullRequest.dateFormated)
+          .font(.subheadline)
       }
       .onAppear {
         Github.loadReviews(organization: organization.login, repository: repository.name, pullNumber: pullRequest.number) {
@@ -48,6 +50,7 @@ struct PullRequestsListItemView: View {
       }
       
       Text(pullRequest.title)
+        .font(.body)
 
       HStack {
         ForEach(pullRequest.labels) { label in

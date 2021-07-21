@@ -27,7 +27,7 @@
 		04A7BD91258E77D8000E55A8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 04A7BD65258E77D8000E55A8 /* Assets.xcassets */; };
 		04AC312325B200A2009A10E7 /* Git_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04AC311E25B20085009A10E7 /* Git_RootView.swift */; };
 		04AC313E25B201AE009A10E7 /* Brew in Frameworks */ = {isa = PBXBuildFile; productRef = 04AC313D25B201AE009A10E7 /* Brew */; };
-		04DD2F4B269E6AED000994E1 /* OAuthSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 04DD2F4A269E6AED000994E1 /* OAuthSwift */; };
+		04D09EFD26A85E8100072702 /* OAuthSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 04D09EFC26A85E8100072702 /* OAuthSwift */; };
 		04F4F93D25903A72005B30B4 /* Brew_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F4F93B25903A72005B30B4 /* Brew_RootView.swift */; };
 		04F582A8269FD4AD003A8403 /* Github in Frameworks */ = {isa = PBXBuildFile; productRef = 04F582A7269FD4AD003A8403 /* Github */; };
 /* End PBXBuildFile section */
@@ -94,9 +94,9 @@
 			files = (
 				04F582A8269FD4AD003A8403 /* Github in Frameworks */,
 				04AC313E25B201AE009A10E7 /* Brew in Frameworks */,
+				04D09EFD26A85E8100072702 /* OAuthSwift in Frameworks */,
 				0495D214269F34F8008B5148 /* Alamofire in Frameworks */,
 				042AE13F25A0E17700B905E4 /* Git in Frameworks */,
-				04DD2F4B269E6AED000994E1 /* OAuthSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -277,9 +277,9 @@
 			packageProductDependencies = (
 				042AE13E25A0E17700B905E4 /* Git */,
 				04AC313D25B201AE009A10E7 /* Brew */,
-				04DD2F4A269E6AED000994E1 /* OAuthSwift */,
 				0495D213269F34F8008B5148 /* Alamofire */,
 				04F582A7269FD4AD003A8403 /* Github */,
+				04D09EFC26A85E8100072702 /* OAuthSwift */,
 			);
 			productName = "KitchenSink (macOS)";
 			productReference = 04A7BD72258E77D8000E55A8 /* KitchenSink.app */;
@@ -646,7 +646,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 11.0;
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.KitchenSink";
 				PRODUCT_NAME = KitchenSink;
 				SDKROOT = macosx;
@@ -672,7 +672,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 11.0;
+				MACOSX_DEPLOYMENT_TARGET = 12.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.KitchenSink";
 				PRODUCT_NAME = KitchenSink;
 				SDKROOT = macosx;
@@ -860,7 +860,7 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = Brew;
 		};
-		04DD2F4A269E6AED000994E1 /* OAuthSwift */ = {
+		04D09EFC26A85E8100072702 /* OAuthSwift */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 04DD2F49269E6AED000994E1 /* XCRemoteSwiftPackageReference "OAuthSwift" */;
 			productName = OAuthSwift;
