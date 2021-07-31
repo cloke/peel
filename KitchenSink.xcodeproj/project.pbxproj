@@ -64,7 +64,7 @@
 		04A7BD65258E77D8000E55A8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		04A7BD6A258E77D8000E55A8 /* KitchenSink.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KitchenSink.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		04A7BD6D258E77D8000E55A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		04A7BD72258E77D8000E55A8 /* KitchenSink.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KitchenSink.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		04A7BD72258E77D8000E55A8 /* Kitchen Sync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Kitchen Sync.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		04A7BD74258E77D8000E55A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		04A7BD75258E77D8000E55A8 /* macOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = macOS.entitlements; sourceTree = "<group>"; };
 		04A7BD7A258E77D8000E55A8 /* Tests iOS.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Tests iOS.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -187,7 +187,7 @@
 			isa = PBXGroup;
 			children = (
 				04A7BD6A258E77D8000E55A8 /* KitchenSink.app */,
-				04A7BD72258E77D8000E55A8 /* KitchenSink.app */,
+				04A7BD72258E77D8000E55A8 /* Kitchen Sync.app */,
 				04A7BD7A258E77D8000E55A8 /* Tests iOS.xctest */,
 				04A7BD85258E77D8000E55A8 /* Tests macOS.xctest */,
 			);
@@ -282,7 +282,7 @@
 				04D09EFC26A85E8100072702 /* OAuthSwift */,
 			);
 			productName = "KitchenSink (macOS)";
-			productReference = 04A7BD72258E77D8000E55A8 /* KitchenSink.app */;
+			productReference = 04A7BD72258E77D8000E55A8 /* Kitchen Sync.app */;
 			productType = "com.apple.product-type.application";
 		};
 		04A7BD79258E77D8000E55A8 /* Tests iOS */ = {
@@ -637,7 +637,7 @@
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = UNX9FJDDXV;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -646,9 +646,9 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.KitchenSink";
-				PRODUCT_NAME = KitchenSink;
+				PRODUCT_NAME = "Kitchen Sync";
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.0;
 			};
@@ -663,7 +663,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = UNX9FJDDXV;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -672,9 +672,9 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				MACOSX_DEPLOYMENT_TARGET = 11.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.KitchenSink";
-				PRODUCT_NAME = KitchenSink;
+				PRODUCT_NAME = "Kitchen Sync";
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.0;
 			};

@@ -38,6 +38,12 @@ struct RepositoryView: View {
           Text("Issues")
             .fontWeight(currentTab == "Issues" ? .bold : .none)
         }
+        Button {
+          currentTab = "Actions"
+        } label: {
+          Text("Actions")
+            .fontWeight(currentTab == "Actions" ? .bold : .none)
+        }
         
       }
       //        .buttonStyle(.borderless)
@@ -48,6 +54,9 @@ struct RepositoryView: View {
         CommitsListView(repository: repository)
       case "Issues":
         IssuesLisView(repository: repository)
+      case "Actions":
+        ActionsListView(repository: repository)
+
       default:
         Text("Something is wrong")
       }
@@ -56,6 +65,33 @@ struct RepositoryView: View {
   }
 }
 
+struct ActionsListView: View {
+  public let repository: Github.Repository
+  
+  @EnvironmentObject var viewModel: Github.ViewModel
+  @State private var actions = [Github.Action]()
+  
+  var body: some View {
+    NavigationView {
+      List(actions) { action in
+        VStack {
+//          NavigationLink(destination: CommitDetailView(commit: commit)) {
+//            CommitsListItemView(commit: commit)
+//          }
+          Text(action.name)
+          Divider()
+        }
+      }
+    }
+    .onAppear {
+      Github.actions(from: repository) {
+        actions = $0.workflow_runs
+      } error: {
+        print($0)
+      }
+    }
+  }
+}
 
 //struct RepositoryView_Previews: PreviewProvider {
 //  static var previews: some View {

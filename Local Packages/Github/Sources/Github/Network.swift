@@ -84,6 +84,19 @@ extension Github {
     load(url: commit.url, success: success, error: error)
   }
   
+  static func actions(from repository: Repository,
+                                 success: ((Github.Runs) -> Void)? = nil,
+                                 error: ((AFError) -> Void)? = nil) {
+    guard let organization = repository.owner.login else {
+            print("Issue generating url for repository")
+            error?(.invalidURL(url: ""))
+            return
+          }
+    let url = "https://api.github.com/repos/\(organization)/\(repository.name)/actions/runs"
+    print(url)
+    load(url: url, success: success, error: error)
+  }
+  
   static func issues(from repository: Repository,
                      success: (([Github.Issue]) -> Void)? = nil,
                      error: ((AFError) -> Void)? = nil) {
