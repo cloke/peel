@@ -46,7 +46,7 @@ struct RepositoryView: View {
         }
         
       }
-      //        .buttonStyle(.borderless)
+      .buttonStyle(.borderless)
       switch currentTab {
       case "Pulls":
         PullRequestsView(organization: organization, repository: repository)
@@ -65,31 +65,27 @@ struct RepositoryView: View {
   }
 }
 
-struct ActionsListView: View {
-  public let repository: Github.Repository
+struct ActionDetailView: View {
+  let action: Github.Action
   
-  @EnvironmentObject var viewModel: Github.ViewModel
-  @State private var actions = [Github.Action]()
+  @State private var workflowJobs = [Github.WorkflowJob]()
   
   var body: some View {
-    NavigationView {
-      List(actions) { action in
-        VStack {
-//          NavigationLink(destination: CommitDetailView(commit: commit)) {
-//            CommitsListItemView(commit: commit)
-//          }
-          Text(action.name)
+    VStack {
+      Text(action.status)
+        .onAppear {
+          Github.workflowJobs(from: action) {
+            workflowJobs = $0.jobs
+          } error: {
+            print($0)
+          }
+        }
+      
+        List(workflowJobs) { workflowJob in
           Divider()
+          Text(workflowJob.name)
         }
       }
-    }
-    .onAppear {
-      Github.actions(from: repository) {
-        actions = $0.workflow_runs
-      } error: {
-        print($0)
-      }
-    }
   }
 }
 

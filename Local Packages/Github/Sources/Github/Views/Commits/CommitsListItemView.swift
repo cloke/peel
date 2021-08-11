@@ -16,7 +16,7 @@ struct CommitsListItemView: View {
         Text(commit.author?.login ?? "Unknown Author")
           .font(.headline)
         Spacer()
-        Text(commit.commit.author.dateFormated)
+        Text(commit.commit.author.dateFormatted)
           .font(.subheadline)
       }
       

@@ -1,0 +1,54 @@
+//
+//  OrganizationPullRequestsListView.swift
+//  OrganizationPullRequestsListView
+//
+//  Created by Cory Loken on 8/6/21.
+//
+
+import SwiftUI
+
+struct OrganizationPullRequestsListView: View {
+  @EnvironmentObject var viewModel: Github.ViewModel
+
+  var pullRequests: [Github.PullRequest]
+
+  var body: some View {
+    List {
+      ForEach(pullRequests.sorted(by: { $0.updated_at > $1.updated_at })) { pullRequest in
+        VStack {
+          HStack {
+            Text(pullRequest.head.repo.name)
+            Text(pullRequest.user.publicName)
+            Text(pullRequest.title)
+            Spacer()
+            Link(destination: URL(string: pullRequest.html_url)!) {
+              Image(systemName: "arrowshape.turn.up.right")
+            }
+          }
+          if viewModel.hasMe(in: pullRequest.requested_reviewers),
+             let url = URL(string: pullRequest.html_url) {
+            HStack {
+              Link("Review Requested of Me", destination: url)
+                .foregroundColor(.yellow)
+              Spacer()
+            }
+          }
+          if pullRequest.requested_reviewers.count > 0 {
+            HStack {
+              Text("Reviewers: \(pullRequest.requested_reviewers.map { $0.publicName }.joined(separator: ", "))")
+              Spacer()
+            }
+          }
+        }
+        Divider()
+      }
+    }
+  }
+}
+
+
+//struct OrganizationPullRequestsListView_Previews: PreviewProvider {
+//    static var previews: some View {
+//      OrganizationPullRequestsListView()
+//    }
+//}

@@ -49,6 +49,8 @@
 - [ ] Download artifacts
 - [ ] Show running actions
 - [ ] Show completed actions
+- [ ] Show status of all actions across organization
+- [ ] Show status of all actions across all organizations
   
 #  TODO GIT
 ### General

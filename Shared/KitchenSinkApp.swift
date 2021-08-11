@@ -9,7 +9,6 @@ import Foundation
 import SwiftUI
 import OAuthSwift
 
-
 @main
 struct KitchenSinkApp: App {
 //  @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate

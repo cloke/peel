@@ -52,18 +52,18 @@ extension Github {
   public struct CommitUser: Codable, Equatable {
     var name: String
     var email: String
-    var date: String
+    var date: String?
     
     // TODO: This code should go into crunchy common as "relative date style". Could it be a modifier? Text("something").relativeDate()
-    var dateFormated: String {
+    var dateFormatted: String {
       let formatter = DateFormatter()
       formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZ"
-      if let date = formatter.date(from: date) {
+      if let date = date, let formatted = formatter.date(from: date) {
         formatter.doesRelativeDateFormatting = true
         formatter.locale = Locale(identifier: "en_US")
         formatter.dateStyle = .long
         formatter.timeStyle = .short
-        return formatter.string(from: date)
+        return formatter.string(from: formatted)
       }
       return ""
     }
@@ -91,7 +91,7 @@ extension Github {
     public var author: CommitUser
     public var committer: CommitUser
     public var message: String
-    public var url: String
+    public var url: String?
     public var commentCount: Int?
     public var verification: CommitVerification?
   }

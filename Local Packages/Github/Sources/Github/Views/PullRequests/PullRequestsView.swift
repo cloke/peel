@@ -13,6 +13,7 @@ struct PullRequestDetailView: View {
   let organization: Github.Organization
   let repository: Github.Repository
   let pullRequest: Github.PullRequest
+  
   var body: some View {
     VStack(alignment: .leading) {
       Text(pullRequest.title)
@@ -64,7 +65,7 @@ public struct PullRequestsView: View {
       }
     }
     .onAppear {
-      Github.loadPullRequests(organization: organization, repository: repository) {
+      Github.pullRequests(from: repository) {
         pullRequests = $0
         state = $0.count == 0 ? .empty : .loaded
       } error: {

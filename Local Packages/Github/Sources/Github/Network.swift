@@ -33,10 +33,18 @@ extension Github {
   
   /// Returns an array of pull requests from the specified repository
   /// - parameter organization: The github organization or personal repository name
-  public static func loadPullRequests(organization: Github.Organization, repository: Github.Repository,
-                                      success: (([Github.PullRequest]) -> Void)? = nil,
-                                      error: ((AFError) -> Void)? = nil) {
-    loadMany(url: "https://api.github.com/repos/\(organization.login)/\(repository.name)/pulls", success: success, error: error)
+  public static func pullRequests(from repository: Github.Repository,
+                                  success: (([Github.PullRequest]) -> Void)? = nil,
+                                  error: ((AFError) -> Void)? = nil) {
+    
+    guard let organization = repository.owner.login else {
+      print("Issue generating url for repository")
+      error?(.invalidURL(url: ""))
+      return
+    }
+    let url = "https://api.github.com/repos/\(organization)/\(repository.name)/pulls"
+    
+    loadMany(url: url, success: success, error: error)
   }
   
   public static func loadRepositories(organization: String,
@@ -84,30 +92,74 @@ extension Github {
     load(url: commit.url, success: success, error: error)
   }
   
+  static func workflowJobs(from action: Action,
+                           success: ((Github.WorkflowRun) -> Void)? = nil,
+                           error: ((AFError) -> Void)? = nil) {
+    load(url: action.jobs_url, success: success, error: error)
+  }
+  
   static func actions(from repository: Repository,
-                                 success: ((Github.Runs) -> Void)? = nil,
-                                 error: ((AFError) -> Void)? = nil) {
+                      success: ((Github.Runs) -> Void)? = nil,
+                      error: ((AFError) -> Void)? = nil) {
     guard let organization = repository.owner.login else {
-            print("Issue generating url for repository")
-            error?(.invalidURL(url: ""))
-            return
-          }
+      print("Issue generating url for repository")
+      error?(.invalidURL(url: ""))
+      return
+    }
     let url = "https://api.github.com/repos/\(organization)/\(repository.name)/actions/runs"
-    print(url)
     load(url: url, success: success, error: error)
   }
+  
+  static func workflows(from repository: Repository,
+                        success: (([Github.Workflow]) -> Void)? = nil,
+                        error: ((AFError) -> Void)? = nil) {
+    guard let organization = repository.owner.login else {
+      print("Issue generating url for repository")
+      error?(.invalidURL(url: ""))
+      return
+    }
+    let url = "https://api.github.com/repos/\(organization)/\(repository.name)/actions/workflows"
+    load(
+      url: url,
+      success: { (workflowContainer: WorkflowContainer) in
+        print(workflowContainer)
+        success?(workflowContainer.workflows)
+      },
+      error: error
+    )
+  }
+  
+  static func runs(from workflow: Workflow,
+                   repository: Repository,
+                   success: (([Github.Action]) -> Void)? = nil,
+                   error: ((AFError) -> Void)? = nil) {
+    guard let organization = repository.owner.login else {
+      print("Issue generating url for repository")
+      error?(.invalidURL(url: ""))
+      return
+    }
+    let url = "https://api.github.com/repos/\(organization)/\(repository.name)/actions/workflows/\(workflow.id)/runs"
+    load(
+      url: url,
+      success: { (workflowContainer: Runs) in
+        success?(workflowContainer.workflow_runs)
+      },
+      error: error
+    )
+  }
+  
   
   static func issues(from repository: Repository,
                      success: (([Github.Issue]) -> Void)? = nil,
                      error: ((AFError) -> Void)? = nil) {
     let url = "\(repository.issues_url[..<repository.issues_url.index(repository.issues_url.endIndex, offsetBy: -9)])"
-
+    
     loadMany(url: url, success: success, error: error)
   }
   
   static func createIssue(for repository: Repository, title: String, body: String, owner: String,
-                     success: ((Github.Issue) -> Void)? = nil,
-                     error: ((AFError) -> Void)? = nil) {
+                          success: ((Github.Issue) -> Void)? = nil,
+                          error: ((AFError) -> Void)? = nil) {
     let json = [
       "title": title,
       "body": body,
@@ -143,6 +195,8 @@ extension Github {
           print(value)
           success?(value)
         case .failure(let err):
+          print("•••••••••")
+          print(url)
           print(err)
           error?(err)
         }
@@ -202,13 +256,13 @@ extension Github {
   
   public static func reauthorize(success: (() -> Void)? = nil, error: (() -> Void)? = nil)  {
     config.githubToken = ""
-//    authorize(
-//      success: {
-//        success?()
-//      },
-//      error: {
-//        error?()
-//      }
-//    )
+    //    authorize(
+    //      success: {
+    //        success?()
+    //      },
+    //      error: {
+    //        error?()
+    //      }
+    //    )
   }
 }

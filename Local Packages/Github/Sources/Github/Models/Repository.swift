@@ -61,33 +61,33 @@ extension Github {
     public var labels_url: String
     public var releases_url: String
     public var deployments_url: String
-    public var created_at: String
-    public var updated_at: String
-    public var pushed_at: String
-    public var git_url: String
-    public var ssh_url: String
-    public var clone_url: String
-    public var svn_url: String
+    public var created_at: String?
+    public var updated_at: String?
+    public var pushed_at: String?
+    public var git_url: String?
+    public var ssh_url: String?
+    public var clone_url: String?
+    public var svn_url: String?
     public var homepage: String?
-    public var size: Int
-    public var stargazers_count: Int
-    public var watchers_count: Int
+    public var size: Int?
+    public var stargazers_count: Int?
+    public var watchers_count: Int?
     public var language: String?
-    public var has_issues: Bool
-    public var has_projects: Bool
-    public var has_downloads: Bool
-    public var has_wiki: Bool
-    public var has_pages: Bool
-    public var forks_count: Int
+    public var has_issues: Bool?
+    public var has_projects: Bool?
+    public var has_downloads: Bool?
+    public var has_wiki: Bool?
+    public var has_pages: Bool?
+    public var forks_count: Int?
     public var mirror_url: String?
-    public var archived: Bool
-    public var disabled: Bool
-    public var open_issues_count: Int
+    public var archived: Bool?
+    public var disabled: Bool?
+    public var open_issues_count: Int?
     public var license: License?
-    public var forks: Int
-    public var open_issues: Int
-    public var watchers: Int
-    public var default_branch: String
+    public var forks: Int?
+    public var open_issues: Int?
+    public var watchers: Int?
+    public var default_branch: String?
     public var permissions: Permissions?
   }
 }
