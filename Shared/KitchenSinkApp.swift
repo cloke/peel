@@ -1,5 +1,5 @@
 //
-//  KitchenSinkApp.swift
+//  KitchenSyncApp.swift
 //  Shared
 //
 //  Created by Cory Loken on 12/19/20.
@@ -10,7 +10,7 @@ import SwiftUI
 import OAuthSwift
 
 @main
-struct KitchenSinkApp: App {
+struct KitchenSyncApp: App {
 //  @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
   @Environment(\.openURL) var openURL
   

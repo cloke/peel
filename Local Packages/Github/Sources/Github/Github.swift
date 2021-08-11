@@ -140,7 +140,7 @@ struct ProfileNameView: View {
   
   var body: some View {
     HStack {
-      if #available(macOSApplicationExtension 12.0, *) {
+      if #available(macOS 12.0, *) {
         AsyncImage(url: URL(string: me.avatar_url)) { image in
           image.resizable()
         } placeholder: {

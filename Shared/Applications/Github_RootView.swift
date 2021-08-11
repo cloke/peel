@@ -1,6 +1,6 @@
 //
 //  Github_RootView.swift
-//  KitchenSink (macOS)
+//  KitchenSync (macOS)
 //
 //  Created by Cory Loken on 7/14/21.
 //

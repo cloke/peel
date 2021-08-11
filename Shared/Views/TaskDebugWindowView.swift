@@ -1,6 +1,6 @@
 //
 //  DebugWindowView.swift
-//  KitchenSink
+//  KitchenSync
 //
 //  Created by Cory Loken on 1/1/21.
 //

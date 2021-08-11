@@ -1,6 +1,6 @@
 //
 //  ApplicationBrewResultView.swift
-//  KitchenSink
+//  KitchenSync
 //
 //  Created by Cory Loken on 12/20/20.
 //

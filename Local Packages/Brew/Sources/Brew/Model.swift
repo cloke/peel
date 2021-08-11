@@ -1,6 +1,6 @@
 //
 //  Model.swift
-//  KitchenSink (iOS)
+//  KitchenSync (iOS)
 //
 //  Created by Cory Loken on 12/19/20.
 //

@@ -1,6 +1,6 @@
 //
 //  Color.swift
-//  KitchenSink (macOS)
+//  KitchenSync (macOS)
 //
 //  Created by Cory Loken on 2/22/21.
 //

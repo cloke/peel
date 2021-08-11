@@ -76,7 +76,7 @@
 		04AC311E25B20085009A10E7 /* Git_RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Git_RootView.swift; sourceTree = "<group>"; };
 		04AC312825B200DC009A10E7 /* Brew */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Brew; sourceTree = "<group>"; };
 		04F4F93B25903A72005B30B4 /* Brew_RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brew_RootView.swift; sourceTree = "<group>"; };
-		04F4F9772596AAD7005B30B4 /* KitchenSink.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = KitchenSink.entitlements; sourceTree = "<group>"; };
+		04F4F9772596AAD7005B30B4 /* KitchenSync.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = KitchenSync.entitlements; sourceTree = "<group>"; };
 		04F582A6269FD388003A8403 /* Github */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Github; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -158,7 +158,7 @@
 			children = (
 				043A532125998D1E00980BE2 /* README.md */,
 				04A7BD62258E77D7000E55A8 /* Shared */,
-				04F4F9772596AAD7005B30B4 /* KitchenSink.entitlements */,
+				04F4F9772596AAD7005B30B4 /* KitchenSync.entitlements */,
 				0467867A25A0DB9000D5E87F /* Local Packages */,
 				04A7BD6C258E77D8000E55A8 /* iOS */,
 				04A7BD73258E77D8000E55A8 /* macOS */,
@@ -261,9 +261,9 @@
 			productReference = 04A7BD6A258E77D8000E55A8 /* KitchenSink.app */;
 			productType = "com.apple.product-type.application";
 		};
-		04A7BD71258E77D8000E55A8 /* KitchenSink (macOS) */ = {
+		04A7BD71258E77D8000E55A8 /* KitchenSync (macOS) */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 04A7BD97258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "KitchenSink (macOS)" */;
+			buildConfigurationList = 04A7BD97258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "KitchenSync (macOS)" */;
 			buildPhases = (
 				04A7BD6E258E77D8000E55A8 /* Sources */,
 				04A7BD6F258E77D8000E55A8 /* Frameworks */,
@@ -273,7 +273,7 @@
 			);
 			dependencies = (
 			);
-			name = "KitchenSink (macOS)";
+			name = "KitchenSync (macOS)";
 			packageProductDependencies = (
 				042AE13E25A0E17700B905E4 /* Git */,
 				04AC313D25B201AE009A10E7 /* Brew */,
@@ -346,7 +346,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 04A7BD61258E77D7000E55A8 /* Build configuration list for PBXProject "KitchenSynk" */;
+			buildConfigurationList = 04A7BD61258E77D7000E55A8 /* Build configuration list for PBXProject "KitchenSync" */;
 			compatibilityVersion = "Xcode 12.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -364,7 +364,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				04A7BD71258E77D8000E55A8 /* KitchenSink (macOS) */,
+				04A7BD71258E77D8000E55A8 /* KitchenSync (macOS) */,
 				04A7BD69258E77D8000E55A8 /* KitchenSink (iOS) */,
 				04A7BD79258E77D8000E55A8 /* Tests iOS */,
 				04A7BD84258E77D8000E55A8 /* Tests macOS */,
@@ -460,7 +460,7 @@
 		};
 		04A7BD87258E77D8000E55A8 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 04A7BD71258E77D8000E55A8 /* KitchenSink (macOS) */;
+			target = 04A7BD71258E77D8000E55A8 /* KitchenSync (macOS) */;
 			targetProxy = 04A7BD86258E77D8000E55A8 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -772,7 +772,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		04A7BD61258E77D7000E55A8 /* Build configuration list for PBXProject "KitchenSynk" */ = {
+		04A7BD61258E77D7000E55A8 /* Build configuration list for PBXProject "KitchenSync" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				04A7BD92258E77D8000E55A8 /* Debug */,
@@ -790,7 +790,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		04A7BD97258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "KitchenSink (macOS)" */ = {
+		04A7BD97258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "KitchenSync (macOS)" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				04A7BD98258E77D8000E55A8 /* Debug */,

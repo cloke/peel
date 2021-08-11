@@ -1,6 +1,6 @@
 //
 //  Git_BranchListView.swift
-//  KitchenSink
+//  KitchenSync
 //
 //  Created by Cory Loken on 12/26/20.
 //

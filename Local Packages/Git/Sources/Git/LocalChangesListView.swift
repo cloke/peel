@@ -1,6 +1,6 @@
 //
 //  LocalChangesListView.swift
-//  KitchenSink
+//  KitchenSync
 //
 //  Created by Cory Loken on 12/27/20.
 //
