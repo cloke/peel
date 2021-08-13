@@ -46,7 +46,7 @@ struct RepositoryView: View {
         }
         
       }
-      .buttonStyle(.borderless)
+//      .buttonStyle(.borderless)
       switch currentTab {
       case "Pulls":
         PullRequestsView(organization: organization, repository: repository)
@@ -62,30 +62,6 @@ struct RepositoryView: View {
       }
     }
     Spacer()
-  }
-}
-
-struct ActionDetailView: View {
-  let action: Github.Action
-  
-  @State private var workflowJobs = [Github.WorkflowJob]()
-  
-  var body: some View {
-    VStack {
-      Text(action.status)
-        .onAppear {
-          Github.workflowJobs(from: action) {
-            workflowJobs = $0.jobs
-          } error: {
-            print($0)
-          }
-        }
-      
-        List(workflowJobs) { workflowJob in
-          Divider()
-          Text(workflowJob.name)
-        }
-      }
   }
 }
 

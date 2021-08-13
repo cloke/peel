@@ -15,9 +15,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "04A7BD69258E77D8000E55A8"
-               BuildableName = "KitchenSink.app"
-               BlueprintName = "KitchenSink (iOS)"
-               ReferencedContainer = "container:KitchenSink.xcodeproj">
+               BuildableName = "KitchenSync.app"
+               BlueprintName = "KitchenSync (iOS)"
+               ReferencedContainer = "container:KitchenSync.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -28,16 +28,6 @@
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES">
       <Testables>
-         <TestableReference
-            skipped = "NO">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "04A7BD79258E77D8000E55A8"
-               BuildableName = "Tests iOS.xctest"
-               BlueprintName = "Tests iOS"
-               ReferencedContainer = "container:KitchenSink.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction
@@ -55,9 +45,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "04A7BD69258E77D8000E55A8"
-            BuildableName = "KitchenSink.app"
-            BlueprintName = "KitchenSink (iOS)"
-            ReferencedContainer = "container:KitchenSink.xcodeproj">
+            BuildableName = "KitchenSync.app"
+            BlueprintName = "KitchenSync (iOS)"
+            ReferencedContainer = "container:KitchenSync.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -67,16 +57,15 @@
       savedToolIdentifier = ""
       useCustomWorkingDirectory = "NO"
       debugDocumentVersioning = "YES">
-      <BuildableProductRunnable
-         runnableDebuggingMode = "0">
+      <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "04A7BD69258E77D8000E55A8"
-            BuildableName = "KitchenSink.app"
-            BlueprintName = "KitchenSink (iOS)"
-            ReferencedContainer = "container:KitchenSink.xcodeproj">
+            BuildableName = "KitchenSync.app"
+            BlueprintName = "KitchenSync (iOS)"
+            ReferencedContainer = "container:KitchenSync.xcodeproj">
          </BuildableReference>
-      </BuildableProductRunnable>
+      </MacroExpansion>
    </ProfileAction>
    <AnalyzeAction
       buildConfiguration = "Debug">

@@ -7,20 +7,21 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		042AE13F25A0E17700B905E4 /* Git in Frameworks */ = {isa = PBXBuildFile; productRef = 042AE13E25A0E17700B905E4 /* Git */; };
-		043A530F2599589B00980BE2 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043A530E2599589B00980BE2 /* SettingsView.swift */; };
+		0409092426C5C7C3008D5A52 /* Alamofire in Frameworks */ = {isa = PBXBuildFile; productRef = 0409092326C5C7C3008D5A52 /* Alamofire */; };
+		041CB2B926C57C1D0028FFF0 /* Git in Frameworks */ = {isa = PBXBuildFile; productRef = 041CB2B826C57C1D0028FFF0 /* Git */; };
 		043A53102599589B00980BE2 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043A530E2599589B00980BE2 /* SettingsView.swift */; };
-		04678655259FC75700D5E87F /* CommonToolbarItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04678654259FC75700D5E87F /* CommonToolbarItems.swift */; };
 		04678656259FC75700D5E87F /* CommonToolbarItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04678654259FC75700D5E87F /* CommonToolbarItems.swift */; };
-		0467865D259FEEF100D5E87F /* TaskDebugWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0467865C259FEEF100D5E87F /* TaskDebugWindowView.swift */; };
 		0467865E259FEEF100D5E87F /* TaskDebugWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0467865C259FEEF100D5E87F /* TaskDebugWindowView.swift */; };
+		046D40E426C56BBB003715AF /* OAuthSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 046D40E326C56BBB003715AF /* OAuthSwift */; };
+		046D40E526C56C1F003715AF /* Github_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0495D215269F5277008B5148 /* Github_RootView.swift */; };
+		046D40E726C56C5B003715AF /* Github in Frameworks */ = {isa = PBXBuildFile; productRef = 046D40E626C56C5B003715AF /* Github */; };
 		0495D214269F34F8008B5148 /* Alamofire in Frameworks */ = {isa = PBXBuildFile; productRef = 0495D213269F34F8008B5148 /* Alamofire */; };
 		0495D216269F5277008B5148 /* Github_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0495D215269F5277008B5148 /* Github_RootView.swift */; };
 		04A3CA2E25E46BA700EB520C /* Color.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A3CA2D25E46BA700EB520C /* Color.swift */; };
 		04A7BD7F258E77D8000E55A8 /* Tests_iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD7E258E77D8000E55A8 /* Tests_iOS.swift */; };
 		04A7BD8A258E77D8000E55A8 /* Tests_macOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */; };
-		04A7BD8C258E77D8000E55A8 /* KitchenSinkApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD63258E77D7000E55A8 /* KitchenSinkApp.swift */; };
-		04A7BD8D258E77D8000E55A8 /* KitchenSinkApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD63258E77D7000E55A8 /* KitchenSinkApp.swift */; };
+		04A7BD8C258E77D8000E55A8 /* KitchenSyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD63258E77D7000E55A8 /* KitchenSyncApp.swift */; };
+		04A7BD8D258E77D8000E55A8 /* KitchenSyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD63258E77D7000E55A8 /* KitchenSyncApp.swift */; };
 		04A7BD8E258E77D8000E55A8 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD64258E77D7000E55A8 /* ContentView.swift */; };
 		04A7BD8F258E77D8000E55A8 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD64258E77D7000E55A8 /* ContentView.swift */; };
 		04A7BD90258E77D8000E55A8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 04A7BD65258E77D8000E55A8 /* Assets.xcassets */; };
@@ -59,10 +60,10 @@
 		0473C0AE26A24FC100A8FE23 /* CrunchyCommon */ = {isa = PBXFileReference; lastKnownFileType = folder; path = CrunchyCommon; sourceTree = "<group>"; };
 		0495D215269F5277008B5148 /* Github_RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Github_RootView.swift; sourceTree = "<group>"; };
 		04A3CA2D25E46BA700EB520C /* Color.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Color.swift; sourceTree = "<group>"; };
-		04A7BD63258E77D7000E55A8 /* KitchenSinkApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KitchenSinkApp.swift; sourceTree = "<group>"; };
+		04A7BD63258E77D7000E55A8 /* KitchenSyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KitchenSyncApp.swift; sourceTree = "<group>"; };
 		04A7BD64258E77D7000E55A8 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		04A7BD65258E77D8000E55A8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		04A7BD6A258E77D8000E55A8 /* KitchenSink.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KitchenSink.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		04A7BD6A258E77D8000E55A8 /* KitchenSync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KitchenSync.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		04A7BD6D258E77D8000E55A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		04A7BD72258E77D8000E55A8 /* Kitchen Sync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Kitchen Sync.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		04A7BD74258E77D8000E55A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -85,6 +86,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0409092426C5C7C3008D5A52 /* Alamofire in Frameworks */,
+				046D40E426C56BBB003715AF /* OAuthSwift in Frameworks */,
+				046D40E726C56C5B003715AF /* Github in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -93,10 +97,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				04F582A8269FD4AD003A8403 /* Github in Frameworks */,
+				041CB2B926C57C1D0028FFF0 /* Git in Frameworks */,
 				04AC313E25B201AE009A10E7 /* Brew in Frameworks */,
 				04D09EFD26A85E8100072702 /* OAuthSwift in Frameworks */,
 				0495D214269F34F8008B5148 /* Alamofire in Frameworks */,
-				042AE13F25A0E17700B905E4 /* Git in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -177,7 +181,7 @@
 				04A3CA2C25E46B9800EB520C /* Extensions */,
 				04678654259FC75700D5E87F /* CommonToolbarItems.swift */,
 				04A7BD64258E77D7000E55A8 /* ContentView.swift */,
-				04A7BD63258E77D7000E55A8 /* KitchenSinkApp.swift */,
+				04A7BD63258E77D7000E55A8 /* KitchenSyncApp.swift */,
 				04A7BD65258E77D8000E55A8 /* Assets.xcassets */,
 			);
 			path = Shared;
@@ -186,7 +190,7 @@
 		04A7BD6B258E77D8000E55A8 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				04A7BD6A258E77D8000E55A8 /* KitchenSink.app */,
+				04A7BD6A258E77D8000E55A8 /* KitchenSync.app */,
 				04A7BD72258E77D8000E55A8 /* Kitchen Sync.app */,
 				04A7BD7A258E77D8000E55A8 /* Tests iOS.xctest */,
 				04A7BD85258E77D8000E55A8 /* Tests macOS.xctest */,
@@ -242,9 +246,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		04A7BD69258E77D8000E55A8 /* KitchenSink (iOS) */ = {
+		04A7BD69258E77D8000E55A8 /* KitchenSync (iOS) */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 04A7BD94258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "KitchenSink (iOS)" */;
+			buildConfigurationList = 04A7BD94258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "KitchenSync (iOS)" */;
 			buildPhases = (
 				04A7BD66258E77D8000E55A8 /* Sources */,
 				04A7BD67258E77D8000E55A8 /* Frameworks */,
@@ -254,11 +258,14 @@
 			);
 			dependencies = (
 			);
-			name = "KitchenSink (iOS)";
+			name = "KitchenSync (iOS)";
 			packageProductDependencies = (
+				046D40E326C56BBB003715AF /* OAuthSwift */,
+				046D40E626C56C5B003715AF /* Github */,
+				0409092326C5C7C3008D5A52 /* Alamofire */,
 			);
 			productName = "KitchenSink (iOS)";
-			productReference = 04A7BD6A258E77D8000E55A8 /* KitchenSink.app */;
+			productReference = 04A7BD6A258E77D8000E55A8 /* KitchenSync.app */;
 			productType = "com.apple.product-type.application";
 		};
 		04A7BD71258E77D8000E55A8 /* KitchenSync (macOS) */ = {
@@ -275,11 +282,11 @@
 			);
 			name = "KitchenSync (macOS)";
 			packageProductDependencies = (
-				042AE13E25A0E17700B905E4 /* Git */,
 				04AC313D25B201AE009A10E7 /* Brew */,
 				0495D213269F34F8008B5148 /* Alamofire */,
 				04F582A7269FD4AD003A8403 /* Github */,
 				04D09EFC26A85E8100072702 /* OAuthSwift */,
+				041CB2B826C57C1D0028FFF0 /* Git */,
 			);
 			productName = "KitchenSink (macOS)";
 			productReference = 04A7BD72258E77D8000E55A8 /* Kitchen Sync.app */;
@@ -365,7 +372,7 @@
 			projectRoot = "";
 			targets = (
 				04A7BD71258E77D8000E55A8 /* KitchenSync (macOS) */,
-				04A7BD69258E77D8000E55A8 /* KitchenSink (iOS) */,
+				04A7BD69258E77D8000E55A8 /* KitchenSync (iOS) */,
 				04A7BD79258E77D8000E55A8 /* Tests iOS */,
 				04A7BD84258E77D8000E55A8 /* Tests macOS */,
 			);
@@ -411,10 +418,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				04A7BD8E258E77D8000E55A8 /* ContentView.swift in Sources */,
-				04A7BD8C258E77D8000E55A8 /* KitchenSinkApp.swift in Sources */,
-				043A530F2599589B00980BE2 /* SettingsView.swift in Sources */,
-				04678655259FC75700D5E87F /* CommonToolbarItems.swift in Sources */,
-				0467865D259FEEF100D5E87F /* TaskDebugWindowView.swift in Sources */,
+				046D40E526C56C1F003715AF /* Github_RootView.swift in Sources */,
+				04A7BD8C258E77D8000E55A8 /* KitchenSyncApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -423,7 +428,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				04A7BD8F258E77D8000E55A8 /* ContentView.swift in Sources */,
-				04A7BD8D258E77D8000E55A8 /* KitchenSinkApp.swift in Sources */,
+				04A7BD8D258E77D8000E55A8 /* KitchenSyncApp.swift in Sources */,
 				0495D216269F5277008B5148 /* Github_RootView.swift in Sources */,
 				043A53102599589B00980BE2 /* SettingsView.swift in Sources */,
 				04678656259FC75700D5E87F /* CommonToolbarItems.swift in Sources */,
@@ -455,7 +460,7 @@
 /* Begin PBXTargetDependency section */
 		04A7BD7C258E77D8000E55A8 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 04A7BD69258E77D8000E55A8 /* KitchenSink (iOS) */;
+			target = 04A7BD69258E77D8000E55A8 /* KitchenSync (iOS) */;
 			targetProxy = 04A7BD7B258E77D8000E55A8 /* PBXContainerItemProxy */;
 		};
 		04A7BD87258E77D8000E55A8 /* PBXTargetDependency */ = {
@@ -582,8 +587,9 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = KitchenSink.entitlements;
+				CODE_SIGN_ENTITLEMENTS = KitchenSync.entitlements;
 				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = UNX9FJDDXV;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = iOS/Info.plist;
@@ -593,12 +599,12 @@
 					"@executable_path/Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.KitchenSink";
-				PRODUCT_NAME = KitchenSink;
+				PRODUCT_NAME = KitchenSync;
 				SDKROOT = iphoneos;
-				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,6";
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
@@ -607,8 +613,9 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = KitchenSink.entitlements;
+				CODE_SIGN_ENTITLEMENTS = KitchenSync.entitlements;
 				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 3;
 				DEVELOPMENT_TEAM = UNX9FJDDXV;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = iOS/Info.plist;
@@ -618,12 +625,12 @@
 					"@executable_path/Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.KitchenSink";
-				PRODUCT_NAME = KitchenSink;
+				PRODUCT_NAME = KitchenSync;
 				SDKROOT = iphoneos;
-				SUPPORTS_MACCATALYST = YES;
+				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,6";
+				TARGETED_DEVICE_FAMILY = "1,2";
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
@@ -781,7 +788,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		04A7BD94258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "KitchenSink (iOS)" */ = {
+		04A7BD94258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "KitchenSync (iOS)" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				04A7BD95258E77D8000E55A8 /* Debug */,
@@ -847,9 +854,23 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		042AE13E25A0E17700B905E4 /* Git */ = {
+		0409092326C5C7C3008D5A52 /* Alamofire */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 0495D212269F34F8008B5148 /* XCRemoteSwiftPackageReference "Alamofire" */;
+			productName = Alamofire;
+		};
+		041CB2B826C57C1D0028FFF0 /* Git */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = Git;
+		};
+		046D40E326C56BBB003715AF /* OAuthSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 04DD2F49269E6AED000994E1 /* XCRemoteSwiftPackageReference "OAuthSwift" */;
+			productName = OAuthSwift;
+		};
+		046D40E626C56C5B003715AF /* Github */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Github;
 		};
 		0495D213269F34F8008B5148 /* Alamofire */ = {
 			isa = XCSwiftPackageProductDependency;

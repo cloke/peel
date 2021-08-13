@@ -40,7 +40,11 @@ struct OrganizationPullRequestsListView: View {
             }
           }
         }
-        Divider()
+        #if os(macOS)
+        Divider() // Weird bug, but compiler times out without something here
+        #else
+        EmptyView()
+        #endif
       }
     }
   }

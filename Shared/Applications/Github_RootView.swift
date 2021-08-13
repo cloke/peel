@@ -38,7 +38,9 @@ struct Github_RootView: View {
     }
     .frame(idealHeight: 400)
     .toolbar {
+      #if os(macOS)
       ToolSelectionToolbar()
+      #endif
       ToolbarItem(placement: .navigation) {
         Menu {
           Button {

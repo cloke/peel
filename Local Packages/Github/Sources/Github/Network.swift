@@ -188,15 +188,13 @@ extension Github {
   private static func load<T: Codable>(url: String,
                                        success: ((T) -> Void)? = nil,
                                        error: ((AFError) -> Void)? = nil) {
+    print("Load url:", url)
     AF.request(URL(string: url)!, method: .get, headers: headers)
       .responseDecodable { (response: DataResponse<T, AFError>) in
         switch response.result {
         case .success(let value):
-          print(value)
           success?(value)
         case .failure(let err):
-          print("•••••••••")
-          print(url)
           print(err)
           error?(err)
         }
@@ -207,11 +205,11 @@ extension Github {
   private static func loadMany<T: Codable>(url: String,
                                            success: (([T]) -> Void)? = nil,
                                            error: ((AFError) -> Void)? = nil) {
+    print("Load url:", url)
     AF.request(URL(string: url)!, method: .get, headers: headers)
       .responseDecodable { (response: DataResponse<[T], AFError>) in
         switch response.result {
         case .success(let value):
-          print(value)
           success?(value)
         case .failure(let err):
           print(err)

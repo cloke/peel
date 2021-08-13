@@ -97,8 +97,12 @@ extension Color {
     typealias NativeColor = NSColor
     #endif
     
+    #if os(iOS)
+    return false
+    #else
     NativeColor(self).usingColorSpace(.extendedSRGB)?.getRed(&r, green: &g, blue: &b, alpha: &a)
     let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
     return  lum < 0.50
+    #endif
   }
 }

@@ -5,6 +5,7 @@
 //  Created by Cory Loken on 5/14/21.
 //
 
+#if os(macOS)
 import TaskRunner
 
 public struct Commands: TaskRunnerProtocol {
@@ -25,3 +26,4 @@ public struct Commands: TaskRunnerProtocol {
     }
   }
 }
+#endif

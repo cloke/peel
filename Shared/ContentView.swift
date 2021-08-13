@@ -6,13 +6,9 @@
 //
 
 import SwiftUI
+#if os(macOS)
 import Git
-
-enum CurrentTool: String, Identifiable, CaseIterable {
-  case brew = "brew", git = "git", github = "github"
-  
-  var id: String { rawValue }
-}
+#endif
 
 struct Command {
   static let BrewInstalled = ["list", "--formula"]
@@ -21,6 +17,21 @@ struct Command {
   static let BrewInstall = ["install"]
   
   static let GitBranch = "branch"
+}
+
+
+#if os(iOS)
+struct ContentView: View {
+  var body: some View {
+    NavigationView {
+      Github_RootView()
+    }
+  }
+}
+#else
+enum CurrentTool: String, Identifiable, CaseIterable {
+  case brew = "brew", git = "git", github = "github"
+  var id: String { rawValue }
 }
 
 struct ContentView: View {
@@ -38,7 +49,7 @@ struct ContentView: View {
     }
   }
 }
-
+#endif
 struct ContentView_Previews: PreviewProvider {
   static var previews: some View {
     ContentView()

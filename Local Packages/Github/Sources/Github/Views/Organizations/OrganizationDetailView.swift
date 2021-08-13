@@ -32,9 +32,10 @@ struct ActionConclusionView: View {
 }
 
 struct OrganizationDetailView: View {
+  @EnvironmentObject var viewModel: Github.ViewModel
+
   let organization: Github.Organization
   
-  @EnvironmentObject var viewModel: Github.ViewModel
   @State private var members = [Github.User]()
   @State private var repositories = [Github.Repository]()
   @State private var pullRequests = [Github.PullRequest]()
@@ -105,6 +106,7 @@ struct OrganizationDetailView: View {
       }
       
       OrganizationPullRequestsListView(pullRequests: pullRequests)
+        .environmentObject(viewModel)
     }
     .onAppear {
       Github.members(from: organization) {
