@@ -18,6 +18,7 @@ let package = Package(
     .package(name: "Alamofire", url: "https://github.com/Alamofire/Alamofire.git", from: "5.4.3"),
     .package(name: "OAuthSwift", url: "https://github.com/OAuthSwift/OAuthSwift.git", .upToNextMajor(from: "2.2.0")),
     .package(name: "CrunchyCommon", path: "../CrunchyCommon"),
+    .package(name: "Git", path: "../Git"),
     .package(name: "MarkdownUI", url: "https://github.com/gonzalezreal/MarkdownUI", from: "0.0.0"),
   ],
   targets: [

@@ -8,6 +8,7 @@
 import SwiftUI
 import CrunchyCommon
 
+#if os(macOS)
 struct FileListItemView: View {
   @EnvironmentObject var repository: Model.Repository
   var path: String
@@ -106,6 +107,7 @@ struct FileListView: View {
     }
   }
 }
+#endif
 
 //struct FileListView_Previews: PreviewProvider {
 //  static var previews: some View {

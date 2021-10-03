@@ -7,6 +7,7 @@
 
 import SwiftUI
 
+#if os(macOS)
 struct BranchListItemView: View {
   @EnvironmentObject var repository: Model.Repository
   @State private var upDown = ""
@@ -143,3 +144,4 @@ struct BranchListView_Previews: PreviewProvider {
     BranchListView(branches: [], label: "Test")
   }
 }
+#endif

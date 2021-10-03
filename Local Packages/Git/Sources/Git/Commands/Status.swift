@@ -8,6 +8,7 @@
 /// Functions that are defined in the git reference
 /// https://git-scm.com/docs/git-status
 
+#if os(macOS)
 extension Commands {
   static func status(on repository: Model.Repository, callback: (([FileDescriptor]) -> ())? = nil) {
     try? Commands.run(.git, command: ["-C", repository.path, "--no-optional-locks", "status", "--porcelain=2"]) {
@@ -45,3 +46,4 @@ extension Commands {
     }
   }
 }
+#endif

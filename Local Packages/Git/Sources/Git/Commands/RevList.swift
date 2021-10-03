@@ -8,6 +8,7 @@
 /// Functions that are defined in the git reference
 /// https://git-scm.com/docs/git-log
 
+#if os(macOS)
 extension Commands {
   static func revList(repository: Model.Repository, branchA: String, branchB: String, callback: ((Int, Int) -> ())? = nil) {
     try? Commands.run(.git, command: ["-C", repository.path, "rev-list", "--left-right", "--count", "\(branchA)...\(branchB)"]) {
@@ -22,3 +23,4 @@ extension Commands {
     }
   }
 }
+#endif

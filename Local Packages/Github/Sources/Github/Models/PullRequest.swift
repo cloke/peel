@@ -30,7 +30,7 @@ extension Github {
     public var locked: Bool
     public var title: String
     public var user: User
-    public var body: String
+    public var body: String?
     public var created_at: String
     public var updated_at: String
     public var closed_at: String?

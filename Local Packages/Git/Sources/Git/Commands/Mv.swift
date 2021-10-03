@@ -8,6 +8,8 @@
 /// Functions that are defined in the git reference
 /// https://git-scm.com/docs/git-mv
 
+#if os(macOS)
 extension Commands {
   /// Placeholder for git mv
 }
+#endif

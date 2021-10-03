@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0409092426C5C7C3008D5A52 /* Alamofire in Frameworks */ = {isa = PBXBuildFile; productRef = 0409092326C5C7C3008D5A52 /* Alamofire */; };
+		040AAB7E26CB385800DE1CBF /* Git in Frameworks */ = {isa = PBXBuildFile; productRef = 040AAB7D26CB385800DE1CBF /* Git */; };
 		041CB2B926C57C1D0028FFF0 /* Git in Frameworks */ = {isa = PBXBuildFile; productRef = 041CB2B826C57C1D0028FFF0 /* Git */; };
 		043A53102599589B00980BE2 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043A530E2599589B00980BE2 /* SettingsView.swift */; };
 		04678656259FC75700D5E87F /* CommonToolbarItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04678654259FC75700D5E87F /* CommonToolbarItems.swift */; };
@@ -28,6 +29,7 @@
 		04A7BD91258E77D8000E55A8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 04A7BD65258E77D8000E55A8 /* Assets.xcassets */; };
 		04AC312325B200A2009A10E7 /* Git_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04AC311E25B20085009A10E7 /* Git_RootView.swift */; };
 		04AC313E25B201AE009A10E7 /* Brew in Frameworks */ = {isa = PBXBuildFile; productRef = 04AC313D25B201AE009A10E7 /* Brew */; };
+		04C823C226CB3B22005748D2 /* Kingfisher in Frameworks */ = {isa = PBXBuildFile; productRef = 04C823C126CB3B22005748D2 /* Kingfisher */; };
 		04D09EFD26A85E8100072702 /* OAuthSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 04D09EFC26A85E8100072702 /* OAuthSwift */; };
 		04F4F93D25903A72005B30B4 /* Brew_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F4F93B25903A72005B30B4 /* Brew_RootView.swift */; };
 		04F582A8269FD4AD003A8403 /* Github in Frameworks */ = {isa = PBXBuildFile; productRef = 04F582A7269FD4AD003A8403 /* Github */; };
@@ -89,6 +91,8 @@
 				0409092426C5C7C3008D5A52 /* Alamofire in Frameworks */,
 				046D40E426C56BBB003715AF /* OAuthSwift in Frameworks */,
 				046D40E726C56C5B003715AF /* Github in Frameworks */,
+				040AAB7E26CB385800DE1CBF /* Git in Frameworks */,
+				04C823C226CB3B22005748D2 /* Kingfisher in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -263,6 +267,8 @@
 				046D40E326C56BBB003715AF /* OAuthSwift */,
 				046D40E626C56C5B003715AF /* Github */,
 				0409092326C5C7C3008D5A52 /* Alamofire */,
+				040AAB7D26CB385800DE1CBF /* Git */,
+				04C823C126CB3B22005748D2 /* Kingfisher */,
 			);
 			productName = "KitchenSink (iOS)";
 			productReference = 04A7BD6A258E77D8000E55A8 /* KitchenSync.app */;
@@ -365,7 +371,7 @@
 			packageReferences = (
 				04DD2F49269E6AED000994E1 /* XCRemoteSwiftPackageReference "OAuthSwift" */,
 				0495D212269F34F8008B5148 /* XCRemoteSwiftPackageReference "Alamofire" */,
-				04D7336326A0C4250039EC0B /* XCRemoteSwiftPackageReference "Kingfisher" */,
+				04C823C026CB3B22005748D2 /* XCRemoteSwiftPackageReference "Kingfisher" */,
 			);
 			productRefGroup = 04A7BD6B258E77D8000E55A8 /* Products */;
 			projectDirPath = "";
@@ -589,11 +595,11 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = KitchenSync.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = UNX9FJDDXV;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = iOS/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -615,11 +621,11 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = KitchenSync.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = UNX9FJDDXV;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = iOS/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -835,12 +841,12 @@
 				minimumVersion = 5.4.3;
 			};
 		};
-		04D7336326A0C4250039EC0B /* XCRemoteSwiftPackageReference "Kingfisher" */ = {
+		04C823C026CB3B22005748D2 /* XCRemoteSwiftPackageReference "Kingfisher" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/onevcat/Kingfisher";
+			repositoryURL = "https://github.com/onevcat/Kingfisher.git";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 6.0.0;
+				minimumVersion = 6.3.1;
 			};
 		};
 		04DD2F49269E6AED000994E1 /* XCRemoteSwiftPackageReference "OAuthSwift" */ = {
@@ -858,6 +864,10 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 0495D212269F34F8008B5148 /* XCRemoteSwiftPackageReference "Alamofire" */;
 			productName = Alamofire;
+		};
+		040AAB7D26CB385800DE1CBF /* Git */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Git;
 		};
 		041CB2B826C57C1D0028FFF0 /* Git */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -880,6 +890,11 @@
 		04AC313D25B201AE009A10E7 /* Brew */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = Brew;
+		};
+		04C823C126CB3B22005748D2 /* Kingfisher */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 04C823C026CB3B22005748D2 /* XCRemoteSwiftPackageReference "Kingfisher" */;
+			productName = Kingfisher;
 		};
 		04D09EFC26A85E8100072702 /* OAuthSwift */ = {
 			isa = XCSwiftPackageProductDependency;

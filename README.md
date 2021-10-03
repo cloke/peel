@@ -25,9 +25,9 @@
 
 ### Pull Requests
 - [X] Pull request view
-- [ ] Display comments
+- [X] Display comments
 - [ ] Reviewer status
-- [ ] Diff view (use common git code)
+- [X] Diff view (use common git code)
 - [ ] Research approver flow. This will be a huge undertaking since it requires direct comments on diff lines.
 
 ### Issues
@@ -43,7 +43,7 @@
   - [ ] Add image support. There is no way to do this in the api, but we can host the files or use base64 encoded images. 
     
 ### Actions
-- [ ] Actions view
+- [X] Actions view
 - [ ] Can we show some of the billing / usage information in this view? I'd like to know how many minutes I've used. 
 - [ ] Browse artifacts
 - [ ] Download artifacts

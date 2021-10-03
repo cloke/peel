@@ -16,8 +16,8 @@ import Foundation
 
 /// Functions that are defined in the git reference
 /// https://git-scm.com/docs/git-add
-
 extension Commands {
+#if os(macOS)
   /// Processes a diff based on direct file paths
   static func diff(repository: Model.Repository, path: String, callback: ((Diff) -> ())? = nil) {
     try? Commands.run(.git, command: ["-C", repository.path, "diff", path]) {
@@ -28,7 +28,7 @@ extension Commands {
       }
     }
   }
-  
+
   /// Processes a diff based on specific commits
   static func diff(commit: String, on respository: Model.Repository, callback: ((Diff) -> ())? = nil) {
     try? Commands.run(.git, command: ["-C", respository.path, "diff", "\(commit)~", commit]) {
@@ -39,7 +39,8 @@ extension Commands {
       }
     }
   }
-  
+#endif
+
   public static func processDiff(lines: [String]) -> Diff {
     var diff = Diff()
     let regex = try! NSRegularExpression(
@@ -54,7 +55,7 @@ extension Commands {
     
     for var line in lines {
       switch line {
-      // Start of new file
+        // Start of new file
       case let string where line.starts(with: "diff --git"):
         // Save all data if there was a file in process
         if var file = currentFile {
@@ -70,7 +71,7 @@ extension Commands {
         numberingLines = false
         continue
         
-      // Process a chunk of the file
+        // Process a chunk of the file
       case let string where line.starts(with: "@@"):
         let range = NSRange(location: 0, length: string.utf16.count)
         let match = regex.firstMatch(in: line, options: [], range: range)
@@ -90,11 +91,11 @@ extension Commands {
         lineOffset = 0
         numberingLines = true
         
-      // Ignore these lines. Do we need them?
+        // Ignore these lines. Do we need them?
       case _ where line.trimmingCharacters(in: .whitespaces).starts(with: "---"): ()
       case _ where line.trimmingCharacters(in: .whitespaces).starts(with: "+++"): ()
         
-      // Build up actual line diffs
+        // Build up actual line diffs
       case _ where line.trimmingCharacters(in: .whitespaces).starts(with: "-") && numberingLines:
         lineOffset -= 1
         currentChunk?.lines.append(Diff.File.Chunk.Line(line: line, status: String(line.first ?? Character(" ")), lineNumber: lineNumber))

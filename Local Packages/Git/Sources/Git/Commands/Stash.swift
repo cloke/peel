@@ -8,6 +8,7 @@
 /// Functions that are defined in the git reference
 /// https://git-scm.com/docs/git-stash
 
+#if os(macOS)
 extension Commands {
   struct Stash {
     static func list(on repository: Model.Repository, callback: (([String]) -> ())? = nil) {
@@ -19,3 +20,4 @@ extension Commands {
     }
   }
 }
+#endif

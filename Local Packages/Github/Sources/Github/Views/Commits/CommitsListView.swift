@@ -14,6 +14,8 @@ struct CommitsListView: View {
   @State private var commits = [Github.Commit]()
   
   var body: some View {
+    Group {
+#if os(macOS)
     NavigationView {
       List(commits, id: \.sha) { commit in
         VStack {
@@ -23,6 +25,17 @@ struct CommitsListView: View {
           Divider()
         }
       }
+    }
+#else
+    List(commits, id: \.sha) { commit in
+      VStack {
+        NavigationLink(destination: CommitDetailView(commit: commit)) {
+          CommitsListItemView(commit: commit)
+        }
+      }
+    }
+    .navigationBarTitleDisplayMode(.inline)
+#endif
     }
     .onAppear {
       Github.commits(from: repository) {

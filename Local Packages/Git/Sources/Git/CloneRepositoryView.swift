@@ -7,6 +7,7 @@
 
 import SwiftUI
 
+#if os(macOS)
 public struct CloneRepositoryView: View {
   @StateObject private var viewModel: ViewModel = .shared
   @State private var cloneUrl = ""
@@ -38,3 +39,4 @@ public struct CloneRepositoryView: View {
     }
   }
 }
+#endif

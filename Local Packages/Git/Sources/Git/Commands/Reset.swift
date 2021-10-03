@@ -8,8 +8,10 @@
 /// Functions that are defined in the git reference
 /// https://git-scm.com/docs/git-reset
 
+#if os(macOS)
 extension Commands {
   static func reset(path: String, on repository: Model.Repository, callback: (([String]) -> ())? = nil) {
     Commands.simple(command: ["-C", repository.path, "reset", "HEAD", path], callback: callback)
   }
 }
+#endif

@@ -31,6 +31,7 @@ struct OrganizationRepositoryView: View {
             .environmentObject(viewModel),
           label: { Text(organization.login) }
         )
+//          .listStyle(.plain)
       }
       .onAppear {
         Github.loadRepositories(organization: organization.login) {

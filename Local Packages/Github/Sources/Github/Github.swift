@@ -67,7 +67,7 @@ extension Github {
                   Text(pullRequest.title)
                     .minimumScaleFactor(0.7)
                     .lineLimit(1)
-                    
+                  
                   HStack {
                     if viewModel.hasMe(in: pullRequest.requested_reviewers),
                        let url = URL(string: pullRequest.html_url) {
@@ -84,7 +84,7 @@ extension Github {
                   Text(pullRequest.requested_reviewers.map({ $0.login ?? ""  }).joined(separator: ", "))
                     .minimumScaleFactor(0.7)
                     .lineLimit(1)
-  
+                  
                 }
               }
 #if os(macOS)
@@ -96,7 +96,6 @@ extension Github {
         .onAppear {
           for organization in organizations {
             Github.loadRepositories(organization: organization.login, success: { repositories in
-              //              repositories = $0
               for repository in repositories {
                 Github.pullRequests(from: repository) {
                   pullRequests.append(contentsOf: $0)
@@ -118,46 +117,45 @@ public struct Github {
     public init() {}
     
     public var body: some View {
-      VStack {
-        List {
-          if hasToken && viewModel.me != nil {
-            NavigationLink(
-              destination: PersonalView(organizations: organizations)
-                .environmentObject(viewModel),
-              label: {  ProfileNameView(me: viewModel.me!) }
-            )
-          } else {
-            Button("Login") {
-              Github.authorize(success:  {
-                Github.me {
-                  viewModel.me = $0
-                }
-                Github.loadOrganizations() {
-                  organizations = $0
-                }
-              })
-            }
-          }
+      List {
+        if hasToken && viewModel.me != nil {
+          NavigationLink(
+            destination: PersonalView(organizations: organizations)
+              .environmentObject(viewModel),
+            label: {  ProfileNameView(me: viewModel.me!) }
+          )
           ForEach(organizations) { organization in
             OrganizationRepositoryView(organization: organization)
               .environmentObject(viewModel)
           }
+
+        } else {
+          Button("Login") {
+            Github.authorize(success:  {
+              Github.me {
+                viewModel.me = $0
+              }
+              Github.loadOrganizations() {
+                organizations = $0
+              }
+            })
+          }
         }
-        Spacer()
       }
-      .onAppear {
-        if hasToken {
-          Github.authorize(success:  {
-            Github.me {
-              viewModel.me = $0
-            }
-            Github.loadOrganizations() {
-              organizations = $0
-            }
-          })
+      Spacer()
+        .onAppear {
+          if hasToken {
+            Github.authorize(success:  {
+              Github.me {
+                viewModel.me = $0
+              }
+              Github.loadOrganizations() {
+                organizations = $0
+              }
+            })
+          }
         }
-      }
-      .environmentObject(viewModel)
+        .environmentObject(viewModel)
     }
   }
 }

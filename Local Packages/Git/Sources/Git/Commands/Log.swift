@@ -9,7 +9,7 @@ import Foundation
 
 /// Functions that are defined in the git reference
 /// https://git-scm.com/docs/git-log
-
+#if os(macOS)
 extension Commands {
   static func log(branch: String, on repository: Model.Repository, callback: (([Model.LogEntry]) -> ())? = nil) {
     // loot at --graph without parent
@@ -36,3 +36,4 @@ extension Commands {
     }
   }
 }
+#endif

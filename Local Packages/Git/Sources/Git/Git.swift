@@ -1,5 +1,6 @@
 import SwiftUI
 
+#if os(macOS)
 public struct GitRootView: View {
   @ObservedObject public var repository: Model.Repository
 
@@ -22,3 +23,4 @@ public struct GitRootView: View {
     .environmentObject(repository)
   }
 }
+#endif

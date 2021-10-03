@@ -26,4 +26,8 @@ public struct Commands: TaskRunnerProtocol {
     }
   }
 }
+#else
+public struct Commands {
+  private static let shared = Commands()
+}
 #endif

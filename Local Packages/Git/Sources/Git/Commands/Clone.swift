@@ -9,7 +9,7 @@ import Foundation
 
 /// Functions that are defined in the git reference
 /// https://git-scm.com/docs/git-clone
-
+#if os(macOS)
 extension Commands {
   static func clone(with url: String, to destination: URL, callback: ((Model.Repository) -> ())? = nil) {
     // TODO: Refactor most of these to use a state on the callback
@@ -24,3 +24,4 @@ extension Commands {
     }    
   }
 }
+#endif

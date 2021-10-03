@@ -106,7 +106,7 @@ extension Model {
       self.name = name
       self.path = path
     }
-    
+#if os(macOS)
     func loadBranches(branchType: Model.BranchType) {
       // TODO - The array should be built in one pass to reduce weird graphic errors.
       // Maybe wait for swift 6 and use async calls to simplify
@@ -117,7 +117,6 @@ extension Model {
         branches.append(contentsOf: list)
       }
     }
-    
     func load() {
       loadBranches(branchType: .local)
       loadBranches(branchType: .remote)
@@ -145,7 +144,8 @@ extension Model {
         }
       }
     }
-    
+#endif
+
     enum CodingKeys: String, CodingKey {
       case id, name, path
     }
@@ -182,6 +182,7 @@ internal extension NSTextCheckingResult {
   }
 }
 
+#if os(macOS)
 public class ViewModel: ObservableObject {
   @AppStorage(wrappedValue: Data(), "repositories") var repositoriesPersisted: Data
   @AppStorage(wrappedValue: Data(), "selected-repository") var selectedRepositoryPersisted: Data
@@ -229,6 +230,7 @@ public class ViewModel: ObservableObject {
     selectedRepository = Model.Repository(name: "Add Repository", path: "")
   }
   
+  
   public func addRepository(callback: (() -> ())? = nil) {
     open() { [self] in
       // Check to see if this is a git folder.
@@ -263,3 +265,4 @@ public class ViewModel: ObservableObject {
     }
   }
 }
+#endif

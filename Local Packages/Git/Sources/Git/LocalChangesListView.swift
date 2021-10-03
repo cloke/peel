@@ -7,6 +7,7 @@
 
 import SwiftUI
 
+#if os(macOS)
 public struct LocalChangesListView: View {
   @EnvironmentObject var repository: Model.Repository
 
@@ -25,7 +26,7 @@ public struct LocalChangesListView: View {
     }))
   }
 }
-
+#endif
 //struct LocalChangesListView_Previews: PreviewProvider {
 //  static var previews: some View {
 //    LocalChangesListView(repository: Model.Repository(name: "blah", path: "."))

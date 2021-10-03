@@ -7,6 +7,7 @@
 
 import SwiftUI
 
+#if os(macOS)
 struct HistoryListView: View {
   @EnvironmentObject var repository: Model.Repository
   
@@ -54,3 +55,4 @@ struct HistoryListView_Previews: PreviewProvider {
     HistoryListView(branch: "Who Knows")
   }
 }
+#endif

@@ -39,12 +39,10 @@ struct ContentView: View {
   
   var body: some View {
     NavigationView {
-      VStack {
-        switch currentTool {
-        case .brew: Brew_RootView()
-        case .git: Git_RootView()
-        case .github: Github_RootView()
-        }
+      switch currentTool {
+      case .brew: Brew_RootView()
+      case .git: Git_RootView()
+      case .github: Github_RootView()
       }
     }
   }

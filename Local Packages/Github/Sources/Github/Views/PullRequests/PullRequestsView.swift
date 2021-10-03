@@ -22,7 +22,7 @@ struct PullRequestDetailView: View {
       Text("Description")
         .font(.headline)
       ScrollView {
-        Markdown(Document(stringLiteral: pullRequest.body))
+        Markdown(Document(stringLiteral: pullRequest.body ?? ""))
       }
       PullRequestReviewRowView(organization: organization, repository: repository, pullNumber: pullRequest.number)
       Spacer()
@@ -50,6 +50,7 @@ public struct PullRequestsView: View {
       case .loading:
         ProgressView()
       case .loaded:
+#if os(macOS)
         NavigationView {
           List {
             ForEach(pullRequests) { pullRequest in
@@ -60,10 +61,20 @@ public struct PullRequestsView: View {
             }
           }
         }
-      case .empty:
-        Text("No Pull Requests Found")
-      }
+#else
+        List {
+          ForEach(pullRequests) { pullRequest in
+            NavigationLink(destination: PullRequestDetailView(organization: organization, repository: repository, pullRequest: pullRequest)) {
+              PullRequestsListItemView(pullRequest: pullRequest, organization: organization, repository: repository)
+            }
+          }
+        }
+        .navigationBarTitleDisplayMode(.inline)
+#endif
+    case .empty:
+      Text("No Pull Requests Found")
     }
+  }
     .onAppear {
       Github.pullRequests(from: repository) {
         pullRequests = $0
@@ -72,5 +83,5 @@ public struct PullRequestsView: View {
         print($0)
       }
     }
-  }
+}
 }

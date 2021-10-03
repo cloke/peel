@@ -7,6 +7,7 @@
 
 import SwiftUI
 
+#if os(macOS)
 struct StashListView: View {
   public let repository: Model.Repository
   @State private var stashes = [String]()
@@ -37,3 +38,4 @@ struct StashListView: View {
     }
   }
 }
+#endif
