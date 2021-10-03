@@ -37,7 +37,7 @@ extension Github {
     public var closed_at: String?
     public var author_association: String
     public var active_lock_reason: String?
-    public var body: String
+    public var body: String?
     public var performed_via_github_app: String?
   }
 }

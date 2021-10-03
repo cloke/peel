@@ -11,6 +11,20 @@ enum LoadingState {
   case loading, loaded, empty
 }
 
+struct IssueListItemView: View {
+  let issue: Github.Issue
+  
+  var body: some View {
+    Text(issue.title)
+    HStack {
+      ForEach(issue.labels) { label in
+        Text(label.name)
+          .background(Color.init(hex: label.color))
+      }
+    }
+  }
+}
+
 struct IssuesLisView: View {
   let repository: Github.Repository
   
@@ -43,15 +57,18 @@ struct IssuesLisView: View {
       case .loading:
         ProgressView()
       case .loaded:
-        List(issues) { issue in
-          Text(issue.title)
-          HStack {
-            ForEach(issue.labels) { label in
-              Text(label.name)
-                .background(Color.init(hex: label.color))
-            }
+#if os(macOS)
+        NavigationView {
+          List(issues) { issue in
+            IssueListItemView(issue: issue)
           }
         }
+#else
+        List(issues) { issue in
+          IssueListItemView(issue: issue)
+        }
+        .navigationBarTitleDisplayMode(.inline)
+#endif
       case .empty:
         Text("No issues found")
       }
