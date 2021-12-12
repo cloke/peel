@@ -8,7 +8,6 @@
 import Foundation
 
 extension Github {
-  
   /// The github api returns queries for what workflows exist on an organization as a count and an array of workflows.
   /// This servers the only purpose to decode the workflows so that the array can be returned.
   struct WorkflowContainer: Codable {
@@ -18,7 +17,7 @@ extension Github {
   
   struct Workflow: Codable, Identifiable {
     public var id: Int
-    public var node_id: String
+    public var node_id: String?
     public var name: String
     public var path: String
     public var state: String
@@ -26,7 +25,7 @@ extension Github {
     public var updated_at: String
     public var url: String
     public var html_url: String
-    public var badge_url: String
+    public var badge_url: String?
   }
   
   struct WorkflowRun: Codable {
@@ -50,7 +49,7 @@ extension Github {
     public var id: Int
     public var run_id: Int
     public var run_url: String
-    public var node_id: String
+    public var node_id: String?
     public var head_sha: String
     public var url: String
     public var html_url: String
@@ -71,7 +70,7 @@ extension Github {
   public struct Action: Codable, Identifiable {
     public var id: Int
     public var name: String
-    public var node_id: String
+    public var node_id: String?
     public var head_branch: String
     public var head_sha: String
     public var run_number: Int

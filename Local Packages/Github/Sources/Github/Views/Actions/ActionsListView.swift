@@ -7,12 +7,42 @@
 
 import SwiftUI
 
-struct ActionsListItemView: View {
-  let action: Github.Action
+struct ActionsView: View {
+  public let repository: Github.Repository
+  
+  @State private var state: LoadingState = .loading
+  @State private var actions = [Github.Action]()
   
   var body: some View {
     VStack {
-      HStack {
+      switch state {
+      case .loading:
+        ProgressView()
+      case .loaded:
+        ActionsListView(repository: repository, actions: actions)
+      case .empty:
+        Text("No Pull Requests Found")
+      }
+    }
+    .onAppear {
+      Github.workflows(from: repository, success: { workflows in
+        for workflow in workflows {
+          Github.runs(from: workflow, repository: repository, success: {
+            self.actions.append(contentsOf: $0)
+            state = $0.count == 0 ? .empty : .loaded
+          })
+        }
+      })
+    }
+  }
+}
+
+struct ActionsListItemView: View {
+  let action: Github.Action
+  
+  public var body: some View {
+    VStack(alignment: .leading) {
+      HStack(alignment: .top) {
         if action.status == "in_progress" {
           ProgressView()
             .scaleEffect(0.5)
@@ -20,10 +50,12 @@ struct ActionsListItemView: View {
           ActionConclusionView(conclusion: action.conclusion ?? "")
         }
         Text("#\(action.run_number)")
-        Text(action.head_commit.message.components(separatedBy: "\n\n").first ?? "")
-        Spacer()
         Text(action.updatedAtFormatted)
+          .font(.subheadline)
       }
+      Text(action.head_commit.message.components(separatedBy: "\n\n").first ?? "")
+      Spacer()
+      
       HStack {
         Text(action.repository.name)
         Text(action.name)
@@ -34,19 +66,20 @@ struct ActionsListItemView: View {
 }
 
 struct ActionsListView: View {
-  public let repository: Github.Repository
   @EnvironmentObject var viewModel: Github.ViewModel
-  @State private var actions = [Github.Action]()
+  let repository: Github.Repository
+  let actions: [Github.Action]
   
   var body: some View {
     Group {
 #if os(macOS)
       NavigationView {
-        List {
-          ForEach(actions.sorted(by: { $0.updated_at > $1.updated_at })) { action in
+        List(actions.sorted(by: { $0.updated_at > $1.updated_at })) { action in
+          VStack {
             NavigationLink(destination: ActionDetailView(action: action)) {
               ActionsListItemView(action: action)
             }
+            Divider()
           }
         }
       }
@@ -59,16 +92,6 @@ struct ActionsListView: View {
         }
       }
 #endif
-    }
-    .onAppear {
-      Github.workflows(from: repository, success: { workflows in
-        for workflow in workflows {
-          Github.runs(from: workflow, repository: repository, success: { actions in
-            self.actions.append(contentsOf: actions)
-          })
-        }
-      })
-      
     }
   }
 }

@@ -24,7 +24,16 @@ struct ActionDetailView: View {
         }
       
         List(workflowJobs) { workflowJob in
-          Text(workflowJob.name)
+          VStack(alignment: .leading) {
+            Text(workflowJob.name)
+            Divider()
+            ForEach(workflowJob.steps, id: \.name) { step in
+              HStack {
+                Text(step.name)
+                Text(step.status)
+              }
+            }
+          }
         }
       }
   }

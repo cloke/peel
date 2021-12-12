@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import Kingfisher
 
 struct PullRequestReviewRowView: View {
   let organization: Github.Organization
@@ -25,22 +24,7 @@ struct PullRequestReviewRowView: View {
             .padding(3)
             .background(review.state == "APPROVED" ? Color.green : Color.clear)
             .cornerRadius(3)
-          if let url = URL(string: review.user.avatar_url) {
-            KFImage.url(url)
-              .cancelOnDisappear(true)
-            //            .onFailure { error in
-            //              collapse = true
-            //            }
-              .fade(duration: 0.25)
-              .resizable()
-              .scaledToFit()
-              .frame(minWidth: 0, maxWidth: 30, maxHeight: 30, alignment: .center)
-              .clipped()
-              .clipShape(Circle())
-            
-          } else {
-            EmptyView()
-          }
+          AvatarView(url: URL(string: review.user.avatar_url))
         }
       }
     }

@@ -1,11 +1,11 @@
-// swift-tools-version:5.3
+// swift-tools-version:5.5
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
 
 let package = Package(
   name: "Github",
-  platforms: [.macOS(.v11), .iOS(.v14)],
+  platforms: [.macOS(.v12), .iOS(.v15)],
   products: [
     // Products define the executables and libraries a package produces, and make them visible to other packages.
     .library(
@@ -14,7 +14,6 @@ let package = Package(
   ],
   dependencies: [
     // Dependencies declare other packages that this package depends on.
-    .package(name: "Kingfisher", url: "https://github.com/onevcat/Kingfisher.git", from: "6.0.0"),
     .package(name: "Alamofire", url: "https://github.com/Alamofire/Alamofire.git", from: "5.4.3"),
     .package(name: "OAuthSwift", url: "https://github.com/OAuthSwift/OAuthSwift.git", .upToNextMajor(from: "2.2.0")),
     .package(name: "CrunchyCommon", path: "../CrunchyCommon"),
@@ -26,7 +25,7 @@ let package = Package(
     // Targets can depend on other targets in this package, and on products in packages this package depends on.
     .target(
       name: "Github",
-      dependencies: ["Kingfisher", "Alamofire", "CrunchyCommon", "OAuthSwift", "MarkdownUI"]),
+      dependencies: ["Alamofire", "CrunchyCommon", "OAuthSwift", "MarkdownUI"]),
     .testTarget(
       name: "GithubTests",
       dependencies: ["Github"]),

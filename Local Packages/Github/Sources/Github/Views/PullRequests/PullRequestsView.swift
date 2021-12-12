@@ -16,7 +16,7 @@ struct PullRequestDetailView: View {
   
   var body: some View {
     VStack(alignment: .leading) {
-      Text(pullRequest.title)
+      Text(pullRequest.title ?? "")
         .font(.title)
       Divider()
       Text("Description")
@@ -28,6 +28,36 @@ struct PullRequestDetailView: View {
       Spacer()
     }
     .padding()
+  }
+}
+
+struct PullRequestListView: View {
+  let organization: Github.Organization
+  let repository: Github.Repository
+  let pullRequests: [Github.PullRequest]
+  
+  var body: some View {
+#if os(macOS)
+    NavigationView {
+      List {
+        ForEach(pullRequests) { pullRequest in
+          NavigationLink(destination: PullRequestDetailView(organization: organization, repository: repository, pullRequest: pullRequest)) {
+            PullRequestsListItemView(pullRequest: pullRequest, organization: organization, repository: repository)
+          }
+          Divider()
+        }
+      }
+    }
+#else
+    List {
+      ForEach(pullRequests) { pullRequest in
+        NavigationLink(destination: PullRequestDetailView(organization: organization, repository: repository, pullRequest: pullRequest)) {
+          PullRequestsListItemView(pullRequest: pullRequest, organization: organization, repository: repository)
+        }
+      }
+    }
+    .navigationBarTitleDisplayMode(.inline)
+#endif
   }
 }
 
@@ -50,31 +80,11 @@ public struct PullRequestsView: View {
       case .loading:
         ProgressView()
       case .loaded:
-#if os(macOS)
-        NavigationView {
-          List {
-            ForEach(pullRequests) { pullRequest in
-              NavigationLink(destination: PullRequestDetailView(organization: organization, repository: repository, pullRequest: pullRequest)) {
-                PullRequestsListItemView(pullRequest: pullRequest, organization: organization, repository: repository)
-              }
-              Divider()
-            }
-          }
-        }
-#else
-        List {
-          ForEach(pullRequests) { pullRequest in
-            NavigationLink(destination: PullRequestDetailView(organization: organization, repository: repository, pullRequest: pullRequest)) {
-              PullRequestsListItemView(pullRequest: pullRequest, organization: organization, repository: repository)
-            }
-          }
-        }
-        .navigationBarTitleDisplayMode(.inline)
-#endif
-    case .empty:
-      Text("No Pull Requests Found")
+        PullRequestListView(organization: organization, repository: repository, pullRequests: pullRequests)
+      case .empty:
+        Text("No Pull Requests Found")
+      }
     }
-  }
     .onAppear {
       Github.pullRequests(from: repository) {
         pullRequests = $0
@@ -83,5 +93,5 @@ public struct PullRequestsView: View {
         print($0)
       }
     }
-}
+  }
 }

@@ -32,11 +32,15 @@ struct VerticalLabelStyle: LabelStyle {
 
 struct Github_RootView: View {
   var body: some View {
+    VStack {
     Github.RootView()
       .frame(minWidth: 100)
-      .frame(idealHeight: 400)
+    }
+    .frame(idealHeight: 400)
+
       .toolbar {
 #if os(macOS)
+        ToggleSidebarToolbarItem(placement: .navigation)
         ToolSelectionToolbar()
 #endif
         ToolbarItem(placement: .navigation) {

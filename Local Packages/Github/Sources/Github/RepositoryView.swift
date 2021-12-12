@@ -15,53 +15,23 @@ struct RepositoryView: View {
   
   // TODO: make this reference an enum
   @State private var currentTab = "Pulls"
+  @State private var selection = 1
   
   var body: some View {
-    VStack {
-      HStack {
-        Button {
-          currentTab = "Pulls"
-        } label:  {
-          Text("Pulls")
-            .fontWeight(currentTab == "Pulls" ? .bold : .none)
-        }
-        
-        Button {
-          currentTab = "Commits"
-        } label: {
-          Text("Commits")
-            .fontWeight(currentTab == "Commits" ? .bold : .none)
-        }
-        Button {
-          currentTab = "Issues"
-        } label: {
-          Text("Issues")
-            .fontWeight(currentTab == "Issues" ? .bold : .none)
-        }
-        Button {
-          currentTab = "Actions"
-        } label: {
-          Text("Actions")
-            .fontWeight(currentTab == "Actions" ? .bold : .none)
-        }
-        
-      }
-//      .buttonStyle(.borderless)
-      switch currentTab {
-      case "Pulls":
-        PullRequestsView(organization: organization, repository: repository)
-      case "Commits":
-        CommitsListView(repository: repository)
-      case "Issues":
-        IssuesLisView(repository: repository)
-      case "Actions":
-        ActionsListView(repository: repository)
-
-      default:
-        Text("Something is wrong")
-      }
+    TabView(selection: $selection) {
+      PullRequestsView(organization: organization, repository: repository)
+        .tabItem { Text("Pull Requests") }
+        .tag(1)
+      CommitsListView(repository: repository)
+        .tabItem { Text("Commits") }
+        .tag(2)
+      IssuesListView(repository: repository)
+        .tabItem { Text("Issues") }
+        .tag(3)
+      ActionsView(repository: repository)
+        .tabItem { Text("Actions") }
+        .tag(4)
     }
-    Spacer()
   }
 }
 

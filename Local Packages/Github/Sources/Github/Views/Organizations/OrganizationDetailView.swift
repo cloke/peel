@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import Kingfisher
 
 struct ActionConclusionView: View {
   let conclusion: String
@@ -33,7 +32,7 @@ struct ActionConclusionView: View {
 
 struct OrganizationDetailView: View {
   @EnvironmentObject var viewModel: Github.ViewModel
-
+  
   let organization: Github.Organization
   
   @State private var members = [Github.User]()
@@ -44,69 +43,64 @@ struct OrganizationDetailView: View {
   
   var body: some View {
     VStack {
-      if let url = URL(string: organization.avatar_url) {
-        KFImage.url(url)
-          .cancelOnDisappear(true)
-        //            .onFailure { error in
-        //              collapse = true
-        //            }
-          .fade(duration: 0.25)
-          .resizable()
-          .scaledToFit()
+        AsyncImage(url: URL(string: organization.avatar_url)) { image in
+          image
+            .resizable()
+            .scaledToFit()
+            .clipped()
+            .clipShape(Circle())
+        } placeholder: {
+          ProgressView()
+        }
           .frame(minWidth: 0, maxWidth: 100, maxHeight: 100, alignment: .center)
-          .clipped()
-          .clipShape(Circle())
-      }
+
       Text(organization.login)
       
       HStack {
         ForEach(members) { member in
-          if let url = URL(string: member.avatar_url) {
-            Spacer()
-            KFImage.url(url)
-              .cancelOnDisappear(true)
-            //            .onFailure { error in
-            //              collapse = true
-            //            }
-              .fade(duration: 0.25)
-              .resizable()
-              .scaledToFit()
-              .frame(minWidth: 0, maxWidth: 100, maxHeight: 100, alignment: .center)
-              .clipped()
-              .clipShape(Circle())
-          }
+          Spacer()
+          AvatarView(url: URL(string: member.avatar_url), maxWidth: 100.0, maxHeight: 100)
+//        URL(string: member.avatar_url)th: 100, maxHeight: 100, alignment: .center)
         }
         Spacer()
       }
-      
-      Link("Issues", destination: URL(string: organization.issues_url)!)
-      
-      List {
-        ForEach(actions.sorted(by: { $0.updated_at > $1.updated_at })) { action in
-          VStack {
-            HStack {
-              if action.status == "in_progress" {
-                ProgressView()
-                  .scaleEffect(0.5)
-              } else {
-                ActionConclusionView(conclusion: action.conclusion ?? "")
+            
+      TabView(selection: /*@START_MENU_TOKEN@*//*@PLACEHOLDER=Selection@*/.constant(1)/*@END_MENU_TOKEN@*/) {
+        OrganizationPullRequestsListView(pullRequests: pullRequests)
+          .environmentObject(viewModel)
+          .tabItem { Text("Pull Requests") }.tag(1)
+        List {
+          ForEach(actions.sorted(by: { $0.updated_at > $1.updated_at })) { action in
+            VStack {
+              HStack {
+                if action.status == "in_progress" {
+                  ProgressView()
+                    .scaleEffect(0.5)
+                } else {
+                  ActionConclusionView(conclusion: action.conclusion ?? "")
+                }
+                Text("#\(action.run_number)")
+                Text(action.head_commit.message.components(separatedBy: "\n\n").first ?? "")
+                Spacer()
+                Text(action.updatedAtFormatted)
               }
-              Text("#\(action.run_number)")
-              Text(action.head_commit.message.components(separatedBy: "\n\n").first ?? "")
-              Spacer()
-              Text(action.updatedAtFormatted)
-            }
-            HStack {
-              Text(action.repository.name)
-              Text(action.name)
-              Spacer()
+              HStack {
+                Text(action.repository.name)
+                Text(action.name)
+                Spacer()
+              }
             }
           }
         }
+        .tabItem { Text("Actions") }.tag(2)
+        Link("Issues", destination: URL(string: organization.issues_url)!)
+          .tabItem { Text("Issues") }.tag(3)
       }
-      
-      OrganizationPullRequestsListView(pullRequests: pullRequests)
-        .environmentObject(viewModel)
+      .onAppear {
+        #if os(iOS)
+        UITabBar.appearance().barTintColor = .white
+        #endif
+      }
     }
     .onAppear {
       Github.members(from: organization) {

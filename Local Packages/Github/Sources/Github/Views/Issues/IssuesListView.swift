@@ -25,7 +25,7 @@ struct IssueListItemView: View {
   }
 }
 
-struct IssuesLisView: View {
+struct IssuesListView: View {
   let repository: Github.Repository
   
   @State private var issues = [Github.Issue]()
@@ -60,12 +60,19 @@ struct IssuesLisView: View {
 #if os(macOS)
         NavigationView {
           List(issues) { issue in
-            IssueListItemView(issue: issue)
+            VStack {
+              NavigationLink(destination: IssueDetailView(issue: issue)) {
+                IssueListItemView(issue: issue)
+              }
+              Divider()
+            }
           }
         }
 #else
         List(issues) { issue in
-          IssueListItemView(issue: issue)
+          NavigationLink(destination: IssueDetailView(issue: issue)) {
+            IssueListItemView(issue: issue)
+          }
         }
         .navigationBarTitleDisplayMode(.inline)
 #endif

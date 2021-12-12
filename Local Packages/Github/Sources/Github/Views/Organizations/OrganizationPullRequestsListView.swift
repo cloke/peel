@@ -9,42 +9,44 @@ import SwiftUI
 
 struct OrganizationPullRequestsListView: View {
   @EnvironmentObject var viewModel: Github.ViewModel
-
+  
   var pullRequests: [Github.PullRequest]
-
+  
   var body: some View {
     List {
-      ForEach(pullRequests.sorted(by: { $0.updated_at > $1.updated_at })) { pullRequest in
+      ForEach(pullRequests.sorted(by: { $0.updated_at ?? "" > $1.updated_at ?? ""})) { pullRequest in
         VStack {
           HStack {
             Text(pullRequest.head.repo.name)
-            Text(pullRequest.user.publicName)
-            Text(pullRequest.title)
+            Text(pullRequest.user?.publicName ?? "")
+            Text(pullRequest.title ?? "")
             Spacer()
-            Link(destination: URL(string: pullRequest.html_url)!) {
+            Link(destination: URL(string: pullRequest.html_url ?? "")!) {
               Image(systemName: "arrowshape.turn.up.right")
             }
           }
-          if viewModel.hasMe(in: pullRequest.requested_reviewers),
-             let url = URL(string: pullRequest.html_url) {
-            HStack {
-              Link("Review Requested of Me", destination: url)
-                .foregroundColor(.yellow)
-              Spacer()
+          if let reviewers = pullRequest.requested_reviewers, viewModel.hasMe(in: reviewers) {
+            if let htmlUrl = pullRequest.html_url,
+               let url = URL(string: htmlUrl) {
+              HStack {
+                Link("Review Requested of Me", destination: url)
+                  .foregroundColor(.yellow)
+                Spacer()
+              }
             }
           }
-          if pullRequest.requested_reviewers.count > 0 {
+          if pullRequest.requested_reviewers != nil && pullRequest.requested_reviewers!.count > 0 {
             HStack {
-              Text("Reviewers: \(pullRequest.requested_reviewers.map { $0.publicName }.joined(separator: ", "))")
+              Text("Reviewers: \(pullRequest.requested_reviewers?.map { $0.publicName }.joined(separator: ", ") ?? "")")
               Spacer()
             }
           }
         }
-        #if os(macOS)
+#if os(macOS)
         Divider() // Weird bug, but compiler times out without something here
-        #else
+#else
         EmptyView()
-        #endif
+#endif
       }
     }
   }

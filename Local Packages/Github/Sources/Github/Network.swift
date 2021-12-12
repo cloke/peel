@@ -37,7 +37,7 @@ extension Github {
                                   success: (([Github.PullRequest]) -> Void)? = nil,
                                   error: ((AFError) -> Void)? = nil) {
     
-    guard let organization = repository.owner.login else {
+    guard let organization = repository.owner?.login else {
       print("Issue generating url for repository")
       error?(.invalidURL(url: ""))
       return
@@ -81,7 +81,7 @@ extension Github {
   public static func commits(from repository: Repository,
                              success: (([Github.Commit]) -> Void)? = nil,
                              error: ((AFError) -> Void)? = nil) {
-    let url = "\(repository.commits_url[..<repository.commits_url.index(repository.commits_url.endIndex, offsetBy: -6)])"
+    let url = "\(repository.commits_url![..<repository.commits_url!.index(repository.commits_url!.endIndex, offsetBy: -6)])"
     loadMany(url: url, success: success, error: error)
   }
   
@@ -101,7 +101,7 @@ extension Github {
   static func actions(from repository: Repository,
                       success: ((Github.Runs) -> Void)? = nil,
                       error: ((AFError) -> Void)? = nil) {
-    guard let organization = repository.owner.login else {
+    guard let organization = repository.owner?.login else {
       print("Issue generating url for repository")
       error?(.invalidURL(url: ""))
       return
@@ -113,7 +113,7 @@ extension Github {
   static func workflows(from repository: Repository,
                         success: (([Github.Workflow]) -> Void)? = nil,
                         error: ((AFError) -> Void)? = nil) {
-    guard let organization = repository.owner.login else {
+    guard let organization = repository.owner?.login else {
       print("Issue generating url for repository")
       error?(.invalidURL(url: ""))
       return
@@ -133,7 +133,7 @@ extension Github {
                    repository: Repository,
                    success: (([Github.Action]) -> Void)? = nil,
                    error: ((AFError) -> Void)? = nil) {
-    guard let organization = repository.owner.login else {
+    guard let organization = repository.owner?.login else {
       print("Issue generating url for repository")
       error?(.invalidURL(url: ""))
       return
@@ -152,7 +152,7 @@ extension Github {
   static func issues(from repository: Repository,
                      success: (([Github.Issue]) -> Void)? = nil,
                      error: ((AFError) -> Void)? = nil) {
-    let url = "\(repository.issues_url[..<repository.issues_url.index(repository.issues_url.endIndex, offsetBy: -9)])"
+    let url = "\(repository.issues_url![..<repository.issues_url!.index(repository.issues_url!.endIndex, offsetBy: -9)])"
     
     loadMany(url: url, success: success, error: error)
   }
@@ -166,7 +166,7 @@ extension Github {
       "owner": owner
     ]
     
-    guard let organization = repository.owner.login,
+    guard let organization = repository.owner?.login,
           let url = URL(string: "https://api.github.com/repos/\(organization)/\(repository.name)/issues") else {
             print("Issue generating url for repository")
             error?(.invalidURL(url: ""))

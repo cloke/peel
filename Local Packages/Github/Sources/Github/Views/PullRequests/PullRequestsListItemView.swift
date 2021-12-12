@@ -49,11 +49,11 @@ struct PullRequestsListItemView: View {
         }
       }
       
-      Text(pullRequest.title)
+      Text(pullRequest.title ?? "")
         .font(.body)
 
       HStack {
-        ForEach(pullRequest.labels) { label in
+        ForEach(pullRequest.labels ?? []) { label in
           let color = Color.init(hex: label.color)
           Text(label.name)
             .padding(3)
@@ -64,8 +64,10 @@ struct PullRequestsListItemView: View {
         Spacer()
       }
       
-      if viewModel.hasMe(in: pullRequest.requested_reviewers),
-         let url = URL(string: pullRequest.html_url) {
+      if let htmlUrl = pullRequest.html_url,
+         let url = URL(string: htmlUrl),
+         let reviewers = pullRequest.requested_reviewers,
+          viewModel.hasMe(in: reviewers) {
         HStack {
           Link("Review Requested of Me", destination: url)
             .foregroundColor(.yellow)
@@ -73,9 +75,9 @@ struct PullRequestsListItemView: View {
         }
       }
       Spacer()
-      if pullRequest.requested_reviewers.count > 0 {
+      if  pullRequest.requested_reviewers != nil && pullRequest.requested_reviewers!.count > 0 {
         HStack {
-          Text("Reviewers: \(pullRequest.requested_reviewers.map { $0.publicName }.joined(separator: ", "))")
+          Text("Reviewers: \(pullRequest.requested_reviewers?.map { $0.publicName }.joined(separator: ", ") ?? "")")
           Spacer()
         }
 //        PullRequestReviewRowView(organization: organization, repository: repository, pullNumber: pullRequest.number)
