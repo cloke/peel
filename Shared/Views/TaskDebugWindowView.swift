@@ -9,6 +9,7 @@ import SwiftUI
 import Combine
 import TaskRunner
 
+/// Expandable view that will render the in progress task logs
 struct TaskDebugDisclosureContentView: View {
   @ObservedObject var log: DebugLog
   
