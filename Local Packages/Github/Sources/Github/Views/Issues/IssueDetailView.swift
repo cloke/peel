@@ -6,15 +6,20 @@
 //
 
 import SwiftUI
+import MarkdownUI
 
-struct SwiftUIView: View {
-    var body: some View {
-        Text(/*@START_MENU_TOKEN@*/"Hello, World!"/*@END_MENU_TOKEN@*/)
+struct IssueDetailView: View {
+  let issue: Github.Issue
+  
+  var body: some View {
+    ScrollView {
+      Markdown(Document(stringLiteral: issue.body ?? ""))
     }
+  }
 }
 
-struct SwiftUIView_Previews: PreviewProvider {
-    static var previews: some View {
-        SwiftUIView()
-    }
-}
+//struct IssueDetailView_Previews: PreviewProvider {
+//  static var previews: some View {
+//    IssueDetailView(issue: Github.Issue())
+//  }
+//}

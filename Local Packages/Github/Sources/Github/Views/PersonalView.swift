@@ -1,5 +1,5 @@
 //
-//  SwiftUIView.swift
+//  PersonalView.swift
 //  
 //
 //  Created by Cory Loken on 12/12/21.
@@ -7,14 +7,71 @@
 
 import SwiftUI
 
-struct SwiftUIView: View {
-    var body: some View {
-        Text(/*@START_MENU_TOKEN@*/"Hello, World!"/*@END_MENU_TOKEN@*/)
+struct PersonalHeaderView: View {
+  @EnvironmentObject var viewModel: Github.ViewModel
+  @Binding var pullRequests: [Github.PullRequest]
+  @State private var pullRequestCache = [Github.PullRequest]()
+  
+  var body: some View {
+    HStack {
+      Spacer()
+      Button("My Requests") {
+        withAnimation {
+          pullRequestCache = pullRequests
+          pullRequests = pullRequests.filter { viewModel.hasMe(in: $0.requested_reviewers ?? []) }
+        }
+      }
+      Button("All") {
+        withAnimation {
+          pullRequests = pullRequestCache
+        }
+      }
     }
+  }
 }
 
-struct SwiftUIView_Previews: PreviewProvider {
-    static var previews: some View {
-        SwiftUIView()
+struct PersonalView: View {
+  @EnvironmentObject var viewModel: Github.ViewModel
+  @State private var pullRequests = [Github.PullRequest]()
+  
+  let organizations: [Github.User]
+  
+  var body: some View {
+    VStack {
+      PersonalHeaderView(pullRequests: $pullRequests)
+        .padding(.horizontal)
+      NavigationView {
+        List {
+          ForEach(pullRequests.sorted(by: { $0.updated_at ?? "" > $1.updated_at ?? ""})) { pullRequest in
+            VStack {
+              NavigationLink(destination: PullRequestDetailView(organization: pullRequest.base.repo.owner, repository: pullRequest.base.repo, pullRequest: pullRequest)) {
+                PullRequestsListItemView(pullRequest: pullRequest, organization: pullRequest.base.repo.owner, repository: pullRequest.base.repo, showAvatar: true, showRepository: true)
+              }
+#if os(macOS)
+              Divider()
+#endif
+            }
+          }
+        }
+        .frame(idealWidth: 300)
+      }
+      .onAppear {
+        for organization in organizations {
+          Github.loadRepositories(organization: organization.login ?? "", success: { repositories in
+            for repository in repositories {
+              Github.pullRequests(from: repository) {
+                pullRequests.append(contentsOf: $0)
+              }
+            }
+          })
+        }
+      }
     }
+  }
 }
+
+//struct PersonalView_Previews: PreviewProvider {
+//  static var previews: some View {
+//    PersonalView()
+//  }
+//}
