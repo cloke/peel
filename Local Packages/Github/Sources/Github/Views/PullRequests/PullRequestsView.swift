@@ -10,7 +10,7 @@ import CrunchyCommon
 import MarkdownUI
 
 struct PullRequestDetailView: View {
-  let organization: Github.Organization
+  let organization: Github.User?
   let repository: Github.Repository
   let pullRequest: Github.PullRequest
   
@@ -32,7 +32,7 @@ struct PullRequestDetailView: View {
 }
 
 struct PullRequestListView: View {
-  let organization: Github.Organization
+  let organization: Github.User
   let repository: Github.Repository
   let pullRequests: [Github.PullRequest]
   
@@ -62,14 +62,14 @@ struct PullRequestListView: View {
 }
 
 public struct PullRequestsView: View {
-  public let organization: Github.Organization
+  public let organization: Github.User
   public let repository: Github.Repository
   
   @EnvironmentObject var viewModel: Github.ViewModel
   @State private var pullRequests = [Github.PullRequest]()
   @State private var state: LoadingState = .loading
   
-  public init(organization: Github.Organization, repository: Github.Repository) {
+  public init(organization: Github.User, repository: Github.Repository) {
     self.organization = organization
     self.repository = repository
   }

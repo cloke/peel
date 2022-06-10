@@ -53,7 +53,7 @@ extension Github {
     loadMany(url: "https://api.github.com/orgs/\(organization)/repos?per_page=100", success: success, error: error)
   }
   
-  public static func loadOrganizations(success: (([Github.Organization]) -> Void)? = nil,
+  public static func loadOrganizations(success: (([Github.User]) -> Void)? = nil,
                                        error: ((AFError) -> Void)? = nil) {
     loadMany(url: "https://api.github.com/user/orgs", success: success, error: error)
   }
@@ -70,11 +70,15 @@ extension Github {
     load(url: "https://api.github.com/user", success: success, error: error)
   }
   
-  public static func members(from organization: Organization,
+  public static func members(from organization: User,
                              success: (([Github.User]) -> Void)? = nil,
                              error: ((AFError) -> Void)? = nil) {
+    if organization.members_url == nil {
+      error?(.invalidURL(url: "members only exist on organization users"))
+      return
+    }
     /// Git adds /{member} to the url, but we want just the array url.
-    let url = "\(organization.members_url[..<organization.members_url.index(organization.members_url.endIndex, offsetBy: -9)])"
+    let url = "\(organization.members_url![..<organization.members_url!.index(organization.members_url!.endIndex, offsetBy: -9)])"
     loadMany(url: url, success: success, error: error)
   }
   

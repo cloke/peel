@@ -72,6 +72,7 @@ public extension TaskRunnerProtocol {
     DebugViewModel.shared.debugLogs.append(debuglog)
     /// Starts the external process.
     // (This does the same as ”launch()“, but it is a more modern API.)
+    
     DispatchQueue.global(qos: .background).async {
       try? process.run()
       /// A buffer to store partial lines of data before we can turn them into strings.
@@ -128,7 +129,7 @@ public extension TaskRunnerProtocol {
 
             outputData.append(lineData)
             outputArray.append(line)
-            DispatchQueue.main.async {
+            Task { @MainActor in
               debuglog.entries.append(DebugLogEntry(entry: line))
               callback?(.buffer(line))
             }

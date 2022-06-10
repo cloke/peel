@@ -10,7 +10,7 @@ import SwiftUI
 import CrunchyCommon
 
 struct RepositoryView: View {
-  public let organization: Github.Organization
+  public let organization: Github.User
   public let repository: Github.Repository
   
   // TODO: make this reference an enum

@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct PullRequestReviewRowView: View {
-  let organization: Github.Organization
+  let organization: Github.User?
   let repository: Github.Repository
   let pullNumber: Int
   
@@ -29,7 +29,7 @@ struct PullRequestReviewRowView: View {
       }
     }
     .onAppear {
-      Github.loadReviews(organization: organization.login, repository: repository.name, pullNumber: pullNumber) {
+      Github.loadReviews(organization: organization?.login ?? "", repository: repository.name, pullNumber: pullNumber) {
         reviews = $0
       }
     }

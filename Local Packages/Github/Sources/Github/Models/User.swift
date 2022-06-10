@@ -11,20 +11,20 @@ extension Github {
     public var id: Int
     public var node_id: String
     public var avatar_url: String
-    public var gravatar_id: String
+    public var gravatar_id: String?
     public var url: String
-    public var html_url: String
-    public var followers_url: String
-    public var following_url: String
-    public var gists_url: String
-    public var starred_url: String
-    public var subscriptions_url: String
-    public var organizations_url: String
+    public var html_url: String?
+    public var followers_url: String?
+    public var following_url: String?
+    public var gists_url: String?
+    public var starred_url: String?
+    public var subscriptions_url: String?
+    public var organizations_url: String?
     public var repos_url: String
     public var events_url: String
-    public var received_events_url: String
-    public var type: String
-    public var site_admin: Bool
+    public var received_events_url: String?
+    public var type: String?
+    public var site_admin: Bool?
     
     // Additional attributes loaded from the user endpoint
     public var name: String?
@@ -51,6 +51,10 @@ extension Github {
     public var publicName: String {
       login ?? "Unknown Login"
     }
+    
+    // Organization Specific Properties
+    public var issues_url: String?
+    public var members_url: String?
 //    "plan": {
 //      "name": "free",
 //      "space": 976562499,

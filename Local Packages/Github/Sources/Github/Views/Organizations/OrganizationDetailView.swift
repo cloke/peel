@@ -33,7 +33,7 @@ struct ActionConclusionView: View {
 struct OrganizationDetailView: View {
   @EnvironmentObject var viewModel: Github.ViewModel
   
-  let organization: Github.Organization
+  let organization: Github.User
   
   @State private var members = [Github.User]()
   @State private var repositories = [Github.Repository]()
@@ -54,7 +54,7 @@ struct OrganizationDetailView: View {
         }
           .frame(minWidth: 0, maxWidth: 100, maxHeight: 100, alignment: .center)
 
-      Text(organization.login)
+      Text(organization.login ?? "")
       
       HStack {
         ForEach(members) { member in
@@ -93,7 +93,7 @@ struct OrganizationDetailView: View {
           }
         }
         .tabItem { Text("Actions") }.tag(2)
-        Link("Issues", destination: URL(string: organization.issues_url)!)
+        Link("Issues", destination: URL(string: organization.issues_url ?? "")!)
           .tabItem { Text("Issues") }.tag(3)
       }
       .onAppear {
@@ -107,7 +107,7 @@ struct OrganizationDetailView: View {
         members = $0
       }
       
-      Github.loadRepositories(organization: organization.login, success: {
+      Github.loadRepositories(organization: organization.login ?? "", success: {
         repositories = $0
         for repository in repositories {
           Github.pullRequests(from: repository) {

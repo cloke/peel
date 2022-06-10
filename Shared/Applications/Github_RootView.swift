@@ -9,7 +9,7 @@ import SwiftUI
 import Github
 
 struct RepositoriesView: View {
-  let organization: Github.Organization
+  let organization: Github.User
   var repositories = [Github.Repository]()
   
   var body: some View {

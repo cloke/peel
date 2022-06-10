@@ -10,8 +10,10 @@ import SwiftUI
 struct PullRequestsListItemView: View {
   @EnvironmentObject var viewModel: Github.ViewModel
   let pullRequest: Github.PullRequest
-  let organization: Github.Organization
+  let organization: Github.User?
   let repository: Github.Repository
+  var showAvatar = false
+  var showRepository = false
 
   @State private var reviews = [Github.Review]()
   
@@ -36,6 +38,19 @@ struct PullRequestsListItemView: View {
   
   var body: some View {
     VStack {
+      if showAvatar || showRepository {
+        HStack {
+          if showAvatar {
+            AvatarView(url: URL(string: organization?.avatar_url ?? ""), maxHeight: 20)
+          }
+          if showRepository {
+            Text(repository.name)
+              .padding(3)
+              .cornerRadius(3)
+          }
+          Spacer()
+        }
+      }
       HStack(alignment: .top) {
         Text(prState)
           .font(.headline)
@@ -44,7 +59,7 @@ struct PullRequestsListItemView: View {
           .font(.subheadline)
       }
       .onAppear {
-        Github.loadReviews(organization: organization.login, repository: repository.name, pullNumber: pullRequest.number) {
+        Github.loadReviews(organization: organization?.login ?? "", repository: repository.name, pullNumber: pullRequest.number) {
           reviews = $0
         }
       }
@@ -80,7 +95,6 @@ struct PullRequestsListItemView: View {
           Text("Reviewers: \(pullRequest.requested_reviewers?.map { $0.publicName }.joined(separator: ", ") ?? "")")
           Spacer()
         }
-//        PullRequestReviewRowView(organization: organization, repository: repository, pullNumber: pullRequest.number)
       }
     }
   }

@@ -11,7 +11,6 @@ import OAuthSwift
 
 @main
 struct KitchenSyncApp: App {
-//  @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
   @Environment(\.openURL) var openURL
   
   var body: some Scene {
@@ -19,13 +18,12 @@ struct KitchenSyncApp: App {
       ContentView()
         .handlesExternalEvents(preferring: Set(arrayLiteral: "*"), allowing: Set(arrayLiteral: "*")) // activate existing window if exists
         .onOpenURL { url in
-            OAuthSwift.handle(url: url)
-          }
+          OAuthSwift.handle(url: url)
+        }
     }
     .handlesExternalEvents(matching: Set(arrayLiteral: "*")) // create new window if doesn't exist
-
+    
 #if os(macOS)
-
     WindowGroup("Debug") {
       TaskDebugWindow()
         .padding()
@@ -35,6 +33,6 @@ struct KitchenSyncApp: App {
     Settings {
       SettingsView()
     }
-    #endif
+#endif
   }
 }

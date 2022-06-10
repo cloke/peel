@@ -22,6 +22,8 @@
 - [ ] Display all of my repositories on personal account
 - [ ] Show watching
 - [ ] Show starred
+- [ ] User / Organiztion is currently unified to user, but it would be useful to separate them again and figure out a base protocol. For example `login` can be null on user, but not org, so we have to do a lot of extra nuull checks for no reason. 
+- [ ] Async image seems to have issues never leaving the .empty state when in a list view. May be a swift issue?
 
 ### Pull Requests
 - [X] Pull request view

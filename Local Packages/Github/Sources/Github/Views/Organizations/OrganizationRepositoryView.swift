@@ -10,7 +10,7 @@ import SwiftUI
 struct OrganizationRepositoryView: View {
   @EnvironmentObject var viewModel: Github.ViewModel
   
-  let organization: Github.Organization
+  let organization: Github.User
   
   @State var isExpanded = false
   @State private var repositories = [Github.Repository]()
@@ -29,12 +29,12 @@ struct OrganizationRepositoryView: View {
         NavigationLink(
           destination: OrganizationDetailView(organization: organization)
             .environmentObject(viewModel),
-          label: { Text(organization.login) }
+          label: { Text(organization.login ?? "") }
         )
           .listStyle(.plain)
       }
       .onAppear {
-        Github.loadRepositories(organization: organization.login) {
+        Github.loadRepositories(organization: organization.login ?? "") {
           repositories = $0
         }
       }

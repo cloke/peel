@@ -16,6 +16,7 @@
 		046D40E426C56BBB003715AF /* OAuthSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 046D40E326C56BBB003715AF /* OAuthSwift */; };
 		046D40E526C56C1F003715AF /* Github_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0495D215269F5277008B5148 /* Github_RootView.swift */; };
 		046D40E726C56C5B003715AF /* Github in Frameworks */ = {isa = PBXBuildFile; productRef = 046D40E626C56C5B003715AF /* Github */; };
+		048F40F82853ED470007A9A4 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 048F40F72853ED060007A9A4 /* ContentView.swift */; };
 		0495D214269F34F8008B5148 /* Alamofire in Frameworks */ = {isa = PBXBuildFile; productRef = 0495D213269F34F8008B5148 /* Alamofire */; };
 		0495D216269F5277008B5148 /* Github_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0495D215269F5277008B5148 /* Github_RootView.swift */; };
 		04A3CA2E25E46BA700EB520C /* Color.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A3CA2D25E46BA700EB520C /* Color.swift */; };
@@ -23,7 +24,6 @@
 		04A7BD8A258E77D8000E55A8 /* Tests_macOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */; };
 		04A7BD8C258E77D8000E55A8 /* KitchenSyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD63258E77D7000E55A8 /* KitchenSyncApp.swift */; };
 		04A7BD8D258E77D8000E55A8 /* KitchenSyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD63258E77D7000E55A8 /* KitchenSyncApp.swift */; };
-		04A7BD8E258E77D8000E55A8 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD64258E77D7000E55A8 /* ContentView.swift */; };
 		04A7BD8F258E77D8000E55A8 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD64258E77D7000E55A8 /* ContentView.swift */; };
 		04A7BD90258E77D8000E55A8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 04A7BD65258E77D8000E55A8 /* Assets.xcassets */; };
 		04A7BD91258E77D8000E55A8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 04A7BD65258E77D8000E55A8 /* Assets.xcassets */; };
@@ -59,6 +59,7 @@
 		0467865C259FEEF100D5E87F /* TaskDebugWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDebugWindowView.swift; sourceTree = "<group>"; };
 		0467867425A0DB4F00D5E87F /* Git */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Git; sourceTree = "<group>"; };
 		0473C0AE26A24FC100A8FE23 /* CrunchyCommon */ = {isa = PBXFileReference; lastKnownFileType = folder; path = CrunchyCommon; sourceTree = "<group>"; };
+		048F40F72853ED060007A9A4 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		0495D215269F5277008B5148 /* Github_RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Github_RootView.swift; sourceTree = "<group>"; };
 		04A3CA2D25E46BA700EB520C /* Color.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Color.swift; sourceTree = "<group>"; };
 		04A7BD63258E77D7000E55A8 /* KitchenSyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KitchenSyncApp.swift; sourceTree = "<group>"; };
@@ -182,7 +183,6 @@
 				0467866E259FEFAD00D5E87F /* Views */,
 				04A3CA2C25E46B9800EB520C /* Extensions */,
 				04678654259FC75700D5E87F /* CommonToolbarItems.swift */,
-				04A7BD64258E77D7000E55A8 /* ContentView.swift */,
 				04A7BD63258E77D7000E55A8 /* KitchenSyncApp.swift */,
 				04A7BD65258E77D8000E55A8 /* Assets.xcassets */,
 			);
@@ -204,6 +204,7 @@
 			isa = PBXGroup;
 			children = (
 				04A7BD6D258E77D8000E55A8 /* Info.plist */,
+				048F40F72853ED060007A9A4 /* ContentView.swift */,
 			);
 			path = iOS;
 			sourceTree = "<group>";
@@ -211,6 +212,7 @@
 		04A7BD73258E77D8000E55A8 /* macOS */ = {
 			isa = PBXGroup;
 			children = (
+				04A7BD64258E77D7000E55A8 /* ContentView.swift */,
 				04A7BD74258E77D8000E55A8 /* Info.plist */,
 				04A7BD75258E77D8000E55A8 /* macOS.entitlements */,
 			);
@@ -419,8 +421,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				04A7BD8E258E77D8000E55A8 /* ContentView.swift in Sources */,
 				046D40E526C56C1F003715AF /* Github_RootView.swift in Sources */,
+				048F40F82853ED470007A9A4 /* ContentView.swift in Sources */,
 				04A7BD8C258E77D8000E55A8 /* KitchenSyncApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

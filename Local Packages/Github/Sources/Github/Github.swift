@@ -9,7 +9,7 @@ import SwiftUI
 
 public struct Github {
   public struct RootView: View {
-    @State private var organizations = [Organization]()
+    @State private var organizations = [User]()
     @ObservedObject var viewModel = ViewModel()
     
     public init() {}
