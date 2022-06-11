@@ -30,11 +30,11 @@ extension DetailView {
         case.complete(let data, _):
           guard let decoded = try? JSONDecoder().decode([Info].self, from: data).first else { return }
           DispatchQueue.main.async {
-            name = decoded.name ?? ""
-            desciption = decoded.description ?? ""
-            homepage = decoded.homepage ?? ""
-            installed = decoded.installed?.first
-            versions = decoded.versions
+            self.name = decoded.name ?? ""
+            self.desciption = decoded.description ?? ""
+            self.homepage = decoded.homepage ?? ""
+            self.installed = decoded.installed?.first
+            self.versions = decoded.versions
           }
         }
       }

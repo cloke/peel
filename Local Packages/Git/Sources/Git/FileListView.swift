@@ -17,12 +17,10 @@ struct FileListItemView: View {
   var body: some View {
     HStack {
       Toggle(isOn: $toggleState) { EmptyView() }
-        .onChange(of: toggleState) {
-          if $0 {
-            Task {
-              try? await Commands.add(to: repository, path: path)
-            }
-          } else { Commands.reset(path: path, on: repository) }
+        .onChange(of: toggleState) { status in
+          Task {
+            try? await status ?  Commands.add(to: repository, path: path) : Commands.reset(path: path, on: repository)
+          }
         }
       Text(path)
         .truncationMode(.head)
