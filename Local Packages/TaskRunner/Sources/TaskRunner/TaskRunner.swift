@@ -131,7 +131,9 @@ public extension TaskRunnerProtocol {
             outputArray.append(line)
             Task { @MainActor in
               debuglog.entries.append(DebugLogEntry(entry: line))
-              callback?(.buffer(line))
+              // TODO: The concept of buffer has issues with async.
+              // Look into making buffer be an async queue.
+//              callback?(.buffer(line))
             }
           }
         }

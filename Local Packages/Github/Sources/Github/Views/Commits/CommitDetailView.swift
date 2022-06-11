@@ -63,11 +63,11 @@ internal extension NSTextCheckingResult {
   }
 }
 
-//struct DiffView_Previews: PreviewProvider {
-//  static var previews: some View {
-//    DiffView(diff: Diff())
-//  }
-//}
+struct DiffView_Previews: PreviewProvider {
+  static var previews: some View {
+    DiffView(diff: Diff())
+  }
+}
 
 
 

@@ -11,11 +11,11 @@ import Foundation
 /// https://git-scm.com/docs/git-log
 #if os(macOS)
 extension Commands {
-  static func log(branch: String, on repository: Model.Repository, callback: (([Model.LogEntry]) -> ())? = nil) {
+  static func log(branch: String, on repository: Model.Repository) async -> [Model.LogEntry] {
     // loot at --graph without parent
     var logs = [Model.LogEntry]()
-    try? Commands.run(.git, command: ["-C", repository.path, "--no-pager", "log", "--pretty=tformat:%ad<•>%h<•>%an<•>%d<•>%s", "--date=iso-strict", "--first-parent", branch.replacingOccurrences(of: "*", with: "").trimmingCharacters(in: .whitespacesAndNewlines)]) {
-      switch $0 {
+    let status = try? await Commands.run(.git, command: ["-C", repository.path, "--no-pager", "log", "--pretty=tformat:%ad<•>%h<•>%an<•>%d<•>%s", "--date=iso-strict", "--first-parent", branch.replacingOccurrences(of: "*", with: "").trimmingCharacters(in: .whitespacesAndNewlines)])
+      switch status {
       case .complete(_, let array):
         let dateFormatter = ISO8601DateFormatter()
         array.forEach {
@@ -30,10 +30,12 @@ extension Commands {
             )
           )
         }
-        callback?(logs)
+//        callack?(logs)
         default: ()
       }
-    }
+    return logs
+
+    
   }
 }
 #endif

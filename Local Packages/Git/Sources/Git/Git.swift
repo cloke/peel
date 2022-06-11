@@ -18,6 +18,7 @@ public struct GitRootView: View {
         BranchListView(branches: repository.branches.filter { $0.type == .local }, label: "Local Branches", location: .local)
         BranchListView(branches: repository.branches.filter { $0.type == .remote }, label: "Remote Branches", location: .remote)
       }
+      .listStyle(.sidebar)
       Spacer()
     }
     .environmentObject(repository)

@@ -12,40 +12,31 @@ struct HistoryListView: View {
   @EnvironmentObject var repository: Model.Repository
   
   @State private var commits = [Model.LogEntry]()
-  @State private var selectedCommit = Model.LogEntry(commit: "")
   @State private var diff = Diff()
+  @State private var selection: String?
   
   var branch: String
   
   var body: some View {
-    NavigationView {
-      ScrollView {
-        LazyVStack(alignment: .leading) {
-          ForEach(commits) { commit in
-            LogEntryRowView(log: commit)
-              .frame(height: 100)
-              .contentShape(Rectangle())
-              .padding(.vertical, 0)
-              .padding(.horizontal, 2)
-              .background(selectedCommit.id == commit.id ? Color.gitGreen : Color.clear)
-              .clipped()
-              .onTapGesture {
-                selectedCommit = commit
-                Commands.diff(commit: commit.commit, on: repository) {
-                  diff = $0
-                }
-              }
-            Divider()
-              .padding(0)
-          }
+    List(commits, selection: $selection) { commit in
+      NavigationLink(destination: DiffView(diff: diff)) {
+        LogEntryRowView(log: commit)
+          .frame(height: 90)
+          .padding(.vertical, 0)
+          .padding(.horizontal, 2)
+      }
+    }
+    .listStyle(.sidebar)
+    .task {
+      commits = await Commands.log(branch: branch, on: repository)
+
+    }
+    .onChange(of: selection) { commit in
+      if let commit = commit {
+        Commands.diff(commit: commit, on: repository) {
+          diff = $0
         }
       }
-      .onAppear {
-        Commands.log(branch: branch, on: repository) {
-          commits = $0
-        }
-      }
-      DiffView(diff: diff)
     }
   }
 }

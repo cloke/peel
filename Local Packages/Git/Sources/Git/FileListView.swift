@@ -18,7 +18,11 @@ struct FileListItemView: View {
     HStack {
       Toggle(isOn: $toggleState) { EmptyView() }
         .onChange(of: toggleState) {
-          $0 ? Commands.add(to: repository, path: path) : Commands.reset(path: path, on: repository)
+          if $0 {
+            Task {
+              try? await Commands.add(to: repository, path: path)
+            }
+          } else { Commands.reset(path: path, on: repository) }
         }
       Text(path)
         .truncationMode(.head)

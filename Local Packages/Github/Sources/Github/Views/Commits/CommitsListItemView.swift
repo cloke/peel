@@ -12,7 +12,7 @@ struct CommitsListItemView: View {
   
   var body: some View {
     VStack(alignment: .leading) {
-      HStack(alignment: .top) {
+      HStack(alignment: .bottom) {
         Text(commit.author?.login ?? "Unknown Author")
           .font(.headline)
         Spacer()
@@ -21,7 +21,8 @@ struct CommitsListItemView: View {
       }
       
       Text(commit.commit.message)
-        .padding()
+        .padding(.horizontal)
+        .padding(.vertical, 5)
     }
   }
 }

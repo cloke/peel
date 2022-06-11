@@ -24,6 +24,8 @@ struct ContentView: View {
       case .git: Git_RootView()
       case .github: Github_RootView()
       }
+      Text("Placeholder 1")
+      Text("Placeholder 2")
     }
   }
 }
