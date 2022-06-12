@@ -33,19 +33,17 @@ struct IssuesListView: View {
   @State private var isShowingCreateIssue = false {
     didSet {
       if isShowingCreateIssue == false {
-        loadData()
+        Task {
+          try? await loadData()
+        }
       }
     }
   }
   
-  func loadData() {
+  func loadData() async throws {
     state = .loading
-    Github.issues(from: repository) {
-      issues = $0
-      state = $0.count == 0 ? .empty : .loaded
-    } error: {
-      print($0)
-    }
+    issues = try await Github.issues(from: repository)
+    state = issues.count == 0 ? .empty : .loaded
   }
   
   var body: some View {
@@ -80,8 +78,8 @@ struct IssuesListView: View {
         Text("No issues found")
       }
     }
-    .onAppear {
-      loadData()
+    .task {
+      try? await loadData()
     }
     .sheet(isPresented: $isShowingCreateIssue, onDismiss: { isShowingCreateIssue = false }) {
       IssueCreateView(showSheet: $isShowingCreateIssue, repository: repository)

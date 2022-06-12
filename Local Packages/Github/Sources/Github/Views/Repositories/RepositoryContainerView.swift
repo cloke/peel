@@ -9,7 +9,7 @@ import SwiftUI
 // Used for hex color
 import CrunchyCommon
 
-struct RepositoryView: View {
+struct RepositoryContainerView: View {
   public let organization: Github.User
   public let repository: Github.Repository
   

@@ -58,12 +58,13 @@ struct PullRequestsListItemView: View {
         Text(pullRequest.dateFormated)
           .font(.subheadline)
       }
-      .onAppear {
-        Github.loadReviews(organization: organization?.login ?? "", repository: repository.name, pullNumber: pullRequest.number) {
-          reviews = $0
+      .task {
+        do {
+          reviews = try await Github.loadReviews(organization: organization?.login ?? "", repository: repository.name, pullNumber: pullRequest.number)
+        } catch {
+          
         }
       }
-      
       Text(pullRequest.title ?? "")
         .font(.body)
 

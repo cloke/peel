@@ -23,11 +23,14 @@ struct IssueCreateView: View {
       TextEditor(text: $issueBody)
       Button("Submit") {
         guard let owner = viewModel.me?.login else { return print("Tried to create an issue with no owner") }
-        Github.createIssue(for: repository, title: title, body: issueBody, owner: owner, success: { _ in
-          showSheet = false
-        }, error: { _ in
-          print("Something happened, if only I had a way to tell the user!!")
-        })
+        Task {
+          do {
+            _ = try await Github.createIssue(for: repository, title: title, body: issueBody, owner: owner)
+            showSheet = false
+          } catch {
+            print("Something happened, if only I had a way to tell the user!!")
+          }
+        }
       }
     }
     .padding()

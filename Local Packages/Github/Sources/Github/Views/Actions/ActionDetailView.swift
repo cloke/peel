@@ -15,11 +15,11 @@ struct ActionDetailView: View {
   var body: some View {
     VStack {
       Text(action.status)
-        .onAppear {
-          Github.workflowJobs(from: action) {
-            workflowJobs = $0.jobs
-          } error: {
-            print($0)
+        .task {
+          do {
+            workflowJobs = try await Github.workflowJobs(from: action).jobs
+          } catch {
+            print(error)
           }
         }
       

@@ -30,28 +30,26 @@ public struct Github {
             
           } else {
             Button("Login") {
-              Github.authorize(success:  {
-                Github.me {
-                  viewModel.me = $0
+              Task {
+                do {
+                  try await Github.authorize()
+                  viewModel.me = try await Github.me()
+                  organizations = try await Github.loadOrganizations()
                 }
-                Github.loadOrganizations() {
-                  organizations = $0
-                }
-              })
+              }
             }
           }
         }
         Spacer()
           .onAppear {
             if hasToken {
-              Github.authorize(success:  {
-                Github.me {
-                  viewModel.me = $0
+              Task {
+                do {
+                  try await Github.authorize()
+                  viewModel.me = try await Github.me()
+                  organizations = try await Github.loadOrganizations()
                 }
-                Github.loadOrganizations() {
-                  organizations = $0
-                }
-              })
+              }
             }
           }
       }

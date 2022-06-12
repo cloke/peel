@@ -43,28 +43,28 @@ struct OrganizationDetailView: View {
   
   var body: some View {
     VStack {
-        AsyncImage(url: URL(string: organization.avatar_url)) { image in
-          image
-            .resizable()
-            .scaledToFit()
-            .clipped()
-            .clipShape(Circle())
-        } placeholder: {
-          ProgressView()
-        }
-          .frame(minWidth: 0, maxWidth: 100, maxHeight: 100, alignment: .center)
-
+      AsyncImage(url: URL(string: organization.avatar_url)) { image in
+        image
+          .resizable()
+          .scaledToFit()
+          .clipped()
+          .clipShape(Circle())
+      } placeholder: {
+        ProgressView()
+      }
+      .frame(minWidth: 0, maxWidth: 100, maxHeight: 100, alignment: .center)
+      
       Text(organization.login ?? "")
       
       HStack {
         ForEach(members) { member in
           Spacer()
           AvatarView(url: URL(string: member.avatar_url), maxWidth: 100.0, maxHeight: 100)
-//        URL(string: member.avatar_url)th: 100, maxHeight: 100, alignment: .center)
+          //        URL(string: member.avatar_url)th: 100, maxHeight: 100, alignment: .center)
         }
         Spacer()
       }
-            
+      
       TabView(selection: /*@START_MENU_TOKEN@*//*@PLACEHOLDER=Selection@*/.constant(1)/*@END_MENU_TOKEN@*/) {
         OrganizationPullRequestsListView(pullRequests: pullRequests)
           .environmentObject(viewModel)
@@ -97,32 +97,28 @@ struct OrganizationDetailView: View {
           .tabItem { Text("Issues") }.tag(3)
       }
       .onAppear {
-        #if os(iOS)
+#if os(iOS)
         UITabBar.appearance().barTintColor = .white
-        #endif
+#endif
       }
     }
-    .onAppear {
-      Github.members(from: organization) {
-        members = $0
-      }
-      
-      Github.loadRepositories(organization: organization.login ?? "", success: {
-        repositories = $0
+    .task {
+      do {
+        members = try await Github.members(from: organization)
+        repositories = try await Github.loadRepositories(organization: organization.login ?? "")
+
         for repository in repositories {
-          Github.pullRequests(from: repository) {
-            pullRequests.append(contentsOf: $0)
-          }
+          let requests = try await Github.pullRequests(from: repository)
+          pullRequests.append(contentsOf: requests)
           
-          Github.workflows(from: repository, success: { workflows in
-            for workflow in workflows {
-              Github.runs(from: workflow, repository: repository, success: { actions in
-                self.actions.append(contentsOf: actions)
-              })
-            }
-          })
+          for workflow in try await Github.workflows(from: repository) {
+            let actions = try await Github.runs(from: workflow, repository: repository)
+            self.actions.append(contentsOf: actions)
+          }
         }
-      })
+      } catch {
+        print("Error Loading Detail View")
+      }
     }
   }
 }

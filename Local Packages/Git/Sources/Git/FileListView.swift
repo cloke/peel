@@ -19,7 +19,9 @@ struct FileListItemView: View {
       Toggle(isOn: $toggleState) { EmptyView() }
         .onChange(of: toggleState) { status in
           Task {
-            try? await status ?  Commands.add(to: repository, path: path) : Commands.reset(path: path, on: repository)
+            try? await status ?
+            Commands.add(to: repository, path: path) :
+            Commands.reset(path: path, on: repository)
           }
         }
       Text(path)
@@ -49,10 +51,10 @@ struct FileListView: View {
           }.disabled(commitMessage.count == 0)
           Spacer()
           Button { Commands.Stash.push(repository: repository) }
-            label: {
-              Image(systemName: "square.stack.3d.up")
-              Text("Stash")
-            }
+        label: {
+          Image(systemName: "square.stack.3d.up")
+          Text("Stash")
+        }
         }
         ForEach(repository.status) { change in
           FileListItemView(path: change.path, toggleState: ![.modifiedMe, .untracked, .unknown].contains(change.status)) //change.status != "??" ? false : true)
@@ -67,15 +69,15 @@ struct FileListView: View {
             }
             .contextMenu {
               Button {}
-                label: {
-                  Text("Ignore")
-                  Image(systemName: "pencil.slash")
-                }
+            label: {
+              Text("Ignore")
+              Image(systemName: "pencil.slash")
+            }
               Button {}
-                label: {
-                  Text("Move to trash")
-                  Image(systemName: "trash")
-                }
+            label: {
+              Text("Move to trash")
+              Image(systemName: "trash")
+            }
               Button {
                 let str = change.path
                   .replacingOccurrences(of: " ", with: "\\ ")
@@ -83,10 +85,10 @@ struct FileListView: View {
                   repository.refreshStatus()
                 }
               }
-              label: {
-                Text("Revert file")
-                Image(systemName: "arrow.uturn.backward")
-              }
+            label: {
+              Text("Revert file")
+              Image(systemName: "arrow.uturn.backward")
+            }
             }
         }
       }

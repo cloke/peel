@@ -23,14 +23,19 @@ public struct CloneRepositoryView: View {
         TextField("", text: $cloneUrl)
         HStack {
           Button { isCloning = false }
-            label: { Text("Cancel") }
+        label: { Text("Cancel") }
           Spacer()
           Button {
             viewModel.open() { destination in
-              Commands.clone(with: cloneUrl, to: destination) {
-                isCloning = false
-                  viewModel.repositories.append($0)
-                  viewModel.selectedRepository = $0
+              Task {
+                do {
+                  let repository = try await Commands.clone(with: cloneUrl, to: destination)
+                  isCloning = false
+                  viewModel.repositories.append(repository)
+                  viewModel.selectedRepository = repository
+                } catch {
+                  print("Handle ", error)
+                }
               }
             }
           } label: { Text("Clone") }

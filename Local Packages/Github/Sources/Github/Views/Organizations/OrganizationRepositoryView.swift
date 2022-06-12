@@ -19,7 +19,7 @@ struct OrganizationRepositoryView: View {
     DisclosureGroup(isExpanded: $isExpanded) {
       ForEach(repositories) { repository in
         NavigationLink(
-          destination: RepositoryView(organization: organization, repository: repository)
+          destination: RepositoryContainerView(organization: organization, repository: repository)
             .environmentObject(viewModel),
           label: { Text(repository.name) }
         )
@@ -34,8 +34,10 @@ struct OrganizationRepositoryView: View {
           .listStyle(.plain)
       }
       .onAppear {
-        Github.loadRepositories(organization: organization.login ?? "") {
-          repositories = $0
+        Task {
+          do {
+            repositories = try await Github.loadRepositories(organization: organization.login ?? "")
+          }
         }
       }
     }

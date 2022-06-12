@@ -57,13 +57,15 @@ struct PersonalView: View {
       }
       .onAppear {
         for organization in organizations {
-          Github.loadRepositories(organization: organization.login ?? "", success: { repositories in
-            for repository in repositories {
-              Github.pullRequests(from: repository) {
-                pullRequests.append(contentsOf: $0)
+          Task {
+            do {
+              let repositories = try await Github.loadRepositories(organization: organization.login ?? "")
+              for repository in repositories {
+                let requests = try await Github.pullRequests(from: repository)
+                pullRequests.append(contentsOf: requests)
               }
             }
-          })
+          }
         }
       }
     }

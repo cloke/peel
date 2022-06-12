@@ -17,18 +17,18 @@ struct CommitDetailView: View {
   var body: some View {
     VStack {
       Text(commit.sha)
-        .onAppear {
-          Github.commitDetail(from: commit) {
-            commitDetail = $0
+        .task {
+          do {
+            commitDetail = try await Github.commitDetail(from: commit)
             var patches = [String]()
-            for file in $0.files {
+            for file in commitDetail!.files {
               var patch: [String] = file.patch.components(separatedBy: "\n")
               patch.insert("diff --git", at: 0)
               patches.append(contentsOf: patch)
             }
             diff = Git.Commands.processDiff(lines: patches)
-          } error: {
-            print($0)
+          } catch {
+            print(error)
           }
         }
       

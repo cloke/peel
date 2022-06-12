@@ -37,11 +37,11 @@ struct CommitsListView: View {
     .navigationBarTitleDisplayMode(.inline)
 #endif
     }
-    .onAppear {
-      Github.commits(from: repository) {
-        commits = $0
-      } error: {
-        print($0)
+    .task {
+      do {
+        commits = try await Github.commits(from: repository)
+      } catch {
+        print(error)
       }
     }
   }

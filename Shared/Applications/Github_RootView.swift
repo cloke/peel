@@ -8,19 +8,6 @@
 import SwiftUI
 import Github
 
-struct RepositoriesView: View {
-  let organization: Github.User
-  var repositories = [Github.Repository]()
-  
-  var body: some View {
-    ForEach(repositories) { repository in
-      NavigationLink(destination: PullRequestsView(organization: organization, repository: repository)) {
-        Text(repository.name)
-      }
-    }
-  }
-}
-
 struct VerticalLabelStyle: LabelStyle {
   func makeBody(configuration: Configuration) -> some View {
     VStack {

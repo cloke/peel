@@ -24,15 +24,16 @@ struct ActionsView: View {
         Text("No Pull Requests Found")
       }
     }
-    .onAppear {
-      Github.workflows(from: repository, success: { workflows in
-        for workflow in workflows {
-          Github.runs(from: workflow, repository: repository, success: {
-            self.actions.append(contentsOf: $0)
-            state = $0.count == 0 ? .empty : .loaded
-          })
+    .task {
+      do {
+        for workflow in try await Github.workflows(from: repository) {
+          let actions = try await Github.runs(from: workflow, repository: repository)
+          self.actions.append(contentsOf: actions)
+          state = actions.count == 0 ? .empty : .loaded
         }
-      })
+      } catch {
+        print(error)
+      }
     }
   }
 }

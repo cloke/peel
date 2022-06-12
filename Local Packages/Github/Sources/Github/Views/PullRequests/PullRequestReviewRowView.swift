@@ -28,9 +28,11 @@ struct PullRequestReviewRowView: View {
         }
       }
     }
-    .onAppear {
-      Github.loadReviews(organization: organization?.login ?? "", repository: repository.name, pullNumber: pullNumber) {
-        reviews = $0
+    .task {
+      do {
+        reviews = try await Github.loadReviews(organization: organization?.login ?? "", repository: repository.name, pullNumber: pullNumber)
+      } catch {
+        
       }
     }
   }

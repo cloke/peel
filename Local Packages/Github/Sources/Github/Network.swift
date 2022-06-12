@@ -9,6 +9,10 @@ import Alamofire
 import OAuthSwift
 import SwiftUI
 
+enum GithubError: Error {
+  case couldNotDecode
+}
+
 private struct Config {
   @AppStorage("github-token") var githubToken = ""
 }
@@ -33,137 +37,104 @@ extension Github {
   
   /// Returns an array of pull requests from the specified repository
   /// - parameter organization: The github organization or personal repository name
-  public static func pullRequests(from repository: Github.Repository,
-                                  success: (([Github.PullRequest]) -> Void)? = nil,
-                                  error: ((AFError) -> Void)? = nil) {
-    
+  public static func pullRequests(from repository: Github.Repository) async throws -> [Github.PullRequest] {
     guard let organization = repository.owner?.login else {
       print("Issue generating url for repository")
-      error?(.invalidURL(url: ""))
-      return
+      throw AFError.invalidURL(url: "")
     }
-    let url = "https://api.github.com/repos/\(organization)/\(repository.name)/pulls"
-    
-    loadMany(url: url, success: success, error: error)
+    return try await loadMany(url: "https://api.github.com/repos/\(organization)/\(repository.name)/pulls")
   }
   
-  public static func loadRepositories(organization: String,
-                                      success: (([Github.Repository]) -> Void)? = nil,
-                                      error: ((AFError) -> Void)? = nil) {
-    loadMany(url: "https://api.github.com/orgs/\(organization)/repos?per_page=100", success: success, error: error)
+  public static func loadRepositories(organization: String) async throws -> [Github.Repository] {
+    return try await loadMany(url: "https://api.github.com/orgs/\(organization)/repos?per_page=100")
   }
   
-  public static func loadOrganizations(success: (([Github.User]) -> Void)? = nil,
-                                       error: ((AFError) -> Void)? = nil) {
-    loadMany(url: "https://api.github.com/user/orgs", success: success, error: error)
+  public static func loadOrganizations() async throws -> [Github.User] {
+    try await loadMany(url: "https://api.github.com/user/orgs")
   }
   
-  public static func loadReviews(organization: String, repository: String, pullNumber: Int,
-                                 success: (([Github.Review]) -> Void)? = nil,
-                                 error: ((AFError) -> Void)? = nil) {
-    loadMany(url: "https://api.github.com/repos/\(organization)/\(repository)/pulls/\(pullNumber)/reviews", success: success, error: error)
+  public static func loadReviews(organization: String, repository: String, pullNumber: Int) async throws -> [Github.Review] {
+    try await loadMany(url: "https://api.github.com/repos/\(organization)/\(repository)/pulls/\(pullNumber)/reviews")
   }
   
   /// Provides the user record of the current authenticated user.
-  public static func me(success: ((Github.User) -> Void)? = nil,
-                        error: ((AFError) -> Void)? = nil) {
-    load(url: "https://api.github.com/user", success: success, error: error)
+  public static func me() async throws -> Github.User {
+    try await load(url: "https://api.github.com/user")
   }
   
-  public static func members(from organization: User,
-                             success: (([Github.User]) -> Void)? = nil,
-                             error: ((AFError) -> Void)? = nil) {
+  public static func members(from organization: User) async throws -> [Github.User]  {
     if organization.members_url == nil {
-      error?(.invalidURL(url: "members only exist on organization users"))
-      return
+      throw AFError.invalidURL(url: "members only exist on organization users")
     }
     /// Git adds /{member} to the url, but we want just the array url.
     let url = "\(organization.members_url![..<organization.members_url!.index(organization.members_url!.endIndex, offsetBy: -9)])"
-    loadMany(url: url, success: success, error: error)
+    return try await loadMany(url: url)
   }
   
-  public static func commits(from repository: Repository,
-                             success: (([Github.Commit]) -> Void)? = nil,
-                             error: ((AFError) -> Void)? = nil) {
+  public static func commits(from repository: Repository) async throws -> [Github.Commit] {
     let url = "\(repository.commits_url![..<repository.commits_url!.index(repository.commits_url!.endIndex, offsetBy: -6)])"
-    loadMany(url: url, success: success, error: error)
+
+    return try await loadMany(url: url)
   }
   
   /// Get the details of a single commit
-  static func commitDetail(from commit: Commit,
-                           success: ((Github.CommitDetail) -> Void)? = nil,
-                           error: ((AFError) -> Void)? = nil) {
-    load(url: commit.url, success: success, error: error)
+  static func commitDetail(from commit: Commit) async throws -> Github.CommitDetail {
+    try await load(url: commit.url)
   }
   
-  static func workflowJobs(from action: Action,
-                           success: ((Github.WorkflowRun) -> Void)? = nil,
-                           error: ((AFError) -> Void)? = nil) {
-    load(url: action.jobs_url, success: success, error: error)
+  static func workflowJobs(from action: Action) async throws -> WorkflowRun {
+     try await load(url: action.jobs_url)
   }
   
-  static func actions(from repository: Repository,
-                      success: ((Github.Runs) -> Void)? = nil,
-                      error: ((AFError) -> Void)? = nil) {
+  static func actions(from repository: Repository) async throws -> Runs {
     guard let organization = repository.owner?.login else {
       print("Issue generating url for repository")
-      error?(.invalidURL(url: ""))
-      return
+      throw AFError.invalidURL(url: "")
     }
-    let url = "https://api.github.com/repos/\(organization)/\(repository.name)/actions/runs"
-    load(url: url, success: success, error: error)
+    return try await load(url: "https://api.github.com/repos/\(organization)/\(repository.name)/actions/runs")
   }
   
-  static func workflows(from repository: Repository,
-                        success: (([Github.Workflow]) -> Void)? = nil,
-                        error: ((AFError) -> Void)? = nil) {
+  static func workflows(from repository: Repository) async throws -> [Workflow] {
     guard let organization = repository.owner?.login else {
       print("Issue generating url for repository")
-      error?(.invalidURL(url: ""))
-      return
+      throw AFError.invalidURL(url: "")
     }
     let url = "https://api.github.com/repos/\(organization)/\(repository.name)/actions/workflows"
-    load(
-      url: url,
-      success: { (workflowContainer: WorkflowContainer) in
-        print(workflowContainer)
-        success?(workflowContainer.workflows)
-      },
-      error: error
-    )
+
+    guard let workflowContainer: Github.WorkflowContainer = try await load(url: url) else {
+      throw GithubError.couldNotDecode
+    }
+    return workflowContainer.workflows
   }
   
-  static func runs(from workflow: Workflow,
-                   repository: Repository,
-                   success: (([Github.Action]) -> Void)? = nil,
-                   error: ((AFError) -> Void)? = nil) {
+  /// Returns an array of Github workflow runs
+  /// - Parameters:
+  ///   - workflow: Github.Workflow referencing a workflow containing workflow runs
+  ///   - repository: repository containing workflows
+  /// - Returns: An array of Github actions. [Github.Action]
+  static func runs(from workflow: Workflow, repository: Repository) async throws -> [Action] {
     guard let organization = repository.owner?.login else {
       print("Issue generating url for repository")
-      error?(.invalidURL(url: ""))
-      return
+      throw AFError.invalidURL(url: "")
     }
     let url = "https://api.github.com/repos/\(organization)/\(repository.name)/actions/workflows/\(workflow.id)/runs"
-    load(
-      url: url,
-      success: { (workflowContainer: Runs) in
-        success?(workflowContainer.workflow_runs)
-      },
-      error: error
-    )
-  }
-  
-  
-  static func issues(from repository: Repository,
-                     success: (([Github.Issue]) -> Void)? = nil,
-                     error: ((AFError) -> Void)? = nil) {
-    let url = "\(repository.issues_url![..<repository.issues_url!.index(repository.issues_url!.endIndex, offsetBy: -9)])"
+    guard let workflowContainer: Github.Runs = try await load(url: url) else {
+      throw GithubError.couldNotDecode
+    }
     
-    loadMany(url: url, success: success, error: error)
+    return workflowContainer.workflow_runs
   }
   
-  static func createIssue(for repository: Repository, title: String, body: String, owner: String,
-                          success: ((Github.Issue) -> Void)? = nil,
-                          error: ((AFError) -> Void)? = nil) {
+  /// Returns an array of Github issues.
+  /// - Parameters:
+  ///   - repository: Github.Repository referencing a repository containing issues
+  /// - Returns: An array of github issues
+  static func issues(from repository: Repository) async throws -> [Issue] {
+    let url = "\(repository.issues_url![..<repository.issues_url!.index(repository.issues_url!.endIndex, offsetBy: -9)])"
+    return try await loadMany(url: url)
+  }
+  
+  static func createIssue(for repository: Repository, title: String, body: String, owner: String) async throws -> Issue {
     let json = [
       "title": title,
       "body": body,
@@ -172,61 +143,35 @@ extension Github {
     
     guard let organization = repository.owner?.login,
           let url = URL(string: "https://api.github.com/repos/\(organization)/\(repository.name)/issues") else {
-            print("Issue generating url for repository")
-            error?(.invalidURL(url: ""))
-            return
-          }
-    AF.request(url, method: .post, parameters: json, encoder: JSONParameterEncoder.default, headers: headers)
-      .responseDecodable { (response: DataResponse<Issue, AFError>) in
-        switch response.result {
-        case .success(let value):
-          success?(value)
-        case .failure(let err):
-          print(err)
-          error?(err)
-        }
-      }
-    print(json)
+      print("Issue generating url for repository")
+      throw AFError.invalidURL(url: "")
+    }
+    
+    return try await AF.request(url, method: .post, parameters: json, encoder: JSONParameterEncoder.default, headers: headers)
+      .serializingDecodable(Issue.self)
+      .value
   }
+  
   /// Used when the expected response will be a single of codable object.
-  private static func load<T: Codable>(url: String,
-                                       success: ((T) -> Void)? = nil,
-                                       error: ((AFError) -> Void)? = nil) {
-    print("Load url:", url)
-    AF.request(URL(string: url)!, method: .get, headers: headers)
-      .responseDecodable { (response: DataResponse<T, AFError>) in
-        switch response.result {
-        case .success(let value):
-          success?(value)
-        case .failure(let err):
-          print(err)
-          error?(err)
-        }
-      }
+  private static func load<T: Codable>(url: String) async throws -> T {
+    try await AF.request(URL(string: url)!, method: .get, headers: headers)
+        .serializingDecodable(T.self)
+        .value
   }
   
   /// Used when the expected response will be an array of codable objects.
-  private static func loadMany<T: Codable>(url: String,
-                                           success: (([T]) -> Void)? = nil,
-                                           error: ((AFError) -> Void)? = nil) {
-    print("Load url:", url)
-    AF.request(URL(string: url)!, method: .get, headers: headers)
-      .responseDecodable { (response: DataResponse<[T], AFError>) in
-        switch response.result {
-        case .success(let value):
-          success?(value)
-        case .failure(let err):
-          print(err)
-          error?(err)
-        }
-      }
+  /// - Parameter url: url to the github api
+  /// - Returns: array of codables
+  private static func loadMany<T: Codable>(url: String) async throws -> [T] {
+    return try await AF.request(URL(string: url)!, method: .get, headers: headers)
+      .serializingDecodable([T].self)
+      .value
   }
   
   /// Authorizes with the github api or returns success if token exists. To reset token and access call reauthorize.
-  public static func authorize(success: (() -> Void)? = nil, error: (() -> Void)? = nil)  {
+  public static func authorize() async throws -> Void {
     if !config.githubToken.isEmpty {
       print("Not empty: \(config.githubToken)")
-      success?()
       return
     }
     
@@ -242,29 +187,22 @@ extension Github {
     oauthswift.authorizeURLHandler = OAuthSwiftOpenURLExternally.sharedInstance
     
     let state = generateState(withLength: 20)
-    oauthswift.authorize(
-      withCallbackURL: URL(string: "crunchy-kitchen-sink://")!, scope: "user,repo,admin:org,org", state: state) { result in
-        switch result {
-        case .success(let (credential, _, _)):
-          config.githubToken = credential.oauthToken
-          print(credential.oauthToken)
-          success?()
-        case .failure(let err):
-          print(err.description)
-          error?()
+    return await withCheckedContinuation { continuation in
+      oauthswift.authorize(
+        withCallbackURL: URL(string: "crunchy-kitchen-sink://")!, scope: "user,repo,admin:org,org", state: state) { result in
+          switch result {
+          case .success(let (credential, _, _)):
+            config.githubToken = credential.oauthToken
+            print(credential.oauthToken)
+            continuation.resume()
+          case .failure(let err):
+            continuation.resume(throwing: err.underlyingError as! Never)
+          }
         }
-      }
+    }
   }
   
   public static func reauthorize(success: (() -> Void)? = nil, error: (() -> Void)? = nil)  {
     config.githubToken = ""
-    //    authorize(
-    //      success: {
-    //        success?()
-    //      },
-    //      error: {
-    //        error?()
-    //      }
-    //    )
   }
 }

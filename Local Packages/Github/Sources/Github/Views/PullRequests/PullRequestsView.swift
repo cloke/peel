@@ -86,11 +86,13 @@ public struct PullRequestsView: View {
       }
     }
     .onAppear {
-      Github.pullRequests(from: repository) {
-        pullRequests = $0
-        state = $0.count == 0 ? .empty : .loaded
-      } error: {
-        print($0)
+      Task {
+        do {
+          pullRequests = try await Github.pullRequests(from: repository)
+          state = pullRequests.count == 0 ? .empty : .loaded
+        } catch {
+          print(error)
+        }
       }
     }
   }

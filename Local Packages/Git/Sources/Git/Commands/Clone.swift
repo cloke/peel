@@ -11,17 +11,16 @@ import Foundation
 /// https://git-scm.com/docs/git-clone
 #if os(macOS)
 extension Commands {
-  static func clone(with url: String, to destination: URL, callback: ((Model.Repository) -> ())? = nil) {
+  static func clone(with url: String, to destination: URL) async throws -> Model.Repository {
     // TODO: Refactor most of these to use a state on the callback
-    guard let url = URL(string: url) else { return }
+    guard let url = URL(string: url) else { throw GitError.Unknown }
     // TODO: Add https support
-    if (url.scheme == "https") { return }
+    if (url.scheme == "https") { throw GitError.Unknown }
     
-    guard let repositoryName = url.path.components(separatedBy: "/").last?.dropLast(4).description else { return }
+    guard let repositoryName = url.path.components(separatedBy: "/").last?.dropLast(4).description else { throw GitError.Unknown }
     
-    Commands.simple(command: ["clone", url.description, [destination.path, repositoryName].joined(separator: "/")]) { _ in
-      callback?(Model.Repository(name: repositoryName, path: destination.path))
-    }    
+    _ = try await Commands.simple(command: ["clone", url.description, [destination.path, repositoryName].joined(separator: "/")])
+    return Model.Repository(name: repositoryName, path: destination.path)
   }
 }
 #endif
