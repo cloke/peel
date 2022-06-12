@@ -18,25 +18,30 @@ struct HistoryListView: View {
   var branch: String
   
   var body: some View {
-    List(commits, selection: $selection) { commit in
-      NavigationLink(destination: DiffView(diff: diff)) {
-        LogEntryRowView(log: commit)
-          .frame(height: 90)
-          .padding(.vertical, 0)
-          .padding(.horizontal, 2)
-      }
-    }
-    .listStyle(.sidebar)
-    .task {
-      commits = await Commands.log(branch: branch, on: repository)
-
-    }
-    .onChange(of: selection) { commit in
-      if let commit = commit {
-        Commands.diff(commit: commit, on: repository) {
-          diff = $0
+    NavigationView {
+      List(commits, selection: $selection) { commit in
+        NavigationLink(destination: DiffView(diff: diff)) {
+          VStack {
+            LogEntryRowView(log: commit)
+              .frame(height: 90)
+              .padding(.vertical, 0)
+              .padding(.horizontal, 2)
+            Divider()
+          }
         }
       }
+      .listStyle(.sidebar)
+      .task {
+        commits = await Commands.log(branch: branch, on: repository)
+      }
+      .onChange(of: selection) { commit in
+        if let commit = commit {
+          Commands.diff(commit: commit, on: repository) {
+            diff = $0
+          }
+        }
+      }
+      Text("Select a commit")
     }
   }
 }
