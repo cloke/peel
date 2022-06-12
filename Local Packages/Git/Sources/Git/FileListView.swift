@@ -24,10 +24,18 @@ struct FileListItemView: View {
             Commands.reset(path: path, on: repository)
           }
         }
-      Text(path)
+      Label(path, systemImage: icon(from: path))
         .truncationMode(.head)
-        .lineLimit(1)
       Spacer()
+    }
+  }
+  
+  func icon(from path: String) -> String {
+    switch (path as NSString).pathExtension {
+    case "md":
+      return "doc"
+    default:
+      return (path as NSString).pathExtension
     }
   }
 }
@@ -92,6 +100,7 @@ struct FileListView: View {
             }
         }
       }
+      .listStyle(.sidebar)
       DiffView(diff: diff)
     }
     .onAppear {

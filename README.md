@@ -84,6 +84,7 @@
 - [ ] Continue to look at what is considered staged or unstaged and fix check boxes as needed
 - [ ] Ensure at least on file is staged before commit
 - [ ] Stage all files
+- [X] Preview icons
 
 ### Pull
 - [ ] Pull remote into checked out branch
