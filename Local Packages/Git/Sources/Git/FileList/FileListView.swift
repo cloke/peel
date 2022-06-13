@@ -11,7 +11,7 @@ import CrunchyCommon
 #if os(macOS)
 struct FileListItemView: View {
   @EnvironmentObject var repository: Model.Repository
-  var path: String
+  var file: FileDescriptor
   @State var toggleState: Bool
   
   var body: some View {
@@ -27,6 +27,7 @@ struct FileListItemView: View {
       Label(path, systemImage: icon(from: path))
         .truncationMode(.head)
       Spacer()
+//      Text()
     }
   }
   
@@ -64,8 +65,8 @@ struct FileListView: View {
           Text("Stash")
         }
         }
-        ForEach(repository.status) { change in
-          FileListItemView(path: change.path, toggleState: ![.modifiedMe, .untracked, .unknown].contains(change.status)) //change.status != "??" ? false : true)
+        ForEach(repository.status) { file in
+          FileListItemView(file: file, toggleState: ![.modifiedMe, .untracked, .unknown].contains(file.status)) //change.status != "??" ? false : true)
             .contentShape(Rectangle())
             .background(color(status: change.status))
             .foregroundColor(color(status: change.status).isDarkColor == true ? .white : .black)
