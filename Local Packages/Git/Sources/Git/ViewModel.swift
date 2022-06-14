@@ -93,66 +93,6 @@ extension Model {
 }
 
 extension Model {
-  /// Identifiable container for single git repository
-  public class Repository: Codable, Identifiable, ObservableObject {
-    public var id = UUID()
-    public var name: String
-    public var path: String
-    
-    @Published var branches = [Model.Branch]()
-    @Published var status = [FileDescriptor]()
-    
-    init(name: String, path: String) {
-      self.name = name
-      self.path = path
-    }
-#if os(macOS)
-    func loadBranches(branchType: Model.BranchType) {
-      // TODO - The array should be built in one pass to reduce weird graphic errors.
-      // Maybe wait for swift 6 and use async calls to simplify
-      print("Load branches in \(name)")
-      Commands.Branch.list(from: branchType, on: self) { [self] list in
-        print("load type: \(branchType)")
-        branches.removeAll(where: { $0.type == branchType })
-        branches.append(contentsOf: list)
-      }
-    }
-    func load() {
-      loadBranches(branchType: .local)
-      loadBranches(branchType: .remote)
-      refreshStatus()
-    }
-    
-    func refreshStatus() {
-      Commands.status(on: self) { self.status = $0 }
-    }
-    
-    func activate(branch: Model.Branch) {
-      branches.forEach { $0.isActive = $0.id == branch.id ? true : false }
-    }
-    
-    func push(branch: Model.Branch) {
-      Commands.push(branch: branch, to: self) { _ in
-        self.refreshStatus()
-      }
-    }
-    
-    func delete(branch: Model.Branch) {
-      Commands.Branch.delete(name: branch.name, on: self) { [self] _ in
-        if let index = branches.firstIndex(where: { $0.id == branch.id }) {
-          branches.remove(at: index)
-        }
-      }
-    }
-#endif
-
-    enum CodingKeys: String, CodingKey {
-      case id, name, path
-    }
-  }
-}
-
-extension Model {
   /** Identifiable container for single git log entry
    
    git log --abbrev-commit --graph --decorate --first-parent --date=iso8601-strict

@@ -20,7 +20,10 @@ struct HistoryListView: View {
   var body: some View {
     NavigationView {
       List(commits, selection: $selection) { commit in
-        NavigationLink(destination: DiffView(diff: diff)) {
+        NavigationLink(
+          destination: DiffView(diff: diff)
+            .padding()
+        ) {
           VStack {
             LogEntryRowView(log: commit)
               .frame(height: 90)

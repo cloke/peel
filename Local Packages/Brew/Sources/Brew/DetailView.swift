@@ -46,7 +46,7 @@ extension DetailView {
         switch $0 {
         case .buffer(let buffer):
           DispatchQueue.main.async {
-            outputStream.append(buffer)
+            self.outputStream.append(buffer)
           }
         case .complete(_, _):
           print("Do nothing")
@@ -60,7 +60,7 @@ extension DetailView {
         switch $0 {
         case .buffer(let buffer):
           DispatchQueue.main.async {
-            outputStream.append(buffer)
+            self.outputStream.append(buffer)
           }
         case .complete(_, _):
           print("Do nothing")

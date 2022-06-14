@@ -7,7 +7,9 @@ public struct GitRootView: View {
   public init(repository: Model.Repository) {
     print("Switched to repository: \(repository.name)")
     self.repository = repository
-    self.repository.load()
+    Task {
+      await repository.load()
+    }
   }
   
   public var body: some View {
@@ -20,7 +22,6 @@ public struct GitRootView: View {
           BranchListView(branches: repository.branches.filter { $0.type == .remote }, label: "Remote Branches", location: .remote)
         }
         .listStyle(.sidebar)
-        Spacer()
       }
       .environmentObject(repository)
       Text("Hello")

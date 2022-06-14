@@ -66,6 +66,7 @@
 - [ ] Add a timed mechanism for checking for local and remote changes
 - [ ] Set a check for minimum git version (>2.23 is required). 
 - [ ] Bundle git into project
+- [ ] When deleting a branch log is flooded with error about publishing changes on background thread
 
 ### Clone
 - [X] ssh

@@ -8,15 +8,6 @@
 import SwiftUI
 import Github
 
-struct VerticalLabelStyle: LabelStyle {
-  func makeBody(configuration: Configuration) -> some View {
-    VStack {
-      configuration.icon.font(.headline)
-      configuration.title.font(.subheadline)
-    }
-  }
-}
-
 struct Github_RootView: View {
   var body: some View {
     VStack {

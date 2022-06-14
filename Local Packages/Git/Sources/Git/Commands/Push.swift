@@ -10,8 +10,8 @@
 
 #if os(macOS)
 extension Commands {
-  static func push(branch: Model.Branch, to repository: Model.Repository, callback: (([String]) -> ())? = nil) {
-    Commands.simple(command: ["-C", repository.path, "push", "origin", branch.name], callback: callback)
+  static func push(branch: Model.Branch, to repository: Model.Repository) async throws -> [String] {
+    try await Commands.simple(command: ["-C", repository.path, "push", "origin", branch.name])
   }
 }
 #endif

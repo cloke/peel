@@ -18,6 +18,7 @@ struct BranchListItemView: View {
   public var selected: () -> ()
   public var activated: () -> ()
   public var push: () -> ()
+  
   var body: some View {
     Text(name)
       .fontWeight(isActive ? .bold : .regular)
@@ -34,10 +35,11 @@ struct BranchListItemView: View {
       push()
     } label: { Image(systemName: "square.and.arrow.up") }
     Text(upDown)
-      .onAppear {
-        Commands.revList(repository: repository, branchA: "origin/\(name)", branchB: name) {
-          upDown = "(⇣\($0) / \($1) ⇡)"
-        }
+      .task {
+        do {
+          let status = try await Commands.revList(repository: repository, branchA: "origin/\(name)", branchB: name)
+          upDown = "(⇣\(status.0) / \(status.1) ⇡)"
+        } catch {}
       }
   }
 }
@@ -80,29 +82,37 @@ public struct BranchListView: View {
               }
             },
             push: {
-              repository.push(branch: branch)
+              Task {
+                try? await repository.push(branch: branch)
+              }
             }
           )
         }
         .sheet(isPresented: $isShowing) {
           BranchRepositoryView() { [self] in
             isShowing = false
-            repository.load()
+            Task {
+              await repository.load()
+            }
           }
           .padding()
           .frame(width: 300, height: 100)
         }
         .contextMenu {
           Button { isShowing = true }
-            label: {
-              Text("Create Branch")
-              Image(systemName: "arrow.triangle.branch")
+        label: {
+          Text("Create Branch")
+          Image(systemName: "arrow.triangle.branch")
+        }
+          Button {
+            Task {
+              try? await repository.delete(branch: branch)
             }
-          Button { repository.delete(branch: branch) }
-            label: {
-              Text("Delete Branch")
-              Image(systemName: "trash")
-            }
+          }
+        label: {
+          Text("Delete Branch")
+          Image(systemName: "trash")
+        }
         }
       }
     } label: {
@@ -111,7 +121,9 @@ public struct BranchListView: View {
         Spacer()
         if isExpanded {
           Button {
-            repository.load()
+            Task {
+              await repository.load()
+            }
           } label: { Image(systemName: "arrow.counterclockwise.icloud") }
         }
       }
@@ -129,12 +141,15 @@ struct BranchRepositoryView: View {
     TextField("Branch Name", text: $name)
     HStack {
       Button { callback?() }
-        label: { Text("Cancel") }
+    label: { Text("Cancel") }
       Spacer()
       Button {
-        Commands.Branch.create(name: name, on: repository) { _ in callback?() }
+        Task {
+          _ = try? await Commands.Branch.create(name: name, on: repository)
+          callback?()
+        }
       }
-      label: { Text("Create") }
+    label: { Text("Create") }
     }
   }
 }

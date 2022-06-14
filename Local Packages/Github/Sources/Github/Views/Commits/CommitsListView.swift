@@ -16,25 +16,25 @@ struct CommitsListView: View {
   var body: some View {
     Group {
 #if os(macOS)
-    NavigationView {
+      NavigationView {
+        List(commits, id: \.sha) { commit in
+          VStack {
+            NavigationLink(destination: CommitDetailView(commit: commit)) {
+              CommitsListItemView(commit: commit)
+            }
+            Divider()
+          }
+        }
+      }
+#else
       List(commits, id: \.sha) { commit in
         VStack {
           NavigationLink(destination: CommitDetailView(commit: commit)) {
             CommitsListItemView(commit: commit)
           }
-          Divider()
         }
       }
-    }
-#else
-    List(commits, id: \.sha) { commit in
-      VStack {
-        NavigationLink(destination: CommitDetailView(commit: commit)) {
-          CommitsListItemView(commit: commit)
-        }
-      }
-    }
-    .navigationBarTitleDisplayMode(.inline)
+      .navigationBarTitleDisplayMode(.inline)
 #endif
     }
     .task {

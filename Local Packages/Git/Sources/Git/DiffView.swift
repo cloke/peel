@@ -7,9 +7,24 @@
 
 import SwiftUI
 
+struct LineNumberView: View {
+  var status: String
+  var number: String
+  
+  var body: some View {
+    HStack {
+      Text(number)
+        .padding(.leading)
+        .opacity(status == "+" ? 0 : 1)
+      Text(number)
+        .opacity(status == "-" ? 0 : 1)
+    }
+  }
+}
+
 public struct DiffView: View {
   public var diff: Diff
-
+  
   public init(diff: Diff) {
     self.diff = diff
   }
@@ -25,11 +40,11 @@ public struct DiffView: View {
                 ForEach(chunk.lines) { line in
                   HStack {
                     if line.lineNumber != 0 {
-                      Text(line.lineNumber.description)
-                        .padding(.leading)
+                      LineNumberView(status: line.status, number: line.lineNumber.description)
                     }
                     Text(line.line)
                       .padding(.horizontal)
+                      .font(.body.monospaced())
                     Spacer()
                   }
                   .background(lineColor(line.status))

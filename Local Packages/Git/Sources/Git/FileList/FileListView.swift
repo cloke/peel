@@ -1,5 +1,5 @@
 //
-//  Git_FileListView.swift
+//  FileListView.swift
 //  KitchenSync
 //
 //  Created by Cory Loken on 12/28/20.
@@ -9,55 +9,33 @@ import SwiftUI
 import CrunchyCommon
 
 #if os(macOS)
-struct FileListItemView: View {
-  @EnvironmentObject var repository: Model.Repository
-  var file: FileDescriptor
-  @State var toggleState: Bool
-  
-  var body: some View {
-    HStack {
-      Toggle(isOn: $toggleState) { EmptyView() }
-        .onChange(of: toggleState) { status in
-          Task {
-            try? await status ?
-            Commands.add(to: repository, path: path) :
-            Commands.reset(path: path, on: repository)
-          }
-        }
-      Label(path, systemImage: icon(from: path))
-        .truncationMode(.head)
-      Spacer()
-//      Text()
-    }
-  }
-  
-  func icon(from path: String) -> String {
-    switch (path as NSString).pathExtension {
-    case "md":
-      return "doc"
-    default:
-      return (path as NSString).pathExtension
-    }
-  }
-}
-
 struct FileListView: View {
   @ObservedObject var repository: Model.Repository
   @State private var commitMessage: String = ""
   @State private var diff = Diff()
+  @FocusState private var commitIsFocused: Bool
   
   var body: some View {
     NavigationView {
       List {
-        TextEditor(text: $commitMessage)
-          .frame(height: 100)
+        ZStack {
+          TextEditor(text: $commitMessage)
+            .frame(height: 100)
+            .focused($commitIsFocused)
+          withAnimation {
+            Text("Enter commit message")
+              .opacity(commitIsFocused ? 0 : 1)
+              .disabled(true)
+          }
+        }
         HStack {
           Button("Commit") {
             Commands.commit(repository: repository, message: commitMessage) { _ in
               commitMessage = ""
               repository.refreshStatus()
             }
-          }.disabled(commitMessage.count == 0)
+          }
+          .disabled(commitMessage.count == 0)
           Spacer()
           Button { Commands.Stash.push(repository: repository) }
         label: {
@@ -66,13 +44,11 @@ struct FileListView: View {
         }
         }
         ForEach(repository.status) { file in
-          FileListItemView(file: file, toggleState: ![.modifiedMe, .untracked, .unknown].contains(file.status)) //change.status != "??" ? false : true)
+          FileListItemView(file: file, toggleState: [.modifiedMe].contains(file.status)) //change.status != "??" ? false : true)
             .contentShape(Rectangle())
-            .background(color(status: change.status))
-            .foregroundColor(color(status: change.status).isDarkColor == true ? .white : .black)
             .onTapGesture {
               DispatchQueue.main.async {
-                let str = change.path
+                let str = file.path
                 Commands.diff(repository: repository, path: str) { diff = $0 }
               }
             }
@@ -88,7 +64,7 @@ struct FileListView: View {
               Image(systemName: "trash")
             }
               Button {
-                let str = change.path
+                let str = file.path
                   .replacingOccurrences(of: " ", with: "\\ ")
                 Commands.restore(path: str, on: repository) { _ in
                   repository.refreshStatus()
