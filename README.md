@@ -67,7 +67,7 @@
 - [ ] Add a timed mechanism for checking for local and remote changes
 - [ ] Set a check for minimum git version (>2.23 is required). 
 - [ ] Bundle git into project
-- [ ] When deleting a branch log is flooded with error about publishing changes on background thread
+- [X] When deleting a branch log is flooded with error about publishing changes on background thread
 
 ### Clone
 - [X] ssh
@@ -124,6 +124,10 @@
 ### Branch
 - [ ] Add ability to create a branch
 - [ ] Add ability to delete a branch
+  - [ ] Single branch (currently have to select check box. If only one branch then checkbox should not be needed.)
+      - [ ] Update strings to show singular
+  - [X] Multiple branchs
+    - [ ] Update strings to show plural
 - [ ] Use a property for selected branch and not the asterix in the name
 - [ ] Figure out git push. 
 - [ ] On fresh install there might be an issue with adding a repo. They seem to only work after app restart. 
