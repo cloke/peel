@@ -50,6 +50,7 @@ public struct Diff: Identifiable {
     public struct Chunk: Identifiable {
       public var id = UUID()
       public var chunk = ""
+      public var parsedObjectName = ""
       public var lines = [Line]()
       
       /// Identifiable container for single git line diff
@@ -82,12 +83,12 @@ extension Model {
     var name: String
     /// Status of branch from branch command. ie. result started with "*"
     @Published var isActive: Bool
-    var type: BranchType
     
-    init(name: String, isActive: Bool, type: BranchType) {
+    var isSelected = false
+    
+    init(name: String, isActive: Bool) {
       self.name = name
       self.isActive = isActive
-      self.type = type
     }
   }
 }
@@ -194,7 +195,7 @@ public class ViewModel: ObservableObject {
     dialog.canChooseFiles = false;
     dialog.canChooseDirectories = true;
     
-    if (dialog.runModal() ==  NSApplication.ModalResponse.OK) {
+    if (dialog.runModal() == NSApplication.ModalResponse.OK) {
       let result = dialog.url
       if (result != nil) {
         callback?(result!)

@@ -5,41 +5,39 @@
 //  Created by Cory Loken on 5/14/21.
 //
 
-#if os(macOS)
+#if canImport(AppKit)
 import TaskRunner
+import Foundation
 
 public struct Commands: TaskRunnerProtocol {
   private static let shared = Commands()
-  
-  static func run(_ url: Executable, command: [String], callback: ((TaskStatus) -> ())? = nil) throws {
-    try? Self.shared.run(url, command: command, callback: callback)
-  }
-  
-  static func run(_ url: Executable, command: [String]) async throws -> TaskStatus {
+
+  static func launch(tool: URL, arguments: [String]) async throws -> TaskStatus {
     return try await withCheckedThrowingContinuation {
       (continuation: CheckedContinuation<TaskStatus, Error>) in
-      try? Self.shared.run(url, command: command, callback: { status in
-        continuation.resume(returning: status)
-      })
-    }
-  }
-  
-  /// Provides a single point for commands that just execture a command and return data
-  static func simple(command: [String], callback: (([String]) -> ())? = nil) {
-    try? Commands.run(.git, command: command) {
-      switch $0 {
-      case .complete(_, let array):
-        callback?(array)
-      default: ()
+      DispatchQueue.main.async {
+        Self.shared.launch(tool: tool, arguments: arguments) { result, arg in
+          continuation.resume(returning: .complete(arg, [""]))
+        }
       }
     }
   }
   
-  static func simple(command: [String]) async throws -> [String] {
-    let status = try? await Commands.run(.git, command: command)
+//  static func run(_ url: Executable, command: [String]) async throws -> TaskStatus {
+//    return try await withCheckedThrowingContinuation {
+//      (continuation: CheckedContinuation<TaskStatus, Error>) in
+//      try? Self.shared.run(url, command: command, callback: { status in
+//        continuation.resume(returning: status)
+//      })
+//    }
+//  }
+  
+  /// Provides a single point for commands that just execture a command and return data
+  static func simple(arguments: [String]) async throws -> [String] {
+    let status = try? await Commands.launch(tool: URL(string: Executable.git.rawValue)!, arguments: arguments)
     switch status {
-    case .complete(_, let array):
-      return array
+    case .complete(let data, _):
+      return String(data: data, encoding: .utf8)!.split(separator: "\n").map { String($0) }
     default:
       throw GitError.Unknown
     }

@@ -10,8 +10,8 @@
 
 #if os(macOS)
 extension Commands {
-  static func commit(repository: Model.Repository, message: String, callback: (([String]) -> ())? = nil) {
-    Self.simple(command: ["-C", repository.path, "commit", "-m", message], callback: callback)
+  static func commit(repository: Model.Repository, message: String) async throws -> [String] {
+    try await Self.simple(arguments: ["-C", repository.path, "commit", "-m", message])
   }
 }
 #endif

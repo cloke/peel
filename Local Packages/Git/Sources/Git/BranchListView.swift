@@ -8,39 +8,50 @@
 import SwiftUI
 
 #if os(macOS)
+struct ListItem: Identifiable {
+    let id: Int
+    var isChecked: Bool
+}
+
 struct BranchListItemView: View {
   @EnvironmentObject var repository: Model.Repository
   @State private var upDown = ""
   
-  public var name: String
-  public var isActive: Bool
+  @Binding var branch: Model.Branch
+
   public var type: Model.BranchType
   public var selected: () -> ()
   public var activated: () -> ()
   public var push: () -> ()
   
   var body: some View {
-    Text(name)
-      .fontWeight(isActive ? .bold : .regular)
-      .gesture(
-        TapGesture(count: 1)
-          .onEnded({ selected() })
-      )
-      .highPriorityGesture(
-        TapGesture(count: 2)
-          .onEnded({ activated() })
-      )
-    Spacer()
-    Button {
-      push()
-    } label: { Image(systemName: "square.and.arrow.up") }
-    Text(upDown)
-      .task {
-        do {
-          let status = try await Commands.revList(repository: repository, branchA: "origin/\(name)", branchB: name)
-          upDown = "(⇣\(status.0) / \(status.1) ⇡)"
-        } catch {}
-      }
+    HStack {
+      Toggle(isOn: $branch.isSelected, label: {})
+        .toggleStyle(.checkbox)
+      Text(branch.name)
+        .fontWeight(branch.isActive ? .bold : .regular)
+        .gesture(
+          TapGesture(count: 1)
+            .onEnded({ selected() })
+        )
+        .highPriorityGesture(
+          TapGesture(count: 2)
+            .onEnded({ activated() })
+        )
+      Spacer()
+      Text(upDown)
+        .task {
+          do {
+            if type == .local {
+              let status = try await Commands.revList(repository: repository, branchA: "origin/\(branch.name)", branchB: branch.name)
+              upDown = "(⇣\(status.0) / \(status.1) ⇡)"
+            }
+          } catch {}
+        }
+      Button {
+        push()
+      } label: { Image(systemName: "square.and.arrow.up") }
+    }
   }
 }
 
@@ -51,43 +62,42 @@ public struct BranchListView: View {
   @State private var isShowing = false
   // TODO: Should we persist this as state?
   @State private var isExpanded = false
+  @State private var multiSelection = Set<UUID>()
   
-  public var branches: [Model.Branch]
+  
+  @Binding public var localBranches: [Model.Branch]
   public var label: String
   public var location: Model.BranchType = .remote
-  
-  public init(branches: [Model.Branch], label: String, location: Model.BranchType = .remote) {
-    self.branches = branches
-    self.label = label
-    self.location = location
-  }
-  
+    
   public var body: some View {
     DisclosureGroup(isExpanded: $isExpanded) {
-      ForEach(branches) { branch in
-        NavigationLink(destination: HistoryListView(branch: branch.name), tag: branch.name, selection: self.$selection) {
+      ForEach(localBranches.indices, id: \.self) { index in
+        NavigationLink(destination: HistoryListView(branch: localBranches[index].name), tag: localBranches[index].name, selection: self.$selection) {
           BranchListItemView(
-            name: branch.name,
-            isActive: branch.isActive,
+            branch: $localBranches[index],
             type: location,
             selected: {
-              self.selection = branch.name
+              self.selection = localBranches[index].name
             },
             activated: {
-              self.selection = branch.name
-              Commands.checkout(branch: branch.name, from: repository) { _ in
+              self.selection = localBranches[index].name
+              Task { @MainActor in
+                let branch = localBranches[index].name
+                _ = try await Commands.checkout(branch: branch , from: repository)
                 DispatchQueue.main.async {
-                  repository.activate(branch: branch)
+                  repository.activate(branch: localBranches[index])
                 }
               }
             },
             push: {
               Task {
+                let branch = localBranches[index]
                 try? await repository.push(branch: branch)
               }
             }
           )
         }
+        .font(.footnote)
         .sheet(isPresented: $isShowing) {
           BranchRepositoryView() { [self] in
             isShowing = false
@@ -99,25 +109,25 @@ public struct BranchListView: View {
           .frame(width: 300, height: 100)
         }
         .contextMenu {
-          Button { isShowing = true }
-        label: {
-          Text("Create Branch")
-          Image(systemName: "arrow.triangle.branch")
-        }
+          Button {
+            isShowing = true
+          } label: {
+            Text("Create Branch")
+            Image(systemName: "arrow.triangle.branch")
+          }
           Button {
             Task {
-              try? await repository.delete(branch: branch)
+              try? await repository.delete(branches: localBranches.filter { $0.isSelected == true })
             }
+          } label: {
+            Text("Delete Branch")
+            Image(systemName: "trash")
           }
-        label: {
-          Text("Delete Branch")
-          Image(systemName: "trash")
-        }
         }
       }
     } label: {
       HStack {
-        Text(label)
+        Text("\(label) (\(localBranches.count))")
         Spacer()
         if isExpanded {
           Button {
@@ -156,7 +166,7 @@ struct BranchRepositoryView: View {
 
 struct BranchListView_Previews: PreviewProvider {
   static var previews: some View {
-    BranchListView(branches: [], label: "Test")
+    BranchListView(localBranches: .constant([]), label: "Test")
   }
 }
 #endif

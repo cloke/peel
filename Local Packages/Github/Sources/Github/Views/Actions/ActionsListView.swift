@@ -7,6 +7,33 @@
 
 import SwiftUI
 
+public struct ActionConclusionView: View {
+  let conclusion: String
+  
+  public init(conclusion: String) {
+    self.conclusion = conclusion
+  }
+  
+  public var body: some View {
+    Group {
+      switch conclusion {
+      case "success":
+        Image(systemName: "checkmark.circle")
+          .foregroundColor(.green)
+      case "failure":
+        Image(systemName: "xmark.circle")
+          .foregroundColor(.red)
+      case "cancelled":
+        Image(systemName: "nosign")
+          .foregroundColor(.yellow)
+      default:
+        Image(systemName: "questionmark.circle")
+      }
+    }
+    .help(conclusion)
+  }
+}
+
 struct ActionsView: View {
   public let repository: Github.Repository
   
@@ -67,7 +94,6 @@ struct ActionsListItemView: View {
 }
 
 struct ActionsListView: View {
-  @EnvironmentObject var viewModel: Github.ViewModel
   let repository: Github.Repository
   let actions: [Github.Action]
   

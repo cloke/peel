@@ -94,7 +94,7 @@ extension Github {
     return try await load(url: "https://api.github.com/repos/\(organization)/\(repository.name)/actions/runs")
   }
   
-  static func workflows(from repository: Repository) async throws -> [Workflow] {
+  public static func workflows(from repository: Repository) async throws -> [Workflow] {
     guard let organization = repository.owner?.login else {
       print("Issue generating url for repository")
       throw AFError.invalidURL(url: "")
@@ -112,7 +112,7 @@ extension Github {
   ///   - workflow: Github.Workflow referencing a workflow containing workflow runs
   ///   - repository: repository containing workflows
   /// - Returns: An array of Github actions. [Github.Action]
-  static func runs(from workflow: Workflow, repository: Repository) async throws -> [Action] {
+  public static func runs(from workflow: Workflow, repository: Repository) async throws -> [Action] {
     guard let organization = repository.owner?.login else {
       print("Issue generating url for repository")
       throw AFError.invalidURL(url: "")

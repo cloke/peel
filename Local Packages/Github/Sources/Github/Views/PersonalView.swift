@@ -7,12 +7,12 @@
 
 import SwiftUI
 
-struct PersonalHeaderView: View {
+public struct PersonalHeaderView: View {
   @EnvironmentObject var viewModel: Github.ViewModel
   @Binding var pullRequests: [Github.PullRequest]
   @State private var pullRequestCache = [Github.PullRequest]()
   
-  var body: some View {
+  public var body: some View {
     HStack {
       Spacer()
       Button("My Requests") {
@@ -30,13 +30,17 @@ struct PersonalHeaderView: View {
   }
 }
 
-struct PersonalView: View {
+public struct PersonalView: View {
   @EnvironmentObject var viewModel: Github.ViewModel
   @State private var pullRequests = [Github.PullRequest]()
   
   let organizations: [Github.User]
   
-  var body: some View {
+  public init(organizations: [Github.User]) {
+    self.organizations = organizations
+  }
+  
+  public var body: some View {
     VStack {
       PersonalHeaderView(pullRequests: $pullRequests)
         .padding(.horizontal)

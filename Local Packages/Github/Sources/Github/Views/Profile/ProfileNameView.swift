@@ -7,10 +7,14 @@
 
 import SwiftUI
 
-struct ProfileNameView: View {
+public struct ProfileNameView: View {
   let me: Github.User
   
-  var body: some View {
+  public init(me: Github.User) {
+    self.me = me
+  }
+  
+  public var body: some View {
     HStack {
       AsyncImage(url: URL(string: me.avatar_url)) { image in
         image

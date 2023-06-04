@@ -8,11 +8,10 @@
 import SwiftUI
 
 struct CommitsListView: View {
-  public let repository: Github.Repository
-  
-  @EnvironmentObject var viewModel: Github.ViewModel
   @State private var commits = [Github.Commit]()
-  
+
+  public let repository: Github.Repository
+    
   var body: some View {
     Group {
 #if os(macOS)

@@ -14,7 +14,8 @@ let package = Package(
   ],
   dependencies: [
     // Dependencies declare other packages that this package depends on.
-    .package(path: "../TaskRunner"),
+    .package(name: "TaskRunner", url: "https://github.com/crunchybananas/TaskRunner", branch: "main")
+
   ],
   targets: [
     // Targets are the basic building blocks of a package. A target can define a module or a test suite.

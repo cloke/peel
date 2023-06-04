@@ -25,19 +25,24 @@ struct FileListView: View {
           withAnimation {
             Text("Enter commit message")
               .opacity(commitIsFocused ? 0 : 1)
-              .disabled(true)
+              .allowsHitTesting(false)
           }
         }
         HStack {
           Button("Commit") {
-            Commands.commit(repository: repository, message: commitMessage) { _ in
+            Task {
+              _ = try await Commands.commit(repository: repository, message: commitMessage)
               commitMessage = ""
-              repository.refreshStatus()
+              await repository.refreshStatus()
             }
           }
           .disabled(commitMessage.count == 0)
           Spacer()
-          Button { Commands.Stash.push(repository: repository) }
+          Button {
+            Task {
+              try await Commands.Stash.push(repository: repository)
+            }
+          }
         label: {
           Image(systemName: "square.stack.3d.up")
           Text("Stash")
@@ -47,42 +52,40 @@ struct FileListView: View {
           FileListItemView(file: file, toggleState: [.modifiedMe].contains(file.status)) //change.status != "??" ? false : true)
             .contentShape(Rectangle())
             .onTapGesture {
-              DispatchQueue.main.async {
+              Task {
                 let str = file.path
-                Commands.diff(repository: repository, path: str) { diff = $0 }
+                diff = try await Commands.diff(repository: repository, path: str)
               }
             }
             .contextMenu {
-              Button {}
-            label: {
-              Text("Ignore")
-              Image(systemName: "pencil.slash")
-            }
-              Button {}
-            label: {
-              Text("Move to trash")
-              Image(systemName: "trash")
-            }
+              Button {} label: {
+                Text("Ignore")
+                Image(systemName: "pencil.slash")
+              }
+              Button {} label: {
+                Text("Move to trash")
+                Image(systemName: "trash")
+              }
               Button {
                 let str = file.path
                   .replacingOccurrences(of: " ", with: "\\ ")
-                Commands.restore(path: str, on: repository) { _ in
-                  repository.refreshStatus()
+                Task {
+                  _ = try await Commands.restore(path: str, on: repository)
+                  await repository.refreshStatus()
                 }
+              } label: {
+                Text("Revert file")
+                Image(systemName: "arrow.uturn.backward")
               }
-            label: {
-              Text("Revert file")
-              Image(systemName: "arrow.uturn.backward")
-            }
             }
         }
       }
       .listStyle(.sidebar)
       DiffView(diff: diff)
     }
-    .onAppear {
+    .task {
       print("Refresh status on: \(repository.name)")
-      repository.refreshStatus()
+      await repository.refreshStatus()
     }
   }
   

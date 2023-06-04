@@ -13,34 +13,37 @@
 // Huge help from https://github.com/guillermomuntaner/GitDiff/
 
 import Foundation
+import TaskRunner
 
 /// Functions that are defined in the git reference
 /// https://git-scm.com/docs/git-add
 extension Commands {
 #if os(macOS)
   /// Processes a diff based on direct file paths
-  static func diff(repository: Model.Repository, path: String, callback: ((Diff) -> ())? = nil) {
-    try? Commands.run(.git, command: ["-C", repository.path, "diff", path]) {
-      switch $0 {
-      case .complete(_, let lines):
-        callback?(self.processDiff(lines: lines))
-      default: ()
-      }
+  static func diff(repository: Model.Repository, path: String) async throws -> Diff {
+    let result = try? await Self.launch(tool: URL(string: Executable.git.rawValue)!, arguments: ["-C", repository.path, "diff", path])
+    switch result {
+    case .complete(let data, _):
+      let array = String(data: data, encoding: .utf8)!.split(separator: "\n")
+      return self.processDiff(lines: array.map { String($0) })
+    default:
+      throw GitError.Unknown
     }
   }
-
+  
   /// Processes a diff based on specific commits
-  static func diff(commit: String, on respository: Model.Repository, callback: ((Diff) -> ())? = nil) {
-    try? Commands.run(.git, command: ["-C", respository.path, "diff", "\(commit)~", commit]) {
-      switch $0 {
-      case .complete(_, let lines):
-        callback?(self.processDiff(lines: lines))
-      default: ()
-      }
+  static func diff(commit: String, on respository: Model.Repository) async throws -> Diff {
+    let result = try? await Self.launch(tool: URL(string: Executable.git.rawValue)!, arguments: ["-C", respository.path, "diff", "\(commit)~", commit])
+    switch result {
+    case .complete(let data, _):
+      let array = String(data: data, encoding: .utf8)!.split(separator: "\n")
+      return self.processDiff(lines: array.map { String($0) })
+    default:
+      throw GitError.Unknown
     }
   }
 #endif
-
+  
   public static func processDiff(lines: [String]) -> Diff {
     var diff = Diff()
     let regex = try! NSRegularExpression(
@@ -53,7 +56,7 @@ extension Commands {
     var currentFile: Diff.File? = nil
     var currentChunk: Diff.File.Chunk? = nil
     
-    for var line in lines {
+    for line in lines {
       switch line {
         // Start of new file
       case let string where line.starts(with: "diff --git"):
@@ -84,10 +87,11 @@ extension Commands {
         currentChunk?.chunk = match?.group(0, in: line) ?? ""
         
         lineNumber = Int(match?.group(3, in: line) ?? "0") ?? 0
-        line = line.replacingOccurrences(of: (match?.group(0, in: line) ?? ""), with: "")
-        if line.count > 0 {
-          currentChunk?.lines.append(Diff.File.Chunk.Line(line: line, status: String(line.first ?? Character(" ")), lineNumber: lineNumber))
-        }
+        currentChunk?.parsedObjectName = line.replacingOccurrences(of: (match?.group(0, in: line) ?? ""), with: "")
+        //        if line.count > 0 {
+        //           This will be the class name that git adds
+        //          currentChunk?.lines.append(Diff.File.Chunk.Line(line: line, status: String(line.first ?? Character(" ")), lineNumber: lineNumber))
+        //        }
         lineOffset = 0
         numberingLines = true
         

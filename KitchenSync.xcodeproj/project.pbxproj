@@ -9,13 +9,16 @@
 /* Begin PBXBuildFile section */
 		0409092426C5C7C3008D5A52 /* Alamofire in Frameworks */ = {isa = PBXBuildFile; productRef = 0409092326C5C7C3008D5A52 /* Alamofire */; };
 		040AAB7E26CB385800DE1CBF /* Git in Frameworks */ = {isa = PBXBuildFile; productRef = 040AAB7D26CB385800DE1CBF /* Git */; };
-		041CB2B926C57C1D0028FFF0 /* Git in Frameworks */ = {isa = PBXBuildFile; productRef = 041CB2B826C57C1D0028FFF0 /* Git */; };
 		043A53102599589B00980BE2 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043A530E2599589B00980BE2 /* SettingsView.swift */; };
+		04510A582A2D200C001DEF5B /* Github in Frameworks */ = {isa = PBXBuildFile; productRef = 04510A572A2D200C001DEF5B /* Github */; };
+		04562F9528D1410D00FDA072 /* GithubUI in Frameworks */ = {isa = PBXBuildFile; productRef = 04562F9428D1410D00FDA072 /* GithubUI */; };
+		04562F9728D1411B00FDA072 /* GithubUI in Frameworks */ = {isa = PBXBuildFile; productRef = 04562F9628D1411B00FDA072 /* GithubUI */; };
 		04678656259FC75700D5E87F /* CommonToolbarItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04678654259FC75700D5E87F /* CommonToolbarItems.swift */; };
 		0467865E259FEEF100D5E87F /* TaskDebugWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0467865C259FEEF100D5E87F /* TaskDebugWindowView.swift */; };
 		046D40E426C56BBB003715AF /* OAuthSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 046D40E326C56BBB003715AF /* OAuthSwift */; };
 		046D40E526C56C1F003715AF /* Github_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0495D215269F5277008B5148 /* Github_RootView.swift */; };
 		046D40E726C56C5B003715AF /* Github in Frameworks */ = {isa = PBXBuildFile; productRef = 046D40E626C56C5B003715AF /* Github */; };
+		048086662A2D21E500536A3E /* Brew in Frameworks */ = {isa = PBXBuildFile; productRef = 048086652A2D21E500536A3E /* Brew */; };
 		048F40F82853ED470007A9A4 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 048F40F72853ED060007A9A4 /* ContentView.swift */; };
 		0495D214269F34F8008B5148 /* Alamofire in Frameworks */ = {isa = PBXBuildFile; productRef = 0495D213269F34F8008B5148 /* Alamofire */; };
 		0495D216269F5277008B5148 /* Github_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0495D215269F5277008B5148 /* Github_RootView.swift */; };
@@ -28,10 +31,8 @@
 		04A7BD90258E77D8000E55A8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 04A7BD65258E77D8000E55A8 /* Assets.xcassets */; };
 		04A7BD91258E77D8000E55A8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 04A7BD65258E77D8000E55A8 /* Assets.xcassets */; };
 		04AC312325B200A2009A10E7 /* Git_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04AC311E25B20085009A10E7 /* Git_RootView.swift */; };
-		04AC313E25B201AE009A10E7 /* Brew in Frameworks */ = {isa = PBXBuildFile; productRef = 04AC313D25B201AE009A10E7 /* Brew */; };
 		04D09EFD26A85E8100072702 /* OAuthSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 04D09EFC26A85E8100072702 /* OAuthSwift */; };
 		04F4F93D25903A72005B30B4 /* Brew_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F4F93B25903A72005B30B4 /* Brew_RootView.swift */; };
-		04F582A8269FD4AD003A8403 /* Github in Frameworks */ = {isa = PBXBuildFile; productRef = 04F582A7269FD4AD003A8403 /* Github */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -52,13 +53,15 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		042AE13525A0DF8200B905E4 /* TaskRunner */ = {isa = PBXFileReference; lastKnownFileType = folder; path = TaskRunner; sourceTree = "<group>"; };
 		043A530E2599589B00980BE2 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		043A532125998D1E00980BE2 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		04510A5D2A2D20C9001DEF5B /* GithubUI */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = GithubUI; path = "Local Packages/GithubUI"; sourceTree = "<group>"; };
+		04510A5E2A2D20F1001DEF5B /* Git */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Git; path = "Local Packages/Git"; sourceTree = "<group>"; };
+		04510A5F2A2D212E001DEF5B /* TaskRunner */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = TaskRunner; path = ../TaskRunner; sourceTree = "<group>"; };
+		04510A602A2D216A001DEF5B /* CrunchyCommon */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = CrunchyCommon; path = "Local Packages/CrunchyCommon"; sourceTree = "<group>"; };
 		04678654259FC75700D5E87F /* CommonToolbarItems.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonToolbarItems.swift; sourceTree = "<group>"; };
 		0467865C259FEEF100D5E87F /* TaskDebugWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDebugWindowView.swift; sourceTree = "<group>"; };
-		0467867425A0DB4F00D5E87F /* Git */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Git; sourceTree = "<group>"; };
-		0473C0AE26A24FC100A8FE23 /* CrunchyCommon */ = {isa = PBXFileReference; lastKnownFileType = folder; path = CrunchyCommon; sourceTree = "<group>"; };
+		048086642A2D21A300536A3E /* Brew */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Brew; path = "Local Packages/Brew"; sourceTree = "<group>"; };
 		048F40F72853ED060007A9A4 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		0495D215269F5277008B5148 /* Github_RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Github_RootView.swift; sourceTree = "<group>"; };
 		04A3CA2D25E46BA700EB520C /* Color.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Color.swift; sourceTree = "<group>"; };
@@ -77,10 +80,9 @@
 		04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests_macOS.swift; sourceTree = "<group>"; };
 		04A7BD8B258E77D8000E55A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		04AC311E25B20085009A10E7 /* Git_RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Git_RootView.swift; sourceTree = "<group>"; };
-		04AC312825B200DC009A10E7 /* Brew */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Brew; sourceTree = "<group>"; };
 		04F4F93B25903A72005B30B4 /* Brew_RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brew_RootView.swift; sourceTree = "<group>"; };
 		04F4F9772596AAD7005B30B4 /* KitchenSync.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = KitchenSync.entitlements; sourceTree = "<group>"; };
-		04F582A6269FD388003A8403 /* Github */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Github; sourceTree = "<group>"; };
+		04F582A6269FD388003A8403 /* Github */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Github; path = "Local Packages/Github"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -89,6 +91,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				0409092426C5C7C3008D5A52 /* Alamofire in Frameworks */,
+				04562F9728D1411B00FDA072 /* GithubUI in Frameworks */,
 				046D40E426C56BBB003715AF /* OAuthSwift in Frameworks */,
 				046D40E726C56C5B003715AF /* Github in Frameworks */,
 				040AAB7E26CB385800DE1CBF /* Git in Frameworks */,
@@ -99,9 +102,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				04F582A8269FD4AD003A8403 /* Github in Frameworks */,
-				041CB2B926C57C1D0028FFF0 /* Git in Frameworks */,
-				04AC313E25B201AE009A10E7 /* Brew in Frameworks */,
+				048086662A2D21E500536A3E /* Brew in Frameworks */,
+				04562F9528D1410D00FDA072 /* GithubUI in Frameworks */,
+				04510A582A2D200C001DEF5B /* Github in Frameworks */,
 				04D09EFD26A85E8100072702 /* OAuthSwift in Frameworks */,
 				0495D214269F34F8008B5148 /* Alamofire in Frameworks */,
 			);
@@ -124,6 +127,19 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		042D2CC32891E44100E162D3 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				04F582A6269FD388003A8403 /* Github */,
+				04510A5D2A2D20C9001DEF5B /* GithubUI */,
+				04510A5E2A2D20F1001DEF5B /* Git */,
+				04510A5F2A2D212E001DEF5B /* TaskRunner */,
+				04510A602A2D216A001DEF5B /* CrunchyCommon */,
+				048086642A2D21A300536A3E /* Brew */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
 		0467866E259FEFAD00D5E87F /* Views */ = {
 			isa = PBXGroup;
 			children = (
@@ -131,18 +147,6 @@
 				0467865C259FEEF100D5E87F /* TaskDebugWindowView.swift */,
 			);
 			path = Views;
-			sourceTree = "<group>";
-		};
-		0467867A25A0DB9000D5E87F /* Local Packages */ = {
-			isa = PBXGroup;
-			children = (
-				0473C0AE26A24FC100A8FE23 /* CrunchyCommon */,
-				04F582A6269FD388003A8403 /* Github */,
-				042AE13525A0DF8200B905E4 /* TaskRunner */,
-				04AC312825B200DC009A10E7 /* Brew */,
-				0467867425A0DB4F00D5E87F /* Git */,
-			);
-			path = "Local Packages";
 			sourceTree = "<group>";
 		};
 		0467868025A0DBE400D5E87F /* Frameworks */ = {
@@ -163,10 +167,10 @@
 		04A7BD5D258E77D7000E55A8 = {
 			isa = PBXGroup;
 			children = (
+				042D2CC32891E44100E162D3 /* Packages */,
 				043A532125998D1E00980BE2 /* README.md */,
 				04A7BD62258E77D7000E55A8 /* Shared */,
 				04F4F9772596AAD7005B30B4 /* KitchenSync.entitlements */,
-				0467867A25A0DB9000D5E87F /* Local Packages */,
 				04A7BD6C258E77D8000E55A8 /* iOS */,
 				04A7BD73258E77D8000E55A8 /* macOS */,
 				04A7BD7D258E77D8000E55A8 /* Tests iOS */,
@@ -268,6 +272,7 @@
 				046D40E626C56C5B003715AF /* Github */,
 				0409092326C5C7C3008D5A52 /* Alamofire */,
 				040AAB7D26CB385800DE1CBF /* Git */,
+				04562F9628D1411B00FDA072 /* GithubUI */,
 			);
 			productName = "KitchenSink (iOS)";
 			productReference = 04A7BD6A258E77D8000E55A8 /* KitchenSync.app */;
@@ -287,11 +292,11 @@
 			);
 			name = "KitchenSync (macOS)";
 			packageProductDependencies = (
-				04AC313D25B201AE009A10E7 /* Brew */,
 				0495D213269F34F8008B5148 /* Alamofire */,
-				04F582A7269FD4AD003A8403 /* Github */,
 				04D09EFC26A85E8100072702 /* OAuthSwift */,
-				041CB2B826C57C1D0028FFF0 /* Git */,
+				04562F9428D1410D00FDA072 /* GithubUI */,
+				04510A572A2D200C001DEF5B /* Github */,
+				048086652A2D21E500536A3E /* Brew */,
 			);
 			productName = "KitchenSink (macOS)";
 			productReference = 04A7BD72258E77D8000E55A8 /* Kitchen Sync.app */;
@@ -340,7 +345,7 @@
 			isa = PBXProject;
 			attributes = {
 				LastSwiftUpdateCheck = 1230;
-				LastUpgradeCheck = 1240;
+				LastUpgradeCheck = 1400;
 				TargetAttributes = {
 					04A7BD69258E77D8000E55A8 = {
 						CreatedOnToolsVersion = 12.3;
@@ -509,6 +514,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -568,6 +574,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -597,7 +604,7 @@
 				DEVELOPMENT_TEAM = UNX9FJDDXV;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = iOS/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -623,7 +630,7 @@
 				DEVELOPMENT_TEAM = UNX9FJDDXV;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = iOS/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -649,6 +656,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 11;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = UNX9FJDDXV;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -657,7 +665,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.KitchenSink";
 				PRODUCT_NAME = "Kitchen Sync";
 				SDKROOT = macosx;
@@ -675,6 +683,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 11;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = UNX9FJDDXV;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -683,7 +692,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 12.0;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.KitchenSink";
 				PRODUCT_NAME = "Kitchen Sync";
 				SDKROOT = macosx;
@@ -742,6 +751,7 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = UNX9FJDDXV;
 				INFOPLIST_FILE = "Tests macOS/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -764,6 +774,7 @@
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = UNX9FJDDXV;
 				INFOPLIST_FILE = "Tests macOS/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -859,9 +870,17 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = Git;
 		};
-		041CB2B826C57C1D0028FFF0 /* Git */ = {
+		04510A572A2D200C001DEF5B /* Github */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = Git;
+			productName = Github;
+		};
+		04562F9428D1410D00FDA072 /* GithubUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = GithubUI;
+		};
+		04562F9628D1411B00FDA072 /* GithubUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = GithubUI;
 		};
 		046D40E326C56BBB003715AF /* OAuthSwift */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -872,23 +891,19 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = Github;
 		};
+		048086652A2D21E500536A3E /* Brew */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Brew;
+		};
 		0495D213269F34F8008B5148 /* Alamofire */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 0495D212269F34F8008B5148 /* XCRemoteSwiftPackageReference "Alamofire" */;
 			productName = Alamofire;
 		};
-		04AC313D25B201AE009A10E7 /* Brew */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = Brew;
-		};
 		04D09EFC26A85E8100072702 /* OAuthSwift */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 04DD2F49269E6AED000994E1 /* XCRemoteSwiftPackageReference "OAuthSwift" */;
 			productName = OAuthSwift;
-		};
-		04F582A7269FD4AD003A8403 /* Github */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = Github;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

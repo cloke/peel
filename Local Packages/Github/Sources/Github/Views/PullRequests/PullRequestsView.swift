@@ -62,12 +62,11 @@ struct PullRequestListView: View {
 }
 
 public struct PullRequestsView: View {
-  public let organization: Github.User
-  public let repository: Github.Repository
-  
-  @EnvironmentObject var viewModel: Github.ViewModel
   @State private var pullRequests = [Github.PullRequest]()
   @State private var state: LoadingState = .loading
+  
+  public let organization: Github.User
+  public let repository: Github.Repository
   
   public init(organization: Github.User, repository: Github.Repository) {
     self.organization = organization

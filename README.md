@@ -1,4 +1,5 @@
 # TODO GENERAL
+- [ ] Most of the git UI could be reused in the github package. Should probably make GitUI package.
 - [X] Look at organizing tool specific code into local packages
 - [ ] TaskRunner should handle stdError and report back to the user
 - [ ] Hook github view into debugger window
@@ -160,3 +161,15 @@ The reasoning would be that many high level UI features are easier in catalyst a
 the ability to make some features available on iPad.
 - Arguments are escaped via process. This means an argument like "origin main" will fail because the command line sees that as
 a single argumnet. Each argument needs to be passed into the array separately. 
+
+# Structure
+
+App
+|-- Github
+  |-- GithubUI
+    |-- Layer to define common git models
+      |-- Github Web Api
+|-- Git
+  |-- GithubUI
+    |-- Layer to define common git models
+      |-- Git command line

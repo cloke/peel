@@ -39,8 +39,8 @@ struct HistoryListView: View {
       }
       .onChange(of: selection) { commit in
         if let commit = commit {
-          Commands.diff(commit: commit, on: repository) {
-            diff = $0
+          Task {
+            diff = try await Commands.diff(commit: commit, on: repository)
           }
         }
       }

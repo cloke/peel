@@ -11,7 +11,7 @@
 #if os(macOS)
 extension Commands {
   static func push(branch: Model.Branch, to repository: Model.Repository) async throws -> [String] {
-    try await Commands.simple(command: ["-C", repository.path, "push", "origin", branch.name])
+    try await Self.simple(arguments: ["-C", repository.path, "push", "origin", branch.name])
   }
 }
 #endif

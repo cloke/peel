@@ -14,28 +14,22 @@ extension Commands {
   static func log(branch: String, on repository: Model.Repository) async -> [Model.LogEntry] {
     // loot at --graph without parent
     var logs = [Model.LogEntry]()
-    let status = try? await Commands.run(.git, command: ["-C", repository.path, "--no-pager", "log", "--pretty=tformat:%ad<•>%h<•>%an<•>%d<•>%s", "--date=iso-strict", "--first-parent", branch.replacingOccurrences(of: "*", with: "").trimmingCharacters(in: .whitespacesAndNewlines)])
-      switch status {
-      case .complete(_, let array):
-        let dateFormatter = ISO8601DateFormatter()
-        array.forEach {
-          let components = $0.components(separatedBy: "<•>")
-          logs.append(
-            // This feels like a crash waiting to happen. Probably need to create a safe index extension.
-            Model.LogEntry(
-              commit: components[1],
-              date: dateFormatter.date(from: components[0]) ?? Date(),
-              author: components[2],
-              message: components[4]
-            )
-          )
-        }
-//        callack?(logs)
-        default: ()
-      }
-    return logs
+    let array = try? await Self.simple(arguments: ["-C", repository.path, "--no-pager", "log", "--pretty=tformat:%ad<•>%h<•>%an<•>%d<•>%s", "--date=iso-strict", "--first-parent", branch.replacingOccurrences(of: "*", with: "").trimmingCharacters(in: .whitespacesAndNewlines)])
+    let dateFormatter = ISO8601DateFormatter()
+    array?.forEach {
+      let components = $0.components(separatedBy: "<•>")
+      logs.append(
+        // This feels like a crash waiting to happen. Probably need to create a safe index extension.
+        Model.LogEntry(
+          commit: components[1],
+          date: dateFormatter.date(from: components[0]) ?? Date(),
+          author: components[2],
+          message: components[4]
+        )
+      )
+    }
 
-    
+    return logs
   }
 }
 #endif

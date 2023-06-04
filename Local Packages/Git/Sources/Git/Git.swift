@@ -18,8 +18,8 @@ public struct GitRootView: View {
         List {
           LocalChangesListView()
           StashListView(repository: repository)
-          BranchListView(branches: repository.branches.filter { $0.type == .local }, label: "Local Branches", location: .local)
-          BranchListView(branches: repository.branches.filter { $0.type == .remote }, label: "Remote Branches", location: .remote)
+          BranchListView(localBranches: $repository.localBranches, label: "Local Branches", location: .local)
+          BranchListView(localBranches: $repository.remoteBranches, label: "Remote Branches", location: .remote)
         }
         .listStyle(.sidebar)
       }

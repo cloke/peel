@@ -18,8 +18,9 @@ public struct LocalChangesListView: View {
       }
     }
     .contextMenu(ContextMenu(menuItems: {
-      Button { Commands.status(on: repository) }
-        label: {
+      Button {
+        Task { try? await Commands.status(on: repository) }
+      } label: {
           Image(systemName: "arrow.counterclockwise.icloud")
           Text("Refresh")
         }

@@ -12,7 +12,7 @@ import Git
 struct CommitDetailView: View {
   let commit: Github.Commit
   @State private var commitDetail: Github.CommitDetail?
-  @State private var diff: Git.Diff?
+  @State private var diff: Diff?
   
   var body: some View {
     VStack {
@@ -26,7 +26,7 @@ struct CommitDetailView: View {
               patch.insert("diff --git", at: 0)
               patches.append(contentsOf: patch)
             }
-            diff = Git.Commands.processDiff(lines: patches)
+            diff = Commands.processDiff(lines: patches)
           } catch {
             print(error)
           }

@@ -6,8 +6,8 @@
         "repositoryURL": "https://github.com/Alamofire/Alamofire.git",
         "state": {
           "branch": null,
-          "revision": "354dda32d89fc8cd4f5c46487f64957d355f53d8",
-          "version": "5.6.1"
+          "revision": "8dd85aee02e39dd280c75eef88ffdb86eed4b07b",
+          "version": "5.6.2"
         }
       },
       {
@@ -24,8 +24,8 @@
         "repositoryURL": "https://github.com/Thomvis/BrightFutures.git",
         "state": {
           "branch": null,
-          "revision": "939858b811026f85e87847a808f0bea2f187e5c4",
-          "version": "8.1.0"
+          "revision": "fa66fa183dce7196d431244d0215748cd14c5758",
+          "version": "8.2.0"
         }
       },
       {
@@ -33,8 +33,8 @@
         "repositoryURL": "https://github.com/pointfreeco/combine-schedulers",
         "state": {
           "branch": null,
-          "revision": "4cf088c29a20f52be0f2ca54992b492c54e0076b",
-          "version": "0.5.3"
+          "revision": "0ba3a562716efabb585ccb169450c5389107286b",
+          "version": "0.6.0"
         }
       },
       {
@@ -123,8 +123,8 @@
         "repositoryURL": "https://github.com/pointfreeco/xctest-dynamic-overlay",
         "state": {
           "branch": null,
-          "revision": "50a70a9d3583fe228ce672e8923010c8df2deddd",
-          "version": "0.2.1"
+          "revision": "ef8e14e7ce1c0c304c644c6ba365d06c468ded6b",
+          "version": "0.3.3"
         }
       }
     ]

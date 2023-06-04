@@ -11,12 +11,12 @@
 #if os(macOS)
 extension Commands {
   struct Stash {
-    static func list(on repository: Model.Repository, callback: (([String]) -> ())? = nil) {
-      Commands.simple(command: ["-C", repository.path, "stash", "list"], callback: callback)
+    static func list(on repository: Model.Repository) async throws -> [String] {
+      try await Commands.simple(arguments: ["-C", repository.path, "stash", "list"])
     }
     
-    static func push(repository: Model.Repository, with message: String = "", callback: (([String]) -> ())? = nil) {
-      Commands.simple(command: ["-C", repository.path, "stash", "push", "-m", message], callback: callback)
+    static func push(repository: Model.Repository, with message: String = "") async throws -> [String] {
+      try await Commands.simple(arguments: ["-C", repository.path, "stash", "push", "-m", message])
     }
   }
 }

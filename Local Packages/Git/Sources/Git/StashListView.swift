@@ -20,7 +20,9 @@ struct StashListView: View {
       }
       .onChange(of: isExpanded, perform:  { value in
         if isExpanded == true {
-          Commands.Stash.list(on: repository) { self.stashes = $0 }
+          Task {
+            self.stashes = try await Commands.Stash.list(on: repository)
+          }
         }
       })
     } label: {
@@ -29,7 +31,9 @@ struct StashListView: View {
         Spacer()
         if isExpanded {
           Button {
-            Commands.Stash.list(on: repository) { self.stashes = $0 }
+            Task {
+              self.stashes = try await Commands.Stash.list(on: repository)
+            }
           } label: {
             Image(systemName: "arrow.counterclockwise.icloud")
           }

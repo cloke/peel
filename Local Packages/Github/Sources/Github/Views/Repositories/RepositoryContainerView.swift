@@ -9,15 +9,20 @@ import SwiftUI
 // Used for hex color
 import CrunchyCommon
 
-struct RepositoryContainerView: View {
-  public let organization: Github.User
-  public let repository: Github.Repository
+public struct RepositoryContainerView: View {
+  let organization: Github.User
+  let repository: Github.Repository
   
   // TODO: make this reference an enum
   @State private var currentTab = "Pulls"
   @State private var selection = 1
   
-  var body: some View {
+  public init(organization: Github.User, repository: Github.Repository) {
+    self.organization = organization
+    self.repository = repository
+  }
+  
+  public var body: some View {
     TabView(selection: $selection) {
       PullRequestsView(organization: organization, repository: repository)
         .tabItem { Text("Pull Requests") }

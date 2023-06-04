@@ -19,7 +19,7 @@ extension Commands {
     
     guard let repositoryName = url.path.components(separatedBy: "/").last?.dropLast(4).description else { throw GitError.Unknown }
     
-    _ = try await Commands.simple(command: ["clone", url.description, [destination.path, repositoryName].joined(separator: "/")])
+    _ = try await Self.simple(arguments: ["clone", url.description, [destination.path, repositoryName].joined(separator: "/")])
     return Model.Repository(name: repositoryName, path: destination.path)
   }
 }

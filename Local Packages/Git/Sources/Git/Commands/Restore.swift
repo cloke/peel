@@ -10,8 +10,8 @@
 
 #if os(macOS)
 extension Commands {
-  static func restore(path: String, on repository: Model.Repository, callback: (([String]) -> ())? = nil) {
-    Self.simple(command: ["-C", repository.path, "restore", path], callback: callback)
+  static func restore(path: String, on repository: Model.Repository) async throws -> [String] {
+    try await Self.simple(arguments: ["-C", repository.path, "restore", path])
   }
 }
 #endif

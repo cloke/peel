@@ -41,6 +41,7 @@ public struct DiffView: View {
                   HStack {
                     if line.lineNumber != 0 {
                       LineNumberView(status: line.status, number: line.lineNumber.description)
+                        .font(.body.monospaced())
                     }
                     Text(line.line)
                       .padding(.horizontal)
@@ -50,11 +51,11 @@ public struct DiffView: View {
                   .background(lineColor(line.status))
                 }
               }
-              
             }
           }
           Spacer()
         }
+        .textSelection(.enabled)
         .frame(width: geometry.size.width)
         .frame(minHeight: geometry.size.height)
       }

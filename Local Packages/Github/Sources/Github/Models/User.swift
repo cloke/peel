@@ -7,7 +7,7 @@
 
 extension Github {
   public struct User: Codable, Identifiable {
-    var login: String?
+    public var login: String?
     public var id: Int
     public var node_id: String
     public var avatar_url: String

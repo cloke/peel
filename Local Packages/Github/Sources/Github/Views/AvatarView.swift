@@ -7,14 +7,22 @@
 
 import SwiftUI
 
-struct AvatarView: View {
+public struct AvatarView: View {
   let url: URL?
-  var minWidth = 0.0
-  var maxWidth = 30.0
-  var maxHeight = 30.0
-  var alignment: Alignment = .center
+  var minWidth: Double
+  var maxWidth: Double
+  var maxHeight: Double
+  var alignment: Alignment
   
-  var body: some View {
+  public init(url: URL?, minWidth: Double = 0.0, maxWidth: Double = 30.0, maxHeight: Double = 30.0, alignment: Alignment = .center) {
+    self.url = url
+    self.minWidth = minWidth
+    self.maxWidth = maxWidth
+    self.maxHeight = maxHeight
+    self.alignment = alignment
+  }
+  
+  public var body: some View {
     AsyncImage(url: url, transaction: Transaction(animation: .easeInOut)) { phase in
       switch phase {
       case .empty:

@@ -14,24 +14,36 @@ extension Model {
     public var name: String
     public var path: String
     
-    @Published var branches = [Model.Branch]()
+    @Published var localBranches = [Model.Branch]()
+    @Published var remoteBranches = [Model.Branch]()
+
     @Published var status = [FileDescriptor]()
     
     init(name: String, path: String) {
       self.name = name
       self.path = path
     }
-
+    
     @available(macOS 12, *)
     func loadBranches(branchType: Model.BranchType) async {
       // TODO - The array should be built in one pass to reduce weird graphic errors.
       // Maybe wait for swift 6 and use async calls to simplify
       print("Load branches in \(name)")
       do {
+        #if canImport(AppKit)
         let list = try await Commands.Branch.list(from: branchType, on: self)
-        print("load type: \(branchType)")
-        branches.removeAll(where: { $0.type == branchType })
-        branches.append(contentsOf: list)
+
+        print("load type: \(branchType), count \(list.count)")
+        DispatchQueue.main.async { [self] in
+          if branchType == .local {
+            localBranches.removeAll()
+            localBranches.append(contentsOf: list)
+          } else {
+            remoteBranches.removeAll()
+            remoteBranches.append(contentsOf: list)
+          }
+        }
+        #endif
       } catch {}
     }
     
@@ -40,34 +52,46 @@ extension Model {
       // TODO: Use a task group
       await loadBranches(branchType: .local)
       await loadBranches(branchType: .remote)
-      refreshStatus()
+      await refreshStatus()
     }
     
-    @available(macOS 12, *)
-    func refreshStatus() {
-      Commands.status(on: self) { self.status = $0 }
+    func refreshStatus() async {
+      #if canImport(AppKit)
+      if let status = try? await Commands.status(on: self) {
+        DispatchQueue.main.async {
+          self.status = status
+        }
+      }
+      #endif
     }
     
     @available(macOS 12, *)
     func activate(branch: Model.Branch) {
-      branches.forEach { $0.isActive = $0.id == branch.id ? true : false }
+      localBranches.forEach { $0.isActive = $0.id == branch.id ? true : false }
     }
     
     @available(macOS 12, *)
     func push(branch: Model.Branch) async throws {
-      do {
-        _ = try await Commands.push(branch: branch, to: self)
-        self.refreshStatus()
-      } catch {}
+      #if canImport(AppKit)
+      _ = try await Commands.push(branch: branch, to: self)
+      await self.refreshStatus()
+      #endif
     }
     
-    @available(macOS 12, *)
     func delete(branch: Model.Branch) async throws {
-      do {
+      #if canImport(AppKit)
       _ = try await Commands.Branch.delete(name: branch.name, on: self)
-        if let index = branches.firstIndex(where: { $0.id == branch.id }) {
-          branches.remove(at: index)
+      if let index = localBranches.firstIndex(where: { $0.id == branch.id }) {
+        Task { @MainActor in
+          localBranches.remove(at: index)
         }
+      }
+      #endif
+    }
+    
+    func delete(branches: [Model.Branch]) async throws {
+      for branch in branches {
+        try await delete(branch: branch)
       }
     }
     

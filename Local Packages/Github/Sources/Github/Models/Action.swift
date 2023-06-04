@@ -15,7 +15,7 @@ extension Github {
     public var workflows: [Workflow]
   }
   
-  struct Workflow: Codable, Identifiable {
+  public struct Workflow: Codable, Identifiable {
     public var id: Int
     public var node_id: String?
     public var name: String
@@ -28,16 +28,16 @@ extension Github {
     public var badge_url: String?
   }
   
-  struct WorkflowRun: Codable {
+  public struct WorkflowRun: Codable {
     public var total_count: Int
     public var jobs: [WorkflowJob]
   }
   
   /// Workflow jobs appear to be the individual runs of an action.
-  struct WorkflowJob: Codable, Identifiable {
+  public struct WorkflowJob: Codable, Identifiable {
 
     /// Steps are the individual tasks within the workflow.
-    struct Steps: Codable {
+    public struct Steps: Codable {
       public var name: String
       public var status: String
       public var conclusion: String?
@@ -110,7 +110,7 @@ extension Github {
     public var repository: Repository
 //    public var head_repository: Repository
   
-    var updatedAtFormatted: String {
+    public var updatedAtFormatted: String {
       let formatter = DateFormatter()
       formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZ"
       if let date = formatter.date(from: created_at) {
