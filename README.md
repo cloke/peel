@@ -2,6 +2,7 @@
 - [ ] Most of the git UI could be reused in the github package. Should probably make GitUI package.
 - [X] Look at organizing tool specific code into local packages
 - [ ] TaskRunner should handle stdError and report back to the user
+- [ ] TaskRunner launch code should provide a stream of results. 
 - [ ] Hook github view into debugger window
 - [ ] Figure out what would make sense for iOS / iPad
   - [ ] Most of the github view will work on mobile, but the git package needs to be reworked to not require MacOS and optionally provide views not tied to system calls.
@@ -97,7 +98,7 @@
 - [ ] Push locks up the UI. Needs a status indicator and ensure task is on background thread.
 - [ ] We can't just do git push "main" it would need to be git push "origin main". "branch -la provides better detail"
 - [ ] The push icon seems to only reflect the status of the main branch.
-- [ ] The status does not update after a push to indicate there is nothing to push. 
+- [ ] The status does not update after a push to indicate there is nothing to push. This is most likelt bcause the command returns nothing.
 
 ### Conflicts
 - [ ] Show files in conflict 

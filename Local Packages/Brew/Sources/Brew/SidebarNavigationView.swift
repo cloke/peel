@@ -62,29 +62,29 @@ extension SidebarNavigationView {
     private var cancellables: Set<AnyCancellable> = []
     
     func installed() {
-      outputStream = []
-      try? run(.brew, command: Command.BrewInstalled) { [self] in
-        switch $0 {
-        case .buffer(let string):
-          outputStream.append(string)
-        case.complete(let data, _):
-          print(data)
-        }
-      }
+//      outputStream = []
+//      try? run(.brew, command: Command.BrewInstalled) { [self] in
+//        switch $0 {
+//        case .buffer(let string):
+//          outputStream.append(string)
+//        case.complete(let data, _):
+//          print(data)
+//        }
+//      }
     }
     
     func available(term: String) {
-      var command = Command.BrewAvailable
-      command.append(term)
-      outputStream = []
-      try? run(.brew, command: command) { [self] in
-        switch $0 {
-        case .buffer(let string):
-          outputStream.append(string)
-        case.complete(let data, _):
-          print(data)
-        }
-      }
+//      var command = Command.BrewAvailable
+//      command.append(term)
+//      outputStream = []
+//      try? run(.brew, command: command) { [self] in
+//        switch $0 {
+//        case .buffer(let string):
+//          outputStream.append(string)
+//        case.complete(let data, _):
+//          print(data)
+//        }
+//      }
     }
   }
 }

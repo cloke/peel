@@ -23,15 +23,6 @@ public struct Commands: TaskRunnerProtocol {
     }
   }
   
-//  static func run(_ url: Executable, command: [String]) async throws -> TaskStatus {
-//    return try await withCheckedThrowingContinuation {
-//      (continuation: CheckedContinuation<TaskStatus, Error>) in
-//      try? Self.shared.run(url, command: command, callback: { status in
-//        continuation.resume(returning: status)
-//      })
-//    }
-//  }
-  
   /// Provides a single point for commands that just execture a command and return data
   static func simple(arguments: [String]) async throws -> [String] {
     let status = try? await Commands.launch(tool: URL(string: Executable.git.rawValue)!, arguments: arguments)

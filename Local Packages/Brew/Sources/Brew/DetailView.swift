@@ -9,6 +9,42 @@ import SwiftUI
 import Combine
 import TaskRunner
 
+#if canImport(AppKit)
+import TaskRunner
+import Foundation
+
+struct Commands: TaskRunnerProtocol {
+  private static let shared = Commands()
+  
+  static func launch(tool: URL, arguments: [String]) async throws -> TaskStatus {
+    return try await withCheckedThrowingContinuation {
+      (continuation: CheckedContinuation<TaskStatus, Error>) in
+      DispatchQueue.main.async {
+        Self.shared.launch(tool: tool, arguments: arguments) { result, arg in
+          continuation.resume(returning: .complete(arg, [""]))
+        }
+      }
+    }
+  }
+  
+  /// Provides a single point for commands that just execture a command and return data
+  static func simple(arguments: [String]) async throws -> [String] {
+    let status = try? await Commands.launch(tool: URL(string: Executable.brew.rawValue)!, arguments: arguments)
+    switch status {
+    case .complete(let data, _):
+      return String(data: data, encoding: .utf8)!.split(separator: "\n").map { String($0) }
+    default: ()
+    }
+    return []
+  }
+}
+#else
+public struct Commands {
+  private static let shared = Commands()
+}
+#endif
+
+
 extension DetailView {
   class ViewModel: TaskRunnerProtocol, ObservableObject {
     @Published var outputStream = [String]()
@@ -17,55 +53,54 @@ extension DetailView {
     @Published var versions: AvailableVersion? = nil
     @Published var homepage = ""
     @Published var name = ""
-    
-    func details(of _name: String) {
+        
+    func details(of _name: String) async {
       // This seems messy. Need to think though complex argument strings.
       var cmd = Command.BrewInfo
       cmd.append(_name)
       
-      try? run(.brew, command: cmd) { [self] in
-        switch $0 {
-        case .buffer(_):
-          print("Do Nothing")
-        case.complete(let data, _):
-          guard let decoded = try? JSONDecoder().decode([Info].self, from: data).first else { return }
-          DispatchQueue.main.async {
-            self.name = decoded.name ?? ""
-            self.desciption = decoded.description ?? ""
-            self.homepage = decoded.homepage ?? ""
-            self.installed = decoded.installed?.first
-            self.versions = decoded.versions
-          }
+      let result = try? await Commands.launch(tool: URL(string: Executable.brew.rawValue)!, arguments: cmd)
+      switch result {
+      case .complete(let data, _):
+        guard let decoded = try? JSONDecoder().decode([Info].self, from: data).first else { return }
+        DispatchQueue.main.async {
+          self.name = decoded.name ?? ""
+          self.desciption = decoded.description ?? ""
+          self.homepage = decoded.homepage ?? ""
+          self.installed = decoded.installed?.first
+          self.versions = decoded.versions
         }
+      default: ()
       }
     }
     
     func install(target: String, name: String) {
-      let cmd = [target, Executable.brew.rawValue, "install", name]
-      try? run(.archetecture, command: cmd) { [self] in
-        switch $0 {
-        case .buffer(let buffer):
-          DispatchQueue.main.async {
-            self.outputStream.append(buffer)
-          }
-        case .complete(_, _):
-          print("Do nothing")
-        }
-      }
+      /// Return to this. The new code does not support the buffer.
+//      let cmd = [target, Executable.brew.rawValue, "install", name]
+//      try? run(.archetecture, command: cmd) { [self] in
+//        switch $0 {
+//        case .buffer(let buffer):
+//          DispatchQueue.main.async {
+//            self.outputStream.append(buffer)
+//          }
+//        case .complete(_, _):
+//          print("Do nothing")
+//        }
+//      }
     }
     
     func uninstall(target: String, name: String) {
-      let cmd = [target, Executable.brew.rawValue, "uninstall", name]
-      try? run(.archetecture, command: cmd) { [self] in
-        switch $0 {
-        case .buffer(let buffer):
-          DispatchQueue.main.async {
-            self.outputStream.append(buffer)
-          }
-        case .complete(_, _):
-          print("Do nothing")
-        }
-      }
+//      let cmd = [target, Executable.brew.rawValue, "uninstall", name]
+//      try? run(.archetecture, command: cmd) { [self] in
+//        switch $0 {
+//        case .buffer(let buffer):
+//          DispatchQueue.main.async {
+//            self.outputStream.append(buffer)
+//          }
+//        case .complete(_, _):
+//          print("Do nothing")
+//        }
+//      }
     }
   }
 }
@@ -112,7 +147,9 @@ struct DetailView: View {
       }
     }
     .onAppear {
-      viewModel.details(of: name)
+      Task { @MainActor in
+        await viewModel.details(of: name)
+      }
     }
     #else
     Text("This view is not for iOS")
