@@ -44,21 +44,19 @@ public struct PersonalView: View {
     VStack {
       PersonalHeaderView(pullRequests: $pullRequests)
         .padding(.horizontal)
-      NavigationView {
-        List {
-          ForEach(pullRequests.sorted(by: { $0.updated_at ?? "" > $1.updated_at ?? ""})) { pullRequest in
-            VStack {
-              NavigationLink(destination: PullRequestDetailView(organization: pullRequest.base.repo.owner, repository: pullRequest.base.repo, pullRequest: pullRequest)) {
-                PullRequestsListItemView(pullRequest: pullRequest, organization: pullRequest.base.repo.owner, repository: pullRequest.base.repo, showAvatar: true, showRepository: true)
-              }
-#if os(macOS)
-              Divider()
-#endif
+      List {
+        ForEach(pullRequests.sorted(by: { $0.updated_at ?? "" > $1.updated_at ?? ""})) { pullRequest in
+          VStack {
+            NavigationLink(destination: PullRequestDetailView(organization: pullRequest.base.repo.owner, repository: pullRequest.base.repo, pullRequest: pullRequest)) {
+              PullRequestsListItemView(pullRequest: pullRequest, organization: pullRequest.base.repo.owner, repository: pullRequest.base.repo, showAvatar: true, showRepository: true)
             }
+#if os(macOS)
+            Divider()
+#endif
           }
         }
-        .frame(idealWidth: 300)
       }
+      .frame(idealWidth: 300)
       .onAppear {
         for organization in organizations {
           Task {
