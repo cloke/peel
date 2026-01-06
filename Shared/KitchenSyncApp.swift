@@ -18,6 +18,13 @@ struct KitchenSyncApp: App {
       ContentView()
         .handlesExternalEvents(preferring: Set(arrayLiteral: "*"), allowing: Set(arrayLiteral: "*")) // activate existing window if exists
         .onOpenURL { url in
+          print("=== URL CALLBACK RECEIVED ===")
+          print("URL: \(url.absoluteString)")
+          print("Scheme: \(url.scheme ?? "nil")")
+          print("Host: \(url.host ?? "nil")")
+          print("Path: \(url.path)")
+          print("Query: \(url.query ?? "nil")")
+          print("=============================")
           OAuthSwift.handle(url: url)
         }
     }

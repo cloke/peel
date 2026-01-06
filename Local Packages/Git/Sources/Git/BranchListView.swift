@@ -70,7 +70,8 @@ public struct BranchListView: View {
   public var location: Model.BranchType = .remote
     
   public var body: some View {
-    DisclosureGroup(isExpanded: $isExpanded) {
+    List {
+    Section("test", isExpanded: $isExpanded) {
       ForEach(localBranches.indices, id: \.self) { index in
         NavigationLink(destination: HistoryListView(branch: localBranches[index].name), tag: localBranches[index].name, selection: self.$selection) {
           BranchListItemView(
@@ -125,18 +126,20 @@ public struct BranchListView: View {
           }
         }
       }
-    } label: {
-      HStack {
-        Text("\(label) (\(localBranches.count))")
-        Spacer()
-        if isExpanded {
-          Button {
-            Task {
-              await repository.load()
-            }
-          } label: { Image(systemName: "arrow.counterclockwise.icloud") }
-        }
-      }
+    }
+//    label: {
+//      HStack {
+//        Text("\(label) (\(localBranches.count))")
+//        Spacer()
+//        if isExpanded {
+//          Button {
+//            Task {
+//              await repository.load()
+//            }
+//          } label: { Image(systemName: "arrow.counterclockwise.icloud") }
+//        }
+//      }
+//    }
     }
   }
 }

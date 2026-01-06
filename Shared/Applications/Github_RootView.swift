@@ -39,6 +39,8 @@ struct Github_RootView: View {
                 try await Github.authorize()
                 viewModel.me = try await Github.me()
                 organizations = try await Github.loadOrganizations()
+              } catch {
+                print("Login error: \(error)")
               }
             }
           }
@@ -48,9 +50,12 @@ struct Github_RootView: View {
             if Github.hasToken {
               Task {
                 do {
-                  try await Github.authorize()
                   viewModel.me = try await Github.me()
                   organizations = try await Github.loadOrganizations()
+                } catch {
+                  print("Error loading user data: \(error)")
+                  // Token may be invalid, clear it
+                  Github.reauthorize()
                 }
               }
             }
@@ -74,7 +79,9 @@ struct Github_RootView: View {
       ToolbarItem(placement: .navigation) {
         Menu {
           Button {
-            Github.reauthorize()
+            Github.logout()
+            viewModel.me = nil
+            organizations = []
           } label: {
             Text("Logout")
             Image(systemName: "figure.wave")
