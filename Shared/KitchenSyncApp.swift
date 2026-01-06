@@ -16,6 +16,7 @@ struct KitchenSyncApp: App {
   var body: some Scene {
     WindowGroup {
       ContentView()
+        .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
         .onOpenURL { url in
           print("=== URL CALLBACK RECEIVED ===")
           print("URL: \(url.absoluteString)")
@@ -32,19 +33,9 @@ struct KitchenSyncApp: App {
           print("=============================")
           
           // Handle the OAuth callback
-          let handled = OAuthSwift.handle(url: url)
-          print("OAuth handled: \(handled)")
+          OAuthSwift.handle(url: url)
         }
     }
-    .handlesExternalEvents(matching: ["*"])
-    #if os(macOS)
-    // Additional handler at the app level for macOS
-    .commands {
-      CommandGroup(replacing: .newItem) {
-        // This ensures the app can handle URL events
-      }
-    }
-    #endif
     
 #if os(macOS)
     WindowGroup("Debug") {
