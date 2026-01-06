@@ -268,16 +268,12 @@ Local Packages/
    - Updated `Network.swift` to use async keychain access
    - Made `headers` and `hasToken` async properties
    - Simplified `ViewModel` by removing duplicate token management
-2. ✅ **Modernization:**
-   - Removed `Config` struct with `@AppStorage`
-   - All token access now goes through secure Keychain
-   - Better error handling with proper error types
-3. ✅ **UI Updates:**
-   - Updated `Github_RootView` to use new async patterns
-   - Improved logout flow with proper token deletion
-   - Changed "Reauthorize" → "Logout" (better UX)
+2. ✅ **OAuth UX Fix:**
+   - Fixed OAuth callback opening new window
+   - Added `.handlesExternalEvents(preferring:allowing:)` to activate existing window
+   - Cleaned up verbose debug logging
 
-**Commits:** 1 (8de44f6)  
+**Commits:** 3 (8de44f6, 37e6535, 8dbe62a) - **Merged to main** ✅  
 **Build:** ✅ SUCCESS  
 **Files Changed:** 4 files (+211/-54 lines)
 
@@ -285,35 +281,35 @@ Local Packages/
 
 **Testing Needed:**
 - [ ] Test GitHub login flow
+- [ ] Verify OAuth returns to existing window (not new window)
 - [ ] Test logout and verify token is deleted from Keychain
 - [ ] Test app restart - token should persist
-- [ ] Verify existing users migrate smoothly (may need migration code)
 
 ---
 
-## Next Session Priorities
+## Next Session Priorities (Session 3)
 
-### Option A: Continue ViewModel Modernization (Recommended)
+### Option A: Quick Wins - Clean Up Warnings ⭐ RECOMMENDED START
+**Fix deprecation warnings** (30 minutes)
+- Fix `onChange(of:perform:)` deprecation in OrganizationRepositoryView.swift
+- Fix NavigationLink deprecation in BranchListView.swift
+- **Impact:** Low | **Risk:** Low | **Time:** 30 minutes
+- **Why start here:** Clean slate before bigger refactors
+
+### Option B: Continue ViewModel Modernization
 **Convert Git.ViewModel to @Observable** (210 lines, more complex)
 - Remove heavy Combine usage (PassthroughSubject, sink, etc.)
 - Fix manual DispatchQueue.main.async calls
 - Modernize Repository class as well
 - **Impact:** Medium-High | **Risk:** Medium | **Time:** 2-3 hours
 
-### Option B: Navigation Modernization (Big Task)
+### Option C: Navigation Modernization (Big Task)
 **Update NavigationView → NavigationStack** (7 files)
 - Higher risk of breaking things
 - Recommend doing after ViewModels are modernized
 - **Impact:** High | **Risk:** High | **Time:** 3-4 hours
 
-### Option C: Clean Up Warnings
-**Fix deprecation warnings** (Quick wins)
-- Fix `onChange(of:perform:)` deprecation
-- Fix type inference warning in KitchenSyncApp
-- **Impact:** Low | **Risk:** Low | **Time:** 30 minutes
-
-**Recommendation:** Start next session with Option C (quick cleanup) or Option A (Git.ViewModel)
-
+**Recommendation:** Start Session 3 with **Option A (warnings)**, then move to **Option B (Git.ViewModel)**
 
 ---
 
