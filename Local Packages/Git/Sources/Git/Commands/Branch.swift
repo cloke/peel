@@ -9,9 +9,10 @@
 /// https://git-scm.com/docs/git-branch
 
 import SwiftUI
-import TaskRunner
 
 #if os(macOS)
+import TaskRunner
+
 extension Commands {
   struct Branch {
     // TODO: This should allow the root branch to be specified.

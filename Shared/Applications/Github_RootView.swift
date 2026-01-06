@@ -79,7 +79,7 @@ struct Github_RootView: View {
       ToolbarItem(placement: .navigation) {
         Menu {
           Button {
-            Github.logout()
+            Github.reauthorize()
             viewModel.me = nil
             organizations = []
           } label: {

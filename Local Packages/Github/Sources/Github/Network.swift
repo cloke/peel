@@ -175,10 +175,9 @@ extension Github {
       return
     }
     
-    // TODO: Move OAuth credentials to environment variables or Keychain
     let oauthswift = OAuth2Swift(
-      consumerKey:    "5839b088c4fed070f6e4",
-      consumerSecret: "2cbd6eb22c992083759806086c3a7d6c418c110a",
+      consumerKey:    "Ov23liMnGh1bRfKc0qpU",
+      consumerSecret: "2c18d51fc40cda6e94a626fafcc98f4968f4e850",
       authorizeUrl:   "https://github.com/login/oauth/authorize",
       accessTokenUrl: "https://github.com/login/oauth/access_token",
       responseType:   "code"
@@ -187,16 +186,10 @@ extension Github {
     self.oauthswift = oauthswift
     oauthswift.authorizeURLHandler = OAuthSwiftOpenURLExternally.sharedInstance
     
-    let callbackURL = URL(string: "crunchy-kitchen-sink://oauth-callback")!
-    print("OAuth: Starting authorization flow")
-    print("OAuth: Callback URL = \(callbackURL.absoluteString)")
-    
     let state = generateState(withLength: 20)
-    print("OAuth: State = \(state)")
-    
     return try await withCheckedThrowingContinuation { continuation in
       oauthswift.authorize(
-        withCallbackURL: callbackURL, scope: "user,repo,admin:org,org", state: state) { result in
+        withCallbackURL: URL(string: "crunchy-kitchen-sink://oauth-callback")!, scope: "user,repo,admin:org,org", state: state) { result in
           switch result {
           case .success(let (credential, _, _)):
             config.githubToken = credential.oauthToken
@@ -204,7 +197,6 @@ extension Github {
             continuation.resume()
           case .failure(let err):
             print("OAuth failed: \(err.localizedDescription)")
-            print("OAuth error details: \(err)")
             continuation.resume(throwing: err)
           }
         }
@@ -213,15 +205,5 @@ extension Github {
   
   public static func reauthorize(success: (() -> Void)? = nil, error: (() -> Void)? = nil)  {
     config.githubToken = ""
-    print("Token cleared - ready for re-authentication")
-  }
-  
-  /// Clears the stored token. Returns true if a token was cleared.
-  @discardableResult
-  public static func logout() -> Bool {
-    let hadToken = !config.githubToken.isEmpty
-    config.githubToken = ""
-    print("Logged out - token cleared")
-    return hadToken
   }
 }

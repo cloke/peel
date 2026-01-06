@@ -1,6 +1,6 @@
 //
 //  Diff.swift
-//  
+//
 //
 //  Created by Cory Loken on 5/9/21.
 //
@@ -13,8 +13,9 @@
 // Huge help from https://github.com/guillermomuntaner/GitDiff/
 
 import Foundation
+#if os(macOS)
 import TaskRunner
-
+#endif
 /// Functions that are defined in the git reference
 /// https://git-scm.com/docs/git-add
 extension Commands {
