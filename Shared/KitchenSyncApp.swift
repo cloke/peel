@@ -24,8 +24,17 @@ struct KitchenSyncApp: App {
           print("Host: \(url.host ?? "nil")")
           print("Path: \(url.path)")
           print("Query: \(url.query ?? "nil")")
+          print("Fragment: \(url.fragment ?? "nil")")
+          print("URL Components:")
+          if let components = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            print("  - Query Items: \(components.queryItems?.description ?? "nil")")
+          }
+          print("OS Version: \(ProcessInfo.processInfo.operatingSystemVersionString)")
           print("=============================")
-          OAuthSwift.handle(url: url)
+          
+          // Handle the OAuth callback
+          let handled = OAuthSwift.handle(url: url)
+          print("OAuth handled: \(handled)")
         }
     }
     .handlesExternalEvents(matching: Set(arrayLiteral: "*")) // create new window if doesn't exist

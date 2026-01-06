@@ -175,6 +175,11 @@ extension Github {
       return
     }
     
+    print("=== Starting GitHub OAuth ===")
+    print("Client ID: Ov23liMnGh1bRfKc0qpU")
+    print("Callback URL: crunchy-kitchen-sink://oauth-callback")
+    print("============================")
+    
     let oauthswift = OAuth2Swift(
       consumerKey:    "Ov23liMnGh1bRfKc0qpU",
       consumerSecret: "2c18d51fc40cda6e94a626fafcc98f4968f4e850",
@@ -187,16 +192,21 @@ extension Github {
     oauthswift.authorizeURLHandler = OAuthSwiftOpenURLExternally.sharedInstance
     
     let state = generateState(withLength: 20)
+    print("Generated OAuth state: \(state)")
+    
     return try await withCheckedThrowingContinuation { continuation in
       oauthswift.authorize(
         withCallbackURL: URL(string: "crunchy-kitchen-sink://oauth-callback")!, scope: "user,repo,admin:org,org", state: state) { result in
           switch result {
           case .success(let (credential, _, _)):
             config.githubToken = credential.oauthToken
-            print("OAuth successful, token received")
+            print("OAuth successful, token received: \(credential.oauthToken.prefix(10))...")
             continuation.resume()
           case .failure(let err):
             print("OAuth failed: \(err.localizedDescription)")
+            if let oauthError = err as? OAuthSwiftError {
+              print("OAuth error details: \(oauthError)")
+            }
             continuation.resume(throwing: err)
           }
         }
