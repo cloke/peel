@@ -1,9 +1,8 @@
 //
-//  Color.swift
-//  KitchenSync
+//  Color+Extensions.swift
+//  Github
 //
-//  Created by Cory Loken on 2/22/21.
-//  Merged with CrunchyCommon on 1/5/26
+//  Migrated from CrunchyCommon on 1/5/26
 //
 
 import SwiftUI

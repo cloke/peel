@@ -9,7 +9,7 @@ tags:
   - ui-ux
   - modernization
   - macos-26
-  - ios-18
+  - ios-26
 estimated-effort: 1-2 weeks
 ---
 
@@ -166,6 +166,24 @@ Local Packages/
 - [ ] Animation polish
 - [ ] Accessibility audit
 - [ ] Dark mode refinement
+
+---
+
+## Progress Tracking
+
+### Session 1: January 5, 2026
+**Completed:**
+- [x] ✅ Deleted CrunchyCommon package dependency
+  - Migrated Date+ISO8601 extensions to `Shared/Extensions/`
+  - Migrated Color extensions to `Shared/Extensions/` and `Github/Extensions/`
+  - Updated Github & Git Package.swift files
+  - Removed all CrunchyCommon imports (3 files)
+  - Build verified: SUCCESS
+  - Files changed: 9 | Lines migrated: ~132
+
+**Status:** Ready for testing & commit
+
+**Next:** Merge GithubUI into Github package (est. 20-30 min)
 
 ---
 

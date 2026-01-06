@@ -14,7 +14,7 @@ let package = Package(
   ],
   dependencies: [
     // Dependencies declare other packages that this package depends on.
-    .package(name: "CrunchyCommon", path: "../CrunchyCommon"),
+    // CrunchyCommon removed - migrated to Shared/Extensions
     .package(name: "TaskRunner", path: "../../../TaskRunner")
   ],
   targets: [
@@ -23,8 +23,7 @@ let package = Package(
     .target(
       name: "Git",
       dependencies: [
-        .product(name: "TaskRunner", package: "TaskRunner", condition: .when(platforms: [.macOS])),
-        "CrunchyCommon"
+        .product(name: "TaskRunner", package: "TaskRunner", condition: .when(platforms: [.macOS]))
       ]
     ),
     
