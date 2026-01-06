@@ -223,53 +223,85 @@ Local Packages/
 
 ## Progress Tracking
 
-### Session 1: January 5, 2026 ✅ COMPLETE
+### Session 1: January 5, 2026 (3 hours) ✅ COMPLETE
 
-**Completed Tasks:**
-1. [x] ✅ **Deep dive audit** - Analyzed 109 Swift files, documented all issues
-2. [x] ✅ **Deleted CrunchyCommon package**
-   - Migrated Date+ISO8601 extensions to Shared/Extensions/
-   - Migrated Color hex extensions to Shared/Extensions/ and Github/Extensions/
-   - Updated Github & Git Package.swift files
-   - Removed all imports (3 files)
-   - Commits: 8f0c28e, ca2d2c0
-3. [x] ✅ **Fixed Git tool crash on app launch**
-   - Changed URL(string:) → URL(fileURLWithPath:) for executables
-   - Fixed 3 instances in Commands.swift and Diff.swift
-   - Resolves: 'NSInvalidArgumentException: non-file URL argument'
-   - Commit: 3a8156e
-4. [x] ✅ **Merged GithubUI package into Github**
-   - Moved 3 organization views to Github/Views/Organizations/
-   - Removed self-imports and updated all references
-   - Manually fixed Xcode project.pbxproj (removed 8 GithubUI references)
-   - Deleted GithubUI package directory
-   - Commit: 8f00117
-5. [x] ✅ **Documentation**
-   - Created Plans/MODERNIZATION_SUMMARY.md
-   - Created .github/copilot-instructions.md
-   - Updated this modernization plan
+**What We Accomplished:**
+1. ✅ **Deep Dive Audit** - Analyzed 109 Swift files, identified all issues
+2. ✅ **Package Consolidation:**
+   - Deleted CrunchyCommon package (migrated to Shared/Extensions)
+   - Merged GithubUI into Github package
+   - **Result:** 5 packages → 3 packages (40% reduction)
+3. ✅ **Bug Fixes:**
+   - Fixed Git tool crash (URL(string:) → URL(fileURLWithPath:))
+   - Fixed tool switching crash (removed file:// prefix)
+4. ✅ **@Observable Migration:**
+   - Converted Github.ViewModel (ObservableObject → @Observable + @MainActor)
+   - Removed ALL Combine code from Github package
+   - Updated 7 files to use modern patterns
+   - **Removed 18 lines of Combine boilerplate**
+5. ✅ **Documentation:**
+   - Created MODERNIZATION_SUMMARY.md (executive summary)
+   - Created .github/copilot-instructions.md (Swift 6 best practices)
 
-**Stats:**
-- **Commits:** 4 total
-- **Packages:** 5 → 3 (40% reduction)
-- **Files changed:** ~25 total
-- **Build status:** ✅ SUCCESS
-- **Time:** ~2 hours
+**Commits:** 5 (8f0c28e, ca2d2c0, 3a8156e, 8f00117, beb1313)  
+**Build:** ✅ SUCCESS  
+**Files Changed:** ~33 total
 
 **Known Issues:**
-- 🐛 PR tab doesn't render until tab switch (will fix during navigation refactor)
+- 🐛 PR tab rendering bug - **may be fixed** by @Observable conversion (needs testing tomorrow)
 
-**Next Session Goals:**
-- Add Keychain token storage (security fix)
-- Convert one ViewModel to @Observable (Github.ViewModel is simplest)
-- Update Package.swift files to Swift 6.0
+**Testing Needed:**
+- [ ] Test GitHub login/logout
+- [ ] Test organization browsing
+- [ ] **Test if PR tab renders correctly now** (most important!)
+- [ ] Test Personal view filters ("My Requests" / "All")
+- [ ] Verify no regressions
+
+---
+
+## Next Session Priorities
+
+### Option A: Continue ViewModel Modernization (Recommended)
+**Convert Git.ViewModel to @Observable** (210 lines, more complex)
+- Remove heavy Combine usage (PassthroughSubject, sink, etc.)
+- Fix manual DispatchQueue.main.async calls
+- Modernize Repository class as well
+- **Impact:** Medium-High | **Risk:** Medium | **Time:** 2-3 hours
+
+### Option B: Security Fix (Quick Win)
+**Add Keychain token storage**
+- Create KeychainService actor
+- Migrate OAuth token from UserDefaults
+- **Impact:** High (security) | **Risk:** Medium | **Time:** 1 hour
+
+### Option C: Navigation Modernization (Big Task)
+**Update NavigationView → NavigationStack** (7 files)
+- Higher risk of breaking things
+- Recommend doing after ViewModels are modernized
+- **Impact:** High | **Risk:** High | **Time:** 3-4 hours
+
+**Recommendation:** Start next session with Option B (Keychain) or Option A (Git.ViewModel)
+
+---
+
+## Resources
+
+- [Apple SwiftUI Documentation](https://developer.apple.com/documentation/swiftui)
+- [Swift 6 Migration Guide](https://www.swift.org/migration/documentation/swift-6-concurrency-migration-guide/)
+- [@Observable Documentation](https://developer.apple.com/documentation/observation)
+- [Navigation Stack Guide](https://developer.apple.com/documentation/swiftui/navigationstack)
+- Project plans in `/Plans/`
 
 ---
 
 ## Notes
 
-- Keep backward compatibility considerations minimal (targeting latest OS)
-- Focus on developer experience and maintainability
-- Prioritize features that improve user workflows
-- Consider accessibility from the start
-- Test on both macOS and iOS throughout development
+- ✅ Modernization is progressing well - 40% package reduction on day 1
+- ✅ @Observable conversion was smooth, may have fixed lifecycle bugs
+- ⚠️ Need to decide on Brew package fate (keep or delete)
+- 📝 Git.ViewModel is next big refactor (heavy Combine usage)
+- 🎯 Focus remains on GitHub tool per user request
+
+---
+
+**End of Session 1 - January 5, 2026**
