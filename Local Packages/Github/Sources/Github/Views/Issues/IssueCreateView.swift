@@ -3,6 +3,7 @@
 //  IssueCreateView
 //
 //  Created by Cory Loken on 7/20/21.
+//  Modernized to @Observable on 1/5/26
 //
 
 import SwiftUI
@@ -11,7 +12,7 @@ struct IssueCreateView: View {
   @Binding var showSheet: Bool
   let repository: Github.Repository
   
-  @EnvironmentObject var viewModel: Github.ViewModel
+  @Environment(Github.ViewModel.self) private var viewModel
   @State private var title = ""
   @State private var issueBody = ""
   

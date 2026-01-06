@@ -2,13 +2,14 @@
 //  OrganizationPullRequestsListView.swift
 //  OrganizationPullRequestsListView
 //
-//  Created by Cory Loken on 7/16/21.
+//  Created by Cory Loken on 8/6/21.
+//  Modernized to @Observable on 1/5/26
 //
 
 import SwiftUI
 
 struct OrganizationPullRequestsListView: View {
-  @EnvironmentObject var viewModel: Github.ViewModel
+  @Environment(Github.ViewModel.self) private var viewModel
   
   var pullRequests: [Github.PullRequest]
   

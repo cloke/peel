@@ -21,41 +21,36 @@ This document outlines how to evolve KitchenSink (now "Kitchen Sync") into an AI
 
 ## Phase 1: Stabilize & Simplify (Week 1)
 
-### 1.1 Fix Immediate Issues ✅ COMPLETED
+### 1.1 Fix Immediate Issues
 - [x] Fix GitHub OAuth error handling
 - [x] Add network entitlement for macOS
-- [x] **Updated GitHub OAuth credentials** - Client ID: Ov23liMnGh1bRfKc0qpU, updated secret
-- [x] **Fixed OAuth callback URL** - Changed to `crunchy-kitchen-sink://oauth-callback`
-- [x] **Fixed macOS URL scheme handling** - Removed conflicting `/Applications/KitchenSync.app`
-- [x] **Fixed iOS build issues** - Made TaskRunner macOS-only (uses Process API)
-- [x] **Fixed Git package** - Conditionally includes TaskRunner only on macOS
-- [x] **OAuth working on both iOS and macOS** ✅
+- [x] **Verify/regenerate GitHub OAuth credentials** (updated 2026-01-05)
 - [ ] Add proper error UI (alerts/toasts) instead of just console logging
 - [ ] Move OAuth credentials out of source code (to Keychain or environment)
+- [ ] **KNOWN ISSUE:** PR tab doesn't render until tab switch (likely NavigationSplitView lifecycle issue)
 
-**Key Learnings:**
-- macOS 26 (Tahoe) requires apps handling URL schemes to be registered with Launch Services
-- Conflicting app bundles in /Applications can steal URL callbacks
-- For development: Run from Xcode works fine once conflicting apps are removed
-- iOS OAuth worked immediately; macOS issue was environment-specific, not code
-
-### 1.2 Modernize SwiftUI UX (NEW - See SWIFTUI_MODERNIZATION_PLAN.md)
-- [ ] Audit current UI built on macOS 13 / SwiftUI 3.0
-- [ ] Update to modern SwiftUI patterns (macOS 14+ / SwiftUI 5.0+)
-- [ ] Leverage new SwiftUI features for better macOS/iOS parity
-- [ ] See detailed UX modernization plan in separate document
-
-### 1.2 Consolidate Package Structure
+### 1.2 Consolidate Package Structure ✅ IN PROGRESS
 
 **Current (Over-engineered):**
 ```
 Local Packages/
 ├── Brew/          # Homebrew UI (macOS only)
-├── CrunchyCommon/ # Shared utilities
+├── CrunchyCommon/ # Shared utilities [DELETED ✅]
 ├── Git/           # Local git operations
 ├── Github/        # GitHub API + Models + Some Views
-└── GithubUI/      # More GitHub Views (confusing split)
+└── GithubUI/      # More GitHub Views (confusing split) [MERGED ✅]
 ```
+
+**Progress (Jan 5, 2026):**
+- [x] ✅ Deleted CrunchyCommon package (migrated to Shared/Extensions and Github/Extensions)
+- [x] ✅ Merged GithubUI into Github package
+- [x] ✅ Fixed Git tool crash (URL handling)
+- **Package count: 5 → 3 (40% reduction)**
+
+**Next Steps:**
+- [ ] Decide: Keep or remove Brew package
+- [ ] Consider renaming Github → GitHub (proper capitalization)
+- [ ] Create AgentOrchestrator package when ready
 
 **Proposed (Simplified):**
 ```

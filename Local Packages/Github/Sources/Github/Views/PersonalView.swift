@@ -3,12 +3,13 @@
 //  
 //
 //  Created by Cory Loken on 12/12/21.
+//  Modernized to @Observable on 1/5/26
 //
 
 import SwiftUI
 
 public struct PersonalHeaderView: View {
-  @EnvironmentObject var viewModel: Github.ViewModel
+  @Environment(Github.ViewModel.self) private var viewModel
   @Binding var pullRequests: [Github.PullRequest]
   @State private var pullRequestCache = [Github.PullRequest]()
   
@@ -31,7 +32,7 @@ public struct PersonalHeaderView: View {
 }
 
 public struct PersonalView: View {
-  @EnvironmentObject var viewModel: Github.ViewModel
+  @Environment(Github.ViewModel.self) private var viewModel
   @State private var pullRequests = [Github.PullRequest]()
   
   let organizations: [Github.User]
@@ -73,9 +74,3 @@ public struct PersonalView: View {
     }
   }
 }
-
-//struct PersonalView_Previews: PreviewProvider {
-//  static var previews: some View {
-//    PersonalView()
-//  }
-//}

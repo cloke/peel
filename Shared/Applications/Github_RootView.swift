@@ -3,14 +3,14 @@
 //  KitchenSync (macOS)
 //
 //  Created by Cory Loken on 7/14/21.
+//  Modernized to @Observable on 1/5/26
 //
 
 import SwiftUI
 import Github
-import Combine
 
 struct Github_RootView: View {
-  @ObservedObject public var viewModel = Github.ViewModel()
+  @State private var viewModel = Github.ViewModel()
   
   @State private var organizations = [Github.User]()
   @State private var columnVisibility = NavigationSplitViewVisibility.all
@@ -23,7 +23,7 @@ struct Github_RootView: View {
         if Github.hasToken && viewModel.me != nil {
           NavigationLink(
             destination: PersonalView(organizations: organizations)
-              .environmentObject(viewModel),
+              .environment(viewModel),
             label: {  ProfileNameView(me: viewModel.me!) }
           )
           Section("Organizations") {
@@ -68,7 +68,7 @@ struct Github_RootView: View {
       }
     }
     .navigationSplitViewStyle(.automatic)
-    .environmentObject(viewModel)
+    .environment(viewModel)
     .frame(idealHeight: 400)
     .toolbar {
 #if os(macOS)
@@ -80,8 +80,7 @@ struct Github_RootView: View {
           Button {
             Github.reauthorize()
           } label: {
-            Text("Logout")
-            Image(systemName: "figure.wave")
+            Text("Reauthorize")
           }
         } label: {
           Image(systemName: "gear")

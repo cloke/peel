@@ -3,28 +3,28 @@
 //  viewModel
 //
 //  Created by Cory Loken on 7/15/21.
+//  Modernized to @Observable on 1/5/26
 //
 
 import SwiftUI
-import Combine
 
 extension Github {
-  public class ViewModel: ObservableObject {
-    @AppStorage("github-token") var githubTokenPersisted = ""
+  @MainActor
+  @Observable
+  public class ViewModel {
+    @ObservationIgnored
+    @AppStorage("github-token") private var githubTokenPersisted = ""
     
-    @Published public var me: Github.User?
-    @Published public var token: String = ""
-    
-    var disposables = Set<AnyCancellable>()
+    public var me: Github.User?
+    public var token: String = "" {
+      didSet {
+        githubTokenPersisted = token
+      }
+    }
     
     public init() {
-      $token
-        .dropFirst()
-        .receive(on: DispatchQueue.main)
-        .sink {
-          self.githubTokenPersisted = $0
-        }
-        .store(in: &disposables)
+      // Load token from storage on init
+      token = githubTokenPersisted
     }
     
     /// Checks to see if the current user is contained in the list of reviewers
