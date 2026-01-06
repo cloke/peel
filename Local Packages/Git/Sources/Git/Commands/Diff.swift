@@ -22,7 +22,7 @@ extension Commands {
 #if os(macOS)
   /// Processes a diff based on direct file paths
   static func diff(repository: Model.Repository, path: String) async throws -> Diff {
-    let result = try? await Self.launch(tool: URL(string: Executable.git.rawValue)!, arguments: ["-C", repository.path, "diff", path])
+    let result = try? await Self.launch(tool: URL(fileURLWithPath: Executable.git.rawValue), arguments: ["-C", repository.path, "diff", path])
     switch result {
     case .complete(let data, _):
       let array = String(data: data, encoding: .utf8)!.split(separator: "\n")
@@ -34,7 +34,7 @@ extension Commands {
   
   /// Processes a diff based on specific commits
   static func diff(commit: String, on respository: Model.Repository) async throws -> Diff {
-    let result = try? await Self.launch(tool: URL(string: Executable.git.rawValue)!, arguments: ["-C", respository.path, "diff", "\(commit)~", commit])
+    let result = try? await Self.launch(tool: URL(fileURLWithPath: Executable.git.rawValue), arguments: ["-C", respository.path, "diff", "\(commit)~", commit])
     switch result {
     case .complete(let data, _):
       let array = String(data: data, encoding: .utf8)!.split(separator: "\n")
