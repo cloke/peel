@@ -16,7 +16,6 @@ struct KitchenSyncApp: App {
   var body: some Scene {
     WindowGroup {
       ContentView()
-        .handlesExternalEvents(preferring: Set(arrayLiteral: "*"), allowing: Set(arrayLiteral: "*")) // activate existing window if exists
         .onOpenURL { url in
           print("=== URL CALLBACK RECEIVED ===")
           print("URL: \(url.absoluteString)")
@@ -37,7 +36,15 @@ struct KitchenSyncApp: App {
           print("OAuth handled: \(handled)")
         }
     }
-    .handlesExternalEvents(matching: Set(arrayLiteral: "*")) // create new window if doesn't exist
+    .handlesExternalEvents(matching: ["*"])
+    #if os(macOS)
+    // Additional handler at the app level for macOS
+    .commands {
+      CommandGroup(replacing: .newItem) {
+        // This ensures the app can handle URL events
+      }
+    }
+    #endif
     
 #if os(macOS)
     WindowGroup("Debug") {
