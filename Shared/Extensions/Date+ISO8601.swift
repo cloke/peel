@@ -1,3 +1,10 @@
+//
+//  Date+ISO8601.swift
+//  KitchenSync
+//
+//  Migrated from CrunchyCommon on 1/5/26
+//
+
 import Foundation
 
 extension ISO8601DateFormatter {
@@ -13,20 +20,13 @@ extension Formatter {
 }
 
 extension Date {
-  public var iso8601: String {
+  var iso8601: String {
     return Formatter.iso8601.string(from: self)
   }
 }
 
 extension String {
-  public var iso8601: Date? {
+  var iso8601: Date? {
     return Formatter.iso8601.date(from: self)
-  }
-}
-
-public struct CrunchyCommon {
-  public private(set) var text = "Hello, World!"
-  
-  public init() {
   }
 }

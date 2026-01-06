@@ -3,29 +3,29 @@
 //  KitchenSync (macOS)
 //
 //  Created by Cory Loken on 7/14/21.
+//  Modernized to @Observable on 1/5/26
+//  Updated for Keychain storage on 1/6/26
 //
 
 import SwiftUI
 import Github
-import Combine
-import GithubUI
 
 struct Github_RootView: View {
-  @ObservedObject public var viewModel = Github.ViewModel()
+  @State public var viewModel = Github.ViewModel()
   
   @State private var organizations = [Github.User]()
   @State private var columnVisibility = NavigationSplitViewVisibility.all
   @State private var mainSelection = ["A", "B", "C"]
   @State private var selection: String?
+  @State private var hasToken = false
   
   var body: some View {
     NavigationSplitView(columnVisibility: $columnVisibility) {
       List {
-        if Github.hasToken && viewModel.me != nil {
+        if hasToken && viewModel.me != nil {
           NavigationLink(
-            destination: PersonalView(organizations: organizations)
-              .environmentObject(viewModel),
-            label: {  ProfileNameView(me: viewModel.me!) }
+            destination: PersonalView(organizations: organizations),
+            label: { ProfileNameView(me: viewModel.me!) }
           )
           Section("Organizations") {
             ForEach(organizations) { organization in
@@ -39,19 +39,25 @@ struct Github_RootView: View {
                 try await Github.authorize()
                 viewModel.me = try await Github.me()
                 organizations = try await Github.loadOrganizations()
+                hasToken = await Github.hasToken
+              } catch {
+                print("Login error: \(error)")
               }
             }
           }
         }
         Spacer()
-          .onAppear {
-            if Github.hasToken {
-              Task {
-                do {
-                  try await Github.authorize()
-                  viewModel.me = try await Github.me()
-                  organizations = try await Github.loadOrganizations()
-                }
+          .task {
+            hasToken = await Github.hasToken
+            if hasToken {
+              do {
+                viewModel.me = try await Github.me()
+                organizations = try await Github.loadOrganizations()
+              } catch {
+                print("Error loading user data: \(error)")
+                // Token may be invalid, clear it
+                await Github.reauthorize()
+                hasToken = false
               }
             }
           }
@@ -64,7 +70,7 @@ struct Github_RootView: View {
       }
     }
     .navigationSplitViewStyle(.automatic)
-    .environmentObject(viewModel)
+    .environment(viewModel)
     .frame(idealHeight: 400)
     .toolbar {
 #if os(macOS)
@@ -74,7 +80,12 @@ struct Github_RootView: View {
       ToolbarItem(placement: .navigation) {
         Menu {
           Button {
-            Github.reauthorize()
+            Task {
+              await Github.reauthorize()
+              hasToken = false
+              viewModel.me = nil
+              organizations = []
+            }
           } label: {
             Text("Logout")
             Image(systemName: "figure.wave")

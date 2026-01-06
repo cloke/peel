@@ -13,26 +13,39 @@ enum GithubError: Error {
   case couldNotDecode
 }
 
-private struct Config {
-  @AppStorage("github-token") var githubToken = ""
-}
-
-private let config  = Config()
-
 extension Github {
   /// Allows the application initializers to call back into SwiftUI after OAuth has been completed in the browser
   private static var oauthswift: OAuthSwift?
+  private static let tokenKey = "github-oauth-token"
   
   static var headers: HTTPHeaders {
-    return [
-      "Authorization": "token \(config.githubToken)",
-      "Accept": "application/vnd.github.v3+json",
-      "Content-Type": "application/vnd.github.v3+json"
-    ]
+    get async {
+      let token = await getToken()
+      return [
+        "Authorization": "token \(token)",
+        "Accept": "application/vnd.github.v3+json",
+        "Content-Type": "application/vnd.github.v3+json"
+      ]
+    }
   }
   
   public static var hasToken: Bool {
-    !config.githubToken.isEmpty
+    get async {
+      let token = await getToken()
+      return !token.isEmpty
+    }
+  }
+  
+  /// Get token from keychain
+  private static func getToken() async -> String {
+    do {
+      return try await KeychainService.shared.retrieve(for: tokenKey)
+    } catch KeychainService.KeychainError.itemNotFound {
+      return ""
+    } catch {
+      print("Failed to retrieve token from keychain: \(error)")
+      return ""
+    }
   }
   
   /// Returns an array of pull requests from the specified repository
@@ -147,6 +160,7 @@ extension Github {
       throw AFError.invalidURL(url: "")
     }
     
+    let headers = await headers
     return try await AF.request(url, method: .post, parameters: json, encoder: JSONParameterEncoder.default, headers: headers)
       .serializingDecodable(Issue.self)
       .value
@@ -154,7 +168,8 @@ extension Github {
   
   /// Used when the expected response will be a single of codable object.
   private static func load<T: Codable>(url: String) async throws -> T {
-    try await AF.request(URL(string: url)!, method: .get, headers: headers)
+    let headers = await headers
+    return try await AF.request(URL(string: url)!, method: .get, headers: headers)
         .serializingDecodable(T.self)
         .value
   }
@@ -163,6 +178,7 @@ extension Github {
   /// - Parameter url: url to the github api
   /// - Returns: array of codables
   private static func loadMany<T: Codable>(url: String) async throws -> [T] {
+    let headers = await headers
     return try await AF.request(URL(string: url)!, method: .get, headers: headers)
       .serializingDecodable([T].self)
       .value
@@ -170,14 +186,20 @@ extension Github {
   
   /// Authorizes with the github api or returns success if token exists. To reset token and access call reauthorize.
   public static func authorize() async throws -> Void {
-    if !config.githubToken.isEmpty {
-      print("Not empty: \(config.githubToken)")
+    let currentToken = await getToken()
+    if !currentToken.isEmpty {
+      print("Token already exists")
       return
     }
     
+    print("=== Starting GitHub OAuth ===")
+    print("Client ID: Ov23liMnGh1bRfKc0qpU")
+    print("Callback URL: crunchy-kitchen-sink://oauth-callback")
+    print("============================")
+    
     let oauthswift = OAuth2Swift(
-      consumerKey:    "5839b088c4fed070f6e4",
-      consumerSecret: "e8cf6fbbb3f25d8671938e3fc375f631c97aa4d4",
+      consumerKey:    "Ov23liMnGh1bRfKc0qpU",
+      consumerSecret: "2c18d51fc40cda6e94a626fafcc98f4968f4e850",
       authorizeUrl:   "https://github.com/login/oauth/authorize",
       accessTokenUrl: "https://github.com/login/oauth/access_token",
       responseType:   "code"
@@ -187,22 +209,33 @@ extension Github {
     oauthswift.authorizeURLHandler = OAuthSwiftOpenURLExternally.sharedInstance
     
     let state = generateState(withLength: 20)
-    return await withCheckedContinuation { continuation in
+    print("Generated OAuth state: \(state)")
+    
+    return try await withCheckedThrowingContinuation { continuation in
       oauthswift.authorize(
-        withCallbackURL: URL(string: "crunchy-kitchen-sink://")!, scope: "user,repo,admin:org,org", state: state) { result in
+        withCallbackURL: URL(string: "crunchy-kitchen-sink://oauth-callback")!, scope: "user,repo,admin:org,org", state: state) { result in
           switch result {
           case .success(let (credential, _, _)):
-            config.githubToken = credential.oauthToken
-            print(credential.oauthToken)
-            continuation.resume()
+            Task {
+              do {
+                try await KeychainService.shared.save(credential.oauthToken, for: "github-oauth-token")
+                print("OAuth successful, token saved to keychain")
+                continuation.resume()
+              } catch {
+                print("Failed to save token to keychain: \(error)")
+                continuation.resume(throwing: error)
+              }
+            }
           case .failure(let err):
-            continuation.resume(throwing: err.underlyingError as! Never)
+            print("OAuth failed: \(err.localizedDescription)")
+            print("OAuth error details: \(err)")
+            continuation.resume(throwing: err)
           }
         }
     }
   }
   
-  public static func reauthorize(success: (() -> Void)? = nil, error: (() -> Void)? = nil)  {
-    config.githubToken = ""
+  public static func reauthorize() async {
+    try? await KeychainService.shared.delete(for: "github-oauth-token")
   }
 }

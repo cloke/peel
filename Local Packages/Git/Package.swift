@@ -5,7 +5,7 @@ import PackageDescription
 
 let package = Package(
   name: "Git",
-  platforms: [.macOS("13"), .iOS("16")],
+  platforms: [.macOS("26"), .iOS("26")],
   products: [
     // Products define the executables and libraries a package produces, and make them visible to other packages.
     .library(
@@ -14,8 +14,8 @@ let package = Package(
   ],
   dependencies: [
     // Dependencies declare other packages that this package depends on.
-    .package(name: "CrunchyCommon", path: "../CrunchyCommon"),
-    .package(name: "TaskRunner", path: "../TaskRunner")
+    // CrunchyCommon removed - migrated to Shared/Extensions
+    .package(name: "TaskRunner", path: "../../../TaskRunner")
   ],
   targets: [
     // Targets are the basic building blocks of a package. A target can define a module or a test suite.
@@ -23,8 +23,7 @@ let package = Package(
     .target(
       name: "Git",
       dependencies: [
-        .product(name: "TaskRunner", package: "TaskRunner", condition: .when(platforms: [.macOS])),
-        "CrunchyCommon"
+        .product(name: "TaskRunner", package: "TaskRunner", condition: .when(platforms: [.macOS]))
       ]
     ),
     

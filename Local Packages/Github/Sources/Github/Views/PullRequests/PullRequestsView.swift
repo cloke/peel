@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import CrunchyCommon
 import MarkdownUI
 
 struct PullRequestDetailView: View {

@@ -1,8 +1,8 @@
 //
-//  Color.swift
-//  Color
+//  Color+Extensions.swift
+//  Github
 //
-//  Created by Cory Loken on 7/18/21.
+//  Migrated from CrunchyCommon on 1/5/26
 //
 
 import SwiftUI
@@ -14,7 +14,9 @@ import AppKit
 #endif
 
 extension Color {
-  public init(hex string: String) {
+  /// Initialize a Color from a hex string
+  /// Supports formats: "FF0000", "#FF0000", "FF0000AA" (with alpha)
+  init(hex string: String) {
     var string: String = string.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
     if string.hasPrefix("#") {
       _ = string.removeFirst()
@@ -38,22 +40,16 @@ extension Color {
     
     if string.count == 2 {
       let mask = 0xFF
-      
       let g = Int(color) & mask
-      
       let gray = Double(g) / 255.0
-      
       self.init(.sRGB, red: gray, green: gray, blue: gray, opacity: 1)
       
     } else if string.count == 4 {
       let mask = 0x00FF
-      
       let g = Int(color >> 8) & mask
       let a = Int(color) & mask
-      
       let gray = Double(g) / 255.0
       let alpha = Double(a) / 255.0
-      
       self.init(.sRGB, red: gray, green: gray, blue: gray, opacity: alpha)
       
     } else if string.count == 6 {
@@ -61,11 +57,9 @@ extension Color {
       let r = Int(color >> 16) & mask
       let g = Int(color >> 8) & mask
       let b = Int(color) & mask
-      
       let red = Double(r) / 255.0
       let green = Double(g) / 255.0
       let blue = Double(b) / 255.0
-      
       self.init(.sRGB, red: red, green: green, blue: blue, opacity: 1)
       
     } else if string.count == 8 {
@@ -74,12 +68,10 @@ extension Color {
       let g = Int(color >> 16) & mask
       let b = Int(color >> 8) & mask
       let a = Int(color) & mask
-      
       let red = Double(r) / 255.0
       let green = Double(g) / 255.0
       let blue = Double(b) / 255.0
       let alpha = Double(a) / 255.0
-      
       self.init(.sRGB, red: red, green: green, blue: blue, opacity: alpha)
       
     } else {
@@ -87,7 +79,8 @@ extension Color {
     }
   }
   
-  public var isDarkColor: Bool {
+  /// Returns true if this color is considered dark (luminance < 0.50)
+  var isDarkColor: Bool {
     var r, g, b, a: CGFloat
     (r, g, b, a) = (0, 0, 0, 0)
     
@@ -98,11 +91,14 @@ extension Color {
     #endif
     
     #if os(iOS)
-    return false
+    // On iOS, use UIColor conversion
+    NativeColor(self).getRed(&r, green: &g, blue: &b, alpha: &a)
     #else
+    // On macOS, use NSColor with color space conversion
     NativeColor(self).usingColorSpace(.extendedSRGB)?.getRed(&r, green: &g, blue: &b, alpha: &a)
-    let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
-    return  lum < 0.50
     #endif
+    
+    let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    return lum < 0.50
   }
 }

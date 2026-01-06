@@ -25,7 +25,7 @@ public struct Commands: TaskRunnerProtocol {
   
   /// Provides a single point for commands that just execture a command and return data
   static func simple(arguments: [String]) async throws -> [String] {
-    let status = try? await Commands.launch(tool: URL(string: Executable.git.rawValue)!, arguments: arguments)
+    let status = try? await Commands.launch(tool: URL(fileURLWithPath: Executable.git.rawValue), arguments: arguments)
     switch status {
     case .complete(let data, _):
       return String(data: data, encoding: .utf8)!.split(separator: "\n").map { String($0) }

@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import CrunchyCommon
 
 #if os(macOS)
 struct FileListView: View {

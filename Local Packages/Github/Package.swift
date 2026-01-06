@@ -5,7 +5,7 @@ import PackageDescription
 
 let package = Package(
   name: "Github",
-  platforms: [.macOS("13"), .iOS("16")],
+  platforms: [.macOS("26"), .iOS("26")],
   products: [
     // Products define the executables and libraries a package produces, and make them visible to other packages.
     .library(
@@ -16,7 +16,7 @@ let package = Package(
     // Dependencies declare other packages that this package depends on.
     .package(url: "https://github.com/Alamofire/Alamofire.git", from: "5.4.3"),
     .package(url: "https://github.com/OAuthSwift/OAuthSwift.git", .upToNextMajor(from: "2.2.0")),
-    .package(name: "CrunchyCommon", path: "../CrunchyCommon"),
+    // CrunchyCommon removed - migrated to Shared/Extensions
     .package(name: "Git", path: "../Git"),
     .package(url: "https://github.com/gonzalezreal/MarkdownUI", from: "0.0.0"),
   ],
@@ -25,7 +25,7 @@ let package = Package(
     // Targets can depend on other targets in this package, and on products in packages this package depends on.
     .target(
       name: "Github",
-      dependencies: ["Alamofire", "CrunchyCommon", "OAuthSwift", "MarkdownUI", "Git"]),
+      dependencies: ["Alamofire", "OAuthSwift", "MarkdownUI", "Git"]),
     .testTarget(
       name: "GithubTests",
       dependencies: ["Github"]),

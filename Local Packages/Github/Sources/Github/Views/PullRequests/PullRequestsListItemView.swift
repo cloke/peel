@@ -3,12 +3,13 @@
 //  PullRequestsListItemView
 //
 //  Created by Cory Loken on 7/20/21.
+//  Modernized to @Observable on 1/5/26
 //
 
 import SwiftUI
 
 struct PullRequestsListItemView: View {
-  @EnvironmentObject var viewModel: Github.ViewModel
+  @Environment(Github.ViewModel.self) private var viewModel
   let pullRequest: Github.PullRequest
   let organization: Github.User?
   let repository: Github.Repository

@@ -16,12 +16,11 @@ struct KitchenSyncApp: App {
   var body: some Scene {
     WindowGroup {
       ContentView()
-        .handlesExternalEvents(preferring: Set(arrayLiteral: "*"), allowing: Set(arrayLiteral: "*")) // activate existing window if exists
+        .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
         .onOpenURL { url in
           OAuthSwift.handle(url: url)
         }
     }
-    .handlesExternalEvents(matching: Set(arrayLiteral: "*")) // create new window if doesn't exist
     
 #if os(macOS)
     WindowGroup("Debug") {

@@ -1,911 +1,918 @@
 // !$*UTF8*$!
 {
-	archiveVersion = 1;
-	classes = {
-	};
-	objectVersion = 56;
-	objects = {
+  archiveVersion = 1;
+  classes = {
+  };
+  objectVersion = 56;
+  objects = {
 
 /* Begin PBXBuildFile section */
-		0409092426C5C7C3008D5A52 /* Alamofire in Frameworks */ = {isa = PBXBuildFile; productRef = 0409092326C5C7C3008D5A52 /* Alamofire */; };
-		040AAB7E26CB385800DE1CBF /* Git in Frameworks */ = {isa = PBXBuildFile; productRef = 040AAB7D26CB385800DE1CBF /* Git */; };
-		043A53102599589B00980BE2 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043A530E2599589B00980BE2 /* SettingsView.swift */; };
-		04510A582A2D200C001DEF5B /* Github in Frameworks */ = {isa = PBXBuildFile; productRef = 04510A572A2D200C001DEF5B /* Github */; };
-		04562F9528D1410D00FDA072 /* GithubUI in Frameworks */ = {isa = PBXBuildFile; productRef = 04562F9428D1410D00FDA072 /* GithubUI */; };
-		04562F9728D1411B00FDA072 /* GithubUI in Frameworks */ = {isa = PBXBuildFile; productRef = 04562F9628D1411B00FDA072 /* GithubUI */; };
-		04678656259FC75700D5E87F /* CommonToolbarItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04678654259FC75700D5E87F /* CommonToolbarItems.swift */; };
-		0467865E259FEEF100D5E87F /* TaskDebugWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0467865C259FEEF100D5E87F /* TaskDebugWindowView.swift */; };
-		046D40E426C56BBB003715AF /* OAuthSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 046D40E326C56BBB003715AF /* OAuthSwift */; };
-		046D40E526C56C1F003715AF /* Github_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0495D215269F5277008B5148 /* Github_RootView.swift */; };
-		046D40E726C56C5B003715AF /* Github in Frameworks */ = {isa = PBXBuildFile; productRef = 046D40E626C56C5B003715AF /* Github */; };
-		048086662A2D21E500536A3E /* Brew in Frameworks */ = {isa = PBXBuildFile; productRef = 048086652A2D21E500536A3E /* Brew */; };
-		048F40F82853ED470007A9A4 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 048F40F72853ED060007A9A4 /* ContentView.swift */; };
-		0495D214269F34F8008B5148 /* Alamofire in Frameworks */ = {isa = PBXBuildFile; productRef = 0495D213269F34F8008B5148 /* Alamofire */; };
-		0495D216269F5277008B5148 /* Github_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0495D215269F5277008B5148 /* Github_RootView.swift */; };
-		04A3CA2E25E46BA700EB520C /* Color.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A3CA2D25E46BA700EB520C /* Color.swift */; };
-		04A7BD7F258E77D8000E55A8 /* Tests_iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD7E258E77D8000E55A8 /* Tests_iOS.swift */; };
-		04A7BD8A258E77D8000E55A8 /* Tests_macOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */; };
-		04A7BD8C258E77D8000E55A8 /* KitchenSyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD63258E77D7000E55A8 /* KitchenSyncApp.swift */; };
-		04A7BD8D258E77D8000E55A8 /* KitchenSyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD63258E77D7000E55A8 /* KitchenSyncApp.swift */; };
-		04A7BD8F258E77D8000E55A8 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD64258E77D7000E55A8 /* ContentView.swift */; };
-		04A7BD90258E77D8000E55A8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 04A7BD65258E77D8000E55A8 /* Assets.xcassets */; };
-		04A7BD91258E77D8000E55A8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 04A7BD65258E77D8000E55A8 /* Assets.xcassets */; };
-		04AC312325B200A2009A10E7 /* Git_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04AC311E25B20085009A10E7 /* Git_RootView.swift */; };
-		04D09EFD26A85E8100072702 /* OAuthSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 04D09EFC26A85E8100072702 /* OAuthSwift */; };
-		04F4F93D25903A72005B30B4 /* Brew_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F4F93B25903A72005B30B4 /* Brew_RootView.swift */; };
+    0409092426C5C7C3008D5A52 /* Alamofire in Frameworks */ = {isa = PBXBuildFile; productRef = 0409092326C5C7C3008D5A52 /* Alamofire */; };
+    040AAB7E26CB385800DE1CBF /* Git in Frameworks */ = {isa = PBXBuildFile; productRef = 040AAB7D26CB385800DE1CBF /* Git */; };
+    043A53102599589B00980BE2 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043A530E2599589B00980BE2 /* SettingsView.swift */; };
+    04510A582A2D200C001DEF5B /* Github in Frameworks */ = {isa = PBXBuildFile; productRef = 04510A572A2D200C001DEF5B /* Github */; };
+    04678656259FC75700D5E87F /* CommonToolbarItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04678654259FC75700D5E87F /* CommonToolbarItems.swift */; };
+    0467865E259FEEF100D5E87F /* TaskDebugWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0467865C259FEEF100D5E87F /* TaskDebugWindowView.swift */; };
+    046D40E426C56BBB003715AF /* OAuthSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 046D40E326C56BBB003715AF /* OAuthSwift */; };
+    046D40E526C56C1F003715AF /* Github_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0495D215269F5277008B5148 /* Github_RootView.swift */; };
+    046D40E726C56C5B003715AF /* Github in Frameworks */ = {isa = PBXBuildFile; productRef = 046D40E626C56C5B003715AF /* Github */; };
+    048086662A2D21E500536A3E /* Brew in Frameworks */ = {isa = PBXBuildFile; productRef = 048086652A2D21E500536A3E /* Brew */; };
+    048F40F82853ED470007A9A4 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 048F40F72853ED060007A9A4 /* ContentView.swift */; };
+    0495D214269F34F8008B5148 /* Alamofire in Frameworks */ = {isa = PBXBuildFile; productRef = 0495D213269F34F8008B5148 /* Alamofire */; };
+    0495D216269F5277008B5148 /* Github_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0495D215269F5277008B5148 /* Github_RootView.swift */; };
+    04A3CA2E25E46BA700EB520C /* Color.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A3CA2D25E46BA700EB520C /* Color.swift */; };
+    04A7BD7F258E77D8000E55A8 /* Tests_iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD7E258E77D8000E55A8 /* Tests_iOS.swift */; };
+    04A7BD8A258E77D8000E55A8 /* Tests_macOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */; };
+    04A7BD8C258E77D8000E55A8 /* KitchenSyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD63258E77D7000E55A8 /* KitchenSyncApp.swift */; };
+    04A7BD8D258E77D8000E55A8 /* KitchenSyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD63258E77D7000E55A8 /* KitchenSyncApp.swift */; };
+    04A7BD8F258E77D8000E55A8 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD64258E77D7000E55A8 /* ContentView.swift */; };
+    04A7BD90258E77D8000E55A8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 04A7BD65258E77D8000E55A8 /* Assets.xcassets */; };
+    04A7BD91258E77D8000E55A8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 04A7BD65258E77D8000E55A8 /* Assets.xcassets */; };
+    04AC312325B200A2009A10E7 /* Git_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04AC311E25B20085009A10E7 /* Git_RootView.swift */; };
+    04D09EFD26A85E8100072702 /* OAuthSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 04D09EFC26A85E8100072702 /* OAuthSwift */; };
+    04F4F93D25903A72005B30B4 /* Brew_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F4F93B25903A72005B30B4 /* Brew_RootView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		04A7BD7B258E77D8000E55A8 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 04A7BD5E258E77D7000E55A8 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 04A7BD69258E77D8000E55A8;
-			remoteInfo = "KitchenSink (iOS)";
-		};
-		04A7BD86258E77D8000E55A8 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 04A7BD5E258E77D7000E55A8 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 04A7BD71258E77D8000E55A8;
-			remoteInfo = "KitchenSink (macOS)";
-		};
+    04A7BD7B258E77D8000E55A8 /* PBXContainerItemProxy */ = {
+      isa = PBXContainerItemProxy;
+      containerPortal = 04A7BD5E258E77D7000E55A8 /* Project object */;
+      proxyType = 1;
+      remoteGlobalIDString = 04A7BD69258E77D8000E55A8;
+      remoteInfo = "KitchenSink (iOS)";
+    };
+    04A7BD86258E77D8000E55A8 /* PBXContainerItemProxy */ = {
+      isa = PBXContainerItemProxy;
+      containerPortal = 04A7BD5E258E77D7000E55A8 /* Project object */;
+      proxyType = 1;
+      remoteGlobalIDString = 04A7BD71258E77D8000E55A8;
+      remoteInfo = "KitchenSink (macOS)";
+    };
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		043A530E2599589B00980BE2 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-		043A532125998D1E00980BE2 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
-		04510A5D2A2D20C9001DEF5B /* GithubUI */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = GithubUI; path = "Local Packages/GithubUI"; sourceTree = "<group>"; };
-		04510A5E2A2D20F1001DEF5B /* Git */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Git; path = "Local Packages/Git"; sourceTree = "<group>"; };
-		04510A5F2A2D212E001DEF5B /* TaskRunner */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = TaskRunner; path = ../TaskRunner; sourceTree = "<group>"; };
-		04510A602A2D216A001DEF5B /* CrunchyCommon */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = CrunchyCommon; path = "Local Packages/CrunchyCommon"; sourceTree = "<group>"; };
-		04678654259FC75700D5E87F /* CommonToolbarItems.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonToolbarItems.swift; sourceTree = "<group>"; };
-		0467865C259FEEF100D5E87F /* TaskDebugWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDebugWindowView.swift; sourceTree = "<group>"; };
-		048086642A2D21A300536A3E /* Brew */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Brew; path = "Local Packages/Brew"; sourceTree = "<group>"; };
-		048F40F72853ED060007A9A4 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		0495D215269F5277008B5148 /* Github_RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Github_RootView.swift; sourceTree = "<group>"; };
-		04A3CA2D25E46BA700EB520C /* Color.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Color.swift; sourceTree = "<group>"; };
-		04A7BD63258E77D7000E55A8 /* KitchenSyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KitchenSyncApp.swift; sourceTree = "<group>"; };
-		04A7BD64258E77D7000E55A8 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		04A7BD65258E77D8000E55A8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		04A7BD6A258E77D8000E55A8 /* KitchenSync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KitchenSync.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		04A7BD6D258E77D8000E55A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		04A7BD72258E77D8000E55A8 /* Kitchen Sync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Kitchen Sync.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		04A7BD74258E77D8000E55A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		04A7BD75258E77D8000E55A8 /* macOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = macOS.entitlements; sourceTree = "<group>"; };
-		04A7BD7A258E77D8000E55A8 /* Tests iOS.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Tests iOS.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		04A7BD7E258E77D8000E55A8 /* Tests_iOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests_iOS.swift; sourceTree = "<group>"; };
-		04A7BD80258E77D8000E55A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		04A7BD85258E77D8000E55A8 /* Tests macOS.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Tests macOS.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests_macOS.swift; sourceTree = "<group>"; };
-		04A7BD8B258E77D8000E55A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		04AC311E25B20085009A10E7 /* Git_RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Git_RootView.swift; sourceTree = "<group>"; };
-		04F4F93B25903A72005B30B4 /* Brew_RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brew_RootView.swift; sourceTree = "<group>"; };
-		04F4F9772596AAD7005B30B4 /* KitchenSync.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = KitchenSync.entitlements; sourceTree = "<group>"; };
-		04F582A6269FD388003A8403 /* Github */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Github; path = "Local Packages/Github"; sourceTree = "<group>"; };
+    042D0C362F0C81450056EC39 /* AGENT_ORCHESTRATION_PLAN.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = AGENT_ORCHESTRATION_PLAN.md; sourceTree = "<group>"; };
+    042D0C372F0C81450056EC39 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+    042D0C392F0D91450056EC44 /* SWIFTUI_MODERNIZATION_PLAN.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = SWIFTUI_MODERNIZATION_PLAN.md; sourceTree = "<group>"; };
+    043A530E2599589B00980BE2 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+    043A532125998D1E00980BE2 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+    04510A5E2A2D20F1001DEF5B /* Git */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Git; path = "Local Packages/Git"; sourceTree = "<group>"; };
+    04510A5F2A2D212E001DEF5B /* TaskRunner */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = TaskRunner; path = ../TaskRunner; sourceTree = "<group>"; };
+    04678654259FC75700D5E87F /* CommonToolbarItems.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonToolbarItems.swift; sourceTree = "<group>"; };
+    0467865C259FEEF100D5E87F /* TaskDebugWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDebugWindowView.swift; sourceTree = "<group>"; };
+    048086642A2D21A300536A3E /* Brew */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Brew; path = "Local Packages/Brew"; sourceTree = "<group>"; };
+    048F40F72853ED060007A9A4 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+    0495D215269F5277008B5148 /* Github_RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Github_RootView.swift; sourceTree = "<group>"; };
+    04A3CA2D25E46BA700EB520C /* Color.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Color.swift; sourceTree = "<group>"; };
+    04A7BD63258E77D7000E55A8 /* KitchenSyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KitchenSyncApp.swift; sourceTree = "<group>"; };
+    04A7BD64258E77D7000E55A8 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+    04A7BD65258E77D8000E55A8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+    04A7BD6A258E77D8000E55A8 /* KitchenSync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KitchenSync.app; sourceTree = BUILT_PRODUCTS_DIR; };
+    04A7BD6D258E77D8000E55A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+    04A7BD72258E77D8000E55A8 /* Kitchen Sync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Kitchen Sync.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+    04A7BD74258E77D8000E55A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+    04A7BD75258E77D8000E55A8 /* macOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = macOS.entitlements; sourceTree = "<group>"; };
+    04A7BD7A258E77D8000E55A8 /* Tests iOS.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Tests iOS.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+    04A7BD7E258E77D8000E55A8 /* Tests_iOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests_iOS.swift; sourceTree = "<group>"; };
+    04A7BD80258E77D8000E55A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+    04A7BD85258E77D8000E55A8 /* Tests macOS.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Tests macOS.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+    04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests_macOS.swift; sourceTree = "<group>"; };
+    04A7BD8B258E77D8000E55A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+    04AC311E25B20085009A10E7 /* Git_RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Git_RootView.swift; sourceTree = "<group>"; };
+    04F4F93B25903A72005B30B4 /* Brew_RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brew_RootView.swift; sourceTree = "<group>"; };
+    04F4F9772596AAD7005B30B4 /* KitchenSync.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = KitchenSync.entitlements; sourceTree = "<group>"; };
+    04F582A6269FD388003A8403 /* Github */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Github; path = "Local Packages/Github"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		04A7BD67258E77D8000E55A8 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				0409092426C5C7C3008D5A52 /* Alamofire in Frameworks */,
-				04562F9728D1411B00FDA072 /* GithubUI in Frameworks */,
-				046D40E426C56BBB003715AF /* OAuthSwift in Frameworks */,
-				046D40E726C56C5B003715AF /* Github in Frameworks */,
-				040AAB7E26CB385800DE1CBF /* Git in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		04A7BD6F258E77D8000E55A8 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				048086662A2D21E500536A3E /* Brew in Frameworks */,
-				04562F9528D1410D00FDA072 /* GithubUI in Frameworks */,
-				04510A582A2D200C001DEF5B /* Github in Frameworks */,
-				04D09EFD26A85E8100072702 /* OAuthSwift in Frameworks */,
-				0495D214269F34F8008B5148 /* Alamofire in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		04A7BD77258E77D8000E55A8 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		04A7BD82258E77D8000E55A8 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
+    04A7BD67258E77D8000E55A8 /* Frameworks */ = {
+      isa = PBXFrameworksBuildPhase;
+      buildActionMask = 2147483647;
+      files = (
+        0409092426C5C7C3008D5A52 /* Alamofire in Frameworks */,
+        04562F9728D1411B00FDA072 /* GithubUI in Frameworks */,
+        046D40E426C56BBB003715AF /* OAuthSwift in Frameworks */,
+        046D40E726C56C5B003715AF /* Github in Frameworks */,
+        040AAB7E26CB385800DE1CBF /* Git in Frameworks */,
+      );
+      runOnlyForDeploymentPostprocessing = 0;
+    };
+    04A7BD6F258E77D8000E55A8 /* Frameworks */ = {
+      isa = PBXFrameworksBuildPhase;
+      buildActionMask = 2147483647;
+      files = (
+        048086662A2D21E500536A3E /* Brew in Frameworks */,
+        04510A582A2D200C001DEF5B /* Github in Frameworks */,
+        04D09EFD26A85E8100072702 /* OAuthSwift in Frameworks */,
+        0495D214269F34F8008B5148 /* Alamofire in Frameworks */,
+      );
+      runOnlyForDeploymentPostprocessing = 0;
+    };
+    04A7BD77258E77D8000E55A8 /* Frameworks */ = {
+      isa = PBXFrameworksBuildPhase;
+      buildActionMask = 2147483647;
+      files = (
+      );
+      runOnlyForDeploymentPostprocessing = 0;
+    };
+    04A7BD82258E77D8000E55A8 /* Frameworks */ = {
+      isa = PBXFrameworksBuildPhase;
+      buildActionMask = 2147483647;
+      files = (
+      );
+      runOnlyForDeploymentPostprocessing = 0;
+    };
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		042D2CC32891E44100E162D3 /* Packages */ = {
-			isa = PBXGroup;
-			children = (
-				04F582A6269FD388003A8403 /* Github */,
-				04510A5D2A2D20C9001DEF5B /* GithubUI */,
-				04510A5E2A2D20F1001DEF5B /* Git */,
-				04510A5F2A2D212E001DEF5B /* TaskRunner */,
-				04510A602A2D216A001DEF5B /* CrunchyCommon */,
-				048086642A2D21A300536A3E /* Brew */,
-			);
-			name = Packages;
-			sourceTree = "<group>";
-		};
-		0467866E259FEFAD00D5E87F /* Views */ = {
-			isa = PBXGroup;
-			children = (
-				043A530E2599589B00980BE2 /* SettingsView.swift */,
-				0467865C259FEEF100D5E87F /* TaskDebugWindowView.swift */,
-			);
-			path = Views;
-			sourceTree = "<group>";
-		};
-		0467868025A0DBE400D5E87F /* Frameworks */ = {
-			isa = PBXGroup;
-			children = (
-			);
-			name = Frameworks;
-			sourceTree = "<group>";
-		};
-		04A3CA2C25E46B9800EB520C /* Extensions */ = {
-			isa = PBXGroup;
-			children = (
-				04A3CA2D25E46BA700EB520C /* Color.swift */,
-			);
-			path = Extensions;
-			sourceTree = "<group>";
-		};
-		04A7BD5D258E77D7000E55A8 = {
-			isa = PBXGroup;
-			children = (
-				042D2CC32891E44100E162D3 /* Packages */,
-				043A532125998D1E00980BE2 /* README.md */,
-				04A7BD62258E77D7000E55A8 /* Shared */,
-				04F4F9772596AAD7005B30B4 /* KitchenSync.entitlements */,
-				04A7BD6C258E77D8000E55A8 /* iOS */,
-				04A7BD73258E77D8000E55A8 /* macOS */,
-				04A7BD7D258E77D8000E55A8 /* Tests iOS */,
-				04A7BD88258E77D8000E55A8 /* Tests macOS */,
-				04A7BD6B258E77D8000E55A8 /* Products */,
-				0467868025A0DBE400D5E87F /* Frameworks */,
-			);
-			sourceTree = "<group>";
-		};
-		04A7BD62258E77D7000E55A8 /* Shared */ = {
-			isa = PBXGroup;
-			children = (
-				04A7BDA5258EBAC4000E55A8 /* Applications */,
-				0467866E259FEFAD00D5E87F /* Views */,
-				04A3CA2C25E46B9800EB520C /* Extensions */,
-				04678654259FC75700D5E87F /* CommonToolbarItems.swift */,
-				04A7BD63258E77D7000E55A8 /* KitchenSyncApp.swift */,
-				04A7BD65258E77D8000E55A8 /* Assets.xcassets */,
-			);
-			path = Shared;
-			sourceTree = "<group>";
-		};
-		04A7BD6B258E77D8000E55A8 /* Products */ = {
-			isa = PBXGroup;
-			children = (
-				04A7BD6A258E77D8000E55A8 /* KitchenSync.app */,
-				04A7BD72258E77D8000E55A8 /* Kitchen Sync.app */,
-				04A7BD7A258E77D8000E55A8 /* Tests iOS.xctest */,
-				04A7BD85258E77D8000E55A8 /* Tests macOS.xctest */,
-			);
-			name = Products;
-			sourceTree = "<group>";
-		};
-		04A7BD6C258E77D8000E55A8 /* iOS */ = {
-			isa = PBXGroup;
-			children = (
-				04A7BD6D258E77D8000E55A8 /* Info.plist */,
-				048F40F72853ED060007A9A4 /* ContentView.swift */,
-			);
-			path = iOS;
-			sourceTree = "<group>";
-		};
-		04A7BD73258E77D8000E55A8 /* macOS */ = {
-			isa = PBXGroup;
-			children = (
-				04A7BD64258E77D7000E55A8 /* ContentView.swift */,
-				04A7BD74258E77D8000E55A8 /* Info.plist */,
-				04A7BD75258E77D8000E55A8 /* macOS.entitlements */,
-			);
-			path = macOS;
-			sourceTree = "<group>";
-		};
-		04A7BD7D258E77D8000E55A8 /* Tests iOS */ = {
-			isa = PBXGroup;
-			children = (
-				04A7BD7E258E77D8000E55A8 /* Tests_iOS.swift */,
-				04A7BD80258E77D8000E55A8 /* Info.plist */,
-			);
-			path = "Tests iOS";
-			sourceTree = "<group>";
-		};
-		04A7BD88258E77D8000E55A8 /* Tests macOS */ = {
-			isa = PBXGroup;
-			children = (
-				04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */,
-				04A7BD8B258E77D8000E55A8 /* Info.plist */,
-			);
-			path = "Tests macOS";
-			sourceTree = "<group>";
-		};
-		04A7BDA5258EBAC4000E55A8 /* Applications */ = {
-			isa = PBXGroup;
-			children = (
-				04AC311E25B20085009A10E7 /* Git_RootView.swift */,
-				04F4F93B25903A72005B30B4 /* Brew_RootView.swift */,
-				0495D215269F5277008B5148 /* Github_RootView.swift */,
-			);
-			path = Applications;
-			sourceTree = "<group>";
-		};
+    042D0C382F0C81450056EC39 /* Plans */ = {
+      isa = PBXGroup;
+      children = (
+        042D0C362F0C81450056EC39 /* AGENT_ORCHESTRATION_PLAN.md */,
+        042D0C372F0C81450056EC39 /* README.md */,
+        042D0C392F0D91450056EC44 /* SWIFTUI_MODERNIZATION_PLAN.md */,
+      );
+      path = Plans;
+      sourceTree = "<group>";
+    };
+    042D2CC32891E44100E162D3 /* Packages */ = {
+      isa = PBXGroup;
+      children = (
+        04F582A6269FD388003A8403 /* Github */,
+        04510A5E2A2D20F1001DEF5B /* Git */,
+        04510A5F2A2D212E001DEF5B /* TaskRunner */,
+        048086642A2D21A300536A3E /* Brew */,
+      );
+      name = Packages;
+      sourceTree = "<group>";
+    };
+    0467866E259FEFAD00D5E87F /* Views */ = {
+      isa = PBXGroup;
+      children = (
+        043A530E2599589B00980BE2 /* SettingsView.swift */,
+        0467865C259FEEF100D5E87F /* TaskDebugWindowView.swift */,
+      );
+      path = Views;
+      sourceTree = "<group>";
+    };
+    0467868025A0DBE400D5E87F /* Frameworks */ = {
+      isa = PBXGroup;
+      children = (
+      );
+      name = Frameworks;
+      sourceTree = "<group>";
+    };
+    04A3CA2C25E46B9800EB520C /* Extensions */ = {
+      isa = PBXGroup;
+      children = (
+        04A3CA2D25E46BA700EB520C /* Color.swift */,
+      );
+      path = Extensions;
+      sourceTree = "<group>";
+    };
+    04A7BD5D258E77D7000E55A8 = {
+      isa = PBXGroup;
+      children = (
+        042D0C382F0C81450056EC39 /* Plans */,
+        042D2CC32891E44100E162D3 /* Packages */,
+        043A532125998D1E00980BE2 /* README.md */,
+        04A7BD62258E77D7000E55A8 /* Shared */,
+        04F4F9772596AAD7005B30B4 /* KitchenSync.entitlements */,
+        04A7BD6C258E77D8000E55A8 /* iOS */,
+        04A7BD73258E77D8000E55A8 /* macOS */,
+        04A7BD7D258E77D8000E55A8 /* Tests iOS */,
+        04A7BD88258E77D8000E55A8 /* Tests macOS */,
+        04A7BD6B258E77D8000E55A8 /* Products */,
+        0467868025A0DBE400D5E87F /* Frameworks */,
+      );
+      sourceTree = "<group>";
+    };
+    04A7BD62258E77D7000E55A8 /* Shared */ = {
+      isa = PBXGroup;
+      children = (
+        04A7BDA5258EBAC4000E55A8 /* Applications */,
+        0467866E259FEFAD00D5E87F /* Views */,
+        04A3CA2C25E46B9800EB520C /* Extensions */,
+        04678654259FC75700D5E87F /* CommonToolbarItems.swift */,
+        04A7BD63258E77D7000E55A8 /* KitchenSyncApp.swift */,
+        04A7BD65258E77D8000E55A8 /* Assets.xcassets */,
+      );
+      path = Shared;
+      sourceTree = "<group>";
+    };
+    04A7BD6B258E77D8000E55A8 /* Products */ = {
+      isa = PBXGroup;
+      children = (
+        04A7BD6A258E77D8000E55A8 /* KitchenSync.app */,
+        04A7BD72258E77D8000E55A8 /* Kitchen Sync.app */,
+        04A7BD7A258E77D8000E55A8 /* Tests iOS.xctest */,
+        04A7BD85258E77D8000E55A8 /* Tests macOS.xctest */,
+      );
+      name = Products;
+      sourceTree = "<group>";
+    };
+    04A7BD6C258E77D8000E55A8 /* iOS */ = {
+      isa = PBXGroup;
+      children = (
+        04A7BD6D258E77D8000E55A8 /* Info.plist */,
+        048F40F72853ED060007A9A4 /* ContentView.swift */,
+      );
+      path = iOS;
+      sourceTree = "<group>";
+    };
+    04A7BD73258E77D8000E55A8 /* macOS */ = {
+      isa = PBXGroup;
+      children = (
+        04A7BD64258E77D7000E55A8 /* ContentView.swift */,
+        04A7BD74258E77D8000E55A8 /* Info.plist */,
+        04A7BD75258E77D8000E55A8 /* macOS.entitlements */,
+      );
+      path = macOS;
+      sourceTree = "<group>";
+    };
+    04A7BD7D258E77D8000E55A8 /* Tests iOS */ = {
+      isa = PBXGroup;
+      children = (
+        04A7BD7E258E77D8000E55A8 /* Tests_iOS.swift */,
+        04A7BD80258E77D8000E55A8 /* Info.plist */,
+      );
+      path = "Tests iOS";
+      sourceTree = "<group>";
+    };
+    04A7BD88258E77D8000E55A8 /* Tests macOS */ = {
+      isa = PBXGroup;
+      children = (
+        04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */,
+        04A7BD8B258E77D8000E55A8 /* Info.plist */,
+      );
+      path = "Tests macOS";
+      sourceTree = "<group>";
+    };
+    04A7BDA5258EBAC4000E55A8 /* Applications */ = {
+      isa = PBXGroup;
+      children = (
+        04AC311E25B20085009A10E7 /* Git_RootView.swift */,
+        04F4F93B25903A72005B30B4 /* Brew_RootView.swift */,
+        0495D215269F5277008B5148 /* Github_RootView.swift */,
+      );
+      path = Applications;
+      sourceTree = "<group>";
+    };
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		04A7BD69258E77D8000E55A8 /* KitchenSync (iOS) */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 04A7BD94258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "KitchenSync (iOS)" */;
-			buildPhases = (
-				04A7BD66258E77D8000E55A8 /* Sources */,
-				04A7BD67258E77D8000E55A8 /* Frameworks */,
-				04A7BD68258E77D8000E55A8 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = "KitchenSync (iOS)";
-			packageProductDependencies = (
-				046D40E326C56BBB003715AF /* OAuthSwift */,
-				046D40E626C56C5B003715AF /* Github */,
-				0409092326C5C7C3008D5A52 /* Alamofire */,
-				040AAB7D26CB385800DE1CBF /* Git */,
-				04562F9628D1411B00FDA072 /* GithubUI */,
-			);
-			productName = "KitchenSink (iOS)";
-			productReference = 04A7BD6A258E77D8000E55A8 /* KitchenSync.app */;
-			productType = "com.apple.product-type.application";
-		};
-		04A7BD71258E77D8000E55A8 /* KitchenSync (macOS) */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 04A7BD97258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "KitchenSync (macOS)" */;
-			buildPhases = (
-				04A7BD6E258E77D8000E55A8 /* Sources */,
-				04A7BD6F258E77D8000E55A8 /* Frameworks */,
-				04A7BD70258E77D8000E55A8 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = "KitchenSync (macOS)";
-			packageProductDependencies = (
-				0495D213269F34F8008B5148 /* Alamofire */,
-				04D09EFC26A85E8100072702 /* OAuthSwift */,
-				04562F9428D1410D00FDA072 /* GithubUI */,
-				04510A572A2D200C001DEF5B /* Github */,
-				048086652A2D21E500536A3E /* Brew */,
-			);
-			productName = "KitchenSink (macOS)";
-			productReference = 04A7BD72258E77D8000E55A8 /* Kitchen Sync.app */;
-			productType = "com.apple.product-type.application";
-		};
-		04A7BD79258E77D8000E55A8 /* Tests iOS */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 04A7BD9A258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "Tests iOS" */;
-			buildPhases = (
-				04A7BD76258E77D8000E55A8 /* Sources */,
-				04A7BD77258E77D8000E55A8 /* Frameworks */,
-				04A7BD78258E77D8000E55A8 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				04A7BD7C258E77D8000E55A8 /* PBXTargetDependency */,
-			);
-			name = "Tests iOS";
-			productName = "Tests iOS";
-			productReference = 04A7BD7A258E77D8000E55A8 /* Tests iOS.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
-		};
-		04A7BD84258E77D8000E55A8 /* Tests macOS */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 04A7BD9D258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "Tests macOS" */;
-			buildPhases = (
-				04A7BD81258E77D8000E55A8 /* Sources */,
-				04A7BD82258E77D8000E55A8 /* Frameworks */,
-				04A7BD83258E77D8000E55A8 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				04A7BD87258E77D8000E55A8 /* PBXTargetDependency */,
-			);
-			name = "Tests macOS";
-			productName = "Tests macOS";
-			productReference = 04A7BD85258E77D8000E55A8 /* Tests macOS.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
-		};
+    04A7BD69258E77D8000E55A8 /* KitchenSync (iOS) */ = {
+      isa = PBXNativeTarget;
+      buildConfigurationList = 04A7BD94258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "KitchenSync (iOS)" */;
+      buildPhases = (
+        04A7BD66258E77D8000E55A8 /* Sources */,
+        04A7BD67258E77D8000E55A8 /* Frameworks */,
+        04A7BD68258E77D8000E55A8 /* Resources */,
+      );
+      buildRules = (
+      );
+      dependencies = (
+      );
+      name = "KitchenSync (iOS)";
+      packageProductDependencies = (
+        046D40E326C56BBB003715AF /* OAuthSwift */,
+        046D40E626C56C5B003715AF /* Github */,
+        0409092326C5C7C3008D5A52 /* Alamofire */,
+        040AAB7D26CB385800DE1CBF /* Git */,
+      );
+      productName = "KitchenSink (iOS)";
+      productReference = 04A7BD6A258E77D8000E55A8 /* KitchenSync.app */;
+      productType = "com.apple.product-type.application";
+    };
+    04A7BD71258E77D8000E55A8 /* KitchenSync (macOS) */ = {
+      isa = PBXNativeTarget;
+      buildConfigurationList = 04A7BD97258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "KitchenSync (macOS)" */;
+      buildPhases = (
+        04A7BD6E258E77D8000E55A8 /* Sources */,
+        04A7BD6F258E77D8000E55A8 /* Frameworks */,
+        04A7BD70258E77D8000E55A8 /* Resources */,
+      );
+      buildRules = (
+      );
+      dependencies = (
+      );
+      name = "KitchenSync (macOS)";
+      packageProductDependencies = (
+        0495D213269F34F8008B5148 /* Alamofire */,
+        04D09EFC26A85E8100072702 /* OAuthSwift */,
+        04510A572A2D200C001DEF5B /* Github */,
+        048086652A2D21E500536A3E /* Brew */,
+      );
+      productName = "KitchenSink (macOS)";
+      productReference = 04A7BD72258E77D8000E55A8 /* Kitchen Sync.app */;
+      productType = "com.apple.product-type.application";
+    };
+    04A7BD79258E77D8000E55A8 /* Tests iOS */ = {
+      isa = PBXNativeTarget;
+      buildConfigurationList = 04A7BD9A258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "Tests iOS" */;
+      buildPhases = (
+        04A7BD76258E77D8000E55A8 /* Sources */,
+        04A7BD77258E77D8000E55A8 /* Frameworks */,
+        04A7BD78258E77D8000E55A8 /* Resources */,
+      );
+      buildRules = (
+      );
+      dependencies = (
+        04A7BD7C258E77D8000E55A8 /* PBXTargetDependency */,
+      );
+      name = "Tests iOS";
+      productName = "Tests iOS";
+      productReference = 04A7BD7A258E77D8000E55A8 /* Tests iOS.xctest */;
+      productType = "com.apple.product-type.bundle.ui-testing";
+    };
+    04A7BD84258E77D8000E55A8 /* Tests macOS */ = {
+      isa = PBXNativeTarget;
+      buildConfigurationList = 04A7BD9D258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "Tests macOS" */;
+      buildPhases = (
+        04A7BD81258E77D8000E55A8 /* Sources */,
+        04A7BD82258E77D8000E55A8 /* Frameworks */,
+        04A7BD83258E77D8000E55A8 /* Resources */,
+      );
+      buildRules = (
+      );
+      dependencies = (
+        04A7BD87258E77D8000E55A8 /* PBXTargetDependency */,
+      );
+      name = "Tests macOS";
+      productName = "Tests macOS";
+      productReference = 04A7BD85258E77D8000E55A8 /* Tests macOS.xctest */;
+      productType = "com.apple.product-type.bundle.ui-testing";
+    };
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		04A7BD5E258E77D7000E55A8 /* Project object */ = {
-			isa = PBXProject;
-			attributes = {
-				LastSwiftUpdateCheck = 1230;
-				LastUpgradeCheck = 1400;
-				TargetAttributes = {
-					04A7BD69258E77D8000E55A8 = {
-						CreatedOnToolsVersion = 12.3;
-					};
-					04A7BD71258E77D8000E55A8 = {
-						CreatedOnToolsVersion = 12.3;
-					};
-					04A7BD79258E77D8000E55A8 = {
-						CreatedOnToolsVersion = 12.3;
-						TestTargetID = 04A7BD69258E77D8000E55A8;
-					};
-					04A7BD84258E77D8000E55A8 = {
-						CreatedOnToolsVersion = 12.3;
-						TestTargetID = 04A7BD71258E77D8000E55A8;
-					};
-				};
-			};
-			buildConfigurationList = 04A7BD61258E77D7000E55A8 /* Build configuration list for PBXProject "KitchenSync" */;
-			compatibilityVersion = "Xcode 14.0";
-			developmentRegion = en;
-			hasScannedForEncodings = 0;
-			knownRegions = (
-				en,
-				Base,
-			);
-			mainGroup = 04A7BD5D258E77D7000E55A8;
-			packageReferences = (
-				04DD2F49269E6AED000994E1 /* XCRemoteSwiftPackageReference "OAuthSwift" */,
-				0495D212269F34F8008B5148 /* XCRemoteSwiftPackageReference "Alamofire" */,
-			);
-			productRefGroup = 04A7BD6B258E77D8000E55A8 /* Products */;
-			projectDirPath = "";
-			projectRoot = "";
-			targets = (
-				04A7BD71258E77D8000E55A8 /* KitchenSync (macOS) */,
-				04A7BD69258E77D8000E55A8 /* KitchenSync (iOS) */,
-				04A7BD79258E77D8000E55A8 /* Tests iOS */,
-				04A7BD84258E77D8000E55A8 /* Tests macOS */,
-			);
-		};
+    04A7BD5E258E77D7000E55A8 /* Project object */ = {
+      isa = PBXProject;
+      attributes = {
+        LastSwiftUpdateCheck = 1230;
+        LastUpgradeCheck = 1400;
+        TargetAttributes = {
+          04A7BD69258E77D8000E55A8 = {
+            CreatedOnToolsVersion = 12.3;
+          };
+          04A7BD71258E77D8000E55A8 = {
+            CreatedOnToolsVersion = 12.3;
+          };
+          04A7BD79258E77D8000E55A8 = {
+            CreatedOnToolsVersion = 12.3;
+            TestTargetID = 04A7BD69258E77D8000E55A8;
+          };
+          04A7BD84258E77D8000E55A8 = {
+            CreatedOnToolsVersion = 12.3;
+            TestTargetID = 04A7BD71258E77D8000E55A8;
+          };
+        };
+      };
+      buildConfigurationList = 04A7BD61258E77D7000E55A8 /* Build configuration list for PBXProject "KitchenSync" */;
+      compatibilityVersion = "Xcode 14.0";
+      developmentRegion = en;
+      hasScannedForEncodings = 0;
+      knownRegions = (
+        en,
+        Base,
+      );
+      mainGroup = 04A7BD5D258E77D7000E55A8;
+      packageReferences = (
+        04DD2F49269E6AED000994E1 /* XCRemoteSwiftPackageReference "OAuthSwift" */,
+        0495D212269F34F8008B5148 /* XCRemoteSwiftPackageReference "Alamofire" */,
+      );
+      productRefGroup = 04A7BD6B258E77D8000E55A8 /* Products */;
+      projectDirPath = "";
+      projectRoot = "";
+      targets = (
+        04A7BD71258E77D8000E55A8 /* KitchenSync (macOS) */,
+        04A7BD69258E77D8000E55A8 /* KitchenSync (iOS) */,
+        04A7BD79258E77D8000E55A8 /* Tests iOS */,
+        04A7BD84258E77D8000E55A8 /* Tests macOS */,
+      );
+    };
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		04A7BD68258E77D8000E55A8 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				04A7BD90258E77D8000E55A8 /* Assets.xcassets in Resources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		04A7BD70258E77D8000E55A8 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				04A7BD91258E77D8000E55A8 /* Assets.xcassets in Resources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		04A7BD78258E77D8000E55A8 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		04A7BD83258E77D8000E55A8 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
+    04A7BD68258E77D8000E55A8 /* Resources */ = {
+      isa = PBXResourcesBuildPhase;
+      buildActionMask = 2147483647;
+      files = (
+        04A7BD90258E77D8000E55A8 /* Assets.xcassets in Resources */,
+      );
+      runOnlyForDeploymentPostprocessing = 0;
+    };
+    04A7BD70258E77D8000E55A8 /* Resources */ = {
+      isa = PBXResourcesBuildPhase;
+      buildActionMask = 2147483647;
+      files = (
+        04A7BD91258E77D8000E55A8 /* Assets.xcassets in Resources */,
+      );
+      runOnlyForDeploymentPostprocessing = 0;
+    };
+    04A7BD78258E77D8000E55A8 /* Resources */ = {
+      isa = PBXResourcesBuildPhase;
+      buildActionMask = 2147483647;
+      files = (
+      );
+      runOnlyForDeploymentPostprocessing = 0;
+    };
+    04A7BD83258E77D8000E55A8 /* Resources */ = {
+      isa = PBXResourcesBuildPhase;
+      buildActionMask = 2147483647;
+      files = (
+      );
+      runOnlyForDeploymentPostprocessing = 0;
+    };
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		04A7BD66258E77D8000E55A8 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				046D40E526C56C1F003715AF /* Github_RootView.swift in Sources */,
-				048F40F82853ED470007A9A4 /* ContentView.swift in Sources */,
-				04A7BD8C258E77D8000E55A8 /* KitchenSyncApp.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		04A7BD6E258E77D8000E55A8 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				04A7BD8F258E77D8000E55A8 /* ContentView.swift in Sources */,
-				04A7BD8D258E77D8000E55A8 /* KitchenSyncApp.swift in Sources */,
-				0495D216269F5277008B5148 /* Github_RootView.swift in Sources */,
-				043A53102599589B00980BE2 /* SettingsView.swift in Sources */,
-				04678656259FC75700D5E87F /* CommonToolbarItems.swift in Sources */,
-				04F4F93D25903A72005B30B4 /* Brew_RootView.swift in Sources */,
-				04A3CA2E25E46BA700EB520C /* Color.swift in Sources */,
-				04AC312325B200A2009A10E7 /* Git_RootView.swift in Sources */,
-				0467865E259FEEF100D5E87F /* TaskDebugWindowView.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		04A7BD76258E77D8000E55A8 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				04A7BD7F258E77D8000E55A8 /* Tests_iOS.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		04A7BD81258E77D8000E55A8 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				04A7BD8A258E77D8000E55A8 /* Tests_macOS.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
+    04A7BD66258E77D8000E55A8 /* Sources */ = {
+      isa = PBXSourcesBuildPhase;
+      buildActionMask = 2147483647;
+      files = (
+        046D40E526C56C1F003715AF /* Github_RootView.swift in Sources */,
+        048F40F82853ED470007A9A4 /* ContentView.swift in Sources */,
+        04A7BD8C258E77D8000E55A8 /* KitchenSyncApp.swift in Sources */,
+      );
+      runOnlyForDeploymentPostprocessing = 0;
+    };
+    04A7BD6E258E77D8000E55A8 /* Sources */ = {
+      isa = PBXSourcesBuildPhase;
+      buildActionMask = 2147483647;
+      files = (
+        04A7BD8F258E77D8000E55A8 /* ContentView.swift in Sources */,
+        04A7BD8D258E77D8000E55A8 /* KitchenSyncApp.swift in Sources */,
+        0495D216269F5277008B5148 /* Github_RootView.swift in Sources */,
+        043A53102599589B00980BE2 /* SettingsView.swift in Sources */,
+        04678656259FC75700D5E87F /* CommonToolbarItems.swift in Sources */,
+        04F4F93D25903A72005B30B4 /* Brew_RootView.swift in Sources */,
+        04A3CA2E25E46BA700EB520C /* Color.swift in Sources */,
+        04AC312325B200A2009A10E7 /* Git_RootView.swift in Sources */,
+        0467865E259FEEF100D5E87F /* TaskDebugWindowView.swift in Sources */,
+      );
+      runOnlyForDeploymentPostprocessing = 0;
+    };
+    04A7BD76258E77D8000E55A8 /* Sources */ = {
+      isa = PBXSourcesBuildPhase;
+      buildActionMask = 2147483647;
+      files = (
+        04A7BD7F258E77D8000E55A8 /* Tests_iOS.swift in Sources */,
+      );
+      runOnlyForDeploymentPostprocessing = 0;
+    };
+    04A7BD81258E77D8000E55A8 /* Sources */ = {
+      isa = PBXSourcesBuildPhase;
+      buildActionMask = 2147483647;
+      files = (
+        04A7BD8A258E77D8000E55A8 /* Tests_macOS.swift in Sources */,
+      );
+      runOnlyForDeploymentPostprocessing = 0;
+    };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		04A7BD7C258E77D8000E55A8 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 04A7BD69258E77D8000E55A8 /* KitchenSync (iOS) */;
-			targetProxy = 04A7BD7B258E77D8000E55A8 /* PBXContainerItemProxy */;
-		};
-		04A7BD87258E77D8000E55A8 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 04A7BD71258E77D8000E55A8 /* KitchenSync (macOS) */;
-			targetProxy = 04A7BD86258E77D8000E55A8 /* PBXContainerItemProxy */;
-		};
+    04A7BD7C258E77D8000E55A8 /* PBXTargetDependency */ = {
+      isa = PBXTargetDependency;
+      target = 04A7BD69258E77D8000E55A8 /* KitchenSync (iOS) */;
+      targetProxy = 04A7BD7B258E77D8000E55A8 /* PBXContainerItemProxy */;
+    };
+    04A7BD87258E77D8000E55A8 /* PBXTargetDependency */ = {
+      isa = PBXTargetDependency;
+      target = 04A7BD71258E77D8000E55A8 /* KitchenSync (macOS) */;
+      targetProxy = 04A7BD86258E77D8000E55A8 /* PBXContainerItemProxy */;
+    };
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		04A7BD92258E77D8000E55A8 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_ANALYZER_NONNULL = YES;
-				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
-				CLANG_CXX_LIBRARY = "libc++";
-				CLANG_ENABLE_MODULES = YES;
-				CLANG_ENABLE_OBJC_ARC = YES;
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
-				CLANG_WARN_BOOL_CONVERSION = YES;
-				CLANG_WARN_COMMA = YES;
-				CLANG_WARN_CONSTANT_CONVERSION = YES;
-				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
-				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
-				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
-				CLANG_WARN_EMPTY_BODY = YES;
-				CLANG_WARN_ENUM_CONVERSION = YES;
-				CLANG_WARN_INFINITE_RECURSION = YES;
-				CLANG_WARN_INT_CONVERSION = YES;
-				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
-				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
-				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
-				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
-				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
-				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
-				CLANG_WARN_STRICT_PROTOTYPES = YES;
-				CLANG_WARN_SUSPICIOUS_MOVE = YES;
-				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
-				CLANG_WARN_UNREACHABLE_CODE = YES;
-				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				COPY_PHASE_STRIP = NO;
-				DEAD_CODE_STRIPPING = YES;
-				DEBUG_INFORMATION_FORMAT = dwarf;
-				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_TESTABILITY = YES;
-				GCC_C_LANGUAGE_STANDARD = gnu11;
-				GCC_DYNAMIC_NO_PIC = NO;
-				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_OPTIMIZATION_LEVEL = 0;
-				GCC_PREPROCESSOR_DEFINITIONS = (
-					"DEBUG=1",
-					"$(inherited)",
-				);
-				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
-				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
-				GCC_WARN_UNDECLARED_SELECTOR = YES;
-				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
-				GCC_WARN_UNUSED_FUNCTION = YES;
-				GCC_WARN_UNUSED_VARIABLE = YES;
-				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
-				MTL_FAST_MATH = YES;
-				ONLY_ACTIVE_ARCH = YES;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-			};
-			name = Debug;
-		};
-		04A7BD93258E77D8000E55A8 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_SEARCH_USER_PATHS = NO;
-				CLANG_ANALYZER_NONNULL = YES;
-				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
-				CLANG_CXX_LIBRARY = "libc++";
-				CLANG_ENABLE_MODULES = YES;
-				CLANG_ENABLE_OBJC_ARC = YES;
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
-				CLANG_WARN_BOOL_CONVERSION = YES;
-				CLANG_WARN_COMMA = YES;
-				CLANG_WARN_CONSTANT_CONVERSION = YES;
-				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
-				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
-				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
-				CLANG_WARN_EMPTY_BODY = YES;
-				CLANG_WARN_ENUM_CONVERSION = YES;
-				CLANG_WARN_INFINITE_RECURSION = YES;
-				CLANG_WARN_INT_CONVERSION = YES;
-				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
-				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
-				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
-				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
-				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
-				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
-				CLANG_WARN_STRICT_PROTOTYPES = YES;
-				CLANG_WARN_SUSPICIOUS_MOVE = YES;
-				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
-				CLANG_WARN_UNREACHABLE_CODE = YES;
-				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				COPY_PHASE_STRIP = NO;
-				DEAD_CODE_STRIPPING = YES;
-				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				ENABLE_NS_ASSERTIONS = NO;
-				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				GCC_C_LANGUAGE_STANDARD = gnu11;
-				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
-				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
-				GCC_WARN_UNDECLARED_SELECTOR = YES;
-				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
-				GCC_WARN_UNUSED_FUNCTION = YES;
-				GCC_WARN_UNUSED_VARIABLE = YES;
-				MTL_ENABLE_DEBUG_INFO = NO;
-				MTL_FAST_MATH = YES;
-				SWIFT_COMPILATION_MODE = wholemodule;
-				SWIFT_OPTIMIZATION_LEVEL = "-O";
-			};
-			name = Release;
-		};
-		04A7BD95258E77D8000E55A8 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = KitchenSync.entitlements;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 4;
-				DEVELOPMENT_TEAM = UNX9FJDDXV;
-				ENABLE_PREVIEWS = YES;
-				INFOPLIST_FILE = iOS/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.KitchenSink";
-				PRODUCT_NAME = KitchenSync;
-				SDKROOT = iphoneos;
-				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Debug;
-		};
-		04A7BD96258E77D8000E55A8 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = KitchenSync.entitlements;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 4;
-				DEVELOPMENT_TEAM = UNX9FJDDXV;
-				ENABLE_PREVIEWS = YES;
-				INFOPLIST_FILE = iOS/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.KitchenSink";
-				PRODUCT_NAME = KitchenSync;
-				SDKROOT = iphoneos;
-				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				VALIDATE_PRODUCT = YES;
-			};
-			name = Release;
-		};
-		04A7BD98258E77D8000E55A8 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = macOS/macOS.entitlements;
-				CODE_SIGN_IDENTITY = "-";
-				CODE_SIGN_STYLE = Automatic;
-				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 11;
-				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = UNX9FJDDXV;
-				ENABLE_HARDENED_RUNTIME = YES;
-				ENABLE_PREVIEWS = YES;
-				INFOPLIST_FILE = macOS/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.KitchenSink";
-				PRODUCT_NAME = "Kitchen Sync";
-				SDKROOT = macosx;
-				SWIFT_VERSION = 5.0;
-			};
-			name = Debug;
-		};
-		04A7BD99258E77D8000E55A8 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = macOS/macOS.entitlements;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 11;
-				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = UNX9FJDDXV;
-				ENABLE_HARDENED_RUNTIME = YES;
-				ENABLE_PREVIEWS = YES;
-				INFOPLIST_FILE = macOS/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.KitchenSink";
-				PRODUCT_NAME = "Kitchen Sync";
-				SDKROOT = macosx;
-				SWIFT_VERSION = 5.0;
-			};
-			name = Release;
-		};
-		04A7BD9B258E77D8000E55A8 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = UNX9FJDDXV;
-				INFOPLIST_FILE = "Tests iOS/Info.plist";
-				IPHONEOS_DEPLOYMENT_TARGET = 14.3;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.Tests-iOS";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = "KitchenSink (iOS)";
-			};
-			name = Debug;
-		};
-		04A7BD9C258E77D8000E55A8 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = UNX9FJDDXV;
-				INFOPLIST_FILE = "Tests iOS/Info.plist";
-				IPHONEOS_DEPLOYMENT_TARGET = 14.3;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.Tests-iOS";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = "KitchenSink (iOS)";
-				VALIDATE_PRODUCT = YES;
-			};
-			name = Release;
-		};
-		04A7BD9E258E77D8000E55A8 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
-				CODE_SIGN_STYLE = Automatic;
-				COMBINE_HIDPI_IMAGES = YES;
-				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = UNX9FJDDXV;
-				INFOPLIST_FILE = "Tests macOS/Info.plist";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-					"@loader_path/../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 11.1;
-				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.Tests-macOS";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = macosx;
-				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = "KitchenSink (macOS)";
-			};
-			name = Debug;
-		};
-		04A7BD9F258E77D8000E55A8 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
-				CODE_SIGN_STYLE = Automatic;
-				COMBINE_HIDPI_IMAGES = YES;
-				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = UNX9FJDDXV;
-				INFOPLIST_FILE = "Tests macOS/Info.plist";
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-					"@loader_path/../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 11.1;
-				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.Tests-macOS";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = macosx;
-				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = "KitchenSink (macOS)";
-			};
-			name = Release;
-		};
+    04A7BD92258E77D8000E55A8 /* Debug */ = {
+      isa = XCBuildConfiguration;
+      buildSettings = {
+        ALWAYS_SEARCH_USER_PATHS = NO;
+        CLANG_ANALYZER_NONNULL = YES;
+        CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+        CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+        CLANG_CXX_LIBRARY = "libc++";
+        CLANG_ENABLE_MODULES = YES;
+        CLANG_ENABLE_OBJC_ARC = YES;
+        CLANG_ENABLE_OBJC_WEAK = YES;
+        CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+        CLANG_WARN_BOOL_CONVERSION = YES;
+        CLANG_WARN_COMMA = YES;
+        CLANG_WARN_CONSTANT_CONVERSION = YES;
+        CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+        CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+        CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+        CLANG_WARN_EMPTY_BODY = YES;
+        CLANG_WARN_ENUM_CONVERSION = YES;
+        CLANG_WARN_INFINITE_RECURSION = YES;
+        CLANG_WARN_INT_CONVERSION = YES;
+        CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+        CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+        CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+        CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+        CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+        CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+        CLANG_WARN_STRICT_PROTOTYPES = YES;
+        CLANG_WARN_SUSPICIOUS_MOVE = YES;
+        CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+        CLANG_WARN_UNREACHABLE_CODE = YES;
+        CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+        COPY_PHASE_STRIP = NO;
+        DEAD_CODE_STRIPPING = YES;
+        DEBUG_INFORMATION_FORMAT = dwarf;
+        ENABLE_STRICT_OBJC_MSGSEND = YES;
+        ENABLE_TESTABILITY = YES;
+        GCC_C_LANGUAGE_STANDARD = gnu11;
+        GCC_DYNAMIC_NO_PIC = NO;
+        GCC_NO_COMMON_BLOCKS = YES;
+        GCC_OPTIMIZATION_LEVEL = 0;
+        GCC_PREPROCESSOR_DEFINITIONS = (
+          "DEBUG=1",
+          "$(inherited)",
+        );
+        GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+        GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+        GCC_WARN_UNDECLARED_SELECTOR = YES;
+        GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+        GCC_WARN_UNUSED_FUNCTION = YES;
+        GCC_WARN_UNUSED_VARIABLE = YES;
+        MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+        MTL_FAST_MATH = YES;
+        ONLY_ACTIVE_ARCH = YES;
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+        SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+      };
+      name = Debug;
+    };
+    04A7BD93258E77D8000E55A8 /* Release */ = {
+      isa = XCBuildConfiguration;
+      buildSettings = {
+        ALWAYS_SEARCH_USER_PATHS = NO;
+        CLANG_ANALYZER_NONNULL = YES;
+        CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+        CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+        CLANG_CXX_LIBRARY = "libc++";
+        CLANG_ENABLE_MODULES = YES;
+        CLANG_ENABLE_OBJC_ARC = YES;
+        CLANG_ENABLE_OBJC_WEAK = YES;
+        CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+        CLANG_WARN_BOOL_CONVERSION = YES;
+        CLANG_WARN_COMMA = YES;
+        CLANG_WARN_CONSTANT_CONVERSION = YES;
+        CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+        CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+        CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+        CLANG_WARN_EMPTY_BODY = YES;
+        CLANG_WARN_ENUM_CONVERSION = YES;
+        CLANG_WARN_INFINITE_RECURSION = YES;
+        CLANG_WARN_INT_CONVERSION = YES;
+        CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+        CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+        CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+        CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+        CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+        CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+        CLANG_WARN_STRICT_PROTOTYPES = YES;
+        CLANG_WARN_SUSPICIOUS_MOVE = YES;
+        CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+        CLANG_WARN_UNREACHABLE_CODE = YES;
+        CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+        COPY_PHASE_STRIP = NO;
+        DEAD_CODE_STRIPPING = YES;
+        DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+        ENABLE_NS_ASSERTIONS = NO;
+        ENABLE_STRICT_OBJC_MSGSEND = YES;
+        GCC_C_LANGUAGE_STANDARD = gnu11;
+        GCC_NO_COMMON_BLOCKS = YES;
+        GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+        GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+        GCC_WARN_UNDECLARED_SELECTOR = YES;
+        GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+        GCC_WARN_UNUSED_FUNCTION = YES;
+        GCC_WARN_UNUSED_VARIABLE = YES;
+        MTL_ENABLE_DEBUG_INFO = NO;
+        MTL_FAST_MATH = YES;
+        SWIFT_COMPILATION_MODE = wholemodule;
+        SWIFT_OPTIMIZATION_LEVEL = "-O";
+      };
+      name = Release;
+    };
+    04A7BD95258E77D8000E55A8 /* Debug */ = {
+      isa = XCBuildConfiguration;
+      buildSettings = {
+        ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+        CODE_SIGN_ENTITLEMENTS = KitchenSync.entitlements;
+        CODE_SIGN_IDENTITY = "Apple Development";
+        CODE_SIGN_STYLE = Automatic;
+        CURRENT_PROJECT_VERSION = 4;
+        DEVELOPMENT_TEAM = UNX9FJDDXV;
+        ENABLE_PREVIEWS = YES;
+        INFOPLIST_FILE = iOS/Info.plist;
+        IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+        LD_RUNPATH_SEARCH_PATHS = (
+          "$(inherited)",
+          "@executable_path/Frameworks",
+        );
+        MACOSX_DEPLOYMENT_TARGET = 26.0;
+        PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.KitchenSink";
+        PRODUCT_NAME = KitchenSync;
+        PROVISIONING_PROFILE_SPECIFIER = "";
+        SDKROOT = iphoneos;
+        SUPPORTS_MACCATALYST = NO;
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+        SWIFT_VERSION = 6.0;
+        TARGETED_DEVICE_FAMILY = "1,2";
+        TVOS_DEPLOYMENT_TARGET = 26.0;
+      };
+      name = Debug;
+    };
+    04A7BD96258E77D8000E55A8 /* Release */ = {
+      isa = XCBuildConfiguration;
+      buildSettings = {
+        ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+        CODE_SIGN_ENTITLEMENTS = KitchenSync.entitlements;
+        CODE_SIGN_IDENTITY = "Apple Development";
+        CODE_SIGN_STYLE = Automatic;
+        CURRENT_PROJECT_VERSION = 4;
+        DEVELOPMENT_TEAM = UNX9FJDDXV;
+        ENABLE_PREVIEWS = YES;
+        INFOPLIST_FILE = iOS/Info.plist;
+        IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+        LD_RUNPATH_SEARCH_PATHS = (
+          "$(inherited)",
+          "@executable_path/Frameworks",
+        );
+        MACOSX_DEPLOYMENT_TARGET = 26.0;
+        PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.KitchenSink";
+        PRODUCT_NAME = KitchenSync;
+        PROVISIONING_PROFILE_SPECIFIER = "";
+        SDKROOT = iphoneos;
+        SUPPORTS_MACCATALYST = NO;
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+        SWIFT_VERSION = 6.0;
+        TARGETED_DEVICE_FAMILY = "1,2";
+        TVOS_DEPLOYMENT_TARGET = 26.0;
+        VALIDATE_PRODUCT = YES;
+      };
+      name = Release;
+    };
+    04A7BD98258E77D8000E55A8 /* Debug */ = {
+      isa = XCBuildConfiguration;
+      buildSettings = {
+        ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+        CODE_SIGN_ENTITLEMENTS = macOS/macOS.entitlements;
+        CODE_SIGN_IDENTITY = "Apple Development";
+        CODE_SIGN_STYLE = Automatic;
+        COMBINE_HIDPI_IMAGES = YES;
+        CURRENT_PROJECT_VERSION = 11;
+        DEAD_CODE_STRIPPING = YES;
+        DEVELOPMENT_TEAM = UNX9FJDDXV;
+        ENABLE_HARDENED_RUNTIME = YES;
+        ENABLE_PREVIEWS = YES;
+        INFOPLIST_FILE = macOS/Info.plist;
+        LD_RUNPATH_SEARCH_PATHS = (
+          "$(inherited)",
+          "@executable_path/../Frameworks",
+        );
+        MACOSX_DEPLOYMENT_TARGET = 26.0;
+        PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.KitchenSink";
+        PRODUCT_NAME = "Kitchen Sync";
+        PROVISIONING_PROFILE_SPECIFIER = "";
+        SDKROOT = macosx;
+        SWIFT_VERSION = 5.0;
+      };
+      name = Debug;
+    };
+    04A7BD99258E77D8000E55A8 /* Release */ = {
+      isa = XCBuildConfiguration;
+      buildSettings = {
+        ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+        CODE_SIGN_ENTITLEMENTS = macOS/macOS.entitlements;
+        CODE_SIGN_IDENTITY = "Apple Development";
+        CODE_SIGN_STYLE = Automatic;
+        COMBINE_HIDPI_IMAGES = YES;
+        CURRENT_PROJECT_VERSION = 11;
+        DEAD_CODE_STRIPPING = YES;
+        DEVELOPMENT_TEAM = UNX9FJDDXV;
+        ENABLE_HARDENED_RUNTIME = YES;
+        ENABLE_PREVIEWS = YES;
+        INFOPLIST_FILE = macOS/Info.plist;
+        LD_RUNPATH_SEARCH_PATHS = (
+          "$(inherited)",
+          "@executable_path/../Frameworks",
+        );
+        MACOSX_DEPLOYMENT_TARGET = 26.0;
+        PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.KitchenSink";
+        PRODUCT_NAME = "Kitchen Sync";
+        PROVISIONING_PROFILE_SPECIFIER = "";
+        SDKROOT = macosx;
+        SWIFT_VERSION = 5.0;
+      };
+      name = Release;
+    };
+    04A7BD9B258E77D8000E55A8 /* Debug */ = {
+      isa = XCBuildConfiguration;
+      buildSettings = {
+        ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+        CODE_SIGN_STYLE = Automatic;
+        DEVELOPMENT_TEAM = UNX9FJDDXV;
+        INFOPLIST_FILE = "Tests iOS/Info.plist";
+        IPHONEOS_DEPLOYMENT_TARGET = 14.3;
+        LD_RUNPATH_SEARCH_PATHS = (
+          "$(inherited)",
+          "@executable_path/Frameworks",
+          "@loader_path/Frameworks",
+        );
+        PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.Tests-iOS";
+        PRODUCT_NAME = "$(TARGET_NAME)";
+        SDKROOT = iphoneos;
+        SWIFT_VERSION = 5.0;
+        TARGETED_DEVICE_FAMILY = "1,2";
+        TEST_TARGET_NAME = "KitchenSink (iOS)";
+      };
+      name = Debug;
+    };
+    04A7BD9C258E77D8000E55A8 /* Release */ = {
+      isa = XCBuildConfiguration;
+      buildSettings = {
+        ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+        CODE_SIGN_STYLE = Automatic;
+        DEVELOPMENT_TEAM = UNX9FJDDXV;
+        INFOPLIST_FILE = "Tests iOS/Info.plist";
+        IPHONEOS_DEPLOYMENT_TARGET = 14.3;
+        LD_RUNPATH_SEARCH_PATHS = (
+          "$(inherited)",
+          "@executable_path/Frameworks",
+          "@loader_path/Frameworks",
+        );
+        PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.Tests-iOS";
+        PRODUCT_NAME = "$(TARGET_NAME)";
+        SDKROOT = iphoneos;
+        SWIFT_VERSION = 5.0;
+        TARGETED_DEVICE_FAMILY = "1,2";
+        TEST_TARGET_NAME = "KitchenSink (iOS)";
+        VALIDATE_PRODUCT = YES;
+      };
+      name = Release;
+    };
+    04A7BD9E258E77D8000E55A8 /* Debug */ = {
+      isa = XCBuildConfiguration;
+      buildSettings = {
+        ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+        CODE_SIGN_STYLE = Automatic;
+        COMBINE_HIDPI_IMAGES = YES;
+        DEAD_CODE_STRIPPING = YES;
+        DEVELOPMENT_TEAM = UNX9FJDDXV;
+        INFOPLIST_FILE = "Tests macOS/Info.plist";
+        LD_RUNPATH_SEARCH_PATHS = (
+          "$(inherited)",
+          "@executable_path/../Frameworks",
+          "@loader_path/../Frameworks",
+        );
+        MACOSX_DEPLOYMENT_TARGET = 11.1;
+        PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.Tests-macOS";
+        PRODUCT_NAME = "$(TARGET_NAME)";
+        SDKROOT = macosx;
+        SWIFT_VERSION = 5.0;
+        TEST_TARGET_NAME = "KitchenSink (macOS)";
+      };
+      name = Debug;
+    };
+    04A7BD9F258E77D8000E55A8 /* Release */ = {
+      isa = XCBuildConfiguration;
+      buildSettings = {
+        ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+        CODE_SIGN_STYLE = Automatic;
+        COMBINE_HIDPI_IMAGES = YES;
+        DEAD_CODE_STRIPPING = YES;
+        DEVELOPMENT_TEAM = UNX9FJDDXV;
+        INFOPLIST_FILE = "Tests macOS/Info.plist";
+        LD_RUNPATH_SEARCH_PATHS = (
+          "$(inherited)",
+          "@executable_path/../Frameworks",
+          "@loader_path/../Frameworks",
+        );
+        MACOSX_DEPLOYMENT_TARGET = 11.1;
+        PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.Tests-macOS";
+        PRODUCT_NAME = "$(TARGET_NAME)";
+        SDKROOT = macosx;
+        SWIFT_VERSION = 5.0;
+        TEST_TARGET_NAME = "KitchenSink (macOS)";
+      };
+      name = Release;
+    };
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		04A7BD61258E77D7000E55A8 /* Build configuration list for PBXProject "KitchenSync" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				04A7BD92258E77D8000E55A8 /* Debug */,
-				04A7BD93258E77D8000E55A8 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		04A7BD94258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "KitchenSync (iOS)" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				04A7BD95258E77D8000E55A8 /* Debug */,
-				04A7BD96258E77D8000E55A8 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		04A7BD97258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "KitchenSync (macOS)" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				04A7BD98258E77D8000E55A8 /* Debug */,
-				04A7BD99258E77D8000E55A8 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		04A7BD9A258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "Tests iOS" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				04A7BD9B258E77D8000E55A8 /* Debug */,
-				04A7BD9C258E77D8000E55A8 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		04A7BD9D258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "Tests macOS" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				04A7BD9E258E77D8000E55A8 /* Debug */,
-				04A7BD9F258E77D8000E55A8 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
+    04A7BD61258E77D7000E55A8 /* Build configuration list for PBXProject "KitchenSync" */ = {
+      isa = XCConfigurationList;
+      buildConfigurations = (
+        04A7BD92258E77D8000E55A8 /* Debug */,
+        04A7BD93258E77D8000E55A8 /* Release */,
+      );
+      defaultConfigurationIsVisible = 0;
+      defaultConfigurationName = Release;
+    };
+    04A7BD94258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "KitchenSync (iOS)" */ = {
+      isa = XCConfigurationList;
+      buildConfigurations = (
+        04A7BD95258E77D8000E55A8 /* Debug */,
+        04A7BD96258E77D8000E55A8 /* Release */,
+      );
+      defaultConfigurationIsVisible = 0;
+      defaultConfigurationName = Release;
+    };
+    04A7BD97258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "KitchenSync (macOS)" */ = {
+      isa = XCConfigurationList;
+      buildConfigurations = (
+        04A7BD98258E77D8000E55A8 /* Debug */,
+        04A7BD99258E77D8000E55A8 /* Release */,
+      );
+      defaultConfigurationIsVisible = 0;
+      defaultConfigurationName = Release;
+    };
+    04A7BD9A258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "Tests iOS" */ = {
+      isa = XCConfigurationList;
+      buildConfigurations = (
+        04A7BD9B258E77D8000E55A8 /* Debug */,
+        04A7BD9C258E77D8000E55A8 /* Release */,
+      );
+      defaultConfigurationIsVisible = 0;
+      defaultConfigurationName = Release;
+    };
+    04A7BD9D258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "Tests macOS" */ = {
+      isa = XCConfigurationList;
+      buildConfigurations = (
+        04A7BD9E258E77D8000E55A8 /* Debug */,
+        04A7BD9F258E77D8000E55A8 /* Release */,
+      );
+      defaultConfigurationIsVisible = 0;
+      defaultConfigurationName = Release;
+    };
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		0495D212269F34F8008B5148 /* XCRemoteSwiftPackageReference "Alamofire" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/Alamofire/Alamofire.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 5.4.3;
-			};
-		};
-		04DD2F49269E6AED000994E1 /* XCRemoteSwiftPackageReference "OAuthSwift" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/OAuthSwift/OAuthSwift.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 2.2.0;
-			};
-		};
+    0495D212269F34F8008B5148 /* XCRemoteSwiftPackageReference "Alamofire" */ = {
+      isa = XCRemoteSwiftPackageReference;
+      repositoryURL = "https://github.com/Alamofire/Alamofire.git";
+      requirement = {
+        kind = upToNextMajorVersion;
+        minimumVersion = 5.4.3;
+      };
+    };
+    04DD2F49269E6AED000994E1 /* XCRemoteSwiftPackageReference "OAuthSwift" */ = {
+      isa = XCRemoteSwiftPackageReference;
+      repositoryURL = "https://github.com/OAuthSwift/OAuthSwift.git";
+      requirement = {
+        kind = upToNextMajorVersion;
+        minimumVersion = 2.2.0;
+      };
+    };
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		0409092326C5C7C3008D5A52 /* Alamofire */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 0495D212269F34F8008B5148 /* XCRemoteSwiftPackageReference "Alamofire" */;
-			productName = Alamofire;
-		};
-		040AAB7D26CB385800DE1CBF /* Git */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = Git;
-		};
-		04510A572A2D200C001DEF5B /* Github */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = Github;
-		};
-		04562F9428D1410D00FDA072 /* GithubUI */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = GithubUI;
-		};
-		04562F9628D1411B00FDA072 /* GithubUI */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = GithubUI;
-		};
-		046D40E326C56BBB003715AF /* OAuthSwift */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 04DD2F49269E6AED000994E1 /* XCRemoteSwiftPackageReference "OAuthSwift" */;
-			productName = OAuthSwift;
-		};
-		046D40E626C56C5B003715AF /* Github */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = Github;
-		};
-		048086652A2D21E500536A3E /* Brew */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = Brew;
-		};
-		0495D213269F34F8008B5148 /* Alamofire */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 0495D212269F34F8008B5148 /* XCRemoteSwiftPackageReference "Alamofire" */;
-			productName = Alamofire;
-		};
-		04D09EFC26A85E8100072702 /* OAuthSwift */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 04DD2F49269E6AED000994E1 /* XCRemoteSwiftPackageReference "OAuthSwift" */;
-			productName = OAuthSwift;
-		};
+    0409092326C5C7C3008D5A52 /* Alamofire */ = {
+      isa = XCSwiftPackageProductDependency;
+      package = 0495D212269F34F8008B5148 /* XCRemoteSwiftPackageReference "Alamofire" */;
+      productName = Alamofire;
+    };
+    040AAB7D26CB385800DE1CBF /* Git */ = {
+      isa = XCSwiftPackageProductDependency;
+      productName = Git;
+    };
+    04510A572A2D200C001DEF5B /* Github */ = {
+      isa = XCSwiftPackageProductDependency;
+      productName = Github;
+    };
+    046D40E326C56BBB003715AF /* OAuthSwift */ = {
+      isa = XCSwiftPackageProductDependency;
+      package = 04DD2F49269E6AED000994E1 /* XCRemoteSwiftPackageReference "OAuthSwift" */;
+      productName = OAuthSwift;
+    };
+    046D40E626C56C5B003715AF /* Github */ = {
+      isa = XCSwiftPackageProductDependency;
+      productName = Github;
+    };
+    048086652A2D21E500536A3E /* Brew */ = {
+      isa = XCSwiftPackageProductDependency;
+      productName = Brew;
+    };
+    0495D213269F34F8008B5148 /* Alamofire */ = {
+      isa = XCSwiftPackageProductDependency;
+      package = 0495D212269F34F8008B5148 /* XCRemoteSwiftPackageReference "Alamofire" */;
+      productName = Alamofire;
+    };
+    04D09EFC26A85E8100072702 /* OAuthSwift */ = {
+      isa = XCSwiftPackageProductDependency;
+      package = 04DD2F49269E6AED000994E1 /* XCRemoteSwiftPackageReference "OAuthSwift" */;
+      productName = OAuthSwift;
+    };
 /* End XCSwiftPackageProductDependency section */
-	};
-	rootObject = 04A7BD5E258E77D7000E55A8 /* Project object */;
+  };
+  rootObject = 04A7BD5E258E77D7000E55A8 /* Project object */;
 }
