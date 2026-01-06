@@ -8,7 +8,6 @@
 import SwiftUI
 import Github
 import Combine
-import GithubUI
 
 struct Github_RootView: View {
   @ObservedObject public var viewModel = Github.ViewModel()
@@ -80,8 +79,6 @@ struct Github_RootView: View {
         Menu {
           Button {
             Github.reauthorize()
-            viewModel.me = nil
-            organizations = []
           } label: {
             Text("Logout")
             Image(systemName: "figure.wave")
