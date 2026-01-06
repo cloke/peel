@@ -3,7 +3,8 @@
 //  viewModel
 //
 //  Created by Cory Loken on 7/15/21.
-//  Modernized to @Observable on 1/5/26
+//  Modernized to @Observable on 1/6/26
+//  Migrated to Keychain storage on 1/6/26
 //
 
 import SwiftUI
@@ -12,20 +13,9 @@ extension Github {
   @MainActor
   @Observable
   public class ViewModel {
-    @ObservationIgnored
-    @AppStorage("github-token") private var githubTokenPersisted = ""
-    
     public var me: Github.User?
-    public var token: String = "" {
-      didSet {
-        githubTokenPersisted = token
-      }
-    }
     
-    public init() {
-      // Load token from storage on init
-      token = githubTokenPersisted
-    }
+    public init() {}
     
     /// Checks to see if the current user is contained in the list of reviewers
     public func hasMe(in reviewers: [User]) -> Bool {
