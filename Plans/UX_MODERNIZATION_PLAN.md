@@ -3,66 +3,58 @@
 **Date:** January 7, 2026  
 **Status:** ✅ **COMPLETE**  
 **Priority:** High  
-**Prerequisite:** Swift 6 modernization ✅ COMPLETE
 
 ---
 
 ## Executive Summary
 
-The UX modernization is **complete**. All phases have been implemented:
-
-- ✅ Phase 1: Critical fixes (crash risks, deprecated APIs)
-- ✅ Phase 2: Preview modernization (15+ files)
-- ✅ Phase 3: Error handling (proper error UI)
-- ✅ Phase 4: Loading states (progress indicators)
-- ✅ Phase 5: Layout polish (empty states, responsive)
-- ✅ Phase 6: Navigation (segmented picker with labels)
-- ✅ SwiftData integration (iCloud-ready persistence)
+All modernization work is **complete**. The app is now using:
+- ✅ Swift 6 / SwiftUI 6 patterns
+- ✅ Modern error handling with UI feedback
+- ✅ SwiftData for persistence (iCloud-ready)
+- ✅ Git worktree management with VS Code integration
 
 ---
 
-## Completed Work (January 7, 2026)
+## Completed Work
 
-### Phase 1: Critical Fixes ✅
-- [x] Fixed force unwrap crash in `Github_RootView.swift`
-- [x] Fixed deprecated Alert in `Git_RootView.swift`
-- [x] Added error UI for GitHub login/load failures
+### Swift 6 Modernization ✅
+- @Observable instead of ObservableObject
+- NavigationStack/NavigationSplitView
+- async/await throughout
+- Actors for thread safety
 
-### Phase 2: Preview Modernization ✅
-- [x] Converted 15+ files to `#Preview` macro
-
-### Phase 3: Error Handling ✅
-- [x] Created `ViewState<T>` and `ErrorView` components
-- [x] Replaced `print()` with proper error UI
-- [x] Added `Logger` to Network.swift
-
-### Phase 4: Loading States ✅
-- [x] Loading indicators throughout
-
-### Phase 5: Layout Polish ✅
-- [x] `ContentUnavailableView` empty states
-- [x] Removed hardcoded frames
-
-### Phase 6: Navigation ✅
-- [x] Segmented picker with icons + labels
+### UX Polish ✅
+- Fixed force unwrap crash risks
+- Fixed deprecated Alert syntax
+- Converted 15+ files to #Preview macro
+- Added error alerts and loading states
+- Added ContentUnavailableView empty states
+- Segmented tool picker with icons + labels
 
 ### SwiftData Integration ✅
-- [x] iCloud-safe models (no circular refs)
-- [x] Git repos persist to SwiftData
-- [x] Ready for iCloud (one line change)
+- iCloud-safe models (no circular refs, UUID identity)
+- Git repositories persist via SwiftData
+- Separate synced vs device-local models
+- Ready for iCloud with one line change
+
+### Git Worktrees ✅
+- List/create/delete worktree commands
+- Open worktree in VS Code
+- UI in Git sidebar
 
 ---
 
 ## What's Persisted Where
 
-| Data | Storage | Syncs to iCloud |
-|------|---------|-----------------|
-| GitHub OAuth Token | Keychain | ❌ No (security) |
-| Git Repositories | SwiftData | ✅ Ready |
+| Data | Storage | iCloud Ready |
+|------|---------|--------------|
+| GitHub OAuth Token | Keychain | ❌ (security) |
+| Git Repositories | SwiftData | ✅ Yes |
 | Selected Repo | SwiftData | ❌ Device-local |
 | Tool Selection | @AppStorage | ❌ No |
-| GitHub Data | API (not stored) | N/A |
-| Brew Data | CLI (not stored) | N/A |
+| GitHub Data | API (live) | N/A |
+| Brew Data | CLI (live) | N/A |
 
 ---
 
@@ -72,8 +64,104 @@ The UX modernization is **complete**. All phases have been implemented:
 
 ---
 
-## Next Steps
+# Next Steps for Future Sessions
 
-Modernization complete! Ready for feature work:
-- `WORKTREE_FEATURE_PLAN.md` - PR integration
-- `AGENT_ORCHESTRATION_PLAN.md` - AI agents
+## Option 1: PR → Worktree Integration (Recommended)
+**Goal:** One-click "Review Locally" button on GitHub PRs
+
+**Tasks:**
+1. Add "Review Locally" button to `PullRequestDetailView`
+2. Create worktree from PR's branch
+3. Open worktree in VS Code automatically
+4. Track which PRs have active worktrees (SwiftData)
+
+**Files to modify:**
+- `Local Packages/Github/Sources/Github/Views/PullRequests/PullRequestsView.swift`
+- `Local Packages/Git/Sources/Git/WorktreeListView.swift`
+
+**Estimated time:** 2-3 hours
+
+---
+
+## Option 2: GitHub Favorites
+**Goal:** Star repos and see them in a favorites section
+
+**Tasks:**
+1. Add star button to repo views
+2. Create favorites section in GitHub sidebar
+3. Wire up to `GitHubFavorite` SwiftData model
+
+**Estimated time:** 1-2 hours
+
+---
+
+## Option 3: Recent PRs
+**Goal:** Quick access to recently viewed PRs
+
+**Tasks:**
+1. Track PR views in `RecentPullRequest` model
+2. Show "Recent" section in Personal view
+3. Auto-cleanup old entries
+
+**Estimated time:** 1 hour
+
+---
+
+## Option 4: Enable iCloud Sync
+**Goal:** Sync repositories and favorites across Macs
+
+**Tasks:**
+1. Enable CloudKit in Xcode capabilities
+2. Change `cloudKitDatabase: .none` to `.automatic`
+3. Test sync between devices
+4. Handle merge conflicts
+
+**Files to modify:**
+- `Shared/KitchenSyncApp.swift` (one line change)
+- Xcode project capabilities
+
+**Estimated time:** 1-2 hours (plus testing)
+
+---
+
+## Option 5: Agent Orchestration (Larger Feature)
+**Goal:** Manage AI coding agents with isolated workspaces
+
+**See:** `AGENT_ORCHESTRATION_PLAN.md`
+
+**Estimated time:** 1-2 weeks
+
+---
+
+## Quick Reference
+
+**To start a new session, copy this:**
+
+```
+I'm continuing work on KitchenSink. Last session completed:
+- UX modernization (all phases)
+- SwiftData integration (iCloud-ready)
+- Git worktree management
+
+I want to work on: [CHOOSE ONE]
+- PR → Worktree integration (review PRs locally)
+- GitHub favorites feature
+- Recent PRs feature  
+- Enable iCloud sync
+- Agent orchestration
+
+Please read the relevant plan in /Plans/ and let's get started.
+```
+
+---
+
+## Files Reference
+
+| Area | Key Files |
+|------|-----------|
+| App Entry | `Shared/KitchenSyncApp.swift` |
+| SwiftData Models | `Shared/KitchenSyncApp.swift` (bottom) |
+| Git UI | `Shared/Applications/Git_RootView.swift` |
+| GitHub UI | `Shared/Applications/Github_RootView.swift` |
+| Worktrees | `Local Packages/Git/Sources/Git/WorktreeListView.swift` |
+| Plans | `Plans/WORKTREE_FEATURE_PLAN.md`, `Plans/AGENT_ORCHESTRATION_PLAN.md` |
