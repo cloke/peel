@@ -14,7 +14,11 @@ struct RepositoriesListView: View {
   var body: some View {
     ForEach(repositories) { repository in
       NavigationLink(destination: PullRequestsView(organization: organization, repository: repository)) {
-        Text(repository.name)
+        HStack {
+          Text(repository.name)
+          Spacer()
+          FavoriteButton(repository: repository)
+        }
       }
     }
   }

@@ -3,37 +3,75 @@
 //  PullRequestsView
 //
 //  Created by Cory Loken on 7/15/21.
-//  Updated for better empty/error states on 1/7/26
 //
 
 import SwiftUI
 import MarkdownUI
 
 struct PullRequestDetailView: View {
+  @Environment(\.recentPRsProvider) private var recentPRsProvider
+  
   let organization: Github.User?
   let repository: Github.Repository
   let pullRequest: Github.PullRequest
   
+  #if os(macOS)
+  @State private var showingReviewLocally = false
+  #endif
+  
   var body: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      Text(pullRequest.title ?? "Untitled")
-        .font(.title)
+    VStack(alignment: .leading) {
+      // Header with title and actions
+      HStack(alignment: .top) {
+        VStack(alignment: .leading, spacing: 4) {
+          Text(pullRequest.title ?? "")
+            .font(.title)
+          
+          HStack(spacing: 12) {
+            Label("#\(pullRequest.number)", systemImage: "number")
+            Label(pullRequest.head.ref, systemImage: "arrow.triangle.branch")
+            if let state = pullRequest.state {
+              Label(state.capitalized, systemImage: state == "open" ? "circle.fill" : "checkmark.circle.fill")
+                .foregroundStyle(state == "open" ? .green : .purple)
+            }
+          }
+          .font(.caption)
+          .foregroundStyle(.secondary)
+        }
+        
+        Spacer()
+        
+        #if os(macOS)
+        Button {
+          showingReviewLocally = true
+        } label: {
+          Label("Review Locally", systemImage: "arrow.down.to.line.circle")
+        }
+        .buttonStyle(.bordered)
+        .help("Create a worktree to review this PR locally")
+        #endif
+      }
       
       Divider()
       
-      if let body = pullRequest.body, !body.isEmpty {
-        Text("Description")
-          .font(.headline)
-        ScrollView {
-          Markdown(Document(stringLiteral: body))
-        }
+      Text("Description")
+        .font(.headline)
+      ScrollView {
+        Markdown(Document(stringLiteral: pullRequest.body ?? ""))
       }
-      
       PullRequestReviewRowView(organization: organization, repository: repository, pullNumber: pullRequest.number)
-      
       Spacer()
     }
     .padding()
+    .onAppear {
+      // Record this PR view
+      recentPRsProvider?.recordView(pr: pullRequest, repo: repository)
+    }
+    #if os(macOS)
+    .sheet(isPresented: $showingReviewLocally) {
+      ReviewLocallySheet(pullRequest: pullRequest, repository: repository)
+    }
+    #endif
   }
 }
 
@@ -48,6 +86,7 @@ struct PullRequestListView: View {
         NavigationLink(destination: PullRequestDetailView(organization: organization, repository: repository, pullRequest: pullRequest)) {
           PullRequestsListItemView(pullRequest: pullRequest, organization: organization, repository: repository)
         }
+        Divider()
       }
     }
   }
@@ -56,7 +95,6 @@ struct PullRequestListView: View {
 public struct PullRequestsView: View {
   @State private var pullRequests = [Github.PullRequest]()
   @State private var state: LoadingState = .loading
-  @State private var errorMessage: String?
   
   public let organization: Github.User
   public let repository: Github.Repository
@@ -67,41 +105,24 @@ public struct PullRequestsView: View {
   }
   
   public var body: some View {
-    Group {
+    VStack {
       switch state {
       case .loading:
-        ProgressView("Loading pull requests...")
+        ProgressView()
       case .loaded:
         PullRequestListView(organization: organization, repository: repository, pullRequests: pullRequests)
       case .empty:
-        ContentUnavailableView(
-          "No Pull Requests",
-          systemImage: "arrow.triangle.pull",
-          description: Text("This repository has no open pull requests")
-        )
+        Text("No Pull Requests Found")
       }
     }
     .task(id: repository.id) {
-      await loadPullRequests()
-    }
-    .alert("Error", isPresented: .constant(errorMessage != nil)) {
-      Button("OK") { errorMessage = nil }
-      Button("Retry") { Task { await loadPullRequests() } }
-    } message: {
-      Text(errorMessage ?? "")
-    }
-  }
-  
-  private func loadPullRequests() async {
-    state = .loading
-    errorMessage = nil
-    
-    do {
-      pullRequests = try await Github.pullRequests(from: repository)
-      state = pullRequests.isEmpty ? .empty : .loaded
-    } catch {
-      errorMessage = "Failed to load pull requests: \(error.localizedDescription)"
-      state = .empty
+      state = .loading
+      do {
+        pullRequests = try await Github.pullRequests(from: repository)
+        state = pullRequests.count == 0 ? .empty : .loaded
+      } catch {
+        print(error)
+      }
     }
   }
 }

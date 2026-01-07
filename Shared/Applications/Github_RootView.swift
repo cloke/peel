@@ -5,30 +5,52 @@
 //  Created by Cory Loken on 7/14/21.
 //  Modernized to @Observable on 1/5/26
 //  Updated for Keychain storage on 1/6/26
-//  Fixed force unwrap and error UI on 1/7/26
 //
 
 import SwiftUI
+import SwiftData
 import Github
 
 struct Github_RootView: View {
+  @Environment(\.modelContext) private var modelContext
   @State public var viewModel = Github.ViewModel()
+  @State private var dataProvider: GitHubDataProvider?
   
   @State private var organizations = [Github.User]()
   @State private var columnVisibility = NavigationSplitViewVisibility.all
+  @State private var mainSelection = ["A", "B", "C"]
+  @State private var selection: String?
   @State private var hasToken = false
-  @State private var isLoading = false
-  @State private var errorMessage: String?
   
   var body: some View {
     NavigationSplitView(columnVisibility: $columnVisibility) {
       List {
-        if isLoading {
-          ProgressView("Loading...")
-        } else if hasToken, let me = viewModel.me {
+        // Favorites section
+        if let provider = dataProvider, !provider.getFavorites().isEmpty {
+          Section("Favorites") {
+            ForEach(provider.getFavorites()) { favorite in
+              FavoriteRepositoryRow(favorite: favorite) {
+                // TODO: Navigate to repository
+              }
+            }
+          }
+        }
+        
+        // Recent PRs section
+        if let provider = dataProvider, !provider.getRecentPRs().isEmpty {
+          Section("Recent PRs") {
+            ForEach(provider.getRecentPRs().prefix(5)) { recent in
+              RecentPRRow(recentPR: recent) {
+                // TODO: Navigate to PR
+              }
+            }
+          }
+        }
+        
+        if hasToken && viewModel.me != nil {
           NavigationLink(
             destination: PersonalView(organizations: organizations),
-            label: { ProfileNameView(me: me) }
+            label: { ProfileNameView(me: viewModel.me!) }
           )
           Section("Organizations") {
             ForEach(organizations) { organization in
@@ -37,12 +59,33 @@ struct Github_RootView: View {
           }
         } else {
           Button("Login") {
-            Task { await login() }
+            Task {
+              do {
+                try await Github.authorize()
+                viewModel.me = try await Github.me()
+                organizations = try await Github.loadOrganizations()
+                hasToken = await Github.hasToken
+              } catch {
+                print("Login error: \(error)")
+              }
+            }
           }
         }
-      }
-      .task {
-        await loadInitialData()
+        Spacer()
+          .task {
+            hasToken = await Github.hasToken
+            if hasToken {
+              do {
+                viewModel.me = try await Github.me()
+                organizations = try await Github.loadOrganizations()
+              } catch {
+                print("Error loading user data: \(error)")
+                // Token may be invalid, clear it
+                await Github.reauthorize()
+                hasToken = false
+              }
+          }
+        }
       }
     } detail: {
       Text("Select an organization or repository")
@@ -50,6 +93,12 @@ struct Github_RootView: View {
     }
     .navigationSplitViewStyle(.automatic)
     .environment(viewModel)
+    .favoritesProvider(dataProvider)
+    .recentPRsProvider(dataProvider)
+    .onAppear {
+      dataProvider = GitHubDataProvider(modelContext: modelContext)
+    }
+    .frame(idealHeight: 400)
     .toolbar {
 #if os(macOS)
       ToggleSidebarToolbarItem(placement: .navigation)
@@ -58,7 +107,12 @@ struct Github_RootView: View {
       ToolbarItem(placement: .navigation) {
         Menu {
           Button {
-            Task { await logout() }
+            Task {
+              await Github.reauthorize()
+              hasToken = false
+              viewModel.me = nil
+              organizations = []
+            }
           } label: {
             Text("Logout")
             Image(systemName: "figure.wave")
@@ -68,52 +122,11 @@ struct Github_RootView: View {
         }
       }
     }
-    .alert("Error", isPresented: .constant(errorMessage != nil)) {
-      Button("OK") { errorMessage = nil }
-    } message: {
-      Text(errorMessage ?? "An unknown error occurred")
-    }
-  }
-  
-  private func loadInitialData() async {
-    hasToken = await Github.hasToken
-    guard hasToken else { return }
-    
-    isLoading = true
-    defer { isLoading = false }
-    
-    do {
-      viewModel.me = try await Github.me()
-      organizations = try await Github.loadOrganizations()
-    } catch {
-      errorMessage = "Failed to load user data: \(error.localizedDescription)"
-      await Github.reauthorize()
-      hasToken = false
-    }
-  }
-  
-  private func login() async {
-    isLoading = true
-    defer { isLoading = false }
-    
-    do {
-      try await Github.authorize()
-      viewModel.me = try await Github.me()
-      organizations = try await Github.loadOrganizations()
-      hasToken = await Github.hasToken
-    } catch {
-      errorMessage = "Login failed: \(error.localizedDescription)"
-    }
-  }
-  
-  private func logout() async {
-    await Github.reauthorize()
-    hasToken = false
-    viewModel.me = nil
-    organizations = []
   }
 }
 
-#Preview {
-  Github_RootView()
+struct Github_RootView_Previews: PreviewProvider {
+  static var previews: some View {
+    Github_RootView()
+  }
 }

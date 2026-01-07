@@ -147,6 +147,10 @@ Local Packages/Git/Sources/Git/
 ## Future Enhancements
 
 - **Agent Integration:** Auto-create worktree when spawning AI agent
-- **PR Review:** One-click "Review Locally" creates worktree from PR
+- **~~PR Review:~~ ✅ DONE** One-click "Review Locally" creates worktree from PR
 - **Cleanup:** Auto-prune worktrees when branches are merged
 - **Tracking:** Show which worktrees have VS Code windows open
+- **Configurable IDE:** Currently hardcoded to VS Code. Should support:
+  - User preference in Settings (VS Code, Cursor, Xcode, etc.)
+  - Auto-detect installed IDEs
+  - Custom command configuration
