@@ -23,11 +23,7 @@ struct KitchenSyncApp: App {
     }
     
 #if os(macOS)
-    WindowGroup("Debug") {
-      TaskDebugWindow()
-        .padding()
-        .frame(minWidth: 600, idealWidth: 600, minHeight: 400, idealHeight: 400)
-    }
+    // TaskDebugWindow removed - no longer needed after TaskRunner removal
     
     Settings {
       SettingsView()

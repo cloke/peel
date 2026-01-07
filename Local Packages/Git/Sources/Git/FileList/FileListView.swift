@@ -9,7 +9,7 @@ import SwiftUI
 
 #if os(macOS)
 struct FileListView: View {
-  @ObservedObject var repository: Model.Repository
+  @Bindable var repository: Model.Repository
   @State private var commitMessage: String = ""
   @State private var diff = Diff()
   @FocusState private var commitIsFocused: Bool

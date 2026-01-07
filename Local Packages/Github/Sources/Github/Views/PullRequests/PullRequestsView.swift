@@ -70,14 +70,13 @@ public struct PullRequestsView: View {
         Text("No Pull Requests Found")
       }
     }
-    .onAppear {
-      Task {
-        do {
-          pullRequests = try await Github.pullRequests(from: repository)
-          state = pullRequests.count == 0 ? .empty : .loaded
-        } catch {
-          print(error)
-        }
+    .task(id: repository.id) {
+      state = .loading
+      do {
+        pullRequests = try await Github.pullRequests(from: repository)
+        state = pullRequests.count == 0 ? .empty : .loaded
+      } catch {
+        print(error)
       }
     }
   }

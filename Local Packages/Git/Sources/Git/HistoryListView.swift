@@ -9,7 +9,7 @@ import SwiftUI
 
 #if os(macOS)
 struct HistoryListView: View {
-  @EnvironmentObject var repository: Model.Repository
+  @Environment(Model.Repository.self) var repository
   
   @State private var commits = [Model.LogEntry]()
   @State private var diff = Diff()

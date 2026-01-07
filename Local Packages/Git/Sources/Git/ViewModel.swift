@@ -6,7 +6,7 @@
 //
 
 import SwiftUI
-import Combine
+import Observation
 
 extension Array where Element: Equatable{
   mutating func remove (element: Element) {
@@ -16,7 +16,7 @@ extension Array where Element: Equatable{
   }
 }
 
-enum FileStatus: String {
+public enum FileStatus: String {
   case modifiedMe = ".M"
   case new = "AM"
   case deleted = "D."
@@ -27,10 +27,10 @@ enum FileStatus: String {
   case unknown = "**"
 }
 
-struct FileDescriptor: Identifiable {
-  let id = UUID()
-  let path: String
-  let status: FileStatus
+public struct FileDescriptor: Identifiable {
+  public let id = UUID()
+  public let path: String
+  public let status: FileStatus
 }
 
 public struct Diff: Identifiable {
@@ -77,12 +77,13 @@ extension Model {
     case local = "-l", remote = "-r"
   }
   
-  public class Branch: Identifiable, ObservableObject {
+  @Observable
+  public class Branch: Identifiable {
     public var id = UUID()
     /// Name of the branch
     var name: String
     /// Status of branch from branch command. ie. result started with "*"
-    @Published var isActive: Bool
+    var isActive: Bool
     
     var isSelected = false
     

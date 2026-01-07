@@ -14,7 +14,17 @@ extension Commands {
   static func log(branch: String, on repository: Model.Repository) async -> [Model.LogEntry] {
     // loot at --graph without parent
     var logs = [Model.LogEntry]()
-    let array = try? await Self.simple(arguments: ["-C", repository.path, "--no-pager", "log", "--pretty=tformat:%ad<•>%h<•>%an<•>%d<•>%s", "--date=iso-strict", "--first-parent", branch.replacingOccurrences(of: "*", with: "").trimmingCharacters(in: .whitespacesAndNewlines)])
+    let cleanBranch = branch.replacingOccurrences(of: "*", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+    let array = try? await Self.simple(
+      arguments: [
+        "--no-pager", "log",
+        "--pretty=tformat:%ad<•>%h<•>%an<•>%d<•>%s",
+        "--date=iso-strict",
+        "--first-parent",
+        cleanBranch
+      ],
+      in: repository
+    )
     let dateFormatter = ISO8601DateFormatter()
     array?.forEach {
       let components = $0.components(separatedBy: "<•>")

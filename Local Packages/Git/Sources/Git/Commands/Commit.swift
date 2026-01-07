@@ -11,7 +11,7 @@
 #if os(macOS)
 extension Commands {
   static func commit(repository: Model.Repository, message: String) async throws -> [String] {
-    try await Self.simple(arguments: ["-C", repository.path, "commit", "-m", message])
+    try await Self.simple(arguments: ["commit", "-m", message], in: repository)
   }
 }
 #endif

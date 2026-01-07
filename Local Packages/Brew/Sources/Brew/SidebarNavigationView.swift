@@ -6,46 +6,38 @@
 //
 
 import SwiftUI
-import Combine
-import TaskRunner
+import Observation
 
-class SearchResults: ObservableObject {
-  let objectWillChange = PassthroughSubject<SearchResults, Never>()
-  
-  @Published var isSearching = false {
-    didSet { objectWillChange.send(self) }
-  }
+@MainActor
+@Observable
+class SearchResults {
+  var isSearching = false
   
   // Store items in a set to prevent duplicates
   var items = Set<String>() {
     didSet {
-      // SwiftUI Lists/ForEAch/etc require random access collections
+      // SwiftUI Lists/ForEach/etc require random access collections
       filtered = Array(items).sorted()
     }
   }
   
-  @Published var filtered = [String]() {
-    didSet { objectWillChange.send(self) }
-  }
+  var filtered = [String]()
   
-  @Published var searchText: String = "" {
-    didSet { textDidChange.send(searchText) }
-  }
-  
-  private let textDidChange = PassthroughSubject<String, Never>()
-  private var cancellables = Set<AnyCancellable>()
-  
-  init() {
-    textDidChange
-      .debounce(for: .seconds(0.3), scheduler: DispatchQueue.main)
-      .sink { _ in
-        self.search()
+  var searchText: String = "" {
+    didSet {
+      searchTask?.cancel()
+      searchTask = Task {
+        try? await Task.sleep(for: .seconds(0.3))
+        guard !Task.isCancelled else { return }
+        search()
       }
-      .store(in: &cancellables)
+    }
   }
+  
+  private var searchTask: Task<Void, Never>?
   
   func search() {
-    if searchText == "" {
+    if searchText.isEmpty {
       filtered.removeAll()
       isSearching = false
       return
@@ -56,43 +48,42 @@ class SearchResults: ObservableObject {
 }
 
 extension SidebarNavigationView {
-  class ViewModel: TaskRunnerProtocol {
-    @Published var outputStream = [String]()
-    
-    private var cancellables: Set<AnyCancellable> = []
+  @MainActor
+  @Observable
+  class ViewModel {
+    var outputStream = [String]()
     
     func installed() {
-//      outputStream = []
-//      try? run(.brew, command: Command.BrewInstalled) { [self] in
-//        switch $0 {
-//        case .buffer(let string):
-//          outputStream.append(string)
-//        case.complete(let data, _):
-//          print(data)
-//        }
-//      }
+      Task {
+        outputStream = []
+        do {
+          let results = try await Commands.simple(arguments: Command.BrewInstalled)
+          outputStream = results
+        } catch {
+          print("Failed to get installed packages: \(error)")
+        }
+      }
     }
     
     func available(term: String) {
-//      var command = Command.BrewAvailable
-//      command.append(term)
-//      outputStream = []
-//      try? run(.brew, command: command) { [self] in
-//        switch $0 {
-//        case .buffer(let string):
-//          outputStream.append(string)
-//        case.complete(let data, _):
-//          print(data)
-//        }
-//      }
+      Task {
+        var command = Command.BrewAvailable
+        command.append(term)
+        outputStream = []
+        do {
+          let results = try await Commands.simple(arguments: command)
+          outputStream = results
+        } catch {
+          print("Failed to search packages: \(error)")
+        }
+      }
     }
   }
 }
 
 public struct SidebarNavigationView: View {
-  @ObservedObject private var results = SearchResults()
-  
-  var viewModel = ViewModel()
+  @State private var results = SearchResults()
+  @State private var viewModel = ViewModel()
   
   public init() {}
   
@@ -108,12 +99,9 @@ public struct SidebarNavigationView: View {
           viewModel.available(term: results.searchText)
         }
       }
-      .onReceive(viewModel.$outputStream) { data in
-        // TODO: There is no reason to use a stream for the list. 
-        DispatchQueue.main.async {
-          if data.count > 0 {
-            results.items.insert(data.last!)
-          }
+      .onChange(of: viewModel.outputStream) { _, data in
+        if let lastItem = data.last {
+          results.items.insert(lastItem)
         }
       }
       SearchBarView(searchText: $results.searchText, isSearching: $results.isSearching)

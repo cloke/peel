@@ -5,37 +5,51 @@
 //  Created by Cory Loken on 5/14/21.
 //
 
-#if canImport(AppKit)
-import TaskRunner
 import Foundation
+import TaskRunner
 
-public struct Commands: TaskRunnerProtocol {
-  private static let shared = Commands()
-
-  static func launch(tool: URL, arguments: [String]) async throws -> TaskStatus {
-    return try await withCheckedThrowingContinuation {
-      (continuation: CheckedContinuation<TaskStatus, Error>) in
-      DispatchQueue.main.async {
-        Self.shared.launch(tool: tool, arguments: arguments) { result, arg in
-          continuation.resume(returning: .complete(arg, [""]))
-        }
-      }
+/// Git command executor using modern ProcessExecutor actor.
+/// All git commands are executed through this interface.
+public struct Commands {
+  private static let executor = ProcessExecutor()
+  private static let gitExecutable = "git"
+  
+  /// Execute a git command and return the result.
+  /// - Parameters:
+  ///   - arguments: Git command arguments
+  ///   - repository: Optional repository to run command in (uses -C flag)
+  ///   - throwOnError: Whether to throw on non-zero exit code (default: true)
+  /// - Returns: ProcessExecutor result with stdout, stderr, and exit code
+  static func execute(
+    arguments: [String],
+    in repository: Model.Repository? = nil,
+    throwOnError: Bool = true
+  ) async throws -> ProcessExecutor.Result {
+    var args = arguments
+    
+    // Prepend repository path if provided
+    if let repository {
+      args = ["-C", repository.path] + args
     }
+    
+    return try await executor.execute(
+      gitExecutable,
+      arguments: args,
+      throwOnNonZeroExit: throwOnError
+    )
   }
   
-  /// Provides a single point for commands that just execture a command and return data
-  static func simple(arguments: [String]) async throws -> [String] {
-    let status = try? await Commands.launch(tool: URL(fileURLWithPath: Executable.git.rawValue), arguments: arguments)
-    switch status {
-    case .complete(let data, _):
-      return String(data: data, encoding: .utf8)!.split(separator: "\n").map { String($0) }
-    default:
-      throw GitError.Unknown
-    }
+  /// Execute a git command and return output as lines of text.
+  /// This is the most common pattern for git commands.
+  /// - Parameters:
+  ///   - arguments: Git command arguments  
+  ///   - repository: Optional repository to run command in
+  /// - Returns: Array of non-empty output lines
+  static func simple(
+    arguments: [String],
+    in repository: Model.Repository? = nil
+  ) async throws -> [String] {
+    let result = try await execute(arguments: arguments, in: repository)
+    return result.lines
   }
 }
-#else
-public struct Commands {
-  private static let shared = Commands()
-}
-#endif

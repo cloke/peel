@@ -11,7 +11,10 @@
 #if canImport(AppKit)
 extension Commands {
   static func revList(repository: Model.Repository, branchA: String, branchB: String) async throws -> (Int, Int) {
-    let lines = try await Self.simple(arguments: ["-C", repository.path, "rev-list", "--left-right", "--count", "\(branchA)...\(branchB)"])
+    let lines = try await Self.simple(
+      arguments: ["rev-list", "--left-right", "--count", "\(branchA)...\(branchB)"],
+      in: repository
+    )
 
     guard let t = lines.first?.split(separator: "\t"), let l = Int(t.first ?? "0"), let r = Int(t.last ?? "0") else {
       throw GitError.Unknown

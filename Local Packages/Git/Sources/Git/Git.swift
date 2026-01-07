@@ -2,7 +2,7 @@ import SwiftUI
 
 #if os(macOS)
 public struct GitRootView: View {
-  @ObservedObject public var repository: Model.Repository
+  @Bindable public var repository: Model.Repository
   
   public init(repository: Model.Repository) {
     print("Switched to repository: \(repository.name)")
@@ -22,7 +22,7 @@ public struct GitRootView: View {
       }
       .listStyle(.sidebar)
       .navigationTitle(repository.name)
-      .environmentObject(repository)
+      .environment(repository)
     }
   }
 }

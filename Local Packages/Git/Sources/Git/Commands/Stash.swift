@@ -12,11 +12,11 @@
 extension Commands {
   struct Stash {
     static func list(on repository: Model.Repository) async throws -> [String] {
-      try await Commands.simple(arguments: ["-C", repository.path, "stash", "list"])
+      try await Commands.simple(arguments: ["stash", "list"], in: repository)
     }
     
     static func push(repository: Model.Repository, with message: String = "") async throws -> [String] {
-      try await Commands.simple(arguments: ["-C", repository.path, "stash", "push", "-m", message])
+      try await Commands.simple(arguments: ["stash", "push", "-m", message], in: repository)
     }
   }
 }

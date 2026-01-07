@@ -67,7 +67,7 @@ struct IssuesListView: View {
         Text("No issues found")
       }
     }
-    .task {
+    .task(id: repository.id) {
       try? await loadData()
     }
     .sheet(isPresented: $isShowingCreateIssue, onDismiss: { isShowingCreateIssue = false }) {

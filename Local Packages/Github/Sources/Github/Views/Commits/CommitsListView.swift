@@ -21,7 +21,7 @@ struct CommitsListView: View {
         Divider()
       }
     }
-    .task {
+    .task(id: repository.id) {
       do {
         commits = try await Github.commits(from: repository)
       } catch {

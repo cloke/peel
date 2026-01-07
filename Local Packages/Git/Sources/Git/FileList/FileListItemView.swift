@@ -9,7 +9,7 @@ import SwiftUI
 
 @available(macOS 12, *)
 struct FileListItemView: View {
-  @EnvironmentObject var repository: Model.Repository
+  @Environment(Model.Repository.self) var repository
   var file: FileDescriptor
   @State private var toggleState: Bool = false
   

@@ -51,7 +51,7 @@ struct ActionsView: View {
         Text("No Pull Requests Found")
       }
     }
-    .task {
+    .task(id: repository.id) {
       do {
         for workflow in try await Github.workflows(from: repository) {
           let actions = try await Github.runs(from: workflow, repository: repository)

@@ -14,7 +14,7 @@ struct ListItem: Identifiable {
 }
 
 struct BranchListItemView: View {
-  @EnvironmentObject var repository: Model.Repository
+  @Environment(Model.Repository.self) var repository
   @State private var upDown = ""
   
   @Binding var branch: Model.Branch
@@ -56,7 +56,7 @@ struct BranchListItemView: View {
 }
 
 public struct BranchListView: View {
-  @EnvironmentObject var repository: Model.Repository
+  @Environment(Model.Repository.self) var repository
   
   @State private var isShowing = false
   // TODO: Should we persist this as state?
@@ -81,9 +81,7 @@ public struct BranchListView: View {
               Task { @MainActor in
                 let branch = localBranches[index].name
                 _ = try await Commands.checkout(branch: branch , from: repository)
-                DispatchQueue.main.async {
-                  repository.activate(branch: localBranches[index])
-                }
+                repository.activate(branch: localBranches[index])
               }
             },
             push: {
@@ -144,7 +142,7 @@ public struct BranchListView: View {
 }
 
 struct BranchRepositoryView: View {
-  @EnvironmentObject var repository: Model.Repository
+  @Environment(Model.Repository.self) var repository
   @State private var name = ""
   
   public var callback: (() -> ())? = nil

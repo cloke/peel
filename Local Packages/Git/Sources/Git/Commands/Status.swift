@@ -12,7 +12,10 @@
 extension Commands {
   static func status(on repository: Model.Repository) async throws -> [FileDescriptor] {
     do {
-      let array = try await Self.simple(arguments: ["-C", repository.path, "--no-optional-locks", "status", "--porcelain=2"])
+      let array = try await Self.simple(
+        arguments: ["--no-optional-locks", "status", "--porcelain=2"],
+        in: repository
+      )
       return try (array.compactMap { line in
         switch line.first {
         case "1":

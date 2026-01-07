@@ -9,7 +9,7 @@ import SwiftUI
 
 #if os(macOS)
 public struct LocalChangesListView: View {
-  @EnvironmentObject var repository: Model.Repository
+  @Environment(Model.Repository.self) var repository
 
   public var body: some View {
     NavigationLink(destination: FileListView(repository: repository)) {
@@ -31,7 +31,7 @@ public struct LocalChangesListView: View {
 struct LocalChangesListView_Previews: PreviewProvider {
   static var previews: some View {
     LocalChangesListView()
-      .environmentObject(Model.Repository(name: "blah", path: "."))
+      .environment(Model.Repository(name: "blah", path: "."))
   }
 }
 #endif

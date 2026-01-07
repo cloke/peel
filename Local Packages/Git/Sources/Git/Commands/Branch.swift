@@ -11,23 +11,21 @@
 import SwiftUI
 
 #if os(macOS)
-import TaskRunner
-
 extension Commands {
   struct Branch {
     // TODO: This should allow the root branch to be specified.
     static func create(name: String, on repository: Model.Repository) async throws -> [String] {
-      try await Commands.simple(arguments: ["-C", repository.path, "checkout", "-b", name])
+      try await Commands.simple(arguments: ["checkout", "-b", name], in: repository)
     }
     
     static func delete(name: String, on repository: Model.Repository) async throws -> [String] {
-      try await Commands.simple(arguments: ["-C", repository.path, "branch", "-d", name])
+      try await Commands.simple(arguments: ["branch", "-d", name], in: repository)
     }
     
     static func list(from branchType: Model.BranchType, on repository: Model.Repository) async throws -> [Model.Branch] {
       let array = branchType == .remote ?
-      try await Commands.simple(arguments:  ["-C", repository.path, "ls-remote", "--heads", "origin"]) :
-      try await Commands.simple(arguments:  ["-C", repository.path, "branch", "-l"])
+        try await Commands.simple(arguments: ["ls-remote", "--heads", "origin"], in: repository) :
+        try await Commands.simple(arguments: ["branch", "-l"], in: repository)
 
 
       return array.map {
