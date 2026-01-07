@@ -15,10 +15,13 @@ struct ToolSelectionToolbar: ToolbarContent {
     ToolbarItem(placement: .principal) {
       Picker("Tool", selection: $currentTool) {
         Label("Brew", systemImage: "mug")
+          .labelStyle(.titleAndIcon)
           .tag(CurrentTool.brew)
         Label("Git", systemImage: "arrow.triangle.branch")
+          .labelStyle(.titleAndIcon)
           .tag(CurrentTool.git)
         Label("GitHub", systemImage: "person.2")
+          .labelStyle(.titleAndIcon)
           .tag(CurrentTool.github)
       }
       .pickerStyle(.segmented)
