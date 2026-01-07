@@ -62,22 +62,21 @@ struct KitchenSyncApp: App {
 }
 
 // MARK: - SwiftData Models
-// These are in this file temporarily until added to Xcode project properly.
-// Design: iCloud-safe with no circular references, UUID-based identity.
+// CloudKit-compatible: all properties have defaults, no unique constraints
 
-// MARK: - Synced Models (will sync to iCloud when enabled)
+// MARK: - Synced Models (sync to iCloud)
 
 /// A git repository tracked by the app.
 @Model
 final class SyncedRepository {
-  @Attribute(.unique) var id: UUID
-  var name: String
+  var id: UUID = UUID()
+  var name: String = ""
   var remoteURL: String?
-  var isFavorite: Bool
+  var isFavorite: Bool = false
   var colorTag: String?
   var notes: String?
-  var createdAt: Date
-  var modifiedAt: Date
+  var createdAt: Date = Date()
+  var modifiedAt: Date = Date()
   
   init(name: String, remoteURL: String? = nil) {
     self.id = UUID()
@@ -96,13 +95,13 @@ final class SyncedRepository {
 /// A GitHub repository marked as favorite.
 @Model
 final class GitHubFavorite {
-  @Attribute(.unique) var id: UUID
-  var githubRepoId: Int
-  var fullName: String
-  var ownerLogin: String
-  var repoName: String
+  var id: UUID = UUID()
+  var githubRepoId: Int = 0
+  var fullName: String = ""
+  var ownerLogin: String = ""
+  var repoName: String = ""
   var htmlURL: String?
-  var addedAt: Date
+  var addedAt: Date = Date()
   var notes: String?
   
   init(githubRepoId: Int, fullName: String, ownerLogin: String, repoName: String, htmlURL: String? = nil) {
@@ -119,14 +118,14 @@ final class GitHubFavorite {
 /// A recently viewed pull request.
 @Model
 final class RecentPullRequest {
-  @Attribute(.unique) var id: UUID
-  var githubPRId: Int
-  var prNumber: Int
-  var title: String
-  var repoFullName: String
-  var state: String
+  var id: UUID = UUID()
+  var githubPRId: Int = 0
+  var prNumber: Int = 0
+  var title: String = ""
+  var repoFullName: String = ""
+  var state: String = "unknown"
   var htmlURL: String?
-  var viewedAt: Date
+  var viewedAt: Date = Date()
   
   init(githubPRId: Int, prNumber: Int, title: String, repoFullName: String, state: String, htmlURL: String? = nil) {
     self.id = UUID()
@@ -149,11 +148,11 @@ final class RecentPullRequest {
 /// Maps a SyncedRepository to its local path on THIS device.
 @Model
 final class LocalRepositoryPath {
-  @Attribute(.unique) var id: UUID
-  var repositoryId: UUID  // References SyncedRepository.id (NOT a @Relationship)
-  var localPath: String
-  var lastAccessedAt: Date
-  var isValid: Bool
+  var id: UUID = UUID()
+  var repositoryId: UUID = UUID()
+  var localPath: String = ""
+  var lastAccessedAt: Date = Date()
+  var isValid: Bool = true
   
   init(repositoryId: UUID, localPath: String) {
     self.id = UUID()
@@ -174,11 +173,11 @@ final class LocalRepositoryPath {
 /// Tracks a worktree created through the app.
 @Model
 final class TrackedWorktree {
-  @Attribute(.unique) var id: UUID
-  var repositoryId: UUID  // References SyncedRepository.id
-  var localPath: String
-  var branch: String
-  var createdAt: Date
+  var id: UUID = UUID()
+  var repositoryId: UUID = UUID()
+  var localPath: String = ""
+  var branch: String = ""
+  var createdAt: Date = Date()
   var purpose: String?
   var linkedPRNumber: Int?
   var linkedPRRepo: String?
@@ -203,12 +202,12 @@ final class TrackedWorktree {
 /// App settings for THIS device only.
 @Model
 final class DeviceSettings {
-  @Attribute(.unique) var id: UUID
-  var deviceName: String
-  var currentTool: String
+  var id: UUID = UUID()
+  var deviceName: String = "Unknown"
+  var currentTool: String = "github"
   var selectedRepositoryId: UUID?
   var sidebarWidth: Double?
-  var lastUsedAt: Date
+  var lastUsedAt: Date = Date()
   
   init() {
     self.id = UUID()
@@ -225,7 +224,6 @@ final class DeviceSettings {
     lastUsedAt = Date()
   }
 }
-
 // MARK: - Data Service
 
 /// Service for managing app data with SwiftData
