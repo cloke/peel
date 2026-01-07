@@ -4,29 +4,32 @@
 //
 //  Created by Cory Loken on 12/20/20.
 //  Fixed deprecated Alert on 1/7/26
+//  Updated for SwiftData on 1/7/26
 //
 
 import SwiftUI
+import SwiftData
 import Git
 
 struct Git_RootView: View {
-  @State private var viewModel: ViewModel = .shared
+  @Environment(\.modelContext) private var modelContext
+  @Query(sort: \SyncedRepository.name) private var syncedRepos: [SyncedRepository]
   
+  @State private var viewModel: ViewModel = .shared
   @State private var repoNotFoundError = false
-  @State public var isCloning = false
+  @State private var isCloning = false
+  @State private var hasLoadedFromSwiftData = false
 
   var body: some View {
     Group {
-      if viewModel.selectedRepository.name == "N/A" {
+      if viewModel.selectedRepository.name == "N/A" || viewModel.selectedRepository.path.isEmpty {
         ContentUnavailableView {
           Label("No Repository", systemImage: "folder")
         } description: {
           Text("Open a git repository to get started")
         } actions: {
           Button("Open Repository") {
-            viewModel.addRepository() {
-              repoNotFoundError = true
-            }
+            addRepository()
           }
           .buttonStyle(.borderedProminent)
         }
@@ -41,13 +44,11 @@ struct Git_RootView: View {
       
       ToolbarItem(placement: .navigation) {
         Button {
-          viewModel.addRepository() {
-            repoNotFoundError = true
-          }
-        } label : { Image(systemName: "folder.badge.plus") }
+          addRepository()
+        } label: { Image(systemName: "folder.badge.plus") }
         .help(Text("Open Repository"))
       }
-      ToolbarItem(placement: .navigation){
+      ToolbarItem(placement: .navigation) {
         Button {
           isCloning = true
         } label: { Image(systemName: "folder.badge.gear") }
@@ -64,12 +65,108 @@ struct Git_RootView: View {
         .padding()
         .frame(width: 300, height: 100)
     }
+    .task {
+      if !hasLoadedFromSwiftData {
+        loadFromSwiftData()
+        hasLoadedFromSwiftData = true
+      }
+    }
+    .onChange(of: viewModel.selectedRepository.path) { _, _ in
+      saveSelectionToSwiftData()
+    }
+  }
+  
+  private func addRepository() {
+    let dialog = NSOpenPanel()
+    dialog.title = "Choose a git repository"
+    dialog.showsHiddenFiles = false
+    dialog.canChooseFiles = false
+    dialog.canChooseDirectories = true
+    
+    guard dialog.runModal() == .OK, let url = dialog.url else { return }
+    
+    if !FileManager.default.fileExists(atPath: url.appendingPathComponent(".git").path) {
+      repoNotFoundError = true
+      return
+    }
+    
+    let name = url.lastPathComponent
+    let path = url.path
+    
+    // Add to SwiftData
+    let syncedRepo = SyncedRepository(name: name, remoteURL: nil)
+    modelContext.insert(syncedRepo)
+    
+    let localPath = LocalRepositoryPath(repositoryId: syncedRepo.id, localPath: path)
+    modelContext.insert(localPath)
+    
+    try? modelContext.save()
+    
+    // Add to ViewModel
+    let repo = Model.Repository(name: name, path: path)
+    viewModel.repositories.append(repo)
+    viewModel.selectedRepository = repo
+  }
+  
+  private func loadFromSwiftData() {
+    var loadedRepos: [Model.Repository] = []
+    
+    for syncedRepo in syncedRepos {
+      let repoId = syncedRepo.id
+      let descriptor = FetchDescriptor<LocalRepositoryPath>(
+        predicate: #Predicate { $0.repositoryId == repoId }
+      )
+      
+      if let localPath = try? modelContext.fetch(descriptor).first {
+        let repo = Model.Repository(name: syncedRepo.name, path: localPath.localPath)
+        loadedRepos.append(repo)
+      }
+    }
+    
+    viewModel.repositories = loadedRepos
+    
+    // Restore selection
+    let settingsDescriptor = FetchDescriptor<DeviceSettings>()
+    if let settings = try? modelContext.fetch(settingsDescriptor).first,
+       let selectedId = settings.selectedRepositoryId,
+       let syncedRepo = syncedRepos.first(where: { $0.id == selectedId }) {
+      let repoId = syncedRepo.id
+      let pathDescriptor = FetchDescriptor<LocalRepositoryPath>(
+        predicate: #Predicate { $0.repositoryId == repoId }
+      )
+      if let localPath = try? modelContext.fetch(pathDescriptor).first {
+        viewModel.selectedRepository = Model.Repository(name: syncedRepo.name, path: localPath.localPath)
+      }
+    } else if let firstRepo = loadedRepos.first {
+      viewModel.selectedRepository = firstRepo
+    }
+  }
+  
+  private func saveSelectionToSwiftData() {
+    guard !viewModel.selectedRepository.path.isEmpty else { return }
+    
+    let path = viewModel.selectedRepository.path
+    let pathDescriptor = FetchDescriptor<LocalRepositoryPath>(
+      predicate: #Predicate { $0.localPath == path }
+    )
+    
+    guard let localPath = try? modelContext.fetch(pathDescriptor).first else { return }
+    
+    let settingsDescriptor = FetchDescriptor<DeviceSettings>()
+    let settings: DeviceSettings
+    if let existing = try? modelContext.fetch(settingsDescriptor).first {
+      settings = existing
+    } else {
+      settings = DeviceSettings()
+      modelContext.insert(settings)
+    }
+    
+    settings.selectedRepositoryId = localPath.repositoryId
+    settings.touch()
+    try? modelContext.save()
   }
 }
 
-
-struct Git_RootView_Previews: PreviewProvider {
-  static var previews: some View {
-    Git_RootView()
-  }
+#Preview {
+  Git_RootView()
 }
