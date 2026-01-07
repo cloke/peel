@@ -1,51 +1,40 @@
-# Plans
+# Kitchen Sync - Project Plans
 
-This folder contains planning documents, architecture decisions, and roadmaps for the Kitchen Sync project.
+## Status Overview
 
-## Active Documents
+| Plan | Status | Description |
+|------|--------|-------------|
+| [SWIFTUI_MODERNIZATION_PLAN](SWIFTUI_MODERNIZATION_PLAN.md) | ✅ Complete | Swift 6 / SwiftUI 6 migration |
+| [UX_MODERNIZATION_PLAN](UX_MODERNIZATION_PLAN.md) | ✅ Complete | UI/UX improvements |
+| [SWIFTDATA_PLAN](SWIFTDATA_PLAN.md) | ✅ Complete | SwiftData + iCloud sync |
+| [WORKTREE_FEATURE_PLAN](WORKTREE_FEATURE_PLAN.md) | ✅ Complete | Git worktrees + PR review |
+| [AGENT_ORCHESTRATION_PLAN](AGENT_ORCHESTRATION_PLAN.md) | 🟡 In Progress | AI agent management |
 
-| Document | Description | Status |
-|----------|-------------|--------|
-| [WORKTREE_FEATURE_PLAN.md](./WORKTREE_FEATURE_PLAN.md) | Git worktree management with VS Code | ✅ Phase 1 Complete |
-| [SWIFTDATA_PLAN.md](./SWIFTDATA_PLAN.md) | SwiftData + iCloud sync integration | 🟡 Planning |
-| [AGENT_ORCHESTRATION_PLAN.md](./AGENT_ORCHESTRATION_PLAN.md) | AI Agent workspace management (future) | 🟡 Planning |
+## Completed Work (January 2026)
 
-## Completed Documents
+### Core Modernization
+- Migrated all packages to @Observable (removed Combine)
+- Fixed navigation with NavigationStack
+- Removed all manual DispatchQueue threading
 
-| Document | Description |
-|----------|-------------|
-| [UX_MODERNIZATION_PLAN.md](./UX_MODERNIZATION_PLAN.md) | UI/UX polish and fixes | ✅ Complete |
-| [MODERNIZATION_COMPLETE.md](./MODERNIZATION_COMPLETE.md) | Swift 6 modernization summary |
-| [SWIFTUI_MODERNIZATION_PLAN.md](./SWIFTUI_MODERNIZATION_PLAN.md) | Original code modernization |
+### New Features
+- **PR → Worktree Integration** - Review PRs locally in VS Code
+- **GitHub Favorites** - Star repos, synced via iCloud
+- **Recent PRs** - Track viewed PRs
+- **Archive Filtering** - Hide archived repos by default
+- **iCloud Sync** - SwiftData with CloudKit
 
-## Archive
+### Documentation
+- Updated copilot-instructions.md with CloudKit requirements
+- Archived completed session summaries
 
-Completed session notes and historical documents are in the `Archive/` folder.
+## Next Up
 
-## Quick Start
+**Agent Orchestration** - Multi-agent workspace management
+- Create isolated worktrees for AI agents
+- Track agent tasks and state
+- Integrate with Claude CLI / Copilot CLI
 
-**Current Focus:**
-1. `WORKTREE_FEATURE_PLAN.md` - Git worktree management (Phase 1 done)
-2. `SWIFTDATA_PLAN.md` - Decide on persistence strategy
-
-**Feature Roadmap:**
-1. ✅ Swift 6 modernization
-2. ✅ UX polish  
-3. ✅ Worktrees (basic)
-4. 🟡 SwiftData (optional)
-5. 🟡 PR → Worktree integration
-6. 🔴 Agent orchestration
-
-## Plan Template
-
-When creating new plans, use this frontmatter:
-
-```yaml
 ---
-status: planning | in-progress | complete
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
-priority: low | medium | high
-estimated-effort: X hours/days
----
-```
+
+See [MODERNIZATION_COMPLETE.md](MODERNIZATION_COMPLETE.md) for detailed history.

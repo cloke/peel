@@ -433,3 +433,43 @@ The SwiftUI modernization is **COMPLETE** for all KitchenSink packages. The code
 ---
 
 **Modernization Status**: Git ✅ | Brew ✅ | Github ✅ | **100% COMPLETE** 🎉
+
+---
+
+## January 7, 2026 - Feature Additions
+
+### PR → Worktree Integration ✅
+- "Review Locally" button on PR detail view
+- Creates worktree from PR branch automatically
+- Opens in VS Code
+- Remembers recent local repositories
+
+### GitHub Favorites ✅
+- Star button on repository list items
+- Favorites section in sidebar with navigation
+- Backed by SwiftData with iCloud sync
+
+### Recent PRs Tracking ✅
+- Auto-records viewed PRs
+- Shows in sidebar with state indicators
+- Click to view PR info
+
+### Archive Filtering ✅
+- Hides archived repos by default
+- Toggle to show with count
+- Visual badge on archived repos
+
+### iCloud Sync ✅
+- SwiftData models are CloudKit-compatible
+- Favorites and recent PRs sync across devices
+- Container: `iCloud.crunchy-bananas.KitchenSink`
+
+### New API Methods
+- `Github.repository(owner:name:)` - Fetch single repo
+- `Github.user(login:)` - Fetch user by login
+- `Commands.fetch()` - Git fetch command
+- `Commands.getRemoteURL()` - Get remote URL
+
+---
+
+**Last Updated:** January 7, 2026
