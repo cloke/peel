@@ -1,6 +1,6 @@
 //
 //  FileListItemView.swift
-//  
+//
 //
 //  Created by Cory Loken on 6/12/22.
 //
@@ -21,7 +21,7 @@ struct FileListItemView: View {
   var body: some View {
     HStack {
       Toggle(isOn: $toggleState) { EmptyView() }
-        .onChange(of: toggleState) { status in
+        .onChange(of: toggleState) { _, status in
           Task {
             #if canImport(AppKit)
             try? await status ?

@@ -39,14 +39,13 @@ public struct OrganizationRepositoryView: View {
       }
       
     }
-    .onChange(of: isExpanded) { newValue in
+    .onChange(of: isExpanded) { _, newValue in
       if newValue {
         Task {
           repositories = try await Github.loadRepositories(organization: organization.login ?? "")
           isLoading = false
         }
       }
-      
     }
   }
 }

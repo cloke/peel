@@ -22,6 +22,9 @@ public struct GitRootView: View {
           BranchListView(localBranches: $repository.remoteBranches, label: "Remote Branches", location: .remote)
         }
         .listStyle(.sidebar)
+        .navigationDestination(for: String.self) { branchName in
+          HistoryListView(branch: branchName)
+        }
       }
       .environmentObject(repository)
       Text("Hello")

@@ -1,6 +1,6 @@
 //
 //  StashListView.swift
-//  
+//
 //
 //  Created by Cory Loken on 2/22/21.
 //
@@ -18,13 +18,13 @@ struct StashListView: View {
       List(stashes, id: \.self) {
         Text($0)
       }
-      .onChange(of: isExpanded, perform:  { value in
+      .onChange(of: isExpanded) { _, value in
         if isExpanded == true {
           Task {
             self.stashes = try await Commands.Stash.list(on: repository)
           }
         }
-      })
+      }
     } label: {
       HStack {
         Text("Stash")

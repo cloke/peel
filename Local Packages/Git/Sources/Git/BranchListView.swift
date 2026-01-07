@@ -73,7 +73,7 @@ public struct BranchListView: View {
     List {
     Section("test", isExpanded: $isExpanded) {
       ForEach(localBranches.indices, id: \.self) { index in
-        NavigationLink(destination: HistoryListView(branch: localBranches[index].name), tag: localBranches[index].name, selection: self.$selection) {
+        NavigationLink(value: localBranches[index].name) {
           BranchListItemView(
             branch: $localBranches[index],
             type: location,
