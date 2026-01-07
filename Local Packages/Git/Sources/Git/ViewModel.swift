@@ -1,6 +1,6 @@
 //
 //  File.swift
-//  
+//
 //
 //  Created by Cory Loken on 1/2/21.
 //
@@ -124,16 +124,29 @@ internal extension NSTextCheckingResult {
 }
 
 #if os(macOS)
-public class ViewModel: ObservableObject {
-  @AppStorage(wrappedValue: Data(), "repositories") var repositoriesPersisted: Data
-  @AppStorage(wrappedValue: Data(), "selected-repository") var selectedRepositoryPersisted: Data
+@MainActor
+@Observable
+public class ViewModel {
+  @ObservationIgnored @AppStorage(wrappedValue: Data(), "repositories") var repositoriesPersisted: Data
+  @ObservationIgnored @AppStorage(wrappedValue: Data(), "selected-repository") var selectedRepositoryPersisted: Data
   
-  @Published public var repositories = [Model.Repository]()
-  @Published public var selectedRepository = Model.Repository(name: "Add Repository", path: "")
+  public var repositories = [Model.Repository]() {
+    didSet {
+      if let encoded = try? JSONEncoder().encode(repositories) {
+        repositoriesPersisted = encoded
+      }
+    }
+  }
+  
+  public var selectedRepository = Model.Repository(name: "Add Repository", path: "") {
+    didSet {
+      if let encoded = try? JSONEncoder().encode(selectedRepository) {
+        selectedRepositoryPersisted = encoded
+      }
+    }
+  }
   
   public static let shared = ViewModel()
-  
-  var disposables = Set<AnyCancellable>()
   
   public init() {
     if let repositoriesDecoded = try? JSONDecoder().decode([Model.Repository].self, from: repositoriesPersisted) {
@@ -143,27 +156,6 @@ public class ViewModel: ObservableObject {
     if let selectedRepositoryEncoded = try? JSONDecoder().decode(Model.Repository.self, from: selectedRepositoryPersisted) {
       selectedRepository = selectedRepositoryEncoded
     }
-    
-    /// Transforms a complex data type to data which is appropriate for storage properties
-    $repositories
-      .dropFirst()
-      .receive(on: DispatchQueue.main)
-      .sink {
-        if let repositoriesEncoded = try? JSONEncoder().encode($0) {
-          self.repositoriesPersisted = repositoriesEncoded
-        }
-      }
-      .store(in: &disposables)
-    /// Transforms a complex data type to data which is appropriate for storage properties
-    $selectedRepository
-      .dropFirst()
-      .receive(on: DispatchQueue.main)
-      .sink { [self] in
-        if let selectedRepositoryEncoded = try? JSONEncoder().encode($0) {
-          selectedRepositoryPersisted = selectedRepositoryEncoded
-        }
-      }
-      .store(in: &disposables)
   }
   
   public func resetSettings() {
@@ -190,7 +182,6 @@ public class ViewModel: ObservableObject {
     let dialog = NSOpenPanel();
     
     dialog.title = "Choose single directory";
-    dialog.showsResizeIndicator = true;
     dialog.showsHiddenFiles = false;
     dialog.canChooseFiles = false;
     dialog.canChooseDirectories = true;

@@ -9,7 +9,7 @@ import SwiftUI
 import Git
 
 struct SettingsView: View {
-  @ObservedObject private var gitViewModel = ViewModel()
+  @State private var gitViewModel = ViewModel()
   
   var body: some View {
     Form {

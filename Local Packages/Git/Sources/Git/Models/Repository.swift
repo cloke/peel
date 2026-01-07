@@ -1,6 +1,6 @@
 //
 //  Repository.swift
-//  
+//
 //
 //  Created by Cory Loken on 6/12/22.
 //
@@ -58,7 +58,7 @@ extension Model {
     func refreshStatus() async {
       #if canImport(AppKit)
       if let status = try? await Commands.status(on: self) {
-        DispatchQueue.main.async {
+        await MainActor.run {
           self.status = status
         }
       }

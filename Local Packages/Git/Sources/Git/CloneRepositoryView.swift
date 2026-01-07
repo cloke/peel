@@ -9,7 +9,7 @@ import SwiftUI
 
 #if os(macOS)
 public struct CloneRepositoryView: View {
-  @StateObject private var viewModel: ViewModel = .shared
+  @State private var viewModel: ViewModel = .shared
   @State private var cloneUrl = ""
   @Binding var isCloning: Bool
   

@@ -9,7 +9,7 @@ import SwiftUI
 import Git
 
 struct Git_RootView: View {
-  @StateObject private var viewModel: ViewModel = .shared
+  @State private var viewModel: ViewModel = .shared
   
   @State private var repoNotFoundError = false
   @State public var isCloning = false
