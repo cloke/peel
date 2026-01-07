@@ -143,30 +143,62 @@ final class AppSettings {
 }
 ```
 
-### Container Setup
+### Container Setup (Two Stores Pattern)
+
+The key insight: **Use TWO model configurations** - one for iCloud sync, one for device-local data.
 
 ```swift
 import SwiftData
+import SwiftUI
 
 @main
 struct KitchenSyncApp: App {
   var sharedModelContainer: ModelContainer = {
-    let schema = Schema([
-      GitRepository.self,
-      SavedWorktree.self,
+    // Models that SYNC to iCloud
+    let syncedSchema = Schema([
+      SyncedRepository.self,
       GitHubFavorite.self,
       RecentPullRequest.self,
-      AppSettings.self,
     ])
     
-    let modelConfiguration = ModelConfiguration(
-      schema: schema,
+    // Models that stay LOCAL to this device
+    let localSchema = Schema([
+      LocalRepositoryPath.self,
+      TrackedWorktree.self,
+      DeviceSettings.self,
+    ])
+    
+    // Combined schema
+    let fullSchema = Schema([
+      SyncedRepository.self,
+      GitHubFavorite.self,
+      RecentPullRequest.self,
+      LocalRepositoryPath.self,
+      TrackedWorktree.self,
+      DeviceSettings.self,
+    ])
+    
+    // iCloud-synced configuration
+    let syncedConfig = ModelConfiguration(
+      "Synced",
+      schema: syncedSchema,
       isStoredInMemoryOnly: false,
-      cloudKitDatabase: .automatic  // Enables iCloud sync
+      cloudKitDatabase: .automatic  // ← This enables iCloud sync
+    )
+    
+    // Device-local configuration (no CloudKit)
+    let localConfig = ModelConfiguration(
+      "Local", 
+      schema: localSchema,
+      isStoredInMemoryOnly: false,
+      cloudKitDatabase: .none       // ← NO iCloud for device-specific data
     )
     
     do {
-      return try ModelContainer(for: schema, configurations: [modelConfiguration])
+      return try ModelContainer(
+        for: fullSchema,
+        configurations: [syncedConfig, localConfig]
+      )
     } catch {
       fatalError("Could not create ModelContainer: \(error)")
     }
@@ -175,8 +207,19 @@ struct KitchenSyncApp: App {
   var body: some Scene {
     WindowGroup {
       ContentView()
+        .onAppear {
+          // Run migration on first launch
+          DataMigration.migrateIfNeeded(modelContainer: sharedModelContainer)
+        }
     }
     .modelContainer(sharedModelContainer)
+    
+    #if os(macOS)
+    Settings {
+      SettingsView()
+    }
+    .modelContainer(sharedModelContainer)
+    #endif
   }
 }
 ```
