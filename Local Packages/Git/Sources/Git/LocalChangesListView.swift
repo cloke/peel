@@ -28,11 +28,9 @@ public struct LocalChangesListView: View {
   }
 }
 
-struct LocalChangesListView_Previews: PreviewProvider {
-  static var previews: some View {
-    LocalChangesListView()
-      .environment(Model.Repository(name: "blah", path: "."))
-  }
+#Preview {
+  LocalChangesListView()
+    .environment(Model.Repository(name: "blah", path: "."))
 }
 #endif
 

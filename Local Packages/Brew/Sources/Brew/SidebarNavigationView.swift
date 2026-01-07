@@ -119,8 +119,6 @@ public struct SidebarNavigationView: View {
   }
 }
 
-struct SidebarNavigationView_Previews: PreviewProvider {
-  static var previews: some View {
-    SidebarNavigationView()
-  }
+#Preview {
+  SidebarNavigationView()
 }

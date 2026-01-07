@@ -19,14 +19,12 @@ struct ResultDetailView: View {
   }
 }
 
-struct ResultDetailView_Previews: PreviewProvider {
-  static var previews: some View {
-    ResultDetailView(
-      resultStream: .constant(
-        ["Test", "Test 1"]
-      )
+#Preview {
+  ResultDetailView(
+    resultStream: .constant(
+      ["Test", "Test 1"]
     )
-  }
+  )
 }
 
 

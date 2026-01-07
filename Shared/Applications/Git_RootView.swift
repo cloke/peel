@@ -3,6 +3,7 @@
 //  KitchenSync
 //
 //  Created by Cory Loken on 12/20/20.
+//  Fixed deprecated Alert on 1/7/26
 //
 
 import SwiftUI
@@ -23,7 +24,6 @@ struct Git_RootView: View {
           .frame(minWidth: 100)
       }
     }
-    .frame(idealHeight: 400)
     .toolbar {
       ToolSelectionToolbar()
       RepositoriesMenuToolbarItem(repositories: viewModel.repositories, selectedRepository: $viewModel.selectedRepository)
@@ -44,12 +44,10 @@ struct Git_RootView: View {
         } label: { Image(systemName: "folder.badge.gear") }
       }
     }
-    .alert(isPresented: $repoNotFoundError) {
-      Alert(
-        title: Text("Repository Not Found!"),
-        message: Text("A git repository could not be found."),
-        dismissButton: .default(Text("Ok"))
-      )
+    .alert("Repository Not Found", isPresented: $repoNotFoundError) {
+      Button("OK", role: .cancel) { }
+    } message: {
+      Text("A git repository could not be found at that location.")
     }
     .sheet(isPresented: $isCloning) {
       CloneRepositoryView(isCloning: $isCloning)
@@ -59,9 +57,6 @@ struct Git_RootView: View {
   }
 }
 
-
-struct Git_RootView_Previews: PreviewProvider {
-  static var previews: some View {
-    Git_RootView()
-  }
+#Preview {
+  Git_RootView()
 }

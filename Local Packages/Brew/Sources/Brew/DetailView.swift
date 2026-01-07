@@ -157,8 +157,6 @@ struct DetailView: View {
   }
 }
 
-struct Brew_DetailView_Previews: PreviewProvider {
-  static var previews: some View {
-    DetailView(name: "apsx")
-  }
+#Preview {
+  DetailView(name: "apsx")
 }

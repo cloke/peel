@@ -41,16 +41,14 @@ struct LogEntryRowView: View {
 }
 
 
-struct LogEntryRowView_Previews: PreviewProvider {
-  static var previews: some View {
-    LogEntryRowView(
-      log: Model.LogEntry(
-        commit: "123",
-        date: Date() - 1000,
-        author: "Phillp J. Fry",
-        message: "It's just like the story of the grasshopper and the octopus. All year long the grasshopper kept burying acorns for winter while the octopus mooched off his girlfriend and watched TV. Then the winter came, and the grasshopper died, and the octopus ate all his acorns and also he got a racecar. Is any of this getting through to you?"
-      )
+#Preview {
+  LogEntryRowView(
+    log: Model.LogEntry(
+      commit: "123",
+      date: Date() - 1000,
+      author: "Phillp J. Fry",
+      message: "It's just like the story of the grasshopper and the octopus. All year long the grasshopper kept burying acorns for winter while the octopus mooched off his girlfriend and watched TV. Then the winter came, and the grasshopper died, and the octopus ate all his acorns and also he got a racecar. Is any of this getting through to you?"
     )
-    .frame(width: 200, height: 80)
-  }
+  )
+  .frame(width: 200, height: 80)
 }

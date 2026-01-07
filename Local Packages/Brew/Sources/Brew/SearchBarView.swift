@@ -47,12 +47,12 @@ struct SearchBarView: View {
   }
 }
 
-struct SearchBarView_Previews: PreviewProvider {
-  static var previews: some View {
-    Group {
-      SearchBarView(searchText: .constant("Phillip j"), isSearching: .constant(true))
-      SearchBarView(searchText: .constant("Phillip j"), isSearching: .constant(false))
-    }
+#Preview("Searching") {
+  SearchBarView(searchText: .constant("Phillip j"), isSearching: .constant(true))
     .padding()
-  }
+}
+
+#Preview("Not Searching") {
+  SearchBarView(searchText: .constant("Phillip j"), isSearching: .constant(false))
+    .padding()
 }

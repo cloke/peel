@@ -69,6 +69,7 @@ public struct BranchListView: View {
   public var location: Model.BranchType = .remote
     
   public var body: some View {
+    let _ = print("🟡 BranchListView rendering: \(label), repo: \(repository.name), branches: \(localBranches.count)")
     List {
     Section("test", isExpanded: $isExpanded) {
       ForEach(localBranches.indices, id: \.self) { index in
@@ -164,9 +165,7 @@ struct BranchRepositoryView: View {
   }
 }
 
-struct BranchListView_Previews: PreviewProvider {
-  static var previews: some View {
-    BranchListView(localBranches: .constant([]), label: "Test")
-  }
+#Preview {
+  BranchListView(localBranches: .constant([]), label: "Test")
 }
 #endif

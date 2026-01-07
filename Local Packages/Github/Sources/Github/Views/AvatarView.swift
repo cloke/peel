@@ -42,8 +42,6 @@ public struct AvatarView: View {
   }
 }
 
-struct AvatarView_Previews: PreviewProvider {
-  static var previews: some View {
-    AvatarView(url: URL(string: "test"))
-  }
+#Preview {
+  AvatarView(url: URL(string: "https://avatars.githubusercontent.com/u/1"))
 }

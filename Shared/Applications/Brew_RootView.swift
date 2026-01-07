@@ -17,8 +17,6 @@ struct Brew_RootView: View {
   }
 }
 
-struct Brew_RootView_Previews: PreviewProvider {
-  static var previews: some View {
-    Brew_RootView()
-  }
+#Preview {
+  Brew_RootView()
 }

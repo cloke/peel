@@ -13,6 +13,7 @@ public struct GitRootView: View {
   }
   
   public var body: some View {
+    let _ = print("🟣 GitRootView rendering body for repo: \(repository.name)")
     NavigationStack {
       List {
         LocalChangesListView()

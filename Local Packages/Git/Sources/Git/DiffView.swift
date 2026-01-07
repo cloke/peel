@@ -72,8 +72,6 @@ public struct DiffView: View {
 }
 
 
-struct DiffView_Previews: PreviewProvider {
-  static var previews: some View {
-    DiffView(diff: Diff())
-  }
+#Preview {
+  DiffView(diff: Diff())
 }
