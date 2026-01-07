@@ -18,6 +18,7 @@ public struct GitRootView: View {
         StashListView(repository: repository)
         BranchListView(localBranches: $repository.localBranches, label: "Local Branches", location: .local)
         BranchListView(localBranches: $repository.remoteBranches, label: "Remote Branches", location: .remote)
+        WorktreeListView()
       }
       .listStyle(.sidebar)
       .navigationTitle(repository.name)
