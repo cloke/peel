@@ -3,6 +3,7 @@
 //  PullRequestsView
 //
 //  Created by Cory Loken on 7/15/21.
+//  Updated for better empty/error states on 1/7/26
 //
 
 import SwiftUI
@@ -14,16 +15,22 @@ struct PullRequestDetailView: View {
   let pullRequest: Github.PullRequest
   
   var body: some View {
-    VStack(alignment: .leading) {
-      Text(pullRequest.title ?? "")
+    VStack(alignment: .leading, spacing: 16) {
+      Text(pullRequest.title ?? "Untitled")
         .font(.title)
+      
       Divider()
-      Text("Description")
-        .font(.headline)
-      ScrollView {
-        Markdown(Document(stringLiteral: pullRequest.body ?? ""))
+      
+      if let body = pullRequest.body, !body.isEmpty {
+        Text("Description")
+          .font(.headline)
+        ScrollView {
+          Markdown(Document(stringLiteral: body))
+        }
       }
+      
       PullRequestReviewRowView(organization: organization, repository: repository, pullNumber: pullRequest.number)
+      
       Spacer()
     }
     .padding()
@@ -41,7 +48,6 @@ struct PullRequestListView: View {
         NavigationLink(destination: PullRequestDetailView(organization: organization, repository: repository, pullRequest: pullRequest)) {
           PullRequestsListItemView(pullRequest: pullRequest, organization: organization, repository: repository)
         }
-        Divider()
       }
     }
   }
@@ -50,6 +56,7 @@ struct PullRequestListView: View {
 public struct PullRequestsView: View {
   @State private var pullRequests = [Github.PullRequest]()
   @State private var state: LoadingState = .loading
+  @State private var errorMessage: String?
   
   public let organization: Github.User
   public let repository: Github.Repository
@@ -60,24 +67,41 @@ public struct PullRequestsView: View {
   }
   
   public var body: some View {
-    VStack {
+    Group {
       switch state {
       case .loading:
-        ProgressView()
+        ProgressView("Loading pull requests...")
       case .loaded:
         PullRequestListView(organization: organization, repository: repository, pullRequests: pullRequests)
       case .empty:
-        Text("No Pull Requests Found")
+        ContentUnavailableView(
+          "No Pull Requests",
+          systemImage: "arrow.triangle.pull",
+          description: Text("This repository has no open pull requests")
+        )
       }
     }
     .task(id: repository.id) {
-      state = .loading
-      do {
-        pullRequests = try await Github.pullRequests(from: repository)
-        state = pullRequests.count == 0 ? .empty : .loaded
-      } catch {
-        print(error)
-      }
+      await loadPullRequests()
+    }
+    .alert("Error", isPresented: .constant(errorMessage != nil)) {
+      Button("OK") { errorMessage = nil }
+      Button("Retry") { Task { await loadPullRequests() } }
+    } message: {
+      Text(errorMessage ?? "")
+    }
+  }
+  
+  private func loadPullRequests() async {
+    state = .loading
+    errorMessage = nil
+    
+    do {
+      pullRequests = try await Github.pullRequests(from: repository)
+      state = pullRequests.isEmpty ? .empty : .loaded
+    } catch {
+      errorMessage = "Failed to load pull requests: \(error.localizedDescription)"
+      state = .empty
     }
   }
 }

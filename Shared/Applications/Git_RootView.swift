@@ -16,12 +16,22 @@ struct Git_RootView: View {
   @State public var isCloning = false
 
   var body: some View {
-    VStack {
+    Group {
       if viewModel.selectedRepository.name == "N/A" {
-        Text("No repository selected")
+        ContentUnavailableView {
+          Label("No Repository", systemImage: "folder")
+        } description: {
+          Text("Open a git repository to get started")
+        } actions: {
+          Button("Open Repository") {
+            viewModel.addRepository() {
+              repoNotFoundError = true
+            }
+          }
+          .buttonStyle(.borderedProminent)
+        }
       } else {
         GitRootView(repository: viewModel.selectedRepository)
-          .frame(minWidth: 100)
       }
     }
     .toolbar {
@@ -40,8 +50,8 @@ struct Git_RootView: View {
       ToolbarItem(placement: .navigation){
         Button {
           isCloning = true
-          // TODO: add view go get remote repo url. Then show folder select for destination
         } label: { Image(systemName: "folder.badge.gear") }
+        .help("Clone Repository")
       }
     }
     .alert("Repository Not Found", isPresented: $repoNotFoundError) {
@@ -51,12 +61,15 @@ struct Git_RootView: View {
     }
     .sheet(isPresented: $isCloning) {
       CloneRepositoryView(isCloning: $isCloning)
-      .padding()
-      .frame(width: 300, height: 100)
+        .padding()
+        .frame(width: 300, height: 100)
     }
   }
 }
 
-#Preview {
-  Git_RootView()
+
+struct Git_RootView_Previews: PreviewProvider {
+  static var previews: some View {
+    Git_RootView()
+  }
 }

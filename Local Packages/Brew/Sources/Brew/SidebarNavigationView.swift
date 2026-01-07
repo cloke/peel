@@ -3,6 +3,7 @@
 //  KitchenSync (iOS)
 //
 //  Created by Cory Loken on 12/19/20.
+//  Updated for error handling on 1/7/26
 //
 
 import SwiftUI
@@ -52,31 +53,40 @@ extension SidebarNavigationView {
   @Observable
   class ViewModel {
     var outputStream = [String]()
+    var isLoading = false
+    var errorMessage: String?
     
-    func installed() {
-      Task {
-        outputStream = []
-        do {
-          let results = try await Commands.simple(arguments: Command.BrewInstalled)
-          outputStream = results
-        } catch {
-          print("Failed to get installed packages: \(error)")
-        }
+    func installed() async {
+      isLoading = true
+      errorMessage = nil
+      outputStream = []
+      
+      do {
+        let results = try await Commands.simple(arguments: Command.BrewInstalled)
+        outputStream = results
+      } catch {
+        errorMessage = "Failed to get installed packages: \(error.localizedDescription)"
       }
+      
+      isLoading = false
     }
     
-    func available(term: String) {
-      Task {
-        var command = Command.BrewAvailable
-        command.append(term)
-        outputStream = []
-        do {
-          let results = try await Commands.simple(arguments: command)
-          outputStream = results
-        } catch {
-          print("Failed to search packages: \(error)")
-        }
+    func available(term: String) async {
+      isLoading = true
+      errorMessage = nil
+      outputStream = []
+      
+      var command = Command.BrewAvailable
+      command.append(term)
+      
+      do {
+        let results = try await Commands.simple(arguments: command)
+        outputStream = results
+      } catch {
+        errorMessage = "Failed to search packages: \(error.localizedDescription)"
       }
+      
+      isLoading = false
     }
   }
 }
@@ -92,11 +102,19 @@ public struct SidebarNavigationView: View {
       HStack {
         Button("Installed") {
           results.items = []
-          viewModel.installed()
+          Task { await viewModel.installed() }
         }
+        .disabled(viewModel.isLoading)
+        
         Button("Available") {
           results.items = []
-          viewModel.available(term: results.searchText)
+          Task { await viewModel.available(term: results.searchText) }
+        }
+        .disabled(viewModel.isLoading)
+        
+        if viewModel.isLoading {
+          ProgressView()
+            .controlSize(.small)
         }
       }
       .onChange(of: viewModel.outputStream) { _, data in
@@ -104,17 +122,28 @@ public struct SidebarNavigationView: View {
           results.items.insert(lastItem)
         }
       }
+      
       SearchBarView(searchText: $results.searchText, isSearching: $results.isSearching)
         .padding(.all)
-      List(results.filtered, id: \.self) { name in
-        NavigationLink(
-          destination:
-            DetailView(name: name)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-        ) {
-          Text(name)
+      
+      if results.filtered.isEmpty && !viewModel.isLoading {
+        ContentUnavailableView(
+          "No Packages",
+          systemImage: "shippingbox",
+          description: Text("Click 'Installed' or search for packages")
+        )
+      } else {
+        List(results.filtered, id: \.self) { name in
+          NavigationLink(destination: DetailView(name: name)) {
+            Text(name)
+          }
         }
       }
+    }
+    .alert("Error", isPresented: .constant(viewModel.errorMessage != nil)) {
+      Button("OK") { viewModel.errorMessage = nil }
+    } message: {
+      Text(viewModel.errorMessage ?? "")
     }
   }
 }

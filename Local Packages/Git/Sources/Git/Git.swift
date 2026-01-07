@@ -5,7 +5,6 @@ public struct GitRootView: View {
   @Bindable public var repository: Model.Repository
   
   public init(repository: Model.Repository) {
-    print("Switched to repository: \(repository.name)")
     self.repository = repository
     Task {
       await repository.load()
@@ -13,7 +12,6 @@ public struct GitRootView: View {
   }
   
   public var body: some View {
-    let _ = print("🟣 GitRootView rendering body for repo: \(repository.name)")
     NavigationStack {
       List {
         LocalChangesListView()

@@ -83,7 +83,6 @@ struct FileListView: View {
       DiffView(diff: diff)
       .navigationTitle("Local Changes")
       .task {
-        print("Refresh status on: \(repository.name)")
         await repository.refreshStatus()
       }
     }

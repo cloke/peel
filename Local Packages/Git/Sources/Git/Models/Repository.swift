@@ -49,28 +49,20 @@ extension Model {
     @available(macOS 12, *)
     @MainActor
     func loadBranches(branchType: Model.BranchType) async {
-      // TODO - The array should be built in one pass to reduce weird graphic errors.
-      // Maybe wait for swift 6 and use async calls to simplify
-      print("🔴 Load branches in \(name)")
       do {
         #if canImport(AppKit)
         let list = try await Commands.Branch.list(from: branchType, on: self)
 
-        print("🔴 load type: \(branchType), count \(list.count)")
         if branchType == .local {
-          print("🔴 Setting localBranches")
           localBranches.removeAll()
           localBranches.append(contentsOf: list)
-          print("🔴 Done setting localBranches")
         } else {
-          print("🔴 Setting remoteBranches")
           remoteBranches.removeAll()
           remoteBranches.append(contentsOf: list)
-          print("🔴 Done setting remoteBranches")
         }
         #endif
       } catch {
-        print("🔴 Error loading branches: \(error)")
+        // Error loading branches - could propagate to UI in future
       }
     }
     

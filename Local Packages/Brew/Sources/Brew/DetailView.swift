@@ -3,6 +3,7 @@
 //  KitchenSync (iOS)
 //
 //  Created by Cory Loken on 12/19/20.
+//  Updated for error handling on 1/7/26
 //
 
 import SwiftUI
@@ -54,54 +55,70 @@ extension DetailView {
     var versions: AvailableVersion? = nil
     var homepage = ""
     var name = ""
+    var isLoading = false
+    var isInstalling = false
+    var errorMessage: String?
         
     func details(of _name: String) async {
+      isLoading = true
+      errorMessage = nil
+      
       var cmd = Command.BrewInfo
       cmd.append(_name)
       
       do {
         let infos = try await Commands.executeJSON([Info].self, arguments: cmd)
-        guard let decoded = infos.first else { return }
+        guard let decoded = infos.first else {
+          errorMessage = "Package not found"
+          isLoading = false
+          return
+        }
         
-        // Already on MainActor, direct assignment
         self.name = decoded.name ?? ""
         self.desciption = decoded.description ?? ""
         self.homepage = decoded.homepage ?? ""
         self.installed = decoded.installed?.first
         self.versions = decoded.versions
       } catch {
-        // Handle error - could show to user
-        print("Failed to fetch brew info: \(error)")
+        errorMessage = "Failed to fetch package info: \(error.localizedDescription)"
       }
+      
+      isLoading = false
     }
     
     func install(target: String, name: String) {
       Task {
+        isInstalling = true
         outputStream.removeAll()
         do {
-          // Use arch command for target architecture and stream output
           let args = [target, "/opt/homebrew/bin/brew", "install", name]
           for try await line in await Commands.stream(arguments: args) {
             outputStream.append(line)
           }
+          // Refresh details after install
+          await details(of: name)
         } catch {
           outputStream.append("Installation failed: \(error.localizedDescription)")
         }
+        isInstalling = false
       }
     }
     
     func uninstall(target: String, name: String) {
       Task {
+        isInstalling = true
         outputStream.removeAll()
         do {
-          // Use arch command for target architecture and stream output
           let args = [target, "/opt/homebrew/bin/brew", "uninstall", name]
           for try await line in await Commands.stream(arguments: args) {
             outputStream.append(line)
           }
+          // Refresh details after uninstall
+          await details(of: name)
         } catch {
           outputStream.append("Uninstallation failed: \(error.localizedDescription)")
         }
+        isInstalling = false
       }
     }
   }
@@ -115,48 +132,86 @@ struct DetailView: View {
   var body: some View {
     #if os(macOS)
     VSplitView {
-      VStack {
-        HStack {
-          if viewModel.installed != nil {
-            Button("Uninstall") {
-              viewModel.uninstall(target: "-x86_64", name: viewModel.name)
-            }
-          } else if viewModel.versions != nil {
-            Button("Install x86_64 (Intel)") {
-              viewModel.install(target: "-x86_64", name: viewModel.name)
-            }
-            Button("Install arm (Apple Silicon)") {
-              viewModel.install(target: "-arm64", name: viewModel.name)
+      VStack(spacing: 12) {
+        if viewModel.isLoading {
+          ProgressView("Loading package info...")
+        } else if let error = viewModel.errorMessage {
+          ContentUnavailableView {
+            Label("Error", systemImage: "exclamationmark.triangle")
+          } description: {
+            Text(error)
+          } actions: {
+            Button("Retry") {
+              Task { await viewModel.details(of: name) }
             }
           }
-        }
-        Text(viewModel.name)
-        Text(viewModel.desciption)
-        if !viewModel.homepage.isEmpty {
-          Link("Project Homepge", destination: URL(string: viewModel.homepage)!)
-        }
-        if viewModel.installed != nil {
-          Text(viewModel.installed?.version ?? "")
-        } else if viewModel.versions != nil {
-          Text("Stable: \(viewModel.versions?.stable ?? "unknown")")
+        } else {
+          // Action buttons
+          HStack {
+            if viewModel.installed != nil {
+              Button("Uninstall") {
+                viewModel.uninstall(target: "-x86_64", name: viewModel.name)
+              }
+              .disabled(viewModel.isInstalling)
+            } else if viewModel.versions != nil {
+              Button("Install x86_64 (Intel)") {
+                viewModel.install(target: "-x86_64", name: viewModel.name)
+              }
+              .disabled(viewModel.isInstalling)
+              
+              Button("Install arm (Apple Silicon)") {
+                viewModel.install(target: "-arm64", name: viewModel.name)
+              }
+              .disabled(viewModel.isInstalling)
+            }
+            
+            if viewModel.isInstalling {
+              ProgressView()
+                .controlSize(.small)
+            }
+          }
+          
+          // Package info
+          Text(viewModel.name)
+            .font(.headline)
+          
+          Text(viewModel.desciption)
+            .foregroundStyle(.secondary)
+          
+          if !viewModel.homepage.isEmpty, let url = URL(string: viewModel.homepage) {
+            Link("Project Homepage", destination: url)
+          }
+          
+          if let installed = viewModel.installed {
+            Label("Installed: \(installed.version ?? "unknown")", systemImage: "checkmark.circle.fill")
+              .foregroundStyle(.green)
+          } else if let versions = viewModel.versions {
+            Label("Available: \(versions.stable ?? "unknown")", systemImage: "arrow.down.circle")
+              .foregroundStyle(.blue)
+          }
         }
       }
+      .padding()
+      
       Divider()
-      ScrollView(.vertical) {
-        ResultDetailView(resultStream: $viewModel.outputStream)
-          .frame(idealHeight: 100)
-          .background(Color.green)
+      
+      // Output stream
+      if !viewModel.outputStream.isEmpty {
+        ScrollView(.vertical) {
+          ResultDetailView(resultStream: $viewModel.outputStream)
+        }
+        .background(Color(nsColor: .textBackgroundColor))
       }
     }
     .task(id: name) {
       await viewModel.details(of: name)
     }
     #else
-    Text("This view is not for iOS")
+    Text("This view is not available on iOS")
     #endif
   }
 }
 
 #Preview {
-  DetailView(name: "apsx")
+  DetailView(name: "wget")
 }
