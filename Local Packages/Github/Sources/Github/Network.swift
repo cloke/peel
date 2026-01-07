@@ -3,35 +3,15 @@
 //  Network
 //
 //  Created by Cory Loken on 7/15/21.
-//  Cleaned up error handling on 1/7/26
 //
 
 import Alamofire
 import OAuthSwift
 import SwiftUI
-import os
 
-enum GithubError: LocalizedError {
+enum GithubError: Error {
   case couldNotDecode
-  case invalidRepository
-  case missingOwner
-  case authenticationFailed(String)
-  
-  var errorDescription: String? {
-    switch self {
-    case .couldNotDecode:
-      return "Failed to decode response from GitHub"
-    case .invalidRepository:
-      return "Invalid repository configuration"
-    case .missingOwner:
-      return "Repository owner is missing"
-    case .authenticationFailed(let message):
-      return "Authentication failed: \(message)"
-    }
-  }
 }
-
-private let logger = Logger(subsystem: "com.kitchensync", category: "GitHub")
 
 extension Github {
   /// Allows the application initializers to call back into SwiftUI after OAuth has been completed in the browser
@@ -63,7 +43,7 @@ extension Github {
     } catch KeychainService.KeychainError.itemNotFound {
       return ""
     } catch {
-      logger.error("Failed to retrieve token from keychain: \(error.localizedDescription)")
+      print("Failed to retrieve token from keychain: \(error)")
       return ""
     }
   }
@@ -72,7 +52,8 @@ extension Github {
   /// - parameter organization: The github organization or personal repository name
   public static func pullRequests(from repository: Github.Repository) async throws -> [Github.PullRequest] {
     guard let organization = repository.owner?.login else {
-      throw GithubError.missingOwner
+      print("Issue generating url for repository")
+      throw AFError.invalidURL(url: "")
     }
     return try await loadMany(url: "https://api.github.com/repos/\(organization)/\(repository.name)/pulls")
   }
@@ -94,20 +75,28 @@ extension Github {
     try await load(url: "https://api.github.com/user")
   }
   
+  /// Fetch a single repository by owner and name
+  public static func repository(owner: String, name: String) async throws -> Github.Repository {
+    try await load(url: "https://api.github.com/repos/\(owner)/\(name)")
+  }
+  
+  /// Fetch a user by login
+  public static func user(login: String) async throws -> Github.User {
+    try await load(url: "https://api.github.com/users/\(login)")
+  }
+  
   public static func members(from organization: User) async throws -> [Github.User]  {
-    guard let membersUrl = organization.members_url else {
+    if organization.members_url == nil {
       throw AFError.invalidURL(url: "members only exist on organization users")
     }
     /// Git adds /{member} to the url, but we want just the array url.
-    let url = "\(membersUrl[..<membersUrl.index(membersUrl.endIndex, offsetBy: -9)])"
+    let url = "\(organization.members_url![..<organization.members_url!.index(organization.members_url!.endIndex, offsetBy: -9)])"
     return try await loadMany(url: url)
   }
   
   public static func commits(from repository: Repository) async throws -> [Github.Commit] {
-    guard let commitsUrl = repository.commits_url else {
-      throw GithubError.invalidRepository
-    }
-    let url = "\(commitsUrl[..<commitsUrl.index(commitsUrl.endIndex, offsetBy: -6)])"
+    let url = "\(repository.commits_url![..<repository.commits_url!.index(repository.commits_url!.endIndex, offsetBy: -6)])"
+
     return try await loadMany(url: url)
   }
   
@@ -122,14 +111,16 @@ extension Github {
   
   static func actions(from repository: Repository) async throws -> Runs {
     guard let organization = repository.owner?.login else {
-      throw GithubError.missingOwner
+      print("Issue generating url for repository")
+      throw AFError.invalidURL(url: "")
     }
     return try await load(url: "https://api.github.com/repos/\(organization)/\(repository.name)/actions/runs")
   }
   
   public static func workflows(from repository: Repository) async throws -> [Workflow] {
     guard let organization = repository.owner?.login else {
-      throw GithubError.missingOwner
+      print("Issue generating url for repository")
+      throw AFError.invalidURL(url: "")
     }
     let url = "https://api.github.com/repos/\(organization)/\(repository.name)/actions/workflows"
 
@@ -146,7 +137,8 @@ extension Github {
   /// - Returns: An array of Github actions. [Github.Action]
   public static func runs(from workflow: Workflow, repository: Repository) async throws -> [Action] {
     guard let organization = repository.owner?.login else {
-      throw GithubError.missingOwner
+      print("Issue generating url for repository")
+      throw AFError.invalidURL(url: "")
     }
     let url = "https://api.github.com/repos/\(organization)/\(repository.name)/actions/workflows/\(workflow.id)/runs"
     guard let workflowContainer: Github.Runs = try await load(url: url) else {
@@ -161,10 +153,7 @@ extension Github {
   ///   - repository: Github.Repository referencing a repository containing issues
   /// - Returns: An array of github issues
   static func issues(from repository: Repository) async throws -> [Issue] {
-    guard let issuesUrl = repository.issues_url else {
-      throw GithubError.invalidRepository
-    }
-    let url = "\(issuesUrl[..<issuesUrl.index(issuesUrl.endIndex, offsetBy: -9)])"
+    let url = "\(repository.issues_url![..<repository.issues_url!.index(repository.issues_url!.endIndex, offsetBy: -9)])"
     return try await loadMany(url: url)
   }
   
@@ -177,7 +166,8 @@ extension Github {
     
     guard let organization = repository.owner?.login,
           let url = URL(string: "https://api.github.com/repos/\(organization)/\(repository.name)/issues") else {
-      throw GithubError.missingOwner
+      print("Issue generating url for repository")
+      throw AFError.invalidURL(url: "")
     }
     
     let headers = await headers
@@ -208,11 +198,14 @@ extension Github {
   public static func authorize() async throws -> Void {
     let currentToken = await getToken()
     if !currentToken.isEmpty {
-      logger.info("Token already exists, skipping OAuth")
+      print("Token already exists")
       return
     }
     
-    logger.info("Starting GitHub OAuth flow")
+    print("=== Starting GitHub OAuth ===")
+    print("Client ID: Ov23liMnGh1bRfKc0qpU")
+    print("Callback URL: crunchy-kitchen-sink://oauth-callback")
+    print("============================")
     
     let oauthswift = OAuth2Swift(
       consumerKey:    "Ov23liMnGh1bRfKc0qpU",
@@ -226,6 +219,7 @@ extension Github {
     oauthswift.authorizeURLHandler = OAuthSwiftOpenURLExternally.sharedInstance
     
     let state = generateState(withLength: 20)
+    print("Generated OAuth state: \(state)")
     
     return try await withCheckedThrowingContinuation { continuation in
       oauthswift.authorize(
@@ -235,16 +229,17 @@ extension Github {
             Task {
               do {
                 try await KeychainService.shared.save(credential.oauthToken, for: "github-oauth-token")
-                logger.info("OAuth successful, token saved to keychain")
+                print("OAuth successful, token saved to keychain")
                 continuation.resume()
               } catch {
-                logger.error("Failed to save token to keychain: \(error.localizedDescription)")
+                print("Failed to save token to keychain: \(error)")
                 continuation.resume(throwing: error)
               }
             }
           case .failure(let err):
-            logger.error("OAuth failed: \(err.localizedDescription)")
-            continuation.resume(throwing: GithubError.authenticationFailed(err.localizedDescription))
+            print("OAuth failed: \(err.localizedDescription)")
+            print("OAuth error details: \(err)")
+            continuation.resume(throwing: err)
           }
         }
     }

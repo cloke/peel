@@ -18,8 +18,6 @@ struct Github_RootView: View {
   
   @State private var organizations = [Github.User]()
   @State private var columnVisibility = NavigationSplitViewVisibility.all
-  @State private var mainSelection = ["A", "B", "C"]
-  @State private var selection: String?
   @State private var hasToken = false
   
   var body: some View {
@@ -29,8 +27,18 @@ struct Github_RootView: View {
         if let provider = dataProvider, !provider.getFavorites().isEmpty {
           Section("Favorites") {
             ForEach(provider.getFavorites()) { favorite in
-              FavoriteRepositoryRow(favorite: favorite) {
-                // TODO: Navigate to repository
+              NavigationLink(destination: FavoriteRepositoryDestination(favorite: favorite)) {
+                HStack {
+                  Image(systemName: "star.fill")
+                    .foregroundStyle(.yellow)
+                  VStack(alignment: .leading, spacing: 2) {
+                    Text(favorite.repoName)
+                      .font(.callout)
+                    Text(favorite.ownerLogin)
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                  }
+                }
               }
             }
           }
@@ -40,8 +48,20 @@ struct Github_RootView: View {
         if let provider = dataProvider, !provider.getRecentPRs().isEmpty {
           Section("Recent PRs") {
             ForEach(provider.getRecentPRs().prefix(5)) { recent in
-              RecentPRRow(recentPR: recent) {
-                // TODO: Navigate to PR
+              NavigationLink(destination: RecentPRDestination(recentPR: recent)) {
+                HStack {
+                  Image(systemName: recent.state == "open" ? "circle.fill" : "checkmark.circle.fill")
+                    .foregroundStyle(recent.state == "open" ? .green : .purple)
+                    .font(.caption)
+                  VStack(alignment: .leading, spacing: 2) {
+                    Text("#\(recent.prNumber) \(recent.title)")
+                      .font(.callout)
+                      .lineLimit(1)
+                    Text(recent.repoFullName)
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                  }
+                }
               }
             }
           }
@@ -80,7 +100,6 @@ struct Github_RootView: View {
                 organizations = try await Github.loadOrganizations()
               } catch {
                 print("Error loading user data: \(error)")
-                // Token may be invalid, clear it
                 await Github.reauthorize()
                 hasToken = false
               }
@@ -121,6 +140,98 @@ struct Github_RootView: View {
           Image(systemName: "gear")
         }
       }
+    }
+  }
+}
+
+// MARK: - Destination Views
+
+/// Loads and displays a favorited repository
+struct FavoriteRepositoryDestination: View {
+  let favorite: FavoriteRepository
+  
+  @State private var repository: Github.Repository?
+  @State private var owner: Github.User?
+  @State private var isLoading = true
+  @State private var error: String?
+  
+  var body: some View {
+    Group {
+      if isLoading {
+        ProgressView("Loading repository...")
+      } else if let error {
+        VStack {
+          Text("Failed to load repository")
+            .font(.headline)
+          Text(error)
+            .foregroundStyle(.secondary)
+          Button("Retry") {
+            Task { await loadRepository() }
+          }
+        }
+      } else if let repository, let owner {
+        RepositoryContainerView(organization: owner, repository: repository)
+      }
+    }
+    .task {
+      await loadRepository()
+    }
+  }
+  
+  private func loadRepository() async {
+    isLoading = true
+    error = nil
+    do {
+      async let repoTask = Github.repository(owner: favorite.ownerLogin, name: favorite.repoName)
+      async let ownerTask = Github.user(login: favorite.ownerLogin)
+      (repository, owner) = try await (repoTask, ownerTask)
+    } catch {
+      self.error = error.localizedDescription
+    }
+    isLoading = false
+  }
+}
+
+/// Loads and displays a recent PR
+struct RecentPRDestination: View {
+  let recentPR: RecentPRInfo
+  
+  @State private var isLoading = true
+  @State private var error: String?
+  
+  var body: some View {
+    Group {
+      if isLoading {
+        ProgressView("Loading PR...")
+      } else if let error {
+        VStack {
+          Text("Failed to load PR")
+            .font(.headline)
+          Text(error)
+            .foregroundStyle(.secondary)
+        }
+      } else {
+        VStack(spacing: 16) {
+          Text("#\(recentPR.prNumber)")
+            .font(.largeTitle)
+            .foregroundStyle(.secondary)
+          Text(recentPR.title)
+            .font(.title2)
+          Text(recentPR.repoFullName)
+            .foregroundStyle(.secondary)
+          
+          if let urlString = recentPR.htmlURL, let url = URL(string: urlString) {
+            Link(destination: url) {
+              Label("Open in Browser", systemImage: "safari")
+            }
+            .buttonStyle(.borderedProminent)
+          }
+        }
+        .padding()
+      }
+    }
+    .task {
+      isLoading = false
     }
   }
 }
