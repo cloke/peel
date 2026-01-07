@@ -474,3 +474,74 @@ do {
 
 **Last Updated:** January 5, 2026  
 **Modernization Status:** In Progress - See SWIFTUI_MODERNIZATION_PLAN.md
+
+---
+
+## SwiftData & iCloud Sync
+
+### CloudKit Compatibility Requirements
+When creating or modifying `@Model` classes for SwiftData with iCloud sync:
+
+```swift
+// ✅ CORRECT - CloudKit compatible
+@Model
+final class MyModel {
+  var id: UUID = UUID()           // Default value required
+  var name: String = ""           // Default value required  
+  var count: Int = 0              // Default value required
+  var optionalField: String?      // Optional is fine
+  var createdAt: Date = Date()    // Default value required
+}
+
+// ❌ WRONG - Will crash with CloudKit
+@Model
+final class MyModel {
+  @Attribute(.unique) var id: UUID  // No unique constraints!
+  var name: String                   // No default = crash
+  var count: Int                     // No default = crash
+}
+```
+
+**CloudKit Rules:**
+1. **No `@Attribute(.unique)`** - CloudKit doesn't support unique constraints
+2. **All non-optional properties must have default values**
+3. **No relationships with delete rules** - Use UUID references instead
+4. **Test locally first** with `cloudKitDatabase: .none` before enabling `.automatic`
+
+### iCloud Configuration
+- Entitlements are in `macOS/macOS.entitlements`
+- Container ID: `iCloud.crunchy-bananas.KitchenSink`
+- SwiftData config in `KitchenSyncApp.swift` uses `cloudKitDatabase: .automatic`
+
+---
+
+## Agent Tool Usage
+
+### File Verification
+When editing files, the tool cache may show stale content. If you suspect a file wasn't updated:
+
+```bash
+# Always verify with terminal commands
+cat /path/to/file | head -20
+grep "specific text" /path/to/file
+tail -10 /path/to/file
+```
+
+### When Replacements Fail
+If `replace_string_in_file` reports success but the file hasn't changed:
+1. Use `sed` or direct file manipulation via terminal
+2. Verify changes with `grep` or `cat`
+3. Don't repeatedly try the same replacement
+
+```bash
+# Direct sed replacement
+sed -i '' 's/old text/new text/' /path/to/file
+
+# Verify
+grep "new text" /path/to/file
+```
+
+---
+
+**Last Updated:** January 7, 2026  
+**Modernization Status:** Complete - See MODERNIZATION_COMPLETE.md
