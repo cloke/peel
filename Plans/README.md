@@ -6,30 +6,35 @@ This folder contains planning documents, architecture decisions, and roadmaps fo
 
 | Document | Description | Status |
 |----------|-------------|--------|
-| [UX_MODERNIZATION_PLAN.md](./UX_MODERNIZATION_PLAN.md) | UI/UX polish and outdated pattern fixes | 🔴 Not Started |
-| [AGENT_ORCHESTRATION_PLAN.md](./AGENT_ORCHESTRATION_PLAN.md) | AI Agent Orchestration integration (future) | 🟡 Planning |
+| [WORKTREE_FEATURE_PLAN.md](./WORKTREE_FEATURE_PLAN.md) | Git worktree management with VS Code | ✅ Phase 1 Complete |
+| [SWIFTDATA_PLAN.md](./SWIFTDATA_PLAN.md) | SwiftData + iCloud sync integration | 🟡 Planning |
+| [AGENT_ORCHESTRATION_PLAN.md](./AGENT_ORCHESTRATION_PLAN.md) | AI Agent workspace management (future) | 🟡 Planning |
 
-## Reference Documents
+## Completed Documents
 
 | Document | Description |
 |----------|-------------|
-| [MODERNIZATION_COMPLETE.md](./MODERNIZATION_COMPLETE.md) | Summary of Swift 6 modernization (Sessions 1-4) |
-| [SWIFTUI_MODERNIZATION_PLAN.md](./SWIFTUI_MODERNIZATION_PLAN.md) | Original modernization plan (✅ Complete) |
+| [UX_MODERNIZATION_PLAN.md](./UX_MODERNIZATION_PLAN.md) | UI/UX polish and fixes | ✅ Complete |
+| [MODERNIZATION_COMPLETE.md](./MODERNIZATION_COMPLETE.md) | Swift 6 modernization summary |
+| [SWIFTUI_MODERNIZATION_PLAN.md](./SWIFTUI_MODERNIZATION_PLAN.md) | Original code modernization |
 
 ## Archive
 
-Completed plans and session notes are in the `Archive/` folder.
+Completed session notes and historical documents are in the `Archive/` folder.
 
 ## Quick Start
 
-**Want to improve the app?**
-1. Read `UX_MODERNIZATION_PLAN.md` - identifies all UX issues
-2. Start with Phase 1 (critical fixes, 30 min)
-3. Optionally continue to Phase 2-6
+**Current Focus:**
+1. `WORKTREE_FEATURE_PLAN.md` - Git worktree management (Phase 1 done)
+2. `SWIFTDATA_PLAN.md` - Decide on persistence strategy
 
-**Want to add features?**
-1. Complete at least UX Phase 1 first (fix crash risks)
-2. Then proceed with feature development
+**Feature Roadmap:**
+1. ✅ Swift 6 modernization
+2. ✅ UX polish  
+3. ✅ Worktrees (basic)
+4. 🟡 SwiftData (optional)
+5. 🟡 PR → Worktree integration
+6. 🔴 Agent orchestration
 
 ## Plan Template
 
