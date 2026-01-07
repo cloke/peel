@@ -32,7 +32,7 @@ struct KitchenSyncApp: App {
     let modelConfiguration = ModelConfiguration(
       schema: schema,
       isStoredInMemoryOnly: false,
-      cloudKitDatabase: .none  // Change to .automatic when ready for iCloud
+      cloudKitDatabase: .automatic  // Change to .automatic when ready for iCloud
     )
     
     do {
