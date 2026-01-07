@@ -15,7 +15,7 @@ struct FileListView: View {
   @FocusState private var commitIsFocused: Bool
   
   var body: some View {
-    NavigationView {
+    NavigationStack {
       List {
         ZStack {
           TextEditor(text: $commitMessage)
@@ -81,10 +81,11 @@ struct FileListView: View {
       }
       .listStyle(.sidebar)
       DiffView(diff: diff)
-    }
-    .task {
-      print("Refresh status on: \(repository.name)")
-      await repository.refreshStatus()
+      .navigationTitle("Local Changes")
+      .task {
+        print("Refresh status on: \(repository.name)")
+        await repository.refreshStatus()
+      }
     }
   }
   

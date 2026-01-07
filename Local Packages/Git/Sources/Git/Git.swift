@@ -13,21 +13,16 @@ public struct GitRootView: View {
   }
   
   public var body: some View {
-    NavigationView {
-      VStack {
-        List {
-          LocalChangesListView()
-          StashListView(repository: repository)
-          BranchListView(localBranches: $repository.localBranches, label: "Local Branches", location: .local)
-          BranchListView(localBranches: $repository.remoteBranches, label: "Remote Branches", location: .remote)
-        }
-        .listStyle(.sidebar)
-        .navigationDestination(for: String.self) { branchName in
-          HistoryListView(branch: branchName)
-        }
+    NavigationStack {
+      List {
+        LocalChangesListView()
+        StashListView(repository: repository)
+        BranchListView(localBranches: $repository.localBranches, label: "Local Branches", location: .local)
+        BranchListView(localBranches: $repository.remoteBranches, label: "Remote Branches", location: .remote)
       }
+      .listStyle(.sidebar)
+      .navigationTitle(repository.name)
       .environmentObject(repository)
-      Text("Hello")
     }
   }
 }

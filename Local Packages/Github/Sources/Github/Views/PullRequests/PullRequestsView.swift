@@ -36,27 +36,14 @@ struct PullRequestListView: View {
   let pullRequests: [Github.PullRequest]
   
   var body: some View {
-#if os(macOS)
-    NavigationView {
-      List {
-        ForEach(pullRequests) { pullRequest in
-          NavigationLink(destination: PullRequestDetailView(organization: organization, repository: repository, pullRequest: pullRequest)) {
-            PullRequestsListItemView(pullRequest: pullRequest, organization: organization, repository: repository)
-          }
-          Divider()
-        }
-      }
-    }
-#else
     List {
       ForEach(pullRequests) { pullRequest in
         NavigationLink(destination: PullRequestDetailView(organization: organization, repository: repository, pullRequest: pullRequest)) {
           PullRequestsListItemView(pullRequest: pullRequest, organization: organization, repository: repository)
         }
+        Divider()
       }
     }
-    .navigationBarTitleDisplayMode(.inline)
-#endif
   }
 }
 

@@ -55,25 +55,14 @@ struct IssuesListView: View {
       case .loading:
         ProgressView()
       case .loaded:
-#if os(macOS)
-        NavigationView {
-          List(issues) { issue in
-            VStack {
-              NavigationLink(destination: IssueDetailView(issue: issue)) {
-                IssueListItemView(issue: issue)
-              }
-              Divider()
-            }
-          }
-        }
-#else
         List(issues) { issue in
-          NavigationLink(destination: IssueDetailView(issue: issue)) {
-            IssueListItemView(issue: issue)
+          VStack {
+            NavigationLink(destination: IssueDetailView(issue: issue)) {
+              IssueListItemView(issue: issue)
+            }
+            Divider()
           }
         }
-        .navigationBarTitleDisplayMode(.inline)
-#endif
       case .empty:
         Text("No issues found")
       }

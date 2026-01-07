@@ -59,15 +59,12 @@ struct Github_RootView: View {
                 await Github.reauthorize()
                 hasToken = false
               }
-            }
           }
+        }
       }
-    } content: {
-      Text("Yo 2")
     } detail: {
-      ZStack {
-        Text("Select an organization")
-      }
+      Text("Select an organization or repository")
+        .foregroundStyle(.secondary)
     }
     .navigationSplitViewStyle(.automatic)
     .environment(viewModel)

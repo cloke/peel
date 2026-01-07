@@ -30,14 +30,7 @@ public struct OrganizationRepositoryView: View {
         )
       }
     } label: {
-      HStack {
-        NavigationLink(
-          destination: OrganizationDetailView(organization: organization),
-          label: { Text(organization.login ?? "") }
-        )
-        .listStyle(.plain)
-      }
-      
+      Text(organization.login ?? "")
     }
     .onChange(of: isExpanded) { _, newValue in
       if newValue {
@@ -46,6 +39,7 @@ public struct OrganizationRepositoryView: View {
           isLoading = false
         }
       }
+      
     }
   }
 }

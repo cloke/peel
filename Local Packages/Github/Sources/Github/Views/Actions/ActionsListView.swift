@@ -98,27 +98,13 @@ struct ActionsListView: View {
   let actions: [Github.Action]
   
   var body: some View {
-    Group {
-#if os(macOS)
-      NavigationView {
-        List(actions.sorted(by: { $0.updated_at > $1.updated_at })) { action in
-          VStack {
-            NavigationLink(destination: ActionDetailView(action: action)) {
-              ActionsListItemView(action: action)
-            }
-            Divider()
-          }
+    List(actions.sorted(by: { $0.updated_at > $1.updated_at })) { action in
+      VStack {
+        NavigationLink(destination: ActionDetailView(action: action)) {
+          ActionsListItemView(action: action)
         }
+        Divider()
       }
-#else
-      List {
-        ForEach(actions.sorted(by: { $0.updated_at > $1.updated_at })) { action in
-          NavigationLink(destination: ActionDetailView(action: action)) {
-            ActionsListItemView(action: action)
-          }
-        }
-      }
-#endif
     }
   }
 }

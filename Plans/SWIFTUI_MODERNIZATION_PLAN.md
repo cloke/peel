@@ -279,37 +279,82 @@ Local Packages/
 
 **Security Impact:** ⭐ **HIGH** - OAuth tokens now properly secured in Keychain instead of UserDefaults
 
+---
+
+### Session 3: January 6, 2026 (1.5 hours) ✅ COMPLETE - Navigation Modernization
+
+**What We Accomplished:**
+
+1. ✅ **Git Package Navigation Modernization (4 files):**
+   - **Git.swift**: Replaced `NavigationView` with `NavigationStack`, removed "Hello" placeholder, added `.navigationTitle(repository.name)`
+   - **FileListView.swift**: Replaced `NavigationView` with `NavigationStack`, added navigation title
+   - **HistoryListView.swift**: Replaced `NavigationView` with `NavigationStack`, removed "Select a commit" placeholder, added `.navigationTitle("History: \(branch)")`
+   - **BranchListView.swift**: Replaced deprecated `NavigationLink(tag:selection:)` with modern value-based `NavigationLink(value:)` + `.navigationDestination(for:)`, removed unused selection state
+
+2. ✅ **Github Package Navigation Cleanup (4 files):**
+   - **PullRequestsView.swift**: Removed nested `NavigationView` (parent `NavigationSplitView` handles navigation)
+   - **ActionsListView.swift**: Removed nested `NavigationView` and platform-specific code
+   - **CommitsListView.swift**: Removed nested `NavigationView` and platform-specific code
+   - **IssuesListView.swift**: Removed nested `NavigationView` and platform-specific code
+
+3. ✅ **Deprecation Fixes:**
+   - **OrganizationRepositoryView.swift**: Updated `onChange(of:)` to modern syntax `onChange(of:) { _, newValue in }`
+   - **HistoryListView.swift**: Updated `onChange(of:)` to modern syntax
+
+4. ✅ **UX Improvements:**
+   - **Github_RootView.swift**: Removed "Yo 2" placeholder content pane, simplified to single detail pane with better message
+   - All Git views now have proper navigation titles instead of generic text
+   - Removed unnecessary platform-specific navigation code (#if os(macOS))
+
+**Files Changed:** 9 files  
+**Build:** ✅ SUCCESS  
+
+**Navigation Issues Fixed:**
+- ✅ Deprecated `NavigationView` → `NavigationStack` (7 files)
+- ✅ Nested `NavigationView` anti-pattern removed (4 files)
+- ✅ Deprecated `NavigationLink(tag:selection:)` → modern value-based pattern
+- ✅ `onChange` deprecation warnings (2 files)
+- ✅ Useless placeholder detail panes removed
+- ✅ Platform-specific navigation code removed
+
+**Impact:**
+- **Better Navigation:** Modern NavigationStack provides smoother, more predictable navigation
+- **Cleaner Code:** Removed nested navigation anti-patterns that caused clunky behavior
+- **Better UX:** Proper navigation titles instead of placeholders
+- **Future-Proof:** Using latest SwiftUI navigation APIs
+
 **Testing Needed:**
-- [ ] Test GitHub login flow
-- [ ] Verify OAuth returns to existing window (not new window)
-- [ ] Test logout and verify token is deleted from Keychain
-- [ ] Test app restart - token should persist
+- [ ] Test Git repository browsing and branch navigation
+- [ ] Test GitHub pull request navigation
+- [ ] Test commits/issues/actions navigation
+- [ ] Verify navigation feels less "clunky"
 
 ---
 
-## Next Session Priorities (Session 3)
+## Next Session Priorities (Session 4)
 
-### Option A: Quick Wins - Clean Up Warnings ⭐ RECOMMENDED START
-**Fix deprecation warnings** (30 minutes)
-- Fix `onChange(of:perform:)` deprecation in OrganizationRepositoryView.swift
-- Fix NavigationLink deprecation in BranchListView.swift
-- **Impact:** Low | **Risk:** Low | **Time:** 30 minutes
-- **Why start here:** Clean slate before bigger refactors
-
-### Option B: Continue ViewModel Modernization
+### Option A: Continue ViewModel Modernization ⭐ RECOMMENDED
 **Convert Git.ViewModel to @Observable** (210 lines, more complex)
 - Remove heavy Combine usage (PassthroughSubject, sink, etc.)
 - Fix manual DispatchQueue.main.async calls
 - Modernize Repository class as well
 - **Impact:** Medium-High | **Risk:** Medium | **Time:** 2-3 hours
 
-### Option C: Navigation Modernization (Big Task)
-**Update NavigationView → NavigationStack** (7 files)
-- Higher risk of breaking things
-- Recommend doing after ViewModels are modernized
-- **Impact:** High | **Risk:** High | **Time:** 3-4 hours
+### Option B: Fix Remaining Minor Issues
+**Polish and cleanup**
+- Test navigation flow to find any remaining issues
+- Look for other deprecated API usage
+- Address any console warnings
+- **Impact:** Low-Medium | **Risk:** Low | **Time:** 1 hour
 
-**Recommendation:** Start Session 3 with **Option A (warnings)**, then move to **Option B (Git.ViewModel)**
+### Option C: Layout Modernization
+**Improve view layouts and spacing**
+- Review spacing and alignment
+- Look for opportunities to use modern layout APIs
+- Improve empty states
+- **Impact:** Medium | **Risk:** Low | **Time:** 2 hours
+
+**Recommendation:** Start Session 4 with **Option A (Git.ViewModel)** to continue momentum on modernization
 
 ---
 

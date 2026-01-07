@@ -58,7 +58,6 @@ struct BranchListItemView: View {
 public struct BranchListView: View {
   @EnvironmentObject var repository: Model.Repository
   
-  @State public private(set) var selection: String?
   @State private var isShowing = false
   // TODO: Should we persist this as state?
   @State private var isExpanded = false
@@ -77,11 +76,8 @@ public struct BranchListView: View {
           BranchListItemView(
             branch: $localBranches[index],
             type: location,
-            selected: {
-              self.selection = localBranches[index].name
-            },
+            selected: {},
             activated: {
-              self.selection = localBranches[index].name
               Task { @MainActor in
                 let branch = localBranches[index].name
                 _ = try await Commands.checkout(branch: branch , from: repository)
@@ -97,6 +93,9 @@ public struct BranchListView: View {
               }
             }
           )
+        }
+        .navigationDestination(for: String.self) { branchName in
+          HistoryListView(branch: branchName)
         }
         .font(.footnote)
         .sheet(isPresented: $isShowing) {
