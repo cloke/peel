@@ -298,7 +298,7 @@ Local Packages/
    - **IssuesListView.swift**: Removed nested `NavigationView` and platform-specific code
 
 3. ✅ **Deprecation Fixes:**
-   - **OrganizationRepositoryView.swift**: Updated `onChange(of:)` to modern syntax `onChange(of:) { _, newValue in }`
+   - **OrganizationRepositoryView.swift**: Updated `onChange(of:)` to modern syntax `onChange(of:) { _, newValue in }`, **fixed nested NavigationLink in label causing repo selection not to update main window**
    - **HistoryListView.swift**: Updated `onChange(of:)` to modern syntax
 
 4. ✅ **UX Improvements:**
@@ -322,6 +322,7 @@ Local Packages/
 - **Cleaner Code:** Removed nested navigation anti-patterns that caused clunky behavior
 - **Better UX:** Proper navigation titles instead of placeholders
 - **Future-Proof:** Using latest SwiftUI navigation APIs
+- **Bug Fix:** Fixed repository selection not updating main window (caused by nested NavigationLink in DisclosureGroup label)
 
 **Testing Needed:**
 - [ ] Test Git repository browsing and branch navigation
