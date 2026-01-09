@@ -28,7 +28,15 @@
 **Fix:** Get token from `gh auth token` and pass as `GH_TOKEN` environment variable.
 
 ### 4. Model Info Display ✅
-**Added:** Parse copilot output stats and display model info:
+**Problem:** Stats weren't showing - content goes to stdout but stats go to stderr!
+
+**Fix:** Combine stdout + stderr before parsing:
+```swift
+let combinedOutput = result.stdoutString + "\n" + result.stderrString
+return parseCopilotOutput(combinedOutput)
+```
+
+**Now displays:**
 - Model name (e.g., `claude-sonnet-4.5`)
 - Duration
 - Token usage (input/output)
@@ -46,6 +54,48 @@
 
 ---
 
+## Committed: b5f7b74
+
+---
+
+## Next Steps (Priority Order)
+
+### 1. Model Selection (Easy Win) 🎯
+Add ability to select model for Copilot agents. Available models:
+- **Claude:** `claude-sonnet-4.5` (default), `claude-haiku-4.5`, `claude-opus-4.5`, `claude-sonnet-4`
+- **GPT:** `gpt-5.1-codex-max`, `gpt-5.1-codex`, `gpt-5.2`, `gpt-5.1`, `gpt-5`, `gpt-5.1-codex-mini`, `gpt-5-mini`
+
+Implementation:
+- Add `model` property to Agent
+- Add model picker in NewAgentSheet and AgentDetailView
+- Pass `--model <model>` to copilot CLI
+
+### 2. Multi-Agent Coordination (Medium) 🔄
+Allow two agents to work on related tasks:
+- Agent A: Research/planning
+- Agent B: Implementation
+- Shared context/output between them
+- Sequential or parallel execution
+
+### 3. Working Directory Context (Medium)
+Run copilot in a specific repo directory for better context:
+- Select repository from GitHub tab
+- Pass `workingDirectory` to `runCopilotSession`
+- Agent understands project structure
+
+### 4. Streaming Output (Nice to Have)
+Show response as it generates instead of waiting:
+- Use `AsyncStream` to yield lines as they arrive
+- Update UI progressively
+
+### 5. Git Worktree Integration (Complex)
+Create isolated branches for agent work:
+- `WorkspaceManager.createWorkspace()` creates worktree
+- Agent works in isolated branch
+- Review changes before merge
+
+---
+
 ## How to Test
 
 1. **Open the app** - Go to Agents tab (robot icon in toolbar)
@@ -57,7 +107,7 @@
    - Prompt: "What is 2+2?"
    - Click "Assign"
 5. **Run the task** - Click "Run with Copilot" button
-6. **See output** - Response appears in Output section
+6. **See output** - Response + model info pill appears
 
 ---
 
@@ -92,16 +142,6 @@
    - Added Run button and output display to AgentDetailView
    - Made CLI Status rows clickable
    - Updated CopilotInstallSteps for new CLI
-
----
-
-## Next Steps
-
-1. **Test Claude CLI** - Install and integrate if available
-2. **Add working directory support** - Run prompts in repo context
-3. **Streaming output** - Show response as it generates
-4. **Worktree integration** - Create isolated branches for agent work
-5. **Agent templates** - Pre-configured agents for common tasks
 
 ---
 
