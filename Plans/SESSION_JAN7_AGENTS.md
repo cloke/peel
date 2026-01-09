@@ -22,7 +22,72 @@ Available models now include free options:
 - **1× Premium:** All Claude (except Opus), most GPT models
 - **3× Premium:** Claude Opus 4.5
 
-Model picker now shows "Free" section at top for easy selection during testing.
+---
+
+## UX Feedback & Next Steps 🎯
+
+### 1. Agent Roles (Read-only Planner)
+Current issue: Planner made edits when it should only plan.
+
+**Solution:** Add `AgentRole` with tool restrictions:
+```swift
+enum AgentRole {
+  case planner    // Read-only: can read files, search, but NOT write
+  case implementer // Full access: can edit files, run commands
+  case reviewer   // Read-only: reviews changes, suggests fixes
+}
+```
+- Pass `--deny-tool write_file edit_file` for planners/reviewers
+- Add "Auto-approve" toggle vs manual review step
+
+### 2. Live Status/Progress (Not Just Spinner)
+Show what the agent is doing:
+- "Reading Agent.swift..."
+- "Searching for async patterns..."
+- "Editing CLIService.swift..."
+- Progress bar or step indicator
+
+**Implementation:** Parse copilot's stderr for tool usage in real-time (streaming)
+
+### 3. Chain Templates
+Pre-configured workflows users can save/load:
+- **Code Review:** 1 Planner (Opus) → N Implementers → 1 Reviewer
+- **Bug Fix:** 1 Analyzer → 1 Fixer → 1 Tester
+- **Refactor:** 1 Planner → 3 Implementers (parallel?) → 2 Reviewers
+
+**Template Structure:**
+```swift
+struct ChainTemplate {
+  let name: String
+  let description: String
+  let steps: [AgentStepTemplate]
+  // e.g., "1 planner, up to 10 implementers, 2 reviewers"
+}
+```
+
+### 4. Review Loop
+Allow back-and-forth between agents:
+- Reviewer suggests changes
+- Implementer can accept/deny
+- Loop until approved or max iterations
+
+### 5. Better UX for Creating (No Hidden + Menu)
+Current: `+` menu hides options
+
+**Ideas:**
+- **Segmented control** in sidebar header: `Agents | Chains | Templates`
+- **Empty state cards** when no agents: "Create Agent" / "Create Chain" buttons
+- **Quick actions bar** at bottom of sidebar
+- **Floating action button** (FAB) with expanded options
+
+---
+
+## Immediate Implementation Priority
+
+1. ✅ **Fix + menu** → Use segmented tabs or visible buttons
+2. 🔄 **Add AgentRole** → Planner (read-only), Implementer, Reviewer
+3. 🔄 **Live status** → Show current tool being used
+4. 📋 **Templates** → Save/load chain configurations
 
 ---
 

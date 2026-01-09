@@ -25,7 +25,8 @@ struct Agents_RootView: View {
         agentManager: agentManager,
         cliService: cliService,
         showingSetupSheet: $showingSetupSheet,
-        showingNewChainSheet: $showingNewChainSheet
+        showingNewChainSheet: $showingNewChainSheet,
+        showingNewAgentSheet: $showingNewAgentSheet
       )
     } detail: {
       if let chain = agentManager.selectedChain {
@@ -33,11 +34,32 @@ struct Agents_RootView: View {
       } else if let agent = agentManager.selectedAgent {
         AgentDetailView(agent: agent, agentManager: agentManager)
       } else {
-        ContentUnavailableView(
-          "No Agent Selected",
-          systemImage: "cpu",
-          description: Text("Select an agent from the sidebar or create a new one")
-        )
+        // Empty state with visible create options
+        VStack(spacing: 20) {
+          Image(systemName: "cpu")
+            .font(.system(size: 48))
+            .foregroundStyle(.secondary)
+          Text("No Agent Selected")
+            .font(.title2)
+          Text("Create an agent or chain to get started")
+            .foregroundStyle(.secondary)
+          
+          HStack(spacing: 16) {
+            Button {
+              showingNewAgentSheet = true
+            } label: {
+              Label("New Agent", systemImage: "cpu")
+            }
+            .buttonStyle(.bordered)
+            
+            Button {
+              showingNewChainSheet = true
+            } label: {
+              Label("New Chain", systemImage: "link")
+            }
+            .buttonStyle(.borderedProminent)
+          }
+        }
       }
     }
     .navigationSplitViewStyle(.balanced)
@@ -57,25 +79,6 @@ struct Agents_RootView: View {
       }
       ToolSelectionToolbar()
       #endif
-      
-      ToolbarItem(placement: .primaryAction) {
-        Menu {
-          Button { showingNewAgentSheet = true } label: {
-            Label("New Agent", systemImage: "cpu")
-          }
-          Button { showingNewChainSheet = true } label: {
-            Label("New Chain", systemImage: "link")
-          }
-        } label: {
-          Label("Add", systemImage: "plus")
-        }
-      }
-      
-      ToolbarItem(placement: .primaryAction) {
-        Button { showingSetupSheet = true } label: {
-          Label("Setup", systemImage: cliStatusIcon)
-        }
-      }
     }
     .sheet(isPresented: $showingNewAgentSheet) {
       NewAgentSheet(agentManager: agentManager, cliService: cliService)
@@ -105,78 +108,115 @@ struct AgentsSidebarView: View {
   @Bindable var cliService: CLIService
   @Binding var showingSetupSheet: Bool
   @Binding var showingNewChainSheet: Bool
+  @Binding var showingNewAgentSheet: Bool
   
   var body: some View {
-    List(selection: Binding(
-      get: { agentManager.selectedAgent?.id },
-      set: { id in agentManager.selectedAgent = agentManager.agents.first { $0.id == id } }
-    )) {
-      // Chains section
-      if !agentManager.chains.isEmpty {
-        Section("Chains") {
-          ForEach(agentManager.chains) { chain in
-            ChainRowView(chain: chain)
-              .tag(chain.id)
+    VStack(spacing: 0) {
+      List(selection: Binding(
+        get: { agentManager.selectedAgent?.id },
+        set: { id in agentManager.selectedAgent = agentManager.agents.first { $0.id == id } }
+      )) {
+        // Chains section
+        if !agentManager.chains.isEmpty {
+          Section("Chains") {
+            ForEach(agentManager.chains) { chain in
+              ChainRowView(chain: chain)
+                .tag(chain.id)
+                .onTapGesture {
+                  agentManager.selectedAgent = nil
+                  agentManager.selectedChain = chain
+                }
+            }
+          }
+        }
+        
+        if !agentManager.activeAgents.isEmpty {
+          Section("Active") {
+            ForEach(agentManager.activeAgents) { agent in
+              AgentRowView(agent: agent).tag(agent.id)
+            }
+          }
+        }
+        
+        Section("Agents") {
+          ForEach(agentManager.idleAgents) { agent in
+            AgentRowView(agent: agent)
+              .tag(agent.id)
               .onTapGesture {
-                agentManager.selectedAgent = nil
-                agentManager.selectedChain = chain
+                agentManager.selectedChain = nil
+                agentManager.selectedAgent = agent
               }
           }
         }
-      }
-      
-      if !agentManager.activeAgents.isEmpty {
-        Section("Active") {
-          ForEach(agentManager.activeAgents) { agent in
-            AgentRowView(agent: agent).tag(agent.id)
-          }
-        }
-      }
-      
-      Section("Agents") {
-        ForEach(agentManager.idleAgents) { agent in
-          AgentRowView(agent: agent)
-            .tag(agent.id)
-            .onTapGesture {
-              agentManager.selectedChain = nil
-              agentManager.selectedAgent = agent
+        
+        #if os(macOS)
+        Section("CLI Status") {
+          Button {
+            showingSetupSheet = true
+          } label: {
+            HStack {
+              Image(systemName: copilotStatusIcon)
+                .foregroundStyle(copilotStatusColor)
+              Text("Copilot")
+              Spacer()
+              Text(copilotStatusLabel)
+                .font(.caption).foregroundStyle(.secondary)
             }
+          }
+          .buttonStyle(.plain)
+          
+          Button {
+            showingSetupSheet = true
+          } label: {
+            HStack {
+              Image(systemName: cliService.claudeStatus.isAvailable ? "checkmark.circle.fill" : "xmark.circle")
+                .foregroundStyle(cliService.claudeStatus.isAvailable ? .green : .secondary)
+              Text("Claude")
+              Spacer()
+              Text(cliService.claudeStatus.isAvailable ? "Ready" : "Not installed")
+                .font(.caption).foregroundStyle(.secondary)
+            }
+          }
+          .buttonStyle(.plain)
         }
+        #endif
       }
+      .listStyle(.sidebar)
       
       #if os(macOS)
-      Section("CLI Status") {
+      // Quick action buttons at bottom of sidebar
+      Divider()
+      HStack(spacing: 12) {
         Button {
-          showingSetupSheet = true
+          showingNewAgentSheet = true
         } label: {
-          HStack {
-            Image(systemName: copilotStatusIcon)
-              .foregroundStyle(copilotStatusColor)
-            Text("Copilot")
-            Spacer()
-            Text(copilotStatusLabel)
-              .font(.caption).foregroundStyle(.secondary)
-          }
+          Label("Agent", systemImage: "cpu")
+            .font(.caption)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.bordered)
+        
+        Button {
+          showingNewChainSheet = true
+        } label: {
+          Label("Chain", systemImage: "link")
+            .font(.caption)
+        }
+        .buttonStyle(.bordered)
+        
+        Spacer()
         
         Button {
           showingSetupSheet = true
         } label: {
-          HStack {
-            Image(systemName: cliService.claudeStatus.isAvailable ? "checkmark.circle.fill" : "xmark.circle")
-              .foregroundStyle(cliService.claudeStatus.isAvailable ? .green : .secondary)
-            Text("Claude")
-            Spacer()
-            Text(cliService.claudeStatus.isAvailable ? "Ready" : "Not installed")
-              .font(.caption).foregroundStyle(.secondary)
-          }
+          Image(systemName: cliService.copilotStatus.isAvailable ? "checkmark.circle" : "gear")
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.borderless)
       }
+      .padding(.horizontal, 12)
+      .padding(.vertical, 8)
+      .background(Color(nsColor: .windowBackgroundColor))
       #endif
     }
-    .listStyle(.sidebar)
     .navigationTitle("Agents")
   }
   
@@ -218,13 +258,23 @@ struct AgentRowView: View {
   
   var body: some View {
     HStack(spacing: 10) {
-      Image(systemName: agent.state.iconName)
-        .foregroundStyle(stateColor)
-        .font(.caption)
+      // Role icon with state color
+      ZStack {
+        Circle()
+          .fill(roleColor.opacity(0.2))
+          .frame(width: 28, height: 28)
+        Image(systemName: agent.role.iconName)
+          .foregroundStyle(roleColor)
+          .font(.caption)
+      }
+      
       VStack(alignment: .leading, spacing: 2) {
         Text(agent.name).font(.callout)
         HStack(spacing: 4) {
-          Image(systemName: agent.type.iconName).font(.caption2)
+          Text(agent.role.displayName)
+            .font(.caption2)
+            .foregroundStyle(roleColor)
+          Text("•")
           Text(agent.model.shortName).font(.caption)
         }.foregroundStyle(.secondary)
       }
@@ -232,6 +282,14 @@ struct AgentRowView: View {
       if agent.state.isActive {
         ProgressView().scaleEffect(0.5).frame(width: 16, height: 16)
       }
+    }
+  }
+  
+  private var roleColor: Color {
+    switch agent.role {
+    case .planner: return .blue
+    case .implementer: return .green
+    case .reviewer: return .purple
     }
   }
   
@@ -477,6 +535,7 @@ struct AgentDetailView: View {
         let response = try await cliService.runCopilotSession(
           prompt: task.prompt,
           model: agent.model,
+          role: agent.role,
           workingDirectory: agent.workingDirectory
         )
         output = response.content
@@ -512,39 +571,69 @@ struct NewAgentSheet: View {
   @State private var name = ""
   @State private var type: AgentType = .copilot
   @State private var model: CopilotModel = .claudeSonnet45
+  @State private var role: AgentRole = .implementer
   
   var body: some View {
     NavigationStack {
       Form {
-        TextField("Agent Name", text: $name)
-        Picker("Type", selection: $type) {
-          ForEach(AgentType.allCases) { t in
-            Label(t.displayName, systemImage: t.iconName).tag(t)
+        Section {
+          TextField("Agent Name", text: $name)
+          Picker("Type", selection: $type) {
+            ForEach(AgentType.allCases) { t in
+              Label(t.displayName, systemImage: t.iconName).tag(t)
+            }
           }
         }
         
         #if os(macOS)
-        // Model picker for Copilot agents
+        // Role and Model picker for Copilot agents
         if type == .copilot {
-          Picker("Model", selection: $model) {
-            Section("Free") {
-              ForEach(CopilotModel.allCases.filter { $0.isFree }) { m in
-                Text(m.displayNameWithCost).tag(m)
+          Section("Role") {
+            Picker("Role", selection: $role) {
+              ForEach(AgentRole.allCases) { r in
+                Label {
+                  VStack(alignment: .leading) {
+                    Text(r.displayName)
+                    Text(r.description)
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                  }
+                } icon: {
+                  Image(systemName: r.iconName)
+                }
+                .tag(r)
               }
             }
-            Section("Claude") {
-              ForEach(CopilotModel.allCases.filter { $0.isClaude }) { m in
-                Text(m.displayNameWithCost).tag(m)
-              }
+            .pickerStyle(.inline)
+            
+            if !role.canWrite {
+              Label("This role cannot edit files", systemImage: "lock.fill")
+                .font(.caption)
+                .foregroundStyle(.orange)
             }
-            Section("GPT") {
-              ForEach(CopilotModel.allCases.filter { $0.isGPT && !$0.isFree }) { m in
-                Text(m.displayNameWithCost).tag(m)
+          }
+          
+          Section("Model") {
+            Picker("Model", selection: $model) {
+              Section("Free") {
+                ForEach(CopilotModel.allCases.filter { $0.isFree }) { m in
+                  Text(m.displayNameWithCost).tag(m)
+                }
               }
-            }
-            Section("Gemini") {
-              ForEach(CopilotModel.allCases.filter { $0.isGemini && !$0.isFree }) { m in
-                Text(m.displayNameWithCost).tag(m)
+              Section("Claude") {
+                ForEach(CopilotModel.allCases.filter { $0.isClaude }) { m in
+                  Text(m.displayNameWithCost).tag(m)
+                }
+              }
+              Section("GPT") {
+                ForEach(CopilotModel.allCases.filter { $0.isGPT && !$0.isFree }) { m in
+                  Text(m.displayNameWithCost).tag(m)
+                }
+              }
+              Section("Gemini") {
+                ForEach(CopilotModel.allCases.filter { $0.isGemini && !$0.isFree }) { m in
+                  Text(m.displayNameWithCost).tag(m)
+                }
               }
             }
           }
@@ -567,8 +656,9 @@ struct NewAgentSheet: View {
         ToolbarItem(placement: .confirmationAction) {
           Button("Create") {
             let agent = agentManager.createAgent(
-              name: name.isEmpty ? "\(model.shortName) Agent" : name,
+              name: name.isEmpty ? "\(role.displayName) (\(model.shortName))" : name,
               type: type,
+              role: role,
               model: model
             )
             agentManager.selectedAgent = agent
@@ -576,7 +666,7 @@ struct NewAgentSheet: View {
           }
         }
       }
-    }.frame(minWidth: 400, minHeight: 250)
+    }.frame(minWidth: 400, minHeight: 400)
   }
   
   #if os(macOS)
@@ -881,9 +971,9 @@ struct NewChainSheet: View {
   @State private var name = ""
   @State private var workingDirectory: String?
   @State private var agent1Model: CopilotModel = .claudeOpus45
-  @State private var agent1Role = "Planner"
+  @State private var agent1Role: AgentRole = .planner
   @State private var agent2Model: CopilotModel = .claudeSonnet45
-  @State private var agent2Role = "Implementer"
+  @State private var agent2Role: AgentRole = .implementer
   
   var body: some View {
     NavigationStack {
@@ -911,8 +1001,26 @@ struct NewChainSheet: View {
           #endif
         }
         
-        Section("Agent 1 - \(agent1Role)") {
-          TextField("Role", text: $agent1Role)
+        Section {
+          HStack {
+            Image(systemName: agent1Role.iconName)
+              .foregroundStyle(.blue)
+            Text("Agent 1")
+              .fontWeight(.medium)
+          }
+          
+          Picker("Role", selection: $agent1Role) {
+            ForEach(AgentRole.allCases) { r in
+              Label(r.displayName, systemImage: r.iconName).tag(r)
+            }
+          }
+          
+          if !agent1Role.canWrite {
+            Label("Read-only: cannot edit files", systemImage: "lock.fill")
+              .font(.caption)
+              .foregroundStyle(.orange)
+          }
+          
           Picker("Model", selection: $agent1Model) {
             Section("Free") {
               ForEach(CopilotModel.allCases.filter { $0.isFree }) { m in
@@ -932,8 +1040,26 @@ struct NewChainSheet: View {
           }
         }
         
-        Section("Agent 2 - \(agent2Role)") {
-          TextField("Role", text: $agent2Role)
+        Section {
+          HStack {
+            Image(systemName: agent2Role.iconName)
+              .foregroundStyle(.green)
+            Text("Agent 2")
+              .fontWeight(.medium)
+          }
+          
+          Picker("Role", selection: $agent2Role) {
+            ForEach(AgentRole.allCases) { r in
+              Label(r.displayName, systemImage: r.iconName).tag(r)
+            }
+          }
+          
+          if !agent2Role.canWrite {
+            Label("Read-only: cannot edit files", systemImage: "lock.fill")
+              .font(.caption)
+              .foregroundStyle(.orange)
+          }
+          
           Picker("Model", selection: $agent2Model) {
             Section("Free") {
               ForEach(CopilotModel.allCases.filter { $0.isFree }) { m in
@@ -954,9 +1080,12 @@ struct NewChainSheet: View {
         }
         
         Section {
-          Text("Agent 1 will run first. Its output will be passed as context to Agent 2.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
+          HStack {
+            Image(systemName: "arrow.right")
+            Text("Agent 1 runs first → Output passed to Agent 2")
+          }
+          .font(.caption)
+          .foregroundStyle(.secondary)
         }
       }
       .formStyle(.grouped)
@@ -998,8 +1127,9 @@ struct NewChainSheet: View {
     
     // Create agent 1
     let agent1 = agentManager.createAgent(
-      name: agent1Role,
+      name: agent1Role.displayName,
       type: .copilot,
+      role: agent1Role,
       model: agent1Model,
       workingDirectory: workingDirectory
     )
@@ -1007,8 +1137,9 @@ struct NewChainSheet: View {
     
     // Create agent 2
     let agent2 = agentManager.createAgent(
-      name: agent2Role,
+      name: agent2Role.displayName,
       type: .copilot,
+      role: agent2Role,
       model: agent2Model,
       workingDirectory: workingDirectory
     )
@@ -1226,6 +1357,7 @@ struct ChainDetailView: View {
         let response = try await cliService.runCopilotSession(
           prompt: fullPrompt,
           model: agent.model,
+          role: agent.role,
           workingDirectory: agent.workingDirectory ?? chain.workingDirectory
         )
         

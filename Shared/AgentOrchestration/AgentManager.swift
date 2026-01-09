@@ -42,6 +42,7 @@ public final class AgentManager {
   public func createAgent(
     name: String,
     type: AgentType,
+    role: AgentRole = .implementer,
     model: CopilotModel = .claudeSonnet45,
     workingDirectory: String? = nil,
     customCLIPath: String? = nil
@@ -49,6 +50,7 @@ public final class AgentManager {
     let agent = Agent(
       name: name,
       type: type,
+      role: role,
       model: model,
       workingDirectory: workingDirectory,
       customCLIPath: customCLIPath

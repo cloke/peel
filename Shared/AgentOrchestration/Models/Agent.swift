@@ -120,6 +120,54 @@ public enum CopilotModel: String, Codable, CaseIterable, Identifiable {
   }
 }
 
+/// Role determines what tools an agent can use
+public enum AgentRole: String, Codable, CaseIterable, Identifiable {
+  case planner     // Read-only: analyze, plan, but NOT edit
+  case implementer // Full access: can edit files, run commands
+  case reviewer    // Read-only: review changes, suggest fixes
+  
+  public var id: String { rawValue }
+  
+  public var displayName: String {
+    switch self {
+    case .planner: return "Planner"
+    case .implementer: return "Implementer"
+    case .reviewer: return "Reviewer"
+    }
+  }
+  
+  public var description: String {
+    switch self {
+    case .planner: return "Analyzes code and creates plans (read-only)"
+    case .implementer: return "Makes code changes and runs commands"
+    case .reviewer: return "Reviews changes and suggests fixes (read-only)"
+    }
+  }
+  
+  public var iconName: String {
+    switch self {
+    case .planner: return "map"
+    case .implementer: return "hammer"
+    case .reviewer: return "eye"
+    }
+  }
+  
+  /// Whether this role can write/edit files
+  public var canWrite: Bool {
+    self == .implementer
+  }
+  
+  /// Tools to deny for this role (passed to --deny-tool)
+  public var deniedTools: [String] {
+    switch self {
+    case .planner, .reviewer:
+      return ["write_file", "edit_file", "create_file", "delete_file"]
+    case .implementer:
+      return []
+    }
+  }
+}
+
 /// The type of AI agent CLI being used
 public enum AgentType: String, Codable, CaseIterable, Identifiable {
   case claude = "claude"
@@ -200,6 +248,9 @@ public final class Agent: Identifiable {
   public let createdAt: Date
   public var lastActivityAt: Date
   
+  /// Role determines what tools the agent can use
+  public var role: AgentRole
+  
   /// Selected model for Copilot agents
   public var model: CopilotModel
   
@@ -213,6 +264,7 @@ public final class Agent: Identifiable {
     id: UUID = UUID(),
     name: String,
     type: AgentType,
+    role: AgentRole = .implementer,
     state: AgentState = .idle,
     model: CopilotModel = .claudeSonnet45,
     workingDirectory: String? = nil,
@@ -223,6 +275,7 @@ public final class Agent: Identifiable {
     self.id = id
     self.name = name
     self.type = type
+    self.role = role
     self.state = state
     self.model = model
     self.workingDirectory = workingDirectory

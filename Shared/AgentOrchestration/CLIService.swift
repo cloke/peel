@@ -250,12 +250,14 @@ public final class CLIService {
   /// - Parameters:
   ///   - prompt: The prompt/question to ask Copilot
   ///   - model: The model to use (e.g., claude-sonnet-4.5, gpt-5)
+  ///   - role: The agent role (determines tool access)
   ///   - workingDirectory: Optional directory to run in (for repo context)
   ///   - allowAllTools: If true, auto-approve all tool usage (required for non-interactive)
   /// - Returns: CopilotResponse with content and model info
   public func runCopilotSession(
     prompt: String,
     model: CopilotModel = .claudeSonnet45,
+    role: AgentRole = .implementer,
     workingDirectory: String? = nil,
     allowAllTools: Bool = true
   ) async throws -> CopilotResponse {
@@ -272,6 +274,13 @@ public final class CLIService {
     var arguments = ["-p", prompt, "--model", model.rawValue]
     if allowAllTools {
       arguments.append("--allow-all-tools")
+    }
+    
+    // Apply role-based tool restrictions
+    let deniedTools = role.deniedTools
+    if !deniedTools.isEmpty {
+      arguments.append("--deny-tool")
+      arguments.append(contentsOf: deniedTools)
     }
     
     // Build environment with GH_TOKEN if available
