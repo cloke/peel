@@ -20,7 +20,7 @@
 - [ ] Add error checking.
   - [ ] Handle token expiration.
 - [ ] Add navigation for PRs, Issues
-- [ ] Figure out how to allow decodable to use the private key name that indicates a repo is private. If it requires opting all keys into a Coding Keys enum maybe we handle this at the repoonse layer?
+- [ ] Figure out how to allow decodable to use the private key name that indicates a repo is private. If it requires opting all keys into a Coding Keys enum maybe we handle this at the response layer?
 - [ ] Display all of my repositories on personal account
 - [ ] Show watching
 - [ ] Show starred
