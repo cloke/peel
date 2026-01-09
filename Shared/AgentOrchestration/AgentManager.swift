@@ -22,6 +22,14 @@ public final class AgentManager {
   /// All agent chains
   public private(set) var chains: [AgentChain] = []
   
+  /// Saved chain templates (user-created)
+  public private(set) var savedTemplates: [ChainTemplate] = []
+  
+  /// All available templates (built-in + saved)
+  public var allTemplates: [ChainTemplate] {
+    ChainTemplate.builtInTemplates + savedTemplates
+  }
+  
   /// The workspace manager for creating isolated workspaces
   public let workspaceManager = WorkspaceManager()
   
@@ -34,6 +42,7 @@ public final class AgentManager {
   public init() {
     // Add a sample agent for testing
     addSampleData()
+    loadSavedTemplates()
   }
   
   // MARK: - Agent Lifecycle
@@ -132,6 +141,85 @@ public final class AgentManager {
     if selectedChain?.id == chain.id {
       selectedChain = nil
     }
+  }
+  
+  /// Create a chain from a template
+  public func createChainFromTemplate(_ template: ChainTemplate, workingDirectory: String? = nil) -> AgentChain {
+    let chain = createChain(name: template.name, workingDirectory: workingDirectory)
+    
+    for step in template.steps {
+      let agent = createAgent(
+        name: step.name,
+        type: .copilot,
+        role: step.role,
+        model: step.model,
+        workingDirectory: workingDirectory
+      )
+      agent.frameworkHint = step.frameworkHint
+      agent.customInstructions = step.customInstructions
+      chain.addAgent(agent)
+    }
+    
+    return chain
+  }
+  
+  // MARK: - Template Management
+  
+  /// Save a chain as a new template
+  public func saveChainAsTemplate(_ chain: AgentChain, name: String, description: String = "") {
+    let steps = chain.agents.map { agent in
+      AgentStepTemplate(
+        role: agent.role,
+        model: agent.model,
+        name: agent.name,
+        frameworkHint: agent.frameworkHint,
+        customInstructions: agent.customInstructions
+      )
+    }
+    
+    let template = ChainTemplate(
+      name: name,
+      description: description,
+      steps: steps,
+      isBuiltIn: false
+    )
+    
+    savedTemplates.append(template)
+    persistTemplates()
+  }
+  
+  /// Delete a saved template (cannot delete built-in)
+  public func deleteTemplate(_ template: ChainTemplate) {
+    guard !template.isBuiltIn else { return }
+    savedTemplates.removeAll { $0.id == template.id }
+    persistTemplates()
+  }
+  
+  /// Load saved templates from disk
+  private func loadSavedTemplates() {
+    guard let url = templatesFileURL,
+          let data = try? Data(contentsOf: url),
+          let templates = try? JSONDecoder().decode([ChainTemplate].self, from: data) else {
+      return
+    }
+    savedTemplates = templates
+  }
+  
+  /// Save templates to disk
+  private func persistTemplates() {
+    guard let url = templatesFileURL,
+          let data = try? JSONEncoder().encode(savedTemplates) else {
+      return
+    }
+    try? data.write(to: url)
+  }
+  
+  private var templatesFileURL: URL? {
+    FileManager.default
+      .urls(for: .applicationSupportDirectory, in: .userDomainMask)
+      .first?
+      .appendingPathComponent("KitchenSync")
+      .appendingPathComponent("chain_templates.json")
   }
   
   // MARK: - Queries

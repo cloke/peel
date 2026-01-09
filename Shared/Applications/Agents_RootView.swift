@@ -1067,8 +1067,12 @@ struct NewChainSheet: View {
   @Bindable var cliService: CLIService
   @Environment(\.dismiss) private var dismiss
   
+  @State private var selectedTemplate: ChainTemplate?
   @State private var name = ""
   @State private var workingDirectory: String?
+  @State private var useTemplate = true
+  
+  // Manual config (when not using template)
   @State private var agent1Model: CopilotModel = .claudeOpus45
   @State private var agent1Role: AgentRole = .planner
   @State private var agent2Model: CopilotModel = .claudeSonnet45
@@ -1077,8 +1081,75 @@ struct NewChainSheet: View {
   var body: some View {
     NavigationStack {
       Form {
+        // Template selection
+        Section {
+          Toggle("Use Template", isOn: $useTemplate)
+          
+          if useTemplate {
+            Picker("Template", selection: $selectedTemplate) {
+              Text("Select...").tag(nil as ChainTemplate?)
+              
+              Section("Built-in") {
+                ForEach(ChainTemplate.builtInTemplates) { template in
+                  HStack {
+                    Text(template.name)
+                    Spacer()
+                    Text(template.costDisplay)
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                  }
+                  .tag(template as ChainTemplate?)
+                }
+              }
+              
+              if !agentManager.savedTemplates.isEmpty {
+                Section("Saved") {
+                  ForEach(agentManager.savedTemplates) { template in
+                    HStack {
+                      Text(template.name)
+                      Spacer()
+                      Text(template.costDisplay)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                    .tag(template as ChainTemplate?)
+                  }
+                }
+              }
+            }
+            
+            // Template preview
+            if let template = selectedTemplate {
+              VStack(alignment: .leading, spacing: 8) {
+                if !template.description.isEmpty {
+                  Text(template.description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                
+                ForEach(Array(template.steps.enumerated()), id: \.element.id) { index, step in
+                  HStack(spacing: 8) {
+                    Text("\(index + 1).")
+                      .font(.caption.bold())
+                      .foregroundStyle(.secondary)
+                    Image(systemName: step.role.iconName)
+                      .foregroundStyle(roleColor(step.role))
+                    Text(step.name)
+                      .font(.caption)
+                    Spacer()
+                    Text(step.model.shortName)
+                      .font(.caption2)
+                      .foregroundStyle(.secondary)
+                  }
+                }
+              }
+              .padding(.vertical, 4)
+            }
+          }
+        }
+        
         Section("Chain") {
-          TextField("Chain Name", text: $name)
+          TextField("Chain Name", text: $name, prompt: Text(selectedTemplate?.name ?? "My Chain"))
           
           #if os(macOS)
           HStack {
@@ -1100,91 +1171,94 @@ struct NewChainSheet: View {
           #endif
         }
         
-        Section {
-          HStack {
-            Image(systemName: agent1Role.iconName)
-              .foregroundStyle(.blue)
-            Text("Agent 1")
-              .fontWeight(.medium)
-          }
-          
-          Picker("Role", selection: $agent1Role) {
-            ForEach(AgentRole.allCases) { r in
-              Label(r.displayName, systemImage: r.iconName).tag(r)
+        // Manual configuration (only when not using template)
+        if !useTemplate {
+          Section {
+            HStack {
+              Image(systemName: agent1Role.iconName)
+                .foregroundStyle(.blue)
+              Text("Agent 1")
+                .fontWeight(.medium)
             }
-          }
-          
-          if !agent1Role.canWrite {
-            Label("Read-only: cannot edit files", systemImage: "lock.fill")
-              .font(.caption)
-              .foregroundStyle(.orange)
-          }
-          
-          Picker("Model", selection: $agent1Model) {
-            Section("Free") {
-              ForEach(CopilotModel.allCases.filter { $0.isFree }) { m in
-                Text(m.displayNameWithCost).tag(m)
+            
+            Picker("Role", selection: $agent1Role) {
+              ForEach(AgentRole.allCases) { r in
+                Label(r.displayName, systemImage: r.iconName).tag(r)
               }
             }
-            Section("Claude") {
-              ForEach(CopilotModel.allCases.filter { $0.isClaude }) { m in
-                Text(m.displayNameWithCost).tag(m)
+            
+            if !agent1Role.canWrite {
+              Label("Read-only: cannot edit files", systemImage: "lock.fill")
+                .font(.caption)
+                .foregroundStyle(.orange)
+            }
+            
+            Picker("Model", selection: $agent1Model) {
+              Section("Free") {
+                ForEach(CopilotModel.allCases.filter { $0.isFree }) { m in
+                  Text(m.displayNameWithCost).tag(m)
+                }
               }
-            }
-            Section("GPT") {
-              ForEach(CopilotModel.allCases.filter { $0.isGPT && !$0.isFree }) { m in
-                Text(m.displayNameWithCost).tag(m)
+              Section("Claude") {
+                ForEach(CopilotModel.allCases.filter { $0.isClaude }) { m in
+                  Text(m.displayNameWithCost).tag(m)
+                }
               }
-            }
-          }
-        }
-        
-        Section {
-          HStack {
-            Image(systemName: agent2Role.iconName)
-              .foregroundStyle(.green)
-            Text("Agent 2")
-              .fontWeight(.medium)
-          }
-          
-          Picker("Role", selection: $agent2Role) {
-            ForEach(AgentRole.allCases) { r in
-              Label(r.displayName, systemImage: r.iconName).tag(r)
-            }
-          }
-          
-          if !agent2Role.canWrite {
-            Label("Read-only: cannot edit files", systemImage: "lock.fill")
-              .font(.caption)
-              .foregroundStyle(.orange)
-          }
-          
-          Picker("Model", selection: $agent2Model) {
-            Section("Free") {
-              ForEach(CopilotModel.allCases.filter { $0.isFree }) { m in
-                Text(m.displayNameWithCost).tag(m)
-              }
-            }
-            Section("Claude") {
-              ForEach(CopilotModel.allCases.filter { $0.isClaude }) { m in
-                Text(m.displayNameWithCost).tag(m)
-              }
-            }
-            Section("GPT") {
-              ForEach(CopilotModel.allCases.filter { $0.isGPT && !$0.isFree }) { m in
-                Text(m.displayNameWithCost).tag(m)
+              Section("GPT") {
+                ForEach(CopilotModel.allCases.filter { $0.isGPT && !$0.isFree }) { m in
+                  Text(m.displayNameWithCost).tag(m)
+                }
               }
             }
           }
-        }
-        
-        Section {
-          HStack {
-            Image(systemName: "arrow.right")
-            Text("Agent 1 runs first → Output passed to Agent 2")
+          
+          Section {
+            HStack {
+              Image(systemName: agent2Role.iconName)
+                .foregroundStyle(.green)
+              Text("Agent 2")
+                .fontWeight(.medium)
+            }
+            
+            Picker("Role", selection: $agent2Role) {
+              ForEach(AgentRole.allCases) { r in
+                Label(r.displayName, systemImage: r.iconName).tag(r)
+              }
+            }
+            
+            if !agent2Role.canWrite {
+              Label("Read-only: cannot edit files", systemImage: "lock.fill")
+                .font(.caption)
+                .foregroundStyle(.orange)
+            }
+          
+            Picker("Model", selection: $agent2Model) {
+              Section("Free") {
+                ForEach(CopilotModel.allCases.filter { $0.isFree }) { m in
+                  Text(m.displayNameWithCost).tag(m)
+                }
+              }
+              Section("Claude") {
+                ForEach(CopilotModel.allCases.filter { $0.isClaude }) { m in
+                  Text(m.displayNameWithCost).tag(m)
+                }
+              }
+              Section("GPT") {
+                ForEach(CopilotModel.allCases.filter { $0.isGPT && !$0.isFree }) { m in
+                  Text(m.displayNameWithCost).tag(m)
+                }
+              }
+            }
           }
-          .font(.caption)
-          .foregroundStyle(.secondary)
+          
+          Section {
+            HStack {
+              Image(systemName: "arrow.right")
+              Text("Agent 1 runs first → Output passed to Agent 2")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          }
         }
       }
       .formStyle(.grouped)
@@ -1198,11 +1272,19 @@ struct NewChainSheet: View {
             createChain()
             dismiss()
           }
-          .disabled(name.isEmpty)
+          .disabled(useTemplate && selectedTemplate == nil)
         }
       }
     }
-    .frame(minWidth: 450, minHeight: 450)
+    .frame(minWidth: 500, minHeight: 500)
+  }
+  
+  private func roleColor(_ role: AgentRole) -> Color {
+    switch role {
+    case .planner: return .blue
+    case .implementer: return .green
+    case .reviewer: return .purple
+    }
   }
   
   #if os(macOS)
@@ -1219,30 +1301,41 @@ struct NewChainSheet: View {
   #endif
   
   private func createChain() {
-    let chain = agentManager.createChain(
-      name: name.isEmpty ? "New Chain" : name,
-      workingDirectory: workingDirectory
-    )
+    let chain: AgentChain
     
-    // Create agent 1
-    let agent1 = agentManager.createAgent(
-      name: agent1Role.displayName,
-      type: .copilot,
-      role: agent1Role,
-      model: agent1Model,
-      workingDirectory: workingDirectory
-    )
-    chain.addAgent(agent1)
-    
-    // Create agent 2
-    let agent2 = agentManager.createAgent(
-      name: agent2Role.displayName,
-      type: .copilot,
-      role: agent2Role,
-      model: agent2Model,
-      workingDirectory: workingDirectory
-    )
-    chain.addAgent(agent2)
+    if useTemplate, let template = selectedTemplate {
+      // Create from template
+      chain = agentManager.createChainFromTemplate(template, workingDirectory: workingDirectory)
+      if !name.isEmpty {
+        chain.name = name
+      }
+    } else {
+      // Manual creation
+      chain = agentManager.createChain(
+        name: name.isEmpty ? "New Chain" : name,
+        workingDirectory: workingDirectory
+      )
+      
+      // Create agent 1
+      let agent1 = agentManager.createAgent(
+        name: agent1Role.displayName,
+        type: .copilot,
+        role: agent1Role,
+        model: agent1Model,
+        workingDirectory: workingDirectory
+      )
+      chain.addAgent(agent1)
+      
+      // Create agent 2
+      let agent2 = agentManager.createAgent(
+        name: agent2Role.displayName,
+        type: .copilot,
+        role: agent2Role,
+        model: agent2Model,
+        workingDirectory: workingDirectory
+      )
+      chain.addAgent(agent2)
+    }
     
     agentManager.selectedChain = chain
     agentManager.selectedAgent = nil

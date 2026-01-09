@@ -18,6 +18,7 @@
 | Apple AI Service | `0ca0742` | On-device Foundation Models integration |
 | Brew UI Modernization | `0ca0742` | Segmented picker, .searchable, NavigationStack |
 | Live Status Indicator | `c940c35` | Elapsed time + status messages while running |
+| Chain Templates | `8a4b63d` | Reusable workflows (Code Review, Quick Fix, etc.) |
 
 ### What Works Now
 - ✅ Create agents with role (Planner/Implementer/Reviewer)
@@ -204,9 +205,9 @@ config.computeUnits = .cpuAndNeuralEngine
 - [x] Research Foundation Models API availability
 - [x] Test if FoundationModels framework is available in macOS 26
 - [x] Live status/progress during agent execution
+- [x] **Chain Templates** - Save/load common workflows
 
 ### Short Term (Next Up)
-- [ ] **Chain Templates** - Save/load common workflows (Planner→Implementer→Reviewer)
 - [ ] **Session Cost Tracking** - Show total premium requests used
 - [ ] **Streaming Output** - Show response as it generates (not just status messages)
 - [ ] Add `AgentType.appleAI` for on-device tasks
@@ -227,6 +228,8 @@ config.computeUnits = .cpuAndNeuralEngine
 
 ## Session Commits
 ```
+8a4b63d Add Chain Templates for reusable agent workflows
+b47f63f Update plan with developer use cases and prioritized next steps
 6d33175 Add hybrid translation workflow idea to plan
 c940c35 Add live status indicator while agent is running
 0ca0742 Add AppleAIService for on-device Foundation Models
@@ -234,7 +237,6 @@ c940c35 Add live status indicator while agent is running
 7e0e5c4 Add Agent Roles and improve UX  
 3bcbf40 Add free tier models and update session notes
 3ead2a9 Add model selection, working directory, and multi-agent chains
-19e0884 Update session notes with next steps
 b5f7b74 Add Agent Orchestration with Copilot CLI integration
 ```
 
