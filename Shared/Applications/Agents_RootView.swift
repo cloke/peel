@@ -110,22 +110,18 @@ struct AgentsSidebarView: View {
   @Binding var showingNewChainSheet: Bool
   @Binding var showingNewAgentSheet: Bool
   
+  // Track selection as a string: "chain:id" or "agent:id"
+  @State private var selection: String?
+  
   var body: some View {
     VStack(spacing: 0) {
-      List(selection: Binding(
-        get: { agentManager.selectedAgent?.id },
-        set: { id in agentManager.selectedAgent = agentManager.agents.first { $0.id == id } }
-      )) {
+      List(selection: $selection) {
         // Chains section
         if !agentManager.chains.isEmpty {
           Section("Chains") {
             ForEach(agentManager.chains) { chain in
               ChainRowView(chain: chain)
-                .tag(chain.id)
-                .onTapGesture {
-                  agentManager.selectedAgent = nil
-                  agentManager.selectedChain = chain
-                }
+                .tag("chain:\(chain.id.uuidString)")
             }
           }
         }
@@ -133,7 +129,8 @@ struct AgentsSidebarView: View {
         if !agentManager.activeAgents.isEmpty {
           Section("Active") {
             ForEach(agentManager.activeAgents) { agent in
-              AgentRowView(agent: agent).tag(agent.id)
+              AgentRowView(agent: agent)
+                .tag("agent:\(agent.id.uuidString)")
             }
           }
         }
@@ -141,11 +138,7 @@ struct AgentsSidebarView: View {
         Section("Agents") {
           ForEach(agentManager.idleAgents) { agent in
             AgentRowView(agent: agent)
-              .tag(agent.id)
-              .onTapGesture {
-                agentManager.selectedChain = nil
-                agentManager.selectedAgent = agent
-              }
+              .tag("agent:\(agent.id.uuidString)")
           }
         }
         
@@ -218,6 +211,41 @@ struct AgentsSidebarView: View {
       #endif
     }
     .navigationTitle("Agents")
+    .onChange(of: selection) { _, newValue in
+      handleSelection(newValue)
+    }
+    .onAppear {
+      // Sync selection from manager on appear
+      if let chain = agentManager.selectedChain {
+        selection = "chain:\(chain.id.uuidString)"
+      } else if let agent = agentManager.selectedAgent {
+        selection = "agent:\(agent.id.uuidString)"
+      }
+    }
+  }
+  
+  private func handleSelection(_ value: String?) {
+    guard let value else {
+      agentManager.selectedAgent = nil
+      agentManager.selectedChain = nil
+      return
+    }
+    
+    if value.hasPrefix("chain:") {
+      let idStr = String(value.dropFirst(6))
+      if let uuid = UUID(uuidString: idStr),
+         let chain = agentManager.chains.first(where: { $0.id == uuid }) {
+        agentManager.selectedAgent = nil
+        agentManager.selectedChain = chain
+      }
+    } else if value.hasPrefix("agent:") {
+      let idStr = String(value.dropFirst(6))
+      if let uuid = UUID(uuidString: idStr),
+         let agent = agentManager.agents.first(where: { $0.id == uuid }) {
+        agentManager.selectedChain = nil
+        agentManager.selectedAgent = agent
+      }
+    }
   }
   
   private var copilotStatusIcon: String {
@@ -1081,6 +1109,39 @@ struct NewChainSheet: View {
   var body: some View {
     NavigationStack {
       Form {
+        // Project folder (required) - show first for importance
+        Section {
+          #if os(macOS)
+          HStack {
+            Image(systemName: "folder.fill")
+              .foregroundStyle(workingDirectory == nil ? .orange : .green)
+            Text("Project Folder")
+              .fontWeight(.medium)
+            Spacer()
+            if let dir = workingDirectory {
+              Text(URL(fileURLWithPath: dir).lastPathComponent)
+                .foregroundStyle(.secondary)
+              Button(role: .destructive) {
+                workingDirectory = nil
+              } label: {
+                Image(systemName: "xmark.circle.fill")
+                  .foregroundStyle(.secondary)
+              }
+              .buttonStyle(.plain)
+            }
+            Button("Select...") { selectFolder() }
+          }
+          
+          if workingDirectory == nil {
+            Label("Required: Select a project folder to focus the agent", systemImage: "exclamationmark.triangle.fill")
+              .font(.caption)
+              .foregroundStyle(.orange)
+          }
+          #endif
+        } header: {
+          Text("Project")
+        }
+        
         // Template selection
         Section {
           Toggle("Use Template", isOn: $useTemplate)
@@ -1150,25 +1211,6 @@ struct NewChainSheet: View {
         
         Section("Chain") {
           TextField("Chain Name", text: $name, prompt: Text(selectedTemplate?.name ?? "My Chain"))
-          
-          #if os(macOS)
-          HStack {
-            Text("Project")
-            Spacer()
-            if let dir = workingDirectory {
-              Text(URL(fileURLWithPath: dir).lastPathComponent)
-                .foregroundStyle(.secondary)
-              Button(role: .destructive) {
-                workingDirectory = nil
-              } label: {
-                Image(systemName: "xmark.circle.fill")
-                  .foregroundStyle(.secondary)
-              }
-              .buttonStyle(.plain)
-            }
-            Button("Select...") { selectFolder() }
-          }
-          #endif
         }
         
         // Manual configuration (only when not using template)
@@ -1269,14 +1311,24 @@ struct NewChainSheet: View {
         }
         ToolbarItem(placement: .confirmationAction) {
           Button("Create") {
+            // Save working directory for next time
+            if let dir = workingDirectory {
+              agentManager.lastUsedWorkingDirectory = dir
+            }
             createChain()
             dismiss()
           }
-          .disabled(useTemplate && selectedTemplate == nil)
+          .disabled(workingDirectory == nil || (useTemplate && selectedTemplate == nil))
         }
       }
     }
-    .frame(minWidth: 500, minHeight: 500)
+    .frame(minWidth: 500, minHeight: 550)
+    .onAppear {
+      // Load last used working directory
+      if workingDirectory == nil {
+        workingDirectory = agentManager.lastUsedWorkingDirectory
+      }
+    }
   }
   
   private func roleColor(_ role: AgentRole) -> Color {
@@ -1377,15 +1429,41 @@ struct ChainDetailView: View {
           Spacer()
         }
         
-        // Working directory
-        if let dir = chain.workingDirectory {
+        // Working directory - REQUIRED
+        #if os(macOS)
+        GroupBox {
           HStack {
-            Image(systemName: "folder")
-            Text(dir)
+            Image(systemName: "folder.fill")
+              .foregroundStyle(chain.workingDirectory == nil ? .orange : .green)
+            Text("Project Folder")
+              .font(.subheadline)
+            Spacer()
+            if let dir = chain.workingDirectory {
+              Text(URL(fileURLWithPath: dir).lastPathComponent)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              Button {
+                chain.workingDirectory = nil
+              } label: {
+                Image(systemName: "xmark.circle.fill")
+                  .foregroundStyle(.secondary)
+              }
+              .buttonStyle(.plain)
+            }
+            Button("Select...") {
+              selectFolder()
+            }
+            .buttonStyle(.bordered)
+          }
+          
+          if chain.workingDirectory == nil {
+            Label("Select a project folder to run the chain", systemImage: "exclamationmark.triangle.fill")
               .font(.caption)
-              .foregroundStyle(.secondary)
+              .foregroundStyle(.orange)
+              .padding(.top, 4)
           }
         }
+        #endif
         
         Divider()
         
@@ -1448,12 +1526,16 @@ struct ChainDetailView: View {
         // Run button
         HStack {
           Button {
+            // Save working directory for next time
+            if let dir = chain.workingDirectory {
+              agentManager.lastUsedWorkingDirectory = dir
+            }
             Task { await runChain() }
           } label: {
             Label(isRunning ? "Running..." : "Run Chain", systemImage: isRunning ? "hourglass" : "play.fill")
           }
           .buttonStyle(.borderedProminent)
-          .disabled(isRunning || prompt.isEmpty)
+          .disabled(isRunning || prompt.isEmpty || chain.workingDirectory == nil)
           
           if isRunning {
             ProgressView().scaleEffect(0.8)
@@ -1518,9 +1600,29 @@ struct ChainDetailView: View {
       .padding()
     }
     .navigationTitle(chain.name)
+    .onAppear {
+      // Load last working directory if chain doesn't have one
+      if chain.workingDirectory == nil {
+        chain.workingDirectory = agentManager.lastUsedWorkingDirectory
+      }
+    }
   }
   
   #if os(macOS)
+  private func selectFolder() {
+    let panel = NSOpenPanel()
+    panel.canChooseFiles = false
+    panel.canChooseDirectories = true
+    panel.allowsMultipleSelection = false
+    panel.message = "Select a project folder for this chain"
+    panel.prompt = "Select"
+    
+    if panel.runModal() == .OK, let url = panel.url {
+      chain.workingDirectory = url.path
+      agentManager.lastUsedWorkingDirectory = url.path
+    }
+  }
+  
   private func runChain() async {
     isRunning = true
     errorMessage = nil

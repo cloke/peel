@@ -39,7 +39,19 @@ public final class AgentManager {
   /// Currently selected chain (for UI)
   public var selectedChain: AgentChain?
   
+  /// Last used working directory (persisted)
+  public var lastUsedWorkingDirectory: String? {
+    didSet {
+      if let dir = lastUsedWorkingDirectory {
+        UserDefaults.standard.set(dir, forKey: "lastUsedWorkingDirectory")
+      }
+    }
+  }
+  
   public init() {
+    // Load last used working directory
+    lastUsedWorkingDirectory = UserDefaults.standard.string(forKey: "lastUsedWorkingDirectory")
+    
     // Add a sample agent for testing
     addSampleData()
     loadSavedTemplates()
