@@ -295,13 +295,23 @@ struct AgentDetailView: View {
               get: { agent.model },
               set: { agent.model = $0 }
             )) {
+              Section("Free") {
+                ForEach(CopilotModel.allCases.filter { $0.isFree }) { m in
+                  Text(m.displayNameWithCost).tag(m)
+                }
+              }
               Section("Claude") {
                 ForEach(CopilotModel.allCases.filter { $0.isClaude }) { m in
                   Text(m.displayNameWithCost).tag(m)
                 }
               }
               Section("GPT") {
-                ForEach(CopilotModel.allCases.filter { !$0.isClaude }) { m in
+                ForEach(CopilotModel.allCases.filter { $0.isGPT && !$0.isFree }) { m in
+                  Text(m.displayNameWithCost).tag(m)
+                }
+              }
+              Section("Gemini") {
+                ForEach(CopilotModel.allCases.filter { $0.isGemini && !$0.isFree }) { m in
                   Text(m.displayNameWithCost).tag(m)
                 }
               }
@@ -517,13 +527,23 @@ struct NewAgentSheet: View {
         // Model picker for Copilot agents
         if type == .copilot {
           Picker("Model", selection: $model) {
+            Section("Free") {
+              ForEach(CopilotModel.allCases.filter { $0.isFree }) { m in
+                Text(m.displayNameWithCost).tag(m)
+              }
+            }
             Section("Claude") {
               ForEach(CopilotModel.allCases.filter { $0.isClaude }) { m in
                 Text(m.displayNameWithCost).tag(m)
               }
             }
             Section("GPT") {
-              ForEach(CopilotModel.allCases.filter { !$0.isClaude }) { m in
+              ForEach(CopilotModel.allCases.filter { $0.isGPT && !$0.isFree }) { m in
+                Text(m.displayNameWithCost).tag(m)
+              }
+            }
+            Section("Gemini") {
+              ForEach(CopilotModel.allCases.filter { $0.isGemini && !$0.isFree }) { m in
                 Text(m.displayNameWithCost).tag(m)
               }
             }
@@ -894,13 +914,18 @@ struct NewChainSheet: View {
         Section("Agent 1 - \(agent1Role)") {
           TextField("Role", text: $agent1Role)
           Picker("Model", selection: $agent1Model) {
+            Section("Free") {
+              ForEach(CopilotModel.allCases.filter { $0.isFree }) { m in
+                Text(m.displayNameWithCost).tag(m)
+              }
+            }
             Section("Claude") {
               ForEach(CopilotModel.allCases.filter { $0.isClaude }) { m in
                 Text(m.displayNameWithCost).tag(m)
               }
             }
             Section("GPT") {
-              ForEach(CopilotModel.allCases.filter { !$0.isClaude }) { m in
+              ForEach(CopilotModel.allCases.filter { $0.isGPT && !$0.isFree }) { m in
                 Text(m.displayNameWithCost).tag(m)
               }
             }
@@ -910,13 +935,18 @@ struct NewChainSheet: View {
         Section("Agent 2 - \(agent2Role)") {
           TextField("Role", text: $agent2Role)
           Picker("Model", selection: $agent2Model) {
+            Section("Free") {
+              ForEach(CopilotModel.allCases.filter { $0.isFree }) { m in
+                Text(m.displayNameWithCost).tag(m)
+              }
+            }
             Section("Claude") {
               ForEach(CopilotModel.allCases.filter { $0.isClaude }) { m in
                 Text(m.displayNameWithCost).tag(m)
               }
             }
             Section("GPT") {
-              ForEach(CopilotModel.allCases.filter { !$0.isClaude }) { m in
+              ForEach(CopilotModel.allCases.filter { $0.isGPT && !$0.isFree }) { m in
                 Text(m.displayNameWithCost).tag(m)
               }
             }

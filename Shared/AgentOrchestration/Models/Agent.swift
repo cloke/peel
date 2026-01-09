@@ -23,6 +23,10 @@ public enum CopilotModel: String, Codable, CaseIterable, Identifiable {
   case gpt5 = "gpt-5"
   case gpt51CodexMini = "gpt-5.1-codex-mini"
   case gpt5Mini = "gpt-5-mini"
+  case gpt41 = "gpt-4.1"  // Often free/cheaper
+  
+  // Gemini
+  case gemini3Pro = "gemini-3-pro-preview"
   
   public var id: String { rawValue }
   
@@ -39,23 +43,38 @@ public enum CopilotModel: String, Codable, CaseIterable, Identifiable {
     case .gpt5: return "GPT 5"
     case .gpt51CodexMini: return "GPT 5.1 Codex Mini"
     case .gpt5Mini: return "GPT 5 Mini"
+    case .gpt41: return "GPT 4.1"
+    case .gemini3Pro: return "Gemini 3 Pro"
     }
   }
   
   /// Display name with premium cost (right-aligned)
   public var displayNameWithCost: String {
-    let cost = "\(premiumCost)×"
+    let costStr: String
+    if premiumCost == 0 {
+      costStr = "Free"
+    } else {
+      costStr = "\(premiumCost)×"
+    }
     // Pad to align costs on the right
     let padding = String(repeating: " ", count: max(0, 22 - displayName.count))
-    return "\(displayName)\(padding)\(cost)"
+    return "\(displayName)\(padding)\(costStr)"
   }
   
-  /// Premium requests cost per use
+  /// Premium requests cost per use (0 = free tier)
   public var premiumCost: Int {
     switch self {
     case .claudeOpus45: return 3
+    case .gpt41: return 0  // Free tier
+    case .gpt5Mini: return 0  // Free tier (likely)
+    case .gemini3Pro: return 0  // Free tier (likely)
     default: return 1
     }
+  }
+  
+  /// Whether this is a free-tier model
+  public var isFree: Bool {
+    premiumCost == 0
   }
   
   public var shortName: String {
@@ -71,6 +90,8 @@ public enum CopilotModel: String, Codable, CaseIterable, Identifiable {
     case .gpt5: return "5"
     case .gpt51CodexMini: return "Codex Mini"
     case .gpt5Mini: return "5 Mini"
+    case .gpt41: return "4.1"
+    case .gemini3Pro: return "Gemini 3"
     }
   }
   
@@ -83,9 +104,19 @@ public enum CopilotModel: String, Codable, CaseIterable, Identifiable {
     }
   }
   
+  public var isGPT: Bool {
+    rawValue.hasPrefix("gpt")
+  }
+  
+  public var isGemini: Bool {
+    rawValue.hasPrefix("gemini")
+  }
+  
   /// Group header for picker
   public var family: String {
-    isClaude ? "Claude" : "GPT"
+    if isClaude { return "Claude" }
+    if isGemini { return "Gemini" }
+    return "GPT"
   }
 }
 

@@ -1,63 +1,28 @@
 # Agent Orchestration - Session Summary (Jan 7-8, 2026)
 
-## Session Jan 8: Complete! ✅
+## Session Jan 8: Multi-Agent Chains Working! ✅
 
-### 1. CLI Detection Fix ✅
-**Problem:** App bundles don't inherit shell PATH, so `which gh` failed.
+### Latest: Multi-Agent Chain Test Results
+**Prompt:** "I would like to ensure that we have no legacy and only modern async."
 
-**Fix:** Added `findExecutable()` helper that checks common paths directly:
-- `/opt/homebrew/bin/` (Apple Silicon Homebrew)
-- `/usr/local/bin/` (Intel Homebrew)  
-- `/usr/bin/` and `/bin/`
+**Result:** The chain made an actual code change!
+- Cleaned up `Github.swift` - removed 62 lines of commented-out legacy code
+- Agent 1 (Planner/Opus) did the code change
+- Agent 2 (Implementer/Sonnet) verified the work
 
-### 2. Migrated to New Copilot CLI ✅
-**Discovery:** The old `gh-copilot` extension has been deprecated!
+**Key Insight:** With `--allow-all-tools`, copilot can:
+- Read files in the working directory
+- Write/edit files directly
+- Run shell commands (tests, build)
+- Search the codebase
 
-**Migration:**
-- Old: `gh extension install github/gh-copilot` → `gh copilot suggest`
-- New: `brew install copilot-cli` → `copilot -p "prompt"`
+### Added Free Tier Models
+Available models now include free options:
+- **Free:** GPT 4.1, GPT 5 Mini, Gemini 3 Pro
+- **1× Premium:** All Claude (except Opus), most GPT models
+- **3× Premium:** Claude Opus 4.5
 
-**Updated CLIService to:**
-- Install via `brew install copilot-cli`
-- Auth via `copilot` (interactive first-run)
-- Run via `copilot -p "prompt" --allow-all-tools` (non-interactive)
-
-### 3. Authentication Fix ✅
-**Problem:** Copilot CLI couldn't find auth when launched from app bundle.
-
-**Fix:** Get token from `gh auth token` and pass as `GH_TOKEN` environment variable.
-
-### 4. Model Info Display ✅
-**Problem:** Stats weren't showing - content goes to stdout but stats go to stderr!
-
-**Fix:** Combine stdout + stderr before parsing:
-```swift
-let combinedOutput = result.stdoutString + "\n" + result.stderrString
-return parseCopilotOutput(combinedOutput)
-```
-
-**Now displays:**
-- Model name (e.g., `claude-sonnet-4.5`)
-- Duration
-- Token usage (input/output)
-- Premium requests count
-
-### 5. Async Execution Fix ✅
-**Problem:** Beach ball and ViewBridge crash when running copilot.
-
-**Fix:** Use `Task.detached(priority: .userInitiated)` instead of `DispatchQueue` for proper Swift concurrency off the main actor.
-
-### 6. Model Selection ✅
-- Added `CopilotModel` enum with all available models
-- Model picker in AgentDetailView and NewAgentSheet
-- Shows premium cost per model (e.g., Opus = 3×, others = 1×)
-- Pass `--model <selected>` to copilot CLI
-
-### 7. UX Improvements ✅
-- CLI Status rows in sidebar are now clickable (opens setup sheet)
-- Simplified setup wizard (2 steps instead of 3)
-- Progress indicator while running
-- Model shown in sidebar and agent header
+Model picker now shows "Free" section at top for easy selection during testing.
 
 ---
 
