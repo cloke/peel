@@ -166,6 +166,51 @@ public enum AgentRole: String, Codable, CaseIterable, Identifiable {
       return []
     }
   }
+  
+  /// System prompt prefix that defines the agent's role clearly
+  public var systemPrompt: String {
+    switch self {
+    case .planner:
+      return """
+        You are a PLANNER agent. Your role is to:
+        - Analyze code and understand the codebase
+        - Create detailed plans and identify issues
+        - List specific files and line numbers that need changes
+        - Describe what changes should be made and why
+        
+        IMPORTANT: You must NOT make any edits or modifications to files.
+        You are READ-ONLY. Your job is to analyze and plan, not implement.
+        Output a clear, actionable plan that an Implementer agent can follow.
+        
+        """
+    case .implementer:
+      return """
+        You are an IMPLEMENTER agent. Your role is to:
+        - Execute the plan provided by the Planner
+        - Make precise, targeted code changes
+        - Follow the specific instructions given
+        - Run tests if needed to verify changes
+        
+        You have FULL ACCESS to edit files, run commands, and make changes.
+        Focus on implementing exactly what was planned. If the plan is unclear,
+        make reasonable decisions but stay close to the original intent.
+        
+        """
+    case .reviewer:
+      return """
+        You are a REVIEWER agent. Your role is to:
+        - Review the changes made by the Implementer
+        - Check for bugs, edge cases, and code quality issues
+        - Verify the changes match the original plan
+        - Suggest improvements or flag concerns
+        
+        IMPORTANT: You must NOT make any edits or modifications to files.
+        You are READ-ONLY. Your job is to review and provide feedback only.
+        Be specific about any issues found and suggest how to fix them.
+        
+        """
+    }
+  }
 }
 
 /// The type of AI agent CLI being used
@@ -235,6 +280,104 @@ public enum AgentState: Equatable {
   }
 }
 
+/// Framework/language hints for specialized agent instructions
+public enum FrameworkHint: String, Codable, CaseIterable, Identifiable {
+  case auto = "auto"           // Detect from project
+  case swift = "swift"         // Swift/SwiftUI/iOS/macOS
+  case ember = "ember"         // Ember.js
+  case react = "react"         // React/Next.js
+  case python = "python"       // Python/Django/Flask
+  case rust = "rust"           // Rust
+  case general = "general"     // No specific framework
+  
+  public var id: String { rawValue }
+  
+  public var displayName: String {
+    switch self {
+    case .auto: return "Auto-detect"
+    case .swift: return "Swift/SwiftUI"
+    case .ember: return "Ember.js"
+    case .react: return "React"
+    case .python: return "Python"
+    case .rust: return "Rust"
+    case .general: return "General"
+    }
+  }
+  
+  public var iconName: String {
+    switch self {
+    case .auto: return "wand.and.stars"
+    case .swift: return "swift"
+    case .ember: return "flame"
+    case .react: return "atom"
+    case .python: return "chevron.left.forwardslash.chevron.right"
+    case .rust: return "gearshape.2"
+    case .general: return "doc.text"
+    }
+  }
+  
+  /// Framework-specific instructions to inject into prompts
+  public var instructions: String {
+    switch self {
+    case .auto:
+      return ""  // Will be filled in based on detected project type
+    case .swift:
+      return """
+        
+        FRAMEWORK: Swift/SwiftUI (iOS/macOS)
+        - Use modern Swift 6 patterns: @Observable, async/await, actors
+        - Prefer NavigationStack over NavigationView
+        - Use @MainActor for UI code
+        - Follow Apple HIG for UI design
+        - Use 2-space indentation
+        
+        """
+    case .ember:
+      return """
+        
+        FRAMEWORK: Ember.js
+        - Use Ember Octane patterns (native classes, tracked properties)
+        - Follow Ember conventions for file structure
+        - Use Glimmer components where possible
+        - Prefer native getters over computed properties
+        
+        """
+    case .react:
+      return """
+        
+        FRAMEWORK: React/Next.js
+        - Use functional components with hooks
+        - Prefer TypeScript
+        - Follow React best practices for state management
+        - Use proper key props in lists
+        
+        """
+    case .python:
+      return """
+        
+        FRAMEWORK: Python
+        - Follow PEP 8 style guide
+        - Use type hints where appropriate
+        - Prefer async/await for I/O operations
+        - Use virtual environments and requirements.txt
+        
+        """
+    case .rust:
+      return """
+        
+        FRAMEWORK: Rust
+        - Follow Rust idioms and ownership patterns
+        - Use Result types for error handling
+        - Prefer iterators over manual loops
+        - Document public APIs
+        
+        """
+    case .general:
+      return ""
+    }
+  }
+}
+
 /// Represents an AI coding agent
 @MainActor
 @Observable
@@ -254,6 +397,12 @@ public final class Agent: Identifiable {
   /// Selected model for Copilot agents
   public var model: CopilotModel
   
+  /// Framework hint for specialized instructions
+  public var frameworkHint: FrameworkHint
+  
+  /// Custom instructions to append to prompts
+  public var customInstructions: String?
+  
   /// Working directory for the agent (project folder path)
   public var workingDirectory: String?
   
@@ -267,6 +416,8 @@ public final class Agent: Identifiable {
     role: AgentRole = .implementer,
     state: AgentState = .idle,
     model: CopilotModel = .claudeSonnet45,
+    frameworkHint: FrameworkHint = .auto,
+    customInstructions: String? = nil,
     workingDirectory: String? = nil,
     currentTask: AgentTask? = nil,
     workspace: AgentWorkspace? = nil,
@@ -278,12 +429,42 @@ public final class Agent: Identifiable {
     self.role = role
     self.state = state
     self.model = model
+    self.frameworkHint = frameworkHint
+    self.customInstructions = customInstructions
     self.workingDirectory = workingDirectory
     self.currentTask = currentTask
     self.workspace = workspace
     self.customCLIPath = customCLIPath
     self.createdAt = Date()
     self.lastActivityAt = Date()
+  }
+  
+  /// Build the full prompt with role and framework instructions
+  public func buildPrompt(userPrompt: String, context: String? = nil) -> String {
+    var parts: [String] = []
+    
+    // 1. Role system prompt
+    parts.append(role.systemPrompt)
+    
+    // 2. Framework instructions (if not auto or general)
+    if frameworkHint != .auto && frameworkHint != .general {
+      parts.append(frameworkHint.instructions)
+    }
+    
+    // 3. Custom instructions
+    if let custom = customInstructions, !custom.isEmpty {
+      parts.append("ADDITIONAL INSTRUCTIONS:\n\(custom)\n")
+    }
+    
+    // 4. Context from previous agent (if in chain)
+    if let ctx = context, !ctx.isEmpty {
+      parts.append("CONTEXT FROM PREVIOUS AGENT:\n\(ctx)\n---\n")
+    }
+    
+    // 5. User prompt
+    parts.append("TASK:\n\(userPrompt)")
+    
+    return parts.joined(separator: "\n")
   }
   
   /// Update the agent's state and record activity

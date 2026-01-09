@@ -21,11 +21,10 @@ struct FileListView: View {
           TextEditor(text: $commitMessage)
             .frame(height: 100)
             .focused($commitIsFocused)
-          withAnimation {
-            Text("Enter commit message")
-              .opacity(commitIsFocused ? 0 : 1)
-              .allowsHitTesting(false)
-          }
+          Text("Enter commit message")
+            .opacity(commitIsFocused ? 0 : 1)
+            .allowsHitTesting(false)
+            .animation(.default, value: commitIsFocused)
         }
         HStack {
           Button("Commit") {

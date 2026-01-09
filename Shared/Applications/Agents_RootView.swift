@@ -378,6 +378,42 @@ struct AgentDetailView: View {
             .frame(maxWidth: 250)
           }
           
+          // Role picker
+          HStack {
+            Text("Role").font(.subheadline).foregroundStyle(.secondary)
+            Picker("", selection: Binding(
+              get: { agent.role },
+              set: { agent.role = $0 }
+            )) {
+              ForEach(AgentRole.allCases) { r in
+                Label(r.displayName, systemImage: r.iconName).tag(r)
+              }
+            }
+            .labelsHidden()
+            .frame(maxWidth: 150)
+            
+            if !agent.role.canWrite {
+              Image(systemName: "lock.fill")
+                .foregroundStyle(.orange)
+                .help("Read-only: cannot edit files")
+            }
+          }
+          
+          // Framework picker
+          HStack {
+            Text("Framework").font(.subheadline).foregroundStyle(.secondary)
+            Picker("", selection: Binding(
+              get: { agent.frameworkHint },
+              set: { agent.frameworkHint = $0 }
+            )) {
+              ForEach(FrameworkHint.allCases) { f in
+                Label(f.displayName, systemImage: f.iconName).tag(f)
+              }
+            }
+            .labelsHidden()
+            .frame(maxWidth: 150)
+          }
+          
           // Working directory picker
           HStack {
             Text("Project").font(.subheadline).foregroundStyle(.secondary)
@@ -532,8 +568,10 @@ struct AgentDetailView: View {
     do {
       switch agent.type {
       case .copilot:
+        // Build prompt with role and framework instructions
+        let fullPrompt = agent.buildPrompt(userPrompt: task.prompt)
         let response = try await cliService.runCopilotSession(
-          prompt: task.prompt,
+          prompt: fullPrompt,
           model: agent.model,
           role: agent.role,
           workingDirectory: agent.workingDirectory
@@ -1339,19 +1377,14 @@ struct ChainDetailView: View {
       for (index, agent) in chain.agents.enumerated() {
         chain.state = .running(agentIndex: index)
         
-        // Build prompt with context from previous agents
-        var fullPrompt = prompt
+        // Get context from previous agents
         let context = chain.contextForAgent(at: index)
-        if !context.isEmpty {
-          fullPrompt = """
-          Previous agent output for context:
-          \(context)
-          
-          ---
-          
-          Your task: \(prompt)
-          """
-        }
+        
+        // Build prompt with role instructions, framework hints, and context
+        let fullPrompt = agent.buildPrompt(
+          userPrompt: prompt,
+          context: context.isEmpty ? nil : context
+        )
         
         // Run the agent
         let response = try await cliService.runCopilotSession(

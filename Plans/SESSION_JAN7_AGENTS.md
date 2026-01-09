@@ -1,26 +1,49 @@
 # Agent Orchestration - Session Summary (Jan 7-8, 2026)
 
-## Session Jan 8: Multi-Agent Chains Working! ✅
+## Session Jan 8: Role Prompts & Framework Hints ✅
 
-### Latest: Multi-Agent Chain Test Results
-**Prompt:** "I would like to ensure that we have no legacy and only modern async."
+### Latest: Added System Prompts for Roles
+Each role now has a clear system prompt injected into the conversation:
 
-**Result:** The chain made an actual code change!
-- Cleaned up `Github.swift` - removed 62 lines of commented-out legacy code
-- Agent 1 (Planner/Opus) did the code change
-- Agent 2 (Implementer/Sonnet) verified the work
+**Planner Prompt:**
+```
+You are a PLANNER agent. Your role is to:
+- Analyze code and understand the codebase
+- Create detailed plans and identify issues
+- List specific files and line numbers
+IMPORTANT: You must NOT make any edits. You are READ-ONLY.
+```
 
-**Key Insight:** With `--allow-all-tools`, copilot can:
-- Read files in the working directory
-- Write/edit files directly
-- Run shell commands (tests, build)
-- Search the codebase
+**Implementer Prompt:**
+```
+You are an IMPLEMENTER agent. Your role is to:
+- Execute the plan provided by the Planner
+- Make precise, targeted code changes
+You have FULL ACCESS to edit files.
+```
 
-### Added Free Tier Models
-Available models now include free options:
-- **Free:** GPT 4.1, GPT 5 Mini, Gemini 3 Pro
-- **1× Premium:** All Claude (except Opus), most GPT models
-- **3× Premium:** Claude Opus 4.5
+**Reviewer Prompt:**
+```
+You are a REVIEWER agent. Your role is to:
+- Review the changes made by the Implementer
+- Check for bugs and code quality issues
+IMPORTANT: You must NOT make any edits. You are READ-ONLY.
+```
+
+### Added Framework Hints
+Agents can be configured for specific languages/frameworks:
+- **Auto-detect** - Let the agent figure it out
+- **Swift/SwiftUI** - iOS/macOS patterns, Swift 6, @Observable
+- **Ember.js** - Octane patterns, Glimmer components
+- **React** - Hooks, TypeScript
+- **Python** - PEP 8, async/await
+- **Rust** - Ownership, Result types
+- **General** - No specific framework
+
+### New Agent Properties
+- `agent.buildPrompt(userPrompt:context:)` - Builds full prompt with role + framework + custom instructions
+- `agent.frameworkHint` - Selected framework
+- `agent.customInstructions` - Additional custom instructions
 
 ---
 

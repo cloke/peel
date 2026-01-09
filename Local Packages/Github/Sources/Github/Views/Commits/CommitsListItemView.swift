@@ -21,7 +21,6 @@ struct CommitsListItemView: View {
       }
       
       Text(commit.commit.message)
-        .padding(.horizontal)
         .padding(.vertical, 5)
     }
   }
