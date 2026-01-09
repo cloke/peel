@@ -14,10 +14,12 @@ import AppKit
 struct Agents_RootView: View {
   @State private var agentManager = AgentManager()
   @State private var cliService = CLIService()
+  @State private var sessionTracker = SessionTracker()
   @State private var columnVisibility = NavigationSplitViewVisibility.all
   @State private var showingNewAgentSheet = false
   @State private var showingNewChainSheet = false
   @State private var showingSetupSheet = false
+  @State private var showingSessionSummary = false
   
   var body: some View {
     NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -30,7 +32,7 @@ struct Agents_RootView: View {
       )
     } detail: {
       if let chain = agentManager.selectedChain {
-        ChainDetailView(chain: chain, agentManager: agentManager, cliService: cliService)
+        ChainDetailView(chain: chain, agentManager: agentManager, cliService: cliService, sessionTracker: sessionTracker)
       } else if let agent = agentManager.selectedAgent {
         AgentDetailView(agent: agent, agentManager: agentManager)
       } else {
@@ -39,7 +41,6 @@ struct Agents_RootView: View {
           Image(systemName: "cpu")
             .font(.system(size: 48))
             .foregroundStyle(.secondary)
-            .symbolEffect(.pulse.byLayer, options: .repeating)
           Text("No Agent Selected")
             .font(.title2)
           Text("Create an agent or chain to get started")
@@ -78,6 +79,19 @@ struct Agents_RootView: View {
           Image(systemName: "sidebar.left")
         }
       }
+      ToolbarItem(placement: .automatic) {
+        Button {
+          showingSessionSummary = true
+        } label: {
+          HStack(spacing: 4) {
+            Image(systemName: "chart.bar.fill")
+            Text("\(sessionTracker.totalPremiumUsed)×")
+              .font(.caption)
+              .fontWeight(.medium)
+          }
+        }
+        .help("Session Usage: \(sessionTracker.totalPremiumUsed) premium requests")
+      }
       ToolSelectionToolbar()
       #endif
     }
@@ -89,6 +103,9 @@ struct Agents_RootView: View {
     }
     .sheet(isPresented: $showingSetupSheet) {
       CLISetupSheet(cliService: cliService)
+    }
+    .sheet(isPresented: $showingSessionSummary) {
+      SessionSummarySheet(sessionTracker: sessionTracker)
     }
   }
   
@@ -1401,6 +1418,7 @@ struct ChainDetailView: View {
   let chain: AgentChain
   @Bindable var agentManager: AgentManager
   @Bindable var cliService: CLIService
+  @Bindable var sessionTracker: SessionTracker
   
   @State private var prompt = ""
   @State private var isRunning = false
@@ -1672,6 +1690,9 @@ struct ChainDetailView: View {
       }
       
       chain.state = .complete
+      
+      // Record to session tracker
+      sessionTracker.recordChainRun(chain)
     } catch {
       errorMessage = error.localizedDescription
       chain.state = .failed(message: error.localizedDescription)
@@ -1680,6 +1701,181 @@ struct ChainDetailView: View {
     isRunning = false
   }
   #endif
+}
+
+// MARK: - Session Summary Sheet
+
+struct SessionSummarySheet: View {
+  @Bindable var sessionTracker: SessionTracker
+  @Environment(\.dismiss) private var dismiss
+  @State private var showingExportSuccess = false
+  
+  var body: some View {
+    NavigationStack {
+      ScrollView {
+        VStack(alignment: .leading, spacing: 20) {
+          // Session stats
+          HStack(spacing: 24) {
+            StatCard(
+              title: "Premium Requests",
+              value: "\(sessionTracker.totalPremiumUsed)",
+              icon: "star.fill",
+              color: .orange
+            )
+            StatCard(
+              title: "Session Duration",
+              value: sessionTracker.sessionDuration,
+              icon: "clock.fill",
+              color: .blue
+            )
+            StatCard(
+              title: "Chain Runs",
+              value: "\(sessionTracker.chainRunHistory.count)",
+              icon: "link",
+              color: .purple
+            )
+          }
+          .padding(.horizontal)
+          
+          Divider()
+          
+          // Chain run history
+          if sessionTracker.chainRunHistory.isEmpty {
+            ContentUnavailableView(
+              "No Runs Yet",
+              systemImage: "tray",
+              description: Text("Run a chain to see results here")
+            )
+          } else {
+            VStack(alignment: .leading, spacing: 12) {
+              Text("Run History")
+                .font(.headline)
+                .padding(.horizontal)
+              
+              ForEach(sessionTracker.chainRunHistory) { record in
+                GroupBox {
+                  VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                      Text(record.chainName)
+                        .font(.headline)
+                      Spacer()
+                      Text("\(record.totalPremium)× Premium")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                    
+                    Text(record.timestamp, style: .time)
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                    
+                    // Agent summaries
+                    ForEach(record.results) { result in
+                      HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                          .foregroundStyle(.green)
+                          .font(.caption)
+                        Text(result.agentName)
+                          .font(.caption)
+                        Text("(\(result.model))")
+                          .font(.caption2)
+                          .foregroundStyle(.secondary)
+                        Spacer()
+                        if let duration = result.duration {
+                          Text(duration)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        }
+                      }
+                    }
+                  }
+                }
+                .padding(.horizontal)
+              }
+            }
+          }
+        }
+        .padding(.vertical)
+      }
+      .navigationTitle("Session Summary")
+      #if os(macOS)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Done") {
+            dismiss()
+          }
+        }
+        
+        ToolbarItem(placement: .primaryAction) {
+          Menu {
+            Button {
+              exportMarkdown()
+            } label: {
+              Label("Export as Markdown", systemImage: "doc.text")
+            }
+            
+            Button(role: .destructive) {
+              sessionTracker.resetSession()
+            } label: {
+              Label("Reset Session", systemImage: "trash")
+            }
+          } label: {
+            Image(systemName: "ellipsis.circle")
+          }
+        }
+      }
+      #endif
+      .frame(minWidth: 500, minHeight: 400)
+      .alert("Exported", isPresented: $showingExportSuccess) {
+        Button("OK", role: .cancel) { }
+      } message: {
+        Text("Session report saved to Desktop")
+      }
+    }
+  }
+  
+  #if os(macOS)
+  private func exportMarkdown() {
+    let markdown = sessionTracker.exportAsMarkdown()
+    let desktopURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first!
+    let filename = "agent_session_\(Date().formatted(.iso8601.year().month().day().time(includingFractionalSeconds: false))).md"
+      .replacingOccurrences(of: ":", with: "-")
+    let fileURL = desktopURL.appendingPathComponent(filename)
+    
+    do {
+      try markdown.write(to: fileURL, atomically: true, encoding: .utf8)
+      showingExportSuccess = true
+    } catch {
+      print("Failed to export: \(error)")
+    }
+  }
+  #endif
+}
+
+// MARK: - Stat Card
+
+private struct StatCard: View {
+  let title: String
+  let value: String
+  let icon: String
+  let color: Color
+  
+  var body: some View {
+    GroupBox {
+      VStack(spacing: 8) {
+        Image(systemName: icon)
+          .font(.title2)
+          .foregroundStyle(color)
+        Text(value)
+          .font(.title)
+          .fontWeight(.bold)
+        Text(title)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+      .frame(maxWidth: .infinity)
+      .padding(.vertical, 8)
+    }
+  }
 }
 #endif
 
