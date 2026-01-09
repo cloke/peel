@@ -9,6 +9,12 @@
 import SwiftUI
 import Observation
 
+enum PackageSource: String, CaseIterable, Identifiable {
+  case installed = "Installed"
+  case available = "Available"
+  var id: String { rawValue }
+}
+
 @MainActor
 @Observable
 class SearchResults {
@@ -18,7 +24,11 @@ class SearchResults {
   var items = Set<String>() {
     didSet {
       // SwiftUI Lists/ForEach/etc require random access collections
-      filtered = Array(items).sorted()
+      if searchText.isEmpty {
+        filtered = Array(items).sorted()
+      } else {
+        search()
+      }
     }
   }
   
@@ -39,12 +49,13 @@ class SearchResults {
   
   func search() {
     if searchText.isEmpty {
-      filtered.removeAll()
+      filtered = Array(items).sorted()
       isSearching = false
       return
     }
     
     filtered = items.filter { $0.contains(searchText) }.sorted()
+    isSearching = true
   }
 }
 
@@ -94,49 +105,64 @@ extension SidebarNavigationView {
 public struct SidebarNavigationView: View {
   @State private var results = SearchResults()
   @State private var viewModel = ViewModel()
+  @State private var source: PackageSource = .installed
   
   public init() {}
   
   public var body: some View {
     VStack {
-      HStack {
-        Button("Installed") {
-          results.items = []
-          Task { await viewModel.installed() }
-        }
-        .disabled(viewModel.isLoading)
-        
-        Button("Available") {
-          results.items = []
-          Task { await viewModel.available(term: results.searchText) }
-        }
-        .disabled(viewModel.isLoading)
-        
-        if viewModel.isLoading {
-          ProgressView()
-            .controlSize(.small)
+      Picker("Source", selection: $source) {
+        ForEach(PackageSource.allCases) { source in
+          Text(source.rawValue).tag(source)
         }
       }
-      .onChange(of: viewModel.outputStream) { _, data in
-        if let lastItem = data.last {
-          results.items.insert(lastItem)
-        }
+      .pickerStyle(.segmented)
+      .padding()
+      .disabled(viewModel.isLoading)
+
+      if viewModel.isLoading && results.items.isEmpty {
+        ProgressView()
+          .controlSize(.small)
+          .padding()
       }
-      
-      SearchBarView(searchText: $results.searchText, isSearching: $results.isSearching)
-        .padding(.all)
       
       if results.filtered.isEmpty && !viewModel.isLoading {
         ContentUnavailableView(
           "No Packages",
           systemImage: "shippingbox",
-          description: Text("Click 'Installed' or search for packages")
+          description: Text(source == .installed ? "No installed packages found" : "Search for available packages")
         )
       } else {
         List(results.filtered, id: \.self) { name in
-          NavigationLink(destination: DetailView(name: name)) {
+          NavigationLink(value: name) {
             Text(name)
           }
+        }
+        .navigationDestination(for: String.self) { name in
+          DetailView(name: name)
+        }
+      }
+    }
+    .searchable(text: $results.searchText)
+    .onChange(of: viewModel.outputStream) { _, data in
+      if let lastItem = data.last {
+        results.items.insert(lastItem)
+      }
+    }
+    .task(id: source) {
+      results.items = []
+      if source == .installed {
+        await viewModel.installed()
+      } else if !results.searchText.isEmpty {
+        await viewModel.available(term: results.searchText)
+      }
+    }
+    .task(id: results.searchText) {
+      if source == .available {
+        try? await Task.sleep(for: .seconds(0.5))
+        if !results.searchText.isEmpty {
+          results.items = []
+          await viewModel.available(term: results.searchText)
         }
       }
     }

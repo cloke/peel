@@ -10,10 +10,12 @@ import Brew
 
 struct Brew_RootView: View {
   var body: some View {
-    SidebarNavigationView()
-      .toolbar(content: {
-        ToolSelectionToolbar()
-      })
+    NavigationStack {
+      SidebarNavigationView()
+        .toolbar(content: {
+          ToolSelectionToolbar()
+        })
+    }
   }
 }
 

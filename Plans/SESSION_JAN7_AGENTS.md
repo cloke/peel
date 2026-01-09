@@ -1,235 +1,193 @@
 # Agent Orchestration - Session Summary (Jan 7-8, 2026)
 
-## Session Jan 8: Role Prompts & Framework Hints ✅
+## Current Status ✅
 
-### Latest: Added System Prompts for Roles
-Each role now has a clear system prompt injected into the conversation:
+### Completed Features
+| Feature | Commit | Description |
+|---------|--------|-------------|
+| Basic Agents UI | `b5f7b74` | NavigationSplitView, sidebar, agent detail |
+| Copilot CLI Integration | `b5f7b74` | Detection, auth, non-interactive mode |
+| Model Selection | `3ead2a9` | All Copilot models with premium costs |
+| Working Directory | `3ead2a9` | Folder picker, runs in project context |
+| Multi-Agent Chains | `3ead2a9` | Sequential execution, context passing |
+| Free Tier Models | `3bcbf40` | GPT 4.1, GPT 5 Mini, Gemini 3 Pro |
+| Agent Roles | `7e0e5c4` | Planner (read-only), Implementer, Reviewer |
+| UX Improvements | `7e0e5c4` | Visible buttons, no hidden + menu |
+| Role System Prompts | `477f065` | Clear instructions for each role |
+| Framework Hints | `477f065` | Swift, Ember, React, Python, Rust |
 
-**Planner Prompt:**
-```
-You are a PLANNER agent. Your role is to:
-- Analyze code and understand the codebase
-- Create detailed plans and identify issues
-- List specific files and line numbers
-IMPORTANT: You must NOT make any edits. You are READ-ONLY.
-```
-
-**Implementer Prompt:**
-```
-You are an IMPLEMENTER agent. Your role is to:
-- Execute the plan provided by the Planner
-- Make precise, targeted code changes
-You have FULL ACCESS to edit files.
-```
-
-**Reviewer Prompt:**
-```
-You are a REVIEWER agent. Your role is to:
-- Review the changes made by the Implementer
-- Check for bugs and code quality issues
-IMPORTANT: You must NOT make any edits. You are READ-ONLY.
-```
-
-### Added Framework Hints
-Agents can be configured for specific languages/frameworks:
-- **Auto-detect** - Let the agent figure it out
-- **Swift/SwiftUI** - iOS/macOS patterns, Swift 6, @Observable
-- **Ember.js** - Octane patterns, Glimmer components
-- **React** - Hooks, TypeScript
-- **Python** - PEP 8, async/await
-- **Rust** - Ownership, Result types
-- **General** - No specific framework
-
-### New Agent Properties
-- `agent.buildPrompt(userPrompt:context:)` - Builds full prompt with role + framework + custom instructions
-- `agent.frameworkHint` - Selected framework
-- `agent.customInstructions` - Additional custom instructions
+### What Works Now
+- ✅ Create agents with role (Planner/Implementer/Reviewer)
+- ✅ Select model with premium cost display
+- ✅ Set framework hint (Swift/SwiftUI, Ember, React, etc.)
+- ✅ Set working directory for project context
+- ✅ Create chains with multiple agents
+- ✅ Run chains sequentially with context passing
+- ✅ Role-based tool restrictions (--deny-tool for planners/reviewers)
+- ✅ System prompts injected for clear role behavior
 
 ---
 
-## UX Feedback & Next Steps 🎯
+## Apple Intelligence & On-Device AI 🧠
 
-### 1. Agent Roles (Read-only Planner)
-Current issue: Planner made edits when it should only plan.
+### macOS 26 / iOS 26 New Frameworks
 
-**Solution:** Add `AgentRole` with tool restrictions:
+Apple introduced several on-device AI frameworks that could enhance agent orchestration:
+
+#### 1. **Foundation Models Framework** (New in 26)
 ```swift
-enum AgentRole {
-  case planner    // Read-only: can read files, search, but NOT write
-  case implementer // Full access: can edit files, run commands
-  case reviewer   // Read-only: reviews changes, suggests fixes
+import FoundationModels
+
+// On-device language model for quick tasks
+let session = LanguageModelSession()
+let response = try await session.respond(to: "Summarize this code")
+```
+**Use Cases:**
+- Quick code summarization (no API call needed)
+- Local pre-processing before sending to Copilot
+- Privacy-sensitive tasks that shouldn't leave device
+- Offline capability for basic analysis
+
+#### 2. **Apple Intelligence Integration**
+```swift
+import AppIntents
+
+// Siri/Apple Intelligence can invoke agents
+struct RunAgentIntent: AppIntent {
+  static var title: LocalizedStringResource = "Run Agent"
+  @Parameter(title: "Prompt") var prompt: String
+  
+  func perform() async throws -> some IntentResult {
+    // Run agent chain
+  }
 }
 ```
-- Pass `--deny-tool write_file edit_file` for planners/reviewers
-- Add "Auto-approve" toggle vs manual review step
+**Use Cases:**
+- "Hey Siri, run my code review chain"
+- Shortcuts integration for automated workflows
+- Background agent execution
 
-### 2. Live Status/Progress (Not Just Spinner)
-Show what the agent is doing:
-- "Reading Agent.swift..."
-- "Searching for async patterns..."
-- "Editing CLIService.swift..."
-- Progress bar or step indicator
-
-**Implementation:** Parse copilot's stderr for tool usage in real-time (streaming)
-
-### 3. Chain Templates
-Pre-configured workflows users can save/load:
-- **Code Review:** 1 Planner (Opus) → N Implementers → 1 Reviewer
-- **Bug Fix:** 1 Analyzer → 1 Fixer → 1 Tester
-- **Refactor:** 1 Planner → 3 Implementers (parallel?) → 2 Reviewers
-
-**Template Structure:**
+#### 3. **Writing Tools API**
 ```swift
-struct ChainTemplate {
-  let name: String
-  let description: String
-  let steps: [AgentStepTemplate]
-  // e.g., "1 planner, up to 10 implementers, 2 reviewers"
-}
+// Integrate with system-wide Writing Tools
+@WritingToolsEnabled
+struct CodeEditorView: View { ... }
 ```
+**Use Cases:**
+- Proofread/improve generated code
+- Rewrite suggestions inline
 
-### 4. Review Loop
-Allow back-and-forth between agents:
-- Reviewer suggests changes
-- Implementer can accept/deny
-- Loop until approved or max iterations
+#### 4. **Neural Engine Direct Access**
+```swift
+import CoreML
 
-### 5. Better UX for Creating (No Hidden + Menu)
-Current: `+` menu hides options
+// Custom models on Neural Engine
+let config = MLModelConfiguration()
+config.computeUnits = .cpuAndNeuralEngine
+```
+**Use Cases:**
+- Code embedding models for semantic search
+- Local classification (Swift vs Ember vs React detection)
+- Fast local inference for simple decisions
 
-**Ideas:**
-- **Segmented control** in sidebar header: `Agents | Chains | Templates`
-- **Empty state cards** when no agents: "Create Agent" / "Create Chain" buttons
-- **Quick actions bar** at bottom of sidebar
-- **Floating action button** (FAB) with expanded options
+### Potential Integration Points
 
----
+| Task | Cloud (Copilot) | On-Device |
+|------|-----------------|-----------|
+| Complex reasoning | ✅ Opus/GPT-5 | ❌ |
+| Code generation | ✅ Sonnet/Codex | ❌ |
+| Quick summaries | Optional | ✅ Foundation Models |
+| Framework detection | Optional | ✅ Local classifier |
+| Code search/embedding | Optional | ✅ CoreML |
+| Syntax validation | ❌ | ✅ SourceKit |
+| Privacy-sensitive | ❌ | ✅ On-device |
 
-## Immediate Implementation Priority
+### Implementation Ideas
 
-1. ✅ **Fix + menu** → Use segmented tabs or visible buttons
-2. 🔄 **Add AgentRole** → Planner (read-only), Implementer, Reviewer
-3. 🔄 **Live status** → Show current tool being used
-4. 📋 **Templates** → Save/load chain configurations
+1. **Hybrid Agent Type**
+   ```swift
+   enum AgentType {
+     case copilot      // Cloud - full capability
+     case appleAI      // On-device - fast, private
+     case hybrid       // Use on-device for pre-processing, cloud for heavy lifting
+   }
+   ```
 
----
+2. **Smart Routing**
+   - Detect if task is simple → use on-device
+   - Detect if task needs code changes → use Copilot
+   - Detect if task is privacy-sensitive → force on-device
 
-## Commits
-- `b5f7b74` - Initial agent orchestration with Copilot CLI
-- `19e0884` - Update session notes
+3. **Local Pre-Processing**
+   - Use Foundation Models to summarize context before sending to Copilot
+   - Reduce token usage by pre-filtering relevant code
+   - Detect framework locally before adding hints
 
 ---
 
 ## Next Steps (Priority Order)
 
-### 1. Multi-Agent Coordination 🎯 (Next)
-Allow two agents to work on related tasks:
-- Agent A: Research/planning (e.g., Opus for complex reasoning)
-- Agent B: Implementation (e.g., Codex for code generation)
-- Pass output from Agent A as context to Agent B
-- Sequential execution with shared context
-- **Requires:** Working directory support first
+### Immediate (This Session)
+- [ ] Research Foundation Models API availability
+- [ ] Test if FoundationModels framework is available in macOS 26
 
-### 2. Working Directory Context (Required for Multi-Agent)
-Run copilot in a specific repo directory for better context:
-- Add `workingDirectory` property to Agent
-- Select repository/folder from UI
-- Pass `workingDirectory` to `runCopilotSession`
-- Agent understands project structure and can run tools
+### Short Term
+- [ ] Add `AgentType.appleAI` for on-device tasks
+- [ ] Implement framework auto-detection using local analysis
+- [ ] Add AppIntents for Siri/Shortcuts integration
 
-### 3. Session Cost Tracking (Future Enhancement) 💰
-Track total premium requests used across a session:
-- Add `totalPremiumUsed: Int` to AgentManager or a new SessionTracker
-- Accumulate costs from each `CopilotResponse.premiumRequests`
-- Display running total in UI (e.g., "Session: 7 Premium used")
-- Optional: Show breakdown by model
+### Medium Term  
+- [ ] Chain Templates (save/load workflows)
+- [ ] Review Loop (back-and-forth between agents)
+- [ ] Live status/progress during agent execution
+- [ ] Session cost tracking
 
-### 4. Streaming Output (Nice to Have)
-Show response as it generates instead of waiting:
-- Use `AsyncStream` to yield lines as they arrive
-- Update UI progressively
-
-### 5. Git Worktree Integration (Complex)
-Create isolated branches for agent work:
-- `WorkspaceManager.createWorkspace()` creates worktree
-- Agent works in isolated branch
-- Review changes before merge
+### Long Term
+- [ ] Git worktree integration for isolated workspaces
+- [ ] Parallel agent execution
+- [ ] Custom model fine-tuning for specific codebases
 
 ---
 
-## How to Test
-
-1. **Open the app** - Go to Agents tab (robot icon in toolbar)
-2. **Check CLI Status** - Sidebar should show "Copilot - Ready" (green)
-3. **Select an agent** - Click "Copilot Helper" in sidebar
-4. **Assign a task:**
-   - Click "Assign Task" button
-   - Title: "Test prompt"
-   - Prompt: "What is 2+2?"
-   - Click "Assign"
-5. **Run the task** - Click "Run with Copilot" button
-6. **See output** - Response + model info pill appears
+## Session Commits
+```
+594cce6 Add AppleAIService for on-device Foundation Models
+477f065 Add role system prompts and framework hints
+7e0e5c4 Add Agent Roles and improve UX  
+3bcbf40 Add free tier models and update session notes
+3ead2a9 Add model selection, working directory, and multi-agent chains
+19e0884 Update session notes with next steps
+b5f7b74 Add Agent Orchestration with Copilot CLI integration
+```
 
 ---
 
-## Current State
+## Architecture
 
-**Working:**
-- ✅ Copilot CLI detection (`copilot --version`)
-- ✅ Copilot CLI authentication (via device flow)
-- ✅ Non-interactive prompt execution (`copilot -p "..." -s --allow-all-tools`)
-- ✅ Task assignment UI
-- ✅ Run button with output display
-- ✅ CLI setup wizard
-
-**Not Yet Implemented:**
-- ❌ Claude CLI integration (need to test `claude` command)
-- ❌ Working directory context (run in repo folder)
-- ❌ Streaming output (currently waits for full response)
-- ❌ Git worktree integration for isolated workspaces
-- ❌ Multiple concurrent agents
-
----
-
-## Files Modified Today
-
-1. `Shared/AgentOrchestration/CLIService.swift`
-   - Added `findExecutable()` for PATH-independent executable lookup
-   - Migrated from `gh copilot` to new `copilot-cli`
-   - Added `runCopilotSession()` and `runClaudeSession()`
-   - Simplified installation flow (2 steps)
-
-2. `Shared/Applications/Agents_RootView.swift`
-   - Added Run button and output display to AgentDetailView
-   - Made CLI Status rows clickable
-   - Updated CopilotInstallSteps for new CLI
-
----
-
-## Session Jan 7: Initial Setup
-
-### 1. Basic Agents UI Created ✅
-- Created `Agents_RootView.swift` with:
-  - NavigationSplitView with sidebar showing agents
-  - Agent detail view with task assignment
-  - Sample agents (Claude Assistant, Copilot Helper, Feature Builder)
-  - Tool switcher integration (Agents tab in toolbar)
-
-### 2. CLI Detection Service Created ✅
-- Created `CLIService.swift` for detecting CLI tools
-- Shows CLI status in sidebar
-- Installation wizard with step-by-step flow
-
-### 3. Supporting Files Created
-- `AgentModels.swift` - Agent, AgentTask, AgentType, AgentState
-- `AgentManager.swift` - Agent lifecycle management
-- `WorkspaceManager.swift` - Git worktree integration (stub)
-
----
-
-## Architecture Decisions
-
-1. **Hybrid Diff Approach:** Show diffs in-app for reviewing, VS Code for editing
-2. **Use TaskRunner Package:** Don't duplicate ProcessExecutor, use existing package
-3. **CLI-based Agents:** Use `copilot` and `claude` CLI tools rather than direct API
-4. **Dogfooding:** Plan to use agent orchestration to build agent orchestration features
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Kitchen Sync App                      │
+├─────────────────────────────────────────────────────────┤
+│  Agents_RootView                                         │
+│  ├── Sidebar (Agents, Chains, CLI Status)               │
+│  ├── AgentDetailView (Model, Role, Framework, Project)  │
+│  └── ChainDetailView (Multi-agent orchestration)        │
+├─────────────────────────────────────────────────────────┤
+│  AgentManager                                            │
+│  ├── agents: [Agent]                                    │
+│  ├── chains: [AgentChain]                               │
+│  └── createAgent/createChain                            │
+├─────────────────────────────────────────────────────────┤
+│  CLIService                                              │
+│  ├── runCopilotSession(prompt, model, role, workDir)    │
+│  ├── copilotStatus / claudeStatus                       │
+│  └── getGitHubToken()                                   │
+├─────────────────────────────────────────────────────────┤
+│  Agent Model                                             │
+│  ├── role: AgentRole (planner/implementer/reviewer)     │
+│  ├── model: CopilotModel                                │
+│  ├── frameworkHint: FrameworkHint                       │
+│  ├── buildPrompt(userPrompt, context)                   │
+│  └── workingDirectory                                   │
+└─────────────────────────────────────────────────────────┘
+```
