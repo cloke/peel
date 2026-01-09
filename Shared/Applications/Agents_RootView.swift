@@ -6,6 +6,9 @@
 //
 
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 /// Main view for AI Agent Orchestration
 struct Agents_RootView: View {
@@ -13,13 +16,21 @@ struct Agents_RootView: View {
   @State private var cliService = CLIService()
   @State private var columnVisibility = NavigationSplitViewVisibility.all
   @State private var showingNewAgentSheet = false
+  @State private var showingNewChainSheet = false
   @State private var showingSetupSheet = false
   
   var body: some View {
     NavigationSplitView(columnVisibility: $columnVisibility) {
-      AgentsSidebarView(agentManager: agentManager, cliService: cliService, showingSetupSheet: $showingSetupSheet)
+      AgentsSidebarView(
+        agentManager: agentManager,
+        cliService: cliService,
+        showingSetupSheet: $showingSetupSheet,
+        showingNewChainSheet: $showingNewChainSheet
+      )
     } detail: {
-      if let agent = agentManager.selectedAgent {
+      if let chain = agentManager.selectedChain {
+        ChainDetailView(chain: chain, agentManager: agentManager, cliService: cliService)
+      } else if let agent = agentManager.selectedAgent {
         AgentDetailView(agent: agent, agentManager: agentManager)
       } else {
         ContentUnavailableView(
@@ -48,8 +59,15 @@ struct Agents_RootView: View {
       #endif
       
       ToolbarItem(placement: .primaryAction) {
-        Button { showingNewAgentSheet = true } label: {
-          Label("New Agent", systemImage: "plus")
+        Menu {
+          Button { showingNewAgentSheet = true } label: {
+            Label("New Agent", systemImage: "cpu")
+          }
+          Button { showingNewChainSheet = true } label: {
+            Label("New Chain", systemImage: "link")
+          }
+        } label: {
+          Label("Add", systemImage: "plus")
         }
       }
       
@@ -61,6 +79,9 @@ struct Agents_RootView: View {
     }
     .sheet(isPresented: $showingNewAgentSheet) {
       NewAgentSheet(agentManager: agentManager, cliService: cliService)
+    }
+    .sheet(isPresented: $showingNewChainSheet) {
+      NewChainSheet(agentManager: agentManager, cliService: cliService)
     }
     .sheet(isPresented: $showingSetupSheet) {
       CLISetupSheet(cliService: cliService)
@@ -83,12 +104,27 @@ struct AgentsSidebarView: View {
   @Bindable var agentManager: AgentManager
   @Bindable var cliService: CLIService
   @Binding var showingSetupSheet: Bool
+  @Binding var showingNewChainSheet: Bool
   
   var body: some View {
     List(selection: Binding(
       get: { agentManager.selectedAgent?.id },
       set: { id in agentManager.selectedAgent = agentManager.agents.first { $0.id == id } }
     )) {
+      // Chains section
+      if !agentManager.chains.isEmpty {
+        Section("Chains") {
+          ForEach(agentManager.chains) { chain in
+            ChainRowView(chain: chain)
+              .tag(chain.id)
+              .onTapGesture {
+                agentManager.selectedAgent = nil
+                agentManager.selectedChain = chain
+              }
+          }
+        }
+      }
+      
       if !agentManager.activeAgents.isEmpty {
         Section("Active") {
           ForEach(agentManager.activeAgents) { agent in
@@ -97,9 +133,14 @@ struct AgentsSidebarView: View {
         }
       }
       
-      Section("Available") {
+      Section("Agents") {
         ForEach(agentManager.idleAgents) { agent in
-          AgentRowView(agent: agent).tag(agent.id)
+          AgentRowView(agent: agent)
+            .tag(agent.id)
+            .onTapGesture {
+              agentManager.selectedChain = nil
+              agentManager.selectedAgent = agent
+            }
         }
       }
       
@@ -184,7 +225,7 @@ struct AgentRowView: View {
         Text(agent.name).font(.callout)
         HStack(spacing: 4) {
           Image(systemName: agent.type.iconName).font(.caption2)
-          Text(agent.type.displayName).font(.caption)
+          Text(agent.model.shortName).font(.caption)
         }.foregroundStyle(.secondary)
       }
       Spacer()
@@ -228,11 +269,11 @@ struct AgentDetailView: View {
         HStack(spacing: 16) {
           ZStack {
             Circle()
-              .fill(agent.type == .claude ? Color.orange.opacity(0.2) : Color.blue.opacity(0.2))
+              .fill(agent.model.isClaude ? Color.orange.opacity(0.2) : Color.blue.opacity(0.2))
               .frame(width: 60, height: 60)
             Image(systemName: agent.type.iconName)
               .font(.title)
-              .foregroundStyle(agent.type == .claude ? .orange : .blue)
+              .foregroundStyle(agent.model.isClaude ? .orange : .blue)
           }
           VStack(alignment: .leading, spacing: 4) {
             Text(agent.name).font(.title2).fontWeight(.semibold)
@@ -244,6 +285,59 @@ struct AgentDetailView: View {
           }
           Spacer()
         }
+        
+        #if os(macOS)
+        // Model picker
+        if agent.type == .copilot {
+          HStack {
+            Text("Model").font(.subheadline).foregroundStyle(.secondary)
+            Picker("", selection: Binding(
+              get: { agent.model },
+              set: { agent.model = $0 }
+            )) {
+              Section("Claude") {
+                ForEach(CopilotModel.allCases.filter { $0.isClaude }) { m in
+                  Text(m.displayNameWithCost).tag(m)
+                }
+              }
+              Section("GPT") {
+                ForEach(CopilotModel.allCases.filter { !$0.isClaude }) { m in
+                  Text(m.displayNameWithCost).tag(m)
+                }
+              }
+            }
+            .labelsHidden()
+            .frame(maxWidth: 250)
+          }
+          
+          // Working directory picker
+          HStack {
+            Text("Project").font(.subheadline).foregroundStyle(.secondary)
+            if let dir = agent.workingDirectory {
+              Text(URL(fileURLWithPath: dir).lastPathComponent)
+                .font(.subheadline)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.secondary.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+              Button(role: .destructive) {
+                agent.workingDirectory = nil
+              } label: {
+                Image(systemName: "xmark.circle.fill")
+                  .foregroundStyle(.secondary)
+              }
+              .buttonStyle(.plain)
+            } else {
+              Text("None").font(.subheadline).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Select Folder...") {
+              selectFolder()
+            }
+            .buttonStyle(.bordered)
+          }
+        }
+        #endif
         
         Divider()
         
@@ -348,6 +442,19 @@ struct AgentDetailView: View {
   }
   
   #if os(macOS)
+  private func selectFolder() {
+    let panel = NSOpenPanel()
+    panel.canChooseFiles = false
+    panel.canChooseDirectories = true
+    panel.allowsMultipleSelection = false
+    panel.message = "Select a project folder for this agent"
+    panel.prompt = "Select"
+    
+    if panel.runModal() == .OK, let url = panel.url {
+      agent.workingDirectory = url.path
+    }
+  }
+  
   private func runTask(_ task: AgentTask) async {
     isRunning = true
     output = ""
@@ -357,11 +464,18 @@ struct AgentDetailView: View {
     do {
       switch agent.type {
       case .copilot:
-        let response = try await cliService.runCopilotSession(prompt: task.prompt)
+        let response = try await cliService.runCopilotSession(
+          prompt: task.prompt,
+          model: agent.model,
+          workingDirectory: agent.workingDirectory
+        )
         output = response.content
         modelInfo = response.statsText
       case .claude:
-        output = try await cliService.runClaudeSession(prompt: task.prompt)
+        output = try await cliService.runClaudeSession(
+          prompt: task.prompt,
+          workingDirectory: agent.workingDirectory
+        )
         modelInfo = "Claude CLI"
       case .custom:
         errorMessage = "Custom agents not yet supported"
@@ -386,7 +500,8 @@ struct NewAgentSheet: View {
   @Bindable var cliService: CLIService
   @Environment(\.dismiss) private var dismiss
   @State private var name = ""
-  @State private var type: AgentType = .claude
+  @State private var type: AgentType = .copilot
+  @State private var model: CopilotModel = .claudeSonnet45
   
   var body: some View {
     NavigationStack {
@@ -397,7 +512,24 @@ struct NewAgentSheet: View {
             Label(t.displayName, systemImage: t.iconName).tag(t)
           }
         }
+        
         #if os(macOS)
+        // Model picker for Copilot agents
+        if type == .copilot {
+          Picker("Model", selection: $model) {
+            Section("Claude") {
+              ForEach(CopilotModel.allCases.filter { $0.isClaude }) { m in
+                Text(m.displayNameWithCost).tag(m)
+              }
+            }
+            Section("GPT") {
+              ForEach(CopilotModel.allCases.filter { !$0.isClaude }) { m in
+                Text(m.displayNameWithCost).tag(m)
+              }
+            }
+          }
+        }
+        
         if !isAvailable(type) {
           Section {
             Text(type == .claude ? CLIService.claudeInstallInstructions : CLIService.copilotInstallInstructions)
@@ -414,13 +546,17 @@ struct NewAgentSheet: View {
         ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
         ToolbarItem(placement: .confirmationAction) {
           Button("Create") {
-            let agent = agentManager.createAgent(name: name.isEmpty ? "\(type.displayName) Agent" : name, type: type)
+            let agent = agentManager.createAgent(
+              name: name.isEmpty ? "\(model.shortName) Agent" : name,
+              type: type,
+              model: model
+            )
             agentManager.selectedAgent = agent
             dismiss()
           }
         }
       }
-    }.frame(minWidth: 400, minHeight: 200)
+    }.frame(minWidth: 400, minHeight: 250)
   }
   
   #if os(macOS)
@@ -680,6 +816,418 @@ struct StepRow<Actions: View>: View {
       Spacer()
     }.opacity(isComplete ? 0.7 : 1.0)
   }
+}
+
+// MARK: - Chain Row View
+
+struct ChainRowView: View {
+  let chain: AgentChain
+  
+  var body: some View {
+    HStack(spacing: 10) {
+      Image(systemName: "link")
+        .foregroundStyle(stateColor)
+        .font(.caption)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(chain.name).font(.callout)
+        Text("\(chain.agents.count) agents")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+      Spacer()
+      if case .running = chain.state {
+        ProgressView().scaleEffect(0.5).frame(width: 16, height: 16)
+      }
+    }
+  }
+  
+  private var stateColor: Color {
+    switch chain.state {
+    case .idle: return .secondary
+    case .running: return .blue
+    case .complete: return .green
+    case .failed: return .red
+    }
+  }
+}
+
+// MARK: - New Chain Sheet
+
+struct NewChainSheet: View {
+  @Bindable var agentManager: AgentManager
+  @Bindable var cliService: CLIService
+  @Environment(\.dismiss) private var dismiss
+  
+  @State private var name = ""
+  @State private var workingDirectory: String?
+  @State private var agent1Model: CopilotModel = .claudeOpus45
+  @State private var agent1Role = "Planner"
+  @State private var agent2Model: CopilotModel = .claudeSonnet45
+  @State private var agent2Role = "Implementer"
+  
+  var body: some View {
+    NavigationStack {
+      Form {
+        Section("Chain") {
+          TextField("Chain Name", text: $name)
+          
+          #if os(macOS)
+          HStack {
+            Text("Project")
+            Spacer()
+            if let dir = workingDirectory {
+              Text(URL(fileURLWithPath: dir).lastPathComponent)
+                .foregroundStyle(.secondary)
+              Button(role: .destructive) {
+                workingDirectory = nil
+              } label: {
+                Image(systemName: "xmark.circle.fill")
+                  .foregroundStyle(.secondary)
+              }
+              .buttonStyle(.plain)
+            }
+            Button("Select...") { selectFolder() }
+          }
+          #endif
+        }
+        
+        Section("Agent 1 - \(agent1Role)") {
+          TextField("Role", text: $agent1Role)
+          Picker("Model", selection: $agent1Model) {
+            Section("Claude") {
+              ForEach(CopilotModel.allCases.filter { $0.isClaude }) { m in
+                Text(m.displayNameWithCost).tag(m)
+              }
+            }
+            Section("GPT") {
+              ForEach(CopilotModel.allCases.filter { !$0.isClaude }) { m in
+                Text(m.displayNameWithCost).tag(m)
+              }
+            }
+          }
+        }
+        
+        Section("Agent 2 - \(agent2Role)") {
+          TextField("Role", text: $agent2Role)
+          Picker("Model", selection: $agent2Model) {
+            Section("Claude") {
+              ForEach(CopilotModel.allCases.filter { $0.isClaude }) { m in
+                Text(m.displayNameWithCost).tag(m)
+              }
+            }
+            Section("GPT") {
+              ForEach(CopilotModel.allCases.filter { !$0.isClaude }) { m in
+                Text(m.displayNameWithCost).tag(m)
+              }
+            }
+          }
+        }
+        
+        Section {
+          Text("Agent 1 will run first. Its output will be passed as context to Agent 2.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+      .formStyle(.grouped)
+      .navigationTitle("New Chain")
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Cancel") { dismiss() }
+        }
+        ToolbarItem(placement: .confirmationAction) {
+          Button("Create") {
+            createChain()
+            dismiss()
+          }
+          .disabled(name.isEmpty)
+        }
+      }
+    }
+    .frame(minWidth: 450, minHeight: 450)
+  }
+  
+  #if os(macOS)
+  private func selectFolder() {
+    let panel = NSOpenPanel()
+    panel.canChooseFiles = false
+    panel.canChooseDirectories = true
+    panel.allowsMultipleSelection = false
+    
+    if panel.runModal() == .OK, let url = panel.url {
+      workingDirectory = url.path
+    }
+  }
+  #endif
+  
+  private func createChain() {
+    let chain = agentManager.createChain(
+      name: name.isEmpty ? "New Chain" : name,
+      workingDirectory: workingDirectory
+    )
+    
+    // Create agent 1
+    let agent1 = agentManager.createAgent(
+      name: agent1Role,
+      type: .copilot,
+      model: agent1Model,
+      workingDirectory: workingDirectory
+    )
+    chain.addAgent(agent1)
+    
+    // Create agent 2
+    let agent2 = agentManager.createAgent(
+      name: agent2Role,
+      type: .copilot,
+      model: agent2Model,
+      workingDirectory: workingDirectory
+    )
+    chain.addAgent(agent2)
+    
+    agentManager.selectedChain = chain
+    agentManager.selectedAgent = nil
+  }
+}
+
+// MARK: - Chain Detail View
+
+struct ChainDetailView: View {
+  let chain: AgentChain
+  @Bindable var agentManager: AgentManager
+  @Bindable var cliService: CLIService
+  
+  @State private var prompt = ""
+  @State private var isRunning = false
+  @State private var errorMessage: String?
+  
+  var body: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 24) {
+        // Header
+        HStack(spacing: 16) {
+          ZStack {
+            Circle()
+              .fill(Color.purple.opacity(0.2))
+              .frame(width: 60, height: 60)
+            Image(systemName: "link")
+              .font(.title)
+              .foregroundStyle(.purple)
+          }
+          VStack(alignment: .leading, spacing: 4) {
+            Text(chain.name).font(.title2).fontWeight(.semibold)
+            HStack {
+              Text("\(chain.agents.count) agents")
+              Text("•")
+              Text(chain.state.displayName)
+            }.font(.subheadline).foregroundStyle(.secondary)
+          }
+          Spacer()
+        }
+        
+        // Working directory
+        if let dir = chain.workingDirectory {
+          HStack {
+            Image(systemName: "folder")
+            Text(dir)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
+        
+        Divider()
+        
+        // Agents in chain
+        VStack(alignment: .leading, spacing: 12) {
+          Label("Agents in Chain", systemImage: "list.number").font(.headline)
+          
+          ForEach(Array(chain.agents.enumerated()), id: \.element.id) { index, agent in
+            HStack {
+              Text("\(index + 1).")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+                .frame(width: 24)
+              
+              VStack(alignment: .leading, spacing: 2) {
+                Text(agent.name).font(.subheadline).fontWeight(.medium)
+                Text(agent.model.displayName)
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+              
+              Spacer()
+              
+              // Status indicator
+              if let result = chain.results.first(where: { $0.agentId == agent.id }) {
+                Image(systemName: "checkmark.circle.fill")
+                  .foregroundStyle(.green)
+                Text("\(result.premiumCost)×")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              } else if case .running(let idx) = chain.state, idx == index {
+                ProgressView().scaleEffect(0.7)
+              }
+            }
+            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .background(Color.secondary.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+          }
+        }
+        
+        Divider()
+        
+        // Prompt input
+        VStack(alignment: .leading, spacing: 8) {
+          Label("Task Prompt", systemImage: "text.alignleft").font(.headline)
+          TextEditor(text: $prompt)
+            .font(.system(.body, design: .monospaced))
+            .frame(minHeight: 100)
+            .padding(8)
+            .background(Color.secondary.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+          
+          Text("This prompt will be sent to Agent 1. Agent 2 will receive Agent 1's output as context.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        
+        #if os(macOS)
+        // Run button
+        HStack {
+          Button {
+            Task { await runChain() }
+          } label: {
+            Label(isRunning ? "Running..." : "Run Chain", systemImage: isRunning ? "hourglass" : "play.fill")
+          }
+          .buttonStyle(.borderedProminent)
+          .disabled(isRunning || prompt.isEmpty)
+          
+          if isRunning {
+            ProgressView().scaleEffect(0.8)
+          }
+          
+          Spacer()
+          
+          if !chain.results.isEmpty {
+            Text("Total: \(chain.results.reduce(0) { $0 + $1.premiumCost })× Premium")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
+        
+        // Error
+        if let error = errorMessage {
+          GroupBox {
+            Label(error, systemImage: "exclamationmark.triangle.fill")
+              .foregroundStyle(.red)
+          }
+        }
+        
+        // Results
+        if !chain.results.isEmpty {
+          VStack(alignment: .leading, spacing: 16) {
+            Label("Results", systemImage: "doc.text").font(.headline)
+            
+            ForEach(chain.results) { result in
+              VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                  Text(result.agentName)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                  Text("(\(result.model))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                  Spacer()
+                  if let duration = result.duration {
+                    Text(duration)
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                  }
+                }
+                
+                GroupBox {
+                  ScrollView {
+                    Text(result.output)
+                      .font(.system(.body, design: .monospaced))
+                      .frame(maxWidth: .infinity, alignment: .leading)
+                      .textSelection(.enabled)
+                  }
+                  .frame(maxHeight: 200)
+                }
+              }
+            }
+          }
+        }
+        #endif
+        
+        Spacer()
+      }
+      .padding()
+    }
+    .navigationTitle(chain.name)
+  }
+  
+  #if os(macOS)
+  private func runChain() async {
+    isRunning = true
+    errorMessage = nil
+    chain.reset()
+    chain.state = .running(agentIndex: 0)
+    
+    do {
+      for (index, agent) in chain.agents.enumerated() {
+        chain.state = .running(agentIndex: index)
+        
+        // Build prompt with context from previous agents
+        var fullPrompt = prompt
+        let context = chain.contextForAgent(at: index)
+        if !context.isEmpty {
+          fullPrompt = """
+          Previous agent output for context:
+          \(context)
+          
+          ---
+          
+          Your task: \(prompt)
+          """
+        }
+        
+        // Run the agent
+        let response = try await cliService.runCopilotSession(
+          prompt: fullPrompt,
+          model: agent.model,
+          workingDirectory: agent.workingDirectory ?? chain.workingDirectory
+        )
+        
+        // Parse premium cost from response
+        var premiumCost = agent.model.premiumCost
+        if let premiumStr = response.premiumRequests,
+           let num = Int(premiumStr.components(separatedBy: " ").first ?? "") {
+          premiumCost = num
+        }
+        
+        // Record result
+        let result = AgentChainResult(
+          agentId: agent.id,
+          agentName: agent.name,
+          model: agent.model.displayName,
+          prompt: fullPrompt,
+          output: response.content,
+          duration: response.duration,
+          premiumCost: premiumCost
+        )
+        chain.results.append(result)
+      }
+      
+      chain.state = .complete
+    } catch {
+      errorMessage = error.localizedDescription
+      chain.state = .failed(message: error.localizedDescription)
+    }
+    
+    isRunning = false
+  }
+  #endif
 }
 #endif
 

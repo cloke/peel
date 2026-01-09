@@ -19,11 +19,17 @@ public final class AgentManager {
   /// All registered agents
   public private(set) var agents: [Agent] = []
   
+  /// All agent chains
+  public private(set) var chains: [AgentChain] = []
+  
   /// The workspace manager for creating isolated workspaces
   public let workspaceManager = WorkspaceManager()
   
   /// Currently selected agent (for UI)
   public var selectedAgent: Agent?
+  
+  /// Currently selected chain (for UI)
+  public var selectedChain: AgentChain?
   
   public init() {
     // Add a sample agent for testing
@@ -36,11 +42,15 @@ public final class AgentManager {
   public func createAgent(
     name: String,
     type: AgentType,
+    model: CopilotModel = .claudeSonnet45,
+    workingDirectory: String? = nil,
     customCLIPath: String? = nil
   ) -> Agent {
     let agent = Agent(
       name: name,
       type: type,
+      model: model,
+      workingDirectory: workingDirectory,
       customCLIPath: customCLIPath
     )
     agents.append(agent)
@@ -103,6 +113,23 @@ public final class AgentManager {
       agent.workspace = nil
     }
     agent.clearTask()
+  }
+  
+  // MARK: - Chain Management
+  
+  /// Create a new agent chain
+  public func createChain(name: String, workingDirectory: String? = nil) -> AgentChain {
+    let chain = AgentChain(name: name, workingDirectory: workingDirectory)
+    chains.append(chain)
+    return chain
+  }
+  
+  /// Remove a chain
+  public func removeChain(_ chain: AgentChain) {
+    chains.removeAll { $0.id == chain.id }
+    if selectedChain?.id == chain.id {
+      selectedChain = nil
+    }
   }
   
   // MARK: - Queries

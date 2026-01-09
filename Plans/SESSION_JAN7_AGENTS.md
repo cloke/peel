@@ -47,41 +47,49 @@ return parseCopilotOutput(combinedOutput)
 
 **Fix:** Use `Task.detached(priority: .userInitiated)` instead of `DispatchQueue` for proper Swift concurrency off the main actor.
 
-### 6. UX Improvements ✅
+### 6. Model Selection ✅
+- Added `CopilotModel` enum with all available models
+- Model picker in AgentDetailView and NewAgentSheet
+- Shows premium cost per model (e.g., Opus = 3×, others = 1×)
+- Pass `--model <selected>` to copilot CLI
+
+### 7. UX Improvements ✅
 - CLI Status rows in sidebar are now clickable (opens setup sheet)
 - Simplified setup wizard (2 steps instead of 3)
 - Progress indicator while running
+- Model shown in sidebar and agent header
 
 ---
 
-## Committed: b5f7b74
+## Commits
+- `b5f7b74` - Initial agent orchestration with Copilot CLI
+- `19e0884` - Update session notes
 
 ---
 
 ## Next Steps (Priority Order)
 
-### 1. Model Selection (Easy Win) 🎯
-Add ability to select model for Copilot agents. Available models:
-- **Claude:** `claude-sonnet-4.5` (default), `claude-haiku-4.5`, `claude-opus-4.5`, `claude-sonnet-4`
-- **GPT:** `gpt-5.1-codex-max`, `gpt-5.1-codex`, `gpt-5.2`, `gpt-5.1`, `gpt-5`, `gpt-5.1-codex-mini`, `gpt-5-mini`
-
-Implementation:
-- Add `model` property to Agent
-- Add model picker in NewAgentSheet and AgentDetailView
-- Pass `--model <model>` to copilot CLI
-
-### 2. Multi-Agent Coordination (Medium) 🔄
+### 1. Multi-Agent Coordination 🎯 (Next)
 Allow two agents to work on related tasks:
-- Agent A: Research/planning
-- Agent B: Implementation
-- Shared context/output between them
-- Sequential or parallel execution
+- Agent A: Research/planning (e.g., Opus for complex reasoning)
+- Agent B: Implementation (e.g., Codex for code generation)
+- Pass output from Agent A as context to Agent B
+- Sequential execution with shared context
+- **Requires:** Working directory support first
 
-### 3. Working Directory Context (Medium)
+### 2. Working Directory Context (Required for Multi-Agent)
 Run copilot in a specific repo directory for better context:
-- Select repository from GitHub tab
+- Add `workingDirectory` property to Agent
+- Select repository/folder from UI
 - Pass `workingDirectory` to `runCopilotSession`
-- Agent understands project structure
+- Agent understands project structure and can run tools
+
+### 3. Session Cost Tracking (Future Enhancement) 💰
+Track total premium requests used across a session:
+- Add `totalPremiumUsed: Int` to AgentManager or a new SessionTracker
+- Accumulate costs from each `CopilotResponse.premiumRequests`
+- Display running total in UI (e.g., "Session: 7 Premium used")
+- Optional: Show breakdown by model
 
 ### 4. Streaming Output (Nice to Have)
 Show response as it generates instead of waiting:

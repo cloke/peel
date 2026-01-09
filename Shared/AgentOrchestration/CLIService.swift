@@ -249,11 +249,13 @@ public final class CLIService {
   /// Run a GitHub Copilot session with the given prompt (non-interactive mode)
   /// - Parameters:
   ///   - prompt: The prompt/question to ask Copilot
+  ///   - model: The model to use (e.g., claude-sonnet-4.5, gpt-5)
   ///   - workingDirectory: Optional directory to run in (for repo context)
   ///   - allowAllTools: If true, auto-approve all tool usage (required for non-interactive)
   /// - Returns: CopilotResponse with content and model info
   public func runCopilotSession(
     prompt: String,
+    model: CopilotModel = .claudeSonnet45,
     workingDirectory: String? = nil,
     allowAllTools: Bool = true
   ) async throws -> CopilotResponse {
@@ -266,8 +268,8 @@ public final class CLIService {
     // Get GitHub token from gh CLI to pass to copilot
     let token = await getGitHubToken()
     
-    // Use -p for non-interactive mode (no -s, we want stats), and --allow-all-tools for auto-approval
-    var arguments = ["-p", prompt]
+    // Use -p for non-interactive mode, --model for model selection, --allow-all-tools for auto-approval
+    var arguments = ["-p", prompt, "--model", model.rawValue]
     if allowAllTools {
       arguments.append("--allow-all-tools")
     }
@@ -310,9 +312,11 @@ public final class CLIService {
     for line in lines {
       if line.contains("Total usage est:") {
         inStats = true
-        // Extract premium requests count (e.g., "1 Premium request")
-        if let match = line.range(of: "\\d+\\s+Premium", options: .regularExpression) {
-          premiumRequests = String(line[match])
+        // Extract premium requests count (e.g., "1 Premium request" or "3 Premium requests")
+        if let match = line.range(of: "\\d+\\s+Premium\\s+request", options: .regularExpression) {
+          let text = String(line[match])
+          // Format nicely: "1 Premium request" -> "1 Premium"
+          premiumRequests = text.replacingOccurrences(of: " request", with: "")
         }
         continue
       }
