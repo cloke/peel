@@ -316,6 +316,9 @@ struct AgentDetailView: View {
   @State private var output = ""
   @State private var modelInfo = ""  // Model and stats info
   @State private var errorMessage: String?
+  @State private var statusMessage = ""  // Live status while running
+  @State private var runningSeconds = 0
+  @State private var statusTimer: Timer?
   
   // Need CLI service to run agents
   @State private var cliService = CLIService()
@@ -464,20 +467,38 @@ struct AgentDetailView: View {
             }
             
             #if os(macOS)
-            // Run button
-            HStack {
-              Button {
-                Task { await runTask(task) }
-              } label: {
-                Label(isRunning ? "Running..." : "Run with \(agent.type.displayName)", 
-                      systemImage: isRunning ? "hourglass" : "play.fill")
+            // Run button and status
+            VStack(alignment: .leading, spacing: 8) {
+              HStack {
+                Button {
+                  Task { await runTask(task) }
+                } label: {
+                  Label(isRunning ? "Running..." : "Run with \(agent.type.displayName)", 
+                        systemImage: isRunning ? "hourglass" : "play.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isRunning)
+                
+                if isRunning {
+                  ProgressView()
+                    .scaleEffect(0.8)
+                  Text("\(runningSeconds)s")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                }
               }
-              .buttonStyle(.borderedProminent)
-              .disabled(isRunning)
               
-              if isRunning {
-                ProgressView()
-                  .scaleEffect(0.8)
+              // Live status message
+              if isRunning && !statusMessage.isEmpty {
+                HStack(spacing: 6) {
+                  Image(systemName: "gearshape.2")
+                    .symbolEffect(.rotate, isActive: isRunning)
+                  Text(statusMessage)
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .transition(.opacity)
               }
             }
             
@@ -559,11 +580,50 @@ struct AgentDetailView: View {
     }
   }
   
+  private func startStatusTimer() {
+    runningSeconds = 0
+    statusMessage = "Initializing \(agent.role.displayName)..."
+    
+    // Simulate status updates based on time elapsed
+    statusTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+      Task { @MainActor in
+        runningSeconds += 1
+        
+        // Update status message based on elapsed time
+        switch runningSeconds {
+        case 1...3:
+          statusMessage = "Connecting to \(agent.model.shortName)..."
+        case 4...8:
+          statusMessage = "Reading project files..."
+        case 9...15:
+          statusMessage = "Analyzing code..."
+        case 16...25:
+          if agent.role == .implementer {
+            statusMessage = "Making changes..."
+          } else {
+            statusMessage = "Generating response..."
+          }
+        case 26...40:
+          statusMessage = "Still working..."
+        default:
+          statusMessage = "Processing (\(runningSeconds)s)..."
+        }
+      }
+    }
+  }
+  
+  private func stopStatusTimer() {
+    statusTimer?.invalidate()
+    statusTimer = nil
+    statusMessage = ""
+  }
+  
   private func runTask(_ task: AgentTask) async {
     isRunning = true
     output = ""
     modelInfo = ""
     errorMessage = nil
+    startStatusTimer()
     
     do {
       switch agent.type {
@@ -595,6 +655,7 @@ struct AgentDetailView: View {
       agentManager.blockAgent(agent, reason: error.localizedDescription)
     }
     
+    stopStatusTimer()
     isRunning = false
   }
   #endif
