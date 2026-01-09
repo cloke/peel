@@ -39,6 +39,7 @@ struct Agents_RootView: View {
           Image(systemName: "cpu")
             .font(.system(size: 48))
             .foregroundStyle(.secondary)
+            .symbolEffect(.pulse.byLayer, options: .repeating)
           Text("No Agent Selected")
             .font(.title2)
           Text("Create an agent or chain to get started")
