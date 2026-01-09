@@ -68,10 +68,6 @@ struct Github_RootView: View {
         }
         
         if hasToken && viewModel.me != nil {
-          NavigationLink(
-            destination: PersonalView(organizations: organizations),
-            label: { ProfileNameView(me: viewModel.me!) }
-          )
           Section("Organizations") {
             ForEach(organizations) { organization in
               OrganizationRepositoryView(organization: organization)
@@ -91,18 +87,29 @@ struct Github_RootView: View {
             }
           }
         }
-        Spacer()
-          .task {
-            hasToken = await Github.hasToken
-            if hasToken {
-              do {
-                viewModel.me = try await Github.me()
-                organizations = try await Github.loadOrganizations()
-              } catch {
-                print("Error loading user data: \(error)")
-                await Github.reauthorize()
-                hasToken = false
-              }
+      }
+      .safeAreaInset(edge: .bottom) {
+        // User profile pinned to bottom
+        if hasToken, let me = viewModel.me {
+          NavigationLink(destination: PersonalView(organizations: organizations)) {
+            ProfileNameView(me: me)
+          }
+          .buttonStyle(.plain)
+          .padding(.horizontal)
+          .padding(.vertical, 8)
+          .background(.bar)
+        }
+      }
+      .task {
+        hasToken = await Github.hasToken
+        if hasToken {
+          do {
+            viewModel.me = try await Github.me()
+            organizations = try await Github.loadOrganizations()
+          } catch {
+            print("Error loading user data: \(error)")
+            await Github.reauthorize()
+            hasToken = false
           }
         }
       }

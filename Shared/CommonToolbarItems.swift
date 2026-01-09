@@ -14,6 +14,9 @@ struct ToolSelectionToolbar: ToolbarContent {
   var body: some ToolbarContent {
     ToolbarItem(placement: .principal) {
       Picker("Tool", selection: $currentTool) {
+        Label("Agents", systemImage: "cpu")
+          .labelStyle(.titleAndIcon)
+          .tag(CurrentTool.agents)
         Label("Brew", systemImage: "mug")
           .labelStyle(.titleAndIcon)
           .tag(CurrentTool.brew)

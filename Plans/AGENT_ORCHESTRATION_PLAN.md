@@ -13,336 +13,474 @@ estimated-effort: 3 weeks
 
 # AI Agent Orchestration Integration Plan
 
+## Current Status (Jan 7, 2026)
+
+**Phase 3 In Progress - Basic UI Created, CLI Integration Blocked**
+
+See `/Plans/SESSION_JAN7_AGENTS.md` for detailed session notes.
+
+### Completed:
+- ✅ Agents_RootView.swift with NavigationSplitView
+- ✅ Agent models (Agent, AgentTask, AgentWorkspace, etc.)
+- ✅ AgentManager for state management
+- ✅ WorkspaceManager stub (uses Git.Worktree)
+- ✅ CLISetupSheet with installation wizard UI
+- ✅ Tool switcher integration (Agents tab)
+
+### Blocked:
+- ❌ CLIService.swift edits not persisting (file keeps reverting)
+- ❌ Installation wizard doesn't update state after install completes
+- Need to: clean Xcode cache, verify TaskRunner import, add installation methods
+
+### Next Steps:
+1. Fix CLIService.swift persistence issue
+2. Complete installation flow (detect already-installed gh)
+3. Wire up actual CLI execution to agents
+4. Test with real `gh copilot` commands
+
+---
+
 ## Overview
 
-Evolve Kitchen Sync into an AI Agent Orchestration app for managing multiple AI coding agents with isolated workspaces.
+This document outlines how to evolve KitchenSink (now "Kitchen Sync") into an AI Agent Orchestration app for managing multiple AI coding agents with isolated workspaces.
 
 ---
 
-## Progress Summary
+## Phase 1: Stabilize & Simplify (Week 1)
 
-### ✅ Completed Prerequisites
-- [x] Git worktree commands (list, add, remove, prune)
-- [x] Worktree UI in Git sidebar
-- [x] VS Code integration (open worktrees)
-- [x] PR → Worktree flow (Review Locally)
-- [x] SwiftData persistence with iCloud sync
-- [x] Package consolidation (CrunchyCommon deleted, GithubUI merged)
-- [x] OAuth credentials in Keychain
+### 1.1 Fix Immediate Issues
+- [x] Fix GitHub OAuth error handling
+- [x] Add network entitlement for macOS
+- [x] **Verify/regenerate GitHub OAuth credentials** (updated 2026-01-05)
+- [ ] Add proper error UI (alerts/toasts) instead of just console logging
+- [ ] Move OAuth credentials out of source code (to Keychain or environment)
+- [ ] **KNOWN ISSUE:** PR tab doesn't render until tab switch (likely NavigationSplitView lifecycle issue)
 
-### 🟡 In Progress
-- [ ] AgentOrchestration folder in Shared (Phase 3)
+### 1.2 Consolidate Package Structure ✅ IN PROGRESS
 
-### 📋 Remaining Work
-- Phase 3: Agent Framework
-- Phase 4: VS Code isolated instances
-- Phase 5: Agent Dashboard UI
-- Phase 6: Supervisor pattern (optional)
+**Current (Over-engineered):**
+```
+Local Packages/
+├── Brew/          # Homebrew UI (macOS only)
+├── CrunchyCommon/ # Shared utilities [DELETED ✅]
+├── Git/           # Local git operations
+├── Github/        # GitHub API + Models + Some Views
+└── GithubUI/      # More GitHub Views (confusing split) [MERGED ✅]
+```
+
+**Progress (Jan 5, 2026):**
+- [x] ✅ Deleted CrunchyCommon package (migrated to Shared/Extensions and Github/Extensions)
+- [x] ✅ Merged GithubUI into Github package
+- [x] ✅ Fixed Git tool crash (URL handling)
+- **Package count: 5 → 3 (40% reduction)**
+
+**Next Steps:**
+- [ ] Decide: Keep or remove Brew package
+- [ ] Consider renaming Github → GitHub (proper capitalization)
+- [ ] Create AgentOrchestrator package when ready
+
+**Proposed (Simplified):**
+```
+Local Packages/
+├── Core/              # Shared utilities, extensions, base components
+├── GitOperations/     # Local git + git worktree management (key for agent isolation)
+├── GitHub/            # GitHub API, Models, ALL GitHub views
+└── AgentOrchestrator/ # NEW: Agent management, workspaces, messaging
+```
+
+### 1.3 Remove Unused Code
+- [ ] Empty `PersonalView.swift`
+- [ ] Commented-out `RootView` in `Github.swift`
+- [ ] Consolidate dual `@AppStorage("github-token")` usage
 
 ---
 
-## Phase 1: Stabilize & Simplify ✅ COMPLETE
+## Phase 2: Git Worktree Foundation (Week 1-2)
 
-All items completed in previous sessions.
+### 2.1 Extend Git Package for Worktrees
+
+The existing `Git` package already uses `TaskRunner` for shell commands. Extend it:
+
+```swift
+// GitOperations/Sources/GitOperations/Worktree.swift
+public struct Worktree {
+    public let path: URL
+    public let branch: String
+    public let head: String
+    public let isLocked: Bool
+    
+    public static func list(in repository: URL) async throws -> [Worktree]
+    public static func add(in repository: URL, path: URL, branch: String) async throws -> Worktree
+    public static func remove(worktree: Worktree) async throws
+    public static func prune(in repository: URL) async throws
+}
+```
+
+### 2.2 Create Workspace Manager
+
+```swift
+// AgentOrchestrator/Sources/AgentOrchestrator/WorkspaceManager.swift
+public class WorkspaceManager: ObservableObject {
+    @Published var workspaces: [AgentWorkspace] = []
+    
+    /// Creates an isolated workspace for an agent using git worktree
+    public func createWorkspace(
+        repository: URL,
+        taskName: String,
+        agentId: UUID
+    ) async throws -> AgentWorkspace
+    
+    /// Cleans up completed agent workspaces
+    public func cleanupWorkspace(_ workspace: AgentWorkspace) async throws
+}
+```
 
 ---
 
-## Phase 2: Git Worktree Foundation ✅ COMPLETE
+## Phase 3: Agent Framework (Week 2)
 
-Implemented in `Local Packages/Git/Sources/Git/Commands/Worktree.swift`:
-- `Commands.Worktree.list(on:)` 
-- `Commands.Worktree.add(path:branch:on:)`
-- `Commands.Worktree.addWithNewBranch(path:newBranch:startPoint:on:)`
-- `Commands.Worktree.remove(path:force:on:)`
-- `Commands.Worktree.lock/unlock/prune`
+### 3.1 Core Agent Types
 
-UI in `WorktreeListView.swift` and `CreateWorktreeView.swift`.
+```swift
+// AgentOrchestrator/Sources/AgentOrchestrator/Models/Agent.swift
+public enum AgentType {
+    case claude      // claude-cli
+    case copilot     // GitHub Copilot CLI
+    case custom(String)
+}
+
+public enum AgentState {
+    case idle
+    case planning
+    case working
+    case blocked(reason: String)
+    case testing
+    case complete
+    case failed(Error)
+}
+
+public struct Agent: Identifiable {
+    public let id: UUID
+    public let name: String
+    public let type: AgentType
+    public var state: AgentState
+    public var currentTask: AgentTask?
+    public var workspace: AgentWorkspace?
+}
+```
+
+### 3.2 Agent Lifecycle Manager
+
+```swift
+// AgentOrchestrator/Sources/AgentOrchestrator/AgentManager.swift
+public class AgentManager: ObservableObject {
+    @Published var agents: [Agent] = []
+    
+    /// Spawns a new agent with an isolated workspace
+    public func spawnAgent(
+        type: AgentType,
+        task: AgentTask,
+        repository: URL
+    ) async throws -> Agent
+    
+    /// Monitors agent output and state changes
+    public func monitor(_ agent: Agent) -> AsyncStream<AgentEvent>
+    
+    /// Terminates an agent and cleans up its workspace
+    public func terminate(_ agent: Agent) async throws
+}
+```
+
+### 3.3 CLI Integration
+
+```swift
+// AgentOrchestrator/Sources/AgentOrchestrator/CLIBridge.swift
+public protocol CLIAgent {
+    var executablePath: String { get }
+    func launch(in workspace: URL, with prompt: String) async throws -> Process
+    func sendInput(_ input: String) async throws
+    func terminate() async throws
+}
+
+public class ClaudeCLI: CLIAgent {
+    public func launch(in workspace: URL, with prompt: String) async throws -> Process {
+        // Launch: claude --workspace \(workspace.path) --prompt "\(prompt)"
+    }
+}
+
+public class CopilotCLI: CLIAgent {
+    public func launch(in workspace: URL, with prompt: String) async throws -> Process {
+        // Launch: gh copilot suggest "\(prompt)" in workspace
+    }
+}
+```
 
 ---
 
-## Phase 3: Agent Framework 🟡 NEXT
+## Phase 4: VS Code Integration (Week 2-3)
 
-### 3.1 Create AgentOrchestration in Shared (NOT a package)
+### 4.1 VS Code Controller
 
-Keep it in the main app since it's tightly coupled to SwiftData, Git, and GitHub:
+```swift
+// AgentOrchestrator/Sources/AgentOrchestrator/VSCodeController.swift
+public class VSCodeController {
+    /// Opens a workspace in a new isolated VS Code window
+    public func openWorkspace(
+        _ workspace: AgentWorkspace,
+        agentId: UUID
+    ) async throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/local/bin/code")
+        process.arguments = [
+            "-n",  // New window
+            "--user-data-dir", "~/.vscode-agent-\(agentId.uuidString)",
+            workspace.path.path
+        ]
+        try process.run()
+    }
+    
+    /// Gets list of open VS Code windows
+    public func listWindows() async throws -> [VSCodeWindow]
+}
+```
+
+### 4.2 Monaco Editor Embedding (Optional Dashboard)
+
+For a lightweight code preview in the native app:
+
+```swift
+// AgentOrchestrator/Sources/AgentOrchestrator/Views/MonacoEditorView.swift
+import WebKit
+
+struct MonacoEditorView: NSViewRepresentable {
+    @Binding var content: String
+    let language: String
+    let readOnly: Bool
+    
+    func makeNSView(context: Context) -> WKWebView {
+        // Load Monaco from bundle or CDN
+    }
+}
+```
+
+---
+
+## Phase 5: UI Integration (Week 3)
+
+### 5.1 New Navigation Structure
+
+```swift
+// Shared/ContentView.swift (updated)
+enum CurrentTool: String, CaseIterable {
+    case agents = "agents"    // NEW: Primary feature
+    case brew = "brew"
+    case git = "git"
+    case github = "github"
+}
+```
+
+### 5.2 Agent Dashboard View
+
+```swift
+// Shared/Applications/Agents_RootView.swift
+struct Agents_RootView: View {
+    @StateObject var agentManager = AgentManager()
+    @StateObject var workspaceManager = WorkspaceManager()
+    
+    var body: some View {
+        NavigationSplitView {
+            // Sidebar: List of workspaces and agents
+            AgentsSidebarView()
+        } content: {
+            // Agent grid showing all active agents
+            AgentsGridView()
+        } detail: {
+            // Selected agent detail with Monaco preview
+            AgentDetailView()
+        }
+    }
+}
+```
+
+### 5.3 Agent Grid View
+
+```swift
+struct AgentsGridView: View {
+    @EnvironmentObject var agentManager: AgentManager
+    
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 300))]) {
+            ForEach(agentManager.agents) { agent in
+                AgentCardView(agent: agent)
+            }
+        }
+    }
+}
+
+struct AgentCardView: View {
+    let agent: Agent
+    
+    var body: some View {
+        VStack {
+            HStack {
+                AgentStateIndicator(state: agent.state)
+                Text(agent.name)
+                Spacer()
+                Menu { /* actions */ } label: { Image(systemName: "ellipsis") }
+            }
+            
+            if let task = agent.currentTask {
+                Text(task.description)
+                    .font(.caption)
+            }
+            
+            // Mini Monaco preview of current file
+            if let workspace = agent.workspace {
+                MonacoEditorView(
+                    content: .constant(workspace.currentFileContent),
+                    language: "swift",
+                    readOnly: true
+                )
+                .frame(height: 200)
+            }
+        }
+        .padding()
+        .background(RoundedRectangle(cornerRadius: 12).fill(.background))
+    }
+}
+```
+
+---
+
+## Phase 6: Supervisor Agent Pattern (Week 3+)
+
+### 6.1 Message Bus
+
+```swift
+// AgentOrchestrator/Sources/AgentOrchestrator/MessageBus.swift
+public enum AgentMessage {
+    case taskAssignment(AgentTask)
+    case statusUpdate(AgentState)
+    case question(String)
+    case result(Any)
+    case error(Error)
+}
+
+public class AgentMessageBus: ObservableObject {
+    @Published var messages: [AgentMessage] = []
+    
+    public func publish(_ message: AgentMessage, from: UUID, to: UUID?)
+    public func subscribe(_ agentId: UUID) -> AsyncStream<AgentMessage>
+}
+```
+
+### 6.2 Supervisor Agent
+
+```swift
+public class SupervisorAgent: ObservableObject {
+    @Published var workers: [Agent] = []
+    let messageBus: AgentMessageBus
+    
+    /// Assigns a task to the best available worker
+    public func assignTask(_ task: AgentTask) async throws
+    
+    /// Handles blocked worker - can spawn helper or escalate
+    public func handleBlockedWorker(_ worker: Agent) async throws
+    
+    /// Coordinates multi-agent workflows
+    public func orchestrate(_ workflow: AgentWorkflow) async throws
+}
+```
+
+---
+
+## File Structure After Integration
 
 ```
-Shared/
-├── AgentOrchestration/
-│   ├── Models/
-│   │   ├── Agent.swift
-│   │   ├── AgentTask.swift
-│   │   └── AgentWorkspace.swift
-│   ├── Services/
-│   │   ├── AgentManager.swift
-│   │   ├── WorkspaceManager.swift
-│   │   └── CLIBridge.swift
+KitchenSink/
+├── KitchenSync.entitlements
+├── iOS/
+├── macOS/
+├── Shared/
+│   ├── KitchenSyncApp.swift
+│   ├── CommonToolbarItems.swift
+│   ├── Applications/
+│   │   ├── Agents_RootView.swift      # NEW
+│   │   ├── Brew_RootView.swift
+│   │   ├── Git_RootView.swift
+│   │   └── Github_RootView.swift
 │   └── Views/
-│       ├── AgentDashboardView.swift
-│       └── AgentCardView.swift
-```
-
-**Why not a package:**
-- Tightly coupled to SwiftData models in main app
-- Uses Git package + GitHub package + VS Code service
-- Not reusable in other apps without heavy modification
-- Avoid package overhead - we just consolidated from 5 → 3
-
-### 3.2 Core Models
-
-```swift
-// Shared/AgentOrchestration/Models/Agent.swift
-
-public enum AgentType: String, Codable {
-  case claude      // Claude CLI
-  case copilot     // GitHub Copilot CLI  
-  case cursor      // Cursor AI
-  case custom      // Custom command
-}
-
-public enum AgentState: Equatable {
-  case idle
-  case planning
-  case working
-  case blocked(reason: String)
-  case complete
-  case failed(String)
-}
-
-@MainActor
-@Observable
-public final class Agent: Identifiable {
-  public let id: UUID
-  public var name: String
-  public let type: AgentType
-  public var state: AgentState = .idle
-  public var workspace: AgentWorkspace?
-  public var task: AgentTask?
-  public let createdAt: Date
-  
-  public init(name: String, type: AgentType) {
-    self.id = UUID()
-    self.name = name
-    self.type = type
-    self.createdAt = Date()
-  }
-}
-```
-
-```swift
-// Shared/AgentOrchestration/Models/AgentWorkspace.swift
-
-public struct AgentWorkspace: Identifiable, Equatable {
-  public let id: UUID
-  public let worktreePath: String
-  public let repositoryPath: String
-  public let branch: String
-  public let createdAt: Date
-  public var agentId: UUID?
-  
-  public init(worktreePath: String, repositoryPath: String, branch: String) {
-    self.id = UUID()
-    self.worktreePath = worktreePath
-    self.repositoryPath = repositoryPath
-    self.branch = branch
-    self.createdAt = Date()
-  }
-}
-```
-
-```swift
-// Shared/AgentOrchestration/Models/AgentTask.swift
-
-public enum TaskStatus: String, Codable {
-  case pending
-  case inProgress
-  case complete
-  case failed
-}
-
-public struct AgentTask: Identifiable {
-  public let id: UUID
-  public var title: String
-  public var prompt: String
-  public var status: TaskStatus = .pending
-  public let createdAt: Date
-  public var completedAt: Date?
-  
-  public init(title: String, prompt: String) {
-    self.id = UUID()
-    self.title = title
-    self.prompt = prompt
-    self.createdAt = Date()
-  }
-}
-```
-
-### 3.3 Workspace Manager
-
-Uses existing Git.Worktree commands:
-
-```swift
-// Shared/AgentOrchestration/Services/WorkspaceManager.swift
-
-@MainActor
-@Observable
-public final class WorkspaceManager {
-  private var workspaces: [AgentWorkspace] = []
-  
-  /// Creates an isolated worktree for an agent
-  public func createWorkspace(
-    for repository: Git.Model.Repository,
-    taskName: String,
-    baseBranch: String = "main"
-  ) async throws -> AgentWorkspace {
-    let branchName = "agent/\(taskName.slugified)-\(UUID().uuidString.prefix(8))"
-    let worktreePath = // sibling to repo
-    
-    try await Commands.Worktree.addWithNewBranch(
-      path: worktreePath,
-      newBranch: branchName,
-      startPoint: baseBranch,
-      on: repository
-    )
-    
-    let workspace = AgentWorkspace(
-      worktreePath: worktreePath,
-      repositoryPath: repository.path,
-      branch: branchName
-    )
-    workspaces.append(workspace)
-    return workspace
-  }
-  
-  /// Removes a workspace and its worktree
-  public func removeWorkspace(_ workspace: AgentWorkspace) async throws {
-    // Use Commands.Worktree.remove
-  }
-}
-```
-
-### 3.4 CLI Bridge
-
-```swift
-// Shared/AgentOrchestration/Services/CLIBridge.swift
-
-public protocol CLIAgentProtocol {
-  var name: String { get }
-  var command: String { get }
-  func isInstalled() async -> Bool
-  func launch(in workspacePath: String, prompt: String) async throws -> Process
-}
-
-public struct ClaudeCLI: CLIAgentProtocol {
-  public let name = "Claude"
-  public let command = "claude"
-  
-  public func isInstalled() async -> Bool {
-    FileManager.default.fileExists(atPath: "/usr/local/bin/claude") ||
-    FileManager.default.fileExists(atPath: "/opt/homebrew/bin/claude")
-  }
-  
-  public func launch(in workspacePath: String, prompt: String) async throws -> Process {
-    let process = Process()
-    process.currentDirectoryURL = URL(fileURLWithPath: workspacePath)
-    process.executableURL = URL(fileURLWithPath: "/usr/local/bin/claude")
-    process.arguments = [prompt]
-    try process.run()
-    return process
-  }
-}
+│       ├── AgentCardView.swift         # NEW
+│       ├── AgentsGridView.swift        # NEW
+│       ├── AgentsSidebarView.swift     # NEW
+│       ├── MonacoEditorView.swift      # NEW
+│       └── SettingsView.swift
+└── Local Packages/
+    ├── Core/                           # Renamed from CrunchyCommon
+    ├── GitOperations/                  # Extended Git package
+    │   └── Sources/
+    │       └── GitOperations/
+    │           ├── Git.swift
+    │           ├── Worktree.swift      # NEW
+    │           └── ...
+    ├── GitHub/                         # Merged Github + GithubUI
+    └── AgentOrchestrator/              # NEW PACKAGE
+        ├── Package.swift
+        └── Sources/
+            └── AgentOrchestrator/
+                ├── AgentManager.swift
+                ├── AgentMessageBus.swift
+                ├── CLIBridge.swift
+                ├── SupervisorAgent.swift
+                ├── VSCodeController.swift
+                ├── WorkspaceManager.swift
+                ├── Models/
+                │   ├── Agent.swift
+                │   ├── AgentTask.swift
+                │   └── AgentWorkspace.swift
+                └── Views/
+                    └── MonacoEditorView.swift
 ```
 
 ---
 
-## Phase 4: VS Code Isolated Instances
+## Next Steps
 
-Each agent gets its own VS Code instance with isolated settings:
-
-```swift
-public struct VSCodeIsolatedLauncher {
-  /// Opens VS Code with isolated user data for this agent
-  public func launch(
-    workspace: AgentWorkspace,
-    agentId: UUID
-  ) async throws {
-    // code -n \
-    //   --user-data-dir ~/.kitchen-sync/agents/{agentId}/vscode \
-    //   --extensions-dir ~/.kitchen-sync/agents/{agentId}/extensions \
-    //   {workspace.worktreePath}
-  }
-}
-```
-
----
-
-## Phase 5: Agent Dashboard UI
-
-### Navigation Addition
-```swift
-enum CurrentTool: String {
-  case agents = "agents"  // NEW - Primary feature
-  case github = "github"
-  case git = "git"
-  case brew = "brew"
-}
-```
-
-### Agent Dashboard
-- Grid of active agents with state indicators
-- Create new agent workflow
-- Agent detail view with output log
-- Workspace browser
-
----
-
-## Phase 6: Supervisor Pattern (Future)
-
-Multi-agent coordination with message passing. Defer until single-agent works well.
-
----
-
-## Implementation Order
-
-1. **Create AgentOrchestration folder in Shared** with basic models
-2. **WorkspaceManager** using existing Git.Worktree commands
-3. **CLIBridge** with Claude CLI support
-4. **AgentManager** to tie it together
-5. **Basic UI** - agent list, create agent, view status
-6. **VS Code isolated launch**
-7. **Polish and iterate**
+1. **Test GitHub Login** - Run the app and verify OAuth works after the fixes
+2. **Regenerate OAuth credentials if needed** - Check https://github.com/settings/developers
+3. **Start Phase 1** - Consolidate packages, remove dead code
+4. **Implement Worktree support** - Core foundation for agent isolation
 
 ---
 
 ## Technical Notes
 
-### Claude CLI
+### Git Worktree Commands Reference
 ```bash
-# Check if installed
-which claude
+# List worktrees
+git worktree list
 
-# Run in directory with prompt
-cd /path/to/worktree && claude "Implement feature X"
+# Add new worktree
+git worktree add ../agent-workspace-1 -b agent/task-123
 
-# Or with workspace flag if supported
-claude --workspace /path/to/worktree "Implement feature X"
+# Remove worktree
+git worktree remove ../agent-workspace-1
+
+# Prune stale worktrees
+git worktree prune
 ```
 
-### Isolated VS Code
+### VS Code Isolated Window
 ```bash
+# Open workspace in isolated VS Code instance
 code -n \
-  --user-data-dir ~/.kitchen-sync/agents/abc123/vscode \
-  --extensions-dir ~/.kitchen-sync/agents/abc123/extensions \
+  --user-data-dir ~/.vscode-agent-1 \
+  --extensions-dir ~/.vscode-agent-1/extensions \
   /path/to/worktree
 ```
 
-### Agent Workspace Naming
+### Claude CLI (example)
+```bash
+# Run claude in a specific directory
+cd /path/to/worktree && claude "Implement feature X"
 ```
-~/code/myproject/                    # Main repo
-~/code/myproject-agent-abc123/       # Agent worktree
-~/code/myproject-agent-def456/       # Another agent worktree
-```
-
----
-
-**Last Updated:** January 7, 2026

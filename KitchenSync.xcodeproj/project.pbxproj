@@ -9,28 +9,16 @@
 /* Begin PBXBuildFile section */
 		0409092426C5C7C3008D5A52 /* Alamofire in Frameworks */ = {isa = PBXBuildFile; productRef = 0409092326C5C7C3008D5A52 /* Alamofire */; };
 		040AAB7E26CB385800DE1CBF /* Git in Frameworks */ = {isa = PBXBuildFile; productRef = 040AAB7D26CB385800DE1CBF /* Git */; };
-		043A53102599589B00980BE2 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 043A530E2599589B00980BE2 /* SettingsView.swift */; };
 		04510A582A2D200C001DEF5B /* Github in Frameworks */ = {isa = PBXBuildFile; productRef = 04510A572A2D200C001DEF5B /* Github */; };
-		04678656259FC75700D5E87F /* CommonToolbarItems.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04678654259FC75700D5E87F /* CommonToolbarItems.swift */; };
-		0467865E259FEEF100D5E87F /* TaskDebugWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0467865C259FEEF100D5E87F /* TaskDebugWindowView.swift */; };
 		046D40E426C56BBB003715AF /* OAuthSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 046D40E326C56BBB003715AF /* OAuthSwift */; };
-		046D40E526C56C1F003715AF /* Github_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0495D215269F5277008B5148 /* Github_RootView.swift */; };
 		046D40E726C56C5B003715AF /* Github in Frameworks */ = {isa = PBXBuildFile; productRef = 046D40E626C56C5B003715AF /* Github */; };
 		048086662A2D21E500536A3E /* Brew in Frameworks */ = {isa = PBXBuildFile; productRef = 048086652A2D21E500536A3E /* Brew */; };
 		048F40F82853ED470007A9A4 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 048F40F72853ED060007A9A4 /* ContentView.swift */; };
 		0495D214269F34F8008B5148 /* Alamofire in Frameworks */ = {isa = PBXBuildFile; productRef = 0495D213269F34F8008B5148 /* Alamofire */; };
-		0495D216269F5277008B5148 /* Github_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0495D215269F5277008B5148 /* Github_RootView.swift */; };
-		04A3CA2E25E46BA700EB520C /* Color.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A3CA2D25E46BA700EB520C /* Color.swift */; };
 		04A7BD7F258E77D8000E55A8 /* Tests_iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD7E258E77D8000E55A8 /* Tests_iOS.swift */; };
 		04A7BD8A258E77D8000E55A8 /* Tests_macOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */; };
-		04A7BD8C258E77D8000E55A8 /* KitchenSyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD63258E77D7000E55A8 /* KitchenSyncApp.swift */; };
-		04A7BD8D258E77D8000E55A8 /* KitchenSyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD63258E77D7000E55A8 /* KitchenSyncApp.swift */; };
 		04A7BD8F258E77D8000E55A8 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD64258E77D7000E55A8 /* ContentView.swift */; };
-		04A7BD90258E77D8000E55A8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 04A7BD65258E77D8000E55A8 /* Assets.xcassets */; };
-		04A7BD91258E77D8000E55A8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 04A7BD65258E77D8000E55A8 /* Assets.xcassets */; };
-		04AC312325B200A2009A10E7 /* Git_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04AC311E25B20085009A10E7 /* Git_RootView.swift */; };
 		04D09EFD26A85E8100072702 /* OAuthSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 04D09EFC26A85E8100072702 /* OAuthSwift */; };
-		04F4F93D25903A72005B30B4 /* Brew_RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F4F93B25903A72005B30B4 /* Brew_RootView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -51,19 +39,12 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		043A530E2599589B00980BE2 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		043A532125998D1E00980BE2 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		04510A5E2A2D20F1001DEF5B /* Git */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Git; path = "Local Packages/Git"; sourceTree = "<group>"; };
 		04510A5F2A2D212E001DEF5B /* TaskRunner */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = TaskRunner; path = ../TaskRunner; sourceTree = "<group>"; };
-		04678654259FC75700D5E87F /* CommonToolbarItems.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommonToolbarItems.swift; sourceTree = "<group>"; };
-		0467865C259FEEF100D5E87F /* TaskDebugWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskDebugWindowView.swift; sourceTree = "<group>"; };
 		048086642A2D21A300536A3E /* Brew */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Brew; path = "Local Packages/Brew"; sourceTree = "<group>"; };
 		048F40F72853ED060007A9A4 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		0495D215269F5277008B5148 /* Github_RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Github_RootView.swift; sourceTree = "<group>"; };
-		04A3CA2D25E46BA700EB520C /* Color.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Color.swift; sourceTree = "<group>"; };
-		04A7BD63258E77D7000E55A8 /* KitchenSyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KitchenSyncApp.swift; sourceTree = "<group>"; };
 		04A7BD64258E77D7000E55A8 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		04A7BD65258E77D8000E55A8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		04A7BD6A258E77D8000E55A8 /* KitchenSync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KitchenSync.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		04A7BD6D258E77D8000E55A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		04A7BD72258E77D8000E55A8 /* Kitchen Sync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Kitchen Sync.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -75,14 +56,28 @@
 		04A7BD85258E77D8000E55A8 /* Tests macOS.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Tests macOS.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests_macOS.swift; sourceTree = "<group>"; };
 		04A7BD8B258E77D8000E55A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		04AC311E25B20085009A10E7 /* Git_RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Git_RootView.swift; sourceTree = "<group>"; };
-		04F4F93B25903A72005B30B4 /* Brew_RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brew_RootView.swift; sourceTree = "<group>"; };
 		04F4F9772596AAD7005B30B4 /* KitchenSync.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = KitchenSync.entitlements; sourceTree = "<group>"; };
 		04F582A6269FD388003A8403 /* Github */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Github; path = "Local Packages/Github"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		04913BD12F0F4ED7001EF810 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Applications/Github_RootView.swift,
+				Assets.xcassets,
+				Components/ViewState.swift,
+				"Extensions/Date+ISO8601.swift",
+				KitchenSyncApp.swift,
+				Services/VSCodeService.swift,
+			);
+			target = 04A7BD69258E77D8000E55A8 /* KitchenSync (iOS) */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		042793A42F0DEAE7002A5499 /* Plans */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Plans; sourceTree = "<group>"; };
+		04913BB52F0F4ED7001EF810 /* Shared */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (04913BD12F0F4ED7001EF810 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = Shared; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -136,28 +131,11 @@
 			name = Packages;
 			sourceTree = "<group>";
 		};
-		0467866E259FEFAD00D5E87F /* Views */ = {
-			isa = PBXGroup;
-			children = (
-				043A530E2599589B00980BE2 /* SettingsView.swift */,
-				0467865C259FEEF100D5E87F /* TaskDebugWindowView.swift */,
-			);
-			path = Views;
-			sourceTree = "<group>";
-		};
 		0467868025A0DBE400D5E87F /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
 			);
 			name = Frameworks;
-			sourceTree = "<group>";
-		};
-		04A3CA2C25E46B9800EB520C /* Extensions */ = {
-			isa = PBXGroup;
-			children = (
-				04A3CA2D25E46BA700EB520C /* Color.swift */,
-			);
-			path = Extensions;
 			sourceTree = "<group>";
 		};
 		04A7BD5D258E77D7000E55A8 = {
@@ -166,7 +144,7 @@
 				042793A42F0DEAE7002A5499 /* Plans */,
 				042D2CC32891E44100E162D3 /* Packages */,
 				043A532125998D1E00980BE2 /* README.md */,
-				04A7BD62258E77D7000E55A8 /* Shared */,
+				04913BB52F0F4ED7001EF810 /* Shared */,
 				04F4F9772596AAD7005B30B4 /* KitchenSync.entitlements */,
 				04A7BD6C258E77D8000E55A8 /* iOS */,
 				04A7BD73258E77D8000E55A8 /* macOS */,
@@ -175,19 +153,6 @@
 				04A7BD6B258E77D8000E55A8 /* Products */,
 				0467868025A0DBE400D5E87F /* Frameworks */,
 			);
-			sourceTree = "<group>";
-		};
-		04A7BD62258E77D7000E55A8 /* Shared */ = {
-			isa = PBXGroup;
-			children = (
-				04A7BDA5258EBAC4000E55A8 /* Applications */,
-				0467866E259FEFAD00D5E87F /* Views */,
-				04A3CA2C25E46B9800EB520C /* Extensions */,
-				04678654259FC75700D5E87F /* CommonToolbarItems.swift */,
-				04A7BD63258E77D7000E55A8 /* KitchenSyncApp.swift */,
-				04A7BD65258E77D8000E55A8 /* Assets.xcassets */,
-			);
-			path = Shared;
 			sourceTree = "<group>";
 		};
 		04A7BD6B258E77D8000E55A8 /* Products */ = {
@@ -238,16 +203,6 @@
 			path = "Tests macOS";
 			sourceTree = "<group>";
 		};
-		04A7BDA5258EBAC4000E55A8 /* Applications */ = {
-			isa = PBXGroup;
-			children = (
-				04AC311E25B20085009A10E7 /* Git_RootView.swift */,
-				04F4F93B25903A72005B30B4 /* Brew_RootView.swift */,
-				0495D215269F5277008B5148 /* Github_RootView.swift */,
-			);
-			path = Applications;
-			sourceTree = "<group>";
-		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -285,6 +240,9 @@
 			buildRules = (
 			);
 			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				04913BB52F0F4ED7001EF810 /* Shared */,
 			);
 			name = "KitchenSync (macOS)";
 			packageProductDependencies = (
@@ -388,7 +346,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				04A7BD90258E77D8000E55A8 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -396,7 +353,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				04A7BD91258E77D8000E55A8 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -421,9 +377,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				046D40E526C56C1F003715AF /* Github_RootView.swift in Sources */,
 				048F40F82853ED470007A9A4 /* ContentView.swift in Sources */,
-				04A7BD8C258E77D8000E55A8 /* KitchenSyncApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -432,14 +386,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				04A7BD8F258E77D8000E55A8 /* ContentView.swift in Sources */,
-				04A7BD8D258E77D8000E55A8 /* KitchenSyncApp.swift in Sources */,
-				0495D216269F5277008B5148 /* Github_RootView.swift in Sources */,
-				043A53102599589B00980BE2 /* SettingsView.swift in Sources */,
-				04678656259FC75700D5E87F /* CommonToolbarItems.swift in Sources */,
-				04F4F93D25903A72005B30B4 /* Brew_RootView.swift in Sources */,
-				04A3CA2E25E46BA700EB520C /* Color.swift in Sources */,
-				04AC312325B200A2009A10E7 /* Git_RootView.swift in Sources */,
-				0467865E259FEEF100D5E87F /* TaskDebugWindowView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
