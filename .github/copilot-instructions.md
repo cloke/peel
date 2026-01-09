@@ -541,7 +541,29 @@ sed -i '' 's/old text/new text/' /path/to/file
 grep "new text" /path/to/file
 ```
 
+### App Launching & Testing
+**DO NOT launch the app from terminal.** The user will run the app themselves from Xcode.
+
+Why:
+- Launching from terminal doesn't attach the debugger properly
+- User needs to see console output in Xcode
+- ViewBridge/RemoteViewService errors occur when launched externally
+
+Instead:
+1. Build the project: `xcodebuild -scheme "KitchenSink (macOS)" build`
+2. Tell the user the build succeeded
+3. Let the user run from Xcode with ⌘R
+
+```bash
+# ✅ DO: Just build
+xcodebuild -scheme "KitchenSink (macOS)" -destination 'platform=macOS' build
+
+# ❌ DON'T: Launch the app
+# open "/path/to/Kitchen Sync.app"  # Don't do this
+# pkill -f "Kitchen Sync"           # Don't do this
+```
+
 ---
 
-**Last Updated:** January 7, 2026  
+**Last Updated:** January 9, 2026  
 **Modernization Status:** Complete - See MODERNIZATION_COMPLETE.md
