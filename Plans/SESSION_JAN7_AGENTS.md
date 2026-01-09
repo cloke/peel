@@ -123,6 +123,55 @@ config.computeUnits = .cpuAndNeuralEngine
    - Reduce token usage by pre-filtering relevant code
    - Detect framework locally before adding hints
 
+4. **Hybrid Translation Workflow** 🌐
+   A perfect use case for on-device + cloud hybrid:
+   
+   ```
+   ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+   │  Source Text    │────▶│  Apple AI       │────▶│  Cloud AI       │
+   │  (English)      │     │  (On-Device)    │     │  (Context Check)│
+   └─────────────────┘     └─────────────────┘     └─────────────────┘
+                           │                       │
+                           │ Fast, Free,           │ Verify translation
+                           │ Privacy-safe          │ fits app context
+                           │ Translation           │ (UI strings, tone)
+                           ▼                       ▼
+                           "Guardar cambios"       ✅ "Guardar cambios"
+                                                   (correct for button)
+   ```
+   
+   **Step 1: On-Device Translation (Apple Neural Engine)**
+   - Use `Translation` framework or Foundation Models
+   - Fast, free, works offline
+   - Good for bulk translations
+   
+   **Step 2: Cloud Context Verification (Copilot/GPT)**  
+   - Only send translations that need context review
+   - Verify UI strings match button/label conventions
+   - Check technical terms are translated correctly
+   - Ensure tone matches app style
+   
+   **Benefits:**
+   - 90%+ translations done free on-device
+   - Only pay for context-sensitive review
+   - Privacy: source text never leaves device for initial pass
+   - Offline capability for basic translations
+   
+   **Example Prompts:**
+   ```swift
+   // On-device (free)
+   let translation = try await appleAI.translate("Save changes", to: .spanish)
+   // Result: "Guardar cambios"
+   
+   // Cloud verification (1 premium request for batch)
+   let prompt = """
+   Review these UI translations for a macOS developer app.
+   Verify they're appropriate for buttons/labels:
+   - "Save changes" → "Guardar cambios"
+   - "Delete repository" → "Eliminar repositorio"
+   """
+   ```
+
 ---
 
 ## Next Steps (Priority Order)
