@@ -39,6 +39,7 @@ public struct AvatarView: View {
     }
     .frame(minWidth: minWidth, maxWidth: maxWidth, maxHeight: maxHeight, alignment: alignment)
     .clipShape(Circle())
+    .accessibilityLabel("User avatar")
   }
 }
 

@@ -10,6 +10,12 @@ import SwiftUI
 struct LogEntryRowView: View {
   let log: Model.LogEntry
   
+  private static let relativeDateFormatter: RelativeDateTimeFormatter = {
+    let formatter = RelativeDateTimeFormatter()
+    formatter.unitsStyle = .full
+    return formatter
+  }()
+  
   var body: some View {
     VStack(alignment: .leading) {
       HStack(alignment: .bottom) {
@@ -34,9 +40,7 @@ struct LogEntryRowView: View {
   }
   
   func relativeDate(date: Date) -> String {
-    let formatter = RelativeDateTimeFormatter()
-    formatter.unitsStyle = .full
-    return formatter.localizedString(for: date, relativeTo: Date())
+    Self.relativeDateFormatter.localizedString(for: date, relativeTo: Date())
   }
 }
 

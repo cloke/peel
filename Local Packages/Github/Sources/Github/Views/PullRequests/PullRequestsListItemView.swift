@@ -109,7 +109,6 @@ struct PullRequestsListItemView: View {
         Spacer()
       }
     }
-    Spacer()
     if pullRequest.requested_reviewers != nil && pullRequest.requested_reviewers!.count > 0 {
       HStack {
           ForEach(pullRequest.requested_reviewers!) {

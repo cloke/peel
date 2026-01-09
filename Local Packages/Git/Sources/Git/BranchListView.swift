@@ -70,7 +70,7 @@ public struct BranchListView: View {
     
   public var body: some View {
     List {
-    Section("test", isExpanded: $isExpanded) {
+    Section(label, isExpanded: $isExpanded) {
       ForEach(localBranches.indices, id: \.self) { index in
         NavigationLink(value: localBranches[index].name) {
           BranchListItemView(

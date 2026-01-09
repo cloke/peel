@@ -48,7 +48,7 @@ struct ActionsView: View {
       case .loaded:
         ActionsListView(repository: repository, actions: actions)
       case .empty:
-        Text("No Pull Requests Found")
+        Text("No Actions Found")
       }
     }
     .task(id: repository.id) {
