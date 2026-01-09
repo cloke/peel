@@ -1,4 +1,4 @@
-# Agent Orchestration - Session Summary (Jan 7-8, 2026)
+# Agent Orchestration - Session Summary (Jan 7-9, 2026)
 
 ## Current Status ✅
 
@@ -15,6 +15,9 @@
 | UX Improvements | `7e0e5c4` | Visible buttons, no hidden + menu |
 | Role System Prompts | `477f065` | Clear instructions for each role |
 | Framework Hints | `477f065` | Swift, Ember, React, Python, Rust |
+| Apple AI Service | `0ca0742` | On-device Foundation Models integration |
+| Brew UI Modernization | `0ca0742` | Segmented picker, .searchable, NavigationStack |
+| Live Status Indicator | `c940c35` | Elapsed time + status messages while running |
 
 ### What Works Now
 - ✅ Create agents with role (Planner/Implementer/Reviewer)
@@ -25,6 +28,27 @@
 - ✅ Run chains sequentially with context passing
 - ✅ Role-based tool restrictions (--deny-tool for planners/reviewers)
 - ✅ System prompts injected for clear role behavior
+- ✅ Live status indicator while agent is running
+
+---
+
+## Developer Use Cases 💡
+
+### Translation Workflow (High Value)
+As a developer, I frequently need to translate UI strings. This is a perfect hybrid workflow:
+
+**Pain Point:** Translation services cost money, take time, and require sending text off-device.
+
+**Solution with Apple AI:**
+1. **Free on-device translation** for initial pass (90%+ of work)
+2. **Cloud AI only for context verification** (buttons, tone, technical terms)
+
+**Why This Matters:**
+- Translations are a common, repetitive developer task
+- Apple's on-device models handle this well
+- Saves significant cost vs. sending everything to cloud
+- Works offline for basic translations
+- Privacy-preserving (source text stays on device)
 
 ---
 
@@ -176,20 +200,23 @@ config.computeUnits = .cpuAndNeuralEngine
 
 ## Next Steps (Priority Order)
 
-### Immediate (This Session)
-- [ ] Research Foundation Models API availability
-- [ ] Test if FoundationModels framework is available in macOS 26
+### Completed ✅
+- [x] Research Foundation Models API availability
+- [x] Test if FoundationModels framework is available in macOS 26
+- [x] Live status/progress during agent execution
 
-### Short Term
+### Short Term (Next Up)
+- [ ] **Chain Templates** - Save/load common workflows (Planner→Implementer→Reviewer)
+- [ ] **Session Cost Tracking** - Show total premium requests used
+- [ ] **Streaming Output** - Show response as it generates (not just status messages)
 - [ ] Add `AgentType.appleAI` for on-device tasks
 - [ ] Implement framework auto-detection using local analysis
-- [ ] Add AppIntents for Siri/Shortcuts integration
 
 ### Medium Term  
-- [ ] Chain Templates (save/load workflows)
-- [ ] Review Loop (back-and-forth between agents)
-- [ ] Live status/progress during agent execution
-- [ ] Session cost tracking
+- [ ] **Translation Workflow** - On-device translation + cloud context verification
+- [ ] **Review Loop** - Back-and-forth between agents until approved
+- [ ] Add AppIntents for Siri/Shortcuts integration
+- [ ] Real tool invocation status (parse copilot stderr in real-time)
 
 ### Long Term
 - [ ] Git worktree integration for isolated workspaces
@@ -200,7 +227,9 @@ config.computeUnits = .cpuAndNeuralEngine
 
 ## Session Commits
 ```
-594cce6 Add AppleAIService for on-device Foundation Models
+6d33175 Add hybrid translation workflow idea to plan
+c940c35 Add live status indicator while agent is running
+0ca0742 Add AppleAIService for on-device Foundation Models
 477f065 Add role system prompts and framework hints
 7e0e5c4 Add Agent Roles and improve UX  
 3bcbf40 Add free tier models and update session notes
