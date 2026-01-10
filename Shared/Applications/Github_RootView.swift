@@ -19,6 +19,7 @@ struct Github_RootView: View {
   @State private var organizations = [Github.User]()
   @State private var columnVisibility = NavigationSplitViewVisibility.all
   @State private var hasToken = false
+  @State private var isLoading = false
   
   var body: some View {
     NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -67,7 +68,14 @@ struct Github_RootView: View {
           }
         }
         
-        if hasToken && viewModel.me != nil {
+        if isLoading {
+          HStack {
+            Spacer()
+            ProgressView()
+            Spacer()
+          }
+          .listRowBackground(Color.clear)
+        } else if hasToken && viewModel.me != nil {
           Section("Organizations") {
             ForEach(organizations) { organization in
               OrganizationRepositoryView(organization: organization)
@@ -76,6 +84,8 @@ struct Github_RootView: View {
         } else {
           Button("Login") {
             Task {
+              isLoading = true
+              defer { isLoading = false }
               do {
                 try await Github.authorize()
                 viewModel.me = try await Github.me()
@@ -103,6 +113,8 @@ struct Github_RootView: View {
       .task {
         hasToken = await Github.hasToken
         if hasToken {
+          isLoading = true
+          defer { isLoading = false }
           do {
             viewModel.me = try await Github.me()
             organizations = try await Github.loadOrganizations()

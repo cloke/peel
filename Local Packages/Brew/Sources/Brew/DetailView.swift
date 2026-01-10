@@ -16,7 +16,25 @@ import Foundation
 /// Brew command executor using modern ProcessExecutor actor.
 struct Commands {
   private static let executor = ProcessExecutor()
-  private static let brewExecutable = "brew"
+  
+  /// Find the brew executable in common installation paths.
+  /// macOS GUI apps don't inherit shell PATH, so we need to search explicitly.
+  private static var brewExecutable: String {
+    let paths = [
+      "/opt/homebrew/bin/brew",    // Apple Silicon
+      "/usr/local/bin/brew",        // Intel
+      "/usr/bin/brew"               // Fallback
+    ]
+    
+    for path in paths {
+      if FileManager.default.isExecutableFile(atPath: path) {
+        return path
+      }
+    }
+    
+    // Fallback - most common location for Apple Silicon
+    return "/opt/homebrew/bin/brew"
+  }
   
   /// Execute a brew command and return the result.
   static func execute(arguments: [String]) async throws -> ProcessExecutor.Result {
