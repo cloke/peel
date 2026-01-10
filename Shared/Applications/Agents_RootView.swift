@@ -1706,6 +1706,8 @@ struct ChainDetailView: View {
   
   private func runChain() async {
     isRunning = true
+    defer { isRunning = false }  // Always reset, even on error
+    
     errorMessage = nil
     chain.reset()
     chain.state = .running(agentIndex: 0)
@@ -1788,8 +1790,8 @@ struct ChainDetailView: View {
   /// Run the review loop if enabled and reviewer requests changes
   private func runReviewLoop() async throws {
     // Find the last reviewer result
-    guard let lastReviewerResult = chain.results.last(where: { $0.reviewVerdict != nil }),
-          let verdict = lastReviewerResult.reviewVerdict,
+    guard let initialReviewerResult = chain.results.last(where: { $0.reviewVerdict != nil }),
+          let verdict = initialReviewerResult.reviewVerdict,
           verdict == .needsChanges else {
       // No reviewer or already approved
       return
@@ -1804,16 +1806,19 @@ struct ChainDetailView: View {
     let implementer = chain.agents[implementerIndex]
     let reviewer = chain.agents[reviewerIndex]
     
+    // Track the latest feedback for each iteration
+    var latestFeedback = initialReviewerResult.output
+    
     // Loop until approved or max iterations reached
     while chain.currentReviewIteration < chain.maxReviewIterations {
       chain.currentReviewIteration += 1
       chain.state = .reviewing(iteration: chain.currentReviewIteration)
       
-      // Build prompt with review feedback
+      // Build prompt with the latest review feedback
       let feedbackPrompt = """
         The reviewer has requested changes. Here is their feedback:
         
-        \(lastReviewerResult.output)
+        \(latestFeedback)
         
         Please address the feedback and make the necessary changes.
         Original task: \(prompt)
@@ -1842,7 +1847,8 @@ struct ChainDetailView: View {
           // Hard rejection, stop trying
           throw ChainError.reviewRejected(reason: newReviewerResult.output)
         }
-        // Otherwise continue with needsChanges
+        // Update feedback for next iteration
+        latestFeedback = newReviewerResult.output
       }
     }
     

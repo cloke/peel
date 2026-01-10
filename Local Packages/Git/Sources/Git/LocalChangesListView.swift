@@ -24,6 +24,7 @@ public struct LocalChangesListView: View {
           Image(systemName: "arrow.counterclockwise.icloud")
           Text("Refresh")
         }
+        .keyboardShortcut("r", modifiers: .command)
     }))
   }
 }
@@ -33,4 +34,3 @@ public struct LocalChangesListView: View {
     .environment(Model.Repository(name: "blah", path: "."))
 }
 #endif
-
