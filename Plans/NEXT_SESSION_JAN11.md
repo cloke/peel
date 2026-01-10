@@ -394,31 +394,55 @@ var estimatedCost: String {
 
 ## Session Goals
 
-1. ✅ Implement WorktreeService for chain isolation (created `Shared/AgentOrchestration/WorktreeService.swift`)
-2. 🔲 Add Merger agent role with prompts
-3. 🔲 Create PlannerOutput and MergeVerdict models
-4. 🔲 Implement parallel chain execution with TaskGroup
-5. 🔲 Add merge feedback loop
-6. 🔲 Create "Parallel Feature" chain template
-7. 🔲 Test with simple 2-implementer chain
+### Completed (January 10)
+1. ✅ **WorktreeService created** - `Shared/AgentOrchestration/WorktreeService.swift`
+   - `createWorktreeForChain()` - Isolated worktree for single chain
+   - `createWorktreesForParallelChain()` - Multiple worktrees for parallel implementers
+   - `removeWorktreeForChain()` / `removeAllWorktreesForChain()` - Cleanup
+   - `ActiveWorktree` tracking with status
+   - Automatic branch naming: `chain/<chain-name>-<timestamp>`
+   - Uses existing Git package `Commands.Worktree`
 
-## Progress (January 10)
+2. ✅ **Streaming infrastructure** - Immediate output with `readabilityHandler`
 
-### WorktreeService Created ✅
-Location: `Shared/AgentOrchestration/WorktreeService.swift`
+3. ✅ **UX polish** - Clear button, larger status panel, better parsing
 
-Features:
-- `createWorktreeForChain()` - Create isolated worktree for a single chain
-- `createWorktreesForParallelChain()` - Create multiple worktrees for parallel implementers
-- `removeWorktreeForChain()` / `removeAllWorktreesForChain()` - Cleanup
-- `ActiveWorktree` tracking with status
-- Automatic branch naming: `chain/<chain-name>-<timestamp>`
-- Uses existing Git package `Commands.Worktree` under the hood
+### Next Session (January 11)
+1. 🔲 **Integrate WorktreeService into ChainDetailView**
+   - Add `@State private var worktreeService = WorktreeService()`
+   - Add toggle: "Isolate in Worktree"
+   - Create worktree before running chain
+   - Pass worktree path to agents
+   - Cleanup worktree after chain completes
 
-### Next Steps
-1. Integrate WorktreeService into ChainDetailView
-2. Add UI toggle for worktree isolation
-3. Test worktree creation/cleanup flow
-4. Then add Merger role and parallel execution
+2. 🔲 **Add Merger agent role** (`AgentRole.swift`)
+   - New case `.merger`
+   - System prompt for analyzing parallel changes
+   - JSON output format for conflicts/success
+
+3. 🔲 **Create data models**
+   - `PlannerOutput.swift` - Branch name + task assignments
+   - `MergeVerdict.swift` - merged/conflict status
+
+4. 🔲 **Parallel chain execution**
+   - `withThrowingTaskGroup` to run implementers concurrently
+   - Each implementer gets its own worktree
+   - Collect all results before running merger
+
+5. 🔲 **Merge feedback loop**
+   - If merger reports conflict, re-run specific implementer
+   - Max 2 iterations before failing
+
+6. 🔲 **"Parallel Feature" template**
+   - Planner (Opus) → N Implementers (dynamic) → Merger (Sonnet) → Reviewer (Free)
+
+### Quick Start for Next Session
+```bash
+# Files to work on:
+# 1. Shared/Applications/Agents_RootView.swift - Add worktree toggle + integration
+# 2. Shared/AgentOrchestration/Models/AgentRole.swift - Add .merger case
+# 3. Shared/AgentOrchestration/Models/PlannerOutput.swift - NEW
+# 4. Shared/AgentOrchestration/Models/MergeVerdict.swift - NEW
+```
 
 Let's build this! 🚀
