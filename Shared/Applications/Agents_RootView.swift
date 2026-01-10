@@ -1552,6 +1552,20 @@ struct ChainDetailView: View {
   @State private var errorMessage: String?
   @State private var showingSaveTemplate = false
   
+  /// Calculate total duration from run start time
+  private var totalDuration: String? {
+    guard let startTime = chain.runStartTime,
+          case .complete = chain.state else { return nil }
+    let elapsed = Date().timeIntervalSince(startTime)
+    let minutes = Int(elapsed) / 60
+    let seconds = Int(elapsed) % 60
+    if minutes > 0 {
+      return "\(minutes)m \(seconds)s"
+    } else {
+      return "\(seconds)s"
+    }
+  }
+  
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 24) {
@@ -1738,6 +1752,43 @@ struct ChainDetailView: View {
           LiveStatusPanel(chain: chain)
         }
         
+        // Completion banner (show when just completed)
+        if case .complete = chain.state, !chain.results.isEmpty {
+          GroupBox {
+            HStack(spacing: 12) {
+              Image(systemName: "checkmark.circle.fill")
+                .font(.title2)
+                .foregroundStyle(.green)
+              VStack(alignment: .leading, spacing: 2) {
+                Text("Chain Completed")
+                  .font(.headline)
+                  .foregroundStyle(.green)
+                HStack {
+                  Text("\(chain.results.count) agents")
+                  Text("•")
+                  Text(String(format: "%.1f× premium", chain.results.reduce(0.0) { $0 + $1.premiumCost }))
+                  if let duration = totalDuration {
+                    Text("•")
+                    Text(duration)
+                  }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              }
+              Spacer()
+              
+              Button {
+                // Clear results to run again
+                prompt = ""
+              } label: {
+                Label("New Task", systemImage: "plus")
+              }
+              .buttonStyle(.bordered)
+            }
+          }
+          .background(Color.green.opacity(0.1))
+        }
+        
         // Error
         if let error = errorMessage {
           GroupBox {
@@ -1749,7 +1800,19 @@ struct ChainDetailView: View {
         // Results
         if !chain.results.isEmpty {
           VStack(alignment: .leading, spacing: 16) {
-            Label("Results", systemImage: "doc.text").font(.headline)
+            HStack {
+              Label("Results", systemImage: "doc.text").font(.headline)
+              Spacer()
+              if case .complete = chain.state {
+                Text("Completed")
+                  .font(.caption)
+                  .foregroundStyle(.green)
+                  .padding(.horizontal, 8)
+                  .padding(.vertical, 2)
+                  .background(Color.green.opacity(0.15))
+                  .clipShape(Capsule())
+              }
+            }
             
             ForEach(chain.results) { result in
               VStack(alignment: .leading, spacing: 8) {
@@ -1885,7 +1948,12 @@ struct ChainDetailView: View {
       }
       
       chain.state = .complete
-      chain.addStatusMessage("Chain completed successfully!", type: .complete)
+      chain.addStatusMessage("✓ Chain completed successfully!", type: .complete)
+      
+      // Play completion sound
+      #if os(macOS)
+      NSSound.beep()
+      #endif
       
       // Record to session tracker
       sessionTracker.recordChainRun(chain)
@@ -1920,12 +1988,19 @@ struct ChainDetailView: View {
       context: context.isEmpty ? nil : context
     )
     
-    // Run the agent
+    // Run the agent with streaming output
     let response = try await cliService.runCopilotSession(
       prompt: fullPrompt,
       model: agent.model,
       role: agent.role,
-      workingDirectory: agent.workingDirectory ?? chain.workingDirectory
+      workingDirectory: agent.workingDirectory ?? chain.workingDirectory,
+      onOutput: { [chain] line in
+        // Parse the streaming line for meaningful info
+        let statusLine = parseStreamingLine(line)
+        if let statusLine {
+          chain.addStatusMessage(statusLine.message, type: statusLine.type)
+        }
+      }
     )
     
     // Parse premium cost from response
@@ -2022,6 +2097,60 @@ struct ChainDetailView: View {
     
     // Reached max iterations without approval
     errorMessage = "Review loop reached maximum iterations (\(chain.maxReviewIterations)) without approval"
+  }
+  
+  /// Parse a streaming output line from copilot into a status message
+  private func parseStreamingLine(_ line: String) -> (message: String, type: LiveStatusMessage.MessageType)? {
+    let trimmed = line.trimmingCharacters(in: .whitespaces)
+    
+    // Skip empty lines
+    guard !trimmed.isEmpty else { return nil }
+    
+    // Tool invocations (look for common patterns)
+    if trimmed.contains("read_file") || trimmed.contains("Reading") {
+      return ("Reading file...", .tool)
+    }
+    if trimmed.contains("write_file") || trimmed.contains("Writing") || trimmed.contains("Editing") {
+      return ("Writing file...", .tool)
+    }
+    if trimmed.contains("run_in_terminal") || trimmed.contains("Running command") {
+      return ("Running command...", .tool)
+    }
+    if trimmed.contains("grep_search") || trimmed.contains("Searching") {
+      return ("Searching...", .tool)
+    }
+    if trimmed.contains("semantic_search") {
+      return ("Semantic search...", .tool)
+    }
+    if trimmed.contains("list_dir") {
+      return ("Listing directory...", .tool)
+    }
+    
+    // Progress indicators
+    if trimmed.hasPrefix("�") || trimmed.hasPrefix("●") || trimmed.hasPrefix("○") {
+      // Spinner characters - skip these
+      return nil
+    }
+    
+    // Token/usage info (skip for now, will be in final output)
+    if trimmed.contains("input,") && trimmed.contains("output") {
+      return nil
+    }
+    if trimmed.contains("Total usage") || trimmed.contains("Premium request") {
+      return nil
+    }
+    
+    // Model info
+    if trimmed.hasPrefix("claude-") || trimmed.hasPrefix("gpt-") || trimmed.hasPrefix("gemini-") {
+      return nil
+    }
+    
+    // General progress - truncate long lines
+    if trimmed.count > 80 {
+      return (String(trimmed.prefix(77)) + "...", .progress)
+    }
+    
+    return (trimmed, .progress)
   }
   
   /// Errors that can occur during chain execution

@@ -246,6 +246,9 @@ public final class CLIService {
     return nil
   }
   
+  /// Callback for streaming output from copilot
+  public typealias StreamCallback = @MainActor (String) -> Void
+  
   /// Run a GitHub Copilot session with the given prompt (non-interactive mode)
   /// - Parameters:
   ///   - prompt: The prompt/question to ask Copilot
@@ -253,13 +256,15 @@ public final class CLIService {
   ///   - role: The agent role (determines tool access)
   ///   - workingDirectory: Optional directory to run in (for repo context)
   ///   - allowAllTools: If true, auto-approve all tool usage (required for non-interactive)
+  ///   - onOutput: Optional callback for streaming output lines
   /// - Returns: CopilotResponse with content and model info
   public func runCopilotSession(
     prompt: String,
     model: CopilotModel = .claudeSonnet45,
     role: AgentRole = .implementer,
     workingDirectory: String? = nil,
-    allowAllTools: Bool = true
+    allowAllTools: Bool = true,
+    onOutput: StreamCallback? = nil
   ) async throws -> CopilotResponse {
     guard copilotStatus.isAvailable else {
       throw CLIError.notAvailable("GitHub Copilot CLI is not available. Please complete setup first.")
@@ -289,12 +294,25 @@ public final class CLIService {
       environment["GH_TOKEN"] = token
     }
     
-    let result = try await executeWithEnvironment(
-      copilotPath,
-      arguments: arguments,
-      workingDirectory: workingDirectory,
-      environment: environment
-    )
+    let result: ExecutionResult
+    if let onOutput {
+      // Use streaming execution
+      result = try await executeWithStreaming(
+        copilotPath,
+        arguments: arguments,
+        workingDirectory: workingDirectory,
+        environment: environment,
+        onOutput: onOutput
+      )
+    } else {
+      // Use non-streaming execution
+      result = try await executeWithEnvironment(
+        copilotPath,
+        arguments: arguments,
+        workingDirectory: workingDirectory,
+        environment: environment
+      )
+    }
     
     if result.exitCode != 0 {
       let errorMsg = result.stderrString.isEmpty ? result.stdoutString : result.stderrString
@@ -417,6 +435,94 @@ public final class CLIService {
         exitCode: process.terminationStatus
       )
     }.value
+  }
+  
+  /// Execute a command with streaming output (reads stderr line-by-line for real-time updates)
+  private func executeWithStreaming(
+    _ executable: String,
+    arguments: [String],
+    workingDirectory: String?,
+    environment: [String: String],
+    onOutput: @escaping StreamCallback
+  ) async throws -> ExecutionResult {
+    let execPath = executable
+    let args = arguments
+    let workDir = workingDirectory
+    let env = environment
+    
+    // We need to handle streaming in a way that works with MainActor callbacks
+    let process = Process()
+    let stdoutPipe = Pipe()
+    let stderrPipe = Pipe()
+    
+    process.executableURL = URL(fileURLWithPath: execPath)
+    process.arguments = args
+    process.standardOutput = stdoutPipe
+    process.standardError = stderrPipe
+    process.environment = env
+    
+    if let workDir {
+      process.currentDirectoryURL = URL(fileURLWithPath: workDir)
+    }
+    
+    // Collect all output for final result
+    var stdoutData = Data()
+    var stderrData = Data()
+    var stderrBuffer = ""
+    
+    // Set up stderr reading for streaming (copilot outputs progress to stderr)
+    stderrPipe.fileHandleForReading.readabilityHandler = { handle in
+      let data = handle.availableData
+      if !data.isEmpty {
+        stderrData.append(data)
+        if let str = String(data: data, encoding: .utf8) {
+          stderrBuffer += str
+          // Process complete lines
+          while let newlineIndex = stderrBuffer.firstIndex(of: "\n") {
+            let line = String(stderrBuffer[..<newlineIndex])
+            stderrBuffer = String(stderrBuffer[stderrBuffer.index(after: newlineIndex)...])
+            
+            // Parse and send meaningful output
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if !trimmed.isEmpty {
+              // Send to callback on main actor
+              Task { @MainActor in
+                onOutput(trimmed)
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    // Set up stdout reading
+    stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
+      let data = handle.availableData
+      if !data.isEmpty {
+        stdoutData.append(data)
+      }
+    }
+    
+    try process.run()
+    process.waitUntilExit()
+    
+    // Clean up handlers
+    stderrPipe.fileHandleForReading.readabilityHandler = nil
+    stdoutPipe.fileHandleForReading.readabilityHandler = nil
+    
+    // Read any remaining data
+    if let remainingStdout = try? stdoutPipe.fileHandleForReading.readToEnd() {
+      stdoutData.append(remainingStdout)
+    }
+    if let remainingStderr = try? stderrPipe.fileHandleForReading.readToEnd() {
+      stderrData.append(remainingStderr)
+    }
+    
+    return ExecutionResult(
+      stdoutString: String(data: stdoutData, encoding: .utf8) ?? "",
+      stderrString: String(data: stderrData, encoding: .utf8) ?? "",
+      exitCode: process.terminationStatus
+    )
   }
   
   /// Run a Claude CLI session with the given prompt
