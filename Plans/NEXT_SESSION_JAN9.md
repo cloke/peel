@@ -94,7 +94,7 @@ let review = await runAgent(reviewer, context: results)
 
 ## Ideas for Next Session
 
-### 1. Session Cost Tracking
+### 1. Session Cost Tracking ✅ COMPLETED
 Track total premium requests used across a session:
 ```swift
 @Observable class SessionTracker {
@@ -108,7 +108,7 @@ Show response as it generates instead of waiting:
 - Parse copilot stderr in real-time
 - Show actual tool invocations (not simulated)
 
-### 3. Review Loop
+### 3. Review Loop ✅ COMPLETED
 Allow reviewer to send changes back to implementer:
 ```swift
 enum ReviewResult {
@@ -123,11 +123,11 @@ while reviewResult == .needsChanges {
 }
 ```
 
-### 4. Save Chain Results
+### 4. Save Chain Results ✅ COMPLETED (Export to Markdown)
 Persist chain results to disk for later review:
-- Export as markdown
-- Save to SwiftData
-- Show history of past runs
+- Export as markdown ✅
+- Save to SwiftData (future)
+- Show history of past runs ✅ (in Session Summary)
 
 ---
 
