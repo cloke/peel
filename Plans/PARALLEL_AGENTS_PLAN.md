@@ -49,6 +49,7 @@ In addition to current responsibilities:
 - **Decide branch name** based on the task
 - **Create the branch** (but don't check it out)
 - **Split the task** into independent sub-tasks for each implementer
+- **Recommend model per task** based on complexity (NEW)
 - Output structured task assignments
 
 Example output:
@@ -59,16 +60,31 @@ Example output:
     {
       "implementer": 1,
       "description": "Add SettingsViewModel with user preferences",
-      "files": ["Shared/ViewModels/SettingsViewModel.swift"]
+      "files": ["Shared/ViewModels/SettingsViewModel.swift"],
+      "complexity": "medium",
+      "recommendedModel": "claude-sonnet-4.5"
     },
     {
       "implementer": 2, 
-      "description": "Add SettingsView UI with toggles and pickers",
-      "files": ["Shared/Views/SettingsView.swift"]
+      "description": "Add keyboard shortcut Cmd+R to refresh button",
+      "files": ["Shared/Views/RefreshButton.swift"],
+      "complexity": "trivial",
+      "recommendedModel": "gpt-4.1"
     }
   ]
 }
 ```
+
+#### Model Selection Guidelines (for Planner)
+The planner should recommend models based on task complexity:
+
+| Complexity | Examples | Recommended Model | Cost |
+|------------|----------|-------------------|------|
+| **Trivial** | Add modifier, rename, one-line fix | GPT 4.1 / Haiku | Free/1× |
+| **Simple** | Add property, small function, UI tweak | Haiku / Sonnet | 1× |
+| **Medium** | New view, refactor, multi-file change | Sonnet | 1× |
+| **Complex** | Architecture change, new feature | Sonnet / Opus | 1×/3× |
+| **Critical** | Security fix, data migration | Opus | 3× |
 
 ### 2. Merger (New Role)
 ```swift
@@ -249,6 +265,100 @@ defer {
 - Show estimated cost before running
 - Allow mixing premium/free models
 - Track per-implementer costs
+- **Dynamic model selection** based on planner recommendations
+
+### Challenge 5: Planner Model Selection
+**Problem:** Should planner be Opus (3×) or Sonnet (1×)?
+
+**Analysis:**
+- Opus at 3× is expensive but more reliable for complex planning
+- If Opus gets it right first try, total cost might be lower than Sonnet + retries
+- Planning is the foundation - bad plans cascade into failed implementations
+
+**Recommendation:**
+```
+Cost comparison for a 3-implementer chain:
+
+Sonnet Planner (if it fails once):
+  Planner:      1× (first try) + 1× (retry) = 2×
+  Implementers: 3× (wasted) + 3× (redo) = 6×
+  Total:        8× premium
+
+Opus Planner (gets it right):
+  Planner:      3×
+  Implementers: 3×
+  Total:        6× premium
+```
+
+**Strategy:**
+1. **Default to Opus for Planner** when task is complex or has multiple implementers
+2. **Use Sonnet for Planner** when task is straightforward or single-implementer
+3. **Let user override** based on their experience with the task type
+
+**UI Option:**
+```swift
+enum PlannerStrategy: String, CaseIterable {
+  case auto      // Opus for complex, Sonnet for simple
+  case economy   // Always Sonnet (may need retries)
+  case reliable  // Always Opus (higher upfront cost)
+}
+```
+
+## Cost Optimization Strategy
+
+### Estimated Costs by Chain Type
+
+| Chain Type | Planner | Implementers | Merger | Reviewer | Est. Total |
+|------------|---------|--------------|--------|----------|------------|
+| Quick Fix | Sonnet (1×) | GPT 4.1 (0×) | - | GPT 4.1 (0×) | **1×** |
+| Code Review | Sonnet (1×) | Sonnet (1×) | - | GPT 4.1 (0×) | **2×** |
+| Parallel Feature | Opus (3×) | 2× Sonnet (2×) | Sonnet (1×) | GPT 4.1 (0×) | **6×** |
+| Complex Feature | Opus (3×) | 3× Sonnet (3×) | Sonnet (1×) | Sonnet (1×) | **8×** |
+
+### Smart Model Assignment
+The planner can output model recommendations that the chain executor respects:
+
+```swift
+struct TaskAssignment: Codable {
+  let implementerIndex: Int
+  let description: String
+  let files: [String]
+  let complexity: TaskComplexity
+  let recommendedModel: CopilotModel
+}
+
+enum TaskComplexity: String, Codable {
+  case trivial   // One-line change, add modifier
+  case simple    // Small function, property addition
+  case medium    // New file, refactor
+  case complex   // Multi-file, architecture
+  case critical  // Security, data integrity
+  
+  var suggestedModel: CopilotModel {
+    switch self {
+    case .trivial: return .gpt41        // Free
+    case .simple: return .claudeHaiku45 // 1×
+    case .medium: return .claudeSonnet45 // 1×
+    case .complex: return .claudeSonnet45 // 1×
+    case .critical: return .claudeOpus45 // 3×
+    }
+  }
+}
+```
+
+### Pre-Run Cost Estimate
+Before running a chain, show the user:
+```
+Estimated Cost: 6× premium requests
+
+  Planner (Opus):        3×
+  Implementer 1 (Sonnet): 1×
+  Implementer 2 (GPT 4.1): 0× (free)
+  Merger (Sonnet):       1×
+  Reviewer (GPT 4.1):    0× (free)
+  
+[Run Chain] [Adjust Models...]
+```
 
 ## Timeline
 
