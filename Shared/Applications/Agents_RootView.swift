@@ -1258,7 +1258,7 @@ struct NewChainSheet: View {
         Section {
           #if os(macOS)
           HStack {
-            Image(systemName: "folder.fill")
+            Image(systemName: "folder_fill")
               .foregroundStyle(workingDirectory == nil ? .orange : .green)
             Text("Project Folder")
               .fontWeight(.medium)
@@ -1778,10 +1778,8 @@ struct ChainDetailView: View {
               Spacer()
               
               Button {
-                // Clear everything to run again
+                // Clear results to run again
                 prompt = ""
-                chain.reset()
-                errorMessage = nil
               } label: {
                 Label("New Task", systemImage: "plus")
               }
@@ -2033,7 +2031,7 @@ struct ChainDetailView: View {
   }
   
   /// Run the review loop if enabled and reviewer requests changes
-  private func runReviewLoop() async throws {
+  private func runReviewLoop(workingDirectory: String? = nil) async throws {
     // Find the last reviewer result
     guard let initialReviewerResult = chain.results.last(where: { $0.reviewVerdict != nil }),
           let verdict = initialReviewerResult.reviewVerdict,
@@ -2361,7 +2359,7 @@ struct SessionSummarySheet: View {
     }
   }
   
-  #if os(macOS)
+ #if os(macOS)
   private func exportMarkdown() {
     let markdown = sessionTracker.exportAsMarkdown()
     let desktopURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first!
