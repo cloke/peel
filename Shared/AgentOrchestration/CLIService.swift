@@ -276,7 +276,7 @@ public final class CLIService {
     let token = await getGitHubToken()
     
     // Use -p for non-interactive mode, --model for model selection, --allow-all-tools for auto-approval
-    var arguments = ["-p", prompt, "--model", model.rawValue]
+    var arguments = ["-p", prompt, "--model", model.rawValue, "--stream", "on"]
     if allowAllTools {
       arguments.append("--allow-all-tools")
     }
@@ -462,12 +462,15 @@ public final class CLIService {
     // Start the process
     try process.run()
     
-    // Use async let to read stdout and stderr concurrently
-    async let stderrResult = readStderrWithStreaming(
+    // Use async let to read stdout and stderr concurrently, both with streaming
+    async let stderrResult = readWithStreaming(
       stderrPipe.fileHandleForReading,
       onOutput: onOutput
     )
-    async let stdoutResult = readAllData(stdoutPipe.fileHandleForReading)
+    async let stdoutResult = readWithStreaming(
+      stdoutPipe.fileHandleForReading,
+      onOutput: onOutput
+    )
     
     // Wait for process to complete in background
     await withCheckedContinuation { continuation in
@@ -487,8 +490,8 @@ public final class CLIService {
     )
   }
   
-  /// Read stderr with streaming callbacks using AsyncSequence
-  private func readStderrWithStreaming(
+  /// Read from a file handle with streaming callbacks using AsyncSequence
+  private func readWithStreaming(
     _ handle: FileHandle,
     onOutput: @escaping StreamCallback
   ) async -> Data {

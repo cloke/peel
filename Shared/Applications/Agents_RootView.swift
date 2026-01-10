@@ -2106,51 +2106,39 @@ struct ChainDetailView: View {
     // Skip empty lines
     guard !trimmed.isEmpty else { return nil }
     
-    // Tool invocations (look for common patterns)
-    if trimmed.contains("read_file") || trimmed.contains("Reading") {
-      return ("Reading file...", .tool)
-    }
-    if trimmed.contains("write_file") || trimmed.contains("Writing") || trimmed.contains("Editing") {
-      return ("Writing file...", .tool)
-    }
-    if trimmed.contains("run_in_terminal") || trimmed.contains("Running command") {
-      return ("Running command...", .tool)
-    }
-    if trimmed.contains("grep_search") || trimmed.contains("Searching") {
-      return ("Searching...", .tool)
-    }
-    if trimmed.contains("semantic_search") {
-      return ("Semantic search...", .tool)
-    }
-    if trimmed.contains("list_dir") {
-      return ("Listing directory...", .tool)
-    }
-    
-    // Progress indicators
-    if trimmed.hasPrefix("�") || trimmed.hasPrefix("●") || trimmed.hasPrefix("○") {
-      // Spinner characters - skip these
+    // Skip spinner/progress characters only
+    if trimmed.count < 3 && (trimmed.contains("�") || trimmed.contains("●") || trimmed.contains("○") || trimmed.contains("◐")) {
       return nil
     }
     
-    // Token/usage info (skip for now, will be in final output)
-    if trimmed.contains("input,") && trimmed.contains("output") {
-      return nil
+    // Tool invocations - highlight these
+    if trimmed.lowercased().contains("read_file") || trimmed.lowercased().contains("reading") {
+      return ("📖 Reading file...", .tool)
     }
-    if trimmed.contains("Total usage") || trimmed.contains("Premium request") {
-      return nil
+    if trimmed.lowercased().contains("write_file") || trimmed.lowercased().contains("writing") || 
+       trimmed.lowercased().contains("editing") || trimmed.lowercased().contains("insert_edit") ||
+       trimmed.lowercased().contains("replace_string") {
+      return ("✏️ Editing file...", .tool)
+    }
+    if trimmed.lowercased().contains("run_in_terminal") || trimmed.lowercased().contains("running command") {
+      return ("⚡ Running command...", .tool)
+    }
+    if trimmed.lowercased().contains("grep_search") || trimmed.lowercased().contains("searching") {
+      return ("🔍 Searching...", .tool)
+    }
+    if trimmed.lowercased().contains("semantic_search") {
+      return ("🧠 Semantic search...", .tool)
+    }
+    if trimmed.lowercased().contains("list_dir") {
+      return ("📁 Listing directory...", .tool)
+    }
+    if trimmed.lowercased().contains("create_file") {
+      return ("📝 Creating file...", .tool)
     }
     
-    // Model info
-    if trimmed.hasPrefix("claude-") || trimmed.hasPrefix("gpt-") || trimmed.hasPrefix("gemini-") {
-      return nil
-    }
-    
-    // General progress - truncate long lines
-    if trimmed.count > 80 {
-      return (String(trimmed.prefix(77)) + "...", .progress)
-    }
-    
-    return (trimmed, .progress)
+    // Show the actual output - truncate if too long
+    let displayLine = trimmed.count > 100 ? String(trimmed.prefix(97)) + "..." : trimmed
+    return (displayLine, .progress)
   }
   
   /// Errors that can occur during chain execution
