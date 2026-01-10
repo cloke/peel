@@ -118,15 +118,15 @@ public struct AgentStepTemplate: Identifiable, Codable, Hashable {
   }
   
   /// Estimated premium cost for this step
-  public var estimatedCost: Int {
+  public var estimatedCost: Double {
     model.premiumCost
   }
 }
 
 extension ChainTemplate {
   /// Total estimated premium cost for all steps
-  public var estimatedTotalCost: Int {
-    steps.reduce(0) { $0 + $1.estimatedCost }
+  public var estimatedTotalCost: Double {
+    steps.reduce(0.0) { $0 + $1.estimatedCost }
   }
   
   /// Cost display string
@@ -134,8 +134,10 @@ extension ChainTemplate {
     let total = estimatedTotalCost
     if total == 0 {
       return "Free"
+    } else if total == floor(total) {
+      return "\(Int(total))× Premium"
     } else {
-      return "\(total)× Premium"
+      return String(format: "%.1f× Premium", total)
     }
   }
 }

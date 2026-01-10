@@ -16,7 +16,7 @@ public final class SessionTracker {
   public private(set) var sessionStartTime: Date = Date()
   
   /// Total premium requests used this session
-  public private(set) var totalPremiumUsed: Int = 0
+  public private(set) var totalPremiumUsed: Double = 0.0
   
   /// Total free requests used this session
   public private(set) var totalFreeUsed: Int = 0
@@ -28,7 +28,7 @@ public final class SessionTracker {
   
   /// Record a completed chain run
   public func recordChainRun(_ chain: AgentChain) {
-    let premiumCost = chain.results.reduce(0) { $0 + $1.premiumCost }
+    let premiumCost = chain.results.reduce(0.0) { $0 + $1.premiumCost }
     let freeCost = chain.results.filter { result in
       // Check if the model was free (GPT-4.1 Free is the only free option currently)
       result.model.lowercased().contains("free")
@@ -51,7 +51,7 @@ public final class SessionTracker {
   /// Reset the session (e.g., at start of new day)
   public func resetSession() {
     sessionStartTime = Date()
-    totalPremiumUsed = 0
+    totalPremiumUsed = 0.0
     totalFreeUsed = 0
     chainRunHistory = []
   }
@@ -126,7 +126,7 @@ public struct ChainRunRecord: Identifiable {
   public let chainId: UUID
   public let chainName: String
   public let results: [AgentChainResult]
-  public let totalPremium: Int
+  public let totalPremium: Double
   public let totalFree: Int
   public let timestamp: Date
   
@@ -134,7 +134,7 @@ public struct ChainRunRecord: Identifiable {
     chainId: UUID,
     chainName: String,
     results: [AgentChainResult],
-    totalPremium: Int,
+    totalPremium: Double,
     totalFree: Int,
     timestamp: Date
   ) {

@@ -53,8 +53,15 @@ public enum CopilotModel: String, Codable, CaseIterable, Identifiable {
     let costStr: String
     if premiumCost == 0 {
       costStr = "Free"
+    } else if premiumCost < 1.0 {
+      // Format fractional costs like 0.33 as "0.3×"
+      costStr = String(format: "%.1f×", premiumCost)
+    } else if premiumCost == floor(premiumCost) {
+      // Integer costs like 1.0 or 3.0 as "1×" or "3×"
+      costStr = "\(Int(premiumCost))×"
     } else {
-      costStr = "\(premiumCost)×"
+      // Decimal costs like 2.5 as "2.5×"
+      costStr = String(format: "%.1f×", premiumCost)
     }
     // Pad to align costs on the right
     let padding = String(repeating: " ", count: max(0, 22 - displayName.count))
@@ -62,13 +69,14 @@ public enum CopilotModel: String, Codable, CaseIterable, Identifiable {
   }
   
   /// Premium requests cost per use (0 = free tier)
-  public var premiumCost: Int {
+  public var premiumCost: Double {
     switch self {
-    case .claudeOpus45: return 3
-    case .gpt41: return 0  // Free tier
-    case .gpt5Mini: return 0  // Free tier (likely)
-    case .gemini3Pro: return 0  // Free tier (likely)
-    default: return 1
+    case .claudeOpus45: return 3.0
+    case .claudeHaiku45: return 0.33
+    case .gpt41: return 0.0  // Free tier
+    case .gpt5Mini: return 0.0  // Free tier (likely)
+    case .gemini3Pro: return 0.0  // Free tier (likely)
+    default: return 1.0
     }
   }
   

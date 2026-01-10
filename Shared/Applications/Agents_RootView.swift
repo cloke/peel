@@ -134,10 +134,34 @@ struct AgentsSidebarView: View {
   var body: some View {
     VStack(spacing: 0) {
       List(selection: $selection) {
-        // Chains section
-        if !agentManager.chains.isEmpty {
-          Section("Chains") {
-            ForEach(agentManager.chains) { chain in
+        // Running chains - show prominently at top
+        let runningChains = agentManager.chains.filter { 
+          if case .running = $0.state { return true }
+          if case .reviewing = $0.state { return true }
+          return false
+        }
+        if !runningChains.isEmpty {
+          Section {
+            ForEach(runningChains) { chain in
+              RunningChainRowView(chain: chain)
+                .tag("chain:\(chain.id.uuidString)")
+            }
+          } header: {
+            Label("Running Now", systemImage: "bolt.fill")
+              .foregroundStyle(.blue)
+          }
+        }
+        
+        // Saved chain templates / recent chains
+        let idleChains = agentManager.chains.filter {
+          if case .idle = $0.state { return true }
+          if case .complete = $0.state { return true }
+          if case .failed = $0.state { return true }
+          return false
+        }
+        if !idleChains.isEmpty {
+          Section("Recent Chains") {
+            ForEach(idleChains) { chain in
               ChainRowView(chain: chain)
                 .tag("chain:\(chain.id.uuidString)")
             }
@@ -1073,26 +1097,117 @@ struct StepRow<Actions: View>: View {
   }
 }
 
-// MARK: - Chain Row View
+// MARK: - Running Chain Row View (prominent display for active chains)
+
+struct RunningChainRowView: View {
+  let chain: AgentChain
+  
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 8) {
+        ProgressView()
+          .scaleEffect(0.6)
+          .frame(width: 16, height: 16)
+        
+        Text(chain.name)
+          .font(.callout)
+          .fontWeight(.medium)
+        
+        Spacer()
+        
+        Text(statusText)
+          .font(.caption2)
+          .foregroundStyle(.blue)
+          .padding(.horizontal, 6)
+          .padding(.vertical, 2)
+          .background(Color.blue.opacity(0.15))
+          .clipShape(Capsule())
+      }
+      
+      // Progress bar showing which agent
+      HStack(spacing: 2) {
+        ForEach(Array(chain.agents.enumerated()), id: \.element.id) { index, agent in
+          RoundedRectangle(cornerRadius: 2)
+            .fill(progressColor(for: index))
+            .frame(height: 4)
+        }
+      }
+      
+      // Current agent name
+      if let currentAgent = currentRunningAgent {
+        Text(currentAgent.name)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+    }
+    .padding(.vertical, 4)
+  }
+  
+  private var statusText: String {
+    switch chain.state {
+    case .running(let idx):
+      return "Agent \(idx + 1)/\(chain.agents.count)"
+    case .reviewing(let iter):
+      return "Review #\(iter)"
+    default:
+      return "Running"
+    }
+  }
+  
+  private var currentRunningAgent: Agent? {
+    if case .running(let idx) = chain.state, idx < chain.agents.count {
+      return chain.agents[idx]
+    }
+    return nil
+  }
+  
+  private func progressColor(for index: Int) -> Color {
+    switch chain.state {
+    case .running(let currentIdx):
+      if index < currentIdx { return .green }
+      if index == currentIdx { return .blue }
+      return .secondary.opacity(0.3)
+    case .reviewing:
+      return .orange
+    default:
+      return .secondary.opacity(0.3)
+    }
+  }
+}
+
+// MARK: - Chain Row View (for idle/completed chains)
 
 struct ChainRowView: View {
   let chain: AgentChain
   
   var body: some View {
     HStack(spacing: 10) {
-      Image(systemName: "link")
+      Image(systemName: stateIcon)
         .foregroundStyle(stateColor)
         .font(.caption)
       VStack(alignment: .leading, spacing: 2) {
         Text(chain.name).font(.callout)
-        Text("\(chain.agents.count) agents")
-          .font(.caption)
-          .foregroundStyle(.secondary)
+        HStack(spacing: 4) {
+          Text("\(chain.agents.count) agents")
+          if !chain.results.isEmpty {
+            Text("•")
+            Text("\(chain.results.reduce(0) { $0 + $1.premiumCost })× used")
+          }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
       }
       Spacer()
-      if case .running = chain.state {
-        ProgressView().scaleEffect(0.5).frame(width: 16, height: 16)
-      }
+    }
+  }
+  
+  private var stateIcon: String {
+    switch chain.state {
+    case .idle: return "link"
+    case .running: return "play.circle.fill"
+    case .reviewing: return "arrow.triangle.2.circlepath"
+    case .complete: return "checkmark.circle.fill"
+    case .failed: return "xmark.circle.fill"
     }
   }
   
@@ -1606,6 +1721,11 @@ struct ChainDetailView: View {
           }
         }
         
+        // Live status panel when running
+        if isRunning {
+          LiveStatusPanel(chain: chain)
+        }
+        
         // Error
         if let error = errorMessage {
           GroupBox {
@@ -1710,7 +1830,10 @@ struct ChainDetailView: View {
     
     errorMessage = nil
     chain.reset()
+    chain.clearLiveStatus()
+    chain.runStartTime = Date()
     chain.state = .running(agentIndex: 0)
+    chain.addStatusMessage("Starting chain execution...", type: .info)
     
     do {
       // Run all agents in sequence
@@ -1722,12 +1845,14 @@ struct ChainDetailView: View {
       }
       
       chain.state = .complete
+      chain.addStatusMessage("Chain completed successfully!", type: .complete)
       
       // Record to session tracker
       sessionTracker.recordChainRun(chain)
     } catch {
       errorMessage = error.localizedDescription
       chain.state = .failed(message: error.localizedDescription)
+      chain.addStatusMessage("Error: \(error.localizedDescription)", type: .error)
     }
     
     isRunning = false
@@ -1737,7 +1862,10 @@ struct ChainDetailView: View {
   private func runAgentsSequentially() async throws {
     for (index, agent) in chain.agents.enumerated() {
       chain.state = .running(agentIndex: index)
+      chain.currentAgentStartTime = Date()
+      chain.addStatusMessage("Starting \(agent.name) (\(agent.model.shortName))...", type: .progress)
       try await runSingleAgent(agent, at: index)
+      chain.addStatusMessage("\(agent.name) completed", type: .complete)
     }
   }
   
@@ -1763,7 +1891,7 @@ struct ChainDetailView: View {
     // Parse premium cost from response
     var premiumCost = agent.model.premiumCost
     if let premiumStr = response.premiumRequests,
-       let num = Int(premiumStr.components(separatedBy: " ").first ?? "") {
+       let num = Double(premiumStr.components(separatedBy: " ").first ?? "") {
       premiumCost = num
     }
     
@@ -2042,6 +2170,160 @@ private struct StatCard: View {
       .frame(maxWidth: .infinity)
       .padding(.vertical, 8)
     }
+  }
+}
+
+// MARK: - Live Status Panel
+
+struct LiveStatusPanel: View {
+  let chain: AgentChain
+  
+  var body: some View {
+    GroupBox {
+      VStack(alignment: .leading, spacing: 12) {
+        // Header with elapsed time
+        HStack {
+          Label("Live Status", systemImage: "bolt.fill")
+            .font(.headline)
+            .foregroundStyle(.blue)
+          
+          Spacer()
+          
+          if let startTime = chain.runStartTime {
+            ElapsedTimeView(startTime: startTime)
+          }
+        }
+        
+        // Progress indicator
+        HStack(spacing: 2) {
+          ForEach(Array(chain.agents.enumerated()), id: \.element.id) { index, agent in
+            VStack(spacing: 4) {
+              RoundedRectangle(cornerRadius: 3)
+                .fill(progressColor(for: index))
+                .frame(height: 6)
+              
+              Text(agent.role.displayName)
+                .font(.caption2)
+                .foregroundStyle(index == currentAgentIndex ? .primary : .secondary)
+            }
+          }
+        }
+        
+        Divider()
+        
+        // Status messages log
+        ScrollViewReader { proxy in
+          ScrollView {
+            LazyVStack(alignment: .leading, spacing: 4) {
+              ForEach(chain.liveStatusMessages) { message in
+                HStack(alignment: .top, spacing: 6) {
+                  Image(systemName: message.type.icon)
+                    .font(.caption2)
+                    .foregroundStyle(messageColor(message.type))
+                    .frame(width: 12)
+                  
+                  Text(message.message)
+                    .font(.caption)
+                    .foregroundStyle(message.type == .error ? .red : .primary)
+                  
+                  Spacer()
+                  
+                  Text(message.timestamp, style: .time)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                }
+                .id(message.id)
+              }
+            }
+          }
+          .frame(maxHeight: 120)
+          .onChange(of: chain.liveStatusMessages.count) { _, _ in
+            if let lastMessage = chain.liveStatusMessages.last {
+              withAnimation {
+                proxy.scrollTo(lastMessage.id, anchor: .bottom)
+              }
+            }
+          }
+        }
+        
+        // Current agent status
+        if let currentAgent = currentRunningAgent {
+          HStack {
+            ProgressView()
+              .scaleEffect(0.6)
+            Text("Running: \(currentAgent.name)")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            
+            if let agentStart = chain.currentAgentStartTime {
+              Text("•")
+                .foregroundStyle(.tertiary)
+              ElapsedTimeView(startTime: agentStart)
+                .font(.caption)
+            }
+          }
+        }
+      }
+      .padding(.vertical, 4)
+    }
+    .background(Color.blue.opacity(0.05))
+  }
+  
+  private var currentAgentIndex: Int {
+    if case .running(let idx) = chain.state { return idx }
+    return -1
+  }
+  
+  private var currentRunningAgent: Agent? {
+    if case .running(let idx) = chain.state, idx < chain.agents.count {
+      return chain.agents[idx]
+    }
+    return nil
+  }
+  
+  private func progressColor(for index: Int) -> Color {
+    let currentIdx = currentAgentIndex
+    if index < currentIdx { return .green }
+    if index == currentIdx { return .blue }
+    return .secondary.opacity(0.3)
+  }
+  
+  private func messageColor(_ type: LiveStatusMessage.MessageType) -> Color {
+    switch type {
+    case .info: return .secondary
+    case .tool: return .purple
+    case .progress: return .blue
+    case .error: return .red
+    case .complete: return .green
+    }
+  }
+}
+
+// MARK: - Elapsed Time View
+
+struct ElapsedTimeView: View {
+  let startTime: Date
+  @State private var elapsed: TimeInterval = 0
+  
+  private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+  
+  var body: some View {
+    Text(formattedElapsed)
+      .font(.caption)
+      .foregroundStyle(.secondary)
+      .monospacedDigit()
+      .onReceive(timer) { _ in
+        elapsed = Date().timeIntervalSince(startTime)
+      }
+      .onAppear {
+        elapsed = Date().timeIntervalSince(startTime)
+      }
+  }
+  
+  private var formattedElapsed: String {
+    let minutes = Int(elapsed) / 60
+    let seconds = Int(elapsed) % 60
+    return String(format: "%d:%02d", minutes, seconds)
   }
 }
 #endif
