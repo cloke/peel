@@ -126,22 +126,37 @@ From PARALLEL_AGENTS_PLAN.md:
 
 ## Session Goals
 
-1. ✅ Get streaming output visibly working - Implemented readabilityHandler-based streaming with actor for thread-safety
-2. ✅ Make completion state unmistakably clear - "New Task" button now resets chain state
-3. ✅ Fix any blocking/beach ball issues - Actor-based streaming runs on background queues
-4. 🔲 Test all built-in templates work correctly - Ready for testing
+1. ✅ Get streaming output visibly working - readabilityHandler + StreamAccumulator actor
+2. ✅ Make completion state unmistakably clear - "New Task" resets chain  
+3. ✅ Fix any blocking/beach ball issues - Actor-based streaming on background queues
+4. ✅ Test all built-in templates work correctly - Agent chain successfully made UX changes
 
-## Changes Made (January 10, 2026)
+## Changes Made
 
 ### CLIService.swift
-- Replaced AsyncSequence-based streaming with `readabilityHandler` for more immediate output
-- Created `StreamAccumulator` actor for thread-safe data collection
-- Added separate `processStdoutBuffer()` and `processStderrBuffer()` to avoid actor-isolation issues
+- Replaced AsyncSequence streaming with `readabilityHandler` for immediate output
+- Added `StreamAccumulator` actor for thread-safe data collection
+- Fixed actor isolation with separate `processStdoutBuffer()`/`processStderrBuffer()`
 
-### Agents_RootView.swift
-- Added Clear button next to prompt field
-- Increased Live Status panel height from 120 to 200 pixels
-- Improved `parseStreamingLine()` to filter out stats lines
-- "New Task" button now also resets chain state
+### Agents_RootView.swift  
+- Added Clear button for prompt field
+- Increased Live Status panel height (120 → 200)
+- Improved `parseStreamingLine()` to filter stats lines
+- "New Task" button now resets chain state and clears errors
+
+### Agent Chain Test
+- Successfully ran chain to make UX improvements
+- Brew: Fixed PATH lookup for `brew` executable  
+- GitHub: Added loading spinner during data fetch
+
+---
+
+## Next: Parallel Agents
+
+See **NEXT_SESSION_JAN11.md** for the parallel implementers plan:
+- Planner splits task into independent sub-tasks
+- Multiple implementers run in parallel (each in a git worktree)
+- Merger agent combines changes and handles conflicts
+- Feedback loop if merger finds issues
 
 Good luck! 🚀
