@@ -394,12 +394,31 @@ var estimatedCost: String {
 
 ## Session Goals
 
-1. 🔲 Implement GitWorktreeService in Git package
+1. ✅ Implement WorktreeService for chain isolation (created `Shared/AgentOrchestration/WorktreeService.swift`)
 2. 🔲 Add Merger agent role with prompts
 3. 🔲 Create PlannerOutput and MergeVerdict models
 4. 🔲 Implement parallel chain execution with TaskGroup
 5. 🔲 Add merge feedback loop
 6. 🔲 Create "Parallel Feature" chain template
 7. 🔲 Test with simple 2-implementer chain
+
+## Progress (January 10)
+
+### WorktreeService Created ✅
+Location: `Shared/AgentOrchestration/WorktreeService.swift`
+
+Features:
+- `createWorktreeForChain()` - Create isolated worktree for a single chain
+- `createWorktreesForParallelChain()` - Create multiple worktrees for parallel implementers
+- `removeWorktreeForChain()` / `removeAllWorktreesForChain()` - Cleanup
+- `ActiveWorktree` tracking with status
+- Automatic branch naming: `chain/<chain-name>-<timestamp>`
+- Uses existing Git package `Commands.Worktree` under the hood
+
+### Next Steps
+1. Integrate WorktreeService into ChainDetailView
+2. Add UI toggle for worktree isolation
+3. Test worktree creation/cleanup flow
+4. Then add Merger role and parallel execution
 
 Let's build this! 🚀
