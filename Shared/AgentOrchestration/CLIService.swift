@@ -450,79 +450,81 @@ public final class CLIService {
     let workDir = workingDirectory
     let env = environment
     
-    // We need to handle streaming in a way that works with MainActor callbacks
-    let process = Process()
-    let stdoutPipe = Pipe()
-    let stderrPipe = Pipe()
-    
-    process.executableURL = URL(fileURLWithPath: execPath)
-    process.arguments = args
-    process.standardOutput = stdoutPipe
-    process.standardError = stderrPipe
-    process.environment = env
-    
-    if let workDir {
-      process.currentDirectoryURL = URL(fileURLWithPath: workDir)
-    }
-    
-    // Collect all output for final result
-    var stdoutData = Data()
-    var stderrData = Data()
-    var stderrBuffer = ""
-    
-    // Set up stderr reading for streaming (copilot outputs progress to stderr)
-    stderrPipe.fileHandleForReading.readabilityHandler = { handle in
-      let data = handle.availableData
-      if !data.isEmpty {
-        stderrData.append(data)
-        if let str = String(data: data, encoding: .utf8) {
-          stderrBuffer += str
-          // Process complete lines
-          while let newlineIndex = stderrBuffer.firstIndex(of: "\n") {
-            let line = String(stderrBuffer[..<newlineIndex])
-            stderrBuffer = String(stderrBuffer[stderrBuffer.index(after: newlineIndex)...])
-            
-            // Parse and send meaningful output
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if !trimmed.isEmpty {
-              // Send to callback on main actor
-              Task { @MainActor in
-                onOutput(trimmed)
+    // Run process in detached task to avoid blocking main actor
+    return try await Task.detached(priority: .userInitiated) {
+      let process = Process()
+      let stdoutPipe = Pipe()
+      let stderrPipe = Pipe()
+      
+      process.executableURL = URL(fileURLWithPath: execPath)
+      process.arguments = args
+      process.standardOutput = stdoutPipe
+      process.standardError = stderrPipe
+      process.environment = env
+      
+      if let workDir {
+        process.currentDirectoryURL = URL(fileURLWithPath: workDir)
+      }
+      
+      // Collect all output for final result
+      var stdoutData = Data()
+      var stderrData = Data()
+      var stderrBuffer = ""
+      
+      // Set up stderr reading for streaming (copilot outputs progress to stderr)
+      stderrPipe.fileHandleForReading.readabilityHandler = { handle in
+        let data = handle.availableData
+        if !data.isEmpty {
+          stderrData.append(data)
+          if let str = String(data: data, encoding: .utf8) {
+            stderrBuffer += str
+            // Process complete lines
+            while let newlineIndex = stderrBuffer.firstIndex(of: "\n") {
+              let line = String(stderrBuffer[..<newlineIndex])
+              stderrBuffer = String(stderrBuffer[stderrBuffer.index(after: newlineIndex)...])
+              
+              // Parse and send meaningful output
+              let trimmed = line.trimmingCharacters(in: .whitespaces)
+              if !trimmed.isEmpty {
+                // Send to callback on main actor
+                Task { @MainActor in
+                  onOutput(trimmed)
+                }
               }
             }
           }
         }
       }
-    }
-    
-    // Set up stdout reading
-    stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
-      let data = handle.availableData
-      if !data.isEmpty {
-        stdoutData.append(data)
+      
+      // Set up stdout reading
+      stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
+        let data = handle.availableData
+        if !data.isEmpty {
+          stdoutData.append(data)
+        }
       }
-    }
-    
-    try process.run()
-    process.waitUntilExit()
-    
-    // Clean up handlers
-    stderrPipe.fileHandleForReading.readabilityHandler = nil
-    stdoutPipe.fileHandleForReading.readabilityHandler = nil
-    
-    // Read any remaining data
-    if let remainingStdout = try? stdoutPipe.fileHandleForReading.readToEnd() {
-      stdoutData.append(remainingStdout)
-    }
-    if let remainingStderr = try? stderrPipe.fileHandleForReading.readToEnd() {
-      stderrData.append(remainingStderr)
-    }
-    
-    return ExecutionResult(
-      stdoutString: String(data: stdoutData, encoding: .utf8) ?? "",
-      stderrString: String(data: stderrData, encoding: .utf8) ?? "",
-      exitCode: process.terminationStatus
-    )
+      
+      try process.run()
+      process.waitUntilExit()
+      
+      // Clean up handlers
+      stderrPipe.fileHandleForReading.readabilityHandler = nil
+      stdoutPipe.fileHandleForReading.readabilityHandler = nil
+      
+      // Read any remaining data
+      if let remainingStdout = try? stdoutPipe.fileHandleForReading.readToEnd() {
+        stdoutData.append(remainingStdout)
+      }
+      if let remainingStderr = try? stderrPipe.fileHandleForReading.readToEnd() {
+        stderrData.append(remainingStderr)
+      }
+      
+      return ExecutionResult(
+        stdoutString: String(data: stdoutData, encoding: .utf8) ?? "",
+        stderrString: String(data: stderrData, encoding: .utf8) ?? "",
+        exitCode: process.terminationStatus
+      )
+    }.value
   }
   
   /// Run a Claude CLI session with the given prompt
