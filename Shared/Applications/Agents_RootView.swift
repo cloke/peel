@@ -1778,8 +1778,10 @@ struct ChainDetailView: View {
               Spacer()
               
               Button {
-                // Clear results to run again
+                // Clear everything to run again
                 prompt = ""
+                chain.reset()
+                errorMessage = nil
               } label: {
                 Label("New Task", systemImage: "plus")
               }

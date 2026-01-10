@@ -437,7 +437,7 @@ public final class CLIService {
     }.value
   }
   
-  /// Execute a command with streaming output using AsyncSequence
+  /// Execute a command with streaming output using readabilityHandler for immediate updates
   private func executeWithStreaming(
     _ executable: String,
     arguments: [String],
@@ -459,29 +459,49 @@ public final class CLIService {
       process.currentDirectoryURL = URL(fileURLWithPath: workingDirectory)
     }
     
+    // Use an actor to safely accumulate data across callbacks
+    let accumulator = StreamAccumulator(onOutput: onOutput)
+    
+    // Set up readability handlers for immediate streaming
+    stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
+      let data = handle.availableData
+      if !data.isEmpty {
+        Task {
+          await accumulator.appendStdout(data)
+        }
+      }
+    }
+    
+    stderrPipe.fileHandleForReading.readabilityHandler = { handle in
+      let data = handle.availableData
+      if !data.isEmpty {
+        Task {
+          await accumulator.appendStderr(data)
+        }
+      }
+    }
+    
     // Start the process
     try process.run()
     
-    // Use async let to read stdout and stderr concurrently, both with streaming
-    async let stderrResult = readWithStreaming(
-      stderrPipe.fileHandleForReading,
-      onOutput: onOutput
-    )
-    async let stdoutResult = readWithStreaming(
-      stdoutPipe.fileHandleForReading,
-      onOutput: onOutput
-    )
-    
-    // Wait for process to complete in background
+    // Wait for process to complete
     await withCheckedContinuation { continuation in
       process.terminationHandler = { _ in
+        // Clean up handlers
+        stdoutPipe.fileHandleForReading.readabilityHandler = nil
+        stderrPipe.fileHandleForReading.readabilityHandler = nil
         continuation.resume()
       }
     }
     
-    // Collect results
-    let stderrData = await stderrResult
-    let stdoutData = await stdoutResult
+    // Give a moment for final callbacks to process
+    try? await Task.sleep(for: .milliseconds(100))
+    
+    // Process any remaining buffered content
+    await accumulator.flushRemainingBuffers()
+    
+    // Get final accumulated data
+    let (stdoutData, stderrData) = await accumulator.getFinalData()
     
     return ExecutionResult(
       stdoutString: String(data: stdoutData, encoding: .utf8) ?? "",
@@ -490,42 +510,80 @@ public final class CLIService {
     )
   }
   
-  /// Read from a file handle with streaming callbacks using AsyncSequence
-  private func readWithStreaming(
-    _ handle: FileHandle,
-    onOutput: @escaping StreamCallback
-  ) async -> Data {
-    var allData = Data()
+  /// Actor to safely accumulate streaming data across callbacks
+  /// Actor to safely accumulate streaming data across callbacks
+  private actor StreamAccumulator {
+    private var stdoutData = Data()
+    private var stderrData = Data()
+    private var stdoutBuffer = ""
+    private var stderrBuffer = ""
+    private let onOutput: StreamCallback
     
-    do {
-      // Use AsyncBytes for streaming
-      for try await line in handle.bytes.lines {
-        // Collect data for final result
-        if let lineData = (line + "\n").data(using: .utf8) {
-          allData.append(lineData)
-        }
-        
-        // Send to callback on main actor
+    init(onOutput: @escaping StreamCallback) {
+      self.onOutput = onOutput
+    }
+    
+    func appendStdout(_ data: Data) async {
+      stdoutData.append(data)
+      if let str = String(data: data, encoding: .utf8) {
+        stdoutBuffer += str
+        await processStdoutBuffer()
+      }
+    }
+    
+    func appendStderr(_ data: Data) async {
+      stderrData.append(data)
+      if let str = String(data: data, encoding: .utf8) {
+        stderrBuffer += str
+        await processStderrBuffer()
+      }
+    }
+    
+    private func processStdoutBuffer() async {
+      while let newlineRange = stdoutBuffer.range(of: "\n") {
+        let line = String(stdoutBuffer[..<newlineRange.lowerBound])
+        stdoutBuffer = String(stdoutBuffer[newlineRange.upperBound...])
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         if !trimmed.isEmpty {
           await onOutput(trimmed)
         }
       }
-    } catch {
-      // Handle read errors gracefully
     }
     
-    return allData
-  }
-  
-  /// Read all data from a file handle
-  private func readAllData(_ handle: FileHandle) async -> Data {
-    do {
-      return try handle.readToEnd() ?? Data()
-    } catch {
-      return Data()
+    private func processStderrBuffer() async {
+      while let newlineRange = stderrBuffer.range(of: "\n") {
+        let line = String(stderrBuffer[..<newlineRange.lowerBound])
+        stderrBuffer = String(stderrBuffer[newlineRange.upperBound...])
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        if !trimmed.isEmpty {
+          await onOutput(trimmed)
+        }
+      }
+    }
+    
+    func flushRemainingBuffers() async {
+      if !stdoutBuffer.isEmpty {
+        let trimmed = stdoutBuffer.trimmingCharacters(in: .whitespaces)
+        if !trimmed.isEmpty {
+          await onOutput(trimmed)
+        }
+        stdoutBuffer = ""
+      }
+      if !stderrBuffer.isEmpty {
+        let trimmed = stderrBuffer.trimmingCharacters(in: .whitespaces)
+        if !trimmed.isEmpty {
+          await onOutput(trimmed)
+        }
+        stderrBuffer = ""
+      }
+    }
+    
+    func getFinalData() -> (Data, Data) {
+      return (stdoutData, stderrData)
     }
   }
+
+  
   
   /// Run a Claude CLI session with the given prompt
   /// - Parameters:

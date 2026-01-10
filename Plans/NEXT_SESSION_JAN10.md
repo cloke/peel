@@ -126,9 +126,22 @@ From PARALLEL_AGENTS_PLAN.md:
 
 ## Session Goals
 
-1. ✅ Get streaming output visibly working
-2. ✅ Make completion state unmistakably clear  
-3. ✅ Fix any blocking/beach ball issues
-4. ✅ Test all built-in templates work correctly
+1. ✅ Get streaming output visibly working - Implemented readabilityHandler-based streaming with actor for thread-safety
+2. ✅ Make completion state unmistakably clear - "New Task" button now resets chain state
+3. ✅ Fix any blocking/beach ball issues - Actor-based streaming runs on background queues
+4. 🔲 Test all built-in templates work correctly - Ready for testing
+
+## Changes Made (January 10, 2026)
+
+### CLIService.swift
+- Replaced AsyncSequence-based streaming with `readabilityHandler` for more immediate output
+- Created `StreamAccumulator` actor for thread-safe data collection
+- Added separate `processStdoutBuffer()` and `processStderrBuffer()` to avoid actor-isolation issues
+
+### Agents_RootView.swift
+- Added Clear button next to prompt field
+- Increased Live Status panel height from 120 to 200 pixels
+- Improved `parseStreamingLine()` to filter out stats lines
+- "New Task" button now also resets chain state
 
 Good luck! 🚀
