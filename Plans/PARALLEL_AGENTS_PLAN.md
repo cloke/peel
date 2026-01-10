@@ -304,6 +304,160 @@ enum PlannerStrategy: String, CaseIterable {
 }
 ```
 
+### Challenge 6: Context Window Limits
+**Problem:** Agents degrade as context grows and gets summarized
+
+**Symptoms:**
+- Copilot auto-summarizes when context exceeds window
+- Summarization loses important details (file paths, specific line numbers, edge cases)
+- Agent makes worse decisions with summarized context
+- Longer chains accumulate more context → worse performance at the end
+
+**Analysis:**
+```
+Context accumulation in a chain:
+
+Agent 1 (Planner):    Fresh context (~10k tokens)
+Agent 2 (Impl 1):     Planner output + task (~15k tokens)
+Agent 3 (Impl 2):     Planner + Impl1 output (~25k tokens)
+Agent 4 (Merger):     All previous outputs (~40k tokens) ⚠️
+Agent 5 (Reviewer):   Everything (~50k tokens) ⚠️ SUMMARIZED
+```
+
+**Solutions:**
+
+#### 1. Fresh Context Spawning
+Instead of passing accumulated context, spawn new agents with **curated context**:
+
+```swift
+enum ContextStrategy {
+  case accumulated    // Pass all previous outputs (current behavior)
+  case curated        // Only pass relevant subset
+  case fresh          // New agent with minimal context
+}
+
+// For the merger, instead of all outputs:
+let mergerContext = """
+  Branch: \(plan.branchName)
+  
+  Implementer 1 changed:
+  - \(impl1.filesChanged.joined(separator: "\n- "))
+  
+  Implementer 2 changed:
+  - \(impl2.filesChanged.joined(separator: "\n- "))
+  
+  Review the git diff and merge these changes.
+  """
+```
+
+#### 2. Context Budget Tracking
+Track estimated tokens and warn/spawn when approaching limits:
+
+```swift
+struct ContextBudget {
+  let modelLimit: Int  // e.g., 128k for Sonnet
+  var currentEstimate: Int
+  
+  var utilizationPercent: Int {
+    (currentEstimate * 100) / modelLimit
+  }
+  
+  var shouldSpawnFresh: Bool {
+    utilizationPercent > 70  // Spawn fresh at 70% to avoid summarization
+  }
+}
+
+// Rough token estimation
+func estimateTokens(_ text: String) -> Int {
+  text.count / 4  // ~4 chars per token approximation
+}
+```
+
+#### 3. Checkpoint & Spawn Pattern
+When context gets too large, checkpoint progress and spawn a fresh agent:
+
+```swift
+// During chain execution
+if contextBudget.shouldSpawnFresh {
+  // Save current state
+  let checkpoint = AgentCheckpoint(
+    completedTasks: chain.results,
+    remainingTasks: remainingAgents,
+    keyDecisions: extractKeyDecisions(chain.results),
+    filesModified: extractModifiedFiles(chain.results)
+  )
+  
+  // Spawn fresh agent with curated summary
+  let freshContext = checkpoint.toMinimalContext()
+  try await runSingleAgent(nextAgent, context: freshContext, fresh: true)
+}
+```
+
+#### 4. Hierarchical Summarization
+Use a dedicated summarizer agent (cheap model) to create smart summaries:
+
+```swift
+// When context exceeds threshold
+let summarizer = Agent(
+  name: "Context Summarizer",
+  role: .summarizer,  // New role
+  model: .gpt41       // Free, good enough for summarization
+)
+
+let smartSummary = try await runSingleAgent(summarizer, prompt: """
+  Summarize the following agent outputs for the next agent.
+  KEEP: File paths, function names, specific changes made, error messages
+  DISCARD: Explanations, reasoning, verbose descriptions
+  
+  \(previousOutputs)
+  """)
+```
+
+#### 5. Scoped Context by Role
+Different roles need different context:
+
+```swift
+func contextForRole(_ role: AgentRole, chain: AgentChain) -> String {
+  switch role {
+  case .planner:
+    // Fresh - just the user prompt and codebase info
+    return chain.userPrompt
+    
+  case .implementer:
+    // Only the plan section relevant to this implementer
+    return extractTaskForImplementer(chain.plannerOutput, index: implementerIndex)
+    
+  case .merger:
+    // Git diffs only, not full outputs
+    return generateDiffSummary(chain.implementerResults)
+    
+  case .reviewer:
+    // Final state + key decisions, not full history
+    return generateReviewContext(chain)
+  }
+}
+```
+
+**UI Indicators:**
+```
+┌─────────────────────────────────────┐
+│ Context Usage                       │
+│ ████████░░░░░░░░░░░░ 45% (58k/128k) │
+│                                     │
+│ ⚠️ At 70%, will spawn fresh agent   │
+└─────────────────────────────────────┘
+```
+
+**Model Context Limits (for reference):**
+| Model | Context Window | Safe Threshold (70%) |
+|-------|---------------|---------------------|
+| Claude Opus 4.5 | 200k | 140k |
+| Claude Sonnet 4.5 | 200k | 140k |
+| Claude Haiku 4.5 | 200k | 140k |
+| GPT 4.1 | 128k | 90k |
+| GPT 5.1 Codex | 256k | 180k |
+```
+
 ## Cost Optimization Strategy
 
 ### Estimated Costs by Chain Type
