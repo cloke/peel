@@ -1100,6 +1100,7 @@ struct ChainRowView: View {
     switch chain.state {
     case .idle: return .secondary
     case .running: return .blue
+    case .reviewing: return .orange
     case .complete: return .green
     case .failed: return .red
     }
@@ -1541,6 +1542,42 @@ struct ChainDetailView: View {
             .foregroundStyle(.secondary)
         }
         
+        // Review loop settings (only show if there's a reviewer in the chain)
+        if chain.agents.contains(where: { $0.role == .reviewer }) {
+          GroupBox {
+            VStack(alignment: .leading, spacing: 8) {
+              Toggle(isOn: Binding(
+                get: { chain.enableReviewLoop },
+                set: { chain.enableReviewLoop = $0 }
+              )) {
+                Label("Enable Review Loop", systemImage: "arrow.triangle.2.circlepath")
+              }
+              
+              if chain.enableReviewLoop {
+                HStack {
+                  Text("Max iterations:")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                  Picker("", selection: Binding(
+                    get: { chain.maxReviewIterations },
+                    set: { chain.maxReviewIterations = $0 }
+                  )) {
+                    ForEach([1, 2, 3, 5], id: \.self) { num in
+                      Text("\(num)").tag(num)
+                    }
+                  }
+                  .pickerStyle(.segmented)
+                  .frame(width: 150)
+                }
+                
+                Text("If reviewer requests changes, re-run implementer with feedback")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+            }
+          }
+        }
+        
         #if os(macOS)
         // Run button
         HStack {
@@ -1591,6 +1628,23 @@ struct ChainDetailView: View {
                   Text("(\(result.model))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                  
+                  // Show review verdict if present
+                  if let verdict = result.reviewVerdict {
+                    Spacer()
+                    HStack(spacing: 4) {
+                      Image(systemName: verdict.iconName)
+                      Text(verdict.displayName)
+                    }
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundStyle(verdictColor(verdict))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(verdictColor(verdict).opacity(0.15))
+                    .clipShape(Capsule())
+                  }
+                  
                   Spacer()
                   if let duration = result.duration {
                     Text(duration)
@@ -1642,6 +1696,14 @@ struct ChainDetailView: View {
     }
   }
   
+  private func verdictColor(_ verdict: ReviewVerdict) -> Color {
+    switch verdict {
+    case .approved: return .green
+    case .needsChanges: return .orange
+    case .rejected: return .red
+    }
+  }
+  
   private func runChain() async {
     isRunning = true
     errorMessage = nil
@@ -1649,44 +1711,12 @@ struct ChainDetailView: View {
     chain.state = .running(agentIndex: 0)
     
     do {
-      for (index, agent) in chain.agents.enumerated() {
-        chain.state = .running(agentIndex: index)
-        
-        // Get context from previous agents
-        let context = chain.contextForAgent(at: index)
-        
-        // Build prompt with role instructions, framework hints, and context
-        let fullPrompt = agent.buildPrompt(
-          userPrompt: prompt,
-          context: context.isEmpty ? nil : context
-        )
-        
-        // Run the agent
-        let response = try await cliService.runCopilotSession(
-          prompt: fullPrompt,
-          model: agent.model,
-          role: agent.role,
-          workingDirectory: agent.workingDirectory ?? chain.workingDirectory
-        )
-        
-        // Parse premium cost from response
-        var premiumCost = agent.model.premiumCost
-        if let premiumStr = response.premiumRequests,
-           let num = Int(premiumStr.components(separatedBy: " ").first ?? "") {
-          premiumCost = num
-        }
-        
-        // Record result
-        let result = AgentChainResult(
-          agentId: agent.id,
-          agentName: agent.name,
-          model: agent.model.displayName,
-          prompt: fullPrompt,
-          output: response.content,
-          duration: response.duration,
-          premiumCost: premiumCost
-        )
-        chain.results.append(result)
+      // Run all agents in sequence
+      try await runAgentsSequentially()
+      
+      // Check if we should do a review loop
+      if chain.enableReviewLoop {
+        try await runReviewLoop()
       }
       
       chain.state = .complete
@@ -1699,6 +1729,137 @@ struct ChainDetailView: View {
     }
     
     isRunning = false
+  }
+  
+  /// Run all agents in the chain sequentially
+  private func runAgentsSequentially() async throws {
+    for (index, agent) in chain.agents.enumerated() {
+      chain.state = .running(agentIndex: index)
+      try await runSingleAgent(agent, at: index)
+    }
+  }
+  
+  /// Run a single agent and record its result
+  private func runSingleAgent(_ agent: Agent, at index: Int) async throws {
+    // Get context from previous agents
+    let context = chain.contextForAgent(at: index)
+    
+    // Build prompt with role instructions, framework hints, and context
+    let fullPrompt = agent.buildPrompt(
+      userPrompt: prompt,
+      context: context.isEmpty ? nil : context
+    )
+    
+    // Run the agent
+    let response = try await cliService.runCopilotSession(
+      prompt: fullPrompt,
+      model: agent.model,
+      role: agent.role,
+      workingDirectory: agent.workingDirectory ?? chain.workingDirectory
+    )
+    
+    // Parse premium cost from response
+    var premiumCost = agent.model.premiumCost
+    if let premiumStr = response.premiumRequests,
+       let num = Int(premiumStr.components(separatedBy: " ").first ?? "") {
+      premiumCost = num
+    }
+    
+    // Parse review verdict if this is a reviewer
+    var verdict: ReviewVerdict?
+    if agent.role == .reviewer {
+      verdict = ReviewVerdict.parse(from: response.content)
+    }
+    
+    // Record result
+    let result = AgentChainResult(
+      agentId: agent.id,
+      agentName: agent.name,
+      model: agent.model.displayName,
+      prompt: fullPrompt,
+      output: response.content,
+      duration: response.duration,
+      premiumCost: premiumCost,
+      reviewVerdict: verdict
+    )
+    chain.results.append(result)
+  }
+  
+  /// Run the review loop if enabled and reviewer requests changes
+  private func runReviewLoop() async throws {
+    // Find the last reviewer result
+    guard let lastReviewerResult = chain.results.last(where: { $0.reviewVerdict != nil }),
+          let verdict = lastReviewerResult.reviewVerdict,
+          verdict == .needsChanges else {
+      // No reviewer or already approved
+      return
+    }
+    
+    // Find the implementer agent index
+    guard let implementerIndex = chain.agents.firstIndex(where: { $0.role == .implementer }),
+          let reviewerIndex = chain.agents.firstIndex(where: { $0.role == .reviewer }) else {
+      return
+    }
+    
+    let implementer = chain.agents[implementerIndex]
+    let reviewer = chain.agents[reviewerIndex]
+    
+    // Loop until approved or max iterations reached
+    while chain.currentReviewIteration < chain.maxReviewIterations {
+      chain.currentReviewIteration += 1
+      chain.state = .reviewing(iteration: chain.currentReviewIteration)
+      
+      // Build prompt with review feedback
+      let feedbackPrompt = """
+        The reviewer has requested changes. Here is their feedback:
+        
+        \(lastReviewerResult.output)
+        
+        Please address the feedback and make the necessary changes.
+        Original task: \(prompt)
+        """
+      
+      // Temporarily override the prompt for the re-run
+      let originalPrompt = prompt
+      prompt = feedbackPrompt
+      
+      // Re-run implementer with feedback context
+      try await runSingleAgent(implementer, at: implementerIndex)
+      
+      // Re-run reviewer on the new changes
+      try await runSingleAgent(reviewer, at: reviewerIndex)
+      
+      // Restore original prompt
+      prompt = originalPrompt
+      
+      // Check the new verdict
+      if let newReviewerResult = chain.results.last(where: { $0.reviewVerdict != nil }),
+         let newVerdict = newReviewerResult.reviewVerdict {
+        if newVerdict == .approved {
+          // Success! Exit the loop
+          return
+        } else if newVerdict == .rejected {
+          // Hard rejection, stop trying
+          throw ChainError.reviewRejected(reason: newReviewerResult.output)
+        }
+        // Otherwise continue with needsChanges
+      }
+    }
+    
+    // Reached max iterations without approval
+    errorMessage = "Review loop reached maximum iterations (\(chain.maxReviewIterations)) without approval"
+  }
+  
+  /// Errors that can occur during chain execution
+  enum ChainError: LocalizedError {
+    case reviewRejected(reason: String)
+    
+    var errorDescription: String? {
+      switch self {
+      case .reviewRejected(let reason):
+        return "Review rejected: \(reason.prefix(200))..."
+      }
+    }
   }
   #endif
 }

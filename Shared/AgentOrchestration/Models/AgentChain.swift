@@ -21,9 +21,19 @@ public final class AgentChain: Identifiable {
   /// Shared working directory for all agents in the chain
   public var workingDirectory: String?
   
+  /// Enable review loop - if reviewer requests changes, re-run implementer
+  public var enableReviewLoop: Bool = false
+  
+  /// Maximum review iterations before giving up
+  public var maxReviewIterations: Int = 3
+  
+  /// Current review iteration (0 = first pass)
+  public var currentReviewIteration: Int = 0
+  
   public enum ChainState: Equatable {
     case idle
     case running(agentIndex: Int)
+    case reviewing(iteration: Int)
     case complete
     case failed(message: String)
     
@@ -31,6 +41,7 @@ public final class AgentChain: Identifiable {
       switch self {
       case .idle: return "Idle"
       case .running(let idx): return "Running Agent \(idx + 1)"
+      case .reviewing(let iter): return "Review Loop \(iter + 1)"
       case .complete: return "Complete"
       case .failed: return "Failed"
       }
@@ -78,6 +89,7 @@ public final class AgentChain: Identifiable {
   public func reset() {
     state = .idle
     currentAgentIndex = 0
+    currentReviewIteration = 0
     results = []
     for agent in agents {
       agent.clearTask()
@@ -97,6 +109,9 @@ public struct AgentChainResult: Identifiable {
   public let premiumCost: Int
   public let timestamp: Date
   
+  /// For reviewer agents, the parsed verdict
+  public var reviewVerdict: ReviewVerdict?
+  
   public init(
     agentId: UUID,
     agentName: String,
@@ -104,7 +119,8 @@ public struct AgentChainResult: Identifiable {
     prompt: String,
     output: String,
     duration: String? = nil,
-    premiumCost: Int = 1
+    premiumCost: Int = 1,
+    reviewVerdict: ReviewVerdict? = nil
   ) {
     self.id = UUID()
     self.agentId = agentId
@@ -115,6 +131,86 @@ public struct AgentChainResult: Identifiable {
     self.duration = duration
     self.premiumCost = premiumCost
     self.timestamp = Date()
+    self.reviewVerdict = reviewVerdict
+  }
+}
+
+/// Verdict from a reviewer agent
+public enum ReviewVerdict: String, Codable {
+  case approved = "approved"
+  case needsChanges = "needs_changes"
+  case rejected = "rejected"
+  
+  public var displayName: String {
+    switch self {
+    case .approved: return "Approved"
+    case .needsChanges: return "Needs Changes"
+    case .rejected: return "Rejected"
+    }
+  }
+  
+  public var iconName: String {
+    switch self {
+    case .approved: return "checkmark.seal.fill"
+    case .needsChanges: return "arrow.triangle.2.circlepath"
+    case .rejected: return "xmark.seal.fill"
+    }
+  }
+  
+  public var color: String {
+    switch self {
+    case .approved: return "green"
+    case .needsChanges: return "orange"
+    case .rejected: return "red"
+    }
+  }
+  
+  /// Try to parse a verdict from the reviewer's output
+  public static func parse(from output: String) -> ReviewVerdict {
+    let lowercased = output.lowercased()
+    
+    // Look for explicit markers
+    if lowercased.contains("✅ **approve") ||
+       lowercased.contains("✅ approve") ||
+       lowercased.contains("verdict: approve") ||
+       lowercased.contains("recommendation: approve") ||
+       lowercased.contains("lgtm") ||
+       lowercased.contains("looks good to me") {
+      return .approved
+    }
+    
+    if lowercased.contains("❌ **reject") ||
+       lowercased.contains("❌ reject") ||
+       lowercased.contains("verdict: reject") ||
+       lowercased.contains("recommendation: reject") ||
+       lowercased.contains("cannot approve") ||
+       lowercased.contains("must be fixed before") {
+      return .rejected
+    }
+    
+    // Check for change requests
+    if lowercased.contains("needs changes") ||
+       lowercased.contains("need changes") ||
+       lowercased.contains("requires changes") ||
+       lowercased.contains("should be changed") ||
+       lowercased.contains("please fix") ||
+       lowercased.contains("issues found") ||
+       lowercased.contains("concerns:") ||
+       lowercased.contains("suggestions:") && lowercased.contains("should") {
+      return .needsChanges
+    }
+    
+    // Default to approved if no issues mentioned
+    if lowercased.contains("no issues") ||
+       lowercased.contains("correct") ||
+       lowercased.contains("well-implemented") ||
+       lowercased.contains("properly implemented") {
+      return .approved
+    }
+    
+    // Conservative default - if uncertain, assume approved
+    // (The reviewer said something but we couldn't parse it)
+    return .approved
   }
 }
 
