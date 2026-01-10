@@ -126,7 +126,7 @@ public struct AgentStepTemplate: Identifiable, Codable, Hashable {
 extension ChainTemplate {
   /// Total estimated premium cost for all steps
   public var estimatedTotalCost: Double {
-    steps.reduce(0.0) { $0 + $1.estimatedCost }
+    steps.reduce(0) { $0 + $1.estimatedCost }
   }
   
   /// Cost display string
@@ -134,7 +134,7 @@ extension ChainTemplate {
     let total = estimatedTotalCost
     if total == 0 {
       return "Free"
-    } else if total == floor(total) {
+    } else if total == Double(Int(total)) {
       return "\(Int(total))× Premium"
     } else {
       return String(format: "%.1f× Premium", total)

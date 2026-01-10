@@ -1243,6 +1243,17 @@ struct NewChainSheet: View {
   var body: some View {
     NavigationStack {
       Form {
+        // Explanation at top
+        Section {
+          VStack(alignment: .leading, spacing: 8) {
+            Label("Create a chain of agents to run a task", systemImage: "info.circle")
+              .font(.subheadline)
+            Text("Chains run once. After running, you can save the configuration as a template for future use.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
+        
         // Project folder (required) - show first for importance
         Section {
           #if os(macOS)
@@ -1539,6 +1550,7 @@ struct ChainDetailView: View {
   @State private var prompt = ""
   @State private var isRunning = false
   @State private var errorMessage: String?
+  @State private var showingSaveTemplate = false
   
   var body: some View {
     ScrollView {
@@ -1785,6 +1797,31 @@ struct ChainDetailView: View {
               }
             }
           }
+          
+          // Save as template option (after successful run)
+          if case .complete = chain.state {
+            Divider()
+            
+            HStack {
+              VStack(alignment: .leading) {
+                Text("Save Configuration")
+                  .font(.subheadline)
+                  .fontWeight(.medium)
+                Text("Save this chain as a reusable template")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+              
+              Spacer()
+              
+              Button {
+                showingSaveTemplate = true
+              } label: {
+                Label("Save as Template", systemImage: "square.and.arrow.down")
+              }
+              .buttonStyle(.bordered)
+            }
+          }
         }
         #endif
         
@@ -1793,6 +1830,9 @@ struct ChainDetailView: View {
       .padding()
     }
     .navigationTitle(chain.name)
+    .sheet(isPresented: $showingSaveTemplate) {
+      SaveTemplateSheet(chain: chain, agentManager: agentManager)
+    }
     .onAppear {
       // Load last working directory if chain doesn't have one
       if chain.workingDirectory == nil {
@@ -1996,6 +2036,80 @@ struct ChainDetailView: View {
     }
   }
   #endif
+}
+
+// MARK: - Save Template Sheet
+
+struct SaveTemplateSheet: View {
+  let chain: AgentChain
+  @Bindable var agentManager: AgentManager
+  @Environment(\.dismiss) private var dismiss
+  
+  @State private var templateName = ""
+  @State private var templateDescription = ""
+  
+  var body: some View {
+    NavigationStack {
+      Form {
+        Section {
+          TextField("Template Name", text: $templateName, prompt: Text(chain.name))
+          TextField("Description (optional)", text: $templateDescription, axis: .vertical)
+            .lineLimit(2...4)
+        }
+        
+        Section("Agents in Template") {
+          ForEach(Array(chain.agents.enumerated()), id: \.element.id) { index, agent in
+            HStack {
+              Text("\(index + 1).")
+                .foregroundStyle(.secondary)
+              Image(systemName: agent.role.iconName)
+                .foregroundStyle(roleColor(agent.role))
+              VStack(alignment: .leading) {
+                Text(agent.name)
+                  .font(.subheadline)
+                Text(agent.model.shortName)
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+              Spacer()
+              Text(agent.role.displayName)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+          }
+        }
+        
+        Section {
+          Text("This template can be reused to quickly create new chains with the same agent configuration.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+      .formStyle(.grouped)
+      .navigationTitle("Save as Template")
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Cancel") { dismiss() }
+        }
+        ToolbarItem(placement: .confirmationAction) {
+          Button("Save") {
+            let name = templateName.isEmpty ? chain.name : templateName
+            agentManager.saveChainAsTemplate(chain, name: name, description: templateDescription)
+            dismiss()
+          }
+        }
+      }
+      .frame(minWidth: 400, minHeight: 350)
+    }
+  }
+  
+  private func roleColor(_ role: AgentRole) -> Color {
+    switch role {
+    case .planner: return .blue
+    case .implementer: return .green
+    case .reviewer: return .orange
+    }
+  }
 }
 
 // MARK: - Session Summary Sheet
