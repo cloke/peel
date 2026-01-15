@@ -65,11 +65,13 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Applications/Github_RootView.swift,
+				Applications/Workspaces_RootView.swift,
 				Assets.xcassets,
 				Components/ViewState.swift,
 				"Extensions/Date+ISO8601.swift",
 				KitchenSyncApp.swift,
 				Services/VSCodeService.swift,
+				Services/WorkspaceDashboardService.swift,
 			);
 			target = 04A7BD69258E77D8000E55A8 /* KitchenSync (iOS) */;
 		};
