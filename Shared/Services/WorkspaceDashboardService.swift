@@ -516,7 +516,7 @@ public final class WorkspaceDashboardService {
   
   /// Open worktree in VS Code
   public func openInVSCode(_ worktree: WorktreeInfo) async throws {
-    try await VSCodeService.shared.open(path: worktree.path, newWindow: true)
+    try await VSCodeService.shared.open(paths: vscodePaths(for: worktree), newWindow: true)
   }
   
   /// Open worktree in VS Code and copy prompt to clipboard
@@ -527,7 +527,33 @@ public final class WorkspaceDashboardService {
     pasteboard.setString(prompt, forType: .string)
     
     // Open in VS Code
-    try await VSCodeService.shared.open(path: worktree.path, newWindow: true)
+    try await VSCodeService.shared.open(paths: vscodePaths(for: worktree), newWindow: true)
+  }
+  
+  private func vscodePaths(for worktree: WorktreeInfo) -> [String] {
+    let fm = FileManager.default
+    var paths: [String] = []
+    if fm.fileExists(atPath: worktree.path) {
+      paths.append(worktree.path)
+    }
+    if let workspace = workspaceForWorktree(worktree) {
+      switch workspace.type {
+      case .multiRepo, .folder:
+        if fm.fileExists(atPath: workspace.path) {
+          paths.append(workspace.path)
+        }
+      case .singleRepo:
+        break
+      }
+    }
+    return paths.isEmpty ? [worktree.path] : paths
+  }
+  
+  private func workspaceForWorktree(_ worktree: WorktreeInfo) -> Workspace? {
+    if let workspace = selectedWorkspace, workspace.name == worktree.workspaceName {
+      return workspace
+    }
+    return workspaces.first { $0.name == worktree.workspaceName }
   }
   
   // MARK: - Persistence

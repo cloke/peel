@@ -10,12 +10,19 @@
 - Lists repos and worktrees
 - Create/remove worktrees
 - Open in VS Code
+- VS Code now opens the worktree (focused) and the workspace root (context for other repos/submodules)
 
 ### What's Working
 - Toolbar shows "Workspaces" option ✅
 - Selecting Workspaces shows the view ✅
 - Empty state appears correctly ✅
 - Build succeeds ✅
+
+### Clarification: Repositories list
+- Shows all repos/submodules detected in the selected workspace (needed for multi-repo workspaces)
+- Lets you create worktrees per repo via the context menu ("Create Worktree…")
+- Provides a quick "Open in VS Code" for the main repo when you want the full workspace, not just a worktree
+- If this feels redundant in single-repo workspaces, we can hide it there or replace it with a simple repo summary
 
 ### What's NOT Working
 1. **Add Workspace Sheet** - clicking "+" shows empty dialog
@@ -100,17 +107,4 @@ See `Plans/TIO_WORKSPACE_INTEGRATION.md` for full feature plan.
 2. **Test with tio-workspace** - verify multi-repo detection
 3. **Add Run Agent feature** - template selection + prompt generation
 4. **Polish UI** - icons, colors, animations
-
----
-
-## Command Line Tools
-Xcode CLI tools are configured:
-```bash
-xcode-select -p  # Returns /Applications/Xcode.app/Contents/Developer
-```
-
-Can build from terminal:
-```bash
-cd /Users/coryloken/code/kitchen-sink
-xcodebuild -scheme "KitchenSink (macOS)" -destination 'platform=macOS' build
-```
+5. **Consider hiding/simplifying the Repositories list for single-repo workspaces if it remains confusing**

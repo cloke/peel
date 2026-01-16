@@ -50,10 +50,24 @@ public actor VSCodeService {
     newWindow: Bool = true,
     wait: Bool = false
   ) async throws {
+    try await open(paths: [path], newWindow: newWindow, wait: wait)
+  }
+  
+  /// Open multiple paths in VS Code
+  /// - Parameters:
+  ///   - paths: Paths to open
+  ///   - newWindow: Open in a new window (default: true)
+  ///   - wait: Wait for VS Code to close before returning
+  public func open(
+    paths: [String],
+    newWindow: Bool = true,
+    wait: Bool = false
+  ) async throws {
     guard let vscodePath = findVSCode() else {
       throw VSCodeError.notInstalled
     }
-    
+    let validPaths = paths.filter { !$0.isEmpty }
+    guard !validPaths.isEmpty else { return }
     var arguments = [String]()
     if newWindow {
       arguments.append("-n")
@@ -61,14 +75,11 @@ public actor VSCodeService {
     if wait {
       arguments.append("-w")
     }
-    arguments.append(path)
-    
+    arguments.append(contentsOf: validPaths)
     let process = Process()
     process.executableURL = URL(fileURLWithPath: vscodePath)
     process.arguments = arguments
-    
     try process.run()
-    
     if wait {
       process.waitUntilExit()
     }
