@@ -17,6 +17,9 @@ struct VMIsolationDashboardView: View {
   @State private var errorMessage: String?
   @State private var showingError = false
   @State private var isDownloading = false
+  @State private var missingDependencies: [VMToolDependency] = []
+  @State private var showingDependenciesPrompt = false
+  @State private var isInstallingDependencies = false
   
   var body: some View {
     ScrollView {
@@ -55,11 +58,26 @@ struct VMIsolationDashboardView: View {
     .navigationTitle("VM Isolation")
     .task {
       await service.initialize()
+      let missing = service.missingToolDependencies()
+      if !missing.isEmpty {
+        missingDependencies = missing
+        showingDependenciesPrompt = true
+      }
     }
     .alert("Error", isPresented: $showingError) {
       Button("OK") { }
     } message: {
       Text(errorMessage ?? "Unknown error")
+    }
+    .alert("Install Dependencies?", isPresented: $showingDependenciesPrompt) {
+      Button("Install") {
+        Task {
+          await installMissingDependencies()
+        }
+      }
+      Button("Not Now", role: .cancel) { }
+    } message: {
+      Text(dependencyPromptMessage)
     }
   }
   
@@ -132,11 +150,11 @@ struct VMIsolationDashboardView: View {
           }
           
           if service.isLinuxReady {
-            Text("Alpine Linux ready (~50MB)")
+            Text("Fedora kernel + initramfs ready")
               .font(.caption)
               .foregroundStyle(.secondary)
           } else {
-            Text("Fast boot (~3s), minimal footprint")
+            Text("Downloads Fedora kernel + initramfs")
               .font(.caption)
               .foregroundStyle(.secondary)
             
@@ -216,6 +234,44 @@ struct VMIsolationDashboardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
       }
+
+      // Dependencies
+      VStack(alignment: .leading, spacing: 8) {
+        HStack {
+          Image(systemName: missingDependencies.isEmpty ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+            .foregroundStyle(missingDependencies.isEmpty ? .green : .orange)
+          Text("Dependencies")
+            .fontWeight(.medium)
+        }
+
+        if missingDependencies.isEmpty {
+          Text("All required tools installed")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        } else {
+          Text("Missing: \(missingDependencies.map { $0.tool }.joined(separator: ", "))")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+          Button {
+            Task { await installMissingDependencies() }
+          } label: {
+            if isInstallingDependencies {
+              ProgressView()
+                .scaleEffect(0.7)
+              Text("Installing...")
+            } else {
+              Text("Install via Homebrew")
+            }
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
+          .disabled(isInstallingDependencies)
+        }
+      }
+      .padding()
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
       
       // Show path info
       if service.isVirtualizationAvailable {
@@ -297,11 +353,67 @@ struct VMIsolationDashboardView: View {
       .padding()
       .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
       
-      // Info text
-      Text("Start a test Linux VM to verify the virtualization setup. The VM boots Alpine Linux in ~3 seconds.")
-        .font(.caption)
-        .foregroundStyle(.secondary)
+      // Info and troubleshooting
+      VStack(alignment: .leading, spacing: 8) {
+        Text("Start a test Linux VM to verify the virtualization setup.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+        
+        HStack(spacing: 12) {
+          // Reset button for troubleshooting
+          Button {
+            Task {
+              isDownloading = true
+              do {
+                try await service.resetLinuxVM()
+              } catch {
+                errorMessage = "Failed to reset VM: \(error.localizedDescription)"
+                showingError = true
+              }
+              isDownloading = false
+            }
+          } label: {
+            Label("Reset Linux VM", systemImage: "arrow.clockwise")
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
+          .disabled(isDownloading || service.isLinuxVMRunning)
+          
+          // Path info
+          Text("Files: ~/Library/Application Support/KitchenSync/VMs/linux/")
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+        }
+        
+        // Troubleshooting tip
+        if !service.isLinuxVMRunning {
+          HStack(spacing: 4) {
+            Image(systemName: "lightbulb")
+              .foregroundStyle(.yellow)
+            Text("Tip: If the VM fails to start, try running the app without the debugger (⌘⌥R in Xcode).")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
+      }
     }
+  }
+
+  private var dependencyPromptMessage: String {
+    let list = missingDependencies.map { "\($0.tool): \($0.purpose)" }.joined(separator: "\n")
+    return "Missing tools:\n\(list)\n\nInstall now using Homebrew?"
+  }
+
+  private func installMissingDependencies() async {
+    isInstallingDependencies = true
+    do {
+      try await service.installDependencies(missingDependencies)
+      missingDependencies = service.missingToolDependencies()
+    } catch {
+      errorMessage = "Failed to install dependencies: \(error.localizedDescription)"
+      showingError = true
+    }
+    isInstallingDependencies = false
   }
   
   // MARK: - Pools Section
@@ -315,7 +427,8 @@ struct VMIsolationDashboardView: View {
         GridItem(.flexible()),
         GridItem(.flexible())
       ], spacing: 12) {
-        ForEach(Array(service.pools.values).sorted(by: { $0.tier.rawValue < $1.tier.rawValue }), id: \.tier) { pool in
+        let sortedPools = service.pools.sorted { $0.key < $1.key }
+        ForEach(sortedPools, id: \.key) { _, pool in
           VMPoolCard(pool: pool)
         }
       }

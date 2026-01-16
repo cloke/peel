@@ -153,6 +153,14 @@ enum VMCapabilityTier: String, Sendable, CaseIterable {
   }
 }
 
+// MARK: - Tool Dependencies
+
+struct VMToolDependency: Sendable, Hashable {
+  let tool: String
+  let brewPackage: String
+  let purpose: String
+}
+
 // MARK: - VM Resource Limits
 
 /// Resource constraints for a VM instance
@@ -440,6 +448,14 @@ final class VMIsolationService {
   /// Console output from the running VM
   private(set) var consoleOutput: String = ""
   
+  /// VM delegate (kept alive while VM is running)
+  private var vmDelegate: VMDelegate?
+
+  /// Console pipes (kept alive while VM is running)
+  private var consoleInputPipe: Pipe?
+  private var consoleOutputPipe: Pipe?
+  private var consoleReadTask: Task<Void, Never>?
+  
   // MARK: - Configuration
   
   /// Base path for VM disk images and configs
@@ -447,6 +463,12 @@ final class VMIsolationService {
   
   /// Maximum tasks to keep in history
   private let maxHistoryCount = 100
+
+  // MARK: - Dependencies
+
+  private let requiredDependencies: [VMToolDependency] = [
+    VMToolDependency(tool: "xz", brewPackage: "xz", purpose: "Decompress Fedora initramfs")
+  ]
   
   // MARK: - Initialization
   
@@ -525,55 +547,134 @@ final class VMIsolationService {
   }
   
   private func checkLinuxVMSupport() async {
-    // Check if we have a Linux kernel and rootfs
+    // Check if we have a Linux kernel and initramfs
     let linuxDir = linuxVMDirectory
     let kernelPath = linuxDir.appendingPathComponent("vmlinuz")
-    let rootfsPath = linuxDir.appendingPathComponent("rootfs.img")
+    let initramfsPath = linuxDir.appendingPathComponent("initramfs")
     
-    isLinuxReady = FileManager.default.fileExists(atPath: kernelPath.path) &&
-                   FileManager.default.fileExists(atPath: rootfsPath.path)
+    let kernelExists = FileManager.default.fileExists(atPath: kernelPath.path)
+    let initramfsExists = FileManager.default.fileExists(atPath: initramfsPath.path)
+    let initramfsIsGzip = initramfsExists && isGzipFile(at: initramfsPath.path)
+    let initramfsIsXZ = initramfsExists && isXZFile(at: initramfsPath.path)
+    
+    isLinuxReady = kernelExists && initramfsExists && initramfsIsGzip
+    
+    // Log what we found for debugging
+    if isLinuxReady {
+      if let kernelAttrs = try? FileManager.default.attributesOfItem(atPath: kernelPath.path),
+         let initramfsAttrs = try? FileManager.default.attributesOfItem(atPath: initramfsPath.path) {
+        let kernelSize = kernelAttrs[.size] as? Int ?? 0
+        let initramfsSize = initramfsAttrs[.size] as? Int ?? 0
+        print("Linux VM files found - kernel: \(kernelSize) bytes, initramfs: \(initramfsSize) bytes")
+      }
+    } else if initramfsIsXZ {
+      print("Linux VM initramfs is XZ-compressed; needs GZIP. Re-run setup.")
+    }
   }
   
-  /// Download and set up Alpine Linux for lightweight VMs
-  /// This downloads a minimal Alpine Linux (~50MB) suitable for agent tasks
+  /// Reset Linux VM by deleting all files and re-downloading
+  func resetLinuxVM() async throws {
+    statusMessage = "Resetting Linux VM..."
+    
+    // Stop any running VM first
+    if runningLinuxVM != nil {
+      try await stopLinuxVM()
+    }
+    
+    // Delete existing files
+    let linuxDir = linuxVMDirectory
+    if FileManager.default.fileExists(atPath: linuxDir.path) {
+      try FileManager.default.removeItem(at: linuxDir)
+    }
+    
+    isLinuxReady = false
+    
+    // Re-setup
+    try await setupLinuxVM()
+  }
+  
+  /// Download and set up a Linux VM
+  /// Downloads Fedora kernel and initramfs - recommended by Apple's documentation
   func setupLinuxVM() async throws {
     statusMessage = "Setting up Linux VM environment..."
     
     let linuxDir = linuxVMDirectory
     try FileManager.default.createDirectory(at: linuxDir, withIntermediateDirectories: true)
     
-    // Alpine Linux Virtual - minimal cloud/VM image
-    // Using the "virtual" flavor which is optimized for VMs
-    let alpineVersion = "3.19"
-    let alpineArch = "aarch64"  // Apple Silicon
+    // Use Fedora - Apple's official documentation recommends Fedora for Virtualization.framework
+    // https://developer.apple.com/documentation/virtualization/running_linux_in_a_virtual_machine
+    // "You may obtain a kernel image and the corresponding initial RAM disk image for a
+    //  given release of the Fedora Linux distribution"
     
-    // Download kernel
-    statusMessage = "Downloading Alpine Linux kernel..."
-    let kernelURL = URL(string: "https://dl-cdn.alpinelinux.org/alpine/v\(alpineVersion)/releases/\(alpineArch)/netboot/vmlinuz-virt")!
-    let (kernelData, _) = try await URLSession.shared.data(from: kernelURL)
+    let fedoraReleases = ["40", "39"]  // Fallbacks for compatibility
+    let arch = "aarch64"      // Apple Silicon
+    let fedoraBases = fedoraReleases.flatMap { release in
+      [
+        "https://download.fedoraproject.org/pub/fedora/linux/releases/\(release)/Everything/\(arch)/os/images/pxeboot",
+        "https://fedora.mirror.constant.com/fedora/linux/releases/\(release)/Everything/\(arch)/os/images/pxeboot"
+      ]
+    }
+    
+    // Download kernel (vmlinuz)
+    statusMessage = "Downloading Fedora kernel (vmlinuz)..."
+    let kernelURLs = fedoraBases.compactMap { URL(string: "\($0)/vmlinuz") }
+    let kernelResult = try await downloadFirstAvailable(
+      urls: kernelURLs,
+      minimumBytes: 1_000_000,
+      label: "Fedora kernel"
+    )
+    let kernelData = kernelResult.data
+    let selectedRelease = kernelResult.release
+    
     let kernelPath = linuxDir.appendingPathComponent("vmlinuz")
     try kernelData.write(to: kernelPath)
     
-    // Download initramfs
-    statusMessage = "Downloading Alpine Linux initramfs..."
-    let initrdURL = URL(string: "https://dl-cdn.alpinelinux.org/alpine/v\(alpineVersion)/releases/\(alpineArch)/netboot/initramfs-virt")!
-    let (initrdData, _) = try await URLSession.shared.data(from: initrdURL)
-    let initrdPath = linuxDir.appendingPathComponent("initramfs")
-    try initrdData.write(to: initrdPath)
-    
-    // Create a minimal root filesystem disk image
-    statusMessage = "Creating root filesystem..."
-    let rootfsPath = linuxDir.appendingPathComponent("rootfs.img")
-    
-    // Create a 2GB sparse disk image
-    let diskSize: UInt64 = 2 * 1024 * 1024 * 1024  // 2GB
-    FileManager.default.createFile(atPath: rootfsPath.path, contents: nil)
-    let handle = try FileHandle(forWritingTo: rootfsPath)
-    try handle.truncate(atOffset: diskSize)
-    try handle.close()
-    
+    // Download initramfs (initrd.img)
+    statusMessage = "Downloading Fedora initramfs (~150MB, XZ format)..."
+    let initrdURLs = fedoraBases.compactMap { URL(string: "\($0)/initrd.img") }
+    let initrdResult = try await downloadFirstAvailable(
+      urls: initrdURLs,
+      minimumBytes: 10_000_000,
+      label: "Fedora initramfs"
+    )
+    let initrdData = initrdResult.data
+
+    // Write the XZ-compressed initramfs to disk temporarily
+    let initrdXZPath = linuxDir.appendingPathComponent("initramfs.xz")
+    try initrdData.write(to: initrdXZPath)
+
+    // Decompress XZ to raw initramfs
+    statusMessage = "Decompressing initramfs (XZ → raw)..."
+    print("[VM Setup] Decompressing initramfs (XZ → raw)")
+    let initrdRawPath = linuxDir.appendingPathComponent("initramfs.raw")
+    let xzResult = try await decompressXZ(inputPath: initrdXZPath.path, outputPath: initrdRawPath.path)
+    guard xzResult else {
+      throw VMError.vmCreationFailed("Failed to decompress XZ initramfs. Ensure 'xz' is installed.")
+    }
+
+    // Compress to GZIP
+    statusMessage = "Compressing initramfs (raw → GZIP)..."
+    print("[VM Setup] Compressing initramfs (raw → GZIP)")
+    let initrdGZPath = linuxDir.appendingPathComponent("initramfs")
+    let gzipResult = try await compressGzip(inputPath: initrdRawPath.path, outputPath: initrdGZPath.path)
+    guard gzipResult else {
+      throw VMError.vmCreationFailed("Failed to compress initramfs to GZIP. Ensure 'gzip' is available.")
+    }
+    guard isGzipFile(at: initrdGZPath.path) else {
+      throw VMError.vmCreationFailed("Initramfs conversion failed. Output is not GZIP.")
+    }
+    print("[VM Setup] Initramfs converted to GZIP format.")
+
+    // Clean up temp files
+    try? FileManager.default.removeItem(at: initrdXZPath)
+    try? FileManager.default.removeItem(at: initrdRawPath)
+
+    // Create marker file
+    let markerPath = linuxDir.appendingPathComponent(".distro")
+    try "fedora-\(selectedRelease)".write(to: markerPath, atomically: true, encoding: .utf8)
+
     isLinuxReady = true
-    statusMessage = "Linux VM ready"
+    statusMessage = "Fedora \(selectedRelease) Linux VM ready (initramfs converted to GZIP)"
   }
   
   private func checkMacOSVMSupport() async {
@@ -593,54 +694,186 @@ final class VMIsolationService {
   // MARK: - VM Lifecycle
   
   /// Create and configure a Linux VM
-  private func createLinuxVMConfiguration() throws -> VZVirtualMachineConfiguration {
+  /// - Parameter minimal: If true, uses minimal configuration (fewer devices)
+  /// - Parameter noInitramfs: If true, skips initramfs (for debugging only - won't boot to shell)
+  private func createLinuxVMConfiguration(minimal: Bool = false, noInitramfs: Bool = false) throws -> VZVirtualMachineConfiguration {
     let linuxDir = linuxVMDirectory
     let kernelPath = linuxDir.appendingPathComponent("vmlinuz")
     let initramfsPath = linuxDir.appendingPathComponent("initramfs")
     let rootfsPath = linuxDir.appendingPathComponent("rootfs.img")
     
-    // Boot loader
+    print("[VM] Creating Linux VM configuration (minimal: \(minimal))...")
+    print("[VM] Linux directory: \(linuxDir.path)")
+    print("[VM] Kernel path: \(kernelPath.path)")
+    print("[VM] Initramfs path: \(initramfsPath.path)")
+    print("[VM] Rootfs path: \(rootfsPath.path)")
+    
+    // Verify required files exist and log their sizes
+    guard FileManager.default.fileExists(atPath: kernelPath.path) else {
+      print("[VM] ERROR: Kernel not found!")
+      throw VMError.vmCreationFailed("Kernel not found at \(kernelPath.path)")
+    }
+    guard FileManager.default.fileExists(atPath: initramfsPath.path) else {
+      print("[VM] ERROR: Initramfs not found!")
+      throw VMError.vmCreationFailed("Initramfs not found at \(initramfsPath.path)")
+    }
+    
+    // Log file details
+    if let kernelAttrs = try? FileManager.default.attributesOfItem(atPath: kernelPath.path) {
+      let size = kernelAttrs[.size] as? Int64 ?? 0
+      let perms = kernelAttrs[.posixPermissions] as? Int ?? 0
+      print("[VM] Kernel: \(size) bytes, permissions: \(String(perms, radix: 8))")
+      
+      // Check kernel file header (should be PE/EFI for arm64)
+      if let handle = FileHandle(forReadingAtPath: kernelPath.path) {
+        let header = handle.readData(ofLength: 4)
+        try? handle.close()
+        let headerHex = header.map { String(format: "%02x", $0) }.joined()
+        print("[VM] Kernel header: \(headerHex)")
+        // PE format starts with 'MZ' (4d5a)
+        if header.count >= 2 && header[0] == 0x4d && header[1] == 0x5a {
+          print("[VM] Kernel format: PE/EFI executable (correct)")
+        } else {
+          print("[VM] WARNING: Kernel may not be in correct PE/EFI format!")
+        }
+      }
+    }
+    if let initramfsAttrs = try? FileManager.default.attributesOfItem(atPath: initramfsPath.path) {
+      let size = initramfsAttrs[.size] as? Int64 ?? 0
+      let perms = initramfsAttrs[.posixPermissions] as? Int ?? 0
+      print("[VM] Initramfs: \(size) bytes, permissions: \(String(perms, radix: 8))")
+      
+      // Check initramfs header (should be gzip: 1f 8b)
+      if let handle = FileHandle(forReadingAtPath: initramfsPath.path) {
+        let header = handle.readData(ofLength: 4)
+        try? handle.close()
+        let headerHex = header.map { String(format: "%02x", $0) }.joined()
+        print("[VM] Initramfs header: \(headerHex)")
+        if header.count >= 2 && header[0] == 0x1f && header[1] == 0x8b {
+          print("[VM] Initramfs format: gzip compressed (correct)")
+        } else if header.count >= 4 && header[0...3] == Data([0x30, 0x37, 0x30, 0x37]) {
+          print("[VM] Initramfs format: cpio archive (correct)")
+        } else {
+          print("[VM] WARNING: Initramfs may not be in correct format!")
+        }
+      }
+    }
+    
+    // Check file readability
+    guard FileManager.default.isReadableFile(atPath: kernelPath.path) else {
+      print("[VM] ERROR: Kernel file is not readable!")
+      throw VMError.vmCreationFailed("Kernel file is not readable")
+    }
+    guard FileManager.default.isReadableFile(atPath: initramfsPath.path) else {
+      print("[VM] ERROR: Initramfs file is not readable!")
+      throw VMError.vmCreationFailed("Initramfs file is not readable")
+    }
+    if isXZFile(at: initramfsPath.path) {
+      print("[VM] ERROR: Initramfs is XZ-compressed. Expected GZIP.")
+      throw VMError.vmCreationFailed("Initramfs is XZ-compressed. Re-run Setup Linux VM to convert to GZIP.")
+    }
+    
+    print("[VM] Creating boot loader...")
     let bootLoader = VZLinuxBootLoader(kernelURL: kernelPath)
-    bootLoader.initialRamdiskURL = initramfsPath
-    bootLoader.commandLine = "console=hvc0"
+    if noInitramfs {
+      print("[VM] Skipping initramfs (debug mode)")
+      bootLoader.commandLine = "console=hvc0 panic=1"
+    } else {
+      bootLoader.initialRamdiskURL = initramfsPath
+      // Use Fedora-recommended command line from Apple's sample code
+      // "rd.break=initqueue" stops in initramfs before trying to mount root
+      // This is perfect for testing - we get a shell without needing a root filesystem
+      let commandLine = minimal
+        ? "console=hvc0 rd.break=initqueue"
+        : "console=hvc0 rd.break=initqueue"
+      bootLoader.commandLine = commandLine
+    }
+    print("[VM] Boot command line: \(bootLoader.commandLine)")
     
     let config = VZVirtualMachineConfiguration()
     config.bootLoader = bootLoader
     
-    // CPU and memory
-    config.cpuCount = 2
-    config.memorySize = 2 * 1024 * 1024 * 1024  // 2GB
+    // CPU - try just 1 for minimal
+    let physicalCores = ProcessInfo.processInfo.processorCount
+    let cpuCount = min(2, max(1, physicalCores))
+    config.cpuCount = cpuCount
+    print("[VM] CPU count: \(cpuCount) (physical: \(physicalCores))")
+    
+    // Memory - VZVirtualMachineConfiguration.minimumAllowedMemorySize is 128MB
+    // But Linux needs more - use 512MB minimum
+    let minimumMemory: UInt64 = 512 * 1024 * 1024  // 512MB
+    let desiredMemory: UInt64 = 2 * 1024 * 1024 * 1024  // 2GB (matches Apple sample)
+    config.memorySize = max(desiredMemory, VZVirtualMachineConfiguration.minimumAllowedMemorySize)
+    print("[VM] Memory: \(config.memorySize / 1024 / 1024) MB (minimum: \(VZVirtualMachineConfiguration.minimumAllowedMemorySize / 1024 / 1024) MB)")
     
     // Platform (generic for Linux)
     let platform = VZGenericPlatformConfiguration()
     config.platform = platform
+    print("[VM] Platform: Generic (Linux)")
     
-    // Console (virtio)
-    let consoleDevice = VZVirtioConsoleDeviceConfiguration()
-    let serialPort = VZVirtioConsolePortConfiguration()
-    serialPort.name = "console"
-    consoleDevice.ports[0] = serialPort
-    config.consoleDevices = [consoleDevice]
+    // Virtio console for serial I/O (serial port attachment)
+    let serialPortConfig = VZVirtioConsoleDeviceSerialPortConfiguration()
+
+    let inputPipe = Pipe()
+    let outputPipe = Pipe()
+    let attachment = VZFileHandleSerialPortAttachment(
+      fileHandleForReading: inputPipe.fileHandleForReading,
+      fileHandleForWriting: outputPipe.fileHandleForWriting
+    )
+    serialPortConfig.attachment = attachment
+    config.serialPorts = [serialPortConfig]
+
+    consoleInputPipe = inputPipe
+    consoleOutputPipe = outputPipe
+    print("[VM] Console: Serial port configured")
     
-    // Storage (root filesystem)
-    if FileManager.default.fileExists(atPath: rootfsPath.path) {
-      let diskAttachment = try VZDiskImageStorageDeviceAttachment(url: rootfsPath, readOnly: false)
-      let storageDevice = VZVirtioBlockDeviceConfiguration(attachment: diskAttachment)
-      config.storageDevices = [storageDevice]
+    // In minimal mode, skip optional devices to isolate the issue
+    if !minimal {
+      // Storage - rootfs disk image (optional - we can boot from initramfs)
+      if FileManager.default.fileExists(atPath: rootfsPath.path) {
+        do {
+          if let diskAttrs = try? FileManager.default.attributesOfItem(atPath: rootfsPath.path) {
+            let size = diskAttrs[.size] as? Int64 ?? 0
+            print("[VM] Disk image: \(rootfsPath.lastPathComponent) - \(size / 1024 / 1024) MB")
+          }
+          let diskAttachment = try VZDiskImageStorageDeviceAttachment(url: rootfsPath, readOnly: false)
+          let storageDevice = VZVirtioBlockDeviceConfiguration(attachment: diskAttachment)
+          config.storageDevices = [storageDevice]
+          print("[VM] Storage: Disk attached successfully")
+        } catch {
+          // Non-fatal - we can boot without the disk
+          print("[VM] Warning: Could not attach disk image: \(error)")
+        }
+      } else {
+        print("[VM] Storage: No disk image found (booting from initramfs only)")
+      }
+      
+      // Network (NAT) - optional but useful
+      let networkDevice = VZVirtioNetworkDeviceConfiguration()
+      networkDevice.attachment = VZNATNetworkDeviceAttachment()
+      config.networkDevices = [networkDevice]
+      print("[VM] Network: NAT configured")
+      
+      // Memory balloon (for dynamic memory management)
+      config.memoryBalloonDevices = [VZVirtioTraditionalMemoryBalloonDeviceConfiguration()]
+      print("[VM] Memory balloon: Configured")
+    } else {
+      print("[VM] Minimal mode: Skipping storage, network, memory balloon")
     }
     
-    // Network (NAT)
-    let networkDevice = VZVirtioNetworkDeviceConfiguration()
-    networkDevice.attachment = VZNATNetworkDeviceAttachment()
-    config.networkDevices = [networkDevice]
-    
-    // Entropy (required for Linux)
+    // Entropy (required for Linux to have randomness)
     config.entropyDevices = [VZVirtioEntropyDeviceConfiguration()]
+    print("[VM] Entropy: Configured")
     
-    // Memory balloon (for dynamic memory)
-    config.memoryBalloonDevices = [VZVirtioTraditionalMemoryBalloonDeviceConfiguration()]
-    
-    try config.validate()
+    // Validate configuration before returning
+    print("[VM] Validating configuration...")
+    do {
+      try config.validate()
+      print("[VM] Configuration validated successfully")
+    } catch {
+      print("[VM] ERROR: Configuration validation failed: \(error)")
+      throw error
+    }
     return config
   }
   
@@ -656,24 +889,79 @@ final class VMIsolationService {
       throw VMError.vmAlreadyRunning
     }
     
-    statusMessage = "Creating Linux VM..."
+    statusMessage = "Creating Linux VM configuration..."
     consoleOutput = ""
     
-    let config = try createLinuxVMConfiguration()
-    let vm = VZVirtualMachine(configuration: config)
+    print("[VM] ========== Starting Linux VM ==========")
+    print("[VM] Virtualization supported: \(VZVirtualMachine.isSupported)")
+    print("[VM] System: \(ProcessInfo.processInfo.operatingSystemVersionString)")
+    print("[VM] Architecture: \(getMachineArchitecture())")
     
-    statusMessage = "Starting Linux VM..."
-    
-    try await vm.start()
-    runningLinuxVM = vm
-    
-    // Update pool counts
-    if var pool = pools["compile:linux"] {
-      pool.busyCount = 1
-      pools["compile:linux"] = pool
+    // Create configuration (using standard full config)
+    let config: VZVirtualMachineConfiguration
+    do {
+      config = try createLinuxVMConfiguration(minimal: true, noInitramfs: false)
+    } catch {
+      print("[VM] ERROR: Failed to create configuration: \(error)")
+      statusMessage = "Configuration failed: \(error.localizedDescription)"
+      throw error
     }
     
-    statusMessage = "Linux VM running"
+    statusMessage = "Initializing virtual machine..."
+    print("[VM] Creating VZVirtualMachine instance...")
+    let vm = VZVirtualMachine(configuration: config)
+    
+    // Set delegate to capture state changes
+    let delegate = VMDelegate()
+    vm.delegate = delegate
+    
+    print("[VM] VM created, state: \(describeVMState(vm.state))")
+    print("[VM] VM can start: \(vm.canStart)")
+    
+    statusMessage = "Starting Linux VM..."
+    print("[VM] Calling vm.start()...")
+    
+    do {
+      let options = VZVirtualMachineStartOptions()
+      try await vm.start(options: options)
+      print("[VM] VM started successfully, state: \(describeVMState(vm.state))")
+      
+      runningLinuxVM = vm
+      vmDelegate = delegate  // Keep delegate alive
+
+      startConsoleOutputReader()
+      
+      // Update pool counts
+      if var pool = pools["compile:linux"] {
+        pool.busyCount = 1
+        pools["compile:linux"] = pool
+      }
+      
+      statusMessage = "Linux VM running"
+      
+    } catch let error as NSError {
+      print("[VM] ========== VM START FAILED ==========")
+      print("[VM] Error domain: \(error.domain)")
+      print("[VM] Error code: \(error.code)")
+      print("[VM] Description: \(error.localizedDescription)")
+      if let reason = error.localizedFailureReason {
+        print("[VM] Failure reason: \(reason)")
+      }
+      if let recovery = error.localizedRecoverySuggestion {
+        print("[VM] Recovery suggestion: \(recovery)")
+      }
+      for (key, value) in error.userInfo {
+        print("[VM] UserInfo[\(key)]: \(value)")
+      }
+      print("[VM] ========================================")
+      
+      statusMessage = "VM start failed"
+      var details = error.localizedDescription
+      if let reason = error.localizedFailureReason {
+        details += " Reason: \(reason)"
+      }
+      throw VMError.vmCreationFailed(details)
+    }
   }
   
   /// Stop the running Linux VM
@@ -695,6 +983,7 @@ final class VMIsolationService {
     }
     
     runningLinuxVM = nil
+    stopConsoleOutputReader()
     
     // Update pool counts
     if var pool = pools["compile:linux"] {
@@ -903,6 +1192,188 @@ final class VMIsolationService {
     }
     return false
   }
+
+  // MARK: - Dependency Management
+
+  func missingToolDependencies() -> [VMToolDependency] {
+    requiredDependencies.filter { toolPath(named: $0.tool) == nil }
+  }
+
+  func installDependencies(_ deps: [VMToolDependency]) async throws {
+    guard !deps.isEmpty else { return }
+    guard let brewPath = toolPath(named: "brew") else {
+      throw VMError.vmCreationFailed("Homebrew not found. Install Homebrew first: https://brew.sh")
+    }
+
+    let packages = deps.map { $0.brewPackage }
+    statusMessage = "Installing dependencies: \(packages.joined(separator: ", "))"
+    print("[Dependencies] Installing: \(packages.joined(separator: ", "))")
+
+    let success = try await runProcess(brewPath, arguments: ["install"] + packages, outputPath: "/tmp/kitchensync_brew_install.log")
+    if !success {
+      throw VMError.vmCreationFailed("Failed to install dependencies via Homebrew. See /tmp/kitchensync_brew_install.log")
+    }
+  }
+
+  // MARK: - Initramfs Helpers
+
+  private func isGzipFile(at path: String) -> Bool {
+    guard let handle = FileHandle(forReadingAtPath: path) else { return false }
+    let header = handle.readData(ofLength: 2)
+    try? handle.close()
+    return header.count == 2 && header[0] == 0x1f && header[1] == 0x8b
+  }
+
+  private func isXZFile(at path: String) -> Bool {
+    guard let handle = FileHandle(forReadingAtPath: path) else { return false }
+    let header = handle.readData(ofLength: 4)
+    try? handle.close()
+    return header.count == 4 && header == Data([0xfd, 0x37, 0x7a, 0x58])
+  }
+
+  private func toolPath(named tool: String) -> String? {
+    let candidates = [
+      "/usr/bin/\(tool)",
+      "/opt/homebrew/bin/\(tool)",
+      "/usr/local/bin/\(tool)"
+    ]
+    return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+  }
+
+  private func runProcess(_ executable: String, arguments: [String], outputPath: String) async throws -> Bool {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: executable)
+    process.arguments = arguments
+
+    FileManager.default.createFile(atPath: outputPath, contents: nil)
+    let outHandle = try FileHandle(forWritingTo: URL(fileURLWithPath: outputPath))
+    let outputPipe = Pipe()
+    let errorPipe = Pipe()
+    process.standardOutput = outputPipe
+    process.standardError = errorPipe
+
+    try process.run()
+
+    let bufferSize = 64 * 1024
+    while true {
+      let data = outputPipe.fileHandleForReading.readData(ofLength: bufferSize)
+      if data.isEmpty { break }
+      outHandle.write(data)
+    }
+    try outHandle.close()
+    process.waitUntilExit()
+
+    if process.terminationStatus != 0 {
+      let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+      if let errorText = String(data: errorData, encoding: .utf8), !errorText.isEmpty {
+        print("[VM Setup] Process error: \(errorText)")
+      }
+    }
+
+    return process.terminationStatus == 0
+  }
+
+  private func downloadFirstAvailable(urls: [URL], minimumBytes: Int, label: String) async throws -> (data: Data, release: String) {
+    var lastStatus: Int?
+    for url in urls {
+      let release = extractFedoraRelease(from: url)
+      print("[VM Setup] Downloading \(label) from \(url.absoluteString)")
+      do {
+        let (data, response) = try await URLSession.shared.data(from: url)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+        lastStatus = status
+        if status == 200, data.count >= minimumBytes {
+          print("[VM Setup] \(label) downloaded: \(data.count) bytes")
+          return (data, release)
+        }
+        print("[VM Setup] \(label) download failed (status: \(status), bytes: \(data.count))")
+      } catch {
+        print("[VM Setup] \(label) download error: \(error)")
+      }
+    }
+
+    throw VMError.vmCreationFailed("Failed to download \(label) - last HTTP status: \(lastStatus ?? -1)")
+  }
+
+  private func extractFedoraRelease(from url: URL) -> String {
+    let path = url.path
+    let parts = path.split(separator: "/")
+    if let index = parts.firstIndex(of: "releases"), index + 1 < parts.count {
+      return String(parts[index + 1])
+    }
+    return "unknown"
+  }
+
+  private func decompressXZ(inputPath: String, outputPath: String) async throws -> Bool {
+    guard let xzPath = toolPath(named: "xz") else {
+      throw VMError.vmCreationFailed("xz tool not found. Install with 'brew install xz'.")
+    }
+    print("[VM Setup] Using xz at \(xzPath)")
+    return try await runProcess(xzPath, arguments: ["-d", "-c", inputPath], outputPath: outputPath)
+  }
+
+  private func compressGzip(inputPath: String, outputPath: String) async throws -> Bool {
+    guard let gzipPath = toolPath(named: "gzip") else {
+      throw VMError.vmCreationFailed("gzip tool not found.")
+    }
+    print("[VM Setup] Using gzip at \(gzipPath)")
+    return try await runProcess(gzipPath, arguments: ["-c", inputPath], outputPath: outputPath)
+  }
+  
+  /// Get the machine architecture string
+  private func getMachineArchitecture() -> String {
+    var sysinfo = utsname()
+    uname(&sysinfo)
+    let machine = withUnsafePointer(to: &sysinfo.machine) {
+      $0.withMemoryRebound(to: CChar.self, capacity: 1) {
+        String(cString: $0)
+      }
+    }
+    return machine
+  }
+  
+  /// Describe VM state as a readable string
+  private func describeVMState(_ state: VZVirtualMachine.State) -> String {
+    switch state {
+    case .stopped: return "stopped"
+    case .running: return "running"
+    case .paused: return "paused"
+    case .error: return "error"
+    case .starting: return "starting"
+    case .pausing: return "pausing"
+    case .resuming: return "resuming"
+    case .stopping: return "stopping"
+    case .saving: return "saving"
+    case .restoring: return "restoring"
+    @unknown default: return "unknown(\\(state.rawValue))"
+    }
+  }
+
+  // MARK: - Console Output
+
+  private func startConsoleOutputReader() {
+    guard let outputPipe = consoleOutputPipe else { return }
+    consoleReadTask?.cancel()
+    consoleReadTask = Task { [weak self] in
+      let handle = outputPipe.fileHandleForReading
+      while !Task.isCancelled {
+        let data = handle.readData(ofLength: 4096)
+        if data.isEmpty { break }
+        if let text = String(data: data, encoding: .utf8) {
+          await MainActor.run {
+            self?.consoleOutput += text
+          }
+        }
+      }
+    }
+  }
+
+  private func stopConsoleOutputReader() {
+    consoleReadTask?.cancel()
+    consoleReadTask = nil
+    consoleInputPipe = nil
+    consoleOutputPipe = nil
+  }
   
   // MARK: - Pool Management
   
@@ -916,6 +1387,29 @@ final class VMIsolationService {
       pool.maxCount = maxCount
       pools[key] = pool
     }
+  }
+}
+
+// MARK: - VM Delegate
+
+/// Delegate to capture VM state changes and errors
+final class VMDelegate: NSObject, VZVirtualMachineDelegate {
+  func virtualMachine(_ virtualMachine: VZVirtualMachine, didStopWithError error: (any Error)?) {
+    if let error = error {
+      print("[VM Delegate] VM stopped with error: \(error)")
+      if let nsError = error as NSError? {
+        print("[VM Delegate] Error domain: \(nsError.domain), code: \(nsError.code)")
+        for (key, value) in nsError.userInfo {
+          print("[VM Delegate] UserInfo[\(key)]: \(value)")
+        }
+      }
+    } else {
+      print("[VM Delegate] VM stopped normally")
+    }
+  }
+  
+  func guestDidStop(_ virtualMachine: VZVirtualMachine) {
+    print("[VM Delegate] Guest did stop")
   }
 }
 

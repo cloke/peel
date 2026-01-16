@@ -115,15 +115,17 @@ Implemented actual VM creation using Apple's Virtualization.framework:
 - Add Workspace sheet (Form + toolbar)
 - Create Worktree sheet (Form + toolbar)
 - **VM Isolation dashboard in Agents → Infrastructure**
-- **Linux VM setup and boot (Virtualization.framework)**
+- **Linux VM setup (Fedora kernel + initramfs download + XZ→GZIP conversion)**
 
 ### Needs Work (for TestFlight)
 - [ ] iOS app runtime testing/polish
 - [ ] General UI polish pass
 - [ ] Test agent orchestration features
-- [ ] Test Linux VM boot (click "Start VM" button)
+- [ ] Linux VM boot: **blocked** on macOS 26.1 (Tahoe) with VZErrorDomain code 1
 
 ### VM Isolation Next Steps
+- [ ] Decide on fallback distro (Fedora 40/39) or pause VM boot work
+- [ ] File Feedback Assistant if sample still fails on macOS 26.1
 - [ ] Add console output display from running VM
 - [ ] Execute shell commands inside the VM
 - [ ] Route agent tasks through VM for isolation
