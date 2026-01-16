@@ -147,7 +147,7 @@ public final class AgentTask: Identifiable {
 
 // MARK: - Hashable & Equatable
 extension AgentTask: Hashable {
-  public static func == (lhs: AgentTask, rhs: AgentTask) -> Bool {
+  public nonisolated static func == (lhs: AgentTask, rhs: AgentTask) -> Bool {
     lhs.id == rhs.id
   }
   

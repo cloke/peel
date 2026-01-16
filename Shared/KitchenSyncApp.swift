@@ -209,6 +209,7 @@ final class DeviceSettings {
   var sidebarWidth: Double?
   var lastUsedAt: Date = Date()
   
+  @MainActor
   init() {
     self.id = UUID()
     #if os(macOS)

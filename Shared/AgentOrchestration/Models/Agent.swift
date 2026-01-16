@@ -8,7 +8,7 @@
 import Foundation
 
 /// Available models for Copilot CLI
-public enum CopilotModel: String, Codable, CaseIterable, Identifiable {
+public enum CopilotModel: String, Codable, CaseIterable, Identifiable, Sendable {
   // Claude models
   case claudeSonnet45 = "claude-sonnet-4.5"
   case claudeHaiku45 = "claude-haiku-4.5"
@@ -129,7 +129,7 @@ public enum CopilotModel: String, Codable, CaseIterable, Identifiable {
 }
 
 /// Role determines what tools an agent can use
-public enum AgentRole: String, Codable, CaseIterable, Identifiable {
+public enum AgentRole: String, Codable, CaseIterable, Identifiable, Sendable {
   case planner     // Read-only: analyze, plan, but NOT edit
   case implementer // Full access: can edit files, run commands
   case reviewer    // Read-only: review changes, suggest fixes
@@ -289,7 +289,7 @@ public enum AgentState: Equatable {
 }
 
 /// Framework/language hints for specialized agent instructions
-public enum FrameworkHint: String, Codable, CaseIterable, Identifiable {
+public enum FrameworkHint: String, Codable, CaseIterable, Identifiable, Sendable {
   case auto = "auto"           // Detect from project
   case swift = "swift"         // Swift/SwiftUI/iOS/macOS
   case ember = "ember"         // Ember.js
@@ -496,7 +496,7 @@ public final class Agent: Identifiable {
 
 // MARK: - Hashable & Equatable
 extension Agent: Hashable {
-  public static func == (lhs: Agent, rhs: Agent) -> Bool {
+  public nonisolated static func == (lhs: Agent, rhs: Agent) -> Bool {
     lhs.id == rhs.id
   }
   

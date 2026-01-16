@@ -9,6 +9,7 @@ import SwiftUI
 import Foundation
 import Git
 
+#if os(macOS)
 struct CommitDetailView: View {
   let commit: Github.Commit
   @State private var commitDetail: Github.CommitDetail?
@@ -44,6 +45,7 @@ struct CommitDetailView: View {
     }
   }
 }
+#endif
 
 extension Color {
   public static var gitGreen: Color {
@@ -63,9 +65,11 @@ internal extension NSTextCheckingResult {
   }
 }
 
+#if os(macOS)
 #Preview {
   DiffView(diff: Diff())
 }
+#endif
 
 
 

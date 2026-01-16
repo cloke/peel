@@ -59,6 +59,10 @@ struct WorkspacesDashboardView: View {
         CreateWorktreeSheet(service: service, repo: repo)
       }
     }
+    .toolbar {
+      ToolSelectionToolbar()
+      ToggleSidebarToolbarItem(placement: .navigation)
+    }
   }
   
   // MARK: - Sidebar
@@ -472,45 +476,44 @@ struct AddWorkspaceSheet: View {
   @State private var errorMessage: String?
   
   var body: some View {
-    VStack(spacing: 20) {
-      Text("Add Workspace")
-        .font(.title2.bold())
+    Form {
+      Section {
+        Text("Select a folder containing your project or workspace")
+          .foregroundStyle(.secondary)
+      }
       
-      Text("Select a folder containing your project or workspace")
-        .foregroundStyle(.secondary)
-      
-      HStack {
-        TextField("Path", text: $selectedPath)
-          .textFieldStyle(.roundedBorder)
+      Section {
+        HStack {
+          TextField("Path", text: $selectedPath)
+            .textFieldStyle(.roundedBorder)
+          
+          Button("Browse...") {
+            browseForFolder()
+          }
+        }
         
-        Button("Browse...") {
-          browseForFolder()
+        if let error = errorMessage {
+          Text(error)
+            .foregroundStyle(.red)
         }
       }
-      
-      if let error = errorMessage {
-        Text(error)
-          .foregroundStyle(.red)
-          .font(.caption)
-      }
-      
-      HStack {
+    }
+    .formStyle(.grouped)
+    .navigationTitle("Add Workspace")
+    .toolbar {
+      ToolbarItem(placement: .cancellationAction) {
         Button("Cancel") {
           dismiss()
         }
-        .keyboardShortcut(.cancelAction)
-        
-        Spacer()
-        
+      }
+      ToolbarItem(placement: .confirmationAction) {
         Button("Add") {
           addWorkspace()
         }
-        .keyboardShortcut(.defaultAction)
         .disabled(selectedPath.isEmpty || isLoading)
       }
     }
-    .padding(24)
-    .frame(width: 450, height: 220)
+    .frame(minWidth: 450, minHeight: 200)
   }
   
   private func browseForFolder() {
@@ -556,76 +559,50 @@ struct CreateWorktreeSheet: View {
   @State private var errorMessage: String?
   
   var body: some View {
-    VStack(spacing: 20) {
-      Text("Create Worktree")
-        .font(.title2.bold())
+    Form {
+      Section("Repository") {
+        Text(repo.name)
+          .font(.headline)
+      }
       
-      VStack(alignment: .leading, spacing: 16) {
-        VStack(alignment: .leading, spacing: 4) {
-          Text("Repository")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-          Text(repo.name)
-            .font(.headline)
-        }
-        
-        VStack(alignment: .leading, spacing: 4) {
-          Text("Task Description")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-          TextField("e.g., add search caching", text: $description)
-            .textFieldStyle(.roundedBorder)
-        }
-        
-        VStack(alignment: .leading, spacing: 4) {
-          Text("Base Branch")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-          TextField("main", text: $baseBranch)
-            .textFieldStyle(.roundedBorder)
-        }
-        
+      Section("Configuration") {
+        TextField("Task Description", text: $description, prompt: Text("e.g., add search caching"))
+        TextField("Base Branch", text: $baseBranch, prompt: Text("main"))
         Toggle("Create as detached HEAD (recommended for agent work)", isOn: $createDetached)
-          .font(.caption)
-        
         Toggle("Open in VS Code after creation", isOn: $openInVSCode)
-          .font(.caption)
-        
-        if !description.isEmpty {
-          VStack(alignment: .leading, spacing: 4) {
-            Text("Will create:")
-              .font(.caption)
-              .foregroundStyle(.secondary)
-            Text("\(service.worktreeRoot)/\(repo.name)-\(safeName)")
-              .font(.caption.monospaced())
-              .foregroundStyle(.blue)
-          }
+      }
+      
+      if !description.isEmpty {
+        Section("Preview") {
+          Text("\(service.worktreeRoot)/\(repo.name)-\(safeName)")
+            .font(.caption.monospaced())
+            .foregroundStyle(.blue)
         }
       }
       
       if let error = errorMessage {
-        Text(error)
-          .foregroundStyle(.red)
-          .font(.caption)
+        Section {
+          Text(error)
+            .foregroundStyle(.red)
+        }
       }
-      
-      HStack {
+    }
+    .formStyle(.grouped)
+    .navigationTitle("Create Worktree")
+    .toolbar {
+      ToolbarItem(placement: .cancellationAction) {
         Button("Cancel") {
           dismiss()
         }
-        .keyboardShortcut(.cancelAction)
-        
-        Spacer()
-        
+      }
+      ToolbarItem(placement: .confirmationAction) {
         Button("Create") {
           createWorktree()
         }
-        .keyboardShortcut(.defaultAction)
         .disabled(description.isEmpty || isLoading)
       }
     }
-    .padding(24)
-    .frame(width: 450)
+    .frame(minWidth: 450, minHeight: 350)
   }
   
   private var safeName: String {

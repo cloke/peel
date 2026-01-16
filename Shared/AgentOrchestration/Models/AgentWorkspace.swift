@@ -144,7 +144,7 @@ public final class AgentWorkspace: Identifiable {
 
 // MARK: - Hashable & Equatable
 extension AgentWorkspace: Hashable {
-  public static func == (lhs: AgentWorkspace, rhs: AgentWorkspace) -> Bool {
+  public nonisolated static func == (lhs: AgentWorkspace, rhs: AgentWorkspace) -> Bool {
     lhs.id == rhs.id
   }
   

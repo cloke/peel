@@ -14,22 +14,21 @@
 
 import Foundation
 
+#if os(macOS)
 /// Functions that are defined in the git reference
 /// https://git-scm.com/docs/git-add
 extension Commands {
-#if os(macOS)
   /// Processes a diff based on direct file paths
   static func diff(repository: Model.Repository, path: String) async throws -> Diff {
     let lines = try await Self.simple(arguments: ["diff", path], in: repository)
-    return self.processDiff(lines: lines)
+    return Self.processDiff(lines: lines)
   }
   
   /// Processes a diff based on specific commits
   static func diff(commit: String, on repository: Model.Repository) async throws -> Diff {
     let lines = try await Self.simple(arguments: ["diff", "\(commit)~", commit], in: repository)
-    return self.processDiff(lines: lines)
+    return Self.processDiff(lines: lines)
   }
-#endif
   
   public static func processDiff(lines: [String]) -> Diff {
     var diff = Diff()
@@ -112,3 +111,4 @@ extension Commands {
     return diff
   }
 }
+#endif

@@ -285,7 +285,7 @@ public enum ReviewVerdict: String, Codable {
 
 // MARK: - Hashable
 extension AgentChain: Hashable {
-  public static func == (lhs: AgentChain, rhs: AgentChain) -> Bool {
+  public nonisolated static func == (lhs: AgentChain, rhs: AgentChain) -> Bool {
     lhs.id == rhs.id
   }
   

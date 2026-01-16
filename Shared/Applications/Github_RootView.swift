@@ -20,6 +20,7 @@ struct Github_RootView: View {
   @State private var columnVisibility = NavigationSplitViewVisibility.all
   @State private var hasToken = false
   @State private var isLoading = false
+  @State private var errorMessage: String?
   
   var body: some View {
     NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -75,16 +76,54 @@ struct Github_RootView: View {
             Spacer()
           }
           .listRowBackground(Color.clear)
+        } else if let error = errorMessage {
+          Section {
+            VStack(spacing: 12) {
+              Image(systemName: "exclamationmark.triangle")
+                .font(.largeTitle)
+                .foregroundStyle(.orange)
+              Text(error)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+              Button("Retry") {
+                Task {
+                  isLoading = true
+                  errorMessage = nil
+                  defer { isLoading = false }
+                  do {
+                    viewModel.me = try await Github.me()
+                    organizations = try await Github.loadOrganizations()
+                  } catch {
+                    errorMessage = "Failed to load: \(error.localizedDescription)"
+                  }
+                }
+              }
+              .buttonStyle(.bordered)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical)
+          }
+          .listRowBackground(Color.clear)
         } else if hasToken && viewModel.me != nil {
           Section("Organizations") {
             ForEach(organizations) { organization in
               OrganizationRepositoryView(organization: organization)
             }
           }
+        } else if hasToken {
+          // Token exists but user data not loaded yet - show loading
+          HStack {
+            Spacer()
+            ProgressView("Loading profile...")
+            Spacer()
+          }
+          .listRowBackground(Color.clear)
         } else {
           Button("Login") {
             Task {
               isLoading = true
+              errorMessage = nil
               defer { isLoading = false }
               do {
                 try await Github.authorize()
@@ -93,6 +132,7 @@ struct Github_RootView: View {
                 hasToken = await Github.hasToken
               } catch {
                 print("Login error: \(error)")
+                errorMessage = "Login failed: \(error.localizedDescription)"
               }
             }
           }
@@ -114,14 +154,15 @@ struct Github_RootView: View {
         hasToken = await Github.hasToken
         if hasToken {
           isLoading = true
+          errorMessage = nil
           defer { isLoading = false }
           do {
             viewModel.me = try await Github.me()
             organizations = try await Github.loadOrganizations()
           } catch {
             print("Error loading user data: \(error)")
-            await Github.reauthorize()
-            hasToken = false
+            // Don't logout on network errors - just show error
+            errorMessage = "Failed to load: \(error.localizedDescription)"
           }
         }
       }

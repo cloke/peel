@@ -15,9 +15,13 @@ struct CommitsListView: View {
   var body: some View {
     List(commits, id: \.sha) { commit in
       VStack {
+        #if os(macOS)
         NavigationLink(destination: CommitDetailView(commit: commit)) {
           CommitsListItemView(commit: commit)
         }
+        #else
+        CommitsListItemView(commit: commit)
+        #endif
         Divider()
       }
     }

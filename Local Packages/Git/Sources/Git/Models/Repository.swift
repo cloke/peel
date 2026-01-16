@@ -10,8 +10,9 @@ import Observation
 
 extension Model {
   /// Identifiable container for single git repository
+  /// Note: @unchecked Sendable because this class is accessed on MainActor in practice
   @Observable
-  public class Repository: Codable, Identifiable {
+  public final class Repository: Codable, Identifiable, @unchecked Sendable {
     public var id = UUID()
     public var name: String
     public var path: String

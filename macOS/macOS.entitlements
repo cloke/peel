@@ -14,5 +14,7 @@
 	<array>
 		<string>CloudKit</string>
 	</array>
+	<key>com.apple.security.virtualization</key>
+	<true/>
 </dict>
 </plist>

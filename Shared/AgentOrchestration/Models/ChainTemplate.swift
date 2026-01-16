@@ -8,7 +8,7 @@
 import Foundation
 
 /// A reusable template for creating agent chains
-public struct ChainTemplate: Identifiable, Codable, Hashable {
+public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
   public let id: UUID
   public var name: String
   public var description: String
@@ -93,7 +93,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable {
 }
 
 /// A step within a chain template
-public struct AgentStepTemplate: Identifiable, Codable, Hashable {
+public struct AgentStepTemplate: Identifiable, Codable, Hashable, Sendable {
   public let id: UUID
   public var role: AgentRole
   public var model: CopilotModel

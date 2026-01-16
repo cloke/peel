@@ -6,9 +6,9 @@
 //
 
 import SwiftUI
-import AppKit
 
 #if os(macOS)
+import AppKit
 
 /// Find VS Code executable path
 private func findVSCode() -> String? {

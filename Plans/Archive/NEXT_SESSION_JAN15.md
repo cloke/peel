@@ -24,6 +24,24 @@
 - Provides a quick "Open in VS Code" for the main repo when you want the full workspace, not just a worktree
 - If this feels redundant in single-repo workspaces, we can hide it there or replace it with a simple repo summary
 
+### Worktrees in Kitchen Sync (usage notes)
+- A worktree is an isolated working copy for a single task/branch; the main repo stays clean
+- Use worktrees to keep Copilot/agents focused on one task while retaining access to other submodules
+
+### VS Code opening behavior
+- Kitchen Sync opens the worktree first (focused root) and also the workspace root (context for other repos/submodules)
+- Treat the worktree folder as your primary root for edits and Copilot chat; use the workspace root only for cross-repo navigation
+
+### CLI usage
+- Run git commands from the worktree path (shown on each card and as the first VS Code root)
+- Use the workspace root only for submodule updates/maintenance; `git status` there will show submodule pointer changes
+- If unsure which folder you're in, run `pwd` and `git worktree list` to confirm
+
+### Warnings / gotchas
+- Don’t commit from the workspace root unless you intend to change submodule pointers
+- Don’t remove a worktree if it has unpushed changes; push or stash first
+- Detached worktrees are expected for agent tasks; if you need a branch, create with `detached = false`
+
 ### What's NOT Working
 1. **Add Workspace Sheet** - clicking "+" shows empty dialog
    - Sheet is rendering but content may not be visible

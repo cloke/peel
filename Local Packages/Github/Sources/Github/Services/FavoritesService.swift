@@ -8,6 +8,7 @@
 import SwiftUI
 
 /// Protocol for managing GitHub favorites - implemented by main app
+@MainActor
 public protocol GitHubFavoritesProvider {
   func isFavorite(repoId: Int) -> Bool
   func addFavorite(repo: Github.Repository)
@@ -16,13 +17,14 @@ public protocol GitHubFavoritesProvider {
 }
 
 /// Protocol for tracking recent PRs - implemented by main app
+@MainActor
 public protocol RecentPRsProvider {
   func recordView(pr: Github.PullRequest, repo: Github.Repository)
   func getRecentPRs() -> [RecentPRInfo]
 }
 
 /// Lightweight struct for favorite repository info
-public struct FavoriteRepository: Identifiable {
+public struct FavoriteRepository: Identifiable, Sendable {
   public let id: Int
   public let fullName: String
   public let ownerLogin: String
@@ -41,7 +43,7 @@ public struct FavoriteRepository: Identifiable {
 }
 
 /// Lightweight struct for recent PR info
-public struct RecentPRInfo: Identifiable {
+public struct RecentPRInfo: Identifiable, Sendable {
   public let id: Int
   public let prNumber: Int
   public let title: String

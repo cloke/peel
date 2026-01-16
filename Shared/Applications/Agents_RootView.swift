@@ -10,6 +10,11 @@ import SwiftUI
 import AppKit
 #endif
 
+/// Infrastructure views that can be shown in detail pane
+enum InfrastructureView: String, Hashable {
+  case vmIsolation = "vm-isolation"
+}
+
 /// Main view for AI Agent Orchestration
 struct Agents_RootView: View {
   @State private var agentManager = AgentManager()
@@ -20,6 +25,7 @@ struct Agents_RootView: View {
   @State private var showingNewChainSheet = false
   @State private var showingSetupSheet = false
   @State private var showingSessionSummary = false
+  @State private var selectedInfrastructure: InfrastructureView?
   
   var body: some View {
     NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -28,41 +34,11 @@ struct Agents_RootView: View {
         cliService: cliService,
         showingSetupSheet: $showingSetupSheet,
         showingNewChainSheet: $showingNewChainSheet,
-        showingNewAgentSheet: $showingNewAgentSheet
+        showingNewAgentSheet: $showingNewAgentSheet,
+        selectedInfrastructure: $selectedInfrastructure
       )
     } detail: {
-      if let chain = agentManager.selectedChain {
-        ChainDetailView(chain: chain, agentManager: agentManager, cliService: cliService, sessionTracker: sessionTracker)
-      } else if let agent = agentManager.selectedAgent {
-        AgentDetailView(agent: agent, agentManager: agentManager)
-      } else {
-        // Empty state with visible create options
-        VStack(spacing: 20) {
-          Image(systemName: "cpu")
-            .font(.system(size: 48))
-            .foregroundStyle(.secondary)
-          Text("No Agent Selected")
-            .font(.title2)
-          Text("Create an agent or chain to get started")
-            .foregroundStyle(.secondary)
-          
-          HStack(spacing: 16) {
-            Button {
-              showingNewAgentSheet = true
-            } label: {
-              Label("New Agent", systemImage: "cpu")
-            }
-            .buttonStyle(.bordered)
-            
-            Button {
-              showingNewChainSheet = true
-            } label: {
-              Label("New Chain", systemImage: "link")
-            }
-            .buttonStyle(.borderedProminent)
-          }
-        }
-      }
+      detailView
     }
     .navigationSplitViewStyle(.balanced)
     .task {
@@ -109,6 +85,60 @@ struct Agents_RootView: View {
     }
   }
   
+  @ViewBuilder
+  private var detailView: some View {
+    #if os(macOS)
+    if let infra = selectedInfrastructure {
+      switch infra {
+      case .vmIsolation:
+        VMIsolationDashboardView()
+      }
+    } else if let chain = agentManager.selectedChain {
+      ChainDetailView(chain: chain, agentManager: agentManager, cliService: cliService, sessionTracker: sessionTracker)
+    } else if let agent = agentManager.selectedAgent {
+      AgentDetailView(agent: agent, agentManager: agentManager)
+    } else {
+      emptyStateView
+    }
+    #else
+    if let chain = agentManager.selectedChain {
+      ChainDetailView(chain: chain, agentManager: agentManager, cliService: cliService, sessionTracker: sessionTracker)
+    } else if let agent = agentManager.selectedAgent {
+      AgentDetailView(agent: agent, agentManager: agentManager)
+    } else {
+      emptyStateView
+    }
+    #endif
+  }
+  
+  private var emptyStateView: some View {
+    VStack(spacing: 20) {
+      Image(systemName: "cpu")
+        .font(.system(size: 48))
+        .foregroundStyle(.secondary)
+      Text("No Agent Selected")
+        .font(.title2)
+      Text("Create an agent or chain to get started")
+        .foregroundStyle(.secondary)
+      
+      HStack(spacing: 16) {
+        Button {
+          showingNewAgentSheet = true
+        } label: {
+          Label("New Agent", systemImage: "cpu")
+        }
+        .buttonStyle(.bordered)
+        
+        Button {
+          showingNewChainSheet = true
+        } label: {
+          Label("New Chain", systemImage: "link")
+        }
+        .buttonStyle(.borderedProminent)
+      }
+    }
+  }
+  
   private var cliStatusIcon: String {
     #if os(macOS)
     return (cliService.copilotStatus.isAvailable || cliService.claudeStatus.isAvailable) 
@@ -127,8 +157,9 @@ struct AgentsSidebarView: View {
   @Binding var showingSetupSheet: Bool
   @Binding var showingNewChainSheet: Bool
   @Binding var showingNewAgentSheet: Bool
+  @Binding var selectedInfrastructure: InfrastructureView?
   
-  // Track selection as a string: "chain:id" or "agent:id"
+  // Track selection as a string: "chain:id" or "agent:id" or "infra:key"
   @State private var selection: String?
   
   var body: some View {
@@ -214,6 +245,22 @@ struct AgentsSidebarView: View {
           }
           .buttonStyle(.plain)
         }
+        
+        Section("Infrastructure") {
+          HStack {
+            Image(systemName: "shield.checkered")
+              .foregroundStyle(.purple)
+            Text("VM Isolation")
+            Spacer()
+            Text("Beta")
+              .font(.caption2)
+              .padding(.horizontal, 6)
+              .padding(.vertical, 2)
+              .background(.purple.opacity(0.2), in: Capsule())
+              .foregroundStyle(.purple)
+          }
+          .tag("infra:vm-isolation")
+        }
         #endif
       }
       .listStyle(.sidebar)
@@ -270,10 +317,12 @@ struct AgentsSidebarView: View {
     guard let value else {
       agentManager.selectedAgent = nil
       agentManager.selectedChain = nil
+      selectedInfrastructure = nil
       return
     }
     
     if value.hasPrefix("chain:") {
+      selectedInfrastructure = nil
       let idStr = String(value.dropFirst(6))
       if let uuid = UUID(uuidString: idStr),
          let chain = agentManager.chains.first(where: { $0.id == uuid }) {
@@ -281,12 +330,18 @@ struct AgentsSidebarView: View {
         agentManager.selectedChain = chain
       }
     } else if value.hasPrefix("agent:") {
+      selectedInfrastructure = nil
       let idStr = String(value.dropFirst(6))
       if let uuid = UUID(uuidString: idStr),
          let agent = agentManager.agents.first(where: { $0.id == uuid }) {
         agentManager.selectedChain = nil
         agentManager.selectedAgent = agent
       }
+    } else if value.hasPrefix("infra:") {
+      agentManager.selectedAgent = nil
+      agentManager.selectedChain = nil
+      let key = String(value.dropFirst(6))
+      selectedInfrastructure = InfrastructureView(rawValue: key)
     }
   }
   
