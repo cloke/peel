@@ -2417,7 +2417,10 @@ struct SessionSummarySheet: View {
  #if os(macOS)
   private func exportMarkdown() {
     let markdown = sessionTracker.exportAsMarkdown()
-    let desktopURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first!
+    guard let desktopURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first else {
+      print("Could not access desktop directory")
+      return
+    }
     let filename = "agent_session_\(Date().formatted(.iso8601.year().month().day().time(includingFractionalSeconds: false))).md"
       .replacingOccurrences(of: ":", with: "-")
     let fileURL = desktopURL.appendingPathComponent(filename)

@@ -67,8 +67,10 @@ struct OrganizationDetailView: View {
           }
         }
         .tabItem { Text("Actions") }.tag(2)
-        Link("Issues", destination: URL(string: organization.issues_url ?? "")!)
-          .tabItem { Text("Issues") }.tag(3)
+        if let issuesUrl = organization.issues_url, let url = URL(string: issuesUrl) {
+          Link("Issues", destination: url)
+            .tabItem { Text("Issues") }.tag(3)
+        }
       }
       .onAppear {
 #if os(iOS)

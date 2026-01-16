@@ -1,149 +1,106 @@
-# 🚀 Quick Start - January 7, 2026
+# 🚀 Quick Start - Kitchen Sync
 
-## TL;DR
-✅ **All modernization is COMPLETE!**  
-📋 **Today's focus:** Test the app and decide what's next
+**Last Updated:** January 16, 2026  
+**Status:** ✅ Modernization Complete | Active Development
 
 ---
 
-## 3-Minute Start
+## What is Kitchen Sync?
 
-### 1. Build & Run (30 seconds)
+A macOS/iOS developer tools app for managing:
+- **GitHub** - Repos, PRs, issues, actions (works on iOS too!)
+- **Git** - Local repo management, commits, branches (macOS only)
+- **Homebrew** - Package management with streaming output (macOS only)
+- **AI Agents** - Orchestrated coding agents with VM isolation (macOS only)
+- **Workspaces** - Multi-worktree management (macOS only)
+
+---
+
+## Quick Start (2 minutes)
+
+### Build & Run
 ```bash
+# From Xcode - recommended
+# Open KitchenSync.xcodeproj and press Cmd+R
+
+# Or from terminal (build only - run from Xcode for debugging)
 cd /Users/cloken/code/KitchenSink
 xcodebuild -scheme "KitchenSink (macOS)" -configuration Debug build
-# Or just hit Cmd+R in Xcode
 ```
 
-### 2. Test Git Features (5 min)
-- Open a git repository
-- View status/history
-- Try staging/committing
-- Switch branches
-
-### 3. Test Brew Features (5 min)  
-- Search for a package
-- View package info
-- Try install (watch streaming output!)
-
-### 4. Decide Next Steps (2 min)
-Pick ONE:
-- **A) Stop here** - Everything works, you're done! 🎉
-- **B) Polish** - Better errors, loading states (1-2 hours)
-- **C) Features** - Add new functionality (whatever interests you)
+### First Time Setup
+1. **GitHub** - Click login, authorize OAuth, token saved to Keychain
+2. **Git** - Open a local repository folder
+3. **Brew** - Just works (requires Homebrew installed)
 
 ---
 
-## What Changed Yesterday
+## Project Structure
 
-Modernized TaskRunner package from callbacks to Swift 6 actors:
-
-**Before:**
-```swift
-DispatchQueue.main.async {
-  // callbacks, continuations, manual threading
-}
 ```
-
-**After:**
-```swift
-public actor ProcessExecutor {
-  public func execute(...) async throws -> Result
-}
+KitchenSink/
+├── Shared/                    # Cross-platform code
+│   ├── KitchenSyncApp.swift   # App entry point, SwiftData
+│   ├── Applications/          # Root views for each tool
+│   ├── AgentOrchestration/    # AI agent management
+│   ├── Services/              # Shared services
+│   └── Views/                 # Reusable UI components
+├── Local Packages/
+│   ├── Brew/                  # Homebrew integration
+│   ├── Git/                   # Git operations
+│   └── Github/                # GitHub API + UI
+├── iOS/                       # iOS-specific entry
+├── macOS/                     # macOS-specific entry
+└── Plans/                     # Architecture docs
 ```
-
-**Files changed:** 15+ across TaskRunner, Git, and Brew packages
 
 ---
 
-## If Something Broke
+## Key Documentation
 
-### Git not working?
-Check: `/Users/cloken/code/KitchenSink/Local Packages/Git/Sources/Git/Commands/`
-
-### Brew not working?
-Check: `/Users/cloken/code/KitchenSink/Local Packages/Brew/Sources/Brew/DetailView.swift`
-
-### Build errors?
-```bash
-# Clean build
-cd /Users/cloken/code/KitchenSink
-xcodebuild clean
-xcodebuild -scheme "KitchenSink (macOS)" build
-```
-
-### Still stuck?
-Read: `/Plans/TASKRUNNER_COMPLETE.md` - has all the details
+| Document | Purpose |
+|----------|---------|
+| [Plans/CODE_AUDIT_INDEX.md](Plans/CODE_AUDIT_INDEX.md) | File status tracking, anti-patterns |
+| [Plans/MODERNIZATION_COMPLETE.md](Plans/MODERNIZATION_COMPLETE.md) | What was modernized |
+| [Plans/AGENT_ORCHESTRATION_PLAN.md](Plans/AGENT_ORCHESTRATION_PLAN.md) | AI agent architecture |
+| [Plans/SESSION_JAN16.md](Plans/SESSION_JAN16.md) | Current session notes |
+| [.github/copilot-instructions.md](.github/copilot-instructions.md) | Coding standards |
 
 ---
 
-## Key Files to Know
+## Tech Stack
 
-| What | Where |
-|------|-------|
-| **Today's work** | `/Plans/TASKRUNNER_COMPLETE.md` |
-| **Tomorrow's plan** | `/Plans/STATUS_JAN6.md` |
-| **Overall status** | `/Plans/CURRENT_STATUS.md` |
-| **Code patterns** | `/.github/copilot-instructions.md` |
+- **Swift 6.0** with strict concurrency
+- **SwiftUI 6.0** with @Observable pattern
+- **SwiftData** with iCloud sync (CloudKit)
+- **Targets:** macOS 26 (Tahoe), iOS 26
 
----
-
-## Most Likely Next Steps
-
-### Option A: Test & Ship ✅
-1. Test the app works
-2. Fix any bugs found
-3. Call it done!
-
-**Time:** 30 min  
-**Value:** Highest - ensures everything works
-
-### Option B: Error Handling 💅
-Currently errors just `print()` to console. Make them visible:
-
-```swift
-// Current:
-catch {
-  print("Error: \(error)")
-}
-
-// Better:
-catch {
-  await showError("Failed to load: \(error.localizedDescription)")
-}
-```
-
-**Time:** 30-60 min  
-**Value:** Better UX
-
-### Option C: Progress Indicators ⏳
-Show loading states during operations:
-
-```swift
-@Observable class ViewModel {
-  var isLoading = false
-  
-  func load() async {
-    isLoading = true
-    defer { isLoading = false }
-    // ... do work
-  }
-}
-```
-
-**Time:** 1 hour  
-**Value:** Professional polish
+### Patterns Used
+- `@MainActor @Observable` for ViewModels
+- `actor` for thread-safe services
+- `async/await` throughout (no Combine)
+- `NavigationStack`/`NavigationSplitView` (not NavigationView)
 
 ---
 
-## Remember
+## Development Notes
 
-🎉 **You're DONE with modernization!**
+### Before Making Changes
+1. Check [Plans/CODE_AUDIT_INDEX.md](Plans/CODE_AUDIT_INDEX.md) for existing patterns
+2. Follow [.github/copilot-instructions.md](.github/copilot-instructions.md)
+3. Search codebase before creating new components
 
-Everything from here is **optional** - the app is fully modernized and working.
-
-Pick what sounds fun, ignore the rest!
+### Testing
+- Run from Xcode (Cmd+R) for proper debugging
+- Check both macOS and iOS targets
+- Verify iCloud sync if touching SwiftData models
 
 ---
 
-**Questions?** Check `/Plans/STATUS_JAN6.md` for detailed info.
+## Current Focus Areas
+
+See [Plans/SESSION_JAN16.md](Plans/SESSION_JAN16.md) for active work:
+- Swift 6 strict concurrency (complete)
+- iOS TabView navigation (complete)
+- VM isolation for agents (in progress)
+- Code audit and cleanup (in progress)

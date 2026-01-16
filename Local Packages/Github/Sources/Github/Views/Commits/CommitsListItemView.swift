@@ -26,11 +26,9 @@ struct CommitsListItemView: View {
   }
 }
 
-struct CommitsListItemView_Previews: PreviewProvider {
-  static let decoder = JSONDecoder()
-  static let commit = try! decoder.decode(Github.Commit.self, from: Fixtures.commit)
-  static var previews: some View {
-    CommitsListItemView(commit: commit)
-      .frame(width: 200)
-  }
+#Preview {
+  let decoder = JSONDecoder()
+  let commit = try! decoder.decode(Github.Commit.self, from: Fixtures.commit)
+  return CommitsListItemView(commit: commit)
+    .frame(width: 200)
 }

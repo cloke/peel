@@ -125,6 +125,15 @@ internal extension NSTextCheckingResult {
 }
 
 #if os(macOS)
+/// Manages the list of open Git repositories and the currently selected repository.
+///
+/// This class uses a singleton pattern (`ViewModel.shared`) because:
+/// 1. Repository selection state needs to be shared across all Git-related views
+/// 2. The state persists via `@AppStorage` and should survive view lifecycles
+/// 3. Similar pattern to `KeychainService.shared` for app-wide services
+///
+/// Future consideration: Could be refactored to use `@Environment` injection
+/// from the app level if multi-window support with different repos is needed.
 @MainActor
 @Observable
 public class ViewModel {
@@ -147,6 +156,8 @@ public class ViewModel {
     }
   }
   
+  /// Shared instance for app-wide repository state management.
+  /// See class documentation for rationale on singleton usage.
   public static let shared = ViewModel()
   
   public init() {

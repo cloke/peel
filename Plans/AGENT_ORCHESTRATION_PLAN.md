@@ -120,8 +120,10 @@ public struct Worktree {
 
 ```swift
 // AgentOrchestrator/Sources/AgentOrchestrator/WorkspaceManager.swift
-public class WorkspaceManager: ObservableObject {
-    @Published var workspaces: [AgentWorkspace] = []
+@MainActor
+@Observable
+public class WorkspaceManager {
+    var workspaces: [AgentWorkspace] = []
     
     /// Creates an isolated workspace for an agent using git worktree
     public func createWorkspace(
@@ -173,8 +175,10 @@ public struct Agent: Identifiable {
 
 ```swift
 // AgentOrchestrator/Sources/AgentOrchestrator/AgentManager.swift
-public class AgentManager: ObservableObject {
-    @Published var agents: [Agent] = []
+@MainActor
+@Observable
+public class AgentManager {
+    var agents: [Agent] = []
     
     /// Spawns a new agent with an isolated workspace
     public func spawnAgent(
@@ -284,8 +288,8 @@ enum CurrentTool: String, CaseIterable {
 ```swift
 // Shared/Applications/Agents_RootView.swift
 struct Agents_RootView: View {
-    @StateObject var agentManager = AgentManager()
-    @StateObject var workspaceManager = WorkspaceManager()
+    @State var agentManager = AgentManager()
+    @State var workspaceManager = WorkspaceManager()
     
     var body: some View {
         NavigationSplitView {
@@ -298,6 +302,8 @@ struct Agents_RootView: View {
             // Selected agent detail with Monaco preview
             AgentDetailView()
         }
+        .environment(agentManager)
+        .environment(workspaceManager)
     }
 }
 ```
@@ -306,7 +312,7 @@ struct Agents_RootView: View {
 
 ```swift
 struct AgentsGridView: View {
-    @EnvironmentObject var agentManager: AgentManager
+    @Environment(AgentManager.self) var agentManager
     
     var body: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 300))]) {
@@ -366,8 +372,10 @@ public enum AgentMessage {
     case error(Error)
 }
 
-public class AgentMessageBus: ObservableObject {
-    @Published var messages: [AgentMessage] = []
+@MainActor
+@Observable
+public class AgentMessageBus {
+    var messages: [AgentMessage] = []
     
     public func publish(_ message: AgentMessage, from: UUID, to: UUID?)
     public func subscribe(_ agentId: UUID) -> AsyncStream<AgentMessage>
@@ -377,8 +385,10 @@ public class AgentMessageBus: ObservableObject {
 ### 6.2 Supervisor Agent
 
 ```swift
-public class SupervisorAgent: ObservableObject {
-    @Published var workers: [Agent] = []
+@MainActor
+@Observable
+public class SupervisorAgent {
+    var workers: [Agent] = []
     let messageBus: AgentMessageBus
     
     /// Assigns a task to the best available worker

@@ -47,12 +47,8 @@ struct CommitDetailView: View {
 }
 #endif
 
-extension Color {
-  public static var gitGreen: Color {
-    /// Green color as found on github.com
-    return Color.init(.sRGB, red: 0.157, green: 0.655, blue: 0.271, opacity: 1.0)
-  }
-}
+// Note: Color.gitGreen is defined in Git package (Git/Extensions/Color.swift)
+// The Github package imports Git, so it has access to this extension.
 
 internal extension NSTextCheckingResult {
   func group(_ group: Int, in string: String) -> String? {

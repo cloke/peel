@@ -296,8 +296,6 @@ struct RecentPRDestination: View {
   }
 }
 
-struct Github_RootView_Previews: PreviewProvider {
-  static var previews: some View {
-    Github_RootView()
-  }
+#Preview {
+  Github_RootView()
 }

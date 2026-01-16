@@ -18,8 +18,6 @@ struct TaskDebugWindow: View {
   }
 }
 
-struct TaskDebugWindow_Previews: PreviewProvider {
-  static var previews: some View {
-    TaskDebugWindow()
-  }
+#Preview {
+  TaskDebugWindow()
 }

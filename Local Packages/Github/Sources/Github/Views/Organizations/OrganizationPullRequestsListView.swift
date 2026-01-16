@@ -22,8 +22,10 @@ struct OrganizationPullRequestsListView: View {
             Text(pullRequest.user?.publicName ?? "")
             Text(pullRequest.title ?? "")
             Spacer()
-            Link(destination: URL(string: pullRequest.html_url ?? "")!) {
-              Image(systemName: "arrowshape.turn.up.right")
+            if let htmlUrl = pullRequest.html_url, let url = URL(string: htmlUrl) {
+              Link(destination: url) {
+                Image(systemName: "arrowshape.turn.up.right")
+              }
             }
           }
           if let reviewers = pullRequest.requested_reviewers, viewModel.hasMe(in: reviewers) {
@@ -36,9 +38,9 @@ struct OrganizationPullRequestsListView: View {
               }
             }
           }
-          if pullRequest.requested_reviewers != nil && pullRequest.requested_reviewers!.count > 0 {
+          if let reviewers = pullRequest.requested_reviewers, !reviewers.isEmpty {
             HStack {
-              Text("Reviewers: \(pullRequest.requested_reviewers?.map { $0.publicName }.joined(separator: ", ") ?? "")")
+              Text("Reviewers: \(reviewers.map { $0.publicName }.joined(separator: ", "))")
               Spacer()
             }
           }

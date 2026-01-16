@@ -32,6 +32,9 @@ extension Commands {
   
   public static func processDiff(lines: [String]) -> Diff {
     var diff = Diff()
+    // Note: try! is acceptable here - this is a compile-time constant regex pattern
+    // that has been validated and will always succeed. Using do/catch would add
+    // unnecessary error handling for an impossible failure case.
     let regex = try! NSRegularExpression(
       pattern: "^(?:(?:@@ -(\\d+),?(\\d+)? \\+(\\d+),?(\\d+)? @@)|([-+\\s])(.*))",
       options: [])

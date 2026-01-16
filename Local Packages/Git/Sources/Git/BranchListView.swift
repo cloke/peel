@@ -124,19 +124,6 @@ public struct BranchListView: View {
         }
       }
     }
-//    label: {
-//      HStack {
-//        Text("\(label) (\(localBranches.count))")
-//        Spacer()
-//        if isExpanded {
-//          Button {
-//            Task {
-//              await repository.load()
-//            }
-//          } label: { Image(systemName: "arrow.counterclockwise.icloud") }
-//        }
-//      }
-//    }
     }
   }
 }
@@ -164,9 +151,7 @@ struct BranchRepositoryView: View {
   }
 }
 
-struct BranchListView_Previews: PreviewProvider {
-  static var previews: some View {
-    BranchListView(localBranches: .constant([]), label: "Test")
-  }
+#Preview {
+  BranchListView(localBranches: .constant([]), label: "Test")
 }
 #endif

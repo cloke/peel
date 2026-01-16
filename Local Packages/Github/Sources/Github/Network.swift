@@ -86,17 +86,19 @@ extension Github {
   }
   
   public static func members(from organization: User) async throws -> [Github.User]  {
-    if organization.members_url == nil {
+    guard let membersUrl = organization.members_url else {
       throw AFError.invalidURL(url: "members only exist on organization users")
     }
     /// Git adds /{member} to the url, but we want just the array url.
-    let url = "\(organization.members_url![..<organization.members_url!.index(organization.members_url!.endIndex, offsetBy: -9)])"
+    let url = String(membersUrl.dropLast(9))
     return try await loadMany(url: url)
   }
   
   public static func commits(from repository: Repository) async throws -> [Github.Commit] {
-    let url = "\(repository.commits_url![..<repository.commits_url!.index(repository.commits_url!.endIndex, offsetBy: -6)])"
-
+    guard let commitsUrl = repository.commits_url else {
+      throw AFError.invalidURL(url: "commits_url not available on repository")
+    }
+    let url = String(commitsUrl.dropLast(6))
     return try await loadMany(url: url)
   }
   
@@ -153,7 +155,10 @@ extension Github {
   ///   - repository: Github.Repository referencing a repository containing issues
   /// - Returns: An array of github issues
   static func issues(from repository: Repository) async throws -> [Issue] {
-    let url = "\(repository.issues_url![..<repository.issues_url!.index(repository.issues_url!.endIndex, offsetBy: -9)])"
+    guard let issuesUrl = repository.issues_url else {
+      throw AFError.invalidURL(url: "issues_url not available on repository")
+    }
+    let url = String(issuesUrl.dropLast(9))
     return try await loadMany(url: url)
   }
   
@@ -178,8 +183,11 @@ extension Github {
   
   /// Used when the expected response will be a single of codable object.
   private static func load<T: Codable>(url: String) async throws -> T {
+    guard let requestUrl = URL(string: url) else {
+      throw AFError.invalidURL(url: url)
+    }
     let headers = await headers
-    return try await AF.request(URL(string: url)!, method: .get, headers: headers)
+    return try await AF.request(requestUrl, method: .get, headers: headers)
         .serializingDecodable(T.self)
         .value
   }
@@ -188,8 +196,11 @@ extension Github {
   /// - Parameter url: url to the github api
   /// - Returns: array of codables
   private static func loadMany<T: Codable>(url: String) async throws -> [T] {
+    guard let requestUrl = URL(string: url) else {
+      throw AFError.invalidURL(url: url)
+    }
     let headers = await headers
-    return try await AF.request(URL(string: url)!, method: .get, headers: headers)
+    return try await AF.request(requestUrl, method: .get, headers: headers)
       .serializingDecodable([T].self)
       .value
   }
