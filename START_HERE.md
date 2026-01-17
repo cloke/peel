@@ -1,11 +1,11 @@
-# 🚀 Quick Start - Kitchen Sync
+# 🚀 Quick Start - Peel
 
 **Last Updated:** January 16, 2026  
 **Status:** ✅ Modernization Complete | Active Development
 
 ---
 
-## What is Kitchen Sync?
+## What is Peel?
 
 A macOS/iOS developer tools app for managing:
 - **GitHub** - Repos, PRs, issues, actions (works on iOS too!)
@@ -40,7 +40,7 @@ xcodebuild -scheme "KitchenSink (macOS)" -configuration Debug build
 ```
 KitchenSink/
 ├── Shared/                    # Cross-platform code
-│   ├── KitchenSyncApp.swift   # App entry point, SwiftData
+│   ├── PeelApp.swift          # App entry point, SwiftData
 │   ├── Applications/          # Root views for each tool
 │   ├── AgentOrchestration/    # AI agent management
 │   ├── Services/              # Shared services

@@ -454,7 +454,7 @@ final class VMIsolationService {
   init() {
     let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first 
       ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
-    self.vmBasePath = appSupport.appendingPathComponent("KitchenSync/VMs", isDirectory: true)
+    self.vmBasePath = appSupport.appendingPathComponent("Peel/VMs", isDirectory: true)
   }
   
   /// Initialize the service and check for Virtualization.framework support
@@ -1108,9 +1108,9 @@ final class VMIsolationService {
     statusMessage = "Installing dependencies: \(packages.joined(separator: ", "))"
     print("[Dependencies] Installing: \(packages.joined(separator: ", "))")
 
-    let success = try await runProcess(brewPath, arguments: ["install"] + packages, outputPath: "/tmp/kitchensync_brew_install.log")
+    let success = try await runProcess(brewPath, arguments: ["install"] + packages, outputPath: "/tmp/peel_brew_install.log")
     if !success {
-      throw VMError.vmCreationFailed("Failed to install dependencies via Homebrew. See /tmp/kitchensync_brew_install.log")
+      throw VMError.vmCreationFailed("Failed to install dependencies via Homebrew. See /tmp/peel_brew_install.log")
     }
   }
 

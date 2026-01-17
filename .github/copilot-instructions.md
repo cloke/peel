@@ -1,12 +1,12 @@
-# GitHub Copilot Instructions for Kitchen Sync
+# GitHub Copilot Instructions for Peel
 
 ## Project Context
 
-Kitchen Sync is a macOS/iOS SwiftUI application for managing GitHub, Git repositories, and Homebrew. The project is undergoing modernization from SwiftUI 3.0 (2020) to modern Swift 6.0 and SwiftUI 6.0 patterns.
+Peel is a macOS/iOS SwiftUI application for managing GitHub, Git repositories, and Homebrew. "Peel back the layers" of your dev environment.
 
 **Targets:** macOS 26 (Tahoe), iOS 26  
 **Swift Version:** 6.0  
-**Status:** Active modernization - refer to `/Plans/SWIFTUI_MODERNIZATION_PLAN.md`
+**Status:** Active development - refer to `/Plans/SWIFTUI_MODERNIZATION_PLAN.md`
 
 ---
 
@@ -510,8 +510,8 @@ final class MyModel {
 
 ### iCloud Configuration
 - Entitlements are in `macOS/macOS.entitlements`
-- Container ID: `iCloud.crunchy-bananas.KitchenSink`
-- SwiftData config in `KitchenSyncApp.swift` uses `cloudKitDatabase: .automatic`
+- Container ID: `iCloud.crunchy-bananas.Peel`
+- SwiftData config in `PeelApp.swift` uses `cloudKitDatabase: .automatic`
 
 ---
 

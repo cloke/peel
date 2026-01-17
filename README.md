@@ -1,6 +1,6 @@
-# Kitchen Sync
+# Peel
 
-A macOS/iOS developer tools app for managing GitHub, Git repositories, Homebrew, and AI coding agents.
+Peel back the layers of your dev environment. A macOS/iOS developer tools app for managing GitHub, Git repositories, Homebrew, and AI coding agents.
 
 **Status:** ✅ Active Development  
 **Swift:** 6.0 with strict concurrency  
@@ -36,7 +36,7 @@ See [START_HERE.md](START_HERE.md) for detailed setup.
 ```
 KitchenSink/
 ├── Shared/                    # Cross-platform SwiftUI code
-│   ├── KitchenSyncApp.swift   # Entry point, SwiftData config
+│   ├── PeelApp.swift          # Entry point, SwiftData config
 │   ├── Applications/          # Root views (Git, Brew, GitHub, Agents, Workspaces)
 │   ├── AgentOrchestration/    # AI agent management system
 │   ├── Services/              # Shared services (VSCode, etc.)

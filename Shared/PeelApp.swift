@@ -1,5 +1,5 @@
 //
-//  KitchenSyncApp.swift
+//  PeelApp.swift
 //  Shared
 //
 //  Created by Cory Loken on 12/19/20.
@@ -12,7 +12,7 @@ import SwiftData
 import OAuthSwift
 
 @main
-struct KitchenSyncApp: App {
+struct PeelApp: App {
   @Environment(\.openURL) var openURL
   
   /// SwiftData model container

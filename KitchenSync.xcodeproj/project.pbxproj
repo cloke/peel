@@ -43,9 +43,9 @@
 		048086642A2D21A300536A3E /* Brew */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Brew; path = "Local Packages/Brew"; sourceTree = "<group>"; };
 		048F40F72853ED060007A9A4 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		04A7BD64258E77D7000E55A8 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		04A7BD6A258E77D8000E55A8 /* KitchenSync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KitchenSync.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		04A7BD6A258E77D8000E55A8 /* Peel.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Peel.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		04A7BD6D258E77D8000E55A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		04A7BD72258E77D8000E55A8 /* Kitchen Sync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Kitchen Sync.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		04A7BD72258E77D8000E55A8 /* Peel.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Peel.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		04A7BD74258E77D8000E55A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		04A7BD75258E77D8000E55A8 /* macOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = macOS.entitlements; sourceTree = "<group>"; };
 		04A7BD7A258E77D8000E55A8 /* Tests iOS.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Tests iOS.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -67,7 +67,6 @@
 				Assets.xcassets,
 				Components/ViewState.swift,
 				"Extensions/Date+ISO8601.swift",
-				KitchenSyncApp.swift,
 				Services/VSCodeService.swift,
 				Services/WorkspaceDashboardService.swift,
 			);
@@ -156,8 +155,8 @@
 		04A7BD6B258E77D8000E55A8 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				04A7BD6A258E77D8000E55A8 /* KitchenSync.app */,
-				04A7BD72258E77D8000E55A8 /* Kitchen Sync.app */,
+				04A7BD6A258E77D8000E55A8 /* Peel.app */,
+				04A7BD72258E77D8000E55A8 /* Peel.app */,
 				04A7BD7A258E77D8000E55A8 /* Tests iOS.xctest */,
 				04A7BD85258E77D8000E55A8 /* Tests macOS.xctest */,
 			);
@@ -223,7 +222,7 @@
 				040AAB7D26CB385800DE1CBF /* Git */,
 			);
 			productName = "KitchenSink (iOS)";
-			productReference = 04A7BD6A258E77D8000E55A8 /* KitchenSync.app */;
+			productReference = 04A7BD6A258E77D8000E55A8 /* Peel.app */;
 			productType = "com.apple.product-type.application";
 		};
 		04A7BD71258E77D8000E55A8 /* KitchenSync (macOS) */ = {
@@ -249,7 +248,7 @@
 				046C6AAF2F1BE07D006CDAC7 /* TaskRunner */,
 			);
 			productName = "KitchenSink (macOS)";
-			productReference = 04A7BD72258E77D8000E55A8 /* Kitchen Sync.app */;
+			productReference = 04A7BD72258E77D8000E55A8 /* Peel.app */;
 			productType = "com.apple.product-type.application";
 		};
 		04A7BD79258E77D8000E55A8 /* Tests iOS */ = {
@@ -549,8 +548,8 @@
 					"@executable_path/Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.KitchenSink";
-				PRODUCT_NAME = KitchenSync;
+				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.Peel";
+				PRODUCT_NAME = Peel;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -580,8 +579,8 @@
 					"@executable_path/Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.KitchenSink";
-				PRODUCT_NAME = KitchenSync;
+				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.Peel";
+				PRODUCT_NAME = Peel;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = iphoneos;
 				SUPPORTS_MACCATALYST = NO;
@@ -614,8 +613,8 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.KitchenSink";
-				PRODUCT_NAME = "Kitchen Sync";
+				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.Peel";
+				PRODUCT_NAME = Peel;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = macosx;
 				SWIFT_STRICT_CONCURRENCY = complete;
@@ -643,8 +642,8 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.KitchenSink";
-				PRODUCT_NAME = "Kitchen Sync";
+				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.Peel";
+				PRODUCT_NAME = Peel;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = macosx;
 				SWIFT_STRICT_CONCURRENCY = complete;

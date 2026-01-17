@@ -278,7 +278,7 @@ struct VMIsolationDashboardView: View {
         HStack {
           Image(systemName: "folder")
             .foregroundStyle(.secondary)
-          Text("VM files stored in: ~/Library/Application Support/KitchenSync/VMs/")
+          Text("VM files stored in: ~/Library/Application Support/Peel/VMs/")
             .font(.caption)
             .foregroundStyle(.secondary)
         }
@@ -384,7 +384,7 @@ struct VMIsolationDashboardView: View {
           .disabled(isDownloading || service.isLinuxVMRunning)
           
           // Path info
-          Text("Files: ~/Library/Application Support/KitchenSync/VMs/linux/")
+          Text("Files: ~/Library/Application Support/Peel/VMs/linux/")
             .font(.caption2)
             .foregroundStyle(.tertiary)
         }

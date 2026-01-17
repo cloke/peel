@@ -80,7 +80,7 @@ struct BrewUnavailableView: View {
       } description: {
         Text("Homebrew package management is only available on macOS.")
       } actions: {
-        Text("Open Kitchen Sync on your Mac to manage packages.")
+        Text("Open Peel on your Mac to manage packages.")
           .font(.caption)
           .foregroundStyle(.secondary)
       }
@@ -98,7 +98,7 @@ struct AgentsUnavailableView: View {
       } description: {
         Text("Agent orchestration requires terminal access and is only available on macOS.")
       } actions: {
-        Text("Open Kitchen Sync on your Mac to use AI agents.")
+        Text("Open Peel on your Mac to use AI agents.")
           .font(.caption)
           .foregroundStyle(.secondary)
       }

@@ -14,9 +14,23 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "04A7BD69258E77D8000E55A8"
-               BuildableName = "KitchenSync.app"
-               BlueprintName = "KitchenSync (iOS)"
+               BlueprintIdentifier = "04A7BD71258E77D8000E55A8"
+               BuildableName = "Peel.app"
+               BlueprintName = "KitchenSync (macOS)"
+               ReferencedContainer = "container:KitchenSync.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "04A7BD79258E77D8000E55A8"
+               BuildableName = "Tests iOS.xctest"
+               BlueprintName = "Tests iOS"
                ReferencedContainer = "container:KitchenSync.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -44,9 +58,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "04A7BD69258E77D8000E55A8"
-            BuildableName = "KitchenSync.app"
-            BlueprintName = "KitchenSync (iOS)"
+            BlueprintIdentifier = "04A7BD71258E77D8000E55A8"
+            BuildableName = "Peel.app"
+            BlueprintName = "KitchenSync (macOS)"
             ReferencedContainer = "container:KitchenSync.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -60,9 +74,9 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "04A7BD69258E77D8000E55A8"
-            BuildableName = "KitchenSync.app"
-            BlueprintName = "KitchenSync (iOS)"
+            BlueprintIdentifier = "04A7BD71258E77D8000E55A8"
+            BuildableName = "Peel.app"
+            BlueprintName = "KitchenSync (macOS)"
             ReferencedContainer = "container:KitchenSync.xcodeproj">
          </BuildableReference>
       </MacroExpansion>

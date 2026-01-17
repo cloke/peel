@@ -78,7 +78,7 @@ public final class WorktreeService {
   public init() {
     // Use a subdirectory in the app's temp folder
     let tempDir = FileManager.default.temporaryDirectory
-    self.worktreeBaseDir = tempDir.appendingPathComponent("KitchenSync-Worktrees", isDirectory: true)
+    self.worktreeBaseDir = tempDir.appendingPathComponent("Peel-Worktrees", isDirectory: true)
     
     // Ensure the base directory exists
     try? FileManager.default.createDirectory(at: worktreeBaseDir, withIntermediateDirectories: true)

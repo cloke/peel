@@ -230,7 +230,7 @@ public final class AgentManager {
     FileManager.default
       .urls(for: .applicationSupportDirectory, in: .userDomainMask)
       .first?
-      .appendingPathComponent("KitchenSync")
+      .appendingPathComponent("Peel")
       .appendingPathComponent("chain_templates.json")
   }
   
