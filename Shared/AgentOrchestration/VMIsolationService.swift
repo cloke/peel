@@ -454,7 +454,7 @@ final class VMIsolationService {
   init() {
     let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first 
       ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
-    self.vmBasePath = appSupport.appendingPathComponent("Peel/VMs", isDirectory: true)
+    self.vmBasePath = appSupport.appendingPathComponent("KitchenSync/VMs", isDirectory: true)
   }
   
   /// Initialize the service and check for Virtualization.framework support
@@ -930,7 +930,10 @@ final class VMIsolationService {
     
     // VZMacOSRestoreImage.fetchLatestSupported returns info about the latest
     // compatible restore image for this hardware
-    let restoreImage = try await VZMacOSRestoreImage.latestSupported
+    guard #available(macOS 12.0, *) else {
+      throw VMError.macOSRestoreImageNotFound
+    }
+    let restoreImage = try await fetchLatestRestoreImage()
     let url = restoreImage.url
     let majorVersion = restoreImage.operatingSystemVersion.majorVersion
     let minorVersion = restoreImage.operatingSystemVersion.minorVersion
@@ -953,6 +956,20 @@ final class VMIsolationService {
       self.macOSRestoreImagePath = destinationPath
       self.isMacOSReady = true
       self.statusMessage = "macOS restore image ready"
+    }
+  }
+
+  @available(macOS 12.0, *)
+  private func fetchLatestRestoreImage() async throws -> VZMacOSRestoreImage {
+    try await withCheckedThrowingContinuation { continuation in
+      VZMacOSRestoreImage.fetchLatestSupported { result in
+        switch result {
+        case .success(let image):
+          continuation.resume(returning: image)
+        case .failure(let error):
+          continuation.resume(throwing: error)
+        }
+      }
     }
   }
   
@@ -1108,9 +1125,9 @@ final class VMIsolationService {
     statusMessage = "Installing dependencies: \(packages.joined(separator: ", "))"
     print("[Dependencies] Installing: \(packages.joined(separator: ", "))")
 
-    let success = try await runProcess(brewPath, arguments: ["install"] + packages, outputPath: "/tmp/peel_brew_install.log")
+    let success = try await runProcess(brewPath, arguments: ["install"] + packages, outputPath: "/tmp/kitchensync_brew_install.log")
     if !success {
-      throw VMError.vmCreationFailed("Failed to install dependencies via Homebrew. See /tmp/peel_brew_install.log")
+      throw VMError.vmCreationFailed("Failed to install dependencies via Homebrew. See /tmp/kitchensync_brew_install.log")
     }
   }
 
@@ -1440,17 +1457,12 @@ final class VMDelegate: NSObject, VZVirtualMachineDelegate {
     self.onStop = onStop
   }
 
-  func virtualMachine(_ virtualMachine: VZVirtualMachine, didStopWithError error: (any Error)?) {
-    if let error = error {
-      print("[VM Delegate] VM stopped with error: \(error)")
-      if let nsError = error as NSError? {
-        print("[VM Delegate] Error domain: \(nsError.domain), code: \(nsError.code)")
-        for (key, value) in nsError.userInfo {
-          print("[VM Delegate] UserInfo[\(key)]: \(value)")
-        }
-      }
-    } else {
-      print("[VM Delegate] VM stopped normally")
+  func virtualMachine(_ virtualMachine: VZVirtualMachine, didStopWithError error: Error) {
+    print("[VM Delegate] VM stopped with error: \(error)")
+    let nsError = error as NSError
+    print("[VM Delegate] Error domain: \(nsError.domain), code: \(nsError.code)")
+    for (key, value) in nsError.userInfo {
+      print("[VM Delegate] UserInfo[\(key)]: \(value)")
     }
     onStop?(error)
   }
