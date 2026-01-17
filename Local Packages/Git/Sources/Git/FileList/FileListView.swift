@@ -15,77 +15,94 @@ struct FileListView: View {
   @FocusState private var commitIsFocused: Bool
   
   var body: some View {
-    NavigationStack {
+    HSplitView {
       List {
-        ZStack {
-          TextEditor(text: $commitMessage)
-            .frame(height: 100)
-            .focused($commitIsFocused)
-          Text("Enter commit message")
-            .opacity(commitMessage.isEmpty ? 1 : 0)
-            .foregroundStyle(.secondary)
-            .allowsHitTesting(false)
-            .animation(.default, value: commitMessage.isEmpty)
-        }
-        HStack {
-          Button("Commit") {
-            Task {
-              _ = try await Commands.commit(repository: repository, message: commitMessage)
-              commitMessage = ""
-              await repository.refreshStatus()
-            }
+        Section("Commit") {
+          ZStack {
+            TextEditor(text: $commitMessage)
+              .frame(height: 96)
+              .focused($commitIsFocused)
+            Text("Enter commit message")
+              .opacity(commitMessage.isEmpty ? 1 : 0)
+              .foregroundStyle(.secondary)
+              .allowsHitTesting(false)
+              .animation(.default, value: commitMessage.isEmpty)
           }
-          .disabled(commitMessage.count == 0)
-          Spacer()
-          Button {
-            Task {
-              try await Commands.Stash.push(repository: repository)
-            }
-          }
-        label: {
-          Image(systemName: "square.stack.3d.up")
-          Text("Stash")
-        }
-        }
-        ForEach(repository.status) { file in
-          FileListItemView(file: file, toggleState: [.modifiedMe].contains(file.status)) //change.status != "??" ? false : true)
-            .contentShape(Rectangle())
-            .onTapGesture {
+          HStack {
+            Button("Commit") {
               Task {
-                let str = file.path
-                diff = try await Commands.diff(repository: repository, path: str)
+                _ = try await Commands.commit(repository: repository, message: commitMessage)
+                commitMessage = ""
+                await repository.refreshStatus()
               }
             }
-            .contextMenu {
-              Button {} label: {
-                Text("Ignore")
-                Image(systemName: "pencil.slash")
+            .disabled(commitMessage.count == 0)
+            Spacer()
+            Button {
+              Task {
+                try await Commands.Stash.push(repository: repository)
               }
-              Button {} label: {
-                Text("Move to trash")
-                Image(systemName: "trash")
-              }
-              Button {
-                let str = file.path
-                  .replacingOccurrences(of: " ", with: "\\ ")
-                Task {
-                  _ = try await Commands.restore(path: str, on: repository)
-                  await repository.refreshStatus()
+            } label: {
+              Image(systemName: "square.stack.3d.up")
+              Text("Stash")
+            }
+          }
+        }
+        Section("Changes") {
+          if repository.status.isEmpty {
+            ContentUnavailableView {
+              Label("Working Tree Clean", systemImage: "checkmark.circle")
+            } description: {
+              Text("No local changes detected")
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+            .listRowSeparator(.hidden)
+          } else {
+            ForEach(repository.status) { file in
+              FileListItemView(file: file, toggleState: [.modifiedMe].contains(file.status)) //change.status != "??" ? false : true)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                  Task {
+                    let str = file.path
+                    diff = try await Commands.diff(repository: repository, path: str)
+                  }
                 }
-              } label: {
-                Text("Revert file")
-                Image(systemName: "arrow.uturn.backward")
-              }
+                .contextMenu {
+                  Button {} label: {
+                    Text("Ignore")
+                    Image(systemName: "pencil.slash")
+                  }
+                  Button {} label: {
+                    Text("Move to trash")
+                    Image(systemName: "trash")
+                  }
+                  Button {
+                    let str = file.path
+                      .replacingOccurrences(of: " ", with: "\\ ")
+                    Task {
+                      _ = try await Commands.restore(path: str, on: repository)
+                      await repository.refreshStatus()
+                    }
+                  } label: {
+                    Text("Revert file")
+                    Image(systemName: "arrow.uturn.backward")
+                  }
+                }
             }
+          }
         }
       }
-      .listStyle(.sidebar)
+      .listStyle(.inset)
+      .frame(minWidth: 320, idealWidth: 360)
+      
       DiffView(diff: diff)
-      .navigationTitle("Local Changes")
-      .task {
-        await repository.refreshStatus()
-      }
+        .frame(minWidth: 480)
     }
+    .navigationTitle("Local Changes")
+    .task {
+      await repository.refreshStatus()
+    }
+    .environment(repository)
   }
   
   func color(status: FileStatus) -> Color {

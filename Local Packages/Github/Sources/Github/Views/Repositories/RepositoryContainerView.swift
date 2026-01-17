@@ -21,19 +21,22 @@ public struct RepositoryContainerView: View {
   }
   
   public var body: some View {
-    TabView(selection: $selection) {
-      PullRequestsView(organization: organization, repository: repository)
-        .tabItem { Text("Pull Requests") }
-        .tag(1)
-      CommitsListView(repository: repository)
-        .tabItem { Text("Commits") }
-        .tag(2)
-      IssuesListView(repository: repository)
-        .tabItem { Text("Issues") }
-        .tag(3)
-      ActionsView(repository: repository)
-        .tabItem { Text("Actions") }
-        .tag(4)
+    NavigationStack {
+      TabView(selection: $selection) {
+        PullRequestsView(organization: organization, repository: repository)
+          .tabItem { Text("Pull Requests") }
+          .tag(1)
+        CommitsListView(repository: repository)
+          .tabItem { Text("Commits") }
+          .tag(2)
+        IssuesListView(repository: repository)
+          .tabItem { Text("Issues") }
+          .tag(3)
+        ActionsView(repository: repository)
+          .tabItem { Text("Actions") }
+          .tag(4)
+      }
+      .navigationTitle(repository.full_name ?? repository.name)
     }
   }
 }

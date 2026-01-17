@@ -170,7 +170,7 @@ struct Github_RootView: View {
       Text("Select an organization or repository")
         .foregroundStyle(.secondary)
     }
-    .navigationSplitViewStyle(.automatic)
+    .navigationSplitViewStyle(.balanced)
     .environment(viewModel)
     .favoritesProvider(dataProvider)
     .recentPRsProvider(dataProvider)
