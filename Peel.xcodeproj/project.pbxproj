@@ -70,7 +70,7 @@
 				Services/VSCodeService.swift,
 				Services/WorkspaceDashboardService.swift,
 			);
-			target = 04A7BD69258E77D8000E55A8 /* KitchenSync (iOS) */;
+				target = 04A7BD69258E77D8000E55A8 /* Peel (iOS) */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -203,9 +203,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		04A7BD69258E77D8000E55A8 /* KitchenSync (iOS) */ = {
+		04A7BD69258E77D8000E55A8 /* Peel (iOS) */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 04A7BD94258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "KitchenSync (iOS)" */;
+			buildConfigurationList = 04A7BD94258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "Peel (iOS)" */;
 			buildPhases = (
 				04A7BD66258E77D8000E55A8 /* Sources */,
 				04A7BD67258E77D8000E55A8 /* Frameworks */,
@@ -215,7 +215,7 @@
 			);
 			dependencies = (
 			);
-			name = "KitchenSync (iOS)";
+			name = "Peel (iOS)";
 			packageProductDependencies = (
 				046D40E326C56BBB003715AF /* OAuthSwift */,
 				046D40E626C56C5B003715AF /* Github */,
@@ -225,9 +225,9 @@
 			productReference = 04A7BD6A258E77D8000E55A8 /* Peel.app */;
 			productType = "com.apple.product-type.application";
 		};
-		04A7BD71258E77D8000E55A8 /* KitchenSync (macOS) */ = {
+		04A7BD71258E77D8000E55A8 /* Peel (macOS) */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 04A7BD97258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "KitchenSync (macOS)" */;
+			buildConfigurationList = 04A7BD97258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "Peel (macOS)" */;
 			buildPhases = (
 				04A7BD6E258E77D8000E55A8 /* Sources */,
 				04A7BD6F258E77D8000E55A8 /* Frameworks */,
@@ -240,7 +240,7 @@
 			fileSystemSynchronizedGroups = (
 				04913BB52F0F4ED7001EF810 /* Shared */,
 			);
-			name = "KitchenSync (macOS)";
+			name = "Peel (macOS)";
 			packageProductDependencies = (
 				04D09EFC26A85E8100072702 /* OAuthSwift */,
 				04510A572A2D200C001DEF5B /* Github */,
@@ -312,7 +312,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 04A7BD61258E77D7000E55A8 /* Build configuration list for PBXProject "KitchenSync" */;
+			buildConfigurationList = 04A7BD61258E77D7000E55A8 /* Build configuration list for PBXProject "Peel" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -329,8 +329,8 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				04A7BD71258E77D8000E55A8 /* KitchenSync (macOS) */,
-				04A7BD69258E77D8000E55A8 /* KitchenSync (iOS) */,
+				04A7BD71258E77D8000E55A8 /* Peel (macOS) */,
+				04A7BD69258E77D8000E55A8 /* Peel (iOS) */,
 				04A7BD79258E77D8000E55A8 /* Tests iOS */,
 				04A7BD84258E77D8000E55A8 /* Tests macOS */,
 			);
@@ -406,12 +406,12 @@
 /* Begin PBXTargetDependency section */
 		04A7BD7C258E77D8000E55A8 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 04A7BD69258E77D8000E55A8 /* KitchenSync (iOS) */;
+				target = 04A7BD69258E77D8000E55A8 /* Peel (iOS) */;
 			targetProxy = 04A7BD7B258E77D8000E55A8 /* PBXContainerItemProxy */;
 		};
 		04A7BD87258E77D8000E55A8 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 04A7BD71258E77D8000E55A8 /* KitchenSync (macOS) */;
+				target = 04A7BD71258E77D8000E55A8 /* Peel (macOS) */;
 			targetProxy = 04A7BD86258E77D8000E55A8 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -745,7 +745,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		04A7BD61258E77D7000E55A8 /* Build configuration list for PBXProject "KitchenSync" */ = {
+		04A7BD61258E77D7000E55A8 /* Build configuration list for PBXProject "Peel" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				04A7BD92258E77D8000E55A8 /* Debug */,
@@ -754,7 +754,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		04A7BD94258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "KitchenSync (iOS)" */ = {
+		04A7BD94258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "Peel (iOS)" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				04A7BD95258E77D8000E55A8 /* Debug */,
@@ -763,7 +763,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		04A7BD97258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "KitchenSync (macOS)" */ = {
+		04A7BD97258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "Peel (macOS)" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				04A7BD98258E77D8000E55A8 /* Debug */,
