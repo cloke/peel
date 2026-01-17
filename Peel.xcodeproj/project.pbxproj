@@ -70,7 +70,7 @@
 				Services/VSCodeService.swift,
 				Services/WorkspaceDashboardService.swift,
 			);
-				target = 04A7BD69258E77D8000E55A8 /* Peel (iOS) */;
+			target = 04A7BD69258E77D8000E55A8 /* Peel (iOS) */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -406,12 +406,12 @@
 /* Begin PBXTargetDependency section */
 		04A7BD7C258E77D8000E55A8 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-				target = 04A7BD69258E77D8000E55A8 /* Peel (iOS) */;
+			target = 04A7BD69258E77D8000E55A8 /* Peel (iOS) */;
 			targetProxy = 04A7BD7B258E77D8000E55A8 /* PBXContainerItemProxy */;
 		};
 		04A7BD87258E77D8000E55A8 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-				target = 04A7BD71258E77D8000E55A8 /* Peel (macOS) */;
+			target = 04A7BD71258E77D8000E55A8 /* Peel (macOS) */;
 			targetProxy = 04A7BD86258E77D8000E55A8 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -596,7 +596,7 @@
 		04A7BD98258E77D8000E55A8 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon-mac;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = macOS/macOS.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
@@ -625,7 +625,7 @@
 		04A7BD99258E77D8000E55A8 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon-mac;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = macOS/macOS.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";

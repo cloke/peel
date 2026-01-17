@@ -43,16 +43,18 @@ private func openInVSCode(_ path: String) throws {
 
 public struct WorktreeListView: View {
   @Environment(Model.Repository.self) var repository
+  let onSelectWorktree: (Worktree) -> Void
   
   @State private var worktrees: [Worktree] = []
   @State private var isLoading = true
   @State private var errorMessage: String?
   @State private var showingCreateSheet = false
   @State private var worktreeToDelete: Worktree?
-  @State private var selectedWorktree: Worktree?
   @State private var isExpanded = true
   
-  public init() {}
+  public init(onSelectWorktree: @escaping (Worktree) -> Void = { _ in }) {
+    self.onSelectWorktree = onSelectWorktree
+  }
   
   public var body: some View {
     Section(isExpanded: $isExpanded) {
@@ -71,7 +73,9 @@ public struct WorktreeListView: View {
             onOpenInVSCode: { openWorktreeInVSCode(worktree) },
             onDelete: { worktreeToDelete = worktree },
             onRefresh: { Task { await loadWorktrees() } },
-            onSelect: { selectedWorktree = worktree }
+            onSelect: {
+              onSelectWorktree(worktree)
+            }
           )
         }
       }
@@ -124,23 +128,6 @@ public struct WorktreeListView: View {
     } message: {
       Text(errorMessage ?? "")
     }
-    .sheet(item: $selectedWorktree, onDismiss: {
-      selectedWorktree = nil
-    }) { worktree in
-      WorktreeDetailSheet(
-        worktree: worktree,
-        repository: repository,
-        onClose: { selectedWorktree = nil },
-        onOpenInVSCode: { openWorktreeInVSCode(worktree) },
-        onShowInFinder: { showInFinder(worktree) },
-        onCopyPath: { copyPath(worktree) },
-        onToggleLock: { Task { await toggleLock(worktree) } },
-        onDelete: { worktreeToDelete = worktree },
-        onCreateBranch: { branchName in
-          Task { await createBranchFromDetached(worktree, branchName: branchName) }
-        }
-      )
-    }
   }
   
   private func loadWorktrees() async {
@@ -192,7 +179,7 @@ public struct WorktreeListView: View {
       _ = try await Commands.simple(arguments: ["checkout", "-b", trimmed], in: worktreeRepo)
       await loadWorktrees()
       if let updated = worktrees.first(where: { $0.path == worktree.path }) {
-        selectedWorktree = updated
+        onSelectWorktree(updated)
       }
     } catch {
       errorMessage = "Failed to create branch: \(error.localizedDescription)"
@@ -206,6 +193,17 @@ public struct WorktreeListView: View {
   private func copyPath(_ worktree: Worktree) {
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(worktree.path, forType: .string)
+  }
+
+}
+
+struct WorktreeDetailItem: Identifiable, Equatable {
+  let id: String
+  let worktree: Worktree
+  
+  init(worktree: Worktree) {
+    self.id = worktree.path
+    self.worktree = worktree
   }
 }
 
@@ -415,7 +413,6 @@ struct WorktreeDetailSheet: View {
       HStack {
         Button("Close") {
           onClose()
-          dismiss()
         }
         Spacer()
         Button("Copy Path") {

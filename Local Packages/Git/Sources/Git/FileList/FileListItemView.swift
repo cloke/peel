@@ -39,11 +39,22 @@ struct FileListItemView: View {
   }
   
   func icon(from path: String) -> String {
-    switch (path as NSString).pathExtension {
-    case "md":
+    let ext = (path as NSString).pathExtension.lowercased()
+    switch ext {
+    case "md", "txt", "rtf":
+      return "doc.text"
+    case "swift":
+      return "swift"
+    case "png", "jpg", "jpeg", "gif", "heic", "svg":
+      return "photo"
+    case "json", "yml", "yaml", "xml":
+      return "curlybraces"
+    case "zip", "gz", "tar", "tgz":
+      return "archivebox"
+    case "":
       return "doc"
     default:
-      return (path as NSString).pathExtension
+      return "doc"
     }
   }
 }
