@@ -1,5 +1,7 @@
 # Kitchen Sync - Project Plans
 
+Plans are long-term, team-shared documents. Personal session notes live in a local Sessions/ folder (not committed).
+
 ## Status Overview
 
 | Plan | Status | Description |
@@ -10,10 +12,6 @@
 | [WORKTREE_FEATURE_PLAN](WORKTREE_FEATURE_PLAN.md) | ✅ Complete | Git worktrees + PR review |
 | [AGENT_ORCHESTRATION_PLAN](AGENT_ORCHESTRATION_PLAN.md) | 🟡 In Progress | AI agent management |
 | [apple-agent-big-ideas](apple-agent-big-ideas.md) | 📋 Vision | Hardware-maximizing agent features |
-
-## Current Session
-
-**[SESSION_JAN16.md](SESSION_JAN16.md)** — Big picture planning, phased roadmap
 
 ## Phased Roadmap
 

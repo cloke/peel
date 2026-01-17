@@ -124,10 +124,13 @@ public struct WorktreeListView: View {
     } message: {
       Text(errorMessage ?? "")
     }
-    .sheet(item: $selectedWorktree) { worktree in
+    .sheet(item: $selectedWorktree, onDismiss: {
+      selectedWorktree = nil
+    }) { worktree in
       WorktreeDetailSheet(
         worktree: worktree,
         repository: repository,
+        onClose: { selectedWorktree = nil },
         onOpenInVSCode: { openWorktreeInVSCode(worktree) },
         onShowInFinder: { showInFinder(worktree) },
         onCopyPath: { copyPath(worktree) },
@@ -345,6 +348,7 @@ struct WorktreeRowView: View {
 struct WorktreeDetailSheet: View {
   let worktree: Worktree
   let repository: Model.Repository
+  let onClose: () -> Void
   let onOpenInVSCode: () -> Void
   let onShowInFinder: () -> Void
   let onCopyPath: () -> Void
@@ -410,6 +414,7 @@ struct WorktreeDetailSheet: View {
       
       HStack {
         Button("Close") {
+          onClose()
           dismiss()
         }
         Spacer()
