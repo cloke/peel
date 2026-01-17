@@ -24,7 +24,7 @@ Peel back the layers of your dev environment. A macOS/iOS developer tools app fo
 
 ```bash
 # Open in Xcode and press Cmd+R
-open KitchenSync.xcodeproj
+open Peel.xcodeproj
 ```
 
 See [START_HERE.md](START_HERE.md) for detailed setup.

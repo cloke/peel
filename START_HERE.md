@@ -21,7 +21,7 @@ A macOS/iOS developer tools app for managing:
 ### Build & Run
 ```bash
 # From Xcode - recommended
-# Open KitchenSync.xcodeproj and press Cmd+R
+# Open Peel.xcodeproj and press Cmd+R
 
 # Or from terminal (build only - run from Xcode for debugging)
 cd /Users/cloken/code/KitchenSink
