@@ -69,3 +69,6 @@ fastlane/test_output
 *.xcbkptlist
 /elysian.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings
 */xcschememanagement.plist
+
+# Local session notes (personal)
+Sessions/
