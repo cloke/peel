@@ -18,35 +18,49 @@ struct FileListView: View {
     HSplitView {
       List {
         Section("Commit") {
-          ZStack {
-            TextEditor(text: $commitMessage)
-              .frame(height: 96)
-              .focused($commitIsFocused)
-            Text("Enter commit message")
-              .opacity(commitMessage.isEmpty ? 1 : 0)
-              .foregroundStyle(.secondary)
-              .allowsHitTesting(false)
-              .animation(.default, value: commitMessage.isEmpty)
-          }
-          HStack {
-            Button("Commit") {
-              Task {
-                _ = try await Commands.commit(repository: repository, message: commitMessage)
-                commitMessage = ""
-                await repository.refreshStatus()
+          GroupBox {
+            VStack(alignment: .leading, spacing: 12) {
+              Text("Message")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              TextEditor(text: $commitMessage)
+                .font(.body)
+                .textEditorStyle(.plain)
+                .frame(minHeight: 160)
+                .focused($commitIsFocused)
+                .overlay(alignment: .topLeading) {
+                  if commitMessage.isEmpty {
+                    Text("Enter commit message")
+                      .font(.body)
+                      .foregroundStyle(.secondary)
+                      .padding(.top, 8)
+                      .padding(.leading, 5)
+                  }
+                }
+              HStack {
+                Button("Commit") {
+                  Task {
+                    _ = try await Commands.commit(repository: repository, message: commitMessage)
+                    commitMessage = ""
+                    await repository.refreshStatus()
+                  }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(commitMessage.isEmpty)
+                Spacer()
+                Button {
+                  Task {
+                    try await Commands.Stash.push(repository: repository)
+                  }
+                } label: {
+                  Label("Stash", systemImage: "square.stack.3d.up")
+                }
+                .buttonStyle(.bordered)
               }
             }
-            .disabled(commitMessage.count == 0)
-            Spacer()
-            Button {
-              Task {
-                try await Commands.Stash.push(repository: repository)
-              }
-            } label: {
-              Image(systemName: "square.stack.3d.up")
-              Text("Stash")
-            }
+            .padding(.vertical, 4)
           }
+          .listRowSeparator(.hidden)
         }
         Section("Changes") {
           if repository.status.isEmpty {

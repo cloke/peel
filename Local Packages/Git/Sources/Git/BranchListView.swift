@@ -60,6 +60,7 @@ public struct BranchListView: View {
   @Binding var selection: GitDestination?
   
   @State private var isShowing = false
+  @State private var pushError: String?
   // TODO: Should we persist this as state?
   @State private var isExpanded = false
   @State private var multiSelection = Set<UUID>()
@@ -91,7 +92,11 @@ public struct BranchListView: View {
           push: {
             Task {
               let branch = localBranches[index]
-              try? await repository.push(branch: branch)
+              do {
+                try await repository.push(branch: branch)
+              } catch {
+                pushError = "Failed to push \(branch.name): \(error.localizedDescription)"
+              }
             }
           }
         )
@@ -121,6 +126,11 @@ public struct BranchListView: View {
       }
       .buttonStyle(.plain)
       .contentShape(Rectangle())
+    }
+    .alert("Push Failed", isPresented: .constant(pushError != nil)) {
+      Button("OK") { pushError = nil }
+    } message: {
+      Text(pushError ?? "")
     }
     .sheet(isPresented: $isShowing) {
       BranchRepositoryView() { [self] in
