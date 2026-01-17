@@ -10,6 +10,7 @@
 		0409092426C5C7C3008D5A52 /* Alamofire in Frameworks */ = {isa = PBXBuildFile; productRef = 0409092326C5C7C3008D5A52 /* Alamofire */; };
 		040AAB7E26CB385800DE1CBF /* Git in Frameworks */ = {isa = PBXBuildFile; productRef = 040AAB7D26CB385800DE1CBF /* Git */; };
 		04510A582A2D200C001DEF5B /* Github in Frameworks */ = {isa = PBXBuildFile; productRef = 04510A572A2D200C001DEF5B /* Github */; };
+		046C6AB02F1BE07D006CDAC7 /* TaskRunner in Frameworks */ = {isa = PBXBuildFile; productRef = 046C6AAF2F1BE07D006CDAC7 /* TaskRunner */; };
 		046D40E426C56BBB003715AF /* OAuthSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 046D40E326C56BBB003715AF /* OAuthSwift */; };
 		046D40E726C56C5B003715AF /* Github in Frameworks */ = {isa = PBXBuildFile; productRef = 046D40E626C56C5B003715AF /* Github */; };
 		048086662A2D21E500536A3E /* Brew in Frameworks */ = {isa = PBXBuildFile; productRef = 048086652A2D21E500536A3E /* Brew */; };
@@ -41,7 +42,6 @@
 /* Begin PBXFileReference section */
 		043A532125998D1E00980BE2 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		04510A5E2A2D20F1001DEF5B /* Git */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Git; path = "Local Packages/Git"; sourceTree = "<group>"; };
-		04510A5F2A2D212E001DEF5B /* TaskRunner */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = TaskRunner; path = ../TaskRunner; sourceTree = "<group>"; };
 		048086642A2D21A300536A3E /* Brew */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Brew; path = "Local Packages/Brew"; sourceTree = "<group>"; };
 		048F40F72853ED060007A9A4 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		04A7BD64258E77D7000E55A8 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -100,6 +100,7 @@
 			files = (
 				048086662A2D21E500536A3E /* Brew in Frameworks */,
 				04510A582A2D200C001DEF5B /* Github in Frameworks */,
+				046C6AB02F1BE07D006CDAC7 /* TaskRunner in Frameworks */,
 				04D09EFD26A85E8100072702 /* OAuthSwift in Frameworks */,
 				0495D214269F34F8008B5148 /* Alamofire in Frameworks */,
 			);
@@ -127,7 +128,6 @@
 			children = (
 				04F582A6269FD388003A8403 /* Github */,
 				04510A5E2A2D20F1001DEF5B /* Git */,
-				04510A5F2A2D212E001DEF5B /* TaskRunner */,
 				048086642A2D21A300536A3E /* Brew */,
 			);
 			name = Packages;
@@ -252,6 +252,7 @@
 				04D09EFC26A85E8100072702 /* OAuthSwift */,
 				04510A572A2D200C001DEF5B /* Github */,
 				048086652A2D21E500536A3E /* Brew */,
+				046C6AAF2F1BE07D006CDAC7 /* TaskRunner */,
 			);
 			productName = "KitchenSink (macOS)";
 			productReference = 04A7BD72258E77D8000E55A8 /* Kitchen Sync.app */;
@@ -330,6 +331,7 @@
 			packageReferences = (
 				04DD2F49269E6AED000994E1 /* XCRemoteSwiftPackageReference "OAuthSwift" */,
 				0495D212269F34F8008B5148 /* XCRemoteSwiftPackageReference "Alamofire" */,
+				046C6AAE2F1BE07D006CDAC7 /* XCRemoteSwiftPackageReference "TaskRunner" */,
 			);
 			productRefGroup = 04A7BD6B258E77D8000E55A8 /* Products */;
 			projectDirPath = "";
@@ -799,6 +801,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		046C6AAE2F1BE07D006CDAC7 /* XCRemoteSwiftPackageReference "TaskRunner" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/crunchybananas/TaskRunner";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.0.2;
+			};
+		};
 		0495D212269F34F8008B5148 /* XCRemoteSwiftPackageReference "Alamofire" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/Alamofire/Alamofire.git";
@@ -830,6 +840,11 @@
 		04510A572A2D200C001DEF5B /* Github */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = Github;
+		};
+		046C6AAF2F1BE07D006CDAC7 /* TaskRunner */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 046C6AAE2F1BE07D006CDAC7 /* XCRemoteSwiftPackageReference "TaskRunner" */;
+			productName = TaskRunner;
 		};
 		046D40E326C56BBB003715AF /* OAuthSwift */ = {
 			isa = XCSwiftPackageProductDependency;
