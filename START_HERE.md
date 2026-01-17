@@ -25,7 +25,7 @@ A macOS/iOS developer tools app for managing:
 
 # Or from terminal (build only - run from Xcode for debugging)
 cd /Users/cloken/code/KitchenSink
-xcodebuild -scheme "KitchenSink (macOS)" -configuration Debug build
+xcodebuild -scheme "Peel (macOS)" -configuration Debug build
 ```
 
 ### First Time Setup

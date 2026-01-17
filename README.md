@@ -115,10 +115,10 @@ NavigationStack {
 ### Building
 ```bash
 # Build for macOS
-xcodebuild -scheme "KitchenSink (macOS)" build
+xcodebuild -scheme "Peel (macOS)" build
 
 # Build for iOS
-xcodebuild -scheme "KitchenSink (iOS)" -destination 'platform=iOS Simulator,name=iPhone 16' build
+xcodebuild -scheme "Peel (iOS)" -destination 'platform=iOS Simulator,name=iPhone 16' build
 ```
 
 ### Code Quality

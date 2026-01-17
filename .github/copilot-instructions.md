@@ -550,13 +550,13 @@ Why:
 - ViewBridge/RemoteViewService errors occur when launched externally
 
 Instead:
-1. Build the project: `xcodebuild -scheme "KitchenSink (macOS)" build`
+1. Build the project: `xcodebuild -scheme "Peel (macOS)" build`
 2. Tell the user the build succeeded
 3. Let the user run from Xcode with ⌘R
 
 ```bash
 # ✅ DO: Just build
-xcodebuild -scheme "KitchenSink (macOS)" -destination 'platform=macOS' build
+xcodebuild -scheme "Peel (macOS)" -destination 'platform=macOS' build
 
 # ❌ DON'T: Launch the app
 # open "/path/to/Kitchen Sync.app"  # Don't do this
