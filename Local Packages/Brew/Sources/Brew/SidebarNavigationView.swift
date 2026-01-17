@@ -106,50 +106,63 @@ public struct SidebarNavigationView: View {
   @State private var results = SearchResults()
   @State private var viewModel = ViewModel()
   @State private var source: PackageSource = .installed
+  @State private var selection: String?
   
   public init() {}
   
   public var body: some View {
-    VStack {
-      Picker("Source", selection: $source) {
-        ForEach(PackageSource.allCases) { source in
-          Text(source.rawValue).tag(source)
-        }
-      }
-      .pickerStyle(.segmented)
-      .padding()
-      .disabled(viewModel.isLoading)
-
-      if viewModel.isLoading && results.items.isEmpty {
-        ProgressView()
-          .controlSize(.small)
-          .padding()
-      }
-      
-      if results.filtered.isEmpty && !viewModel.isLoading {
-        ContentUnavailableView(
-          "No Packages",
-          systemImage: "shippingbox",
-          description: Text(source == .installed ? "No installed packages found" : "Search for available packages")
-        )
-      } else {
-        List(results.filtered, id: \.self) { name in
-          NavigationLink(value: name) {
-            Text(name)
+    NavigationSplitView {
+      VStack(spacing: 0) {
+        Picker("Source", selection: $source) {
+          ForEach(PackageSource.allCases) { source in
+            Text(source.rawValue).tag(source)
           }
         }
-        .navigationDestination(for: String.self) { name in
-          DetailView(name: name)
+        .pickerStyle(.segmented)
+        .padding()
+        .disabled(viewModel.isLoading)
+
+        if viewModel.isLoading && results.items.isEmpty {
+          ProgressView()
+            .controlSize(.small)
+            .padding()
+        }
+        
+        if results.filtered.isEmpty && !viewModel.isLoading {
+          ContentUnavailableView(
+            "No Packages",
+            systemImage: "shippingbox",
+            description: Text(source == .installed ? "No installed packages found" : "Search for available packages")
+          )
+        } else {
+          List(results.filtered, id: \.self, selection: $selection) { name in
+            Text(name)
+              .tag(name)
+          }
+          .listStyle(.sidebar)
+        }
+      }
+    } detail: {
+      if let selection {
+        DetailView(name: selection)
+      } else {
+        ContentUnavailableView {
+          Label("Select a Package", systemImage: "shippingbox")
+        } description: {
+          Text("Choose a package from the sidebar to view details")
         }
       }
     }
+    .navigationSplitViewStyle(.balanced)
     .searchable(text: $results.searchText)
     .onChange(of: viewModel.outputStream) { _, data in
-      if let lastItem = data.last {
-        results.items.insert(lastItem)
+      results.items = Set(data)
+      if !results.items.contains(selection ?? "") {
+        selection = nil
       }
     }
     .task(id: source) {
+      selection = nil
       results.items = []
       if source == .installed {
         await viewModel.installed()
@@ -161,6 +174,7 @@ public struct SidebarNavigationView: View {
       if source == .available {
         try? await Task.sleep(for: .seconds(0.5))
         if !results.searchText.isEmpty {
+          selection = nil
           results.items = []
           await viewModel.available(term: results.searchText)
         }
