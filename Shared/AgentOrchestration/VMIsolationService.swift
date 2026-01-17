@@ -40,7 +40,7 @@
 #if os(macOS)
 
 import Foundation
-import Virtualization
+@preconcurrency import Virtualization
 
 // MARK: - Execution Environment
 
@@ -923,7 +923,7 @@ final class VMIsolationService {
   }
   
   /// Download macOS restore image from Apple
-  nonisolated func downloadMacOSRestoreImage() async throws {
+  func downloadMacOSRestoreImage() async throws {
     await MainActor.run {
       statusMessage = "Fetching latest macOS restore image info..."
     }
