@@ -8,6 +8,7 @@
 //  Works with any project - multi-repo workspaces, single repos, or folders.
 //
 
+import Foundation
 import SwiftUI
 
 /// Main view for Workspace & Worktree management
@@ -144,7 +145,11 @@ struct WorkspacesDashboardView: View {
   private var worktreeList: some View {
     VStack(spacing: 0) {
       if let workspace = service.selectedWorkspace {
-        WorkspaceHeader(workspace: workspace, worktreeCount: nonMainWorktrees.count)
+        WorkspaceHeader(
+          workspace: workspace,
+          worktreeCount: nonMainWorktrees.count,
+          onRefresh: refreshAll
+        )
       }
       
       Divider()
@@ -241,6 +246,13 @@ struct WorkspacesDashboardView: View {
       worktreeStatuses[worktree.id] = status
     }
   }
+
+  private func refreshAll() {
+    Task {
+      await service.loadReposAndWorktrees()
+      await loadStatuses()
+    }
+  }
 }
 
 // MARK: - Workspace Header
@@ -248,6 +260,7 @@ struct WorkspacesDashboardView: View {
 struct WorkspaceHeader: View {
   let workspace: Workspace
   let worktreeCount: Int
+  let onRefresh: () -> Void
   
   var body: some View {
     HStack {
@@ -260,6 +273,13 @@ struct WorkspaceHeader: View {
       }
       
       Spacer()
+
+      Button {
+        onRefresh()
+      } label: {
+        Label("Refresh", systemImage: "arrow.clockwise")
+      }
+      .buttonStyle(.bordered)
       
       VStack(alignment: .trailing, spacing: 4) {
         Label("\(worktreeCount)", systemImage: "arrow.triangle.branch")
@@ -409,6 +429,12 @@ struct WorktreeCard: View {
           }
         }
         
+        Text(worktree.path)
+          .font(.caption2)
+          .foregroundStyle(.tertiary)
+          .lineLimit(1)
+          .truncationMode(.middle)
+
         HStack(spacing: 8) {
           if let branch = worktree.branch {
             Label(branch, systemImage: "arrow.branch")
@@ -426,6 +452,12 @@ struct WorktreeCard: View {
               .foregroundStyle(.secondary)
               .lineLimit(1)
           }
+
+          if let status = status, let date = status.lastCommitDate {
+            Text(RelativeDateTimeFormatter().localizedString(for: date, relativeTo: Date()))
+              .font(.caption2)
+              .foregroundStyle(.tertiary)
+          }
         }
       }
       
@@ -435,9 +467,18 @@ struct WorktreeCard: View {
         Button {
           onOpen()
         } label: {
-          Label("Open in VS Code", systemImage: "chevron.left.forwardslash.chevron.right")
+          Image(systemName: "chevron.left.forwardslash.chevron.right")
         }
         .buttonStyle(.bordered)
+        .help("Open in VS Code")
+
+        Button {
+          NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: worktree.path)
+        } label: {
+          Image(systemName: "folder")
+        }
+        .buttonStyle(.bordered)
+        .help("Show in Finder")
         
         Button(role: .destructive) {
           onRemove()
@@ -454,6 +495,34 @@ struct WorktreeCard: View {
     .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
     .onHover { hovering in
       isHovering = hovering
+    }
+    .contextMenu {
+      Button {
+        onOpen()
+      } label: {
+        Label("Open in VS Code", systemImage: "chevron.left.forwardslash.chevron.right")
+      }
+
+      Button {
+        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: worktree.path)
+      } label: {
+        Label("Show in Finder", systemImage: "folder")
+      }
+
+      Button {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(worktree.path, forType: .string)
+      } label: {
+        Label("Copy Path", systemImage: "doc.on.doc")
+      }
+
+      Divider()
+
+      Button(role: .destructive) {
+        onRemove()
+      } label: {
+        Label("Delete Worktree", systemImage: "trash")
+      }
     }
   }
   
