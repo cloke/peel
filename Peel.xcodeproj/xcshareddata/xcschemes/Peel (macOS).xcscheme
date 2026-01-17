@@ -17,7 +17,7 @@
                BlueprintIdentifier = "04A7BD71258E77D8000E55A8"
                BuildableName = "Peel.app"
                BlueprintName = "KitchenSync (macOS)"
-               ReferencedContainer = "container:KitchenSync.xcodeproj">
+               ReferencedContainer = "container:Peel.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
          <BuildActionEntry
@@ -31,7 +31,7 @@
                BlueprintIdentifier = "04A7BD79258E77D8000E55A8"
                BuildableName = "Tests iOS.xctest"
                BlueprintName = "Tests iOS"
-               ReferencedContainer = "container:KitchenSync.xcodeproj">
+               ReferencedContainer = "container:Peel.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -61,7 +61,7 @@
             BlueprintIdentifier = "04A7BD71258E77D8000E55A8"
             BuildableName = "Peel.app"
             BlueprintName = "KitchenSync (macOS)"
-            ReferencedContainer = "container:KitchenSync.xcodeproj">
+            ReferencedContainer = "container:Peel.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -77,7 +77,7 @@
             BlueprintIdentifier = "04A7BD71258E77D8000E55A8"
             BuildableName = "Peel.app"
             BlueprintName = "KitchenSync (macOS)"
-            ReferencedContainer = "container:KitchenSync.xcodeproj">
+            ReferencedContainer = "container:Peel.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
    </ProfileAction>
