@@ -16,7 +16,7 @@
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "04A7BD69258E77D8000E55A8"
                BuildableName = "Peel.app"
-               BlueprintName = "KitchenSync (iOS)"
+               BlueprintName = "Peel (iOS)"
                ReferencedContainer = "container:Peel.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -42,16 +42,16 @@
       allowLocationSimulation = "YES">
       <BuildableProductRunnable
          runnableDebuggingMode = "0">
-         <BuildableReference
+                 BlueprintName = "Peel (iOS)"
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "04A7BD69258E77D8000E55A8"
             BuildableName = "Peel.app"
-            BlueprintName = "KitchenSync (iOS)"
+            BlueprintName = "Peel (iOS)"
             ReferencedContainer = "container:Peel.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
-   <ProfileAction
+               BlueprintName = "Peel (iOS)"
       buildConfiguration = "Release"
       shouldUseLaunchSchemeArgsEnv = "YES"
       savedToolIdentifier = ""
@@ -62,12 +62,12 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "04A7BD69258E77D8000E55A8"
             BuildableName = "Peel.app"
-            BlueprintName = "KitchenSync (iOS)"
+            BlueprintName = "Peel (iOS)"
             ReferencedContainer = "container:Peel.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
    </ProfileAction>
-   <AnalyzeAction
+               BlueprintName = "Peel (iOS)"
       buildConfiguration = "Debug">
    </AnalyzeAction>
    <ArchiveAction

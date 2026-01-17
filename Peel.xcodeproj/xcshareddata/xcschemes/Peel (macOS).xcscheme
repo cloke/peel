@@ -16,12 +16,12 @@
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "04A7BD71258E77D8000E55A8"
                BuildableName = "Peel.app"
-               BlueprintName = "KitchenSync (macOS)"
+               BlueprintName = "Peel (macOS)"
                ReferencedContainer = "container:Peel.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
          <BuildActionEntry
-            buildForTesting = "YES"
+                 BlueprintName = "Peel (macOS)"
             buildForRunning = "NO"
             buildForProfiling = "NO"
             buildForArchiving = "NO"
@@ -35,7 +35,7 @@
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
-   </BuildAction>
+                  BlueprintName = "Peel (macOS)"
    <TestAction
       buildConfiguration = "Debug"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
@@ -60,12 +60,12 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "04A7BD71258E77D8000E55A8"
             BuildableName = "Peel.app"
-            BlueprintName = "KitchenSync (macOS)"
+            BlueprintName = "Peel (macOS)"
             ReferencedContainer = "container:Peel.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
-   <ProfileAction
+               BlueprintName = "Peel (macOS)"
       buildConfiguration = "Release"
       shouldUseLaunchSchemeArgsEnv = "YES"
       savedToolIdentifier = ""
@@ -76,7 +76,7 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "04A7BD71258E77D8000E55A8"
             BuildableName = "Peel.app"
-            BlueprintName = "KitchenSync (macOS)"
+            BlueprintName = "Peel (macOS)"
             ReferencedContainer = "container:Peel.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
