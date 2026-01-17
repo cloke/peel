@@ -150,11 +150,11 @@ struct VMIsolationDashboardView: View {
           }
           
           if service.isLinuxReady {
-            Text("Fedora kernel + initramfs ready")
+            Text("Debian netboot kernel + initramfs ready")
               .font(.caption)
               .foregroundStyle(.secondary)
           } else {
-            Text("Downloads Fedora kernel + initramfs")
+            Text("Downloads Debian netboot kernel + initramfs")
               .font(.caption)
               .foregroundStyle(.secondary)
             
@@ -312,7 +312,7 @@ struct VMIsolationDashboardView: View {
         // Start/Stop button
         if service.isLinuxVMRunning {
           Button {
-            Task {
+            Task { @MainActor in
               do {
                 try await service.stopLinuxVM()
               } catch {
@@ -327,7 +327,7 @@ struct VMIsolationDashboardView: View {
           .tint(.red)
         } else {
           Button {
-            Task {
+            Task { @MainActor in
               isStartingVM = true
               do {
                 try await service.startLinuxVM()
@@ -357,6 +357,10 @@ struct VMIsolationDashboardView: View {
       VStack(alignment: .leading, spacing: 8) {
         Text("Start a test Linux VM to verify the virtualization setup.")
           .font(.caption)
+          .foregroundStyle(.secondary)
+
+        Text("VM start must run on the main actor. The test kernel uses Debian netboot (raw Image) for VZLinuxBootLoader compatibility.")
+          .font(.caption2)
           .foregroundStyle(.secondary)
         
         HStack(spacing: 12) {
