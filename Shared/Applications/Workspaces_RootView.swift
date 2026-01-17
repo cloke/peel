@@ -62,7 +62,6 @@ struct WorkspacesDashboardView: View {
     }
     .toolbar {
       ToolSelectionToolbar()
-      ToggleSidebarToolbarItem(placement: .navigation)
     }
   }
   

@@ -19,6 +19,7 @@ struct Git_RootView: View {
   @State private var repoNotFoundError = false
   @State private var isCloning = false
   @State private var hasLoadedFromSwiftData = false
+  @State private var activeSecurityScopedURL: URL?
 
   var body: some View {
     Group {
@@ -39,21 +40,12 @@ struct Git_RootView: View {
     }
     .toolbar {
       ToolSelectionToolbar()
-      RepositoriesMenuToolbarItem(repositories: viewModel.repositories, selectedRepository: $viewModel.selectedRepository)
-      ToggleSidebarToolbarItem(placement: .navigation)
-      
-      ToolbarItem(placement: .navigation) {
-        Button {
-          addRepository()
-        } label: { Image(systemName: "folder.badge.plus") }
-        .help(Text("Open Repository"))
-      }
-      ToolbarItem(placement: .navigation) {
-        Button {
-          isCloning = true
-        } label: { Image(systemName: "folder.badge.gear") }
-        .help("Clone Repository")
-      }
+      RepositoriesMenuToolbarItem(
+        repositories: viewModel.repositories,
+        selectedRepository: $viewModel.selectedRepository,
+        onAddRepository: { addRepository() },
+        onCloneRepository: { isCloning = true }
+      )
     }
     .alert("Repository Not Found", isPresented: $repoNotFoundError) {
       Button("OK", role: .cancel) { }
@@ -92,18 +84,31 @@ struct Git_RootView: View {
     
     let name = url.lastPathComponent
     let path = url.path
+    let bookmarkData = try? url.bookmarkData(
+      options: .withSecurityScope,
+      includingResourceValuesForKeys: nil,
+      relativeTo: nil
+    )
     
     // Add to SwiftData
     let syncedRepo = SyncedRepository(name: name, remoteURL: nil)
     modelContext.insert(syncedRepo)
     
-    let localPath = LocalRepositoryPath(repositoryId: syncedRepo.id, localPath: path)
+    let localPath = LocalRepositoryPath(
+      repositoryId: syncedRepo.id,
+      localPath: path,
+      bookmarkData: bookmarkData
+    )
     modelContext.insert(localPath)
     
     try? modelContext.save()
     
     // Add to ViewModel
     let repo = Model.Repository(name: name, path: path)
+    if let bookmarkData,
+       let url = resolveBookmarkURL(bookmarkData: bookmarkData) {
+      updateSecurityScope(with: url)
+    }
     viewModel.repositories.append(repo)
     viewModel.selectedRepository = repo
   }
@@ -118,7 +123,8 @@ struct Git_RootView: View {
       )
       
       if let localPath = try? modelContext.fetch(descriptor).first {
-        let repo = Model.Repository(name: syncedRepo.name, path: localPath.localPath)
+        let repoPath = resolvedPath(for: localPath) ?? localPath.localPath
+        let repo = Model.Repository(name: syncedRepo.name, path: repoPath)
         loadedRepos.append(repo)
       }
     }
@@ -135,7 +141,9 @@ struct Git_RootView: View {
         predicate: #Predicate { $0.repositoryId == repoId }
       )
       if let localPath = try? modelContext.fetch(pathDescriptor).first {
-        viewModel.selectedRepository = Model.Repository(name: syncedRepo.name, path: localPath.localPath)
+        let repoPath = resolvedPath(for: localPath) ?? localPath.localPath
+        let repo = Model.Repository(name: syncedRepo.name, path: repoPath)
+        viewModel.selectedRepository = repo
       }
     } else if let firstRepo = loadedRepos.first {
       viewModel.selectedRepository = firstRepo
@@ -151,6 +159,7 @@ struct Git_RootView: View {
     )
     
     guard let localPath = try? modelContext.fetch(pathDescriptor).first else { return }
+    _ = resolvedPath(for: localPath)
     
     let settingsDescriptor = FetchDescriptor<DeviceSettings>()
     let settings: DeviceSettings
@@ -164,6 +173,39 @@ struct Git_RootView: View {
     settings.selectedRepositoryId = localPath.repositoryId
     settings.touch()
     try? modelContext.save()
+  }
+
+  private func resolvedPath(for localPath: LocalRepositoryPath) -> String? {
+    guard let bookmarkData = localPath.bookmarkData,
+          let url = resolveBookmarkURL(bookmarkData: bookmarkData) else {
+      return nil
+    }
+    updateSecurityScope(with: url)
+    if localPath.localPath != url.path {
+      localPath.localPath = url.path
+      try? modelContext.save()
+    }
+    return url.path
+  }
+
+  private func resolveBookmarkURL(bookmarkData: Data) -> URL? {
+    var isStale = false
+    return try? URL(
+      resolvingBookmarkData: bookmarkData,
+      options: [.withSecurityScope],
+      bookmarkDataIsStale: &isStale
+    )
+  }
+
+  private func updateSecurityScope(with url: URL) {
+    if let activeSecurityScopedURL {
+      activeSecurityScopedURL.stopAccessingSecurityScopedResource()
+    }
+    if url.startAccessingSecurityScopedResource() {
+      activeSecurityScopedURL = url
+    } else {
+      activeSecurityScopedURL = nil
+    }
   }
 }
 

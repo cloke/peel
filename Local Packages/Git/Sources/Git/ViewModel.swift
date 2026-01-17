@@ -111,6 +111,7 @@ extension Model {
 
 enum GitError: Error {
   case Unknown
+  case gitNotInstalled
 }
 
 internal extension NSTextCheckingResult {

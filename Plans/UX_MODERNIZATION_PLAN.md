@@ -70,6 +70,7 @@ All modernization work is **complete**. The app is now using:
 - Git → Local Changes commit editor: placeholder alignment still slightly offset vs cursor.
 	- Consider custom NSTextView wrapper for precise placeholder alignment in SwiftUI.
 - OAuth: Evaluate replacing OAuthSwift with native ASWebAuthenticationSession flow.
+- Git tab: worktree detail sheets flash on close.
 
 ## Option 1: PR → Worktree Integration (Recommended)
 **Goal:** One-click "Review Locally" button on GitHub PRs

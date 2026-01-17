@@ -924,6 +924,7 @@ final class VMIsolationService {
   
   /// Download macOS restore image from Apple
   func downloadMacOSRestoreImage() async throws {
+#if arch(arm64)
     await MainActor.run {
       statusMessage = "Fetching latest macOS restore image info..."
     }
@@ -933,10 +934,10 @@ final class VMIsolationService {
     guard #available(macOS 12.0, *) else {
       throw VMError.macOSRestoreImageNotFound
     }
-    let restoreImage = try await fetchLatestRestoreImage()
+    let restoreImage = try await fetchLatestRestoreImageInfo()
     let url = restoreImage.url
-    let majorVersion = restoreImage.operatingSystemVersion.majorVersion
-    let minorVersion = restoreImage.operatingSystemVersion.minorVersion
+    let majorVersion = restoreImage.majorVersion
+    let minorVersion = restoreImage.minorVersion
     
     await MainActor.run {
       statusMessage = "Downloading macOS \(majorVersion).\(minorVersion)..."
@@ -957,21 +958,37 @@ final class VMIsolationService {
       self.isMacOSReady = true
       self.statusMessage = "macOS restore image ready"
     }
+#else
+    throw VMError.virtualizationNotAvailable
+#endif
+  }
+
+#if arch(arm64)
+  private struct RestoreImageInfo: Sendable {
+    let url: URL
+    let majorVersion: Int
+    let minorVersion: Int
   }
 
   @available(macOS 12.0, *)
-  private func fetchLatestRestoreImage() async throws -> VZMacOSRestoreImage {
+  private func fetchLatestRestoreImageInfo() async throws -> RestoreImageInfo {
     try await withCheckedThrowingContinuation { continuation in
       VZMacOSRestoreImage.fetchLatestSupported { result in
         switch result {
         case .success(let image):
-          continuation.resume(returning: image)
+          let info = RestoreImageInfo(
+            url: image.url,
+            majorVersion: image.operatingSystemVersion.majorVersion,
+            minorVersion: image.operatingSystemVersion.minorVersion
+          )
+          continuation.resume(returning: info)
         case .failure(let error):
           continuation.resume(throwing: error)
         }
       }
     }
   }
+#endif
   
   /// Execute a task in the appropriate isolated environment
   func execute(_ task: VMTask) async throws -> VMTaskResult {

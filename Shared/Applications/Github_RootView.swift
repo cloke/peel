@@ -184,7 +184,6 @@ struct Github_RootView: View {
     .frame(idealHeight: 400)
     .toolbar {
 #if os(macOS)
-      ToggleSidebarToolbarItem(placement: .navigation)
       ToolSelectionToolbar()
 #endif
       ToolbarItem(placement: .navigation) {

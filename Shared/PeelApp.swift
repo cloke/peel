@@ -151,13 +151,15 @@ final class LocalRepositoryPath {
   var id: UUID = UUID()
   var repositoryId: UUID = UUID()
   var localPath: String = ""
+  var bookmarkData: Data?
   var lastAccessedAt: Date = Date()
   var isValid: Bool = true
   
-  init(repositoryId: UUID, localPath: String) {
+  init(repositoryId: UUID, localPath: String, bookmarkData: Data? = nil) {
     self.id = UUID()
     self.repositoryId = repositoryId
     self.localPath = localPath
+    self.bookmarkData = bookmarkData
     self.lastAccessedAt = Date()
     self.isValid = true
   }

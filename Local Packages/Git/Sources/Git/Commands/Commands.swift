@@ -14,7 +14,21 @@ import TaskRunner
 /// All git commands are executed through this interface.
 public struct Commands {
   private static let executor = ProcessExecutor()
-  private static let gitExecutable = "git"
+  private static let gitExecutable = resolveGitExecutable()
+
+  private static func resolveGitExecutable() -> String? {
+    let candidates = [
+      "/Library/Developer/CommandLineTools/usr/bin/git",
+      "/Applications/Xcode.app/Contents/Developer/usr/bin/git",
+      "/Applications/Xcode-beta.app/Contents/Developer/usr/bin/git",
+      "/opt/homebrew/bin/git",
+      "/usr/local/bin/git"
+    ]
+    for path in candidates where FileManager.default.isExecutableFile(atPath: path) {
+      return path
+    }
+    return nil
+  }
   
   /// Execute a git command and return the result.
   /// - Parameters:
@@ -27,6 +41,9 @@ public struct Commands {
     in repository: Model.Repository? = nil,
     throwOnError: Bool = true
   ) async throws -> ProcessExecutor.Result {
+    guard let gitExecutable else {
+      throw GitError.gitNotInstalled
+    }
     var args = arguments
     
     // Prepend repository path if provided

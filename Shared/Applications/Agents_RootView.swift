@@ -46,15 +46,6 @@ struct Agents_RootView: View {
     }
     .toolbar {
       #if os(macOS)
-      ToolbarItem(placement: .navigation) {
-        Button {
-          NSApp.keyWindow?.firstResponder?.tryToPerform(
-            #selector(NSSplitViewController.toggleSidebar(_:)), with: nil
-          )
-        } label: {
-          Image(systemName: "sidebar.left")
-        }
-      }
       ToolbarItem(placement: .automatic) {
         Button {
           showingSessionSummary = true
