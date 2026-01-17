@@ -1,8 +1,14 @@
 import SwiftUI
 
 #if os(macOS)
+enum GitDestination: Hashable {
+  case localChanges
+  case history(String)
+}
+
 public struct GitRootView: View {
   @Bindable public var repository: Model.Repository
+  @State private var selection: GitDestination?
   
   public init(repository: Model.Repository) {
     self.repository = repository
@@ -13,25 +19,40 @@ public struct GitRootView: View {
   
   public var body: some View {
     NavigationSplitView {
-      List {
+      List(selection: $selection) {
         Section("Repository") {
           LocalChangesListView()
+            .tag(GitDestination.localChanges)
           StashListView(repository: repository)
         }
-        BranchListView(localBranches: $repository.localBranches, label: "Local Branches", location: .local)
-        BranchListView(localBranches: $repository.remoteBranches, label: "Remote Branches", location: .remote)
+        BranchListView(
+          selection: $selection,
+          localBranches: $repository.localBranches,
+          label: "Local Branches",
+          location: .local
+        )
+        BranchListView(
+          selection: $selection,
+          localBranches: $repository.remoteBranches,
+          label: "Remote Branches",
+          location: .remote
+        )
         WorktreeListView()
       }
       .listStyle(.sidebar)
     } detail: {
-      ContentUnavailableView {
-        Label("Select an Item", systemImage: "arrow.left")
-      } description: {
-        Text("Choose a section from the sidebar to view details")
+      switch selection {
+      case .localChanges:
+        FileListView(repository: repository)
+      case .history(let branchName):
+        HistoryListView(branch: branchName)
+      case .none:
+        ContentUnavailableView {
+          Label("Select an Item", systemImage: "arrow.left")
+        } description: {
+          Text("Choose a section from the sidebar to view details")
+        }
       }
-    }
-    .navigationDestination(for: String.self) { branchName in
-      HistoryListView(branch: branchName)
     }
     .navigationSplitViewStyle(.balanced)
     .navigationTitle(repository.name)

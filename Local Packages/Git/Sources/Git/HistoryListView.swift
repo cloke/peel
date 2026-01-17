@@ -24,12 +24,14 @@ struct HistoryListView: View {
           .frame(height: 90)
           .padding(.vertical, 4)
           .padding(.horizontal, 2)
+          .contentShape(Rectangle())
+          .tag(commit.id)
       }
       .listStyle(.inset)
-      .frame(minWidth: 320, idealWidth: 360)
+      .frame(minWidth: 0, idealWidth: 360)
       
       DiffView(diff: diff)
-        .frame(minWidth: 480)
+        .frame(minWidth: 0)
         .padding(.vertical, 8)
     }
     .navigationTitle("History: \(branch)")

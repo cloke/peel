@@ -47,6 +47,7 @@ struct StashListView: View {
           .help("Refresh")
         }
       }
+      .contentShape(Rectangle())
     }
     .onChange(of: isExpanded) { _, value in
       if isExpanded == true {

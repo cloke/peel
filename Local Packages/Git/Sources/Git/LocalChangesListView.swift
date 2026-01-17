@@ -12,21 +12,20 @@ public struct LocalChangesListView: View {
   @Environment(Model.Repository.self) var repository
 
   public var body: some View {
-    NavigationLink(destination: FileListView(repository: repository)) {
-      HStack(spacing: 8) {
-        Label("Local Changes", systemImage: "doc.text")
-        Spacer()
-        if repository.status.isEmpty {
-          Text("Clean")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        } else {
-          Text("\(repository.status.count)")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
+    HStack(spacing: 8) {
+      Label("Local Changes", systemImage: "doc.text")
+      Spacer()
+      if repository.status.isEmpty {
+        Text("Clean")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      } else {
+        Text("\(repository.status.count)")
+          .font(.caption)
+          .foregroundStyle(.secondary)
       }
     }
+    .contentShape(Rectangle())
     .contextMenu(ContextMenu(menuItems: {
       Button {
         Task { try? await Commands.status(on: repository) }

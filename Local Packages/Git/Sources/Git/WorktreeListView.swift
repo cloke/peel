@@ -83,7 +83,14 @@ public struct WorktreeListView: View {
       .buttonStyle(.plain)
       .tint(.accentColor)
     } header: {
-      Label("Worktrees", systemImage: "square.stack.3d.down.right")
+      Button {
+        withAnimation { isExpanded.toggle() }
+      } label: {
+        Label("Worktrees", systemImage: "square.stack.3d.down.right")
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      .buttonStyle(.plain)
+      .contentShape(Rectangle())
     }
     .task {
       await loadWorktrees()

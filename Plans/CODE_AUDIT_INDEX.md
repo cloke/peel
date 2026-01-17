@@ -146,11 +146,15 @@ grep -r "PreviewProvider" --include="*.swift" .
 |------|--------|---------------|--------|
 | Package.swift | ✅ Modern | 2026-01-16 | Swift 6.0 |
 | README.md | ✅ Adequate | 2026-01-16 | Brief description |
-| Sources/Git/Git.swift | ✅ Modern | 2026-01-16 | NavigationStack |
+| Sources/Git/Git.swift | ✅ Modern | 2026-01-17 | NavigationSplitView + selection-driven detail |
 | Sources/Git/ViewModel.swift | ✅ Modern | 2026-01-16 | Singleton documented (acceptable for app state) |
 | Sources/Git/Commands/Diff.swift | ✅ Modern | 2026-01-16 | `try!` regex documented (compile-time constant) |
-| Sources/Git/Views/BranchListView.swift | ✅ Modern | 2026-01-16 | Cleaned commented code, updated #Preview |
-| Sources/Git/Views/BranchSwitchView.swift | ✅ Modern | 2026-01-16 | Uses documented singleton |
+| Sources/Git/BranchListView.swift | ✅ Modern | 2026-01-17 | Selection-driven rows, active indicator, push UX |
+| Sources/Git/HistoryListView.swift | ✅ Modern | 2026-01-17 | Split view diff, auto-select latest commit |
+| Sources/Git/LocalChangesListView.swift | ✅ Modern | 2026-01-17 | Clean row styling, selection tag |
+| Sources/Git/StashListView.swift | ✅ Modern | 2026-01-17 | Compact disclosure layout |
+| Sources/Git/WorktreeListView.swift | ✅ Modern | 2026-01-17 | Icon header, clickable disclosure |
+| Sources/Git/FileList/FileListView.swift | ✅ Modern | 2026-01-17 | Split view diff, no min-width clamp |
 | Sources/Git/Views/*.swift (others) | ✅ Modern | 2026-01-16 | Clean async/await |
 | Sources/Git/Models/Repository.swift | ✅ Modern | 2026-01-16 | @Observable |
 

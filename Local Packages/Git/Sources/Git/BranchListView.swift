@@ -26,18 +26,10 @@ struct BranchListItemView: View {
   
   var body: some View {
     HStack {
-      Toggle(isOn: $branch.isSelected, label: {})
-        .toggleStyle(.checkbox)
+      Image(systemName: branch.isActive ? "checkmark.circle.fill" : "circle")
+        .foregroundStyle(branch.isActive ? Color.accentColor : Color.secondary)
       Text(branch.name)
         .fontWeight(branch.isActive ? .bold : .regular)
-        .gesture(
-          TapGesture(count: 1)
-            .onEnded({ selected() })
-        )
-        .highPriorityGesture(
-          TapGesture(count: 2)
-            .onEnded({ activated() })
-        )
       Spacer()
       Text(upDown)
         .task {
@@ -53,14 +45,19 @@ struct BranchListItemView: View {
       } label: {
         Image(systemName: "square.and.arrow.up")
       }
-      .buttonStyle(.plain)
+      .buttonStyle(.borderless)
       .help("Push Branch")
     }
+    .simultaneousGesture(
+      TapGesture(count: 2)
+        .onEnded({ activated() })
+    )
   }
 }
 
 public struct BranchListView: View {
   @Environment(Model.Repository.self) var repository
+  @Binding var selection: GitDestination?
   
   @State private var isShowing = false
   // TODO: Should we persist this as state?
@@ -80,30 +77,50 @@ public struct BranchListView: View {
           .font(.caption)
       }
       ForEach(localBranches.indices, id: \.self) { index in
-        NavigationLink(value: localBranches[index].name) {
-          BranchListItemView(
-            branch: $localBranches[index],
-            type: location,
-            selected: {},
-            activated: {
-              Task { @MainActor in
-                let branch = localBranches[index].name
-                _ = try await Commands.checkout(branch: branch , from: repository)
-                repository.activate(branch: localBranches[index])
-              }
-            },
-            push: {
-              Task {
-                let branch = localBranches[index]
-                try? await repository.push(branch: branch)
-              }
+        BranchListItemView(
+          branch: $localBranches[index],
+          type: location,
+          selected: {},
+          activated: {
+            Task { @MainActor in
+              let branch = localBranches[index].name
+              _ = try await Commands.checkout(branch: branch , from: repository)
+              repository.activate(branch: localBranches[index])
             }
-          )
-        }
+          },
+          push: {
+            Task {
+              let branch = localBranches[index]
+              try? await repository.push(branch: branch)
+            }
+          }
+        )
+        .tag(GitDestination.history(localBranches[index].name))
         .font(.footnote)
+        .contentShape(Rectangle())
+        .onTapGesture {
+          selection = .history(localBranches[index].name)
+        }
+        .contextMenu {
+          Button {
+            Task {
+              try? await repository.delete(branches: [localBranches[index]])
+            }
+          } label: {
+            Text("Delete Branch")
+            Image(systemName: "trash")
+          }
+        }
       }
     } header: {
-      Label(label, systemImage: sectionIcon)
+      Button {
+        withAnimation { isExpanded.toggle() }
+      } label: {
+        Label(label, systemImage: sectionIcon)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      .buttonStyle(.plain)
+      .contentShape(Rectangle())
     }
     .sheet(isPresented: $isShowing) {
       BranchRepositoryView() { [self] in
@@ -121,14 +138,6 @@ public struct BranchListView: View {
       } label: {
         Text("Create Branch")
         Image(systemName: "arrow.triangle.branch")
-      }
-      Button {
-        Task {
-          try? await repository.delete(branches: localBranches.filter { $0.isSelected == true })
-        }
-      } label: {
-        Text("Delete Branch")
-        Image(systemName: "trash")
       }
     }
   }
@@ -167,6 +176,10 @@ struct BranchRepositoryView: View {
 }
 
 #Preview {
-  BranchListView(localBranches: .constant([]), label: "Test")
+  BranchListView(
+    selection: .constant(nil),
+    localBranches: .constant([]),
+    label: "Test"
+  )
 }
 #endif
