@@ -11,6 +11,7 @@ public struct OrganizationRepositoryView: View {
   @State var isLoading = true
   @State var isExpanded = false
   @State private var repositories = [Github.Repository]()
+  @AppStorage("github-show-archived") private var showArchivedRepos = false
   
   let organization: Github.User
 
@@ -42,7 +43,8 @@ public struct OrganizationRepositoryView: View {
     .onChange(of: isExpanded) { _, newValue in
       if newValue {
         Task {
-          repositories = try await Github.loadRepositories(organization: organization.login ?? "")
+          let repos = try await Github.loadRepositories(organization: organization.login ?? "")
+          repositories = showArchivedRepos ? repos : repos.filter { $0.archived != true }
           isLoading = false
         }
       }

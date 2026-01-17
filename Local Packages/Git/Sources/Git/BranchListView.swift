@@ -18,6 +18,7 @@ struct BranchListItemView: View {
   @State private var upDown = ""
   
   @Binding var branch: Model.Branch
+  let refreshToken: UUID
 
   public var type: Model.BranchType
   public var selected: () -> ()
@@ -32,13 +33,17 @@ struct BranchListItemView: View {
         .fontWeight(branch.isActive ? .bold : .regular)
       Spacer()
       Text(upDown)
-        .task {
+        .task(id: refreshToken) {
           do {
             if type == .local {
               let status = try await Commands.revList(repository: repository, branchA: "origin/\(branch.name)", branchB: branch.name)
               upDown = "(⇣\(status.0) / \(status.1) ⇡)"
+            } else {
+              upDown = ""
             }
-          } catch {}
+          } catch {
+            upDown = ""
+          }
         }
       Button {
         push()
@@ -61,6 +66,7 @@ public struct BranchListView: View {
   
   @State private var isShowing = false
   @State private var pushError: String?
+  @State private var refreshToken = UUID()
   // TODO: Should we persist this as state?
   @State private var isExpanded = false
   @State private var multiSelection = Set<UUID>()
@@ -80,6 +86,7 @@ public struct BranchListView: View {
       ForEach(localBranches.indices, id: \.self) { index in
         BranchListItemView(
           branch: $localBranches[index],
+          refreshToken: refreshToken,
           type: location,
           selected: {},
           activated: {
@@ -87,6 +94,7 @@ public struct BranchListView: View {
               let branch = localBranches[index].name
               _ = try await Commands.checkout(branch: branch , from: repository)
               repository.activate(branch: localBranches[index])
+              refreshToken = UUID()
             }
           },
           push: {
@@ -94,6 +102,7 @@ public struct BranchListView: View {
               let branch = localBranches[index]
               do {
                 try await repository.push(branch: branch)
+                refreshToken = UUID()
               } catch {
                 pushError = "Failed to push \(branch.name): \(error.localizedDescription)"
               }

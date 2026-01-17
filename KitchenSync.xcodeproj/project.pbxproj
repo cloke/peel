@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		0409092426C5C7C3008D5A52 /* Alamofire in Frameworks */ = {isa = PBXBuildFile; productRef = 0409092326C5C7C3008D5A52 /* Alamofire */; };
 		040AAB7E26CB385800DE1CBF /* Git in Frameworks */ = {isa = PBXBuildFile; productRef = 040AAB7D26CB385800DE1CBF /* Git */; };
 		04510A582A2D200C001DEF5B /* Github in Frameworks */ = {isa = PBXBuildFile; productRef = 04510A572A2D200C001DEF5B /* Github */; };
 		046C6AB02F1BE07D006CDAC7 /* TaskRunner in Frameworks */ = {isa = PBXBuildFile; productRef = 046C6AAF2F1BE07D006CDAC7 /* TaskRunner */; };
@@ -15,7 +14,6 @@
 		046D40E726C56C5B003715AF /* Github in Frameworks */ = {isa = PBXBuildFile; productRef = 046D40E626C56C5B003715AF /* Github */; };
 		048086662A2D21E500536A3E /* Brew in Frameworks */ = {isa = PBXBuildFile; productRef = 048086652A2D21E500536A3E /* Brew */; };
 		048F40F82853ED470007A9A4 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 048F40F72853ED060007A9A4 /* ContentView.swift */; };
-		0495D214269F34F8008B5148 /* Alamofire in Frameworks */ = {isa = PBXBuildFile; productRef = 0495D213269F34F8008B5148 /* Alamofire */; };
 		04A7BD7F258E77D8000E55A8 /* Tests_iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD7E258E77D8000E55A8 /* Tests_iOS.swift */; };
 		04A7BD8A258E77D8000E55A8 /* Tests_macOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */; };
 		04A7BD8F258E77D8000E55A8 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD64258E77D7000E55A8 /* ContentView.swift */; };
@@ -87,7 +85,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				0409092426C5C7C3008D5A52 /* Alamofire in Frameworks */,
 				046D40E426C56BBB003715AF /* OAuthSwift in Frameworks */,
 				046D40E726C56C5B003715AF /* Github in Frameworks */,
 				040AAB7E26CB385800DE1CBF /* Git in Frameworks */,
@@ -102,7 +99,6 @@
 				04510A582A2D200C001DEF5B /* Github in Frameworks */,
 				046C6AB02F1BE07D006CDAC7 /* TaskRunner in Frameworks */,
 				04D09EFD26A85E8100072702 /* OAuthSwift in Frameworks */,
-				0495D214269F34F8008B5148 /* Alamofire in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -224,7 +220,6 @@
 			packageProductDependencies = (
 				046D40E326C56BBB003715AF /* OAuthSwift */,
 				046D40E626C56C5B003715AF /* Github */,
-				0409092326C5C7C3008D5A52 /* Alamofire */,
 				040AAB7D26CB385800DE1CBF /* Git */,
 			);
 			productName = "KitchenSink (iOS)";
@@ -248,7 +243,6 @@
 			);
 			name = "KitchenSync (macOS)";
 			packageProductDependencies = (
-				0495D213269F34F8008B5148 /* Alamofire */,
 				04D09EFC26A85E8100072702 /* OAuthSwift */,
 				04510A572A2D200C001DEF5B /* Github */,
 				048086652A2D21E500536A3E /* Brew */,
@@ -330,7 +324,6 @@
 			mainGroup = 04A7BD5D258E77D7000E55A8;
 			packageReferences = (
 				04DD2F49269E6AED000994E1 /* XCRemoteSwiftPackageReference "OAuthSwift" */,
-				0495D212269F34F8008B5148 /* XCRemoteSwiftPackageReference "Alamofire" */,
 				046C6AAE2F1BE07D006CDAC7 /* XCRemoteSwiftPackageReference "TaskRunner" */,
 			);
 			productRefGroup = 04A7BD6B258E77D8000E55A8 /* Products */;
@@ -809,14 +802,6 @@
 				minimumVersion = 0.0.2;
 			};
 		};
-		0495D212269F34F8008B5148 /* XCRemoteSwiftPackageReference "Alamofire" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/Alamofire/Alamofire.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 5.4.3;
-			};
-		};
 		04DD2F49269E6AED000994E1 /* XCRemoteSwiftPackageReference "OAuthSwift" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/OAuthSwift/OAuthSwift.git";
@@ -828,11 +813,6 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		0409092326C5C7C3008D5A52 /* Alamofire */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 0495D212269F34F8008B5148 /* XCRemoteSwiftPackageReference "Alamofire" */;
-			productName = Alamofire;
-		};
 		040AAB7D26CB385800DE1CBF /* Git */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = Git;
@@ -858,11 +838,6 @@
 		048086652A2D21E500536A3E /* Brew */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = Brew;
-		};
-		0495D213269F34F8008B5148 /* Alamofire */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 0495D212269F34F8008B5148 /* XCRemoteSwiftPackageReference "Alamofire" */;
-			productName = Alamofire;
 		};
 		04D09EFC26A85E8100072702 /* OAuthSwift */ = {
 			isa = XCSwiftPackageProductDependency;

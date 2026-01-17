@@ -21,6 +21,7 @@ struct Github_RootView: View {
   @State private var hasToken = false
   @State private var isLoading = false
   @State private var errorMessage: String?
+  @AppStorage("github-show-archived") private var showArchivedRepos = false
   
   var body: some View {
     NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -141,13 +142,16 @@ struct Github_RootView: View {
       .safeAreaInset(edge: .bottom) {
         // User profile pinned to bottom
         if hasToken, let me = viewModel.me {
-          NavigationLink(destination: PersonalView(organizations: organizations)) {
-            ProfileNameView(me: me)
+          VStack(spacing: 0) {
+            Divider()
+            NavigationLink(destination: PersonalView(organizations: organizations)) {
+              ProfileNameView(me: me)
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal)
+            .padding(.vertical, 10)
           }
-          .buttonStyle(.plain)
-          .padding(.horizontal)
-          .padding(.vertical, 8)
-          .background(.bar)
+          .background(Color(nsColor: .windowBackgroundColor))
         }
       }
       .task {
@@ -185,6 +189,8 @@ struct Github_RootView: View {
 #endif
       ToolbarItem(placement: .navigation) {
         Menu {
+          Toggle("Show Archived Repos", isOn: $showArchivedRepos)
+          Divider()
           Button {
             Task {
               await Github.reauthorize()

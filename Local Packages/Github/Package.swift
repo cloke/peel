@@ -14,7 +14,6 @@ let package = Package(
   ],
   dependencies: [
     // Dependencies declare other packages that this package depends on.
-    .package(url: "https://github.com/Alamofire/Alamofire.git", from: "5.4.3"),
     .package(url: "https://github.com/OAuthSwift/OAuthSwift.git", .upToNextMajor(from: "2.2.0")),
     // CrunchyCommon removed - migrated to Shared/Extensions
     .package(name: "Git", path: "../Git"),
@@ -25,7 +24,7 @@ let package = Package(
     // Targets can depend on other targets in this package, and on products in packages this package depends on.
     .target(
       name: "Github",
-      dependencies: ["Alamofire", "OAuthSwift", "MarkdownUI", "Git"]),
+      dependencies: ["OAuthSwift", "MarkdownUI", "Git"]),
     .testTarget(
       name: "GithubTests",
       dependencies: ["Github"]),

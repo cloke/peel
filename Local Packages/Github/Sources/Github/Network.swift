@@ -5,12 +5,13 @@
 //  Created by Cory Loken on 7/15/21.
 //
 
-import Alamofire
 import OAuthSwift
 import SwiftUI
 
 enum GithubError: Error {
   case couldNotDecode
+  case invalidURL(String)
+  case badResponse(Int)
 }
 
 extension Github {
@@ -18,7 +19,7 @@ extension Github {
   private static var oauthswift: OAuthSwift?
   private static let tokenKey = "github-oauth-token"
   
-  static var headers: HTTPHeaders {
+  static var headers: [String: String] {
     get async {
       let token = await getToken()
       return [
@@ -53,7 +54,7 @@ extension Github {
   public static func pullRequests(from repository: Github.Repository) async throws -> [Github.PullRequest] {
     guard let organization = repository.owner?.login else {
       print("Issue generating url for repository")
-      throw AFError.invalidURL(url: "")
+      throw GithubError.invalidURL("Missing repository owner")
     }
     return try await loadMany(url: "https://api.github.com/repos/\(organization)/\(repository.name)/pulls")
   }
@@ -87,7 +88,7 @@ extension Github {
   
   public static func members(from organization: User) async throws -> [Github.User]  {
     guard let membersUrl = organization.members_url else {
-      throw AFError.invalidURL(url: "members only exist on organization users")
+      throw GithubError.invalidURL("members_url not available on organization")
     }
     /// Git adds /{member} to the url, but we want just the array url.
     let url = String(membersUrl.dropLast(9))
@@ -96,7 +97,7 @@ extension Github {
   
   public static func commits(from repository: Repository) async throws -> [Github.Commit] {
     guard let commitsUrl = repository.commits_url else {
-      throw AFError.invalidURL(url: "commits_url not available on repository")
+      throw GithubError.invalidURL("commits_url not available on repository")
     }
     let url = String(commitsUrl.dropLast(6))
     return try await loadMany(url: url)
@@ -114,7 +115,7 @@ extension Github {
   static func actions(from repository: Repository) async throws -> Runs {
     guard let organization = repository.owner?.login else {
       print("Issue generating url for repository")
-      throw AFError.invalidURL(url: "")
+      throw GithubError.invalidURL("Missing repository owner")
     }
     return try await load(url: "https://api.github.com/repos/\(organization)/\(repository.name)/actions/runs")
   }
@@ -122,7 +123,7 @@ extension Github {
   public static func workflows(from repository: Repository) async throws -> [Workflow] {
     guard let organization = repository.owner?.login else {
       print("Issue generating url for repository")
-      throw AFError.invalidURL(url: "")
+      throw GithubError.invalidURL("Missing repository owner")
     }
     let url = "https://api.github.com/repos/\(organization)/\(repository.name)/actions/workflows"
 
@@ -140,7 +141,7 @@ extension Github {
   public static func runs(from workflow: Workflow, repository: Repository) async throws -> [Action] {
     guard let organization = repository.owner?.login else {
       print("Issue generating url for repository")
-      throw AFError.invalidURL(url: "")
+      throw GithubError.invalidURL("Missing repository owner")
     }
     let url = "https://api.github.com/repos/\(organization)/\(repository.name)/actions/workflows/\(workflow.id)/runs"
     guard let workflowContainer: Github.Runs = try await load(url: url) else {
@@ -156,40 +157,34 @@ extension Github {
   /// - Returns: An array of github issues
   static func issues(from repository: Repository) async throws -> [Issue] {
     guard let issuesUrl = repository.issues_url else {
-      throw AFError.invalidURL(url: "issues_url not available on repository")
+      throw GithubError.invalidURL("issues_url not available on repository")
     }
     let url = String(issuesUrl.dropLast(9))
     return try await loadMany(url: url)
   }
   
   static func createIssue(for repository: Repository, title: String, body: String, owner: String) async throws -> Issue {
-    let json = [
+    guard let organization = repository.owner?.login,
+          let url = URL(string: "https://api.github.com/repos/\(organization)/\(repository.name)/issues") else {
+      print("Issue generating url for repository")
+      throw GithubError.invalidURL("Invalid issues URL")
+    }
+    
+    let json: [String: String] = [
       "title": title,
       "body": body,
       "owner": owner
     ]
-    
-    guard let organization = repository.owner?.login,
-          let url = URL(string: "https://api.github.com/repos/\(organization)/\(repository.name)/issues") else {
-      print("Issue generating url for repository")
-      throw AFError.invalidURL(url: "")
-    }
-    
-    let headers = await headers
-    return try await AF.request(url, method: .post, parameters: json, encoder: JSONParameterEncoder.default, headers: headers)
-      .serializingDecodable(Issue.self)
-      .value
+    let bodyData = try JSONSerialization.data(withJSONObject: json, options: [])
+    return try await load(url: url, method: "POST", body: bodyData)
   }
   
   /// Used when the expected response will be a single of codable object.
   private static func load<T: Codable>(url: String) async throws -> T {
     guard let requestUrl = URL(string: url) else {
-      throw AFError.invalidURL(url: url)
+      throw GithubError.invalidURL(url)
     }
-    let headers = await headers
-    return try await AF.request(requestUrl, method: .get, headers: headers)
-        .serializingDecodable(T.self)
-        .value
+    return try await load(url: requestUrl)
   }
   
   /// Used when the expected response will be an array of codable objects.
@@ -197,12 +192,33 @@ extension Github {
   /// - Returns: array of codables
   private static func loadMany<T: Codable>(url: String) async throws -> [T] {
     guard let requestUrl = URL(string: url) else {
-      throw AFError.invalidURL(url: url)
+      throw GithubError.invalidURL(url)
     }
-    let headers = await headers
-    return try await AF.request(requestUrl, method: .get, headers: headers)
-      .serializingDecodable([T].self)
-      .value
+    return try await load(url: requestUrl)
+  }
+
+  private static func load<T: Codable>(url: URL, method: String = "GET", body: Data? = nil) async throws -> T {
+    var request = URLRequest(url: url)
+    request.httpMethod = method
+    request.httpBody = body
+    let headerValues = await headers
+    for (key, value) in headerValues {
+      request.setValue(value, forHTTPHeaderField: key)
+    }
+    
+    let (data, response) = try await URLSession.shared.data(for: request)
+    guard let http = response as? HTTPURLResponse else {
+      throw GithubError.badResponse(-1)
+    }
+    guard (200...299).contains(http.statusCode) else {
+      throw GithubError.badResponse(http.statusCode)
+    }
+    
+    do {
+      return try JSONDecoder().decode(T.self, from: data)
+    } catch {
+      throw GithubError.couldNotDecode
+    }
   }
   
   /// Authorizes with the github api or returns success if token exists. To reset token and access call reauthorize.
