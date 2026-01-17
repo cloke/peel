@@ -18,24 +18,26 @@ struct HistoryListView: View {
   var branch: String
   
   var body: some View {
-    List(commits, selection: $selection) { commit in
-      NavigationLink(
-        destination: DiffView(diff: diff)
-          .padding()
-      ) {
-        VStack {
-          LogEntryRowView(log: commit)
-            .frame(height: 90)
-            .padding(.vertical, 0)
-            .padding(.horizontal, 2)
-          Divider()
-        }
+    HSplitView {
+      List(commits, selection: $selection) { commit in
+        LogEntryRowView(log: commit)
+          .frame(height: 90)
+          .padding(.vertical, 4)
+          .padding(.horizontal, 2)
       }
+      .listStyle(.inset)
+      .frame(minWidth: 320, idealWidth: 360)
+      
+      DiffView(diff: diff)
+        .frame(minWidth: 480)
+        .padding(.vertical, 8)
     }
-    .listStyle(.sidebar)
     .navigationTitle("History: \(branch)")
     .task {
       commits = await Commands.log(branch: branch, on: repository)
+      if selection == nil, let first = commits.first {
+        selection = first.id
+      }
     }
     .onChange(of: selection) { _, commit in
       if let commit = commit {

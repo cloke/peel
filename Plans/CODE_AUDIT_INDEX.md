@@ -1,12 +1,12 @@
 # KitchenSink Code Audit Index
 
 **Last Full Audit:** January 16, 2026  
-**Cleanup Session:** January 16, 2026 - Fixed force unwraps, previews, docs  
+**Last Updated:** January 17, 2026  
 **Swift Version:** 6.0  
 **SwiftUI Version:** 6.0  
 **Targets:** macOS 26, iOS 26
 
-This document serves as an index for tracking file reviews, preventing code duplication, and ensuring old patterns don't sneak back in.
+This document tracks file reviews, prevents code duplication, and ensures old patterns don't sneak back in.
 
 ---
 
@@ -210,47 +210,29 @@ Package was empty (no sources). Deleted on 2026-01-16.
 
 ## Documentation Status
 
-| File | Status | Last Reviewed | Issues |
-|------|--------|---------------|--------|
-| /README.md | 🔴 Outdated | 2026-01-16 | 2020 structure, wrong packages |
-| /START_HERE.md | 🔴 Outdated | 2026-01-16 | Says Jan 7 is "today" |
-| /Plans/README.md | ⚠️ Needs Update | 2026-01-16 | Missing dates |
+| File | Status | Last Reviewed | Notes |
+|------|--------|---------------|-------|
+| /README.md | ✅ Current | 2026-01-16 | Rewritten with modern structure |
+| /START_HERE.md | ✅ Current | 2026-01-16 | Updated for Jan 16 |
+| /Plans/CODE_AUDIT_INDEX.md | ✅ Current | 2026-01-17 | This file |
 | /Plans/MODERNIZATION_COMPLETE.md | ✅ Current | 2026-01-16 | Historical record |
-| /Plans/SWIFTUI_MODERNIZATION_PLAN.md | ✅ Complete | 2026-01-16 | Status: complete |
-| /Plans/SWIFTDATA_PLAN.md | ✅ Complete | 2026-01-16 | Status: complete |
-| /Plans/UX_MODERNIZATION_PLAN.md | ✅ Complete | 2026-01-16 | Status: complete |
-| /Plans/WORKTREE_FEATURE_PLAN.md | ⚠️ Needs Update | 2026-01-16 | Status inconsistent |
-| /Plans/AGENT_ORCHESTRATION_PLAN.md | ⚠️ Needs Update | 2026-01-16 | Has ObservableObject examples |
-| /Plans/apple-agent-big-ideas.md | ✅ Current | 2026-01-16 | Vision doc |
-| /Plans/PARALLEL_AGENTS_PLAN.md | ✅ Current | 2026-01-16 | Future plan |
-| /Plans/SESSION_JAN16.md | ✅ Current | 2026-01-16 | Current session |
-| /Plans/TIO_WORKSPACE_INTEGRATION.md | ⚠️ Needs Update | 2026-01-16 | Checklist incomplete |
+| /Plans/AGENT_ORCHESTRATION_PLAN.md | ✅ Current | 2026-01-16 | Updated to @Observable patterns |
+| /Plans/SWIFTUI_MODERNIZATION_PLAN.md | ✅ Complete | 2026-01-16 | Archived |
+| /Plans/SWIFTDATA_PLAN.md | ✅ Complete | 2026-01-16 | Archived |
+| /Plans/UX_MODERNIZATION_PLAN.md | ✅ Complete | 2026-01-16 | Archived |
 
 ---
 
-## Priority Fixes
-
-### High Priority 🔴
-
-1. **Remove/fix GithubUI package** - Empty package with no sources
-2. **Update root README.md** - Completely outdated (2020 structure)
-3. **Update START_HERE.md** - References wrong dates
-
-### Medium Priority 🔶
-
-4. **Fix Git ViewModel singleton** - Replace with @Environment injection
-5. **Fix Github/Networking.swift force unwraps** - Add proper guard statements
-6. **Fix force unwraps in Github views** - OrganizationDetailView, PullRequestsListView, CommitDetailView
-7. **Fix VMIsolationService force unwrap** - Line 476
-8. **Update AGENT_ORCHESTRATION_PLAN.md** - Remove ObservableObject examples
+## Remaining Items
 
 ### Low Priority ⚠️
 
-9. **Update PreviewProvider to #Preview** - Github_RootView.swift, TaskDebugWindow.swift
-10. **Remove TaskDebugWindow.swift stub** - Or implement it
-11. **Clean commented code** - BranchListView.swift
-12. **Fix duplicate Color extension** - Github's Color+.swift
-13. **Improve package READMEs** - Brew/README.md especially
+| Item | Notes |
+|------|-------|
+| VMIsolationView.swift force unwrap | L2420 - minor, in error path |
+| Git ViewModel singleton | Documented as acceptable for app-wide state |
+| TaskDebugWindow.swift | Stub file - remove or implement |
+| Brew/README.md | Expand with usage examples |
 
 ---
 

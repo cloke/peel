@@ -50,7 +50,11 @@ struct BranchListItemView: View {
         }
       Button {
         push()
-      } label: { Image(systemName: "square.and.arrow.up") }
+      } label: {
+        Image(systemName: "square.and.arrow.up")
+      }
+      .buttonStyle(.plain)
+      .help("Push Branch")
     }
   }
 }
@@ -69,8 +73,12 @@ public struct BranchListView: View {
   public var location: Model.BranchType = .remote
     
   public var body: some View {
-    List {
-    Section(label, isExpanded: $isExpanded) {
+    Section(isExpanded: $isExpanded) {
+      if localBranches.isEmpty {
+        Text("No branches")
+          .foregroundStyle(.secondary)
+          .font(.caption)
+      }
       ForEach(localBranches.indices, id: \.self) { index in
         NavigationLink(value: localBranches[index].name) {
           BranchListItemView(
@@ -92,38 +100,45 @@ public struct BranchListView: View {
             }
           )
         }
-        .navigationDestination(for: String.self) { branchName in
-          HistoryListView(branch: branchName)
-        }
         .font(.footnote)
-        .sheet(isPresented: $isShowing) {
-          BranchRepositoryView() { [self] in
-            isShowing = false
-            Task {
-              await repository.load()
-            }
-          }
-          .padding()
-          .frame(width: 300, height: 100)
-        }
-        .contextMenu {
-          Button {
-            isShowing = true
-          } label: {
-            Text("Create Branch")
-            Image(systemName: "arrow.triangle.branch")
-          }
-          Button {
-            Task {
-              try? await repository.delete(branches: localBranches.filter { $0.isSelected == true })
-            }
-          } label: {
-            Text("Delete Branch")
-            Image(systemName: "trash")
-          }
+      }
+    } header: {
+      Label(label, systemImage: sectionIcon)
+    }
+    .sheet(isPresented: $isShowing) {
+      BranchRepositoryView() { [self] in
+        isShowing = false
+        Task {
+          await repository.load()
         }
       }
+      .padding()
+      .frame(width: 300, height: 100)
     }
+    .contextMenu {
+      Button {
+        isShowing = true
+      } label: {
+        Text("Create Branch")
+        Image(systemName: "arrow.triangle.branch")
+      }
+      Button {
+        Task {
+          try? await repository.delete(branches: localBranches.filter { $0.isSelected == true })
+        }
+      } label: {
+        Text("Delete Branch")
+        Image(systemName: "trash")
+      }
+    }
+  }
+
+  private var sectionIcon: String {
+    switch location {
+    case .local:
+      return "arrow.triangle.branch"
+    case .remote:
+      return "cloud"
     }
   }
 }

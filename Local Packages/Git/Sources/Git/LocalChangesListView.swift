@@ -13,8 +13,18 @@ public struct LocalChangesListView: View {
 
   public var body: some View {
     NavigationLink(destination: FileListView(repository: repository)) {
-      HStack {
-        Text("Local Changes (\(repository.status.count))")
+      HStack(spacing: 8) {
+        Label("Local Changes", systemImage: "doc.text")
+        Spacer()
+        if repository.status.isEmpty {
+          Text("Clean")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        } else {
+          Text("\(repository.status.count)")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
       }
     }
     .contextMenu(ContextMenu(menuItems: {

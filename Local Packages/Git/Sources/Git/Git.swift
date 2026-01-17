@@ -12,18 +12,30 @@ public struct GitRootView: View {
   }
   
   public var body: some View {
-    NavigationStack {
+    NavigationSplitView {
       List {
-        LocalChangesListView()
-        StashListView(repository: repository)
+        Section("Repository") {
+          LocalChangesListView()
+          StashListView(repository: repository)
+        }
         BranchListView(localBranches: $repository.localBranches, label: "Local Branches", location: .local)
         BranchListView(localBranches: $repository.remoteBranches, label: "Remote Branches", location: .remote)
         WorktreeListView()
       }
       .listStyle(.sidebar)
-      .navigationTitle(repository.name)
-      .environment(repository)
+    } detail: {
+      ContentUnavailableView {
+        Label("Select an Item", systemImage: "arrow.left")
+      } description: {
+        Text("Choose a section from the sidebar to view details")
+      }
     }
+    .navigationDestination(for: String.self) { branchName in
+      HistoryListView(branch: branchName)
+    }
+    .navigationSplitViewStyle(.balanced)
+    .navigationTitle(repository.name)
+    .environment(repository)
   }
 }
 #endif

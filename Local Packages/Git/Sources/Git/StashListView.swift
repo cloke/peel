@@ -15,19 +15,25 @@ struct StashListView: View {
   
   var body: some View {
     DisclosureGroup(isExpanded: $isExpanded) {
-      List(stashes, id: \.self) {
-        Text($0)
-      }
-      .onChange(of: isExpanded) { _, value in
-        if isExpanded == true {
-          Task {
-            self.stashes = try await Commands.Stash.list(on: repository)
+      if stashes.isEmpty {
+        Text("No stashes")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      } else {
+        VStack(alignment: .leading, spacing: 6) {
+          ForEach(stashes, id: \.self) { stash in
+            Text(stash)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
+              .truncationMode(.middle)
           }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
       }
     } label: {
-      HStack {
-        Text("Stash")
+      HStack(spacing: 8) {
+        Label("Stash", systemImage: "archivebox")
         Spacer()
         if isExpanded {
           Button {
@@ -37,6 +43,15 @@ struct StashListView: View {
           } label: {
             Image(systemName: "arrow.counterclockwise.icloud")
           }
+          .buttonStyle(.plain)
+          .help("Refresh")
+        }
+      }
+    }
+    .onChange(of: isExpanded) { _, value in
+      if isExpanded == true {
+        Task {
+          self.stashes = try await Commands.Stash.list(on: repository)
         }
       }
     }
