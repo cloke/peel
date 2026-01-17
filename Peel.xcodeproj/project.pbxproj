@@ -221,7 +221,7 @@
 				046D40E626C56C5B003715AF /* Github */,
 				040AAB7D26CB385800DE1CBF /* Git */,
 			);
-			productName = "KitchenSink (iOS)";
+			productName = "Peel (iOS)";
 			productReference = 04A7BD6A258E77D8000E55A8 /* Peel.app */;
 			productType = "com.apple.product-type.application";
 		};
@@ -247,7 +247,7 @@
 				048086652A2D21E500536A3E /* Brew */,
 				046C6AAF2F1BE07D006CDAC7 /* TaskRunner */,
 			);
-			productName = "KitchenSink (macOS)";
+			productName = "Peel (macOS)";
 			productReference = 04A7BD72258E77D8000E55A8 /* Peel.app */;
 			productType = "com.apple.product-type.application";
 		};
