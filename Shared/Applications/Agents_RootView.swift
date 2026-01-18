@@ -1012,7 +1012,7 @@ struct CLISetupSheet: View {
         ToolbarItem(placement: .primaryAction) {
           Button {
             cliService.resetInstall()
-            Task { await cliService.checkAllCLIs() }
+            Task { await cliService.checkAllCLIs(force: true) }
           } label: {
             Label("Refresh", systemImage: "arrow.clockwise")
           }

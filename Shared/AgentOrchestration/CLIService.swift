@@ -63,6 +63,22 @@ public final class CLIService {
   public var installOutput: [String] = []
   
   private let executor = ProcessExecutor()
+  private let statusCacheTTL: TimeInterval = 12 * 60 * 60
+  private let statusEncoder = JSONEncoder()
+  private let statusDecoder = JSONDecoder()
+  
+  private enum CacheKey {
+    static let copilotStatus = "CLIService.copilotStatus"
+    static let claudeStatus = "CLIService.claudeStatus"
+    static let lastCheckedAt = "CLIService.lastCheckedAt"
+  }
+  
+  private struct PersistedCLIStatus: Codable {
+    let kind: String
+    let version: String?
+    let message: String?
+    let updatedAt: Date
+  }
   
   // MARK: - Static
   
@@ -79,23 +95,29 @@ public final class CLIService {
   
   // MARK: - Init
   
-  public init() {}
+  public init() {
+    loadCachedStatuses()
+  }
   
   // MARK: - Check CLIs
   
-  public func checkAllCLIs() async {
+  public func checkAllCLIs(force: Bool = false) async {
+    if !force, applyCachedStatusesIfFresh() {
+      return
+    }
     await checkCopilot()
     await checkClaude()
   }
   
   public func checkCopilot() async {
-    copilotStatus = .checking
+    setCopilotStatus(.checking, persist: false)
+    defer { updateLastCheckedAt() }
     
     do {
       // Look for new copilot-cli (the standalone CLI, not the deprecated gh extension)
       let copilotPath = findExecutable("copilot")
       guard let copilotPath else {
-        copilotStatus = .notInstalled
+        setCopilotStatus(.notInstalled)
         return
       }
       
@@ -103,14 +125,14 @@ public final class CLIService {
       let versionResult = try await executor.execute(copilotPath, arguments: ["--version"], throwOnNonZeroExit: false)
       if versionResult.exitCode == 0 {
         let version = versionResult.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines)
-        copilotStatus = .available(version: version.isEmpty ? nil : version)
+        setCopilotStatus(.available(version: version.isEmpty ? nil : version))
       } else {
         // CLI installed but may need authentication
-        copilotStatus = .notAuthenticated
+        setCopilotStatus(.notAuthenticated)
       }
       
     } catch {
-      copilotStatus = .error(error.localizedDescription)
+      setCopilotStatus(.error(error.localizedDescription))
     }
   }
   
@@ -132,12 +154,13 @@ public final class CLIService {
   }
   
   public func checkClaude() async {
-    claudeStatus = .checking
+    setClaudeStatus(.checking, persist: false)
+    defer { updateLastCheckedAt() }
     
     // Check common paths for claude CLI
     let claudePath = findExecutable("claude")
     guard let claudePath else {
-      claudeStatus = .notInstalled
+      setClaudeStatus(.notInstalled)
       return
     }
     
@@ -145,12 +168,12 @@ public final class CLIService {
       let versionResult = try await executor.execute(claudePath, arguments: ["--version"], throwOnNonZeroExit: false)
       if versionResult.exitCode == 0 {
         let version = versionResult.stdoutString.trimmingCharacters(in: .whitespacesAndNewlines)
-        claudeStatus = .available(version: version.isEmpty ? nil : version)
+        setClaudeStatus(.available(version: version.isEmpty ? nil : version))
       } else {
-        claudeStatus = .notAuthenticated
+        setClaudeStatus(.notAuthenticated)
       }
     } catch {
-      claudeStatus = .error(error.localizedDescription)
+      setClaudeStatus(.error(error.localizedDescription))
     }
   }
   
@@ -199,6 +222,98 @@ public final class CLIService {
   public func resetInstall() {
     copilotInstallStep = .idle
     installOutput = []
+  }
+
+  // MARK: - Status Persistence
+
+  private func setCopilotStatus(_ status: CLIStatus, persist: Bool = true) {
+    copilotStatus = status
+    if persist {
+      persistStatus(status, key: CacheKey.copilotStatus)
+    }
+  }
+
+  private func setClaudeStatus(_ status: CLIStatus, persist: Bool = true) {
+    claudeStatus = status
+    if persist {
+      persistStatus(status, key: CacheKey.claudeStatus)
+    }
+  }
+
+  private func applyCachedStatusesIfFresh() -> Bool {
+    guard cacheIsFresh() else { return false }
+    loadCachedStatuses()
+    return copilotStatus != .checking || claudeStatus != .checking
+  }
+
+  private func cacheIsFresh() -> Bool {
+    guard let lastChecked = UserDefaults.standard.object(forKey: CacheKey.lastCheckedAt) as? Date else {
+      return false
+    }
+    return Date().timeIntervalSince(lastChecked) < statusCacheTTL
+  }
+
+  private func updateLastCheckedAt() {
+    UserDefaults.standard.set(Date(), forKey: CacheKey.lastCheckedAt)
+  }
+
+  private func loadCachedStatuses() {
+    if let persisted = loadPersistedStatus(for: CacheKey.copilotStatus) {
+      copilotStatus = status(from: persisted)
+    }
+    if let persisted = loadPersistedStatus(for: CacheKey.claudeStatus) {
+      claudeStatus = status(from: persisted)
+    }
+  }
+
+  private func persistStatus(_ status: CLIStatus, key: String) {
+    if case .checking = status { return }
+    let persisted = PersistedCLIStatus(
+      kind: statusKind(status),
+      version: statusVersion(status),
+      message: statusMessage(status),
+      updatedAt: Date()
+    )
+    if let data = try? statusEncoder.encode(persisted) {
+      UserDefaults.standard.set(data, forKey: key)
+    }
+  }
+
+  private func loadPersistedStatus(for key: String) -> PersistedCLIStatus? {
+    guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
+    return try? statusDecoder.decode(PersistedCLIStatus.self, from: data)
+  }
+
+  private func status(from persisted: PersistedCLIStatus) -> CLIStatus {
+    switch persisted.kind {
+    case "available": return .available(version: persisted.version)
+    case "notInstalled": return .notInstalled
+    case "notAuthenticated": return .notAuthenticated
+    case "needsExtension": return .needsExtension
+    case "error": return .error(persisted.message ?? "Unknown error")
+    default: return .notInstalled
+    }
+  }
+
+  private func statusKind(_ status: CLIStatus) -> String {
+    switch status {
+    case .available: return "available"
+    case .notInstalled: return "notInstalled"
+    case .notAuthenticated: return "notAuthenticated"
+    case .needsExtension: return "needsExtension"
+    case .error: return "error"
+    case .checking: return "checking"
+    }
+  }
+
+  private func statusVersion(_ status: CLIStatus) -> String? {
+    if case .available(let version) = status { return version }
+    return nil
+  }
+
+  private func statusMessage(_ status: CLIStatus) -> String? {
+    if case .error(let message) = status { return message }
+    return nil
   }
   
   // MARK: - Running Agents
@@ -637,7 +752,7 @@ public final class CLIService {
   public var copilotInstallStep: InstallStep = .idle
   public var installOutput: [String] = []
   public init() {}
-  public func checkAllCLIs() async {}
+  public func checkAllCLIs(force: Bool = false) async {}
   public func resetInstall() {}
   public static let copilotInstallInstructions = ""
   public static let claudeInstallInstructions = ""
