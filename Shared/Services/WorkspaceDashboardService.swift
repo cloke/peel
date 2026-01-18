@@ -82,6 +82,9 @@ public final class WorkspaceDashboardService {
   
   /// All worktrees across all repos in selected workspace
   public private(set) var worktrees: [Git.Worktree] = []
+
+  /// Tracked worktrees persisted in SwiftData
+  public private(set) var trackedWorktreesByPath: [String: TrackedWorktree] = [:]
   
   /// Loading state
   public private(set) var isLoading = false
@@ -116,6 +119,7 @@ public final class WorkspaceDashboardService {
   public func configure(modelContext: ModelContext) {
     if dataService == nil {
       dataService = DataService(modelContext: modelContext)
+      reloadTrackedWorktrees()
     }
   }
   
@@ -203,6 +207,7 @@ public final class WorkspaceDashboardService {
         allWorktrees.append(contentsOf: repoWorktrees)
       }
       worktrees = allWorktrees
+      syncTrackedWorktrees()
       
     } catch {
       errorMessage = error.localizedDescription
@@ -288,6 +293,10 @@ public final class WorkspaceDashboardService {
 
   public func workspaceName(for worktree: Git.Worktree) -> String? {
     worktreeWorkspaceNames[worktree.path]
+  }
+
+  public func trackedWorktree(for worktree: Git.Worktree) -> TrackedWorktree? {
+    trackedWorktreesByPath[worktree.path]
   }
   
   // MARK: - Worktree Operations
@@ -527,6 +536,71 @@ public final class WorkspaceDashboardService {
       linkedPRNumber: linkedPRNumber,
       linkedPRRepo: linkedPRRepo
     )
+    reloadTrackedWorktrees()
+  }
+
+  private func syncTrackedWorktrees() {
+    guard let dataService else { return }
+    reloadTrackedWorktrees()
+
+    for worktree in worktrees where !worktree.isMain {
+      guard let repoName = repoName(for: worktree),
+            let repo = repos.first(where: { $0.name == repoName }) else {
+        continue
+      }
+
+      let existing = trackedWorktreesByPath[worktree.path]
+      let inferred = inferTrackingData(for: worktree, repo: repo)
+      let repositoryId = dataService.getRepositoryId(forLocalPath: repo.path)
+
+      _ = dataService.upsertTrackedWorktree(
+        repositoryId: repositoryId,
+        localPath: worktree.path,
+        branch: worktree.branch ?? "detached",
+        source: existing?.source ?? inferred.source,
+        purpose: existing?.purpose ?? inferred.purpose,
+        linkedPRNumber: existing?.linkedPRNumber ?? inferred.linkedPRNumber,
+        linkedPRRepo: existing?.linkedPRRepo ?? inferred.linkedPRRepo
+      )
+    }
+
+    reloadTrackedWorktrees()
+  }
+
+  private func reloadTrackedWorktrees() {
+    guard let dataService else {
+      trackedWorktreesByPath = [:]
+      return
+    }
+    let tracked = dataService.getTrackedWorktrees()
+    trackedWorktreesByPath = Dictionary(uniqueKeysWithValues: tracked.map { ($0.localPath, $0) })
+  }
+
+  private func inferTrackingData(
+    for worktree: Git.Worktree,
+    repo: WorkspaceRepo
+  ) -> (source: String, purpose: String?, linkedPRNumber: Int?, linkedPRRepo: String?) {
+    let path = worktree.path
+    if path.contains(WorkspaceManager.workspacesDirName) || path.contains("Peel-Worktrees") {
+      return ("agent", nil, nil, nil)
+    }
+
+    if let prNumber = extractPRNumber(from: path) {
+      return ("pr-review", "PR #\(prNumber)", prNumber, repo.name)
+    }
+
+    return ("manual", nil, nil, nil)
+  }
+
+  private func extractPRNumber(from path: String) -> Int? {
+    let pattern = "-pr-(\\d+)"
+    guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+    let range = NSRange(path.startIndex..<path.endIndex, in: path)
+    guard let match = regex.firstMatch(in: path, range: range), match.numberOfRanges > 1,
+          let numberRange = Range(match.range(at: 1), in: path) else {
+      return nil
+    }
+    return Int(path[numberRange])
   }
   
   // MARK: - Persistence

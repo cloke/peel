@@ -276,4 +276,9 @@ final class DataService {
       try? modelContext.save()
     }
   }
+
+  func getTrackedWorktrees() -> [TrackedWorktree] {
+    let descriptor = FetchDescriptor<TrackedWorktree>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
+    return (try? modelContext.fetch(descriptor)) ?? []
+  }
 }

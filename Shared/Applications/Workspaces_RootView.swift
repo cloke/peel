@@ -181,6 +181,7 @@ struct WorkspacesDashboardView: View {
                 WorktreeSection(
                   repoName: repoName,
                   worktrees: worktrees,
+                  trackedWorktreesByPath: service.trackedWorktreesByPath,
                   statuses: worktreeStatuses,
                   onOpen: openWorktree,
                   onRemove: removeWorktree,
@@ -245,6 +246,7 @@ struct WorkspacesDashboardView: View {
             WorktreeSection(
               repoName: repo.name,
               worktrees: repoWorktrees,
+              trackedWorktreesByPath: service.trackedWorktreesByPath,
               statuses: worktreeStatuses,
               onOpen: openWorktree,
               onRemove: removeWorktree,
@@ -478,6 +480,7 @@ struct RepoRow: View {
 struct WorktreeSection: View {
   let repoName: String
   let worktrees: [Git.Worktree]
+  let trackedWorktreesByPath: [String: TrackedWorktree]
   let statuses: [UUID: WorktreeStatus]
   let onOpen: (Git.Worktree) -> Void
   let onRemove: (Git.Worktree) -> Void
@@ -501,6 +504,7 @@ struct WorktreeSection: View {
       ForEach(worktrees) { worktree in
         WorktreeCard(
           worktree: worktree,
+          trackedWorktree: trackedWorktreesByPath[worktree.path],
           status: statuses[worktree.id],
           onOpen: { onOpen(worktree) },
           onRemove: { onRemove(worktree) }
@@ -517,6 +521,7 @@ struct WorktreeSection: View {
 
 struct WorktreeCard: View {
   let worktree: Git.Worktree
+  let trackedWorktree: TrackedWorktree?
   let status: WorktreeStatus?
   let onOpen: () -> Void
   let onRemove: () -> Void
@@ -581,6 +586,29 @@ struct WorktreeCard: View {
             Text(RelativeDateTimeFormatter().localizedString(for: date, relativeTo: Date()))
               .font(.caption2)
               .foregroundStyle(.tertiary)
+          }
+        }
+
+        if let trackedWorktree {
+          HStack(spacing: 8) {
+            if let purpose = trackedWorktree.purpose {
+              Text(purpose)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            }
+
+            if trackedWorktree.source != "manual" {
+              Label(sourceLabel(for: trackedWorktree.source), systemImage: sourceIcon(for: trackedWorktree.source))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+
+            if let prNumber = trackedWorktree.linkedPRNumber {
+              Text("PR #\(prNumber)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
           }
         }
       }
@@ -663,6 +691,22 @@ struct WorktreeCard: View {
       return String(branch.dropFirst("refs/heads/".count))
     }
     return branch
+  }
+
+  private func sourceLabel(for source: String) -> String {
+    switch source {
+    case "pr-review": return "PR Review"
+    case "agent": return "Agent"
+    default: return source.capitalized
+    }
+  }
+
+  private func sourceIcon(for source: String) -> String {
+    switch source {
+    case "pr-review": return "arrow.triangle.branch"
+    case "agent": return "sparkles"
+    default: return "person"
+    }
   }
 }
 
