@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:KitchenSink}/Tools/PeelCLI",
+            "name": "Debug peel-mcp (Tools/PeelCLI)",
+            "target": "peel-mcp",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug peel-mcp (Tools/PeelCLI)"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:KitchenSink}/Tools/PeelCLI",
+            "name": "Release peel-mcp (Tools/PeelCLI)",
+            "target": "peel-mcp",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release peel-mcp (Tools/PeelCLI)"
+        }
+    ]
+}

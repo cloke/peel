@@ -64,6 +64,7 @@
 - [ ] Template: planner + parallel implementers + merge + review ([#12](https://github.com/cloke/peel/issues/12))
 - [ ] Validation pipeline for correctness checks ([#13](https://github.com/cloke/peel/issues/13))
 - [ ] MCP activity log + cleanup actions ([#16](https://github.com/cloke/peel/issues/16))
+- [ ] MCP control CLI (query, stop server, quit app)
 
 ### Phase 2: Local AI Foundation
 **Timeline:** 3-4 weeks
@@ -130,28 +131,33 @@ Planner → splits task → creates branches
 
 ## GitHub Issues Index
 
-### High Priority (Phase 1A)
-- [#1](https://github.com/cloke/peel/issues/1) - Wire TrackedWorktree SwiftData model
-- [#2](https://github.com/cloke/peel/issues/2) - Unify worktree visibility across tabs
-- [#3](https://github.com/cloke/peel/issues/3) - Persist CLI tool detection status
-- [#4](https://github.com/cloke/peel/issues/4) - Delete duplicate parseWorktreeList
+### Phase 1A ✅ Complete
+- [#1](https://github.com/cloke/peel/issues/1) - Wire TrackedWorktree SwiftData model ✅
+- [#2](https://github.com/cloke/peel/issues/2) - Unify worktree visibility across tabs ✅
+- [#3](https://github.com/cloke/peel/issues/3) - Persist CLI tool detection status ✅
+- [#4](https://github.com/cloke/peel/issues/4) - Delete duplicate parseWorktreeList ✅
 
-### Phase 1B (Parallel Agents)
-- [#5](https://github.com/cloke/peel/issues/5) - Implement parallel agent execution with TaskGroup
-- [#6](https://github.com/cloke/peel/issues/6) - Create Merge Agent for combining worktree results
-- [#7](https://github.com/cloke/peel/issues/7) - Add structured JSON output for Planner agent
+### Phase 1B ✅ Complete (Parallel Agents)
+- [#5](https://github.com/cloke/peel/issues/5) - Implement parallel agent execution with TaskGroup ✅
+- [#6](https://github.com/cloke/peel/issues/6) - Create Merge Agent for combining worktree results ✅
+- [#7](https://github.com/cloke/peel/issues/7) - Add structured JSON output for Planner agent ✅
+
+### Phase 1C (MCP)
+- [#11](https://github.com/cloke/peel/issues/11) - MCP test harness server ✅
+- [#12](https://github.com/cloke/peel/issues/12) - MCP chain template (planner → parallel → merge → review) ✅
+- [#13](https://github.com/cloke/peel/issues/13) - MCP validation pipeline 🔄
+- [#16](https://github.com/cloke/peel/issues/16) - MCP activity log + cleanup actions 🔄
+- MCP Activity: dedicated run detail panel (prompt/output/validation)
+- MCP Activity: show agent live status timeline per run
+- MCP: prevent sleep while chain is running (optional toggle)
 
 ### Phase 2 (Local AI)
 - [#8](https://github.com/cloke/peel/issues/8) - Create PII scrubber CLI tool
-- [#11](https://github.com/cloke/peel/issues/11) - MCP test harness server
-- [#12](https://github.com/cloke/peel/issues/12) - MCP chain template (planner → parallel → merge → review)
-- [#13](https://github.com/cloke/peel/issues/13) - MCP validation pipeline
-- [#16](https://github.com/cloke/peel/issues/16) - MCP activity log + cleanup actions
 - XPC Tool Broker architecture (TBD)
 - MLX integration (TBD)
 
 ### Phase 3 (VM)
-- [#9](https://github.com/cloke/peel/issues/9) - Polish Linux VM experience
+- [#9](https://github.com/cloke/peel/issues/9) - Polish Linux VM experience ✅ (boots to CLI)
 - macOS VM support (TBD)
 
 ---
@@ -160,6 +166,8 @@ Planner → splits task → creates branches
 
 - [AGENT_ORCHESTRATION_PLAN.md](AGENT_ORCHESTRATION_PLAN.md)
 - [PARALLEL_AGENTS_PLAN.md](PARALLEL_AGENTS_PLAN.md)
+- [MCP_AGENT_WORKFLOW.md](MCP_AGENT_WORKFLOW.md) - Build → Launch → Connect workflow
+- [MCP_TEST_PLAN.md](MCP_TEST_PLAN.md) - MCP test cases
 - [VM_ISOLATION_PLAN.md](VM_ISOLATION_PLAN.md)
 - [CONSOLIDATION_PLAN.md](CONSOLIDATION_PLAN.md)
 - [apple-agent-big-ideas.md](apple-agent-big-ideas.md)

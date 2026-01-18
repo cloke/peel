@@ -8,12 +8,12 @@
 
 ## Next Steps (Prioritized)
 
-### 1. WorkspaceDashboardService Cleanup
+### 1. WorkspaceDashboardService Cleanup ✅
 **Location:** `Shared/Services/WorkspaceDashboardService.swift`
 
-- [ ] Delete duplicate `parseWorktreeList()` (lines 314-371) - use `Git.Commands.Worktree.list()` instead
-- [ ] Replace `runGit()` helper with `Git.Commands.simple()`
-- [ ] Delete `WorktreeInfo` model - use `Git.Worktree` directly
+- [x] Delete duplicate `parseWorktreeList()` - now uses `Git.Commands.Worktree.list()`
+- [x] Replace `runGit()` helper with `Git.Commands.simple()`
+- [x] Delete `WorktreeInfo` model - uses `Git.Worktree` directly
 
 ### 2. Unify Worktree Visibility
 All worktrees should appear in the Workspaces tab with source tags:
@@ -35,16 +35,8 @@ All worktrees should appear in the Workspaces tab with source tags:
 - Persist source information (agent, PR review, manual)
 - Survive app restarts
 
-### 4. Error Type Consolidation
-Three duplicate error types exist:
-
-| Location | Type |
-|----------|------|
-| `WorkspaceDashboardService.swift` | `WorktreeError` |
-| `WorkspaceManager.swift` | `WorkspaceError` |
-| `WorktreeService.swift` | `WorktreeError` |
-
-**Fix:** Create single `Shared/Services/WorktreeErrors.swift`
+### 4. Error Type Consolidation ✅
+Consolidated into `Shared/Services/WorktreeErrors.swift`
 
 ### 5. Merge Agent Workspace Services
 `WorkspaceManager` and `WorktreeService` both manage worktrees for agents:

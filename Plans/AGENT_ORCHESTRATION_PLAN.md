@@ -1,8 +1,8 @@
 # Agent Orchestration Plan
 
 **Updated:** January 18, 2026  
-**Status:** In Progress  
-**Priority:** High
+**Status:** ✅ Core Complete  
+**Priority:** Maintenance
 
 ---
 
@@ -11,36 +11,25 @@
 - ✅ Basic Agents_RootView.swift with NavigationSplitView
 - ✅ Agent models (Agent, AgentTask, AgentWorkspace)
 - ✅ AgentManager for state management
-- ✅ WorkspaceManager stub (uses Git.Worktree)
+- ✅ WorkspaceManager (uses Git.Worktree)
 - ✅ CLISetupSheet with installation wizard UI
 - ✅ Tool switcher integration (Agents tab)
+- ✅ CLI tool detection (gh, claude-cli, cursor)
+- ✅ CLI state persistence (#3 closed)
+- ✅ Streaming output to UI
+- ✅ Agent state transitions (idle → working → complete)
+- ✅ Parallel agent execution with TaskGroup (#5 closed)
+- ✅ Merge Agent for combining worktree results (#6 closed)
+- ✅ Planner structured JSON output (#7 closed)
+- ✅ MCP server for external agent access (#11, #12 closed)
 
 ---
 
-## Blocked / In Progress
+## Remaining / Future
 
-### CLI Integration
-- CLIService needs: detect installed tools (gh, claude-cli)
-- Installation wizard doesn't update state after install completes
-- Wire up actual CLI execution to agents
-
----
-
-## Next Steps
-
-### 1. Complete CLIService
-- [ ] Add detection methods for `gh`, `claude-cli`, `cursor`
-- [ ] Installation status persistence
-- [ ] Update UI when tools are detected
-
-### 2. Agent Execution
-- [ ] Wire CLIService to actually run agent commands
-- [ ] Stream output to UI
-- [ ] Handle agent state transitions (idle → working → complete)
-
-### 3. Worktree Integration
-- [ ] Auto-create worktree when spawning agent
-- [ ] Track worktree ↔ agent relationship
+### Worktree Integration (Nice to Have)
+- [x] Auto-create worktree when spawning agent
+- [x] Track worktree ↔ agent relationship
 - [ ] Cleanup worktree when agent completes (optional)
 
 ### 4. PR Review Integration

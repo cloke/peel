@@ -1,7 +1,7 @@
 # Parallel Agents with Worktrees
 
 **Updated:** January 18, 2026  
-**Status:** Future Feature  
+**Status:** ✅ Core Implementation Complete (Issues #5-7 closed)  
 **Depends On:** Agent Orchestration (basic), Consolidation (worktree unification)
 
 ---
@@ -50,16 +50,16 @@ Planner → splits task → creates branch
 
 ## Implementation Steps
 
-1. **Planner output format** - structured JSON with branch name + tasks
-2. **Parallel worktree creation** - one per implementer
-3. **TaskGroup execution** - run agents in parallel
-4. **Merge Agent** - analyze diffs, merge, handle conflicts
-5. **Conflict resolution UI** - show conflicts, let user choose
+1. ✅ **Planner output format** - structured JSON with branch name + tasks (#7)
+2. ✅ **Parallel worktree creation** - one per implementer
+3. ✅ **TaskGroup execution** - run agents in parallel (#5)
+4. ✅ **Merge Agent** - analyze diffs, merge, handle conflicts (#6)
+5. 🔜 **Conflict resolution UI** - show conflicts, let user choose (future)
 
 ---
 
 ## Prerequisites
 
-- [ ] Basic agent execution working (AGENT_ORCHESTRATION_PLAN)
-- [ ] Unified worktree model (CONSOLIDATION_PLAN)
-- [ ] TrackedWorktree persistence
+- [x] Basic agent execution working (AGENT_ORCHESTRATION_PLAN)
+- [x] Unified worktree model (CONSOLIDATION_PLAN)
+- [x] TrackedWorktree persistence
