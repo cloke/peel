@@ -1136,27 +1136,43 @@ public final class MCPServerService {
       return (400, makeRPCError(id: id, code: -32602, message: "Missing prompt"))
     }
 
+    let chainSpec = arguments["chainSpec"] as? [[String: Any]]
+    let chainName = arguments["chainName"] as? String
     let templateId = arguments["templateId"] as? String
     let templateName = arguments["templateName"] as? String
     let workingDirectory = arguments["workingDirectory"] as? String
     let enableReviewLoop = arguments["enableReviewLoop"] as? Bool
 
-    let templates = agentManager.allTemplates
-    let template: ChainTemplate? = {
-      if let templateId, let uuid = UUID(uuidString: templateId) {
-        return templates.first { $0.id == uuid }
+    let chain: AgentChain
+    if let chainSpec, !chainSpec.isEmpty {
+      do {
+        chain = try createChainFromSpec(
+          chainSpec,
+          name: chainName ?? "Dynamic Chain",
+          workingDirectory: workingDirectory
+        )
+      } catch {
+        return (400, makeRPCError(id: id, code: -32602, message: error.localizedDescription))
       }
-      if let templateName {
-        return templates.first { $0.name.lowercased() == templateName.lowercased() }
-      }
-      return templates.first
-    }()
+    } else {
+      let templates = agentManager.allTemplates
+      let template: ChainTemplate? = {
+        if let templateId, let uuid = UUID(uuidString: templateId) {
+          return templates.first { $0.id == uuid }
+        }
+        if let templateName {
+          return templates.first { $0.name.lowercased() == templateName.lowercased() }
+        }
+        return templates.first
+      }()
 
-    guard let template else {
-      return (400, makeRPCError(id: id, code: -32602, message: "Template not found"))
+      guard let template else {
+        return (400, makeRPCError(id: id, code: -32602, message: "Template not found"))
+      }
+
+      chain = agentManager.createChainFromTemplate(template, workingDirectory: workingDirectory)
     }
 
-    let chain = agentManager.createChainFromTemplate(template, workingDirectory: workingDirectory)
     chain.runSource = .mcp
     if let enableReviewLoop {
       chain.enableReviewLoop = enableReviewLoop
@@ -1176,8 +1192,8 @@ public final class MCPServerService {
 
     dataService?.recordMCPRun(
       chainId: chain.id.uuidString,
-      templateId: template.id.uuidString,
-      templateName: template.name,
+      templateId: templateId,
+      templateName: chain.name,
       prompt: prompt,
       workingDirectory: workingDirectory,
       implementerBranches: implementerBranches,
@@ -1216,6 +1232,64 @@ public final class MCPServerService {
     ]
 
     return (200, makeRPCResult(id: id, result: result))
+  }
+
+  private func createChainFromSpec(
+    _ steps: [[String: Any]],
+    name: String,
+    workingDirectory: String?
+  ) throws -> AgentChain {
+    guard steps.count <= 8 else {
+      throw NSError(
+        domain: "MCP",
+        code: 1,
+        userInfo: [NSLocalizedDescriptionKey: "chainSpec exceeds max steps (8)"]
+      )
+    }
+
+    let chain = agentManager.createChain(name: name, workingDirectory: workingDirectory)
+    for step in steps {
+      guard let roleValue = step["role"] as? String,
+            let role = AgentRole.fromString(roleValue) else {
+        throw NSError(
+          domain: "MCP",
+          code: 2,
+          userInfo: [NSLocalizedDescriptionKey: "Invalid or missing role in chainSpec"]
+        )
+      }
+      guard let modelValue = step["model"] as? String,
+            let model = CopilotModel.fromString(modelValue) else {
+        throw NSError(
+          domain: "MCP",
+          code: 3,
+          userInfo: [NSLocalizedDescriptionKey: "Invalid or missing model in chainSpec"]
+        )
+      }
+
+      let agentName = (step["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+      let frameworkHint = (step["frameworkHint"] as? String).flatMap { FrameworkHint(rawValue: $0) } ?? .auto
+      let customInstructions = step["customInstructions"] as? String
+
+      let agent = agentManager.createAgent(
+        name: agentName?.isEmpty == false ? agentName! : role.displayName,
+        type: .copilot,
+        role: role,
+        model: model,
+        workingDirectory: workingDirectory
+      )
+      agent.frameworkHint = frameworkHint
+      agent.customInstructions = customInstructions
+      chain.addAgent(agent)
+    }
+
+    guard !chain.agents.isEmpty else {
+      throw NSError(
+        domain: "MCP",
+        code: 4,
+        userInfo: [NSLocalizedDescriptionKey: "chainSpec must contain at least one step"]
+      )
+    }
+    return chain
   }
 
   private func handleChainMerge(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
@@ -1399,6 +1473,21 @@ public final class MCPServerService {
           "properties": [
             "templateId": ["type": "string"],
             "templateName": ["type": "string"],
+            "chainName": ["type": "string"],
+            "chainSpec": [
+              "type": "array",
+              "items": [
+                "type": "object",
+                "properties": [
+                  "role": ["type": "string"],
+                  "model": ["type": "string"],
+                  "name": ["type": "string"],
+                  "frameworkHint": ["type": "string"],
+                  "customInstructions": ["type": "string"]
+                ],
+                "required": ["role", "model"]
+              ]
+            ],
             "prompt": ["type": "string"],
             "workingDirectory": ["type": "string"],
             "enableReviewLoop": ["type": "boolean"]

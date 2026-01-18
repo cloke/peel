@@ -92,6 +92,31 @@ curl -X POST -H 'Content-Type: application/json' \
   http://127.0.0.1:8765/rpc
 ```
 
+### Planner-Defined Chains (Dynamic)
+You can skip predefined templates and provide a `chainSpec` in the `chains.run` call. Each step
+includes a role and model, with optional name, framework hint, and custom instructions.
+
+Example (JSON body excerpt):
+```json
+{
+  "templateName": "(optional)",
+  "chainName": "Dynamic Chain",
+  "prompt": "...",
+  "workingDirectory": "/path/to/repo",
+  "chainSpec": [
+    {"role": "planner", "model": "gpt-4.1", "name": "Planner"},
+    {"role": "implementer", "model": "gpt-5-mini", "name": "Impl A"},
+    {"role": "implementer", "model": "gpt-4.1", "name": "Impl B"},
+    {"role": "reviewer", "model": "gpt-4.1", "name": "Reviewer"}
+  ]
+}
+```
+
+Notes:
+- Max 8 steps.
+- `role` must be one of `planner`, `implementer`, `reviewer`.
+- `model` can be a Copilot model id (e.g. `gpt-4.1`, `claude-sonnet-4.5`).
+
 ### Merge Implementer Workspaces (Debug)
 If a chain run failed after parallel implementers (e.g., dirty working tree), you can trigger the
 merge step directly using the chain id returned from `chains.run`. Chain ids are persisted in the
