@@ -1022,6 +1022,7 @@ public final class MCPServerService {
     }
 
     let chain = agentManager.createChainFromTemplate(template, workingDirectory: workingDirectory)
+    chain.runSource = .mcp
     if let enableReviewLoop {
       chain.enableReviewLoop = enableReviewLoop
     }

@@ -58,4 +58,32 @@ final class DataServiceTests: XCTestCase {
     XCTAssertEqual(recentRuns.first?.prompt, "test prompt")
     XCTAssertEqual(recentRuns.first?.success, true)
   }
+
+  func testMCPRunHistoryCleanup() async throws {
+    let descriptor = FetchDescriptor<MCPRunRecord>()
+    let existing = (try? modelContainer.mainContext.fetch(descriptor)) ?? []
+    for record in existing {
+      modelContainer.mainContext.delete(record)
+    }
+    try? modelContainer.mainContext.save()
+
+    for index in 1...105 {
+      _ = dataService.recordMCPRun(
+        templateId: "cleanup-\(index)",
+        templateName: "template-\(index)",
+        prompt: "prompt-\(index)",
+        workingDirectory: nil,
+        success: true,
+        errorMessage: nil,
+        mergeConflictsCount: 0,
+        resultCount: 1
+      )
+      try? await Task.sleep(for: .milliseconds(2))
+    }
+
+    let recentRuns = dataService.getRecentMCPRuns(limit: 200)
+    XCTAssertEqual(recentRuns.count, 100)
+    XCTAssertEqual(recentRuns.first?.templateName, "template-105")
+    XCTAssertEqual(recentRuns.last?.templateName, "template-6")
+  }
 }

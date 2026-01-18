@@ -17,6 +17,13 @@ public final class AgentChain: Identifiable {
   public var state: ChainState
   public var currentAgentIndex: Int
   public var results: [AgentChainResult]
+
+  public enum RunSource: String, Sendable {
+    case manual
+    case mcp
+  }
+
+  public var runSource: RunSource = .manual
   
   /// Shared working directory for all agents in the chain
   public var workingDirectory: String?

@@ -1900,83 +1900,101 @@ struct ChainDetailView: View {
         
         Divider()
         
-        // Prompt input
-        VStack(alignment: .leading, spacing: 8) {
-          Label("Task Prompt", systemImage: "text.alignleft").font(.headline)
-          TextEditor(text: $prompt)
-            .font(.system(.body, design: .monospaced))
-            .frame(minHeight: 100)
-            .padding(8)
-            .background(Color.secondary.opacity(0.1))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-          
-          Text("This prompt will be sent to Agent 1. Agent 2 will receive Agent 1's output as context.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-        
-        // Review loop settings (only show if there's a reviewer in the chain)
-        if chain.agents.contains(where: { $0.role == .reviewer }) {
+        if chain.runSource == .mcp {
           GroupBox {
-            VStack(alignment: .leading, spacing: 8) {
-              Toggle(isOn: Binding(
-                get: { chain.enableReviewLoop },
-                set: { chain.enableReviewLoop = $0 }
-              )) {
-                Label("Enable Review Loop", systemImage: "arrow.triangle.2.circlepath")
-              }
-              
-              if chain.enableReviewLoop {
-                HStack {
-                  Text("Max iterations:")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                  Picker("", selection: Binding(
-                    get: { chain.maxReviewIterations },
-                    set: { chain.maxReviewIterations = $0 }
-                  )) {
-                    ForEach([1, 2, 3, 5], id: \.self) { num in
-                      Text("\(num)").tag(num)
-                    }
-                  }
-                  .pickerStyle(.segmented)
-                  .frame(width: 150)
-                }
-                
-                Text("If reviewer requests changes, re-run implementer with feedback")
+            HStack(spacing: 12) {
+              Image(systemName: "bolt.horizontal.circle.fill")
+                .foregroundStyle(.purple)
+              VStack(alignment: .leading, spacing: 2) {
+                Text("MCP Managed")
+                  .font(.headline)
+                Text("This chain is controlled by MCP. Prompt entry and manual run are hidden.")
                   .font(.caption)
                   .foregroundStyle(.secondary)
               }
+              Spacer()
             }
           }
-        }
-        
-        #if os(macOS)
-        // Run button
-        HStack {
-          Button {
-            // Save working directory for next time
-            if let dir = chain.workingDirectory {
-              agentManager.lastUsedWorkingDirectory = dir
-            }
-            Task { await runChain() }
-          } label: {
-            Label(isRunning ? "Running..." : "Run Chain", systemImage: isRunning ? "hourglass" : "play.fill")
-          }
-          .buttonStyle(.borderedProminent)
-          .disabled(isRunning || prompt.isEmpty || chain.workingDirectory == nil)
-          
-          if isRunning {
-            ProgressView().scaleEffect(0.8)
-          }
-          
-          Spacer()
-          
-          if !chain.results.isEmpty {
-            Text("Total: \(chain.results.reduce(0) { $0 + $1.premiumCost })× Premium")
+        } else {
+          // Prompt input
+          VStack(alignment: .leading, spacing: 8) {
+            Label("Task Prompt", systemImage: "text.alignleft").font(.headline)
+            TextEditor(text: $prompt)
+              .font(.system(.body, design: .monospaced))
+              .frame(minHeight: 100)
+              .padding(8)
+              .background(Color.secondary.opacity(0.1))
+              .clipShape(RoundedRectangle(cornerRadius: 8))
+            
+            Text("This prompt will be sent to Agent 1. Agent 2 will receive Agent 1's output as context.")
               .font(.caption)
               .foregroundStyle(.secondary)
           }
+          
+          // Review loop settings (only show if there's a reviewer in the chain)
+          if chain.agents.contains(where: { $0.role == .reviewer }) {
+            GroupBox {
+              VStack(alignment: .leading, spacing: 8) {
+                Toggle(isOn: Binding(
+                  get: { chain.enableReviewLoop },
+                  set: { chain.enableReviewLoop = $0 }
+                )) {
+                  Label("Enable Review Loop", systemImage: "arrow.triangle.2.circlepath")
+                }
+                
+                if chain.enableReviewLoop {
+                  HStack {
+                    Text("Max iterations:")
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                    Picker("", selection: Binding(
+                      get: { chain.maxReviewIterations },
+                      set: { chain.maxReviewIterations = $0 }
+                    )) {
+                      ForEach([1, 2, 3, 5], id: \.self) { num in
+                        Text("\(num)").tag(num)
+                      }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 150)
+                  }
+                  
+                  Text("If reviewer requests changes, re-run implementer with feedback")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+              }
+            }
+          }
+          
+          #if os(macOS)
+          // Run button
+          HStack {
+            Button {
+              // Save working directory for next time
+              if let dir = chain.workingDirectory {
+                agentManager.lastUsedWorkingDirectory = dir
+              }
+              Task { await runChain() }
+            } label: {
+              Label(isRunning ? "Running..." : "Run Chain", systemImage: isRunning ? "hourglass" : "play.fill")
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(isRunning || prompt.isEmpty || chain.workingDirectory == nil)
+            
+            if isRunning {
+              ProgressView().scaleEffect(0.8)
+            }
+            
+            Spacer()
+            
+            if !chain.results.isEmpty {
+              Text("Total: \(chain.results.reduce(0) { $0 + $1.premiumCost })× Premium")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+          }
+          #endif
         }
         
         // Live status panel when running
@@ -2145,7 +2163,6 @@ struct ChainDetailView: View {
             }
           }
         }
-        #endif
         
         Spacer()
       }
