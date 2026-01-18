@@ -157,11 +157,11 @@ struct VMIsolationDashboardView: View {
           }
           
           if service.isLinuxReady {
-            Text("Debian netboot kernel + initramfs ready")
+            Text("Alpine Linux kernel + initramfs ready")
               .font(.caption)
               .foregroundStyle(.secondary)
           } else {
-            Text("Downloads Debian netboot kernel + initramfs")
+            Text("Downloads Alpine Linux kernel + initramfs")
               .font(.caption)
               .foregroundStyle(.secondary)
             
@@ -366,7 +366,7 @@ struct VMIsolationDashboardView: View {
           .font(.caption)
           .foregroundStyle(.secondary)
 
-        Text("VM start must run on the main actor. The test kernel uses Debian netboot (raw Image) for VZLinuxBootLoader compatibility.")
+        Text("VM start must run on the main actor. The test kernel uses Alpine Linux for VZLinuxBootLoader compatibility.")
           .font(.caption2)
           .foregroundStyle(.secondary)
         
