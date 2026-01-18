@@ -70,6 +70,50 @@ curl -X POST -H 'Content-Type: application/json' \
   http://127.0.0.1:8765/rpc
 ```
 
+### Create Template
+```bash
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{
+    "jsonrpc":"2.0",
+    "id":1,
+    "method":"tools/call",
+    "params":{
+      "name":"templates.create",
+      "arguments":{
+        "name":"My Template",
+        "description":"Planner + 2 implementers + reviewer",
+        "steps":[
+          {"role":"planner","model":"gpt-4.1","name":"Planner"},
+          {"role":"implementer","model":"gpt-5-mini","name":"Impl A"},
+          {"role":"implementer","model":"gpt-4.1","name":"Impl B"},
+          {"role":"reviewer","model":"gpt-4.1","name":"Reviewer"}
+        ]
+      }
+    }
+  }' \
+  http://127.0.0.1:8765/rpc
+```
+
+### Validate Template
+```bash
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{
+    "jsonrpc":"2.0",
+    "id":1,
+    "method":"tools/call",
+    "params":{
+      "name":"templates.validate",
+      "arguments":{
+        "name":"My Template",
+        "steps":[
+          {"role":"planner","model":"gpt-4.1"}
+        ]
+      }
+    }
+  }' \
+  http://127.0.0.1:8765/rpc
+```
+
 **Response:** Available chain templates (MCP Harness, etc.)
 
 ### Run Chain

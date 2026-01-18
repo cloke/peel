@@ -199,6 +199,12 @@ public final class AgentManager {
     savedTemplates.append(template)
     persistTemplates()
   }
+
+  /// Save a template directly (used by MCP)
+  public func saveTemplate(_ template: ChainTemplate) {
+    savedTemplates.append(template)
+    persistTemplates()
+  }
   
   /// Delete a saved template (cannot delete built-in)
   public func deleteTemplate(_ template: ChainTemplate) {
@@ -1122,6 +1128,12 @@ public final class MCPServerService {
       let templates = templateList()
       return (200, makeRPCResult(id: id, result: ["templates": templates]))
 
+    case "templates.validate":
+      return await handleTemplateValidate(id: id, arguments: arguments)
+
+    case "templates.create":
+      return await handleTemplateCreate(id: id, arguments: arguments)
+
     case "chains.run":
       return await handleChainRun(id: id, arguments: arguments)
 
@@ -1138,6 +1150,35 @@ public final class MCPServerService {
 
     default:
       return (400, makeRPCError(id: id, code: -32601, message: "Unknown tool"))
+    }
+  }
+
+  private func handleTemplateValidate(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let name = arguments["name"] as? String else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing name"))
+    }
+    let description = arguments["description"] as? String
+    let steps = arguments["steps"] as? [[String: Any]] ?? []
+    do {
+      _ = try parseTemplateSpec(steps: steps, name: name, description: description)
+      return (200, makeRPCResult(id: id, result: ["valid": true]))
+    } catch {
+      return (200, makeRPCResult(id: id, result: ["valid": false, "error": error.localizedDescription]))
+    }
+  }
+
+  private func handleTemplateCreate(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let name = arguments["name"] as? String else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing name"))
+    }
+    let description = arguments["description"] as? String
+    let steps = arguments["steps"] as? [[String: Any]] ?? []
+    do {
+      let template = try parseTemplateSpec(steps: steps, name: name, description: description)
+      agentManager.saveTemplate(template)
+      return (200, makeRPCResult(id: id, result: ["templateId": template.id.uuidString]))
+    } catch {
+      return (400, makeRPCError(id: id, code: -32602, message: error.localizedDescription))
     }
   }
 
@@ -1312,6 +1353,65 @@ public final class MCPServerService {
     return chain
   }
 
+  private func parseTemplateSpec(
+    steps: [[String: Any]],
+    name: String,
+    description: String?
+  ) throws -> ChainTemplate {
+    guard !steps.isEmpty else {
+      throw NSError(
+        domain: "MCP",
+        code: 10,
+        userInfo: [NSLocalizedDescriptionKey: "steps must contain at least one step"]
+      )
+    }
+    guard steps.count <= 8 else {
+      throw NSError(
+        domain: "MCP",
+        code: 11,
+        userInfo: [NSLocalizedDescriptionKey: "steps exceeds max count (8)"]
+      )
+    }
+
+    let parsedSteps: [AgentStepTemplate] = try steps.map { step in
+      guard let roleValue = step["role"] as? String,
+            let role = AgentRole.fromString(roleValue) else {
+        throw NSError(
+          domain: "MCP",
+          code: 12,
+          userInfo: [NSLocalizedDescriptionKey: "Invalid or missing role in steps"]
+        )
+      }
+      guard let modelValue = step["model"] as? String,
+            let model = CopilotModel.fromString(modelValue) else {
+        throw NSError(
+          domain: "MCP",
+          code: 13,
+          userInfo: [NSLocalizedDescriptionKey: "Invalid or missing model in steps"]
+        )
+      }
+
+      let stepName = (step["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+      let frameworkHint = (step["frameworkHint"] as? String).flatMap { FrameworkHint(rawValue: $0) } ?? .auto
+      let customInstructions = step["customInstructions"] as? String
+
+      return AgentStepTemplate(
+        role: role,
+        model: model,
+        name: stepName?.isEmpty == false ? stepName! : role.displayName,
+        frameworkHint: frameworkHint,
+        customInstructions: customInstructions
+      )
+    }
+
+    return ChainTemplate(
+      name: name,
+      description: description ?? "",
+      steps: parsedSteps,
+      isBuiltIn: false
+    )
+  }
+
   private func handleChainMerge(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
     guard let chainId = arguments["chainId"] as? String,
           let uuid = UUID(uuidString: chainId) else {
@@ -1483,6 +1583,58 @@ public final class MCPServerService {
         "inputSchema": [
           "type": "object",
           "properties": [:]
+        ]
+      ],
+      [
+        "name": "templates.validate",
+        "description": "Validate a chain template spec",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "name": ["type": "string"],
+            "description": ["type": "string"],
+            "steps": [
+              "type": "array",
+              "items": [
+                "type": "object",
+                "properties": [
+                  "role": ["type": "string"],
+                  "model": ["type": "string"],
+                  "name": ["type": "string"],
+                  "frameworkHint": ["type": "string"],
+                  "customInstructions": ["type": "string"]
+                ],
+                "required": ["role", "model"]
+              ]
+            ]
+          ],
+          "required": ["name", "steps"]
+        ]
+      ],
+      [
+        "name": "templates.create",
+        "description": "Create and persist a chain template",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "name": ["type": "string"],
+            "description": ["type": "string"],
+            "steps": [
+              "type": "array",
+              "items": [
+                "type": "object",
+                "properties": [
+                  "role": ["type": "string"],
+                  "model": ["type": "string"],
+                  "name": ["type": "string"],
+                  "frameworkHint": ["type": "string"],
+                  "customInstructions": ["type": "string"]
+                ],
+                "required": ["role", "model"]
+              ]
+            ]
+          ],
+          "required": ["name", "steps"]
         ]
       ],
       [
