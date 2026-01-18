@@ -101,6 +101,20 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
       ],
       isBuiltIn: true
+    ),
+
+    // Roadmap MCP (Cost-Conscious): Planner + 3 implementers + reviewer
+    ChainTemplate(
+      name: "MCP Roadmap (3x Cost)",
+      description: "Planner + 3 implementers + reviewer using free/low-cost models",
+      steps: [
+        AgentStepTemplate(role: .planner, model: .gpt41, name: "Planner"),
+        AgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer A"),
+        AgentStepTemplate(role: .implementer, model: .gpt41, name: "Implementer B"),
+        AgentStepTemplate(role: .implementer, model: .gemini3Pro, name: "Implementer C"),
+        AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
+      ],
+      isBuiltIn: true
     )
   ]
 }
