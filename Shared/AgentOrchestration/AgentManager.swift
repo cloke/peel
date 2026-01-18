@@ -265,6 +265,7 @@ public final class AgentChainRunner {
     public let results: [AgentChainResult]
     public let mergeConflicts: [String]
     public let errorMessage: String?
+    public let noWorkReason: String?
     public let validationResult: ValidationResult?
   }
 
@@ -310,6 +311,8 @@ public final class AgentChainRunner {
       chain.addStatusMessage("Error: \(error.localizedDescription)", type: .error)
     }
 
+    let noWorkReason = chain.results.first(where: { $0.plannerDecision?.shouldSkipWork == true })?.plannerDecision?.noWorkReason
+
     // Run validation if configured
     if let config = validationConfig, !config.enabledRules.isEmpty {
       chain.addStatusMessage("Running validation...", type: .info)
@@ -320,6 +323,7 @@ public final class AgentChainRunner {
         results: chain.results,
         mergeConflicts: mergeConflicts,
         errorMessage: errorMessage,
+        noWorkReason: noWorkReason,
         validationResult: nil
       )
       
@@ -343,15 +347,16 @@ public final class AgentChainRunner {
       }
     }
 
-    return RunSummary(
+        return RunSummary(
       chainId: chain.id,
       chainName: chain.name,
       stateDescription: chain.state.displayName,
       results: chain.results,
       mergeConflicts: mergeConflicts,
       errorMessage: errorMessage,
+      noWorkReason: noWorkReason,
       validationResult: validationResult
-    )
+        )
   }
 
   private func runAgentsSequentially(chain: AgentChain, prompt: String) async throws {
@@ -362,6 +367,14 @@ public final class AgentChainRunner {
       let result = try await runSingleAgent(agent, at: index, chain: chain, prompt: prompt)
       chain.results.append(result)
       chain.addStatusMessage("\(agent.name) completed", type: .complete)
+      if agent.role == .planner,
+         let decision = result.plannerDecision,
+         decision.shouldSkipWork {
+        let reason = decision.noWorkReason ?? "Planner determined no work is required."
+        chain.addStatusMessage("Planner gated implementers: \(reason)", type: .complete)
+        chain.state = .complete
+        return
+      }
     }
   }
 
@@ -399,6 +412,14 @@ public final class AgentChainRunner {
         let result = try await runSingleAgent(agent, at: index, chain: chain, prompt: prompt)
         chain.results.append(result)
         chain.addStatusMessage("\(agent.name) completed", type: .complete)
+        if agent.role == .planner,
+           let decision = result.plannerDecision,
+           decision.shouldSkipWork {
+          let reason = decision.noWorkReason ?? "Planner determined no work is required."
+          chain.addStatusMessage("Planner gated implementers: \(reason)", type: .complete)
+          chain.state = .complete
+          return
+        }
       }
     }
 
@@ -569,6 +590,11 @@ public final class AgentChainRunner {
       verdict = ReviewVerdict.parse(from: response.content)
     }
 
+    var plannerDecision: PlannerDecision?
+    if agent.role == .planner {
+      plannerDecision = PlannerDecision.parse(from: response.content)
+    }
+
     let result = AgentChainResult(
       agentId: agent.id,
       agentName: agent.name,
@@ -577,7 +603,8 @@ public final class AgentChainRunner {
       output: response.content,
       duration: response.duration,
       premiumCost: premiumCost,
-      reviewVerdict: verdict
+      reviewVerdict: verdict,
+      plannerDecision: plannerDecision
     )
     return result
   }
@@ -1085,7 +1112,8 @@ public final class MCPServerService {
       mergeConflictsCount: summary.mergeConflicts.count,
       resultCount: summary.results.count,
       validationStatus: summary.validationResult?.status.rawValue,
-      validationReasons: summary.validationResult?.reasons ?? []
+      validationReasons: summary.validationResult?.reasons ?? [],
+      noWorkReason: summary.noWorkReason
     )
 
     var result: [String: Any] = [

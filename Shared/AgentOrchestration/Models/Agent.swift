@@ -211,7 +211,15 @@ public enum AgentRole: String, Codable, CaseIterable, Identifiable, Sendable {
               "recommendedModel": "claude-sonnet-4.5",
               "fileHints": ["Shared/Path/File.swift"]
             }
-          ]
+          ],
+          "noWorkReason": "optional reason if tasks is empty"
+        }
+
+        If no changes are needed, return:
+        {
+          "branch": "n/a",
+          "tasks": [],
+          "noWorkReason": "Why no work is required"
         }
         
         """
