@@ -28,21 +28,62 @@ Peel is a macOS/iOS SwiftUI application for managing GitHub, Git repositories, a
 ### Documentation vs Plans
 | Type | Location | Purpose |
 |------|----------|---------|
-| **docs/** | How things work NOW | Guides, reference |
+| **Docs/** | How things work NOW | Guides, reference |
 | **Plans/** | Future work | Roadmaps, proposals |
 
 ### Key Docs
 | Doc | Path |
 |-----|------|
-| MCP usage guide | `docs/guides/MCP_AGENT_WORKFLOW.md` |
+| MCP usage guide | `Docs/guides/MCP_AGENT_WORKFLOW.md` |
 | Project roadmap | `Plans/ROADMAP.md` |
-| Code patterns | `docs/reference/CODE_AUDIT_INDEX.md` |
+| Code patterns | `Docs/reference/CODE_AUDIT_INDEX.md` |
 
 ### Tools
 | Tool | Path | Purpose |
 |------|------|---------|
 | Build & launch | `Tools/build-and-launch.sh` | Build app, enable MCP, launch |
 | MCP CLI | `Tools/PeelCLI/` | CLI wrapper for MCP commands |
+
+---
+
+## Model Selection for Cost Optimization
+
+Use the right model for the task to minimize premium request costs.
+
+### Task → Model Mapping
+
+| Task Type | Recommended Model | Premium Cost | Notes |
+|-----------|-------------------|--------------|-------|
+| **Planning/Architecture** | Claude Opus, o1 | High (1.0) | Complex reasoning, multi-step plans |
+| **Implementation** | Claude Sonnet, GPT-4.1 | Medium (0.33) | Good balance of quality/cost |
+| **Simple Implementation** | GPT-4.1-mini, Claude Haiku | Low (0) | Single-file changes, clear specs |
+| **Tests/Docs** | GPT-4.1-mini, Haiku | Low (0) | Mechanical, well-defined output |
+| **Renames/Formatting** | Any fast model | Low (0) | Trivial transformations |
+
+### MCP Chain Strategy
+
+For the Peel MCP chain workflow:
+1. **Planner** (Opus/Sonnet): Creates the plan, splits tasks, picks models for each
+2. **Implementers** (Sonnet or lower): Execute individual sub-tasks
+3. **Merge Agent** (Sonnet): Combine results, resolve conflicts  
+4. **Reviewer** (Sonnet): Validate correctness
+
+### When to Use Cheap Models
+
+✅ **Good for 0-cost models:**
+- Writing unit tests from existing code
+- Adding documentation/comments
+- Renaming variables/functions
+- Formatting changes
+- Simple CRUD operations
+- Copying patterns from elsewhere in codebase
+
+❌ **Use premium models for:**
+- Architecture decisions
+- Complex refactoring
+- Security-sensitive code
+- Multi-file coordinated changes
+- Novel algorithms
 
 ---
 
