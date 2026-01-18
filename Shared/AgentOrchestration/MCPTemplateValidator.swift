@@ -19,7 +19,6 @@ public enum MCPTemplateValidationError: LocalizedError {
 }
 
 public struct MCPTemplateValidator {
-  static let allowedRoles = ["planner", "implementer", "reviewer"]
   static let maxSteps = 8
 
   public static func validate(_ template: MCPTemplate) throws {
@@ -33,11 +32,10 @@ public struct MCPTemplateValidator {
       throw MCPTemplateValidationError.tooManySteps(max: maxSteps)
     }
     for step in template.steps {
-      if !allowedRoles.contains(step.role.lowercased()) {
+      if AgentRole.fromString(step.role) == nil {
         throw MCPTemplateValidationError.invalidRole(step.role)
       }
-      // Model validation: ensure CopilotModel.fromString exists, but avoid importing model types here.
-      if step.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      if CopilotModel.fromString(step.model) == nil {
         throw MCPTemplateValidationError.invalidModel(step.model)
       }
     }
