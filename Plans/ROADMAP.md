@@ -1,7 +1,49 @@
-# Peel Roadmap
+---
+title: Peel Roadmap
+status: active
+tags:
+  - roadmap
+  - peel
+  - agent-orchestration
+  - mcp
+updated: 2026-01-18
+audience:
+  - ai-agent
+  - developer
+github_issues:
+  - number: 8
+    status: open
+    title: Create PII scrubber CLI tool
+  - number: 13
+    status: open
+    title: Add validation pipeline for MCP runs
+  - number: 16
+    status: open
+    title: MCP activity log + cleanup actions
+  - number: 17
+    status: open
+    title: Planner gating - skip implementers when no work needed
+  - number: 18
+    status: open
+    title: Show planner prompt in MCP Run detail view
+  - number: 19
+    status: open
+    title: Clarify Assign Task button behavior
+code_locations:
+  - file: Shared/AgentOrchestration/AgentManager.swift
+    lines: 260-500
+    description: AgentChainRunner and parallel execution
+  - file: Shared/AgentOrchestration/MCPTemplateExecutor.swift
+    description: MCP chain template execution
+  - file: Shared/Views/SettingsView.swift
+    description: MCP server toggle and settings
+related_docs:
+  - AGENT_ORCHESTRATION_PLAN.md
+  - PARALLEL_AGENTS_PLAN.md
+  - MCP_AGENT_WORKFLOW.md
+---
 
-**Created:** January 18, 2026  
-**Last Updated:** January 18, 2026
+# Peel Roadmap
 
 ---
 
