@@ -197,6 +197,8 @@ final class MCPRunRecord {
   var errorMessage: String?
   var mergeConflictsCount: Int = 0
   var resultCount: Int = 0
+  var validationStatus: String?
+  var validationReasons: String?
   var createdAt: Date = Date()
 
   init(
@@ -211,6 +213,8 @@ final class MCPRunRecord {
     errorMessage: String? = nil,
     mergeConflictsCount: Int = 0,
     resultCount: Int = 0,
+    validationStatus: String? = nil,
+    validationReasons: String? = nil,
     createdAt: Date = Date()
   ) {
     self.id = UUID()
@@ -225,6 +229,8 @@ final class MCPRunRecord {
     self.errorMessage = errorMessage
     self.mergeConflictsCount = mergeConflictsCount
     self.resultCount = resultCount
+    self.validationStatus = validationStatus
+    self.validationReasons = validationReasons
     self.createdAt = createdAt
   }
 }
