@@ -92,6 +92,27 @@ curl -X POST -H 'Content-Type: application/json' \
   http://127.0.0.1:8765/rpc
 ```
 
+### Merge Implementer Workspaces (Debug)
+If a chain run failed after parallel implementers (e.g., dirty working tree), you can trigger the
+merge step directly using the chain id returned from `chains.run`. Chain ids are persisted in the
+MCP run log, so you can merge after relaunch.
+
+```bash
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{
+    "jsonrpc":"2.0",
+    "id":1,
+    "method":"tools/call",
+    "params":{
+      "name":"chains.merge",
+      "arguments":{
+        "chainId":"<CHAIN_ID>"
+      }
+    }
+  }' \
+  http://127.0.0.1:8765/rpc
+```
+
 ### Planner-Defined Chains (Dynamic)
 
 Templates are predefined, but you can allow a Planner to output a chain spec (JSON) that the app

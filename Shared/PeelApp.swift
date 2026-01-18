@@ -226,20 +226,26 @@ final class DataService {
 
   @discardableResult
   func recordMCPRun(
+    chainId: String? = nil,
     templateId: String?,
     templateName: String,
     prompt: String,
     workingDirectory: String?,
+    implementerBranches: [String] = [],
+    implementerWorkspacePaths: [String] = [],
     success: Bool,
     errorMessage: String?,
     mergeConflictsCount: Int,
     resultCount: Int
   ) -> MCPRunRecord {
     let record = MCPRunRecord(
+      chainId: chainId ?? "",
       templateId: templateId ?? "",
       templateName: templateName,
       prompt: prompt,
       workingDirectory: workingDirectory,
+      implementerBranches: implementerBranches.joined(separator: "\n"),
+      implementerWorkspacePaths: implementerWorkspacePaths.joined(separator: "\n"),
       success: success,
       errorMessage: errorMessage,
       mergeConflictsCount: mergeConflictsCount,
@@ -256,6 +262,14 @@ final class DataService {
     var descriptor = FetchDescriptor<MCPRunRecord>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
     descriptor.fetchLimit = limit
     return (try? modelContext.fetch(descriptor)) ?? []
+  }
+
+  func getMCPRun(forChainId chainId: String) -> MCPRunRecord? {
+    guard !chainId.isEmpty else { return nil }
+    let descriptor = FetchDescriptor<MCPRunRecord>(
+      predicate: #Predicate { $0.chainId == chainId }
+    )
+    return try? modelContext.fetch(descriptor).first
   }
 
   private func cleanupOldMCPRuns(keeping limit: Int = 100) {
