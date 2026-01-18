@@ -239,10 +239,10 @@ requests.post("http://127.0.0.1:8765/rpc", json={
 
 ## Related Files
 
-- [Tools/build-and-launch.sh](../Tools/build-and-launch.sh) - Build and launch script
-- [Tools/PeelCLI/](../Tools/PeelCLI/) - CLI wrapper for MCP
-- [Shared/AgentOrchestration/AgentManager.swift](../Shared/AgentOrchestration/AgentManager.swift) - MCPServerService implementation
-- [Plans/MCP_TEST_PLAN.md](MCP_TEST_PLAN.md) - Test cases
+- [Tools/build-and-launch.sh](../../Tools/build-and-launch.sh) - Build and launch script
+- [Tools/PeelCLI/](../../Tools/PeelCLI/) - CLI wrapper for MCP
+- [Shared/AgentOrchestration/AgentManager.swift](../../Shared/AgentOrchestration/AgentManager.swift) - MCPServerService implementation
+- [MCP_TEST_PLAN.md](MCP_TEST_PLAN.md) - Test cases
 
 ---
 
