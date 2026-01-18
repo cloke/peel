@@ -54,6 +54,26 @@ curl -X POST -H 'Content-Type: application/json' \
 
 ## MCP Endpoints
 
+### Template Schema
+
+External MCP templates should follow the MCPTemplate JSON schema (minimal):
+
+- id: optional UUID (generated if omitted)
+- name: string (required)
+- description: string
+- steps: array of step objects (required)
+
+Step object fields:
+- role: "planner" | "implementer" | "reviewer" (required)
+- model: Copilot model id string (e.g. "gpt-4.1") (required)
+- name: friendly name for the agent (optional)
+- frameworkHint: optional framework hint (e.g. "swiftui")
+- customInstructions: optional freeform instructions for the agent
+
+Validators in Peel enforce a maximum of 8 steps and basic role/model presence.
+
+
+
 ### List Tools
 ```bash
 curl -X POST -H 'Content-Type: application/json' \
