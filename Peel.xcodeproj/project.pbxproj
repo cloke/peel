@@ -20,6 +20,7 @@
 		04D09EFD26A85E8100072702 /* OAuthSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 04D09EFC26A85E8100072702 /* OAuthSwift */; };
 		0A11B6D12F1234567890ABCD /* PeelApp_iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A11B6D02F1234567890ABCD /* PeelApp_iOS.swift */; };
 		0B1E3C9C2FABCDEF00112233 /* DataServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B1E3C9B2FABCDEF00112233 /* DataServiceTests.swift */; };
+		DD3900B27EF856FDCE71847E /* ValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1EDC3CED1C274FD0649E03C /* ValidationTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -60,10 +61,11 @@
 		04F582A6269FD388003A8403 /* Github */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Github; path = "Local Packages/Github"; sourceTree = "<group>"; };
 		0A11B6D02F1234567890ABCD /* PeelApp_iOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeelApp_iOS.swift; sourceTree = "<group>"; };
 		0B1E3C9B2FABCDEF00112233 /* DataServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataServiceTests.swift; sourceTree = "<group>"; };
+		D1EDC3CED1C274FD0649E03C /* ValidationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ValidationTests.swift; path = "Tests macOS/ValidationTests.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		04913BD12F0F4ED7001EF810 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+		04913BD12F0F4ED7001EF810 /* Exceptions for "Shared" folder in "Peel (iOS)" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				AgentOrchestration/VMIsolationService.swift,
@@ -81,8 +83,29 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		042793A42F0DEAE7002A5499 /* Plans */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Plans; sourceTree = "<group>"; };
-		04913BB52F0F4ED7001EF810 /* Shared */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (04913BD12F0F4ED7001EF810 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = Shared; sourceTree = "<group>"; };
+		042793A42F0DEAE7002A5499 /* Plans */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = Plans;
+			sourceTree = "<group>";
+		};
+		04913BB52F0F4ED7001EF810 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				04913BD12F0F4ED7001EF810 /* Exceptions for "Shared" folder in "Peel (iOS)" target */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -204,6 +227,7 @@
 				04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */,
 				0B1E3C9B2FABCDEF00112233 /* DataServiceTests.swift */,
 				04A7BD8B258E77D8000E55A8 /* Info.plist */,
+				D1EDC3CED1C274FD0649E03C /* ValidationTests.swift */,
 			);
 			path = "Tests macOS";
 			sourceTree = "<group>";
@@ -409,6 +433,7 @@
 			files = (
 				04A7BD8A258E77D8000E55A8 /* Tests_macOS.swift in Sources */,
 				0B1E3C9C2FABCDEF00112233 /* DataServiceTests.swift in Sources */,
+				DD3900B27EF856FDCE71847E /* ValidationTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
