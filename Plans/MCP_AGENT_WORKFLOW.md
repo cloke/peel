@@ -1,3 +1,23 @@
+---
+title: MCP Agent Workflow
+status: active
+created: 2026-01-18
+updated: 2026-01-18
+tags: [mcp, agent-orchestration, api]
+audience: [ai-agents, developers]
+code_locations:
+  - path: Shared/AgentOrchestration/AgentManager.swift
+    description: MCPServerService implementation
+  - path: Tools/build-and-launch.sh
+    description: Build and launch script with MCP flags
+  - path: Tools/PeelCLI/
+    description: CLI wrapper for MCP commands
+related_docs:
+  - Plans/MCP_TEST_PLAN.md
+  - Plans/AGENT_ORCHESTRATION_PLAN.md
+  - Docs/guides/MCP_AGENT_WORKFLOW.md
+---
+
 # MCP Agent Workflow
 
 **Created:** January 18, 2026  

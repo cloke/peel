@@ -1,3 +1,15 @@
+---
+title: Apple-Only Agent Big-Ideas
+status: vision
+created: 2026-01-16
+updated: 2026-01-18
+tags: [vision, apple-platform, mlx, metal, ane, isolation]
+audience: [developers, stakeholders]
+related_docs:
+  - Plans/VM_ISOLATION_PLAN.md
+  - Plans/ROADMAP.md
+---
+
 # Apple-Only Agent Big-Ideas (Throughput + Isolation)
 
 _Last updated: 2026-01-16_

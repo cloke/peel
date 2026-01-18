@@ -1,3 +1,24 @@
+---
+title: Agent Orchestration Plan
+status: complete
+created: 2025-12-01
+updated: 2026-01-18
+tags: [agent-orchestration, cli, worktrees]
+audience: [developers]
+code_locations:
+  - path: Shared/AgentOrchestration/AgentManager.swift
+    description: Agent state management and chain execution
+  - path: Shared/AgentOrchestration/CLIService.swift
+    description: CLI tool detection and execution
+  - path: Shared/AgentOrchestration/WorkspaceManager.swift
+    description: Worktree management for agents
+  - path: Shared/Applications/Agents_RootView.swift
+    description: Main agents UI
+related_docs:
+  - Plans/PARALLEL_AGENTS_PLAN.md
+  - Plans/CONSOLIDATION_PLAN.md
+---
+
 # Agent Orchestration Plan
 
 **Updated:** January 18, 2026  

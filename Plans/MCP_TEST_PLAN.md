@@ -1,3 +1,20 @@
+---
+title: MCP Test Plan
+status: active
+created: 2026-01-18
+updated: 2026-01-18
+tags: [mcp, testing, qa]
+audience: [developers, testers]
+code_locations:
+  - path: Shared/AgentOrchestration/AgentManager.swift
+    description: MCPServerService being tested
+  - path: Tests macOS/MCPTemplateTests.swift
+    description: Unit tests for MCP templates
+related_docs:
+  - Plans/MCP_AGENT_WORKFLOW.md
+  - Docs/guides/MCP_TEST_PLAN.md
+---
+
 # MCP Test Plan
 
 **Created:** January 18, 2026
