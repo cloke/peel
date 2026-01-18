@@ -1372,6 +1372,10 @@ struct MCPRunDetailView: View {
     )
   }
 
+  private var plannerPrompt: String? {
+    results.first { $0.agentName.lowercased().contains("planner") }?.prompt
+  }
+
   var body: some View {
     NavigationStack {
       ScrollView {
@@ -1411,10 +1415,18 @@ struct MCPRunDetailView: View {
             }
           }
 
-          GroupBox("Prompt") {
+          GroupBox("User Prompt") {
             Text(run.prompt)
               .font(.caption)
               .textSelection(.enabled)
+          }
+
+          if let plannerPrompt {
+            GroupBox("Planner Prompt") {
+              Text(plannerPrompt)
+                .font(.system(.caption, design: .monospaced))
+                .textSelection(.enabled)
+            }
           }
 
           GroupBox("Agent Outputs") {
