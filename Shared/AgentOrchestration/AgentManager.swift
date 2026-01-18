@@ -265,11 +265,13 @@ public final class AgentChainRunner {
     public let results: [AgentChainResult]
     public let mergeConflicts: [String]
     public let errorMessage: String?
+    public let validationResult: ValidationResult?
   }
 
   private let agentManager: AgentManager
   private let cliService: CLIService
   private let sessionTracker: SessionTracker
+  private let validationRunner = ValidationRunner()
 
   public init(
     agentManager: AgentManager,
@@ -281,9 +283,10 @@ public final class AgentChainRunner {
     self.sessionTracker = sessionTracker
   }
 
-  public func runChain(_ chain: AgentChain, prompt: String) async -> RunSummary {
+  public func runChain(_ chain: AgentChain, prompt: String, validationConfig: ValidationConfiguration? = nil) async -> RunSummary {
     var mergeConflicts: [String] = []
     var errorMessage: String?
+    var validationResult: ValidationResult? = nil
 
     chain.reset()
     chain.clearLiveStatus()
@@ -307,13 +310,47 @@ public final class AgentChainRunner {
       chain.addStatusMessage("Error: \(error.localizedDescription)", type: .error)
     }
 
+    // Run validation if configured
+    if let config = validationConfig, !config.enabledRules.isEmpty {
+      chain.addStatusMessage("Running validation...", type: .info)
+      let summary = RunSummary(
+        chainId: chain.id,
+        chainName: chain.name,
+        stateDescription: chain.state.displayName,
+        results: chain.results,
+        mergeConflicts: mergeConflicts,
+        errorMessage: errorMessage,
+        validationResult: nil
+      )
+      
+      let rules = config.createRules()
+      validationResult = await validationRunner.runValidation(
+        rules: rules,
+        chain: chain,
+        summary: summary,
+        workingDirectory: chain.workingDirectory
+      )
+      
+      switch validationResult?.status {
+      case .passed:
+        chain.addStatusMessage("✓ Validation passed", type: .complete)
+      case .failed:
+        chain.addStatusMessage("✗ Validation failed", type: .error)
+      case .warning:
+        chain.addStatusMessage("⚠ Validation warnings", type: .error)
+      case .skipped, .none:
+        break
+      }
+    }
+
     return RunSummary(
       chainId: chain.id,
       chainName: chain.name,
       stateDescription: chain.state.displayName,
       results: chain.results,
       mergeConflicts: mergeConflicts,
-      errorMessage: errorMessage
+      errorMessage: errorMessage,
+      validationResult: validationResult
     )
   }
 
@@ -1036,7 +1073,7 @@ public final class MCPServerService {
       chain.enableReviewLoop = enableReviewLoop
     }
 
-    let summary = await chainRunner.runChain(chain, prompt: prompt)
+    let summary = await chainRunner.runChain(chain, prompt: prompt, validationConfig: template.validationConfig)
 
     dataService?.recordMCPRun(
       templateId: template.id.uuidString,
@@ -1046,10 +1083,12 @@ public final class MCPServerService {
       success: summary.errorMessage == nil,
       errorMessage: summary.errorMessage,
       mergeConflictsCount: summary.mergeConflicts.count,
-      resultCount: summary.results.count
+      resultCount: summary.results.count,
+      validationStatus: summary.validationResult?.status.rawValue,
+      validationReasons: summary.validationResult?.reasons ?? []
     )
 
-    let result: [String: Any] = [
+    var result: [String: Any] = [
       "chain": [
         "id": chain.id.uuidString,
         "name": chain.name,
@@ -1060,6 +1099,10 @@ public final class MCPServerService {
       "mergeConflicts": summary.mergeConflicts,
       "results": summarizeResults(summary.results)
     ]
+    
+    if let validationResult = summary.validationResult {
+      result["validation"] = validationResult.toDictionary()
+    }
 
     return (200, makeRPCResult(id: id, result: result))
   }
