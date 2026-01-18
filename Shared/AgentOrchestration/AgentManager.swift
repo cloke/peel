@@ -53,9 +53,6 @@ public final class AgentManager {
   public init() {
     // Load last used working directory
     lastUsedWorkingDirectory = UserDefaults.standard.string(forKey: "lastUsedWorkingDirectory")
-    
-    // Add a sample agent for testing
-    addSampleData()
     loadSavedTemplates()
   }
   
@@ -253,39 +250,6 @@ public final class AgentManager {
     agents.filter { $0.state == .idle }
   }
   
-  // MARK: - Sample Data (for development/testing)
-  
-  private func addSampleData() {
-    // Create sample agents to show in UI
-    let claude = Agent(
-      name: "Claude Assistant",
-      type: .claude,
-      state: .idle
-    )
-    agents.append(claude)
-    
-    let copilot = Agent(
-      name: "Copilot Helper",
-      type: .copilot,
-      state: .idle
-    )
-    agents.append(copilot)
-    
-    // Add a working agent with a task
-    let workingAgent = Agent(
-      name: "Feature Builder",
-      type: .claude,
-      state: .working
-    )
-    let task = AgentTask(
-      title: "Implement login flow",
-      description: "Add OAuth login with GitHub",
-      prompt: "Please implement a GitHub OAuth login flow using SwiftUI..."
-    )
-    task.start()
-    workingAgent.currentTask = task
-    agents.append(workingAgent)
-  }
 }
 
 // MARK: - Agent Chain Runner
@@ -736,9 +700,9 @@ public final class MCPServerService {
   public private(set) var lastCleanupSummary: String?
   public private(set) var lastCleanupError: String?
 
-  private let agentManager: AgentManager
-  private let cliService: CLIService
-  private let sessionTracker: SessionTracker
+  public let agentManager: AgentManager
+  public let cliService: CLIService
+  public let sessionTracker: SessionTracker
   private let chainRunner: AgentChainRunner
   private var dataService: DataService?
 
