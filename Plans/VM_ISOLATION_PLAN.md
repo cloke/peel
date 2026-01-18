@@ -11,8 +11,9 @@
 - ✅ Linux VM boots to command line
 - ✅ Kernel + initramfs download works
 - ✅ VZLinuxBootLoader with extracted raw kernel
-- ⚠️ Console output shows ANSI escape codes (needs stripping)
-- ⚠️ UI labels say "Fedora" but downloads Alpine/Debian
+- ✅ Console output ANSI escape codes stripped
+- ✅ UI labels updated (Alpine Linux)
+- ✅ State management (VM cleanup on stop)
 - ❌ macOS VM not working yet
 
 ---
@@ -104,10 +105,20 @@ For testing, enable the netboot configuration:
 - [ ] Add filtering/search in console view
 - [ ] Consider throttle adjustments (currently 0.25s/4KB)
 
-### 3. Quick-Start Presets
-- [ ] Add preset configurations (minimal, development, build-server)
+### 3. Quick-Start Presets (Recommend separate sub-issue)
+**Note:** This is a larger feature that deserves its own GitHub issue.
+
+Suggested implementation:
+- [ ] Define `VMPreset` enum (minimal, development, build-server)
+- [ ] Create configuration builder for each preset
+- [ ] Add UI preset selector dropdown
 - [ ] Auto-configure network/disk based on preset
 - [ ] Template command lines for common use cases
+
+**Preset Types:**
+- **Minimal**: No network, no disk, initramfs only (current default)
+- **Development**: Network + netboot with Alpine repo, for testing
+- **Build Server**: Network + persistent disk image, full rootfs
 
 ### 4. State Management
 - [x] Clear VM state on unexpected stop ✅
