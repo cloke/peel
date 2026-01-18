@@ -190,7 +190,7 @@ struct VMResourceLimits: Sendable {
   
   static let linux = VMResourceLimits(
     cpuCores: 4,
-    memoryGB: 2,
+    memoryGB: 3,
     diskGB: 4,
     timeoutSeconds: 300,
     gpuAccess: false
@@ -216,7 +216,7 @@ struct VMResourceLimits: Sendable {
 // MARK: - Console State (Thread-Safe)
 
 private final class VMConsoleState: @unchecked Sendable {
-  let queue = DispatchQueue(label: "vm.console.reader")
+  let queue = DispatchQueue(label: "vm.console.reader", attributes: .concurrent)
   private var buffer: String = ""
   private let lock = NSLock()
   let maxBufferBytes = 64 * 1024
@@ -287,11 +287,16 @@ private final class VMConsoleState: @unchecked Sendable {
 private enum VMConsoleReader {
   static func start(state: VMConsoleState, fd: Int32) {
     state.markStart()
-    _ = fcntl(fd, F_SETFL, O_NONBLOCK)
+    let flags = fcntl(fd, F_GETFL)
+    _ = fcntl(fd, F_SETFL, flags | O_NONBLOCK)
+    
     state.queue.async {
+      // vmLog("Starting read loop on fd \(fd)")
       var buffer = [UInt8](repeating: 0, count: 4096)
+      
       while !state.isStopping() {
         let count = read(fd, &buffer, buffer.count)
+        
         if count > 0 {
           let data = Data(bytes: buffer, count: count)
           if let text = String(data: data, encoding: .utf8), !text.isEmpty {
@@ -299,12 +304,15 @@ private enum VMConsoleReader {
           }
           state.recordBytes(count)
         } else if count == 0 {
+          // EOF
           break
         } else {
-          if errno == EAGAIN || errno == EWOULDBLOCK {
+          let err = errno
+          if err == EAGAIN || err == EWOULDBLOCK {
             usleep(10_000)
             continue
           }
+          print("[ConsoleReader] Error reading fd \(fd): \(err)")
           break
         }
       }
@@ -558,7 +566,7 @@ final class VMIsolationService {
   private let attachLinuxNetwork = false
   private let attachMemoryBalloon = false
   private let attachMacOSNetwork = true
-  private let isVerboseVMLogging = false
+  private let isVerboseVMLogging = true
 
   // MARK: - Dependencies
 
@@ -594,6 +602,17 @@ final class VMIsolationService {
       
       // Check for Linux VM support
       await checkLinuxVMSupport()
+
+      // Auto-provision if missing or outdated/mismatched
+      if !isLinuxReady {
+        print("[VM Init] Linux VM not ready, attempting auto-setup...")
+        do {
+            try await setupLinuxVM()
+        } catch {
+            print("[VM Init] Auto-setup failed: \(error)")
+            // Continue, statusMessage will reflect the error if set in setupLinuxVM
+        }
+      }
       
       // Check for macOS VM support
       await checkMacOSVMSupport()
@@ -683,6 +702,16 @@ final class VMIsolationService {
     let linuxDir = linuxVMDirectory
     let kernelPath = linuxDir.appendingPathComponent("vmlinuz")
     let initramfsPath = linuxDir.appendingPathComponent("initramfs")
+    let distroTagPath = linuxDir.appendingPathComponent(".distro")
+    let targetTag = "alpine-3.21-virt"
+
+    // Validate Distro Tag
+    let currentTag = (try? String(contentsOf: distroTagPath, encoding: .utf8)) ?? ""
+    if currentTag != targetTag {
+      print("[VM Check] Distro tag mismatch. Found: '\(currentTag)', Expected: '\(targetTag)'. Marking as not ready.")
+      isLinuxReady = false
+      return
+    }
     
     let kernelExists = FileManager.default.fileExists(atPath: kernelPath.path)
     let initramfsExists = FileManager.default.fileExists(atPath: initramfsPath.path)
@@ -692,6 +721,11 @@ final class VMIsolationService {
     
     let kernelIsPE = kernelExists && isPEKernel(at: kernelPath.path)
     isLinuxReady = kernelExists && initramfsExists && initramfsIsCpio
+    
+    if kernelIsPE {
+      print("[VM Check] Kernel appears to be EFI/PE (MZ). Marking as not ready to force fixup.")
+      isLinuxReady = false
+    }
     
     // Log what we found for debugging
     if isLinuxReady {
@@ -742,29 +776,47 @@ final class VMIsolationService {
     let linuxDir = linuxVMDirectory
     try FileManager.default.createDirectory(at: linuxDir, withIntermediateDirectories: true)
     
-    let arch = "arm64"      // Apple Silicon
     let kernelPath = linuxDir.appendingPathComponent("vmlinuz")
     let initrdPath = linuxDir.appendingPathComponent("initramfs")
+    let distroTagPath = linuxDir.appendingPathComponent(".distro")
+    let targetTag = "alpine-3.21-virt"
     
-    // Use Debian netboot (raw Linux Image) for VZLinuxBootLoader compatibility.
-    statusMessage = "Downloading Debian kernel/initramfs..."
-    let debianBase = "https://deb.debian.org/debian/dists/bookworm/main/installer-\(arch)/current/images/netboot/debian-installer/\(arch)"
-    let debianKernelURL = URL(string: "\(debianBase)/linux")!
-    let debianInitrdURL = URL(string: "\(debianBase)/initrd.gz")!
-    let kernelData = try await downloadFirstAvailable(
-      urls: [debianKernelURL],
-      minimumBytes: 4_000_000,
-      label: "Debian kernel"
-    )
-    try kernelData.write(to: kernelPath)
-    let initrdData = try await downloadFirstAvailable(
-      urls: [debianInitrdURL],
-      minimumBytes: 1_000_000,
-      label: "Debian initramfs"
-    )
-    try initrdData.write(to: initrdPath)
-    try "debian-bookworm-netboot".write(to: linuxDir.appendingPathComponent(".distro"), atomically: true, encoding: .utf8)
-    print("[VM Setup] Debian kernel/initramfs ready")
+    // WARNING: Alpine vmlinuz is an EFI/PE executable. VZLinuxBootLoader requires a raw Image.
+    // 'setupLinuxVM' calls 'extractEmbeddedKernel' to fix this.
+    // DO NOT revert to using the downloaded kernel directly without this check.
+    
+    // Check if we already have the correct files
+    let currentTag = (try? String(contentsOf: distroTagPath, encoding: .utf8)) ?? ""
+    let filesExist = FileManager.default.fileExists(atPath: kernelPath.path) &&
+                     FileManager.default.fileExists(atPath: initrdPath.path)
+    
+    if currentTag == targetTag && filesExist {
+      print("[VM Setup] Files already present for \(targetTag). Skipping download.")
+    } else {
+      // Cleanup old files if tag mismatch
+      if currentTag != targetTag {
+        print("[VM Setup] Distro changed (was: \(currentTag)), cleaning up...")
+        try? FileManager.default.removeItem(at: kernelPath)
+        try? FileManager.default.removeItem(at: initrdPath)
+        try? FileManager.default.removeItem(at: linuxDir.appendingPathComponent("initramfs.raw"))
+      }
+      
+      statusMessage = "Downloading Alpine Linux..."
+      // Alpine is lightweight and uses a standard uncompressed/gzip kernel format that works well with VZ
+      let base = "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/aarch64/netboot"
+      let kernelURL = URL(string: "\(base)/vmlinuz-virt")!
+      let initrdURL = URL(string: "\(base)/initramfs-virt")!
+        
+      let kData = try await downloadFirstAvailable(urls: [kernelURL], minimumBytes: 5_000_000, label: "Alpine Kernel")
+      let iData = try await downloadFirstAvailable(urls: [initrdURL], minimumBytes: 2_000_000, label: "Alpine Initramfs")
+      
+      try kData.write(to: kernelPath)
+      try iData.write(to: initrdPath)
+      
+      try targetTag.write(to: distroTagPath, atomically: true, encoding: .utf8)
+    }
+
+    print("[VM Setup] Alpine kernel/initramfs ready")
 
     if isXZFile(at: initrdPath.path) {
       // Convert XZ to raw cpio (Virtualization.framework initrd handling is finicky with XZ)
@@ -801,10 +853,54 @@ final class VMIsolationService {
 
     let kernelIsPE = isPEKernel(at: kernelPath.path)
     if kernelIsPE {
-      print("[VM Setup] Kernel appears to be EFI/PE (MZ). This may still boot, but is a common failure source.")
+      print("[VM Setup] Kernel appears to be EFI/PE (MZ). Attempting to extract raw Image...")
+      let rawKernelPath = linuxDir.appendingPathComponent("vmlinuz.raw")
+      if try await extractEmbeddedKernel(inputPath: kernelPath.path, outputPath: rawKernelPath.path) {
+        try? FileManager.default.removeItem(at: kernelPath)
+        try FileManager.default.moveItem(at: rawKernelPath, to: kernelPath)
+        print("[VM Setup] Replaced EFI kernel with raw Image.")
+      } else {
+        print("[VM Setup] Failed to extract raw kernel. This may fail to boot.")
+      }
     }
     isLinuxReady = isCpioFile(at: initrdPath.path)
     statusMessage = "Linux VM ready"
+  }
+  
+  private func extractEmbeddedKernel(inputPath: String, outputPath: String) async throws -> Bool {
+    print("[VM Setup] Checking for embedded gzip kernel in \(inputPath)...")
+    let data = try Data(contentsOf: URL(fileURLWithPath: inputPath))
+    // Search for gzip magic: 1f 8b 08. Scan first 64KB for speed.
+    let scanLimit = min(data.count, 65536)
+    let scanData = data[0..<scanLimit]
+    guard let range = scanData.range(of: Data([0x1f, 0x8b, 0x08])) else {
+      print("[VM Setup] No gzip header found in kernel header.")
+      return false
+    }
+    print("[VM Setup] Found embedded gzip stream at offset \(range.lowerBound). Extracting...")
+    
+    let tempGz = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("kernel_embedded_\(UUID().uuidString).gz")
+    try data[range.lowerBound...].write(to: tempGz)
+    
+    // Decompress
+    // Note: gunzip may return exit code 2 if there is trailing garbage (the rest of the PE file),
+    // which is expected here. We check the output file size instead.
+    let gzipPath = "/usr/bin/gzip"
+    _ = try await runProcess(gzipPath, arguments: ["-d", "-c", tempGz.path], outputPath: outputPath)
+    
+    // Validation
+    let outAttrs = try? FileManager.default.attributesOfItem(atPath: outputPath)
+    let size = outAttrs?[.size] as? Int64 ?? 0
+    let valid = size > 2_000_000 // Kernel should be > 2MB usually
+    
+    try? FileManager.default.removeItem(at: tempGz)
+    
+    if valid {
+      print("[VM Setup] Successfully extracted raw kernel (\(size) bytes).")
+    } else {
+      print("[VM Setup] Extraction failed or result too small.")
+    }
+    return valid
   }
   
   private func checkMacOSVMSupport() async {
@@ -955,7 +1051,13 @@ final class VMIsolationService {
     
     let bootLoader = VZLinuxBootLoader(kernelURL: kernelPath)
     bootLoader.initialRamdiskURL = initramfsPath
-    bootLoader.commandLine = "console=hvc0 console=ttyAMA0 console=ttyS0 earlycon loglevel=7 debug"
+    // console=hvc0/hvc1 -> Virtio consoles (primary for Apple VZ)
+    // console=ttyAMA0   -> PL011 (ARM default - valid if we have PL011, ignored otherwise)
+    //
+    // TODO: The current Alpine boot fails at "Mounting boot media".
+    // We likely need to supply the 'modloop' or adjust args for diskless boot/netboot repo.
+    // Try adding: alpine_repo=http://dl-cdn.alpinelinux.org/alpine/v3.21/main
+    bootLoader.commandLine = "console=ttyS0 console=ttyAMA0 console=hvc0 console=hvc1 earlycon loglevel=7 debug"
     vmLog("Boot command line: \(bootLoader.commandLine)")
     
     let config = VZVirtualMachineConfiguration()
@@ -991,15 +1093,18 @@ final class VMIsolationService {
       config.serialPorts = [serialPortConfig]
     }
 
-    // Additional serial port (ttyS0) for fallback output
+    // Additional serial port for fallback output (ttyS0/ttyAMA0 depending on arch/config)
     let serialInput = Pipe()
     let serialOutput = Pipe()
     let serialAttachment = VZFileHandleSerialPortAttachment(
       fileHandleForReading: serialInput.fileHandleForReading,
       fileHandleForWriting: serialOutput.fileHandleForWriting
     )
+    
+    // Fallback to Virtio Serial for second port on all architectures since PL011 is problematic with current SDK
     let serialPortConfig = VZVirtioConsoleDeviceSerialPortConfiguration()
     serialPortConfig.attachment = serialAttachment
+    
     config.serialPorts.append(serialPortConfig)
     config.entropyDevices = [VZVirtioEntropyDeviceConfiguration()]
 

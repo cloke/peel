@@ -429,11 +429,25 @@ struct VMIsolationDashboardView: View {
         .font(.caption)
         .foregroundStyle(.secondary)
 
-      TextEditor(text: .constant(service.consoleOutput))
-        .font(.system(.caption, design: .monospaced))
-        .frame(minHeight: 160)
+      ScrollViewReader { proxy in
+        ScrollView {
+          Text(service.consoleOutput)
+            .font(.system(.caption, design: .monospaced))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .textSelection(.enabled)
+            .id("console-output")
+        }
+        .frame(height: 300)
+        .padding(8)
+        .background(Color.black.opacity(0.9))
+        .cornerRadius(8)
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(.tertiary))
-        .disabled(true)
+        .onChange(of: service.consoleOutput) { _, _ in
+          withAnimation {
+            proxy.scrollTo("console-output", anchor: .bottom)
+          }
+        }
+      }
 
       HStack(spacing: 8) {
         TextField("Send console input", text: $consoleInput)
