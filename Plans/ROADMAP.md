@@ -60,21 +60,29 @@
 ### Phase 1C: MCP Test Harness & Templates
 **Timeline:** 1-2 weeks
 
-- [x] MCP server for test harness ([#11](https://github.com/cloke/peel/issues/11))
-- [x] Template: planner + parallel implementers + merge + review ([#12](https://github.com/cloke/peel/issues/12))
-- [x] Planner-defined chains (dynamic chain spec from planner output)
+- [ ] MCP server for test harness ([#11](https://github.com/cloke/peel/issues/11))
+- [ ] Template: planner + parallel implementers + merge + review ([#12](https://github.com/cloke/peel/issues/12))
 - [ ] Validation pipeline for correctness checks ([#13](https://github.com/cloke/peel/issues/13))
-- [x] MCP activity log + cleanup actions ([#16](https://github.com/cloke/peel/issues/16))
-- [x] MCP template create/validate endpoints
-- [x] MCP run detail + outputs (planner/implementer/reviewer)
-- [x] Review pause + reviewer override
+- [ ] MCP activity log + cleanup actions ([#16](https://github.com/cloke/peel/issues/16))
 - [ ] MCP control CLI (query, stop server, quit app)
 
-**Near-term next steps**
-- UX polish for MCP Activity (better empty states, spacing, icons)
-- Swift Charts: live chain timeline + per-agent status chart
-- Expand MCP tests (template validation, executor error paths, review pause)
-- Background MCP session: spawn two chains and monitor both
+#### Proposed Next: Two Worktree Chains (Phase 1C)
+
+**Chain A: MCP Test Harness Server (Issue #11)**
+
+- **Goal:** Stand up the MCP test harness server and expose a basic command surface.
+- **Worktree A (Implementer 1):** MCP server scaffolding, routes, and lifecycle wiring.
+- **Worktree B (Implementer 2):** CLI surface and API contract (request/response models).
+- **Merge:** Reconcile server endpoints with CLI commands; ensure command help text aligns.
+- **Review:** Validate server can start, respond to a health check, and cleanly stop.
+
+**Chain B: MCP Activity Log + Cleanup (Issue #16)**
+
+- **Goal:** Persist and display MCP activity, plus add cleanup actions.
+- **Worktree A (Implementer 1):** SwiftData model + persistence plumbing.
+- **Worktree B (Implementer 2):** UI + action wiring (log list, clear/archive actions).
+- **Merge:** Connect log writes to UI reads; add cleanup triggers.
+- **Review:** Verify log entries appear, updates stream, and cleanup clears state.
 
 ### Phase 2: Local AI Foundation
 **Timeline:** 3-4 weeks
@@ -141,51 +149,39 @@ Planner → splits task → creates branches
 
 ## GitHub Issues Index
 
-### Phase 1A ✅ Complete
-- [#1](https://github.com/cloke/peel/issues/1) - Wire TrackedWorktree SwiftData model ✅
-- [#2](https://github.com/cloke/peel/issues/2) - Unify worktree visibility across tabs ✅
-- [#3](https://github.com/cloke/peel/issues/3) - Persist CLI tool detection status ✅
-- [#4](https://github.com/cloke/peel/issues/4) - Delete duplicate parseWorktreeList ✅
+### High Priority (Phase 1A)
+- [#1](https://github.com/cloke/peel/issues/1) - Wire TrackedWorktree SwiftData model
+- [#2](https://github.com/cloke/peel/issues/2) - Unify worktree visibility across tabs
+- [#3](https://github.com/cloke/peel/issues/3) - Persist CLI tool detection status
+- [#4](https://github.com/cloke/peel/issues/4) - Delete duplicate parseWorktreeList
 
-### Phase 1B ✅ Complete (Parallel Agents)
-- [#5](https://github.com/cloke/peel/issues/5) - Implement parallel agent execution with TaskGroup ✅
-- [#6](https://github.com/cloke/peel/issues/6) - Create Merge Agent for combining worktree results ✅
-- [#7](https://github.com/cloke/peel/issues/7) - Add structured JSON output for Planner agent ✅
-
-### Phase 1C (MCP)
-- [#11](https://github.com/cloke/peel/issues/11) - MCP test harness server ✅
-- [#12](https://github.com/cloke/peel/issues/12) - MCP chain template (planner → parallel → merge → review) ✅
-- [#13](https://github.com/cloke/peel/issues/13) - MCP validation pipeline 🔄
-- [#16](https://github.com/cloke/peel/issues/16) - MCP activity log + cleanup actions ✅
-- MCP Activity: dedicated run detail panel (prompt/output/validation) ✅
-- MCP Activity: show agent live status timeline per run 🔄
-- MCP: prevent sleep while chain is running (optional toggle)
-- MCP templates: create/validate endpoints ✅
-- MCP review pause + reviewer override ✅
+### Phase 1B (Parallel Agents)
+- [#5](https://github.com/cloke/peel/issues/5) - Implement parallel agent execution with TaskGroup
+- [#6](https://github.com/cloke/peel/issues/6) - Create Merge Agent for combining worktree results
+- [#7](https://github.com/cloke/peel/issues/7) - Add structured JSON output for Planner agent
 
 ### Phase 2 (Local AI)
 - [#8](https://github.com/cloke/peel/issues/8) - Create PII scrubber CLI tool
+- [#11](https://github.com/cloke/peel/issues/11) - MCP test harness server
+- [#12](https://github.com/cloke/peel/issues/12) - MCP chain template (planner → parallel → merge → review)
+- [#13](https://github.com/cloke/peel/issues/13) - MCP validation pipeline
+- [#16](https://github.com/cloke/peel/issues/16) - MCP activity log + cleanup actions
+- MCP Activity: dedicated run detail panel (prompt/output/validation)
+- MCP Activity: show agent live status timeline per run
+- MCP: prevent sleep while chain is running (optional toggle)
 - XPC Tool Broker architecture (TBD)
 - MLX integration (TBD)
 
 ### Phase 3 (VM)
-- [#9](https://github.com/cloke/peel/issues/9) - Polish Linux VM experience ✅ (boots to CLI)
+- [#9](https://github.com/cloke/peel/issues/9) - Polish Linux VM experience
 - macOS VM support (TBD)
 
 ---
 
 ## References
 
-### Active Plans
+- [AGENT_ORCHESTRATION_PLAN.md](AGENT_ORCHESTRATION_PLAN.md)
+- [PARALLEL_AGENTS_PLAN.md](PARALLEL_AGENTS_PLAN.md)
 - [VM_ISOLATION_PLAN.md](VM_ISOLATION_PLAN.md)
+- [CONSOLIDATION_PLAN.md](CONSOLIDATION_PLAN.md)
 - [apple-agent-big-ideas.md](apple-agent-big-ideas.md)
-
-### Documentation
-- [MCP Workflow Guide](../Docs/guides/MCP_AGENT_WORKFLOW.md)
-- [MCP Test Plan](../Docs/guides/MCP_TEST_PLAN.md)
-- [Code Audit Index](../Docs/reference/CODE_AUDIT_INDEX.md)
-
-### Archived Plans
-- [Archive/AGENT_ORCHESTRATION_PLAN.md](Archive/AGENT_ORCHESTRATION_PLAN.md)
-- [Archive/PARALLEL_AGENTS_PLAN.md](Archive/PARALLEL_AGENTS_PLAN.md)
-- [Archive/CONSOLIDATION_PLAN.md](Archive/CONSOLIDATION_PLAN.md)
