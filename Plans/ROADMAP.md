@@ -60,12 +60,21 @@
 ### Phase 1C: MCP Test Harness & Templates
 **Timeline:** 1-2 weeks
 
-- [ ] MCP server for test harness ([#11](https://github.com/cloke/peel/issues/11))
-- [ ] Template: planner + parallel implementers + merge + review ([#12](https://github.com/cloke/peel/issues/12))
-- [ ] Planner-defined chains (dynamic chain spec from planner output)
+- [x] MCP server for test harness ([#11](https://github.com/cloke/peel/issues/11))
+- [x] Template: planner + parallel implementers + merge + review ([#12](https://github.com/cloke/peel/issues/12))
+- [x] Planner-defined chains (dynamic chain spec from planner output)
 - [ ] Validation pipeline for correctness checks ([#13](https://github.com/cloke/peel/issues/13))
-- [ ] MCP activity log + cleanup actions ([#16](https://github.com/cloke/peel/issues/16))
+- [x] MCP activity log + cleanup actions ([#16](https://github.com/cloke/peel/issues/16))
+- [x] MCP template create/validate endpoints
+- [x] MCP run detail + outputs (planner/implementer/reviewer)
+- [x] Review pause + reviewer override
 - [ ] MCP control CLI (query, stop server, quit app)
+
+**Near-term next steps**
+- UX polish for MCP Activity (better empty states, spacing, icons)
+- Swift Charts: live chain timeline + per-agent status chart
+- Expand MCP tests (template validation, executor error paths, review pause)
+- Background MCP session: spawn two chains and monitor both
 
 ### Phase 2: Local AI Foundation
 **Timeline:** 3-4 weeks
@@ -147,10 +156,12 @@ Planner → splits task → creates branches
 - [#11](https://github.com/cloke/peel/issues/11) - MCP test harness server ✅
 - [#12](https://github.com/cloke/peel/issues/12) - MCP chain template (planner → parallel → merge → review) ✅
 - [#13](https://github.com/cloke/peel/issues/13) - MCP validation pipeline 🔄
-- [#16](https://github.com/cloke/peel/issues/16) - MCP activity log + cleanup actions 🔄
-- MCP Activity: dedicated run detail panel (prompt/output/validation)
-- MCP Activity: show agent live status timeline per run
+- [#16](https://github.com/cloke/peel/issues/16) - MCP activity log + cleanup actions ✅
+- MCP Activity: dedicated run detail panel (prompt/output/validation) ✅
+- MCP Activity: show agent live status timeline per run 🔄
 - MCP: prevent sleep while chain is running (optional toggle)
+- MCP templates: create/validate endpoints ✅
+- MCP review pause + reviewer override ✅
 
 ### Phase 2 (Local AI)
 - [#8](https://github.com/cloke/peel/issues/8) - Create PII scrubber CLI tool
