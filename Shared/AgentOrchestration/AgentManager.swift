@@ -406,10 +406,16 @@ public final class AgentChainRunner {
       chain.currentAgentStartTime = Date()
       agent.updateState(.working)
       chain.addStatusMessage("Starting \(agent.name) (\(agent.model.shortName))...", type: .progress)
-      let result = try await runSingleAgent(agent, at: index, chain: chain, prompt: prompt)
-      chain.results.append(result)
-      agent.updateState(.complete)
-      chain.addStatusMessage("\(agent.name) completed", type: .complete)
+      do {
+        let result = try await runSingleAgent(agent, at: index, chain: chain, prompt: prompt)
+        chain.results.append(result)
+        agent.updateState(.complete)
+        chain.addStatusMessage("\(agent.name) completed", type: .complete)
+      } catch {
+        agent.updateState(.failed(message: error.localizedDescription))
+        chain.addStatusMessage("\(agent.name) failed", type: .error)
+        throw error
+      }
     }
   }
 
@@ -564,26 +570,41 @@ public final class AgentChainRunner {
       return []
     }
 
-    let repoURL = URL(fileURLWithPath: workingDirectory)
-    let repository = Model.Repository(name: repoURL.lastPathComponent, path: workingDirectory)
+    let baseRepoURL = URL(fileURLWithPath: workingDirectory)
+    let baseRepository = Model.Repository(name: baseRepoURL.lastPathComponent, path: workingDirectory)
 
-    let statusLines = try await Commands.simple(arguments: ["status", "--porcelain"], in: repository)
+    var mergeRepository = baseRepository
+    var mergeWorkspace: AgentWorkspace?
+
+    let statusLines = try await Commands.simple(arguments: ["status", "--porcelain"], in: baseRepository)
     if statusLines.contains(where: { !$0.isEmpty }) {
-      throw NSError(
-        domain: "AgentChain",
-        code: 3,
-        userInfo: [NSLocalizedDescriptionKey: "Working tree has uncommitted changes. Clean it before merging."]
+      let mergeTask = AgentTask(
+        title: "\(chain.name) - Merge",
+        prompt: "Merge implementer branches",
+        repositoryPath: workingDirectory
       )
+      mergeWorkspace = try await agentManager.workspaceManager.createWorkspace(
+        for: baseRepository,
+        task: mergeTask
+      )
+      mergeRepository = Model.Repository(
+        name: baseRepoURL.lastPathComponent,
+        path: mergeWorkspace?.path.path ?? workingDirectory
+      )
+      chain.workingDirectory = mergeWorkspace?.path.path
+      if let path = mergeWorkspace?.path.path {
+        chain.addStatusMessage("Base repo dirty; using merge worktree at \(path)", type: .info)
+      }
     }
 
     var conflicts: [String] = []
     for index in indices {
       guard let workspace = chain.agents[index].workspace else { continue }
       do {
-        _ = try await Commands.simple(arguments: ["merge", "--no-ff", workspace.branch], in: repository)
+        _ = try await Commands.simple(arguments: ["merge", "--no-ff", workspace.branch], in: mergeRepository)
       } catch {
-        _ = try? await Commands.simple(arguments: ["merge", "--abort"], in: repository)
-        let conflictLines = try? await Commands.simple(arguments: ["diff", "--name-only", "--diff-filter=U"], in: repository)
+        _ = try? await Commands.simple(arguments: ["merge", "--abort"], in: mergeRepository)
+        let conflictLines = try? await Commands.simple(arguments: ["diff", "--name-only", "--diff-filter=U"], in: mergeRepository)
         conflicts = conflictLines?.filter { !$0.isEmpty } ?? []
         break
       }
@@ -1167,6 +1188,21 @@ public final class MCPServerService {
       resultCount: summary.results.count
     )
 
+    if let dataService {
+      for result in summary.results {
+        _ = dataService.recordMCPRunResult(
+          chainId: chain.id.uuidString,
+          agentId: result.agentId.uuidString,
+          agentName: result.agentName,
+          model: result.model,
+          prompt: result.prompt,
+          output: result.output,
+          premiumCost: result.premiumCost,
+          reviewVerdict: result.reviewVerdict?.rawValue
+        )
+      }
+    }
+
     let result: [String: Any] = [
       "chain": [
         "id": chain.id.uuidString,
@@ -1235,12 +1271,22 @@ public final class MCPServerService {
     }
 
     let repoURL = URL(fileURLWithPath: workingDirectory)
-    let repository = Model.Repository(name: repoURL.lastPathComponent, path: workingDirectory)
+    let baseRepository = Model.Repository(name: repoURL.lastPathComponent, path: workingDirectory)
+    var mergeRepository = baseRepository
 
     do {
-      let statusLines = try await Commands.simple(arguments: ["status", "--porcelain"], in: repository)
+      let statusLines = try await Commands.simple(arguments: ["status", "--porcelain"], in: baseRepository)
       if statusLines.contains(where: { !$0.isEmpty }) {
-        return ([], "Working tree has uncommitted changes. Clean it before merging.")
+        let mergeTask = AgentTask(
+          title: "MCP Merge",
+          prompt: "Merge implementer branches",
+          repositoryPath: workingDirectory
+        )
+        let workspace = try await agentManager.workspaceManager.createWorkspace(
+          for: baseRepository,
+          task: mergeTask
+        )
+        mergeRepository = Model.Repository(name: repoURL.lastPathComponent, path: workspace.path.path)
       }
     } catch {
       return ([], error.localizedDescription)
@@ -1249,12 +1295,12 @@ public final class MCPServerService {
     var conflicts: [String] = []
     for branch in branches {
       do {
-        _ = try await Commands.simple(arguments: ["merge", "--no-ff", branch], in: repository)
+        _ = try await Commands.simple(arguments: ["merge", "--no-ff", branch], in: mergeRepository)
       } catch {
-        _ = try? await Commands.simple(arguments: ["merge", "--abort"], in: repository)
+        _ = try? await Commands.simple(arguments: ["merge", "--abort"], in: mergeRepository)
         let conflictLines = try? await Commands.simple(
           arguments: ["diff", "--name-only", "--diff-filter=U"],
-          in: repository
+          in: mergeRepository
         )
         conflicts = conflictLines?.filter { !$0.isEmpty } ?? []
         break

@@ -398,6 +398,7 @@ struct MCPDashboardView: View {
   @Bindable var mcpServer: MCPServerService
   @Bindable var sessionTracker: SessionTracker
   @Query(sort: \MCPRunRecord.createdAt, order: .reverse) private var mcpRuns: [MCPRunRecord]
+  @State private var selectedRun: MCPRunRecord?
 
   var body: some View {
     ScrollView {
@@ -483,6 +484,19 @@ struct MCPDashboardView: View {
                       .foregroundStyle(.red)
                       .lineLimit(2)
                   }
+                  HStack {
+                    if !run.chainId.isEmpty {
+                      Button("View details") {
+                        selectedRun = run
+                      }
+                      .buttonStyle(.link)
+                    } else {
+                      Text("Details unavailable (legacy run)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                  }
                 }
                 .padding(.vertical, 4)
               }
@@ -549,6 +563,9 @@ struct MCPDashboardView: View {
       .padding()
     }
     .navigationTitle("MCP Activity")
+    .sheet(item: $selectedRun) { run in
+      MCPRunDetailView(run: run)
+    }
   }
 }
 
@@ -1296,6 +1313,103 @@ struct CopilotInstallSteps: View {
   }
 }
 
+// MARK: - MCP Run Detail
+
+struct MCPRunDetailView: View {
+  let run: MCPRunRecord
+  @Query private var results: [MCPRunResultRecord]
+  @Environment(\.dismiss) private var dismiss
+
+  init(run: MCPRunRecord) {
+    self.run = run
+    let chainId = run.chainId
+    _results = Query(
+      filter: #Predicate { $0.chainId == chainId },
+      sort: [SortDescriptor(\.createdAt, order: .forward)]
+    )
+  }
+
+  var body: some View {
+    NavigationStack {
+      ScrollView {
+        VStack(alignment: .leading, spacing: 16) {
+          GroupBox {
+            VStack(alignment: .leading, spacing: 6) {
+              Text(run.templateName)
+                .font(.headline)
+              Text(run.createdAt, style: .date)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              if let workingDirectory = run.workingDirectory, !workingDirectory.isEmpty {
+                Text(workingDirectory)
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              }
+              if let error = run.errorMessage, !error.isEmpty {
+                Text(error)
+                  .font(.caption)
+                  .foregroundStyle(.red)
+              }
+            }
+          }
+
+          GroupBox("Prompt") {
+            Text(run.prompt)
+              .font(.caption)
+              .textSelection(.enabled)
+          }
+
+          GroupBox("Agent Outputs") {
+            if results.isEmpty {
+              Text("No outputs recorded for this run.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else {
+              VStack(alignment: .leading, spacing: 12) {
+                ForEach(results) { result in
+                  VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                      Text(result.agentName)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                      Text(result.model)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                      Spacer()
+                      if let verdict = result.reviewVerdict, !verdict.isEmpty {
+                        Text(verdict)
+                          .font(.caption2)
+                          .padding(.horizontal, 6)
+                          .padding(.vertical, 2)
+                          .background(Color.secondary.opacity(0.15), in: Capsule())
+                      }
+                    }
+                    Text(result.output)
+                      .font(.caption)
+                      .textSelection(.enabled)
+                  }
+                  if result.id != results.last?.id {
+                    Divider()
+                  }
+                }
+              }
+            }
+          }
+        }
+        .padding(.horizontal, 4)
+      }
+      .navigationTitle("MCP Run")
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Done") {
+            dismiss()
+          }
+        }
+      }
+    }
+  }
+}
+
 
 struct StepRow<Actions: View>: View {
   let number: Int
@@ -1866,35 +1980,96 @@ struct ChainDetailView: View {
           
           ForEach(Array(chain.agents.enumerated()), id: \.element.id) { index, agent in
             HStack {
-              Text("\(index + 1).")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-                .frame(width: 24)
+              // Agent number with status indicator
+              ZStack {
+                Circle()
+                  .fill(agentStatusColor(for: index, agent: agent))
+                  .frame(width: 28, height: 28)
+                
+                if chain.results.contains(where: { $0.agentId == agent.id }) {
+                  Image(systemName: "checkmark")
+                    .font(.caption.bold())
+                    .foregroundStyle(.white)
+                } else if isAgentRunning(at: index) {
+                  ProgressView()
+                    .progressViewStyle(.circular)
+                    .scaleEffect(0.5)
+                    .tint(.white)
+                } else {
+                  Text("\(index + 1)")
+                    .font(.caption.bold())
+                    .foregroundStyle(agentNumberColor(for: index, agent: agent))
+                }
+              }
               
               VStack(alignment: .leading, spacing: 2) {
-                Text(agent.name).font(.subheadline).fontWeight(.medium)
-                Text(agent.model.displayName)
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
+                Text(agent.name)
+                  .font(.subheadline)
+                  .fontWeight(isAgentRunning(at: index) ? .semibold : .medium)
+                
+                HStack(spacing: 4) {
+                  Text(agent.model.displayName)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                  
+                  if let result = chain.results.first(where: { $0.agentId == agent.id }) {
+                    Text("•")
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                    Text("\(result.premiumCost)× used")
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                  } else if agent.state.isActive {
+                    Text("•")
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                    Label(agent.state.displayName, systemImage: agent.state.iconName)
+                      .font(.caption)
+                      .foregroundStyle(Color(agent.state.color))
+                  }
+                }
               }
               
               Spacer()
               
-              // Status indicator
-              if let result = chain.results.first(where: { $0.agentId == agent.id }) {
-                Image(systemName: "checkmark.circle.fill")
+              // Status badge
+              if isAgentRunning(at: index) {
+                Text("Running")
+                  .font(.caption2)
+                  .fontWeight(.medium)
+                  .foregroundStyle(.white)
+                  .padding(.horizontal, 8)
+                  .padding(.vertical, 4)
+                  .background(Color.blue)
+                  .clipShape(Capsule())
+              } else if chain.results.contains(where: { $0.agentId == agent.id }) {
+                Text("Complete")
+                  .font(.caption2)
+                  .fontWeight(.medium)
                   .foregroundStyle(.green)
-                Text("\(result.premiumCost)×")
-                  .font(.caption)
+                  .padding(.horizontal, 8)
+                  .padding(.vertical, 4)
+                  .background(Color.green.opacity(0.15))
+                  .clipShape(Capsule())
+              } else if case .running = chain.state, !isAgentRunning(at: index) {
+                Text("Queued")
+                  .font(.caption2)
+                  .fontWeight(.medium)
                   .foregroundStyle(.secondary)
-              } else if case .running(let idx) = chain.state, idx == index {
-                ProgressView().scaleEffect(0.7)
+                  .padding(.horizontal, 8)
+                  .padding(.vertical, 4)
+                  .background(Color.secondary.opacity(0.15))
+                  .clipShape(Capsule())
               }
             }
             .padding(.vertical, 8)
             .padding(.horizontal, 12)
-            .background(Color.secondary.opacity(0.1))
+            .background(agentBackgroundColor(for: index, agent: agent))
             .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(
+              RoundedRectangle(cornerRadius: 8)
+                .stroke(isAgentRunning(at: index) ? Color.blue : Color.clear, lineWidth: 2)
+            )
           }
         }
         
@@ -2178,6 +2353,62 @@ struct ChainDetailView: View {
         chain.workingDirectory = agentManager.lastUsedWorkingDirectory
       }
     }
+  }
+  
+  // MARK: - Agent Status Helpers
+  
+  private func isAgentRunning(at index: Int) -> Bool {
+    let agent = chain.agents[index]
+    return agent.state.isActive
+  }
+  
+  private func agentStatusColor(for index: Int, agent: Agent) -> Color {
+    // Completed
+    if chain.results.contains(where: { $0.agentId == agent.id }) {
+      return .green
+    }
+    
+    // Currently running/working
+    if agent.state.isActive {
+      return .blue
+    }
+    
+    // Queued (chain is running but this agent hasn't started yet)
+    if case .running = chain.state, agent.state == .idle {
+      return Color.secondary.opacity(0.3)
+    }
+    
+    // Failed
+    if case .failed = agent.state {
+      return .red
+    }
+    
+    // Idle/Not started
+    return Color.secondary.opacity(0.3)
+  }
+  
+  private func agentNumberColor(for index: Int, agent: Agent) -> Color {
+    // Completed or running - white text on colored background
+    if chain.results.contains(where: { $0.agentId == agent.id }) || isAgentRunning(at: index) {
+      return .white
+    }
+    // Otherwise secondary text
+    return .secondary
+  }
+  
+  private func agentBackgroundColor(for index: Int, agent: Agent) -> Color {
+    // Currently running - light blue background
+    if agent.state.isActive {
+      return Color.blue.opacity(0.1)
+    }
+    
+    // Completed - very light green
+    if chain.results.contains(where: { $0.agentId == agent.id }) {
+      return Color.green.opacity(0.05)
+    }
+    
+    // Default
+    return Color.secondary.opacity(0.1)
   }
   
   #if os(macOS)
