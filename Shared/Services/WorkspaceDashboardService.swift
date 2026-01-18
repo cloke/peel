@@ -9,6 +9,7 @@
 //
 
 import Foundation
+import Git
 
 #if os(macOS)
 import AppKit
@@ -306,68 +307,27 @@ public final class WorkspaceDashboardService {
   
   /// Load worktrees for a repository
   private func loadWorktrees(for repo: WorkspaceRepo, in workspace: Workspace) async throws -> [WorktreeInfo] {
-    let output = try await runGit(["worktree", "list", "--porcelain"], in: repo.path)
-    return parseWorktreeList(output, repoName: repo.name, workspaceName: workspace.name, mainPath: repo.path)
+    let repository = Model.Repository(name: repo.name, path: repo.path)
+    let gitWorktrees = try await Commands.Worktree.list(on: repository)
+    return gitWorktrees.map { worktree in
+      WorktreeInfo(
+        path: worktree.path,
+        branch: normalizedBranch(worktree.branch),
+        commit: String(worktree.head.prefix(7)),
+        isMain: worktree.isMain,
+        isDetached: worktree.isDetached,
+        repoName: repo.name,
+        workspaceName: workspace.name
+      )
+    }
   }
-  
-  /// Parse git worktree list --porcelain output
-  private func parseWorktreeList(_ output: String, repoName: String, workspaceName: String, mainPath: String) -> [WorktreeInfo] {
-    var worktrees: [WorktreeInfo] = []
-    var currentPath: String?
-    var currentCommit: String?
-    var currentBranch: String?
-    var isDetached = false
-    
-    for line in output.components(separatedBy: .newlines) {
-      if line.hasPrefix("worktree ") {
-        currentPath = String(line.dropFirst("worktree ".count))
-      } else if line.hasPrefix("HEAD ") {
-        currentCommit = String(line.dropFirst("HEAD ".count).prefix(7))
-      } else if line.hasPrefix("branch ") {
-        let fullBranch = String(line.dropFirst("branch ".count))
-        // Remove refs/heads/ prefix
-        currentBranch = fullBranch.replacingOccurrences(of: "refs/heads/", with: "")
-        isDetached = false
-      } else if line == "detached" {
-        isDetached = true
-        currentBranch = nil
-      } else if line.isEmpty, let path = currentPath, let commit = currentCommit {
-        // End of entry
-        let isMain = path == mainPath
-        
-        worktrees.append(WorktreeInfo(
-          path: path,
-          branch: currentBranch,
-          commit: commit,
-          isMain: isMain,
-          isDetached: isDetached,
-          repoName: repoName,
-          workspaceName: workspaceName
-        ))
-        
-        // Reset for next entry
-        currentPath = nil
-        currentCommit = nil
-        currentBranch = nil
-        isDetached = false
-      }
+
+  private func normalizedBranch(_ branch: String?) -> String? {
+    guard let branch else { return nil }
+    if branch.hasPrefix("refs/heads/") {
+      return String(branch.dropFirst("refs/heads/".count))
     }
-    
-    // Handle last entry if no trailing newline
-    if let path = currentPath, let commit = currentCommit {
-      let isMain = path == mainPath
-      worktrees.append(WorktreeInfo(
-        path: path,
-        branch: currentBranch,
-        commit: commit,
-        isMain: isMain,
-        isDetached: isDetached,
-        repoName: repoName,
-        workspaceName: workspaceName
-      ))
-    }
-    
-    return worktrees
+    return branch
   }
   
   // MARK: - Worktree Operations
@@ -576,7 +536,10 @@ public final class WorkspaceDashboardService {
   
   @discardableResult
   private func runGit(_ args: [String], in directory: String) async throws -> String {
-    try await runCommand("/usr/bin/git", args: args, in: directory)
+    let repoURL = URL(fileURLWithPath: directory)
+    let repository = Model.Repository(name: repoURL.lastPathComponent, path: directory)
+    let lines = try await Commands.simple(arguments: args, in: repository)
+    return lines.joined(separator: "\n")
   }
   
   @discardableResult

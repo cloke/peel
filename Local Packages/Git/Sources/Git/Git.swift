@@ -2,33 +2,6 @@ import SwiftUI
 
 #if os(macOS)
 import AppKit
-
-private func findVSCode() -> String? {
-  let paths = [
-    "/usr/local/bin/code",
-    "/opt/homebrew/bin/code",
-    "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
-    "\(NSHomeDirectory())/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
-  ]
-  for path in paths {
-    if FileManager.default.fileExists(atPath: path) {
-      return path
-    }
-  }
-  return nil
-}
-
-private func openInVSCode(_ path: String) throws {
-  guard let vscodePath = findVSCode() else {
-    throw NSError(domain: "VSCode", code: 1, userInfo: [
-      NSLocalizedDescriptionKey: "VS Code is not installed"
-    ])
-  }
-  let process = Process()
-  process.executableURL = URL(fileURLWithPath: vscodePath)
-  process.arguments = ["-n", path]
-  try process.run()
-}
 enum GitDestination: Hashable {
   case localChanges
   case history(String)
@@ -38,9 +11,14 @@ public struct GitRootView: View {
   @Bindable public var repository: Model.Repository
   @State private var selection: GitDestination?
   @State private var worktreeDetailItem: WorktreeDetailItem?
+  let onOpenInVSCode: ((String) -> Void)?
   
-  public init(repository: Model.Repository) {
+  public init(
+    repository: Model.Repository,
+    onOpenInVSCode: ((String) -> Void)? = nil
+  ) {
     self.repository = repository
+    self.onOpenInVSCode = onOpenInVSCode
     Task {
       await repository.load()
     }
@@ -66,9 +44,12 @@ public struct GitRootView: View {
           label: "Remote Branches",
           location: .remote
         )
-        WorktreeListView(onSelectWorktree: { worktree in
+        WorktreeListView(
+          onSelectWorktree: { worktree in
           worktreeDetailItem = WorktreeDetailItem(worktree: worktree)
-        })
+          },
+          onOpenInVSCode: onOpenInVSCode
+        )
       }
       .listStyle(.sidebar)
     } detail: {
@@ -96,9 +77,7 @@ public struct GitRootView: View {
         repository: repository,
         onClose: { worktreeDetailItem = nil },
         onOpenInVSCode: {
-          Task {
-            try? openInVSCode(item.worktree.path)
-          }
+          onOpenInVSCode?(item.worktree.path)
         },
         onShowInFinder: {
           NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: item.worktree.path)

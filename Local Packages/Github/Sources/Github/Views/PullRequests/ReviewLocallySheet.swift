@@ -253,9 +253,7 @@ public struct ReviewLocallySheet: View {
         }
         
         Button {
-          Task {
-            try? await VSCodeService.shared.open(path: worktreePath)
-          }
+          try? VSCodeLauncher.open(path: worktreePath)
         } label: {
           Label("Open in VS Code", systemImage: "chevron.left.forwardslash.chevron.right")
         }

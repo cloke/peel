@@ -35,7 +35,14 @@ struct Git_RootView: View {
           .buttonStyle(.borderedProminent)
         }
       } else {
-        GitRootView(repository: viewModel.selectedRepository)
+        GitRootView(
+          repository: viewModel.selectedRepository,
+          onOpenInVSCode: { path in
+            Task {
+              try? await VSCodeService.shared.open(path: path)
+            }
+          }
+        )
       }
     }
     .toolbar {

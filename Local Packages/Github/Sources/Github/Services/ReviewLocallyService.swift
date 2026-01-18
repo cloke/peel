@@ -112,7 +112,7 @@ public final class ReviewLocallyService {
       if openInVSCode {
         state = .openingVSCode
         do {
-          try await VSCodeService.shared.open(path: worktreePath)
+          try VSCodeLauncher.open(path: worktreePath)
           state = .complete(worktreePath: worktreePath)
         } catch {
           state = .error("Failed to open VS Code: \(error.localizedDescription)")
@@ -164,7 +164,7 @@ public final class ReviewLocallyService {
     if openInVSCode {
       state = .openingVSCode
       do {
-        try await VSCodeService.shared.open(path: worktreePath)
+        try VSCodeLauncher.open(path: worktreePath)
       } catch {
         // Don't fail completely if VS Code fails
         print("Failed to open VS Code: \(error)")
@@ -243,58 +243,4 @@ public final class ReviewLocallyService {
   }
 }
 
-/// Expose VSCodeService for use
-public actor VSCodeService {
-  public static let shared = VSCodeService()
-  
-  private init() {}
-  
-  private let possiblePaths = [
-    "/usr/local/bin/code",
-    "/opt/homebrew/bin/code",
-    "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
-    "\(NSHomeDirectory())/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
-  ]
-  
-  public func findVSCode() -> String? {
-    for path in possiblePaths {
-      if FileManager.default.fileExists(atPath: path) {
-        return path
-      }
-    }
-    return nil
-  }
-  
-  public var isInstalled: Bool {
-    findVSCode() != nil
-  }
-  
-  public func open(path: String, newWindow: Bool = true) async throws {
-    guard let vscodePath = findVSCode() else {
-      throw VSCodeError.notInstalled
-    }
-    
-    var arguments = [String]()
-    if newWindow {
-      arguments.append("-n")
-    }
-    arguments.append(path)
-    
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: vscodePath)
-    process.arguments = arguments
-    try process.run()
-  }
-}
-
-public enum VSCodeError: LocalizedError {
-  case notInstalled
-  
-  public var errorDescription: String? {
-    switch self {
-    case .notInstalled:
-      return "VS Code is not installed. Please install it from https://code.visualstudio.com"
-    }
-  }
-}
 #endif

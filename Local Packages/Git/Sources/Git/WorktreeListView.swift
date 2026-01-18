@@ -10,40 +10,10 @@ import SwiftUI
 #if os(macOS)
 import AppKit
 
-/// Find VS Code executable path
-private func findVSCode() -> String? {
-  let paths = [
-    "/usr/local/bin/code",
-    "/opt/homebrew/bin/code",
-    "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
-    "\(NSHomeDirectory())/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
-  ]
-  
-  for path in paths {
-    if FileManager.default.fileExists(atPath: path) {
-      return path
-    }
-  }
-  return nil
-}
-
-/// Open a path in VS Code
-private func openInVSCode(_ path: String) throws {
-  guard let vscodePath = findVSCode() else {
-    throw NSError(domain: "VSCode", code: 1, userInfo: [
-      NSLocalizedDescriptionKey: "VS Code is not installed"
-    ])
-  }
-  
-  let process = Process()
-  process.executableURL = URL(fileURLWithPath: vscodePath)
-  process.arguments = ["-n", path]
-  try process.run()
-}
-
 public struct WorktreeListView: View {
   @Environment(Model.Repository.self) var repository
   let onSelectWorktree: (Worktree) -> Void
+  let onOpenInVSCode: ((String) -> Void)?
   
   @State private var worktrees: [Worktree] = []
   @State private var isLoading = true
@@ -52,8 +22,12 @@ public struct WorktreeListView: View {
   @State private var worktreeToDelete: Worktree?
   @State private var isExpanded = true
   
-  public init(onSelectWorktree: @escaping (Worktree) -> Void = { _ in }) {
+  public init(
+    onSelectWorktree: @escaping (Worktree) -> Void = { _ in },
+    onOpenInVSCode: ((String) -> Void)? = nil
+  ) {
     self.onSelectWorktree = onSelectWorktree
+    self.onOpenInVSCode = onOpenInVSCode
   }
   
   public var body: some View {
@@ -70,6 +44,7 @@ public struct WorktreeListView: View {
           WorktreeRowView(
             worktree: worktree,
             repository: repository,
+            canOpenInVSCode: onOpenInVSCode != nil,
             onOpenInVSCode: { openWorktreeInVSCode(worktree) },
             onDelete: { worktreeToDelete = worktree },
             onRefresh: { Task { await loadWorktrees() } },
@@ -141,11 +116,7 @@ public struct WorktreeListView: View {
   }
   
   private func openWorktreeInVSCode(_ worktree: Worktree) {
-    do {
-      try openInVSCode(worktree.path)
-    } catch {
-      errorMessage = error.localizedDescription
-    }
+    onOpenInVSCode?(worktree.path)
   }
   
   private func deleteWorktree(_ worktree: Worktree) async {
@@ -210,6 +181,7 @@ struct WorktreeDetailItem: Identifiable, Equatable {
 struct WorktreeRowView: View {
   let worktree: Worktree
   let repository: Model.Repository
+  let canOpenInVSCode: Bool
   let onOpenInVSCode: () -> Void
   let onDelete: () -> Void
   let onRefresh: () -> Void
@@ -261,7 +233,7 @@ struct WorktreeRowView: View {
       }
       
       // VS Code button (always visible for non-main)
-      if !worktree.isMain && findVSCode() != nil {
+      if !worktree.isMain && canOpenInVSCode {
         Button {
           onOpenInVSCode()
         } label: {
@@ -281,7 +253,7 @@ struct WorktreeRowView: View {
       } label: {
         Label("Open in VS Code", systemImage: "chevron.left.forwardslash.chevron.right")
       }
-      .disabled(findVSCode() == nil)
+      .disabled(!canOpenInVSCode)
       
       Button {
         NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: worktree.path)
