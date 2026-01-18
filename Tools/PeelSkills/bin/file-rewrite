@@ -1,0 +1,274 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# file-rewrite: Reliable file writing that avoids shell escaping issues
+#
+# Usage:
+#   file-rewrite <path> <content>           # Write content directly
+#   file-rewrite <path> --stdin             # Read content from stdin
+#   file-rewrite <path> --file <source>     # Copy from another file
+#   file-rewrite <path> --template <name>   # Use a named template
+#
+# This tool exists because heredocs and shell escaping are unreliable
+# when AI agents try to write multi-line content with special characters.
+
+require 'optparse'
+require 'fileutils'
+require 'json'
+require 'yaml'
+
+class FileRewrite
+  VERSION = '1.0.0'
+  
+  TEMPLATES = {
+    'plan' => <<~TEMPLATE,
+      ---
+      title: %{title}
+      status: draft
+      phase: %{phase}
+      tags:
+        - peel
+      updated: %{date}
+      audience:
+        - ai-agent
+        - developer
+      github_issues: []
+      code_locations: []
+      related_docs: []
+      ---
+
+      # %{title}
+
+      ## Goal
+
+      [Describe what this plan achieves]
+
+      ## Implementation
+
+      ### Completed
+
+      | Feature | Details |
+      |---------|---------|
+
+      ### In Progress
+
+      | Feature | Issue | Gap |
+      |---------|-------|-----|
+
+      ### Planned
+
+      | Feature | Description |
+      |---------|-------------|
+
+      ## Code Locations
+
+      [Where the implementation lives]
+
+      ## Testing
+
+      [How to verify the implementation]
+    TEMPLATE
+    
+    'roadmap' => <<~TEMPLATE,
+      ---
+      title: %{title}
+      status: active
+      tags:
+        - roadmap
+        - peel
+      updated: %{date}
+      audience:
+        - ai-agent
+        - developer
+      ---
+
+      # %{title}
+
+      ## Current State Summary
+
+      ### ✅ Complete
+
+      | Area | Details |
+      |------|---------|
+
+      ### 🟡 In Progress
+
+      | Area | Open Issue | Gap |
+      |------|------------|-----|
+
+      ### 📋 Future
+
+      | Feature | Phase | Notes |
+      |---------|-------|-------|
+
+      ---
+
+      ## Active Work
+
+      [Details on current phase items with issue links]
+
+      ---
+
+      ## References
+
+      - [Related Plan](RELATED_PLAN.md)
+    TEMPLATE
+  }
+  
+  def initialize
+    @options = {
+      backup: true,
+      dry_run: false,
+      quiet: false
+    }
+    parse_options
+  end
+  
+  def run
+    validate_args
+    content = determine_content
+    write_file(content)
+  end
+  
+  private
+  
+  def parse_options
+    OptionParser.new do |opts|
+      opts.banner = "Usage: file-rewrite <path> [options] [content]"
+      opts.separator ""
+      opts.separator "Options:"
+      
+      opts.on("--stdin", "Read content from stdin") do
+        @options[:stdin] = true
+      end
+      
+      opts.on("--file SOURCE", "Copy content from SOURCE file") do |source|
+        @options[:source_file] = source
+      end
+      
+      opts.on("--template NAME", "Use template (plan, roadmap)") do |name|
+        @options[:template] = name
+      end
+      
+      opts.on("--var KEY=VALUE", "Template variable (can repeat)") do |var|
+        @options[:vars] ||= {}
+        key, value = var.split('=', 2)
+        @options[:vars][key.to_sym] = value
+      end
+      
+      opts.on("--no-backup", "Don't create .bak file") do
+        @options[:backup] = false
+      end
+      
+      opts.on("--dry-run", "Print content without writing") do
+        @options[:dry_run] = true
+      end
+      
+      opts.on("-q", "--quiet", "Suppress output") do
+        @options[:quiet] = true
+      end
+      
+      opts.on("--json", "Output result as JSON") do
+        @options[:json] = true
+      end
+      
+      opts.on("-v", "--version", "Show version") do
+        puts "file-rewrite #{VERSION}"
+        exit 0
+      end
+      
+      opts.on("-h", "--help", "Show this help") do
+        puts opts
+        exit 0
+      end
+    end.parse!
+    
+    @path = ARGV.shift
+    @inline_content = ARGV.join(' ') unless ARGV.empty?
+  end
+  
+  def validate_args
+    unless @path
+      abort "Error: No path specified. Use --help for usage."
+    end
+    
+    sources = [@options[:stdin], @options[:source_file], @options[:template], @inline_content].compact.count
+    if sources > 1
+      abort "Error: Specify only one content source (stdin, --file, --template, or inline)"
+    end
+    
+    if sources == 0
+      abort "Error: No content source. Use --stdin, --file, --template, or provide inline content"
+    end
+    
+    if @options[:template] && !TEMPLATES.key?(@options[:template])
+      abort "Error: Unknown template '#{@options[:template]}'. Available: #{TEMPLATES.keys.join(', ')}"
+    end
+    
+    if @options[:source_file] && !File.exist?(@options[:source_file])
+      abort "Error: Source file not found: #{@options[:source_file]}"
+    end
+  end
+  
+  def determine_content
+    if @options[:stdin]
+      $stdin.read
+    elsif @options[:source_file]
+      File.read(@options[:source_file])
+    elsif @options[:template]
+      vars = default_template_vars.merge(@options[:vars] || {})
+      TEMPLATES[@options[:template]] % vars
+    else
+      @inline_content
+    end
+  end
+  
+  def default_template_vars
+    {
+      title: File.basename(@path, '.*').gsub(/[-_]/, ' ').split.map(&:capitalize).join(' '),
+      date: Time.now.strftime('%Y-%m-%d'),
+      phase: '1C'
+    }
+  end
+  
+  def write_file(content)
+    if @options[:dry_run]
+      if @options[:json]
+        puts JSON.pretty_generate({ path: @path, content: content, dry_run: true })
+      else
+        puts "=== DRY RUN: Would write to #{@path} ===\n\n"
+        puts content
+      end
+      return
+    end
+    
+    # Create directory if needed
+    dir = File.dirname(@path)
+    FileUtils.mkdir_p(dir) unless File.directory?(dir)
+    
+    # Backup existing file
+    if @options[:backup] && File.exist?(@path)
+      FileUtils.cp(@path, "#{@path}.bak")
+    end
+    
+    # Write the file
+    File.write(@path, content)
+    
+    # Report result
+    if @options[:json]
+      result = {
+        success: true,
+        path: @path,
+        bytes: content.bytesize,
+        lines: content.count("\n") + 1,
+        backup: @options[:backup] && File.exist?("#{@path}.bak")
+      }
+      puts JSON.pretty_generate(result)
+    elsif !@options[:quiet]
+      puts "✓ Wrote #{content.bytesize} bytes to #{@path}"
+    end
+  end
+end
+
+# Run if executed directly
+FileRewrite.new.run if __FILE__ == $0

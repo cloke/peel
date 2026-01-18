@@ -43,6 +43,28 @@ Peel is a macOS/iOS SwiftUI application for managing GitHub, Git repositories, a
 |------|------|---------|
 | Build & launch | `Tools/build-and-launch.sh` | Build app, enable MCP, launch |
 | MCP CLI | `Tools/PeelCLI/` | CLI wrapper for MCP commands |
+| gh-issue-sync | `Tools/PeelSkills/` | Sync GitHub issues with plan files |
+| roadmap-audit | `Tools/PeelSkills/` | Verify roadmap claims against code |
+| file-rewrite | `Tools/PeelSkills/` | Write files reliably (no shell escaping) |
+
+### Skills (Agent Tools)
+
+**Before editing roadmap/plan files:**
+```bash
+cd /path/to/KitchenSink
+Tools/PeelSkills/.build/debug/gh-issue-sync --plans-dir Plans
+```
+
+**When file writes fail (heredoc issues):**
+```bash
+Tools/PeelSkills/.build/debug/file-rewrite path/to/file.md --stdin
+# Then pipe content to stdin
+```
+
+**Create new plan from template:**
+```bash
+Tools/PeelSkills/.build/debug/file-rewrite Plans/NEW_PLAN.md --template plan --var title="My Plan"
+```
 
 ### MCP CLI First (IMPORTANT)
 When the user asks to **start a chain**, **use the MCP CLI** instead of manually creating worktrees.
