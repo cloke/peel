@@ -93,7 +93,8 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
   }
   
   /// Built-in templates
-  public static let builtInTemplates: [ChainTemplate] = [
+  public static var builtInTemplates: [ChainTemplate] {
+    var templates: [ChainTemplate] = [
     // Code Review: Planner analyzes, Implementer fixes, Reviewer checks
     ChainTemplate(
       name: "Code Review",
@@ -149,50 +150,57 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         AgentStepTemplate(role: .implementer, model: .gpt51Codex, name: "Implementer 2")
       ],
       isBuiltIn: true
-    ),
-
-    // MCP Test Harness: Planner + parallel implementers + reviewer
-    #if os(macOS)
-    ChainTemplate(
-      name: "MCP Harness",
-      description: "Planner with parallel implementers and a reviewer (MCP validation)",
-      steps: [
-        AgentStepTemplate(role: .planner, model: .claudeSonnet45, name: "Planner"),
-        AgentStepTemplate(role: .implementer, model: .claudeSonnet45, name: "Implementer A"),
-        AgentStepTemplate(role: .implementer, model: .gpt51Codex, name: "Implementer B"),
-        AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
-      ],
-      isBuiltIn: true,
-      validationConfig: .default
-    ),
-    #else
-    ChainTemplate(
-      name: "MCP Harness",
-      description: "Planner with parallel implementers and a reviewer (MCP validation)",
-      steps: [
-        AgentStepTemplate(role: .planner, model: .claudeSonnet45, name: "Planner"),
-        AgentStepTemplate(role: .implementer, model: .claudeSonnet45, name: "Implementer A"),
-        AgentStepTemplate(role: .implementer, model: .gpt51Codex, name: "Implementer B"),
-        AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
-      ],
-      isBuiltIn: true
-    ),
-    #endif
-
-    // Roadmap MCP (Cost-Conscious): Planner + 3 implementers + reviewer
-    ChainTemplate(
-      name: "MCP Roadmap (3x Cost)",
-      description: "Planner + 3 implementers + reviewer using free/low-cost models",
-      steps: [
-        AgentStepTemplate(role: .planner, model: .gpt41, name: "Planner"),
-        AgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer A"),
-        AgentStepTemplate(role: .implementer, model: .gpt41, name: "Implementer B"),
-        AgentStepTemplate(role: .implementer, model: .gemini3Pro, name: "Implementer C"),
-        AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
-      ],
-      isBuiltIn: true
     )
   ]
+
+  #if os(macOS)
+    templates.append(
+      ChainTemplate(
+        name: "MCP Harness",
+        description: "Planner with parallel implementers and a reviewer (MCP validation)",
+        steps: [
+          AgentStepTemplate(role: .planner, model: .claudeSonnet45, name: "Planner"),
+          AgentStepTemplate(role: .implementer, model: .claudeSonnet45, name: "Implementer A"),
+          AgentStepTemplate(role: .implementer, model: .gpt51Codex, name: "Implementer B"),
+          AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
+        ],
+        isBuiltIn: true,
+        validationConfig: .default
+      )
+    )
+  #else
+    templates.append(
+      ChainTemplate(
+        name: "MCP Harness",
+        description: "Planner with parallel implementers and a reviewer (MCP validation)",
+        steps: [
+          AgentStepTemplate(role: .planner, model: .claudeSonnet45, name: "Planner"),
+          AgentStepTemplate(role: .implementer, model: .claudeSonnet45, name: "Implementer A"),
+          AgentStepTemplate(role: .implementer, model: .gpt51Codex, name: "Implementer B"),
+          AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
+        ],
+        isBuiltIn: true
+      )
+    )
+  #endif
+
+    templates.append(
+      ChainTemplate(
+        name: "MCP Roadmap (3x Cost)",
+        description: "Planner + 3 implementers + reviewer using free/low-cost models",
+        steps: [
+          AgentStepTemplate(role: .planner, model: .gpt41, name: "Planner"),
+          AgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer A"),
+          AgentStepTemplate(role: .implementer, model: .gpt41, name: "Implementer B"),
+          AgentStepTemplate(role: .implementer, model: .gemini3Pro, name: "Implementer C"),
+          AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
+        ],
+        isBuiltIn: true
+      )
+    )
+
+    return templates
+  }
 }
 
 /// A step within a chain template
