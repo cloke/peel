@@ -14,6 +14,7 @@ import OAuthSwift
 @main
 struct PeelApp: App {
   @Environment(\.openURL) var openURL
+  @State private var mcpServer = MCPServerService()
   
   /// SwiftData model container
   /// To enable iCloud later, change cloudKitDatabase to .automatic
@@ -27,6 +28,7 @@ struct PeelApp: App {
       LocalRepositoryPath.self,
       TrackedWorktree.self,
       DeviceSettings.self,
+      MCPRunRecord.self,
     ])
     
     let modelConfiguration = ModelConfiguration(
@@ -49,12 +51,14 @@ struct PeelApp: App {
         .onOpenURL { url in
           OAuthSwift.handle(url: url)
         }
+        .environment(mcpServer)
     }
     .modelContainer(sharedModelContainer)
     
 #if os(macOS)
     Settings {
       SettingsView()
+        .environment(mcpServer)
     }
     .modelContainer(sharedModelContainer)
 #endif
@@ -216,6 +220,53 @@ final class DataService {
     var descriptor = FetchDescriptor<RecentPullRequest>(sortBy: [SortDescriptor(\.viewedAt, order: .reverse)])
     descriptor.fetchLimit = limit
     return (try? modelContext.fetch(descriptor)) ?? []
+  }
+
+  // MARK: - MCP Run History
+
+  @discardableResult
+  func recordMCPRun(
+    templateId: String?,
+    templateName: String,
+    prompt: String,
+    workingDirectory: String?,
+    success: Bool,
+    errorMessage: String?,
+    mergeConflictsCount: Int,
+    resultCount: Int
+  ) -> MCPRunRecord {
+    let record = MCPRunRecord(
+      templateId: templateId ?? "",
+      templateName: templateName,
+      prompt: prompt,
+      workingDirectory: workingDirectory,
+      success: success,
+      errorMessage: errorMessage,
+      mergeConflictsCount: mergeConflictsCount,
+      resultCount: resultCount,
+      createdAt: Date()
+    )
+    modelContext.insert(record)
+    cleanupOldMCPRuns()
+    try? modelContext.save()
+    return record
+  }
+
+  func getRecentMCPRuns(limit: Int = 20) -> [MCPRunRecord] {
+    var descriptor = FetchDescriptor<MCPRunRecord>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
+    descriptor.fetchLimit = limit
+    return (try? modelContext.fetch(descriptor)) ?? []
+  }
+
+  private func cleanupOldMCPRuns(keeping limit: Int = 100) {
+    let descriptor = FetchDescriptor<MCPRunRecord>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
+    guard let records = try? modelContext.fetch(descriptor), records.count > limit else {
+      return
+    }
+    let toDelete = records.suffix(from: limit)
+    for record in toDelete {
+      modelContext.delete(record)
+    }
   }
 
   // MARK: - Tracked Worktrees

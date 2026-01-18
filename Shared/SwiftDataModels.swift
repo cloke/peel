@@ -181,3 +181,41 @@ final class DeviceSettings {
     lastUsedAt = Date()
   }
 }
+
+/// Persisted MCP run record (device-local)
+@Model
+final class MCPRunRecord {
+  var id: UUID = UUID()
+  var templateId: String = ""
+  var templateName: String = ""
+  var prompt: String = ""
+  var workingDirectory: String?
+  var success: Bool = false
+  var errorMessage: String?
+  var mergeConflictsCount: Int = 0
+  var resultCount: Int = 0
+  var createdAt: Date = Date()
+
+  init(
+    templateId: String = "",
+    templateName: String,
+    prompt: String,
+    workingDirectory: String? = nil,
+    success: Bool,
+    errorMessage: String? = nil,
+    mergeConflictsCount: Int = 0,
+    resultCount: Int = 0,
+    createdAt: Date = Date()
+  ) {
+    self.id = UUID()
+    self.templateId = templateId
+    self.templateName = templateName
+    self.prompt = prompt
+    self.workingDirectory = workingDirectory
+    self.success = success
+    self.errorMessage = errorMessage
+    self.mergeConflictsCount = mergeConflictsCount
+    self.resultCount = resultCount
+    self.createdAt = createdAt
+  }
+}
