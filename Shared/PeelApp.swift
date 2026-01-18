@@ -237,7 +237,9 @@ final class DataService {
     success: Bool,
     errorMessage: String?,
     mergeConflictsCount: Int,
-    resultCount: Int
+    resultCount: Int,
+    validationStatus: String? = nil,
+    validationReasons: [String] = []
   ) -> MCPRunRecord {
     let record = MCPRunRecord(
       chainId: chainId ?? "",
@@ -251,6 +253,8 @@ final class DataService {
       errorMessage: errorMessage,
       mergeConflictsCount: mergeConflictsCount,
       resultCount: resultCount,
+      validationStatus: validationStatus,
+      validationReasons: validationReasons.isEmpty ? nil : validationReasons.joined(separator: "\n"),
       createdAt: Date()
     )
     modelContext.insert(record)

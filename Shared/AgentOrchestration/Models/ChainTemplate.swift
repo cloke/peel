@@ -16,12 +16,17 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
   public let createdAt: Date
   public var isBuiltIn: Bool
   
+  #if os(macOS)
+  public var validationConfig: ValidationConfiguration
+  #endif
+  
   public init(
     id: UUID = UUID(),
     name: String,
     description: String = "",
     steps: [AgentStepTemplate] = [],
-    isBuiltIn: Bool = false
+    isBuiltIn: Bool = false,
+    validationConfig: ValidationConfiguration? = nil
   ) {
     self.id = id
     self.name = name
@@ -29,6 +34,9 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     self.steps = steps
     self.createdAt = Date()
     self.isBuiltIn = isBuiltIn
+    #if os(macOS)
+    self.validationConfig = validationConfig ?? .default
+    #endif
   }
   
   /// Built-in templates
@@ -100,7 +108,8 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         AgentStepTemplate(role: .implementer, model: .gpt51Codex, name: "Implementer B"),
         AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
       ],
-      isBuiltIn: true
+      isBuiltIn: true,
+      validationConfig: .default
     ),
 
     // Roadmap MCP (Cost-Conscious): Planner + 3 implementers + reviewer
