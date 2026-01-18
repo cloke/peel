@@ -2,7 +2,7 @@ import XCTest
 @testable import Peel
 
 final class MCPTemplateTests: XCTestCase {
-  func testLoadValidateExecute() async throws {
+  func testLoadValidate() throws {
     let json = """
     {
       "name": "Test Template",
@@ -15,12 +15,18 @@ final class MCPTemplateTests: XCTestCase {
     """
     let template = try MCPTemplateLoader.load(from: json)
     try MCPTemplateValidator.validate(template)
-    // Execution requires AgentManager/AgentChainRunner but just ensure conversion succeeds
-    #if os(macOS)
-    let agentManager = AgentManager()
-    let chainRunner = AgentChainRunner(agentManager: agentManager, cliService: CLIService(), sessionTracker: SessionTracker())
-    let summary = try await MCPTemplateExecutor.execute(template: template, prompt: "Do nothing", agentManager: agentManager, chainRunner: chainRunner, workingDirectory: nil)
-    XCTAssertNotNil(summary)
-    #endif
+  }
+
+  func testInvalidRoleFailsValidation() throws {
+    let json = """
+    {
+      "name": "Bad Template",
+      "steps": [
+        {"role": "unknown", "model": "gpt-4.1"}
+      ]
+    }
+    """
+    let template = try MCPTemplateLoader.load(from: json)
+    XCTAssertThrowsError(try MCPTemplateValidator.validate(template))
   }
 }

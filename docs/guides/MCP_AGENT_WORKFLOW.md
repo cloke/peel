@@ -213,15 +213,6 @@ curl -X POST -H 'Content-Type: application/json' \
   http://127.0.0.1:8765/rpc
 ```
 
-### Planner-Defined Chains (Dynamic)
-
-Templates are predefined, but you can allow a Planner to output a chain spec (JSON) that the app
-can turn into a runtime chain. This enables the Planner to pick roles/models/parallelism based on
-task scope while still respecting guardrails (approved models, max steps, cost caps).
-
-**Recommendation:** keep templates as defaults and add an opt-in flag for dynamic chains.
-When enabled, the Planner should output a chain spec that the app validates before execution.
-
 **Response:** Chain execution results (planner output, implementer outputs, merge status, review verdict)
 
 ### Stop Server
