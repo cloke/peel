@@ -40,6 +40,7 @@
 #if os(macOS)
 
 import Foundation
+import Darwin
 @preconcurrency import Virtualization
 
 // MARK: - Execution Environment
@@ -210,6 +211,110 @@ struct VMResourceLimits: Sendable {
     timeoutSeconds: 3600,
     gpuAccess: true
   )
+}
+
+// MARK: - Console State (Thread-Safe)
+
+private final class VMConsoleState: @unchecked Sendable {
+  let queue = DispatchQueue(label: "vm.console.reader")
+  private var buffer: String = ""
+  private let lock = NSLock()
+  let maxBufferBytes = 64 * 1024
+  private var shouldStop = false
+  private var bytesRead: Int64 = 0
+
+  func append(_ text: String) {
+    lock.lock()
+    buffer.append(text)
+    if buffer.utf8.count > maxBufferBytes {
+      let tail = buffer.suffix(maxBufferBytes)
+      buffer = String(tail)
+    }
+    lock.unlock()
+  }
+
+  func recordBytes(_ count: Int) {
+    lock.lock()
+    bytesRead += Int64(count)
+    lock.unlock()
+  }
+
+  func totalBytesRead() -> Int64 {
+    lock.lock()
+    let value = bytesRead
+    lock.unlock()
+    return value
+  }
+
+  func drain() -> String? {
+    lock.lock()
+    if buffer.isEmpty {
+      lock.unlock()
+      return nil
+    }
+    let chunk = buffer
+    buffer = ""
+    lock.unlock()
+    return chunk
+  }
+
+  func clear() {
+    lock.lock()
+    buffer = ""
+    lock.unlock()
+  }
+
+  func markStart() {
+    lock.lock()
+    shouldStop = false
+    lock.unlock()
+  }
+
+  func markStop() {
+    lock.lock()
+    shouldStop = true
+    lock.unlock()
+  }
+
+  func isStopping() -> Bool {
+    lock.lock()
+    let value = shouldStop
+    lock.unlock()
+    return value
+  }
+}
+
+private enum VMConsoleReader {
+  static func start(state: VMConsoleState, fd: Int32) {
+    state.markStart()
+    _ = fcntl(fd, F_SETFL, O_NONBLOCK)
+    state.queue.async {
+      var buffer = [UInt8](repeating: 0, count: 4096)
+      while !state.isStopping() {
+        let count = read(fd, &buffer, buffer.count)
+        if count > 0 {
+          let data = Data(bytes: buffer, count: count)
+          if let text = String(data: data, encoding: .utf8), !text.isEmpty {
+            state.append(text)
+          }
+          state.recordBytes(count)
+        } else if count == 0 {
+          break
+        } else {
+          if errno == EAGAIN || errno == EWOULDBLOCK {
+            usleep(10_000)
+            continue
+          }
+          break
+        }
+      }
+    }
+  }
+
+  static func stop(state: VMConsoleState) {
+    state.markStop()
+    state.clear()
+  }
 }
 
 // MARK: - macOS VM Configuration
@@ -410,25 +515,35 @@ final class VMIsolationService {
   
   /// Currently running Linux VM (if any)
   private(set) var runningLinuxVM: VZVirtualMachine?
+  private(set) var runningMacOSVM: VZVirtualMachine?
   
   /// Whether a Linux VM is currently running
   var isLinuxVMRunning: Bool { runningLinuxVM?.state == .running }
+  var isMacOSVMRunning: Bool { runningMacOSVM?.state == .running }
   
   /// Console output from the running VM
   private(set) var consoleOutput: String = ""
   
   /// VM delegate (kept alive while VM is running)
   private var vmDelegate: VMDelegate?
+  private var macOSVMDelegate: VMDelegate?
+  private var macOSInstaller: VZMacOSInstaller?
+  private(set) var isMacOSInstalling = false
 
   /// Console pipes (kept alive while VM is running)
   private var consoleInputPipe: Pipe?
   private var consoleOutputPipe: Pipe?
+  private var serialInputPipe: Pipe?
+  private var serialOutputPipe: Pipe?
   private var consoleReadTask: Task<Void, Never>?
+  private var consoleFlushTimer: DispatchSourceTimer?
+  private let consoleState = VMConsoleState()
+  private let consoleMaxOutputChars = 200_000
 
   /// Throttle console output to avoid UI hangs
   private let consoleFlushInterval: TimeInterval = 0.25
   private let consoleFlushByteThreshold = 4096
-  private let enableConsoleOutput = false
+  private(set) var isConsoleOutputEnabled = false
   
   // MARK: - Configuration
   
@@ -442,12 +557,21 @@ final class VMIsolationService {
   private let attachLinuxDiskImage = false
   private let attachLinuxNetwork = false
   private let attachMemoryBalloon = false
+  private let attachMacOSNetwork = true
+  private let isVerboseVMLogging = false
 
   // MARK: - Dependencies
 
-  private let requiredDependencies: [VMToolDependency] = [
-    VMToolDependency(tool: "xz", brewPackage: "xz", purpose: "Decompress Linux initramfs (if XZ)")
-  ]
+  private func requiredDependencies() -> [VMToolDependency] {
+    let linuxDir = linuxVMDirectory
+    let initramfsPath = linuxDir.appendingPathComponent("initramfs")
+
+    if FileManager.default.fileExists(atPath: initramfsPath.path), isXZFile(at: initramfsPath.path) {
+      return [VMToolDependency(tool: "xz", brewPackage: "xz", purpose: "Decompress Linux initramfs (XZ)")]
+    }
+
+    return []
+  }
   
   // MARK: - Initialization
   
@@ -524,6 +648,34 @@ final class VMIsolationService {
   /// Get the path where macOS VM files should be stored
   var macOSVMDirectory: URL {
     vmBasePath.appendingPathComponent("macos", isDirectory: true)
+  }
+
+  private var macOSVMBundlePath: URL {
+    macOSVMDirectory.appendingPathComponent("Default.bundle", isDirectory: true)
+  }
+
+  private var macOSHardwareModelPath: URL {
+    macOSVMBundlePath.appendingPathComponent("HardwareModel.bin")
+  }
+
+  private var macOSMachineIdentifierPath: URL {
+    macOSVMBundlePath.appendingPathComponent("MachineIdentifier.bin")
+  }
+
+  private var macOSAuxiliaryStoragePath: URL {
+    macOSVMBundlePath.appendingPathComponent("AuxiliaryStorage.bin")
+  }
+
+  private var macOSDiskImagePath: URL {
+    macOSVMBundlePath.appendingPathComponent("Disk.img")
+  }
+
+  private var macOSInstallMarkerPath: URL {
+    macOSVMBundlePath.appendingPathComponent(".installed")
+  }
+
+  var isMacOSVMInstalled: Bool {
+    FileManager.default.fileExists(atPath: macOSInstallMarkerPath.path)
   }
   
   private func checkLinuxVMSupport() async {
@@ -668,6 +820,117 @@ final class VMIsolationService {
       isMacOSReady = false
     }
   }
+
+  @available(macOS 12.0, *)
+  private func loadMacOSRestoreImage() async throws -> VZMacOSRestoreImage {
+    guard let restoreImagePath = macOSRestoreImagePath else {
+      throw VMError.macOSRestoreImageNotFound
+    }
+    return try await VZMacOSRestoreImage.image(from: restoreImagePath)
+  }
+
+  @available(macOS 12.0, *)
+  private func loadOrCreateMacOSHardwareModel(from restoreImage: VZMacOSRestoreImage) throws -> VZMacHardwareModel {
+    if FileManager.default.fileExists(atPath: macOSHardwareModelPath.path),
+       let data = try? Data(contentsOf: macOSHardwareModelPath),
+       let model = VZMacHardwareModel(dataRepresentation: data) {
+      return model
+    }
+
+    guard let configuration = restoreImage.mostFeaturefulSupportedConfiguration else {
+      throw VMError.vmCreationFailed("No supported macOS hardware configuration for this host")
+    }
+    let model = configuration.hardwareModel
+    try model.dataRepresentation.write(to: macOSHardwareModelPath)
+    return model
+  }
+
+  private func loadOrCreateMacOSMachineIdentifier() throws -> VZMacMachineIdentifier {
+    if FileManager.default.fileExists(atPath: macOSMachineIdentifierPath.path),
+       let data = try? Data(contentsOf: macOSMachineIdentifierPath),
+       let identifier = VZMacMachineIdentifier(dataRepresentation: data) {
+      return identifier
+    }
+
+    let identifier = VZMacMachineIdentifier()
+    try identifier.dataRepresentation.write(to: macOSMachineIdentifierPath)
+    return identifier
+  }
+
+  @available(macOS 12.0, *)
+  private func loadOrCreateMacOSAuxiliaryStorage(hardwareModel: VZMacHardwareModel) throws -> VZMacAuxiliaryStorage {
+    if FileManager.default.fileExists(atPath: macOSAuxiliaryStoragePath.path) {
+      return VZMacAuxiliaryStorage(url: macOSAuxiliaryStoragePath)
+    }
+
+    return try VZMacAuxiliaryStorage(
+      creatingStorageAt: macOSAuxiliaryStoragePath,
+      hardwareModel: hardwareModel,
+      options: []
+    )
+  }
+
+  private func ensureMacOSDiskImage(sizeGB: Int) throws -> URL {
+    if !FileManager.default.fileExists(atPath: macOSDiskImagePath.path) {
+      FileManager.default.createFile(atPath: macOSDiskImagePath.path, contents: nil)
+      let handle = try FileHandle(forWritingTo: macOSDiskImagePath)
+      let diskSize = UInt64(max(20, sizeGB)) * 1024 * 1024 * 1024
+      try handle.truncate(atOffset: diskSize)
+      try handle.close()
+      print("[VM] Created macOS disk image: \(macOSDiskImagePath.path) (\(max(20, sizeGB)) GB)")
+    }
+    return macOSDiskImagePath
+  }
+
+  @available(macOS 12.0, *)
+  private func createMacOSVMConfiguration(
+    restoreImage: VZMacOSRestoreImage,
+    resources: VMResourceLimits
+  ) throws -> VZVirtualMachineConfiguration {
+    try FileManager.default.createDirectory(at: macOSVMBundlePath, withIntermediateDirectories: true)
+
+    let hardwareModel = try loadOrCreateMacOSHardwareModel(from: restoreImage)
+    let machineIdentifier = try loadOrCreateMacOSMachineIdentifier()
+    let auxiliaryStorage = try loadOrCreateMacOSAuxiliaryStorage(hardwareModel: hardwareModel)
+
+    let config = VZVirtualMachineConfiguration()
+    config.bootLoader = VZMacOSBootLoader()
+
+    let platform = VZMacPlatformConfiguration()
+    platform.hardwareModel = hardwareModel
+    platform.machineIdentifier = machineIdentifier
+    platform.auxiliaryStorage = auxiliaryStorage
+    config.platform = platform
+
+    config.cpuCount = max(VZVirtualMachineConfiguration.minimumAllowedCPUCount, resources.cpuCores)
+    let memoryBytes = UInt64(resources.memoryGB) * 1024 * 1024 * 1024
+    config.memorySize = max(VZVirtualMachineConfiguration.minimumAllowedMemorySize, memoryBytes)
+
+    let diskURL = try ensureMacOSDiskImage(sizeGB: resources.diskGB)
+    let diskAttachment = try VZDiskImageStorageDeviceAttachment(url: diskURL, readOnly: false)
+    let blockDevice = VZVirtioBlockDeviceConfiguration(attachment: diskAttachment)
+    config.storageDevices = [blockDevice]
+
+    let graphics = VZMacGraphicsDeviceConfiguration()
+    graphics.displays = [VZMacGraphicsDisplayConfiguration(widthInPixels: 1280, heightInPixels: 800, pixelsPerInch: 160)]
+    config.graphicsDevices = [graphics]
+
+    if #available(macOS 13.0, *) {
+      config.keyboards = [VZUSBKeyboardConfiguration()]
+      config.pointingDevices = [VZUSBScreenCoordinatePointingDeviceConfiguration()]
+    }
+
+    if attachMacOSNetwork {
+      let networkDevice = VZVirtioNetworkDeviceConfiguration()
+      networkDevice.attachment = VZNATNetworkDeviceAttachment()
+      config.networkDevices = [networkDevice]
+    }
+
+    config.entropyDevices = [VZVirtioEntropyDeviceConfiguration()]
+
+    try config.validate()
+    return config
+  }
   
   // MARK: - VM Lifecycle
   
@@ -676,9 +939,9 @@ final class VMIsolationService {
     let kernelPath = linuxDir.appendingPathComponent("vmlinuz")
     let initramfsPath = linuxDir.appendingPathComponent("initramfs")
     
-    print("[VM] Creating minimal Linux VM configuration...")
-    print("[VM] Kernel path: \(kernelPath.path)")
-    print("[VM] Initramfs path: \(initramfsPath.path)")
+    vmDebug("Creating minimal Linux VM configuration...")
+    vmDebug("Kernel path: \(kernelPath.path)")
+    vmDebug("Initramfs path: \(initramfsPath.path)")
     
     guard FileManager.default.fileExists(atPath: kernelPath.path) else {
       throw VMError.vmCreationFailed("Kernel not found at \(kernelPath.path)")
@@ -692,8 +955,8 @@ final class VMIsolationService {
     
     let bootLoader = VZLinuxBootLoader(kernelURL: kernelPath)
     bootLoader.initialRamdiskURL = initramfsPath
-    bootLoader.commandLine = "console=hvc0"
-    print("[VM] Boot command line: \(bootLoader.commandLine)")
+    bootLoader.commandLine = "console=hvc0 console=ttyAMA0 console=ttyS0 earlycon loglevel=7 debug"
+    vmLog("Boot command line: \(bootLoader.commandLine)")
     
     let config = VZVirtualMachineConfiguration()
     config.bootLoader = bootLoader
@@ -701,30 +964,51 @@ final class VMIsolationService {
     let platform = VZGenericPlatformConfiguration()
     platform.machineIdentifier = VZGenericMachineIdentifier()
     config.platform = platform
-    print("[VM] Platform: Generic (Linux), machineId: \(platform.machineIdentifier.dataRepresentation.base64EncodedString())")
+    vmDebug("Platform: Generic (Linux), machineId: \(platform.machineIdentifier.dataRepresentation.base64EncodedString())")
     
     let cpuCount = 2
     config.cpuCount = cpuCount
     config.memorySize = max(2 * 1024 * 1024 * 1024, VZVirtualMachineConfiguration.minimumAllowedMemorySize)
     
-    // Serial console + entropy only
-    let serialPortConfig = VZVirtioConsoleDeviceSerialPortConfiguration()
-    let inputPipe = Pipe()
-    let outputPipe = Pipe()
-    let attachment = VZFileHandleSerialPortAttachment(
-      fileHandleForReading: inputPipe.fileHandleForReading,
-      fileHandleForWriting: outputPipe.fileHandleForWriting
+    // Virtio console device + system console port
+    let consoleInput = Pipe()
+    let consoleOutput = Pipe()
+    let consoleAttachment = VZFileHandleSerialPortAttachment(
+      fileHandleForReading: consoleInput.fileHandleForReading,
+      fileHandleForWriting: consoleOutput.fileHandleForWriting
     )
-    serialPortConfig.attachment = attachment
-    config.serialPorts = [serialPortConfig]
+    if #available(macOS 13.0, *) {
+      let consoleDevice = VZVirtioConsoleDeviceConfiguration()
+      let consolePort = VZVirtioConsolePortConfiguration()
+      consolePort.attachment = consoleAttachment
+      consolePort.isConsole = true
+      consolePort.name = "console"
+      consoleDevice.ports[0] = consolePort
+      config.consoleDevices = [consoleDevice]
+    } else {
+      let serialPortConfig = VZVirtioConsoleDeviceSerialPortConfiguration()
+      serialPortConfig.attachment = consoleAttachment
+      config.serialPorts = [serialPortConfig]
+    }
+
+    // Additional serial port (ttyS0) for fallback output
+    let serialInput = Pipe()
+    let serialOutput = Pipe()
+    let serialAttachment = VZFileHandleSerialPortAttachment(
+      fileHandleForReading: serialInput.fileHandleForReading,
+      fileHandleForWriting: serialOutput.fileHandleForWriting
+    )
+    let serialPortConfig = VZVirtioConsoleDeviceSerialPortConfiguration()
+    serialPortConfig.attachment = serialAttachment
+    config.serialPorts.append(serialPortConfig)
     config.entropyDevices = [VZVirtioEntropyDeviceConfiguration()]
 
     if attachMemoryBalloon {
       config.memoryBalloonDevices = [VZVirtioTraditionalMemoryBalloonDeviceConfiguration()]
-      print("[VM] Memory balloon device attached")
+      vmDebug("Memory balloon device attached")
     } else {
       config.memoryBalloonDevices = []
-      print("[VM] Memory balloon device disabled")
+      vmDebug("Memory balloon device disabled")
     }
 
     if attachLinuxDiskImage {
@@ -732,27 +1016,29 @@ final class VMIsolationService {
       let diskAttachment = try VZDiskImageStorageDeviceAttachment(url: diskURL, readOnly: false)
       let blockDevice = VZVirtioBlockDeviceConfiguration(attachment: diskAttachment)
       config.storageDevices = [blockDevice]
-      print("[VM] Disk attachment enabled: \(diskURL.path)")
+      vmDebug("Disk attachment enabled: \(diskURL.path)")
     } else {
       config.storageDevices = []
-      print("[VM] Disk attachment disabled")
+      vmDebug("Disk attachment disabled")
     }
 
     if attachLinuxNetwork {
       let networkDevice = VZVirtioNetworkDeviceConfiguration()
       networkDevice.attachment = VZNATNetworkDeviceAttachment()
       config.networkDevices = [networkDevice]
-      print("[VM] Network attachment enabled (NAT)")
+      vmDebug("Network attachment enabled (NAT)")
     } else {
       config.networkDevices = []
-      print("[VM] Network attachment disabled")
+      vmDebug("Network attachment disabled")
     }
     
-    consoleInputPipe = inputPipe
-    consoleOutputPipe = outputPipe
+    consoleInputPipe = consoleInput
+    consoleOutputPipe = consoleOutput
+    serialInputPipe = serialInput
+    serialOutputPipe = serialOutput
     
     try config.validate()
-    print("[VM] Minimal configuration validated successfully")
+    vmDebug("Minimal configuration validated successfully")
     return config
   }
   
@@ -771,11 +1057,13 @@ final class VMIsolationService {
     statusMessage = "Creating Linux VM configuration..."
     consoleOutput = ""
     
-    print("[VM] ========== Starting Linux VM ==========")
-    print("[VM] Virtualization supported: \(VZVirtualMachine.isSupported)")
-    print("[VM] System: \(ProcessInfo.processInfo.operatingSystemVersionString)")
-    print("[VM] Architecture: \(getMachineArchitecture())")
-    logLinuxVMPreflight()
+    vmLog("Starting Linux VM")
+    vmDebug("Virtualization supported: \(VZVirtualMachine.isSupported)")
+    vmDebug("System: \(ProcessInfo.processInfo.operatingSystemVersionString)")
+    vmDebug("Architecture: \(getMachineArchitecture())")
+    if isVerboseVMLogging {
+      logLinuxVMPreflight()
+    }
     
     // Create configuration (minimal diagnostics first)
     let config: VZVirtualMachineConfiguration
@@ -788,7 +1076,7 @@ final class VMIsolationService {
     }
     
     statusMessage = "Initializing virtual machine..."
-    print("[VM] Creating VZVirtualMachine instance...")
+    vmDebug("Creating VZVirtualMachine instance...")
     let vm = VZVirtualMachine(configuration: config)
     
     // Set delegate to capture state changes
@@ -810,24 +1098,24 @@ final class VMIsolationService {
     }
     vm.delegate = delegate
     
-    print("[VM] VM created, state: \(describeVMState(vm.state))")
-    print("[VM] VM can start: \(vm.canStart)")
+    vmDebug("VM created, state: \(describeVMState(vm.state))")
+    vmDebug("VM can start: \(vm.canStart)")
     
     statusMessage = "Starting Linux VM..."
-    print("[VM] Calling vm.start()...")
+    vmDebug("Calling vm.start()...")
     
     do {
       let options = VZVirtualMachineStartOptions()
       try await vm.start(options: options)
-      print("[VM] VM started successfully, state: \(describeVMState(vm.state))")
+      vmLog("Linux VM started (state: \(describeVMState(vm.state)))")
       
       runningLinuxVM = vm
       vmDelegate = delegate  // Keep delegate alive
 
-      if enableConsoleOutput {
+      if isConsoleOutputEnabled {
         startConsoleOutputReader()
       } else {
-        print("[VM] Console output reader disabled (avoids UI hangs)")
+        vmDebug("Console output reader disabled")
       }
       
       // Update pool counts
@@ -839,20 +1127,20 @@ final class VMIsolationService {
       statusMessage = "Linux VM running"
       
     } catch let error as NSError {
-      print("[VM] ========== VM START FAILED ==========")
-      print("[VM] Error domain: \(error.domain)")
-      print("[VM] Error code: \(error.code)")
-      print("[VM] Description: \(error.localizedDescription)")
+      vmLog("VM start failed")
+      vmDebug("Error domain: \(error.domain)")
+      vmDebug("Error code: \(error.code)")
+      vmDebug("Description: \(error.localizedDescription)")
       if let reason = error.localizedFailureReason {
-        print("[VM] Failure reason: \(reason)")
+        vmDebug("Failure reason: \(reason)")
       }
       if let recovery = error.localizedRecoverySuggestion {
-        print("[VM] Recovery suggestion: \(recovery)")
+        vmDebug("Recovery suggestion: \(recovery)")
       }
       for (key, value) in error.userInfo {
-        print("[VM] UserInfo[\(key)]: \(value)")
+        vmDebug("UserInfo[\(key)]: \(value)")
       }
-      print("[VM] ========================================")
+      vmDebug("VM start failed diagnostics complete")
       
       statusMessage = "VM start failed"
       var details = error.localizedDescription
@@ -883,6 +1171,10 @@ final class VMIsolationService {
     
     runningLinuxVM = nil
     stopConsoleOutputReader()
+    consoleInputPipe = nil
+    consoleOutputPipe = nil
+    serialInputPipe = nil
+    serialOutputPipe = nil
     
     // Update pool counts
     if var pool = pools["compile:linux"] {
@@ -915,11 +1207,136 @@ final class VMIsolationService {
       throw VMError.macOSRestoreImageNotFound
     }
     
-    // TODO: Actually create VZVirtualMachine for macOS
-    // This requires VZMacOSBootLoader, hardware model, machine identifier
-    
     let vmId = UUID().uuidString
     return vmId
+  }
+
+  /// Install macOS into the VM disk (one-time)
+  func installMacOSVM() async throws {
+    guard isVirtualizationAvailable else {
+      throw VMError.virtualizationNotAvailable
+    }
+    guard isMacOSReady else {
+      throw VMError.macOSRestoreImageNotFound
+    }
+    guard !isMacOSVMInstalled else {
+      return
+    }
+    guard !isMacOSInstalling else {
+      return
+    }
+
+    guard #available(macOS 12.0, *) else {
+      throw VMError.macOSRestoreImageNotFound
+    }
+
+    statusMessage = "Preparing macOS installer..."
+    let restoreImage = try await loadMacOSRestoreImage()
+    let config = try createMacOSVMConfiguration(restoreImage: restoreImage, resources: .macOSBuild)
+    let vm = VZVirtualMachine(configuration: config)
+
+    isMacOSInstalling = true
+    defer { isMacOSInstalling = false }
+    statusMessage = "Installing macOS (this can take a while)..."
+
+    let installer = VZMacOSInstaller(virtualMachine: vm, restoringFromImageAt: restoreImage.url)
+    macOSInstaller = installer
+
+    try await withCheckedThrowingContinuation { continuation in
+      installer.install { result in
+        switch result {
+        case .success:
+          continuation.resume()
+        case .failure(let error):
+          continuation.resume(throwing: error)
+        }
+      }
+    }
+
+    try "installed".write(to: macOSInstallMarkerPath, atomically: true, encoding: .utf8)
+    statusMessage = "macOS VM installed"
+  }
+
+  /// Start a macOS VM for testing
+  func startMacOSVM() async throws {
+    guard isVirtualizationAvailable else {
+      throw VMError.virtualizationNotAvailable
+    }
+    guard isMacOSReady else {
+      throw VMError.macOSRestoreImageNotFound
+    }
+    guard runningMacOSVM == nil else {
+      throw VMError.vmAlreadyRunning
+    }
+
+    if !isMacOSVMInstalled {
+      try await installMacOSVM()
+    }
+
+    guard #available(macOS 12.0, *) else {
+      throw VMError.macOSRestoreImageNotFound
+    }
+
+    statusMessage = "Creating macOS VM configuration..."
+    let restoreImage = try await loadMacOSRestoreImage()
+    let config = try createMacOSVMConfiguration(restoreImage: restoreImage, resources: .macOSBuild)
+
+    let vm = VZVirtualMachine(configuration: config)
+    let delegate = VMDelegate { [weak self] error in
+      Task { @MainActor in
+        guard let self else { return }
+        self.runningMacOSVM = nil
+        if var pool = self.pools["compile:macos"] {
+          pool.busyCount = 0
+          self.pools["compile:macos"] = pool
+        }
+        if let error {
+          self.statusMessage = "macOS VM stopped: \(error.localizedDescription)"
+        } else {
+          self.statusMessage = "macOS VM stopped"
+        }
+      }
+    }
+    vm.delegate = delegate
+
+    statusMessage = "Starting macOS VM..."
+    let options = VZVirtualMachineStartOptions()
+    try await vm.start(options: options)
+
+    runningMacOSVM = vm
+    macOSVMDelegate = delegate
+
+    if var pool = pools["compile:macos"] {
+      pool.busyCount = 1
+      pools["compile:macos"] = pool
+    }
+
+    statusMessage = "macOS VM running"
+  }
+
+  /// Stop the running macOS VM
+  func stopMacOSVM() async throws {
+    guard let vm = runningMacOSVM else {
+      return
+    }
+
+    statusMessage = "Stopping macOS VM..."
+
+    if vm.canRequestStop {
+      try vm.requestStop()
+      try? await Task.sleep(for: .seconds(2))
+    }
+
+    if vm.state == .running {
+      try await vm.stop()
+    }
+
+    runningMacOSVM = nil
+    if var pool = pools["compile:macos"] {
+      pool.busyCount = 0
+      pools["compile:macos"] = pool
+    }
+    statusMessage = "macOS VM stopped"
   }
   
   /// Download macOS restore image from Apple
@@ -1126,16 +1543,28 @@ final class VMIsolationService {
     return false
   }
 
+  private func vmLog(_ message: String) {
+    print("[VM] \(message)")
+  }
+
+  private func vmDebug(_ message: String) {
+    guard isVerboseVMLogging else { return }
+    print("[VM] \(message)")
+  }
+
   // MARK: - Dependency Management
 
   func missingToolDependencies() -> [VMToolDependency] {
-    requiredDependencies.filter { toolPath(named: $0.tool) == nil }
+    requiredDependencies().filter { toolPath(named: $0.tool) == nil }
   }
 
   func installDependencies(_ deps: [VMToolDependency]) async throws {
     guard !deps.isEmpty else { return }
     guard let brewPath = toolPath(named: "brew") else {
-      throw VMError.vmCreationFailed("Homebrew not found. Install Homebrew first: https://brew.sh")
+      let hint = isSandboxed()
+        ? "Homebrew not found or blocked by the sandbox. Ensure /opt/homebrew/bin/brew exists and is accessible, or run an unsandboxed build."
+        : "Homebrew not found. Install Homebrew first: https://brew.sh"
+      throw VMError.vmCreationFailed(hint)
     }
 
     let packages = deps.map { $0.brewPackage }
@@ -1164,6 +1593,7 @@ final class VMIsolationService {
   }
 
   private func logLinuxVMPreflight() {
+    guard isVerboseVMLogging else { return }
     let linuxDir = linuxVMDirectory
     let kernelPath = linuxDir.appendingPathComponent("vmlinuz")
     let initramfsPath = linuxDir.appendingPathComponent("initramfs")
@@ -1287,7 +1717,29 @@ final class VMIsolationService {
       "/opt/homebrew/bin/\(tool)",
       "/usr/local/bin/\(tool)"
     ]
-    return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+
+    if let match = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
+      return match
+    }
+
+    if let pathEnv = ProcessInfo.processInfo.environment["PATH"] {
+      let pathCandidates = pathEnv.split(separator: ":").map { String($0) }
+      for dir in pathCandidates {
+        let path = (dir as NSString).appendingPathComponent(tool)
+        if FileManager.default.isExecutableFile(atPath: path) {
+          return path
+        }
+      }
+    }
+
+    if tool == "brew" {
+      let fallback = "/opt/homebrew/bin/brew"
+      if FileManager.default.fileExists(atPath: fallback) || isSandboxed() {
+        return fallback
+      }
+    }
+
+    return nil
   }
 
   private func runProcess(_ executable: String, arguments: [String], outputPath: String) async throws -> Bool {
@@ -1412,41 +1864,93 @@ final class VMIsolationService {
 
   private func startConsoleOutputReader() {
     guard let outputPipe = consoleOutputPipe else { return }
-    consoleReadTask?.cancel()
-    consoleReadTask = Task { [weak self] in
-      let handle = outputPipe.fileHandleForReading
-      var buffer = ""
-      var lastFlush = Date()
-      while !Task.isCancelled {
-        let data = handle.readData(ofLength: 4096)
-        if data.isEmpty { break }
-        if let text = String(data: data, encoding: .utf8) {
-          buffer += text
-          let shouldFlush = buffer.utf8.count >= self?.consoleFlushByteThreshold ?? 4096
-            || Date().timeIntervalSince(lastFlush) >= (self?.consoleFlushInterval ?? 0.25)
-          if shouldFlush {
-            let chunk = buffer
-            buffer.removeAll(keepingCapacity: true)
-            lastFlush = Date()
-            await MainActor.run {
-              self?.consoleOutput += chunk
-            }
-          }
-        }
+
+    stopConsoleOutputReader()
+
+    let handle = outputPipe.fileHandleForReading
+    let fd = handle.fileDescriptor
+    let state = consoleState
+    state.clear()
+
+    vmLog("Console output FD: \(fd)")
+
+    VMConsoleReader.start(state: state, fd: fd)
+
+    if let serialPipe = serialOutputPipe {
+      let serialFd = serialPipe.fileHandleForReading.fileDescriptor
+      vmLog("Serial fallback FD: \(serialFd)")
+      VMConsoleReader.start(state: state, fd: serialPipe.fileHandleForReading.fileDescriptor)
+      vmLog("Console reader attached to serial fallback")
+    }
+    vmLog("Console reader started (fd: \(fd))")
+
+    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+      guard let self else { return }
+      let bytes = self.consoleState.totalBytesRead()
+      if bytes == 0 {
+        self.vmLog("Console: no output received after 2s")
+      } else {
+        self.vmDebug("Console bytes read: \(bytes)")
       }
-      if !buffer.isEmpty {
-        await MainActor.run {
-          self?.consoleOutput += buffer
+    }
+
+    consoleFlushTimer?.cancel()
+    let timer = DispatchSource.makeTimerSource(queue: .main)
+    timer.schedule(deadline: .now() + consoleFlushInterval, repeating: consoleFlushInterval)
+    timer.setEventHandler { [weak self] in
+      guard let self else { return }
+      if let chunk = self.consoleState.drain() {
+        self.consoleOutput += chunk
+        if self.consoleOutput.count > self.consoleMaxOutputChars {
+          let tail = self.consoleOutput.suffix(self.consoleMaxOutputChars)
+          self.consoleOutput = String(tail)
         }
       }
     }
+    consoleFlushTimer = timer
+    timer.resume()
   }
 
   private func stopConsoleOutputReader() {
+    VMConsoleReader.stop(state: consoleState)
+    vmLog("Console reader stopped")
+    consoleFlushTimer?.cancel()
+    consoleFlushTimer = nil
     consoleReadTask?.cancel()
     consoleReadTask = nil
-    consoleInputPipe = nil
-    consoleOutputPipe = nil
+  }
+
+  nonisolated private func flushConsoleBufferIfNeeded(force: Bool) {
+    _ = force
+  }
+
+  func setConsoleOutputEnabled(_ enabled: Bool) {
+    isConsoleOutputEnabled = enabled
+    vmLog("Console output \(enabled ? "enabled" : "disabled")")
+    if enabled {
+      if runningLinuxVM != nil {
+        startConsoleOutputReader()
+      }
+    } else {
+      stopConsoleOutputReader()
+    }
+  }
+
+  func clearConsoleOutput() {
+    consoleOutput = ""
+  }
+
+  func sendConsoleInput(_ input: String) {
+    let payload = input.hasSuffix("\n") ? input : input + "\n"
+    guard let data = payload.data(using: .utf8) else { return }
+    let pipes = [consoleInputPipe, serialInputPipe].compactMap { $0 }
+    for pipe in pipes {
+      do {
+        try pipe.fileHandleForWriting.write(contentsOf: data)
+      } catch {
+        print("[VM] Failed to write to console input: \(error)")
+      }
+    }
   }
   
   // MARK: - Pool Management

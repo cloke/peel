@@ -21,7 +21,7 @@ SwiftData integration is complete with iCloud sync enabled.
 
 ### iCloud Sync
 - **Status:** Enabled (`cloudKitDatabase: .automatic`)
-- **Container:** `iCloud.crunchy-bananas.KitchenSink`
+- **Container:** `iCloud.crunchy-bananas.Peel`
 - **Entitlements:** Configured in `macOS/macOS.entitlements`
 
 ### CloudKit Compatibility
@@ -31,7 +31,7 @@ All models follow CloudKit requirements:
 - No complex relationships (uses UUID references instead)
 
 ### Files
-- Models defined in `Shared/KitchenSyncApp.swift`
+- Models defined in `Shared/PeelApp.swift`
 - Data provider in `GitHubDataProvider` class
 - Service protocols in `Github/Services/FavoritesService.swift`
 

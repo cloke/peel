@@ -36,7 +36,7 @@ All modernization work is **complete**. The app is now using:
 - iCloud-safe models (no circular refs, UUID identity)
 - Git repositories persist via SwiftData
 - Separate synced vs device-local models
-- Ready for iCloud with one line change
+- iCloud sync enabled (`cloudKitDatabase: .automatic`)
 
 ### Git Worktrees ✅
 - List/create/delete worktree commands
@@ -113,20 +113,12 @@ All modernization work is **complete**. The app is now using:
 
 ---
 
-## Option 4: Enable iCloud Sync
-**Goal:** Sync repositories and favorites across Macs
+## Option 4: Enable iCloud Sync ✅ COMPLETED
+**Status:** Enabled via `cloudKitDatabase: .automatic` with CloudKit entitlements in place.
 
-**Tasks:**
-1. Enable CloudKit in Xcode capabilities
-2. Change `cloudKitDatabase: .none` to `.automatic`
-3. Test sync between devices
-4. Handle merge conflicts
-
-**Files to modify:**
-- `Shared/KitchenSyncApp.swift` (one line change)
-- Xcode project capabilities
-
-**Estimated time:** 1-2 hours (plus testing)
+**Files updated:**
+- `Shared/PeelApp.swift`
+- `macOS/macOS.entitlements`
 
 ---
 

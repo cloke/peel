@@ -20,6 +20,8 @@ struct VMIsolationDashboardView: View {
   @State private var missingDependencies: [VMToolDependency] = []
   @State private var showingDependenciesPrompt = false
   @State private var isInstallingDependencies = false
+  @State private var consoleInput = ""
+  @State private var isStartingMacOSVM = false
   
   var body: some View {
     ScrollView {
@@ -37,6 +39,11 @@ struct VMIsolationDashboardView: View {
           // Test VM section (when Linux is ready)
           if service.isLinuxReady {
             testVMSection
+            consoleSection
+          }
+
+          if service.isMacOSReady {
+            testMacOSVMSection
           }
           
           // VM Pools
@@ -401,6 +408,158 @@ struct VMIsolationDashboardView: View {
         }
       }
     }
+  }
+
+  // MARK: - Console Section
+
+  private var consoleSection: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      HStack {
+        Text("Linux Console")
+          .font(.headline)
+        Spacer()
+        Toggle("Console Output", isOn: Binding(
+          get: { service.isConsoleOutputEnabled },
+          set: { service.setConsoleOutputEnabled($0) }
+        ))
+        .toggleStyle(.switch)
+      }
+
+      Text("Use the serial console to interact with the netboot environment.")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+
+      TextEditor(text: .constant(service.consoleOutput))
+        .font(.system(.caption, design: .monospaced))
+        .frame(minHeight: 160)
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(.tertiary))
+        .disabled(true)
+
+      HStack(spacing: 8) {
+        TextField("Send console input", text: $consoleInput)
+          .textFieldStyle(.roundedBorder)
+        Button("Send") {
+          service.sendConsoleInput(consoleInput)
+          consoleInput = ""
+        }
+        .buttonStyle(.bordered)
+        .disabled(!service.isLinuxVMRunning)
+
+        Button("Send Enter") {
+          service.sendConsoleInput("")
+        }
+        .buttonStyle(.bordered)
+        .disabled(!service.isLinuxVMRunning)
+
+        Button("Clear") {
+          service.clearConsoleOutput()
+        }
+        .buttonStyle(.bordered)
+        .disabled(service.consoleOutput.isEmpty)
+      }
+    }
+    .padding()
+    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+  }
+
+  // MARK: - macOS VM Section
+
+  private var testMacOSVMSection: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("Test macOS VM")
+        .font(.headline)
+
+      HStack(spacing: 16) {
+        HStack(spacing: 8) {
+          Circle()
+            .fill(service.isMacOSVMRunning ? .green : .secondary.opacity(0.3))
+            .frame(width: 12, height: 12)
+          Text(service.isMacOSVMRunning ? "Running" : "Stopped")
+            .font(.subheadline)
+            .foregroundStyle(service.isMacOSVMRunning ? .primary : .secondary)
+        }
+
+        Spacer()
+
+        if service.isMacOSVMRunning {
+          Button {
+            Task { @MainActor in
+              do {
+                try await service.stopMacOSVM()
+              } catch {
+                errorMessage = "Failed to stop macOS VM: \(error.localizedDescription)"
+                showingError = true
+              }
+            }
+          } label: {
+            Label("Stop VM", systemImage: "stop.fill")
+          }
+          .buttonStyle(.bordered)
+          .tint(.red)
+        } else {
+          Button {
+            Task { @MainActor in
+              isStartingMacOSVM = true
+              do {
+                try await service.startMacOSVM()
+              } catch {
+                errorMessage = "Failed to start macOS VM: \(error.localizedDescription)"
+                showingError = true
+              }
+              isStartingMacOSVM = false
+            }
+          } label: {
+            if isStartingMacOSVM || service.isMacOSInstalling {
+              ProgressView()
+                .scaleEffect(0.7)
+              Text(service.isMacOSInstalling ? "Installing..." : "Starting...")
+            } else {
+              Label("Start VM", systemImage: "play.fill")
+            }
+          }
+          .buttonStyle(.borderedProminent)
+          .disabled(isStartingMacOSVM || service.isMacOSInstalling)
+        }
+      }
+      .padding()
+      .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+
+      VStack(alignment: .leading, spacing: 8) {
+        Text("Installs macOS into a local VM disk and boots it headlessly.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+
+        if !service.isMacOSVMInstalled {
+          Button {
+            Task { @MainActor in
+              do {
+                try await service.installMacOSVM()
+              } catch {
+                errorMessage = "Failed to install macOS VM: \(error.localizedDescription)"
+                showingError = true
+              }
+            }
+          } label: {
+            if service.isMacOSInstalling {
+              ProgressView()
+                .scaleEffect(0.7)
+              Text("Installing...")
+            } else {
+              Text("Install macOS VM")
+            }
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
+          .disabled(service.isMacOSInstalling)
+        } else {
+          Text("macOS VM is installed")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+    }
+    .padding()
+    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
   }
 
   private var dependencyPromptMessage: String {
