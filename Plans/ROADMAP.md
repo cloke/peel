@@ -65,6 +65,9 @@
 - [ ] Validation pipeline for correctness checks ([#13](https://github.com/cloke/peel/issues/13))
 - [ ] MCP activity log + cleanup actions ([#16](https://github.com/cloke/peel/issues/16))
 - [ ] MCP control CLI (query, stop server, quit app)
+- [ ] Planner gating: skip implementers when planner decides “no work” (record decision + reason)
+- [ ] Show planner prompt in Chain Activity / MCP Run detail
+- [ ] Clarify Assign Task behavior (disable while chain running or label as “Spawn Agent”)
 
 #### Proposed Next: Two Worktree Chains (Phase 1C)
 
