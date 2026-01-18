@@ -96,7 +96,7 @@ final class ValidationTests: XCTestCase {
     
     let result = await rule.validate(chain: chain, summary: summary, workingDirectory: nil)
     XCTAssertEqual(result.status, .failed)
-    XCTAssertTrue(result.reasons.description.contains("Merge conflicts"))
+    XCTAssertTrue(result.reasons.contains { $0.contains("Merge conflicts") })
   }
   
   func testOutputValidationRule() async {

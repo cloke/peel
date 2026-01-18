@@ -121,7 +121,11 @@ public struct GitDiffValidationRule: ValidationRule {
   public let name = "Git Changes"
   public let description = "Checks that implementers made git changes"
   
-  public init() {}
+  private let gitPath: String
+  
+  public init(gitPath: String = "/usr/bin/git") {
+    self.gitPath = gitPath
+  }
   
   public func validate(
     chain: AgentChain,
@@ -132,37 +136,57 @@ public struct GitDiffValidationRule: ValidationRule {
       return .skipped(reason: "No working directory specified")
     }
     
-    // Run git diff to check for changes
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-    process.arguments = ["diff", "--name-only", "HEAD"]
-    process.currentDirectoryURL = URL(fileURLWithPath: workingDir)
-    
-    let pipe = Pipe()
-    process.standardOutput = pipe
-    process.standardError = pipe
-    
-    do {
-      try process.run()
-      process.waitUntilExit()
-      
-      let data = pipe.fileHandleForReading.readDataToEndOfFile()
-      let output = String(data: data, encoding: .utf8) ?? ""
-      
-      if process.terminationStatus != 0 {
-        return .warning(reasons: ["Could not check git diff: \(output)"])
-      }
-      
-      let changedFiles = output.split(separator: "\n").map(String.init).filter { !$0.isEmpty }
-      
-      if changedFiles.isEmpty {
-        return .warning(reasons: ["No git changes detected"])
-      }
-      
-      return .passed(reason: "Changes detected in \(changedFiles.count) file(s)")
-    } catch {
-      return .warning(reasons: ["Could not run git diff: \(error.localizedDescription)"])
+    // Check if git exists
+    guard FileManager.default.fileExists(atPath: gitPath) else {
+      return .warning(reasons: ["Git not found at \(gitPath)"])
     }
+    
+    // Run git diff with timeout to check for changes
+    let task = Task {
+      let process = Process()
+      process.executableURL = URL(fileURLWithPath: gitPath)
+      process.arguments = ["diff", "--name-only", "HEAD"]
+      process.currentDirectoryURL = URL(fileURLWithPath: workingDir)
+      
+      let pipe = Pipe()
+      process.standardOutput = pipe
+      process.standardError = pipe
+      
+      do {
+        try process.run()
+        
+        // Wait up to 5 seconds for git diff to complete
+        var waited = 0.0
+        while process.isRunning && waited < 5.0 {
+          try await Task.sleep(for: .milliseconds(100))
+          waited += 0.1
+        }
+        
+        if process.isRunning {
+          process.terminate()
+          return ValidationResult.warning(reasons: ["Git diff timed out"])
+        }
+        
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(data: data, encoding: .utf8) ?? ""
+        
+        if process.terminationStatus != 0 {
+          return ValidationResult.warning(reasons: ["Could not check git diff: \(output)"])
+        }
+        
+        let changedFiles = output.split(separator: "\n").map(String.init).filter { !$0.isEmpty }
+        
+        if changedFiles.isEmpty {
+          return ValidationResult.warning(reasons: ["No git changes detected"])
+        }
+        
+        return ValidationResult.passed(reason: "Changes detected in \(changedFiles.count) file(s)")
+      } catch {
+        return ValidationResult.warning(reasons: ["Could not run git diff: \(error.localizedDescription)"])
+      }
+    }
+    
+    return await task.value
   }
 }
 

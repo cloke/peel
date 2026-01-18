@@ -73,13 +73,9 @@ public struct ValidationResult: Codable, Sendable {
       return .warning(reasons: allReasons)
     }
     
-    // If all passed or skipped
-    if results.allSatisfy({ $0.status == .passed || $0.status == .skipped }) {
-      let allReasons = results.flatMap { $0.reasons }
-      return ValidationResult(status: .passed, reasons: allReasons)
-    }
-    
-    return .passed(reason: "All validations completed")
+    // All passed or skipped
+    let allReasons = results.flatMap { $0.reasons }
+    return ValidationResult(status: .passed, reasons: allReasons)
   }
 }
 
