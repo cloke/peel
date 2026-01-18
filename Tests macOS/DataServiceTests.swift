@@ -12,6 +12,7 @@ final class DataServiceTests: XCTestCase {
   override func setUp() async throws {
     let schema = Schema([
       MCPRunRecord.self,
+      MCPRunResultRecord.self,
       DeviceSettings.self
     ])
     let config = ModelConfiguration(isStoredInMemoryOnly: true)
@@ -91,5 +92,22 @@ final class DataServiceTests: XCTestCase {
     XCTAssertEqual(recentRuns.count, 100)
     XCTAssertEqual(recentRuns.first?.templateName, "template-105")
     XCTAssertEqual(recentRuns.last?.templateName, "template-6")
+  }
+
+  func testMCPRunResultPersistence() async throws {
+    _ = dataService.recordMCPRunResult(
+      chainId: "chain-xyz",
+      agentId: "agent-1",
+      agentName: "Planner",
+      model: "GPT 4.1",
+      prompt: "test",
+      output: "output",
+      premiumCost: 0,
+      reviewVerdict: "approved"
+    )
+    let results = dataService.getMCPRunResults(chainId: "chain-xyz")
+    XCTAssertEqual(results.count, 1)
+    XCTAssertEqual(results.first?.agentName, "Planner")
+    XCTAssertEqual(results.first?.reviewVerdict, "approved")
   }
 }

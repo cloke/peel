@@ -228,3 +228,41 @@ final class MCPRunRecord {
     self.createdAt = createdAt
   }
 }
+
+/// Persisted MCP run results (device-local)
+@Model
+final class MCPRunResultRecord {
+  var id: UUID = UUID()
+  var chainId: String = ""
+  var agentId: String = ""
+  var agentName: String = ""
+  var model: String = ""
+  var prompt: String = ""
+  var output: String = ""
+  var premiumCost: Double = 0
+  var reviewVerdict: String?
+  var createdAt: Date = Date()
+
+  init(
+    chainId: String = "",
+    agentId: String,
+    agentName: String,
+    model: String,
+    prompt: String,
+    output: String,
+    premiumCost: Double = 0,
+    reviewVerdict: String? = nil,
+    createdAt: Date = Date()
+  ) {
+    self.id = UUID()
+    self.chainId = chainId
+    self.agentId = agentId
+    self.agentName = agentName
+    self.model = model
+    self.prompt = prompt
+    self.output = output
+    self.premiumCost = premiumCost
+    self.reviewVerdict = reviewVerdict
+    self.createdAt = createdAt
+  }
+}

@@ -300,6 +300,18 @@ public enum AgentState: Equatable {
     default: return false
     }
   }
+  
+  public var color: String {
+    switch self {
+    case .idle: return "gray"
+    case .planning: return "yellow"
+    case .working: return "blue"
+    case .blocked: return "orange"
+    case .testing: return "purple"
+    case .complete: return "green"
+    case .failed: return "red"
+    }
+  }
 }
 
 /// Framework/language hints for specialized agent instructions

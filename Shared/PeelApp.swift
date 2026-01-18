@@ -29,6 +29,7 @@ struct PeelApp: App {
       TrackedWorktree.self,
       DeviceSettings.self,
       MCPRunRecord.self,
+      MCPRunResultRecord.self,
     ])
     
     let modelConfiguration = ModelConfiguration(
@@ -270,6 +271,44 @@ final class DataService {
       predicate: #Predicate { $0.chainId == chainId }
     )
     return try? modelContext.fetch(descriptor).first
+  }
+
+  // MARK: - MCP Run Results
+
+  @discardableResult
+  func recordMCPRunResult(
+    chainId: String,
+    agentId: String,
+    agentName: String,
+    model: String,
+    prompt: String,
+    output: String,
+    premiumCost: Double,
+    reviewVerdict: String?
+  ) -> MCPRunResultRecord {
+    let record = MCPRunResultRecord(
+      chainId: chainId,
+      agentId: agentId,
+      agentName: agentName,
+      model: model,
+      prompt: prompt,
+      output: output,
+      premiumCost: premiumCost,
+      reviewVerdict: reviewVerdict,
+      createdAt: Date()
+    )
+    modelContext.insert(record)
+    try? modelContext.save()
+    return record
+  }
+
+  func getMCPRunResults(chainId: String) -> [MCPRunResultRecord] {
+    guard !chainId.isEmpty else { return [] }
+    let descriptor = FetchDescriptor<MCPRunResultRecord>(
+      predicate: #Predicate { $0.chainId == chainId },
+      sortBy: [SortDescriptor(\.createdAt, order: .forward)]
+    )
+    return (try? modelContext.fetch(descriptor)) ?? []
   }
 
   private func cleanupOldMCPRuns(keeping limit: Int = 100) {

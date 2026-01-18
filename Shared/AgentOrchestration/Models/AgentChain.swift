@@ -128,6 +128,7 @@ public final class AgentChain: Identifiable {
     clearLiveStatus()
     for agent in agents {
       agent.clearTask()
+      agent.updateState(.idle)
     }
   }
 }
