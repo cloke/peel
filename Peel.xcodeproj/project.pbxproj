@@ -293,7 +293,7 @@
 			name = "Tests macOS";
 			productName = "Tests macOS";
 			productReference = 04A7BD85258E77D8000E55A8 /* Tests macOS.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -729,12 +729,15 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 11.1;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				OTHER_SWIFT_FLAGS = "$(inherited) -Xcc -fmodule-map-file=\"$(BUILD_DIR)/../Intermediates.noindex/GeneratedModuleMaps/cmark.modulemap\"";
 				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.Tests-macOS";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
-				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = "KitchenSink (macOS)";
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Peel.app/Contents/MacOS/Peel";
+				TEST_TARGET_NAME = "Peel (macOS)";
+				BUNDLE_LOADER = "$(TEST_HOST)";
 			};
 			name = Debug;
 		};
@@ -750,12 +753,15 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 11.1;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				OTHER_SWIFT_FLAGS = "$(inherited) -Xcc -fmodule-map-file=\"$(BUILD_DIR)/../Intermediates.noindex/GeneratedModuleMaps/cmark.modulemap\"";
 				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.Tests-macOS";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
-				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = "KitchenSink (macOS)";
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Peel.app/Contents/MacOS/Peel";
+				TEST_TARGET_NAME = "Peel (macOS)";
+				BUNDLE_LOADER = "$(TEST_HOST)";
 			};
 			name = Release;
 		};
