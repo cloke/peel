@@ -9,6 +9,7 @@ import Foundation
 import Observation
 
 #if os(macOS)
+import AppKit
 import Git
 import Network
 import SwiftData
@@ -991,6 +992,14 @@ public final class MCPServerService {
     case "chains.run":
       return await handleChainRun(id: id, arguments: arguments)
 
+    case "server.stop":
+      stop()
+      return (200, makeRPCResult(id: id, result: ["status": "stopped"]))
+
+    case "app.quit":
+      scheduleAppQuit()
+      return (200, makeRPCResult(id: id, result: ["status": "quitting"]))
+
     default:
       return (400, makeRPCError(id: id, code: -32601, message: "Unknown tool"))
     }
@@ -1146,8 +1155,31 @@ public final class MCPServerService {
           ],
           "required": ["prompt"]
         ]
+      ],
+      [
+        "name": "server.stop",
+        "description": "Stop the MCP server",
+        "inputSchema": [
+          "type": "object",
+          "properties": [:]
+        ]
+      ],
+      [
+        "name": "app.quit",
+        "description": "Quit the Peel app",
+        "inputSchema": [
+          "type": "object",
+          "properties": [:]
+        ]
       ]
     ]
+  }
+
+  private func scheduleAppQuit() {
+    Task { @MainActor in
+      try? await Task.sleep(for: .milliseconds(150))
+      NSApp.terminate(nil)
+    }
   }
 
   private func templateList() -> [[String: Any]] {

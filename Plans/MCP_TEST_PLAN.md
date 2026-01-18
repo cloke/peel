@@ -1,6 +1,7 @@
 # MCP Test Plan
 
-**Created:** January 18, 2026
+**Created:** January 18, 2026  
+**Updated:** January 18, 2026
 
 ## Goals
 - Validate the MCP test harness server responds to JSON-RPC requests.
@@ -8,9 +9,23 @@
 - Confirm templates are discoverable and runnable via MCP.
 
 ## Preconditions
-- Build and run Peel (macOS).
+
+### Option A: Manual (for UI testing)
+- Build and run Peel from Xcode (⌘R).
 - In Settings, enable MCP Server and choose a port.
 - Ensure the selected working directory is a git repo for parallel runs.
+
+### Option B: Script (for agent testing)
+```bash
+# Build, configure, and launch with MCP enabled
+./Tools/build-and-launch.sh --wait-for-server --port 8765
+```
+
+This script:
+1. Builds Peel via xcodebuild
+2. Sets `mcp.server.enabled = true` via defaults
+3. Launches the app
+4. Waits until MCP server responds (with `--wait-for-server`)
 
 ## VS Code Setup
 - Configure a local MCP client to connect to http://localhost:<port>/rpc.
@@ -81,4 +96,7 @@
 ## Next Steps
 - [x] Add persistent MCP run log + cleanup action (issue #16).
 - [ ] Implement validation pipeline for MCP runs (issue #13).
+- [ ] Add MCP Activity run detail panel (prompt/output/validation summary).
+- [ ] Add MCP run timeline (agent status + tool events).
+- [ ] Optional: prevent sleep while MCP chain is running.
 - [ ] UX polish: icons, typography, and empty states in Agents sidebar and MCP dashboard.
