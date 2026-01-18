@@ -84,7 +84,7 @@ public final class WorkspaceDashboardService {
   public private(set) var worktrees: [Git.Worktree] = []
 
   /// Tracked worktrees persisted in SwiftData
-  public private(set) var trackedWorktreesByPath: [String: TrackedWorktree] = [:]
+  private(set) var trackedWorktreesByPath: [String: TrackedWorktree] = [:]
   
   /// Loading state
   public private(set) var isLoading = false
@@ -295,7 +295,7 @@ public final class WorkspaceDashboardService {
     worktreeWorkspaceNames[worktree.path]
   }
 
-  public func trackedWorktree(for worktree: Git.Worktree) -> TrackedWorktree? {
+  func trackedWorktree(for worktree: Git.Worktree) -> TrackedWorktree? {
     trackedWorktreesByPath[worktree.path]
   }
   
