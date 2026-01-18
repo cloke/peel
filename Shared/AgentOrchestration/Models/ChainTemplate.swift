@@ -20,6 +20,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
   public var validationConfig: ValidationConfiguration
   #endif
   
+  #if os(macOS)
   public init(
     id: UUID = UUID(),
     name: String,
@@ -34,10 +35,24 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     self.steps = steps
     self.createdAt = Date()
     self.isBuiltIn = isBuiltIn
-    #if os(macOS)
     self.validationConfig = validationConfig ?? .default
-    #endif
   }
+  #else
+  public init(
+    id: UUID = UUID(),
+    name: String,
+    description: String = "",
+    steps: [AgentStepTemplate] = [],
+    isBuiltIn: Bool = false
+  ) {
+    self.id = id
+    self.name = name
+    self.description = description
+    self.steps = steps
+    self.createdAt = Date()
+    self.isBuiltIn = isBuiltIn
+  }
+  #endif
   
   /// Built-in templates
   public static let builtInTemplates: [ChainTemplate] = [
@@ -99,6 +114,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     ),
 
     // MCP Test Harness: Planner + parallel implementers + reviewer
+    #if os(macOS)
     ChainTemplate(
       name: "MCP Harness",
       description: "Planner with parallel implementers and a reviewer (MCP validation)",
@@ -111,6 +127,19 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
       isBuiltIn: true,
       validationConfig: .default
     ),
+    #else
+    ChainTemplate(
+      name: "MCP Harness",
+      description: "Planner with parallel implementers and a reviewer (MCP validation)",
+      steps: [
+        AgentStepTemplate(role: .planner, model: .claudeSonnet45, name: "Planner"),
+        AgentStepTemplate(role: .implementer, model: .claudeSonnet45, name: "Implementer A"),
+        AgentStepTemplate(role: .implementer, model: .gpt51Codex, name: "Implementer B"),
+        AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
+      ],
+      isBuiltIn: true
+    ),
+    #endif
 
     // Roadmap MCP (Cost-Conscious): Planner + 3 implementers + reviewer
     ChainTemplate(
