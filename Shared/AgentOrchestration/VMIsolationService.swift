@@ -285,6 +285,21 @@ private final class VMConsoleState: @unchecked Sendable {
 }
 
 private enum VMConsoleReader {
+  /// Strip ANSI escape codes from console output
+  /// Removes color codes, cursor movement, and other terminal control sequences
+  static func stripANSIEscapeCodes(_ text: String) -> String {
+    // Pattern matches:
+    // - ESC[ followed by any sequence of digits, semicolons, and ending in a letter (CSI sequences)
+    // - ESC] followed by anything up to BEL or ST (OSC sequences)
+    // - Other ESC sequences
+    let ansiPattern = "\\x1B(?:\\[[0-9;]*[a-zA-Z]|\\][^\\x07\\x1B]*(?:\\x07|\\x1B\\\\)|[=>\\(\\)][0-9A-Za-z]?)"
+    guard let regex = try? NSRegularExpression(pattern: ansiPattern, options: []) else {
+      return text
+    }
+    let range = NSRange(text.startIndex..., in: text)
+    return regex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "")
+  }
+  
   static func start(state: VMConsoleState, fd: Int32) {
     state.markStart()
     let flags = fcntl(fd, F_GETFL)
@@ -300,7 +315,9 @@ private enum VMConsoleReader {
         if count > 0 {
           let data = Data(bytes: buffer, count: count)
           if let text = String(data: data, encoding: .utf8), !text.isEmpty {
-            state.append(text)
+            // Strip ANSI escape codes before appending
+            let cleanText = stripANSIEscapeCodes(text)
+            state.append(cleanText)
           }
           state.recordBytes(count)
         } else if count == 0 {
@@ -769,7 +786,7 @@ final class VMIsolationService {
   }
   
   /// Download and set up a Linux VM
-  /// Downloads Debian netboot kernel and initramfs (arm64) for VZLinuxBootLoader compatibility
+  /// Downloads Alpine Linux kernel and initramfs (arm64) for VZLinuxBootLoader compatibility
   func setupLinuxVM() async throws {
     statusMessage = "Setting up Linux VM environment..."
     
