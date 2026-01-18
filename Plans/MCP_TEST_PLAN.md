@@ -64,6 +64,14 @@
 **Action:** Click “Clean Agent Worktrees” in MCP Activity
 **Expected:** Agent worktrees and branches are removed safely, summary shown; errors visible if any.
 
+### 10. Planner Gating (Skip Implementers)
+**Action:** Run a chain with a prompt that should be rejected by the planner (e.g., “No changes needed”).
+**Expected:** Planner returns “no work” decision; implementers are skipped; chain completes with a clear reason.
+
+### 11. Planner Prompt Visibility
+**Action:** Open MCP Activity run detail for a completed chain.
+**Expected:** Planner prompt is visible and matches the input prompt sent via MCP.
+
 ## Notes
 - Parallel runs require a valid git repo and a clean working tree.
 - Use small prompts to limit token usage during verification.
