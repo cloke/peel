@@ -5,15 +5,16 @@
 //  Created on 1/7/26.
 //
 
+import SwiftData
 import SwiftUI
 #if os(macOS)
 import AppKit
-import Git
 #endif
 
 /// Infrastructure views that can be shown in detail pane
 enum InfrastructureView: String, Hashable {
   case vmIsolation = "vm-isolation"
+  case mcpDashboard = "mcp-dashboard"
 }
 
 /// Main view for AI Agent Orchestration
@@ -21,6 +22,8 @@ struct Agents_RootView: View {
   @State private var agentManager = AgentManager()
   @State private var cliService = CLIService()
   @State private var sessionTracker = SessionTracker()
+  @Environment(MCPServerService.self) private var mcpServer
+  @Environment(\.modelContext) private var modelContext
   @State private var columnVisibility = NavigationSplitViewVisibility.all
   @State private var showingNewAgentSheet = false
   @State private var showingNewChainSheet = false
@@ -43,6 +46,7 @@ struct Agents_RootView: View {
     }
     .navigationSplitViewStyle(.balanced)
     .task {
+      mcpServer.configure(modelContext: modelContext)
       await cliService.checkAllCLIs()
     }
     .toolbar {
@@ -84,6 +88,8 @@ struct Agents_RootView: View {
       switch infra {
       case .vmIsolation:
         VMIsolationDashboardView()
+      case .mcpDashboard:
+        MCPDashboardView(mcpServer: mcpServer, sessionTracker: sessionTracker)
       }
     } else if let chain = agentManager.selectedChain {
       ChainDetailView(chain: chain, agentManager: agentManager, cliService: cliService, sessionTracker: sessionTracker)
@@ -146,6 +152,7 @@ struct Agents_RootView: View {
 struct AgentsSidebarView: View {
   @Bindable var agentManager: AgentManager
   @Bindable var cliService: CLIService
+  @Environment(MCPServerService.self) private var mcpServer
   @Binding var showingSetupSheet: Bool
   @Binding var showingNewChainSheet: Bool
   @Binding var showingNewAgentSheet: Bool
@@ -239,6 +246,22 @@ struct AgentsSidebarView: View {
         }
         
         Section("Infrastructure") {
+          HStack {
+            Image(systemName: mcpServer.isRunning ? "waveform.path.ecg" : "waveform.path")
+              .foregroundStyle(mcpServer.isRunning ? .green : .secondary)
+            Text("MCP Activity")
+            Spacer()
+            if mcpServer.activeRequests > 0 {
+              Text("\(mcpServer.activeRequests)")
+                .font(.caption2)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(.blue.opacity(0.2), in: Capsule())
+                .foregroundStyle(.blue)
+            }
+          }
+          .tag("infra:mcp-dashboard")
+
           HStack {
             Image(systemName: "shield.checkered")
               .foregroundStyle(.purple)
@@ -365,6 +388,166 @@ struct AgentsSidebarView: View {
     case .checking: return "Checking..."
     case .error: return "Error"
     }
+  }
+}
+
+// MARK: - MCP Dashboard
+
+struct MCPDashboardView: View {
+  @Bindable var mcpServer: MCPServerService
+  @Bindable var sessionTracker: SessionTracker
+  @Query(sort: \MCPRunRecord.createdAt, order: .reverse) private var mcpRuns: [MCPRunRecord]
+
+  var body: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 16) {
+        GroupBox {
+          HStack(spacing: 12) {
+            Image(systemName: mcpServer.isRunning ? "bolt.horizontal.circle.fill" : "bolt.horizontal.circle")
+              .font(.title2)
+              .foregroundStyle(mcpServer.isRunning ? .green : .secondary)
+            VStack(alignment: .leading, spacing: 2) {
+              Text("MCP Server")
+                .font(.headline)
+              Text(mcpServer.isRunning ? "Running on localhost:\(mcpServer.port)" : "Stopped")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if mcpServer.activeRequests > 0 {
+              Text("\(mcpServer.activeRequests) active")
+                .font(.caption)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.blue.opacity(0.15), in: Capsule())
+            }
+          }
+        }
+
+        GroupBox {
+          VStack(alignment: .leading, spacing: 8) {
+            Text("Recent MCP Activity")
+              .font(.headline)
+            if let method = mcpServer.lastRequestMethod,
+               let timestamp = mcpServer.lastRequestAt {
+              Text("Last request: \(method)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              Text(timestamp, style: .time)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            } else {
+              Text("No MCP requests yet")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            if let error = mcpServer.lastError {
+              Text(error)
+                .font(.caption)
+                .foregroundStyle(.red)
+            }
+          }
+        }
+
+        GroupBox {
+          VStack(alignment: .leading, spacing: 8) {
+            Text("MCP Run History")
+              .font(.headline)
+            if mcpRuns.isEmpty {
+              Text("No MCP runs yet")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else {
+              ForEach(mcpRuns.prefix(8)) { run in
+                VStack(alignment: .leading, spacing: 4) {
+                  HStack(spacing: 8) {
+                    Image(systemName: run.success ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                      .foregroundStyle(run.success ? .green : .red)
+                    Text(run.templateName)
+                      .font(.subheadline)
+                    Spacer()
+                    Text(run.createdAt, style: .time)
+                      .font(.caption2)
+                      .foregroundStyle(.secondary)
+                  }
+                  if let workingDirectory = run.workingDirectory, !workingDirectory.isEmpty {
+                    Text(workingDirectory)
+                      .font(.caption2)
+                      .foregroundStyle(.secondary)
+                      .lineLimit(1)
+                  }
+                  if let error = run.errorMessage, !error.isEmpty {
+                    Text(error)
+                      .font(.caption)
+                      .foregroundStyle(.red)
+                      .lineLimit(2)
+                  }
+                }
+                .padding(.vertical, 4)
+              }
+            }
+          }
+        }
+
+        GroupBox {
+          VStack(alignment: .leading, spacing: 8) {
+            Text("Cleanup")
+              .font(.headline)
+            Text("Remove agent worktrees and their branches from MCP runs")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Button {
+              Task {
+                await mcpServer.cleanupAgentWorkspaces()
+              }
+            } label: {
+              Label("Clean Agent Worktrees", systemImage: "trash")
+            }
+            .buttonStyle(.bordered)
+            .disabled(mcpServer.isCleaningAgentWorkspaces)
+
+            if mcpServer.isCleaningAgentWorkspaces {
+              Text("Cleaning worktrees...")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else if let summary = mcpServer.lastCleanupSummary {
+              Text(summary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            if let error = mcpServer.lastCleanupError {
+              Text(error)
+                .font(.caption)
+                .foregroundStyle(.red)
+            }
+            if let lastCleanupAt = mcpServer.lastCleanupAt {
+              Text("Last cleanup: \(lastCleanupAt.formatted(date: .abbreviated, time: .shortened))")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+          }
+        }
+
+        GroupBox {
+          VStack(alignment: .leading, spacing: 8) {
+            Text("Session Activity")
+              .font(.headline)
+            Text("Chain runs this session: \(sessionTracker.chainRunHistory.count)")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            if let latest = sessionTracker.chainRunHistory.last {
+              Text("Last run: \(latest.chainName)")
+                .font(.caption)
+              Text(latest.timestamp, style: .time)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+          }
+        }
+      }
+      .padding()
+    }
+    .navigationTitle("MCP Activity")
   }
 }
 
@@ -2004,405 +2187,20 @@ struct ChainDetailView: View {
   
   private func runChain() async {
     isRunning = true
-    defer { isRunning = false }  // Always reset, even on error
-    
+    defer { isRunning = false }
+
     errorMessage = nil
     mergeConflicts = []
-    chain.reset()
-    chain.clearLiveStatus()
-    chain.runStartTime = Date()
-    chain.state = .running(agentIndex: 0)
-    chain.addStatusMessage("Starting chain execution...", type: .info)
-    
-    do {
-      // Run agents with parallel implementers when available
-      try await runAgentsWithParallelImplementers()
-      
-      // Check if we should do a review loop
-      if chain.enableReviewLoop {
-        try await runReviewLoop()
-      }
-      
-      chain.state = .complete
-      chain.addStatusMessage("✓ Chain completed successfully!", type: .complete)
-      
-      // Play completion sound
-      #if os(macOS)
-      NSSound.beep()
-      #endif
-      
-      // Record to session tracker
-      sessionTracker.recordChainRun(chain)
-    } catch {
-      errorMessage = error.localizedDescription
-      chain.state = .failed(message: error.localizedDescription)
-      chain.addStatusMessage("Error: \(error.localizedDescription)", type: .error)
-    }
-    
-    isRunning = false
-  }
-  
-  /// Run all agents in the chain sequentially
-  private func runAgentsSequentially() async throws {
-    for (index, agent) in chain.agents.enumerated() {
-      chain.state = .running(agentIndex: index)
-      chain.currentAgentStartTime = Date()
-      chain.addStatusMessage("Starting \(agent.name) (\(agent.model.shortName))...", type: .progress)
-      let result = try await runSingleAgent(agent, at: index)
-      chain.results.append(result)
-      chain.addStatusMessage("\(agent.name) completed", type: .complete)
-    }
-  }
 
-  /// Run implementers in parallel while keeping other agents sequential
-  private func runAgentsWithParallelImplementers() async throws {
-    let implementerIndices = chain.agents.indices.filter { chain.agents[$0].role == .implementer }
-    guard implementerIndices.count > 1 else {
-      try await runAgentsSequentially()
-      return
-    }
-
-    guard let firstImplementer = implementerIndices.first,
-          let lastImplementer = implementerIndices.last else {
-      try await runAgentsSequentially()
-      return
-    }
-
-    let hasGaps = (firstImplementer...lastImplementer).contains { index in
-      chain.agents[index].role != .implementer
-    }
-    if hasGaps {
-      try await runAgentsSequentially()
-      return
-    }
-
-    // Run pre-implementer agents sequentially
-    if firstImplementer > 0 {
-      for index in 0..<firstImplementer {
-        let agent = chain.agents[index]
-        chain.state = .running(agentIndex: index)
-        chain.currentAgentStartTime = Date()
-        chain.addStatusMessage("Starting \(agent.name) (\(agent.model.shortName))...", type: .progress)
-        let result = try await runSingleAgent(agent, at: index)
-        chain.results.append(result)
-        chain.addStatusMessage("\(agent.name) completed", type: .complete)
-      }
-    }
-
-    // Run implementers in parallel
-    let sharedContext = chain.contextForAgent(at: firstImplementer)
-    let parallelResults = try await runImplementersInParallel(
-      indices: Array(firstImplementer...lastImplementer),
-      context: sharedContext
+    let runner = AgentChainRunner(
+      agentManager: agentManager,
+      cliService: cliService,
+      sessionTracker: sessionTracker
     )
-
-    for index in firstImplementer...lastImplementer {
-      if let result = parallelResults[index] {
-        chain.results.append(result)
-      }
-    }
-
-    chain.addStatusMessage("Merging implementer branches...", type: .progress)
-    let conflicts = try await mergeImplementerBranches(indices: Array(firstImplementer...lastImplementer))
-    if !conflicts.isEmpty {
-      mergeConflicts = conflicts
-      throw NSError(
-        domain: "AgentChain",
-        code: 2,
-        userInfo: [NSLocalizedDescriptionKey: "Merge conflicts detected. Resolve conflicts and re-run the reviewer."]
-      )
-    }
-    chain.addStatusMessage("Merge completed", type: .complete)
-
-    // Run post-implementer agents sequentially
-    if lastImplementer + 1 < chain.agents.count {
-      for index in (lastImplementer + 1)..<chain.agents.count {
-        let agent = chain.agents[index]
-        chain.state = .running(agentIndex: index)
-        chain.currentAgentStartTime = Date()
-        chain.addStatusMessage("Starting \(agent.name) (\(agent.model.shortName))...", type: .progress)
-        let result = try await runSingleAgent(agent, at: index)
-        chain.results.append(result)
-        chain.addStatusMessage("\(agent.name) completed", type: .complete)
-      }
-    }
-  }
-
-  private func runImplementersInParallel(
-    indices: [Int],
-    context: String
-  ) async throws -> [Int: AgentChainResult] {
-#if os(macOS)
-    guard let workingDirectory = chain.workingDirectory else {
-      throw NSError(
-        domain: "AgentChain",
-        code: 1,
-        userInfo: [NSLocalizedDescriptionKey: "Select a working directory to create parallel worktrees."]
-      )
-    }
-
-    let repoURL = URL(fileURLWithPath: workingDirectory)
-    let repository = Model.Repository(name: repoURL.lastPathComponent, path: workingDirectory)
-
-    for index in indices {
-      let agent = chain.agents[index]
-      let task = AgentTask(
-        title: "\(chain.name) - \(agent.name)",
-        prompt: prompt,
-        repositoryPath: workingDirectory
-      )
-      let workspace = try await agentManager.workspaceManager.createWorkspace(
-        for: repository,
-        task: task,
-        agentId: agent.id
-      )
-      agent.workspace = workspace
-      agent.workingDirectory = workspace.path.path
-    }
-
-    var results: [Int: AgentChainResult] = [:]
-    try await withThrowingTaskGroup(of: (Int, AgentChainResult).self) { group in
-      for index in indices {
-        let agent = chain.agents[index]
-        group.addTask {
-          let result = try await runSingleAgent(agent, at: index, contextOverride: context)
-          return (index, result)
-        }
-      }
-
-      for try await (index, result) in group {
-        results[index] = result
-      }
-    }
-
-    return results
-#else
-    var results: [Int: AgentChainResult] = [:]
-    for index in indices {
-      let agent = chain.agents[index]
-      let result = try await runSingleAgent(agent, at: index, contextOverride: context)
-      results[index] = result
-    }
-    return results
-#endif
-  }
-
-  private func mergeImplementerBranches(indices: [Int]) async throws -> [String] {
-#if os(macOS)
-    guard let workingDirectory = chain.workingDirectory else {
-      return []
-    }
-
-    let repoURL = URL(fileURLWithPath: workingDirectory)
-    let repository = Model.Repository(name: repoURL.lastPathComponent, path: workingDirectory)
-
-    let statusLines = try await Commands.simple(arguments: ["status", "--porcelain"], in: repository)
-    if statusLines.contains(where: { !$0.isEmpty }) {
-      throw NSError(
-        domain: "AgentChain",
-        code: 3,
-        userInfo: [NSLocalizedDescriptionKey: "Working tree has uncommitted changes. Clean it before merging."]
-      )
-    }
-
-    var conflicts: [String] = []
-    for index in indices {
-      guard let workspace = chain.agents[index].workspace else { continue }
-      do {
-        _ = try await Commands.simple(arguments: ["merge", "--no-ff", workspace.branch], in: repository)
-      } catch {
-        _ = try? await Commands.simple(arguments: ["merge", "--abort"], in: repository)
-        let conflictLines = try? await Commands.simple(arguments: ["diff", "--name-only", "--diff-filter=U"], in: repository)
-        conflicts = conflictLines?.filter { !$0.isEmpty } ?? []
-        break
-      }
-    }
-
-    return conflicts
-#else
-    return []
-#endif
-  }
-  
-  /// Run a single agent and record its result
-  private func runSingleAgent(
-    _ agent: Agent,
-    at index: Int,
-    contextOverride: String? = nil
-  ) async throws -> AgentChainResult {
-    // Get context from previous agents
-    let context = contextOverride ?? chain.contextForAgent(at: index)
-    
-    // Build prompt with role instructions, framework hints, and context
-    let fullPrompt = agent.buildPrompt(
-      userPrompt: prompt,
-      context: context.isEmpty ? nil : context
-    )
-    
-    // Run the agent with streaming output
-    let response = try await cliService.runCopilotSession(
-      prompt: fullPrompt,
-      model: agent.model,
-      role: agent.role,
-      workingDirectory: agent.workingDirectory ?? chain.workingDirectory,
-      onOutput: { [chain] line in
-        // Parse the streaming line for meaningful info
-        let statusLine = parseStreamingLine(line)
-        if let statusLine {
-          chain.addStatusMessage(statusLine.message, type: statusLine.type)
-        }
-      }
-    )
-    
-    // Parse premium cost from response
-    var premiumCost = agent.model.premiumCost
-    if let premiumStr = response.premiumRequests,
-       let num = Double(premiumStr.components(separatedBy: " ").first ?? "") {
-      premiumCost = num
-    }
-    
-    // Parse review verdict if this is a reviewer
-    var verdict: ReviewVerdict?
-    if agent.role == .reviewer {
-      verdict = ReviewVerdict.parse(from: response.content)
-    }
-    
-    // Record result
-    let result = AgentChainResult(
-      agentId: agent.id,
-      agentName: agent.name,
-      model: agent.model.displayName,
-      prompt: fullPrompt,
-      output: response.content,
-      duration: response.duration,
-      premiumCost: premiumCost,
-      reviewVerdict: verdict
-    )
-    return result
-  }
-  
-  /// Run the review loop if enabled and reviewer requests changes
-  private func runReviewLoop(workingDirectory: String? = nil) async throws {
-    // Find the last reviewer result
-    guard let initialReviewerResult = chain.results.last(where: { $0.reviewVerdict != nil }),
-          let verdict = initialReviewerResult.reviewVerdict,
-          verdict == .needsChanges else {
-      // No reviewer or already approved
-      return
-    }
-    
-    // Find the implementer agent index
-    guard let implementerIndex = chain.agents.firstIndex(where: { $0.role == .implementer }),
-          let reviewerIndex = chain.agents.firstIndex(where: { $0.role == .reviewer }) else {
-      return
-    }
-    
-    let implementer = chain.agents[implementerIndex]
-    let reviewer = chain.agents[reviewerIndex]
-    
-    // Track the latest feedback for each iteration
-    var latestFeedback = initialReviewerResult.output
-    
-    // Loop until approved or max iterations reached
-    while chain.currentReviewIteration < chain.maxReviewIterations {
-      chain.currentReviewIteration += 1
-      chain.state = .reviewing(iteration: chain.currentReviewIteration)
-      
-      // Build prompt with the latest review feedback
-      let feedbackPrompt = """
-        The reviewer has requested changes. Here is their feedback:
-        
-        \(latestFeedback)
-        
-        Please address the feedback and make the necessary changes.
-        Original task: \(prompt)
-        """
-      
-      // Temporarily override the prompt for the re-run
-      let originalPrompt = prompt
-      prompt = feedbackPrompt
-      
-      // Re-run implementer with feedback context
-      let implementerResult = try await runSingleAgent(implementer, at: implementerIndex)
-      chain.results.append(implementerResult)
-      
-      // Re-run reviewer on the new changes
-      let reviewerResult = try await runSingleAgent(reviewer, at: reviewerIndex)
-      chain.results.append(reviewerResult)
-      
-      // Restore original prompt
-      prompt = originalPrompt
-      
-      // Check the new verdict
-      if let newReviewerResult = chain.results.last(where: { $0.reviewVerdict != nil }),
-         let newVerdict = newReviewerResult.reviewVerdict {
-        if newVerdict == .approved {
-          // Success! Exit the loop
-          return
-        } else if newVerdict == .rejected {
-          // Hard rejection, stop trying
-          throw ChainError.reviewRejected(reason: newReviewerResult.output)
-        }
-        // Update feedback for next iteration
-        latestFeedback = newReviewerResult.output
-      }
-    }
-    
-    // Reached max iterations without approval
-    errorMessage = "Review loop reached maximum iterations (\(chain.maxReviewIterations)) without approval"
-  }
-  
-  /// Parse a streaming output line from copilot into a status message
-  private func parseStreamingLine(_ line: String) -> (message: String, type: LiveStatusMessage.MessageType)? {
-    let trimmed = line.trimmingCharacters(in: .whitespaces)
-    
-    // Skip empty lines
-    guard !trimmed.isEmpty else { return nil }
-    
-    // Skip spinner/progress characters only
-    if trimmed.count < 3 && (trimmed.contains("�") || trimmed.contains("●") || trimmed.contains("○") || trimmed.contains("◐")) {
-      return nil
-    }
-    
-    // Tool invocations - highlight these
-    if trimmed.lowercased().contains("read_file") || trimmed.lowercased().contains("reading") {
-      return ("📖 Reading file...", .tool)
-    }
-    if trimmed.lowercased().contains("write_file") || trimmed.lowercased().contains("writing") || 
-       trimmed.lowercased().contains("editing") || trimmed.lowercased().contains("insert_edit") ||
-       trimmed.lowercased().contains("replace_string") {
-      return ("✏️ Editing file...", .tool)
-    }
-    if trimmed.lowercased().contains("run_in_terminal") || trimmed.lowercased().contains("running command") {
-      return ("⚡ Running command...", .tool)
-    }
-    if trimmed.lowercased().contains("grep_search") || trimmed.lowercased().contains("searching") {
-      return ("🔍 Searching...", .tool)
-    }
-    if trimmed.lowercased().contains("semantic_search") {
-      return ("🧠 Semantic search...", .tool)
-    }
-    if trimmed.lowercased().contains("list_dir") {
-      return ("📁 Listing directory...", .tool)
-    }
-    if trimmed.lowercased().contains("create_file") {
-      return ("📝 Creating file...", .tool)
-    }
-    
-    // Show the actual output - truncate if too long
-    let displayLine = trimmed.count > 100 ? String(trimmed.prefix(97)) + "..." : trimmed
-    return (displayLine, .progress)
-  }
-  
-  /// Errors that can occur during chain execution
-  enum ChainError: LocalizedError {
-    case reviewRejected(reason: String)
-    
-    var errorDescription: String? {
-      switch self {
-      case .reviewRejected(let reason):
-        return "Review rejected: \(reason.prefix(200))..."
-      }
+    let summary = await runner.runChain(chain, prompt: prompt)
+    mergeConflicts = summary.mergeConflicts
+    if let failure = summary.errorMessage {
+      errorMessage = failure
     }
   }
   #endif

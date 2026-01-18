@@ -33,6 +33,7 @@
 | Feature | Location | Notes |
 |---------|----------|-------|
 | XPC Tool Brokers | Phase 2 | Needs design |
+| MCP Test Harness | Phase 1C | Templates, validation, MCP server |
 | MLX Integration | Phase 2 | Local inference |
 | PII Scrubber | Phase 2 | High value standalone |
 | Vision/Screen Capture | Phase 3 | Multimodal |
@@ -55,6 +56,14 @@
 - [x] TaskGroup-based parallel execution ([#5](https://github.com/cloke/peel/issues/5))
 - [x] Merge Agent implementation ([#6](https://github.com/cloke/peel/issues/6))
 - [x] Planner structured output format ([#7](https://github.com/cloke/peel/issues/7))
+
+### Phase 1C: MCP Test Harness & Templates
+**Timeline:** 1-2 weeks
+
+- [ ] MCP server for test harness ([#11](https://github.com/cloke/peel/issues/11))
+- [ ] Template: planner + parallel implementers + merge + review ([#12](https://github.com/cloke/peel/issues/12))
+- [ ] Validation pipeline for correctness checks ([#13](https://github.com/cloke/peel/issues/13))
+- [ ] MCP activity log + cleanup actions ([#16](https://github.com/cloke/peel/issues/16))
 
 ### Phase 2: Local AI Foundation
 **Timeline:** 3-4 weeks
@@ -134,6 +143,10 @@ Planner → splits task → creates branches
 
 ### Phase 2 (Local AI)
 - [#8](https://github.com/cloke/peel/issues/8) - Create PII scrubber CLI tool
+- [#11](https://github.com/cloke/peel/issues/11) - MCP test harness server
+- [#12](https://github.com/cloke/peel/issues/12) - MCP chain template (planner → parallel → merge → review)
+- [#13](https://github.com/cloke/peel/issues/13) - MCP validation pipeline
+- [#16](https://github.com/cloke/peel/issues/16) - MCP activity log + cleanup actions
 - XPC Tool Broker architecture (TBD)
 - MLX integration (TBD)
 
