@@ -30,7 +30,6 @@ struct GHIssueSync: AsyncParsableCommand {
   var problemsOnly: Bool = false
   
   mutating func run() async throws {
-    let fm = FileManager.default
     let plansURL = URL(fileURLWithPath: plansDir)
     
     // 1. Get GitHub issues via gh CLI

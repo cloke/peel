@@ -1,3 +1,22 @@
+---
+title: Code Consolidation Plan
+status: in-progress
+created: 2025-12-20
+updated: 2026-01-18
+tags: [refactoring, worktrees, code-quality]
+audience: [developers]
+code_locations:
+  - path: Shared/Services/WorkspaceDashboardService.swift
+    description: Dashboard service (cleanup done)
+  - path: Shared/SwiftDataModels.swift
+    description: TrackedWorktree model
+  - path: Shared/Services/WorktreeErrors.swift
+    description: Consolidated error types
+related_docs:
+  - Plans/AGENT_ORCHESTRATION_PLAN.md
+  - Plans/PARALLEL_AGENTS_PLAN.md
+---
+
 # Code Consolidation Plan
 
 **Updated:** January 18, 2026  

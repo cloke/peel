@@ -1,3 +1,22 @@
+---
+title: Parallel Agents with Worktrees
+status: complete
+created: 2025-12-15
+updated: 2026-01-18
+tags: [parallel-execution, worktrees, taskgroup, merge-agent]
+audience: [developers]
+code_locations:
+  - path: Shared/AgentOrchestration/AgentManager.swift
+    description: TaskGroup parallel execution in AgentChainRunner
+  - path: Shared/AgentOrchestration/MergeAgent.swift
+    description: Merge agent implementation
+  - path: Local Packages/Git/Sources/Git/Worktree.swift
+    description: Git worktree operations
+related_docs:
+  - Plans/AGENT_ORCHESTRATION_PLAN.md
+  - Plans/CONSOLIDATION_PLAN.md
+---
+
 # Parallel Agents with Worktrees
 
 **Updated:** January 18, 2026  

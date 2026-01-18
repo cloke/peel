@@ -1,3 +1,19 @@
+---
+title: VM Isolation Plan
+status: partial
+created: 2025-11-01
+updated: 2026-01-18
+tags: [vm, isolation, security, virtualization]
+audience: [developers]
+code_locations:
+  - path: Shared/Services/VMIsolationService.swift
+    description: VM management and lifecycle
+  - path: Shared/Applications/VM_RootView.swift
+    description: VM UI
+related_docs:
+  - Plans/apple-agent-big-ideas.md
+---
+
 # VM Isolation Plan
 
 **Updated:** January 18, 2026  
