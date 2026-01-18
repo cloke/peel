@@ -126,6 +126,16 @@ public enum CopilotModel: String, Codable, CaseIterable, Identifiable, Sendable 
     if isGemini { return "Gemini" }
     return "GPT"
   }
+
+  public static func fromString(_ value: String) -> CopilotModel? {
+    let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if let direct = CopilotModel(rawValue: normalized) {
+      return direct
+    }
+    return CopilotModel.allCases.first { model in
+      model.displayName.lowercased() == normalized || model.shortName.lowercased() == normalized
+    }
+  }
 }
 
 /// Role determines what tools an agent can use
@@ -232,6 +242,11 @@ public enum AgentRole: String, Codable, CaseIterable, Identifiable, Sendable {
         
         """
     }
+  }
+
+  public static func fromString(_ value: String) -> AgentRole? {
+    let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    return AgentRole.allCases.first { $0.rawValue == normalized }
   }
 }
 
