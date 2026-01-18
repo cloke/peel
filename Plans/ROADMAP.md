@@ -47,7 +47,7 @@
 - [x] Wire TrackedWorktree to Workspaces ([#1](https://github.com/cloke/peel/issues/1))
 - [ ] Complete WorkspaceDashboardService cleanup ([#4](https://github.com/cloke/peel/issues/4))
 - [x] Fix CLI state persistence ([#3](https://github.com/cloke/peel/issues/3))
-- [ ] Unify worktree visibility across tabs ([#2](https://github.com/cloke/peel/issues/2))
+- [x] Unify worktree visibility across tabs ([#2](https://github.com/cloke/peel/issues/2))
 
 ### Phase 1B: True Parallel Agents
 **Timeline:** 2-3 weeks
