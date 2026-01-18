@@ -62,6 +62,7 @@
 
 - [ ] MCP server for test harness ([#11](https://github.com/cloke/peel/issues/11))
 - [ ] Template: planner + parallel implementers + merge + review ([#12](https://github.com/cloke/peel/issues/12))
+- [ ] Planner-defined chains (dynamic chain spec from planner output)
 - [ ] Validation pipeline for correctness checks ([#13](https://github.com/cloke/peel/issues/13))
 - [ ] MCP activity log + cleanup actions ([#16](https://github.com/cloke/peel/issues/16))
 - [ ] MCP control CLI (query, stop server, quit app)
