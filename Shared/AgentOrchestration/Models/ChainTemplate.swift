@@ -20,6 +20,18 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
   public var validationConfig: ValidationConfiguration
   #endif
   
+  private enum CodingKeys: String, CodingKey {
+    case id
+    case name
+    case description
+    case steps
+    case createdAt
+    case isBuiltIn
+    #if os(macOS)
+    case validationConfig
+    #endif
+  }
+  
   #if os(macOS)
   public init(
     id: UUID = UUID(),
@@ -53,6 +65,32 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     self.isBuiltIn = isBuiltIn
   }
   #endif
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+    self.name = try container.decode(String.self, forKey: .name)
+    self.description = try container.decodeIfPresent(String.self, forKey: .description) ?? ""
+    self.steps = try container.decodeIfPresent([AgentStepTemplate].self, forKey: .steps) ?? []
+    self.createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+    self.isBuiltIn = try container.decodeIfPresent(Bool.self, forKey: .isBuiltIn) ?? false
+    #if os(macOS)
+    self.validationConfig = try container.decodeIfPresent(ValidationConfiguration.self, forKey: .validationConfig) ?? .default
+    #endif
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(id, forKey: .id)
+    try container.encode(name, forKey: .name)
+    try container.encode(description, forKey: .description)
+    try container.encode(steps, forKey: .steps)
+    try container.encode(createdAt, forKey: .createdAt)
+    try container.encode(isBuiltIn, forKey: .isBuiltIn)
+    #if os(macOS)
+    try container.encode(validationConfig, forKey: .validationConfig)
+    #endif
+  }
   
   /// Built-in templates
   public static let builtInTemplates: [ChainTemplate] = [
