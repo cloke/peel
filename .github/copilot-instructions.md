@@ -6,7 +6,58 @@ Peel is a macOS/iOS SwiftUI application for managing GitHub, Git repositories, a
 
 **Targets:** macOS 26 (Tahoe), iOS 26  
 **Swift Version:** 6.0  
-**Status:** Active development - refer to `/Plans/SWIFTUI_MODERNIZATION_PLAN.md`
+**Status:** Active development
+
+---
+
+## Project Management
+
+### GitHub Project & Issues
+- **Project Board:** https://github.com/users/cloke/projects/1
+- **Repository:** https://github.com/cloke/peel
+- **Roadmap:** `/Plans/ROADMAP.md`
+
+### Current Phases
+| Phase | Focus | Issues |
+|-------|-------|--------|
+| **1A** | Polish existing features | #1-4 (worktrees, CLI persistence) |
+| **1B** | Parallel agent execution | #5-7 (TaskGroup, Merge Agent) |
+| **2** | Local AI foundation | #8 (PII scrubber) |
+| **3** | VM isolation | #9 (Linux VM polish) |
+
+### Working with Issues
+```bash
+# List open issues
+gh issue list --repo cloke/peel
+
+# View issue details
+gh issue view 5 --repo cloke/peel
+
+# Create a branch for an issue
+git checkout -b issue-5-parallel-agents
+
+# Close an issue via commit
+git commit -m "Implement parallel execution
+
+Closes #5"
+
+# Update project item status
+gh project item-edit --project-id PVT_kwHNO8jOATOTCg --id <ITEM_ID> \
+  --field-id PVTSSF_lAHNO8jOATOTCs4PAuuN --single-select-option-id 47fc9ee4  # In Progress
+```
+
+### Delegating to GitHub Copilot Workspace
+For simple, well-defined tasks, you can delegate to Copilot Workspace:
+1. Open issue in browser: `gh issue view <number> --repo cloke/peel --web`
+2. Click "Open in Copilot Workspace" on the issue page
+3. Copilot Workspace will analyze and propose changes
+4. Review and create PR from Copilot Workspace
+
+Good candidates for delegation:
+- Simple refactors (rename, extract method)
+- Adding tests for existing code
+- Documentation updates
+- Mechanical code cleanup (like #4 - delete duplicate code)
 
 ---
 
@@ -565,5 +616,26 @@ xcodebuild -scheme "Peel (macOS)" -destination 'platform=macOS' build
 
 ---
 
-**Last Updated:** January 9, 2026  
-**Modernization Status:** Complete - See MODERNIZATION_COMPLETE.md
+## GitHub CLI Quick Reference
+
+```bash
+# Issues
+gh issue list --repo cloke/peel
+gh issue view <number> --repo cloke/peel
+gh issue create --repo cloke/peel --title "Title" --body "Description"
+gh issue close <number> --repo cloke/peel
+
+# Project Board
+gh project item-list 1 --owner cloke --format json
+gh project view 1 --owner cloke --web
+
+# PRs
+gh pr create --title "Title" --body "Closes #X"
+gh pr list --repo cloke/peel
+gh pr merge <number>
+```
+
+---
+
+**Last Updated:** January 18, 2026  
+**Modernization Status:** Complete - See Plans/Archive/MODERNIZATION_COMPLETE.md
