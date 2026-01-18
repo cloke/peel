@@ -1,18 +1,19 @@
 # VM Isolation Plan
 
 **Updated:** January 18, 2026  
-**Status:** Experimental (boot working, needs rootfs)  
+**Status:** Linux VM working (boots to CLI), macOS VM not yet  
 **Priority:** Low (future feature)
 
 ---
 
 ## Current State
 
-- ✅ VM starts without UI hangs (console streaming disabled)
+- ✅ Linux VM boots to command line
 - ✅ Kernel + initramfs download works
 - ✅ VZLinuxBootLoader with extracted raw kernel
-- ⚠️ Boot fails at mount stage (no rootfs)
-- ⚠️ Console output shows escape codes
+- ⚠️ Console output shows ANSI escape codes (needs stripping)
+- ⚠️ UI labels say "Fedora" but downloads Alpine/Debian
+- ❌ macOS VM not working yet
 
 ---
 
