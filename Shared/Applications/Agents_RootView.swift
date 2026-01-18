@@ -763,6 +763,42 @@ struct AgentDetailView: View {
           }
         }
         #endif
+
+        if let chain = activeChain {
+          GroupBox("Chain Activity") {
+            VStack(alignment: .leading, spacing: 8) {
+              HStack {
+                Text(chain.name)
+                  .font(.subheadline)
+                  .fontWeight(.medium)
+                Spacer()
+                Text(chain.state.displayName)
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+              if let result = chain.results.last(where: { $0.agentId == agent.id }) {
+                Text(result.output)
+                  .font(.caption)
+                  .textSelection(.enabled)
+              } else if !chain.liveStatusMessages.isEmpty {
+                ForEach(chain.liveStatusMessages) { message in
+                  HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: message.type.icon)
+                      .foregroundStyle(Color(message.type.color))
+                      .font(.caption)
+                    Text(message.message)
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                  }
+                }
+              } else {
+                Text("No chain output yet.")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+            }
+          }
+        }
         
         Divider()
         
@@ -976,6 +1012,12 @@ struct AgentDetailView: View {
     stopStatusTimer()
     isRunning = false
   }
+
+  private var activeChain: AgentChain? {
+    agentManager.chains.first { chain in
+      chain.agents.contains(where: { $0.id == agent.id }) && chain.state != .idle
+    }
+  }
   #endif
 }
 
@@ -1133,6 +1175,7 @@ struct AssignTaskSheet: View {
       }
     }.frame(minWidth: 500, minHeight: 400)
   }
+
 }
 
 // MARK: - CLI Setup Sheet

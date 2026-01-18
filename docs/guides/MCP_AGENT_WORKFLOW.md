@@ -117,6 +117,17 @@ Notes:
 - `role` must be one of `planner`, `implementer`, `reviewer`.
 - `model` can be a Copilot model id (e.g. `gpt-4.1`, `claude-sonnet-4.5`).
 
+### Review Pause + Reviewer Override
+You can pause when a reviewer requests changes and optionally swap the reviewer model:
+
+```json
+{
+  "enableReviewLoop": true,
+  "pauseOnReview": true,
+  "reviewerModel": "gpt-4.1"
+}
+```
+
 ### Merge Implementer Workspaces (Debug)
 If a chain run failed after parallel implementers (e.g., dirty working tree), you can trigger the
 merge step directly using the chain id returned from `chains.run`. Chain ids are persisted in the

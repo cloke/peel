@@ -30,6 +30,9 @@ public final class AgentChain: Identifiable {
   
   /// Enable review loop - if reviewer requests changes, re-run implementer
   public var enableReviewLoop: Bool = false
+
+  /// Pause if reviewer requests changes (do not auto re-run)
+  public var pauseOnReview: Bool = false
   
   /// Maximum review iterations before giving up
   public var maxReviewIterations: Int = 3
