@@ -16,6 +16,40 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
   public let createdAt: Date
   public var isBuiltIn: Bool
   
+  #if os(macOS)
+  public var validationConfig: ValidationConfiguration
+  #endif
+  
+  private enum CodingKeys: String, CodingKey {
+    case id
+    case name
+    case description
+    case steps
+    case createdAt
+    case isBuiltIn
+    #if os(macOS)
+    case validationConfig
+    #endif
+  }
+  
+  #if os(macOS)
+  public init(
+    id: UUID = UUID(),
+    name: String,
+    description: String = "",
+    steps: [AgentStepTemplate] = [],
+    isBuiltIn: Bool = false,
+    validationConfig: ValidationConfiguration? = nil
+  ) {
+    self.id = id
+    self.name = name
+    self.description = description
+    self.steps = steps
+    self.createdAt = Date()
+    self.isBuiltIn = isBuiltIn
+    self.validationConfig = validationConfig ?? .default
+  }
+  #else
   public init(
     id: UUID = UUID(),
     name: String,
@@ -30,9 +64,37 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     self.createdAt = Date()
     self.isBuiltIn = isBuiltIn
   }
+  #endif
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+    self.name = try container.decode(String.self, forKey: .name)
+    self.description = try container.decodeIfPresent(String.self, forKey: .description) ?? ""
+    self.steps = try container.decodeIfPresent([AgentStepTemplate].self, forKey: .steps) ?? []
+    self.createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+    self.isBuiltIn = try container.decodeIfPresent(Bool.self, forKey: .isBuiltIn) ?? false
+    #if os(macOS)
+    self.validationConfig = try container.decodeIfPresent(ValidationConfiguration.self, forKey: .validationConfig) ?? .default
+    #endif
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(id, forKey: .id)
+    try container.encode(name, forKey: .name)
+    try container.encode(description, forKey: .description)
+    try container.encode(steps, forKey: .steps)
+    try container.encode(createdAt, forKey: .createdAt)
+    try container.encode(isBuiltIn, forKey: .isBuiltIn)
+    #if os(macOS)
+    try container.encode(validationConfig, forKey: .validationConfig)
+    #endif
+  }
   
   /// Built-in templates
-  public static let builtInTemplates: [ChainTemplate] = [
+  public static var builtInTemplates: [ChainTemplate] {
+    var templates: [ChainTemplate] = [
     // Code Review: Planner analyzes, Implementer fixes, Reviewer checks
     ChainTemplate(
       name: "Code Review",
@@ -88,35 +150,57 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         AgentStepTemplate(role: .implementer, model: .gpt51Codex, name: "Implementer 2")
       ],
       isBuiltIn: true
-    ),
-
-    // MCP Test Harness: Planner + parallel implementers + reviewer
-    ChainTemplate(
-      name: "MCP Harness",
-      description: "Planner with parallel implementers and a reviewer (MCP validation)",
-      steps: [
-        AgentStepTemplate(role: .planner, model: .claudeSonnet45, name: "Planner"),
-        AgentStepTemplate(role: .implementer, model: .claudeSonnet45, name: "Implementer A"),
-        AgentStepTemplate(role: .implementer, model: .gpt51Codex, name: "Implementer B"),
-        AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
-      ],
-      isBuiltIn: true
-    ),
-
-    // Roadmap MCP (Cost-Conscious): Planner + 3 implementers + reviewer
-    ChainTemplate(
-      name: "MCP Roadmap (3x Cost)",
-      description: "Planner + 3 implementers + reviewer using free/low-cost models",
-      steps: [
-        AgentStepTemplate(role: .planner, model: .gpt41, name: "Planner"),
-        AgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer A"),
-        AgentStepTemplate(role: .implementer, model: .gpt41, name: "Implementer B"),
-        AgentStepTemplate(role: .implementer, model: .gemini3Pro, name: "Implementer C"),
-        AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
-      ],
-      isBuiltIn: true
     )
   ]
+
+  #if os(macOS)
+    templates.append(
+      ChainTemplate(
+        name: "MCP Harness",
+        description: "Planner with parallel implementers and a reviewer (MCP validation)",
+        steps: [
+          AgentStepTemplate(role: .planner, model: .claudeSonnet45, name: "Planner"),
+          AgentStepTemplate(role: .implementer, model: .claudeSonnet45, name: "Implementer A"),
+          AgentStepTemplate(role: .implementer, model: .gpt51Codex, name: "Implementer B"),
+          AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
+        ],
+        isBuiltIn: true,
+        validationConfig: .default
+      )
+    )
+  #else
+    templates.append(
+      ChainTemplate(
+        name: "MCP Harness",
+        description: "Planner with parallel implementers and a reviewer (MCP validation)",
+        steps: [
+          AgentStepTemplate(role: .planner, model: .claudeSonnet45, name: "Planner"),
+          AgentStepTemplate(role: .implementer, model: .claudeSonnet45, name: "Implementer A"),
+          AgentStepTemplate(role: .implementer, model: .gpt51Codex, name: "Implementer B"),
+          AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
+        ],
+        isBuiltIn: true
+      )
+    )
+  #endif
+
+    templates.append(
+      ChainTemplate(
+        name: "MCP Roadmap (3x Cost)",
+        description: "Planner + 3 implementers + reviewer using free/low-cost models",
+        steps: [
+          AgentStepTemplate(role: .planner, model: .gpt41, name: "Planner"),
+          AgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer A"),
+          AgentStepTemplate(role: .implementer, model: .gpt41, name: "Implementer B"),
+          AgentStepTemplate(role: .implementer, model: .gemini3Pro, name: "Implementer C"),
+          AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
+        ],
+        isBuiltIn: true
+      )
+    )
+
+    return templates
+  }
 }
 
 /// A step within a chain template
