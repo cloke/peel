@@ -732,6 +732,8 @@ public final class MCPServerService {
   private enum StorageKey {
     static let enabled = "mcp.server.enabled"
     static let port = "mcp.server.port"
+    static let maxConcurrentChains = "mcp.server.maxConcurrentChains"
+    static let maxQueuedChains = "mcp.server.maxQueuedChains"
   }
 
   public var isEnabled: Bool {
@@ -755,6 +757,24 @@ public final class MCPServerService {
     }
   }
 
+  public var maxConcurrentChains: Int {
+    didSet {
+      if maxConcurrentChains < 1 {
+        maxConcurrentChains = 1
+      }
+      UserDefaults.standard.set(maxConcurrentChains, forKey: StorageKey.maxConcurrentChains)
+    }
+  }
+
+  public var maxQueuedChains: Int {
+    didSet {
+      if maxQueuedChains < 0 {
+        maxQueuedChains = 0
+      }
+      UserDefaults.standard.set(maxQueuedChains, forKey: StorageKey.maxQueuedChains)
+    }
+  }
+
   public private(set) var isRunning: Bool = false
   public var lastError: String?
   public private(set) var activeRequests: Int = 0
@@ -770,6 +790,16 @@ public final class MCPServerService {
   public let sessionTracker: SessionTracker
   private let chainRunner: AgentChainRunner
   private var dataService: DataService?
+
+  private struct ChainQueueEntry {
+    let id: UUID
+    let enqueuedAt: Date
+    let continuation: CheckedContinuation<Void, Never>
+  }
+
+  private var activeChainRuns: Int = 0
+  private var activeChainRunIds: Set<UUID> = []
+  private var chainQueue: [ChainQueueEntry] = []
 
   private let listenerQueue = DispatchQueue(label: "MCPServer.Listener")
   private var listener: NWListener?
@@ -795,8 +825,16 @@ public final class MCPServerService {
     )
     self.isEnabled = UserDefaults.standard.bool(forKey: StorageKey.enabled)
     self.port = UserDefaults.standard.integer(forKey: StorageKey.port)
+    self.maxConcurrentChains = UserDefaults.standard.integer(forKey: StorageKey.maxConcurrentChains)
+    self.maxQueuedChains = UserDefaults.standard.integer(forKey: StorageKey.maxQueuedChains)
     if self.port == 0 {
       self.port = 8765
+    }
+    if self.maxConcurrentChains == 0 {
+      self.maxConcurrentChains = 1
+    }
+    if self.maxQueuedChains == 0 {
+      self.maxQueuedChains = 10
     }
 
     if isEnabled {
@@ -1056,6 +1094,18 @@ public final class MCPServerService {
     case "chains.run":
       return await handleChainRun(id: id, arguments: arguments)
 
+    case "chains.queue.status":
+      return (200, makeRPCResult(id: id, result: queueStatus()))
+
+    case "chains.queue.configure":
+      return handleQueueConfigure(id: id, arguments: arguments)
+
+    case "server.restart":
+      return await handleServerRestart(id: id)
+
+    case "server.port.set":
+      return await handleServerPortSet(id: id, arguments: arguments)
+
     case "server.stop":
       stop()
       return (200, makeRPCResult(id: id, result: ["status": "stopped"]))
@@ -1074,10 +1124,19 @@ public final class MCPServerService {
       return (400, makeRPCError(id: id, code: -32602, message: "Missing prompt"))
     }
 
+    let runId = UUID()
+    if activeChainRuns >= maxConcurrentChains, chainQueue.count >= maxQueuedChains {
+      return (429, makeRPCError(id: id, code: -32000, message: "Chain queue is full"))
+    }
+
     let templateId = arguments["templateId"] as? String
     let templateName = arguments["templateName"] as? String
     let workingDirectory = arguments["workingDirectory"] as? String
     let enableReviewLoop = arguments["enableReviewLoop"] as? Bool
+
+    let queuePosition = activeChainRuns >= maxConcurrentChains ? chainQueue.count + 1 : nil
+    let enqueuedAt = await acquireChainRunSlot(runId: runId)
+    defer { releaseChainRunSlot(runId: runId) }
 
     let templates = agentManager.allTemplates
     let template: ChainTemplate? = {
@@ -1101,6 +1160,10 @@ public final class MCPServerService {
     }
 
     let summary = await chainRunner.runChain(chain, prompt: prompt, validationConfig: template.validationConfig)
+    let queueWaitSeconds: Double? = {
+      guard let enqueuedAt else { return nil }
+      return Date().timeIntervalSince(enqueuedAt)
+    }()
 
     dataService?.recordMCPRun(
       templateId: template.id.uuidString,
@@ -1117,6 +1180,14 @@ public final class MCPServerService {
     )
 
     var result: [String: Any] = [
+      "queue": [
+        "runId": runId.uuidString,
+        "queued": enqueuedAt != nil,
+        "position": queuePosition as Any,
+        "waitSeconds": queueWaitSeconds as Any,
+        "maxConcurrent": maxConcurrentChains,
+        "maxQueued": maxQueuedChains
+      ],
       "chain": [
         "id": chain.id.uuidString,
         "name": chain.name,
@@ -1133,6 +1204,133 @@ public final class MCPServerService {
     }
 
     return (200, makeRPCResult(id: id, result: result))
+  }
+
+  private func handleServerRestart(id: Any?) async -> (Int, Data) {
+    stop()
+    start()
+    await waitForServerStart()
+
+    if isRunning {
+      return (200, makeRPCResult(id: id, result: ["running": true, "port": port]))
+    }
+
+    return (500, makeRPCError(id: id, code: -32001, message: lastError ?? "Failed to restart server"))
+  }
+
+  private func handleServerPortSet(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let requestedPort = arguments["port"] as? Int else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing port"))
+    }
+
+    let autoFind = arguments["autoFind"] as? Bool ?? false
+    let maxAttempts = arguments["maxAttempts"] as? Int ?? 25
+
+    let targetPort: Int
+    if autoFind, !canBind(port: requestedPort) {
+      guard let available = findAvailablePort(startingAt: requestedPort, maxAttempts: maxAttempts) else {
+        return (500, makeRPCError(id: id, code: -32002, message: "No available port found"))
+      }
+      targetPort = available
+    } else {
+      targetPort = requestedPort
+    }
+
+    port = targetPort
+    stop()
+    start()
+    await waitForServerStart()
+
+    if isRunning {
+      return (200, makeRPCResult(id: id, result: ["running": true, "port": port]))
+    }
+
+    return (500, makeRPCError(id: id, code: -32003, message: lastError ?? "Failed to bind to port"))
+  }
+
+  private func waitForServerStart(timeoutSeconds: Double = 2.0) async {
+    let deadline = Date().addingTimeInterval(timeoutSeconds)
+    while Date() < deadline {
+      if isRunning || lastError != nil {
+        break
+      }
+      try? await Task.sleep(for: .milliseconds(75))
+    }
+  }
+
+  private func canBind(port: Int) -> Bool {
+    guard port >= 1024 && port <= 65535 else { return false }
+    guard let portValue = NWEndpoint.Port(rawValue: UInt16(port)) else { return false }
+    do {
+      let listener = try NWListener(using: .tcp, on: portValue)
+      listener.cancel()
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  private func findAvailablePort(startingAt port: Int, maxAttempts: Int) -> Int? {
+    guard port > 0 else { return nil }
+    for offset in 0..<maxAttempts {
+      let candidate = port + offset
+      if candidate > 65535 { break }
+      if canBind(port: candidate) {
+        return candidate
+      }
+    }
+    return nil
+  }
+
+  private func acquireChainRunSlot(runId: UUID) async -> Date? {
+    if activeChainRuns < maxConcurrentChains {
+      activeChainRuns += 1
+      activeChainRunIds.insert(runId)
+      return nil
+    }
+
+    let enqueuedAt = Date()
+    await withCheckedContinuation { continuation in
+      chainQueue.append(ChainQueueEntry(id: runId, enqueuedAt: enqueuedAt, continuation: continuation))
+    }
+    activeChainRuns += 1
+    activeChainRunIds.insert(runId)
+    return enqueuedAt
+  }
+
+  private func releaseChainRunSlot(runId: UUID) {
+    activeChainRuns = max(activeChainRuns - 1, 0)
+    activeChainRunIds.remove(runId)
+    if !chainQueue.isEmpty {
+      let next = chainQueue.removeFirst()
+      next.continuation.resume()
+    }
+  }
+
+  private func queueStatus() -> [String: Any] {
+    return [
+      "activeCount": activeChainRuns,
+      "activeRunIds": activeChainRunIds.map { $0.uuidString },
+      "queuedCount": chainQueue.count,
+      "queued": chainQueue.map {
+        [
+          "runId": $0.id.uuidString,
+          "enqueuedAt": ISO8601DateFormatter().string(from: $0.enqueuedAt)
+        ]
+      },
+      "maxConcurrent": maxConcurrentChains,
+      "maxQueued": maxQueuedChains
+    ]
+  }
+
+  private func handleQueueConfigure(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    if let maxConcurrent = arguments["maxConcurrent"] as? Int {
+      maxConcurrentChains = max(1, maxConcurrent)
+    }
+    if let maxQueued = arguments["maxQueued"] as? Int {
+      maxQueuedChains = max(0, maxQueued)
+    }
+    return (200, makeRPCResult(id: id, result: queueStatus()))
   }
 
   public func cleanupAgentWorkspaces() async {
@@ -1228,11 +1426,51 @@ public final class MCPServerService {
         ]
       ],
       [
+        "name": "chains.queue.status",
+        "description": "Get chain queue status",
+        "inputSchema": [
+          "type": "object",
+          "properties": [:]
+        ]
+      ],
+      [
+        "name": "chains.queue.configure",
+        "description": "Configure chain queue limits",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "maxConcurrent": ["type": "integer"],
+            "maxQueued": ["type": "integer"]
+          ]
+        ]
+      ],
+      [
         "name": "server.stop",
         "description": "Stop the MCP server",
         "inputSchema": [
           "type": "object",
           "properties": [:]
+        ]
+      ],
+      [
+        "name": "server.restart",
+        "description": "Restart the MCP server",
+        "inputSchema": [
+          "type": "object",
+          "properties": [:]
+        ]
+      ],
+      [
+        "name": "server.port.set",
+        "description": "Set MCP server port and restart",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "port": ["type": "integer"],
+            "autoFind": ["type": "boolean"],
+            "maxAttempts": ["type": "integer"]
+          ],
+          "required": ["port"]
         ]
       ],
       [

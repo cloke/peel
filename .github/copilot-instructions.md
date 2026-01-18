@@ -707,21 +707,32 @@ grep "new text" /path/to/file
 ```
 
 ### App Launching & Testing
-**DO NOT launch the app from terminal.** The user will run the app themselves from Xcode.
+**Normal development:** do **not** launch the app from terminal. The user should run from Xcode.
 
 Why:
 - Launching from terminal doesn't attach the debugger properly
 - User needs to see console output in Xcode
 - ViewBridge/RemoteViewService errors occur when launched externally
 
-Instead:
+**MCP development/testing:** it is OK to launch via the script, since MCP requires the app to be running.
+Use `Tools/build-and-launch.sh --wait-for-server` (or `--skip-build` if a build already exists).
+
+Normal dev flow:
 1. Build the project: `xcodebuild -scheme "Peel (macOS)" build`
 2. Tell the user the build succeeded
 3. Let the user run from Xcode with ⌘R
 
+MCP flow:
+1. Run `Tools/build-and-launch.sh --wait-for-server`
+2. Use `Tools/PeelCLI` to call MCP endpoints
+3. Stop the server or quit the app when done
+
 ```bash
-# ✅ DO: Just build
+# ✅ DO: Just build (normal dev)
 xcodebuild -scheme "Peel (macOS)" -destination 'platform=macOS' build
+
+# ✅ DO: Launch via script (MCP dev/testing)
+./Tools/build-and-launch.sh --wait-for-server
 
 # ❌ DON'T: Launch the app
 # open "/path/to/Kitchen Sync.app"  # Don't do this
