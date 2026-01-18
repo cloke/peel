@@ -1393,6 +1393,21 @@ struct MCPRunDetailView: View {
                   .font(.caption)
                   .foregroundStyle(.red)
               }
+              if let noWorkReason = run.noWorkReason, !noWorkReason.isEmpty {
+                HStack(alignment: .top, spacing: 8) {
+                  Image(systemName: "checkmark.seal")
+                    .foregroundStyle(.green)
+                  VStack(alignment: .leading, spacing: 4) {
+                    Text("Planner Decision")
+                      .font(.caption)
+                      .fontWeight(.semibold)
+                    Text(noWorkReason)
+                      .font(.caption2)
+                  }
+                }
+                .padding(8)
+                .background(Color.green.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+              }
             }
           }
 

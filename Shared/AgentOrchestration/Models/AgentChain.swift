@@ -177,6 +177,44 @@ public struct LiveStatusMessage: Identifiable {
   }
 }
 
+/// Planner agent's decision from parsed JSON output
+public struct PlannerDecision: Codable, Sendable {
+  public let branch: String
+  public let tasks: [PlannerTask]
+  public let noWorkReason: String?
+
+  public struct PlannerTask: Codable, Sendable {
+    public let title: String
+    public let description: String
+    public let recommendedModel: String?
+    public let fileHints: [String]?
+  }
+
+  /// Returns true if planner determined no work is needed
+  public var shouldSkipWork: Bool {
+    tasks.isEmpty && noWorkReason != nil
+  }
+
+  /// Parse planner decision from agent output (extracts JSON)
+  public static func parse(from output: String) -> PlannerDecision? {
+    let jsonPattern = #"\{[\s\S]*?\"tasks\"[\s\S]*?\}"#
+    guard let regex = try? NSRegularExpression(pattern: jsonPattern, options: []),
+          let match = regex.firstMatch(in: output, range: NSRange(output.startIndex..., in: output)),
+          let range = Range(match.range, in: output) else {
+      return nil
+    }
+
+    let jsonString = String(output[range])
+    guard let jsonData = jsonString.data(using: .utf8) else {
+      return nil
+    }
+
+    let decoder = JSONDecoder()
+    decoder.keyDecodingStrategy = .convertFromSnakeCase
+    return try? decoder.decode(PlannerDecision.self, from: jsonData)
+  }
+}
+
 /// Result from a single agent in the chain
 public struct AgentChainResult: Identifiable, Sendable {
   public let id: UUID
@@ -191,6 +229,9 @@ public struct AgentChainResult: Identifiable, Sendable {
   
   /// For reviewer agents, the parsed verdict
   public var reviewVerdict: ReviewVerdict?
+
+  /// For planner agents, the parsed decision
+  public var plannerDecision: PlannerDecision?
   
   public init(
     agentId: UUID,
@@ -200,7 +241,8 @@ public struct AgentChainResult: Identifiable, Sendable {
     output: String,
     duration: String? = nil,
     premiumCost: Double = 1.0,
-    reviewVerdict: ReviewVerdict? = nil
+    reviewVerdict: ReviewVerdict? = nil,
+    plannerDecision: PlannerDecision? = nil
   ) {
     self.id = UUID()
     self.agentId = agentId
@@ -212,6 +254,7 @@ public struct AgentChainResult: Identifiable, Sendable {
     self.premiumCost = premiumCost
     self.timestamp = Date()
     self.reviewVerdict = reviewVerdict
+    self.plannerDecision = plannerDecision
   }
 }
 

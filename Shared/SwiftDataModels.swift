@@ -195,6 +195,7 @@ final class MCPRunRecord {
   var implementerWorkspacePaths: String = ""
   var success: Bool = false
   var errorMessage: String?
+  var noWorkReason: String?
   var mergeConflictsCount: Int = 0
   var resultCount: Int = 0
   var validationStatus: String?
@@ -211,6 +212,7 @@ final class MCPRunRecord {
     implementerWorkspacePaths: String = "",
     success: Bool,
     errorMessage: String? = nil,
+    noWorkReason: String? = nil,
     mergeConflictsCount: Int = 0,
     resultCount: Int = 0,
     validationStatus: String? = nil,
@@ -227,6 +229,7 @@ final class MCPRunRecord {
     self.implementerWorkspacePaths = implementerWorkspacePaths
     self.success = success
     self.errorMessage = errorMessage
+    self.noWorkReason = noWorkReason
     self.mergeConflictsCount = mergeConflictsCount
     self.resultCount = resultCount
     self.validationStatus = validationStatus
