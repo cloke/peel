@@ -167,7 +167,7 @@ public struct LiveStatusMessage: Identifiable {
 }
 
 /// Result from a single agent in the chain
-public struct AgentChainResult: Identifiable {
+public struct AgentChainResult: Identifiable, Sendable {
   public let id: UUID
   public let agentId: UUID
   public let agentName: String
@@ -205,7 +205,7 @@ public struct AgentChainResult: Identifiable {
 }
 
 /// Verdict from a reviewer agent
-public enum ReviewVerdict: String, Codable {
+public enum ReviewVerdict: String, Codable, Sendable {
   case approved = "approved"
   case needsChanges = "needs_changes"
   case rejected = "rejected"

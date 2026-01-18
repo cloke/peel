@@ -52,7 +52,7 @@
 ### Phase 1B: True Parallel Agents
 **Timeline:** 2-3 weeks
 
-- [ ] TaskGroup-based parallel execution ([#5](https://github.com/cloke/peel/issues/5))
+- [x] TaskGroup-based parallel execution ([#5](https://github.com/cloke/peel/issues/5))
 - [ ] Merge Agent implementation ([#6](https://github.com/cloke/peel/issues/6))
 - [ ] Planner structured output format ([#7](https://github.com/cloke/peel/issues/7))
 

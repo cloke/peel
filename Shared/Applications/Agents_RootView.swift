@@ -8,6 +8,7 @@
 import SwiftUI
 #if os(macOS)
 import AppKit
+import Git
 #endif
 
 /// Infrastructure views that can be shown in detail pane
@@ -1985,8 +1986,8 @@ struct ChainDetailView: View {
     chain.addStatusMessage("Starting chain execution...", type: .info)
     
     do {
-      // Run all agents in sequence
-      try await runAgentsSequentially()
+      // Run agents with parallel implementers when available
+      try await runAgentsWithParallelImplementers()
       
       // Check if we should do a review loop
       if chain.enableReviewLoop {
@@ -2018,15 +2019,141 @@ struct ChainDetailView: View {
       chain.state = .running(agentIndex: index)
       chain.currentAgentStartTime = Date()
       chain.addStatusMessage("Starting \(agent.name) (\(agent.model.shortName))...", type: .progress)
-      try await runSingleAgent(agent, at: index)
+      let result = try await runSingleAgent(agent, at: index)
+      chain.results.append(result)
       chain.addStatusMessage("\(agent.name) completed", type: .complete)
     }
   }
+
+  /// Run implementers in parallel while keeping other agents sequential
+  private func runAgentsWithParallelImplementers() async throws {
+    let implementerIndices = chain.agents.indices.filter { chain.agents[$0].role == .implementer }
+    guard implementerIndices.count > 1 else {
+      try await runAgentsSequentially()
+      return
+    }
+
+    guard let firstImplementer = implementerIndices.first,
+          let lastImplementer = implementerIndices.last else {
+      try await runAgentsSequentially()
+      return
+    }
+
+    let hasGaps = (firstImplementer...lastImplementer).contains { index in
+      chain.agents[index].role != .implementer
+    }
+    if hasGaps {
+      try await runAgentsSequentially()
+      return
+    }
+
+    // Run pre-implementer agents sequentially
+    if firstImplementer > 0 {
+      for index in 0..<firstImplementer {
+        let agent = chain.agents[index]
+        chain.state = .running(agentIndex: index)
+        chain.currentAgentStartTime = Date()
+        chain.addStatusMessage("Starting \(agent.name) (\(agent.model.shortName))...", type: .progress)
+        let result = try await runSingleAgent(agent, at: index)
+        chain.results.append(result)
+        chain.addStatusMessage("\(agent.name) completed", type: .complete)
+      }
+    }
+
+    // Run implementers in parallel
+    let sharedContext = chain.contextForAgent(at: firstImplementer)
+    let parallelResults = try await runImplementersInParallel(
+      indices: Array(firstImplementer...lastImplementer),
+      context: sharedContext
+    )
+
+    for index in firstImplementer...lastImplementer {
+      if let result = parallelResults[index] {
+        chain.results.append(result)
+      }
+    }
+
+    // Run post-implementer agents sequentially
+    if lastImplementer + 1 < chain.agents.count {
+      for index in (lastImplementer + 1)..<chain.agents.count {
+        let agent = chain.agents[index]
+        chain.state = .running(agentIndex: index)
+        chain.currentAgentStartTime = Date()
+        chain.addStatusMessage("Starting \(agent.name) (\(agent.model.shortName))...", type: .progress)
+        let result = try await runSingleAgent(agent, at: index)
+        chain.results.append(result)
+        chain.addStatusMessage("\(agent.name) completed", type: .complete)
+      }
+    }
+  }
+
+  private func runImplementersInParallel(
+    indices: [Int],
+    context: String
+  ) async throws -> [Int: AgentChainResult] {
+#if os(macOS)
+    guard let workingDirectory = chain.workingDirectory else {
+      throw NSError(
+        domain: "AgentChain",
+        code: 1,
+        userInfo: [NSLocalizedDescriptionKey: "Select a working directory to create parallel worktrees."]
+      )
+    }
+
+    let repoURL = URL(fileURLWithPath: workingDirectory)
+    let repository = Model.Repository(name: repoURL.lastPathComponent, path: workingDirectory)
+
+    for index in indices {
+      let agent = chain.agents[index]
+      let task = AgentTask(
+        title: "\(chain.name) - \(agent.name)",
+        prompt: prompt,
+        repositoryPath: workingDirectory
+      )
+      let workspace = try await agentManager.workspaceManager.createWorkspace(
+        for: repository,
+        task: task,
+        agentId: agent.id
+      )
+      agent.workspace = workspace
+      agent.workingDirectory = workspace.path.path
+    }
+
+    var results: [Int: AgentChainResult] = [:]
+    try await withThrowingTaskGroup(of: (Int, AgentChainResult).self) { group in
+      for index in indices {
+        let agent = chain.agents[index]
+        group.addTask {
+          let result = try await runSingleAgent(agent, at: index, contextOverride: context)
+          return (index, result)
+        }
+      }
+
+      for try await (index, result) in group {
+        results[index] = result
+      }
+    }
+
+    return results
+#else
+    var results: [Int: AgentChainResult] = [:]
+    for index in indices {
+      let agent = chain.agents[index]
+      let result = try await runSingleAgent(agent, at: index, contextOverride: context)
+      results[index] = result
+    }
+    return results
+#endif
+  }
   
   /// Run a single agent and record its result
-  private func runSingleAgent(_ agent: Agent, at index: Int) async throws {
+  private func runSingleAgent(
+    _ agent: Agent,
+    at index: Int,
+    contextOverride: String? = nil
+  ) async throws -> AgentChainResult {
     // Get context from previous agents
-    let context = chain.contextForAgent(at: index)
+    let context = contextOverride ?? chain.contextForAgent(at: index)
     
     // Build prompt with role instructions, framework hints, and context
     let fullPrompt = agent.buildPrompt(
@@ -2073,7 +2200,7 @@ struct ChainDetailView: View {
       premiumCost: premiumCost,
       reviewVerdict: verdict
     )
-    chain.results.append(result)
+    return result
   }
   
   /// Run the review loop if enabled and reviewer requests changes
@@ -2118,10 +2245,12 @@ struct ChainDetailView: View {
       prompt = feedbackPrompt
       
       // Re-run implementer with feedback context
-      try await runSingleAgent(implementer, at: implementerIndex)
+      let implementerResult = try await runSingleAgent(implementer, at: implementerIndex)
+      chain.results.append(implementerResult)
       
       // Re-run reviewer on the new changes
-      try await runSingleAgent(reviewer, at: reviewerIndex)
+      let reviewerResult = try await runSingleAgent(reviewer, at: reviewerIndex)
+      chain.results.append(reviewerResult)
       
       // Restore original prompt
       prompt = originalPrompt
