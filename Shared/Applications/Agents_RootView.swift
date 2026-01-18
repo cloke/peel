@@ -19,9 +19,6 @@ enum InfrastructureView: String, Hashable {
 
 /// Main view for AI Agent Orchestration
 struct Agents_RootView: View {
-  @State private var agentManager = AgentManager()
-  @State private var cliService = CLIService()
-  @State private var sessionTracker = SessionTracker()
   @Environment(MCPServerService.self) private var mcpServer
   @Environment(\.modelContext) private var modelContext
   @State private var columnVisibility = NavigationSplitViewVisibility.all
@@ -30,6 +27,10 @@ struct Agents_RootView: View {
   @State private var showingSetupSheet = false
   @State private var showingSessionSummary = false
   @State private var selectedInfrastructure: InfrastructureView?
+
+  private var agentManager: AgentManager { mcpServer.agentManager }
+  private var cliService: CLIService { mcpServer.cliService }
+  private var sessionTracker: SessionTracker { mcpServer.sessionTracker }
   
   var body: some View {
     NavigationSplitView(columnVisibility: $columnVisibility) {
