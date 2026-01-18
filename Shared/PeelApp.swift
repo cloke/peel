@@ -252,11 +252,11 @@ final class DataService {
       implementerWorkspacePaths: implementerWorkspacePaths.joined(separator: "\n"),
       success: success,
       errorMessage: errorMessage,
+      noWorkReason: noWorkReason,
       mergeConflictsCount: mergeConflictsCount,
       resultCount: resultCount,
       validationStatus: validationStatus,
       validationReasons: validationReasons.isEmpty ? nil : validationReasons.joined(separator: "\n"),
-      noWorkReason: noWorkReason
       createdAt: Date()
     )
     modelContext.insert(record)

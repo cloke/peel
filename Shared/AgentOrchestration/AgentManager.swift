@@ -298,13 +298,17 @@ public final class AgentChainRunner {
     do {
       try await runAgentsWithParallelImplementers(chain: chain, prompt: prompt, mergeConflicts: &mergeConflicts)
 
-      if chain.enableReviewLoop {
-        try await runReviewLoop(chain: chain, prompt: prompt)
-      }
+      if case .complete = chain.state {
+        sessionTracker.recordChainRun(chain)
+      } else {
+        if chain.enableReviewLoop {
+          try await runReviewLoop(chain: chain, prompt: prompt)
+        }
 
-      chain.state = .complete
-      chain.addStatusMessage("✓ Chain completed successfully!", type: .complete)
-      sessionTracker.recordChainRun(chain)
+        chain.state = .complete
+        chain.addStatusMessage("✓ Chain completed successfully!", type: .complete)
+        sessionTracker.recordChainRun(chain)
+      }
     } catch {
       errorMessage = error.localizedDescription
       chain.state = .failed(message: error.localizedDescription)
