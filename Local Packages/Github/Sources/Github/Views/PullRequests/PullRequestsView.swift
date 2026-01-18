@@ -63,9 +63,12 @@ struct PullRequestDetailView: View {
       Spacer()
     }
     .padding()
-    .onAppear {
-      // Record this PR view
-      recentPRsProvider?.recordView(pr: pullRequest, repo: repository)
+    .task(id: pullRequest.id) {
+      await Task.yield()
+      await MainActor.run {
+        // Record this PR view after the current render pass
+        recentPRsProvider?.recordView(pr: pullRequest, repo: repository)
+      }
     }
     #if os(macOS)
     .sheet(isPresented: $showingReviewLocally) {
@@ -118,10 +121,16 @@ public struct PullRequestsView: View {
     .task(id: repository.id) {
       state = .loading
       do {
-        pullRequests = try await Github.pullRequests(from: repository)
-        state = pullRequests.count == 0 ? .empty : .loaded
+        let results = try await Github.pullRequests(from: repository)
+        try Task.checkCancellation()
+        pullRequests = results
+        state = results.isEmpty ? .empty : .loaded
+      } catch is CancellationError {
+        // Ignore cancellations when leaving the tab.
       } catch {
-        print(error)
+        if let urlError = error as? URLError, urlError.code == .cancelled {
+          return
+        }
       }
     }
   }
