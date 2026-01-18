@@ -15,6 +15,17 @@ import Git
 import AppKit
 import SwiftData
 
+public enum WorkspaceValidationError: LocalizedError {
+  case pathTooBroad(String)
+
+  public var errorDescription: String? {
+    switch self {
+    case .pathTooBroad(let path):
+      return "Select a specific project folder. The workspace path \(path) is too broad."
+    }
+  }
+}
+
 /// Represents a configured workspace that can contain multiple repositories
 public struct Workspace: Identifiable, Codable, Hashable {
   public let id: UUID
@@ -142,15 +153,19 @@ public final class WorkspaceDashboardService {
   
   /// Add workspace from path (auto-detects type)
   public func addWorkspaceFromPath(_ path: String) async throws {
-    let url = URL(fileURLWithPath: path)
+    let normalizedPath = normalizePath(path)
+    if isTooBroadWorkspacePath(normalizedPath) {
+      throw WorkspaceValidationError.pathTooBroad(normalizedPath)
+    }
+    let url = URL(fileURLWithPath: normalizedPath)
     let name = url.lastPathComponent
     
     // Detect workspace type
-    let type = try await detectWorkspaceType(path)
+    let type = try await detectWorkspaceType(normalizedPath)
     
     let workspace = Workspace(
       name: name,
-      path: path,
+      path: normalizedPath,
       type: type
     )
     
@@ -183,21 +198,30 @@ public final class WorkspaceDashboardService {
     errorMessage = nil
     worktreeRepoNames = [:]
     worktreeWorkspaceNames = [:]
+
+    let normalizedPath = normalizePath(workspace.path)
+    if isTooBroadWorkspacePath(normalizedPath) {
+      errorMessage = WorkspaceValidationError.pathTooBroad(normalizedPath).localizedDescription
+      isLoading = false
+      return
+    }
     
     do {
       // Load repos based on workspace type
       switch workspace.type {
       case .multiRepo:
-        repos = try await loadSubmodules(in: workspace)
+        let normalizedWorkspace = Workspace(id: workspace.id, name: workspace.name, path: normalizedPath, type: workspace.type, addedAt: workspace.addedAt)
+        repos = try await loadSubmodules(in: normalizedWorkspace)
       case .singleRepo:
         repos = [WorkspaceRepo(
           name: workspace.name,
-          path: workspace.path,
+          path: normalizedPath,
           relativePath: ".",
           isSubmodule: false
         )]
       case .folder:
-        repos = try await findGitRepos(in: workspace)
+        let normalizedWorkspace = Workspace(id: workspace.id, name: workspace.name, path: normalizedPath, type: workspace.type, addedAt: workspace.addedAt)
+        repos = try await findGitRepos(in: normalizedWorkspace)
       }
       
       // Load worktrees for all repos
@@ -617,6 +641,18 @@ public final class WorkspaceDashboardService {
     if let encoded = try? JSONEncoder().encode(workspaces) {
       UserDefaults.standard.set(encoded, forKey: workspacesKey)
     }
+  }
+
+  // MARK: - Path Validation
+
+  private func normalizePath(_ path: String) -> String {
+    URL(fileURLWithPath: path).standardizedFileURL.path
+  }
+
+  private func isTooBroadWorkspacePath(_ path: String) -> Bool {
+    let normalized = normalizePath(path)
+    let home = URL(fileURLWithPath: NSHomeDirectory()).standardizedFileURL.path
+    return normalized == "/" || normalized == "/Users" || normalized == home
   }
   
   // MARK: - Git Helpers

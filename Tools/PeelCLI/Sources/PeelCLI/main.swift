@@ -151,6 +151,15 @@ private func writeError(_ message: String) {
 
 struct MCPClient {
   let port: Int
+  private let session: URLSession
+
+  init(port: Int) {
+    self.port = port
+    let config = URLSessionConfiguration.default
+    config.timeoutIntervalForRequest = 600
+    config.timeoutIntervalForResource = 600
+    self.session = URLSession(configuration: config)
+  }
 
   func call(method: String, params: [String: Any]?) async throws -> [String: Any] {
     var body: [String: Any] = [
@@ -172,8 +181,9 @@ struct MCPClient {
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.httpBody = requestData
+    request.timeoutInterval = 600
 
-    let (data, response) = try await URLSession.shared.data(for: request)
+    let (data, response) = try await session.data(for: request)
     guard let http = response as? HTTPURLResponse else {
       throw CLIError.message("No HTTP response")
     }

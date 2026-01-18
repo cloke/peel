@@ -44,6 +44,20 @@ Peel is a macOS/iOS SwiftUI application for managing GitHub, Git repositories, a
 | Build & launch | `Tools/build-and-launch.sh` | Build app, enable MCP, launch |
 | MCP CLI | `Tools/PeelCLI/` | CLI wrapper for MCP commands |
 
+### MCP CLI First (IMPORTANT)
+When the user asks to **start a chain**, **use the MCP CLI** instead of manually creating worktrees.
+
+**Preferred flow:**
+1. Launch Peel with MCP enabled using `Tools/build-and-launch.sh` (use `--wait-for-server`).
+2. Use `Tools/PeelCLI` to run `chains-run` with `--prompt` and (optionally) `--template-name` or `--template-id`.
+3. Let the app create worktrees; do **not** create worktrees manually unless the user explicitly asks.
+
+**If local changes exist:** commit and push first (unless user says not to).
+
+### Execution Guardrails (IMPORTANT)
+- If a skill or better docs would have prevented confusion, **pause and ask** for clarification or propose adding a skill/doc before continuing.
+- Prefer **one decisive action** over trying multiple approaches. If the first attempt is uncertain, stop and ask rather than trying 10 things.
+
 ---
 
 ## Model Selection for Cost Optimization
