@@ -164,10 +164,16 @@ Planner → splits task → creates branches
 
 ## References
 
-- [AGENT_ORCHESTRATION_PLAN.md](AGENT_ORCHESTRATION_PLAN.md)
-- [PARALLEL_AGENTS_PLAN.md](PARALLEL_AGENTS_PLAN.md)
-- [MCP_AGENT_WORKFLOW.md](MCP_AGENT_WORKFLOW.md) - Build → Launch → Connect workflow
-- [MCP_TEST_PLAN.md](MCP_TEST_PLAN.md) - MCP test cases
+### Active Plans
 - [VM_ISOLATION_PLAN.md](VM_ISOLATION_PLAN.md)
-- [CONSOLIDATION_PLAN.md](CONSOLIDATION_PLAN.md)
 - [apple-agent-big-ideas.md](apple-agent-big-ideas.md)
+
+### Documentation
+- [MCP Workflow Guide](../docs/guides/MCP_AGENT_WORKFLOW.md)
+- [MCP Test Plan](../docs/guides/MCP_TEST_PLAN.md)
+- [Code Audit Index](../docs/reference/CODE_AUDIT_INDEX.md)
+
+### Archived Plans
+- [Archive/AGENT_ORCHESTRATION_PLAN.md](Archive/AGENT_ORCHESTRATION_PLAN.md)
+- [Archive/PARALLEL_AGENTS_PLAN.md](Archive/PARALLEL_AGENTS_PLAN.md)
+- [Archive/CONSOLIDATION_PLAN.md](Archive/CONSOLIDATION_PLAN.md)

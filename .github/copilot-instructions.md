@@ -10,6 +10,42 @@ Peel is a macOS/iOS SwiftUI application for managing GitHub, Git repositories, a
 
 ---
 
+## 🗂️ Quick Navigation
+
+### Finding Code
+| Looking for... | Location |
+|----------------|----------|
+| App entry point | `Shared/PeelApp.swift` |
+| MCP Server | `Shared/AgentOrchestration/AgentManager.swift` → `MCPServerService` |
+| Agent chain execution | `Shared/AgentOrchestration/AgentManager.swift` → `AgentChainRunner` |
+| CLI tool detection | `Shared/AgentOrchestration/CLIService.swift` |
+| Git operations | `Local Packages/Git/Sources/Git/` |
+| GitHub API | `Local Packages/Github/Sources/Github/` |
+| Homebrew | `Local Packages/Brew/Sources/Brew/` |
+| SwiftData models | `Shared/SwiftDataModels.swift` |
+| Views by feature | `Shared/Applications/` (Git_RootView, Github_RootView, etc.) |
+
+### Documentation vs Plans
+| Type | Location | Purpose |
+|------|----------|---------|
+| **docs/** | How things work NOW | Guides, reference |
+| **Plans/** | Future work | Roadmaps, proposals |
+
+### Key Docs
+| Doc | Path |
+|-----|------|
+| MCP usage guide | `docs/guides/MCP_AGENT_WORKFLOW.md` |
+| Project roadmap | `Plans/ROADMAP.md` |
+| Code patterns | `docs/reference/CODE_AUDIT_INDEX.md` |
+
+### Tools
+| Tool | Path | Purpose |
+|------|------|---------|
+| Build & launch | `Tools/build-and-launch.sh` | Build app, enable MCP, launch |
+| MCP CLI | `Tools/PeelCLI/` | CLI wrapper for MCP commands |
+
+---
+
 ## Project Management
 
 ### GitHub Project & Issues
@@ -18,12 +54,13 @@ Peel is a macOS/iOS SwiftUI application for managing GitHub, Git repositories, a
 - **Roadmap:** `/Plans/ROADMAP.md`
 
 ### Current Phases
-| Phase | Focus | Issues |
+| Phase | Focus | Status |
 |-------|-------|--------|
-| **1A** | Polish existing features | #1-4 (worktrees, CLI persistence) |
-| **1B** | Parallel agent execution | #5-7 (TaskGroup, Merge Agent) |
-| **2** | Local AI foundation | #8 (PII scrubber) |
-| **3** | VM isolation | #9 (Linux VM polish) |
+| **1A** | Polish existing features | ✅ Complete |
+| **1B** | Parallel agent execution | ✅ Complete |
+| **1C** | MCP server & templates | 🔄 In Progress (#13, #16 open) |
+| **2** | Local AI foundation | 📋 Next (#8 PII scrubber) |
+| **3** | VM isolation | 📋 Future (#9 Linux VM polish) |
 
 ### Working with Issues
 ```bash
