@@ -169,9 +169,9 @@ Planner → splits task → creates branches
 - [apple-agent-big-ideas.md](apple-agent-big-ideas.md)
 
 ### Documentation
-- [MCP Workflow Guide](../docs/guides/MCP_AGENT_WORKFLOW.md)
-- [MCP Test Plan](../docs/guides/MCP_TEST_PLAN.md)
-- [Code Audit Index](../docs/reference/CODE_AUDIT_INDEX.md)
+- [MCP Workflow Guide](../Docs/guides/MCP_AGENT_WORKFLOW.md)
+- [MCP Test Plan](../Docs/guides/MCP_TEST_PLAN.md)
+- [Code Audit Index](../Docs/reference/CODE_AUDIT_INDEX.md)
 
 ### Archived Plans
 - [Archive/AGENT_ORCHESTRATION_PLAN.md](Archive/AGENT_ORCHESTRATION_PLAN.md)
