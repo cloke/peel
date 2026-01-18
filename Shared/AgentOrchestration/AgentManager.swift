@@ -300,13 +300,23 @@ public final class AgentChainRunner {
     do {
       try await runAgentsWithParallelImplementers(chain: chain, prompt: prompt, mergeConflicts: &mergeConflicts)
 
-      if chain.enableReviewLoop {
+      if let reviewResult = chain.results.last(where: { $0.reviewVerdict != nil }),
+         let verdict = reviewResult.reviewVerdict,
+         chain.pauseOnReview,
+         verdict != .approved {
+        let message = "Review requested changes. Chain paused for user decision."
+        chain.state = .failed(message: message)
+        chain.addStatusMessage(message, type: .error)
+        errorMessage = message
+      } else if chain.enableReviewLoop {
         try await runReviewLoop(chain: chain, prompt: prompt)
       }
 
-      chain.state = .complete
-      chain.addStatusMessage("✓ Chain completed successfully!", type: .complete)
-      sessionTracker.recordChainRun(chain)
+      if errorMessage == nil {
+        chain.state = .complete
+        chain.addStatusMessage("✓ Chain completed successfully!", type: .complete)
+        sessionTracker.recordChainRun(chain)
+      }
     } catch {
       errorMessage = error.localizedDescription
       chain.state = .failed(message: error.localizedDescription)
@@ -1142,6 +1152,8 @@ public final class MCPServerService {
     let templateName = arguments["templateName"] as? String
     let workingDirectory = arguments["workingDirectory"] as? String
     let enableReviewLoop = arguments["enableReviewLoop"] as? Bool
+    let pauseOnReview = arguments["pauseOnReview"] as? Bool
+    let reviewerModelOverride = arguments["reviewerModel"] as? String
 
     let chain: AgentChain
     if let chainSpec, !chainSpec.isEmpty {
@@ -1176,6 +1188,14 @@ public final class MCPServerService {
     chain.runSource = .mcp
     if let enableReviewLoop {
       chain.enableReviewLoop = enableReviewLoop
+    }
+    if let pauseOnReview {
+      chain.pauseOnReview = pauseOnReview
+    }
+    if let reviewerModelOverride,
+       let overrideModel = CopilotModel.fromString(reviewerModelOverride),
+       let reviewer = chain.agents.first(where: { $0.role == .reviewer }) {
+      reviewer.model = overrideModel
     }
 
     let summary = await chainRunner.runChain(chain, prompt: prompt)
@@ -1474,6 +1494,7 @@ public final class MCPServerService {
             "templateId": ["type": "string"],
             "templateName": ["type": "string"],
             "chainName": ["type": "string"],
+            "reviewerModel": ["type": "string"],
             "chainSpec": [
               "type": "array",
               "items": [
@@ -1490,7 +1511,8 @@ public final class MCPServerService {
             ],
             "prompt": ["type": "string"],
             "workingDirectory": ["type": "string"],
-            "enableReviewLoop": ["type": "boolean"]
+            "enableReviewLoop": ["type": "boolean"],
+            "pauseOnReview": ["type": "boolean"]
           ],
           "required": ["prompt"]
         ]
