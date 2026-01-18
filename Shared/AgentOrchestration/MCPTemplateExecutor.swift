@@ -16,6 +16,7 @@ public struct MCPTemplateExecutor {
     }
   }
 
+  @MainActor
   public static func execute(template: MCPTemplate, prompt: String, agentManager: AgentManager, chainRunner: AgentChainRunner, workingDirectory: String?) async throws -> AgentChainRunner.RunSummary {
     // Convert MCPTemplate to ChainTemplate
     let steps = try template.steps.map { s in
