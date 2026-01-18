@@ -82,7 +82,7 @@ public final class WorkspaceManager {
       
     } catch {
       workspace.markError(error.localizedDescription)
-      throw WorkspaceError.creationFailed(error)
+      throw WorktreeError.creationFailed(error)
     }
   }
   
@@ -124,7 +124,7 @@ public final class WorkspaceManager {
     force: Bool = false
   ) async throws {
     guard workspace.canRemove || force else {
-      throw WorkspaceError.cannotRemove(reason: "Workspace is locked or in use")
+      throw WorktreeError.cannotRemove(reason: "Workspace is locked or in use")
     }
     
     workspace.status = .cleaning
@@ -156,7 +156,7 @@ public final class WorkspaceManager {
       
     } catch {
       workspace.markError(error.localizedDescription)
-      throw WorkspaceError.cleanupFailed(error)
+      throw WorktreeError.cleanupFailed(error)
     }
   }
   
@@ -253,28 +253,6 @@ public final class WorkspaceManager {
   }
 }
 
-// MARK: - Errors
-
-public enum WorkspaceError: LocalizedError {
-  case creationFailed(Error)
-  case cleanupFailed(Error)
-  case cannotRemove(reason: String)
-  case notFound
-  
-  public var errorDescription: String? {
-    switch self {
-    case .creationFailed(let error):
-      return "Failed to create workspace: \(error.localizedDescription)"
-    case .cleanupFailed(let error):
-      return "Failed to cleanup workspace: \(error.localizedDescription)"
-    case .cannotRemove(let reason):
-      return "Cannot remove workspace: \(reason)"
-    case .notFound:
-      return "Workspace not found"
-    }
-  }
-}
-
 #else
 // iOS stub - workspaces not supported
 @MainActor
@@ -282,13 +260,5 @@ public enum WorkspaceError: LocalizedError {
 public final class WorkspaceManager {
   public private(set) var workspaces: [AgentWorkspace] = []
   public init() {}
-}
-
-public enum WorkspaceError: LocalizedError {
-  case notSupported
-  
-  public var errorDescription: String? {
-    "Workspaces are only supported on macOS"
-  }
 }
 #endif

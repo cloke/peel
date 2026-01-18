@@ -28,10 +28,12 @@ struct Workspaces_RootView: View {
 
 #if os(macOS)
 import AppKit
+import Git
 
 // MARK: - macOS Dashboard View
 
 struct WorkspacesDashboardView: View {
+  @Environment(\.modelContext) private var modelContext
   @State private var service = WorkspaceDashboardService()
   @State private var showingAddWorkspace = false
   @State private var showingCreateWorktree = false
@@ -42,14 +44,11 @@ struct WorkspacesDashboardView: View {
     NavigationSplitView {
       sidebar
     } detail: {
-      if service.selectedWorkspace != nil {
-        worktreeList
-      } else {
-        emptyState
-      }
+      detailContent
     }
     .navigationSplitViewStyle(.balanced)
     .task {
+      service.configure(modelContext: modelContext)
       await service.loadReposAndWorktrees()
     }
     .sheet(isPresented: $showingAddWorkspace) {
@@ -72,6 +71,7 @@ struct WorkspacesDashboardView: View {
       get: { service.selectedWorkspace?.id },
       set: { id in
         service.selectedWorkspace = service.workspaces.first { $0.id == id }
+        selectedRepo = nil
         Task { await service.loadReposAndWorktrees() }
       }
     )) {
@@ -105,18 +105,33 @@ struct WorkspacesDashboardView: View {
       if service.selectedWorkspace != nil, !service.repos.isEmpty {
         Section("Repositories") {
           ForEach(service.repos) { repo in
-            RepoRow(repo: repo, worktreeCount: worktreeCount(for: repo))
-              .contextMenu {
-                Button("Create Worktree...", systemImage: "plus.square") {
-                  selectedRepo = repo
-                  showingCreateWorktree = true
-                }
-                Button("Open in VS Code", systemImage: "chevron.left.forwardslash.chevron.right") {
-                  Task {
-                    try? await VSCodeService.shared.open(path: repo.path, newWindow: true)
-                  }
+            Button {
+              selectedRepo = repo
+            } label: {
+              RepoRow(
+                repo: repo,
+                worktreeCount: worktreeCount(for: repo),
+                isSelected: selectedRepo?.id == repo.id
+              )
+            }
+            .buttonStyle(.plain)
+            .selectionDisabled(true)
+            .listRowBackground(
+              selectedRepo?.id == repo.id
+              ? Color.accentColor.opacity(0.15)
+              : Color.clear
+            )
+            .contextMenu {
+              Button("Create Worktree...", systemImage: "plus.square") {
+                selectedRepo = repo
+                showingCreateWorktree = true
+              }
+              Button("Open in VS Code", systemImage: "chevron.left.forwardslash.chevron.right") {
+                Task {
+                  try? await VSCodeService.shared.open(path: repo.path, newWindow: true)
                 }
               }
+            }
           }
         }
       }
@@ -136,7 +151,7 @@ struct WorkspacesDashboardView: View {
   }
   
   private func worktreeCount(for repo: WorkspaceRepo) -> Int {
-    service.worktrees.filter { $0.repoName == repo.name && !$0.isMain }.count
+    service.worktrees.filter { service.repoName(for: $0) == repo.name && !$0.isMain }.count
   }
   
   // MARK: - Worktree List
@@ -187,13 +202,73 @@ struct WorkspacesDashboardView: View {
       await loadStatuses()
     }
   }
+
+  @ViewBuilder
+  private var detailContent: some View {
+    if let repo = selectedRepo {
+      repoDetail(repo)
+    } else if service.selectedWorkspace != nil {
+      worktreeList
+    } else {
+      emptyState
+    }
+  }
+
+  private func repoDetail(_ repo: WorkspaceRepo) -> some View {
+    VStack(spacing: 0) {
+      RepoHeader(
+        repo: repo,
+        worktreeCount: worktreeCount(for: repo),
+        onBack: { selectedRepo = nil },
+        onRefresh: refreshAll
+      )
+      Divider()
+      let repoWorktrees = service.worktrees.filter { service.repoName(for: $0) == repo.name && !$0.isMain }
+      if service.isLoading {
+        ProgressView("Loading worktrees...")
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+      } else if repoWorktrees.isEmpty {
+        ContentUnavailableView {
+          Label("No Worktrees for \(repo.name)", systemImage: "arrow.triangle.branch")
+        } description: {
+          Text("Create a worktree for this repository to work in isolation")
+        } actions: {
+          Button("Create Worktree") {
+            selectedRepo = repo
+            showingCreateWorktree = true
+          }
+          .buttonStyle(.borderedProminent)
+        }
+      } else {
+        ScrollView {
+          LazyVStack(spacing: 12) {
+            WorktreeSection(
+              repoName: repo.name,
+              worktrees: repoWorktrees,
+              statuses: worktreeStatuses,
+              onOpen: openWorktree,
+              onRemove: removeWorktree,
+              onCreate: {
+                selectedRepo = repo
+                showingCreateWorktree = true
+              }
+            )
+          }
+          .padding()
+        }
+      }
+    }
+    .task {
+      await loadStatuses()
+    }
+  }
   
-  private var nonMainWorktrees: [WorktreeInfo] {
+  private var nonMainWorktrees: [Git.Worktree] {
     service.worktrees.filter { !$0.isMain }
   }
   
-  private var groupedWorktrees: [String: [WorktreeInfo]] {
-    Dictionary(grouping: nonMainWorktrees, by: \.repoName)
+  private var groupedWorktrees: [String: [Git.Worktree]] {
+    Dictionary(grouping: nonMainWorktrees, by: { service.repoName(for: $0) ?? "Unknown" })
   }
   
   private var noWorktreesView: some View {
@@ -227,13 +302,13 @@ struct WorkspacesDashboardView: View {
   
   // MARK: - Actions
   
-  private func openWorktree(_ worktree: WorktreeInfo) {
+  private func openWorktree(_ worktree: Git.Worktree) {
     Task {
       try? await service.openInVSCode(worktree)
     }
   }
   
-  private func removeWorktree(_ worktree: WorktreeInfo) {
+  private func removeWorktree(_ worktree: Git.Worktree) {
     Task {
       try? await service.removeWorktree(worktree)
     }
@@ -292,6 +367,54 @@ struct WorkspaceHeader: View {
   }
 }
 
+// MARK: - Repo Header
+
+struct RepoHeader: View {
+  let repo: WorkspaceRepo
+  let worktreeCount: Int
+  let onBack: () -> Void
+  let onRefresh: () -> Void
+  
+  var body: some View {
+    HStack {
+      Button {
+        onBack()
+      } label: {
+        Label("Workspaces", systemImage: "chevron.left")
+      }
+      .buttonStyle(.plain)
+      
+      VStack(alignment: .leading, spacing: 4) {
+        Text(repo.name)
+          .font(.title2.bold())
+        Text(repo.path)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .truncationMode(.middle)
+      }
+      
+      Spacer()
+      
+      Button {
+        onRefresh()
+      } label: {
+        Label("Refresh", systemImage: "arrow.clockwise")
+      }
+      .buttonStyle(.bordered)
+      
+      VStack(alignment: .trailing, spacing: 4) {
+        Label("\(worktreeCount)", systemImage: "arrow.triangle.branch")
+          .font(.headline)
+        Text("active worktrees")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+    }
+    .padding()
+  }
+}
+
 // MARK: - Workspace Row
 
 struct WorkspaceRow: View {
@@ -326,6 +449,7 @@ struct WorkspaceRow: View {
 struct RepoRow: View {
   let repo: WorkspaceRepo
   let worktreeCount: Int
+  let isSelected: Bool
   
   var body: some View {
     Label {
@@ -337,7 +461,7 @@ struct RepoRow: View {
             .font(.caption)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(.blue.opacity(0.2))
+            .background(isSelected ? .white.opacity(0.25) : .blue.opacity(0.2))
             .clipShape(RoundedRectangle(cornerRadius: 4))
         }
       }
@@ -345,6 +469,7 @@ struct RepoRow: View {
       Image(systemName: repo.isSubmodule ? "arrow.triangle.branch" : "folder")
         .foregroundStyle(.secondary)
     }
+    .foregroundStyle(isSelected ? .primary : .primary)
   }
 }
 
@@ -352,10 +477,10 @@ struct RepoRow: View {
 
 struct WorktreeSection: View {
   let repoName: String
-  let worktrees: [WorktreeInfo]
+  let worktrees: [Git.Worktree]
   let statuses: [UUID: WorktreeStatus]
-  let onOpen: (WorktreeInfo) -> Void
-  let onRemove: (WorktreeInfo) -> Void
+  let onOpen: (Git.Worktree) -> Void
+  let onRemove: (Git.Worktree) -> Void
   let onCreate: () -> Void
   
   var body: some View {
@@ -391,7 +516,7 @@ struct WorktreeSection: View {
 // MARK: - Worktree Card
 
 struct WorktreeCard: View {
-  let worktree: WorktreeInfo
+  let worktree: Git.Worktree
   let status: WorktreeStatus?
   let onOpen: () -> Void
   let onRemove: () -> Void
@@ -435,13 +560,13 @@ struct WorktreeCard: View {
           .truncationMode(.middle)
 
         HStack(spacing: 8) {
-          if let branch = worktree.branch {
+          if let branch = normalizedBranch(worktree.branch) {
             Label(branch, systemImage: "arrow.branch")
               .font(.caption)
               .foregroundStyle(.secondary)
           }
           
-          Text(worktree.commit)
+          Text(String(worktree.head.prefix(7)))
             .font(.caption.monospaced())
             .foregroundStyle(.tertiary)
           
@@ -530,6 +655,14 @@ struct WorktreeCard: View {
       return .yellow
     }
     return .green
+  }
+
+  private func normalizedBranch(_ branch: String?) -> String? {
+    guard let branch else { return nil }
+    if branch.hasPrefix("refs/heads/") {
+      return String(branch.dropFirst("refs/heads/".count))
+    }
+    return branch
   }
 }
 

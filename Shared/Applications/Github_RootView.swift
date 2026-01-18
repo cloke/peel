@@ -151,7 +151,11 @@ struct Github_RootView: View {
             .padding(.horizontal)
             .padding(.vertical, 10)
           }
+          #if os(macOS)
           .background(Color(nsColor: .windowBackgroundColor))
+          #else
+          .background(Color(.systemBackground))
+          #endif
         }
       }
       .task {
@@ -297,6 +301,134 @@ struct RecentPRDestination: View {
     }
     .task {
       isLoading = false
+    }
+  }
+}
+
+// MARK: - GitHub Data Provider
+
+/// Provides GitHub favorites and recent PRs backed by SwiftData
+@MainActor
+@Observable
+final class GitHubDataProvider: GitHubFavoritesProvider, RecentPRsProvider {
+  private let modelContext: ModelContext
+  
+  init(modelContext: ModelContext) {
+    self.modelContext = modelContext
+  }
+  
+  // MARK: - GitHubFavoritesProvider
+  
+  func isFavorite(repoId: Int) -> Bool {
+    let descriptor = FetchDescriptor<GitHubFavorite>(
+      predicate: #Predicate { $0.githubRepoId == repoId }
+    )
+    return (try? modelContext.fetchCount(descriptor)) ?? 0 > 0
+  }
+  
+  func addFavorite(repo: Github.Repository) {
+    let repoId = repo.id
+    let descriptor = FetchDescriptor<GitHubFavorite>(
+      predicate: #Predicate { $0.githubRepoId == repoId }
+    )
+    if (try? modelContext.fetch(descriptor).first) != nil {
+      return
+    }
+    
+    let favorite = GitHubFavorite(
+      githubRepoId: repo.id,
+      fullName: repo.full_name ?? repo.name,
+      ownerLogin: repo.owner?.login ?? "unknown",
+      repoName: repo.name,
+      htmlURL: repo.html_url
+    )
+    modelContext.insert(favorite)
+    try? modelContext.save()
+  }
+  
+  func removeFavorite(repoId: Int) {
+    let descriptor = FetchDescriptor<GitHubFavorite>(
+      predicate: #Predicate { $0.githubRepoId == repoId }
+    )
+    if let favorite = try? modelContext.fetch(descriptor).first {
+      modelContext.delete(favorite)
+      try? modelContext.save()
+    }
+  }
+  
+  func getFavorites() -> [FavoriteRepository] {
+    let descriptor = FetchDescriptor<GitHubFavorite>(
+      sortBy: [SortDescriptor(\.addedAt, order: .reverse)]
+    )
+    let favorites = (try? modelContext.fetch(descriptor)) ?? []
+    return favorites.map { fav in
+      FavoriteRepository(
+        id: fav.githubRepoId,
+        fullName: fav.fullName,
+        ownerLogin: fav.ownerLogin,
+        repoName: fav.repoName,
+        htmlURL: fav.htmlURL,
+        addedAt: fav.addedAt
+      )
+    }
+  }
+  
+  // MARK: - RecentPRsProvider
+  
+  func recordView(pr: Github.PullRequest, repo: Github.Repository) {
+    let prId = pr.id
+    let descriptor = FetchDescriptor<RecentPullRequest>(
+      predicate: #Predicate { $0.githubPRId == prId }
+    )
+    
+    if let existing = try? modelContext.fetch(descriptor).first {
+      existing.title = pr.title ?? "Untitled"
+      existing.state = pr.state ?? "unknown"
+      existing.markViewed()
+      try? modelContext.save()
+      return
+    }
+    
+    let recent = RecentPullRequest(
+      githubPRId: pr.id,
+      prNumber: pr.number,
+      title: pr.title ?? "Untitled",
+      repoFullName: repo.full_name ?? repo.name,
+      state: pr.state ?? "unknown",
+      htmlURL: pr.html_url
+    )
+    modelContext.insert(recent)
+    cleanupOldPRs()
+    try? modelContext.save()
+  }
+  
+  func getRecentPRs() -> [RecentPRInfo] {
+    var descriptor = FetchDescriptor<RecentPullRequest>(
+      sortBy: [SortDescriptor(\.viewedAt, order: .reverse)]
+    )
+    descriptor.fetchLimit = 20
+    let recents = (try? modelContext.fetch(descriptor)) ?? []
+    return recents.map { recent in
+      RecentPRInfo(
+        id: recent.githubPRId,
+        prNumber: recent.prNumber,
+        title: recent.title,
+        repoFullName: recent.repoFullName,
+        state: recent.state,
+        htmlURL: recent.htmlURL,
+        viewedAt: recent.viewedAt
+      )
+    }
+  }
+  
+  private func cleanupOldPRs() {
+    let descriptor = FetchDescriptor<RecentPullRequest>(
+      sortBy: [SortDescriptor(\.viewedAt, order: .reverse)]
+    )
+    if let all = try? modelContext.fetch(descriptor), all.count > 50 {
+      for old in all.dropFirst(50) {
+        modelContext.delete(old)
+      }
     }
   }
 }

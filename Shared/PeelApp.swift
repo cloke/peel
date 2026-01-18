@@ -62,171 +62,7 @@ struct PeelApp: App {
 }
 
 // MARK: - SwiftData Models
-// CloudKit-compatible: all properties have defaults, no unique constraints
-
-// MARK: - Synced Models (sync to iCloud)
-
-/// A git repository tracked by the app.
-@Model
-final class SyncedRepository {
-  var id: UUID = UUID()
-  var name: String = ""
-  var remoteURL: String?
-  var isFavorite: Bool = false
-  var colorTag: String?
-  var notes: String?
-  var createdAt: Date = Date()
-  var modifiedAt: Date = Date()
-  
-  init(name: String, remoteURL: String? = nil) {
-    self.id = UUID()
-    self.name = name
-    self.remoteURL = remoteURL
-    self.isFavorite = false
-    self.createdAt = Date()
-    self.modifiedAt = Date()
-  }
-  
-  func touch() {
-    modifiedAt = Date()
-  }
-}
-
-/// A GitHub repository marked as favorite.
-@Model
-final class GitHubFavorite {
-  var id: UUID = UUID()
-  var githubRepoId: Int = 0
-  var fullName: String = ""
-  var ownerLogin: String = ""
-  var repoName: String = ""
-  var htmlURL: String?
-  var addedAt: Date = Date()
-  var notes: String?
-  
-  init(githubRepoId: Int, fullName: String, ownerLogin: String, repoName: String, htmlURL: String? = nil) {
-    self.id = UUID()
-    self.githubRepoId = githubRepoId
-    self.fullName = fullName
-    self.ownerLogin = ownerLogin
-    self.repoName = repoName
-    self.htmlURL = htmlURL
-    self.addedAt = Date()
-  }
-}
-
-/// A recently viewed pull request.
-@Model
-final class RecentPullRequest {
-  var id: UUID = UUID()
-  var githubPRId: Int = 0
-  var prNumber: Int = 0
-  var title: String = ""
-  var repoFullName: String = ""
-  var state: String = "unknown"
-  var htmlURL: String?
-  var viewedAt: Date = Date()
-  
-  init(githubPRId: Int, prNumber: Int, title: String, repoFullName: String, state: String, htmlURL: String? = nil) {
-    self.id = UUID()
-    self.githubPRId = githubPRId
-    self.prNumber = prNumber
-    self.title = title
-    self.repoFullName = repoFullName
-    self.state = state
-    self.htmlURL = htmlURL
-    self.viewedAt = Date()
-  }
-  
-  func markViewed() {
-    viewedAt = Date()
-  }
-}
-
-// MARK: - Device-Local Models (NOT synced to iCloud)
-
-/// Maps a SyncedRepository to its local path on THIS device.
-@Model
-final class LocalRepositoryPath {
-  var id: UUID = UUID()
-  var repositoryId: UUID = UUID()
-  var localPath: String = ""
-  var bookmarkData: Data?
-  var lastAccessedAt: Date = Date()
-  var isValid: Bool = true
-  
-  init(repositoryId: UUID, localPath: String, bookmarkData: Data? = nil) {
-    self.id = UUID()
-    self.repositoryId = repositoryId
-    self.localPath = localPath
-    self.bookmarkData = bookmarkData
-    self.lastAccessedAt = Date()
-    self.isValid = true
-  }
-  
-  func markAccessed(validate: Bool = false) {
-    lastAccessedAt = Date()
-    if validate {
-      isValid = FileManager.default.fileExists(atPath: localPath)
-    }
-  }
-}
-
-/// Tracks a worktree created through the app.
-@Model
-final class TrackedWorktree {
-  var id: UUID = UUID()
-  var repositoryId: UUID = UUID()
-  var localPath: String = ""
-  var branch: String = ""
-  var createdAt: Date = Date()
-  var purpose: String?
-  var linkedPRNumber: Int?
-  var linkedPRRepo: String?
-  
-  init(repositoryId: UUID, localPath: String, branch: String) {
-    self.id = UUID()
-    self.repositoryId = repositoryId
-    self.localPath = localPath
-    self.branch = branch
-    self.createdAt = Date()
-  }
-  
-  func linkToPR(number: Int, repo: String) {
-    linkedPRNumber = number
-    linkedPRRepo = repo
-    if purpose == nil {
-      purpose = "PR #\(number)"
-    }
-  }
-}
-
-/// App settings for THIS device only.
-@Model
-final class DeviceSettings {
-  var id: UUID = UUID()
-  var deviceName: String = "Unknown"
-  var currentTool: String = "github"
-  var selectedRepositoryId: UUID?
-  var sidebarWidth: Double?
-  var lastUsedAt: Date = Date()
-  
-  @MainActor
-  init() {
-    self.id = UUID()
-    #if os(macOS)
-    self.deviceName = Host.current().localizedName ?? "Mac"
-    #else
-    self.deviceName = UIDevice.current.name
-    #endif
-    self.currentTool = "github"
-    self.lastUsedAt = Date()
-  }
-  
-  func touch() {
-    lastUsedAt = Date()
-  }
-}
+// Models live in Shared/Models/SwiftDataModels.swift
 // MARK: - Data Service
 
 /// Service for managing app data with SwiftData
@@ -381,134 +217,63 @@ final class DataService {
     descriptor.fetchLimit = limit
     return (try? modelContext.fetch(descriptor)) ?? []
   }
-}
 
-// MARK: - GitHub Data Provider
+  // MARK: - Tracked Worktrees
 
-import Github
+  func getRepositoryId(forLocalPath path: String) -> UUID? {
+    let descriptor = FetchDescriptor<LocalRepositoryPath>(
+      predicate: #Predicate { $0.localPath == path }
+    )
+    return try? modelContext.fetch(descriptor).first?.repositoryId
+  }
 
-/// Provides GitHub favorites and recent PRs backed by SwiftData
-@MainActor
-@Observable
-final class GitHubDataProvider: GitHubFavoritesProvider, RecentPRsProvider {
-  private let modelContext: ModelContext
-  
-  init(modelContext: ModelContext) {
-    self.modelContext = modelContext
+  func getTrackedWorktree(localPath: String) -> TrackedWorktree? {
+    let descriptor = FetchDescriptor<TrackedWorktree>(
+      predicate: #Predicate { $0.localPath == localPath }
+    )
+    return try? modelContext.fetch(descriptor).first
   }
-  
-  // MARK: - GitHubFavoritesProvider
-  
-  func isFavorite(repoId: Int) -> Bool {
-    let descriptor = FetchDescriptor<GitHubFavorite>(
-      predicate: #Predicate { $0.githubRepoId == repoId }
-    )
-    return (try? modelContext.fetchCount(descriptor)) ?? 0 > 0
-  }
-  
-  func addFavorite(repo: Github.Repository) {
-    let repoId = repo.id
-    let descriptor = FetchDescriptor<GitHubFavorite>(
-      predicate: #Predicate { $0.githubRepoId == repoId }
-    )
-    if (try? modelContext.fetch(descriptor).first) != nil {
-      return
-    }
-    
-    let favorite = GitHubFavorite(
-      githubRepoId: repo.id,
-      fullName: repo.full_name ?? repo.name,
-      ownerLogin: repo.owner?.login ?? "unknown",
-      repoName: repo.name,
-      htmlURL: repo.html_url
-    )
-    modelContext.insert(favorite)
-    try? modelContext.save()
-  }
-  
-  func removeFavorite(repoId: Int) {
-    let descriptor = FetchDescriptor<GitHubFavorite>(
-      predicate: #Predicate { $0.githubRepoId == repoId }
-    )
-    if let favorite = try? modelContext.fetch(descriptor).first {
-      modelContext.delete(favorite)
+
+  @discardableResult
+  func upsertTrackedWorktree(
+    repositoryId: UUID?,
+    localPath: String,
+    branch: String,
+    source: String,
+    purpose: String? = nil,
+    linkedPRNumber: Int? = nil,
+    linkedPRRepo: String? = nil
+  ) -> TrackedWorktree {
+    if let existing = getTrackedWorktree(localPath: localPath) {
+      existing.repositoryId = repositoryId ?? existing.repositoryId
+      existing.branch = branch
+      existing.source = source
+      existing.purpose = purpose ?? existing.purpose
+      existing.linkedPRNumber = linkedPRNumber ?? existing.linkedPRNumber
+      existing.linkedPRRepo = linkedPRRepo ?? existing.linkedPRRepo
       try? modelContext.save()
-    }
-  }
-  
-  func getFavorites() -> [FavoriteRepository] {
-    let descriptor = FetchDescriptor<GitHubFavorite>(
-      sortBy: [SortDescriptor(\.addedAt, order: .reverse)]
-    )
-    let favorites = (try? modelContext.fetch(descriptor)) ?? []
-    return favorites.map { fav in
-      FavoriteRepository(
-        id: fav.githubRepoId,
-        fullName: fav.fullName,
-        ownerLogin: fav.ownerLogin,
-        repoName: fav.repoName,
-        htmlURL: fav.htmlURL,
-        addedAt: fav.addedAt
-      )
-    }
-  }
-  
-  // MARK: - RecentPRsProvider
-  
-  func recordView(pr: Github.PullRequest, repo: Github.Repository) {
-    let prId = pr.id
-    let descriptor = FetchDescriptor<RecentPullRequest>(
-      predicate: #Predicate { $0.githubPRId == prId }
-    )
-    
-    if let existing = try? modelContext.fetch(descriptor).first {
-      existing.title = pr.title ?? "Untitled"
-      existing.state = pr.state ?? "unknown"
-      existing.markViewed()
-      try? modelContext.save()
-      return
+      return existing
     }
     
-    let recent = RecentPullRequest(
-      githubPRId: pr.id,
-      prNumber: pr.number,
-      title: pr.title ?? "Untitled",
-      repoFullName: repo.full_name ?? repo.name,
-      state: pr.state ?? "unknown",
-      htmlURL: pr.html_url
+    let resolvedId = repositoryId ?? UUID()
+    let tracked = TrackedWorktree(
+      repositoryId: resolvedId,
+      localPath: localPath,
+      branch: branch,
+      source: source,
+      purpose: purpose
     )
-    modelContext.insert(recent)
-    cleanupOldPRs()
+    tracked.linkedPRNumber = linkedPRNumber
+    tracked.linkedPRRepo = linkedPRRepo
+    modelContext.insert(tracked)
     try? modelContext.save()
+    return tracked
   }
-  
-  func getRecentPRs() -> [RecentPRInfo] {
-    var descriptor = FetchDescriptor<RecentPullRequest>(
-      sortBy: [SortDescriptor(\.viewedAt, order: .reverse)]
-    )
-    descriptor.fetchLimit = 20
-    let recents = (try? modelContext.fetch(descriptor)) ?? []
-    return recents.map { recent in
-      RecentPRInfo(
-        id: recent.githubPRId,
-        prNumber: recent.prNumber,
-        title: recent.title,
-        repoFullName: recent.repoFullName,
-        state: recent.state,
-        htmlURL: recent.htmlURL,
-        viewedAt: recent.viewedAt
-      )
-    }
-  }
-  
-  private func cleanupOldPRs() {
-    let descriptor = FetchDescriptor<RecentPullRequest>(
-      sortBy: [SortDescriptor(\.viewedAt, order: .reverse)]
-    )
-    if let all = try? modelContext.fetch(descriptor), all.count > 50 {
-      for old in all.dropFirst(50) {
-        modelContext.delete(old)
-      }
+
+  func removeTrackedWorktree(localPath: String) {
+    if let existing = getTrackedWorktree(localPath: localPath) {
+      modelContext.delete(existing)
+      try? modelContext.save()
     }
   }
 }

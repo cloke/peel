@@ -13,6 +13,7 @@ import Git
 
 #if os(macOS)
 import AppKit
+import SwiftData
 
 /// Represents a configured workspace that can contain multiple repositories
 public struct Workspace: Identifiable, Codable, Hashable {
@@ -54,56 +55,9 @@ public struct WorkspaceRepo: Identifiable, Hashable {
   }
 }
 
-/// Represents a git worktree
-public struct WorktreeInfo: Identifiable, Hashable {
-  public let id: UUID
-  public let path: String
-  public let branch: String?
-  public let commit: String
-  public let isMain: Bool
-  public let isDetached: Bool
-  public let repoName: String
-  public let workspaceName: String
-  
-  // Derived properties
-  public var displayName: String {
-    if isMain {
-      return "main"
-    }
-    // Extract meaningful name from path
-    let url = URL(fileURLWithPath: path)
-    return url.lastPathComponent
-  }
-  
-  public var statusIcon: String {
-    if isMain { return "house.fill" }
-    if isDetached { return "arrow.triangle.branch" }
-    return "arrow.branch"
-  }
-  
-  public init(
-    path: String,
-    branch: String?,
-    commit: String,
-    isMain: Bool,
-    isDetached: Bool,
-    repoName: String,
-    workspaceName: String
-  ) {
-    self.id = UUID()
-    self.path = path
-    self.branch = branch
-    self.commit = commit
-    self.isMain = isMain
-    self.isDetached = isDetached
-    self.repoName = repoName
-    self.workspaceName = workspaceName
-  }
-}
-
 /// Status of a worktree including uncommitted changes
 public struct WorktreeStatus {
-  public let worktree: WorktreeInfo
+  public let worktree: Git.Worktree
   public let hasUncommittedChanges: Bool
   public let changedFileCount: Int
   public let lastCommitDate: Date?
@@ -127,7 +81,7 @@ public final class WorkspaceDashboardService {
   public private(set) var repos: [WorkspaceRepo] = []
   
   /// All worktrees across all repos in selected workspace
-  public private(set) var worktrees: [WorktreeInfo] = []
+  public private(set) var worktrees: [Git.Worktree] = []
   
   /// Loading state
   public private(set) var isLoading = false
@@ -137,6 +91,10 @@ public final class WorkspaceDashboardService {
   
   /// Worktree root directory
   public let worktreeRoot: String
+
+  private var dataService: DataService?
+  private var worktreeRepoNames: [String: String] = [:]
+  private var worktreeWorkspaceNames: [String: String] = [:]
   
   // MARK: - Storage Keys
   
@@ -153,6 +111,12 @@ public final class WorkspaceDashboardService {
       atPath: worktreeRoot,
       withIntermediateDirectories: true
     )
+  }
+
+  public func configure(modelContext: ModelContext) {
+    if dataService == nil {
+      dataService = DataService(modelContext: modelContext)
+    }
   }
   
   // MARK: - Workspace Management
@@ -213,6 +177,8 @@ public final class WorkspaceDashboardService {
     
     isLoading = true
     errorMessage = nil
+    worktreeRepoNames = [:]
+    worktreeWorkspaceNames = [:]
     
     do {
       // Load repos based on workspace type
@@ -231,7 +197,7 @@ public final class WorkspaceDashboardService {
       }
       
       // Load worktrees for all repos
-      var allWorktrees: [WorktreeInfo] = []
+      var allWorktrees: [Git.Worktree] = []
       for repo in repos {
         let repoWorktrees = try await loadWorktrees(for: repo, in: workspace)
         allWorktrees.append(contentsOf: repoWorktrees)
@@ -306,28 +272,22 @@ public final class WorkspaceDashboardService {
   }
   
   /// Load worktrees for a repository
-  private func loadWorktrees(for repo: WorkspaceRepo, in workspace: Workspace) async throws -> [WorktreeInfo] {
+  private func loadWorktrees(for repo: WorkspaceRepo, in workspace: Workspace) async throws -> [Git.Worktree] {
     let repository = Model.Repository(name: repo.name, path: repo.path)
     let gitWorktrees = try await Commands.Worktree.list(on: repository)
-    return gitWorktrees.map { worktree in
-      WorktreeInfo(
-        path: worktree.path,
-        branch: normalizedBranch(worktree.branch),
-        commit: String(worktree.head.prefix(7)),
-        isMain: worktree.isMain,
-        isDetached: worktree.isDetached,
-        repoName: repo.name,
-        workspaceName: workspace.name
-      )
+    for worktree in gitWorktrees {
+      worktreeRepoNames[worktree.path] = repo.name
+      worktreeWorkspaceNames[worktree.path] = workspace.name
     }
+    return gitWorktrees
   }
 
-  private func normalizedBranch(_ branch: String?) -> String? {
-    guard let branch else { return nil }
-    if branch.hasPrefix("refs/heads/") {
-      return String(branch.dropFirst("refs/heads/".count))
-    }
-    return branch
+  public func repoName(for worktree: Git.Worktree) -> String? {
+    worktreeRepoNames[worktree.path]
+  }
+
+  public func workspaceName(for worktree: Git.Worktree) -> String? {
+    worktreeWorkspaceNames[worktree.path]
   }
   
   // MARK: - Worktree Operations
@@ -338,7 +298,7 @@ public final class WorkspaceDashboardService {
     description: String,
     baseBranch: String = "main",
     detached: Bool = true
-  ) async throws -> WorktreeInfo {
+  ) async throws -> Git.Worktree {
     // Generate safe name from description
     let safeName = description
       .lowercased()
@@ -346,32 +306,39 @@ public final class WorkspaceDashboardService {
       .replacingOccurrences(of: "[^a-z0-9-]", with: "", options: .regularExpression)
     
     let worktreePath = "\(worktreeRoot)/\(repo.name)-\(safeName)"
+    let repository = Model.Repository(name: repo.name, path: repo.path)
     
     // Remove existing if present
     if FileManager.default.fileExists(atPath: worktreePath) {
-      try await runGit(["worktree", "remove", "--force", worktreePath], in: repo.path)
+      _ = try await Commands.simple(arguments: ["worktree", "remove", "--force", worktreePath], in: repository)
     }
     
     // Create worktree
     if detached {
-      try await runGit(["worktree", "add", "--detach", worktreePath, baseBranch], in: repo.path)
+      _ = try await Commands.simple(arguments: ["worktree", "add", "--detach", worktreePath, baseBranch], in: repository)
     } else {
       let branchName = "feature/\(safeName)"
-      try await runGit(["worktree", "add", "-b", branchName, worktreePath, baseBranch], in: repo.path)
+      _ = try await Commands.simple(arguments: ["worktree", "add", "-b", branchName, worktreePath, baseBranch], in: repository)
     }
     
     // Reload worktrees
     await loadReposAndWorktrees()
+
+    let trackedBranch = detached ? "detached" : "feature/\(safeName)"
+    trackWorktree(
+      path: worktreePath,
+      branch: trackedBranch,
+      repo: repo,
+      source: "manual",
+      purpose: description
+    )
     
     // Return the newly created worktree
-    return worktrees.first { $0.path == worktreePath } ?? WorktreeInfo(
+    return worktrees.first { $0.path == worktreePath } ?? Git.Worktree(
       path: worktreePath,
+      head: "HEAD",
       branch: detached ? nil : "feature/\(safeName)",
-      commit: "HEAD",
-      isMain: false,
-      isDetached: detached,
-      repoName: repo.name,
-      workspaceName: selectedWorkspace?.name ?? ""
+      isDetached: detached
     )
   }
   
@@ -379,81 +346,102 @@ public final class WorkspaceDashboardService {
   public func createWorktreeForPR(
     for repo: WorkspaceRepo,
     prNumber: Int
-  ) async throws -> WorktreeInfo {
+  ) async throws -> Git.Worktree {
     let worktreePath = "\(worktreeRoot)/\(repo.name)-pr-\(prNumber)"
+    let repository = Model.Repository(name: repo.name, path: repo.path)
     
     // Fetch PR branch info using gh CLI
     let prInfo = try await runCommand("gh", args: ["pr", "view", "\(prNumber)", "--json", "headRefName", "-q", ".headRefName"], in: repo.path)
     let branch = prInfo.trimmingCharacters(in: .whitespacesAndNewlines)
     
     // Fetch the branch
-    try await runGit(["fetch", "origin", "\(branch):\(branch)"], in: repo.path)
+    _ = try await Commands.simple(arguments: ["fetch", "origin", "\(branch):\(branch)"], in: repository)
     
     // Remove existing if present
     if FileManager.default.fileExists(atPath: worktreePath) {
-      try await runGit(["worktree", "remove", "--force", worktreePath], in: repo.path)
+      _ = try await Commands.simple(arguments: ["worktree", "remove", "--force", worktreePath], in: repository)
     }
     
     // Create worktree on that branch
-    try await runGit(["worktree", "add", worktreePath, branch], in: repo.path)
+    _ = try await Commands.simple(arguments: ["worktree", "add", worktreePath, branch], in: repository)
     
     // Reload worktrees
     await loadReposAndWorktrees()
-    
-    return worktrees.first { $0.path == worktreePath } ?? WorktreeInfo(
+
+    trackWorktree(
       path: worktreePath,
       branch: branch,
-      commit: "HEAD",
-      isMain: false,
-      isDetached: false,
-      repoName: repo.name,
-      workspaceName: selectedWorkspace?.name ?? ""
+      repo: repo,
+      source: "pr-review",
+      purpose: "PR #\(prNumber)",
+      linkedPRNumber: prNumber,
+      linkedPRRepo: repo.name
+    )
+    
+    return worktrees.first { $0.path == worktreePath } ?? Git.Worktree(
+      path: worktreePath,
+      head: "HEAD",
+      branch: branch,
+      isDetached: false
     )
   }
   
   /// Remove a worktree
-  public func removeWorktree(_ worktree: WorktreeInfo) async throws {
+  public func removeWorktree(_ worktree: Git.Worktree) async throws {
     guard !worktree.isMain else {
       throw WorktreeError.cannotRemoveMain
     }
     
     // Find the repo this worktree belongs to
-    guard let repo = repos.first(where: { $0.name == worktree.repoName }) else {
-      throw WorktreeError.repoNotFound
+    guard let repoName = repoName(for: worktree), let repo = repos.first(where: { $0.name == repoName }) else {
+      throw WorktreeError.repositoryNotFound(worktree.path)
     }
+
+    let repository = Model.Repository(name: repo.name, path: repo.path)
     
-    try await runGit(["worktree", "remove", "--force", worktree.path], in: repo.path)
+    _ = try await Commands.simple(arguments: ["worktree", "remove", "--force", worktree.path], in: repository)
     
     // Prune
-    try await runGit(["worktree", "prune"], in: repo.path)
+    _ = try await Commands.simple(arguments: ["worktree", "prune"], in: repository)
     
     // Reload
     await loadReposAndWorktrees()
+    dataService?.removeTrackedWorktree(localPath: worktree.path)
   }
   
   /// Check if worktree has uncommitted changes
-  public func hasUncommittedChanges(_ worktree: WorktreeInfo) async -> Bool {
+  public func hasUncommittedChanges(_ worktree: Git.Worktree) async -> Bool {
     do {
-      let output = try await runGit(["status", "--porcelain"], in: worktree.path)
-      return !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      let repository = Model.Repository(
+        name: URL(fileURLWithPath: worktree.path).lastPathComponent,
+        path: worktree.path
+      )
+      let output = try await Commands.simple(arguments: ["status", "--porcelain"], in: repository)
+      let joined = output.joined(separator: "\n")
+      return !joined.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     } catch {
       return false
     }
   }
   
   /// Get status for a worktree
-  public func getWorktreeStatus(_ worktree: WorktreeInfo) async -> WorktreeStatus {
+  public func getWorktreeStatus(_ worktree: Git.Worktree) async -> WorktreeStatus {
     let hasChanges = await hasUncommittedChanges(worktree)
     var changedCount = 0
     var lastMessage: String?
     var lastDate: Date?
     
     do {
-      let statusOutput = try await runGit(["status", "--porcelain"], in: worktree.path)
-      changedCount = statusOutput.components(separatedBy: .newlines).filter { !$0.isEmpty }.count
+      let repository = Model.Repository(
+        name: URL(fileURLWithPath: worktree.path).lastPathComponent,
+        path: worktree.path
+      )
+      let statusOutput = try await Commands.simple(arguments: ["status", "--porcelain"], in: repository)
+      changedCount = statusOutput.filter { !$0.isEmpty }.count
       
-      let logOutput = try await runGit(["log", "-1", "--format=%s|%aI"], in: worktree.path)
-      let parts = logOutput.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "|")
+      let logOutput = try await Commands.simple(arguments: ["log", "-1", "--format=%s|%aI"], in: repository)
+      let joined = logOutput.joined(separator: "\n")
+      let parts = joined.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "|")
       if parts.count >= 2 {
         lastMessage = parts[0]
         let formatter = ISO8601DateFormatter()
@@ -475,12 +463,12 @@ public final class WorkspaceDashboardService {
   // MARK: - VS Code Integration
   
   /// Open worktree in VS Code
-  public func openInVSCode(_ worktree: WorktreeInfo) async throws {
+  public func openInVSCode(_ worktree: Git.Worktree) async throws {
     try await VSCodeService.shared.open(paths: vscodePaths(for: worktree), newWindow: true)
   }
   
   /// Open worktree in VS Code and copy prompt to clipboard
-  public func openInVSCodeWithPrompt(_ worktree: WorktreeInfo, prompt: String) async throws {
+  public func openInVSCodeWithPrompt(_ worktree: Git.Worktree, prompt: String) async throws {
     // Copy prompt to clipboard
     let pasteboard = NSPasteboard.general
     pasteboard.clearContents()
@@ -490,7 +478,7 @@ public final class WorkspaceDashboardService {
     try await VSCodeService.shared.open(paths: vscodePaths(for: worktree), newWindow: true)
   }
   
-  private func vscodePaths(for worktree: WorktreeInfo) -> [String] {
+  private func vscodePaths(for worktree: Git.Worktree) -> [String] {
     let fm = FileManager.default
     var paths: [String] = []
     if fm.fileExists(atPath: worktree.path) {
@@ -509,11 +497,36 @@ public final class WorkspaceDashboardService {
     return paths.isEmpty ? [worktree.path] : paths
   }
   
-  private func workspaceForWorktree(_ worktree: WorktreeInfo) -> Workspace? {
-    if let workspace = selectedWorkspace, workspace.name == worktree.workspaceName {
-      return workspace
+  private func workspaceForWorktree(_ worktree: Git.Worktree) -> Workspace? {
+    if let selectedWorkspace {
+      return selectedWorkspace
     }
-    return workspaces.first { $0.name == worktree.workspaceName }
+    if let workspaceName = workspaceName(for: worktree) {
+      return workspaces.first { $0.name == workspaceName }
+    }
+    return nil
+  }
+
+  private func trackWorktree(
+    path: String,
+    branch: String,
+    repo: WorkspaceRepo,
+    source: String,
+    purpose: String? = nil,
+    linkedPRNumber: Int? = nil,
+    linkedPRRepo: String? = nil
+  ) {
+    guard let dataService else { return }
+    let repositoryId = dataService.getRepositoryId(forLocalPath: repo.path) ?? UUID()
+    _ = dataService.upsertTrackedWorktree(
+      repositoryId: repositoryId,
+      localPath: path,
+      branch: branch,
+      source: source,
+      purpose: purpose,
+      linkedPRNumber: linkedPRNumber,
+      linkedPRRepo: linkedPRRepo
+    )
   }
   
   // MARK: - Persistence
@@ -533,14 +546,6 @@ public final class WorkspaceDashboardService {
   }
   
   // MARK: - Git Helpers
-  
-  @discardableResult
-  private func runGit(_ args: [String], in directory: String) async throws -> String {
-    let repoURL = URL(fileURLWithPath: directory)
-    let repository = Model.Repository(name: repoURL.lastPathComponent, path: directory)
-    let lines = try await Commands.simple(arguments: args, in: repository)
-    return lines.joined(separator: "\n")
-  }
   
   @discardableResult
   private func runCommand(_ command: String, args: [String], in directory: String) async throws -> String {
@@ -569,25 +574,6 @@ public final class WorkspaceDashboardService {
       } catch {
         continuation.resume(throwing: error)
       }
-    }
-  }
-}
-
-// MARK: - Errors
-
-public enum WorktreeError: LocalizedError {
-  case cannotRemoveMain
-  case repoNotFound
-  case commandFailed(String)
-  
-  public var errorDescription: String? {
-    switch self {
-    case .cannotRemoveMain:
-      return "Cannot remove the main worktree"
-    case .repoNotFound:
-      return "Repository not found"
-    case .commandFailed(let output):
-      return "Command failed: \(output)"
     }
   }
 }
@@ -623,20 +609,18 @@ public struct WorkspaceRepo: Identifiable, Hashable {
   public let isSubmodule: Bool
 }
 
-public struct WorktreeInfo: Identifiable, Hashable {
+public struct Worktree: Identifiable, Hashable {
   public let id = UUID()
   public let path: String
   public let branch: String?
-  public let commit: String
+  public let head: String
   public let isMain: Bool
   public let isDetached: Bool
-  public let repoName: String
-  public let workspaceName: String
   public var displayName: String { "main" }
 }
 
 public struct WorktreeStatus {
-  public let worktree: WorktreeInfo
+  public let worktree: Worktree
   public let hasUncommittedChanges: Bool
   public let changedFileCount: Int
   public let lastCommitDate: Date?
@@ -649,7 +633,7 @@ public final class WorkspaceDashboardService {
   public var workspaces: [Workspace] = []
   public var selectedWorkspace: Workspace?
   public var repos: [WorkspaceRepo] = []
-  public var worktrees: [WorktreeInfo] = []
+  public var worktrees: [Worktree] = []
   public var isLoading = false
   public var worktreeRoot: String { "" }
   
@@ -657,13 +641,13 @@ public final class WorkspaceDashboardService {
   public func loadReposAndWorktrees() async {}
   public func addWorkspaceFromPath(_ path: String) async throws {}
   public func removeWorkspace(_ workspace: Workspace) {}
-  public func getWorktreeStatus(_ worktree: WorktreeInfo) async -> WorktreeStatus {
+  public func getWorktreeStatus(_ worktree: Worktree) async -> WorktreeStatus {
     WorktreeStatus(worktree: worktree, hasUncommittedChanges: false, changedFileCount: 0, lastCommitDate: nil, lastCommitMessage: nil)
   }
-  public func openInVSCode(_ worktree: WorktreeInfo) async throws {}
-  public func removeWorktree(_ worktree: WorktreeInfo) async throws {}
-  public func createWorktree(for repo: WorkspaceRepo, description: String, baseBranch: String, detached: Bool) async throws -> WorktreeInfo {
-    WorktreeInfo(path: "", branch: nil, commit: "", isMain: false, isDetached: true, repoName: "", workspaceName: "")
+  public func openInVSCode(_ worktree: Worktree) async throws {}
+  public func removeWorktree(_ worktree: Worktree) async throws {}
+  public func createWorktree(for repo: WorkspaceRepo, description: String, baseBranch: String, detached: Bool) async throws -> Worktree {
+    Worktree(path: "", branch: nil, head: "", isMain: false, isDetached: true)
   }
 }
 

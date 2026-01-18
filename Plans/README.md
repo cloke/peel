@@ -1,23 +1,27 @@
-# Kitchen Sync - Project Plans
+# Peel - Project Plans
 
-Plans are long-term, team-shared documents. Personal session notes live in a local Sessions/ folder (not committed).
+**Updated:** January 18, 2026
 
-## Status Overview
+---
+
+## Active Plans
 
 | Plan | Status | Description |
 |------|--------|-------------|
-| [SWIFTUI_MODERNIZATION_PLAN](SWIFTUI_MODERNIZATION_PLAN.md) | ✅ Complete | Swift 6 / SwiftUI 6 migration |
-| [UX_MODERNIZATION_PLAN](UX_MODERNIZATION_PLAN.md) | ✅ Complete | UI/UX improvements |
-| [SWIFTDATA_PLAN](SWIFTDATA_PLAN.md) | ✅ Complete | SwiftData + iCloud sync |
-| [WORKTREE_FEATURE_PLAN](WORKTREE_FEATURE_PLAN.md) | ✅ Complete | Git worktrees + PR review |
-| [AGENT_ORCHESTRATION_PLAN](AGENT_ORCHESTRATION_PLAN.md) | 🟡 In Progress | AI agent management |
-| [apple-agent-big-ideas](apple-agent-big-ideas.md) | 📋 Vision | Hardware-maximizing agent features |
+| [CONSOLIDATION_PLAN](CONSOLIDATION_PLAN.md) | 🟡 Ready | Code deduplication, unified worktrees |
+| [AGENT_ORCHESTRATION_PLAN](AGENT_ORCHESTRATION_PLAN.md) | 🟡 In Progress | AI agent management with CLI tools |
+| [PARALLEL_AGENTS_PLAN](PARALLEL_AGENTS_PLAN.md) | 📋 Future | Multiple agents + merge workflow |
+| [VM_ISOLATION_PLAN](VM_ISOLATION_PLAN.md) | 📋 Future | Linux VM sandbox for agents |
+| [apple-agent-big-ideas](apple-agent-big-ideas.md) | 📋 Vision | Hardware-maximizing features |
+| [CODE_AUDIT_INDEX](CODE_AUDIT_INDEX.md) | 📝 Reference | File-by-file audit tracker |
 
-## Phased Roadmap
+---
+
+## Roadmap
 
 ### Phase 1: TestFlight Ready (Current)
-- [ ] Core Git/GitHub/Homebrew polished
-- [ ] Workspaces tab working
+- [ ] Code consolidation (worktree unification)
+- [ ] Basic agent orchestration
 - [ ] iOS feature parity
 
 ### Phase 2: Local AI Foundation
@@ -25,31 +29,23 @@ Plans are long-term, team-shared documents. Personal session notes live in a loc
 - [ ] Basic MLX integration
 - [ ] PII scrubber tool
 
-### Phase 3: Multimodal & Feedback
+### Phase 3: Advanced Agents
+- [ ] Parallel agents with worktrees
+- [ ] Merge agent for combining work
 - [ ] Vision-guided agents
-- [ ] Voice commands
-- [ ] Distributed Actors
 
 ### Phase 4: Full Isolation
-- [ ] Per-task micro-VMs
+- [ ] Per-task Linux VMs
 - [ ] GPU shared cache
 - [ ] ANE micro-services
 
-## Completed Work (January 2026)
-
-### Core Modernization
-- Migrated all packages to @Observable (removed Combine)
-- Fixed navigation with NavigationStack
-- Removed all manual DispatchQueue threading
-
-### New Features
-- **PR → Worktree Integration** - Review PRs locally in VS Code
-- **GitHub Favorites** - Star repos, synced via iCloud
-- **Recent PRs** - Track viewed PRs
-- **Archive Filtering** - Hide archived repos by default
-- **iCloud Sync** - SwiftData with CloudKit
-
 ---
 
-See [MODERNIZATION_COMPLETE.md](MODERNIZATION_COMPLETE.md) for detailed history.
-See [apple-agent-big-ideas.md](apple-agent-big-ideas.md) for the full vision.
+## Completed (Archived)
+
+All completed plans are in [Archive/](Archive/):
+- SwiftUI Modernization (Swift 6, @Observable)
+- SwiftData + iCloud sync
+- UX improvements
+- Git worktree feature
+- PR review locally

@@ -38,33 +38,6 @@ public final class WorktreeService {
     }
   }
   
-  /// Error types for worktree operations
-  public enum WorktreeError: LocalizedError {
-    case repositoryNotFound(String)
-    case worktreeCreationFailed(String)
-    case worktreeRemovalFailed(String)
-    case worktreeNotFound(UUID)
-    case branchCreationFailed(String)
-    case gitNotAvailable
-    
-    public var errorDescription: String? {
-      switch self {
-      case .repositoryNotFound(let path):
-        return "Repository not found at: \(path)"
-      case .worktreeCreationFailed(let msg):
-        return "Failed to create worktree: \(msg)"
-      case .worktreeRemovalFailed(let msg):
-        return "Failed to remove worktree: \(msg)"
-      case .worktreeNotFound(let id):
-        return "Worktree not found: \(id)"
-      case .branchCreationFailed(let msg):
-        return "Failed to create branch: \(msg)"
-      case .gitNotAvailable:
-        return "Git is not available"
-      }
-    }
-  }
-  
   // MARK: - Properties
   
   /// Currently active worktrees managed by this service
