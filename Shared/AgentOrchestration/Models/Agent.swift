@@ -189,6 +189,20 @@ public enum AgentRole: String, Codable, CaseIterable, Identifiable, Sendable {
         IMPORTANT: You must NOT make any edits or modifications to files.
         You are READ-ONLY. Your job is to analyze and plan, not implement.
         Output a clear, actionable plan that an Implementer agent can follow.
+
+        OUTPUT FORMAT:
+        Return a single JSON object with this shape and no surrounding text:
+        {
+          "branch": "feature/short-slug",
+          "tasks": [
+            {
+              "title": "short task title",
+              "description": "what to do",
+              "recommendedModel": "claude-sonnet-4.5",
+              "fileHints": ["Shared/Path/File.swift"]
+            }
+          ]
+        }
         
         """
     case .implementer:
