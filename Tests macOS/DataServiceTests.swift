@@ -27,10 +27,13 @@ final class DataServiceTests: XCTestCase {
   func testMCPRunPersistence() async throws {
     // Record an MCP run
     let record = dataService.recordMCPRun(
+      chainId: "chain-123",
       templateId: "test-id",
       templateName: "test-template",
       prompt: "test prompt",
       workingDirectory: "/tmp/test",
+      implementerBranches: ["branch-a", "branch-b"],
+      implementerWorkspacePaths: ["/tmp/a", "/tmp/b"],
       success: true,
       errorMessage: nil,
       mergeConflictsCount: 0,
@@ -43,6 +46,9 @@ final class DataServiceTests: XCTestCase {
     XCTAssertEqual(record.templateName, "test-template")
     XCTAssertEqual(record.prompt, "test prompt")
     XCTAssertEqual(record.workingDirectory, "/tmp/test")
+    XCTAssertEqual(record.chainId, "chain-123")
+    XCTAssertEqual(record.implementerBranches, "branch-a\nbranch-b")
+    XCTAssertEqual(record.implementerWorkspacePaths, "/tmp/a\n/tmp/b")
     XCTAssertTrue(record.success)
     XCTAssertNil(record.errorMessage)
     XCTAssertEqual(record.mergeConflictsCount, 0)

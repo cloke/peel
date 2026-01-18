@@ -266,6 +266,12 @@ public final class AgentChainRunner {
     public let mergeConflicts: [String]
     public let errorMessage: String?
   }
+  public struct MergeSummary: Sendable {
+    public let chainId: UUID
+    public let chainName: String
+    public let mergeConflicts: [String]
+    public let errorMessage: String?
+  }
 
   private let agentManager: AgentManager
   private let cliService: CLIService
@@ -317,13 +323,92 @@ public final class AgentChainRunner {
     )
   }
 
+  public func mergeImplementerWorkspaces(for chain: AgentChain) async -> MergeSummary {
+    let implementerIndices = chain.agents.indices.filter { chain.agents[$0].role == .implementer }
+    guard implementerIndices.count > 1 else {
+      return MergeSummary(
+        chainId: chain.id,
+        chainName: chain.name,
+        mergeConflicts: [],
+        errorMessage: "Need at least two implementers to merge."
+      )
+    }
+
+    guard let firstImplementer = implementerIndices.first,
+          let lastImplementer = implementerIndices.last else {
+      return MergeSummary(
+        chainId: chain.id,
+        chainName: chain.name,
+        mergeConflicts: [],
+        errorMessage: "No implementers found to merge."
+      )
+    }
+
+    let hasGaps = (firstImplementer...lastImplementer).contains { index in
+      chain.agents[index].role != .implementer
+    }
+    guard !hasGaps else {
+      return MergeSummary(
+        chainId: chain.id,
+        chainName: chain.name,
+        mergeConflicts: [],
+        errorMessage: "Implementers are not contiguous; cannot merge partial ranges."
+      )
+    }
+
+    let workspaces = implementerIndices.compactMap { chain.agents[$0].workspace }
+    guard !workspaces.isEmpty else {
+      return MergeSummary(
+        chainId: chain.id,
+        chainName: chain.name,
+        mergeConflicts: [],
+        errorMessage: "No implementer workspaces available to merge. Run the chain first."
+      )
+    }
+
+    chain.addStatusMessage("Merging implementer branches...", type: .progress)
+    do {
+      let conflicts = try await mergeImplementerBranches(
+        chain: chain,
+        indices: Array(firstImplementer...lastImplementer)
+      )
+      if conflicts.isEmpty {
+        chain.addStatusMessage("Merge completed", type: .complete)
+        return MergeSummary(
+          chainId: chain.id,
+          chainName: chain.name,
+          mergeConflicts: [],
+          errorMessage: nil
+        )
+      } else {
+        chain.addStatusMessage("Merge conflicts detected", type: .error)
+        return MergeSummary(
+          chainId: chain.id,
+          chainName: chain.name,
+          mergeConflicts: conflicts,
+          errorMessage: "Merge conflicts detected."
+        )
+      }
+    } catch {
+      chain.addStatusMessage("Error: \(error.localizedDescription)", type: .error)
+      return MergeSummary(
+        chainId: chain.id,
+        chainName: chain.name,
+        mergeConflicts: [],
+        errorMessage: error.localizedDescription
+      )
+    }
+  }
+
   private func runAgentsSequentially(chain: AgentChain, prompt: String) async throws {
     for (index, agent) in chain.agents.enumerated() {
       chain.state = .running(agentIndex: index)
       chain.currentAgentStartTime = Date()
+      agent.updateState(.working)
       chain.addStatusMessage("Starting \(agent.name) (\(agent.model.shortName))...", type: .progress)
       let result = try await runSingleAgent(agent, at: index, chain: chain, prompt: prompt)
       chain.results.append(result)
+      agent.updateState(.complete)
       chain.addStatusMessage("\(agent.name) completed", type: .complete)
     }
   }
@@ -358,9 +443,11 @@ public final class AgentChainRunner {
         let agent = chain.agents[index]
         chain.state = .running(agentIndex: index)
         chain.currentAgentStartTime = Date()
+        agent.updateState(.working)
         chain.addStatusMessage("Starting \(agent.name) (\(agent.model.shortName))...", type: .progress)
         let result = try await runSingleAgent(agent, at: index, chain: chain, prompt: prompt)
         chain.results.append(result)
+        agent.updateState(.complete)
         chain.addStatusMessage("\(agent.name) completed", type: .complete)
       }
     }
@@ -396,9 +483,11 @@ public final class AgentChainRunner {
         let agent = chain.agents[index]
         chain.state = .running(agentIndex: index)
         chain.currentAgentStartTime = Date()
+        agent.updateState(.working)
         chain.addStatusMessage("Starting \(agent.name) (\(agent.model.shortName))...", type: .progress)
         let result = try await runSingleAgent(agent, at: index, chain: chain, prompt: prompt)
         chain.results.append(result)
+        agent.updateState(.complete)
         chain.addStatusMessage("\(agent.name) completed", type: .complete)
       }
     }
@@ -437,6 +526,12 @@ public final class AgentChainRunner {
       agent.workingDirectory = workspace.path.path
     }
 
+    // Mark all implementers as working
+    for index in indices {
+      let agent = chain.agents[index]
+      agent.updateState(.working)
+    }
+    
     var results: [Int: AgentChainResult] = [:]
     try await withThrowingTaskGroup(of: (Int, AgentChainResult).self) { group in
       for index in indices {
@@ -449,6 +544,9 @@ public final class AgentChainRunner {
             prompt: prompt,
             contextOverride: context
           )
+          await MainActor.run {
+            agent.updateState(.complete)
+          }
           return (index, result)
         }
       }
@@ -578,20 +676,24 @@ public final class AgentChainRunner {
       let originalPrompt = currentPrompt
       currentPrompt = feedbackPrompt
 
+      implementer.updateState(.working)
       let implementerResult = try await runSingleAgent(
         implementer,
         at: implementerIndex,
         chain: chain,
         prompt: currentPrompt
       )
+      implementer.updateState(.complete)
       chain.results.append(implementerResult)
 
+      reviewer.updateState(.working)
       let reviewerResult = try await runSingleAgent(
         reviewer,
         at: reviewerIndex,
         chain: chain,
         prompt: currentPrompt
       )
+      reviewer.updateState(.complete)
       chain.results.append(reviewerResult)
 
       currentPrompt = originalPrompt
@@ -992,6 +1094,9 @@ public final class MCPServerService {
     case "chains.run":
       return await handleChainRun(id: id, arguments: arguments)
 
+    case "chains.merge":
+      return await handleChainMerge(id: id, arguments: arguments)
+
     case "server.stop":
       stop()
       return (200, makeRPCResult(id: id, result: ["status": "stopped"]))
@@ -1038,11 +1143,24 @@ public final class MCPServerService {
 
     let summary = await chainRunner.runChain(chain, prompt: prompt)
 
+    let implementerWorkspaces = chain.agents
+      .filter { $0.role == .implementer }
+      .compactMap { $0.workspace }
+    let implementerBranches = implementerWorkspaces
+      .map { $0.branch }
+      .filter { !$0.isEmpty }
+    let implementerPaths = implementerWorkspaces
+      .map { $0.path.path }
+      .filter { !$0.isEmpty }
+
     dataService?.recordMCPRun(
+      chainId: chain.id.uuidString,
       templateId: template.id.uuidString,
       templateName: template.name,
       prompt: prompt,
       workingDirectory: workingDirectory,
+      implementerBranches: implementerBranches,
+      implementerWorkspacePaths: implementerPaths,
       success: summary.errorMessage == nil,
       errorMessage: summary.errorMessage,
       mergeConflictsCount: summary.mergeConflicts.count,
@@ -1062,6 +1180,92 @@ public final class MCPServerService {
     ]
 
     return (200, makeRPCResult(id: id, result: result))
+  }
+
+  private func handleChainMerge(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let chainId = arguments["chainId"] as? String,
+          let uuid = UUID(uuidString: chainId) else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing or invalid chainId"))
+    }
+
+    let summary: AgentChainRunner.MergeSummary
+    if let chain = agentManager.chains.first(where: { $0.id == uuid }) {
+      summary = await chainRunner.mergeImplementerWorkspaces(for: chain)
+    } else if let dataService,
+              let record = dataService.getMCPRun(forChainId: chainId),
+              let workingDirectory = record.workingDirectory,
+              !workingDirectory.isEmpty {
+      let branches = record.implementerBranches
+        .split(separator: "\n")
+        .map { String($0) }
+        .filter { !$0.isEmpty }
+      let mergeResult = await mergeBranches(
+        workingDirectory: workingDirectory,
+        branches: branches
+      )
+      summary = AgentChainRunner.MergeSummary(
+        chainId: uuid,
+        chainName: record.templateName,
+        mergeConflicts: mergeResult.conflicts,
+        errorMessage: mergeResult.errorMessage
+      )
+    } else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Chain not found"))
+    }
+
+    let result: [String: Any] = [
+      "chain": [
+        "id": summary.chainId.uuidString,
+        "name": summary.chainName
+      ],
+      "success": summary.errorMessage == nil,
+      "errorMessage": summary.errorMessage as Any,
+      "mergeConflicts": summary.mergeConflicts
+    ]
+
+    return (200, makeRPCResult(id: id, result: result))
+  }
+
+  private func mergeBranches(
+    workingDirectory: String,
+    branches: [String]
+  ) async -> (conflicts: [String], errorMessage: String?) {
+    guard !branches.isEmpty else {
+      return ([], "No implementer branches to merge.")
+    }
+
+    let repoURL = URL(fileURLWithPath: workingDirectory)
+    let repository = Model.Repository(name: repoURL.lastPathComponent, path: workingDirectory)
+
+    do {
+      let statusLines = try await Commands.simple(arguments: ["status", "--porcelain"], in: repository)
+      if statusLines.contains(where: { !$0.isEmpty }) {
+        return ([], "Working tree has uncommitted changes. Clean it before merging.")
+      }
+    } catch {
+      return ([], error.localizedDescription)
+    }
+
+    var conflicts: [String] = []
+    for branch in branches {
+      do {
+        _ = try await Commands.simple(arguments: ["merge", "--no-ff", branch], in: repository)
+      } catch {
+        _ = try? await Commands.simple(arguments: ["merge", "--abort"], in: repository)
+        let conflictLines = try? await Commands.simple(
+          arguments: ["diff", "--name-only", "--diff-filter=U"],
+          in: repository
+        )
+        conflicts = conflictLines?.filter { !$0.isEmpty } ?? []
+        break
+      }
+    }
+
+    if !conflicts.isEmpty {
+      return (conflicts, "Merge conflicts detected.")
+    }
+
+    return ([], nil)
   }
 
   public func cleanupAgentWorkspaces() async {
@@ -1154,6 +1358,17 @@ public final class MCPServerService {
             "enableReviewLoop": ["type": "boolean"]
           ],
           "required": ["prompt"]
+        ]
+      ],
+      [
+        "name": "chains.merge",
+        "description": "Merge implementer workspaces for an existing chain",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "chainId": ["type": "string"]
+          ],
+          "required": ["chainId"]
         ]
       ],
       [

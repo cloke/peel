@@ -186,10 +186,13 @@ final class DeviceSettings {
 @Model
 final class MCPRunRecord {
   var id: UUID = UUID()
+  var chainId: String = ""
   var templateId: String = ""
   var templateName: String = ""
   var prompt: String = ""
   var workingDirectory: String?
+  var implementerBranches: String = ""
+  var implementerWorkspacePaths: String = ""
   var success: Bool = false
   var errorMessage: String?
   var mergeConflictsCount: Int = 0
@@ -197,10 +200,13 @@ final class MCPRunRecord {
   var createdAt: Date = Date()
 
   init(
+    chainId: String = "",
     templateId: String = "",
     templateName: String,
     prompt: String,
     workingDirectory: String? = nil,
+    implementerBranches: String = "",
+    implementerWorkspacePaths: String = "",
     success: Bool,
     errorMessage: String? = nil,
     mergeConflictsCount: Int = 0,
@@ -208,10 +214,13 @@ final class MCPRunRecord {
     createdAt: Date = Date()
   ) {
     self.id = UUID()
+    self.chainId = chainId
     self.templateId = templateId
     self.templateName = templateName
     self.prompt = prompt
     self.workingDirectory = workingDirectory
+    self.implementerBranches = implementerBranches
+    self.implementerWorkspacePaths = implementerWorkspacePaths
     self.success = success
     self.errorMessage = errorMessage
     self.mergeConflictsCount = mergeConflictsCount
