@@ -1597,6 +1597,7 @@ struct ChainDetailView: View {
   @State private var prompt = ""
   @State private var isRunning = false
   @State private var errorMessage: String?
+  @State private var mergeConflicts: [String] = []
   @State private var showingSaveTemplate = false
   
   /// Calculate total duration from run start time
@@ -1843,6 +1844,33 @@ struct ChainDetailView: View {
               .foregroundStyle(.red)
           }
         }
+
+        if !mergeConflicts.isEmpty {
+          GroupBox {
+            VStack(alignment: .leading, spacing: 8) {
+              Label("Merge Conflicts", systemImage: "exclamationmark.triangle")
+                .font(.headline)
+                .foregroundStyle(.orange)
+              Text("Resolve these files, then re-run the reviewer.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              ForEach(mergeConflicts, id: \.self) { path in
+                Text(path)
+                  .font(.caption.monospaced())
+                  .foregroundStyle(.secondary)
+              }
+
+              #if os(macOS)
+              if let path = chain.workingDirectory {
+                Button("Open Repo in Finder") {
+                  NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
+                }
+                .buttonStyle(.bordered)
+              }
+              #endif
+            }
+          }
+        }
         
         // Results
         if !chain.results.isEmpty {
@@ -1979,6 +2007,7 @@ struct ChainDetailView: View {
     defer { isRunning = false }  // Always reset, even on error
     
     errorMessage = nil
+    mergeConflicts = []
     chain.reset()
     chain.clearLiveStatus()
     chain.runStartTime = Date()
@@ -2073,6 +2102,18 @@ struct ChainDetailView: View {
       }
     }
 
+    chain.addStatusMessage("Merging implementer branches...", type: .progress)
+    let conflicts = try await mergeImplementerBranches(indices: Array(firstImplementer...lastImplementer))
+    if !conflicts.isEmpty {
+      mergeConflicts = conflicts
+      throw NSError(
+        domain: "AgentChain",
+        code: 2,
+        userInfo: [NSLocalizedDescriptionKey: "Merge conflicts detected. Resolve conflicts and re-run the reviewer."]
+      )
+    }
+    chain.addStatusMessage("Merge completed", type: .complete)
+
     // Run post-implementer agents sequentially
     if lastImplementer + 1 < chain.agents.count {
       for index in (lastImplementer + 1)..<chain.agents.count {
@@ -2143,6 +2184,43 @@ struct ChainDetailView: View {
       results[index] = result
     }
     return results
+#endif
+  }
+
+  private func mergeImplementerBranches(indices: [Int]) async throws -> [String] {
+#if os(macOS)
+    guard let workingDirectory = chain.workingDirectory else {
+      return []
+    }
+
+    let repoURL = URL(fileURLWithPath: workingDirectory)
+    let repository = Model.Repository(name: repoURL.lastPathComponent, path: workingDirectory)
+
+    let statusLines = try await Commands.simple(arguments: ["status", "--porcelain"], in: repository)
+    if statusLines.contains(where: { !$0.isEmpty }) {
+      throw NSError(
+        domain: "AgentChain",
+        code: 3,
+        userInfo: [NSLocalizedDescriptionKey: "Working tree has uncommitted changes. Clean it before merging."]
+      )
+    }
+
+    var conflicts: [String] = []
+    for index in indices {
+      guard let workspace = chain.agents[index].workspace else { continue }
+      do {
+        _ = try await Commands.simple(arguments: ["merge", "--no-ff", workspace.branch], in: repository)
+      } catch {
+        _ = try? await Commands.simple(arguments: ["merge", "--abort"], in: repository)
+        let conflictLines = try? await Commands.simple(arguments: ["diff", "--name-only", "--diff-filter=U"], in: repository)
+        conflicts = conflictLines?.filter { !$0.isEmpty } ?? []
+        break
+      }
+    }
+
+    return conflicts
+#else
+    return []
 #endif
   }
   

@@ -53,7 +53,7 @@
 **Timeline:** 2-3 weeks
 
 - [x] TaskGroup-based parallel execution ([#5](https://github.com/cloke/peel/issues/5))
-- [ ] Merge Agent implementation ([#6](https://github.com/cloke/peel/issues/6))
+- [x] Merge Agent implementation ([#6](https://github.com/cloke/peel/issues/6))
 - [x] Planner structured output format ([#7](https://github.com/cloke/peel/issues/7))
 
 ### Phase 2: Local AI Foundation
