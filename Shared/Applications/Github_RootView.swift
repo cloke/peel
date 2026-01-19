@@ -16,6 +16,8 @@ struct Github_RootView: View {
   @Environment(MCPServerService.self) private var mcpServer
 #endif
   @Environment(\.modelContext) private var modelContext
+  @Query(sort: \GitHubFavorite.addedAt, order: .reverse) private var favoriteRecords: [GitHubFavorite]
+  @Query(sort: \RecentPullRequest.viewedAt, order: .reverse) private var recentPRRecords: [RecentPullRequest]
   @State public var viewModel = Github.ViewModel()
   @State private var dataProvider: GitHubDataProvider?
   
@@ -25,6 +27,14 @@ struct Github_RootView: View {
   @State private var isLoading = false
   @State private var errorMessage: String?
   @AppStorage("github-show-archived") private var showArchivedRepos = false
+  @AppStorage("github.selectedFavoriteKey") private var selectedFavoriteKey: String = ""
+  @AppStorage("github.selectedRecentPRKey") private var selectedRecentPRKey: String = ""
+  @State private var navigationPath = NavigationPath()
+
+  private enum GitHubAutomationDestination: Hashable {
+    case favorite(String)
+    case recentPR(String)
+  }
 
   private func loadProfile() async {
     hasToken = await Github.hasToken
@@ -56,10 +66,11 @@ struct Github_RootView: View {
     NavigationSplitView(columnVisibility: $columnVisibility) {
       List {
         // Favorites section
-        if let provider = dataProvider, !provider.getFavorites().isEmpty {
+        if !favoriteItems.isEmpty {
           Section("Favorites") {
-            ForEach(provider.getFavorites()) { favorite in
-              NavigationLink(destination: FavoriteRepositoryDestination(favorite: favorite)) {
+            ForEach(favoriteItems) { favorite in
+              let favoriteKey = favoriteAutomationKey(for: favorite)
+              NavigationLink(value: GitHubAutomationDestination.favorite(favoriteKey)) {
                 HStack {
                   Image(systemName: "star.fill")
                     .foregroundStyle(.yellow)
@@ -77,10 +88,11 @@ struct Github_RootView: View {
         }
         
         // Recent PRs section
-        if let provider = dataProvider, !provider.getRecentPRs().isEmpty {
+        if !recentPRItems.isEmpty {
           Section("Recent PRs") {
-            ForEach(provider.getRecentPRs().prefix(5)) { recent in
-              NavigationLink(destination: RecentPRDestination(recentPR: recent)) {
+            ForEach(recentPRItems.prefix(5)) { recent in
+              let recentKey = recentPRAutomationKey(for: recent)
+              NavigationLink(value: GitHubAutomationDestination.recentPR(recentKey)) {
                 HStack {
                   Image(systemName: recent.state == "open" ? "circle.fill" : "checkmark.circle.fill")
                     .foregroundStyle(recent.state == "open" ? .green : .purple)
@@ -170,6 +182,8 @@ struct Github_RootView: View {
       }
       .task {
         await loadProfile()
+        persistAutomationTargets()
+        syncAutomationSelection()
       }
 #if os(macOS)
       .onChange(of: mcpServer.lastUIAction?.id) {
@@ -195,16 +209,52 @@ struct Github_RootView: View {
         mcpServer.lastUIAction = nil
       }
 #endif
-    } detail: {
-      Text("Select an organization or repository")
-        .foregroundStyle(.secondary)
-    }
+      } detail: {
+        NavigationStack(path: $navigationPath) {
+          Text("Select an organization or repository")
+            .foregroundStyle(.secondary)
+            .navigationDestination(for: GitHubAutomationDestination.self) { destination in
+              switch destination {
+              case .favorite(let key):
+                if let favorite = favoriteItems.first(where: { favoriteAutomationKey(for: $0) == key }) {
+                  FavoriteRepositoryDestination(favorite: favorite)
+                } else {
+                  Text("Favorite not found")
+                    .foregroundStyle(.secondary)
+                }
+              case .recentPR(let key):
+                if let recent = recentPRItems.first(where: { recentPRAutomationKey(for: $0) == key }) {
+                  RecentPRDestination(recentPR: recent)
+                } else {
+                  Text("PR not found")
+                    .foregroundStyle(.secondary)
+                }
+              }
+            }
+        }
+      }
     .navigationSplitViewStyle(.balanced)
     .environment(viewModel)
     .favoritesProvider(dataProvider)
     .recentPRsProvider(dataProvider)
     .onAppear {
       dataProvider = GitHubDataProvider(modelContext: modelContext)
+      persistAutomationTargets()
+      syncAutomationSelection()
+    }
+    .onChange(of: favoriteRecords) { _, _ in
+      persistAutomationTargets()
+      syncAutomationSelection()
+    }
+    .onChange(of: recentPRRecords) { _, _ in
+      persistAutomationTargets()
+      syncAutomationSelection()
+    }
+    .onChange(of: selectedFavoriteKey) { _, _ in
+      syncAutomationSelection()
+    }
+    .onChange(of: selectedRecentPRKey) { _, _ in
+      syncAutomationSelection()
     }
     .frame(idealHeight: 400)
     .toolbar {
@@ -230,6 +280,63 @@ struct Github_RootView: View {
           Image(systemName: "gear")
         }
       }
+    }
+  }
+
+  private var favoriteItems: [FavoriteRepository] {
+    favoriteRecords.map { record in
+      FavoriteRepository(
+        id: record.githubRepoId,
+        fullName: record.fullName,
+        ownerLogin: record.ownerLogin,
+        repoName: record.repoName,
+        htmlURL: record.htmlURL,
+        addedAt: record.addedAt
+      )
+    }
+  }
+
+  private var recentPRItems: [RecentPRInfo] {
+    recentPRRecords.map { record in
+      RecentPRInfo(
+        id: record.githubPRId,
+        prNumber: record.prNumber,
+        title: record.title,
+        repoFullName: record.repoFullName,
+        state: record.state,
+        htmlURL: record.htmlURL,
+        viewedAt: record.viewedAt
+      )
+    }
+  }
+
+  private func favoriteAutomationKey(for favorite: FavoriteRepository) -> String {
+    let key = favorite.fullName.isEmpty ? "\(favorite.ownerLogin)/\(favorite.repoName)" : favorite.fullName
+    return key
+  }
+
+  private func recentPRAutomationKey(for recent: RecentPRInfo) -> String {
+    "\(recent.repoFullName)#\(recent.prNumber)"
+  }
+
+  private func persistAutomationTargets() {
+    let favoriteKeys = favoriteItems.map { favoriteAutomationKey(for: $0) }
+    let recentPRKeys = recentPRItems.map { recentPRAutomationKey(for: $0) }
+    UserDefaults.standard.set(favoriteKeys, forKey: "github.availableFavoriteKeys")
+    UserDefaults.standard.set(recentPRKeys, forKey: "github.availableRecentPRKeys")
+  }
+
+  private func syncAutomationSelection() {
+    if !selectedFavoriteKey.isEmpty,
+       favoriteItems.contains(where: { favoriteAutomationKey(for: $0) == selectedFavoriteKey }) {
+      navigationPath = NavigationPath()
+      navigationPath.append(GitHubAutomationDestination.favorite(selectedFavoriteKey))
+    } else if !selectedRecentPRKey.isEmpty,
+              recentPRItems.contains(where: { recentPRAutomationKey(for: $0) == selectedRecentPRKey }) {
+      navigationPath = NavigationPath()
+      navigationPath.append(GitHubAutomationDestination.recentPR(selectedRecentPRKey))
+    } else if selectedFavoriteKey.isEmpty && selectedRecentPRKey.isEmpty {
+      navigationPath = NavigationPath()
     }
   }
 }

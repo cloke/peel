@@ -1191,6 +1191,21 @@ public final class MCPServerService {
     }
   }
 
+  public struct ControlDoc: Identifiable {
+    public let controlId: String
+    public let values: [String]
+
+    public var id: String { controlId }
+  }
+
+  public struct ViewControlDoc: Identifiable {
+    public let viewId: String
+    public let title: String
+    public let controls: [ControlDoc]
+
+    public var id: String { viewId }
+  }
+
   public struct UIAction: Identifiable {
     public let id: UUID
     public let controlId: String
@@ -1372,6 +1387,29 @@ public final class MCPServerService {
     ToolCategory.allCases.filter { category in
       toolDefinitions.contains { $0.category == category }
     }
+  }
+
+  public var uiControlDocs: [ViewControlDoc] {
+    var docs = availableViewIds().map { viewId -> ViewControlDoc in
+      let controls = availableControlIds(for: viewId)
+      let values = controlValues(for: viewId)
+      let controlDocs = controls.map { controlId in
+        ControlDoc(controlId: controlId, values: stringValues(values[controlId]))
+      }
+      return ViewControlDoc(viewId: viewId, title: viewTitle(for: viewId), controls: controlDocs)
+    }
+
+    let toolControls = availableToolControlIds().map { controlId in
+      ControlDoc(controlId: controlId, values: [])
+    }
+    if !toolControls.isEmpty {
+      docs.insert(
+        ViewControlDoc(viewId: "tool-shortcuts", title: "Tool Shortcuts", controls: toolControls),
+        at: 0
+      )
+    }
+
+    return docs
   }
 
   public func tools(in category: ToolCategory) -> [ToolDefinition] {
@@ -1851,6 +1889,9 @@ public final class MCPServerService {
     case "state.get":
       return handleStateGet(id: id)
 
+    case "state.readonly":
+      return handleStateGet(id: id)
+
     case "state.list":
       return handleStateList(id: id)
 
@@ -2040,8 +2081,30 @@ public final class MCPServerService {
       recordUIActionRequested(controlId)
       recordUIActionHandled(controlId)
       return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
+    case "workspaces.selectWorktreeName":
+      let nameMap = worktreeNameMapFromDefaults()
+      guard let path = nameMap[value], !path.isEmpty else {
+        return (400, makeRPCError(id: id, code: -32602, message: "Unknown worktree name"))
+      }
+      UserDefaults.standard.set(value, forKey: "workspaces.selectedWorktreeName")
+      UserDefaults.standard.set(path, forKey: "workspaces.selectedWorktreePath")
+      recordUIActionRequested(controlId)
+      recordUIActionHandled(controlId)
+      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value, "path": path]))
     case "git.selectRepo":
       UserDefaults.standard.set(value, forKey: "git.selectedRepoPath")
+      recordUIActionRequested(controlId)
+      recordUIActionHandled(controlId)
+      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
+    case "github.selectFavorite":
+      UserDefaults.standard.set(value, forKey: "github.selectedFavoriteKey")
+      UserDefaults.standard.set("", forKey: "github.selectedRecentPRKey")
+      recordUIActionRequested(controlId)
+      recordUIActionHandled(controlId)
+      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
+    case "github.selectRecentPR":
+      UserDefaults.standard.set(value, forKey: "github.selectedRecentPRKey")
+      UserDefaults.standard.set("", forKey: "github.selectedFavoriteKey")
       recordUIActionRequested(controlId)
       recordUIActionHandled(controlId)
       return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
@@ -2084,9 +2147,15 @@ public final class MCPServerService {
     let workspaceName = UserDefaults.standard.string(forKey: "workspaces.selectedWorkspaceName")
     let repoName = UserDefaults.standard.string(forKey: "workspaces.selectedRepoName")
     let worktreePath = UserDefaults.standard.string(forKey: "workspaces.selectedWorktreePath")
+    let worktreeName = UserDefaults.standard.string(forKey: "workspaces.selectedWorktreeName")
     let workspaceNames = UserDefaults.standard.stringArray(forKey: "workspaces.availableNames")
     let repoNames = UserDefaults.standard.stringArray(forKey: "workspaces.availableRepoNames")
     let worktreePaths = UserDefaults.standard.stringArray(forKey: "workspaces.availableWorktreePaths")
+    let worktreeNames = UserDefaults.standard.stringArray(forKey: "workspaces.availableWorktreeNames")
+    let favoriteKeys = UserDefaults.standard.stringArray(forKey: "github.availableFavoriteKeys")
+    let recentPRKeys = UserDefaults.standard.stringArray(forKey: "github.availableRecentPRKeys")
+    let selectedFavoriteKey = UserDefaults.standard.string(forKey: "github.selectedFavoriteKey")
+    let selectedRecentPRKey = UserDefaults.standard.string(forKey: "github.selectedRecentPRKey")
     let gitRepoPaths = UserDefaults.standard.stringArray(forKey: "git.availableRepoPaths")
     let gitRepoNames = UserDefaults.standard.stringArray(forKey: "git.availableRepoNames")
     let gitSelectedRepo = UserDefaults.standard.string(forKey: "git.selectedRepoPath")
@@ -2096,6 +2165,9 @@ public final class MCPServerService {
     let uniqueWorkspaceNames = dedupeStrings(workspaceNames)
     let uniqueRepoNames = dedupeStrings(repoNames)
     let uniqueWorktreePaths = dedupeStrings(worktreePaths)
+    let uniqueWorktreeNames = dedupeStrings(worktreeNames)
+    let uniqueFavoriteKeys = dedupeStrings(favoriteKeys)
+    let uniqueRecentPRKeys = dedupeStrings(recentPRKeys)
     let recentActions = recentUIActions.prefix(10).map { action in
       [
         "controlId": action.controlId,
@@ -2116,9 +2188,15 @@ public final class MCPServerService {
       "workspacesSelectedWorkspace": workspaceName as Any,
       "workspacesSelectedRepo": repoName as Any,
       "workspacesSelectedWorktree": worktreePath as Any,
+      "workspacesSelectedWorktreeName": worktreeName as Any,
       "workspacesAvailable": uniqueWorkspaceNames as Any,
       "workspacesAvailableRepos": uniqueRepoNames as Any,
       "workspacesAvailableWorktrees": uniqueWorktreePaths as Any,
+      "workspacesAvailableWorktreeNames": uniqueWorktreeNames as Any,
+      "githubAvailableFavorites": uniqueFavoriteKeys as Any,
+      "githubAvailableRecentPRs": uniqueRecentPRKeys as Any,
+      "githubSelectedFavorite": selectedFavoriteKey as Any,
+      "githubSelectedRecentPR": selectedRecentPRKey as Any,
       "gitAvailableRepos": uniqueGitRepoPaths as Any,
       "gitAvailableRepoNames": uniqueGitRepoNames as Any,
       "gitSelectedRepo": gitSelectedRepo as Any,
@@ -2747,7 +2825,7 @@ public final class MCPServerService {
   }
 
   private func defaultToolEnabled(_ tool: ToolDefinition) -> Bool {
-    true
+    !tool.isMutating
   }
 
   private func toolDefinition(named name: String) -> ToolDefinition? {
@@ -2854,6 +2932,16 @@ public final class MCPServerService {
       ToolDefinition(
         name: "state.get",
         description: "Get current app state summary",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .state,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "state.readonly",
+        description: "Background-safe, read-only state snapshot",
         inputSchema: [
           "type": "object",
           "properties": [:]
@@ -3255,6 +3343,24 @@ public final class MCPServerService {
     ["agents", "workspaces", "brew", "git", "github"]
   }
 
+  private func viewTitle(for viewId: String) -> String {
+    switch viewId {
+    case "agents": return "Agents"
+    case "workspaces": return "Workspaces"
+    case "brew": return "Homebrew"
+    case "git": return "Git"
+    case "github": return "GitHub"
+    default: return viewId.capitalized
+    }
+  }
+
+  private func stringValues(_ value: Any?) -> [String] {
+    if let strings = value as? [String] {
+      return strings
+    }
+    return []
+  }
+
   private func availableToolControlIds() -> [String] {
     availableViewIds().map { "tool.\($0)" }
   }
@@ -3272,7 +3378,14 @@ public final class MCPServerService {
         "agents.translationValidation"
       ]
     case "github":
-      return ["github.login", "github.refresh", "github.showArchived", "github.logout"]
+      return [
+        "github.login",
+        "github.refresh",
+        "github.showArchived",
+        "github.logout",
+        "github.selectFavorite",
+        "github.selectRecentPR"
+      ]
     case "brew":
       return ["brew.source", "brew.search"]
     case "workspaces":
@@ -3284,6 +3397,7 @@ public final class MCPServerService {
         "workspaces.selectWorkspace",
         "workspaces.selectRepo",
         "workspaces.selectWorktree",
+        "workspaces.selectWorktreeName",
         "workspaces.openSelectedWorktree",
         "workspaces.removeSelectedWorktree"
       ]
@@ -3296,6 +3410,13 @@ public final class MCPServerService {
 
   private func controlValues(for viewId: String?) -> [String: Any] {
     switch viewId {
+    case "github":
+      let favoriteKeys = UserDefaults.standard.stringArray(forKey: "github.availableFavoriteKeys") ?? []
+      let recentPRKeys = UserDefaults.standard.stringArray(forKey: "github.availableRecentPRKeys") ?? []
+      return [
+        "github.selectFavorite": favoriteKeys,
+        "github.selectRecentPR": recentPRKeys
+      ]
     case "brew":
       return [
         "brew.source": ["Installed", "Available"]
@@ -3304,10 +3425,12 @@ public final class MCPServerService {
       let workspaceNames = UserDefaults.standard.stringArray(forKey: "workspaces.availableNames") ?? []
       let repoNames = UserDefaults.standard.stringArray(forKey: "workspaces.availableRepoNames") ?? []
       let worktreePaths = UserDefaults.standard.stringArray(forKey: "workspaces.availableWorktreePaths") ?? []
+      let worktreeNames = UserDefaults.standard.stringArray(forKey: "workspaces.availableWorktreeNames") ?? []
       return [
         "workspaces.selectWorkspace": workspaceNames,
         "workspaces.selectRepo": repoNames,
-        "workspaces.selectWorktree": worktreePaths
+        "workspaces.selectWorktree": worktreePaths,
+        "workspaces.selectWorktreeName": worktreeNames
       ]
     case "git":
       let repoPaths = UserDefaults.standard.stringArray(forKey: "git.availableRepoPaths") ?? []
@@ -3332,6 +3455,14 @@ public final class MCPServerService {
 
   private func setCurrentToolId(_ toolId: String) {
     UserDefaults.standard.set(toolId, forKey: "current-tool")
+  }
+
+  private func worktreeNameMapFromDefaults() -> [String: String] {
+    guard let data = UserDefaults.standard.data(forKey: "workspaces.availableWorktreeNameMap"),
+          let decoded = try? JSONDecoder().decode([String: String].self, from: data) else {
+      return [:]
+    }
+    return decoded
   }
 }
 
