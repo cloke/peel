@@ -1198,7 +1198,30 @@ public final class MCPServerService {
       return (400, makeRPCError(id: id, code: -32602, message: "Template not found"))
     }
 
-    let chain = agentManager.createChainFromTemplate(template, workingDirectory: workingDirectory)
+    var chainWorkspace: AgentWorkspace?
+    var chainWorkingDirectory = workingDirectory
+    if let workingDirectory {
+      let repoURL = URL(fileURLWithPath: workingDirectory)
+      let repository = Model.Repository(name: repoURL.lastPathComponent, path: workingDirectory)
+      let task = AgentTask(
+        title: "MCP Chain: \(template.name)",
+        prompt: prompt,
+        repositoryPath: workingDirectory
+      )
+
+      do {
+        let workspace = try await agentManager.workspaceManager.createWorkspace(
+          for: repository,
+          task: task
+        )
+        chainWorkspace = workspace
+        chainWorkingDirectory = workspace.path.path
+      } catch {
+        await mcpLog.error(error, context: "Failed to create chain workspace")
+      }
+    }
+
+    let chain = agentManager.createChainFromTemplate(template, workingDirectory: chainWorkingDirectory)
     chain.runSource = .mcp
     if let enableReviewLoop {
       chain.enableReviewLoop = enableReviewLoop
@@ -1207,11 +1230,14 @@ public final class MCPServerService {
     await mcpLog.info("Chain run started", metadata: [
       "runId": runId.uuidString,
       "template": template.name,
-      "workingDirectory": workingDirectory ?? "",
+      "workingDirectory": chainWorkingDirectory ?? "",
       "queued": enqueuedAt == nil ? "false" : "true"
     ])
 
     let summary = await chainRunner.runChain(chain, prompt: prompt, validationConfig: template.validationConfig)
+    if let chainWorkspace {
+      try? await agentManager.workspaceManager.cleanupWorkspace(chainWorkspace, force: true)
+    }
         if let errorMessage = summary.errorMessage {
           await mcpLog.error("Chain run failed", metadata: [
             "runId": runId.uuidString,
