@@ -37,30 +37,31 @@ public struct ActionConclusionView: View {
 struct ActionsView: View {
   public let repository: Github.Repository
   
-  @State private var state: LoadingState = .loading
+  @State private var isLoading = true
   @State private var actions = [Github.Action]()
   
   var body: some View {
     VStack {
-      switch state {
-      case .loading:
+      if isLoading {
         ProgressView()
-      case .loaded:
+      } else if !actions.isEmpty {
         ActionsListView(repository: repository, actions: actions)
-      case .empty:
+      } else {
         Text("No Actions Found")
       }
     }
     .task(id: repository.id) {
+      isLoading = true
+      actions = []
       do {
         for workflow in try await Github.workflows(from: repository) {
           let actions = try await Github.runs(from: workflow, repository: repository)
           self.actions.append(contentsOf: actions)
-          state = actions.count == 0 ? .empty : .loaded
         }
       } catch {
         print(error)
       }
+      isLoading = false
     }
   }
 }

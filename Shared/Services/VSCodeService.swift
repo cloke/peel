@@ -9,6 +9,7 @@ import Foundation
 
 #if os(macOS)
 import AppKit
+import Git
 
 /// Service for integrating with VS Code
 public actor VSCodeService {
@@ -16,23 +17,9 @@ public actor VSCodeService {
   
   private init() {}
   
-  /// Common VS Code executable paths
-  private let possiblePaths = [
-    "/usr/local/bin/code",
-    "/opt/homebrew/bin/code",
-    "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
-    "\(NSHomeDirectory())/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"
-  ]
-  
   /// Find the VS Code executable
   public func findVSCode() -> String? {
-    for path in possiblePaths {
-      if FileManager.default.fileExists(atPath: path) {
-        return path
-      }
-    }
-    // Try using `which` as fallback
-    return nil
+    VSCodeLauncher.findExecutable()
   }
   
   /// Check if VS Code is installed

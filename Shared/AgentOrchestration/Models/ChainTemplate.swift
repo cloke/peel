@@ -242,13 +242,6 @@ extension ChainTemplate {
   
   /// Cost display string
   public var costDisplay: String {
-    let total = estimatedTotalCost
-    if total == 0 {
-      return "Free"
-    } else if total == Double(Int(total)) {
-      return "\(Int(total))× Premium"
-    } else {
-      return String(format: "%.1f× Premium", total)
-    }
+    estimatedTotalCost.premiumCostDisplay
   }
 }

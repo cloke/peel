@@ -76,7 +76,7 @@ public final class SessionTracker {
     
     **Session Started:** \(sessionStartTime.formatted(date: .abbreviated, time: .shortened))
     **Duration:** \(sessionDuration)
-    **Total Premium Requests:** \(totalPremiumUsed)
+    **Total Premium Requests:** \(totalPremiumUsed.premiumMultiplierString())
     **Total Free Requests:** \(totalFreeUsed)
     **Total Chain Runs:** \(chainRunHistory.count)
     
@@ -90,7 +90,7 @@ public final class SessionTracker {
       ## Run \(index + 1): \(record.chainName)
       
       **Time:** \(record.timestamp.formatted(date: .omitted, time: .shortened))
-      **Premium Used:** \(record.totalPremium)
+      **Premium Used:** \(record.totalPremium.premiumMultiplierString())
       
       """
       
@@ -100,7 +100,7 @@ public final class SessionTracker {
         ### \(result.agentName) (\(result.model))
         
         **Duration:** \(result.duration ?? "N/A")
-        **Premium Cost:** \(result.premiumCost)
+        **Premium Cost:** \(result.premiumCost.premiumMultiplierString())
         
         #### Prompt
         ```

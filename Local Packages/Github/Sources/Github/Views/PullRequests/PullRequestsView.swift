@@ -97,7 +97,7 @@ struct PullRequestListView: View {
 
 public struct PullRequestsView: View {
   @State private var pullRequests = [Github.PullRequest]()
-  @State private var state: LoadingState = .loading
+  @State private var isLoading = true
   
   public let organization: Github.User
   public let repository: Github.Repository
@@ -109,22 +109,21 @@ public struct PullRequestsView: View {
   
   public var body: some View {
     VStack {
-      switch state {
-      case .loading:
+      if isLoading {
         ProgressView()
-      case .loaded:
+      } else if !pullRequests.isEmpty {
         PullRequestListView(organization: organization, repository: repository, pullRequests: pullRequests)
-      case .empty:
+      } else {
         Text("No Pull Requests Found")
       }
     }
     .task(id: repository.id) {
-      state = .loading
+      isLoading = true
+      defer { isLoading = false }
       do {
         let results = try await Github.pullRequests(from: repository)
         try Task.checkCancellation()
         pullRequests = results
-        state = results.isEmpty ? .empty : .loaded
       } catch is CancellationError {
         // Ignore cancellations when leaving the tab.
       } catch {
