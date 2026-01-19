@@ -106,16 +106,14 @@ related_docs:
 6. Verification: MCP test plan cases 8–9, plus manual relaunch check
 
 ### Untracked Phase 1C Items
-- [ ] Planner gating: skip implementers when "no work" ([#17](https://github.com/cloke/peel/issues/17))
-- [ ] Show planner prompt in Chain Activity / MCP Run detail ([#18](https://github.com/cloke/peel/issues/18))
-- [ ] Clarify Assign Task behavior ([#19](https://github.com/cloke/peel/issues/19))
+- [x] Planner gating: skip implementers when "no work" ([#17](https://github.com/cloke/peel/issues/17))
+- [x] Show planner prompt in Chain Activity / MCP Run detail ([#18](https://github.com/cloke/peel/issues/18))
+- [x] Clarify Assign Task behavior ([#19](https://github.com/cloke/peel/issues/19))
 - [ ] MCP screenshot capture tool (enable tighter build/run/inspect loop)
 
 **Proposed next targets (Phase 1C):**
-1. [#17](https://github.com/cloke/peel/issues/17) Planner gating — unlocks correctness and saves spend
-2. [#18](https://github.com/cloke/peel/issues/18) Show planner prompt — needed for run traceability
-3. [#19](https://github.com/cloke/peel/issues/19) Clarify Assign Task — UI polish once behavior is settled
-4. MCP screenshot capture tool — optional if we want a tighter automation loop
+1. Verify #16 via MCP test plan cases 8–9
+2. MCP screenshot capture tool — optional if we want a tighter automation loop
 
 ---
 
