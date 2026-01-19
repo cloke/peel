@@ -1431,6 +1431,29 @@ struct MCPRunDetailView: View {
             }
           }
 
+          // Screenshots
+          let screenshotPaths = run.screenshotPaths.split(separator: "\n").map { String($0) }.filter { !$0.isEmpty }
+          if !screenshotPaths.isEmpty {
+            GroupBox("Screenshots") {
+              ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                  ForEach(screenshotPaths, id: \.(self)) { path in
+                    if let url = URL(fileURLWithPath: path) as URL? {
+                      AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                          image.resizable().scaledToFill().frame(width: 120, height: 80).clipped().cornerRadius(6)
+                        default:
+                          Rectangle().fill(Color.secondary).frame(width: 120, height: 80).cornerRadius(6)
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+
           GroupBox("User Prompt") {
             Text(run.prompt)
               .font(.caption)
