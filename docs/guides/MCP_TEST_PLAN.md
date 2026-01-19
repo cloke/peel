@@ -27,6 +27,11 @@ This script:
 3. Launches the app
 4. Waits until MCP server responds (with `--wait-for-server`)
 
+Automated validation script:
+```bash
+./Tools/mcp-test-plan.sh --working-directory /path/to/git/repo
+```
+
 ## VS Code Setup
 - Configure a local MCP client to connect to http://localhost:<port>/rpc.
 - Ensure the MCP client supports JSON-RPC 2.0 with the `tools/list` and `tools/call` methods.
