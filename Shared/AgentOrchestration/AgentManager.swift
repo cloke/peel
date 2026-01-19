@@ -1360,19 +1360,39 @@ public final class MCPServerService {
       return Date().timeIntervalSince(enqueuedAt)
     }()
 
-    dataService?.recordMCPRun(
-      templateId: template.id.uuidString,
-      templateName: template.name,
-      prompt: prompt,
-      workingDirectory: workingDirectory,
-      success: summary.errorMessage == nil,
-      errorMessage: summary.errorMessage,
-      mergeConflictsCount: summary.mergeConflicts.count,
-      resultCount: summary.results.count,
-      validationStatus: summary.validationResult?.status.rawValue,
-      validationReasons: summary.validationResult?.reasons ?? [],
-      noWorkReason: summary.noWorkReason
-    )
+    if let ds = dataService {
+      // Record the run and link it to the agent chain id
+      let _ = ds.recordMCPRun(
+        chainId: chain.id.uuidString,
+        templateId: template.id.uuidString,
+        templateName: template.name,
+        prompt: prompt,
+        workingDirectory: workingDirectory,
+        implementerBranches: [],
+        implementerWorkspacePaths: [],
+        success: summary.errorMessage == nil,
+        errorMessage: summary.errorMessage,
+        mergeConflictsCount: summary.mergeConflicts.count,
+        resultCount: summary.results.count,
+        validationStatus: summary.validationResult?.status.rawValue,
+        validationReasons: summary.validationResult?.reasons ?? [],
+        noWorkReason: summary.noWorkReason
+      )
+
+      // Persist individual agent results linked by chainId
+      for res in summary.results {
+        ds.recordMCPRunResult(
+          chainId: chain.id.uuidString,
+          agentId: res.agentId.uuidString,
+          agentName: res.agentName,
+          model: res.model,
+          prompt: res.prompt,
+          output: res.output,
+          premiumCost: res.premiumCost,
+          reviewVerdict: res.reviewVerdict?.rawValue
+        )
+      }
+    }
 
     var result: [String: Any] = [
       "queue": [
@@ -1615,10 +1635,12 @@ public final class MCPServerService {
     }
 
     if !errors.isEmpty {
-      lastCleanupError = errors.prefix(3).joined(separator: "\n")
+      // Surface the first error but keep the full list available in the summary count
+      lastCleanupError = errors.first
     }
 
-    lastCleanupSummary = "Removed \(removedWorktrees) worktrees, deleted \(deletedBranches) branches."
+    let errorNote = errors.isEmpty ? "" : " (\(errors.count) errors)"
+    lastCleanupSummary = "Removed \(removedWorktrees) worktrees, deleted \(deletedBranches) branches\(errorNote)."
   }
 
   private func toolList() -> [[String: Any]] {
