@@ -2112,7 +2112,7 @@ struct ChainDetailView: View {
                   .padding(.vertical, 4)
                   .background(Color.blue)
                   .clipShape(Capsule())
-              } else if chain.results.contains(where: { $0.agentId == agent.id }) {
+              } else if agent.state == .complete || chain.results.contains(where: { $0.agentId == agent.id }) {
                 Text("Complete")
                   .font(.caption2)
                   .fontWeight(.medium)
@@ -2121,7 +2121,7 @@ struct ChainDetailView: View {
                   .padding(.vertical, 4)
                   .background(Color.green.opacity(0.15))
                   .clipShape(Capsule())
-              } else if case .running = chain.state, !isAgentRunning(at: index) {
+              } else if case .running = chain.state, agent.state == .idle {
                 Text("Queued")
                   .font(.caption2)
                   .fontWeight(.medium)
@@ -2434,7 +2434,7 @@ struct ChainDetailView: View {
   
   private func agentStatusColor(for index: Int, agent: Agent) -> Color {
     // Completed
-    if chain.results.contains(where: { $0.agentId == agent.id }) {
+    if agent.state == .complete || chain.results.contains(where: { $0.agentId == agent.id }) {
       return .green
     }
     
@@ -2459,7 +2459,7 @@ struct ChainDetailView: View {
   
   private func agentNumberColor(for index: Int, agent: Agent) -> Color {
     // Completed or running - white text on colored background
-    if chain.results.contains(where: { $0.agentId == agent.id }) || isAgentRunning(at: index) {
+    if agent.state == .complete || chain.results.contains(where: { $0.agentId == agent.id }) || isAgentRunning(at: index) {
       return .white
     }
     // Otherwise secondary text
@@ -2473,7 +2473,7 @@ struct ChainDetailView: View {
     }
     
     // Completed - very light green
-    if chain.results.contains(where: { $0.agentId == agent.id }) {
+    if agent.state == .complete || chain.results.contains(where: { $0.agentId == agent.id }) {
       return Color.green.opacity(0.05)
     }
     
