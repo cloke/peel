@@ -36,7 +36,7 @@ public final class AgentManager {
   }
   
   /// The workspace manager for creating isolated workspaces
-  public let workspaceManager = WorkspaceManager()
+  public let workspaceManager = AgentWorkspaceService()
   
   /// Currently selected agent (for UI)
   public var selectedAgent: Agent?
@@ -2836,7 +2836,7 @@ public final class MCPServerService {
 
       let workspaces = agentManager.workspaceManager.workspaces(for: repoURL)
       let agentWorkspaces = workspaces.filter { workspace in
-        workspace.path.path.contains("/\(WorkspaceManager.workspacesDirName)/")
+        workspace.path.path.contains("/\(AgentWorkspaceService.workspacesDirName)/")
       }
 
       for workspace in agentWorkspaces {
@@ -4082,7 +4082,7 @@ private actor MergeCoordinator {
 @Observable
 public final class AgentManager {
   public private(set) var agents: [Agent] = []
-  public let workspaceManager = WorkspaceManager()
+  public let workspaceManager = AgentWorkspaceService()
   public var selectedAgent: Agent?
   public init() {}
 }

@@ -605,7 +605,7 @@ public final class WorkspaceDashboardService {
     repo: WorkspaceRepo
   ) -> (source: String, purpose: String?, linkedPRNumber: Int?, linkedPRRepo: String?) {
     let path = worktree.path
-    if path.contains(WorkspaceManager.workspacesDirName) || path.contains("Peel-Worktrees") {
+    if path.contains(AgentWorkspaceService.workspacesDirName) || path.contains("Peel-Worktrees") {
       return ("agent", nil, nil, nil)
     }
 
