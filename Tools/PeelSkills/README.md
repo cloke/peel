@@ -88,6 +88,24 @@ chmod +x bin/file-rewrite
 ./bin/file-rewrite path/to/file.md --template plan
 ```
 
+### translation-validator
+
+Validates translation key parity, placeholders, and structural consistency.
+
+```bash
+# Build
+cd Tools/PeelSkills && swift build
+
+# Run (auto-discover translations under project root)
+.build/debug/translation-validator --root /path/to/project
+
+# Run with explicit translations directory
+.build/debug/translation-validator --translations-path /path/to/translations --base-locale en-us
+
+# JSON output
+.build/debug/translation-validator --root /path/to/project --json
+```
+
 ## Integration with copilot-instructions.md
 
 Add to your `.github/copilot-instructions.md`:

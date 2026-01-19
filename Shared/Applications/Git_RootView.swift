@@ -3,8 +3,6 @@
 //  KitchenSync
 //
 //  Created by Cory Loken on 12/20/20.
-//  Fixed deprecated Alert on 1/7/26
-//  Updated for SwiftData on 1/7/26
 //
 
 import SwiftUI
