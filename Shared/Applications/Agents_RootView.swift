@@ -432,6 +432,41 @@ struct MCPDashboardView: View {
   @Query(sort: \MCPRunRecord.createdAt, order: .reverse) private var mcpRuns: [MCPRunRecord]
   @State private var selectedRun: MCPRunRecord?
   @State private var showingCleanupConfirmation = false
+  @State private var overrideReviewLoopEnabled = false
+  @State private var overrideReviewLoopValue = false
+  @State private var overrideAllowModelSelection = false
+  @State private var overrideAllowScaling = false
+  @State private var overrideMaxImplementersEnabled = false
+  @State private var overrideMaxImplementers = 2
+  @State private var overrideMaxPremiumEnabled = false
+  @State private var overrideMaxPremiumCost = "1.0"
+  @State private var overridePriority = 0
+  @State private var overrideTimeoutEnabled = false
+  @State private var overrideTimeoutSeconds = "600"
+
+  private func buildOverrides() -> MCPServerService.RunOverrides {
+    var overrides = MCPServerService.RunOverrides()
+    if overrideReviewLoopEnabled {
+      overrides.enableReviewLoop = overrideReviewLoopValue
+    }
+    overrides.allowPlannerModelSelection = overrideAllowModelSelection
+    overrides.allowPlannerImplementerScaling = overrideAllowScaling
+    if overrideMaxImplementersEnabled {
+      overrides.maxImplementers = max(1, overrideMaxImplementers)
+    }
+    if overrideMaxPremiumEnabled, let value = Double(overrideMaxPremiumCost) {
+      overrides.maxPremiumCost = value
+    }
+    overrides.priority = overridePriority
+    if overrideTimeoutEnabled, let value = Double(overrideTimeoutSeconds) {
+      overrides.timeoutSeconds = value
+    }
+    return overrides
+  }
+
+  private func chainForRun(_ run: MCPServerService.ActiveRunInfo) -> AgentChain? {
+    mcpServer.agentManager.chains.first { $0.id == run.chainId }
+  }
 
   var body: some View {
     ScrollView {
@@ -485,6 +520,154 @@ struct MCPDashboardView: View {
         }
 
         GroupBox {
+          VStack(alignment: .leading, spacing: 10) {
+            Text("Run Overrides")
+              .font(.headline)
+            Toggle("Override review loop", isOn: $overrideReviewLoopEnabled)
+            if overrideReviewLoopEnabled {
+              Toggle("Enable review loop", isOn: $overrideReviewLoopValue)
+                .padding(.leading, 12)
+            }
+            Toggle("Allow planner model selection", isOn: $overrideAllowModelSelection)
+            Toggle("Allow planner implementer scaling", isOn: $overrideAllowScaling)
+
+            HStack {
+              Toggle("Limit implementers", isOn: $overrideMaxImplementersEnabled)
+              if overrideMaxImplementersEnabled {
+                Stepper(value: $overrideMaxImplementers, in: 1...6) {
+                  Text("Max: \(overrideMaxImplementers)")
+                    .font(.caption)
+                }
+              }
+            }
+
+            HStack {
+              Toggle("Cost cap", isOn: $overrideMaxPremiumEnabled)
+              if overrideMaxPremiumEnabled {
+                TextField("Max premium", text: $overrideMaxPremiumCost)
+                  .frame(width: 80)
+                  .textFieldStyle(.roundedBorder)
+              }
+            }
+
+            HStack {
+              Text("Priority")
+              Stepper(value: $overridePriority, in: -5...5) {
+                Text("\(overridePriority)")
+                  .font(.caption)
+              }
+            }
+
+            HStack {
+              Toggle("Timeout", isOn: $overrideTimeoutEnabled)
+              if overrideTimeoutEnabled {
+                TextField("Seconds", text: $overrideTimeoutSeconds)
+                  .frame(width: 90)
+                  .textFieldStyle(.roundedBorder)
+              }
+            }
+          }
+        }
+
+        GroupBox {
+          VStack(alignment: .leading, spacing: 8) {
+            Text("Active MCP Runs")
+              .font(.headline)
+            if mcpServer.activeRuns.isEmpty {
+              Text("No active MCP runs")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else {
+              ForEach(mcpServer.activeRuns) { run in
+                let chain = chainForRun(run)
+                VStack(alignment: .leading, spacing: 6) {
+                  HStack {
+                    Text(chain?.name ?? run.templateName)
+                      .font(.subheadline)
+                      .fontWeight(.medium)
+                    Spacer()
+                    if let state = chain?.state.displayName {
+                      Text(state)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    }
+                  }
+                  if let lastMessage = chain?.liveStatusMessages.last {
+                    Text(lastMessage.message)
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                      .lineLimit(2)
+                  }
+                  HStack(spacing: 8) {
+                    Button("Pause") {
+                      Task { await mcpServer.pauseRun(run.id) }
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button("Resume") {
+                      Task { await mcpServer.resumeRun(run.id) }
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button("Step") {
+                      Task { await mcpServer.stepRun(run.id) }
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button("Stop") {
+                      Task { await mcpServer.stopRun(run.id) }
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
+                  }
+                }
+                .padding(.vertical, 4)
+              }
+            }
+          }
+        }
+
+        GroupBox {
+          VStack(alignment: .leading, spacing: 8) {
+            Text("Queue")
+              .font(.headline)
+            HStack(spacing: 12) {
+              Stepper(value: $mcpServer.maxConcurrentChains, in: 1...8) {
+                Text("Max concurrent: \(mcpServer.maxConcurrentChains)")
+                  .font(.caption)
+              }
+              Stepper(value: $mcpServer.maxQueuedChains, in: 0...20) {
+                Text("Max queued: \(mcpServer.maxQueuedChains)")
+                  .font(.caption)
+              }
+            }
+            if mcpServer.queuedRuns.isEmpty {
+              Text("Queue empty")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else {
+              ForEach(mcpServer.queuedRuns) { queued in
+                HStack {
+                  Text("#\(queued.position)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                  Text(String(queued.id.uuidString.prefix(8)))
+                    .font(.caption)
+                  Text("Priority \(queued.priority)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                  Spacer()
+                  Button("Cancel") {
+                    Task { _ = await mcpServer.cancelQueuedRun(queued.id) }
+                  }
+                  .buttonStyle(.link)
+                }
+              }
+            }
+          }
+        }
+
+        GroupBox {
           VStack(alignment: .leading, spacing: 8) {
             Text("MCP Run History")
               .font(.headline)
@@ -521,6 +704,10 @@ struct MCPDashboardView: View {
                     if !run.chainId.isEmpty {
                       Button("View details") {
                         selectedRun = run
+                      }
+                      .buttonStyle(.link)
+                      Button("Rerun") {
+                        Task { await mcpServer.rerun(run, overrides: buildOverrides()) }
                       }
                       .buttonStyle(.link)
                     } else {
@@ -1409,7 +1596,13 @@ struct CopilotInstallSteps: View {
 struct MCPRunDetailView: View {
   let run: MCPRunRecord
   @Query private var results: [MCPRunResultRecord]
+  @Query(sort: \MCPRunRecord.createdAt, order: .reverse) private var allRuns: [MCPRunRecord]
   @Environment(\.dismiss) private var dismiss
+  #if os(macOS)
+  @Environment(MCPServerService.self) private var mcpServer
+  #endif
+  @State private var showingCompareSheet = false
+  @State private var compareRun: MCPRunRecord?
 
   init(run: MCPRunRecord) {
     self.run = run
@@ -1422,6 +1615,64 @@ struct MCPRunDetailView: View {
 
   private var plannerPrompt: String? {
     results.first { $0.agentName.lowercased().contains("planner") }?.prompt
+  }
+
+  private var worktreePaths: [String] {
+    let raw = run.implementerWorkspacePaths
+    let parsed = raw.split(separator: "\n").map { String($0) }.filter { !$0.isEmpty }
+    if !parsed.isEmpty {
+      return parsed
+    }
+    if let workingDirectory = run.workingDirectory, !workingDirectory.isEmpty {
+      return [workingDirectory]
+    }
+    return []
+  }
+
+  #if os(macOS)
+  private func exportRun() {
+    let panel = NSSavePanel()
+    panel.allowedContentTypes = [.plainText]
+    panel.nameFieldStringValue = "mcp-run-\(run.createdAt.formatted(date: .numeric, time: .omitted)).md"
+    panel.begin { response in
+      guard response == .OK, let url = panel.url else { return }
+      let content = markdownExport()
+      try? content.write(to: url, atomically: true, encoding: .utf8)
+    }
+  }
+  #endif
+
+  private func markdownExport() -> String {
+    var lines: [String] = []
+    lines.append("# MCP Run")
+    lines.append("- Template: \(run.templateName)")
+    lines.append("- Created: \(run.createdAt)")
+    if let workingDirectory = run.workingDirectory, !workingDirectory.isEmpty {
+      lines.append("- Working Directory: \(workingDirectory)")
+    }
+    if let error = run.errorMessage, !error.isEmpty {
+      lines.append("- Error: \(error)")
+    }
+    if let noWorkReason = run.noWorkReason, !noWorkReason.isEmpty {
+      lines.append("- Planner Decision: \(noWorkReason)")
+    }
+    lines.append("")
+    lines.append("## Prompt")
+    lines.append(run.prompt)
+    lines.append("")
+    lines.append("## Results")
+    for result in results {
+      lines.append("### \(result.agentName) (\(result.model))")
+      lines.append("- Cost: \(result.premiumCost)")
+      lines.append("- Timestamp: \(result.createdAt)")
+      if let verdict = result.reviewVerdict, !verdict.isEmpty {
+        lines.append("- Review Verdict: \(verdict)")
+      }
+      lines.append("")
+      lines.append(result.output)
+      lines.append("")
+    }
+    return lines.joined(separator: "\n")
   }
 
   private func elapsedLabel(from start: Date, to end: Date) -> String {
@@ -1469,6 +1720,34 @@ struct MCPRunDetailView: View {
                 }
                 .padding(8)
                 .background(Color.green.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+              }
+            }
+          }
+
+          if !worktreePaths.isEmpty {
+            GroupBox("Worktrees") {
+              VStack(alignment: .leading, spacing: 8) {
+                ForEach(worktreePaths, id: \.self) { path in
+                  HStack {
+                    Text(path)
+                      .font(.caption2)
+                      .foregroundStyle(.secondary)
+                      .lineLimit(1)
+                    Spacer()
+                    #if os(macOS)
+                    Button("Open") {
+                      NSWorkspace.shared.open(URL(fileURLWithPath: path))
+                    }
+                    .buttonStyle(.link)
+                    #endif
+                  }
+                }
+                #if os(macOS)
+                Button("Clean Worktrees") {
+                  Task { await mcpServer.cleanupWorktrees(paths: worktreePaths) }
+                }
+                .buttonStyle(.bordered)
+                #endif
               }
             }
           }
@@ -1571,6 +1850,12 @@ struct MCPRunDetailView: View {
                       Text(result.model)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                      Text("\(result.premiumCost)×")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                      Text(result.createdAt, style: .time)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                       Spacer()
                       if let verdict = result.reviewVerdict, !verdict.isEmpty {
                         Text(verdict)
@@ -1600,6 +1885,107 @@ struct MCPRunDetailView: View {
           Button("Done") {
             dismiss()
           }
+        }
+        #if os(macOS)
+        ToolbarItem(placement: .primaryAction) {
+          Button("Export") {
+            exportRun()
+          }
+        }
+        ToolbarItem(placement: .primaryAction) {
+          Button("Compare") {
+            compareRun = allRuns.first(where: { $0.id != run.id })
+            showingCompareSheet = true
+          }
+          .disabled(allRuns.filter { $0.id != run.id }.isEmpty)
+        }
+        #endif
+      }
+    }
+    .sheet(isPresented: $showingCompareSheet) {
+      if let compareRun {
+        CompareRunSheet(currentRun: run, runs: allRuns, compareRun: compareRun)
+      }
+    }
+  }
+}
+
+// MARK: - Compare Runs
+
+struct CompareRunSheet: View {
+  let currentRun: MCPRunRecord
+  let runs: [MCPRunRecord]
+  @State private var compareRunId: String
+  @Query private var currentResults: [MCPRunResultRecord]
+  @Query private var compareResults: [MCPRunResultRecord]
+  @Environment(\.dismiss) private var dismiss
+
+  init(currentRun: MCPRunRecord, runs: [MCPRunRecord], compareRun: MCPRunRecord) {
+    self.currentRun = currentRun
+    self.runs = runs
+    _compareRunId = State(initialValue: compareRun.chainId)
+    let currentChainId = currentRun.chainId
+    _currentResults = Query(
+      filter: #Predicate { $0.chainId == currentChainId },
+      sort: [SortDescriptor(\.createdAt, order: .forward)]
+    )
+    _compareResults = Query(
+      filter: #Predicate { $0.chainId == compareRunId },
+      sort: [SortDescriptor(\.createdAt, order: .forward)]
+    )
+  }
+
+  var body: some View {
+    NavigationStack {
+      VStack(alignment: .leading, spacing: 12) {
+        Picker("Compare with", selection: $compareRunId) {
+          ForEach(runs.filter { $0.id != currentRun.id }) { run in
+            Text(run.templateName + " • " + run.createdAt.formatted(date: .abbreviated, time: .shortened))
+              .tag(run.chainId)
+          }
+        }
+        .pickerStyle(.menu)
+
+        HStack(alignment: .top, spacing: 12) {
+          VStack(alignment: .leading, spacing: 6) {
+            Text("Current Run")
+              .font(.headline)
+            ForEach(currentResults) { result in
+              VStack(alignment: .leading, spacing: 4) {
+                Text(result.agentName)
+                  .font(.subheadline)
+                  .fontWeight(.medium)
+                Text(result.output)
+                  .font(.caption)
+                  .textSelection(.enabled)
+              }
+              .padding(.vertical, 4)
+            }
+          }
+          Divider()
+          VStack(alignment: .leading, spacing: 6) {
+            Text("Compare Run")
+              .font(.headline)
+            ForEach(compareResults) { result in
+              VStack(alignment: .leading, spacing: 4) {
+                Text(result.agentName)
+                  .font(.subheadline)
+                  .fontWeight(.medium)
+                Text(result.output)
+                  .font(.caption)
+                  .textSelection(.enabled)
+              }
+              .padding(.vertical, 4)
+            }
+          }
+        }
+        Spacer()
+      }
+      .padding()
+      .navigationTitle("Compare Runs")
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Done") { dismiss() }
         }
       }
     }

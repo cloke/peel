@@ -259,6 +259,57 @@ public final class AgentManager {
 @MainActor
 @Observable
 public final class AgentChainRunner {
+  private actor ChainRunGate {
+    enum Mode {
+      case running
+      case paused
+      case step
+    }
+
+    private var mode: Mode = .running
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func waitIfPaused() async {
+      switch mode {
+      case .running:
+        return
+      case .step:
+        mode = .paused
+        return
+      case .paused:
+        await withCheckedContinuation { continuation in
+          self.continuation = continuation
+        }
+        if mode == .step {
+          mode = .paused
+        }
+      }
+    }
+
+    func pause() {
+      mode = .paused
+    }
+
+    func resume() {
+      mode = .running
+      continuation?.resume()
+      continuation = nil
+    }
+
+    func step() {
+      switch mode {
+      case .running:
+        mode = .step
+      case .paused:
+        mode = .step
+        continuation?.resume()
+        continuation = nil
+      case .step:
+        return
+      }
+    }
+  }
+
   public struct ChainRunOptions: Sendable {
     public let allowPlannerModelSelection: Bool
     public let allowPlannerImplementerScaling: Bool
@@ -296,6 +347,7 @@ public final class AgentChainRunner {
   private let mcpLog = MCPLogService.shared
   private let mergeCoordinator = MergeCoordinator.shared
   private let screenshotService = ScreenshotService()
+  private var runGates: [UUID: ChainRunGate] = [:]
 
   public init(
     agentManager: AgentManager,
@@ -313,6 +365,9 @@ public final class AgentChainRunner {
     validationConfig: ValidationConfiguration? = nil,
     runOptions: ChainRunOptions? = nil
   ) async -> RunSummary {
+    let gate = ChainRunGate()
+    runGates[chain.id] = gate
+    defer { runGates[chain.id] = nil }
     let sleepAssertionId = beginSleepPrevention(for: chain)
     defer {
       if let sleepAssertionId {
@@ -415,6 +470,7 @@ public final class AgentChainRunner {
   private func runAgentsSequentially(chain: AgentChain, prompt: String) async throws {
     for (index, agent) in chain.agents.enumerated() {
       try checkCancellation(chain: chain)
+      await waitForGate(chain: chain)
       chain.state = .running(agentIndex: index)
       chain.currentAgentStartTime = Date()
       chain.addStatusMessage("Starting \(agent.name) (\(agent.model.shortName))...", type: .progress)
@@ -578,6 +634,7 @@ public final class AgentChainRunner {
     if firstImplementer > 0 {
       for index in 0..<firstImplementer {
         try checkCancellation(chain: chain)
+        await waitForGate(chain: chain)
         let agent = chain.agents[index]
         chain.state = .running(agentIndex: index)
         chain.currentAgentStartTime = Date()
@@ -609,6 +666,7 @@ public final class AgentChainRunner {
     guard implementerIndices.count > 1 else {
       for index in updatedFirst..<chain.agents.count {
         try checkCancellation(chain: chain)
+        await waitForGate(chain: chain)
         let agent = chain.agents[index]
         chain.state = .running(agentIndex: index)
         chain.currentAgentStartTime = Date()
@@ -633,6 +691,7 @@ public final class AgentChainRunner {
     }
 
     try checkCancellation(chain: chain)
+    await waitForGate(chain: chain)
     let sharedContext = chain.contextForAgent(at: updatedFirst)
     let parallelResults = try await runImplementersInParallel(
       chain: chain,
@@ -663,6 +722,7 @@ public final class AgentChainRunner {
     if updatedLast + 1 < chain.agents.count {
       for index in (updatedLast + 1)..<chain.agents.count {
         try checkCancellation(chain: chain)
+        await waitForGate(chain: chain)
         let agent = chain.agents[index]
         chain.state = .running(agentIndex: index)
         chain.currentAgentStartTime = Date()
@@ -933,6 +993,7 @@ public final class AgentChainRunner {
 
     while chain.currentReviewIteration < chain.maxReviewIterations {
       try checkCancellation(chain: chain)
+      await waitForGate(chain: chain)
       chain.currentReviewIteration += 1
       chain.state = .reviewing(iteration: chain.currentReviewIteration)
 
@@ -956,6 +1017,7 @@ public final class AgentChainRunner {
       )
       chain.results.append(implementerResult)
 
+      await waitForGate(chain: chain)
       let reviewerResult = try await runSingleAgent(
         reviewer,
         at: reviewerIndex,
@@ -1038,6 +1100,30 @@ public final class AgentChainRunner {
     chain.addStatusMessage("✋ Chain cancelled.", type: .error)
     throw ChainError.cancelled
   }
+
+  private func waitForGate(chain: AgentChain) async {
+    if let gate = runGates[chain.id] {
+      await gate.waitIfPaused()
+    }
+  }
+
+  public func pause(chainId: UUID) async {
+    if let gate = runGates[chainId] {
+      await gate.pause()
+    }
+  }
+
+  public func resume(chainId: UUID) async {
+    if let gate = runGates[chainId] {
+      await gate.resume()
+    }
+  }
+
+  public func step(chainId: UUID) async {
+    if let gate = runGates[chainId] {
+      await gate.step()
+    }
+  }
 }
 
 // MARK: - MCP Server
@@ -1116,15 +1202,31 @@ public final class MCPServerService {
   private var dataService: DataService?
   private let screenshotService = ScreenshotService()
 
+  public struct ActiveRunInfo: Identifiable {
+    public let id: UUID
+    public let chainId: UUID
+    public let templateName: String
+    public let prompt: String
+    public let workingDirectory: String?
+    public let enqueuedAt: Date?
+    public let startedAt: Date
+    public let priority: Int
+    public let timeoutSeconds: Double?
+  }
+
   private struct ChainQueueEntry {
     let id: UUID
     let enqueuedAt: Date
-    let continuation: CheckedContinuation<Void, Never>
+    let priority: Int
+    let continuation: CheckedContinuation<Bool, Never>
   }
 
   private var activeChainRuns: Int = 0
   private var activeChainRunIds: Set<UUID> = []
   private var activeChainTasks: [UUID: Task<AgentChainRunner.RunSummary, Never>] = [:]
+  private var activeChainTimeouts: [UUID: Task<Void, Never>] = [:]
+  private var activeRunsById: [UUID: ActiveRunInfo] = [:]
+  private var activeRunChains: [UUID: AgentChain] = [:]
   private var chainQueue: [ChainQueueEntry] = []
 
   private let listenerQueue = DispatchQueue(label: "MCPServer.Listener")
@@ -1169,9 +1271,110 @@ public final class MCPServerService {
     }
   }
 
+  public struct QueuedRunInfo: Identifiable {
+    public let id: UUID
+    public let enqueuedAt: Date
+    public let priority: Int
+    public let position: Int
+  }
+
+  public var activeRuns: [ActiveRunInfo] {
+    activeRunsById.values.sorted { $0.startedAt < $1.startedAt }
+  }
+
+  public var queuedRuns: [QueuedRunInfo] {
+    chainQueue.enumerated().map { index, entry in
+      QueuedRunInfo(id: entry.id, enqueuedAt: entry.enqueuedAt, priority: entry.priority, position: index + 1)
+    }
+  }
+
   public func configure(modelContext: ModelContext) {
     if dataService == nil {
       dataService = DataService(modelContext: modelContext)
+    }
+  }
+
+  public struct RunOverrides {
+    public var enableReviewLoop: Bool? = nil
+    public var allowPlannerModelSelection: Bool = false
+    public var allowPlannerImplementerScaling: Bool = false
+    public var maxImplementers: Int? = nil
+    public var maxPremiumCost: Double? = nil
+    public var priority: Int = 0
+    public var timeoutSeconds: Double? = nil
+
+    public init() {}
+  }
+
+  public func pauseRun(_ runId: UUID) async {
+    if let chain = activeRunChains[runId] {
+      await chainRunner.pause(chainId: chain.id)
+    }
+  }
+
+  public func resumeRun(_ runId: UUID) async {
+    if let chain = activeRunChains[runId] {
+      await chainRunner.resume(chainId: chain.id)
+    }
+  }
+
+  public func stepRun(_ runId: UUID) async {
+    if let chain = activeRunChains[runId] {
+      await chainRunner.step(chainId: chain.id)
+    }
+  }
+
+  public func stopRun(_ runId: UUID) async {
+    if let task = activeChainTasks[runId] {
+      task.cancel()
+    }
+  }
+
+  public func cancelQueuedRun(_ runId: UUID) async -> Bool {
+    return cancelQueuedRunInternal(runId: runId)
+  }
+
+  func rerun(_ record: MCPRunRecord, overrides: RunOverrides = RunOverrides()) async {
+    var arguments: [String: Any] = [
+      "templateName": record.templateName,
+      "prompt": record.prompt,
+      "workingDirectory": record.workingDirectory ?? ""
+    ]
+    if let enableReviewLoop = overrides.enableReviewLoop {
+      arguments["enableReviewLoop"] = enableReviewLoop
+    }
+    arguments["allowPlannerModelSelection"] = overrides.allowPlannerModelSelection
+    arguments["allowPlannerImplementerScaling"] = overrides.allowPlannerImplementerScaling
+    if let maxImplementers = overrides.maxImplementers {
+      arguments["maxImplementers"] = maxImplementers
+    }
+    if let maxPremiumCost = overrides.maxPremiumCost {
+      arguments["maxPremiumCost"] = maxPremiumCost
+    }
+    if overrides.priority != 0 {
+      arguments["priority"] = overrides.priority
+    }
+    if let timeoutSeconds = overrides.timeoutSeconds {
+      arguments["timeoutSeconds"] = timeoutSeconds
+    }
+    _ = await handleChainRun(id: nil, arguments: arguments)
+  }
+
+  public func cleanupWorktrees(paths: [String]) async {
+    guard !paths.isEmpty else { return }
+    for path in paths {
+      guard let workspace = agentManager.workspaceManager.workspaces.first(where: { $0.path.path == path }) else {
+        continue
+      }
+      let repository = Model.Repository(
+        name: workspace.parentRepositoryPath.lastPathComponent,
+        path: workspace.parentRepositoryPath.path
+      )
+      let branch = workspace.branch
+      try? await agentManager.workspaceManager.cleanupWorkspace(workspace, force: true)
+      if !branch.isEmpty {
+        _ = try? await Commands.simple(arguments: ["branch", "-D", branch], in: repository)
+      }
     }
   }
 
@@ -1428,11 +1631,23 @@ public final class MCPServerService {
     case "chains.stop":
       return await handleChainStop(id: id, arguments: arguments)
 
+    case "chains.pause":
+      return await handleChainPause(id: id, arguments: arguments)
+
+    case "chains.resume":
+      return await handleChainResume(id: id, arguments: arguments)
+
+    case "chains.step":
+      return await handleChainStep(id: id, arguments: arguments)
+
     case "chains.queue.status":
       return (200, makeRPCResult(id: id, result: queueStatus()))
 
     case "chains.queue.configure":
       return handleQueueConfigure(id: id, arguments: arguments)
+
+    case "chains.queue.cancel":
+      return await handleQueueCancel(id: id, arguments: arguments)
 
     case "logs.mcp.path":
       return (200, makeRPCResult(id: id, result: ["path": await mcpLog.logPath()]))
@@ -1492,9 +1707,14 @@ public final class MCPServerService {
     let allowPlannerImplementerScaling = arguments["allowPlannerImplementerScaling"] as? Bool ?? false
     let maxImplementers = arguments["maxImplementers"] as? Int
     let maxPremiumCost = arguments["maxPremiumCost"] as? Double
+    let priority = arguments["priority"] as? Int ?? 0
+    let timeoutSeconds = arguments["timeoutSeconds"] as? Double
 
-    let queuePosition = activeChainRuns >= maxConcurrentChains ? chainQueue.count + 1 : nil
-    let enqueuedAt = await acquireChainRunSlot(runId: runId)
+    let (enqueuedAt, wasCancelled, queuePosition) = await acquireChainRunSlot(runId: runId, priority: priority)
+    if wasCancelled {
+      await mcpLog.warning("Queued chain cancelled", metadata: ["runId": runId.uuidString])
+      return (400, makeRPCError(id: id, code: -32005, message: "Queued run cancelled"))
+    }
     defer { releaseChainRunSlot(runId: runId) }
 
     let templates = agentManager.allTemplates
@@ -1560,6 +1780,19 @@ public final class MCPServerService {
       "queued": enqueuedAt == nil ? "false" : "true"
     ])
 
+    activeRunChains[runId] = chain
+    activeRunsById[runId] = ActiveRunInfo(
+      id: runId,
+      chainId: chain.id,
+      templateName: template.name,
+      prompt: prompt,
+      workingDirectory: chainWorkingDirectory,
+      enqueuedAt: enqueuedAt,
+      startedAt: Date(),
+      priority: priority,
+      timeoutSeconds: timeoutSeconds
+    )
+
     let runTask = Task { @MainActor in
       await chainRunner.runChain(
         chain,
@@ -1570,9 +1803,24 @@ public final class MCPServerService {
     }
     activeChainTasks[runId] = runTask
     activeChainRunIds.insert(runId)
+    if let timeoutSeconds, timeoutSeconds > 0 {
+      activeChainTimeouts[runId] = Task { [weak self] in
+        try? await Task.sleep(for: .seconds(timeoutSeconds))
+        guard let self, !(self.activeChainTasks[runId]?.isCancelled ?? true) else { return }
+        self.activeChainTasks[runId]?.cancel()
+        await self.mcpLog.warning("Chain timeout exceeded", metadata: [
+          "runId": runId.uuidString,
+          "timeoutSeconds": "\(timeoutSeconds)"
+        ])
+      }
+    }
     defer {
       activeChainTasks[runId] = nil
       activeChainRunIds.remove(runId)
+      activeChainTimeouts[runId]?.cancel()
+      activeChainTimeouts[runId] = nil
+      activeRunsById[runId] = nil
+      activeRunChains[runId] = nil
     }
 
     let summary = await runTask.value
@@ -1602,6 +1850,8 @@ public final class MCPServerService {
     }()
 
     if let ds = dataService {
+      let workspacePaths = [chainWorkingDirectory].compactMap { $0 }
+      let workspaceBranches = [chainWorkspace?.branch].compactMap { $0 }
       // Record the run and link it to the agent chain id
       let _ = ds.recordMCPRun(
         chainId: chain.id.uuidString,
@@ -1609,8 +1859,8 @@ public final class MCPServerService {
         templateName: template.name,
         prompt: prompt,
         workingDirectory: workingDirectory,
-        implementerBranches: [],
-        implementerWorkspacePaths: [],
+        implementerBranches: workspaceBranches,
+        implementerWorkspacePaths: workspacePaths,
         screenshotPaths: summary.results.compactMap { $0.screenshotPath },
         success: summary.errorMessage == nil,
         errorMessage: summary.errorMessage,
@@ -1689,6 +1939,42 @@ public final class MCPServerService {
     return (200, makeRPCResult(id: id, result: ["cancelled": [runId.uuidString]]))
   }
 
+  private func handleChainPause(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let runIdString = arguments["runId"] as? String,
+          let runId = UUID(uuidString: runIdString),
+          let chain = activeRunChains[runId] else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing or invalid runId"))
+    }
+
+    await chainRunner.pause(chainId: chain.id)
+    await mcpLog.info("Chain paused", metadata: ["runId": runId.uuidString])
+    return (200, makeRPCResult(id: id, result: ["paused": runId.uuidString]))
+  }
+
+  private func handleChainResume(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let runIdString = arguments["runId"] as? String,
+          let runId = UUID(uuidString: runIdString),
+          let chain = activeRunChains[runId] else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing or invalid runId"))
+    }
+
+    await chainRunner.resume(chainId: chain.id)
+    await mcpLog.info("Chain resumed", metadata: ["runId": runId.uuidString])
+    return (200, makeRPCResult(id: id, result: ["resumed": runId.uuidString]))
+  }
+
+  private func handleChainStep(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let runIdString = arguments["runId"] as? String,
+          let runId = UUID(uuidString: runIdString),
+          let chain = activeRunChains[runId] else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing or invalid runId"))
+    }
+
+    await chainRunner.step(chainId: chain.id)
+    await mcpLog.info("Chain step", metadata: ["runId": runId.uuidString])
+    return (200, makeRPCResult(id: id, result: ["step": runId.uuidString]))
+  }
+
   private func handleServerRestart(id: Any?) async -> (Int, Data) {
     stop()
     start()
@@ -1765,20 +2051,33 @@ public final class MCPServerService {
     return nil
   }
 
-  private func acquireChainRunSlot(runId: UUID) async -> Date? {
+  private func acquireChainRunSlot(runId: UUID, priority: Int) async -> (Date?, Bool, Int?) {
     if activeChainRuns < maxConcurrentChains {
       activeChainRuns += 1
       activeChainRunIds.insert(runId)
-      return nil
+      return (nil, false, nil)
     }
 
     let enqueuedAt = Date()
-    await withCheckedContinuation { continuation in
-      chainQueue.append(ChainQueueEntry(id: runId, enqueuedAt: enqueuedAt, continuation: continuation))
+    var position: Int?
+    let shouldRun = await withCheckedContinuation { continuation in
+      chainQueue.append(ChainQueueEntry(id: runId, enqueuedAt: enqueuedAt, priority: priority, continuation: continuation))
+      chainQueue.sort {
+        if $0.priority != $1.priority {
+          return $0.priority > $1.priority
+        }
+        return $0.enqueuedAt < $1.enqueuedAt
+      }
+      if let index = chainQueue.firstIndex(where: { $0.id == runId }) {
+        position = index + 1
+      }
+    }
+    guard shouldRun else {
+      return (enqueuedAt, true, position)
     }
     activeChainRuns += 1
     activeChainRunIds.insert(runId)
-    return enqueuedAt
+    return (enqueuedAt, false, position)
   }
 
   private func releaseChainRunSlot(runId: UUID) {
@@ -1786,7 +2085,7 @@ public final class MCPServerService {
     activeChainRunIds.remove(runId)
     if !chainQueue.isEmpty {
       let next = chainQueue.removeFirst()
-      next.continuation.resume()
+      next.continuation.resume(returning: true)
     }
   }
 
@@ -1798,12 +2097,22 @@ public final class MCPServerService {
       "queued": chainQueue.map {
         [
           "runId": $0.id.uuidString,
-          "enqueuedAt": ISO8601DateFormatter().string(from: $0.enqueuedAt)
+          "enqueuedAt": ISO8601DateFormatter().string(from: $0.enqueuedAt),
+          "priority": $0.priority
         ]
       },
       "maxConcurrent": maxConcurrentChains,
       "maxQueued": maxQueuedChains
     ]
+  }
+
+  private func cancelQueuedRunInternal(runId: UUID) -> Bool {
+    guard let index = chainQueue.firstIndex(where: { $0.id == runId }) else {
+      return false
+    }
+    let entry = chainQueue.remove(at: index)
+    entry.continuation.resume(returning: false)
+    return true
   }
 
   private func handleQueueConfigure(id: Any?, arguments: [String: Any]) -> (Int, Data) {
@@ -1814,6 +2123,20 @@ public final class MCPServerService {
       maxQueuedChains = max(0, maxQueued)
     }
     return (200, makeRPCResult(id: id, result: queueStatus()))
+  }
+
+  private func handleQueueCancel(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let runIdString = arguments["runId"] as? String,
+          let runId = UUID(uuidString: runIdString) else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing or invalid runId"))
+    }
+
+    if cancelQueuedRunInternal(runId: runId) {
+      await mcpLog.warning("Queued chain cancelled", metadata: ["runId": runId.uuidString])
+      return (200, makeRPCResult(id: id, result: ["cancelled": runId.uuidString]))
+    }
+
+    return (404, makeRPCError(id: id, code: -32004, message: "Queued run not found"))
   }
 
   public func cleanupAgentWorkspaces() async {
@@ -1909,7 +2232,9 @@ public final class MCPServerService {
             "allowPlannerModelSelection": ["type": "boolean"],
             "allowPlannerImplementerScaling": ["type": "boolean"],
             "maxImplementers": ["type": "integer"],
-            "maxPremiumCost": ["type": "number"]
+            "maxPremiumCost": ["type": "number"],
+            "priority": ["type": "integer"],
+            "timeoutSeconds": ["type": "number"]
           ],
           "required": ["prompt"]
         ]
@@ -1923,6 +2248,39 @@ public final class MCPServerService {
             "runId": ["type": "string"],
             "all": ["type": "boolean"]
           ]
+        ]
+      ],
+      [
+        "name": "chains.pause",
+        "description": "Pause a running chain by runId",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"]
+          ],
+          "required": ["runId"]
+        ]
+      ],
+      [
+        "name": "chains.resume",
+        "description": "Resume a paused chain by runId",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"]
+          ],
+          "required": ["runId"]
+        ]
+      ],
+      [
+        "name": "chains.step",
+        "description": "Step a paused chain to the next agent by runId",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"]
+          ],
+          "required": ["runId"]
         ]
       ],
       [
@@ -1942,6 +2300,17 @@ public final class MCPServerService {
             "maxConcurrent": ["type": "integer"],
             "maxQueued": ["type": "integer"]
           ]
+        ]
+      ],
+      [
+        "name": "chains.queue.cancel",
+        "description": "Cancel a queued chain by runId",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"]
+          ],
+          "required": ["runId"]
         ]
       ],
       [
