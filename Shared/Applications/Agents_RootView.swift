@@ -900,6 +900,11 @@ struct AgentDetailView: View {
               .font(.subheadline).foregroundStyle(.secondary)
             Button("Assign Task") { showingTaskSheet = true }
               .buttonStyle(.borderedProminent)
+              .disabled(activeChain != nil)
+            if let chain = activeChain {
+              Text("Assign Task is disabled while \(chain.name) is running.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
           }
         }
         
@@ -910,6 +915,7 @@ struct AgentDetailView: View {
     .toolbar {
       if agent.state == .idle || agent.currentTask == nil {
         Button("Assign Task") { showingTaskSheet = true }
+          .disabled(activeChain != nil)
       }
     }
     .sheet(isPresented: $showingTaskSheet) {
