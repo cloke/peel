@@ -70,32 +70,42 @@ actor ScreenshotService {
 
   @available(macOS 12.3, *)
   private func captureImage(filter: SCContentFilter, configuration: SCStreamConfiguration) async throws -> CGImage {
-    try await withCheckedThrowingContinuation { continuation in
-      let output = ScreenshotStreamOutput(continuation: continuation)
-      let stream = SCStream(filter: filter, configuration: configuration, delegate: output)
-      let streamBox = StreamBox(stream: stream)
-      output.attach(stream)
+    let cancellationState = CaptureCancellationState()
+    return try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { continuation in
+        let output = ScreenshotStreamOutput(continuation: continuation)
+        let stream = SCStream(filter: filter, configuration: configuration, delegate: output)
+        let streamBox = StreamBox(stream: stream)
+        cancellationState.configure(output: output, streamBox: streamBox)
+        output.attach(stream)
 
-      do {
-        try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: .main)
-      } catch {
-        output.failIfNeeded(error)
-        return
-      }
-
-      Task { [streamBox, output] in
         do {
-          try await streamBox.stream.startCapture()
+          try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: .main)
         } catch {
           output.failIfNeeded(error)
+          return
+        }
+
+        Task { [streamBox, output] in
+          do {
+            try await streamBox.stream.startCapture()
+          } catch {
+            output.failIfNeeded(error)
+          }
+        }
+
+        Task { [streamBox, output] in
+          do {
+            try await Task.sleep(for: .seconds(2))
+            output.failIfNeeded(ScreenshotError.timedOut)
+          } catch {
+            output.failIfNeeded(error)
+          }
+          try? await streamBox.stream.stopCapture()
         }
       }
-
-      Task { [streamBox, output] in
-        try? await Task.sleep(for: .seconds(2))
-        output.failIfNeeded(ScreenshotError.timedOut)
-        try? await streamBox.stream.stopCapture()
-      }
+    } onCancel: {
+      cancellationState.cancel()
     }
   }
 }
@@ -149,6 +159,25 @@ private final class StreamBox: @unchecked Sendable {
 
   init(stream: SCStream) {
     self.stream = stream
+  }
+}
+
+@available(macOS 12.3, *)
+private final class CaptureCancellationState: @unchecked Sendable {
+  private var output: ScreenshotStreamOutput?
+  private var streamBox: StreamBox?
+
+  func configure(output: ScreenshotStreamOutput, streamBox: StreamBox) {
+    self.output = output
+    self.streamBox = streamBox
+  }
+
+  func cancel() {
+    output?.failIfNeeded(CancellationError())
+    guard let streamBox else { return }
+    Task { [streamBox] in
+      try? await streamBox.stream.stopCapture()
+    }
   }
 }
 #else
