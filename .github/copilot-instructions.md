@@ -10,6 +10,20 @@ Peel is a macOS/iOS SwiftUI application for managing GitHub, Git repositories, a
 
 ---
 
+## Preferred Languages & Tech
+
+**Preferred (in order):**
+1. **Swift** — First choice for all Apple platform code, agents, services
+2. **Shell (bash/zsh)** — Scripting, automation, CLI tools
+3. **Rust** — Performance-critical components, CLI tools
+4. **Ruby** — Scripting, data processing, quick prototypes
+
+**Fallback only when necessary:**
+- **Python** — AI/ML ecosystem tools (MLX has Python bindings, some models require it)
+- Prefer Swift wrappers around Python when possible (e.g., PythonKit or shell-out)
+
+---
+
 ## 🗂️ Quick Navigation
 
 ### Finding Code
