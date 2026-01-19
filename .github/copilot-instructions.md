@@ -682,6 +682,10 @@ final class MyModel {
 
 ## Agent Tool Usage
 
+### MCP Validation & Test Runs (IMPORTANT)
+- For validation/tests (MCP runs, screenshot checks, harness tests), **use free/low-cost models only**.
+- Prefer templates that are explicitly low-cost (e.g., Free Review) and avoid premium models unless the user explicitly requests them.
+
 ### File Verification
 When editing files, the tool cache may show stale content. If you suspect a file wasn't updated:
 
