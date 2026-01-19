@@ -63,6 +63,7 @@ public final class CLIService {
   public var installOutput: [String] = []
   
   private let executor = ProcessExecutor()
+  private let mcpLog = MCPLogService.shared
   private let statusCacheTTL: TimeInterval = 12 * 60 * 60
   private let statusEncoder = JSONEncoder()
   private let statusDecoder = JSONDecoder()
@@ -417,6 +418,8 @@ public final class CLIService {
         arguments: arguments,
         workingDirectory: workingDirectory,
         environment: environment,
+        modelName: model.displayName,
+        roleName: role.displayName,
         onOutput: onOutput
       )
     } else {
@@ -558,6 +561,8 @@ public final class CLIService {
     arguments: [String],
     workingDirectory: String?,
     environment: [String: String],
+    modelName: String,
+    roleName: String,
     onOutput: @escaping StreamCallback
   ) async throws -> ExecutionResult {
     let process = Process()
@@ -629,8 +634,18 @@ public final class CLIService {
       // Process any remaining buffered content
       await accumulator.flushRemainingBuffers()
       
-      // Get final accumulated data
+      // Get final accumulated data + diagnostics
       let (stdoutData, stderrData) = await accumulator.getFinalData()
+      let diagnostics = await accumulator.getDiagnostics()
+      if !diagnostics.completionDetected {
+        await mcpLog.warning("Copilot stream completed without stats marker", metadata: [
+          "model": modelName,
+          "role": roleName,
+          "workingDirectory": workingDirectory ?? "",
+          "exitCode": "\(process.terminationStatus)",
+          "stderrTail": diagnostics.stderrTail
+        ])
+      }
       
       return ExecutionResult(
         stdoutString: String(data: stdoutData, encoding: .utf8) ?? "",
@@ -640,6 +655,13 @@ public final class CLIService {
     } onCancel: {
       if process.isRunning {
         process.terminate()
+      }
+      Task { @MainActor in
+        await mcpLog.warning("Copilot stream cancelled", metadata: [
+          "model": modelName,
+          "role": roleName,
+          "workingDirectory": workingDirectory ?? ""
+        ])
       }
     }
   }
@@ -654,6 +676,7 @@ public final class CLIService {
     private let onOutput: StreamCallback
     private let onCompletionDetected: @Sendable () async -> Void
     private var completionMarked = false
+    private var stderrTail: [String] = []
     
     init(onOutput: @escaping StreamCallback, onCompletionDetected: @escaping @Sendable () async -> Void) {
       self.onOutput = onOutput
@@ -694,6 +717,7 @@ public final class CLIService {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         if !trimmed.isEmpty {
           await onOutput(trimmed)
+          appendStderrTail(trimmed)
         }
         if trimmed.contains("Total usage est:") {
           await markCompletionIfNeeded()
@@ -713,6 +737,7 @@ public final class CLIService {
         let trimmed = stderrBuffer.trimmingCharacters(in: .whitespaces)
         if !trimmed.isEmpty {
           await onOutput(trimmed)
+          appendStderrTail(trimmed)
         }
         if trimmed.contains("Total usage est:") {
           await markCompletionIfNeeded()
@@ -725,6 +750,18 @@ public final class CLIService {
       guard !completionMarked else { return }
       completionMarked = true
       await onCompletionDetected()
+    }
+
+    private func appendStderrTail(_ line: String) {
+      stderrTail.append(line)
+      if stderrTail.count > 5 {
+        stderrTail.removeFirst(stderrTail.count - 5)
+      }
+    }
+
+    func getDiagnostics() -> (completionDetected: Bool, stderrTail: String) {
+      let tail = stderrTail.joined(separator: " | ")
+      return (completionMarked, tail)
     }
     
     func getFinalData() -> (Data, Data) {
