@@ -161,7 +161,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         steps: [
           AgentStepTemplate(role: .planner, model: .claudeSonnet45, name: "Planner"),
           AgentStepTemplate(role: .implementer, model: .claudeSonnet45, name: "Implementer A"),
-          AgentStepTemplate(role: .implementer, model: .gpt51Codex, name: "Implementer B"),
+          AgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer B"),
           AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
         ],
         isBuiltIn: true,
@@ -176,7 +176,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         steps: [
           AgentStepTemplate(role: .planner, model: .claudeSonnet45, name: "Planner"),
           AgentStepTemplate(role: .implementer, model: .claudeSonnet45, name: "Implementer A"),
-          AgentStepTemplate(role: .implementer, model: .gpt51Codex, name: "Implementer B"),
+          AgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer B"),
           AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
         ],
         isBuiltIn: true
