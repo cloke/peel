@@ -2055,98 +2055,30 @@ struct ChainDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
           Label("Agents in Chain", systemImage: "list.number").font(.headline)
           
-          ForEach(Array(chain.agents.enumerated()), id: \.element.id) { index, agent in
-            HStack {
-              // Agent number with status indicator
-              ZStack {
-                Circle()
-                  .fill(agentStatusColor(for: index, agent: agent))
-                  .frame(width: 28, height: 28)
-                
-                if chain.results.contains(where: { $0.agentId == agent.id }) {
-                  Image(systemName: "checkmark")
-                    .font(.caption.bold())
-                    .foregroundStyle(.white)
-                } else if isAgentRunning(at: index) {
-                  ProgressView()
-                    .progressViewStyle(.circular)
-                    .scaleEffect(0.5)
-                    .tint(.white)
-                } else {
-                  Text("\(index + 1)")
-                    .font(.caption.bold())
-                    .foregroundStyle(agentNumberColor(for: index, agent: agent))
-                }
-              }
-              
-              VStack(alignment: .leading, spacing: 2) {
-                Text(agent.name)
-                  .font(.subheadline)
-                  .fontWeight(isAgentRunning(at: index) ? .semibold : .medium)
-                
-                HStack(spacing: 4) {
-                  Text(agent.model.displayName)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                  
-                  if let result = chain.results.first(where: { $0.agentId == agent.id }) {
-                    Text("•")
-                      .font(.caption)
-                      .foregroundStyle(.secondary)
-                    Text("\(result.premiumCost)× used")
-                      .font(.caption)
-                      .foregroundStyle(.secondary)
-                  } else if agent.state.isActive {
-                    Text("•")
-                      .font(.caption)
-                      .foregroundStyle(.secondary)
-                    Label(agent.state.displayName, systemImage: agent.state.iconName)
-                      .font(.caption)
-                      .foregroundStyle(agent.state.color)
-                  }
-                }
-              }
-              
-              Spacer()
-              
-              // Status badge
-              if isAgentRunning(at: index) {
-                Text("Running")
-                  .font(.caption2)
-                  .fontWeight(.medium)
-                  .foregroundStyle(.white)
-                  .padding(.horizontal, 8)
-                  .padding(.vertical, 4)
-                  .background(Color.blue)
-                  .clipShape(Capsule())
-              } else if agent.state == .complete || chain.results.contains(where: { $0.agentId == agent.id }) {
-                Text("Complete")
-                  .font(.caption2)
-                  .fontWeight(.medium)
-                  .foregroundStyle(.green)
-                  .padding(.horizontal, 8)
-                  .padding(.vertical, 4)
-                  .background(Color.green.opacity(0.15))
-                  .clipShape(Capsule())
-              } else if case .running = chain.state, agent.state == .idle {
-                Text("Queued")
-                  .font(.caption2)
-                  .fontWeight(.medium)
-                  .foregroundStyle(.secondary)
-                  .padding(.horizontal, 8)
-                  .padding(.vertical, 4)
-                  .background(Color.secondary.opacity(0.15))
-                  .clipShape(Capsule())
+          // Group agents by role: planner, implementers, reviewer
+          let agentsWithIndex = Array(chain.agents.enumerated())
+          let planner = agentsWithIndex.first { $0.element.role == .planner }
+          let reviewer = agentsWithIndex.last { $0.element.role == .reviewer }
+          let implementers = agentsWithIndex.filter { $0.element.role == .implementer }
+          
+          // Planner (if exists)
+          if let (index, agent) = planner {
+            agentCard(index: index, agent: agent, chain: chain)
+          }
+          
+          // Implementers Grid (if any)
+          if !implementers.isEmpty {
+            let columns = [GridItem(.adaptive(minimum: 200), spacing: 12)]
+            LazyVGrid(columns: columns, spacing: 12) {
+              ForEach(implementers, id: \.element.id) { index, agent in
+                agentCard(index: index, agent: agent, chain: chain)
               }
             }
-            .padding(.vertical, 8)
-            .padding(.horizontal, 12)
-            .background(agentBackgroundColor(for: index, agent: agent))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay(
-              RoundedRectangle(cornerRadius: 8)
-                .stroke(isAgentRunning(at: index) ? Color.blue : Color.clear, lineWidth: 2)
-            )
+          }
+          
+          // Reviewer (if exists and not same as planner)
+          if let (index, agent) = reviewer, reviewer?.element.id != planner?.element.id {
+            agentCard(index: index, agent: agent, chain: chain)
           }
         }
         
@@ -2430,6 +2362,129 @@ struct ChainDetailView: View {
         chain.workingDirectory = agentManager.lastUsedWorkingDirectory
       }
     }
+  }
+  
+  // MARK: - Agent Card View
+  
+  @ViewBuilder
+  private func agentCard(index: Int, agent: Agent, chain: AgentChain) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 8) {
+        // Role icon with consistent sizing
+        Image(systemName: agent.role.iconName)
+          .frame(width: 20, height: 20)
+          .foregroundStyle(.secondary)
+        
+        // Agent number with status indicator
+        ZStack {
+          Circle()
+            .fill(agentStatusColor(for: index, agent: agent))
+            .frame(width: 24, height: 24)
+          
+          if chain.results.contains(where: { $0.agentId == agent.id }) {
+            Image(systemName: "checkmark")
+              .font(.caption2.bold())
+              .foregroundStyle(.white)
+          } else if isAgentRunning(at: index) {
+            ProgressView()
+              .progressViewStyle(.circular)
+              .scaleEffect(0.4)
+              .tint(.white)
+          } else {
+            Text("\(index + 1)")
+              .font(.caption2.bold())
+              .foregroundStyle(agentNumberColor(for: index, agent: agent))
+          }
+        }
+        
+        Spacer()
+        
+        // Status pill (compact)
+        if isAgentRunning(at: index) {
+          Text("Running")
+            .font(.caption2)
+            .fontWeight(.medium)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(Color.blue)
+            .clipShape(Capsule())
+        } else if agent.state == .complete || chain.results.contains(where: { $0.agentId == agent.id }) {
+          Text("Complete")
+            .font(.caption2)
+            .fontWeight(.medium)
+            .foregroundStyle(.green)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(Color.green.opacity(0.15))
+            .clipShape(Capsule())
+        } else if case .running = chain.state, agent.state == .idle {
+          Text("Queued")
+            .font(.caption2)
+            .fontWeight(.medium)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(Color.secondary.opacity(0.15))
+            .clipShape(Capsule())
+        } else if case .failed = agent.state {
+          Text("Failed")
+            .font(.caption2)
+            .fontWeight(.medium)
+            .foregroundStyle(.red)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(Color.red.opacity(0.15))
+            .clipShape(Capsule())
+        }
+      }
+      
+      // Role badge
+      Text(agent.role.displayName)
+        .font(.caption2)
+        .fontWeight(.semibold)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(Color.secondary.opacity(0.1))
+        .clipShape(Capsule())
+      
+      // Agent name
+      Text(agent.name)
+        .font(.subheadline)
+        .fontWeight(isAgentRunning(at: index) ? .semibold : .medium)
+        .lineLimit(2)
+      
+      // Model and cost info
+      HStack(spacing: 4) {
+        Text(agent.model.displayName)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+        
+        if let result = chain.results.first(where: { $0.agentId == agent.id }) {
+          Text("•")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          Text("\(result.premiumCost)× used")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        } else if agent.state.isActive {
+          Text("•")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          Label(agent.state.displayName, systemImage: agent.state.iconName)
+            .font(.caption)
+            .foregroundStyle(agent.state.color)
+        }
+      }
+    }
+    .padding(12)
+    .background(agentBackgroundColor(for: index, agent: agent))
+    .clipShape(RoundedRectangle(cornerRadius: 8))
+    .overlay(
+      RoundedRectangle(cornerRadius: 8)
+        .stroke(isAgentRunning(at: index) ? Color.blue : Color.clear, lineWidth: 2)
+    )
   }
   
   // MARK: - Agent Status Helpers
