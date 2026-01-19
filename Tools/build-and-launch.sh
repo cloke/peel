@@ -66,17 +66,21 @@ fi
 if [[ "$SKIP_BUILD" == "false" ]]; then
   echo "🔨 Building Peel..."
   cd "$PROJECT_DIR"
-  
+
+  BUILD_LOG=$(mktemp)
   xcodebuild \
     -project Peel.xcodeproj \
     -scheme "$SCHEME" \
     -configuration Debug \
     -derivedDataPath "$BUILD_DIR" \
     -destination 'platform=macOS' \
-    build \
-    2>&1 | grep -E '(Building|Build succeeded|error:|warning:|\*\*)' || true
+    build > "$BUILD_LOG" 2>&1
+  BUILD_STATUS=$?
 
-  if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
+  grep -E '(Building|Build succeeded|error:|warning:|\*\*)' "$BUILD_LOG" || true
+  rm -f "$BUILD_LOG"
+
+  if [[ $BUILD_STATUS -ne 0 ]]; then
     echo "❌ Build failed"
     exit 1
   fi
