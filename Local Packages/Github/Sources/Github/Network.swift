@@ -51,12 +51,19 @@ extension Github {
   
   /// Returns an array of pull requests from the specified repository
   /// - parameter organization: The github organization or personal repository name
-  public static func pullRequests(from repository: Github.Repository) async throws -> [Github.PullRequest] {
+  /// - parameter state: open, closed, or all
+  public static func pullRequests(
+    from repository: Github.Repository,
+    state: String = "open"
+  ) async throws -> [Github.PullRequest] {
     guard let organization = repository.owner?.login else {
       print("Issue generating url for repository")
       throw GithubError.invalidURL("Missing repository owner")
     }
-    return try await loadMany(url: "https://api.github.com/repos/\(organization)/\(repository.name)/pulls")
+    let encodedState = state.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? state
+    return try await loadMany(
+      url: "https://api.github.com/repos/\(organization)/\(repository.name)/pulls?state=\(encodedState)&per_page=100"
+    )
   }
   
   public static func loadRepositories(organization: String) async throws -> [Github.Repository] {

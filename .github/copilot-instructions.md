@@ -160,6 +160,31 @@ gh project item-edit --project-id PVT_kwHNO8jOATOTCg --id <ITEM_ID> \
   --field-id PVTSSF_lAHNO8jOATOTCs4PAuuN --single-select-option-id 47fc9ee4  # In Progress
 ```
 
+### Issue Template (REQUIRED)
+When creating issues, use this exact Markdown structure to keep formatting consistent:
+
+```
+## Summary
+<one sentence>
+
+## Proposed Charts / Work
+- <bullet list>
+
+## Data Source
+- <API/log/store>
+
+## UI Placement
+- <view/area>
+
+## Acceptance Criteria
+- [ ] <testable outcome>
+```
+
+If an issue template file exists in .github/ISSUE_TEMPLATE, prefer:
+```
+gh issue create --repo cloke/peel --template <template-file>
+```
+
 ### Delegating to GitHub Copilot Workspace
 For simple, well-defined tasks, you can delegate to Copilot Workspace:
 1. Open issue in browser: `gh issue view <number> --repo cloke/peel --web`

@@ -1569,12 +1569,25 @@ public final class MCPServerService {
   }
 
   private func handleRPC(body: Data) async -> (Int, Data) {
+    let startTime = Date()
+    var methodForLog = "unknown"
+    var statusCode = 500
+    defer {
+      let durationMs = Int(Date().timeIntervalSince(startTime) * 1000)
+      Task { await mcpLog.info("RPC complete", metadata: [
+        "method": methodForLog,
+        "durationMs": "\(durationMs)",
+        "status": "\(statusCode)"
+      ]) }
+    }
     activeRequests += 1
     defer { activeRequests -= 1 }
     do {
       let json = try JSONSerialization.jsonObject(with: body, options: [])
       guard let dict = json as? [String: Any] else {
         await mcpLog.warning("Invalid RPC request: non-object JSON")
+        methodForLog = "invalid"
+        statusCode = 400
         return (400, makeRPCError(id: nil, code: -32600, message: "Invalid Request"))
       }
 
@@ -1586,8 +1599,10 @@ public final class MCPServerService {
          let params,
          let toolName = params["name"] as? String {
         lastRequestMethod = "tools/call: \(toolName)"
+        methodForLog = "tools/call: \(toolName)"
       } else {
         lastRequestMethod = method
+        methodForLog = method
       }
 
       switch method {
@@ -1596,20 +1611,26 @@ public final class MCPServerService {
           "serverInfo": ["name": "Peel MCP Test Harness", "version": "0.1"],
           "capabilities": ["tools": [:]]
         ]
+        statusCode = 200
         return (200, makeRPCResult(id: id, result: result))
 
       case "tools/list":
+        statusCode = 200
         return (200, makeRPCResult(id: id, result: ["tools": toolList()]))
 
       case "tools/call":
-        return await handleToolCall(id: id, params: params)
+        let result = await handleToolCall(id: id, params: params)
+        statusCode = result.0
+        return result
 
       default:
         await mcpLog.warning("RPC method not found", metadata: ["method": method])
+        statusCode = 400
         return (400, makeRPCError(id: id, code: -32601, message: "Method not found"))
       }
     } catch {
       await mcpLog.error(error, context: "RPC handling failed")
+      statusCode = 500
       return (500, makeRPCError(id: nil, code: -32603, message: error.localizedDescription))
     }
   }
