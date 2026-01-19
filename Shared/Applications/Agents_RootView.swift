@@ -905,6 +905,7 @@ struct AgentDetailView: View {
               Text("Assign Task is disabled while \(chain.name) is running.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            }
           }
         }
         
