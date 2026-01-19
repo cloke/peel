@@ -11,6 +11,7 @@ import Observation
 #if os(macOS)
 import AppKit
 import Git
+import IOKit.pwr_mgt
 import Network
 import SwiftData
 
@@ -367,6 +368,12 @@ public final class AgentChainRunner {
     let gate = ChainRunGate()
     runGates[chain.id] = gate
     defer { runGates[chain.id] = nil }
+    let sleepAssertionId = beginSleepPrevention(for: chain)
+    defer {
+      if let sleepAssertionId {
+        endSleepPrevention(assertionId: sleepAssertionId)
+      }
+    }
 
     var mergeConflicts: [String] = []
     var errorMessage: String?
@@ -479,6 +486,26 @@ public final class AgentChainRunner {
         return
       }
     }
+  }
+
+  private func beginSleepPrevention(for chain: AgentChain) -> IOPMAssertionID? {
+    let reason = "Peel chain execution: \(chain.name)"
+    var assertionId: IOPMAssertionID = 0
+    let result = IOPMAssertionCreateWithName(
+      kIOPMAssertionTypeNoDisplaySleep as CFString,
+      IOPMAssertionLevel(kIOPMAssertionLevelOn),
+      reason as CFString,
+      &assertionId
+    )
+    if result == kIOReturnSuccess {
+      chain.addStatusMessage("Preventing sleep during chain run", type: .info)
+      return assertionId
+    }
+    return nil
+  }
+
+  private func endSleepPrevention(assertionId: IOPMAssertionID) {
+    IOPMAssertionRelease(assertionId)
   }
 
   private func applyPlannerOverrides(
@@ -1110,6 +1137,7 @@ public final class MCPServerService {
     static let port = "mcp.server.port"
     static let maxConcurrentChains = "mcp.server.maxConcurrentChains"
     static let maxQueuedChains = "mcp.server.maxQueuedChains"
+    static let autoCleanupWorkspaces = "mcp.server.autoCleanupWorkspaces"
   }
 
   public var isEnabled: Bool {
@@ -1148,6 +1176,12 @@ public final class MCPServerService {
         maxQueuedChains = 0
       }
       UserDefaults.standard.set(maxQueuedChains, forKey: StorageKey.maxQueuedChains)
+    }
+  }
+
+  public var autoCleanupWorkspaces: Bool {
+    didSet {
+      UserDefaults.standard.set(autoCleanupWorkspaces, forKey: StorageKey.autoCleanupWorkspaces)
     }
   }
 
@@ -1221,6 +1255,7 @@ public final class MCPServerService {
     self.port = UserDefaults.standard.integer(forKey: StorageKey.port)
     self.maxConcurrentChains = UserDefaults.standard.integer(forKey: StorageKey.maxConcurrentChains)
     self.maxQueuedChains = UserDefaults.standard.integer(forKey: StorageKey.maxQueuedChains)
+    self.autoCleanupWorkspaces = UserDefaults.standard.bool(forKey: StorageKey.autoCleanupWorkspaces)
     if self.port == 0 {
       self.port = 8765
     }
@@ -1792,20 +1827,23 @@ public final class MCPServerService {
     if let chainWorkspace {
       try? await agentManager.workspaceManager.cleanupWorkspace(chainWorkspace, force: true)
     }
-        if let errorMessage = summary.errorMessage {
-          await mcpLog.error("Chain run failed", metadata: [
-            "runId": runId.uuidString,
-            "template": template.name,
-            "error": errorMessage
-          ])
-        } else {
-          await mcpLog.info("Chain run completed", metadata: [
-            "runId": runId.uuidString,
-            "template": template.name,
-            "results": "\(summary.results.count)",
-            "mergeConflicts": "\(summary.mergeConflicts.count)"
-          ])
-        }
+    if autoCleanupWorkspaces {
+      await cleanupAgentWorkspaces()
+    }
+    if let errorMessage = summary.errorMessage {
+      await mcpLog.error("Chain run failed", metadata: [
+        "runId": runId.uuidString,
+        "template": template.name,
+        "error": errorMessage
+      ])
+    } else {
+      await mcpLog.info("Chain run completed", metadata: [
+        "runId": runId.uuidString,
+        "template": template.name,
+        "results": "\(summary.results.count)",
+        "mergeConflicts": "\(summary.mergeConflicts.count)"
+      ])
+    }
     let queueWaitSeconds: Double? = {
       guard let enqueuedAt else { return nil }
       return Date().timeIntervalSince(enqueuedAt)
