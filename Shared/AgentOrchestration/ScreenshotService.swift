@@ -7,11 +7,14 @@ import CoreMedia
 import ScreenCaptureKit
 
 actor ScreenshotService {
+  private var permissionRequested = false
+
   enum ScreenshotError: Error {
     case permissionDenied
     case captureFailed
     case notSupported
     case noDisplay
+    case timedOut
   }
 
   func capture(label: String? = nil) async throws -> URL {
@@ -19,8 +22,14 @@ actor ScreenshotService {
       throw ScreenshotError.notSupported
     }
 
-    if !CGPreflightScreenCaptureAccess() {
-      if !CGRequestScreenCaptureAccess() {
+    let hasPermission = await MainActor.run { CGPreflightScreenCaptureAccess() }
+    if !hasPermission {
+      if permissionRequested {
+        throw ScreenshotError.permissionDenied
+      }
+      permissionRequested = true
+      let granted = await MainActor.run { CGRequestScreenCaptureAccess() }
+      if !granted {
         throw ScreenshotError.permissionDenied
       }
     }
@@ -80,6 +89,12 @@ actor ScreenshotService {
         } catch {
           output.failIfNeeded(error)
         }
+      }
+
+      Task { [streamBox, output] in
+        try? await Task.sleep(for: .seconds(2))
+        output.failIfNeeded(ScreenshotError.timedOut)
+        try? await streamBox.stream.stopCapture()
       }
     }
   }
