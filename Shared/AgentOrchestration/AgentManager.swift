@@ -275,6 +275,7 @@ public final class AgentChainRunner {
   private let validationRunner = ValidationRunner()
   private let mcpLog = MCPLogService.shared
   private let mergeCoordinator = MergeCoordinator.shared
+  private let screenshotService = ScreenshotService()
 
   public init(
     agentManager: AgentManager,
@@ -669,7 +670,7 @@ public final class AgentChainRunner {
         plannerDecision = PlannerDecision.parse(from: response.content)
       }
 
-      let result = AgentChainResult(
+      var result = AgentChainResult(
         agentId: agent.id,
         agentName: agent.name,
         model: agent.model.displayName,
@@ -690,6 +691,18 @@ public final class AgentChainRunner {
         "duration": response.duration ?? "",
         "premiumCost": "\(premiumCost)"
       ])
+
+      do {
+        let url = try await screenshotService.capture(label: "\(chain.id.uuidString)-\(agent.name)")
+        result.screenshotPath = url.path
+        chain.addStatusMessage("📸 Screenshot captured", type: .tool)
+        await mcpLog.info("Screenshot saved", metadata: ["path": url.path])
+      } catch {
+        // Non-fatal: log and continue
+        await mcpLog.warning("Screenshot failed", metadata: ["error": error.localizedDescription])
+        chain.addStatusMessage("Screenshot failed: \(error.localizedDescription)", type: .error)
+      }
+
       return result
     } catch {
       if case ChainError.cancelled = error {
@@ -904,6 +917,7 @@ public final class MCPServerService {
   public let sessionTracker: SessionTracker
   private let chainRunner: AgentChainRunner
   private var dataService: DataService?
+  private let screenshotService = ScreenshotService()
 
   private struct ChainQueueEntry {
     let id: UUID
@@ -1244,6 +1258,16 @@ public final class MCPServerService {
       scheduleAppQuit()
       return (200, makeRPCResult(id: id, result: ["status": "quitting"]))
 
+    case "screenshot.capture":
+      let label = arguments["label"] as? String
+      do {
+        let url = try await screenshotService.capture(label: label)
+        return (200, makeRPCResult(id: id, result: ["path": url.path]))
+      } catch {
+        await mcpLog.warning("Screenshot tool failed", metadata: ["error": error.localizedDescription])
+        return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
+      }
+
     default:
       await mcpLog.warning("Unknown tool", metadata: ["name": name])
       return (400, makeRPCError(id: id, code: -32601, message: "Unknown tool"))
@@ -1370,6 +1394,7 @@ public final class MCPServerService {
         workingDirectory: workingDirectory,
         implementerBranches: [],
         implementerWorkspacePaths: [],
+        screenshotPaths: summary.results.compactMap { $0.screenshotPath },
         success: summary.errorMessage == nil,
         errorMessage: summary.errorMessage,
         mergeConflictsCount: summary.mergeConflicts.count,
@@ -1751,6 +1776,16 @@ public final class MCPServerService {
         "inputSchema": [
           "type": "object",
           "properties": [:]
+        ]
+      ],
+      [
+        "name": "screenshot.capture",
+        "description": "Capture screenshot of current screen state",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "label": ["type": "string"]
+          ]
         ]
       ]
     ]
