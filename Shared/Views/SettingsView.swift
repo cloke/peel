@@ -24,6 +24,17 @@ struct SettingsView: View {
           )
         )
 
+        Toggle(
+          "Auto-clean agent worktrees",
+          isOn: Binding(
+            get: { mcpServer.autoCleanupWorkspaces },
+            set: { mcpServer.autoCleanupWorkspaces = $0 }
+          )
+        )
+        Text("Remove agent worktrees after MCP runs complete.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+
         HStack {
           Text("Port")
           TextField(
