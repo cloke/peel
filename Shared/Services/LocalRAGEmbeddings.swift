@@ -46,6 +46,42 @@ struct CoreMLEmbeddingProvider: LocalRAGEmbeddingProvider {
   }
 }
 
+struct LocalRAGModelDescriptor {
+  static func describe(modelURL: URL) throws -> [String: Any] {
+    let model = try MLModel(contentsOf: modelURL)
+    let description = model.modelDescription
+    let inputDescriptions = description.inputDescriptionsByName.mapValues { value in
+      featureDescription(value)
+    }
+    let outputDescriptions = description.outputDescriptionsByName.mapValues { value in
+      featureDescription(value)
+    }
+
+    return [
+      "name": description.metadata[.author] as Any,
+      "inputs": inputDescriptions,
+      "outputs": outputDescriptions
+    ]
+  }
+
+  private static func featureDescription(_ description: MLFeatureDescription) -> [String: Any] {
+    var info: [String: Any] = [
+      "type": "\(description.type)",
+      "isOptional": description.isOptional
+    ]
+    if let multiArray = description.multiArrayConstraint {
+      info["multiArrayShape"] = multiArray.shape
+      info["multiArrayDataType"] = "\(multiArray.dataType)"
+    }
+    if let imageConstraint = description.imageConstraint {
+      info["imageWidth"] = imageConstraint.pixelsWide
+      info["imageHeight"] = imageConstraint.pixelsHigh
+      info["imagePixelFormat"] = "\(imageConstraint.pixelFormatType)"
+    }
+    return info
+  }
+}
+
 struct HashEmbeddingProvider: LocalRAGEmbeddingProvider {
   let dimensions: Int = 128
 

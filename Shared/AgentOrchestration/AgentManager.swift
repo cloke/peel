@@ -1959,6 +1959,9 @@ public final class MCPServerService {
     case "rag.search":
       return await handleRagSearch(id: id, arguments: arguments)
 
+    case "rag.model.describe":
+      return await handleRagModelDescribe(id: id, arguments: arguments)
+
     case "templates.list":
       let templates = templateList()
       return (200, makeRPCResult(id: id, result: ["templates": templates]))
@@ -2426,6 +2429,25 @@ public final class MCPServerService {
       return (200, makeRPCResult(id: id, result: ["mode": mode, "results": payload]))
     } catch {
       await mcpLog.warning("Local RAG search failed", metadata: ["error": error.localizedDescription])
+      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
+    }
+  }
+
+  private func handleRagModelDescribe(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    let modelName = (arguments["modelName"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let modelExtension = (arguments["extension"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let resolvedName = modelName?.isEmpty == false ? modelName! : "bge-small-en-v1.5"
+    let resolvedExtension = modelExtension?.isEmpty == false ? modelExtension! : "mlpackage"
+
+    guard let url = Bundle.main.url(forResource: resolvedName, withExtension: resolvedExtension) else {
+      return (404, makeRPCError(id: id, code: -32021, message: "Model not found in bundle"))
+    }
+
+    do {
+      let info = try LocalRAGModelDescriptor.describe(modelURL: url)
+      return (200, makeRPCResult(id: id, result: ["model": info, "url": url.path]))
+    } catch {
+      await mcpLog.warning("Local RAG model describe failed", metadata: ["error": error.localizedDescription])
       return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
     }
   }
@@ -3165,6 +3187,19 @@ public final class MCPServerService {
             "mode": ["type": "string"]
           ],
           "required": ["query"]
+        ],
+        category: .rag,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "rag.model.describe",
+        description: "Describe the Core ML embedding model",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "modelName": ["type": "string"],
+            "extension": ["type": "string"]
+          ]
         ],
         category: .rag,
         isMutating: false

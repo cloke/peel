@@ -136,6 +136,7 @@ QueryService
 - 2026-01-19: Added `rag.search` MCP tool (text match stub over chunks).
 - 2026-01-19: Added hash-based embedding provider + vector search stub (`rag.search` mode: `vector`).
 - 2026-01-19: Added Core ML embedding provider scaffold (awaiting model asset + output mapping).
+- 2026-01-19: Added `rag.model.describe` MCP tool to validate Core ML model bundle metadata.
 
 ## Open Questions
 - Preferred embedding model (local vs API)?
