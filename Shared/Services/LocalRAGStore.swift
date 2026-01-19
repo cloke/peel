@@ -1,0 +1,553 @@
+//
+//  LocalRAGStore.swift
+//  Peel
+//
+//  Created on 1/19/26.
+//
+
+import CryptoKit
+import Foundation
+import SQLite3
+
+struct LocalRAGIndexReport: Sendable {
+  let repoId: String
+  let repoPath: String
+  let filesIndexed: Int
+  let chunksIndexed: Int
+  let bytesScanned: Int
+  let durationMs: Int
+}
+
+struct LocalRAGSearchResult: Sendable {
+  let filePath: String
+  let startLine: Int
+  let endLine: Int
+  let snippet: String
+}
+
+struct LocalRAGScannedFile: Sendable {
+  let path: String
+  let text: String
+  let lineCount: Int
+  let byteCount: Int
+  let language: String
+}
+
+struct LocalRAGChunk: Sendable {
+  let startLine: Int
+  let endLine: Int
+  let text: String
+  let tokenCount: Int
+}
+
+struct LocalRAGChunker {
+  var maxLines: Int = 200
+  var overlapLines: Int = 20
+
+  func chunk(text: String) -> [LocalRAGChunk] {
+    let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+    guard !lines.isEmpty else { return [] }
+
+    var chunks: [LocalRAGChunk] = []
+    chunks.reserveCapacity(max(1, lines.count / maxLines))
+
+    var start = 0
+    while start < lines.count {
+      let end = min(lines.count, start + maxLines)
+      let slice = lines[start..<end]
+      let chunkText = slice.joined(separator: "\n")
+      let tokenCount = approximateTokenCount(for: chunkText)
+      chunks.append(
+        LocalRAGChunk(
+          startLine: start + 1,
+          endLine: end,
+          text: chunkText,
+          tokenCount: tokenCount
+        )
+      )
+      if end == lines.count { break }
+      start = max(0, end - overlapLines)
+    }
+
+    return chunks
+  }
+
+  private func approximateTokenCount(for text: String) -> Int {
+    let words = text.split { $0.isWhitespace || $0.isNewline }
+    return max(1, words.count)
+  }
+}
+
+struct LocalRAGFileScanner {
+  var maxFileBytes: Int = 1_000_000
+  var excludedDirectories: Set<String> = [
+    ".git",
+    ".build",
+    ".swiftpm",
+    "build",
+    "DerivedData",
+    "node_modules",
+    "Carthage"
+  ]
+
+  func scan(rootURL: URL) -> [LocalRAGScannedFile] {
+    guard let enumerator = FileManager.default.enumerator(
+      at: rootURL,
+      includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey],
+      options: [.skipsHiddenFiles, .skipsPackageDescendants]
+    ) else {
+      return []
+    }
+
+    var results: [LocalRAGScannedFile] = []
+
+    for case let fileURL as URL in enumerator {
+      if shouldSkip(url: fileURL) {
+        enumerator.skipDescendants()
+        continue
+      }
+
+      guard isTextFile(url: fileURL) else { continue }
+
+      if let file = readFile(url: fileURL) {
+        results.append(file)
+      }
+    }
+
+    return results
+  }
+
+  private func shouldSkip(url: URL) -> Bool {
+    let lastComponent = url.lastPathComponent
+    if excludedDirectories.contains(lastComponent) {
+      return true
+    }
+    return false
+  }
+
+  private func isTextFile(url: URL) -> Bool {
+    let ext = url.pathExtension.lowercased()
+    if ext.isEmpty { return false }
+    return [
+      "swift", "md", "txt", "json", "yml", "yaml", "toml", "rb", "py",
+      "js", "ts", "tsx", "jsx", "html", "css", "scss", "sql", "sh",
+      "zsh", "bash", "cfg", "ini", "plist", "xml"
+    ].contains(ext)
+  }
+
+  private func readFile(url: URL) -> LocalRAGScannedFile? {
+    guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+          let fileSize = attrs[.size] as? NSNumber else {
+      return nil
+    }
+
+    let byteCount = min(fileSize.intValue, maxFileBytes)
+    guard byteCount > 0 else { return nil }
+
+    guard let data = try? Data(contentsOf: url, options: [.mappedIfSafe]) else {
+      return nil
+    }
+
+    let slice = data.prefix(byteCount)
+    guard let text = String(data: slice, encoding: .utf8) else { return nil }
+    let lineCount = text.split(separator: "\n", omittingEmptySubsequences: false).count
+
+    return LocalRAGScannedFile(
+      path: url.path,
+      text: text,
+      lineCount: lineCount,
+      byteCount: byteCount,
+      language: languageFor(url: url)
+    )
+  }
+
+  private func languageFor(url: URL) -> String {
+    switch url.pathExtension.lowercased() {
+    case "swift": return "Swift"
+    case "md": return "Markdown"
+    case "rb": return "Ruby"
+    case "py": return "Python"
+    case "js", "jsx": return "JavaScript"
+    case "ts", "tsx": return "TypeScript"
+    case "yml", "yaml": return "YAML"
+    case "json": return "JSON"
+    case "toml": return "TOML"
+    case "html": return "HTML"
+    case "css", "scss": return "CSS"
+    case "sql": return "SQL"
+    case "sh", "zsh", "bash": return "Shell"
+    case "plist", "xml": return "XML"
+    default: return url.pathExtension.uppercased()
+    }
+  }
+}
+
+actor LocalRAGStore {
+  struct Status: Sendable {
+    let dbPath: String
+    let exists: Bool
+    let schemaVersion: Int
+    let extensionLoaded: Bool
+    let lastInitializedAt: Date?
+  }
+
+  enum LocalRAGError: LocalizedError {
+    case sqlite(String)
+    case invalidPath
+
+    var errorDescription: String? {
+      switch self {
+      case .sqlite(let message):
+        return message
+      case .invalidPath:
+        return "Invalid database path"
+      }
+    }
+  }
+
+  private let dbURL: URL
+  private var db: OpaquePointer?
+  private var schemaVersion: Int = 0
+  private var extensionLoaded: Bool = false
+  private var lastInitializedAt: Date?
+  private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+
+  private let scanner = LocalRAGFileScanner()
+  private let chunker = LocalRAGChunker()
+
+  private let dateFormatter = ISO8601DateFormatter()
+
+  init() {
+    let baseURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+      ?? FileManager.default.temporaryDirectory
+    let ragURL = baseURL.appendingPathComponent("Peel/RAG", isDirectory: true)
+    if !FileManager.default.fileExists(atPath: ragURL.path) {
+      try? FileManager.default.createDirectory(at: ragURL, withIntermediateDirectories: true)
+    }
+    self.dbURL = ragURL.appendingPathComponent("rag.sqlite")
+  }
+
+  deinit {
+    if let db {
+      sqlite3_close(db)
+    }
+  }
+
+  func status() -> Status {
+    Status(
+      dbPath: dbURL.path,
+      exists: FileManager.default.fileExists(atPath: dbURL.path),
+      schemaVersion: schemaVersion,
+      extensionLoaded: extensionLoaded,
+      lastInitializedAt: lastInitializedAt
+    )
+  }
+
+  func initialize(extensionPath: String? = nil) throws -> Status {
+    try openIfNeeded()
+    try loadExtensionIfAvailable(extensionPath: extensionPath)
+    try ensureSchema()
+    lastInitializedAt = Date()
+    return status()
+  }
+
+  func indexRepository(path: String) async throws -> LocalRAGIndexReport {
+    let startTime = Date()
+    _ = try initialize()
+
+    let repoURL = URL(fileURLWithPath: path)
+    let scannedFiles = scanner.scan(rootURL: repoURL)
+    let repoId = stableId(for: path)
+    let repoName = repoURL.lastPathComponent
+    let now = dateFormatter.string(from: Date())
+
+    try upsertRepo(id: repoId, name: repoName, rootPath: path, lastIndexedAt: now)
+
+    var chunkCount = 0
+    var bytesScanned = 0
+
+    for file in scannedFiles {
+      let fileId = stableId(for: "\(repoId):\(file.path)")
+      let fileHash = stableId(for: file.text)
+      try upsertFile(
+        id: fileId,
+        repoId: repoId,
+        path: file.path,
+        hash: fileHash,
+        language: file.language,
+        updatedAt: now
+      )
+      try deleteChunks(for: fileId)
+
+      let chunks = chunker.chunk(text: file.text)
+      for chunk in chunks {
+        let chunkHash = stableId(for: "\(fileId):\(chunk.startLine):\(chunk.endLine):\(chunk.text)")
+        try upsertChunk(
+          id: chunkHash,
+          fileId: fileId,
+          startLine: chunk.startLine,
+          endLine: chunk.endLine,
+          text: chunk.text,
+          tokenCount: chunk.tokenCount
+        )
+      }
+
+      chunkCount += chunks.count
+      bytesScanned += file.byteCount
+    }
+
+    let durationMs = Int(Date().timeIntervalSince(startTime) * 1000)
+    return LocalRAGIndexReport(
+      repoId: repoId,
+      repoPath: path,
+      filesIndexed: scannedFiles.count,
+      chunksIndexed: chunkCount,
+      bytesScanned: bytesScanned,
+      durationMs: durationMs
+    )
+  }
+
+  func search(query: String, repoPath: String? = nil, limit: Int = 10) async throws -> [LocalRAGSearchResult] {
+    let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedQuery.isEmpty else { return [] }
+    try openIfNeeded()
+
+    let sqlBase = """
+    SELECT files.path, chunks.start_line, chunks.end_line, chunks.text
+    FROM chunks
+    JOIN files ON files.id = chunks.file_id
+    JOIN repos ON repos.id = files.repo_id
+    WHERE chunks.text LIKE ?
+    """
+
+    let sql: String
+    if repoPath != nil {
+      sql = sqlBase + " AND repos.root_path = ? ORDER BY files.path LIMIT ?"
+    } else {
+      sql = sqlBase + " ORDER BY files.path LIMIT ?"
+    }
+
+    return try queryRows(sql: sql) { statement in
+      bindText(statement, 1, "%\(trimmedQuery)%")
+      var bindIndex: Int32 = 2
+      if let repoPath {
+        bindText(statement, bindIndex, repoPath)
+        bindIndex += 1
+      }
+      sqlite3_bind_int(statement, bindIndex, Int32(max(1, limit)))
+    }
+  }
+
+  private func openIfNeeded() throws {
+    if db != nil {
+      return
+    }
+    guard dbURL.isFileURL else {
+      throw LocalRAGError.invalidPath
+    }
+    var handle: OpaquePointer?
+    let result = sqlite3_open(dbURL.path, &handle)
+    guard result == SQLITE_OK, let handle else {
+      if let handle {
+        let message = String(cString: sqlite3_errmsg(handle))
+        throw LocalRAGError.sqlite(message)
+      }
+      throw LocalRAGError.sqlite("Failed to open SQLite database")
+    }
+    db = handle
+    sqlite3_exec(handle, "PRAGMA foreign_keys = ON;", nil, nil, nil)
+  }
+
+  private func loadExtensionIfAvailable(extensionPath: String?) throws {
+    extensionLoaded = false
+    let path = extensionPath?.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let path, !path.isEmpty else {
+      return
+    }
+    throw LocalRAGError.sqlite("SQLite extension loading is not enabled in this build (path: \(path))")
+  }
+
+  private func ensureSchema() throws {
+    try exec("CREATE TABLE IF NOT EXISTS rag_meta (key TEXT PRIMARY KEY, value TEXT)")
+    try exec("CREATE TABLE IF NOT EXISTS repos (id TEXT PRIMARY KEY, name TEXT, root_path TEXT, last_indexed_at TEXT)")
+    try exec("CREATE TABLE IF NOT EXISTS files (id TEXT PRIMARY KEY, repo_id TEXT, path TEXT, hash TEXT, language TEXT, updated_at TEXT, FOREIGN KEY(repo_id) REFERENCES repos(id) ON DELETE CASCADE)")
+    try exec("CREATE TABLE IF NOT EXISTS chunks (id TEXT PRIMARY KEY, file_id TEXT, start_line INTEGER, end_line INTEGER, text TEXT, token_count INTEGER, FOREIGN KEY(file_id) REFERENCES files(id) ON DELETE CASCADE)")
+    try exec("CREATE TABLE IF NOT EXISTS embeddings (chunk_id TEXT PRIMARY KEY, embedding BLOB, FOREIGN KEY(chunk_id) REFERENCES chunks(id) ON DELETE CASCADE)")
+    try exec("CREATE TABLE IF NOT EXISTS cache_embeddings (text_hash TEXT PRIMARY KEY, embedding BLOB, updated_at TEXT)")
+
+    let now = dateFormatter.string(from: Date())
+    try exec("INSERT OR IGNORE INTO rag_meta (key, value) VALUES ('schema_version', '1')")
+    try exec("INSERT OR IGNORE INTO rag_meta (key, value) VALUES ('created_at', '\(now)')")
+    try exec("INSERT OR REPLACE INTO rag_meta (key, value) VALUES ('updated_at', '\(now)')")
+
+    let versionText = try queryString("SELECT value FROM rag_meta WHERE key = 'schema_version'")
+    schemaVersion = Int(versionText ?? "") ?? 0
+  }
+
+  private func exec(_ sql: String) throws {
+    guard let db else {
+      throw LocalRAGError.sqlite("Database not initialized")
+    }
+    var errorMessage: UnsafeMutablePointer<Int8>?
+    let result = sqlite3_exec(db, sql, nil, nil, &errorMessage)
+    if result != SQLITE_OK {
+      let message = errorMessage.map { String(cString: $0) } ?? "SQLite error"
+      if let errorMessage {
+        sqlite3_free(errorMessage)
+      }
+      throw LocalRAGError.sqlite(message)
+    }
+  }
+
+  private func queryString(_ sql: String) throws -> String? {
+    guard let db else {
+      throw LocalRAGError.sqlite("Database not initialized")
+    }
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK else {
+      let message = String(cString: sqlite3_errmsg(db))
+      throw LocalRAGError.sqlite(message)
+    }
+    defer { sqlite3_finalize(statement) }
+
+    if sqlite3_step(statement) == SQLITE_ROW,
+       let text = sqlite3_column_text(statement, 0) {
+      return String(cString: text)
+    }
+    return nil
+  }
+
+  private func queryRows(
+    sql: String,
+    binder: (OpaquePointer) -> Void
+  ) throws -> [LocalRAGSearchResult] {
+    guard let db else {
+      throw LocalRAGError.sqlite("Database not initialized")
+    }
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let statement else {
+      let message = String(cString: sqlite3_errmsg(db))
+      throw LocalRAGError.sqlite(message)
+    }
+    defer { sqlite3_finalize(statement) }
+
+    binder(statement)
+
+    var results: [LocalRAGSearchResult] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+      let path = String(cString: sqlite3_column_text(statement, 0))
+      let startLine = Int(sqlite3_column_int(statement, 1))
+      let endLine = Int(sqlite3_column_int(statement, 2))
+      let text = String(cString: sqlite3_column_text(statement, 3))
+      let snippet = String(text.prefix(240))
+      results.append(
+        LocalRAGSearchResult(
+          filePath: path,
+          startLine: startLine,
+          endLine: endLine,
+          snippet: snippet
+        )
+      )
+    }
+
+    return results
+  }
+
+  private func upsertRepo(id: String, name: String, rootPath: String, lastIndexedAt: String) throws {
+    let sql = """
+    INSERT OR REPLACE INTO repos (id, name, root_path, last_indexed_at)
+    VALUES (?, ?, ?, ?)
+    """
+    try execute(sql: sql) { statement in
+      bindText(statement, 1, id)
+      bindText(statement, 2, name)
+      bindText(statement, 3, rootPath)
+      bindText(statement, 4, lastIndexedAt)
+    }
+  }
+
+  private func upsertFile(
+    id: String,
+    repoId: String,
+    path: String,
+    hash: String,
+    language: String,
+    updatedAt: String
+  ) throws {
+    let sql = """
+    INSERT OR REPLACE INTO files (id, repo_id, path, hash, language, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    """
+    try execute(sql: sql) { statement in
+      bindText(statement, 1, id)
+      bindText(statement, 2, repoId)
+      bindText(statement, 3, path)
+      bindText(statement, 4, hash)
+      bindText(statement, 5, language)
+      bindText(statement, 6, updatedAt)
+    }
+  }
+
+  private func upsertChunk(
+    id: String,
+    fileId: String,
+    startLine: Int,
+    endLine: Int,
+    text: String,
+    tokenCount: Int
+  ) throws {
+    let sql = """
+    INSERT OR REPLACE INTO chunks (id, file_id, start_line, end_line, text, token_count)
+    VALUES (?, ?, ?, ?, ?, ?)
+    """
+    try execute(sql: sql) { statement in
+      bindText(statement, 1, id)
+      bindText(statement, 2, fileId)
+      sqlite3_bind_int(statement, 3, Int32(startLine))
+      sqlite3_bind_int(statement, 4, Int32(endLine))
+      bindText(statement, 5, text)
+      sqlite3_bind_int(statement, 6, Int32(tokenCount))
+    }
+  }
+
+  private func deleteChunks(for fileId: String) throws {
+    let sql = "DELETE FROM chunks WHERE file_id = ?"
+    try execute(sql: sql) { statement in
+      bindText(statement, 1, fileId)
+    }
+  }
+
+  private func execute(sql: String, binder: (OpaquePointer) -> Void) throws {
+    guard let db else {
+      throw LocalRAGError.sqlite("Database not initialized")
+    }
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK else {
+      let message = String(cString: sqlite3_errmsg(db))
+      throw LocalRAGError.sqlite(message)
+    }
+    guard let statement else {
+      throw LocalRAGError.sqlite("Failed to prepare statement")
+    }
+    defer { sqlite3_finalize(statement) }
+
+    binder(statement)
+    let stepResult = sqlite3_step(statement)
+    guard stepResult == SQLITE_DONE else {
+      let message = String(cString: sqlite3_errmsg(db))
+      throw LocalRAGError.sqlite(message)
+    }
+  }
+
+  private func bindText(_ statement: OpaquePointer, _ index: Int32, _ value: String) {
+    sqlite3_bind_text(statement, index, (value as NSString).utf8String, -1, sqliteTransient)
+  }
+
+  private func stableId(for value: String) -> String {
+    let digest = SHA256.hash(data: Data(value.utf8))
+    return digest.map { String(format: "%02x", $0) }.joined()
+  }
+}
