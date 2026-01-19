@@ -18,6 +18,7 @@ import SwiftData
 @MainActor
 @Observable
 public final class AgentManager {
+  private let mcpLog = MCPLogService.shared
   
   /// All registered agents
   public private(set) var agents: [Agent] = []
@@ -533,6 +534,7 @@ public final class AgentChainRunner {
 
     let statusLines = try await Commands.simple(arguments: ["status", "--porcelain"], in: repository)
     if statusLines.contains(where: { !$0.isEmpty }) {
+      await mcpLog.warning("Merge aborted: dirty working tree", metadata: ["repo": workingDirectory])
       throw NSError(
         domain: "AgentChain",
         code: 3,
@@ -549,6 +551,10 @@ public final class AgentChainRunner {
         _ = try? await Commands.simple(arguments: ["merge", "--abort"], in: repository)
         let conflictLines = try? await Commands.simple(arguments: ["diff", "--name-only", "--diff-filter=U"], in: repository)
         conflicts = conflictLines?.filter { !$0.isEmpty } ?? []
+        await mcpLog.warning("Merge conflicts detected", metadata: [
+          "repo": workingDirectory,
+          "conflicts": conflicts.joined(separator: ", ")
+        ])
         break
       }
     }
@@ -615,6 +621,11 @@ public final class AgentChainRunner {
       agent.updateState(.complete)
       return result
     } catch {
+      await mcpLog.error(error, context: "Agent run failed", metadata: [
+        "agent": agent.name,
+        "role": agent.role.displayName,
+        "model": agent.model.displayName
+      ])
       agent.updateState(.failed(message: error.localizedDescription))
       throw error
     }
@@ -1053,6 +1064,7 @@ public final class MCPServerService {
     do {
       let json = try JSONSerialization.jsonObject(with: body, options: [])
       guard let dict = json as? [String: Any] else {
+        await mcpLog.warning("Invalid RPC request: non-object JSON")
         return (400, makeRPCError(id: nil, code: -32600, message: "Invalid Request"))
       }
 
@@ -1083,15 +1095,18 @@ public final class MCPServerService {
         return await handleToolCall(id: id, params: params)
 
       default:
+        await mcpLog.warning("RPC method not found", metadata: ["method": method])
         return (400, makeRPCError(id: id, code: -32601, message: "Method not found"))
       }
     } catch {
+      await mcpLog.error(error, context: "RPC handling failed")
       return (500, makeRPCError(id: nil, code: -32603, message: error.localizedDescription))
     }
   }
 
   private func handleToolCall(id: Any?, params: [String: Any]?) async -> (Int, Data) {
     guard let params, let name = params["name"] as? String else {
+      await mcpLog.warning("Invalid tool call params")
       return (400, makeRPCError(id: id, code: -32602, message: "Invalid params"))
     }
 
@@ -1111,6 +1126,14 @@ public final class MCPServerService {
     case "chains.queue.configure":
       return handleQueueConfigure(id: id, arguments: arguments)
 
+    case "logs.mcp.path":
+      return (200, makeRPCResult(id: id, result: ["path": await mcpLog.logPath()]))
+
+    case "logs.mcp.tail":
+      let lines = arguments["lines"] as? Int ?? 200
+      let text = await mcpLog.tail(lines: lines)
+      return (200, makeRPCResult(id: id, result: ["text": text]))
+
     case "server.restart":
       return await handleServerRestart(id: id)
 
@@ -1126,17 +1149,20 @@ public final class MCPServerService {
       return (200, makeRPCResult(id: id, result: ["status": "quitting"]))
 
     default:
+      await mcpLog.warning("Unknown tool", metadata: ["name": name])
       return (400, makeRPCError(id: id, code: -32601, message: "Unknown tool"))
     }
   }
 
   private func handleChainRun(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
     guard let prompt = arguments["prompt"] as? String else {
+      await mcpLog.warning("chains.run missing prompt")
       return (400, makeRPCError(id: id, code: -32602, message: "Missing prompt"))
     }
 
     let runId = UUID()
     if activeChainRuns >= maxConcurrentChains, chainQueue.count >= maxQueuedChains {
+      await mcpLog.warning("Chain queue full", metadata: ["runId": runId.uuidString])
       return (429, makeRPCError(id: id, code: -32000, message: "Chain queue is full"))
     }
 
@@ -1161,6 +1187,7 @@ public final class MCPServerService {
     }()
 
     guard let template else {
+      await mcpLog.warning("Template not found", metadata: ["runId": runId.uuidString])
       return (400, makeRPCError(id: id, code: -32602, message: "Template not found"))
     }
 
@@ -1170,7 +1197,28 @@ public final class MCPServerService {
       chain.enableReviewLoop = enableReviewLoop
     }
 
+    await mcpLog.info("Chain run started", metadata: [
+      "runId": runId.uuidString,
+      "template": template.name,
+      "workingDirectory": workingDirectory ?? "",
+      "queued": enqueuedAt == nil ? "false" : "true"
+    ])
+
     let summary = await chainRunner.runChain(chain, prompt: prompt, validationConfig: template.validationConfig)
+        if let errorMessage = summary.errorMessage {
+          await mcpLog.error("Chain run failed", metadata: [
+            "runId": runId.uuidString,
+            "template": template.name,
+            "error": errorMessage
+          ])
+        } else {
+          await mcpLog.info("Chain run completed", metadata: [
+            "runId": runId.uuidString,
+            "template": template.name,
+            "results": "\(summary.results.count)",
+            "mergeConflicts": "\(summary.mergeConflicts.count)"
+          ])
+        }
     let queueWaitSeconds: Double? = {
       guard let enqueuedAt else { return nil }
       return Date().timeIntervalSince(enqueuedAt)
@@ -1452,6 +1500,24 @@ public final class MCPServerService {
           "properties": [
             "maxConcurrent": ["type": "integer"],
             "maxQueued": ["type": "integer"]
+          ]
+        ]
+      ],
+      [
+        "name": "logs.mcp.path",
+        "description": "Get MCP log file path",
+        "inputSchema": [
+          "type": "object",
+          "properties": [:]
+        ]
+      ],
+      [
+        "name": "logs.mcp.tail",
+        "description": "Get last N lines of MCP log",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "lines": ["type": "integer"]
           ]
         ]
       ],
