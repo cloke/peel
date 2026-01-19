@@ -29,7 +29,7 @@ struct Github_RootView: View {
   @AppStorage("github-show-archived") private var showArchivedRepos = false
   @AppStorage("github.selectedFavoriteKey") private var selectedFavoriteKey: String = ""
   @AppStorage("github.selectedRecentPRKey") private var selectedRecentPRKey: String = ""
-  @State private var navigationPath = NavigationPath()
+  @State private var selectedAutomationDestination: GitHubAutomationDestination?
 
   private enum GitHubAutomationDestination: Hashable {
     case favorite(String)
@@ -69,8 +69,7 @@ struct Github_RootView: View {
         if !favoriteItems.isEmpty {
           Section("Favorites") {
             ForEach(favoriteItems) { favorite in
-              let favoriteKey = favoriteAutomationKey(for: favorite)
-              NavigationLink(value: GitHubAutomationDestination.favorite(favoriteKey)) {
+              NavigationLink(destination: FavoriteRepositoryDestination(favorite: favorite)) {
                 HStack {
                   Image(systemName: "star.fill")
                     .foregroundStyle(.yellow)
@@ -91,8 +90,7 @@ struct Github_RootView: View {
         if !recentPRItems.isEmpty {
           Section("Recent PRs") {
             ForEach(recentPRItems.prefix(5)) { recent in
-              let recentKey = recentPRAutomationKey(for: recent)
-              NavigationLink(value: GitHubAutomationDestination.recentPR(recentKey)) {
+              NavigationLink(destination: RecentPRDestination(recentPR: recent)) {
                 HStack {
                   Image(systemName: recent.state == "open" ? "circle.fill" : "checkmark.circle.fill")
                     .foregroundStyle(recent.state == "open" ? .green : .purple)
@@ -210,27 +208,8 @@ struct Github_RootView: View {
       }
 #endif
       } detail: {
-        NavigationStack(path: $navigationPath) {
-          Text("Select an organization or repository")
-            .foregroundStyle(.secondary)
-            .navigationDestination(for: GitHubAutomationDestination.self) { destination in
-              switch destination {
-              case .favorite(let key):
-                if let favorite = favoriteItems.first(where: { favoriteAutomationKey(for: $0) == key }) {
-                  FavoriteRepositoryDestination(favorite: favorite)
-                } else {
-                  Text("Favorite not found")
-                    .foregroundStyle(.secondary)
-                }
-              case .recentPR(let key):
-                if let recent = recentPRItems.first(where: { recentPRAutomationKey(for: $0) == key }) {
-                  RecentPRDestination(recentPR: recent)
-                } else {
-                  Text("PR not found")
-                    .foregroundStyle(.secondary)
-                }
-              }
-            }
+        NavigationStack {
+          detailRootView
         }
       }
     .navigationSplitViewStyle(.balanced)
@@ -329,14 +308,37 @@ struct Github_RootView: View {
   private func syncAutomationSelection() {
     if !selectedFavoriteKey.isEmpty,
        favoriteItems.contains(where: { favoriteAutomationKey(for: $0) == selectedFavoriteKey }) {
-      navigationPath = NavigationPath()
-      navigationPath.append(GitHubAutomationDestination.favorite(selectedFavoriteKey))
+      selectedAutomationDestination = .favorite(selectedFavoriteKey)
     } else if !selectedRecentPRKey.isEmpty,
               recentPRItems.contains(where: { recentPRAutomationKey(for: $0) == selectedRecentPRKey }) {
-      navigationPath = NavigationPath()
-      navigationPath.append(GitHubAutomationDestination.recentPR(selectedRecentPRKey))
+      selectedAutomationDestination = .recentPR(selectedRecentPRKey)
     } else if selectedFavoriteKey.isEmpty && selectedRecentPRKey.isEmpty {
-      navigationPath = NavigationPath()
+      selectedAutomationDestination = nil
+    }
+  }
+
+  @ViewBuilder
+  private var detailRootView: some View {
+    if let selection = selectedAutomationDestination {
+      switch selection {
+      case .favorite(let key):
+        if let favorite = favoriteItems.first(where: { favoriteAutomationKey(for: $0) == key }) {
+          FavoriteRepositoryDestination(favorite: favorite)
+        } else {
+          Text("Favorite not found")
+            .foregroundStyle(.secondary)
+        }
+      case .recentPR(let key):
+        if let recent = recentPRItems.first(where: { recentPRAutomationKey(for: $0) == key }) {
+          RecentPRDestination(recentPR: recent)
+        } else {
+          Text("PR not found")
+            .foregroundStyle(.secondary)
+        }
+      }
+    } else {
+      Text("Select an organization or repository")
+        .foregroundStyle(.secondary)
     }
   }
 }
