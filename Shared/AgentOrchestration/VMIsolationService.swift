@@ -222,10 +222,12 @@ private final class VMConsoleState: @unchecked Sendable {
   let maxBufferBytes = 64 * 1024
   private var shouldStop = false
   private var bytesRead: Int64 = 0
+  private var lastOutputAt: Date?
 
   func append(_ text: String) {
     lock.lock()
     buffer.append(text)
+    lastOutputAt = Date()
     if buffer.utf8.count > maxBufferBytes {
       let tail = buffer.suffix(maxBufferBytes)
       buffer = String(tail)
@@ -261,7 +263,15 @@ private final class VMConsoleState: @unchecked Sendable {
   func clear() {
     lock.lock()
     buffer = ""
+    lastOutputAt = nil
     lock.unlock()
+  }
+
+  func lastOutputTimestamp() -> Date? {
+    lock.lock()
+    let value = lastOutputAt
+    lock.unlock()
+    return value
   }
 
   func markStart() {
@@ -563,6 +573,7 @@ final class VMIsolationService {
   private var consoleReadTask: Task<Void, Never>?
   private var consoleFlushTimer: DispatchSourceTimer?
   private let consoleState = VMConsoleState()
+  private var lastConsoleInactivityLogAt: Date?
   private let consoleMaxOutputChars = 200_000
 
   /// Throttle console output to avoid UI hangs
@@ -2016,6 +2027,13 @@ final class VMIsolationService {
       }
     }
 
+    DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) { [weak self] in
+      self?.logConsoleInactivity(thresholdSeconds: 10)
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 30.0) { [weak self] in
+      self?.logConsoleInactivity(thresholdSeconds: 30)
+    }
+
     consoleFlushTimer?.cancel()
     let timer = DispatchSource.makeTimerSource(queue: .main)
     timer.schedule(deadline: .now() + consoleFlushInterval, repeating: consoleFlushInterval)
@@ -2027,6 +2045,8 @@ final class VMIsolationService {
           let tail = self.consoleOutput.suffix(self.consoleMaxOutputChars)
           self.consoleOutput = String(tail)
         }
+      } else {
+        self.logConsoleInactivity(thresholdSeconds: 10)
       }
     }
     consoleFlushTimer = timer
@@ -2036,10 +2056,22 @@ final class VMIsolationService {
   private func stopConsoleOutputReader() {
     VMConsoleReader.stop(state: consoleState)
     vmLog("Console reader stopped")
+    lastConsoleInactivityLogAt = nil
     consoleFlushTimer?.cancel()
     consoleFlushTimer = nil
     consoleReadTask?.cancel()
     consoleReadTask = nil
+  }
+
+  private func logConsoleInactivity(thresholdSeconds: TimeInterval) {
+    guard let lastOutput = consoleState.lastOutputTimestamp() else { return }
+    let sinceLastOutput = Date().timeIntervalSince(lastOutput)
+    guard sinceLastOutput >= thresholdSeconds else { return }
+    if let lastLog = lastConsoleInactivityLogAt, Date().timeIntervalSince(lastLog) < thresholdSeconds {
+      return
+    }
+    lastConsoleInactivityLogAt = Date()
+    vmLog("Console: no output for \(Int(sinceLastOutput))s (threshold \(Int(thresholdSeconds))s)")
   }
 
   nonisolated private func flushConsoleBufferIfNeeded(force: Bool) {
