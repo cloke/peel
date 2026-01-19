@@ -21,13 +21,13 @@ github_issues:
     status: open
     title: MCP activity log + cleanup actions
   - number: 17
-    status: open
+    status: closed
     title: Planner gating - skip implementers when no work needed
   - number: 18
-    status: open
+    status: closed
     title: Show planner prompt in MCP Run detail view
   - number: 19
-    status: open
+    status: closed
     title: Clarify Assign Task button behavior
 code_locations:
   - file: Shared/AgentOrchestration/AgentManager.swift
