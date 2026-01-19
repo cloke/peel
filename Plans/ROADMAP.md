@@ -88,10 +88,34 @@ related_docs:
 - Display in MCP Activity dashboard
 - Cleanup actions for worktrees/branches
 
+**Scope (v1):**
+- Persist run metadata: chain id, template name, timestamps, status/error, validation summary
+- Persist per-agent results for a run (planner/implementers/merge/review)
+- MCP Activity list shows recent runs and survives relaunch
+- Run detail view shows outputs and validation (prompt tracked under #18)
+- Cleanup action removes agent worktrees + branches created by MCP runs
+- Safety: confirmation dialog, error surfacing, and non-blocking cleanup
+- Retention cap (e.g., last 100 runs) to bound SwiftData growth
+
+**Implementation plan (start):**
+1. SwiftData models for run + result records (Shared/SwiftDataModels.swift)
+2. DataService helpers: record run, record result, fetch recent, cleanup (Shared/PeelApp.swift)
+3. Chain runner hooks: persist run + results on completion (Shared/AgentOrchestration/AgentManager.swift)
+4. MCP Activity UI: list + detail binding to SwiftData queries (Shared/Applications/Agents_RootView.swift)
+5. Cleanup action: call WorkspaceManager to remove worktrees/branches, surface status/errors in UI
+6. Verification: MCP test plan cases 8–9, plus manual relaunch check
+
 ### Untracked Phase 1C Items
 - [ ] Planner gating: skip implementers when "no work" ([#17](https://github.com/cloke/peel/issues/17))
 - [ ] Show planner prompt in Chain Activity / MCP Run detail ([#18](https://github.com/cloke/peel/issues/18))
 - [ ] Clarify Assign Task behavior ([#19](https://github.com/cloke/peel/issues/19))
+- [ ] MCP screenshot capture tool (enable tighter build/run/inspect loop)
+
+**Proposed next targets (Phase 1C):**
+1. [#17](https://github.com/cloke/peel/issues/17) Planner gating — unlocks correctness and saves spend
+2. [#18](https://github.com/cloke/peel/issues/18) Show planner prompt — needed for run traceability
+3. [#19](https://github.com/cloke/peel/issues/19) Clarify Assign Task — UI polish once behavior is settled
+4. MCP screenshot capture tool — optional if we want a tighter automation loop
 
 ---
 
@@ -100,6 +124,7 @@ related_docs:
 | Feature | Issue | Description |
 |---------|-------|-------------|
 | PII Scrubber | [#8](https://github.com/cloke/peel/issues/8) | CLI tool to strip sensitive data before sending to AI |
+| MCP Automation Framework | TBD | Extract MCP server + automation tools into reusable package |
 | XPC Tool Broker | TBD | Sandboxed tool execution via XPC |
 | MLX Integration | TBD | Local model inference for code tasks |
 

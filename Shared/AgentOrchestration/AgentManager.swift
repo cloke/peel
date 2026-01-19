@@ -1283,7 +1283,9 @@ public final class MCPServerService {
       "chain": [
         "id": chain.id.uuidString,
         "name": chain.name,
-        "state": summary.stateDescription
+        "state": summary.stateDescription,
+        "gated": summary.noWorkReason != nil,
+        "noWorkReason": summary.noWorkReason as Any
       ],
       "success": summary.errorMessage == nil,
       "errorMessage": summary.errorMessage as Any,
@@ -1635,6 +1637,20 @@ public final class MCPServerService {
       ]
       if let verdict = result.reviewVerdict {
         item["reviewVerdict"] = verdict.rawValue
+      }
+      if let decision = result.plannerDecision {
+        item["plannerDecision"] = [
+          "branch": decision.branch,
+          "tasks": decision.tasks.map { task in
+            [
+              "title": task.title,
+              "description": task.description,
+              "recommendedModel": task.recommendedModel as Any,
+              "fileHints": task.fileHints as Any
+            ]
+          },
+          "noWorkReason": decision.noWorkReason as Any
+        ]
       }
       return item
     }
