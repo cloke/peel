@@ -181,6 +181,10 @@ Notes:
 - `role` must be one of `planner`, `implementer`, `reviewer`.
 - `model` can be a Copilot model id (e.g. `gpt-4.1`, `claude-sonnet-4.5`).
 
+#### Chain Limits & Planner Constraints
+The caller defines the step count and model selection in `chainSpec`. Planners cannot currently
+auto-spawn additional implementers, and validators enforce a hard limit of 8 steps.
+
 ### Review Pause + Reviewer Override
 You can pause when a reviewer requests changes and optionally swap the reviewer model:
 
