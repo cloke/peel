@@ -121,11 +121,11 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     // Free Review: Use free models for cost-effective review
     ChainTemplate(
       name: "Free Review",
-      description: "Cost-effective review using free tier models",
+      description: "Cost-effective review using free/low-cost models",
       steps: [
         AgentStepTemplate(role: .planner, model: .gpt41, name: "Analyzer"),
         AgentStepTemplate(role: .implementer, model: .gpt41, name: "Implementer"),
-        AgentStepTemplate(role: .reviewer, model: .gemini3Pro, name: "Reviewer")
+        AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
       ],
       isBuiltIn: true
     ),
@@ -192,7 +192,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
           AgentStepTemplate(role: .planner, model: .gpt41, name: "Planner"),
           AgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer A"),
           AgentStepTemplate(role: .implementer, model: .gpt41, name: "Implementer B"),
-          AgentStepTemplate(role: .implementer, model: .gemini3Pro, name: "Implementer C"),
+          AgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer C"),
           AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
         ],
         isBuiltIn: true
