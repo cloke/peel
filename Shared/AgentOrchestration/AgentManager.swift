@@ -1164,6 +1164,22 @@ public final class MCPServerService {
     }
   }
 
+  public enum ToolGroup: String, CaseIterable {
+    case screenshots
+    case uiNavigation
+    case mutating
+    case backgroundSafe
+
+    var displayName: String {
+      switch self {
+      case .screenshots: return "Screenshots"
+      case .uiNavigation: return "UI Navigation"
+      case .mutating: return "Mutating"
+      case .backgroundSafe: return "Background-safe"
+      }
+    }
+  }
+
   public struct ToolDefinition: Identifiable {
     public let name: String
     public let description: String
@@ -1389,6 +1405,12 @@ public final class MCPServerService {
     }
   }
 
+  public var toolGroups: [ToolGroup] {
+    ToolGroup.allCases.filter { group in
+      toolDefinitions.contains { !groups(for: $0).filter { $0 == group }.isEmpty }
+    }
+  }
+
   public var uiControlDocs: [ViewControlDoc] {
     var docs = availableViewIds().map { viewId -> ViewControlDoc in
       let controls = availableControlIds(for: viewId)
@@ -1422,8 +1444,22 @@ public final class MCPServerService {
     tools(in: category).count
   }
 
+  public func tools(in group: ToolGroup) -> [ToolDefinition] {
+    toolDefinitions
+      .filter { groups(for: $0).contains(group) }
+      .sorted { $0.name < $1.name }
+  }
+
+  public func toolCount(in group: ToolGroup) -> Int {
+    tools(in: group).count
+  }
+
   public func enabledToolCount(in category: ToolCategory) -> Int {
     tools(in: category).filter { isToolEnabled($0.name) }.count
+  }
+
+  public func enabledToolCount(in group: ToolGroup) -> Int {
+    tools(in: group).filter { isToolEnabled($0.name) }.count
   }
 
   public var foregroundToolCount: Int {
@@ -1447,9 +1483,22 @@ public final class MCPServerService {
     return !tools.isEmpty && tools.allSatisfy { isToolEnabled($0.name) }
   }
 
+  public func isGroupEnabled(_ group: ToolGroup) -> Bool {
+    let tools = tools(in: group)
+    return !tools.isEmpty && tools.allSatisfy { isToolEnabled($0.name) }
+  }
+
   public func setCategoryEnabled(_ category: ToolCategory, enabled: Bool) {
     var updated = toolPermissions
     for tool in tools(in: category) {
+      updated[tool.name] = enabled
+    }
+    toolPermissions = updated
+  }
+
+  public func setGroupEnabled(_ group: ToolGroup, enabled: Bool) {
+    var updated = toolPermissions
+    for tool in tools(in: group) {
       updated[tool.name] = enabled
     }
     toolPermissions = updated
@@ -2221,6 +2270,9 @@ public final class MCPServerService {
     let toolForegroundByName = Dictionary(uniqueKeysWithValues: toolDefinitions.map { tool in
       (tool.name, tool.requiresForeground)
     })
+    let toolGroupsByName = Dictionary(uniqueKeysWithValues: toolDefinitions.map { tool in
+      (tool.name, groups(for: tool).map { $0.rawValue })
+    })
     let state: [String: Any] = [
       "views": availableViewIds(),
       "tools": toolDefinitions.map { $0.name },
@@ -2228,6 +2280,8 @@ public final class MCPServerService {
       "controlsByView": controlsByView,
       "controlValuesByView": controlValuesByView,
       "toolRequiresForeground": toolForegroundByName,
+      "toolGroups": toolGroupsByName,
+      "toolGroupList": toolGroups.map { $0.rawValue },
       "currentViewId": currentViewId as Any
     ]
     return (200, makeRPCResult(id: id, result: state))
@@ -3211,6 +3265,7 @@ public final class MCPServerService {
         "description": tool.description,
         "inputSchema": tool.inputSchema,
         "category": tool.category.rawValue,
+        "groups": groups(for: tool).map { $0.rawValue },
         "enabled": isToolEnabled(tool.name),
         "requiresForeground": tool.requiresForeground
       ]
@@ -3352,6 +3407,23 @@ public final class MCPServerService {
     case "github": return "GitHub"
     default: return viewId.capitalized
     }
+  }
+
+  private func groups(for tool: ToolDefinition) -> [ToolGroup] {
+    var groups: [ToolGroup] = []
+    if tool.name == "screenshot.capture" {
+      groups.append(.screenshots)
+    }
+    if tool.name == "ui.navigate" || tool.name == "ui.back" || tool.name == "ui.snapshot" {
+      groups.append(.uiNavigation)
+    }
+    if tool.isMutating {
+      groups.append(.mutating)
+    }
+    if !tool.requiresForeground {
+      groups.append(.backgroundSafe)
+    }
+    return groups
   }
 
   private func stringValues(_ value: Any?) -> [String] {
