@@ -397,6 +397,10 @@ struct RecentPRDestination: View {
   
   @State private var isLoading = true
   @State private var error: String?
+  @State private var pullRequest: Github.PullRequest?
+  @State private var repository: Github.Repository?
+  @State private var owner: Github.User?
+  @State private var descriptionText: String = ""
   
   var body: some View {
     Group {
@@ -409,29 +413,150 @@ struct RecentPRDestination: View {
           Text(error)
             .foregroundStyle(.secondary)
         }
-      } else {
-        VStack(spacing: 16) {
-          Text("#\(recentPR.prNumber)")
-            .font(.largeTitle)
-            .foregroundStyle(.secondary)
-          Text(recentPR.title)
-            .font(.title2)
-          Text(recentPR.repoFullName)
-            .foregroundStyle(.secondary)
-          
-          if let urlString = recentPR.htmlURL, let url = URL(string: urlString) {
-            Link(destination: url) {
-              Label("Open in Browser", systemImage: "safari")
+      } else if let pullRequest, let repository {
+        ScrollView {
+          VStack(alignment: .leading, spacing: 16) {
+            headerView(pullRequest: pullRequest, repository: repository)
+
+            Divider()
+
+            if !descriptionText.isEmpty {
+              VStack(alignment: .leading, spacing: 8) {
+                Text("Description")
+                  .font(.headline)
+                Text(descriptionText)
+                  .font(.body)
+                  .foregroundStyle(.primary)
+              }
             }
-            .buttonStyle(.borderedProminent)
+
+            metadataGrid(pullRequest: pullRequest, repository: repository)
+
+            if let urlString = pullRequest.html_url ?? recentPR.htmlURL,
+               let url = URL(string: urlString) {
+              Link(destination: url) {
+                Label("Open in Browser", systemImage: "safari")
+              }
+              .buttonStyle(.borderedProminent)
+            }
           }
+          .padding()
         }
-        .padding()
+      } else {
+        Text("PR details unavailable")
+          .foregroundStyle(.secondary)
       }
     }
     .task {
-      isLoading = false
+      await loadPullRequestDetails()
     }
+  }
+
+  private func loadPullRequestDetails() async {
+    isLoading = true
+    error = nil
+    defer { isLoading = false }
+
+    let parts = recentPR.repoFullName.split(separator: "/")
+    guard parts.count == 2 else {
+      error = "Invalid repository name"
+      return
+    }
+
+    let ownerLogin = String(parts[0])
+    let repoName = String(parts[1])
+
+    do {
+      async let repoTask = Github.repository(owner: ownerLogin, name: repoName)
+      async let prTask = Github.pullRequest(owner: ownerLogin, repository: repoName, number: recentPR.prNumber)
+      let (repo, pr) = try await (repoTask, prTask)
+      repository = repo
+      pullRequest = pr
+      owner = pr.base.user ?? repo.owner
+      descriptionText = (pr.body ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    } catch {
+      self.error = error.localizedDescription
+    }
+  }
+
+  @ViewBuilder
+  private func headerView(pullRequest: Github.PullRequest, repository: Github.Repository) -> some View {
+    VStack(alignment: .leading, spacing: 6) {
+      Text(pullRequest.title ?? recentPR.title)
+        .font(.title2)
+      Text("#\(pullRequest.number) · \(recentPR.repoFullName)")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+      HStack(spacing: 12) {
+        if let state = pullRequest.state {
+          Label(state.capitalized, systemImage: state == "open" ? "circle.fill" : "checkmark.circle.fill")
+            .foregroundStyle(state == "open" ? .green : .purple)
+        }
+        Label(pullRequest.head.ref, systemImage: "arrow.triangle.branch")
+        if pullRequest.draft == true {
+          Label("Draft", systemImage: "square.and.pencil")
+            .foregroundStyle(.secondary)
+        }
+      }
+      .font(.caption)
+      .foregroundStyle(.secondary)
+    }
+  }
+
+  @ViewBuilder
+  private func metadataGrid(pullRequest: Github.PullRequest, repository: Github.Repository) -> some View {
+    let created = formattedDate(pullRequest.created_at)
+    let updated = formattedDate(pullRequest.updated_at)
+    let author = pullRequest.user?.publicName ?? "Unknown"
+    let reviewers = (pullRequest.requested_reviewers ?? []).map { $0.publicName }.filter { !$0.isEmpty }
+    let labels = (pullRequest.labels ?? []).map { $0.name }.filter { !$0.isEmpty }
+
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 16) {
+        metadataItem("Author", author)
+        metadataItem("Updated", updated)
+        metadataItem("Created", created)
+      }
+      HStack(spacing: 16) {
+        metadataItem("Commits", pullRequest.commits.map(String.init) ?? "–")
+        metadataItem("Files", pullRequest.changed_files.map(String.init) ?? "–")
+        metadataItem("+/-", diffSummary(for: pullRequest))
+      }
+      if !reviewers.isEmpty {
+        metadataItem("Reviewers", reviewers.joined(separator: ", "))
+      }
+      if !labels.isEmpty {
+        metadataItem("Labels", labels.joined(separator: ", "))
+      }
+    }
+  }
+
+  private func metadataItem(_ title: String, _ value: String) -> some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Text(title)
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+      Text(value)
+        .font(.callout)
+    }
+  }
+
+  private func formattedDate(_ value: String?) -> String {
+    guard let value, !value.isEmpty else { return "–" }
+    let formatter = ISO8601DateFormatter()
+    if let date = formatter.date(from: value) {
+      return date.formatted(date: .abbreviated, time: .shortened)
+    }
+    return value
+  }
+
+  private func diffSummary(for pullRequest: Github.PullRequest) -> String {
+    let additions = pullRequest.additions ?? 0
+    let deletions = pullRequest.deletions ?? 0
+    if additions == 0 && deletions == 0 {
+      return "–"
+    }
+    return "+\(additions) / -\(deletions)"
   }
 }
 
