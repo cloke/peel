@@ -5,12 +5,45 @@
 //  Created on 1/19/26.
 //
 
+import CoreML
 import CryptoKit
 import Foundation
 
 protocol LocalRAGEmbeddingProvider: Sendable {
   func embed(texts: [String]) async throws -> [[Float]]
   var dimensions: Int { get }
+}
+
+enum LocalRAGEmbeddingError: LocalizedError {
+  case modelNotConfigured
+  case unsupportedModel
+
+  var errorDescription: String? {
+    switch self {
+    case .modelNotConfigured:
+      return "Core ML model is not configured"
+    case .unsupportedModel:
+      return "Core ML model output format is not supported"
+    }
+  }
+}
+
+struct CoreMLEmbeddingProvider: LocalRAGEmbeddingProvider {
+  let modelURL: URL?
+  let dimensions: Int
+
+  init(modelURL: URL?, dimensions: Int) {
+    self.modelURL = modelURL
+    self.dimensions = dimensions
+  }
+
+  func embed(texts: [String]) async throws -> [[Float]] {
+    guard let modelURL else {
+      throw LocalRAGEmbeddingError.modelNotConfigured
+    }
+    _ = try MLModel(contentsOf: modelURL)
+    throw LocalRAGEmbeddingError.unsupportedModel
+  }
 }
 
 struct HashEmbeddingProvider: LocalRAGEmbeddingProvider {
