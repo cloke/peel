@@ -575,7 +575,20 @@ public final class CLIService {
     }
     
     // Use an actor to safely accumulate data across callbacks
-    let accumulator = StreamAccumulator(onOutput: onOutput)
+    let completionSignal = CompletionSignal()
+    let accumulator = StreamAccumulator(
+      onOutput: onOutput,
+      onCompletionDetected: { await completionSignal.markCompleted() }
+    )
+
+    // Terminate the process if we see Copilot's final stats marker but the process hangs
+    Task {
+      await completionSignal.waitForCompletion()
+      try? await Task.sleep(for: .seconds(1))
+      if process.isRunning {
+        process.terminate()
+      }
+    }
     
     // Set up readability handlers for immediate streaming
     stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
@@ -633,9 +646,12 @@ public final class CLIService {
     private var stdoutBuffer = ""
     private var stderrBuffer = ""
     private let onOutput: StreamCallback
+    private let onCompletionDetected: @Sendable () async -> Void
+    private var completionMarked = false
     
-    init(onOutput: @escaping StreamCallback) {
+    init(onOutput: @escaping StreamCallback, onCompletionDetected: @escaping @Sendable () async -> Void) {
       self.onOutput = onOutput
+      self.onCompletionDetected = onCompletionDetected
     }
     
     func appendStdout(_ data: Data) async {
@@ -673,6 +689,9 @@ public final class CLIService {
         if !trimmed.isEmpty {
           await onOutput(trimmed)
         }
+        if trimmed.contains("Total usage est:") {
+          await markCompletionIfNeeded()
+        }
       }
     }
     
@@ -689,12 +708,42 @@ public final class CLIService {
         if !trimmed.isEmpty {
           await onOutput(trimmed)
         }
+        if trimmed.contains("Total usage est:") {
+          await markCompletionIfNeeded()
+        }
         stderrBuffer = ""
       }
+    }
+
+    private func markCompletionIfNeeded() async {
+      guard !completionMarked else { return }
+      completionMarked = true
+      await onCompletionDetected()
     }
     
     func getFinalData() -> (Data, Data) {
       return (stdoutData, stderrData)
+    }
+  }
+
+  private actor CompletionSignal {
+    private var completed = false
+    private var continuations: [CheckedContinuation<Void, Never>] = []
+
+    func markCompleted() {
+      guard !completed else { return }
+      completed = true
+      continuations.forEach { $0.resume() }
+      continuations.removeAll()
+    }
+
+    func waitForCompletion() async {
+      if completed {
+        return
+      }
+      await withCheckedContinuation { continuation in
+        continuations.append(continuation)
+      }
     }
   }
 
