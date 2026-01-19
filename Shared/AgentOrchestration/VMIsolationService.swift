@@ -591,7 +591,7 @@ final class VMIsolationService {
 
   /// Debug toggles (keep minimal while stabilizing VM boot)
   private let attachLinuxDiskImage = false
-  private let attachLinuxNetwork = false
+  private let attachLinuxNetwork = true
   private let attachMemoryBalloon = false
   private let attachMacOSNetwork = true
   private let isVerboseVMLogging = true
@@ -1083,9 +1083,10 @@ final class VMIsolationService {
     // console=ttyAMA0   -> PL011 (ARM default - valid if we have PL011, ignored otherwise)
     //
     // TODO: The current Alpine boot fails at "Mounting boot media".
-    // We likely need to supply the 'modloop' or adjust args for diskless boot/netboot repo.
-    // Try adding: alpine_repo=http://dl-cdn.alpinelinux.org/alpine/v3.21/main
-    bootLoader.commandLine = "console=ttyS0 console=ttyAMA0 console=hvc0 console=hvc1 earlycon loglevel=7 debug"
+    // Use netboot repo + modloop to provide rootfs for diskless boot.
+    let alpineRepo = "http://dl-cdn.alpinelinux.org/alpine/v3.21/main"
+    let modloop = "http://dl-cdn.alpinelinux.org/alpine/v3.21/releases/aarch64/netboot/modloop-virt"
+    bootLoader.commandLine = "console=ttyS0 console=ttyAMA0 console=hvc0 console=hvc1 earlycon loglevel=7 debug alpine_repo=\(alpineRepo) modloop=\(modloop)"
     vmLog("Boot command line: \(bootLoader.commandLine)")
     
     let config = VZVirtualMachineConfiguration()
