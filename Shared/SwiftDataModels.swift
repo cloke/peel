@@ -201,6 +201,7 @@ final class MCPRunRecord {
   var validationStatus: String?
   var validationReasons: String?
   var createdAt: Date = Date()
+  var screenshotPaths: String = ""
 
   init(
     chainId: String = "",
@@ -210,6 +211,7 @@ final class MCPRunRecord {
     workingDirectory: String? = nil,
     implementerBranches: String = "",
     implementerWorkspacePaths: String = "",
+    screenshotPaths: String = "",
     success: Bool,
     errorMessage: String? = nil,
     noWorkReason: String? = nil,
@@ -235,6 +237,7 @@ final class MCPRunRecord {
     self.validationStatus = validationStatus
     self.validationReasons = validationReasons
     self.createdAt = createdAt
+    self.screenshotPaths = screenshotPaths
   }
 }
 
