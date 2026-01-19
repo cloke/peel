@@ -497,6 +497,14 @@ public final class AgentChainRunner {
         task: task,
         agentId: agent.id
       )
+      await mcpLog.info("Parallel implementer workspace created", metadata: [
+        "chainId": chain.id.uuidString,
+        "agentId": agent.id.uuidString,
+        "agentName": agent.name,
+        "role": agent.role.displayName,
+        "branch": workspace.branch,
+        "workingDirectory": workspace.path.path
+      ])
       agent.workspace = workspace
       agent.workingDirectory = workspace.path.path
     }
@@ -506,6 +514,14 @@ public final class AgentChainRunner {
       for index in indices {
         let agent = chain.agents[index]
         group.addTask {
+          await self.mcpLog.info("Parallel implementer start", metadata: [
+            "chainId": chain.id.uuidString,
+            "agentId": agent.id.uuidString,
+            "agentName": agent.name,
+            "role": agent.role.displayName,
+            "model": agent.model.displayName,
+            "workingDirectory": agent.workingDirectory ?? ""
+          ])
           let result = try await self.runSingleAgent(
             agent,
             at: index,
@@ -513,6 +529,15 @@ public final class AgentChainRunner {
             prompt: prompt,
             contextOverride: context
           )
+          await self.mcpLog.info("Parallel implementer complete", metadata: [
+            "chainId": chain.id.uuidString,
+            "agentId": agent.id.uuidString,
+            "agentName": agent.name,
+            "role": agent.role.displayName,
+            "model": agent.model.displayName,
+            "duration": result.duration ?? "",
+            "premiumCost": "\(result.premiumCost)"
+          ])
           return (index, result)
         }
       }
@@ -577,6 +602,15 @@ public final class AgentChainRunner {
   ) async throws -> AgentChainResult {
     let context = contextOverride ?? chain.contextForAgent(at: index)
 
+    await mcpLog.info("Agent run start", metadata: [
+      "chainId": chain.id.uuidString,
+      "agentId": agent.id.uuidString,
+      "agentName": agent.name,
+      "role": agent.role.displayName,
+      "model": agent.model.displayName,
+      "workingDirectory": agent.workingDirectory ?? chain.workingDirectory ?? ""
+    ])
+
     let fullPrompt = agent.buildPrompt(
       userPrompt: prompt,
       context: context.isEmpty ? nil : context
@@ -625,6 +659,15 @@ public final class AgentChainRunner {
         plannerDecision: plannerDecision
       )
       agent.updateState(.complete)
+      await mcpLog.info("Agent run complete", metadata: [
+        "chainId": chain.id.uuidString,
+        "agentId": agent.id.uuidString,
+        "agentName": agent.name,
+        "role": agent.role.displayName,
+        "model": agent.model.displayName,
+        "duration": response.duration ?? "",
+        "premiumCost": "\(premiumCost)"
+      ])
       return result
     } catch {
       await mcpLog.error(error, context: "Agent run failed", metadata: [
