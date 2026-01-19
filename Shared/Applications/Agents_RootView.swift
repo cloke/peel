@@ -171,6 +171,13 @@ struct AgentsSidebarView: View {
           if case .reviewing = $0.state { return true }
           return false
         }
+        // Saved chain templates / recent chains
+        let idleChains = agentManager.chains.filter {
+          if case .idle = $0.state { return true }
+          if case .complete = $0.state { return true }
+          if case .failed = $0.state { return true }
+          return false
+        }
         if !runningChains.isEmpty {
           Section {
             ForEach(runningChains) { chain in
@@ -181,15 +188,23 @@ struct AgentsSidebarView: View {
             Label("Running Now", systemImage: "bolt.fill")
               .foregroundStyle(.blue)
           }
+        } else if idleChains.isEmpty {
+          Section {
+            ContentUnavailableView {
+              Label("No Chains Yet", systemImage: "link")
+                .font(.title3)
+            } description: {
+              Text("Create a chain to run multi-agent tasks.")
+                .font(.caption)
+            } actions: {
+              Button("New Chain") {
+                showingNewChainSheet = true
+              }
+              .buttonStyle(.bordered)
+            }
+          }
         }
         
-        // Saved chain templates / recent chains
-        let idleChains = agentManager.chains.filter {
-          if case .idle = $0.state { return true }
-          if case .complete = $0.state { return true }
-          if case .failed = $0.state { return true }
-          return false
-        }
         if !idleChains.isEmpty {
           Section("Recent Chains") {
             ForEach(idleChains) { chain in
@@ -207,11 +222,28 @@ struct AgentsSidebarView: View {
             }
           }
         }
-        
-        Section("Agents") {
-          ForEach(agentManager.idleAgents) { agent in
-            AgentRowView(agent: agent)
-              .tag("agent:\(agent.id.uuidString)")
+
+        if agentManager.activeAgents.isEmpty && agentManager.idleAgents.isEmpty {
+          Section("Agents") {
+            ContentUnavailableView {
+              Label("No Agents Yet", systemImage: "cpu")
+                .font(.title3)
+            } description: {
+              Text("Create an agent to run or join chains.")
+                .font(.caption)
+            } actions: {
+              Button("New Agent") {
+                showingNewAgentSheet = true
+              }
+              .buttonStyle(.bordered)
+            }
+          }
+        } else {
+          Section("Agents") {
+            ForEach(agentManager.idleAgents) { agent in
+              AgentRowView(agent: agent)
+                .tag("agent:\(agent.id.uuidString)")
+            }
           }
         }
         
