@@ -424,7 +424,7 @@ struct RecentPRDestination: View {
               VStack(alignment: .leading, spacing: 8) {
                 Text("Description")
                   .font(.headline)
-                Text(descriptionText)
+                Text(.init(descriptionText))
                   .font(.body)
                   .foregroundStyle(.primary)
               }
