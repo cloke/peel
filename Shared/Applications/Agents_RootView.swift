@@ -399,6 +399,7 @@ struct MCPDashboardView: View {
   @Bindable var sessionTracker: SessionTracker
   @Query(sort: \MCPRunRecord.createdAt, order: .reverse) private var mcpRuns: [MCPRunRecord]
   @State private var selectedRun: MCPRunRecord?
+  @State private var showingCleanupConfirmation = false
 
   var body: some View {
     ScrollView {
@@ -512,14 +513,22 @@ struct MCPDashboardView: View {
               .font(.caption)
               .foregroundStyle(.secondary)
             Button {
-              Task {
-                await mcpServer.cleanupAgentWorkspaces()
-              }
+              showingCleanupConfirmation = true
             } label: {
               Label("Clean Agent Worktrees", systemImage: "trash")
             }
             .buttonStyle(.bordered)
             .disabled(mcpServer.isCleaningAgentWorkspaces)
+            .confirmationDialog("Remove agent worktrees and branches?", isPresented: $showingCleanupConfirmation, titleVisibility: .visible) {
+              Button("Confirm", role: .destructive) {
+                Task {
+                  await mcpServer.cleanupAgentWorkspaces()
+                }
+              }
+              Button("Cancel", role: .cancel) {}
+            } message: {
+              Text("This will delete worktrees and branches created by the MCP run. This cannot be undone.")
+            }
 
             if mcpServer.isCleaningAgentWorkspaces {
               Text("Cleaning worktrees...")
