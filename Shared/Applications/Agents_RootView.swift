@@ -1437,7 +1437,7 @@ struct MCPRunDetailView: View {
             GroupBox("Screenshots") {
               ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                  ForEach(screenshotPaths, id: \.(self)) { path in
+                  ForEach(screenshotPaths, id: \.self) { path in
                     if let url = URL(fileURLWithPath: path) as URL? {
                       AsyncImage(url: url) { phase in
                         switch phase {
