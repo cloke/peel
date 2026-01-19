@@ -132,6 +132,29 @@ private struct MCPToolSettingsSection: View {
       }
       .buttonStyle(.bordered)
 
+      VStack(alignment: .leading, spacing: 6) {
+        Text("Tool Groups")
+          .font(.headline)
+        ForEach(mcpServer.toolGroups, id: \.self) { group in
+          HStack {
+            Toggle(
+              group.displayName,
+              isOn: Binding(
+                get: { mcpServer.isGroupEnabled(group) },
+                set: { mcpServer.setGroupEnabled(group, enabled: $0) }
+              )
+            )
+            .help("Enable or disable all tools in the \(group.displayName) group.")
+            Spacer()
+            Text("\(mcpServer.enabledToolCount(in: group))/\(mcpServer.toolCount(in: group)) enabled")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
+      }
+
+      Divider()
+
       ForEach(mcpServer.toolCategories, id: \.self) { category in
         VStack(alignment: .leading, spacing: 6) {
           HStack {
