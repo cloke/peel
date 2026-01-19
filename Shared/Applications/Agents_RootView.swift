@@ -56,18 +56,25 @@ struct Agents_RootView: View {
       switch action.controlId {
       case "agents.newAgent":
         showingNewAgentSheet = true
+        mcpServer.recordUIActionHandled(action.controlId)
       case "agents.newChain":
         showingNewChainSheet = true
+        mcpServer.recordUIActionHandled(action.controlId)
       case "agents.mcpDashboard":
         selectedInfrastructure = .mcpDashboard
+        mcpServer.recordUIActionHandled(action.controlId)
       case "agents.cliSetup":
         showingSetupSheet = true
+        mcpServer.recordUIActionHandled(action.controlId)
       case "agents.sessionSummary":
         showingSessionSummary = true
+        mcpServer.recordUIActionHandled(action.controlId)
       case "agents.vmIsolation":
         selectedInfrastructure = .vmIsolation
+        mcpServer.recordUIActionHandled(action.controlId)
       case "agents.translationValidation":
         selectedInfrastructure = .translationValidation
+        mcpServer.recordUIActionHandled(action.controlId)
       default:
         break
       }

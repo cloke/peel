@@ -177,8 +177,10 @@ struct Github_RootView: View {
         switch action.controlId {
         case "github.login":
           Task { await authorizeAndLoad() }
+          mcpServer.recordUIActionHandled(action.controlId)
         case "github.refresh":
           Task { await loadProfile() }
+          mcpServer.recordUIActionHandled(action.controlId)
         case "github.logout":
           Task {
             await Github.reauthorize()
@@ -186,6 +188,7 @@ struct Github_RootView: View {
             viewModel.me = nil
             organizations = []
           }
+          mcpServer.recordUIActionHandled(action.controlId)
         default:
           break
         }

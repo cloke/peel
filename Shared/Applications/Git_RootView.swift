@@ -21,8 +21,81 @@ struct Git_RootView: View {
   @State private var isCloning = false
   @State private var hasLoadedFromSwiftData = false
   @State private var activeSecurityScopedURL: URL?
+  @AppStorage("git.selectedRepoPath") private var selectedRepoPath: String = ""
 
   var body: some View {
+    contentView
+  }
+
+  private var contentView: some View {
+    mainContent
+      .toolbar {
+        ToolSelectionToolbar()
+        RepositoriesMenuToolbarItem(
+          repositories: viewModel.repositories,
+          selectedRepository: $viewModel.selectedRepository,
+          onAddRepository: { addRepository() },
+          onCloneRepository: { isCloning = true }
+        )
+      }
+      .alert("Repository Not Found", isPresented: $repoNotFoundError) {
+        Button("OK", role: .cancel) { }
+      } message: {
+        Text("A git repository could not be found at that location.")
+      }
+      .sheet(isPresented: $isCloning) {
+        CloneRepositoryView(isCloning: $isCloning)
+          .padding()
+          .frame(width: 300, height: 100)
+      }
+      .task {
+        if !hasLoadedFromSwiftData {
+          loadFromSwiftData()
+          hasLoadedFromSwiftData = true
+        }
+        persistAvailableRepos()
+        syncSelectedRepoFromStorage()
+      }
+      .onChange(of: viewModel.repositories.map { $0.path }) { _, _ in
+        persistAvailableRepos()
+        syncSelectedRepoFromStorage()
+      }
+      .onChange(of: viewModel.selectedRepository.path) { _, newValue in
+        if !newValue.isEmpty, selectedRepoPath != newValue {
+          selectedRepoPath = newValue
+        }
+        saveSelectionToSwiftData()
+      }
+      .onChange(of: selectedRepoPath) { _, _ in
+        syncSelectedRepoFromStorage()
+      }
+#if os(macOS)
+      .onChange(of: mcpServer.lastUIAction?.id) {
+        guard let action = mcpServer.lastUIAction else { return }
+        switch action.controlId {
+        case "git.openRepository":
+          addRepository()
+          mcpServer.recordUIActionHandled(action.controlId)
+        case "git.cloneRepository":
+          isCloning = true
+          mcpServer.recordUIActionHandled(action.controlId)
+        case "git.openInVSCode":
+          let path = viewModel.selectedRepository.path
+          if !path.isEmpty {
+            Task {
+              try? await VSCodeService.shared.open(path: path)
+            }
+            mcpServer.recordUIActionHandled(action.controlId)
+          }
+        default:
+          break
+        }
+        mcpServer.lastUIAction = nil
+      }
+#endif
+  }
+
+  private var mainContent: some View {
     Group {
       if viewModel.selectedRepository.name == "N/A" || viewModel.selectedRepository.path.isEmpty {
         ContentUnavailableView {
@@ -45,55 +118,6 @@ struct Git_RootView: View {
           }
         )
       }
-    }
-    .toolbar {
-      ToolSelectionToolbar()
-      RepositoriesMenuToolbarItem(
-        repositories: viewModel.repositories,
-        selectedRepository: $viewModel.selectedRepository,
-        onAddRepository: { addRepository() },
-        onCloneRepository: { isCloning = true }
-      )
-    }
-    .alert("Repository Not Found", isPresented: $repoNotFoundError) {
-      Button("OK", role: .cancel) { }
-    } message: {
-      Text("A git repository could not be found at that location.")
-    }
-    .sheet(isPresented: $isCloning) {
-      CloneRepositoryView(isCloning: $isCloning)
-        .padding()
-        .frame(width: 300, height: 100)
-    }
-    .task {
-      if !hasLoadedFromSwiftData {
-        loadFromSwiftData()
-        hasLoadedFromSwiftData = true
-      }
-    }
-#if os(macOS)
-    .onChange(of: mcpServer.lastUIAction?.id) {
-      guard let action = mcpServer.lastUIAction else { return }
-      switch action.controlId {
-      case "git.openRepository":
-        addRepository()
-      case "git.cloneRepository":
-        isCloning = true
-      case "git.openInVSCode":
-        let path = viewModel.selectedRepository.path
-        if !path.isEmpty {
-          Task {
-            try? await VSCodeService.shared.open(path: path)
-          }
-        }
-      default:
-        break
-      }
-      mcpServer.lastUIAction = nil
-    }
-#endif
-    .onChange(of: viewModel.selectedRepository.path) { _, _ in
-      saveSelectionToSwiftData()
     }
   }
   
@@ -202,6 +226,22 @@ struct Git_RootView: View {
     settings.selectedRepositoryId = localPath.repositoryId
     settings.touch()
     try? modelContext.save()
+  }
+
+  private func persistAvailableRepos() {
+    let repoPaths = Array(Set(viewModel.repositories.map { $0.path })).sorted()
+    let repoNames = Array(Set(viewModel.repositories.map { $0.name })).sorted()
+    UserDefaults.standard.set(repoPaths, forKey: "git.availableRepoPaths")
+    UserDefaults.standard.set(repoNames, forKey: "git.availableRepoNames")
+  }
+
+  private func syncSelectedRepoFromStorage() {
+    guard !selectedRepoPath.isEmpty else { return }
+    if let repo = viewModel.repositories.first(where: { $0.path == selectedRepoPath }) {
+      if viewModel.selectedRepository.path != repo.path {
+        viewModel.selectedRepository = repo
+      }
+    }
   }
 
   private func resolvedPath(for localPath: LocalRepositoryPath) -> String? {

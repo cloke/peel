@@ -68,6 +68,7 @@ if [[ "$SKIP_BUILD" == "false" ]]; then
   cd "$PROJECT_DIR"
 
   BUILD_LOG=$(mktemp)
+  set +e
   xcodebuild \
     -project Peel.xcodeproj \
     -scheme "$SCHEME" \
@@ -76,14 +77,19 @@ if [[ "$SKIP_BUILD" == "false" ]]; then
     -destination 'platform=macOS' \
     build > "$BUILD_LOG" 2>&1
   BUILD_STATUS=$?
+  set -e
 
   grep -E '(Building|Build succeeded|error:|warning:|\*\*)' "$BUILD_LOG" || true
-  rm -f "$BUILD_LOG"
 
   if [[ $BUILD_STATUS -ne 0 ]]; then
     echo "❌ Build failed"
+    echo "---- Build log (last 200 lines) ----"
+    tail -n 200 "$BUILD_LOG"
+    echo "------------------------------------"
+    rm -f "$BUILD_LOG"
     exit 1
   fi
+  rm -f "$BUILD_LOG"
   echo "✅ Build succeeded"
 else
   echo "⏭️  Skipping build (--skip-build)"

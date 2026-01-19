@@ -60,6 +60,14 @@ struct SettingsView: View {
               .font(.caption)
               .foregroundStyle(.secondary)
 
+            Text("Foreground tools: \(mcpServer.foregroundToolCount) · Background tools: \(mcpServer.backgroundToolCount)")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+
+            Text("App active: \(mcpServer.isAppActive ? "Yes" : "No") · Frontmost: \(mcpServer.isAppFrontmost ? "Yes" : "No")")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+
             if let method = mcpServer.lastRequestMethod,
                let timestamp = mcpServer.lastRequestAt {
               Text("Last request: \(method) at \(timestamp.formatted(date: .omitted, time: .shortened))")
@@ -154,6 +162,12 @@ private struct MCPToolSettingsSection: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.leading, 36)
+              if tool.requiresForeground {
+                Text("Requires foreground UI")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+                  .padding(.leading, 36)
+              }
             }
           }
         }
