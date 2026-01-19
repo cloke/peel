@@ -18,6 +18,7 @@ import SwiftData
 @MainActor
 @Observable
 public final class AgentManager {
+  private let mcpLog = MCPLogService.shared
   /// All registered agents
   public private(set) var agents: [Agent] = []
   
