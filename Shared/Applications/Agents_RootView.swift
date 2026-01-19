@@ -15,6 +15,7 @@ import AppKit
 enum InfrastructureView: String, Hashable {
   case vmIsolation = "vm-isolation"
   case mcpDashboard = "mcp-dashboard"
+  case translationValidation = "translation-validation"
 }
 
 /// Main view for AI Agent Orchestration
@@ -91,6 +92,8 @@ struct Agents_RootView: View {
         VMIsolationDashboardView()
       case .mcpDashboard:
         MCPDashboardView(mcpServer: mcpServer, sessionTracker: sessionTracker)
+      case .translationValidation:
+        TranslationValidationView()
       }
     } else if let chain = agentManager.selectedChain {
       ChainDetailView(chain: chain, agentManager: agentManager, cliService: cliService, sessionTracker: sessionTracker)
@@ -294,6 +297,20 @@ struct AgentsSidebarView: View {
             }
           }
           .tag("infra:mcp-dashboard")
+
+          HStack {
+            Image(systemName: "character.book.closed")
+              .foregroundStyle(.indigo)
+            Text("Translation Validation")
+            Spacer()
+            Text("Preview")
+              .font(.caption2)
+              .padding(.horizontal, 6)
+              .padding(.vertical, 2)
+              .background(.indigo.opacity(0.2), in: Capsule())
+              .foregroundStyle(.indigo)
+          }
+          .tag("infra:translation-validation")
 
           HStack {
             Image(systemName: "shield.checkered")
@@ -3495,6 +3512,351 @@ struct ElapsedTimeView: View {
     let minutes = Int(elapsed) / 60
     let seconds = Int(elapsed) % 60
     return String(format: "%d:%02d", minutes, seconds)
+  }
+}
+#endif
+
+// MARK: - Translation Validation
+
+#if os(macOS)
+struct TranslationValidationView: View {
+  @Environment(MCPServerService.self) private var mcpServer
+  @State private var rootPath = ""
+  @State private var translationsPath = ""
+  @State private var baseLocale = ""
+  @State private var toolPath = ""
+  @State private var lastDetectedToolPath: String?
+  @State private var showSummaryOnly = true
+  @State private var filterMissing = true
+  @State private var filterExtra = true
+  @State private var filterPlaceholders = false
+  @State private var filterTypes = false
+  @State private var filterSuspects = false
+  @State private var useAppleAI = false
+  @State private var redactSamples = true
+  @State private var showingRootConfirm = false
+  @State private var pendingOptions: TranslationValidatorService.Options?
+
+  private var service: TranslationValidatorService { mcpServer.translationValidatorService }
+
+  private var selectedOnly: String? {
+    let kinds: [String] = [
+      filterMissing ? IssueKind.missing.rawValue : nil,
+      filterExtra ? IssueKind.extra.rawValue : nil,
+      filterPlaceholders ? IssueKind.placeholders.rawValue : nil,
+      filterTypes ? IssueKind.types.rawValue : nil,
+      filterSuspects ? IssueKind.suspects.rawValue : nil
+    ].compactMap { $0 }
+
+    return kinds.isEmpty ? nil : kinds.joined(separator: ",")
+  }
+
+  var body: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 16) {
+        GroupBox {
+          VStack(alignment: .leading, spacing: 12) {
+            Text("Translation Validator")
+              .font(.headline)
+
+            LabeledContent("Project root") {
+              TextField("/path/to/project", text: $rootPath)
+                .textFieldStyle(.roundedBorder)
+                .frame(minWidth: 320)
+            }
+
+            LabeledContent("Translations path (optional)") {
+              TextField("/path/to/translations", text: $translationsPath)
+                .textFieldStyle(.roundedBorder)
+                .frame(minWidth: 320)
+            }
+
+            LabeledContent("Base locale (optional)") {
+              TextField("en-us", text: $baseLocale)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 120)
+            }
+
+            LabeledContent("Validator path (optional)") {
+              HStack(spacing: 8) {
+                TextField("Auto-detect from app project", text: $toolPath)
+                  .textFieldStyle(.roundedBorder)
+                  .frame(minWidth: 320)
+
+                Button("Detect") {
+                  if let detected = service.suggestedToolPath(rootHint: rootPath) {
+                    toolPath = detected
+                    lastDetectedToolPath = detected
+                  }
+                }
+                .buttonStyle(.bordered)
+              }
+            }
+
+            Toggle("Summary only", isOn: $showSummaryOnly)
+
+            Toggle("Use Apple on-device AI for suspects", isOn: $useAppleAI)
+              .disabled(!service.appleAIAvailable)
+
+            if useAppleAI && !service.appleAIAvailable {
+              Text("Apple AI is not available on this device.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            Toggle("Redact samples before AI", isOn: $redactSamples)
+              .disabled(!useAppleAI)
+            if useAppleAI && !redactSamples {
+              Text("Raw samples will be sent to the on-device model.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+              Text("Filters")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 12)], spacing: 8) {
+                Toggle("Missing", isOn: $filterMissing)
+                Toggle("Extra", isOn: $filterExtra)
+                Toggle("Placeholders", isOn: $filterPlaceholders)
+                Toggle("Types", isOn: $filterTypes)
+                Toggle("Suspects", isOn: $filterSuspects)
+              }
+              .toggleStyle(.switch)
+            }
+
+            HStack(spacing: 12) {
+              Button(service.isRunning ? "Running..." : "Run Validator") {
+                let options = TranslationValidatorService.Options(
+                  root: rootPath,
+                  translationsPath: translationsPath.isEmpty ? nil : translationsPath,
+                  baseLocale: baseLocale.isEmpty ? nil : baseLocale,
+                  only: selectedOnly,
+                  summary: showSummaryOnly,
+                  toolPath: toolPath.isEmpty ? nil : toolPath,
+                  useAppleAI: useAppleAI,
+                  redactSamples: redactSamples
+                )
+                if isRiskyRoot(rootPath) {
+                  pendingOptions = options
+                  showingRootConfirm = true
+                } else {
+                  Task { await service.validate(options: options) }
+                }
+              }
+              .buttonStyle(.borderedProminent)
+              .disabled(service.isRunning || rootPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+              Button("Stop") {
+                service.cancel()
+              }
+              .buttonStyle(.bordered)
+              .disabled(!service.isRunning)
+            }
+
+            if let detected = lastDetectedToolPath {
+              Text("Detected tool: \(detected)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            if rootPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+              Text("Set a project root to avoid scanning the whole disk.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            if let error = service.lastError {
+              Text(error)
+                .font(.caption)
+                .foregroundStyle(.red)
+            }
+          }
+          .padding(4)
+        }
+
+        if let report = service.lastReport {
+          GroupBox {
+            VStack(alignment: .leading, spacing: 12) {
+              Text("Suggestions")
+                .font(.headline)
+
+              if let summary = service.lastSummary {
+                ForEach(summary.roots, id: \.path) { root in
+                  VStack(alignment: .leading, spacing: 8) {
+                    Text(root.path)
+                      .font(.subheadline)
+                    HStack(spacing: 12) {
+                      summaryPill("Files", root.files)
+                      if filterMissing { summaryPill("Missing", root.missingKeys) }
+                      if filterExtra { summaryPill("Extra", root.extraKeys) }
+                      if filterTypes { summaryPill("Types", root.typeMismatches) }
+                      if filterPlaceholders { summaryPill("Placeholders", root.placeholderMismatches) }
+                      if filterSuspects { summaryPill("Suspects", root.suspectTranslations) }
+                    }
+                  }
+                  .padding(.vertical, 6)
+                }
+              }
+
+              if !showSummaryOnly {
+                ForEach(report.roots, id: \.path) { root in
+                  VStack(alignment: .leading, spacing: 10) {
+                    Text("\(root.path)")
+                      .font(.subheadline)
+
+                    ForEach(root.files, id: \.file) { file in
+                      if fileHasVisibleIssues(file) {
+                        DisclosureGroup(file.file) {
+                          VStack(alignment: .leading, spacing: 6) {
+                            if filterMissing {
+                              KeyListView(title: "Missing", entries: file.missingKeys)
+                            }
+                            if filterExtra {
+                              KeyListView(title: "Extra", entries: file.extraKeys)
+                            }
+                            if filterTypes {
+                              ForEach(file.typeMismatches.indices, id: \.self) { index in
+                                let mismatch = file.typeMismatches[index]
+                                Text("Type mismatch [\(mismatch.locale)] \(mismatch.key): \(mismatch.expected.rawValue) → \(mismatch.found.rawValue)")
+                                  .font(.caption)
+                                  .foregroundStyle(.secondary)
+                              }
+                            }
+                            if filterPlaceholders {
+                              ForEach(file.placeholderMismatches.indices, id: \.self) { index in
+                                let mismatch = file.placeholderMismatches[index]
+                                Text("Placeholder mismatch [\(mismatch.locale)] \(mismatch.key): \(mismatch.expected) → \(mismatch.found)")
+                                  .font(.caption)
+                                  .foregroundStyle(.secondary)
+                              }
+                            }
+                            if filterSuspects {
+                              VStack(alignment: .leading, spacing: 8) {
+                                ForEach(file.suspectTranslations.indices, id: \.self) { index in
+                                  let suspect = file.suspectTranslations[index]
+                                  VStack(alignment: .leading, spacing: 4) {
+                                    Text("Suspect [\(suspect.locale)] \(suspect.key)")
+                                      .font(.caption)
+                                      .fontWeight(.semibold)
+                                    Text(suspect.reason)
+                                      .font(.caption)
+                                      .foregroundStyle(.secondary)
+                                    if let baseSample = suspect.baseSample,
+                                       let localeSample = suspect.localeSample {
+                                      VStack(alignment: .leading, spacing: 2) {
+                                        Text("English: \(baseSample)")
+                                          .font(.caption2)
+                                          .foregroundStyle(.secondary)
+                                        Text("Locale: \(localeSample)")
+                                          .font(.caption2)
+                                          .foregroundStyle(.secondary)
+                                      }
+                                      .padding(.leading, 6)
+                                    }
+                                  }
+                                  .padding(.vertical, 4)
+                                }
+                              }
+                            }
+                          }
+                          .padding(.vertical, 4)
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      .padding(16)
+    }
+    .alert("Large scan warning", isPresented: $showingRootConfirm) {
+      Button("Cancel", role: .cancel) {
+        pendingOptions = nil
+      }
+      Button("Run Anyway", role: .destructive) {
+        if let options = pendingOptions {
+          Task { await service.validate(options: options) }
+        }
+        pendingOptions = nil
+      }
+    } message: {
+      Text("The selected root looks broad and may scan a large portion of your disk. Continue?")
+    }
+  }
+
+  private func summaryPill(_ label: String, _ value: Int) -> some View {
+    Text("\(label): \(value)")
+      .font(.caption2)
+      .padding(.horizontal, 8)
+      .padding(.vertical, 4)
+      .background(Color.blue.opacity(0.12), in: Capsule())
+  }
+
+  private func fileHasVisibleIssues(_ file: FileReport) -> Bool {
+    if filterMissing && !file.missingKeys.isEmpty { return true }
+    if filterExtra && !file.extraKeys.isEmpty { return true }
+    if filterTypes && !file.typeMismatches.isEmpty { return true }
+    if filterPlaceholders && !file.placeholderMismatches.isEmpty { return true }
+    if filterSuspects && !file.suspectTranslations.isEmpty { return true }
+    return false
+  }
+
+  private func isRiskyRoot(_ path: String) -> Bool {
+    let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.isEmpty { return false }
+    let expanded = expandPath(trimmed)
+    let risky: Set<String> = [
+      "/",
+      FileManager.default.homeDirectoryForCurrentUser.path,
+      "/Users",
+      "/System",
+      "/Library",
+      "/Applications"
+    ]
+    return risky.contains(expanded)
+  }
+
+  private func expandPath(_ path: String) -> String {
+    if path.hasPrefix("~") {
+      let home = FileManager.default.homeDirectoryForCurrentUser.path
+      return path.replacingOccurrences(of: "~", with: home)
+    }
+    return path
+  }
+}
+
+private struct KeyListView: View {
+  let title: String
+  let entries: [LocaleKeyList]
+
+  private let maxItems = 12
+
+  var body: some View {
+    ForEach(entries.indices, id: \.self) { index in
+      let entry = entries[index]
+      let keys = entry.keys
+      let preview = keys.prefix(maxItems).joined(separator: ", ")
+      let remaining = keys.count - min(keys.count, maxItems)
+      let suffix = remaining > 0 ? " (+\(remaining) more)" : ""
+      Text("\(title) (\(entry.locale)): \(preview)\(suffix)")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
+  }
+}
+#else
+struct TranslationValidationView: View {
+  var body: some View {
+    ContentUnavailableView(
+      "Translation Validation",
+      systemImage: "character.book.closed",
+      description: Text("Available on macOS only.")
+    )
   }
 }
 #endif

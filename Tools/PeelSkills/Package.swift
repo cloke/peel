@@ -9,7 +9,8 @@ let package = Package(
   products: [
     .executable(name: "gh-issue-sync", targets: ["GHIssueSync"]),
     .executable(name: "roadmap-audit", targets: ["RoadmapAudit"]),
-    .executable(name: "file-rewrite", targets: ["FileRewrite"])
+    .executable(name: "file-rewrite", targets: ["FileRewrite"]),
+    .executable(name: "translation-validator", targets: ["TranslationValidator"])
   ],
   dependencies: [
     .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0"),
@@ -38,6 +39,14 @@ let package = Package(
         .product(name: "ArgumentParser", package: "swift-argument-parser")
       ],
       path: "Sources/FileRewrite"
+    ),
+    .executableTarget(
+      name: "TranslationValidator",
+      dependencies: [
+        .product(name: "ArgumentParser", package: "swift-argument-parser"),
+        .product(name: "Yams", package: "Yams")
+      ],
+      path: "Sources/TranslationValidator"
     )
   ]
 )
