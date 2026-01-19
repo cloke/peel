@@ -229,11 +229,6 @@ actor LocalRAGStore {
     self.dbURL = ragURL.appendingPathComponent("rag.sqlite")
   }
 
-  deinit {
-    if let db {
-      sqlite3_close(db)
-    }
-  }
 
   func status() -> Status {
     Status(
@@ -665,7 +660,7 @@ actor LocalRAGStore {
     let data = encodeVector(vector)
     try execute(sql: sql) { statement in
       bindText(statement, 1, chunkId)
-      data.withUnsafeBytes { bytes in
+      _ = data.withUnsafeBytes { bytes in
         sqlite3_bind_blob(statement, 2, bytes.baseAddress, Int32(data.count), sqliteTransient)
       }
     }
