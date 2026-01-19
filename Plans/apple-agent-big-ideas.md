@@ -17,7 +17,6 @@ _Last updated: 2026-01-16_
 ## Index
 
 - [Tag Legend](#tag-legend)
-- [Language & Tech Preferences](#language--tech-preferences)
 - [North Star](#north-star)
 - [Phased Roadmap](#phased-roadmap)
 - [Hypervisor & VM Isolation](#hypervisor--vm-isolation)
@@ -43,18 +42,6 @@ _Last updated: 2026-01-16_
 - **tools**: macOS / Apple‑only tech leverage
 - **wwdc**: features that showcase Apple platform capabilities
 
-## Language & Tech Preferences
-
-**Preferred (in order):**
-1. **Swift** — First choice for all Apple platform code, agents, services
-2. **Shell (bash/zsh)** — Scripting, automation, CLI tools
-3. **Rust** — Performance-critical components, CLI tools
-4. **Ruby** — Scripting, data processing, quick prototypes
-
-**Fallback only when necessary:**
-- **Python** — AI/ML ecosystem tools (MLX has Python bindings, some models require it)
-- Prefer Swift wrappers around Python when possible (e.g., PythonKit or shell-out)
-
 ## North Star
 
 Push Apple hardware to its limits with local agents while keeping strict safety boundaries. Emphasize single‑machine scale‑out using Apple's hypervisor, Metal, ANE, and MLX to achieve both high throughput and strong isolation.
@@ -64,13 +51,6 @@ Push Apple hardware to its limits with local agents while keeping strict safety 
 ---
 
 ## Phased Roadmap
-
-### Phase 1: TestFlight Ready (Current Focus)
-Get Kitchen Sync stable and feature-complete enough for external testing:
-- [ ] Core Git/GitHub/Homebrew management polished
-- [ ] Basic agent orchestration working
-- [ ] SwiftData + iCloud sync stable
-- [ ] macOS + iOS feature parity where appropriate
 
 ### Phase 2: Local AI Foundation
 Build the infrastructure for on-device intelligence:
