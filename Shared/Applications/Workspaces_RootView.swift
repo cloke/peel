@@ -40,6 +40,9 @@ struct WorkspacesDashboardView: View {
   @State private var showingCreateWorktree = false
   @State private var selectedRepo: WorkspaceRepo?
   @State private var worktreeStatuses: [UUID: WorktreeStatus] = [:]
+  @AppStorage("workspaces.selectedWorkspaceName") private var selectedWorkspaceName: String = ""
+  @AppStorage("workspaces.selectedRepoName") private var selectedRepoName: String = ""
+  @AppStorage("workspaces.selectedWorktreePath") private var selectedWorktreePath: String = ""
   
   var body: some View {
     NavigationSplitView {
@@ -51,17 +54,71 @@ struct WorkspacesDashboardView: View {
     .task {
       service.configure(modelContext: modelContext)
       await service.loadReposAndWorktrees()
+      syncSelectionFromStoredValues()
+      persistAvailableWorkspaceState()
+    }
+    .onChange(of: service.workspaces) { _, _ in
+      syncSelectionFromStoredValues()
+      persistAvailableWorkspaceState()
+    }
+    .onChange(of: service.repos) { _, _ in
+      syncSelectionFromStoredValues()
+      persistAvailableWorkspaceState()
+    }
+    .onChange(of: service.worktrees) { _, _ in
+      persistAvailableWorkspaceState()
+    }
+    .onChange(of: service.selectedWorkspace?.name) { _, newValue in
+      let name = newValue ?? ""
+      if selectedWorkspaceName != name {
+        selectedWorkspaceName = name
+      }
+    }
+    .onChange(of: selectedRepo?.name) { _, newValue in
+      let name = newValue ?? ""
+      if selectedRepoName != name {
+        selectedRepoName = name
+      }
+    }
+    .onChange(of: selectedWorkspaceName) { _, _ in
+      syncSelectionFromStoredValues()
+    }
+    .onChange(of: selectedRepoName) { _, _ in
+      syncSelectionFromStoredValues()
+    }
+    .onChange(of: selectedWorktreePath) { _, _ in
+      syncSelectionFromStoredValues()
     }
     .onChange(of: mcpServer.lastUIAction?.id) {
       guard let action = mcpServer.lastUIAction else { return }
       switch action.controlId {
       case "workspaces.refresh":
         Task { await service.loadReposAndWorktrees() }
+        mcpServer.recordUIActionHandled(action.controlId)
       case "workspaces.addWorkspace":
         showingAddWorkspace = true
+        mcpServer.recordUIActionHandled(action.controlId)
       case "workspaces.createWorktree":
         if selectedRepo != nil {
           showingCreateWorktree = true
+          mcpServer.recordUIActionHandled(action.controlId)
+        }
+      case "workspaces.openInVSCode":
+        if let repo = selectedRepo {
+          Task {
+            try? await VSCodeService.shared.open(path: repo.path, newWindow: true)
+          }
+          mcpServer.recordUIActionHandled(action.controlId)
+        }
+      case "workspaces.openSelectedWorktree":
+        if let worktree = selectedWorktree() {
+          openWorktree(worktree)
+          mcpServer.recordUIActionHandled(action.controlId)
+        }
+      case "workspaces.removeSelectedWorktree":
+        if let worktree = selectedWorktree() {
+          removeWorktree(worktree)
+          mcpServer.recordUIActionHandled(action.controlId)
         }
       default:
         break
@@ -345,6 +402,50 @@ struct WorkspacesDashboardView: View {
       await service.loadReposAndWorktrees()
       await loadStatuses()
     }
+  }
+
+  private func syncSelectionFromStoredValues() {
+    if !selectedWorkspaceName.isEmpty,
+       let workspace = service.workspaces.first(where: { $0.name == selectedWorkspaceName }) {
+      if service.selectedWorkspace?.id != workspace.id {
+        service.selectedWorkspace = workspace
+      }
+    }
+
+    if !selectedRepoName.isEmpty,
+       let repo = service.repos.first(where: { $0.name == selectedRepoName }) {
+      if selectedRepo?.id != repo.id {
+        selectedRepo = repo
+      }
+    } else if !selectedRepoName.isEmpty {
+      selectedRepo = nil
+    }
+
+    if !selectedWorktreePath.isEmpty,
+       let worktree = service.worktrees.first(where: { $0.path == selectedWorktreePath }) {
+      let repoName = service.repoName(for: worktree)
+      if let repoName,
+         let repo = service.repos.first(where: { $0.name == repoName }),
+         selectedRepo?.id != repo.id {
+        selectedRepo = repo
+      }
+    } else if !selectedWorktreePath.isEmpty {
+      selectedWorktreePath = ""
+    }
+  }
+
+  private func selectedWorktree() -> Git.Worktree? {
+    guard !selectedWorktreePath.isEmpty else { return nil }
+    return service.worktrees.first { $0.path == selectedWorktreePath }
+  }
+
+  private func persistAvailableWorkspaceState() {
+    let workspaceNames = Array(Set(service.workspaces.map { $0.name })).sorted()
+    let repoNames = Array(Set(service.repos.map { $0.name })).sorted()
+    let worktreePaths = Array(Set(service.worktrees.map { $0.path })).sorted()
+    UserDefaults.standard.set(workspaceNames, forKey: "workspaces.availableNames")
+    UserDefaults.standard.set(repoNames, forKey: "workspaces.availableRepoNames")
+    UserDefaults.standard.set(worktreePaths, forKey: "workspaces.availableWorktreePaths")
   }
 }
 

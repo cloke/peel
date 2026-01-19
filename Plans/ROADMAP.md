@@ -152,6 +152,8 @@ related_docs:
 | [#32](https://github.com/cloke/peel/issues/32) | Sleep prevention | IOPMAssertion |
 | [#33](https://github.com/cloke/peel/issues/33) | MCP run timeline | Visualization |
 | - | Headless MCP/CLI feasibility | Ensure architecture supports a headless/CLI mode |
+| [#66](https://github.com/cloke/peel/issues/66) | MCP UI automation tools + permissions | Tool registry + UI automation |
+| [#67](https://github.com/cloke/peel/issues/67) | Headless MCP/CLI feasibility | CLI pathway + module split |
 
 ### 📋 Agent Features (Open)
 

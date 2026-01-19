@@ -76,6 +76,9 @@ Enable comprehensive app testing via MCP by adding UI automation tools, view/con
    - Implement `state.get`, `state.list`.
 5. **Coverage Expansion**
    - Register view/control IDs for GitHub, Agents, Brew, Git, Workspaces.
+6. **Foreground vs Background**
+   - Flag tools with foreground requirements.
+   - Surface UI action history + pending actions.
 
 ## Acceptance Criteria
 - [ ] MCP tools are listed with category + enabled status.
@@ -83,8 +86,25 @@ Enable comprehensive app testing via MCP by adding UI automation tools, view/con
 - [ ] Settings allow user to opt in/out per tool or category.
 - [ ] Navigation and basic action tools can drive the GitHub and Agents tabs.
 - [ ] MCP log includes tool call metadata + timing.
+- [ ] Tools indicate whether foreground UI is required.
+- [ ] MCP UI action history is visible in the app.
+
+## Current Status (2026-01-19)
+- Implemented tool registry with categories, foreground requirement flags, and permissions gating.
+- Added UI navigation + action tools (navigate/back/snapshot/tap/setText/toggle/select).
+- Added state tools (state.get/state.list) with control values and foreground metadata.
+- Wired core controls for Agents, GitHub, Brew, Git, Workspaces, plus selection state syncing.
+- Added MCP UI action history + pending state in MCP Dashboard.
+
+## Next Steps
+1. Expand control coverage for Workspaces (per-worktree open/remove by name) and GitHub (favorites/PRs).
+2. Add background-safe tools for read-only state extraction (no UI) and flag them clearly.
+3. Add MCP tool docs in Settings or MCP Dashboard (human-readable control list).
+4. Finalize permissions UX (category toggles + per-tool tooltips) and revisit defaults.
 
 ## Open Questions
 - Should tool permissions be per-device only or iCloud synced?
 - Where should view/control IDs live (central registry vs per-feature)?
 - Do we need a “safe mode” that disables state-changing tools by default?
+- What MCP tools can run headless vs require foreground UI (e.g., screenshots, UI taps)?
+- Should we add a visible “UI control mode” indicator when foreground UI automation is active?

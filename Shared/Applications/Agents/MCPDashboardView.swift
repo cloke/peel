@@ -153,6 +153,12 @@ struct MCPDashboardView: View {
             Text("Tools enabled: \(mcpServer.enabledToolCount)/\(mcpServer.totalToolCount)")
               .font(.caption)
               .foregroundStyle(.secondary)
+            Text("Foreground tools: \(mcpServer.foregroundToolCount) · Background tools: \(mcpServer.backgroundToolCount)")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Text("App active: \(mcpServer.isAppActive ? "Yes" : "No") · Frontmost: \(mcpServer.isAppFrontmost ? "Yes" : "No")")
+              .font(.caption)
+              .foregroundStyle(.secondary)
             if let blocked = mcpServer.lastBlockedTool,
                let blockedAt = mcpServer.lastBlockedToolAt {
               Text("Last blocked tool: \(blocked)")
@@ -161,6 +167,55 @@ struct MCPDashboardView: View {
               Text(blockedAt, style: .time)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+            }
+            if let handled = mcpServer.lastUIActionHandled,
+               let handledAt = mcpServer.lastUIActionHandledAt {
+              Text("Last UI action: \(handled)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              Text(handledAt, style: .time)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+            if let pending = mcpServer.lastUIAction?.controlId {
+              Text("Pending UI action: \(pending)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            if let requiresForeground = mcpServer.lastToolRequiresForeground,
+               let requiresForegroundAt = mcpServer.lastToolRequiresForegroundAt {
+              Text("Last tool requires UI: \(requiresForeground ? "Yes" : "No")")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              Text(requiresForegroundAt, style: .time)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+          }
+        }
+
+        GroupBox {
+          VStack(alignment: .leading, spacing: 8) {
+            Text("MCP UI Actions")
+              .font(.headline)
+            if mcpServer.recentUIActions.isEmpty {
+              Text("No UI actions yet")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else {
+              ForEach(mcpServer.recentUIActions.prefix(8)) { action in
+                HStack {
+                  Text(action.controlId)
+                    .font(.caption)
+                  Spacer()
+                  Text(action.status)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                  Text(action.timestamp, style: .time)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                }
+              }
             }
           }
         }

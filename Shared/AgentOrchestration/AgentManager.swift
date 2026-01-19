@@ -1170,8 +1170,25 @@ public final class MCPServerService {
     public let inputSchema: [String: Any]
     public let category: ToolCategory
     public let isMutating: Bool
+    public let requiresForeground: Bool
 
     public var id: String { name }
+
+    public init(
+      name: String,
+      description: String,
+      inputSchema: [String: Any],
+      category: ToolCategory,
+      isMutating: Bool,
+      requiresForeground: Bool = false
+    ) {
+      self.name = name
+      self.description = description
+      self.inputSchema = inputSchema
+      self.category = category
+      self.isMutating = isMutating
+      self.requiresForeground = requiresForeground
+    }
   }
 
   public struct UIAction: Identifiable {
@@ -1181,6 +1198,20 @@ public final class MCPServerService {
     public init(controlId: String) {
       self.id = UUID()
       self.controlId = controlId
+    }
+  }
+
+  public struct UIActionRecord: Identifiable {
+    public let id: UUID
+    public let controlId: String
+    public let status: String
+    public let timestamp: Date
+
+    public init(controlId: String, status: String, timestamp: Date = Date()) {
+      self.id = UUID()
+      self.controlId = controlId
+      self.status = status
+      self.timestamp = timestamp
     }
   }
 
@@ -1236,6 +1267,18 @@ public final class MCPServerService {
   public private(set) var lastRequestAt: Date?
   public private(set) var lastBlockedTool: String?
   public private(set) var lastBlockedToolAt: Date?
+  public private(set) var lastToolRequiresForeground: Bool?
+  public private(set) var lastToolRequiresForegroundAt: Date?
+  public private(set) var lastUIActionHandled: String?
+  public private(set) var lastUIActionHandledAt: Date?
+  public private(set) var recentUIActions: [UIActionRecord] = []
+  public var isAppActive: Bool {
+    NSApp.isActive
+  }
+
+  public var isAppFrontmost: Bool {
+    NSApp.keyWindow?.isKeyWindow ?? false
+  }
   public private(set) var isCleaningAgentWorkspaces: Bool = false
   public private(set) var lastCleanupAt: Date?
   public private(set) var lastCleanupSummary: String?
@@ -1343,6 +1386,14 @@ public final class MCPServerService {
 
   public func enabledToolCount(in category: ToolCategory) -> Int {
     tools(in: category).filter { isToolEnabled($0.name) }.count
+  }
+
+  public var foregroundToolCount: Int {
+    toolDefinitions.filter { $0.requiresForeground }.count
+  }
+
+  public var backgroundToolCount: Int {
+    toolDefinitions.filter { !$0.requiresForeground }.count
   }
 
   public var totalToolCount: Int {
@@ -1517,6 +1568,7 @@ public final class MCPServerService {
           switch state {
           case .ready:
             self.isRunning = true
+            self.lastError = nil
           case .failed(let error):
             self.lastError = error.localizedDescription
             self.isRunning = false
@@ -1757,6 +1809,14 @@ public final class MCPServerService {
       return (400, makeRPCError(id: id, code: -32601, message: "Unknown tool"))
     }
 
+    lastToolRequiresForeground = tool.requiresForeground
+    lastToolRequiresForegroundAt = Date()
+
+    if tool.requiresForeground && !NSApp.isActive {
+      await mcpLog.warning("Foreground tool called while app inactive", metadata: ["name": tool.name])
+      recordUIActionForegroundNeeded(tool.name)
+    }
+
     if !isToolEnabled(name) {
       await mcpLog.warning("Tool disabled", metadata: ["name": name, "category": tool.category.rawValue])
       lastBlockedTool = name
@@ -1836,6 +1896,9 @@ public final class MCPServerService {
     case "server.port.set":
       return await handleServerPortSet(id: id, arguments: arguments)
 
+    case "server.status":
+      return handleServerStatus(id: id)
+
     case "server.stop":
       stop()
       return (200, makeRPCResult(id: id, result: ["status": "stopped"]))
@@ -1843,6 +1906,10 @@ public final class MCPServerService {
     case "app.quit":
       scheduleAppQuit()
       return (200, makeRPCResult(id: id, result: ["status": "quitting"]))
+
+    case "app.activate":
+      activateApp()
+      return (200, makeRPCResult(id: id, result: ["status": "activated"]))
 
     case "screenshot.capture":
       let label = arguments["label"] as? String
@@ -1873,7 +1940,9 @@ public final class MCPServerService {
       return (404, makeRPCError(id: id, code: -32020, message: "Unknown viewId"))
     }
 
+    recordUIActionRequested("ui.navigate:\(viewId)")
     setCurrentToolId(viewId)
+    recordUIActionHandled("ui.navigate:\(viewId)")
     return (200, makeRPCResult(id: id, result: ["viewId": viewId, "status": "navigated"]))
   }
 
@@ -1889,9 +1958,11 @@ public final class MCPServerService {
       return (404, makeRPCError(id: id, code: -32022, message: "Unknown controlId"))
     }
 
+    recordUIActionRequested(controlId)
     if controlId.hasPrefix("tool.") {
       let toolId = controlId.replacingOccurrences(of: "tool.", with: "")
       setCurrentToolId(toolId)
+      recordUIActionHandled(controlId)
       return (200, makeRPCResult(id: id, result: ["controlId": controlId, "status": "tapped"]))
     }
 
@@ -1909,6 +1980,8 @@ public final class MCPServerService {
     switch controlId {
     case "brew.search":
       UserDefaults.standard.set(value, forKey: "brew.searchText")
+      recordUIActionRequested(controlId)
+      recordUIActionHandled(controlId)
       return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
     default:
       break
@@ -1928,6 +2001,8 @@ public final class MCPServerService {
       let current = UserDefaults.standard.bool(forKey: "github-show-archived")
       let next = value ?? !current
       UserDefaults.standard.set(next, forKey: "github-show-archived")
+      recordUIActionRequested(controlId)
+      recordUIActionHandled(controlId)
       return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": next]))
     default:
       return (400, makeRPCError(id: id, code: -32025, message: "toggle not supported"))
@@ -1947,6 +2022,28 @@ public final class MCPServerService {
         return (400, makeRPCError(id: id, code: -32602, message: "Invalid value"))
       }
       UserDefaults.standard.set(value, forKey: "brew.source")
+      recordUIActionRequested(controlId)
+      recordUIActionHandled(controlId)
+      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
+    case "workspaces.selectWorkspace":
+      UserDefaults.standard.set(value, forKey: "workspaces.selectedWorkspaceName")
+      recordUIActionRequested(controlId)
+      recordUIActionHandled(controlId)
+      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
+    case "workspaces.selectRepo":
+      UserDefaults.standard.set(value, forKey: "workspaces.selectedRepoName")
+      recordUIActionRequested(controlId)
+      recordUIActionHandled(controlId)
+      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
+    case "workspaces.selectWorktree":
+      UserDefaults.standard.set(value, forKey: "workspaces.selectedWorktreePath")
+      recordUIActionRequested(controlId)
+      recordUIActionHandled(controlId)
+      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
+    case "git.selectRepo":
+      UserDefaults.standard.set(value, forKey: "git.selectedRepoPath")
+      recordUIActionRequested(controlId)
+      recordUIActionHandled(controlId)
       return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
     default:
       return (400, makeRPCError(id: id, code: -32026, message: "select not supported"))
@@ -1970,10 +2067,12 @@ public final class MCPServerService {
   private func handleUISnapshot(id: Any?) -> (Int, Data) {
     let currentViewId = currentToolId()
     let controls = availableToolControlIds() + availableControlIds(for: currentViewId)
+    let controlValues = controlValues(for: currentViewId)
     let snapshot: [String: Any] = [
       "currentViewId": currentViewId as Any,
       "availableViewIds": availableViewIds(),
-      "controls": controls
+      "controls": controls,
+      "controlValues": controlValues
     ]
     return (200, makeRPCResult(id: id, result: snapshot))
   }
@@ -1982,14 +2081,52 @@ public final class MCPServerService {
     let showArchived = UserDefaults.standard.bool(forKey: "github-show-archived")
     let brewSource = UserDefaults.standard.string(forKey: "brew.source")
     let brewSearch = UserDefaults.standard.string(forKey: "brew.searchText")
+    let workspaceName = UserDefaults.standard.string(forKey: "workspaces.selectedWorkspaceName")
+    let repoName = UserDefaults.standard.string(forKey: "workspaces.selectedRepoName")
+    let worktreePath = UserDefaults.standard.string(forKey: "workspaces.selectedWorktreePath")
+    let workspaceNames = UserDefaults.standard.stringArray(forKey: "workspaces.availableNames")
+    let repoNames = UserDefaults.standard.stringArray(forKey: "workspaces.availableRepoNames")
+    let worktreePaths = UserDefaults.standard.stringArray(forKey: "workspaces.availableWorktreePaths")
+    let gitRepoPaths = UserDefaults.standard.stringArray(forKey: "git.availableRepoPaths")
+    let gitRepoNames = UserDefaults.standard.stringArray(forKey: "git.availableRepoNames")
+    let gitSelectedRepo = UserDefaults.standard.string(forKey: "git.selectedRepoPath")
+    let formatter = ISO8601DateFormatter()
+    let uniqueGitRepoPaths = dedupeStrings(gitRepoPaths)
+    let uniqueGitRepoNames = dedupeStrings(gitRepoNames)
+    let uniqueWorkspaceNames = dedupeStrings(workspaceNames)
+    let uniqueRepoNames = dedupeStrings(repoNames)
+    let uniqueWorktreePaths = dedupeStrings(worktreePaths)
+    let recentActions = recentUIActions.prefix(10).map { action in
+      [
+        "controlId": action.controlId,
+        "status": action.status,
+        "timestamp": formatter.string(from: action.timestamp)
+      ]
+    }
     let state: [String: Any] = [
       "currentTool": currentToolId() as Any,
       "mcpRunning": isRunning,
       "activeRequests": activeRequests,
+      "appActive": isAppActive,
+      "appFrontmost": isAppFrontmost,
       "lastRequestAt": lastRequestAt?.formatted() as Any,
       "githubShowArchived": showArchived,
       "brewSource": brewSource as Any,
-      "brewSearchText": brewSearch as Any
+      "brewSearchText": brewSearch as Any,
+      "workspacesSelectedWorkspace": workspaceName as Any,
+      "workspacesSelectedRepo": repoName as Any,
+      "workspacesSelectedWorktree": worktreePath as Any,
+      "workspacesAvailable": uniqueWorkspaceNames as Any,
+      "workspacesAvailableRepos": uniqueRepoNames as Any,
+      "workspacesAvailableWorktrees": uniqueWorktreePaths as Any,
+      "gitAvailableRepos": uniqueGitRepoPaths as Any,
+      "gitAvailableRepoNames": uniqueGitRepoNames as Any,
+      "gitSelectedRepo": gitSelectedRepo as Any,
+      "lastUIActionHandled": lastUIActionHandled as Any,
+      "lastUIActionHandledAt": lastUIActionHandledAt.map { formatter.string(from: $0) } as Any,
+      "pendingUIAction": lastUIAction?.controlId as Any,
+      "lastToolRequiresForeground": lastToolRequiresForeground as Any,
+      "recentUIActions": recentActions
     ]
     return (200, makeRPCResult(id: id, result: state))
   }
@@ -2000,11 +2137,19 @@ public final class MCPServerService {
     let controlsByView = Dictionary(uniqueKeysWithValues: availableViewIds().map { viewId in
       (viewId, availableControlIds(for: viewId))
     })
+    let controlValuesByView = Dictionary(uniqueKeysWithValues: availableViewIds().map { viewId in
+      (viewId, controlValues(for: viewId))
+    })
+    let toolForegroundByName = Dictionary(uniqueKeysWithValues: toolDefinitions.map { tool in
+      (tool.name, tool.requiresForeground)
+    })
     let state: [String: Any] = [
       "views": availableViewIds(),
       "tools": toolDefinitions.map { $0.name },
       "controls": controls,
       "controlsByView": controlsByView,
+      "controlValuesByView": controlValuesByView,
+      "toolRequiresForeground": toolForegroundByName,
       "currentViewId": currentViewId as Any
     ]
     return (200, makeRPCResult(id: id, result: state))
@@ -2386,6 +2531,16 @@ public final class MCPServerService {
     return (500, makeRPCError(id: id, code: -32003, message: lastError ?? "Failed to bind to port"))
   }
 
+  private func handleServerStatus(id: Any?) -> (Int, Data) {
+    let status: [String: Any] = [
+      "enabled": isEnabled,
+      "running": isRunning,
+      "port": port,
+      "lastError": lastError as Any
+    ]
+    return (200, makeRPCResult(id: id, result: status))
+  }
+
   private func waitForServerStart(timeoutSeconds: Double = 2.0) async {
     let deadline = Date().addingTimeInterval(timeoutSeconds)
     while Date() < deadline {
@@ -2612,7 +2767,8 @@ public final class MCPServerService {
           "required": ["controlId"]
         ],
         category: .ui,
-        isMutating: true
+        isMutating: true,
+        requiresForeground: true
       ),
       ToolDefinition(
         name: "ui.setText",
@@ -2626,7 +2782,8 @@ public final class MCPServerService {
           "required": ["controlId", "value"]
         ],
         category: .ui,
-        isMutating: true
+        isMutating: true,
+        requiresForeground: true
       ),
       ToolDefinition(
         name: "ui.toggle",
@@ -2640,7 +2797,8 @@ public final class MCPServerService {
           "required": ["controlId"]
         ],
         category: .ui,
-        isMutating: true
+        isMutating: true,
+        requiresForeground: true
       ),
       ToolDefinition(
         name: "ui.select",
@@ -2654,7 +2812,8 @@ public final class MCPServerService {
           "required": ["controlId", "value"]
         ],
         category: .ui,
-        isMutating: true
+        isMutating: true,
+        requiresForeground: true
       ),
       ToolDefinition(
         name: "ui.navigate",
@@ -2667,7 +2826,8 @@ public final class MCPServerService {
           "required": ["viewId"]
         ],
         category: .ui,
-        isMutating: true
+        isMutating: true,
+        requiresForeground: true
       ),
       ToolDefinition(
         name: "ui.back",
@@ -2677,7 +2837,8 @@ public final class MCPServerService {
           "properties": [:]
         ],
         category: .ui,
-        isMutating: true
+        isMutating: true,
+        requiresForeground: true
       ),
       ToolDefinition(
         name: "ui.snapshot",
@@ -2687,7 +2848,8 @@ public final class MCPServerService {
           "properties": [:]
         ],
         category: .ui,
-        isMutating: false
+        isMutating: false,
+        requiresForeground: true
       ),
       ToolDefinition(
         name: "state.get",
@@ -2888,6 +3050,16 @@ public final class MCPServerService {
         isMutating: true
       ),
       ToolDefinition(
+        name: "server.status",
+        description: "Get MCP server status",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .server,
+        isMutating: false
+      ),
+      ToolDefinition(
         name: "app.quit",
         description: "Quit the Peel app",
         inputSchema: [
@@ -2895,7 +3067,19 @@ public final class MCPServerService {
           "properties": [:]
         ],
         category: .app,
-        isMutating: true
+        isMutating: true,
+        requiresForeground: true
+      ),
+      ToolDefinition(
+        name: "app.activate",
+        description: "Bring the Peel app to the foreground",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .app,
+        isMutating: true,
+        requiresForeground: true
       ),
       ToolDefinition(
         name: "screenshot.capture",
@@ -2907,7 +3091,8 @@ public final class MCPServerService {
           ]
         ],
         category: .diagnostics,
-        isMutating: false
+        isMutating: false,
+        requiresForeground: true
       ),
       ToolDefinition(
         name: "translations.validate",
@@ -2938,7 +3123,8 @@ public final class MCPServerService {
         "description": tool.description,
         "inputSchema": tool.inputSchema,
         "category": tool.category.rawValue,
-        "enabled": isToolEnabled(tool.name)
+        "enabled": isToolEnabled(tool.name),
+        "requiresForeground": tool.requiresForeground
       ]
     }
   }
@@ -2948,6 +3134,10 @@ public final class MCPServerService {
       try? await Task.sleep(for: .milliseconds(150))
       NSApp.terminate(nil)
     }
+  }
+
+  private func activateApp() {
+    NSApp.activate(ignoringOtherApps: true)
   }
 
   private func templateList() -> [[String: Any]] {
@@ -3039,6 +3229,28 @@ public final class MCPServerService {
     })
   }
 
+  public func recordUIActionHandled(_ controlId: String) {
+    lastUIActionHandled = controlId
+    lastUIActionHandledAt = Date()
+    appendUIActionRecord(controlId: controlId, status: "handled")
+  }
+
+  public func recordUIActionRequested(_ controlId: String) {
+    appendUIActionRecord(controlId: controlId, status: "requested")
+  }
+
+  public func recordUIActionForegroundNeeded(_ controlId: String) {
+    appendUIActionRecord(controlId: controlId, status: "foreground-needed")
+  }
+
+  private func appendUIActionRecord(controlId: String, status: String) {
+    let record = UIActionRecord(controlId: controlId, status: status)
+    recentUIActions.insert(record, at: 0)
+    if recentUIActions.count > 25 {
+      recentUIActions.removeLast(recentUIActions.count - 25)
+    }
+  }
+
   private func availableViewIds() -> [String] {
     ["agents", "workspaces", "brew", "git", "github"]
   }
@@ -3064,12 +3276,54 @@ public final class MCPServerService {
     case "brew":
       return ["brew.source", "brew.search"]
     case "workspaces":
-      return ["workspaces.refresh", "workspaces.addWorkspace", "workspaces.createWorktree"]
+      return [
+        "workspaces.refresh",
+        "workspaces.addWorkspace",
+        "workspaces.createWorktree",
+        "workspaces.openInVSCode",
+        "workspaces.selectWorkspace",
+        "workspaces.selectRepo",
+        "workspaces.selectWorktree",
+        "workspaces.openSelectedWorktree",
+        "workspaces.removeSelectedWorktree"
+      ]
     case "git":
-      return ["git.openRepository", "git.cloneRepository", "git.openInVSCode"]
+      return ["git.openRepository", "git.cloneRepository", "git.openInVSCode", "git.selectRepo"]
     default:
       return []
     }
+  }
+
+  private func controlValues(for viewId: String?) -> [String: Any] {
+    switch viewId {
+    case "brew":
+      return [
+        "brew.source": ["Installed", "Available"]
+      ]
+    case "workspaces":
+      let workspaceNames = UserDefaults.standard.stringArray(forKey: "workspaces.availableNames") ?? []
+      let repoNames = UserDefaults.standard.stringArray(forKey: "workspaces.availableRepoNames") ?? []
+      let worktreePaths = UserDefaults.standard.stringArray(forKey: "workspaces.availableWorktreePaths") ?? []
+      return [
+        "workspaces.selectWorkspace": workspaceNames,
+        "workspaces.selectRepo": repoNames,
+        "workspaces.selectWorktree": worktreePaths
+      ]
+    case "git":
+      let repoPaths = UserDefaults.standard.stringArray(forKey: "git.availableRepoPaths") ?? []
+      let repoNames = UserDefaults.standard.stringArray(forKey: "git.availableRepoNames") ?? []
+      return [
+        "git.selectRepo": repoPaths,
+        "git.selectRepoNames": repoNames
+      ]
+    default:
+      return [:]
+    }
+  }
+
+  private func dedupeStrings(_ values: [String]?) -> [String] {
+    guard let values else { return [] }
+    return Array(Set(values)).sorted()
   }
 
   private func currentToolId() -> String? {
