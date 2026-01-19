@@ -89,6 +89,21 @@ github_issues:
   - number: 44
     status: open
     title: Multi-agent quorum for destructive actions
+  - number: 54
+    status: open
+    title: VM bootstrap for GitHub auth + repo provisioning
+  - number: 55
+    status: closed
+    title: Translation parity validator (tio-front-end baseline)
+  - number: 56
+    status: closed
+    title: Translation validator: discover locales and parse YAML
+  - number: 57
+    status: closed
+    title: Translation validator: parity + placeholder checks
+  - number: 58
+    status: closed
+    title: Translation validator: suggestions view (read-only)
 code_locations:
   - file: Shared/AgentOrchestration/AgentManager.swift
     lines: 260-500
@@ -125,6 +140,7 @@ related_docs:
 | **MCP Activity Log** | #16 - Persist/display run history, cleanup actions |
 | **Screenshot Capture** | #21 - ScreenCaptureKit integration for chain runs |
 | **Dynamic Scaling** | #25 - Cost caps and model selection |
+| **Translation Validator** | #55–#58 - CLI + MCP + UI suggestions + Apple on-device checks |
 
 ### 📋 Phase 1C Polish (Open)
 
@@ -169,6 +185,7 @@ related_docs:
 | [#35](https://github.com/cloke/peel/issues/35) | Vision Pipeline | Screen capture → analysis |
 | [#36](https://github.com/cloke/peel/issues/36) | Voice Commands | On-device Whisper |
 | [#37](https://github.com/cloke/peel/issues/37) | Distributed Actors | Multi-Mac scale |
+| [#54](https://github.com/cloke/peel/issues/54) | VM bootstrap auth | GitHub auth + repo provisioning |
 | - | macOS VM | Full Xcode isolation |
 | - | GPU Shared Cache | MLX caching service |
 
