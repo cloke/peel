@@ -15,6 +15,10 @@ Peel includes an MCP (Model Context Protocol) server that allows external AI age
 
 The recommended workflow is **agent builds the app, launches it, then connects** to the MCP server.
 
+Peel can also act as the **planner/reviewer/model picker**, while the external agent (me) uses MCP
+to execute parallel work asynchronously. This lets the app orchestrate chain structure and cost
+controls, while MCP runs proceed in parallel.
+
 ---
 
 ## Why Build-Then-Launch?
@@ -39,6 +43,21 @@ The MCP server runs inside the Peel app. This creates a chicken-and-egg problem:
 curl -X POST -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
   http://127.0.0.1:8765/rpc
+
+```
+
+### Parallel Chain Runs (Async)
+
+Use the helper script to fire multiple chains concurrently (useful for parallel implementers or
+multiple independent tasks):
+
+```bash
+./Tools/run-chains-parallel.sh \
+  --prompt "Task A" \
+  --prompt "Task B" \
+  --template-name "MCP Harness" \
+  --working-directory /path/to/repo \
+  --max-concurrent 2
 ```
 
 ### Script Options

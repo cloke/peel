@@ -64,12 +64,19 @@ actor ScreenshotService {
     try await withCheckedThrowingContinuation { continuation in
       let output = ScreenshotStreamOutput(continuation: continuation)
       let stream = SCStream(filter: filter, configuration: configuration, delegate: output)
+      let streamBox = StreamBox(stream: stream)
       output.attach(stream)
 
-      Task {
+      do {
+        try stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: .main)
+      } catch {
+        output.failIfNeeded(error)
+        return
+      }
+
+      Task { [streamBox, output] in
         do {
-          try await stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: .main)
-          try await stream.startCapture()
+          try await streamBox.stream.startCapture()
         } catch {
           output.failIfNeeded(error)
         }
@@ -79,7 +86,7 @@ actor ScreenshotService {
 }
 
 @available(macOS 12.3, *)
-private final class ScreenshotStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate {
+private final class ScreenshotStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
   private var continuation: CheckedContinuation<CGImage, Error>?
   private let context = CIContext()
   private var didFinish = false
@@ -103,7 +110,10 @@ private final class ScreenshotStreamOutput: NSObject, SCStreamOutput, SCStreamDe
     continuation?.resume(returning: cgImage)
     continuation = nil
 
-    Task { try? await stream.stopCapture() }
+    let streamBox = StreamBox(stream: stream)
+    Task { [streamBox] in
+      try? await streamBox.stream.stopCapture()
+    }
   }
 
   func stream(_ stream: SCStream, didStopWithError error: Error) {
@@ -115,6 +125,15 @@ private final class ScreenshotStreamOutput: NSObject, SCStreamOutput, SCStreamDe
     didFinish = true
     continuation?.resume(throwing: error)
     continuation = nil
+  }
+}
+
+@available(macOS 12.3, *)
+private final class StreamBox: @unchecked Sendable {
+  let stream: SCStream
+
+  init(stream: SCStream) {
+    self.stream = stream
   }
 }
 #else
