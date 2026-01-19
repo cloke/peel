@@ -61,7 +61,7 @@
 		04F582A6269FD388003A8403 /* Github */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Github; path = "Local Packages/Github"; sourceTree = "<group>"; };
 		0A11B6D02F1234567890ABCD /* PeelApp_iOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeelApp_iOS.swift; sourceTree = "<group>"; };
 		0B1E3C9B2FABCDEF00112233 /* DataServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataServiceTests.swift; sourceTree = "<group>"; };
-		D1EDC3CED1C274FD0649E03C /* ValidationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ValidationTests.swift; path = "Tests macOS/ValidationTests.swift"; sourceTree = "<group>"; };
+		D1EDC3CED1C274FD0649E03C /* ValidationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ValidationTests.swift; path = "ValidationTests.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
