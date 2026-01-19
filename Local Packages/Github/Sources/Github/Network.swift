@@ -87,6 +87,11 @@ extension Github {
   public static func repository(owner: String, name: String) async throws -> Github.Repository {
     try await load(url: "https://api.github.com/repos/\(owner)/\(name)")
   }
+
+  /// Fetch a single pull request by owner, repository, and number
+  public static func pullRequest(owner: String, repository: String, number: Int) async throws -> Github.PullRequest {
+    try await load(url: "https://api.github.com/repos/\(owner)/\(repository)/pulls/\(number)")
+  }
   
   /// Fetch a user by login
   public static func user(login: String) async throws -> Github.User {
