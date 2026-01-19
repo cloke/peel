@@ -2,26 +2,42 @@
 import Foundation
 import AppKit
 import CoreGraphics
+import CoreImage
+import CoreMedia
+import ScreenCaptureKit
 
 actor ScreenshotService {
   enum ScreenshotError: Error {
     case permissionDenied
     case captureFailed
     case notSupported
+    case noDisplay
   }
 
   func capture(label: String? = nil) async throws -> URL {
-    // Check permission
+    guard #available(macOS 12.3, *) else {
+      throw ScreenshotError.notSupported
+    }
+
     if !CGPreflightScreenCaptureAccess() {
-      // Request access (may show system prompt)
       if !CGRequestScreenCaptureAccess() {
         throw ScreenshotError.permissionDenied
       }
     }
 
-    guard let image = CGWindowListCreateImage(.infinite, .optionOnScreenOnly, kCGNullWindowID, [.bestResolution]) else {
-      throw ScreenshotError.captureFailed
+    let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+    guard let display = content.displays.first else {
+      throw ScreenshotError.noDisplay
     }
+
+    let filter = SCContentFilter(display: display, excludingWindows: [])
+    let configuration = SCStreamConfiguration()
+    configuration.width = display.width
+    configuration.height = display.height
+    configuration.scalesToFit = true
+    configuration.showsCursor = true
+
+    let image = try await captureImage(filter: filter, configuration: configuration)
 
     let rep = NSBitmapImageRep(cgImage: image)
     guard let data = rep.representation(using: .png, properties: [:]) else {
@@ -41,6 +57,64 @@ actor ScreenshotService {
 
     try data.write(to: fileURL, options: .atomic)
     return fileURL
+  }
+
+  @available(macOS 12.3, *)
+  private func captureImage(filter: SCContentFilter, configuration: SCStreamConfiguration) async throws -> CGImage {
+    try await withCheckedThrowingContinuation { continuation in
+      let output = ScreenshotStreamOutput(continuation: continuation)
+      let stream = SCStream(filter: filter, configuration: configuration, delegate: output)
+      output.attach(stream)
+
+      Task {
+        do {
+          try await stream.addStreamOutput(output, type: .screen, sampleHandlerQueue: .main)
+          try await stream.startCapture()
+        } catch {
+          output.failIfNeeded(error)
+        }
+      }
+    }
+  }
+}
+
+@available(macOS 12.3, *)
+private final class ScreenshotStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate {
+  private var continuation: CheckedContinuation<CGImage, Error>?
+  private let context = CIContext()
+  private var didFinish = false
+  private weak var stream: SCStream?
+
+  init(continuation: CheckedContinuation<CGImage, Error>) {
+    self.continuation = continuation
+  }
+
+  func attach(_ stream: SCStream) {
+    self.stream = stream
+  }
+
+  func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of outputType: SCStreamOutputType) {
+    guard !didFinish, outputType == .screen else { return }
+    guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+    let ciImage = CIImage(cvImageBuffer: imageBuffer)
+    guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return }
+
+    didFinish = true
+    continuation?.resume(returning: cgImage)
+    continuation = nil
+
+    Task { try? await stream.stopCapture() }
+  }
+
+  func stream(_ stream: SCStream, didStopWithError error: Error) {
+    failIfNeeded(error)
+  }
+
+  func failIfNeeded(_ error: Error) {
+    guard !didFinish else { return }
+    didFinish = true
+    continuation?.resume(throwing: error)
+    continuation = nil
   }
 }
 #else
