@@ -189,6 +189,7 @@ actor LocalRAGStore {
     let schemaVersion: Int
     let extensionLoaded: Bool
     let lastInitializedAt: Date?
+    let providerName: String
   }
 
   enum LocalRAGError: LocalizedError {
@@ -218,8 +219,8 @@ actor LocalRAGStore {
 
   private let dateFormatter = ISO8601DateFormatter()
 
-  init(embeddingProvider: LocalRAGEmbeddingProvider = HashEmbeddingProvider()) {
-    self.embeddingProvider = embeddingProvider
+  init(embeddingProvider: LocalRAGEmbeddingProvider? = nil) {
+    self.embeddingProvider = embeddingProvider ?? LocalRAGEmbeddingProviderFactory.makeDefault()
     let baseURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
       ?? FileManager.default.temporaryDirectory
     let ragURL = baseURL.appendingPathComponent("Peel/RAG", isDirectory: true)
@@ -236,7 +237,8 @@ actor LocalRAGStore {
       exists: FileManager.default.fileExists(atPath: dbURL.path),
       schemaVersion: schemaVersion,
       extensionLoaded: extensionLoaded,
-      lastInitializedAt: lastInitializedAt
+      lastInitializedAt: lastInitializedAt,
+      providerName: String(describing: type(of: embeddingProvider))
     )
   }
 

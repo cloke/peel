@@ -2350,7 +2350,8 @@ public final class MCPServerService {
       "dbPath": status.dbPath,
       "exists": status.exists,
       "schemaVersion": status.schemaVersion,
-      "extensionLoaded": status.extensionLoaded
+      "extensionLoaded": status.extensionLoaded,
+      "embeddingProvider": status.providerName
     ]
     if let lastInitializedAt = status.lastInitializedAt {
       result["lastInitializedAt"] = formatter.string(from: lastInitializedAt)

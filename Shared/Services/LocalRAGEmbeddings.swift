@@ -8,10 +8,40 @@
 import CoreML
 import CryptoKit
 import Foundation
+@preconcurrency import NaturalLanguage
 
 protocol LocalRAGEmbeddingProvider: Sendable {
   func embed(texts: [String]) async throws -> [[Float]]
   var dimensions: Int { get }
+}
+
+enum LocalRAGEmbeddingProviderFactory {
+  static func makeDefault() -> LocalRAGEmbeddingProvider {
+    if let provider = SystemEmbeddingProvider() {
+      return provider
+    }
+    return HashEmbeddingProvider()
+  }
+}
+
+struct SystemEmbeddingProvider: LocalRAGEmbeddingProvider, @unchecked Sendable {
+  let embedding: NLEmbedding
+  let dimensions: Int
+
+  init?() {
+    guard let embedding = NLEmbedding.sentenceEmbedding(for: .english) else {
+      return nil
+    }
+    self.embedding = embedding
+    self.dimensions = embedding.dimension
+  }
+
+  func embed(texts: [String]) async throws -> [[Float]] {
+    texts.map { text in
+      let vector = embedding.vector(for: text) ?? Array(repeating: 0, count: dimensions)
+      return vector.map { Float($0) }
+    }
+  }
 }
 
 enum LocalRAGEmbeddingError: LocalizedError {
