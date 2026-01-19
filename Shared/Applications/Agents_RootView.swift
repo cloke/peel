@@ -1392,6 +1392,16 @@ struct MCPRunDetailView: View {
     results.first { $0.agentName.lowercased().contains("planner") }?.prompt
   }
 
+  private func elapsedLabel(from start: Date, to end: Date) -> String {
+    let elapsed = max(0, end.timeIntervalSince(start))
+    let minutes = Int(elapsed) / 60
+    let seconds = Int(elapsed) % 60
+    if minutes > 0 {
+      return "\(minutes)m \(seconds)s"
+    }
+    return "\(seconds)s"
+  }
+
   var body: some View {
     NavigationStack {
       ScrollView {
@@ -1465,6 +1475,51 @@ struct MCPRunDetailView: View {
               Text(plannerPrompt)
                 .font(.system(.caption, design: .monospaced))
                 .textSelection(.enabled)
+            }
+          }
+
+          GroupBox("Timeline") {
+            if results.isEmpty {
+              Text("No timeline entries yet.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else {
+              VStack(alignment: .leading, spacing: 10) {
+                ForEach(Array(results.enumerated()), id: \.element.id) { index, result in
+                  HStack(alignment: .top, spacing: 10) {
+                    VStack(spacing: 0) {
+                      Circle()
+                        .fill(Color.blue.opacity(0.6))
+                        .frame(width: 8, height: 8)
+                      if index < results.count - 1 {
+                        Rectangle()
+                          .fill(Color.secondary.opacity(0.3))
+                          .frame(width: 2)
+                          .frame(maxHeight: 24)
+                      }
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                      HStack(spacing: 8) {
+                        Text(result.agentName)
+                          .font(.subheadline)
+                          .fontWeight(.medium)
+                        Text(result.model)
+                          .font(.caption)
+                          .foregroundStyle(.secondary)
+                        Spacer()
+                        Text(elapsedLabel(from: run.createdAt, to: result.createdAt))
+                          .font(.caption2)
+                          .foregroundStyle(.secondary)
+                      }
+                      Text(result.createdAt, style: .time)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    }
+                  }
+                }
+              }
+              .padding(.vertical, 4)
             }
           }
 
