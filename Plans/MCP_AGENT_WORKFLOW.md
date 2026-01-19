@@ -114,6 +114,9 @@ curl -X POST -H 'Content-Type: application/json' \
 
 **Response:** Chain execution results (planner output, implementer outputs, merge status, review verdict)
 
+Note: For dynamic chains using `chainSpec`, the caller defines the step count and model selection.
+Planners cannot auto-scale implementers, and validators enforce a hard max of 8 steps.
+
 ### Stop Server
 ```bash
 curl -X POST -H 'Content-Type: application/json' \
