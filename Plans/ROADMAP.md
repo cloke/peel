@@ -130,13 +130,12 @@ related_docs:
 - [x] Planner gating: skip implementers when "no work" ([#17](https://github.com/cloke/peel/issues/17))
 - [x] Show planner prompt in Chain Activity / MCP Run detail ([#18](https://github.com/cloke/peel/issues/18))
 - [x] Clarify Assign Task behavior ([#19](https://github.com/cloke/peel/issues/19))
-- [ ] MCP screenshot capture tool (enable tighter build/run/inspect loop) ([#21](https://github.com/cloke/peel/issues/21))
-- [ ] Dynamic chain scaling + model selection for cost caps ([#25](https://github.com/cloke/peel/issues/25))
+- [x] MCP screenshot capture tool (enable tighter build/run/inspect loop) ([#21](https://github.com/cloke/peel/issues/21))
+- [x] Dynamic chain scaling + model selection for cost caps ([#25](https://github.com/cloke/peel/issues/25))
 
 **Proposed next targets (Phase 1C):**
 1. Verify #16 via MCP test plan cases 8–9
-2. Dynamic chain scaling + model selection for cost caps ([#25](https://github.com/cloke/peel/issues/25))
-3. MCP screenshot capture tool — optional if we want a tighter automation loop
+2. MCP screenshot capture tool — optional if we want a tighter automation loop
 
 ### Next Steps (Tomorrow)
 - [ ] Run MCP test plan cases 8–9 and log results
