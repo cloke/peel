@@ -43,6 +43,7 @@ struct WorkspacesDashboardView: View {
   @AppStorage("workspaces.selectedWorkspaceName") private var selectedWorkspaceName: String = ""
   @AppStorage("workspaces.selectedRepoName") private var selectedRepoName: String = ""
   @AppStorage("workspaces.selectedWorktreePath") private var selectedWorktreePath: String = ""
+  @AppStorage("workspaces.selectedWorktreeName") private var selectedWorktreeName: String = ""
   
   var body: some View {
     NavigationSplitView {
@@ -87,6 +88,9 @@ struct WorkspacesDashboardView: View {
       syncSelectionFromStoredValues()
     }
     .onChange(of: selectedWorktreePath) { _, _ in
+      syncSelectionFromStoredValues()
+    }
+    .onChange(of: selectedWorktreeName) { _, _ in
       syncSelectionFromStoredValues()
     }
     .onChange(of: mcpServer.lastUIAction?.id) {
@@ -421,6 +425,15 @@ struct WorkspacesDashboardView: View {
       selectedRepo = nil
     }
 
+    let nameMap = worktreeNameMap()
+    if !selectedWorktreeName.isEmpty,
+       let mappedPath = nameMap[selectedWorktreeName],
+       mappedPath != selectedWorktreePath {
+      selectedWorktreePath = mappedPath
+    } else if !selectedWorktreeName.isEmpty, nameMap[selectedWorktreeName] == nil {
+      selectedWorktreeName = ""
+    }
+
     if !selectedWorktreePath.isEmpty,
        let worktree = service.worktrees.first(where: { $0.path == selectedWorktreePath }) {
       let repoName = service.repoName(for: worktree)
@@ -428,6 +441,10 @@ struct WorkspacesDashboardView: View {
          let repo = service.repos.first(where: { $0.name == repoName }),
          selectedRepo?.id != repo.id {
         selectedRepo = repo
+      }
+      let label = nameMap.first(where: { $0.value == worktree.path })?.key ?? worktree.displayName
+      if selectedWorktreeName != label {
+        selectedWorktreeName = label
       }
     } else if !selectedWorktreePath.isEmpty {
       selectedWorktreePath = ""
@@ -443,9 +460,41 @@ struct WorkspacesDashboardView: View {
     let workspaceNames = Array(Set(service.workspaces.map { $0.name })).sorted()
     let repoNames = Array(Set(service.repos.map { $0.name })).sorted()
     let worktreePaths = Array(Set(service.worktrees.map { $0.path })).sorted()
+    let nameMap = worktreeNameMap()
+    let worktreeNames = Array(nameMap.keys).sorted()
     UserDefaults.standard.set(workspaceNames, forKey: "workspaces.availableNames")
     UserDefaults.standard.set(repoNames, forKey: "workspaces.availableRepoNames")
     UserDefaults.standard.set(worktreePaths, forKey: "workspaces.availableWorktreePaths")
+    UserDefaults.standard.set(worktreeNames, forKey: "workspaces.availableWorktreeNames")
+    if let data = try? JSONEncoder().encode(nameMap) {
+      UserDefaults.standard.set(data, forKey: "workspaces.availableWorktreeNameMap")
+    }
+  }
+
+  private func worktreeNameMap() -> [String: String] {
+    let worktrees = service.worktrees
+    var labelCounts: [String: Int] = [:]
+    for worktree in worktrees {
+      let baseLabel = worktreeAutomationLabel(for: worktree)
+      labelCounts[baseLabel, default: 0] += 1
+    }
+
+    var map: [String: String] = [:]
+    for worktree in worktrees {
+      let baseLabel = worktreeAutomationLabel(for: worktree)
+      let label = labelCounts[baseLabel, default: 0] > 1
+      ? "\(baseLabel) • \(URL(fileURLWithPath: worktree.path).lastPathComponent)"
+      : baseLabel
+      map[label] = worktree.path
+    }
+    return map
+  }
+
+  private func worktreeAutomationLabel(for worktree: Git.Worktree) -> String {
+    if let repoName = service.repoName(for: worktree) {
+      return "\(repoName)/\(worktree.displayName)"
+    }
+    return worktree.displayName
   }
 }
 

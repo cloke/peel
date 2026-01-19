@@ -142,6 +142,7 @@ private struct MCPToolSettingsSection: View {
                 set: { mcpServer.setCategoryEnabled(category, enabled: $0) }
               )
             )
+            .help("Enable or disable all tools in the \(category.displayName) category.")
             Spacer()
             Text("\(mcpServer.enabledToolCount(in: category))/\(mcpServer.toolCount(in: category)) enabled")
               .font(.caption)
@@ -150,6 +151,8 @@ private struct MCPToolSettingsSection: View {
 
           ForEach(mcpServer.tools(in: category)) { tool in
             VStack(alignment: .leading, spacing: 2) {
+              let mutatingLabel = tool.isMutating ? "Mutating" : "Read-only"
+              let foregroundLabel = tool.requiresForeground ? "Foreground required" : "Background-safe"
               Toggle(
                 tool.name,
                 isOn: Binding(
@@ -158,20 +161,49 @@ private struct MCPToolSettingsSection: View {
                 )
               )
               .padding(.leading, 16)
+              .help("\(tool.description)\n\(mutatingLabel) · \(foregroundLabel)")
               Text(tool.description)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.leading, 36)
-              if tool.requiresForeground {
-                Text("Requires foreground UI")
-                  .font(.caption2)
-                  .foregroundStyle(.secondary)
-                  .padding(.leading, 36)
-              }
+              Text("\(mutatingLabel) · \(foregroundLabel)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 36)
             }
           }
         }
         .padding(.vertical, 6)
+      }
+
+      Divider()
+
+      VStack(alignment: .leading, spacing: 8) {
+        Text("UI Control Reference")
+          .font(.headline)
+        Text("Use these control IDs with MCP UI tools (navigate/tap/select).")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+
+        ForEach(mcpServer.uiControlDocs) { doc in
+          DisclosureGroup(doc.title) {
+            VStack(alignment: .leading, spacing: 6) {
+              ForEach(doc.controls) { control in
+                VStack(alignment: .leading, spacing: 2) {
+                  Text(control.controlId)
+                    .font(.caption)
+                  if !control.values.isEmpty {
+                    Text(control.values.joined(separator: ", "))
+                      .font(.caption2)
+                      .foregroundStyle(.secondary)
+                      .lineLimit(3)
+                  }
+                }
+              }
+            }
+            .padding(.leading, 8)
+          }
+        }
       }
     }
   }
