@@ -75,11 +75,18 @@ struct SettingsView: View {
       #endif
 
       Section("About") {
-        Text("Work in progress. If this tool helps you, donations help move it along.")
+        VStack(alignment: .leading, spacing: 8) {
+          Text("Peel keeps GitHub, git, and Homebrew close at hand so you can stay in flow.")
+            .font(.callout)
+          Text("If this app saves you time, please consider supporting development.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          HStack(spacing: 12) {
+            Link("GitHub", destination: URL(string: "https://github.com/cloke/peel")!)
+            Link("Donate", destination: URL(string: "https://github.com/sponsors/crunchybananas")!)
+          }
           .font(.caption)
-          .foregroundStyle(.secondary)
-
-        Link("GitHub: crunchybananas", destination: URL(string: "https://github.com/crunchybananas")!)
+        }
       }
     }
     .padding()

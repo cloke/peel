@@ -7,6 +7,13 @@
 
 import Foundation
 
+struct MCPLogEntry: Sendable {
+  let timestamp: Date
+  let level: String
+  let message: String
+  let metadata: [String: String]
+}
+
 actor MCPLogService {
   static let shared = MCPLogService()
 
@@ -51,6 +58,51 @@ actor MCPLogService {
     let parts = text.split(separator: "\n", omittingEmptySubsequences: false)
     let slice = parts.suffix(max(1, lines))
     return slice.joined(separator: "\n")
+  }
+
+  func readEntries(limit: Int = 1000) -> [MCPLogEntry] {
+    guard let data = try? Data(contentsOf: fileURL),
+          let text = String(data: data, encoding: .utf8) else {
+      return []
+    }
+    let lines = text.split(separator: "\n", omittingEmptySubsequences: true)
+    let slice = lines.suffix(max(1, limit))
+    var entries: [MCPLogEntry] = []
+    entries.reserveCapacity(slice.count)
+
+    for line in slice {
+      let sections = line.split(separator: "]", maxSplits: 2, omittingEmptySubsequences: false)
+      guard sections.count >= 3 else { continue }
+      let timestampText = sections[0].dropFirst()
+      let levelText = sections[1].trimmingCharacters(in: .whitespacesAndNewlines)
+      let trimmedLevel = levelText.hasPrefix("[") ? String(levelText.dropFirst()) : levelText
+      let remainder = sections[2].trimmingCharacters(in: .whitespacesAndNewlines)
+
+      let parts = remainder.components(separatedBy: " | ")
+      let message = parts.first ?? ""
+      var metadata: [String: String] = [:]
+      if parts.count > 1 {
+        for pair in parts[1].split(separator: " ") {
+          let kv = pair.split(separator: "=", maxSplits: 1)
+          if kv.count == 2 {
+            metadata[String(kv[0])] = String(kv[1])
+          }
+        }
+      }
+
+      if let timestamp = formatter.date(from: String(timestampText)) {
+        entries.append(
+          MCPLogEntry(
+            timestamp: timestamp,
+            level: trimmedLevel,
+            message: message,
+            metadata: metadata
+          )
+        )
+      }
+    }
+
+    return entries
   }
 
   private func write(level: String, message: String, metadata: [String: String]) {

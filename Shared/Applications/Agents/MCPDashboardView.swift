@@ -5,6 +5,7 @@
 //  Created on 1/19/26.
 //
 
+import Charts
 import SwiftData
 import SwiftUI
 
@@ -25,6 +26,9 @@ struct MCPDashboardView: View {
   @State private var overridePriority = 0
   @State private var overrideTimeoutEnabled = false
   @State private var overrideTimeoutSeconds = "600"
+  @State private var latencySamples: [MCPDailyLatency] = []
+  @State private var isLoadingLatency = false
+  @State private var lastLatencyRefresh: Date?
 
   private func buildOverrides() -> MCPServerService.RunOverrides {
     var overrides = MCPServerService.RunOverrides()
@@ -48,6 +52,51 @@ struct MCPDashboardView: View {
 
   private func chainForRun(_ run: MCPServerService.ActiveRunInfo) -> AgentChain? {
     mcpServer.agentManager.chains.first { $0.id == run.chainId }
+  }
+
+  private func loadLatencySamples() async {
+    isLoadingLatency = true
+    defer { isLoadingLatency = false }
+    let entries = await MCPLogService.shared.readEntries(limit: 2000)
+    let calendar = Calendar.current
+    let startDate = calendar.date(byAdding: .day, value: -14, to: Date()) ?? Date.distantPast
+    var durationsByDay: [Date: [Double]] = [:]
+
+    for entry in entries where entry.message == "RPC complete" {
+      guard entry.timestamp >= startDate,
+            let raw = entry.metadata["durationMs"],
+            let duration = Double(raw) else {
+        continue
+      }
+      let day = calendar.startOfDay(for: entry.timestamp)
+      durationsByDay[day, default: []].append(duration)
+    }
+
+    let samples = durationsByDay.keys.sorted().map { day in
+      let values = durationsByDay[day] ?? []
+      return MCPDailyLatency(
+        day: day,
+        medianMs: percentile(values, 0.5),
+        p95Ms: percentile(values, 0.95)
+      )
+    }
+
+    latencySamples = samples
+    lastLatencyRefresh = Date()
+  }
+
+  private func percentile(_ values: [Double], _ percentile: Double) -> Double {
+    guard !values.isEmpty else { return 0 }
+    let sorted = values.sorted()
+    let clamped = min(max(percentile, 0), 1)
+    let rank = clamped * Double(sorted.count - 1)
+    let lower = Int(floor(rank))
+    let upper = Int(ceil(rank))
+    if lower == upper {
+      return sorted[lower]
+    }
+    let weight = rank - Double(lower)
+    return sorted[lower] + (sorted[upper] - sorted[lower]) * weight
   }
 
   var body: some View {
@@ -100,6 +149,45 @@ struct MCPDashboardView: View {
               Text(error)
                 .font(.caption)
                 .foregroundStyle(.red)
+            }
+          }
+        }
+
+        GroupBox {
+          VStack(alignment: .leading, spacing: 8) {
+            HStack {
+              Text("MCP Latency (Last 14 Days)")
+                .font(.headline)
+              Spacer()
+              Button("Refresh") {
+                Task { await loadLatencySamples() }
+              }
+              .buttonStyle(.bordered)
+            }
+            if isLoadingLatency {
+              ProgressView()
+                .scaleEffect(0.8)
+            } else if latencySamples.isEmpty {
+              Text("No latency samples yet")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else {
+              Chart(latencySeriesPoints) { point in
+                LineMark(
+                  x: .value("Day", point.day, unit: .day),
+                  y: .value("Latency (ms)", point.value)
+                )
+                .foregroundStyle(by: .value("Metric", point.metric))
+              }
+              .chartXAxis {
+                AxisMarks(values: .stride(by: .day, count: 2))
+              }
+              .frame(height: 160)
+            }
+            if let lastLatencyRefresh {
+              Text("Updated \(lastLatencyRefresh, style: .time)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
             }
           }
         }
@@ -378,6 +466,34 @@ struct MCPDashboardView: View {
     .navigationTitle("MCP Activity")
     .sheet(item: $selectedRun) { run in
       MCPRunDetailView(run: run)
+    }
+    .task {
+      await loadLatencySamples()
+    }
+  }
+}
+
+private struct MCPDailyLatency: Identifiable {
+  let id = UUID()
+  let day: Date
+  let medianMs: Double
+  let p95Ms: Double
+}
+
+private struct MCPLatencyPoint: Identifiable {
+  let id = UUID()
+  let day: Date
+  let value: Double
+  let metric: String
+}
+
+private extension MCPDashboardView {
+  var latencySeriesPoints: [MCPLatencyPoint] {
+    latencySamples.flatMap { sample in
+      [
+        MCPLatencyPoint(day: sample.day, value: sample.medianMs, metric: "Median"),
+        MCPLatencyPoint(day: sample.day, value: sample.p95Ms, metric: "P95")
+      ]
     }
   }
 }

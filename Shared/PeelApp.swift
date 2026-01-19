@@ -10,6 +10,9 @@ import Foundation
 import SwiftUI
 import SwiftData
 import OAuthSwift
+#if os(macOS)
+import AppKit
+#endif
 
 @main
 struct PeelApp: App {
@@ -55,7 +58,16 @@ struct PeelApp: App {
         .environment(mcpServer)
     }
     .modelContainer(sharedModelContainer)
-    
+    #if os(macOS)
+    .commands {
+      CommandGroup(replacing: .appInfo) {
+        Button("About Peel") {
+          showAboutPanel()
+        }
+      }
+    }
+    #endif
+
 #if os(macOS)
     Settings {
       SettingsView()
@@ -64,6 +76,33 @@ struct PeelApp: App {
     .modelContainer(sharedModelContainer)
 #endif
   }
+
+#if os(macOS)
+  private func showAboutPanel() {
+    let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+    let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+    let versionText = build.isEmpty ? version : "\(version) (\(build))"
+
+    let credits = NSMutableAttributedString(
+      string: "Peel keeps GitHub, git, and Homebrew close at hand so you can stay in flow.\n\nSupport development: "
+    )
+    let donateLink = NSAttributedString(
+      string: "github.com/sponsors/crunchybananas",
+      attributes: [
+        .link: URL(string: "https://github.com/sponsors/crunchybananas")!,
+        .foregroundColor: NSColor.linkColor
+      ]
+    )
+    credits.append(donateLink)
+
+    NSApp.orderFrontStandardAboutPanel(options: [
+      .applicationName: "Peel",
+      .applicationVersion: versionText,
+      .credits: credits
+    ])
+    NSApp.activate(ignoringOtherApps: true)
+  }
+#endif
 }
 
 // MARK: - SwiftData Models
