@@ -18,8 +18,6 @@ import SwiftData
 @MainActor
 @Observable
 public final class AgentManager {
-  private let mcpLog = MCPLogService.shared
-  
   /// All registered agents
   public private(set) var agents: [Agent] = []
   
@@ -751,6 +749,7 @@ public final class AgentChainRunner {
 @MainActor
 @Observable
 public final class MCPServerService {
+  private let mcpLog = MCPLogService.shared
   private enum StorageKey {
     static let enabled = "mcp.server.enabled"
     static let port = "mcp.server.port"
