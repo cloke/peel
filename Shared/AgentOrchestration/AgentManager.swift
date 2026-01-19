@@ -1150,6 +1150,7 @@ public final class MCPServerService {
     case diagnostics
     case ui
     case state
+    case rag
 
     var displayName: String {
       switch self {
@@ -1160,6 +1161,7 @@ public final class MCPServerService {
       case .diagnostics: return "Diagnostics"
       case .ui: return "UI Automation"
       case .state: return "State"
+      case .rag: return "Local RAG"
       }
     }
   }
@@ -1323,6 +1325,7 @@ public final class MCPServerService {
   private var dataService: DataService?
   private let screenshotService = ScreenshotService()
   let translationValidatorService = TranslationValidatorService()
+  private let localRagStore = LocalRAGStore()
 
   public struct ActiveRunInfo: Identifiable {
     public let id: UUID
@@ -1944,6 +1947,18 @@ public final class MCPServerService {
     case "state.list":
       return handleStateList(id: id)
 
+    case "rag.status":
+      return await handleRagStatus(id: id)
+
+    case "rag.init":
+      return await handleRagInit(id: id, arguments: arguments)
+
+    case "rag.index":
+      return await handleRagIndex(id: id, arguments: arguments)
+
+    case "rag.search":
+      return await handleRagSearch(id: id, arguments: arguments)
+
     case "templates.list":
       let templates = templateList()
       return (200, makeRPCResult(id: id, result: ["templates": templates]))
@@ -2321,6 +2336,90 @@ public final class MCPServerService {
       ]))
     } catch {
       await mcpLog.warning("Translation validation failed", metadata: ["error": error.localizedDescription])
+      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
+    }
+  }
+
+  private func handleRagStatus(id: Any?) async -> (Int, Data) {
+    let status = await localRagStore.status()
+    let formatter = ISO8601DateFormatter()
+    var result: [String: Any] = [
+      "dbPath": status.dbPath,
+      "exists": status.exists,
+      "schemaVersion": status.schemaVersion,
+      "extensionLoaded": status.extensionLoaded
+    ]
+    if let lastInitializedAt = status.lastInitializedAt {
+      result["lastInitializedAt"] = formatter.string(from: lastInitializedAt)
+    }
+    return (200, makeRPCResult(id: id, result: result))
+  }
+
+  private func handleRagInit(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    let extensionPath = arguments["extensionPath"] as? String
+    do {
+      let status = try await localRagStore.initialize(extensionPath: extensionPath)
+      let formatter = ISO8601DateFormatter()
+      var result: [String: Any] = [
+        "dbPath": status.dbPath,
+        "exists": status.exists,
+        "schemaVersion": status.schemaVersion,
+        "extensionLoaded": status.extensionLoaded
+      ]
+      if let lastInitializedAt = status.lastInitializedAt {
+        result["lastInitializedAt"] = formatter.string(from: lastInitializedAt)
+      }
+      return (200, makeRPCResult(id: id, result: result))
+    } catch {
+      await mcpLog.warning("Local RAG init failed", metadata: ["error": error.localizedDescription])
+      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
+    }
+  }
+
+  private func handleRagIndex(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    let repoPath = (arguments["repoPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let repoPath, !repoPath.isEmpty else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing repoPath"))
+    }
+
+    do {
+      let report = try await localRagStore.indexRepository(path: repoPath)
+      let result: [String: Any] = [
+        "repoId": report.repoId,
+        "repoPath": report.repoPath,
+        "filesIndexed": report.filesIndexed,
+        "chunksIndexed": report.chunksIndexed,
+        "bytesScanned": report.bytesScanned,
+        "durationMs": report.durationMs
+      ]
+      return (200, makeRPCResult(id: id, result: result))
+    } catch {
+      await mcpLog.warning("Local RAG index failed", metadata: ["error": error.localizedDescription])
+      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
+    }
+  }
+
+  private func handleRagSearch(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    let query = (arguments["query"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let query, !query.isEmpty else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing query"))
+    }
+    let repoPath = (arguments["repoPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let limit = arguments["limit"] as? Int ?? 10
+
+    do {
+      let results = try await localRagStore.search(query: query, repoPath: repoPath, limit: limit)
+      let payload = results.map { result in
+        [
+          "filePath": result.filePath,
+          "startLine": result.startLine,
+          "endLine": result.endLine,
+          "snippet": result.snippet
+        ]
+      }
+      return (200, makeRPCResult(id: id, result: ["results": payload]))
+    } catch {
+      await mcpLog.warning("Local RAG search failed", metadata: ["error": error.localizedDescription])
       return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
     }
   }
@@ -3011,6 +3110,56 @@ public final class MCPServerService {
           "properties": [:]
         ],
         category: .state,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "rag.status",
+        description: "Get Local RAG database status",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .rag,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "rag.init",
+        description: "Initialize the Local RAG database schema",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "extensionPath": ["type": "string"]
+          ]
+        ],
+        category: .rag,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "rag.index",
+        description: "Index a repository path into the Local RAG database",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": ["type": "string"]
+          ],
+          "required": ["repoPath"]
+        ],
+        category: .rag,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "rag.search",
+        description: "Search indexed content (text match stub)",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "query": ["type": "string"],
+            "repoPath": ["type": "string"],
+            "limit": ["type": "integer"]
+          ],
+          "required": ["query"]
+        ],
+        category: .rag,
         isMutating: false
       ),
       ToolDefinition(
