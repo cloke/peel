@@ -10,6 +10,9 @@ import SwiftData
 import Git
 
 struct Git_RootView: View {
+#if os(macOS)
+  @Environment(MCPServerService.self) private var mcpServer
+#endif
   @Environment(\.modelContext) private var modelContext
   @Query(sort: \SyncedRepository.name) private var syncedRepos: [SyncedRepository]
   
@@ -68,6 +71,27 @@ struct Git_RootView: View {
         hasLoadedFromSwiftData = true
       }
     }
+#if os(macOS)
+    .onChange(of: mcpServer.lastUIAction?.id) {
+      guard let action = mcpServer.lastUIAction else { return }
+      switch action.controlId {
+      case "git.openRepository":
+        addRepository()
+      case "git.cloneRepository":
+        isCloning = true
+      case "git.openInVSCode":
+        let path = viewModel.selectedRepository.path
+        if !path.isEmpty {
+          Task {
+            try? await VSCodeService.shared.open(path: path)
+          }
+        }
+      default:
+        break
+      }
+      mcpServer.lastUIAction = nil
+    }
+#endif
     .onChange(of: viewModel.selectedRepository.path) { _, _ in
       saveSelectionToSwiftData()
     }

@@ -8,6 +8,11 @@ Enable comprehensive app testing via MCP by adding UI automation tools, view/con
 - Add a Settings section that lets users opt in/out of specific MCP tools (or categories).
 - Ensure safety, auditability, and local-only execution.
 
+## Execution Instructions
+- For any new feature: always ensure an MCP tool exists, or explicitly ask whether one should be added.
+- Create or update GitHub issues for missing work before starting implementation.
+- Start the work immediately after issues are in place.
+
 ## Non-Goals
 - Full end-to-end UI testing infrastructure (CI runners, cloud devices).
 - Remote MCP exposure beyond localhost.

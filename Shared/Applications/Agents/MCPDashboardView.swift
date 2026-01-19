@@ -150,6 +150,18 @@ struct MCPDashboardView: View {
                 .font(.caption)
                 .foregroundStyle(.red)
             }
+            Text("Tools enabled: \(mcpServer.enabledToolCount)/\(mcpServer.totalToolCount)")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            if let blocked = mcpServer.lastBlockedTool,
+               let blockedAt = mcpServer.lastBlockedToolAt {
+              Text("Last blocked tool: \(blocked)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              Text(blockedAt, style: .time)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
           }
         }
 

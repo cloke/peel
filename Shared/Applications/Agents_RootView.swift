@@ -51,6 +51,28 @@ struct Agents_RootView: View {
       mcpServer.configure(modelContext: modelContext)
       await cliService.checkAllCLIs()
     }
+    .onChange(of: mcpServer.lastUIAction?.id) {
+      guard let action = mcpServer.lastUIAction else { return }
+      switch action.controlId {
+      case "agents.newAgent":
+        showingNewAgentSheet = true
+      case "agents.newChain":
+        showingNewChainSheet = true
+      case "agents.mcpDashboard":
+        selectedInfrastructure = .mcpDashboard
+      case "agents.cliSetup":
+        showingSetupSheet = true
+      case "agents.sessionSummary":
+        showingSessionSummary = true
+      case "agents.vmIsolation":
+        selectedInfrastructure = .vmIsolation
+      case "agents.translationValidation":
+        selectedInfrastructure = .translationValidation
+      default:
+        break
+      }
+      mcpServer.lastUIAction = nil
+    }
     .toolbar {
       #if os(macOS)
       ToolbarItem(placement: .automatic) {

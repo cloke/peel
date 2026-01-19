@@ -1139,6 +1139,49 @@ public final class MCPServerService {
     static let maxConcurrentChains = "mcp.server.maxConcurrentChains"
     static let maxQueuedChains = "mcp.server.maxQueuedChains"
     static let autoCleanupWorkspaces = "mcp.server.autoCleanupWorkspaces"
+    static let toolPermissions = "mcp.server.toolPermissions"
+  }
+
+  public enum ToolCategory: String, CaseIterable {
+    case chains
+    case logs
+    case server
+    case app
+    case diagnostics
+    case ui
+    case state
+
+    var displayName: String {
+      switch self {
+      case .chains: return "Chains"
+      case .logs: return "Logs"
+      case .server: return "Server"
+      case .app: return "App"
+      case .diagnostics: return "Diagnostics"
+      case .ui: return "UI Automation"
+      case .state: return "State"
+      }
+    }
+  }
+
+  public struct ToolDefinition: Identifiable {
+    public let name: String
+    public let description: String
+    public let inputSchema: [String: Any]
+    public let category: ToolCategory
+    public let isMutating: Bool
+
+    public var id: String { name }
+  }
+
+  public struct UIAction: Identifiable {
+    public let id: UUID
+    public let controlId: String
+
+    public init(controlId: String) {
+      self.id = UUID()
+      self.controlId = controlId
+    }
   }
 
   public var isEnabled: Bool {
@@ -1191,10 +1234,13 @@ public final class MCPServerService {
   public private(set) var activeRequests: Int = 0
   public private(set) var lastRequestMethod: String?
   public private(set) var lastRequestAt: Date?
+  public private(set) var lastBlockedTool: String?
+  public private(set) var lastBlockedToolAt: Date?
   public private(set) var isCleaningAgentWorkspaces: Bool = false
   public private(set) var lastCleanupAt: Date?
   public private(set) var lastCleanupSummary: String?
   public private(set) var lastCleanupError: String?
+  public var lastUIAction: UIAction?
 
   public let agentManager: AgentManager
   public let cliService: CLIService
@@ -1235,6 +1281,11 @@ public final class MCPServerService {
   private var listener: NWListener?
   private var connections: [UUID: NWConnection] = [:]
   private var connectionStates: [UUID: ConnectionState] = [:]
+  private var toolPermissions: [String: Bool] = [:] {
+    didSet {
+      persistToolPermissions()
+    }
+  }
 
   private struct ConnectionState {
     var buffer = Data()
@@ -1267,10 +1318,70 @@ public final class MCPServerService {
     if self.maxQueuedChains == 0 {
       self.maxQueuedChains = 10
     }
+    loadToolPermissions()
 
     if isEnabled {
       start()
     }
+  }
+
+  public var toolCategories: [ToolCategory] {
+    ToolCategory.allCases.filter { category in
+      toolDefinitions.contains { $0.category == category }
+    }
+  }
+
+  public func tools(in category: ToolCategory) -> [ToolDefinition] {
+    toolDefinitions
+      .filter { $0.category == category }
+      .sorted { $0.name < $1.name }
+  }
+
+  public func toolCount(in category: ToolCategory) -> Int {
+    tools(in: category).count
+  }
+
+  public func enabledToolCount(in category: ToolCategory) -> Int {
+    tools(in: category).filter { isToolEnabled($0.name) }.count
+  }
+
+  public var totalToolCount: Int {
+    toolDefinitions.count
+  }
+
+  public var enabledToolCount: Int {
+    toolDefinitions.filter { isToolEnabled($0.name) }.count
+  }
+
+  public func isCategoryEnabled(_ category: ToolCategory) -> Bool {
+    let tools = tools(in: category)
+    return !tools.isEmpty && tools.allSatisfy { isToolEnabled($0.name) }
+  }
+
+  public func setCategoryEnabled(_ category: ToolCategory, enabled: Bool) {
+    var updated = toolPermissions
+    for tool in tools(in: category) {
+      updated[tool.name] = enabled
+    }
+    toolPermissions = updated
+  }
+
+  public func setAllToolsEnabled(_ enabled: Bool) {
+    var updated: [String: Bool] = [:]
+    for tool in toolDefinitions {
+      updated[tool.name] = enabled
+    }
+    toolPermissions = updated
+  }
+
+  public func isToolEnabled(_ name: String) -> Bool {
+    guard let tool = toolDefinition(named: name) else { return false }
+    return toolPermissions[name] ?? defaultToolEnabled(tool)
+  }
+
+  public func setToolEnabled(_ name: String, enabled: Bool) {
+    guard toolDefinition(named: name) != nil else { return }
+    toolPermissions[name] = enabled
   }
 
   public struct QueuedRunInfo: Identifiable {
@@ -1641,9 +1752,48 @@ public final class MCPServerService {
       return (400, makeRPCError(id: id, code: -32602, message: "Invalid params"))
     }
 
+    guard let tool = toolDefinition(named: name) else {
+      await mcpLog.warning("Unknown tool", metadata: ["name": name])
+      return (400, makeRPCError(id: id, code: -32601, message: "Unknown tool"))
+    }
+
+    if !isToolEnabled(name) {
+      await mcpLog.warning("Tool disabled", metadata: ["name": name, "category": tool.category.rawValue])
+      lastBlockedTool = name
+      lastBlockedToolAt = Date()
+      return (400, makeRPCError(id: id, code: -32010, message: "Tool disabled"))
+    }
+
     let arguments = params["arguments"] as? [String: Any] ?? [:]
 
     switch name {
+    case "ui.tap":
+      return handleUITap(id: id, arguments: arguments)
+
+    case "ui.setText":
+      return handleUISetText(id: id, arguments: arguments)
+
+    case "ui.toggle":
+      return handleUIToggle(id: id, arguments: arguments)
+
+    case "ui.select":
+      return handleUISelect(id: id, arguments: arguments)
+
+    case "ui.navigate":
+      return handleUINavigate(id: id, arguments: arguments)
+
+    case "ui.back":
+      return handleUIBack(id: id)
+
+    case "ui.snapshot":
+      return handleUISnapshot(id: id)
+
+    case "state.get":
+      return handleStateGet(id: id)
+
+    case "state.list":
+      return handleStateList(id: id)
+
     case "templates.list":
       let templates = templateList()
       return (200, makeRPCResult(id: id, result: ["templates": templates]))
@@ -1711,6 +1861,153 @@ public final class MCPServerService {
       await mcpLog.warning("Unknown tool", metadata: ["name": name])
       return (400, makeRPCError(id: id, code: -32601, message: "Unknown tool"))
     }
+  }
+
+  private func handleUINavigate(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    guard let viewId = (arguments["viewId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !viewId.isEmpty else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing viewId"))
+    }
+
+    guard availableViewIds().contains(viewId) else {
+      return (404, makeRPCError(id: id, code: -32020, message: "Unknown viewId"))
+    }
+
+    setCurrentToolId(viewId)
+    return (200, makeRPCResult(id: id, result: ["viewId": viewId, "status": "navigated"]))
+  }
+
+  private func handleUITap(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    guard let controlId = (arguments["controlId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !controlId.isEmpty else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing controlId"))
+    }
+
+    let currentViewId = currentToolId()
+    let availableControls = availableToolControlIds() + availableControlIds(for: currentViewId)
+    guard availableControls.contains(controlId) else {
+      return (404, makeRPCError(id: id, code: -32022, message: "Unknown controlId"))
+    }
+
+    if controlId.hasPrefix("tool.") {
+      let toolId = controlId.replacingOccurrences(of: "tool.", with: "")
+      setCurrentToolId(toolId)
+      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "status": "tapped"]))
+    }
+
+    lastUIAction = UIAction(controlId: controlId)
+    return (200, makeRPCResult(id: id, result: ["controlId": controlId, "status": "queued"]))
+  }
+
+  private func handleUISetText(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    guard let controlId = (arguments["controlId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !controlId.isEmpty else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing controlId"))
+    }
+    let value = arguments["value"] as? String ?? ""
+
+    switch controlId {
+    case "brew.search":
+      UserDefaults.standard.set(value, forKey: "brew.searchText")
+      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
+    default:
+      break
+    }
+    return (400, makeRPCError(id: id, code: -32024, message: "setText not supported"))
+  }
+
+  private func handleUIToggle(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    guard let controlId = (arguments["controlId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !controlId.isEmpty else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing controlId"))
+    }
+    let value = arguments["on"] as? Bool
+
+    switch controlId {
+    case "github.showArchived":
+      let current = UserDefaults.standard.bool(forKey: "github-show-archived")
+      let next = value ?? !current
+      UserDefaults.standard.set(next, forKey: "github-show-archived")
+      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": next]))
+    default:
+      return (400, makeRPCError(id: id, code: -32025, message: "toggle not supported"))
+    }
+  }
+
+  private func handleUISelect(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    guard let controlId = (arguments["controlId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !controlId.isEmpty else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing controlId"))
+    }
+    let value = (arguments["value"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+    switch controlId {
+    case "brew.source":
+      guard value == "Installed" || value == "Available" else {
+        return (400, makeRPCError(id: id, code: -32602, message: "Invalid value"))
+      }
+      UserDefaults.standard.set(value, forKey: "brew.source")
+      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
+    default:
+      return (400, makeRPCError(id: id, code: -32026, message: "select not supported"))
+    }
+  }
+
+  private func handleUIBack(id: Any?) -> (Int, Data) {
+    guard let current = currentToolId() else {
+      return (400, makeRPCError(id: id, code: -32021, message: "Back not supported"))
+    }
+
+    let viewIds = availableViewIds()
+    guard let index = viewIds.firstIndex(of: current), index > 0 else {
+      return (400, makeRPCError(id: id, code: -32021, message: "Back not supported"))
+    }
+    let previous = viewIds[index - 1]
+    setCurrentToolId(previous)
+    return (200, makeRPCResult(id: id, result: ["viewId": previous, "status": "navigated"]))
+  }
+
+  private func handleUISnapshot(id: Any?) -> (Int, Data) {
+    let currentViewId = currentToolId()
+    let controls = availableToolControlIds() + availableControlIds(for: currentViewId)
+    let snapshot: [String: Any] = [
+      "currentViewId": currentViewId as Any,
+      "availableViewIds": availableViewIds(),
+      "controls": controls
+    ]
+    return (200, makeRPCResult(id: id, result: snapshot))
+  }
+
+  private func handleStateGet(id: Any?) -> (Int, Data) {
+    let showArchived = UserDefaults.standard.bool(forKey: "github-show-archived")
+    let brewSource = UserDefaults.standard.string(forKey: "brew.source")
+    let brewSearch = UserDefaults.standard.string(forKey: "brew.searchText")
+    let state: [String: Any] = [
+      "currentTool": currentToolId() as Any,
+      "mcpRunning": isRunning,
+      "activeRequests": activeRequests,
+      "lastRequestAt": lastRequestAt?.formatted() as Any,
+      "githubShowArchived": showArchived,
+      "brewSource": brewSource as Any,
+      "brewSearchText": brewSearch as Any
+    ]
+    return (200, makeRPCResult(id: id, result: state))
+  }
+
+  private func handleStateList(id: Any?) -> (Int, Data) {
+    let currentViewId = currentToolId()
+    let controls = availableToolControlIds() + availableControlIds(for: currentViewId)
+    let controlsByView = Dictionary(uniqueKeysWithValues: availableViewIds().map { viewId in
+      (viewId, availableControlIds(for: viewId))
+    })
+    let state: [String: Any] = [
+      "views": availableViewIds(),
+      "tools": toolDefinitions.map { $0.name },
+      "controls": controls,
+      "controlsByView": controlsByView,
+      "currentViewId": currentViewId as Any
+    ]
+    return (200, makeRPCResult(id: id, result: state))
   }
 
   private func handleTranslationsValidate(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
@@ -2280,20 +2577,152 @@ public final class MCPServerService {
     lastCleanupSummary = "Removed \(removedWorktrees) worktrees, deleted \(deletedBranches) branches\(errorNote)."
   }
 
-  private func toolList() -> [[String: Any]] {
-    return [
-      [
-        "name": "templates.list",
-        "description": "List available chain templates",
-        "inputSchema": [
+  private func loadToolPermissions() {
+    guard let data = UserDefaults.standard.data(forKey: StorageKey.toolPermissions),
+          let decoded = try? JSONDecoder().decode([String: Bool].self, from: data) else {
+      toolPermissions = [:]
+      return
+    }
+    toolPermissions = decoded
+  }
+
+  private func persistToolPermissions() {
+    guard let data = try? JSONEncoder().encode(toolPermissions) else { return }
+    UserDefaults.standard.set(data, forKey: StorageKey.toolPermissions)
+  }
+
+  private func defaultToolEnabled(_ tool: ToolDefinition) -> Bool {
+    true
+  }
+
+  private func toolDefinition(named name: String) -> ToolDefinition? {
+    toolDefinitions.first { $0.name == name }
+  }
+
+  private var toolDefinitions: [ToolDefinition] {
+    [
+      ToolDefinition(
+        name: "ui.tap",
+        description: "Tap a control by controlId",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "controlId": ["type": "string"]
+          ],
+          "required": ["controlId"]
+        ],
+        category: .ui,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "ui.setText",
+        description: "Set text for a control",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "controlId": ["type": "string"],
+            "value": ["type": "string"]
+          ],
+          "required": ["controlId", "value"]
+        ],
+        category: .ui,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "ui.toggle",
+        description: "Toggle a control",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "controlId": ["type": "string"],
+            "on": ["type": "boolean"]
+          ],
+          "required": ["controlId"]
+        ],
+        category: .ui,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "ui.select",
+        description: "Select a value for a control",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "controlId": ["type": "string"],
+            "value": ["type": "string"]
+          ],
+          "required": ["controlId", "value"]
+        ],
+        category: .ui,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "ui.navigate",
+        description: "Navigate to a top-level view by viewId",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "viewId": ["type": "string"]
+          ],
+          "required": ["viewId"]
+        ],
+        category: .ui,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "ui.back",
+        description: "Navigate back to the previous view (if supported)",
+        inputSchema: [
           "type": "object",
           "properties": [:]
-        ]
-      ],
-      [
-        "name": "chains.run",
-        "description": "Run a chain template with a prompt",
-        "inputSchema": [
+        ],
+        category: .ui,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "ui.snapshot",
+        description: "Return the current view and visible control IDs",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .ui,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "state.get",
+        description: "Get current app state summary",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .state,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "state.list",
+        description: "List available view IDs and tools",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .state,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "templates.list",
+        description: "List available chain templates",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .chains,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "chains.run",
+        description: "Run a chain template with a prompt",
+        inputSchema: [
           "type": "object",
           "properties": [
             "templateId": ["type": "string"],
@@ -2309,120 +2738,144 @@ public final class MCPServerService {
             "timeoutSeconds": ["type": "number"]
           ],
           "required": ["prompt"]
-        ]
-      ],
-      [
-        "name": "chains.stop",
-        "description": "Cancel a running chain by runId (or all running chains)",
-        "inputSchema": [
+        ],
+        category: .chains,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "chains.stop",
+        description: "Cancel a running chain by runId (or all running chains)",
+        inputSchema: [
           "type": "object",
           "properties": [
             "runId": ["type": "string"],
             "all": ["type": "boolean"]
           ]
-        ]
-      ],
-      [
-        "name": "chains.pause",
-        "description": "Pause a running chain by runId",
-        "inputSchema": [
+        ],
+        category: .chains,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "chains.pause",
+        description: "Pause a running chain by runId",
+        inputSchema: [
           "type": "object",
           "properties": [
             "runId": ["type": "string"]
           ],
           "required": ["runId"]
-        ]
-      ],
-      [
-        "name": "chains.resume",
-        "description": "Resume a paused chain by runId",
-        "inputSchema": [
+        ],
+        category: .chains,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "chains.resume",
+        description: "Resume a paused chain by runId",
+        inputSchema: [
           "type": "object",
           "properties": [
             "runId": ["type": "string"]
           ],
           "required": ["runId"]
-        ]
-      ],
-      [
-        "name": "chains.step",
-        "description": "Step a paused chain to the next agent by runId",
-        "inputSchema": [
+        ],
+        category: .chains,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "chains.step",
+        description: "Step a paused chain to the next agent by runId",
+        inputSchema: [
           "type": "object",
           "properties": [
             "runId": ["type": "string"]
           ],
           "required": ["runId"]
-        ]
-      ],
-      [
-        "name": "chains.queue.status",
-        "description": "Get chain queue status",
-        "inputSchema": [
+        ],
+        category: .chains,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "chains.queue.status",
+        description: "Get chain queue status",
+        inputSchema: [
           "type": "object",
           "properties": [:]
-        ]
-      ],
-      [
-        "name": "chains.queue.configure",
-        "description": "Configure chain queue limits",
-        "inputSchema": [
+        ],
+        category: .chains,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "chains.queue.configure",
+        description: "Configure chain queue limits",
+        inputSchema: [
           "type": "object",
           "properties": [
             "maxConcurrent": ["type": "integer"],
             "maxQueued": ["type": "integer"]
           ]
-        ]
-      ],
-      [
-        "name": "chains.queue.cancel",
-        "description": "Cancel a queued chain by runId",
-        "inputSchema": [
+        ],
+        category: .chains,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "chains.queue.cancel",
+        description: "Cancel a queued chain by runId",
+        inputSchema: [
           "type": "object",
           "properties": [
             "runId": ["type": "string"]
           ],
           "required": ["runId"]
-        ]
-      ],
-      [
-        "name": "logs.mcp.path",
-        "description": "Get MCP log file path",
-        "inputSchema": [
+        ],
+        category: .chains,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "logs.mcp.path",
+        description: "Get MCP log file path",
+        inputSchema: [
           "type": "object",
           "properties": [:]
-        ]
-      ],
-      [
-        "name": "logs.mcp.tail",
-        "description": "Get last N lines of MCP log",
-        "inputSchema": [
+        ],
+        category: .logs,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "logs.mcp.tail",
+        description: "Get last N lines of MCP log",
+        inputSchema: [
           "type": "object",
           "properties": [
             "lines": ["type": "integer"]
           ]
-        ]
-      ],
-      [
-        "name": "server.stop",
-        "description": "Stop the MCP server",
-        "inputSchema": [
+        ],
+        category: .logs,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "server.stop",
+        description: "Stop the MCP server",
+        inputSchema: [
           "type": "object",
           "properties": [:]
-        ]
-      ],
-      [
-        "name": "server.restart",
-        "description": "Restart the MCP server",
-        "inputSchema": [
+        ],
+        category: .server,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "server.restart",
+        description: "Restart the MCP server",
+        inputSchema: [
           "type": "object",
           "properties": [:]
-        ]
-      ],
-      [
-        "name": "server.port.set",
-        "description": "Set MCP server port and restart",
-        "inputSchema": [
+        ],
+        category: .server,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "server.port.set",
+        description: "Set MCP server port and restart",
+        inputSchema: [
           "type": "object",
           "properties": [
             "port": ["type": "integer"],
@@ -2430,30 +2883,36 @@ public final class MCPServerService {
             "maxAttempts": ["type": "integer"]
           ],
           "required": ["port"]
-        ]
-      ],
-      [
-        "name": "app.quit",
-        "description": "Quit the Peel app",
-        "inputSchema": [
+        ],
+        category: .server,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "app.quit",
+        description: "Quit the Peel app",
+        inputSchema: [
           "type": "object",
           "properties": [:]
-        ]
-      ],
-      [
-        "name": "screenshot.capture",
-        "description": "Capture screenshot of current screen state",
-        "inputSchema": [
+        ],
+        category: .app,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "screenshot.capture",
+        description: "Capture screenshot of current screen state",
+        inputSchema: [
           "type": "object",
           "properties": [
             "label": ["type": "string"]
           ]
-        ]
-      ],
-      [
-        "name": "translations.validate",
-        "description": "Validate translation key parity and consistency",
-        "inputSchema": [
+        ],
+        category: .diagnostics,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "translations.validate",
+        description: "Validate translation key parity and consistency",
+        inputSchema: [
           "type": "object",
           "properties": [
             "root": ["type": "string"],
@@ -2465,9 +2924,23 @@ public final class MCPServerService {
             "useAppleAI": ["type": "boolean"],
             "redactSamples": ["type": "boolean"]
           ]
-        ]
-      ]
+        ],
+        category: .diagnostics,
+        isMutating: false
+      )
     ]
+  }
+
+  private func toolList() -> [[String: Any]] {
+    toolDefinitions.map { tool in
+      [
+        "name": tool.name,
+        "description": tool.description,
+        "inputSchema": tool.inputSchema,
+        "category": tool.category.rawValue,
+        "enabled": isToolEnabled(tool.name)
+      ]
+    }
   }
 
   private func scheduleAppQuit() {
@@ -2564,6 +3037,47 @@ public final class MCPServerService {
     connection.send(content: response, completion: .contentProcessed { _ in
       connection.cancel()
     })
+  }
+
+  private func availableViewIds() -> [String] {
+    ["agents", "workspaces", "brew", "git", "github"]
+  }
+
+  private func availableToolControlIds() -> [String] {
+    availableViewIds().map { "tool.\($0)" }
+  }
+
+  private func availableControlIds(for viewId: String?) -> [String] {
+    switch viewId {
+    case "agents":
+      return [
+        "agents.newAgent",
+        "agents.newChain",
+        "agents.mcpDashboard",
+        "agents.cliSetup",
+        "agents.sessionSummary",
+        "agents.vmIsolation",
+        "agents.translationValidation"
+      ]
+    case "github":
+      return ["github.login", "github.refresh", "github.showArchived", "github.logout"]
+    case "brew":
+      return ["brew.source", "brew.search"]
+    case "workspaces":
+      return ["workspaces.refresh", "workspaces.addWorkspace", "workspaces.createWorktree"]
+    case "git":
+      return ["git.openRepository", "git.cloneRepository", "git.openInVSCode"]
+    default:
+      return []
+    }
+  }
+
+  private func currentToolId() -> String? {
+    UserDefaults.standard.string(forKey: "current-tool")
+  }
+
+  private func setCurrentToolId(_ toolId: String) {
+    UserDefaults.standard.set(toolId, forKey: "current-tool")
   }
 }
 

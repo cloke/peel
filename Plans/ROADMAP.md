@@ -151,6 +151,7 @@ related_docs:
 | [#28](https://github.com/cloke/peel/issues/28) | Agents UI polish | Empty states |
 | [#32](https://github.com/cloke/peel/issues/32) | Sleep prevention | IOPMAssertion |
 | [#33](https://github.com/cloke/peel/issues/33) | MCP run timeline | Visualization |
+| - | Headless MCP/CLI feasibility | Ensure architecture supports a headless/CLI mode |
 
 ### 📋 Agent Features (Open)
 

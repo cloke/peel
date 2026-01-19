@@ -33,6 +33,7 @@ import Git
 // MARK: - macOS Dashboard View
 
 struct WorkspacesDashboardView: View {
+  @Environment(MCPServerService.self) private var mcpServer
   @Environment(\.modelContext) private var modelContext
   @State private var service = WorkspaceDashboardService()
   @State private var showingAddWorkspace = false
@@ -50,6 +51,22 @@ struct WorkspacesDashboardView: View {
     .task {
       service.configure(modelContext: modelContext)
       await service.loadReposAndWorktrees()
+    }
+    .onChange(of: mcpServer.lastUIAction?.id) {
+      guard let action = mcpServer.lastUIAction else { return }
+      switch action.controlId {
+      case "workspaces.refresh":
+        Task { await service.loadReposAndWorktrees() }
+      case "workspaces.addWorkspace":
+        showingAddWorkspace = true
+      case "workspaces.createWorktree":
+        if selectedRepo != nil {
+          showingCreateWorktree = true
+        }
+      default:
+        break
+      }
+      mcpServer.lastUIAction = nil
     }
     .sheet(isPresented: $showingAddWorkspace) {
       AddWorkspaceSheet(service: service)
