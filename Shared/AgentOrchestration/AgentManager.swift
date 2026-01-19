@@ -273,6 +273,7 @@ public final class AgentChainRunner {
   private let cliService: CLIService
   private let sessionTracker: SessionTracker
   private let validationRunner = ValidationRunner()
+  private let mcpLog = MCPLogService.shared
 
   public init(
     agentManager: AgentManager,
