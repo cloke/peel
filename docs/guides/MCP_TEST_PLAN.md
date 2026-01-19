@@ -21,6 +21,11 @@
 ./Tools/build-and-launch.sh --wait-for-server --port 8765
 ```
 
+Automated validation script:
+```bash
+./Tools/mcp-test-plan.py --working-directory /path/to/git/repo
+```
+
 This script:
 1. Builds Peel via xcodebuild
 2. Sets `mcp.server.enabled = true` via defaults
