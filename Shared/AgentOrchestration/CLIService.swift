@@ -609,33 +609,39 @@ public final class CLIService {
       }
     }
     
-    // Start the process
-    try process.run()
-    
-    // Wait for process to complete
-    await withCheckedContinuation { continuation in
-      process.terminationHandler = { _ in
-        // Clean up handlers
-        stdoutPipe.fileHandleForReading.readabilityHandler = nil
-        stderrPipe.fileHandleForReading.readabilityHandler = nil
-        continuation.resume()
+    return try await withTaskCancellationHandler {
+      // Start the process
+      try process.run()
+      
+      // Wait for process to complete
+      await withCheckedContinuation { continuation in
+        process.terminationHandler = { _ in
+          // Clean up handlers
+          stdoutPipe.fileHandleForReading.readabilityHandler = nil
+          stderrPipe.fileHandleForReading.readabilityHandler = nil
+          continuation.resume()
+        }
+      }
+      
+      // Give a moment for final callbacks to process
+      try? await Task.sleep(for: .milliseconds(100))
+      
+      // Process any remaining buffered content
+      await accumulator.flushRemainingBuffers()
+      
+      // Get final accumulated data
+      let (stdoutData, stderrData) = await accumulator.getFinalData()
+      
+      return ExecutionResult(
+        stdoutString: String(data: stdoutData, encoding: .utf8) ?? "",
+        stderrString: String(data: stderrData, encoding: .utf8) ?? "",
+        exitCode: process.terminationStatus
+      )
+    } onCancel: {
+      if process.isRunning {
+        process.terminate()
       }
     }
-    
-    // Give a moment for final callbacks to process
-    try? await Task.sleep(for: .milliseconds(100))
-    
-    // Process any remaining buffered content
-    await accumulator.flushRemainingBuffers()
-    
-    // Get final accumulated data
-    let (stdoutData, stderrData) = await accumulator.getFinalData()
-    
-    return ExecutionResult(
-      stdoutString: String(data: stdoutData, encoding: .utf8) ?? "",
-      stderrString: String(data: stderrData, encoding: .utf8) ?? "",
-      exitCode: process.terminationStatus
-    )
   }
   
   /// Actor to safely accumulate streaming data across callbacks

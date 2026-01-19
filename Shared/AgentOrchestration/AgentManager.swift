@@ -298,11 +298,13 @@ public final class AgentChainRunner {
     chain.addStatusMessage("Starting chain execution...", type: .info)
 
     do {
+      try checkCancellation(chain: chain)
       try await runAgentsWithParallelImplementers(chain: chain, prompt: prompt, mergeConflicts: &mergeConflicts)
 
       if case .complete = chain.state {
         sessionTracker.recordChainRun(chain)
       } else {
+        try checkCancellation(chain: chain)
         if chain.enableReviewLoop {
           try await runReviewLoop(chain: chain, prompt: prompt)
         }
@@ -312,9 +314,16 @@ public final class AgentChainRunner {
         sessionTracker.recordChainRun(chain)
       }
     } catch {
-      errorMessage = error.localizedDescription
-      chain.state = .failed(message: error.localizedDescription)
-      chain.addStatusMessage("Error: \(error.localizedDescription)", type: .error)
+      switch error {
+      case ChainError.cancelled:
+        errorMessage = "Cancelled"
+        chain.state = .failed(message: "Cancelled")
+        chain.addStatusMessage("✋ Chain cancelled.", type: .error)
+      default:
+        errorMessage = error.localizedDescription
+        chain.state = .failed(message: error.localizedDescription)
+        chain.addStatusMessage("Error: \(error.localizedDescription)", type: .error)
+      }
     }
 
     let noWorkReason = chain.results.first(where: { $0.plannerDecision?.shouldSkipWork == true })?.plannerDecision?.noWorkReason
@@ -367,6 +376,7 @@ public final class AgentChainRunner {
 
   private func runAgentsSequentially(chain: AgentChain, prompt: String) async throws {
     for (index, agent) in chain.agents.enumerated() {
+      try checkCancellation(chain: chain)
       chain.state = .running(agentIndex: index)
       chain.currentAgentStartTime = Date()
       chain.addStatusMessage("Starting \(agent.name) (\(agent.model.shortName))...", type: .progress)
@@ -389,6 +399,7 @@ public final class AgentChainRunner {
     prompt: String,
     mergeConflicts: inout [String]
   ) async throws {
+    try checkCancellation(chain: chain)
     let implementerIndices = chain.agents.indices.filter { chain.agents[$0].role == .implementer }
     guard implementerIndices.count > 1 else {
       try await runAgentsSequentially(chain: chain, prompt: prompt)
@@ -411,6 +422,7 @@ public final class AgentChainRunner {
 
     if firstImplementer > 0 {
       for index in 0..<firstImplementer {
+        try checkCancellation(chain: chain)
         let agent = chain.agents[index]
         chain.state = .running(agentIndex: index)
         chain.currentAgentStartTime = Date()
@@ -429,6 +441,7 @@ public final class AgentChainRunner {
       }
     }
 
+    try checkCancellation(chain: chain)
     let sharedContext = chain.contextForAgent(at: firstImplementer)
     let parallelResults = try await runImplementersInParallel(
       chain: chain,
@@ -438,6 +451,7 @@ public final class AgentChainRunner {
     )
 
     for index in firstImplementer...lastImplementer {
+      try checkCancellation(chain: chain)
       if let result = parallelResults[index] {
         chain.results.append(result)
       }
@@ -457,6 +471,7 @@ public final class AgentChainRunner {
 
     if lastImplementer + 1 < chain.agents.count {
       for index in (lastImplementer + 1)..<chain.agents.count {
+        try checkCancellation(chain: chain)
         let agent = chain.agents[index]
         chain.state = .running(agentIndex: index)
         chain.currentAgentStartTime = Date()
@@ -474,6 +489,7 @@ public final class AgentChainRunner {
     context: String,
     prompt: String
   ) async throws -> [Int: AgentChainResult] {
+    try checkCancellation(chain: chain)
     guard let workingDirectory = chain.workingDirectory else {
       throw NSError(
         domain: "AgentChain",
@@ -486,6 +502,7 @@ public final class AgentChainRunner {
     let repository = Model.Repository(name: repoURL.lastPathComponent, path: workingDirectory)
 
     for index in indices {
+      try checkCancellation(chain: chain)
       let agent = chain.agents[index]
       let task = AgentTask(
         title: "\(chain.name) - \(agent.name)",
@@ -514,35 +531,39 @@ public final class AgentChainRunner {
       for index in indices {
         let agent = chain.agents[index]
         group.addTask {
-          await self.mcpLog.info("Parallel implementer start", metadata: [
-            "chainId": chain.id.uuidString,
-            "agentId": agent.id.uuidString,
-            "agentName": agent.name,
-            "role": agent.role.displayName,
-            "model": agent.model.displayName,
-            "workingDirectory": agent.workingDirectory ?? ""
-          ])
-          let result = try await self.runSingleAgent(
-            agent,
-            at: index,
-            chain: chain,
-            prompt: prompt,
-            contextOverride: context
-          )
-          await self.mcpLog.info("Parallel implementer complete", metadata: [
-            "chainId": chain.id.uuidString,
-            "agentId": agent.id.uuidString,
-            "agentName": agent.name,
-            "role": agent.role.displayName,
-            "model": agent.model.displayName,
-            "duration": result.duration ?? "",
-            "premiumCost": "\(result.premiumCost)"
-          ])
-          return (index, result)
+          try await Task { @MainActor in
+            try self.checkCancellation(chain: chain)
+            await self.mcpLog.info("Parallel implementer start", metadata: [
+              "chainId": chain.id.uuidString,
+              "agentId": agent.id.uuidString,
+              "agentName": agent.name,
+              "role": agent.role.displayName,
+              "model": agent.model.displayName,
+              "workingDirectory": agent.workingDirectory ?? ""
+            ])
+            let result = try await self.runSingleAgent(
+              agent,
+              at: index,
+              chain: chain,
+              prompt: prompt,
+              contextOverride: context
+            )
+            await self.mcpLog.info("Parallel implementer complete", metadata: [
+              "chainId": chain.id.uuidString,
+              "agentId": agent.id.uuidString,
+              "agentName": agent.name,
+              "role": agent.role.displayName,
+              "model": agent.model.displayName,
+              "duration": result.duration ?? "",
+              "premiumCost": "\(result.premiumCost)"
+            ])
+            return (index, result)
+          }.value
         }
       }
 
       for try await (index, result) in group {
+        try checkCancellation(chain: chain)
         results[index] = result
       }
     }
@@ -600,6 +621,7 @@ public final class AgentChainRunner {
     prompt: String,
     contextOverride: String? = nil
   ) async throws -> AgentChainResult {
+    try checkCancellation(chain: chain)
     let context = contextOverride ?? chain.contextForAgent(at: index)
 
     await mcpLog.info("Agent run start", metadata: [
@@ -670,6 +692,15 @@ public final class AgentChainRunner {
       ])
       return result
     } catch {
+      if case ChainError.cancelled = error {
+        await mcpLog.warning("Agent run cancelled", metadata: [
+          "agent": agent.name,
+          "role": agent.role.displayName,
+          "model": agent.model.displayName
+        ])
+        agent.updateState(.failed(message: "Cancelled"))
+        throw error
+      }
       await mcpLog.error(error, context: "Agent run failed", metadata: [
         "agent": agent.name,
         "role": agent.role.displayName,
@@ -698,6 +729,7 @@ public final class AgentChainRunner {
     var currentPrompt = prompt
 
     while chain.currentReviewIteration < chain.maxReviewIterations {
+      try checkCancellation(chain: chain)
       chain.currentReviewIteration += 1
       chain.state = .reviewing(iteration: chain.currentReviewIteration)
 
@@ -785,13 +817,23 @@ public final class AgentChainRunner {
 
   enum ChainError: LocalizedError {
     case reviewRejected(reason: String)
+    case cancelled
 
     var errorDescription: String? {
       switch self {
       case .reviewRejected(let reason):
         return "Review rejected: \(reason.prefix(200))..."
+      case .cancelled:
+        return "Chain cancelled"
       }
     }
+  }
+
+  private func checkCancellation(chain: AgentChain) throws {
+    guard Task.isCancelled else { return }
+    chain.state = .failed(message: "Cancelled")
+    chain.addStatusMessage("✋ Chain cancelled.", type: .error)
+    throw ChainError.cancelled
   }
 }
 
@@ -871,6 +913,7 @@ public final class MCPServerService {
 
   private var activeChainRuns: Int = 0
   private var activeChainRunIds: Set<UUID> = []
+  private var activeChainTasks: [UUID: Task<AgentChainRunner.RunSummary, Never>] = [:]
   private var chainQueue: [ChainQueueEntry] = []
 
   private let listenerQueue = DispatchQueue(label: "MCPServer.Listener")
@@ -1170,6 +1213,9 @@ public final class MCPServerService {
     case "chains.run":
       return await handleChainRun(id: id, arguments: arguments)
 
+    case "chains.stop":
+      return await handleChainStop(id: id, arguments: arguments)
+
     case "chains.queue.status":
       return (200, makeRPCResult(id: id, result: queueStatus()))
 
@@ -1242,8 +1288,12 @@ public final class MCPServerService {
     }
 
     var chainWorkspace: AgentWorkspace?
-    var chainWorkingDirectory = workingDirectory
-    if let workingDirectory {
+    var chainWorkingDirectory = workingDirectory ?? agentManager.lastUsedWorkingDirectory
+    if chainWorkingDirectory == nil {
+      await mcpLog.warning("chains.run missing workingDirectory", metadata: ["runId": runId.uuidString])
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing workingDirectory"))
+    }
+    if let workingDirectory = chainWorkingDirectory {
       let repoURL = URL(fileURLWithPath: workingDirectory)
       let repository = Model.Repository(name: repoURL.lastPathComponent, path: workingDirectory)
       let task = AgentTask(
@@ -1277,7 +1327,17 @@ public final class MCPServerService {
       "queued": enqueuedAt == nil ? "false" : "true"
     ])
 
-    let summary = await chainRunner.runChain(chain, prompt: prompt, validationConfig: template.validationConfig)
+    let runTask = Task { @MainActor in
+      await chainRunner.runChain(chain, prompt: prompt, validationConfig: template.validationConfig)
+    }
+    activeChainTasks[runId] = runTask
+    activeChainRunIds.insert(runId)
+    defer {
+      activeChainTasks[runId] = nil
+      activeChainRunIds.remove(runId)
+    }
+
+    let summary = await runTask.value
     if let chainWorkspace {
       try? await agentManager.workspaceManager.cleanupWorkspace(chainWorkspace, force: true)
     }
@@ -1341,6 +1401,30 @@ public final class MCPServerService {
     }
 
     return (200, makeRPCResult(id: id, result: result))
+  }
+
+  private func handleChainStop(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    let runIdString = arguments["runId"] as? String
+    let cancelAll = arguments["all"] as? Bool ?? false
+
+    if cancelAll {
+      let runIds = Array(activeChainTasks.keys)
+      runIds.forEach { activeChainTasks[$0]?.cancel() }
+      await mcpLog.warning("Chain cancellation requested", metadata: ["runIds": runIds.map { $0.uuidString }.joined(separator: ",")])
+      return (200, makeRPCResult(id: id, result: ["cancelled": runIds.map { $0.uuidString }]))
+    }
+
+    guard let runIdString, let runId = UUID(uuidString: runIdString) else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing or invalid runId"))
+    }
+
+    guard let task = activeChainTasks[runId] else {
+      return (404, makeRPCError(id: id, code: -32004, message: "Run not found"))
+    }
+
+    task.cancel()
+    await mcpLog.warning("Chain cancellation requested", metadata: ["runId": runId.uuidString])
+    return (200, makeRPCResult(id: id, result: ["cancelled": [runId.uuidString]]))
   }
 
   private func handleServerRestart(id: Any?) async -> (Int, Data) {
@@ -1560,6 +1644,17 @@ public final class MCPServerService {
             "enableReviewLoop": ["type": "boolean"]
           ],
           "required": ["prompt"]
+        ]
+      ],
+      [
+        "name": "chains.stop",
+        "description": "Cancel a running chain by runId (or all running chains)",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"],
+            "all": ["type": "boolean"]
+          ]
         ]
       ],
       [
