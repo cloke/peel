@@ -530,39 +530,42 @@ public final class AgentChainRunner {
       return []
     }
 
-    return try await mergeCoordinator.withLock(workingDirectory) {
-      let repoURL = URL(fileURLWithPath: workingDirectory)
-      let repository = Model.Repository(name: repoURL.lastPathComponent, path: workingDirectory)
-
-      let statusLines = try await Commands.simple(arguments: ["status", "--porcelain"], in: repository)
-      if statusLines.contains(where: { !$0.isEmpty }) {
-        await mcpLog.warning("Merge aborted: dirty working tree", metadata: ["repo": workingDirectory])
-        throw NSError(
-          domain: "AgentChain",
-          code: 3,
-          userInfo: [NSLocalizedDescriptionKey: "Working tree has uncommitted changes. Clean it before merging."]
-        )
-      }
-
-      var conflicts: [String] = []
-      for index in indices {
-        guard let workspace = chain.agents[index].workspace else { continue }
-        do {
-          _ = try await Commands.simple(arguments: ["merge", "--no-ff", workspace.branch], in: repository)
-        } catch {
-          _ = try? await Commands.simple(arguments: ["merge", "--abort"], in: repository)
-          let conflictLines = try? await Commands.simple(arguments: ["diff", "--name-only", "--diff-filter=U"], in: repository)
-          conflicts = conflictLines?.filter { !$0.isEmpty } ?? []
-          await mcpLog.warning("Merge conflicts detected", metadata: [
-            "repo": workingDirectory,
-            "conflicts": conflicts.joined(separator: ", ")
-          ])
-          break
-        }
-      }
-
-      return conflicts
+    await mergeCoordinator.acquire(workingDirectory)
+    defer {
+      Task { await mergeCoordinator.release(workingDirectory) }
     }
+
+    let repoURL = URL(fileURLWithPath: workingDirectory)
+    let repository = Model.Repository(name: repoURL.lastPathComponent, path: workingDirectory)
+
+    let statusLines = try await Commands.simple(arguments: ["status", "--porcelain"], in: repository)
+    if statusLines.contains(where: { !$0.isEmpty }) {
+      await mcpLog.warning("Merge aborted: dirty working tree", metadata: ["repo": workingDirectory])
+      throw NSError(
+        domain: "AgentChain",
+        code: 3,
+        userInfo: [NSLocalizedDescriptionKey: "Working tree has uncommitted changes. Clean it before merging."]
+      )
+    }
+
+    var conflicts: [String] = []
+    for index in indices {
+      guard let workspace = chain.agents[index].workspace else { continue }
+      do {
+        _ = try await Commands.simple(arguments: ["merge", "--no-ff", workspace.branch], in: repository)
+      } catch {
+        _ = try? await Commands.simple(arguments: ["merge", "--abort"], in: repository)
+        let conflictLines = try? await Commands.simple(arguments: ["diff", "--name-only", "--diff-filter=U"], in: repository)
+        conflicts = conflictLines?.filter { !$0.isEmpty } ?? []
+        await mcpLog.warning("Merge conflicts detected", metadata: [
+          "repo": workingDirectory,
+          "conflicts": conflicts.joined(separator: ", ")
+        ])
+        break
+      }
+    }
+
+    return conflicts
   }
 
   private func runSingleAgent(
@@ -1654,13 +1657,7 @@ private actor MergeCoordinator {
   private var locks = Set<String>()
   private var waiters: [String: [CheckedContinuation<Void, Never>]] = [:]
 
-  func withLock<T>(_ key: String, _ body: () async throws -> T) async rethrows -> T {
-    await acquire(key)
-    defer { release(key) }
-    return try await body()
-  }
-
-  private func acquire(_ key: String) async {
+  func acquire(_ key: String) async {
     if !locks.contains(key) {
       locks.insert(key)
       return
@@ -1671,7 +1668,7 @@ private actor MergeCoordinator {
     }
   }
 
-  private func release(_ key: String) {
+  func release(_ key: String) {
     if var queue = waiters[key], !queue.isEmpty {
       let continuation = queue.removeFirst()
       waiters[key] = queue
