@@ -459,12 +459,13 @@ struct RepoRow: View {
         Text(repo.name)
         Spacer()
         if worktreeCount > 0 {
-          Text("\(worktreeCount)")
-            .font(.caption)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(isSelected ? .white.opacity(0.25) : .blue.opacity(0.2))
-            .clipShape(RoundedRectangle(cornerRadius: 4))
+          Chip(
+            text: "\(worktreeCount)",
+            style: .rounded(4),
+            font: .caption,
+            foreground: .primary,
+            background: isSelected ? .white.opacity(0.25) : .blue.opacity(0.2)
+          )
         }
       }
     } icon: {
@@ -540,21 +541,23 @@ struct WorktreeCard: View {
             .font(.headline)
           
           if worktree.isDetached {
-            Text("detached")
-              .font(.caption2)
-              .padding(.horizontal, 4)
-              .padding(.vertical, 1)
-              .background(.orange.opacity(0.2))
-              .clipShape(RoundedRectangle(cornerRadius: 3))
+            Chip(
+              text: "detached",
+              style: .rounded(3),
+              background: .orange.opacity(0.2),
+              horizontalPadding: 4,
+              verticalPadding: 1
+            )
           }
           
           if let status = status, status.hasUncommittedChanges {
-            Text("\(status.changedFileCount) changes")
-              .font(.caption2)
-              .padding(.horizontal, 4)
-              .padding(.vertical, 1)
-              .background(.yellow.opacity(0.2))
-              .clipShape(RoundedRectangle(cornerRadius: 3))
+            Chip(
+              text: "\(status.changedFileCount) changes",
+              style: .rounded(3),
+              background: .yellow.opacity(0.2),
+              horizontalPadding: 4,
+              verticalPadding: 1
+            )
           }
         }
         

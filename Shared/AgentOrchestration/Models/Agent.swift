@@ -54,15 +54,8 @@ public enum CopilotModel: String, Codable, CaseIterable, Identifiable, Sendable 
     let costStr: String
     if premiumCost == 0 {
       costStr = "Free"
-    } else if premiumCost < 1.0 {
-      // Format fractional costs like 0.33 as "0.3×"
-      costStr = String(format: "%.1f×", premiumCost)
-    } else if premiumCost == floor(premiumCost) {
-      // Integer costs like 1.0 or 3.0 as "1×" or "3×"
-      costStr = "\(Int(premiumCost))×"
     } else {
-      // Decimal costs like 2.5 as "2.5×"
-      costStr = String(format: "%.1f×", premiumCost)
+      costStr = premiumCost.premiumMultiplierString()
     }
     // Pad to align costs on the right
     let padding = String(repeating: " ", count: max(0, 22 - displayName.count))
@@ -552,5 +545,38 @@ extension Agent: Hashable {
   
   public nonisolated func hash(into hasher: inout Hasher) {
     hasher.combine(id)
+  }
+}
+
+// MARK: - Premium Cost Formatting
+
+private enum PremiumCostFormatting {
+  static let formatter: NumberFormatter = {
+    let formatter = NumberFormatter()
+    formatter.numberStyle = .decimal
+    formatter.minimumFractionDigits = 2
+    formatter.maximumFractionDigits = 2
+    formatter.roundingMode = .halfUp
+    return formatter
+  }()
+}
+
+extension Double {
+  var normalizedPremiumCost: Double {
+    abs(self) < 0.005 ? 0 : self
+  }
+
+  func premiumMultiplierString() -> String {
+    let value = normalizedPremiumCost
+    let numberString = PremiumCostFormatting.formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+    return "\(numberString)×"
+  }
+
+  var premiumCostDisplay: String {
+    let value = normalizedPremiumCost
+    if value == 0 {
+      return "Free"
+    }
+    return "\(premiumMultiplierString()) Premium"
   }
 }

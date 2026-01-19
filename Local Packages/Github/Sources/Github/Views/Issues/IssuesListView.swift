@@ -7,10 +7,6 @@
 
 import SwiftUI
 
-enum LoadingState {
-  case loading, loaded, empty
-}
-
 struct IssueListItemView: View {
   let issue: Github.Issue
   
@@ -29,7 +25,7 @@ struct IssuesListView: View {
   let repository: Github.Repository
   
   @State private var issues = [Github.Issue]()
-  @State private var state: LoadingState = .loading
+  @State private var isLoading = true
   @State private var isShowingCreateIssue = false {
     didSet {
       if isShowingCreateIssue == false {
@@ -41,9 +37,9 @@ struct IssuesListView: View {
   }
   
   func loadData() async throws {
-    state = .loading
+    isLoading = true
+    defer { isLoading = false }
     issues = try await Github.issues(from: repository)
-    state = issues.count == 0 ? .empty : .loaded
   }
   
   var body: some View {
@@ -51,10 +47,9 @@ struct IssuesListView: View {
       Button {
         isShowingCreateIssue = true
       } label: { Label("Create Issue", systemImage: "plus") }
-      switch state {
-      case .loading:
+      if isLoading {
         ProgressView()
-      case .loaded:
+      } else if !issues.isEmpty {
         List(issues) { issue in
           VStack {
             NavigationLink(destination: IssueDetailView(issue: issue)) {
@@ -63,7 +58,7 @@ struct IssuesListView: View {
             Divider()
           }
         }
-      case .empty:
+      } else {
         Text("No issues found")
       }
     }

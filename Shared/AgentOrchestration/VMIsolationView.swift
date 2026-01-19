@@ -148,12 +148,11 @@ struct VMIsolationDashboardView: View {
             Text("Linux VMs")
               .fontWeight(.medium)
             
-            Text("Recommended")
-              .font(.caption2)
-              .padding(.horizontal, 6)
-              .padding(.vertical, 2)
-              .background(.green.opacity(0.2), in: Capsule())
-              .foregroundStyle(.green)
+            Chip(
+              text: "Recommended",
+              foreground: .green,
+              background: .green.opacity(0.2)
+            )
           }
           
           if service.isLinuxReady {
@@ -797,12 +796,12 @@ struct VMPoolCard: View {
         Text(pool.tier.description)
           .fontWeight(.medium)
         Spacer()
-        Text(pool.environment.displayName)
-          .font(.caption)
-          .padding(.horizontal, 6)
-          .padding(.vertical, 2)
-          .background(colorForEnvironment(pool.environment).opacity(0.2), in: Capsule())
-          .foregroundStyle(colorForEnvironment(pool.environment))
+        Chip(
+          text: pool.environment.displayName,
+          font: .caption,
+          foreground: colorForEnvironment(pool.environment),
+          background: colorForEnvironment(pool.environment).opacity(0.2)
+        )
       }
       
       HStack(spacing: 16) {
