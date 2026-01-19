@@ -1,6 +1,7 @@
 import XCTest
 @testable import Peel
 
+@MainActor
 final class ValidationTests: XCTestCase {
   
   func testValidationResultCreation() {
@@ -56,6 +57,7 @@ final class ValidationTests: XCTestCase {
       results: [],
       mergeConflicts: [],
       errorMessage: nil,
+      noWorkReason: nil,
       validationResult: nil
     )
     
@@ -73,6 +75,7 @@ final class ValidationTests: XCTestCase {
       results: [],
       mergeConflicts: [],
       errorMessage: "Test error",
+      noWorkReason: nil,
       validationResult: nil
     )
     
@@ -91,6 +94,7 @@ final class ValidationTests: XCTestCase {
       results: [],
       mergeConflicts: ["file1.swift", "file2.swift"],
       errorMessage: nil,
+      noWorkReason: nil,
       validationResult: nil
     )
     
@@ -118,6 +122,7 @@ final class ValidationTests: XCTestCase {
       results: [resultWithOutput],
       mergeConflicts: [],
       errorMessage: nil,
+      noWorkReason: nil,
       validationResult: nil
     )
     
@@ -144,6 +149,7 @@ final class ValidationTests: XCTestCase {
       results: [resultWithNoOutput],
       mergeConflicts: [],
       errorMessage: nil,
+      noWorkReason: nil,
       validationResult: nil
     )
     
@@ -171,6 +177,7 @@ final class ValidationTests: XCTestCase {
       results: [approvedResult],
       mergeConflicts: [],
       errorMessage: nil,
+      noWorkReason: nil,
       validationResult: nil
     )
     
@@ -198,6 +205,7 @@ final class ValidationTests: XCTestCase {
       results: [rejectedResult],
       mergeConflicts: [],
       errorMessage: nil,
+      noWorkReason: nil,
       validationResult: nil
     )
     
@@ -224,6 +232,7 @@ final class ValidationTests: XCTestCase {
       results: [implementerResult],
       mergeConflicts: [],
       errorMessage: nil,
+      noWorkReason: nil,
       validationResult: nil
     )
     

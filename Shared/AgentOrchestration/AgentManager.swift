@@ -569,48 +569,55 @@ public final class AgentChainRunner {
       userPrompt: prompt,
       context: context.isEmpty ? nil : context
     )
+    agent.updateState(.working)
 
-    let response = try await cliService.runCopilotSession(
-      prompt: fullPrompt,
-      model: agent.model,
-      role: agent.role,
-      workingDirectory: agent.workingDirectory ?? chain.workingDirectory,
-      onOutput: { [chain] line in
-        let statusLine = self.parseStreamingLine(line)
-        if let statusLine {
-          chain.addStatusMessage(statusLine.message, type: statusLine.type)
+    do {
+      let response = try await cliService.runCopilotSession(
+        prompt: fullPrompt,
+        model: agent.model,
+        role: agent.role,
+        workingDirectory: agent.workingDirectory ?? chain.workingDirectory,
+        onOutput: { [chain] line in
+          let statusLine = self.parseStreamingLine(line)
+          if let statusLine {
+            chain.addStatusMessage(statusLine.message, type: statusLine.type)
+          }
         }
+      )
+
+      var premiumCost = agent.model.premiumCost
+      if let premiumStr = response.premiumRequests,
+         let num = Double(premiumStr.components(separatedBy: " ").first ?? "") {
+        premiumCost = num
       }
-    )
 
-    var premiumCost = agent.model.premiumCost
-    if let premiumStr = response.premiumRequests,
-       let num = Double(premiumStr.components(separatedBy: " ").first ?? "") {
-      premiumCost = num
+      var verdict: ReviewVerdict?
+      if agent.role == .reviewer {
+        verdict = ReviewVerdict.parse(from: response.content)
+      }
+
+      var plannerDecision: PlannerDecision?
+      if agent.role == .planner {
+        plannerDecision = PlannerDecision.parse(from: response.content)
+      }
+
+      let result = AgentChainResult(
+        agentId: agent.id,
+        agentName: agent.name,
+        model: agent.model.displayName,
+        prompt: fullPrompt,
+        output: response.content,
+        duration: response.duration,
+        premiumCost: premiumCost,
+        reviewVerdict: verdict,
+        plannerDecision: plannerDecision
+      )
+      agent.updateState(.complete)
+      return result
+    } catch {
+      agent.updateState(.failed(message: error.localizedDescription))
+      throw error
     }
-
-    var verdict: ReviewVerdict?
-    if agent.role == .reviewer {
-      verdict = ReviewVerdict.parse(from: response.content)
-    }
-
-    var plannerDecision: PlannerDecision?
-    if agent.role == .planner {
-      plannerDecision = PlannerDecision.parse(from: response.content)
-    }
-
-    let result = AgentChainResult(
-      agentId: agent.id,
-      agentName: agent.name,
-      model: agent.model.displayName,
-      prompt: fullPrompt,
-      output: response.content,
-      duration: response.duration,
-      premiumCost: premiumCost,
-      reviewVerdict: verdict,
-      plannerDecision: plannerDecision
-    )
-    return result
   }
 
   private func runReviewLoop(chain: AgentChain, prompt: String) async throws {
