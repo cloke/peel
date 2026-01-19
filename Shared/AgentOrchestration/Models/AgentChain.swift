@@ -227,6 +227,7 @@ public struct AgentChainResult: Identifiable, Sendable {
   public let duration: String?
   public let premiumCost: Double
   public let timestamp: Date
+  public var screenshotPath: String?
   
   /// For reviewer agents, the parsed verdict
   public var reviewVerdict: ReviewVerdict?
