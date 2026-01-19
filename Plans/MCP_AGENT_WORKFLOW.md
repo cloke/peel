@@ -122,7 +122,11 @@ curl -X POST -H 'Content-Type: application/json' \
         "templateName":"MCP Harness",
         "prompt":"Add a dark mode toggle to SettingsView",
         "workingDirectory":"/path/to/git/repo",
-        "enableReviewLoop":true
+        "enableReviewLoop":true,
+        "allowPlannerModelSelection":true,
+        "allowPlannerImplementerScaling":true,
+        "maxImplementers":3,
+        "maxPremiumCost":1.0
       }
     }
   }' \
@@ -131,8 +135,10 @@ curl -X POST -H 'Content-Type: application/json' \
 
 **Response:** Chain execution results (planner output, implementer outputs, merge status, review verdict)
 
-Note: For dynamic chains using `chainSpec`, the caller defines the step count and model selection.
-Planners cannot auto-scale implementers, and validators enforce a hard max of 8 steps.
+Note: The planner can propose model mix and implementer count when these options are enabled. Cost
+caps will downgrade implementer models to meet the limit when possible. For dynamic chains using
+`chainSpec`, the caller still defines the step count and model selection; validators enforce a hard
+max of 8 steps.
 
 ### Stop Server
 ```bash
