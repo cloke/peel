@@ -105,15 +105,20 @@ extension SidebarNavigationView {
 public struct SidebarNavigationView: View {
   @State private var results = SearchResults()
   @State private var viewModel = ViewModel()
-  @State private var source: PackageSource = .installed
+  @AppStorage("brew.source") private var sourceRaw: String = PackageSource.installed.rawValue
+  @AppStorage("brew.searchText") private var storedSearchText: String = ""
   @State private var selection: String?
   
   public init() {}
   
   public var body: some View {
+    let source = PackageSource(rawValue: sourceRaw) ?? .installed
     NavigationSplitView {
       VStack(spacing: 0) {
-        Picker("Source", selection: $source) {
+        Picker("Source", selection: Binding(
+          get: { source },
+          set: { sourceRaw = $0.rawValue }
+        )) {
           ForEach(PackageSource.allCases) { source in
             Text(source.rawValue).tag(source)
           }
@@ -155,13 +160,23 @@ public struct SidebarNavigationView: View {
     }
     .navigationSplitViewStyle(.balanced)
     .searchable(text: $results.searchText)
+    .onChange(of: results.searchText) { _, newValue in
+      if storedSearchText != newValue {
+        storedSearchText = newValue
+      }
+    }
+    .onChange(of: storedSearchText) { _, newValue in
+      if results.searchText != newValue {
+        results.searchText = newValue
+      }
+    }
     .onChange(of: viewModel.outputStream) { _, data in
       results.items = Set(data)
       if !results.items.contains(selection ?? "") {
         selection = nil
       }
     }
-    .task(id: source) {
+    .task(id: sourceRaw) {
       selection = nil
       results.items = []
       if source == .installed {

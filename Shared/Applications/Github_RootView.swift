@@ -12,6 +12,9 @@ import SwiftData
 import Github
 
 struct Github_RootView: View {
+#if os(macOS)
+  @Environment(MCPServerService.self) private var mcpServer
+#endif
   @Environment(\.modelContext) private var modelContext
   @State public var viewModel = Github.ViewModel()
   @State private var dataProvider: GitHubDataProvider?
@@ -22,6 +25,32 @@ struct Github_RootView: View {
   @State private var isLoading = false
   @State private var errorMessage: String?
   @AppStorage("github-show-archived") private var showArchivedRepos = false
+
+  private func loadProfile() async {
+    hasToken = await Github.hasToken
+    guard hasToken else { return }
+    isLoading = true
+    errorMessage = nil
+    defer { isLoading = false }
+    do {
+      viewModel.me = try await Github.me()
+      organizations = try await Github.loadOrganizations()
+    } catch {
+      errorMessage = "Failed to load: \(error.localizedDescription)"
+    }
+  }
+
+  private func authorizeAndLoad() async {
+    isLoading = true
+    errorMessage = nil
+    defer { isLoading = false }
+    do {
+      try await Github.authorize()
+      await loadProfile()
+    } catch {
+      errorMessage = "Login failed: \(error.localizedDescription)"
+    }
+  }
   
   var body: some View {
     NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -89,15 +118,7 @@ struct Github_RootView: View {
                 .multilineTextAlignment(.center)
               Button("Retry") {
                 Task {
-                  isLoading = true
-                  errorMessage = nil
-                  defer { isLoading = false }
-                  do {
-                    viewModel.me = try await Github.me()
-                    organizations = try await Github.loadOrganizations()
-                  } catch {
-                    errorMessage = "Failed to load: \(error.localizedDescription)"
-                  }
+                  await loadProfile()
                 }
               }
               .buttonStyle(.bordered)
@@ -123,18 +144,7 @@ struct Github_RootView: View {
         } else {
           Button("Login") {
             Task {
-              isLoading = true
-              errorMessage = nil
-              defer { isLoading = false }
-              do {
-                try await Github.authorize()
-                viewModel.me = try await Github.me()
-                organizations = try await Github.loadOrganizations()
-                hasToken = await Github.hasToken
-              } catch {
-                print("Login error: \(error)")
-                errorMessage = "Login failed: \(error.localizedDescription)"
-              }
+              await authorizeAndLoad()
             }
           }
         }
@@ -159,21 +169,29 @@ struct Github_RootView: View {
         }
       }
       .task {
-        hasToken = await Github.hasToken
-        if hasToken {
-          isLoading = true
-          errorMessage = nil
-          defer { isLoading = false }
-          do {
-            viewModel.me = try await Github.me()
-            organizations = try await Github.loadOrganizations()
-          } catch {
-            print("Error loading user data: \(error)")
-            // Don't logout on network errors - just show error
-            errorMessage = "Failed to load: \(error.localizedDescription)"
-          }
-        }
+        await loadProfile()
       }
+#if os(macOS)
+      .onChange(of: mcpServer.lastUIAction?.id) {
+        guard let action = mcpServer.lastUIAction else { return }
+        switch action.controlId {
+        case "github.login":
+          Task { await authorizeAndLoad() }
+        case "github.refresh":
+          Task { await loadProfile() }
+        case "github.logout":
+          Task {
+            await Github.reauthorize()
+            hasToken = false
+            viewModel.me = nil
+            organizations = []
+          }
+        default:
+          break
+        }
+        mcpServer.lastUIAction = nil
+      }
+#endif
     } detail: {
       Text("Select an organization or repository")
         .foregroundStyle(.secondary)
