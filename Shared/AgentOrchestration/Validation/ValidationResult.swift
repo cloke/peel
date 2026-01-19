@@ -82,7 +82,7 @@ public struct ValidationResult: Codable, Sendable {
 extension ValidationResult {
   /// Convert to dictionary for MCP response
   public func toDictionary() -> [String: Any] {
-    var dict: [String: Any] = [
+    let dict: [String: Any] = [
       "status": status.rawValue,
       "reasons": reasons,
       "metadata": metadata,
