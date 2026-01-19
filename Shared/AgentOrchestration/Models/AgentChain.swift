@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import SwiftUI
 
 /// A chain of agents that execute sequentially, passing output as context
 @MainActor
@@ -160,13 +161,13 @@ public struct LiveStatusMessage: Identifiable {
       }
     }
     
-    public var color: String {
+    public var color: Color {
       switch self {
-      case .info: return "secondary"
-      case .tool: return "purple"
-      case .progress: return "blue"
-      case .error: return "red"
-      case .complete: return "green"
+      case .info: return .secondary
+      case .tool: return .purple
+      case .progress: return .blue
+      case .error: return .red
+      case .complete: return .green
       }
     }
   }

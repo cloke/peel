@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import SwiftUI
 
 /// Available models for Copilot CLI
 public enum CopilotModel: String, Codable, CaseIterable, Identifiable, Sendable {
@@ -324,15 +325,15 @@ public enum AgentState: Equatable {
     }
   }
   
-  public var color: String {
+  public var color: Color {
     switch self {
-    case .idle: return "gray"
-    case .planning: return "yellow"
-    case .working: return "blue"
-    case .blocked: return "orange"
-    case .testing: return "purple"
-    case .complete: return "green"
-    case .failed: return "red"
+    case .idle: return .gray
+    case .planning: return .yellow
+    case .working: return .blue
+    case .blocked: return .orange
+    case .testing: return .purple
+    case .complete: return .green
+    case .failed: return .red
     }
   }
 }
