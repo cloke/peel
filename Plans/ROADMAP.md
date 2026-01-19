@@ -15,7 +15,7 @@ github_issues:
     status: open
     title: Create PII scrubber CLI tool
   - number: 13
-    status: open
+    status: closed
     title: Add validation pipeline for MCP runs
   - number: 16
     status: open
@@ -59,6 +59,7 @@ related_docs:
 | **CLI Integration** | Tool detection, streaming output, model selection, state persistence |
 | **MCP Server** | JSON-RPC server, templates.list, chains.run, server control |
 | **Parallel Agents** | TaskGroup execution, merge agent, planner structured output |
+| **MCP Validation** | Automated correctness checks for chain execution results |
 | **Session Tracking** | Premium cost tracking, session summary export |
 | **Settings/Preferences** | MCP toggle, port config, status display |
 
@@ -66,7 +67,6 @@ related_docs:
 
 | Area | Open Issue | Gap |
 |------|------------|-----|
-| **MCP Validation** | [#13](https://github.com/cloke/peel/issues/13) | Correctness checks for chain runs |
 | **MCP Activity Log** | [#16](https://github.com/cloke/peel/issues/16) | Persist/display run history, cleanup actions |
 
 ### 📋 Future
@@ -82,9 +82,6 @@ related_docs:
 ---
 
 ## Active Work: Phase 1C
-
-### MCP Validation Pipeline ([#13](https://github.com/cloke/peel/issues/13))
-Automated correctness checks for chain execution results.
 
 ### MCP Activity Log + Cleanup ([#16](https://github.com/cloke/peel/issues/16))
 - Persist MCP run history (SwiftData)
