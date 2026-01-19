@@ -784,7 +784,7 @@ struct AgentDetailView: View {
                 ForEach(chain.liveStatusMessages) { message in
                   HStack(alignment: .top, spacing: 6) {
                     Image(systemName: message.type.icon)
-                      .foregroundStyle(Color(message.type.color))
+                      .foregroundStyle(message.type.color)
                       .font(.caption)
                     Text(message.message)
                       .font(.caption)
@@ -2095,7 +2095,7 @@ struct ChainDetailView: View {
                       .foregroundStyle(.secondary)
                     Label(agent.state.displayName, systemImage: agent.state.iconName)
                       .font(.caption)
-                      .foregroundStyle(Color(agent.state.color))
+                      .foregroundStyle(agent.state.color)
                   }
                 }
               }
