@@ -168,12 +168,19 @@ curl -X POST -H 'Content-Type: application/json' \
         "templateName":"MCP Harness",
         "prompt":"Add a dark mode toggle to SettingsView",
         "workingDirectory":"/path/to/git/repo",
-        "enableReviewLoop":true
+        "enableReviewLoop":true,
+        "allowPlannerModelSelection":true,
+        "allowPlannerImplementerScaling":true,
+        "maxImplementers":3,
+        "maxPremiumCost":1.0
       }
     }
   }' \
   http://127.0.0.1:8765/rpc
 ```
+
+Note: The planner can propose model mix and implementer count when these options are enabled. Cost
+caps will downgrade implementer models to meet the limit when possible.
 
 ### Planner-Defined Chains (Dynamic)
 You can skip predefined templates and provide a `chainSpec` in the `chains.run` call. Each step
@@ -237,6 +244,9 @@ curl -X POST -H 'Content-Type: application/json' \
 ```
 
 **Response:** Chain execution results (planner output, implementer outputs, merge status, review verdict)
+
+Note: The planner can propose model mix and implementer count when these options are enabled. Cost
+caps will downgrade implementer models to meet the limit when possible.
 
 ### Stop Server
 ```bash

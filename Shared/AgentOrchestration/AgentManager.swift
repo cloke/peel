@@ -258,6 +258,25 @@ public final class AgentManager {
 @MainActor
 @Observable
 public final class AgentChainRunner {
+  public struct ChainRunOptions: Sendable {
+    public let allowPlannerModelSelection: Bool
+    public let allowPlannerImplementerScaling: Bool
+    public let maxImplementers: Int?
+    public let maxPremiumCost: Double?
+
+    public init(
+      allowPlannerModelSelection: Bool = false,
+      allowPlannerImplementerScaling: Bool = false,
+      maxImplementers: Int? = nil,
+      maxPremiumCost: Double? = nil
+    ) {
+      self.allowPlannerModelSelection = allowPlannerModelSelection
+      self.allowPlannerImplementerScaling = allowPlannerImplementerScaling
+      self.maxImplementers = maxImplementers
+      self.maxPremiumCost = maxPremiumCost
+    }
+  }
+
   public struct RunSummary: Sendable {
     public let chainId: UUID
     public let chainName: String
@@ -287,7 +306,12 @@ public final class AgentChainRunner {
     self.sessionTracker = sessionTracker
   }
 
-  public func runChain(_ chain: AgentChain, prompt: String, validationConfig: ValidationConfiguration? = nil) async -> RunSummary {
+  public func runChain(
+    _ chain: AgentChain,
+    prompt: String,
+    validationConfig: ValidationConfiguration? = nil,
+    runOptions: ChainRunOptions? = nil
+  ) async -> RunSummary {
     var mergeConflicts: [String] = []
     var errorMessage: String?
     var validationResult: ValidationResult? = nil
@@ -300,7 +324,12 @@ public final class AgentChainRunner {
 
     do {
       try checkCancellation(chain: chain)
-      try await runAgentsWithParallelImplementers(chain: chain, prompt: prompt, mergeConflicts: &mergeConflicts)
+      try await runAgentsWithParallelImplementers(
+        chain: chain,
+        prompt: prompt,
+        mergeConflicts: &mergeConflicts,
+        runOptions: runOptions
+      )
 
       if case .complete = chain.state {
         sessionTracker.recordChainRun(chain)
@@ -395,28 +424,125 @@ public final class AgentChainRunner {
     }
   }
 
+  private func applyPlannerOverrides(
+    chain: AgentChain,
+    decision: PlannerDecision,
+    options: ChainRunOptions
+  ) async {
+    guard options.allowPlannerImplementerScaling ||
+            options.allowPlannerModelSelection ||
+            options.maxImplementers != nil ||
+            options.maxPremiumCost != nil else {
+      return
+    }
+
+    let tasks = decision.tasks
+    guard !tasks.isEmpty else { return }
+
+    let implementerIndices = chain.agents.indices.filter { chain.agents[$0].role == .implementer }
+    guard let firstImplementer = implementerIndices.first,
+          let lastImplementer = implementerIndices.last else {
+      return
+    }
+
+    let preAgents = Array(chain.agents.prefix(firstImplementer))
+    let postAgents = Array(chain.agents.suffix(from: lastImplementer + 1))
+
+    var desiredCount = implementerIndices.count
+    if options.allowPlannerImplementerScaling {
+      desiredCount = tasks.count
+    }
+    if let maxImplementers = options.maxImplementers, maxImplementers > 0 {
+      desiredCount = min(desiredCount, maxImplementers)
+    }
+
+    let nonImplementerCount = preAgents.count + postAgents.count
+    let maxBySteps = max(1, MCPTemplateValidator.maxSteps - nonImplementerCount)
+    desiredCount = min(desiredCount, maxBySteps)
+
+    if desiredCount != implementerIndices.count {
+      chain.addStatusMessage("Planner requested \(desiredCount) implementer(s)", type: .info)
+    }
+
+    var implementers = implementerIndices.map { chain.agents[$0] }
+
+    if desiredCount < implementers.count {
+      let removed = implementers.suffix(from: desiredCount)
+      implementers = Array(implementers.prefix(desiredCount))
+      for agent in removed {
+        await agentManager.removeAgent(agent)
+      }
+    } else if desiredCount > implementers.count {
+      let startIndex = implementers.count
+      for index in startIndex..<desiredCount {
+        let taskTitle = tasks.indices.contains(index) ? tasks[index].title : "Implementer \(index + 1)"
+        let agent = agentManager.createAgent(
+          name: taskTitle,
+          type: .copilot,
+          role: .implementer,
+          model: implementers.first?.model ?? .claudeSonnet45,
+          workingDirectory: chain.workingDirectory
+        )
+        implementers.append(agent)
+      }
+    }
+
+    if options.allowPlannerModelSelection {
+      for (index, agent) in implementers.enumerated() {
+        guard index < tasks.count,
+              let modelName = tasks[index].recommendedModel,
+              let model = CopilotModel.fromString(modelName) else {
+          continue
+        }
+        agent.model = model
+      }
+      chain.addStatusMessage("Applied planner model recommendations", type: .info)
+    }
+
+    if let maxPremiumCost = options.maxPremiumCost, maxPremiumCost >= 0 {
+      let cheapest = preferredLowCostModel()
+      var totalCost = implementers.reduce(0) { $0 + $1.model.premiumCost }
+      var downgraded = 0
+
+      if totalCost > maxPremiumCost {
+        let sorted = implementers.sorted { $0.model.premiumCost > $1.model.premiumCost }
+        for agent in sorted {
+          guard totalCost > maxPremiumCost else { break }
+          guard agent.model.premiumCost > cheapest.premiumCost else { continue }
+          totalCost -= agent.model.premiumCost
+          agent.model = cheapest
+          totalCost += cheapest.premiumCost
+          downgraded += 1
+        }
+      }
+
+      if downgraded > 0 {
+        chain.addStatusMessage("Cost cap applied: downgraded \(downgraded) implementer(s)", type: .info)
+      }
+      if totalCost > maxPremiumCost {
+        chain.addStatusMessage("Cost cap exceeded after downgrades", type: .error)
+      }
+    }
+
+    chain.agents = preAgents + implementers + postAgents
+  }
+
+  private func preferredLowCostModel() -> CopilotModel {
+    if let free = CopilotModel.allCases.first(where: { $0.isFree }) {
+      return free
+    }
+    return CopilotModel.allCases.min(by: { $0.premiumCost < $1.premiumCost }) ?? .gpt41
+  }
+
   private func runAgentsWithParallelImplementers(
     chain: AgentChain,
     prompt: String,
-    mergeConflicts: inout [String]
+    mergeConflicts: inout [String],
+    runOptions: ChainRunOptions?
   ) async throws {
     try checkCancellation(chain: chain)
-    let implementerIndices = chain.agents.indices.filter { chain.agents[$0].role == .implementer }
-    guard implementerIndices.count > 1 else {
-      try await runAgentsSequentially(chain: chain, prompt: prompt)
-      return
-    }
-
-    guard let firstImplementer = implementerIndices.first,
-          let lastImplementer = implementerIndices.last else {
-      try await runAgentsSequentially(chain: chain, prompt: prompt)
-      return
-    }
-
-    let hasGaps = (firstImplementer...lastImplementer).contains { index in
-      chain.agents[index].role != .implementer
-    }
-    if hasGaps {
+    let initialImplementerIndices = chain.agents.indices.filter { chain.agents[$0].role == .implementer }
+    guard let firstImplementer = initialImplementerIndices.first else {
       try await runAgentsSequentially(chain: chain, prompt: prompt)
       return
     }
@@ -442,16 +568,52 @@ public final class AgentChainRunner {
       }
     }
 
+    if let options = runOptions,
+       let decision = chain.results.first(where: { $0.plannerDecision != nil })?.plannerDecision {
+      await applyPlannerOverrides(chain: chain, decision: decision, options: options)
+    }
+
+    let implementerIndices = chain.agents.indices.filter { chain.agents[$0].role == .implementer }
+    guard let updatedFirst = implementerIndices.first else {
+      return
+    }
+
+    guard implementerIndices.count > 1 else {
+      for index in updatedFirst..<chain.agents.count {
+        try checkCancellation(chain: chain)
+        let agent = chain.agents[index]
+        chain.state = .running(agentIndex: index)
+        chain.currentAgentStartTime = Date()
+        chain.addStatusMessage("Starting \(agent.name) (\(agent.model.shortName))...", type: .progress)
+        let result = try await runSingleAgent(agent, at: index, chain: chain, prompt: prompt)
+        chain.results.append(result)
+        chain.addStatusMessage("\(agent.name) completed", type: .complete)
+      }
+      return
+    }
+
+    guard let updatedLast = implementerIndices.last else {
+      return
+    }
+
+    let hasGaps = (updatedFirst...updatedLast).contains { index in
+      chain.agents[index].role != .implementer
+    }
+    if hasGaps {
+      try await runAgentsSequentially(chain: chain, prompt: prompt)
+      return
+    }
+
     try checkCancellation(chain: chain)
-    let sharedContext = chain.contextForAgent(at: firstImplementer)
+    let sharedContext = chain.contextForAgent(at: updatedFirst)
     let parallelResults = try await runImplementersInParallel(
       chain: chain,
-      indices: Array(firstImplementer...lastImplementer),
+      indices: Array(updatedFirst...updatedLast),
       context: sharedContext,
       prompt: prompt
     )
 
-    for index in firstImplementer...lastImplementer {
+    for index in updatedFirst...updatedLast {
       try checkCancellation(chain: chain)
       if let result = parallelResults[index] {
         chain.results.append(result)
@@ -459,7 +621,7 @@ public final class AgentChainRunner {
     }
 
     chain.addStatusMessage("Merging implementer branches...", type: .progress)
-    let conflicts = try await mergeImplementerBranches(chain: chain, indices: Array(firstImplementer...lastImplementer))
+    let conflicts = try await mergeImplementerBranches(chain: chain, indices: Array(updatedFirst...updatedLast))
     if !conflicts.isEmpty {
       mergeConflicts = conflicts
       throw NSError(
@@ -470,8 +632,8 @@ public final class AgentChainRunner {
     }
     chain.addStatusMessage("Merge completed", type: .complete)
 
-    if lastImplementer + 1 < chain.agents.count {
-      for index in (lastImplementer + 1)..<chain.agents.count {
+    if updatedLast + 1 < chain.agents.count {
+      for index in (updatedLast + 1)..<chain.agents.count {
         try checkCancellation(chain: chain)
         let agent = chain.agents[index]
         chain.state = .running(agentIndex: index)
@@ -1290,6 +1452,10 @@ public final class MCPServerService {
     let templateName = arguments["templateName"] as? String
     let workingDirectory = arguments["workingDirectory"] as? String
     let enableReviewLoop = arguments["enableReviewLoop"] as? Bool
+    let allowPlannerModelSelection = arguments["allowPlannerModelSelection"] as? Bool ?? false
+    let allowPlannerImplementerScaling = arguments["allowPlannerImplementerScaling"] as? Bool ?? false
+    let maxImplementers = arguments["maxImplementers"] as? Int
+    let maxPremiumCost = arguments["maxPremiumCost"] as? Double
 
     let queuePosition = activeChainRuns >= maxConcurrentChains ? chainQueue.count + 1 : nil
     let enqueuedAt = await acquireChainRunSlot(runId: runId)
@@ -1344,6 +1510,13 @@ public final class MCPServerService {
       chain.enableReviewLoop = enableReviewLoop
     }
 
+    let runOptions = AgentChainRunner.ChainRunOptions(
+      allowPlannerModelSelection: allowPlannerModelSelection,
+      allowPlannerImplementerScaling: allowPlannerImplementerScaling,
+      maxImplementers: maxImplementers,
+      maxPremiumCost: maxPremiumCost
+    )
+
     await mcpLog.info("Chain run started", metadata: [
       "runId": runId.uuidString,
       "template": template.name,
@@ -1352,7 +1525,12 @@ public final class MCPServerService {
     ])
 
     let runTask = Task { @MainActor in
-      await chainRunner.runChain(chain, prompt: prompt, validationConfig: template.validationConfig)
+      await chainRunner.runChain(
+        chain,
+        prompt: prompt,
+        validationConfig: template.validationConfig,
+        runOptions: runOptions
+      )
     }
     activeChainTasks[runId] = runTask
     activeChainRunIds.insert(runId)
@@ -1688,7 +1866,11 @@ public final class MCPServerService {
             "templateName": ["type": "string"],
             "prompt": ["type": "string"],
             "workingDirectory": ["type": "string"],
-            "enableReviewLoop": ["type": "boolean"]
+            "enableReviewLoop": ["type": "boolean"],
+            "allowPlannerModelSelection": ["type": "boolean"],
+            "allowPlannerImplementerScaling": ["type": "boolean"],
+            "maxImplementers": ["type": "integer"],
+            "maxPremiumCost": ["type": "number"]
           ],
           "required": ["prompt"]
         ]
