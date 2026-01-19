@@ -107,6 +107,7 @@ related_docs:
 - Added `chains.stop` MCP endpoint to cancel active chain runs
 - Enforced `workingDirectory` for `chains.run` to prevent whole-disk scans
 - Added streaming diagnostics for missing usage marker and cancellation logging
+- Added parallel chain helper script for async MCP runs (`Tools/run-chains-parallel.sh`)
 
 **Scope (v1):**
 - Persist run metadata: chain id, template name, timestamps, status/error, validation summary
