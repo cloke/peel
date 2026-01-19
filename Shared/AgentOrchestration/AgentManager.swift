@@ -2406,9 +2406,15 @@ public final class MCPServerService {
     }
     let repoPath = (arguments["repoPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
     let limit = arguments["limit"] as? Int ?? 10
+    let mode = (arguments["mode"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "text"
 
     do {
-      let results = try await localRagStore.search(query: query, repoPath: repoPath, limit: limit)
+      let results: [LocalRAGSearchResult]
+      if mode.lowercased() == "vector" {
+        results = try await localRagStore.searchVector(query: query, repoPath: repoPath, limit: limit)
+      } else {
+        results = try await localRagStore.search(query: query, repoPath: repoPath, limit: limit)
+      }
       let payload = results.map { result in
         [
           "filePath": result.filePath,
@@ -2417,7 +2423,7 @@ public final class MCPServerService {
           "snippet": result.snippet
         ]
       }
-      return (200, makeRPCResult(id: id, result: ["results": payload]))
+      return (200, makeRPCResult(id: id, result: ["mode": mode, "results": payload]))
     } catch {
       await mcpLog.warning("Local RAG search failed", metadata: ["error": error.localizedDescription])
       return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
@@ -3155,7 +3161,8 @@ public final class MCPServerService {
           "properties": [
             "query": ["type": "string"],
             "repoPath": ["type": "string"],
-            "limit": ["type": "integer"]
+            "limit": ["type": "integer"],
+            "mode": ["type": "string"]
           ],
           "required": ["query"]
         ],

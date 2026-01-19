@@ -214,10 +214,12 @@ actor LocalRAGStore {
 
   private let scanner = LocalRAGFileScanner()
   private let chunker = LocalRAGChunker()
+  private let embeddingProvider: LocalRAGEmbeddingProvider
 
   private let dateFormatter = ISO8601DateFormatter()
 
-  init() {
+  init(embeddingProvider: LocalRAGEmbeddingProvider = HashEmbeddingProvider()) {
+    self.embeddingProvider = embeddingProvider
     let baseURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
       ?? FileManager.default.temporaryDirectory
     let ragURL = baseURL.appendingPathComponent("Peel/RAG", isDirectory: true)
@@ -280,16 +282,22 @@ actor LocalRAGStore {
       try deleteChunks(for: fileId)
 
       let chunks = chunker.chunk(text: file.text)
-      for chunk in chunks {
-        let chunkHash = stableId(for: "\(fileId):\(chunk.startLine):\(chunk.endLine):\(chunk.text)")
+      let chunkTexts = chunks.map { $0.text }
+      let embeddings = try await embeddingProvider.embed(texts: chunkTexts)
+
+      for (index, chunk) in chunks.enumerated() {
+        let chunkId = stableId(for: "\(fileId):\(chunk.startLine):\(chunk.endLine):\(chunk.text)")
         try upsertChunk(
-          id: chunkHash,
+          id: chunkId,
           fileId: fileId,
           startLine: chunk.startLine,
           endLine: chunk.endLine,
           text: chunk.text,
           tokenCount: chunk.tokenCount
         )
+        if index < embeddings.count {
+          try upsertEmbedding(chunkId: chunkId, vector: embeddings[index])
+        }
       }
 
       chunkCount += chunks.count
@@ -336,6 +344,59 @@ actor LocalRAGStore {
       }
       sqlite3_bind_int(statement, bindIndex, Int32(max(1, limit)))
     }
+  }
+
+  func searchVector(query: String, repoPath: String? = nil, limit: Int = 10) async throws -> [LocalRAGSearchResult] {
+    let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedQuery.isEmpty else { return [] }
+    try openIfNeeded()
+
+    let queryVector = try await embeddingProvider.embed(texts: [trimmedQuery]).first ?? []
+    if queryVector.isEmpty {
+      return []
+    }
+
+    let candidateLimit = max(limit * 50, 200)
+    let sqlBase = """
+    SELECT files.path, chunks.start_line, chunks.end_line, chunks.text, embeddings.embedding
+    FROM embeddings
+    JOIN chunks ON chunks.id = embeddings.chunk_id
+    JOIN files ON files.id = chunks.file_id
+    JOIN repos ON repos.id = files.repo_id
+    WHERE embeddings.embedding IS NOT NULL
+    """
+
+    let sql: String
+    if repoPath != nil {
+      sql = sqlBase + " AND repos.root_path = ? LIMIT ?"
+    } else {
+      sql = sqlBase + " LIMIT ?"
+    }
+
+    let rows = try queryEmbeddingRows(sql: sql) { statement in
+      var bindIndex: Int32 = 1
+      if let repoPath {
+        bindText(statement, bindIndex, repoPath)
+        bindIndex += 1
+      }
+      sqlite3_bind_int(statement, bindIndex, Int32(candidateLimit))
+    }
+
+    let scored = rows.compactMap { row -> (LocalRAGSearchResult, Float)? in
+      guard let vector = decodeVector(row.embeddingData) else { return nil }
+      let score = cosineSimilarity(queryVector, vector)
+      let snippet = String(row.text.prefix(240))
+      let result = LocalRAGSearchResult(
+        filePath: row.filePath,
+        startLine: row.startLine,
+        endLine: row.endLine,
+        snippet: snippet
+      )
+      return (result, score)
+    }
+
+    let top = scored.sorted { $0.1 > $1.1 }.prefix(limit).map { $0.0 }
+    return Array(top)
   }
 
   private func openIfNeeded() throws {
@@ -416,6 +477,56 @@ actor LocalRAGStore {
       return String(cString: text)
     }
     return nil
+  }
+
+  private struct EmbeddingRow {
+    let filePath: String
+    let startLine: Int
+    let endLine: Int
+    let text: String
+    let embeddingData: Data
+  }
+
+  private func queryEmbeddingRows(
+    sql: String,
+    binder: (OpaquePointer) -> Void
+  ) throws -> [EmbeddingRow] {
+    guard let db else {
+      throw LocalRAGError.sqlite("Database not initialized")
+    }
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let statement else {
+      let message = String(cString: sqlite3_errmsg(db))
+      throw LocalRAGError.sqlite(message)
+    }
+    defer { sqlite3_finalize(statement) }
+
+    binder(statement)
+
+    var rows: [EmbeddingRow] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+      let path = String(cString: sqlite3_column_text(statement, 0))
+      let startLine = Int(sqlite3_column_int(statement, 1))
+      let endLine = Int(sqlite3_column_int(statement, 2))
+      let text = String(cString: sqlite3_column_text(statement, 3))
+      let blobPointer = sqlite3_column_blob(statement, 4)
+      let blobSize = sqlite3_column_bytes(statement, 4)
+      if let blobPointer, blobSize > 0 {
+        let data = Data(bytes: blobPointer, count: Int(blobSize))
+        rows.append(
+          EmbeddingRow(
+            filePath: path,
+            startLine: startLine,
+            endLine: endLine,
+            text: text,
+            embeddingData: data
+          )
+        )
+      }
+    }
+
+    return rows
   }
 
   private func queryRows(
@@ -544,6 +655,51 @@ actor LocalRAGStore {
 
   private func bindText(_ statement: OpaquePointer, _ index: Int32, _ value: String) {
     sqlite3_bind_text(statement, index, (value as NSString).utf8String, -1, sqliteTransient)
+  }
+
+  private func upsertEmbedding(chunkId: String, vector: [Float]) throws {
+    let sql = """
+    INSERT OR REPLACE INTO embeddings (chunk_id, embedding)
+    VALUES (?, ?)
+    """
+    let data = encodeVector(vector)
+    try execute(sql: sql) { statement in
+      bindText(statement, 1, chunkId)
+      data.withUnsafeBytes { bytes in
+        sqlite3_bind_blob(statement, 2, bytes.baseAddress, Int32(data.count), sqliteTransient)
+      }
+    }
+  }
+
+  private func encodeVector(_ vector: [Float]) -> Data {
+    var copy = vector
+    return Data(bytes: &copy, count: MemoryLayout<Float>.stride * copy.count)
+  }
+
+  private func decodeVector(_ data: Data) -> [Float]? {
+    let stride = MemoryLayout<Float>.stride
+    guard data.count % stride == 0 else { return nil }
+    let count = data.count / stride
+    return data.withUnsafeBytes { buffer in
+      let pointer = buffer.bindMemory(to: Float.self)
+      guard pointer.count >= count else { return nil }
+      return Array(pointer.prefix(count))
+    }
+  }
+
+  private func cosineSimilarity(_ lhs: [Float], _ rhs: [Float]) -> Float {
+    let count = min(lhs.count, rhs.count)
+    guard count > 0 else { return 0 }
+    var dot: Float = 0
+    var lhsSum: Float = 0
+    var rhsSum: Float = 0
+    for i in 0..<count {
+      dot += lhs[i] * rhs[i]
+      lhsSum += lhs[i] * lhs[i]
+      rhsSum += rhs[i] * rhs[i]
+    }
+    let denom = sqrt(max(lhsSum * rhsSum, 0.000001))
+    return dot / denom
   }
 
   private func stableId(for value: String) -> String {

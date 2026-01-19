@@ -134,6 +134,7 @@ QueryService
 - 2026-01-19: Added `LocalRAGStore` schema init + MCP tools (`rag.status`, `rag.init`, `rag.index`).
 - 2026-01-19: Added repo scanning + chunking pipeline (stubbed indexing without embeddings).
 - 2026-01-19: Added `rag.search` MCP tool (text match stub over chunks).
+- 2026-01-19: Added hash-based embedding provider + vector search stub (`rag.search` mode: `vector`).
 
 ## Open Questions
 - Preferred embedding model (local vs API)?
