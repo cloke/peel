@@ -6,6 +6,9 @@
 //
 
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 #if os(macOS)
 struct PIIScrubberView: View {
@@ -22,6 +25,7 @@ struct PIIScrubberView: View {
   @State private var lastDetectedToolPath: String?
 
   @State private var report: PIIScrubberReport?
+  @State private var lastReportPath: String?
   @State private var lastError: String?
   @State private var isRunning = false
 
@@ -67,6 +71,10 @@ struct PIIScrubberView: View {
                 .textFieldStyle(.roundedBorder)
                 .frame(minWidth: 320)
             }
+
+            Text("Formats: email, phone, ssn, credit_card, name, address, organization, generic. Actions: preserve, redact, fake, drop.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
 
             LabeledContent("Seed") {
               TextField("peel", text: $seed)
@@ -127,6 +135,20 @@ struct PIIScrubberView: View {
               Text("Audit Report")
                 .font(.headline)
 
+              HStack(spacing: 12) {
+                if let lastReportPath {
+                  Button("Open Report") {
+                    openReport(at: lastReportPath)
+                  }
+                  .buttonStyle(.bordered)
+
+                  Button("Save Report As…") {
+                    exportReport(from: lastReportPath)
+                  }
+                  .buttonStyle(.bordered)
+                }
+              }
+
               if let completedAt = report.completedAt {
                 Text("Completed: \(completedAt.formatted())")
                   .font(.caption)
@@ -175,6 +197,7 @@ struct PIIScrubberView: View {
     isRunning = true
     lastError = nil
     report = nil
+    lastReportPath = nil
     defer { isRunning = false }
 
     let options = PIIScrubberService.Options(
@@ -192,9 +215,27 @@ struct PIIScrubberView: View {
     do {
       let result = try await service.runScrubber(options: options)
       report = result.report
+      lastReportPath = result.reportPath
     } catch {
       lastError = error.localizedDescription
     }
+  }
+
+  private func openReport(at path: String) {
+    #if os(macOS)
+    NSWorkspace.shared.open(URL(fileURLWithPath: path))
+    #endif
+  }
+
+  private func exportReport(from path: String) {
+    #if os(macOS)
+    let panel = NSSavePanel()
+    panel.nameFieldStringValue = URL(fileURLWithPath: path).lastPathComponent
+    panel.canCreateDirectories = true
+    if panel.runModal() == .OK, let destination = panel.url {
+      try? FileManager.default.copyItem(at: URL(fileURLWithPath: path), to: destination)
+    }
+    #endif
   }
 }
 #endif

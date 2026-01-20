@@ -47,6 +47,11 @@ struct PIIScrubber: ParsableCommand {
     let writer = try OutputWriter(path: output)
     var reportData = AuditReport(startedAt: Date())
     let configData = try ScrubConfig.load(from: config)
+    let configErrors = configData.validationErrors()
+    if !configErrors.isEmpty {
+      let message = (["Invalid config:"] + configErrors.map { "- \($0)" }).joined(separator: "\n")
+      throw ValidationError(message)
+    }
     let scrubber = Scrubber(seed: seed, maxSamples: maxSamples, config: configData, enableNER: enableNER)
 
     for line in reader {
@@ -189,6 +194,22 @@ private struct ScrubConfig: Codable {
 
   private static func decodeYAML(_ text: String) throws -> ScrubConfig {
     return try YAMLDecoder().decode(ScrubConfig.self, from: text)
+  }
+
+  func validationErrors() -> [String] {
+    var errors: [String] = []
+    if version != 1 {
+      errors.append("Unsupported config version: \(version)")
+    }
+    for (index, rule) in rules.enumerated() {
+      if rule.table == nil && rule.column == nil {
+        errors.append("Rule \(index + 1): specify table and/or column")
+      }
+      if rule.action == .drop && rule.format != nil {
+        errors.append("Rule \(index + 1): drop action cannot include format")
+      }
+    }
+    return errors
   }
 }
 
