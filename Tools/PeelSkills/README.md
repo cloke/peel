@@ -81,10 +81,14 @@ cat dump.sql | .build/debug/pii-scrubber --report scrub-report.json > scrubbed.s
 # Run with files
 .build/debug/pii-scrubber --input dump.sql --output scrubbed.sql --report scrub-report.json
 
+# Run with config
+.build/debug/pii-scrubber --input dump.sql --output scrubbed.sql --config pii-scrubber.yml --report scrub-report.json
+
 # Options
 --seed "peel"        Deterministic seed for replacements
 --report-format json Audit report format: json or text
 --max-samples 5      Max samples per PII type
+--config path        Config file (yaml/json) for column/table rules
 ```
 
 ## Building
