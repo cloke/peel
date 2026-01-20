@@ -370,25 +370,25 @@ Planner -> splits task -> creates branches
 ```
 42,74
 ```
-- #42 Local RAG for codebase context (benchmark + sqlite-vec decision)
+- #42 ✅ Local RAG for codebase context (benchmark + sqlite-vec decision)
 - #74 Local RAG v1: Embedding provider (Core ML)
 
 ### Track B: Agent UX Polish (6 issues)
 ```
 70,39,40,29,30,69
 ```
-- #70 Auto-cleanup agent worktrees on completion
+- #70 ✅ Auto-cleanup agent worktrees on completion
 - #39 Add chain templates gallery
 - #40 Agent feedback loop - watch and retry
 - #29 Add Review with Agent button for PRs
 - #30 Add merge conflict resolution UI
-- #69 Conflict resolution UI for parallel agents
+- #69 ✅ Conflict resolution UI for parallel agents (dup of #30)
 
 ### Track C: Charts & Analytics (6 issues)
 ```
 65,59,61,62,63,64
 ```
-- #65 Add agent usage charts
+- #65 ✅ Add agent usage charts
 - #59 Add PR throughput & cycle time charts
 - #61 Add PR review load chart
 - #62 Add repo health trend charts
@@ -407,10 +407,10 @@ Planner -> splits task -> creates branches
 ```
 67,52,76,71
 ```
-- #67 Headless MCP/CLI feasibility
+- #67 ✅ Headless MCP/CLI feasibility
 - #52 Fix screenshot capture to preserve sidebar/vibrancy
-- #76 PII scrubber enhancements
-- #71 PR review with agent workflow
+- #76 ✅ PII scrubber enhancements
+- #71 ✅ PR review with agent workflow (dup of #29)
 
 ### Track F: Phase 3 / Future (6 issues)
 ```
@@ -419,7 +419,7 @@ Planner -> splits task -> creates branches
 - #35 Screen capture to Vision analysis pipeline
 - #36 Voice commands via on-device Whisper
 - #37 Cross-machine distributed actors
-- #54 VM bootstrap: GitHub auth + repo provisioning
+- #54 ✅ VM bootstrap: GitHub auth + repo provisioning
 - #43 Deterministic replay for agent runs
 - #44 Multi-agent quorum for destructive actions
 
@@ -427,5 +427,5 @@ Planner -> splits task -> creates branches
 ```
 31,38
 ```
-- #31 PII scrubber design document
-- #38 iOS feature parity audit
+- #31 ✅ PII scrubber design document
+- #38 ✅ iOS feature parity audit
