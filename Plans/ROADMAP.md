@@ -15,7 +15,7 @@ github_issues:
     status: closed
     title: Create PII scrubber CLI tool
   - number: 76
-    status: open
+    status: closed
     title: PII scrubber enhancements (NER, rules, audit UX)
   - number: 16
     status: closed
@@ -45,13 +45,13 @@ github_issues:
     status: closed
     title: Improve empty states in Agents UI
   - number: 29
-    status: open
+    status: closed
     title: Add Review with Agent button for PRs
   - number: 30
     status: open
     title: Add merge conflict resolution UI
   - number: 31
-    status: open
+    status: closed
     title: PII scrubber design document
   - number: 32
     status: closed
@@ -72,7 +72,7 @@ github_issues:
     status: open
     title: Cross-machine distributed actors
   - number: 38
-    status: open
+    status: closed
     title: iOS feature parity audit
   - number: 39
     status: open
@@ -84,7 +84,7 @@ github_issues:
     status: open
     title: Budget-aware agent scheduler
   - number: 42
-    status: open
+    status: closed
     title: Local RAG for codebase context
   - number: 72
     status: closed
@@ -105,7 +105,7 @@ github_issues:
     status: open
     title: Multi-agent quorum for destructive actions
   - number: 54
-    status: open
+    status: closed
     title: VM bootstrap for GitHub auth + repo provisioning
   - number: 55
     status: closed
@@ -113,9 +113,9 @@ github_issues:
   - number: 56
     status: closed
     title: Translation validator: discover locales and parse YAML
-  - number: 57
+  - number: 67
     status: closed
-    title: Translation validator: parity + placeholder checks
+    title: Headless MCP/CLI feasibility
   - number: 58
     status: closed
     title: Translation validator: suggestions view (read-only)
@@ -152,6 +152,10 @@ related_docs:
   - PARALLEL_AGENTS_PLAN.md
   - LOCAL_RAG_PLAN.md
   - MCP_AGENT_WORKFLOW.md
+  - PII_SCRUBBER_DESIGN.md
+  - Docs/guides/MCP_HEADLESS_FEASIBILITY.md
+  - Docs/guides/IOS_FEATURE_MATRIX.md
+  - Docs/guides/VM_BOOTSTRAP_GITHUB_AUTH.md
 ---
 
 # Peel Roadmap
@@ -193,12 +197,11 @@ related_docs:
 | [#33](https://github.com/cloke/peel/issues/33) | MCP run timeline | ✅ Closed |
 | [#66](https://github.com/cloke/peel/issues/66) | MCP UI automation | ✅ Closed |
 | [#68](https://github.com/cloke/peel/issues/68) | Tool grouping toggles | ✅ Closed |
+| [#67](https://github.com/cloke/peel/issues/67) | Headless MCP/CLI feasibility | ✅ Closed |
 
 ### 📋 Phase 1C Polish (Open)
 
-| Issue | Title | Notes |
-|-------|-------|-------|
-| [#67](https://github.com/cloke/peel/issues/67) | Headless MCP/CLI feasibility | CLI pathway + module split |
+_No open items._
 
 ### 📋 Agent Features (Open)
 
@@ -222,20 +225,20 @@ related_docs:
 | [#72](https://github.com/cloke/peel/issues/72) | Local RAG: SQLite store | ✅ Closed |
 | [#73](https://github.com/cloke/peel/issues/73) | Local RAG: Repo scan + chunking | ✅ Closed |
 | [#75](https://github.com/cloke/peel/issues/75) | Local RAG: Query API + MCP | ✅ Closed |
+| [#42](https://github.com/cloke/peel/issues/42) | Local RAG: Codebase context | ✅ Closed |
+| [#76](https://github.com/cloke/peel/issues/76) | PII Scrubber Enhancements | ✅ Closed |
+| [#31](https://github.com/cloke/peel/issues/31) | PII Design Doc | ✅ Closed |
 
 ### 🔄 In Progress
 
 | Issue | Title | Notes |
 |-------|-------|-------|
-| [#76](https://github.com/cloke/peel/issues/76) | PII Scrubber Enhancements | NER done, audit UI done, enhancements ongoing |
-| [#42](https://github.com/cloke/peel/issues/42) | Local RAG | Core done, benchmarking in progress |
 | [#74](https://github.com/cloke/peel/issues/74) | Local RAG: Embedding provider | System embeddings working (w/ crash fix), Core ML blocked |
 
 ### 📋 Open
 
 | Issue | Title | Description |
 |-------|-------|-------------|
-| [#31](https://github.com/cloke/peel/issues/31) | PII Design Doc | Architecture first |
 | [#22](https://github.com/cloke/peel/issues/22) | MCP Automation Package | Reusable framework |
 | [#23](https://github.com/cloke/peel/issues/23) | XPC Tool Broker | Sandboxed execution |
 | [#24](https://github.com/cloke/peel/issues/24) | MLX Integration | Local inference |
@@ -250,7 +253,7 @@ related_docs:
 | [#35](https://github.com/cloke/peel/issues/35) | Vision Pipeline | Screen capture → analysis |
 | [#36](https://github.com/cloke/peel/issues/36) | Voice Commands | On-device Whisper |
 | [#37](https://github.com/cloke/peel/issues/37) | Distributed Actors | Multi-Mac scale |
-| [#54](https://github.com/cloke/peel/issues/54) | VM bootstrap auth | GitHub auth + repo provisioning |
+| [#54](https://github.com/cloke/peel/issues/54) | VM bootstrap auth | ✅ Closed (Docs/guides/VM_BOOTSTRAP_GITHUB_AUTH.md) |
 | - | macOS VM | Full Xcode isolation |
 | - | GPU Shared Cache | MLX caching service |
 

@@ -321,7 +321,31 @@ actor LocalRAGStore {
 
       let chunks = chunker.chunk(text: file.text)
       let chunkTexts = chunks.map { $0.text }
-      let embeddings = try await embeddingProvider.embed(texts: chunkTexts)
+      let chunkHashes = chunkTexts.map { stableId(for: $0) }
+
+      var embeddings = Array(repeating: [Float](), count: chunks.count)
+      var missingIndexes: [Int] = []
+
+      for (index, textHash) in chunkHashes.enumerated() {
+        if let cached = try fetchCachedEmbedding(textHash: textHash) {
+          embeddings[index] = cached
+        } else {
+          missingIndexes.append(index)
+        }
+      }
+
+      if !missingIndexes.isEmpty {
+        let missingTexts = missingIndexes.map { chunkTexts[$0] }
+        let missingEmbeddings = try await embeddingProvider.embed(texts: missingTexts)
+        for (offset, index) in missingIndexes.enumerated() {
+          guard offset < missingEmbeddings.count else { break }
+          let vector = missingEmbeddings[offset]
+          embeddings[index] = vector
+          if !vector.isEmpty {
+            try upsertCacheEmbedding(textHash: chunkHashes[index], vector: vector)
+          }
+        }
+      }
 
       for (index, chunk) in chunks.enumerated() {
         let chunkId = stableId(for: "\(fileId):\(chunk.startLine):\(chunk.endLine):\(chunk.text)")
@@ -735,6 +759,42 @@ actor LocalRAGStore {
       _ = data.withUnsafeBytes { bytes in
         sqlite3_bind_blob(statement, 2, bytes.baseAddress, Int32(data.count), sqliteTransient)
       }
+    }
+  }
+
+  private func fetchCachedEmbedding(textHash: String) throws -> [Float]? {
+    guard let db else {
+      throw LocalRAGError.sqlite("Database not initialized")
+    }
+    let sql = "SELECT embedding FROM cache_embeddings WHERE text_hash = ? LIMIT 1"
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let statement else {
+      let message = String(cString: sqlite3_errmsg(db))
+      throw LocalRAGError.sqlite(message)
+    }
+    defer { sqlite3_finalize(statement) }
+
+    bindText(statement, 1, textHash)
+
+    guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+    let blobPointer = sqlite3_column_blob(statement, 0)
+    let blobSize = sqlite3_column_bytes(statement, 0)
+    guard let blobPointer, blobSize > 0 else { return nil }
+    let data = Data(bytes: blobPointer, count: Int(blobSize))
+    return decodeVector(data)
+  }
+
+  private func upsertCacheEmbedding(textHash: String, vector: [Float]) throws {
+    let sql = "INSERT OR REPLACE INTO cache_embeddings (text_hash, embedding, updated_at) VALUES (?, ?, ?)"
+    let data = encodeVector(vector)
+    let now = dateFormatter.string(from: Date())
+    try execute(sql: sql) { statement in
+      bindText(statement, 1, textHash)
+      _ = data.withUnsafeBytes { bytes in
+        sqlite3_bind_blob(statement, 2, bytes.baseAddress, Int32(data.count), sqliteTransient)
+      }
+      bindText(statement, 3, now)
     }
   }
 
