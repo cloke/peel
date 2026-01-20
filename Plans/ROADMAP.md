@@ -231,6 +231,10 @@ related_docs:
 
 **In Progress:**
 - [ ] #76 PII scrubber enhancements (NER, rules, audit UX)
+  - [x] Config rules (YAML/JSON) + COPY parsing
+  - [x] NER detection (names/orgs/places)
+  - [ ] Audit report UI + export
+  - [ ] Config validation error surfacing
 
 **Open Polish Items:**
 - [ ] #26 Automate MCP test plan validation
@@ -245,6 +249,7 @@ related_docs:
 - Added parallel chain helper script (`Tools/run-chains-parallel.sh`)
 - Screenshot capture with ScreenCaptureKit integration
 - Cost caps and planner-driven model selection
+- PII scrubber enhancements: config rules, COPY parsing, NER, MCP `pii.scrub` support
 
 ---
 
