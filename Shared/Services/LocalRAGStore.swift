@@ -192,6 +192,17 @@ actor LocalRAGStore {
     let providerName: String
   }
 
+  struct Stats: Sendable {
+    let repoCount: Int
+    let fileCount: Int
+    let chunkCount: Int
+    let embeddingCount: Int
+    let cacheEmbeddingCount: Int
+    let dbSizeBytes: Int
+    let lastIndexedAt: Date?
+    let lastIndexedRepoPath: String?
+  }
+
   enum LocalRAGError: LocalizedError {
     case sqlite(String)
     case invalidPath
@@ -248,6 +259,36 @@ actor LocalRAGStore {
     try ensureSchema()
     lastInitializedAt = Date()
     return status()
+  }
+
+  func stats() throws -> Stats {
+    try openIfNeeded()
+    try ensureSchema()
+
+    let repoCount = try queryInt("SELECT COUNT(*) FROM repos")
+    let fileCount = try queryInt("SELECT COUNT(*) FROM files")
+    let chunkCount = try queryInt("SELECT COUNT(*) FROM chunks")
+    let embeddingCount = try queryInt("SELECT COUNT(*) FROM embeddings")
+    let cacheEmbeddingCount = try queryInt("SELECT COUNT(*) FROM cache_embeddings")
+
+    let lastIndexedRow = try queryRow(
+      "SELECT root_path, last_indexed_at FROM repos WHERE last_indexed_at IS NOT NULL ORDER BY last_indexed_at DESC LIMIT 1"
+    )
+    let lastIndexedRepoPath = lastIndexedRow?.0
+    let lastIndexedAt = lastIndexedRow.flatMap { dateFormatter.date(from: $0.1) }
+
+    let dbSizeBytes = (try? FileManager.default.attributesOfItem(atPath: dbURL.path)[.size] as? NSNumber)?.intValue ?? 0
+
+    return Stats(
+      repoCount: repoCount,
+      fileCount: fileCount,
+      chunkCount: chunkCount,
+      embeddingCount: embeddingCount,
+      cacheEmbeddingCount: cacheEmbeddingCount,
+      dbSizeBytes: dbSizeBytes,
+      lastIndexedAt: lastIndexedAt,
+      lastIndexedRepoPath: lastIndexedRepoPath
+    )
   }
 
   func indexRepository(path: String) async throws -> LocalRAGIndexReport {
@@ -474,6 +515,35 @@ actor LocalRAGStore {
       return String(cString: text)
     }
     return nil
+  }
+
+  private func queryInt(_ sql: String) throws -> Int {
+    let value = try queryString(sql) ?? "0"
+    return Int(value) ?? 0
+  }
+
+  private func queryRow(_ sql: String) throws -> (String, String)? {
+    guard let db else {
+      throw LocalRAGError.sqlite("Database not initialized")
+    }
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let statement else {
+      let message = String(cString: sqlite3_errmsg(db))
+      throw LocalRAGError.sqlite(message)
+    }
+    defer { sqlite3_finalize(statement) }
+
+    guard sqlite3_step(statement) == SQLITE_ROW else {
+      return nil
+    }
+
+    guard let firstText = sqlite3_column_text(statement, 0),
+          let secondText = sqlite3_column_text(statement, 1) else {
+      return nil
+    }
+
+    return (String(cString: firstText), String(cString: secondText))
   }
 
   private struct EmbeddingRow {

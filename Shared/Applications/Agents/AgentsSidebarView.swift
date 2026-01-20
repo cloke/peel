@@ -152,6 +152,19 @@ struct AgentsSidebarView: View {
           .tag("infra:mcp-dashboard")
 
           HStack {
+            Image(systemName: "magnifyingglass.circle")
+              .foregroundStyle(.teal)
+            Text("Local RAG")
+            Spacer()
+            Chip(
+              text: "Dev",
+              foreground: .teal,
+              background: .teal.opacity(0.2)
+            )
+          }
+          .tag("infra:local-rag")
+
+          HStack {
             Image(systemName: "character.book.closed")
               .foregroundStyle(.indigo)
             Text("Translation Validation")

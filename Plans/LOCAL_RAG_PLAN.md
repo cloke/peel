@@ -140,6 +140,7 @@ QueryService
 - 2026-01-19: Removed incompatible Core ML model bundle (spec unsupported); continuing with hash-embedding fallback while we select a compatible model.
 - 2026-01-19: Switched default embedding provider to NaturalLanguage `NLEmbedding` (system sentence embeddings).
 - 2026-01-19: Attempted jina-embeddings-v2-small-en Core ML export; coremlc fails to parse model spec on Xcode 26, so removed from repo.
+- 2026-01-19: Enabled Local RAG MCP tools by default (dev validation) to allow `rag.init`/`rag.index` without manual permissions.
 
 ## Open Questions
 - Preferred embedding model (local vs API)?
