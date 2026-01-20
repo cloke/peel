@@ -166,12 +166,15 @@ extension Github {
   /// Returns an array of Github issues.
   /// - Parameters:
   ///   - repository: Github.Repository referencing a repository containing issues
+  ///   - state: open, closed, or all
   /// - Returns: An array of github issues
-  static func issues(from repository: Repository) async throws -> [Issue] {
+  static func issues(from repository: Repository, state: String = "open") async throws -> [Issue] {
     guard let issuesUrl = repository.issues_url else {
       throw GithubError.invalidURL("issues_url not available on repository")
     }
-    let url = String(issuesUrl.dropLast(9))
+    let encodedState = state.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? state
+    let baseUrl = String(issuesUrl.dropLast(9))
+    let url = "\(baseUrl)?state=\(encodedState)&per_page=100"
     return try await loadMany(url: url)
   }
   

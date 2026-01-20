@@ -6,6 +6,13 @@
 //
 
 extension Github {
+  public struct IssuePullRequestLink: Codable {
+    public var url: String?
+    public var html_url: String?
+    public var diff_url: String?
+    public var patch_url: String?
+  }
+
   // TODO: Should we combine with main model? It would require almost all props to be optional. Or do we even worry about a codable?
   public struct NewIssue: Codable {
     public var title: String
@@ -39,6 +46,7 @@ extension Github {
     public var active_lock_reason: String?
     public var body: String?
     public var performed_via_github_app: String?
+    public var pull_request: IssuePullRequestLink?
   }
 }
 

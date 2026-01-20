@@ -23,6 +23,9 @@ public struct RepositoryContainerView: View {
   public var body: some View {
     NavigationStack {
       TabView(selection: $selection) {
+        RepositoryInsightsView(repository: repository)
+          .tabItem { Text("Insights") }
+          .tag(0)
         PullRequestsView(organization: organization, repository: repository)
           .tabItem { Text("Pull Requests") }
           .tag(1)

@@ -282,7 +282,6 @@ private struct PRInsightsChartsView: View {
     isLoadingReviews = true
     defer { isLoadingReviews = false }
 
-    let calendar = Calendar.current
     let weeks = chartWeekStarts
     var requestedByWeek = Dictionary(uniqueKeysWithValues: weeks.map { ($0, 0) })
     var completedByWeek = Dictionary(uniqueKeysWithValues: weeks.map { ($0, 0) })
