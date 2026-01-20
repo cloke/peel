@@ -128,7 +128,7 @@ github_issues:
 code_locations:
   - file: Shared/AgentOrchestration/AgentManager.swift
     lines: 260-500
-    description: AgentChainRunner and parallel execution
+    description: AgentChainRunner and parallel execution (reduced to ~4K lines)
   - file: Shared/AgentOrchestration/MCPTemplateExecutor.swift
     description: MCP chain template execution
   - file: Shared/Views/SettingsView.swift
@@ -136,11 +136,15 @@ code_locations:
   - file: Shared/Services/LocalRAGStore.swift
     description: Local RAG SQLite store, file scanner, chunker
   - file: Shared/Services/LocalRAGEmbeddings.swift
-    description: Embedding providers (system, hash, Core ML scaffold)
+    description: Embedding providers (system w/ text sanitization, hash, Core ML scaffold)
+  - file: Shared/Services/TranslationValidatorService.swift
+    description: Translation validation service (extracted from AgentManager)
+  - file: Shared/Services/PIIScrubberService.swift
+    description: PII scrubber service (extracted from AgentManager)
   - file: Shared/Applications/Agents/LocalRAGDashboardView.swift
     description: Local RAG dashboard UI
   - file: Shared/Applications/Agents/PIIScrubberView.swift
-    description: PII scrubber UI
+    description: PII scrubber UI with audit report display/export
   - file: Tools/PeelSkills/Sources/PIIScrubber/PIIScrubber.swift
     description: PII scrubber CLI tool
 related_docs:
@@ -223,9 +227,9 @@ related_docs:
 
 | Issue | Title | Notes |
 |-------|-------|-------|
-| [#76](https://github.com/cloke/peel/issues/76) | PII Scrubber Enhancements | NER done, audit UI remaining |
-| [#42](https://github.com/cloke/peel/issues/42) | Local RAG | Core done, enhancements open |
-| [#74](https://github.com/cloke/peel/issues/74) | Local RAG: Embedding provider | System embeddings working, Core ML blocked |
+| [#76](https://github.com/cloke/peel/issues/76) | PII Scrubber Enhancements | NER done, audit UI done, enhancements ongoing |
+| [#42](https://github.com/cloke/peel/issues/42) | Local RAG | Core done, benchmarking in progress |
+| [#74](https://github.com/cloke/peel/issues/74) | Local RAG: Embedding provider | System embeddings working (w/ crash fix), Core ML blocked |
 
 ### 📋 Open
 
@@ -281,20 +285,41 @@ related_docs:
 - [x] #19 Clarify Assign Task behavior
 - [x] #21 MCP screenshot capture tool
 - [x] #25 Dynamic chain scaling + model selection
+- [x] #26 Automate MCP test plan validation
+- [x] #27 Fix Alpine VM boot to full OS
+- [x] #28 Improve empty states in Agents UI
+- [x] #32 Prevent system sleep during chain execution
+- [x] #33 Add MCP run timeline visualization
+- [x] #66 MCP UI automation tools + permissions
+- [x] #68 MCP tool grouping toggles
+- [x] #72 Local RAG: SQLite store
+- [x] #73 Local RAG: Repo scan + chunking
+- [x] #75 Local RAG: Query API + MCP hook
 
 **In Progress:**
 - [ ] #76 PII scrubber enhancements (NER, rules, audit UX)
   - [x] Config rules (YAML/JSON) + COPY parsing
   - [x] NER detection (names/orgs/places)
-  - [ ] Audit report UI + export
-  - [ ] Config validation error surfacing
+  - [x] Audit report UI + export
+  - [ ] Config validation error surfacing (optional polish)
+- [ ] #42 Local RAG for codebase context
+  - [x] SQLite store + brute-force cosine similarity
+  - [x] File scanning + chunking (code-aware)
+  - [x] System embedding provider (NLEmbedding)
+  - [x] NLEmbedding crash fix (text sanitization)
+  - [ ] Large repo benchmark (tio-workspace)
+  - [ ] sqlite-vec evaluation (if needed for scale)
+- [ ] #74 Local RAG: Embedding provider (Core ML)
+  - [x] System embeddings (NLEmbedding) - working
+  - [ ] Core ML model integration - blocked on model selection
+
+**Code Quality (Jan 20):**
+- [x] Extracted TranslationValidatorService (~520 lines) from AgentManager
+- [x] Extracted PIIScrubberService (~220 lines) from AgentManager
+- [x] AgentManager reduced from 4,710 → 3,996 lines
 
 **Open Polish Items:**
-- [ ] #26 Automate MCP test plan validation
-- [ ] #27 Fix Alpine VM boot to full OS
-- [ ] #28 Improve empty states in Agents UI
-- [ ] #32 Prevent system sleep during chain execution
-- [ ] #33 Add MCP run timeline visualization
+- [ ] #67 Headless MCP/CLI feasibility
 
 **Recent Progress:**
 - Added `chains.stop` MCP endpoint to cancel active chain runs
@@ -330,4 +355,6 @@ Planner -> splits task -> creates branches
 - [PARALLEL_AGENTS_PLAN.md](PARALLEL_AGENTS_PLAN.md)
 - [VM_ISOLATION_PLAN.md](VM_ISOLATION_PLAN.md)
 - [MCP_AGENT_WORKFLOW.md](MCP_AGENT_WORKFLOW.md)
+- [LOCAL_RAG_PLAN.md](LOCAL_RAG_PLAN.md)
+- [HEALTH_CHECK_ACTION_PLAN_2026-01-20.md](HEALTH_CHECK_ACTION_PLAN_2026-01-20.md) - Latest action plan
 - [Sessions/HEALTH_CHECK_2026-01-19.md](../Sessions/HEALTH_CHECK_2026-01-19.md) - Full health audit
