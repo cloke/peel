@@ -67,6 +67,26 @@ echo "content" | .build/debug/file-rewrite path/to/file.md --stdin
 - `plan` - Feature plan with frontmatter
 - `roadmap` - Project roadmap with status tables
 
+### pii-scrubber
+
+Scrubs PII from text streams (e.g. pg_dump) with deterministic replacements.
+
+```bash
+# Build
+cd Tools/PeelSkills && swift build
+
+# Run (stdin -> stdout)
+cat dump.sql | .build/debug/pii-scrubber --report scrub-report.json > scrubbed.sql
+
+# Run with files
+.build/debug/pii-scrubber --input dump.sql --output scrubbed.sql --report scrub-report.json
+
+# Options
+--seed "peel"        Deterministic seed for replacements
+--report-format json Audit report format: json or text
+--max-samples 5      Max samples per PII type
+```
+
 ## Building
 
 ```bash
@@ -77,6 +97,7 @@ swift build -c release
 cp .build/release/gh-issue-sync /usr/local/bin/
 cp .build/release/roadmap-audit /usr/local/bin/
 cp .build/release/file-rewrite /usr/local/bin/
+cp .build/release/pii-scrubber /usr/local/bin/
 ```
 
 ## Ruby Alternative
