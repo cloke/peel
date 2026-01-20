@@ -13,6 +13,7 @@ struct MCPDashboardView: View {
   @Bindable var mcpServer: MCPServerService
   @Bindable var sessionTracker: SessionTracker
   @Query(sort: \MCPRunRecord.createdAt, order: .reverse) private var mcpRuns: [MCPRunRecord]
+  @Query(sort: \MCPRunResultRecord.createdAt, order: .reverse) private var mcpRunResults: [MCPRunResultRecord]
   @State private var selectedRun: MCPRunRecord?
   @State private var showingCleanupConfirmation = false
   @State private var overrideReviewLoopEnabled = false
@@ -30,6 +31,26 @@ struct MCPDashboardView: View {
   @State private var isLoadingLatency = false
   @State private var lastLatencyRefresh: Date?
   @State private var isLoadingRag = false
+  @State private var usageGranularity: UsageGranularity = .day
+
+  private enum UsageGranularity: String, CaseIterable {
+    case day
+    case week
+
+    var label: String {
+      switch self {
+      case .day: return "Daily"
+      case .week: return "Weekly"
+      }
+    }
+  }
+
+  private struct MCPRunUsageStat: Identifiable {
+    let id = UUID()
+    let bucketStart: Date
+    let runCount: Int
+    let averagePremiumCost: Double
+  }
 
   private func buildOverrides() -> MCPServerService.RunOverrides {
     var overrides = MCPServerService.RunOverrides()
@@ -84,6 +105,47 @@ struct MCPDashboardView: View {
 
     latencySamples = samples
     lastLatencyRefresh = Date()
+  }
+
+  private func usageStats(granularity: UsageGranularity) -> [MCPRunUsageStat] {
+    let calendar = Calendar.current
+    let cutoff: Date = {
+      switch granularity {
+      case .day:
+        return calendar.date(byAdding: .day, value: -30, to: Date()) ?? Date.distantPast
+      case .week:
+        return calendar.date(byAdding: .weekOfYear, value: -12, to: Date()) ?? Date.distantPast
+      }
+    }()
+
+    let costsByChain = Dictionary(grouping: mcpRunResults, by: { $0.chainId })
+      .mapValues { results in
+        results.reduce(0.0) { $0 + $1.premiumCost }
+      }
+
+    var aggregates: [Date: (count: Int, totalCost: Double)] = [:]
+
+    for run in mcpRuns where run.createdAt >= cutoff {
+      let bucketStart: Date
+      switch granularity {
+      case .day:
+        bucketStart = calendar.startOfDay(for: run.createdAt)
+      case .week:
+        bucketStart = calendar.dateInterval(of: .weekOfYear, for: run.createdAt)?.start
+          ?? calendar.startOfDay(for: run.createdAt)
+      }
+      let runCost = costsByChain[run.chainId] ?? 0
+      var entry = aggregates[bucketStart] ?? (0, 0)
+      entry.count += 1
+      entry.totalCost += runCost
+      aggregates[bucketStart] = entry
+    }
+
+    return aggregates.keys.sorted().map { day in
+      let entry = aggregates[day] ?? (0, 0)
+      let averageCost = entry.count > 0 ? entry.totalCost / Double(entry.count) : 0
+      return MCPRunUsageStat(bucketStart: day, runCount: entry.count, averagePremiumCost: averageCost)
+    }
   }
 
   private func percentile(_ values: [Double], _ percentile: Double) -> Double {
@@ -333,6 +395,59 @@ struct MCPDashboardView: View {
               Text("Updated \(lastLatencyRefresh, style: .time)")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+            }
+          }
+        }
+
+        GroupBox {
+          VStack(alignment: .leading, spacing: 8) {
+            HStack {
+              Text("Agent Usage")
+                .font(.headline)
+              Spacer()
+              Picker("Granularity", selection: $usageGranularity) {
+                ForEach(UsageGranularity.allCases, id: \.self) { option in
+                  Text(option.label).tag(option)
+                }
+              }
+              .pickerStyle(.segmented)
+              .frame(width: 180)
+            }
+
+            let stats = usageStats(granularity: usageGranularity)
+            if stats.isEmpty {
+              Text("No MCP run data yet")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else {
+              Chart(stats) { stat in
+                BarMark(
+                  x: .value("Period", stat.bucketStart, unit: usageGranularity == .day ? .day : .weekOfYear),
+                  y: .value("Runs", stat.runCount)
+                )
+                .foregroundStyle(Color.accentColor.opacity(0.6))
+              }
+              .frame(height: 140)
+
+              Chart(stats) { stat in
+                LineMark(
+                  x: .value("Period", stat.bucketStart, unit: usageGranularity == .day ? .day : .weekOfYear),
+                  y: .value("Avg Cost", stat.averagePremiumCost)
+                )
+                .foregroundStyle(.blue)
+                PointMark(
+                  x: .value("Period", stat.bucketStart, unit: usageGranularity == .day ? .day : .weekOfYear),
+                  y: .value("Avg Cost", stat.averagePremiumCost)
+                )
+                .foregroundStyle(.blue)
+              }
+              .frame(height: 140)
+
+              if let last = stats.last {
+                Text("Latest avg cost: \(last.averagePremiumCost.premiumCostDisplay)")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              }
             }
           }
         }
