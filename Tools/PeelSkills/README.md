@@ -89,6 +89,23 @@ cat dump.sql | .build/debug/pii-scrubber --report scrub-report.json > scrubbed.s
 --report-format json Audit report format: json or text
 --max-samples 5      Max samples per PII type
 --config path        Config file (yaml/json) for column/table rules
+
+Config schema (YAML or JSON):
+
+```yaml
+version: 1
+defaults:
+  action: fake         # preserve | redact | fake | drop
+  format: generic      # email | phone | ssn | credit_card | name | address | organization | generic
+rules:
+  - table: users
+    column: email
+    action: fake
+    format: email
+  - table: users
+    column: ssn
+    action: drop
+```
 ```
 
 ## Building
