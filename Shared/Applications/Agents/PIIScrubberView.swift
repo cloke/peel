@@ -89,7 +89,7 @@ struct PIIScrubberView: View {
               .frame(width: 160)
             }
 
-            Toggle("Enable NER (placeholder)", isOn: $enableNER)
+            Toggle("Enable NER", isOn: $enableNER)
 
             LabeledContent("pii-scrubber path (optional)") {
               HStack(spacing: 8) {
