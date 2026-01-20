@@ -149,12 +149,21 @@ public struct PersonalView: View {
 private struct PRInsightsChartsView: View {
   let pullRequests: [Github.PullRequest]
 
+  @State private var reviewLoadPoints: [PRReviewLoadPoint] = []
+  @State private var topReviewerPoints: [PRReviewerCountPoint] = []
+  @State private var isLoadingReviews = false
+
   private static let isoFormatter: ISO8601DateFormatter = {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return formatter
   }()
   private static let fallbackFormatter = ISO8601DateFormatter()
+  private static let reviewFormatter: ISO8601DateFormatter = {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter
+  }()
 
   private let calendar = Calendar.current
   private let chartWeeks = 12
@@ -215,8 +224,116 @@ private struct PRInsightsChartsView: View {
         }
         .padding(.vertical, 4)
       }
+
+      GroupBox {
+        VStack(alignment: .leading, spacing: 8) {
+          Text("PR Review Load (Last 12 Weeks)")
+            .font(.headline)
+          if isLoadingReviews {
+            ProgressView()
+              .scaleEffect(0.9)
+          } else if reviewLoadPoints.isEmpty {
+            Text("No review load data yet")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          } else {
+            Chart(reviewLoadPoints) { point in
+              BarMark(
+                x: .value("Week", point.weekStart, unit: .weekOfYear),
+                y: .value("Count", point.count)
+              )
+              .foregroundStyle(by: .value("Series", point.series))
+            }
+            .chartXAxis {
+              AxisMarks(values: .stride(by: .weekOfYear, count: 2))
+            }
+            .frame(height: 160)
+          }
+
+          if !topReviewerPoints.isEmpty {
+            Text("Top Reviewers")
+              .font(.headline)
+            Chart(topReviewerPoints) { point in
+              BarMark(
+                x: .value("Reviewer", point.reviewer),
+                y: .value("Reviews", point.count)
+              )
+              .foregroundStyle(.blue)
+            }
+            .frame(height: 160)
+          }
+        }
+        .padding(.vertical, 4)
+      }
     }
     .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+    .task(id: pullRequests.map(\.id).reduce(0, ^)) {
+      await loadReviewLoadData()
+    }
+  }
+
+  private func loadReviewLoadData() async {
+    guard !pullRequests.isEmpty else {
+      reviewLoadPoints = []
+      topReviewerPoints = []
+      return
+    }
+
+    isLoadingReviews = true
+    defer { isLoadingReviews = false }
+
+    let calendar = Calendar.current
+    let weeks = chartWeekStarts
+    var requestedByWeek = Dictionary(uniqueKeysWithValues: weeks.map { ($0, 0) })
+    var completedByWeek = Dictionary(uniqueKeysWithValues: weeks.map { ($0, 0) })
+    var reviewerCounts: [String: Int] = [:]
+
+    let recentPulls = pullRequests
+      .sorted { ($0.updated_at ?? "") > ($1.updated_at ?? "") }
+      .prefix(40)
+
+    for pr in recentPulls {
+      if let created = parseDate(pr.created_at) {
+        let week = weekStart(for: created)
+        let requestedCount = pr.requested_reviewers?.count ?? 0
+        if requestedByWeek[week] != nil {
+          requestedByWeek[week, default: 0] += requestedCount
+        }
+      }
+
+      guard let owner = pr.base.repo.owner?.login else { continue }
+      let repoName = pr.base.repo.name
+      do {
+        let reviews = try await Github.loadReviews(
+          organization: owner,
+          repository: repoName,
+          pullNumber: pr.number
+        )
+        for review in reviews {
+          let submittedAt = parseReviewDate(review.submitted_at)
+          let week = weekStart(for: submittedAt)
+          if completedByWeek[week] != nil {
+            completedByWeek[week, default: 0] += 1
+          }
+          let login = review.user.login ?? "Unknown"
+          reviewerCounts[login, default: 0] += 1
+        }
+      } catch {
+        continue
+      }
+    }
+
+    reviewLoadPoints = weeks.flatMap { week in
+      [
+        PRReviewLoadPoint(weekStart: week, series: "Requested", count: requestedByWeek[week] ?? 0),
+        PRReviewLoadPoint(weekStart: week, series: "Completed", count: completedByWeek[week] ?? 0)
+      ]
+    }
+
+    topReviewerPoints = reviewerCounts
+      .sorted { $0.value > $1.value }
+      .prefix(8)
+      .map { PRReviewerCountPoint(reviewer: $0.key, count: $0.value) }
   }
 
   private var throughputPoints: [PRThroughputPoint] {
@@ -286,6 +403,13 @@ private struct PRInsightsChartsView: View {
     return Self.fallbackFormatter.date(from: value)
   }
 
+  private func parseReviewDate(_ value: String) -> Date {
+    if let parsed = Self.reviewFormatter.date(from: value) {
+      return parsed
+    }
+    return Self.fallbackFormatter.date(from: value) ?? Date()
+  }
+
   private func median(_ values: [Double]) -> Double {
     let sorted = values.sorted()
     guard !sorted.isEmpty else { return 0 }
@@ -308,4 +432,17 @@ private struct PRCycleTimePoint: Identifiable {
   let id = UUID()
   let weekStart: Date
   let medianDays: Double
+}
+
+private struct PRReviewLoadPoint: Identifiable {
+  let id = UUID()
+  let weekStart: Date
+  let series: String
+  let count: Int
+}
+
+private struct PRReviewerCountPoint: Identifiable {
+  let id = UUID()
+  let reviewer: String
+  let count: Int
 }
