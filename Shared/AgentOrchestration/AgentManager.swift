@@ -2148,6 +2148,10 @@ public final class MCPServerService {
       return (200, makeRPCResult(id: id, result: ["controlId": controlId, "status": "tapped"]))
     }
 
+    if controlId.hasPrefix("agents.") {
+      UserDefaults.standard.set(controlId, forKey: "agents.selectedInfrastructure")
+    }
+
     lastUIAction = UIAction(controlId: controlId)
     return (200, makeRPCResult(id: id, result: ["controlId": controlId, "status": "queued"]))
   }
@@ -2568,6 +2572,13 @@ public final class MCPServerService {
       "limit": lastRagSearchLimit as Any,
       "at": lastRagSearchAt.map { formatter.string(from: $0) } as Any,
       "results": searchPayload
+    ]
+
+    payload["ui"] = [
+      "currentViewId": currentToolId() as Any,
+      "selectedInfrastructure": UserDefaults.standard.string(forKey: "agents.selectedInfrastructure") as Any,
+      "lastUIActionHandled": lastUIActionHandled as Any,
+      "pendingUIAction": lastUIAction?.controlId as Any
     ]
 
     if let error = lastRagError {
