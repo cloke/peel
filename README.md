@@ -141,11 +141,6 @@ See [Plans/CODE_AUDIT_INDEX.md](Plans/CODE_AUDIT_INDEX.md) for the full audit ch
 - iOS support (GitHub features)
 - VM isolation foundation
 
-### In Progress 🟡
-- AI agent orchestration
-- Parallel agents with worktrees
-- Code audit cleanup
-
 ### Future 📋
 - Apple Intelligence integration
 - Metal GPU acceleration for agents
