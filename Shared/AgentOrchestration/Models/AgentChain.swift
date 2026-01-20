@@ -293,14 +293,28 @@ public enum ReviewVerdict: String, Codable, Sendable {
   /// Try to parse a verdict from the reviewer's output
   public static func parse(from output: String) -> ReviewVerdict {
     let lowercased = output.lowercased()
+
+    // If a verdict is explicitly stated, honor it first
+    if lowercased.contains("verdict") && lowercased.contains("approved") {
+      return .approved
+    }
+    if lowercased.contains("verdict") && lowercased.contains("needs changes") {
+      return .needsChanges
+    }
+    if lowercased.contains("verdict") && lowercased.contains("rejected") {
+      return .rejected
+    }
     
     // Look for explicit markers
-    if lowercased.contains("✅ **approve") ||
+     if lowercased.contains("✅ **approve") ||
        lowercased.contains("✅ approve") ||
        lowercased.contains("verdict: approve") ||
        lowercased.contains("recommendation: approve") ||
        lowercased.contains("lgtm") ||
-       lowercased.contains("looks good to me") {
+       lowercased.contains("looks good to me") ||
+       lowercased.contains("approved.") ||
+       lowercased.contains("approved!") ||
+       lowercased.contains("approved") && lowercased.contains("no further action") {
       return .approved
     }
     
@@ -314,19 +328,25 @@ public enum ReviewVerdict: String, Codable, Sendable {
     }
     
     // Check for change requests
-    if lowercased.contains("needs changes") ||
+     if lowercased.contains("needs changes") ||
        lowercased.contains("need changes") ||
+       lowercased.contains("requested changes") ||
+       lowercased.contains("change requests") ||
        lowercased.contains("requires changes") ||
        lowercased.contains("should be changed") ||
        lowercased.contains("please fix") ||
        lowercased.contains("issues found") ||
-       lowercased.contains("concerns:") ||
-       lowercased.contains("suggestions:") && lowercased.contains("should") {
+       (lowercased.contains("concerns:") && !lowercased.contains("no concerns")) ||
+       (lowercased.contains("suggestions:") && lowercased.contains("should")) {
       return .needsChanges
     }
     
     // Default to approved if no issues mentioned
-    if lowercased.contains("no issues") ||
+     if lowercased.contains("no issues") ||
+       lowercased.contains("no concerns") ||
+       lowercased.contains("no changes needed") ||
+       lowercased.contains("no changes required") ||
+       lowercased.contains("no further action needed") ||
        lowercased.contains("correct") ||
        lowercased.contains("well-implemented") ||
        lowercased.contains("properly implemented") {

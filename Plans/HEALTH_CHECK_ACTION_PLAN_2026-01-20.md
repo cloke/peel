@@ -10,7 +10,45 @@ related_docs:
 ---
 
 # Health Check Action Plan – January 20, 2026
+## Session Paused - Next Steps
 
+### Completed This Session
+1. ✅ Extracted `TranslationValidatorService.swift` (~520 lines) from AgentManager
+2. ✅ Extracted `PIIScrubberService.swift` (~220 lines) from AgentManager  
+3. ✅ AgentManager reduced from 4,710 → 3,996 lines
+4. ✅ Fixed NLEmbedding crash - added text sanitization in `LocalRAGEmbeddings.swift`
+
+### Immediate Next Steps (Resume Here)
+1. **Commit the crash fix** - `LocalRAGEmbeddings.swift` has uncommitted changes
+2. **Re-test RAG indexing on tio-workspace** - Previous attempt crashed on malformed text
+3. **Benchmark search performance** - Test query speed across 3K+ files
+
+### Commands to Resume
+```bash
+cd /Users/cloken/code/KitchenSink
+
+# 1. Commit the fix
+git add -A && git commit -m "Fix NLEmbedding crash: sanitize text before embedding
+
+- Add text length limit (10K chars)
+- Filter control characters and null bytes
+- Collapse excessive whitespace
+- Return zero vector for empty text after sanitization"
+
+# 2. Launch app with MCP
+./Tools/build-and-launch.sh --wait-for-server
+
+# 3. Init RAG and index tio-workspace
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rag.init","arguments":{}}}' \
+  http://127.0.0.1:8765/rpc
+
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rag.index","arguments":{"repoPath":"/Users/cloken/code/tio-workspace"}}}' \
+  http://127.0.0.1:8765/rpc
+```
+
+---
 ## Executive Summary
 
 ### Overall Health: ✅ Excellent
