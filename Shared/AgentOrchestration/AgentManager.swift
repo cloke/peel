@@ -1166,6 +1166,11 @@ public final class MCPServerService {
     }
   }
 
+  public enum RAGSearchMode: String, CaseIterable {
+    case text
+    case vector
+  }
+
   public enum ToolGroup: String, CaseIterable {
     case screenshots
     case uiNavigation
@@ -1317,6 +1322,16 @@ public final class MCPServerService {
   public private(set) var lastCleanupSummary: String?
   public private(set) var lastCleanupError: String?
   public var lastUIAction: UIAction?
+  private(set) var ragStatus: LocalRAGStore.Status?
+  private(set) var ragStats: LocalRAGStore.Stats?
+  private(set) var lastRagRefreshAt: Date?
+  private(set) var lastRagError: String?
+  private(set) var lastRagSearchQuery: String?
+  private(set) var lastRagSearchMode: RAGSearchMode?
+  private(set) var lastRagSearchRepoPath: String?
+  private(set) var lastRagSearchLimit: Int?
+  private(set) var lastRagSearchAt: Date?
+  private(set) var lastRagSearchResults: [LocalRAGSearchResult] = []
 
   public let agentManager: AgentManager
   public let cliService: CLIService
@@ -1516,8 +1531,8 @@ public final class MCPServerService {
   }
 
   public func isToolEnabled(_ name: String) -> Bool {
-    guard let tool = toolDefinition(named: name) else { return false }
-    return toolPermissions[name] ?? defaultToolEnabled(tool)
+    guard toolDefinition(named: name) != nil else { return false }
+    return true
   }
 
   public func setToolEnabled(_ name: String, enabled: Bool) {
@@ -1546,6 +1561,62 @@ public final class MCPServerService {
     if dataService == nil {
       dataService = DataService(modelContext: modelContext)
     }
+  }
+
+  public func refreshRagSummary() async {
+    do {
+      let status = await localRagStore.status()
+      let stats = try await localRagStore.stats()
+      ragStatus = status
+      ragStats = stats
+      lastRagError = nil
+      lastRagRefreshAt = Date()
+    } catch {
+      ragStatus = await localRagStore.status()
+      ragStats = nil
+      lastRagError = error.localizedDescription
+      lastRagRefreshAt = Date()
+    }
+  }
+
+  func initializeRag(extensionPath: String? = nil) async throws {
+    let status = try await localRagStore.initialize(extensionPath: extensionPath)
+    ragStatus = status
+    ragStats = try await localRagStore.stats()
+    lastRagError = nil
+    lastRagRefreshAt = Date()
+  }
+
+  func indexRag(repoPath: String) async throws -> LocalRAGIndexReport {
+    let report = try await localRagStore.indexRepository(path: repoPath)
+    ragStatus = await localRagStore.status()
+    ragStats = try await localRagStore.stats()
+    lastRagError = nil
+    lastRagRefreshAt = Date()
+    return report
+  }
+
+  func searchRag(
+    query: String,
+    mode: RAGSearchMode,
+    repoPath: String? = nil,
+    limit: Int = 10
+  ) async throws -> [LocalRAGSearchResult] {
+    let results: [LocalRAGSearchResult]
+    switch mode {
+    case .vector:
+      results = try await localRagStore.searchVector(query: query, repoPath: repoPath, limit: limit)
+    case .text:
+      results = try await localRagStore.search(query: query, repoPath: repoPath, limit: limit)
+    }
+    lastRagSearchQuery = query
+    lastRagSearchMode = mode
+    lastRagSearchRepoPath = repoPath
+    lastRagSearchLimit = limit
+    lastRagSearchAt = Date()
+    lastRagSearchResults = results
+    lastRagError = nil
+    return results
   }
 
   public struct RunOverrides {
@@ -1961,6 +2032,9 @@ public final class MCPServerService {
 
     case "rag.model.describe":
       return await handleRagModelDescribe(id: id, arguments: arguments)
+
+    case "rag.ui.status":
+      return await handleRagUIStatus(id: id)
 
     case "templates.list":
       let templates = templateList()
@@ -2413,12 +2487,8 @@ public final class MCPServerService {
     let mode = (arguments["mode"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "text"
 
     do {
-      let results: [LocalRAGSearchResult]
-      if mode.lowercased() == "vector" {
-        results = try await localRagStore.searchVector(query: query, repoPath: repoPath, limit: limit)
-      } else {
-        results = try await localRagStore.search(query: query, repoPath: repoPath, limit: limit)
-      }
+      let resolvedMode: RAGSearchMode = mode.lowercased() == "vector" ? .vector : .text
+      let results = try await searchRag(query: query, mode: resolvedMode, repoPath: repoPath, limit: limit)
       let payload = results.map { result in
         [
           "filePath": result.filePath,
@@ -2451,6 +2521,63 @@ public final class MCPServerService {
       await mcpLog.warning("Local RAG model describe failed", metadata: ["error": error.localizedDescription])
       return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
     }
+  }
+
+  private func handleRagUIStatus(id: Any?) async -> (Int, Data) {
+    let formatter = ISO8601DateFormatter()
+    let status = await localRagStore.status()
+    let stats = try? await localRagStore.stats()
+
+    var payload: [String: Any] = [
+      "status": [
+        "dbPath": status.dbPath,
+        "exists": status.exists,
+        "schemaVersion": status.schemaVersion,
+        "extensionLoaded": status.extensionLoaded,
+        "embeddingProvider": status.providerName,
+        "lastInitializedAt": status.lastInitializedAt.map { formatter.string(from: $0) } as Any
+      ]
+    ]
+
+    if let stats {
+      payload["stats"] = [
+        "repoCount": stats.repoCount,
+        "fileCount": stats.fileCount,
+        "chunkCount": stats.chunkCount,
+        "embeddingCount": stats.embeddingCount,
+        "cacheEmbeddingCount": stats.cacheEmbeddingCount,
+        "dbSizeBytes": stats.dbSizeBytes,
+        "lastIndexedAt": stats.lastIndexedAt.map { formatter.string(from: $0) } as Any,
+        "lastIndexedRepoPath": stats.lastIndexedRepoPath as Any
+      ]
+    }
+
+    let searchPayload = lastRagSearchResults.prefix(10).map { result in
+      [
+        "filePath": result.filePath,
+        "startLine": result.startLine,
+        "endLine": result.endLine,
+        "snippet": result.snippet
+      ]
+    }
+
+    payload["lastSearch"] = [
+      "query": lastRagSearchQuery as Any,
+      "mode": lastRagSearchMode?.rawValue as Any,
+      "repoPath": lastRagSearchRepoPath as Any,
+      "limit": lastRagSearchLimit as Any,
+      "at": lastRagSearchAt.map { formatter.string(from: $0) } as Any,
+      "results": searchPayload
+    ]
+
+    if let error = lastRagError {
+      payload["error"] = error
+    }
+    if let refreshedAt = lastRagRefreshAt {
+      payload["refreshedAt"] = formatter.string(from: refreshedAt)
+    }
+
+    return (200, makeRPCResult(id: id, result: payload))
   }
 
   private func encodeJSON<T: Encodable>(_ value: T) -> [String: Any] {
@@ -3007,7 +3134,7 @@ public final class MCPServerService {
   }
 
   private func defaultToolEnabled(_ tool: ToolDefinition) -> Bool {
-    !tool.isMutating
+    true
   }
 
   private func toolDefinition(named name: String) -> ToolDefinition? {
@@ -3201,6 +3328,16 @@ public final class MCPServerService {
             "modelName": ["type": "string"],
             "extension": ["type": "string"]
           ]
+        ],
+        category: .rag,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "rag.ui.status",
+        description: "Get Local RAG dashboard status snapshot",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
         ],
         category: .rag,
         isMutating: false
@@ -3639,7 +3776,8 @@ public final class MCPServerService {
         "agents.cliSetup",
         "agents.sessionSummary",
         "agents.vmIsolation",
-        "agents.translationValidation"
+        "agents.translationValidation",
+        "agents.localRag"
       ]
     case "github":
       return [

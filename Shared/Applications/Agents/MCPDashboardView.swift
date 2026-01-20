@@ -29,6 +29,7 @@ struct MCPDashboardView: View {
   @State private var latencySamples: [MCPDailyLatency] = []
   @State private var isLoadingLatency = false
   @State private var lastLatencyRefresh: Date?
+  @State private var isLoadingRag = false
 
   private func buildOverrides() -> MCPServerService.RunOverrides {
     var overrides = MCPServerService.RunOverrides()
@@ -97,6 +98,16 @@ struct MCPDashboardView: View {
     }
     let weight = rank - Double(lower)
     return sorted[lower] + (sorted[upper] - sorted[lower]) * weight
+  }
+
+  private func refreshRagSummary() async {
+    isLoadingRag = true
+    defer { isLoadingRag = false }
+    await mcpServer.refreshRagSummary()
+  }
+
+  private func formatBytes(_ bytes: Int) -> String {
+    ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
   }
 
   var body: some View {
@@ -216,6 +227,73 @@ struct MCPDashboardView: View {
                     .foregroundStyle(.secondary)
                 }
               }
+            }
+          }
+        }
+
+        GroupBox {
+          VStack(alignment: .leading, spacing: 8) {
+            HStack {
+              Text("Local RAG")
+                .font(.headline)
+              Spacer()
+              Button("Refresh") {
+                Task { await refreshRagSummary() }
+              }
+              .buttonStyle(.bordered)
+            }
+            if isLoadingRag {
+              ProgressView()
+                .scaleEffect(0.8)
+            } else if let status = mcpServer.ragStatus {
+              Text("DB: \(status.dbPath)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              Text("Schema: v\(status.schemaVersion) · Embeddings: \(status.providerName)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              Text("Extension loaded: \(status.extensionLoaded ? "Yes" : "No")")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              if let lastInit = status.lastInitializedAt {
+                Text("Last init: \(lastInit, style: .time)")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              }
+              if let stats = mcpServer.ragStats {
+                Text("Repos: \(stats.repoCount) · Files: \(stats.fileCount) · Chunks: \(stats.chunkCount)")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+                Text("Embeddings: \(stats.embeddingCount) · Cache: \(stats.cacheEmbeddingCount)")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+                Text("DB size: \(formatBytes(stats.dbSizeBytes))")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+                if let lastIndexedAt = stats.lastIndexedAt {
+                  let repoLabel = stats.lastIndexedRepoPath ?? "(unknown repo)"
+                  Text("Last index: \(repoLabel)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                  Text(lastIndexedAt, style: .time)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                }
+              }
+              if let error = mcpServer.lastRagError {
+                Text(error)
+                  .font(.caption)
+                  .foregroundStyle(.red)
+              }
+              if let lastRefresh = mcpServer.lastRagRefreshAt {
+                Text("Updated \(lastRefresh, style: .time)")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              }
+            } else {
+              Text("No RAG data yet")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
           }
         }
@@ -536,6 +614,7 @@ struct MCPDashboardView: View {
     }
     .task {
       await loadLatencySamples()
+      await refreshRagSummary()
     }
   }
 }

@@ -16,6 +16,7 @@ enum InfrastructureView: String, Hashable {
   case vmIsolation = "vm-isolation"
   case mcpDashboard = "mcp-dashboard"
   case translationValidation = "translation-validation"
+  case localRag = "local-rag"
 }
 
 /// Main view for AI Agent Orchestration
@@ -75,6 +76,9 @@ struct Agents_RootView: View {
       case "agents.translationValidation":
         selectedInfrastructure = .translationValidation
         mcpServer.recordUIActionHandled(action.controlId)
+      case "agents.localRag":
+        selectedInfrastructure = .localRag
+        mcpServer.recordUIActionHandled(action.controlId)
       default:
         break
       }
@@ -123,6 +127,8 @@ struct Agents_RootView: View {
         MCPDashboardView(mcpServer: mcpServer, sessionTracker: sessionTracker)
       case .translationValidation:
         TranslationValidationView()
+      case .localRag:
+        LocalRAGDashboardView(mcpServer: mcpServer)
       }
     } else if let chain = agentManager.selectedChain {
       ChainDetailView(chain: chain, agentManager: agentManager, cliService: cliService, sessionTracker: sessionTracker)
