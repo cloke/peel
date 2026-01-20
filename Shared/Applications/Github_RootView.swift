@@ -20,6 +20,10 @@ struct Github_RootView: View {
   @Query(sort: \RecentPullRequest.viewedAt, order: .reverse) private var recentPRRecords: [RecentPullRequest]
   @State public var viewModel = Github.ViewModel()
   @State private var dataProvider: GitHubDataProvider?
+#if os(macOS)
+  @State private var reviewAgentCoordinator = PRReviewAgentCoordinator()
+  @State private var reviewAgentTarget: PRReviewAgentTarget?
+#endif
   
   @State private var organizations = [Github.User]()
   @State private var columnVisibility = NavigationSplitViewVisibility.all
@@ -216,10 +220,21 @@ struct Github_RootView: View {
     .environment(viewModel)
     .favoritesProvider(dataProvider)
     .recentPRsProvider(dataProvider)
+#if os(macOS)
+    .reviewWithAgentProvider(reviewAgentCoordinator)
+    .sheet(item: $reviewAgentTarget) { target in
+      GithubReviewAgentSheet(target: target)
+    }
+#endif
     .onAppear {
       dataProvider = GitHubDataProvider(modelContext: modelContext)
       persistAutomationTargets()
       syncAutomationSelection()
+#if os(macOS)
+      reviewAgentCoordinator.onReview = { pr, repo in
+        reviewAgentTarget = PRReviewAgentTarget.from(pullRequest: pr, repository: repo)
+      }
+#endif
     }
     .onChange(of: favoriteRecords) { _, _ in
       persistAutomationTargets()
@@ -393,6 +408,7 @@ struct FavoriteRepositoryDestination: View {
 
 /// Loads and displays a recent PR
 struct RecentPRDestination: View {
+  @Environment(\.reviewWithAgentProvider) private var reviewWithAgentProvider
   let recentPR: RecentPRInfo
   
   @State private var isLoading = true
@@ -401,6 +417,10 @@ struct RecentPRDestination: View {
   @State private var repository: Github.Repository?
   @State private var owner: Github.User?
   @State private var descriptionText: String = ""
+
+#if os(macOS)
+  @State private var showingReviewLocally = false
+#endif
   
   var body: some View {
     Group {
@@ -432,12 +452,31 @@ struct RecentPRDestination: View {
 
             metadataGrid(pullRequest: pullRequest, repository: repository)
 
-            if let urlString = pullRequest.html_url ?? recentPR.htmlURL,
-               let url = URL(string: urlString) {
-              Link(destination: url) {
-                Label("Open in Browser", systemImage: "safari")
+            HStack(spacing: 12) {
+              if let urlString = pullRequest.html_url ?? recentPR.htmlURL,
+                 let url = URL(string: urlString) {
+                Link(destination: url) {
+                  Label("Open in Browser", systemImage: "safari")
+                }
+                .buttonStyle(.borderedProminent)
+              }
+
+#if os(macOS)
+              Button {
+                showingReviewLocally = true
+              } label: {
+                Label("Review Locally", systemImage: "arrow.down.to.line.circle")
+              }
+              .buttonStyle(.bordered)
+
+              Button {
+                reviewWithAgentProvider?.reviewWithAgent(pr: pullRequest, repo: repository)
+              } label: {
+                Label("Review with Agent", systemImage: "sparkles")
               }
               .buttonStyle(.borderedProminent)
+              .disabled(reviewWithAgentProvider == nil)
+#endif
             }
           }
           .padding()
@@ -450,6 +489,13 @@ struct RecentPRDestination: View {
     .task {
       await loadPullRequestDetails()
     }
+#if os(macOS)
+    .sheet(isPresented: $showingReviewLocally) {
+      if let pullRequest, let repository {
+        ReviewLocallySheet(pullRequest: pullRequest, repository: repository)
+      }
+    }
+#endif
   }
 
   private func loadPullRequestDetails() async {
@@ -561,6 +607,17 @@ struct RecentPRDestination: View {
 }
 
 // MARK: - GitHub Data Provider
+
+#if os(macOS)
+@MainActor
+final class PRReviewAgentCoordinator: PRReviewAgentProvider {
+  var onReview: ((Github.PullRequest, Github.Repository) -> Void)?
+
+  func reviewWithAgent(pr: Github.PullRequest, repo: Github.Repository) {
+    onReview?(pr, repo)
+  }
+}
+#endif
 
 /// Provides GitHub favorites and recent PRs backed by SwiftData
 @MainActor

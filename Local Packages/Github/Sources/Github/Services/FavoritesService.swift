@@ -23,6 +23,12 @@ public protocol RecentPRsProvider {
   func getRecentPRs() -> [RecentPRInfo]
 }
 
+/// Protocol for starting PR review with agents - implemented by main app
+@MainActor
+public protocol PRReviewAgentProvider {
+  func reviewWithAgent(pr: Github.PullRequest, repo: Github.Repository)
+}
+
 /// Lightweight struct for favorite repository info
 public struct FavoriteRepository: Identifiable, Sendable {
   public let id: Int
@@ -73,6 +79,10 @@ private struct RecentPRsProviderKey: EnvironmentKey {
   static let defaultValue: RecentPRsProvider? = nil
 }
 
+private struct PRReviewAgentProviderKey: EnvironmentKey {
+  static let defaultValue: PRReviewAgentProvider? = nil
+}
+
 public extension EnvironmentValues {
   var favoritesProvider: GitHubFavoritesProvider? {
     get { self[FavoritesProviderKey.self] }
@@ -82,6 +92,11 @@ public extension EnvironmentValues {
   var recentPRsProvider: RecentPRsProvider? {
     get { self[RecentPRsProviderKey.self] }
     set { self[RecentPRsProviderKey.self] = newValue }
+  }
+
+  var reviewWithAgentProvider: PRReviewAgentProvider? {
+    get { self[PRReviewAgentProviderKey.self] }
+    set { self[PRReviewAgentProviderKey.self] = newValue }
   }
 }
 
@@ -94,5 +109,9 @@ public extension View {
   
   func recentPRsProvider(_ provider: RecentPRsProvider?) -> some View {
     environment(\.recentPRsProvider, provider)
+  }
+
+  func reviewWithAgentProvider(_ provider: PRReviewAgentProvider?) -> some View {
+    environment(\.reviewWithAgentProvider, provider)
   }
 }

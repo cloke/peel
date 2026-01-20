@@ -43,6 +43,9 @@ public struct ReviewLocallySheet: View {
     }
     .frame(width: 480, height: 400)
     .onAppear {
+      if selectedRepoPath.isEmpty, let lastPath = service.lastSelectedRepoPath {
+        selectedRepoPath = lastPath
+      }
       // Auto-select matching repository if found
       autoSelectRepository()
     }
@@ -134,6 +137,7 @@ public struct ReviewLocallySheet: View {
           Button("Browse...") {
             if let path = service.browseForRepository() {
               selectedRepoPath = path
+              service.lastSelectedRepoPath = path
             }
           }
         }

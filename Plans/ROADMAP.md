@@ -153,6 +153,7 @@ related_docs:
   - LOCAL_RAG_PLAN.md
   - MCP_AGENT_WORKFLOW.md
   - PII_SCRUBBER_DESIGN.md
+  - Docs/guides/AGENTS_UX_AUDIT.md
   - Docs/guides/MCP_HEADLESS_FEASIBILITY.md
   - Docs/guides/IOS_FEATURE_MATRIX.md
   - Docs/guides/VM_BOOTSTRAP_GITHUB_AUTH.md
@@ -207,9 +208,7 @@ _No open items._
 
 | Issue | Title | Notes |
 |-------|-------|-------|
-| [#29](https://github.com/cloke/peel/issues/29) | PR Review with Agent | GitHub integration |
 | [#30](https://github.com/cloke/peel/issues/30) | Conflict resolution UI | Merge conflicts |
-| [#34](https://github.com/cloke/peel/issues/34) | Auto-cleanup worktrees | Optional setting |
 | [#39](https://github.com/cloke/peel/issues/39) | Templates gallery | Built-in templates |
 | [#40](https://github.com/cloke/peel/issues/40) | Feedback loop | Watch and retry |
 

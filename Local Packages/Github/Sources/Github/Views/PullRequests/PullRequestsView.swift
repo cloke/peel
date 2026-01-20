@@ -10,6 +10,7 @@ import MarkdownUI
 
 struct PullRequestDetailView: View {
   @Environment(\.recentPRsProvider) private var recentPRsProvider
+  @Environment(\.reviewWithAgentProvider) private var reviewWithAgentProvider
   
   let organization: Github.User?
   let repository: Github.Repository
@@ -49,6 +50,15 @@ struct PullRequestDetailView: View {
         }
         .buttonStyle(.bordered)
         .help("Create a worktree to review this PR locally")
+
+        Button {
+          reviewWithAgentProvider?.reviewWithAgent(pr: pullRequest, repo: repository)
+        } label: {
+          Label("Review with Agent", systemImage: "sparkles")
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(reviewWithAgentProvider == nil)
+        .help("Create a worktree and run an agent review")
         #endif
       }
       
