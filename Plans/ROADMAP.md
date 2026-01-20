@@ -391,8 +391,8 @@ Planner -> splits task -> creates branches
 - #65 ✅ Add agent usage charts
 - #59 ✅ Add PR throughput & cycle time charts
 - #61 ✅ Add PR review load chart
-- #62 Add repo health trend charts
-- #63 Add GitHub Actions reliability chart
+- #62 ✅ Add repo health trend charts
+- #63 ✅ Add GitHub Actions reliability chart
 - #64 Add Homebrew activity charts
 
 ### Track D: Local AI Foundation (3 issues)
