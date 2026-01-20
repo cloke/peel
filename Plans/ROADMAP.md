@@ -358,3 +358,71 @@ Planner -> splits task -> creates branches
 - [LOCAL_RAG_PLAN.md](LOCAL_RAG_PLAN.md)
 - [HEALTH_CHECK_ACTION_PLAN_2026-01-20.md](HEALTH_CHECK_ACTION_PLAN_2026-01-20.md) - Latest action plan
 - [Sessions/HEALTH_CHECK_2026-01-19.md](../Sessions/HEALTH_CHECK_2026-01-19.md) - Full health audit
+
+---
+
+## Issue Queues (Pick a Track)
+
+### Track A: Finish Local RAG (2 issues)
+```
+42,74
+```
+- #42 Local RAG for codebase context (benchmark + sqlite-vec decision)
+- #74 Local RAG v1: Embedding provider (Core ML)
+
+### Track B: Agent UX Polish (6 issues)
+```
+70,39,40,29,30,69
+```
+- #70 Auto-cleanup agent worktrees on completion
+- #39 Add chain templates gallery
+- #40 Agent feedback loop - watch and retry
+- #29 Add Review with Agent button for PRs
+- #30 Add merge conflict resolution UI
+- #69 Conflict resolution UI for parallel agents
+
+### Track C: Charts & Analytics (6 issues)
+```
+65,59,61,62,63,64
+```
+- #65 Add agent usage charts
+- #59 Add PR throughput & cycle time charts
+- #61 Add PR review load chart
+- #62 Add repo health trend charts
+- #63 Add GitHub Actions reliability chart
+- #64 Add Homebrew activity charts
+
+### Track D: Local AI Foundation (3 issues)
+```
+24,23,41
+```
+- #24 MLX integration
+- #23 XPC tool broker
+- #41 Budget-aware agent scheduler
+
+### Track E: Polish & Cleanup (4 issues)
+```
+67,52,76,71
+```
+- #67 Headless MCP/CLI feasibility
+- #52 Fix screenshot capture to preserve sidebar/vibrancy
+- #76 PII scrubber enhancements
+- #71 PR review with agent workflow
+
+### Track F: Phase 3 / Future (6 issues)
+```
+35,36,37,54,43,44
+```
+- #35 Screen capture to Vision analysis pipeline
+- #36 Voice commands via on-device Whisper
+- #37 Cross-machine distributed actors
+- #54 VM bootstrap: GitHub auth + repo provisioning
+- #43 Deterministic replay for agent runs
+- #44 Multi-agent quorum for destructive actions
+
+### Track G: Documentation (2 issues)
+```
+31,38
+```
+- #31 PII scrubber design document
+- #38 iOS feature parity audit
