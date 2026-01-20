@@ -51,13 +51,8 @@ struct AgentsSidebarView: View {
               Label("No Chains Yet", systemImage: "link")
                 .font(.title3)
             } description: {
-              Text("Create a chain to run multi-agent tasks.")
+              Text("Use the footer to create a chain.")
                 .font(.caption)
-            } actions: {
-              Button("New Chain") {
-                showingNewChainSheet = true
-              }
-              .buttonStyle(.bordered)
             }
           }
         }
@@ -86,13 +81,8 @@ struct AgentsSidebarView: View {
               Label("No Agents Yet", systemImage: "cpu")
                 .font(.title3)
             } description: {
-              Text("Create an agent to run or join chains.")
+              Text("Use the footer to create an agent.")
                 .font(.caption)
-            } actions: {
-              Button("New Agent") {
-                showingNewAgentSheet = true
-              }
-              .buttonStyle(.bordered)
             }
           }
         } else {
