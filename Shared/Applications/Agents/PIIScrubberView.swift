@@ -14,6 +14,7 @@ struct PIIScrubberView: View {
   @State private var outputPath = ""
   @State private var reportPath = ""
   @State private var reportFormat = "json"
+  @State private var configPath = ""
   @State private var seed = "peel"
   @State private var maxSamples = 5
   @State private var enableNER = false
@@ -59,6 +60,12 @@ struct PIIScrubberView: View {
               }
               .pickerStyle(.segmented)
               .frame(width: 160)
+            }
+
+            LabeledContent("Config path (optional)") {
+              TextField("/path/to/pii-scrubber.yml", text: $configPath)
+                .textFieldStyle(.roundedBorder)
+                .frame(minWidth: 320)
             }
 
             LabeledContent("Seed") {
@@ -175,6 +182,7 @@ struct PIIScrubberView: View {
       outputPath: outputPath,
       reportPath: reportPath.isEmpty ? nil : reportPath,
       reportFormat: reportFormat.isEmpty ? nil : reportFormat,
+      configPath: configPath.isEmpty ? nil : configPath,
       seed: seed.isEmpty ? nil : seed,
       maxSamples: maxSamples,
       enableNER: enableNER,

@@ -52,7 +52,8 @@ let package = Package(
     .executableTarget(
       name: "PIIScrubber",
       dependencies: [
-        .product(name: "ArgumentParser", package: "swift-argument-parser")
+        .product(name: "ArgumentParser", package: "swift-argument-parser"),
+        .product(name: "Yams", package: "Yams")
       ],
       path: "Sources/PIIScrubber"
     )

@@ -2431,6 +2431,7 @@ public final class MCPServerService {
     let outputPath = (arguments["outputPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
     let reportPath = (arguments["reportPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
     let reportFormat = (arguments["reportFormat"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let configPath = (arguments["configPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
     let seed = (arguments["seed"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
     let maxSamples = arguments["maxSamples"] as? Int
     let enableNER = arguments["enableNER"] as? Bool ?? false
@@ -2448,6 +2449,7 @@ public final class MCPServerService {
       outputPath: outputPath,
       reportPath: reportPath,
       reportFormat: reportFormat,
+      configPath: configPath,
       seed: seed,
       maxSamples: maxSamples,
       enableNER: enableNER,
@@ -3655,6 +3657,7 @@ public final class MCPServerService {
             "outputPath": ["type": "string"],
             "reportPath": ["type": "string"],
             "reportFormat": ["type": "string"],
+            "configPath": ["type": "string"],
             "seed": ["type": "string"],
             "maxSamples": ["type": "integer"],
             "enableNER": ["type": "boolean"],
@@ -4476,6 +4479,7 @@ final class PIIScrubberService {
     var outputPath: String
     var reportPath: String?
     var reportFormat: String?
+    var configPath: String?
     var seed: String?
     var maxSamples: Int?
     var enableNER: Bool
@@ -4486,6 +4490,7 @@ final class PIIScrubberService {
       outputPath: String,
       reportPath: String? = nil,
       reportFormat: String? = nil,
+      configPath: String? = nil,
       seed: String? = nil,
       maxSamples: Int? = nil,
       enableNER: Bool = false,
@@ -4495,6 +4500,7 @@ final class PIIScrubberService {
       self.outputPath = outputPath
       self.reportPath = reportPath
       self.reportFormat = reportFormat
+      self.configPath = configPath
       self.seed = seed
       self.maxSamples = maxSamples
       self.enableNER = enableNER
@@ -4531,6 +4537,9 @@ final class PIIScrubberService {
     }
     if let reportFormat = options.reportFormat, !reportFormat.isEmpty {
       arguments.append(contentsOf: ["--report-format", reportFormat])
+    }
+    if let configPath = options.configPath, !configPath.isEmpty {
+      arguments.append(contentsOf: ["--config", expandPath(configPath)])
     }
     if let seed = options.seed, !seed.isEmpty {
       arguments.append(contentsOf: ["--seed", seed])
