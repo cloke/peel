@@ -6,14 +6,17 @@ tags:
   - peel
   - agent-orchestration
   - mcp
-updated: 2026-01-19
+updated: 2026-01-20
 audience:
   - ai-agent
   - developer
 github_issues:
   - number: 8
-    status: open
+    status: closed
     title: Create PII scrubber CLI tool
+  - number: 76
+    status: open
+    title: PII scrubber enhancements (NER, rules, audit UX)
   - number: 16
     status: closed
     title: MCP activity log + cleanup actions
@@ -141,6 +144,7 @@ related_docs:
 | **Screenshot Capture** | #21 - ScreenCaptureKit integration for chain runs |
 | **Dynamic Scaling** | #25 - Cost caps and model selection |
 | **Translation Validator** | #55–#58 - CLI + MCP + UI suggestions + Apple on-device checks |
+| **PII Scrubber (Baseline)** | #8 - CLI + MCP + UI for deterministic scrubbing |
 
 ### 📋 Phase 1C Polish (Open)
 
@@ -172,6 +176,7 @@ related_docs:
 | Issue | Title | Description |
 |-------|-------|-------------|
 | [#8](https://github.com/cloke/peel/issues/8) | PII Scrubber CLI | Strip sensitive data |
+| [#76](https://github.com/cloke/peel/issues/76) | PII Scrubber Enhancements | NER + rules + audit UX |
 | [#31](https://github.com/cloke/peel/issues/31) | PII Design Doc | Architecture first |
 | [#22](https://github.com/cloke/peel/issues/22) | MCP Automation Package | Reusable framework |
 | [#23](https://github.com/cloke/peel/issues/23) | XPC Tool Broker | Sandboxed execution |
@@ -213,15 +218,19 @@ related_docs:
 
 ## Active Work: Phase 1C
 
-### Phase 1C Status (January 19, 2026)
+### Phase 1C Status (January 20, 2026)
 
 **Completed:**
+- [x] #8 PII scrubber baseline (CLI + MCP + UI)
 - [x] #16 MCP Activity Log + Cleanup
 - [x] #17 Planner gating: skip implementers when "no work"
 - [x] #18 Show planner prompt in Chain Activity / MCP Run detail
 - [x] #19 Clarify Assign Task behavior
 - [x] #21 MCP screenshot capture tool
 - [x] #25 Dynamic chain scaling + model selection
+
+**In Progress:**
+- [ ] #76 PII scrubber enhancements (NER, rules, audit UX)
 
 **Open Polish Items:**
 - [ ] #26 Automate MCP test plan validation
