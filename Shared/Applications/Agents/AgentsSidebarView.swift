@@ -165,6 +165,19 @@ struct AgentsSidebarView: View {
           .tag("infra:local-rag")
 
           HStack {
+            Image(systemName: "shield.lefthalf.filled")
+              .foregroundStyle(.orange)
+            Text("PII Scrubber")
+            Spacer()
+            Chip(
+              text: "Beta",
+              foreground: .orange,
+              background: .orange.opacity(0.2)
+            )
+          }
+          .tag("infra:pii-scrubber")
+
+          HStack {
             Image(systemName: "character.book.closed")
               .foregroundStyle(.indigo)
             Text("Translation Validation")
@@ -271,6 +284,20 @@ struct AgentsSidebarView: View {
       agentManager.selectedChain = nil
       let key = String(value.dropFirst(6))
       selectedInfrastructure = InfrastructureView(rawValue: key)
+      if let controlId = infrastructureControlId(for: key) {
+        mcpServer.recordUIActionHandled(controlId)
+      }
+    }
+  }
+
+  private func infrastructureControlId(for key: String) -> String? {
+    switch key {
+    case "mcp-dashboard": return "agents.mcpDashboard"
+    case "local-rag": return "agents.localRag"
+    case "translation-validation": return "agents.translationValidation"
+    case "vm-isolation": return "agents.vmIsolation"
+    case "pii-scrubber": return "agents.piiScrubber"
+    default: return nil
     }
   }
 

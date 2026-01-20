@@ -17,6 +17,7 @@ enum InfrastructureView: String, Hashable {
   case mcpDashboard = "mcp-dashboard"
   case translationValidation = "translation-validation"
   case localRag = "local-rag"
+  case piiScrubber = "pii-scrubber"
 }
 
 /// Main view for AI Agent Orchestration
@@ -79,10 +80,20 @@ struct Agents_RootView: View {
       case "agents.localRag":
         selectedInfrastructure = .localRag
         mcpServer.recordUIActionHandled(action.controlId)
+      case "agents.piiScrubber":
+        selectedInfrastructure = .piiScrubber
+        mcpServer.recordUIActionHandled(action.controlId)
       default:
         break
       }
       mcpServer.lastUIAction = nil
+    }
+    .onChange(of: selectedInfrastructure) { _, newValue in
+      if let newValue {
+        UserDefaults.standard.set("infra:\(newValue.rawValue)", forKey: "agents.selectedInfrastructure")
+      } else {
+        UserDefaults.standard.removeObject(forKey: "agents.selectedInfrastructure")
+      }
     }
     .toolbar {
       #if os(macOS)
@@ -129,6 +140,8 @@ struct Agents_RootView: View {
         TranslationValidationView()
       case .localRag:
         LocalRAGDashboardView(mcpServer: mcpServer)
+      case .piiScrubber:
+        PIIScrubberView()
       }
     } else if let chain = agentManager.selectedChain {
       ChainDetailView(chain: chain, agentManager: agentManager, cliService: cliService, sessionTracker: sessionTracker)

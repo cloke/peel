@@ -1340,6 +1340,7 @@ public final class MCPServerService {
   private var dataService: DataService?
   private let screenshotService = ScreenshotService()
   let translationValidatorService = TranslationValidatorService()
+  let piiScrubberService = PIIScrubberService()
   private let localRagStore = LocalRAGStore()
 
   public struct ActiveRunInfo: Identifiable {
@@ -2106,6 +2107,9 @@ public final class MCPServerService {
     case "translations.validate":
       return await handleTranslationsValidate(id: id, arguments: arguments)
 
+    case "pii.scrub":
+      return await handlePIIScrub(id: id, arguments: arguments)
+
     default:
       await mcpLog.warning("Unknown tool", metadata: ["name": name])
       return (400, makeRPCError(id: id, code: -32601, message: "Unknown tool"))
@@ -2417,6 +2421,52 @@ public final class MCPServerService {
       ]))
     } catch {
       await mcpLog.warning("Translation validation failed", metadata: ["error": error.localizedDescription])
+      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
+    }
+  }
+
+
+  private func handlePIIScrub(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    let inputPath = (arguments["inputPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let outputPath = (arguments["outputPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let reportPath = (arguments["reportPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let reportFormat = (arguments["reportFormat"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let seed = (arguments["seed"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let maxSamples = arguments["maxSamples"] as? Int
+    let enableNER = arguments["enableNER"] as? Bool ?? false
+    let toolPath = arguments["toolPath"] as? String
+
+    guard let inputPath, !inputPath.isEmpty else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing inputPath"))
+    }
+    guard let outputPath, !outputPath.isEmpty else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing outputPath"))
+    }
+
+    let options = PIIScrubberService.Options(
+      inputPath: inputPath,
+      outputPath: outputPath,
+      reportPath: reportPath,
+      reportFormat: reportFormat,
+      seed: seed,
+      maxSamples: maxSamples,
+      enableNER: enableNER,
+      toolPath: toolPath
+    )
+
+    do {
+      let result = try await piiScrubberService.runScrubber(options: options)
+      var payload: [String: Any] = [
+        "inputPath": result.inputPath,
+        "outputPath": result.outputPath,
+        "reportPath": result.reportPath as Any
+      ]
+      if let report = result.report {
+        payload["report"] = encodeJSON(report)
+      }
+      return (200, makeRPCResult(id: id, result: payload))
+    } catch {
+      await mcpLog.warning("PII scrubber failed", metadata: ["error": error.localizedDescription])
       return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
     }
   }
@@ -3594,6 +3644,26 @@ public final class MCPServerService {
         ],
         category: .diagnostics,
         isMutating: false
+      ),
+      ToolDefinition(
+        name: "pii.scrub",
+        description: "Scrub PII from a text file using the pii-scrubber CLI",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "inputPath": ["type": "string"],
+            "outputPath": ["type": "string"],
+            "reportPath": ["type": "string"],
+            "reportFormat": ["type": "string"],
+            "seed": ["type": "string"],
+            "maxSamples": ["type": "integer"],
+            "enableNER": ["type": "boolean"],
+            "toolPath": ["type": "string"]
+          ],
+          "required": ["inputPath", "outputPath"]
+        ],
+        category: .diagnostics,
+        isMutating: true
       )
     ]
   }
@@ -3788,7 +3858,8 @@ public final class MCPServerService {
         "agents.sessionSummary",
         "agents.vmIsolation",
         "agents.translationValidation",
-        "agents.localRag"
+        "agents.localRag",
+        "agents.piiScrubber"
       ]
     case "github":
       return [
@@ -4385,6 +4456,206 @@ final class TranslationValidatorService {
     }
     return sanitized
   }
+}
+
+@MainActor
+@Observable
+final class PIIScrubberService {
+  struct ValidationError: LocalizedError {
+    let message: String
+
+    init(_ message: String) {
+      self.message = message
+    }
+
+    var errorDescription: String? { message }
+  }
+
+  struct Options {
+    var inputPath: String
+    var outputPath: String
+    var reportPath: String?
+    var reportFormat: String?
+    var seed: String?
+    var maxSamples: Int?
+    var enableNER: Bool
+    var toolPath: String?
+
+    init(
+      inputPath: String,
+      outputPath: String,
+      reportPath: String? = nil,
+      reportFormat: String? = nil,
+      seed: String? = nil,
+      maxSamples: Int? = nil,
+      enableNER: Bool = false,
+      toolPath: String? = nil
+    ) {
+      self.inputPath = inputPath
+      self.outputPath = outputPath
+      self.reportPath = reportPath
+      self.reportFormat = reportFormat
+      self.seed = seed
+      self.maxSamples = maxSamples
+      self.enableNER = enableNER
+      self.toolPath = toolPath
+    }
+  }
+
+  struct ScrubResult {
+    let inputPath: String
+    let outputPath: String
+    let reportPath: String?
+    let report: PIIScrubberReport?
+  }
+
+  private let executor = ProcessExecutor()
+  var isRunning: Bool = false
+  var lastError: String?
+  var lastResult: ScrubResult?
+  private var runningTask: Task<Void, Never>?
+
+  func runScrubber(options: Options) async throws -> ScrubResult {
+    let trimmedInput = options.inputPath.trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmedOutput = options.outputPath.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedInput.isEmpty else { throw ValidationError("Input path is required.") }
+    guard !trimmedOutput.isEmpty else { throw ValidationError("Output path is required.") }
+
+    guard let toolPath = resolveToolPath(customPath: options.toolPath) else {
+      throw ValidationError("pii-scrubber not found. Build PeelSkills or set a tool path.")
+    }
+
+    var arguments: [String] = ["--input", expandPath(trimmedInput), "--output", expandPath(trimmedOutput)]
+    if let reportPath = options.reportPath, !reportPath.isEmpty {
+      arguments.append(contentsOf: ["--report", expandPath(reportPath)])
+    }
+    if let reportFormat = options.reportFormat, !reportFormat.isEmpty {
+      arguments.append(contentsOf: ["--report-format", reportFormat])
+    }
+    if let seed = options.seed, !seed.isEmpty {
+      arguments.append(contentsOf: ["--seed", seed])
+    }
+    if let maxSamples = options.maxSamples {
+      arguments.append(contentsOf: ["--max-samples", String(maxSamples)])
+    }
+    if options.enableNER {
+      arguments.append("--enable-ner")
+    }
+
+    let result = try await executor.execute(toolPath, arguments: arguments, throwOnNonZeroExit: false)
+    if result.exitCode != 0 {
+      let message = result.stderrString.isEmpty ? result.stdoutString : result.stderrString
+      throw ValidationError(message.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    var report: PIIScrubberReport?
+    if let reportPath = options.reportPath, !reportPath.isEmpty {
+      let path = expandPath(reportPath)
+      if let data = try? Data(contentsOf: URL(fileURLWithPath: path)) {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        report = try? decoder.decode(PIIScrubberReport.self, from: data)
+      }
+    }
+
+    let scrubResult = ScrubResult(
+      inputPath: trimmedInput,
+      outputPath: trimmedOutput,
+      reportPath: options.reportPath,
+      report: report
+    )
+    lastResult = scrubResult
+    lastError = nil
+    return scrubResult
+  }
+
+  func suggestedToolPath() -> String? {
+    findToolPath()
+  }
+
+  private func resolveToolPath(customPath: String?) -> String? {
+    if let customPath, !customPath.isEmpty {
+      let expanded = expandPath(customPath)
+      if FileManager.default.isExecutableFile(atPath: expanded) {
+        return expanded
+      }
+    }
+    return findToolPath()
+  }
+
+  private func findToolPath() -> String? {
+    let fm = FileManager.default
+    let home = fm.homeDirectoryForCurrentUser.path
+    let roots = [
+      fm.currentDirectoryPath,
+      home,
+      URL(fileURLWithPath: home).appendingPathComponent("code").path,
+      URL(fileURLWithPath: home).appendingPathComponent("projects").path,
+      Bundle.main.bundleURL.deletingLastPathComponent().path
+    ]
+
+    var detected: [String] = []
+    for root in roots {
+      if let ancestor = findAncestor(containing: "Tools/PeelSkills", from: root) {
+        detected.append(ancestor)
+      }
+    }
+
+    for root in Array(Set(detected)) {
+      let debugPath = URL(fileURLWithPath: root)
+        .appendingPathComponent("Tools/PeelSkills/.build/debug/pii-scrubber")
+        .path
+      if fm.isExecutableFile(atPath: debugPath) { return debugPath }
+
+      let releasePath = URL(fileURLWithPath: root)
+        .appendingPathComponent("Tools/PeelSkills/.build/release/pii-scrubber")
+        .path
+      if fm.isExecutableFile(atPath: releasePath) { return releasePath }
+    }
+
+    return nil
+  }
+
+  private func expandPath(_ path: String) -> String {
+    let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.hasPrefix("~") {
+      let home = FileManager.default.homeDirectoryForCurrentUser.path
+      return trimmed.replacingOccurrences(of: "~", with: home)
+    }
+    if trimmed.hasPrefix("/") {
+      return trimmed
+    }
+    return URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+      .appendingPathComponent(trimmed)
+      .path
+  }
+
+  private func findAncestor(containing relativePath: String, from start: String) -> String? {
+    var url = URL(fileURLWithPath: start)
+    let fm = FileManager.default
+    while true {
+      let candidate = url.appendingPathComponent(relativePath).path
+      if fm.fileExists(atPath: candidate) {
+        return url.path
+      }
+      let parent = url.deletingLastPathComponent()
+      if parent.path == url.path { break }
+      url = parent
+    }
+    return nil
+  }
+}
+
+struct PIIScrubberReport: Codable {
+  struct Sample: Codable {
+    let original: String
+    let replacement: String
+  }
+
+  var startedAt: Date
+  var completedAt: Date?
+  var counts: [String: Int]
+  var samples: [String: [Sample]]
 }
 
 private actor MergeCoordinator {
