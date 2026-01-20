@@ -36,13 +36,13 @@ github_issues:
     status: closed
     title: Dynamic chain scaling and model selection
   - number: 26
-    status: open
+    status: closed
     title: Automate MCP test plan validation
   - number: 27
-    status: open
+    status: closed
     title: Fix Alpine Linux VM boot to full OS
   - number: 28
-    status: open
+    status: closed
     title: Improve empty states in Agents UI
   - number: 29
     status: open
@@ -54,13 +54,13 @@ github_issues:
     status: open
     title: PII scrubber design document
   - number: 32
-    status: open
+    status: closed
     title: Prevent system sleep during MCP chain
   - number: 33
-    status: open
+    status: closed
     title: Add MCP run timeline visualization
   - number: 34
-    status: open
+    status: closed
     title: Optional auto-cleanup worktrees
   - number: 35
     status: open
@@ -86,6 +86,18 @@ github_issues:
   - number: 42
     status: open
     title: Local RAG for codebase context
+  - number: 72
+    status: closed
+    title: Local RAG v1 SQLite store
+  - number: 73
+    status: closed
+    title: Local RAG v1 repo scan + chunking
+  - number: 74
+    status: open
+    title: Local RAG v1 embedding provider (Core ML)
+  - number: 75
+    status: closed
+    title: Local RAG v1 query API + MCP hook
   - number: 43
     status: open
     title: Deterministic replay for agent runs
@@ -107,6 +119,12 @@ github_issues:
   - number: 58
     status: closed
     title: Translation validator: suggestions view (read-only)
+  - number: 66
+    status: closed
+    title: MCP UI automation tools + permissions
+  - number: 68
+    status: closed
+    title: MCP tool grouping toggles
 code_locations:
   - file: Shared/AgentOrchestration/AgentManager.swift
     lines: 260-500
@@ -115,9 +133,20 @@ code_locations:
     description: MCP chain template execution
   - file: Shared/Views/SettingsView.swift
     description: MCP server toggle and settings
+  - file: Shared/Services/LocalRAGStore.swift
+    description: Local RAG SQLite store, file scanner, chunker
+  - file: Shared/Services/LocalRAGEmbeddings.swift
+    description: Embedding providers (system, hash, Core ML scaffold)
+  - file: Shared/Applications/Agents/LocalRAGDashboardView.swift
+    description: Local RAG dashboard UI
+  - file: Shared/Applications/Agents/PIIScrubberView.swift
+    description: PII scrubber UI
+  - file: Tools/PeelSkills/Sources/PIIScrubber/PIIScrubber.swift
+    description: PII scrubber CLI tool
 related_docs:
   - AGENT_ORCHESTRATION_PLAN.md
   - PARALLEL_AGENTS_PLAN.md
+  - LOCAL_RAG_PLAN.md
   - MCP_AGENT_WORKFLOW.md
 ---
 
@@ -145,18 +174,26 @@ related_docs:
 | **Dynamic Scaling** | #25 - Cost caps and model selection |
 | **Translation Validator** | #55–#58 - CLI + MCP + UI suggestions + Apple on-device checks |
 | **PII Scrubber (Baseline)** | #8 - CLI + MCP + UI for deterministic scrubbing |
+| **MCP UI Automation** | #66 - Tool registry, permissions, UI actions |
+| **MCP Tool Grouping** | #68 - Grouped toggles for tool categories |
+| **Local RAG (Core)** | #72-75 - SQLite store, scanning, embeddings, search |
+
+### 📋 Phase 1C Polish (Closed)
+
+| Issue | Title | Status |
+|-------|-------|--------|
+| [#26](https://github.com/cloke/peel/issues/26) | Automate MCP test plan | ✅ Closed |
+| [#27](https://github.com/cloke/peel/issues/27) | Fix Alpine VM boot | ✅ Closed |
+| [#28](https://github.com/cloke/peel/issues/28) | Agents UI polish | ✅ Closed |
+| [#32](https://github.com/cloke/peel/issues/32) | Sleep prevention | ✅ Closed |
+| [#33](https://github.com/cloke/peel/issues/33) | MCP run timeline | ✅ Closed |
+| [#66](https://github.com/cloke/peel/issues/66) | MCP UI automation | ✅ Closed |
+| [#68](https://github.com/cloke/peel/issues/68) | Tool grouping toggles | ✅ Closed |
 
 ### 📋 Phase 1C Polish (Open)
 
 | Issue | Title | Notes |
 |-------|-------|-------|
-| [#26](https://github.com/cloke/peel/issues/26) | Automate MCP test plan | Integration tests |
-| [#27](https://github.com/cloke/peel/issues/27) | Fix Alpine VM boot | Netboot/rootfs |
-| [#28](https://github.com/cloke/peel/issues/28) | Agents UI polish | Empty states |
-| [#32](https://github.com/cloke/peel/issues/32) | Sleep prevention | IOPMAssertion |
-| [#33](https://github.com/cloke/peel/issues/33) | MCP run timeline | Visualization |
-| - | Headless MCP/CLI feasibility | Ensure architecture supports a headless/CLI mode |
-| [#66](https://github.com/cloke/peel/issues/66) | MCP UI automation tools + permissions | Tool registry + UI automation |
 | [#67](https://github.com/cloke/peel/issues/67) | Headless MCP/CLI feasibility | CLI pathway + module split |
 
 ### 📋 Agent Features (Open)
@@ -173,16 +210,32 @@ related_docs:
 
 ## Phase 2: Local AI Foundation
 
+### ✅ Completed
+
+| Issue | Title | Status |
+|-------|-------|--------|
+| [#8](https://github.com/cloke/peel/issues/8) | PII Scrubber CLI | ✅ Closed |
+| [#72](https://github.com/cloke/peel/issues/72) | Local RAG: SQLite store | ✅ Closed |
+| [#73](https://github.com/cloke/peel/issues/73) | Local RAG: Repo scan + chunking | ✅ Closed |
+| [#75](https://github.com/cloke/peel/issues/75) | Local RAG: Query API + MCP | ✅ Closed |
+
+### 🔄 In Progress
+
+| Issue | Title | Notes |
+|-------|-------|-------|
+| [#76](https://github.com/cloke/peel/issues/76) | PII Scrubber Enhancements | NER done, audit UI remaining |
+| [#42](https://github.com/cloke/peel/issues/42) | Local RAG | Core done, enhancements open |
+| [#74](https://github.com/cloke/peel/issues/74) | Local RAG: Embedding provider | System embeddings working, Core ML blocked |
+
+### 📋 Open
+
 | Issue | Title | Description |
 |-------|-------|-------------|
-| [#8](https://github.com/cloke/peel/issues/8) | PII Scrubber CLI | Strip sensitive data |
-| [#76](https://github.com/cloke/peel/issues/76) | PII Scrubber Enhancements | NER + rules + audit UX |
 | [#31](https://github.com/cloke/peel/issues/31) | PII Design Doc | Architecture first |
 | [#22](https://github.com/cloke/peel/issues/22) | MCP Automation Package | Reusable framework |
 | [#23](https://github.com/cloke/peel/issues/23) | XPC Tool Broker | Sandboxed execution |
 | [#24](https://github.com/cloke/peel/issues/24) | MLX Integration | Local inference |
 | [#41](https://github.com/cloke/peel/issues/41) | Budget Scheduler | Resource allocation |
-| [#42](https://github.com/cloke/peel/issues/42) | Local RAG | Vector DB for context |
 
 ---
 
