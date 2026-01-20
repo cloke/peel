@@ -239,7 +239,10 @@ struct CLISetupSheet: View {
       }
       .navigationTitle("CLI Setup")
       .toolbar {
-        ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Done") { dismiss() }
+            .accessibilityIdentifier("agents.cliSetup.done")
+        }
         ToolbarItem(placement: .primaryAction) {
           Button {
             cliService.resetInstall()
@@ -247,6 +250,7 @@ struct CLISetupSheet: View {
           } label: {
             Label("Refresh", systemImage: "arrow.clockwise")
           }
+          .accessibilityIdentifier("agents.cliSetup.refresh")
         }
       }
     }.frame(minWidth: 550, minHeight: 500)
@@ -312,6 +316,7 @@ struct CopilotInstallSteps: View {
         }
         .buttonStyle(.borderedProminent)
         .disabled(isInstalling)
+        .accessibilityIdentifier("agents.cliSetup.installCopilot")
       }
 
       // Step 2: Authenticate
@@ -322,6 +327,7 @@ struct CopilotInstallSteps: View {
             cliService.openCopilotAuth()
           }
           .buttonStyle(.borderedProminent)
+          .accessibilityIdentifier("agents.cliSetup.openCopilotAuth")
 
           Text("Run 'copilot' and follow the authentication prompts.")
             .font(.caption)
@@ -336,6 +342,7 @@ struct CopilotInstallSteps: View {
           }
           .buttonStyle(.bordered)
           .disabled(isInstalling)
+          .accessibilityIdentifier("agents.cliSetup.confirmCopilotAuth")
         }
       }
     }

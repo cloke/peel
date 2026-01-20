@@ -105,7 +105,7 @@ struct AgentsSidebarView: View {
         }
 
         #if os(macOS)
-        Section("CLI Status") {
+        Section("Connections") {
           Button {
             showingSetupSheet = true
           } label: {
@@ -119,6 +119,7 @@ struct AgentsSidebarView: View {
             }
           }
           .buttonStyle(.plain)
+          .accessibilityIdentifier("agents.cliSetup")
 
           Button {
             showingSetupSheet = true
@@ -133,9 +134,10 @@ struct AgentsSidebarView: View {
             }
           }
           .buttonStyle(.plain)
+          .accessibilityIdentifier("agents.cliSetup")
         }
 
-        Section("Infrastructure") {
+        Section("Tools") {
           HStack {
             Image(systemName: mcpServer.isRunning ? "waveform.path.ecg" : "waveform.path")
               .foregroundStyle(mcpServer.isRunning ? .green : .secondary)
@@ -149,6 +151,7 @@ struct AgentsSidebarView: View {
               )
             }
           }
+          .accessibilityIdentifier("agents.mcpDashboard")
           .tag("infra:mcp-dashboard")
 
           HStack {
@@ -156,12 +159,8 @@ struct AgentsSidebarView: View {
               .foregroundStyle(.teal)
             Text("Local RAG")
             Spacer()
-            Chip(
-              text: "Dev",
-              foreground: .teal,
-              background: .teal.opacity(0.2)
-            )
           }
+          .accessibilityIdentifier("agents.localRag")
           .tag("infra:local-rag")
 
           HStack {
@@ -169,12 +168,8 @@ struct AgentsSidebarView: View {
               .foregroundStyle(.orange)
             Text("PII Scrubber")
             Spacer()
-            Chip(
-              text: "Beta",
-              foreground: .orange,
-              background: .orange.opacity(0.2)
-            )
           }
+          .accessibilityIdentifier("agents.piiScrubber")
           .tag("infra:pii-scrubber")
 
           HStack {
@@ -182,12 +177,8 @@ struct AgentsSidebarView: View {
               .foregroundStyle(.indigo)
             Text("Translation Validation")
             Spacer()
-            Chip(
-              text: "Preview",
-              foreground: .indigo,
-              background: .indigo.opacity(0.2)
-            )
           }
+          .accessibilityIdentifier("agents.translationValidation")
           .tag("infra:translation-validation")
 
           HStack {
@@ -195,12 +186,8 @@ struct AgentsSidebarView: View {
               .foregroundStyle(.purple)
             Text("VM Isolation")
             Spacer()
-            Chip(
-              text: "Beta",
-              foreground: .purple,
-              background: .purple.opacity(0.2)
-            )
           }
+          .accessibilityIdentifier("agents.vmIsolation")
           .tag("infra:vm-isolation")
         }
         #endif
@@ -218,6 +205,7 @@ struct AgentsSidebarView: View {
             .font(.caption)
         }
         .buttonStyle(.bordered)
+        .accessibilityIdentifier("agents.newAgent")
 
         Button {
           showingNewChainSheet = true
@@ -226,6 +214,7 @@ struct AgentsSidebarView: View {
             .font(.caption)
         }
         .buttonStyle(.bordered)
+        .accessibilityIdentifier("agents.newChain")
 
         Spacer()
 
@@ -235,6 +224,7 @@ struct AgentsSidebarView: View {
           Image(systemName: cliService.copilotStatus.isAvailable ? "checkmark.circle" : "gear")
         }
         .buttonStyle(.borderless)
+        .accessibilityIdentifier("agents.cliSetup")
       }
       .padding(.horizontal, 12)
       .padding(.vertical, 8)

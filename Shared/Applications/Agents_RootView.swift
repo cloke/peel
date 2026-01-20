@@ -108,6 +108,7 @@ struct Agents_RootView: View {
               .fontWeight(.medium)
           }
         }
+        .accessibilityIdentifier("agents.sessionSummary")
         .help("Session Usage: \(sessionTracker.totalPremiumUsed.premiumMultiplierString()) premium requests")
       }
       ToolSelectionToolbar()

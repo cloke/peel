@@ -32,6 +32,17 @@ public final class ReviewLocallyService {
   
   /// Recent local repositories that could be used for PR review
   public var recentRepositories: [LocalRepository] = []
+
+  public var lastSelectedRepoPath: String? {
+    get { UserDefaults.standard.string(forKey: lastRepoPathKey) }
+    set {
+      if let newValue, !newValue.isEmpty {
+        UserDefaults.standard.set(newValue, forKey: lastRepoPathKey)
+      } else {
+        UserDefaults.standard.removeObject(forKey: lastRepoPathKey)
+      }
+    }
+  }
   
   private init() {
     loadRecentRepositories()
@@ -83,6 +94,10 @@ public final class ReviewLocallyService {
     openInVSCode: Bool = true
   ) async {
     state = .checkingRepository
+
+    if !localRepoPath.isEmpty {
+      lastSelectedRepoPath = localRepoPath
+    }
     
     // Verify the local repository exists
     guard FileManager.default.fileExists(atPath: localRepoPath) else {
@@ -188,6 +203,7 @@ public final class ReviewLocallyService {
   // MARK: - Recent Repositories Persistence
   
   private let recentReposKey = "ReviewLocallyService.recentRepositories"
+  private let lastRepoPathKey = "ReviewLocallyService.lastSelectedRepoPath"
   
   private func loadRecentRepositories() {
     guard let data = UserDefaults.standard.data(forKey: recentReposKey),

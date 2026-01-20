@@ -33,6 +33,7 @@ struct LocalRAGDashboardView: View {
                 Task { await mcpServer.refreshRagSummary() }
               }
               .buttonStyle(.bordered)
+              .accessibilityIdentifier("agents.localRag.refresh")
             }
 
             if let status = mcpServer.ragStatus {
@@ -102,6 +103,7 @@ struct LocalRAGDashboardView: View {
 
             TextField("Repository path", text: $repoPath)
               .textFieldStyle(.roundedBorder)
+              .accessibilityIdentifier("agents.localRag.repoPath")
 
             HStack(spacing: 12) {
               Button("Init DB") {
@@ -109,12 +111,14 @@ struct LocalRAGDashboardView: View {
               }
               .buttonStyle(.bordered)
               .disabled(isInitializing)
+              .accessibilityIdentifier("agents.localRag.init")
 
               Button("Index Repo") {
                 Task { await indexRepository() }
               }
               .buttonStyle(.borderedProminent)
               .disabled(isIndexing || repoPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+              .accessibilityIdentifier("agents.localRag.index")
             }
 
             if isIndexing || isInitializing {
@@ -140,6 +144,7 @@ struct LocalRAGDashboardView: View {
 
             TextField("Query", text: $query)
               .textFieldStyle(.roundedBorder)
+              .accessibilityIdentifier("agents.localRag.query")
 
             HStack {
               Picker("Mode", selection: $searchMode) {
@@ -148,11 +153,13 @@ struct LocalRAGDashboardView: View {
                 }
               }
               .pickerStyle(.segmented)
+              .accessibilityIdentifier("agents.localRag.mode")
 
               Stepper(value: $limit, in: 1...25) {
                 Text("Limit: \(limit)")
                   .font(.caption)
               }
+              .accessibilityIdentifier("agents.localRag.limit")
             }
 
             Button("Search") {
@@ -160,6 +167,7 @@ struct LocalRAGDashboardView: View {
             }
             .buttonStyle(.bordered)
             .disabled(isSearching || query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .accessibilityIdentifier("agents.localRag.search")
 
             if isSearching {
               ProgressView()

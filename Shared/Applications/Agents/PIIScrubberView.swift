@@ -43,18 +43,21 @@ struct PIIScrubberView: View {
               TextField("/path/to/dump.sql", text: $inputPath)
                 .textFieldStyle(.roundedBorder)
                 .frame(minWidth: 320)
+                .accessibilityIdentifier("agents.piiScrubber.inputPath")
             }
 
             LabeledContent("Output path") {
               TextField("/path/to/scrubbed.sql", text: $outputPath)
                 .textFieldStyle(.roundedBorder)
                 .frame(minWidth: 320)
+                .accessibilityIdentifier("agents.piiScrubber.outputPath")
             }
 
             LabeledContent("Report path (optional)") {
               TextField("/path/to/report.json", text: $reportPath)
                 .textFieldStyle(.roundedBorder)
                 .frame(minWidth: 320)
+                .accessibilityIdentifier("agents.piiScrubber.reportPath")
             }
 
             LabeledContent("Report format") {
@@ -64,12 +67,14 @@ struct PIIScrubberView: View {
               }
               .pickerStyle(.segmented)
               .frame(width: 160)
+              .accessibilityIdentifier("agents.piiScrubber.reportFormat")
             }
 
             LabeledContent("Config path (optional)") {
               TextField("/path/to/pii-scrubber.yml", text: $configPath)
                 .textFieldStyle(.roundedBorder)
                 .frame(minWidth: 320)
+                .accessibilityIdentifier("agents.piiScrubber.configPath")
             }
 
             Text("Formats: email, phone, ssn, credit_card, name, address, organization, generic. Actions: preserve, redact, fake, drop.")
@@ -80,6 +85,7 @@ struct PIIScrubberView: View {
               TextField("peel", text: $seed)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 160)
+                .accessibilityIdentifier("agents.piiScrubber.seed")
             }
 
             LabeledContent("Max samples") {
@@ -87,15 +93,18 @@ struct PIIScrubberView: View {
                 Text("\(maxSamples)")
               }
               .frame(width: 160)
+              .accessibilityIdentifier("agents.piiScrubber.maxSamples")
             }
 
             Toggle("Enable NER", isOn: $enableNER)
+              .accessibilityIdentifier("agents.piiScrubber.enableNER")
 
             LabeledContent("pii-scrubber path (optional)") {
               HStack(spacing: 8) {
                 TextField("Auto-detect from project", text: $toolPath)
                   .textFieldStyle(.roundedBorder)
                   .frame(minWidth: 320)
+                  .accessibilityIdentifier("agents.piiScrubber.toolPath")
 
                 Button("Detect") {
                   if let detected = service.suggestedToolPath() {
@@ -104,6 +113,7 @@ struct PIIScrubberView: View {
                   }
                 }
                 .buttonStyle(.bordered)
+                .accessibilityIdentifier("agents.piiScrubber.detect")
               }
             }
 
@@ -113,6 +123,7 @@ struct PIIScrubberView: View {
               }
               .buttonStyle(.borderedProminent)
               .disabled(isRunning)
+              .accessibilityIdentifier("agents.piiScrubber.run")
 
               if let lastDetectedToolPath {
                 Text("Detected: \(lastDetectedToolPath)")
@@ -141,11 +152,13 @@ struct PIIScrubberView: View {
                     openReport(at: lastReportPath)
                   }
                   .buttonStyle(.bordered)
+                  .accessibilityIdentifier("agents.piiScrubber.openReport")
 
                   Button("Save Report As…") {
                     exportReport(from: lastReportPath)
                   }
                   .buttonStyle(.bordered)
+                  .accessibilityIdentifier("agents.piiScrubber.saveReport")
                 }
               }
 

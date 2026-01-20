@@ -105,6 +105,7 @@ struct SessionSummarySheet: View {
           Button("Done") {
             dismiss()
           }
+          .accessibilityIdentifier("agents.sessionSummary.done")
         }
 
         ToolbarItem(placement: .primaryAction) {
@@ -114,15 +115,18 @@ struct SessionSummarySheet: View {
             } label: {
               Label("Export as Markdown", systemImage: "doc.text")
             }
+            .accessibilityIdentifier("agents.sessionSummary.export")
 
             Button(role: .destructive) {
               sessionTracker.resetSession()
             } label: {
               Label("Reset Session", systemImage: "trash")
             }
+            .accessibilityIdentifier("agents.sessionSummary.reset")
           } label: {
             Image(systemName: "ellipsis.circle")
           }
+          .accessibilityIdentifier("agents.sessionSummary.menu")
         }
       }
       #endif
