@@ -201,6 +201,10 @@ struct MCPRunDetailView: View {
                     }
                     Spacer()
                     #if os(macOS)
+                    Button("VS Code") {
+                      Task { try? await VSCodeService.shared.open(path: path, newWindow: true) }
+                    }
+                    .buttonStyle(.link)
                     Button("Open") {
                       NSWorkspace.shared.open(URL(fileURLWithPath: path))
                     }
