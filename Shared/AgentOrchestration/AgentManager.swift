@@ -260,6 +260,11 @@ public final class AgentManager {
 @MainActor
 @Observable
 public final class AgentChainRunner {
+  private enum RagDefaults {
+    static let query = "localrag.query"
+    static let searchMode = "localrag.searchMode"
+    static let searchLimit = "localrag.searchLimit"
+  }
   private actor ChainRunGate {
     enum Mode {
       case running
@@ -348,6 +353,7 @@ public final class AgentChainRunner {
   private let mcpLog = MCPLogService.shared
   private let mergeCoordinator = MergeCoordinator.shared
   private let screenshotService = ScreenshotService()
+  private let localRagStore = LocalRAGStore()
   private var runGates: [UUID: ChainRunGate] = [:]
 
   public init(
@@ -794,9 +800,10 @@ public final class AgentChainRunner {
       agent.workspace = workspace
       agent.workingDirectory = workspace.path.path
 
-      let ragQuery = localRagQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      let storedQuery = UserDefaults.standard.string(forKey: RagDefaults.query) ?? ""
+      let ragQuery = storedQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       ? prompt
-      : localRagQuery
+      : storedQuery
       if let ragContext = await buildRagContext(query: ragQuery, repoPath: workspace.path.path) {
         ragContexts[agent.id] = ragContext
       }
@@ -849,6 +856,37 @@ public final class AgentChainRunner {
     }
 
     return results
+  }
+
+  private func buildRagContext(query: String, repoPath: String) async -> String? {
+    let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedQuery.isEmpty else { return nil }
+
+    let mode = UserDefaults.standard.string(forKey: RagDefaults.searchMode) ?? "text"
+    let storedLimit = UserDefaults.standard.integer(forKey: RagDefaults.searchLimit)
+    let limit = storedLimit == 0 ? 5 : storedLimit
+
+    do {
+      let results: [LocalRAGSearchResult]
+      if mode.lowercased() == "vector" {
+        results = try await localRagStore.searchVector(query: trimmedQuery, repoPath: repoPath, limit: limit)
+      } else {
+        results = try await localRagStore.search(query: trimmedQuery, repoPath: repoPath, limit: limit)
+      }
+
+      guard !results.isEmpty else { return nil }
+
+      let snippets = results.map { result in
+        "- \(result.filePath) [\(result.startLine)-\(result.endLine)]:\n\(result.snippet)"
+      }
+      return ([
+        "Local RAG context for: \"\(trimmedQuery)\"",
+        snippets.joined(separator: "\n\n")
+      ]).joined(separator: "\n")
+    } catch {
+      await mcpLog.warning("Local RAG context build failed", metadata: ["error": error.localizedDescription])
+      return nil
+    }
   }
 
   private func mergeImplementerBranches(chain: AgentChain, indices: [Int]) async throws -> [String] {
