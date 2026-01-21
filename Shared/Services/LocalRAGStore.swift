@@ -248,10 +248,16 @@ actor LocalRAGStore {
 
 
   func status() -> Status {
-    let modelsURL = dbURL.deletingLastPathComponent().appendingPathComponent("Models", isDirectory: true)
-    let modelURL = modelsURL.appendingPathComponent("codebert-base-256.mlmodelc")
-    let vocabURL = modelsURL.appendingPathComponent("codebert-base.vocab.json")
-    let helperURL = modelsURL.appendingPathComponent("tokenize_codebert.py")
+    let modelsURLs = candidateModelDirectories(primary: dbURL.deletingLastPathComponent())
+    let modelPresent = modelsURLs.contains { url in
+      FileManager.default.fileExists(atPath: url.appendingPathComponent("codebert-base-256.mlmodelc").path)
+    }
+    let vocabPresent = modelsURLs.contains { url in
+      FileManager.default.fileExists(atPath: url.appendingPathComponent("codebert-base.vocab.json").path)
+    }
+    let helperPresent = modelsURLs.contains { url in
+      FileManager.default.fileExists(atPath: url.appendingPathComponent("tokenize_codebert.py").path)
+    }
     return Status(
       dbPath: dbURL.path,
       exists: FileManager.default.fileExists(atPath: dbURL.path),
@@ -259,10 +265,31 @@ actor LocalRAGStore {
       extensionLoaded: extensionLoaded,
       lastInitializedAt: lastInitializedAt,
       providerName: String(describing: type(of: embeddingProvider)),
-      coreMLModelPresent: FileManager.default.fileExists(atPath: modelURL.path),
-      coreMLVocabPresent: FileManager.default.fileExists(atPath: vocabURL.path),
-      coreMLTokenizerHelperPresent: FileManager.default.fileExists(atPath: helperURL.path)
+      coreMLModelPresent: modelPresent,
+      coreMLVocabPresent: vocabPresent,
+      coreMLTokenizerHelperPresent: helperPresent
     )
+  }
+
+  private func candidateModelDirectories(primary: URL) -> [URL] {
+    var directories: [URL] = [primary]
+    if let bundleId = Bundle.main.bundleIdentifier {
+      let containerBase = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Containers")
+        .appendingPathComponent(bundleId)
+        .appendingPathComponent("Data/Library/Application Support")
+      directories.append(containerBase)
+    }
+
+    var seen = Set<String>()
+    return directories
+      .map { $0.appendingPathComponent("Models", isDirectory: true) }
+      .filter { url in
+        let path = url.standardizedFileURL.path
+        guard !seen.contains(path) else { return false }
+        seen.insert(path)
+        return true
+      }
   }
 
   func initialize(extensionPath: String? = nil) throws -> Status {
