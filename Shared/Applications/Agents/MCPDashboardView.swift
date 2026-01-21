@@ -303,6 +303,7 @@ struct MCPDashboardView: View {
                 Task { await refreshRagSummary() }
               }
               .buttonStyle(.bordered)
+              .accessibilityIdentifier("agents.mcpDashboard.rag.refresh")
             }
             if isLoadingRag {
               ProgressView()
@@ -370,6 +371,7 @@ struct MCPDashboardView: View {
                 Task { await loadLatencySamples() }
               }
               .buttonStyle(.bordered)
+              .accessibilityIdentifier("agents.mcpDashboard.latency.refresh")
             }
             if isLoadingLatency {
               ProgressView()
@@ -412,6 +414,7 @@ struct MCPDashboardView: View {
               }
               .pickerStyle(.segmented)
               .frame(width: 180)
+              .accessibilityIdentifier("agents.mcpDashboard.usage.granularity")
             }
 
             let stats = usageStats(granularity: usageGranularity)
@@ -457,29 +460,37 @@ struct MCPDashboardView: View {
             Text("Run Overrides")
               .font(.headline)
             Toggle("Override review loop", isOn: $overrideReviewLoopEnabled)
+              .accessibilityIdentifier("agents.mcpDashboard.overrides.reviewLoopOverride")
             if overrideReviewLoopEnabled {
               Toggle("Enable review loop", isOn: $overrideReviewLoopValue)
                 .padding(.leading, 12)
+                .accessibilityIdentifier("agents.mcpDashboard.overrides.reviewLoopEnable")
             }
             Toggle("Allow planner model selection", isOn: $overrideAllowModelSelection)
+              .accessibilityIdentifier("agents.mcpDashboard.overrides.allowModelSelection")
             Toggle("Allow planner implementer scaling", isOn: $overrideAllowScaling)
+              .accessibilityIdentifier("agents.mcpDashboard.overrides.allowScaling")
 
             HStack {
               Toggle("Limit implementers", isOn: $overrideMaxImplementersEnabled)
+                .accessibilityIdentifier("agents.mcpDashboard.overrides.limitImplementers")
               if overrideMaxImplementersEnabled {
                 Stepper(value: $overrideMaxImplementers, in: 1...6) {
                   Text("Max: \(overrideMaxImplementers)")
                     .font(.caption)
                 }
+                .accessibilityIdentifier("agents.mcpDashboard.overrides.maxImplementers")
               }
             }
 
             HStack {
               Toggle("Cost cap", isOn: $overrideMaxPremiumEnabled)
+                .accessibilityIdentifier("agents.mcpDashboard.overrides.costCap")
               if overrideMaxPremiumEnabled {
                 TextField("Max premium", text: $overrideMaxPremiumCost)
                   .frame(width: 80)
                   .textFieldStyle(.roundedBorder)
+                  .accessibilityIdentifier("agents.mcpDashboard.overrides.maxPremium")
               }
             }
 
@@ -489,14 +500,17 @@ struct MCPDashboardView: View {
                 Text("\(overridePriority)")
                   .font(.caption)
               }
+              .accessibilityIdentifier("agents.mcpDashboard.overrides.priority")
             }
 
             HStack {
               Toggle("Timeout", isOn: $overrideTimeoutEnabled)
+                .accessibilityIdentifier("agents.mcpDashboard.overrides.timeoutEnabled")
               if overrideTimeoutEnabled {
                 TextField("Seconds", text: $overrideTimeoutSeconds)
                   .frame(width: 90)
                   .textFieldStyle(.roundedBorder)
+                  .accessibilityIdentifier("agents.mcpDashboard.overrides.timeoutSeconds")
               }
             }
           }
@@ -536,22 +550,26 @@ struct MCPDashboardView: View {
                       Task { await mcpServer.pauseRun(run.id) }
                     }
                     .buttonStyle(.bordered)
+                    .accessibilityIdentifier("agents.mcpDashboard.activeRun.\(run.id.uuidString).pause")
 
                     Button("Resume") {
                       Task { await mcpServer.resumeRun(run.id) }
                     }
                     .buttonStyle(.bordered)
+                    .accessibilityIdentifier("agents.mcpDashboard.activeRun.\(run.id.uuidString).resume")
 
                     Button("Step") {
                       Task { await mcpServer.stepRun(run.id) }
                     }
                     .buttonStyle(.bordered)
+                    .accessibilityIdentifier("agents.mcpDashboard.activeRun.\(run.id.uuidString).step")
 
                     Button("Stop") {
                       Task { await mcpServer.stopRun(run.id) }
                     }
                     .buttonStyle(.bordered)
                     .tint(.red)
+                    .accessibilityIdentifier("agents.mcpDashboard.activeRun.\(run.id.uuidString).stop")
                   }
                 }
                 .padding(.vertical, 4)
@@ -569,10 +587,12 @@ struct MCPDashboardView: View {
                 Text("Max concurrent: \(mcpServer.maxConcurrentChains)")
                   .font(.caption)
               }
+              .accessibilityIdentifier("agents.mcpDashboard.queue.maxConcurrent")
               Stepper(value: $mcpServer.maxQueuedChains, in: 0...20) {
                 Text("Max queued: \(mcpServer.maxQueuedChains)")
                   .font(.caption)
               }
+              .accessibilityIdentifier("agents.mcpDashboard.queue.maxQueued")
             }
             if mcpServer.queuedRuns.isEmpty {
               Text("Queue empty")
@@ -594,6 +614,7 @@ struct MCPDashboardView: View {
                     Task { _ = await mcpServer.cancelQueuedRun(queued.id) }
                   }
                   .buttonStyle(.link)
+                  .accessibilityIdentifier("agents.mcpDashboard.queue.\(queued.id.uuidString).cancel")
                 }
               }
             }
@@ -639,10 +660,12 @@ struct MCPDashboardView: View {
                         selectedRun = run
                       }
                       .buttonStyle(.link)
+                      .accessibilityIdentifier("agents.mcpDashboard.runHistory.\(run.id.uuidString).view")
                       Button("Rerun") {
                         Task { await mcpServer.rerun(run, overrides: buildOverrides()) }
                       }
                       .buttonStyle(.link)
+                      .accessibilityIdentifier("agents.mcpDashboard.runHistory.\(run.id.uuidString).rerun")
                     } else {
                       Text("Details unavailable (legacy run)")
                         .font(.caption2)
@@ -671,13 +694,16 @@ struct MCPDashboardView: View {
             }
             .buttonStyle(.bordered)
             .disabled(mcpServer.isCleaningAgentWorkspaces)
+            .accessibilityIdentifier("agents.mcpDashboard.cleanup.start")
             .confirmationDialog("Remove agent worktrees and branches?", isPresented: $showingCleanupConfirmation, titleVisibility: .visible) {
               Button("Confirm", role: .destructive) {
                 Task {
                   await mcpServer.cleanupAgentWorkspaces()
                 }
               }
+              .accessibilityIdentifier("agents.mcpDashboard.cleanup.confirm")
               Button("Cancel", role: .cancel) {}
+                .accessibilityIdentifier("agents.mcpDashboard.cleanup.cancel")
             } message: {
               Text("This will delete worktrees and branches created by the MCP run. This cannot be undone.")
             }
