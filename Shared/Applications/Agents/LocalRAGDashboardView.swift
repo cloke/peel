@@ -44,6 +44,20 @@ struct LocalRAGDashboardView: View {
               Text("Schema: v\(status.schemaVersion) · Embeddings: \(status.providerName)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+              let coreMLAssets = [
+                status.coreMLModelPresent ? "model" : nil,
+                status.coreMLVocabPresent ? "vocab" : nil,
+                status.coreMLTokenizerHelperPresent ? "tokenizer" : nil
+              ].compactMap { $0 }.joined(separator: ", ")
+              if !coreMLAssets.isEmpty {
+                Text("Core ML assets: \(coreMLAssets)")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              } else {
+                Text("Core ML assets missing")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              }
               Toggle("Use Core ML embeddings (CodeBERT)", isOn: $useCoreML)
                 .font(.caption)
                 .toggleStyle(.switch)

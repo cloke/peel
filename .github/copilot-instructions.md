@@ -66,6 +66,7 @@ Peel is a macOS/iOS SwiftUI application for managing GitHub, Git repositories, a
 - Use `Tools/ModelTools/convert_codebert_to_coreml.py` to generate a `.mlpackage` and vocab.
 - Compile with `coremlc` and copy to:
   `~/Library/Containers/crunchy-bananas.Peel/Data/Library/Application Support/Peel/RAG/Models/`
+- Ensure `tokenize_codebert.py` is copied alongside the model to enable proper BPE tokenization.
 - Output folder `Tools/ModelTools/output/` is ignored.
 
 ### Skills (Agent Tools)

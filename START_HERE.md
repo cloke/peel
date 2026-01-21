@@ -50,6 +50,7 @@ xcrun coremlc compile Tools/ModelTools/output/codebert-base-256.mlpackage Tools/
 mkdir -p "$HOME/Library/Containers/crunchy-bananas.Peel/Data/Library/Application Support/Peel/RAG/Models"
 cp -R Tools/ModelTools/output/codebert-base-256.mlmodelc "$HOME/Library/Containers/crunchy-bananas.Peel/Data/Library/Application Support/Peel/RAG/Models/"
 cp Tools/ModelTools/output/codebert-base.vocab.json "$HOME/Library/Containers/crunchy-bananas.Peel/Data/Library/Application Support/Peel/RAG/Models/"
+cp Tools/ModelTools/output/tokenize_codebert.py "$HOME/Library/Containers/crunchy-bananas.Peel/Data/Library/Application Support/Peel/RAG/Models/"
 ```
 
 3. Restart Peel and check Agents → Local RAG. `rag.status` should report `CoreMLEmbeddingProvider`.
