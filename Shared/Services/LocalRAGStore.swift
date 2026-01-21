@@ -16,6 +16,8 @@ struct LocalRAGIndexReport: Sendable {
   let chunksIndexed: Int
   let bytesScanned: Int
   let durationMs: Int
+  let embeddingCount: Int
+  let embeddingDurationMs: Int
 }
 
 struct LocalRAGSearchResult: Sendable {
@@ -305,6 +307,8 @@ actor LocalRAGStore {
 
     var chunkCount = 0
     var bytesScanned = 0
+    var embeddingCount = 0
+    var embeddingDurationMs = 0
 
     for file in scannedFiles {
       let fileId = stableId(for: "\(repoId):\(file.path)")
@@ -336,7 +340,11 @@ actor LocalRAGStore {
 
       if !missingIndexes.isEmpty {
         let missingTexts = missingIndexes.map { chunkTexts[$0] }
+        let embedStart = Date()
         let missingEmbeddings = try await embeddingProvider.embed(texts: missingTexts)
+        let embedDuration = Int(Date().timeIntervalSince(embedStart) * 1000)
+        embeddingDurationMs += embedDuration
+        embeddingCount += missingEmbeddings.count
         for (offset, index) in missingIndexes.enumerated() {
           guard offset < missingEmbeddings.count else { break }
           let vector = missingEmbeddings[offset]
@@ -373,7 +381,9 @@ actor LocalRAGStore {
       filesIndexed: scannedFiles.count,
       chunksIndexed: chunkCount,
       bytesScanned: bytesScanned,
-      durationMs: durationMs
+      durationMs: durationMs,
+      embeddingCount: embeddingCount,
+      embeddingDurationMs: embeddingDurationMs
     )
   }
 

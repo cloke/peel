@@ -9,6 +9,7 @@ import SwiftUI
 
 struct LocalRAGDashboardView: View {
   @Bindable var mcpServer: MCPServerService
+  @AppStorage("localrag.useCoreML") private var useCoreML = false
   @State private var repoPath = ""
   @State private var query = ""
   @State private var searchMode: MCPServerService.RAGSearchMode = .text
@@ -42,6 +43,12 @@ struct LocalRAGDashboardView: View {
                 .foregroundStyle(.secondary)
               Text("Schema: v\(status.schemaVersion) · Embeddings: \(status.providerName)")
                 .font(.caption)
+                .foregroundStyle(.secondary)
+              Toggle("Use Core ML embeddings (CodeBERT)", isOn: $useCoreML)
+                .font(.caption)
+                .toggleStyle(.switch)
+              Text("Restart required to apply Core ML setting")
+                .font(.caption2)
                 .foregroundStyle(.secondary)
               Text("Extension loaded: \(status.extensionLoaded ? "Yes" : "No")")
                 .font(.caption)
@@ -133,6 +140,14 @@ struct LocalRAGDashboardView: View {
               Text("Duration: \(report.durationMs) ms")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+              if report.embeddingCount > 0 {
+                let perEmbedding = report.embeddingDurationMs > 0
+                  ? Double(report.embeddingDurationMs) / Double(max(report.embeddingCount, 1))
+                  : 0
+                Text("Embeddings: \(report.embeddingCount) vectors · \(report.embeddingDurationMs) ms (\(perEmbedding, specifier: "%.1f") ms/vector)")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              }
             }
           }
         }

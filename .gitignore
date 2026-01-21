@@ -72,3 +72,6 @@ fastlane/test_output
 
 # Local session notes (personal)
 Sessions/
+
+# Local model conversion outputs
+Tools/ModelTools/output/
