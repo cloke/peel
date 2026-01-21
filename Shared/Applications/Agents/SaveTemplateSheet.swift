@@ -20,8 +20,10 @@ struct SaveTemplateSheet: View {
       Form {
         Section {
           TextField("Template Name", text: $templateName, prompt: Text(chain.name))
+            .accessibilityIdentifier("agents.saveTemplate.name")
           TextField("Description (optional)", text: $templateDescription, axis: .vertical)
             .lineLimit(2...4)
+            .accessibilityIdentifier("agents.saveTemplate.description")
         }
 
         Section("Agents in Template") {
@@ -57,6 +59,7 @@ struct SaveTemplateSheet: View {
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           Button("Cancel") { dismiss() }
+            .accessibilityIdentifier("agents.saveTemplate.cancel")
         }
         ToolbarItem(placement: .confirmationAction) {
           Button("Save") {
@@ -64,6 +67,7 @@ struct SaveTemplateSheet: View {
             agentManager.saveChainAsTemplate(chain, name: name, description: templateDescription)
             dismiss()
           }
+          .accessibilityIdentifier("agents.saveTemplate.save")
         }
       }
       .frame(minWidth: 400, minHeight: 350)

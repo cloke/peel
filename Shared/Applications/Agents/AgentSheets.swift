@@ -23,11 +23,13 @@ struct NewAgentSheet: View {
       Form {
         Section {
           TextField("Agent Name", text: $name)
+            .accessibilityIdentifier("agents.newAgent.name")
           Picker("Type", selection: $type) {
             ForEach(AgentType.allCases) { t in
               Label(t.displayName, systemImage: t.iconName).tag(t)
             }
           }
+          .accessibilityIdentifier("agents.newAgent.type")
         }
 
         #if os(macOS)
@@ -50,6 +52,7 @@ struct NewAgentSheet: View {
               }
             }
             .pickerStyle(.inline)
+            .accessibilityIdentifier("agents.newAgent.role")
 
             if !role.canWrite {
               Label("This role cannot edit files", systemImage: "lock.fill")
@@ -81,6 +84,7 @@ struct NewAgentSheet: View {
                 }
               }
             }
+            .accessibilityIdentifier("agents.newAgent.model")
           }
         }
 
@@ -97,7 +101,10 @@ struct NewAgentSheet: View {
       .formStyle(.grouped)
       .navigationTitle("New Agent")
       .toolbar {
-        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Cancel") { dismiss() }
+            .accessibilityIdentifier("agents.newAgent.cancel")
+        }
         ToolbarItem(placement: .confirmationAction) {
           Button("Create") {
             let agent = agentManager.createAgent(
@@ -109,6 +116,7 @@ struct NewAgentSheet: View {
             agentManager.selectedAgent = agent
             dismiss()
           }
+          .accessibilityIdentifier("agents.newAgent.create")
         }
       }
     }.frame(minWidth: 400, minHeight: 400)
@@ -138,16 +146,21 @@ struct AssignTaskSheet: View {
     NavigationStack {
       Form {
         TextField("Task Title", text: $title)
+          .accessibilityIdentifier("agents.assignTask.title")
         Section("Prompt") {
           TextEditor(text: $prompt)
             .font(.system(.body, design: .monospaced))
             .frame(minHeight: 150)
+            .accessibilityIdentifier("agents.assignTask.prompt")
         }
       }
       .formStyle(.grouped)
       .navigationTitle("Assign Task")
       .toolbar {
-        ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Cancel") { dismiss() }
+            .accessibilityIdentifier("agents.assignTask.cancel")
+        }
         ToolbarItem(placement: .confirmationAction) {
           Button("Assign") {
             let task = AgentTask(title: title, prompt: prompt)
@@ -157,6 +170,7 @@ struct AssignTaskSheet: View {
             }
             dismiss()
           }.disabled(title.isEmpty || prompt.isEmpty)
+          .accessibilityIdentifier("agents.assignTask.assign")
         }
       }
     }.frame(minWidth: 500, minHeight: 400)

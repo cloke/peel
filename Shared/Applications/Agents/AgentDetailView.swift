@@ -82,6 +82,7 @@ struct AgentDetailView: View {
             }
             .labelsHidden()
             .frame(maxWidth: 250)
+            .accessibilityIdentifier("agents.agentDetail.modelPicker")
           }
 
           // Role picker
@@ -97,6 +98,7 @@ struct AgentDetailView: View {
             }
             .labelsHidden()
             .frame(maxWidth: 150)
+            .accessibilityIdentifier("agents.agentDetail.rolePicker")
 
             if !agent.role.canWrite {
               Image(systemName: "lock.fill")
@@ -118,6 +120,7 @@ struct AgentDetailView: View {
             }
             .labelsHidden()
             .frame(maxWidth: 150)
+            .accessibilityIdentifier("agents.agentDetail.frameworkPicker")
           }
 
           // Working directory picker
@@ -139,6 +142,7 @@ struct AgentDetailView: View {
                   .foregroundStyle(.secondary)
               }
               .buttonStyle(.plain)
+              .accessibilityIdentifier("agents.agentDetail.project.clear")
             } else {
               Text("None").font(.subheadline).foregroundStyle(.secondary)
             }
@@ -147,6 +151,7 @@ struct AgentDetailView: View {
               selectFolder()
             }
             .buttonStyle(.bordered)
+            .accessibilityIdentifier("agents.agentDetail.project.select")
           }
         }
         #endif
@@ -219,6 +224,7 @@ struct AgentDetailView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(isRunning)
+                .accessibilityIdentifier("agents.agentDetail.task.run")
 
                 if isRunning {
                   ProgressView()
@@ -288,6 +294,7 @@ struct AgentDetailView: View {
             Button("Assign Task") { showingTaskSheet = true }
               .buttonStyle(.borderedProminent)
               .disabled(activeChain != nil)
+              .accessibilityIdentifier("agents.agentDetail.task.assign")
             if let chain = activeChain {
               Text("Assign Task is disabled while \(chain.name) is running.")
                 .font(.caption)
@@ -304,6 +311,7 @@ struct AgentDetailView: View {
       if agent.state == .idle || agent.currentTask == nil {
         Button("Assign Task") { showingTaskSheet = true }
           .disabled(activeChain != nil)
+          .accessibilityIdentifier("agents.agentDetail.toolbar.assign")
       }
     }
     .sheet(isPresented: $showingTaskSheet) {
