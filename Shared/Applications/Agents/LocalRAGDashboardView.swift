@@ -9,11 +9,11 @@ import SwiftUI
 
 struct LocalRAGDashboardView: View {
   @Bindable var mcpServer: MCPServerService
-  @AppStorage("localrag.useCoreML") private var useCoreML = false
-  @State private var repoPath = ""
-  @State private var query = ""
-  @State private var searchMode: MCPServerService.RAGSearchMode = .text
-  @State private var limit = 5
+  private var useCoreML: Binding<Bool> { $mcpServer.localRagUseCoreML }
+  private var repoPath: Binding<String> { $mcpServer.localRagRepoPath }
+  private var query: Binding<String> { $mcpServer.localRagQuery }
+  private var searchMode: Binding<MCPServerService.RAGSearchMode> { $mcpServer.localRagSearchMode }
+  private var limit: Binding<Int> { $mcpServer.localRagSearchLimit }
   @State private var isInitializing = false
   @State private var isIndexing = false
   @State private var isSearching = false
@@ -58,15 +58,16 @@ struct LocalRAGDashboardView: View {
                   .font(.caption2)
                   .foregroundStyle(.secondary)
               }
-              Toggle("Use Core ML embeddings (CodeBERT)", isOn: $useCoreML)
+              Toggle("Use Core ML embeddings (CodeBERT)", isOn: useCoreML)
                 .font(.caption)
                 .toggleStyle(.switch)
-              if useCoreML && !status.coreMLTokenizerHelperPresent {
+                .accessibilityIdentifier("agents.localRag.useCoreML")
+              if useCoreML.wrappedValue && !status.coreMLTokenizerHelperPresent {
                 Text("Warning: tokenizer helper missing — embeddings will be low quality")
                   .font(.caption2)
                   .foregroundStyle(.orange)
               }
-              if useCoreML && (!status.coreMLModelPresent || !status.coreMLVocabPresent) {
+              if useCoreML.wrappedValue && (!status.coreMLModelPresent || !status.coreMLVocabPresent) {
                 Text("Warning: Core ML assets missing — falling back to system embeddings")
                   .font(.caption2)
                   .foregroundStyle(.orange)
@@ -132,7 +133,7 @@ struct LocalRAGDashboardView: View {
             Text("Indexing")
               .font(.headline)
 
-            TextField("Repository path", text: $repoPath)
+            TextField("Repository path", text: repoPath)
               .textFieldStyle(.roundedBorder)
               .accessibilityIdentifier("agents.localRag.repoPath")
 
@@ -148,7 +149,7 @@ struct LocalRAGDashboardView: View {
                 Task { await indexRepository() }
               }
               .buttonStyle(.borderedProminent)
-              .disabled(isIndexing || repoPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+              .disabled(isIndexing || repoPath.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
               .accessibilityIdentifier("agents.localRag.index")
             }
 
@@ -181,12 +182,12 @@ struct LocalRAGDashboardView: View {
             Text("Search")
               .font(.headline)
 
-            TextField("Query", text: $query)
+            TextField("Query", text: query)
               .textFieldStyle(.roundedBorder)
               .accessibilityIdentifier("agents.localRag.query")
 
             HStack {
-              Picker("Mode", selection: $searchMode) {
+              Picker("Mode", selection: searchMode) {
                 ForEach(MCPServerService.RAGSearchMode.allCases, id: \.self) { mode in
                   Text(mode.rawValue.capitalized).tag(mode)
                 }
@@ -194,8 +195,8 @@ struct LocalRAGDashboardView: View {
               .pickerStyle(.segmented)
               .accessibilityIdentifier("agents.localRag.mode")
 
-              Stepper(value: $limit, in: 1...25) {
-                Text("Limit: \(limit)")
+              Stepper(value: limit, in: 1...25) {
+                Text("Limit: \(limit.wrappedValue)")
                   .font(.caption)
               }
               .accessibilityIdentifier("agents.localRag.limit")
@@ -205,7 +206,7 @@ struct LocalRAGDashboardView: View {
               Task { await runSearch() }
             }
             .buttonStyle(.bordered)
-            .disabled(isSearching || query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(isSearching || query.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .accessibilityIdentifier("agents.localRag.search")
 
             if isSearching {
@@ -247,10 +248,30 @@ struct LocalRAGDashboardView: View {
     }
     .navigationTitle("Local RAG")
     .task {
-      if repoPath.isEmpty {
-        repoPath = mcpServer.agentManager.lastUsedWorkingDirectory ?? ""
+      if repoPath.wrappedValue.isEmpty {
+        repoPath.wrappedValue = mcpServer.agentManager.lastUsedWorkingDirectory ?? ""
       }
       await mcpServer.refreshRagSummary()
+    }
+    .onChange(of: mcpServer.lastUIAction?.id) {
+      guard let action = mcpServer.lastUIAction else { return }
+      switch action.controlId {
+      case "agents.localRag.refresh":
+        Task { await mcpServer.refreshRagSummary() }
+        mcpServer.recordUIActionHandled(action.controlId)
+      case "agents.localRag.init":
+        Task { await initializeDatabase() }
+        mcpServer.recordUIActionHandled(action.controlId)
+      case "agents.localRag.index":
+        Task { await indexRepository() }
+        mcpServer.recordUIActionHandled(action.controlId)
+      case "agents.localRag.search":
+        Task { await runSearch() }
+        mcpServer.recordUIActionHandled(action.controlId)
+      default:
+        break
+      }
+      mcpServer.lastUIAction = nil
     }
   }
 
@@ -267,7 +288,7 @@ struct LocalRAGDashboardView: View {
   }
 
   private func indexRepository() async {
-    let trimmed = repoPath.trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmed = repoPath.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return }
     errorMessage = nil
     isIndexing = true
@@ -281,7 +302,7 @@ struct LocalRAGDashboardView: View {
   }
 
   private func runSearch() async {
-    let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmed = query.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return }
     errorMessage = nil
     isSearching = true
@@ -289,9 +310,11 @@ struct LocalRAGDashboardView: View {
     do {
       let results = try await mcpServer.searchRag(
         query: trimmed,
-        mode: searchMode,
-        repoPath: repoPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : repoPath,
-        limit: limit
+        mode: searchMode.wrappedValue,
+        repoPath: repoPath.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+          ? nil
+          : repoPath.wrappedValue,
+        limit: limit.wrappedValue
       )
       self.results = results
     } catch {

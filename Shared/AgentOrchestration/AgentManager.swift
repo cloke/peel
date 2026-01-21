@@ -1156,6 +1156,11 @@ public final class MCPServerService {
     static let maxQueuedChains = "mcp.server.maxQueuedChains"
     static let autoCleanupWorkspaces = "mcp.server.autoCleanupWorkspaces"
     static let toolPermissions = "mcp.server.toolPermissions"
+    static let localRagRepoPath = "localrag.repoPath"
+    static let localRagQuery = "localrag.query"
+    static let localRagSearchMode = "localrag.searchMode"
+    static let localRagSearchLimit = "localrag.searchLimit"
+    static let localRagUseCoreML = "localrag.useCoreML"
   }
 
   public enum ToolCategory: String, CaseIterable {
@@ -1338,6 +1343,21 @@ public final class MCPServerService {
   public private(set) var lastCleanupSummary: String?
   public private(set) var lastCleanupError: String?
   public var lastUIAction: UIAction?
+  public var localRagRepoPath: String = "" {
+    didSet { UserDefaults.standard.set(localRagRepoPath, forKey: StorageKey.localRagRepoPath) }
+  }
+  public var localRagQuery: String = "" {
+    didSet { UserDefaults.standard.set(localRagQuery, forKey: StorageKey.localRagQuery) }
+  }
+  public var localRagSearchMode: RAGSearchMode = .text {
+    didSet { UserDefaults.standard.set(localRagSearchMode.rawValue, forKey: StorageKey.localRagSearchMode) }
+  }
+  public var localRagSearchLimit: Int = 5 {
+    didSet { UserDefaults.standard.set(localRagSearchLimit, forKey: StorageKey.localRagSearchLimit) }
+  }
+  public var localRagUseCoreML: Bool = false {
+    didSet { UserDefaults.standard.set(localRagUseCoreML, forKey: StorageKey.localRagUseCoreML) }
+  }
   private(set) var ragStatus: LocalRAGStore.Status?
   private(set) var ragStats: LocalRAGStore.Stats?
   private(set) var lastRagRefreshAt: Date?
@@ -1419,6 +1439,13 @@ public final class MCPServerService {
     self.maxConcurrentChains = UserDefaults.standard.integer(forKey: StorageKey.maxConcurrentChains)
     self.maxQueuedChains = UserDefaults.standard.integer(forKey: StorageKey.maxQueuedChains)
     self.autoCleanupWorkspaces = UserDefaults.standard.bool(forKey: StorageKey.autoCleanupWorkspaces)
+    self.localRagRepoPath = UserDefaults.standard.string(forKey: StorageKey.localRagRepoPath) ?? ""
+    self.localRagQuery = UserDefaults.standard.string(forKey: StorageKey.localRagQuery) ?? ""
+    let storedMode = UserDefaults.standard.string(forKey: StorageKey.localRagSearchMode) ?? RAGSearchMode.text.rawValue
+    self.localRagSearchMode = RAGSearchMode(rawValue: storedMode) ?? .text
+    let storedLimit = UserDefaults.standard.integer(forKey: StorageKey.localRagSearchLimit)
+    self.localRagSearchLimit = storedLimit == 0 ? 5 : storedLimit
+    self.localRagUseCoreML = UserDefaults.standard.bool(forKey: StorageKey.localRagUseCoreML)
     if self.port == 0 {
       self.port = 8765
     }
@@ -2205,6 +2232,16 @@ public final class MCPServerService {
       recordUIActionRequested(controlId)
       recordUIActionHandled(controlId)
       return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
+    case "agents.localRag.repoPath":
+      localRagRepoPath = value
+      recordUIActionRequested(controlId)
+      recordUIActionHandled(controlId)
+      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
+    case "agents.localRag.query":
+      localRagQuery = value
+      recordUIActionRequested(controlId)
+      recordUIActionHandled(controlId)
+      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
     default:
       break
     }
@@ -2223,6 +2260,13 @@ public final class MCPServerService {
       let current = UserDefaults.standard.bool(forKey: "github-show-archived")
       let next = value ?? !current
       UserDefaults.standard.set(next, forKey: "github-show-archived")
+      recordUIActionRequested(controlId)
+      recordUIActionHandled(controlId)
+      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": next]))
+    case "agents.localRag.useCoreML":
+      let current = UserDefaults.standard.bool(forKey: StorageKey.localRagUseCoreML)
+      let next = value ?? !current
+      localRagUseCoreML = next
       recordUIActionRequested(controlId)
       recordUIActionHandled(controlId)
       return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": next]))
@@ -2247,6 +2291,23 @@ public final class MCPServerService {
       recordUIActionRequested(controlId)
       recordUIActionHandled(controlId)
       return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
+    case "agents.localRag.mode":
+      let normalized = value.lowercased()
+      guard let mode = RAGSearchMode(rawValue: normalized) else {
+        return (400, makeRPCError(id: id, code: -32602, message: "Invalid value"))
+      }
+      localRagSearchMode = mode
+      recordUIActionRequested(controlId)
+      recordUIActionHandled(controlId)
+      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": mode.rawValue]))
+    case "agents.localRag.limit":
+      guard let parsed = Int(value), (1...25).contains(parsed) else {
+        return (400, makeRPCError(id: id, code: -32602, message: "Invalid value"))
+      }
+      localRagSearchLimit = parsed
+      recordUIActionRequested(controlId)
+      recordUIActionHandled(controlId)
+      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": parsed]))
     case "workspaces.selectWorkspace":
       UserDefaults.standard.set(value, forKey: "workspaces.selectedWorkspaceName")
       recordUIActionRequested(controlId)
@@ -4374,7 +4435,16 @@ public final class MCPServerService {
         "agents.vmIsolation",
         "agents.translationValidation",
         "agents.localRag",
-        "agents.piiScrubber"
+        "agents.piiScrubber",
+        "agents.localRag.refresh",
+        "agents.localRag.repoPath",
+        "agents.localRag.init",
+        "agents.localRag.index",
+        "agents.localRag.query",
+        "agents.localRag.mode",
+        "agents.localRag.limit",
+        "agents.localRag.search",
+        "agents.localRag.useCoreML"
       ]
     case "github":
       return [
@@ -4430,6 +4500,12 @@ public final class MCPServerService {
         "workspaces.selectRepo": repoNames,
         "workspaces.selectWorktree": worktreePaths,
         "workspaces.selectWorktreeName": worktreeNames
+      ]
+    case "agents":
+      let limits = (1...25).map { String($0) }
+      return [
+        "agents.localRag.mode": RAGSearchMode.allCases.map { $0.rawValue },
+        "agents.localRag.limit": limits
       ]
     case "git":
       let repoPaths = UserDefaults.standard.stringArray(forKey: "git.availableRepoPaths") ?? []

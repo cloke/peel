@@ -1,0 +1,105 @@
+{
+  "id": "prompt-boost-with-snippets",
+  "title": "Local RAG: Prompt boost with grounded snippets",
+  "description": "Show how to turn a vague request into a grounded, higher-quality prompt using Local RAG results.",
+  "preconditions": [
+    "Peel built and launchable",
+    "Local RAG indexing completed for KitchenSink"
+  ],
+  "continueToken": "continue",
+  "steps": [
+    {
+      "type": "app.launch",
+      "type": "pause",
+      "message": "Topic: Baseline prompt vs grounded prompt. Type continue to move the UI to Local RAG."
+    },
+    {
+      "type": "ui.navigate",
+      "path": "agents"
+    },
+    {
+      "type": "ui.tap",
+      "path": "agents.localRag"
+      "type": "ui.navigate",
+      "path": "agents"
+      "type": "ui.snapshot"
+      "type": "ui.tap",
+      "path": "agents.localRag"
+      "type": "pause",
+      "message": "Topic: Baseline prompt (vague). Type continue to show it."
+      "message": "State the goal: faster codebase lookup and better prompts. Type continue to proceed."
+    },
+      "type": "prompt.compose",
+      "template": "Baseline prompt (before Local RAG): \"Find where Local RAG embeddings are configured and summarize the defaults.\"",
+      "inputs": []
+      "template": "Baseline prompt (before Local RAG): \"Find where Local RAG embeddings are configured and summarize the defaults.\"",
+      "inputs": []
+      "type": "pause",
+      "message": "Topic: Use Local RAG to ground the prompt. Type continue to run the UI search."
+    },
+    {
+      "type": "ui.setText",
+      "path": "agents.localRag.query",
+      "message": "LocalRAGEmbeddings provider selection Core ML tokenizer helper"
+    },
+    {
+      "type": "ui.select",
+      "path": "agents.localRag.mode",
+      "message": "vector"
+    },
+    {
+      "type": "ui.select",
+      "path": "agents.localRag.limit",
+      "message": "5"
+    },
+    {
+      "type": "ui.tap",
+      "path": "agents.localRag.search"
+      "tool": "rag.search",
+      "arguments": {
+        "query": "LocalRAGEmbeddings provider selection Core ML tokenizer helper",
+      "message": "Topic: Call out the best snippets. Type continue to fetch MCP search output."
+    },
+    {
+      "type": "mcp.call",
+      "tool": "rag.search",
+      "arguments": {
+        "query": "LocalRAGEmbeddings provider selection Core ML tokenizer helper",
+        "mode": "vector",
+        "limit": 5
+      }
+        "limit": 5
+      }
+    },
+    {
+      "type": "pause",
+      "message": "Open the top two results in the editor and highlight key lines. Type continue to proceed."
+    },
+    {
+      "type": "prompt.compose",
+      "template": "Improved prompt: \"Using the snippets below, explain how `LocalRAGEmbeddings` chooses the embedding provider, how Core ML assets are detected, and what warnings are shown in the dashboard. Provide file paths and brief bullets.\"",
+      "inputs": [
+      "message": "Topic: Explain how the snippets tighten the prompt and reduce search time. Type continue to proceed."
+        "Snippet from LocalRAGDashboardView.swift"
+      ]
+    },
+    {
+      "type": "pause",
+      "message": "Explain how the snippets tighten the prompt and reduce search time. Type continue to proceed."
+    },
+    {
+      "type": "mcp.call",
+      "tool": "chains.run",
+      "arguments": {
+        "templateName": "MCP Harness",
+        "prompt": "Using the snippets below, explain how Local RAG selects the embedding provider and how the UI warns about missing assets. Provide file paths and short bullets.",
+        "workingDirectory": "/Users/cloken/code/KitchenSink",
+        "enableReviewLoop": false
+      }
+    },
+    {
+      "type": "pause",
+      "message": "Call out that the chain answer is grounded and quicker to validate. Type continue to finish."
+    }
+  ]
+}

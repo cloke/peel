@@ -252,7 +252,7 @@ actor LocalRAGStore {
     let modelURL = modelsURL.appendingPathComponent("codebert-base-256.mlmodelc")
     let vocabURL = modelsURL.appendingPathComponent("codebert-base.vocab.json")
     let helperURL = modelsURL.appendingPathComponent("tokenize_codebert.py")
-    Status(
+    return Status(
       dbPath: dbURL.path,
       exists: FileManager.default.fileExists(atPath: dbURL.path),
       schemaVersion: schemaVersion,
