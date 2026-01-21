@@ -23,12 +23,11 @@ struct LocalRAGDashboardView: View {
 
   var body: some View {
     ScrollView {
-      VStack(alignment: .leading, spacing: 16) {
+      VStack(alignment: .leading, spacing: LayoutSpacing.page) {
         GroupBox {
-          VStack(alignment: .leading, spacing: 8) {
+          VStack(alignment: .leading, spacing: LayoutSpacing.item) {
             HStack {
-              Text("Local RAG")
-                .font(.headline)
+              SectionHeader("Local RAG")
               Spacer()
               Button("Refresh") {
                 Task { await mcpServer.refreshRagSummary() }
@@ -129,15 +128,14 @@ struct LocalRAGDashboardView: View {
         }
 
         GroupBox {
-          VStack(alignment: .leading, spacing: 8) {
-            Text("Indexing")
-              .font(.headline)
+          VStack(alignment: .leading, spacing: LayoutSpacing.item) {
+            SectionHeader("Indexing")
 
             TextField("Repository path", text: repoPath)
               .textFieldStyle(.roundedBorder)
               .accessibilityIdentifier("agents.localRag.repoPath")
 
-            HStack(spacing: 12) {
+            HStack(spacing: LayoutSpacing.item) {
               Button("Init DB") {
                 Task { await initializeDatabase() }
               }
@@ -178,9 +176,8 @@ struct LocalRAGDashboardView: View {
         }
 
         GroupBox {
-          VStack(alignment: .leading, spacing: 8) {
-            Text("Search")
-              .font(.headline)
+          VStack(alignment: .leading, spacing: LayoutSpacing.item) {
+            SectionHeader("Search")
 
             TextField("Query", text: query)
               .textFieldStyle(.roundedBorder)
@@ -219,7 +216,7 @@ struct LocalRAGDashboardView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             } else {
-              VStack(alignment: .leading, spacing: 8) {
+              VStack(alignment: .leading, spacing: LayoutSpacing.item) {
                 ForEach(results.indices, id: \.self) { index in
                   let result = results[index]
                   VStack(alignment: .leading, spacing: 4) {
