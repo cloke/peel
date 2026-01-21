@@ -461,35 +461,30 @@ struct MCPDashboardView: View {
         }
 
         GroupBox {
-          VStack(alignment: .leading, spacing: 12) {
-            Text("Run Overrides")
-              .font(.headline)
-            VStack(alignment: .leading, spacing: 8) {
-              Text("Review Controls")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+          VStack(alignment: .leading, spacing: LayoutSpacing.section) {
+            SectionHeader("Run Overrides")
+            VStack(alignment: .leading, spacing: LayoutSpacing.item) {
+              SectionHeader("Review Controls", style: .secondary)
               Toggle("Override review loop", isOn: $overrideReviewLoopEnabled)
                 .accessibilityIdentifier("agents.mcpDashboard.overrides.reviewLoopOverride")
               if overrideReviewLoopEnabled {
                 Toggle("Enable review loop", isOn: $overrideReviewLoopValue)
-                  .padding(.leading, 16)
+                  .padding(.leading, LayoutSpacing.indent)
                   .accessibilityIdentifier("agents.mcpDashboard.overrides.reviewLoopEnable")
               }
               Toggle("Override review pause", isOn: $overridePauseOnReviewEnabled)
                 .accessibilityIdentifier("agents.mcpDashboard.overrides.reviewPauseOverride")
               if overridePauseOnReviewEnabled {
                 Toggle("Pause on review request", isOn: $overridePauseOnReviewValue)
-                  .padding(.leading, 16)
+                  .padding(.leading, LayoutSpacing.indent)
                   .accessibilityIdentifier("agents.mcpDashboard.overrides.reviewPauseEnable")
               }
             }
 
             Divider()
 
-            VStack(alignment: .leading, spacing: 8) {
-              Text("Planner Controls")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: LayoutSpacing.item) {
+              SectionHeader("Planner Controls", style: .secondary)
               Toggle("Allow planner model selection", isOn: $overrideAllowModelSelection)
                 .accessibilityIdentifier("agents.mcpDashboard.overrides.allowModelSelection")
               Toggle("Allow planner implementer scaling", isOn: $overrideAllowScaling)
@@ -498,10 +493,8 @@ struct MCPDashboardView: View {
 
             Divider()
 
-            VStack(alignment: .leading, spacing: 8) {
-              Text("Limits")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: LayoutSpacing.item) {
+              SectionHeader("Limits", style: .secondary)
               Toggle("Limit implementers", isOn: $overrideMaxImplementersEnabled)
                 .accessibilityIdentifier("agents.mcpDashboard.overrides.limitImplementers")
               if overrideMaxImplementersEnabled {
@@ -509,14 +502,14 @@ struct MCPDashboardView: View {
                   Text("Max: \(overrideMaxImplementers)")
                     .font(.caption)
                 }
-                .padding(.leading, 16)
+                .padding(.leading, LayoutSpacing.indent)
                 .accessibilityIdentifier("agents.mcpDashboard.overrides.maxImplementers")
               }
 
               Toggle("Cost cap", isOn: $overrideMaxPremiumEnabled)
                 .accessibilityIdentifier("agents.mcpDashboard.overrides.costCap")
               if overrideMaxPremiumEnabled {
-                HStack(spacing: 8) {
+                HStack(spacing: LayoutSpacing.item) {
                   Text("Max premium")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -525,16 +518,14 @@ struct MCPDashboardView: View {
                     .textFieldStyle(.roundedBorder)
                     .accessibilityIdentifier("agents.mcpDashboard.overrides.maxPremium")
                 }
-                .padding(.leading, 16)
+                .padding(.leading, LayoutSpacing.indent)
               }
             }
 
             Divider()
 
-            VStack(alignment: .leading, spacing: 8) {
-              Text("Scheduling")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: LayoutSpacing.item) {
+              SectionHeader("Scheduling", style: .secondary)
               HStack {
                 Text("Priority")
                 Stepper(value: $overridePriority, in: -5...5) {
@@ -547,7 +538,7 @@ struct MCPDashboardView: View {
               Toggle("Timeout", isOn: $overrideTimeoutEnabled)
                 .accessibilityIdentifier("agents.mcpDashboard.overrides.timeoutEnabled")
               if overrideTimeoutEnabled {
-                HStack(spacing: 8) {
+                HStack(spacing: LayoutSpacing.item) {
                   Text("Seconds")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -556,7 +547,7 @@ struct MCPDashboardView: View {
                     .textFieldStyle(.roundedBorder)
                     .accessibilityIdentifier("agents.mcpDashboard.overrides.timeoutSeconds")
                 }
-                .padding(.leading, 16)
+                .padding(.leading, LayoutSpacing.indent)
               }
             }
           }
