@@ -551,6 +551,7 @@ struct MCPDashboardView: View {
               }
             }
           }
+          .padding(.vertical, LayoutSpacing.section)
         }
 
         GroupBox {

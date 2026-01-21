@@ -241,7 +241,8 @@ struct LocalRAGDashboardView: View {
           }
         }
       }
-      .padding()
+      .padding(.horizontal, LayoutSpacing.page)
+      .padding(.vertical, LayoutSpacing.section)
     }
     .navigationTitle("Local RAG")
     .task {
