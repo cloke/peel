@@ -159,6 +159,7 @@ private struct TemplateCard: View {
           onCreate()
         }
         .buttonStyle(.borderedProminent)
+        .accessibilityIdentifier("agents.templateGallery.template.\(template.id.uuidString).create")
 
         Spacer()
 
@@ -169,6 +170,7 @@ private struct TemplateCard: View {
             Image(systemName: "trash")
           }
           .buttonStyle(.bordered)
+          .accessibilityIdentifier("agents.templateGallery.template.\(template.id.uuidString).delete")
         }
       }
     }

@@ -185,6 +185,7 @@ struct Agents_RootView: View {
           Label("New Agent", systemImage: "cpu")
         }
         .buttonStyle(.bordered)
+        .accessibilityIdentifier("agents.emptyState.newAgent")
         
         Button {
           showingNewChainSheet = true
@@ -192,6 +193,7 @@ struct Agents_RootView: View {
           Label("New Chain", systemImage: "link")
         }
         .buttonStyle(.borderedProminent)
+        .accessibilityIdentifier("agents.emptyState.newChain")
       }
     }
   }

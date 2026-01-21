@@ -60,8 +60,10 @@ struct NewChainSheet: View {
                   .foregroundStyle(.secondary)
               }
               .buttonStyle(.plain)
+              .accessibilityIdentifier("agents.newChain.project.clear")
             }
             Button("Select...") { selectFolder() }
+              .accessibilityIdentifier("agents.newChain.project.select")
           }
 
           if workingDirectory == nil {
@@ -77,6 +79,7 @@ struct NewChainSheet: View {
         // Template selection
         Section {
           Toggle("Use Template", isOn: $useTemplate)
+            .accessibilityIdentifier("agents.newChain.useTemplate")
 
           if useTemplate {
             Picker("Template", selection: $selectedTemplate) {
@@ -110,6 +113,7 @@ struct NewChainSheet: View {
                 }
               }
             }
+            .accessibilityIdentifier("agents.newChain.template")
 
             // Template preview
             if let template = selectedTemplate {
@@ -143,6 +147,7 @@ struct NewChainSheet: View {
 
         Section("Chain") {
           TextField("Chain Name", text: $name, prompt: Text(selectedTemplate?.name ?? "My Chain"))
+            .accessibilityIdentifier("agents.newChain.name")
         }
 
         // Manual configuration (only when not using template)
@@ -160,6 +165,7 @@ struct NewChainSheet: View {
                 Label(r.displayName, systemImage: r.iconName).tag(r)
               }
             }
+            .accessibilityIdentifier("agents.newChain.agent1.role")
 
             if !agent1Role.canWrite {
               Label("Read-only: cannot edit files", systemImage: "lock.fill")
@@ -184,6 +190,7 @@ struct NewChainSheet: View {
                 }
               }
             }
+            .accessibilityIdentifier("agents.newChain.agent1.model")
           }
 
           Section {
@@ -199,6 +206,7 @@ struct NewChainSheet: View {
                 Label(r.displayName, systemImage: r.iconName).tag(r)
               }
             }
+            .accessibilityIdentifier("agents.newChain.agent2.role")
 
             if !agent2Role.canWrite {
               Label("Read-only: cannot edit files", systemImage: "lock.fill")
@@ -223,6 +231,7 @@ struct NewChainSheet: View {
                 }
               }
             }
+            .accessibilityIdentifier("agents.newChain.agent2.model")
           }
 
           Section {
@@ -240,6 +249,7 @@ struct NewChainSheet: View {
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           Button("Cancel") { dismiss() }
+            .accessibilityIdentifier("agents.newChain.cancel")
         }
         ToolbarItem(placement: .confirmationAction) {
           Button("Create") {
@@ -251,6 +261,7 @@ struct NewChainSheet: View {
             dismiss()
           }
           .disabled(workingDirectory == nil || (useTemplate && selectedTemplate == nil))
+          .accessibilityIdentifier("agents.newChain.create")
         }
       }
     }

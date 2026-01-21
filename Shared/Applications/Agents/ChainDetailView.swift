@@ -85,11 +85,13 @@ struct ChainDetailView: View {
                   .foregroundStyle(.secondary)
               }
               .buttonStyle(.plain)
+              .accessibilityIdentifier("agents.chainDetail.project.clear")
             }
             Button("Select...") {
               selectFolder()
             }
             .buttonStyle(.bordered)
+            .accessibilityIdentifier("agents.chainDetail.project.select")
           }
 
           if chain.workingDirectory == nil {
@@ -170,6 +172,7 @@ struct ChainDetailView: View {
               .padding(8)
               .background(Color.secondary.opacity(0.1))
               .clipShape(RoundedRectangle(cornerRadius: 8))
+              .accessibilityIdentifier("agents.chainDetail.prompt")
 
             Text("This prompt will be sent to Agent 1. Agent 2 will receive Agent 1's output as context.")
               .font(.caption)
@@ -186,6 +189,7 @@ struct ChainDetailView: View {
                 )) {
                   Label("Enable Review Loop", systemImage: "arrow.triangle.2.circlepath")
                 }
+                .accessibilityIdentifier("agents.chainDetail.reviewLoop.enabled")
 
                 if chain.enableReviewLoop {
                   HStack {
@@ -202,6 +206,7 @@ struct ChainDetailView: View {
                     }
                     .pickerStyle(.segmented)
                     .frame(width: 150)
+                    .accessibilityIdentifier("agents.chainDetail.reviewLoop.maxIterations")
                   }
 
                   Text("If reviewer requests changes, re-run implementer with feedback")
@@ -226,6 +231,7 @@ struct ChainDetailView: View {
             }
             .buttonStyle(.borderedProminent)
             .disabled(isRunning || prompt.isEmpty || chain.workingDirectory == nil)
+            .accessibilityIdentifier("agents.chainDetail.run")
 
             if isRunning {
               ProgressView().scaleEffect(0.8)
@@ -279,6 +285,7 @@ struct ChainDetailView: View {
                 Label("New Task", systemImage: "plus")
               }
               .buttonStyle(.bordered)
+              .accessibilityIdentifier("agents.chainDetail.newTask")
             }
           }
           .background(Color.green.opacity(0.1))
@@ -313,6 +320,7 @@ struct ChainDetailView: View {
                   NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
                 }
                 .buttonStyle(.bordered)
+                .accessibilityIdentifier("agents.chainDetail.mergeConflicts.openFinder")
               }
               #endif
             }
@@ -403,6 +411,7 @@ struct ChainDetailView: View {
                 Label("Save as Template", systemImage: "square.and.arrow.down")
               }
               .buttonStyle(.bordered)
+              .accessibilityIdentifier("agents.chainDetail.saveTemplate")
             }
           }
         }
@@ -561,6 +570,7 @@ struct ChainDetailView: View {
       RoundedRectangle(cornerRadius: 8)
         .stroke(isAgentRunning(at: index) ? Color.blue : Color.clear, lineWidth: 2)
     )
+    .accessibilityIdentifier("agents.chainDetail.agentCard.\(agent.id.uuidString)")
   }
 
   // MARK: - Agent Status Helpers

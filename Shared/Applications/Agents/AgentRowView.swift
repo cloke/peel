@@ -37,6 +37,7 @@ struct AgentRowView: View {
         ProgressView().scaleEffect(0.5).frame(width: 16, height: 16)
       }
     }
+    .accessibilityIdentifier("agents.agentRow.\(agent.id.uuidString)")
   }
 
   private var roleColor: Color {

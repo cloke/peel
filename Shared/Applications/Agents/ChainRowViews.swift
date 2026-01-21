@@ -47,6 +47,7 @@ struct RunningChainRowView: View {
       }
     }
     .padding(.vertical, 4)
+    .accessibilityIdentifier("agents.chainRow.running.\(chain.id.uuidString)")
   }
 
   private var statusText: String {
@@ -103,6 +104,7 @@ struct ChainRowView: View {
       }
       Spacer()
     }
+    .accessibilityIdentifier("agents.chainRow.\(chain.id.uuidString)")
   }
 
   private var stateIcon: String {

@@ -52,18 +52,21 @@ struct TranslationValidationView: View {
               TextField("/path/to/project", text: $rootPath)
                 .textFieldStyle(.roundedBorder)
                 .frame(minWidth: 320)
+                .accessibilityIdentifier("agents.translationValidator.rootPath")
             }
 
             LabeledContent("Translations path (optional)") {
               TextField("/path/to/translations", text: $translationsPath)
                 .textFieldStyle(.roundedBorder)
                 .frame(minWidth: 320)
+                .accessibilityIdentifier("agents.translationValidator.translationsPath")
             }
 
             LabeledContent("Base locale (optional)") {
               TextField("en-us", text: $baseLocale)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 120)
+                .accessibilityIdentifier("agents.translationValidator.baseLocale")
             }
 
             LabeledContent("Validator path (optional)") {
@@ -71,6 +74,7 @@ struct TranslationValidationView: View {
                 TextField("Auto-detect from app project", text: $toolPath)
                   .textFieldStyle(.roundedBorder)
                   .frame(minWidth: 320)
+                  .accessibilityIdentifier("agents.translationValidator.toolPath")
 
                 Button("Detect") {
                   if let detected = service.suggestedToolPath(rootHint: rootPath) {
@@ -79,13 +83,16 @@ struct TranslationValidationView: View {
                   }
                 }
                 .buttonStyle(.bordered)
+                .accessibilityIdentifier("agents.translationValidator.detect")
               }
             }
 
             Toggle("Summary only", isOn: $showSummaryOnly)
+              .accessibilityIdentifier("agents.translationValidator.summaryOnly")
 
             Toggle("Use Apple on-device AI for suspects", isOn: $useAppleAI)
               .disabled(!service.appleAIAvailable)
+              .accessibilityIdentifier("agents.translationValidator.useAppleAI")
 
             if useAppleAI && !service.appleAIAvailable {
               Text("Apple AI is not available on this device.")
@@ -95,6 +102,7 @@ struct TranslationValidationView: View {
 
             Toggle("Redact samples before AI", isOn: $redactSamples)
               .disabled(!useAppleAI)
+              .accessibilityIdentifier("agents.translationValidator.redactSamples")
             if useAppleAI && !redactSamples {
               Text("Raw samples will be sent to the on-device model.")
                 .font(.caption)
@@ -107,10 +115,15 @@ struct TranslationValidationView: View {
                 .foregroundStyle(.secondary)
               LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 12)], spacing: 8) {
                 Toggle("Missing", isOn: $filterMissing)
+                  .accessibilityIdentifier("agents.translationValidator.filter.missing")
                 Toggle("Extra", isOn: $filterExtra)
+                  .accessibilityIdentifier("agents.translationValidator.filter.extra")
                 Toggle("Placeholders", isOn: $filterPlaceholders)
+                  .accessibilityIdentifier("agents.translationValidator.filter.placeholders")
                 Toggle("Types", isOn: $filterTypes)
+                  .accessibilityIdentifier("agents.translationValidator.filter.types")
                 Toggle("Suspects", isOn: $filterSuspects)
+                  .accessibilityIdentifier("agents.translationValidator.filter.suspects")
               }
               .toggleStyle(.switch)
             }
@@ -136,12 +149,14 @@ struct TranslationValidationView: View {
               }
               .buttonStyle(.borderedProminent)
               .disabled(service.isRunning || rootPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+              .accessibilityIdentifier("agents.translationValidator.run")
 
               Button("Stop") {
                 service.cancel()
               }
               .buttonStyle(.bordered)
               .disabled(!service.isRunning)
+              .accessibilityIdentifier("agents.translationValidator.stop")
             }
 
             if let detected = lastDetectedToolPath {
@@ -269,12 +284,14 @@ struct TranslationValidationView: View {
       Button("Cancel", role: .cancel) {
         pendingOptions = nil
       }
+      .accessibilityIdentifier("agents.translationValidator.confirm.cancel")
       Button("Run Anyway", role: .destructive) {
         if let options = pendingOptions {
           Task { await service.validate(options: options) }
         }
         pendingOptions = nil
       }
+      .accessibilityIdentifier("agents.translationValidator.confirm.run")
     } message: {
       Text("The selected root looks broad and may scan a large portion of your disk. Continue?")
     }
