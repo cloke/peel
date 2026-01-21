@@ -61,6 +61,16 @@ struct LocalRAGDashboardView: View {
               Toggle("Use Core ML embeddings (CodeBERT)", isOn: $useCoreML)
                 .font(.caption)
                 .toggleStyle(.switch)
+              if useCoreML && !status.coreMLTokenizerHelperPresent {
+                Text("Warning: tokenizer helper missing — embeddings will be low quality")
+                  .font(.caption2)
+                  .foregroundStyle(.orange)
+              }
+              if useCoreML && (!status.coreMLModelPresent || !status.coreMLVocabPresent) {
+                Text("Warning: Core ML assets missing — falling back to system embeddings")
+                  .font(.caption2)
+                  .foregroundStyle(.orange)
+              }
               Text("Restart required to apply Core ML setting")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
