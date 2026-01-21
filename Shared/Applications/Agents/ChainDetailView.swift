@@ -192,6 +192,14 @@ struct ChainDetailView: View {
                 .accessibilityIdentifier("agents.chainDetail.reviewLoop.enabled")
 
                 if chain.enableReviewLoop {
+                  Toggle(isOn: Binding(
+                    get: { chain.pauseOnReview },
+                    set: { chain.pauseOnReview = $0 }
+                  )) {
+                    Label("Pause on Review Request", systemImage: "pause.circle")
+                  }
+                  .accessibilityIdentifier("agents.chainDetail.reviewLoop.pauseOnReview")
+
                   HStack {
                     Text("Max iterations:")
                       .font(.caption)
@@ -308,10 +316,26 @@ struct ChainDetailView: View {
               Text("Resolve these files, then re-run the reviewer.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-              ForEach(mergeConflicts, id: \.self) { path in
-                Text(path)
-                  .font(.caption.monospaced())
-                  .foregroundStyle(.secondary)
+              ForEach(Array(mergeConflicts.enumerated()), id: \.offset) { index, path in
+                HStack(spacing: 8) {
+                  Text(path)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                  Spacer()
+                  #if os(macOS)
+                  Button("VS Code") {
+                    Task { try? await VSCodeService.shared.openFile(path) }
+                  }
+                  .buttonStyle(.link)
+                  .accessibilityIdentifier("agents.chainDetail.mergeConflicts.\(index).openVSCode")
+                  Button("Reveal") {
+                    NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: "")
+                  }
+                  .buttonStyle(.link)
+                  .accessibilityIdentifier("agents.chainDetail.mergeConflicts.\(index).reveal")
+                  #endif
+                }
               }
 
               #if os(macOS)

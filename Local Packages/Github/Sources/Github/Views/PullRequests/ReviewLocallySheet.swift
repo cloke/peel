@@ -133,6 +133,7 @@ public struct ReviewLocallySheet: View {
         HStack {
           TextField("Path to local repository", text: $selectedRepoPath)
             .textFieldStyle(.roundedBorder)
+            .accessibilityIdentifier("github.reviewLocal.repoPath")
           
           Button("Browse...") {
             if let path = service.browseForRepository() {
@@ -140,6 +141,7 @@ public struct ReviewLocallySheet: View {
               service.lastSelectedRepoPath = path
             }
           }
+          .accessibilityIdentifier("github.reviewLocal.repoBrowse")
         }
       }
       .padding(.horizontal)
@@ -166,6 +168,7 @@ public struct ReviewLocallySheet: View {
       // Options
       Toggle("Open in VS Code when ready", isOn: $openInVSCode)
         .padding(.horizontal)
+        .accessibilityIdentifier("github.reviewLocal.openInVSCode")
       
       Spacer()
     }
@@ -202,6 +205,7 @@ public struct ReviewLocallySheet: View {
       .cornerRadius(6)
     }
     .buttonStyle(.plain)
+    .accessibilityIdentifier("github.reviewLocal.recent.\(repo.id.uuidString)")
   }
   
   // MARK: - Progress View
@@ -255,6 +259,7 @@ public struct ReviewLocallySheet: View {
         } label: {
           Label("Show in Finder", systemImage: "folder")
         }
+        .accessibilityIdentifier("github.reviewLocal.complete.showFinder")
         
         Button {
           try? VSCodeLauncher.open(path: worktreePath)
@@ -262,6 +267,7 @@ public struct ReviewLocallySheet: View {
           Label("Open in VS Code", systemImage: "chevron.left.forwardslash.chevron.right")
         }
         .buttonStyle(.borderedProminent)
+        .accessibilityIdentifier("github.reviewLocal.complete.openVSCode")
       }
       
       Spacer()
@@ -290,6 +296,7 @@ public struct ReviewLocallySheet: View {
       Button("Try Again") {
         service.reset()
       }
+      .accessibilityIdentifier("github.reviewLocal.error.tryAgain")
       
       Spacer()
     }
@@ -309,6 +316,7 @@ public struct ReviewLocallySheet: View {
           dismiss()
         }
         .keyboardShortcut(.cancelAction)
+        .accessibilityIdentifier("github.reviewLocal.cancel")
       }
       
       Spacer()
@@ -327,6 +335,7 @@ public struct ReviewLocallySheet: View {
         .buttonStyle(.borderedProminent)
         .disabled(selectedRepoPath.isEmpty)
         .keyboardShortcut(.defaultAction)
+        .accessibilityIdentifier("github.reviewLocal.createWorktree")
         
       case .complete:
         Button("Done") {
@@ -335,12 +344,14 @@ public struct ReviewLocallySheet: View {
         }
         .buttonStyle(.borderedProminent)
         .keyboardShortcut(.defaultAction)
+        .accessibilityIdentifier("github.reviewLocal.complete.done")
         
       case .error:
         Button("Close") {
           service.reset()
           dismiss()
         }
+        .accessibilityIdentifier("github.reviewLocal.error.close")
         
       default:
         EmptyView()
