@@ -192,6 +192,9 @@ actor LocalRAGStore {
     let extensionLoaded: Bool
     let lastInitializedAt: Date?
     let providerName: String
+    let coreMLModelPresent: Bool
+    let coreMLVocabPresent: Bool
+    let coreMLTokenizerHelperPresent: Bool
   }
 
   struct Stats: Sendable {
@@ -245,13 +248,20 @@ actor LocalRAGStore {
 
 
   func status() -> Status {
+    let modelsURL = dbURL.deletingLastPathComponent().appendingPathComponent("Models", isDirectory: true)
+    let modelURL = modelsURL.appendingPathComponent("codebert-base-256.mlmodelc")
+    let vocabURL = modelsURL.appendingPathComponent("codebert-base.vocab.json")
+    let helperURL = modelsURL.appendingPathComponent("tokenize_codebert.py")
     Status(
       dbPath: dbURL.path,
       exists: FileManager.default.fileExists(atPath: dbURL.path),
       schemaVersion: schemaVersion,
       extensionLoaded: extensionLoaded,
       lastInitializedAt: lastInitializedAt,
-      providerName: String(describing: type(of: embeddingProvider))
+      providerName: String(describing: type(of: embeddingProvider)),
+      coreMLModelPresent: FileManager.default.fileExists(atPath: modelURL.path),
+      coreMLVocabPresent: FileManager.default.fileExists(atPath: vocabURL.path),
+      coreMLTokenizerHelperPresent: FileManager.default.fileExists(atPath: helperURL.path)
     )
   }
 
