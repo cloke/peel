@@ -34,14 +34,11 @@ xcodebuild -scheme "Peel (macOS)" -configuration Debug build
 3. **Brew** - Just works (requires Homebrew installed)
 
 ### Optional: Local RAG Core ML Embeddings
-Core ML embedding artifacts are **not** committed. To use CodeBERT embeddings locally:
+Core ML embedding artifacts are **not** committed. To use CodeBERT embeddings locally, see Docs/guides/LOCAL_RAG_MODEL_CATALOG.md.
 
 1. Generate the Core ML model and vocab:
 ```bash
-python3 Tools/ModelTools/convert_codebert_to_coreml.py \
-	--model-id microsoft/codebert-base \
-	--seq-len 256 \
-	--output Tools/ModelTools/output/codebert-base-256.mlpackage
+python3 Tools/ModelTools/convert_codebert_to_coreml.py --model codebert-base-256
 ```
 
 2. Compile and copy assets into app support:
