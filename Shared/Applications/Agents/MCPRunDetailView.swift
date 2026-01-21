@@ -205,10 +205,12 @@ struct MCPRunDetailView: View {
                       Task { try? await VSCodeService.shared.open(path: path, newWindow: true) }
                     }
                     .buttonStyle(.link)
+                    .accessibilityIdentifier("agents.mcpRunDetail.worktree.openVSCode")
                     Button("Open") {
                       NSWorkspace.shared.open(URL(fileURLWithPath: path))
                     }
                     .buttonStyle(.link)
+                    .accessibilityIdentifier("agents.mcpRunDetail.worktree.openFinder")
                     #endif
                   }
                 }
@@ -222,6 +224,7 @@ struct MCPRunDetailView: View {
                   Task { await mcpServer.cleanupWorktrees(paths: worktreePaths) }
                 }
                 .buttonStyle(.bordered)
+                .accessibilityIdentifier("agents.mcpRunDetail.worktree.clean")
                 #endif
               }
             }
@@ -236,16 +239,19 @@ struct MCPRunDetailView: View {
                 Text(mergeReadinessLabel)
                   .font(.caption)
                   .foregroundStyle(run.mergeConflictsCount > 0 ? .red : .green)
+                  .accessibilityIdentifier("agents.mcpRunDetail.mergeReadiness.status")
               }
               if run.mergeConflictsCount > 0 {
                 Text("Conflicts detected: \(run.mergeConflictsCount)")
                   .font(.caption2)
                   .foregroundStyle(.secondary)
+                  .accessibilityIdentifier("agents.mcpRunDetail.mergeReadiness.conflicts")
               }
               if !implementerBranches.isEmpty {
                 Text("Implementer branches: \(implementerBranches.joined(separator: ", "))")
                   .font(.caption2)
                   .foregroundStyle(.secondary)
+                  .accessibilityIdentifier("agents.mcpRunDetail.mergeReadiness.branches")
               }
             }
           }
