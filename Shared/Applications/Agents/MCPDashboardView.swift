@@ -461,29 +461,47 @@ struct MCPDashboardView: View {
         }
 
         GroupBox {
-          VStack(alignment: .leading, spacing: 10) {
+          VStack(alignment: .leading, spacing: 12) {
             Text("Run Overrides")
               .font(.headline)
-            Toggle("Override review loop", isOn: $overrideReviewLoopEnabled)
-              .accessibilityIdentifier("agents.mcpDashboard.overrides.reviewLoopOverride")
-            if overrideReviewLoopEnabled {
-              Toggle("Enable review loop", isOn: $overrideReviewLoopValue)
-                .padding(.leading, 12)
-                .accessibilityIdentifier("agents.mcpDashboard.overrides.reviewLoopEnable")
+            VStack(alignment: .leading, spacing: 8) {
+              Text("Review Controls")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              Toggle("Override review loop", isOn: $overrideReviewLoopEnabled)
+                .accessibilityIdentifier("agents.mcpDashboard.overrides.reviewLoopOverride")
+              if overrideReviewLoopEnabled {
+                Toggle("Enable review loop", isOn: $overrideReviewLoopValue)
+                  .padding(.leading, 16)
+                  .accessibilityIdentifier("agents.mcpDashboard.overrides.reviewLoopEnable")
+              }
+              Toggle("Override review pause", isOn: $overridePauseOnReviewEnabled)
+                .accessibilityIdentifier("agents.mcpDashboard.overrides.reviewPauseOverride")
+              if overridePauseOnReviewEnabled {
+                Toggle("Pause on review request", isOn: $overridePauseOnReviewValue)
+                  .padding(.leading, 16)
+                  .accessibilityIdentifier("agents.mcpDashboard.overrides.reviewPauseEnable")
+              }
             }
-            Toggle("Override review pause", isOn: $overridePauseOnReviewEnabled)
-              .accessibilityIdentifier("agents.mcpDashboard.overrides.reviewPauseOverride")
-            if overridePauseOnReviewEnabled {
-              Toggle("Pause on review request", isOn: $overridePauseOnReviewValue)
-                .padding(.leading, 12)
-                .accessibilityIdentifier("agents.mcpDashboard.overrides.reviewPauseEnable")
-            }
-            Toggle("Allow planner model selection", isOn: $overrideAllowModelSelection)
-              .accessibilityIdentifier("agents.mcpDashboard.overrides.allowModelSelection")
-            Toggle("Allow planner implementer scaling", isOn: $overrideAllowScaling)
-              .accessibilityIdentifier("agents.mcpDashboard.overrides.allowScaling")
 
-            HStack {
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+              Text("Planner Controls")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              Toggle("Allow planner model selection", isOn: $overrideAllowModelSelection)
+                .accessibilityIdentifier("agents.mcpDashboard.overrides.allowModelSelection")
+              Toggle("Allow planner implementer scaling", isOn: $overrideAllowScaling)
+                .accessibilityIdentifier("agents.mcpDashboard.overrides.allowScaling")
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+              Text("Limits")
+                .font(.caption)
+                .foregroundStyle(.secondary)
               Toggle("Limit implementers", isOn: $overrideMaxImplementersEnabled)
                 .accessibilityIdentifier("agents.mcpDashboard.overrides.limitImplementers")
               if overrideMaxImplementersEnabled {
@@ -491,38 +509,54 @@ struct MCPDashboardView: View {
                   Text("Max: \(overrideMaxImplementers)")
                     .font(.caption)
                 }
+                .padding(.leading, 16)
                 .accessibilityIdentifier("agents.mcpDashboard.overrides.maxImplementers")
               }
-            }
 
-            HStack {
               Toggle("Cost cap", isOn: $overrideMaxPremiumEnabled)
                 .accessibilityIdentifier("agents.mcpDashboard.overrides.costCap")
               if overrideMaxPremiumEnabled {
-                TextField("Max premium", text: $overrideMaxPremiumCost)
-                  .frame(width: 80)
-                  .textFieldStyle(.roundedBorder)
-                  .accessibilityIdentifier("agents.mcpDashboard.overrides.maxPremium")
+                HStack(spacing: 8) {
+                  Text("Max premium")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                  TextField("1.0", text: $overrideMaxPremiumCost)
+                    .frame(width: 90)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("agents.mcpDashboard.overrides.maxPremium")
+                }
+                .padding(.leading, 16)
               }
             }
 
-            HStack {
-              Text("Priority")
-              Stepper(value: $overridePriority, in: -5...5) {
-                Text("\(overridePriority)")
-                  .font(.caption)
-              }
-              .accessibilityIdentifier("agents.mcpDashboard.overrides.priority")
-            }
+            Divider()
 
-            HStack {
+            VStack(alignment: .leading, spacing: 8) {
+              Text("Scheduling")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              HStack {
+                Text("Priority")
+                Stepper(value: $overridePriority, in: -5...5) {
+                  Text("\(overridePriority)")
+                    .font(.caption)
+                }
+                .accessibilityIdentifier("agents.mcpDashboard.overrides.priority")
+              }
+
               Toggle("Timeout", isOn: $overrideTimeoutEnabled)
                 .accessibilityIdentifier("agents.mcpDashboard.overrides.timeoutEnabled")
               if overrideTimeoutEnabled {
-                TextField("Seconds", text: $overrideTimeoutSeconds)
-                  .frame(width: 90)
-                  .textFieldStyle(.roundedBorder)
-                  .accessibilityIdentifier("agents.mcpDashboard.overrides.timeoutSeconds")
+                HStack(spacing: 8) {
+                  Text("Seconds")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                  TextField("600", text: $overrideTimeoutSeconds)
+                    .frame(width: 90)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("agents.mcpDashboard.overrides.timeoutSeconds")
+                }
+                .padding(.leading, 16)
               }
             }
           }
