@@ -271,4 +271,26 @@ extension ChainTemplate {
   public var costDisplay: String {
     estimatedTotalCost.premiumCostDisplay
   }
+
+  #if os(macOS)
+  public var validationSummaryLabel: String? {
+    if validationConfig.enabledRules.isEmpty {
+      return nil
+    }
+    if validationConfig == .default {
+      return "Validation: Default"
+    }
+    if validationConfig == .strict {
+      return "Validation: Strict"
+    }
+    if validationConfig == .minimal {
+      return "Validation: Minimal"
+    }
+    return "Validation: Custom"
+  }
+  #else
+  public var validationSummaryLabel: String? {
+    nil
+  }
+  #endif
 }

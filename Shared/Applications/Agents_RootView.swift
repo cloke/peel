@@ -15,6 +15,7 @@ import AppKit
 enum InfrastructureView: String, Hashable {
   case vmIsolation = "vm-isolation"
   case mcpDashboard = "mcp-dashboard"
+  case templateGallery = "template-gallery"
   case translationValidation = "translation-validation"
   case localRag = "local-rag"
   case piiScrubber = "pii-scrubber"
@@ -77,6 +78,9 @@ struct Agents_RootView: View {
       case "agents.translationValidation":
         selectedInfrastructure = .translationValidation
         mcpServer.recordUIActionHandled(action.controlId)
+      case "agents.templateGallery":
+        selectedInfrastructure = .templateGallery
+        mcpServer.recordUIActionHandled(action.controlId)
       case "agents.localRag":
         selectedInfrastructure = .localRag
         mcpServer.recordUIActionHandled(action.controlId)
@@ -137,6 +141,8 @@ struct Agents_RootView: View {
         VMIsolationDashboardView()
       case .mcpDashboard:
         MCPDashboardView(mcpServer: mcpServer, sessionTracker: sessionTracker)
+      case .templateGallery:
+        ChainTemplateGalleryView(agentManager: agentManager)
       case .translationValidation:
         TranslationValidationView()
       case .localRag:

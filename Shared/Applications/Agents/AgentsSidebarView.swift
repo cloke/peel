@@ -145,6 +145,15 @@ struct AgentsSidebarView: View {
           .tag("infra:mcp-dashboard")
 
           HStack {
+            Image(systemName: "square.grid.2x2")
+              .foregroundStyle(.blue)
+            Text("Template Gallery")
+            Spacer()
+          }
+          .accessibilityIdentifier("agents.templateGallery")
+          .tag("infra:template-gallery")
+
+          HStack {
             Image(systemName: "magnifyingglass.circle")
               .foregroundStyle(.teal)
             Text("Local RAG")
@@ -273,6 +282,7 @@ struct AgentsSidebarView: View {
   private func infrastructureControlId(for key: String) -> String? {
     switch key {
     case "mcp-dashboard": return "agents.mcpDashboard"
+    case "template-gallery": return "agents.templateGallery"
     case "local-rag": return "agents.localRag"
     case "translation-validation": return "agents.translationValidation"
     case "vm-isolation": return "agents.vmIsolation"
