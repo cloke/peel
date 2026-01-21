@@ -391,12 +391,14 @@ struct MCPRunDetailView: View {
           Button("Done") {
             dismiss()
           }
+          .accessibilityIdentifier("agents.mcpRunDetail.done")
         }
         #if os(macOS)
         ToolbarItem(placement: .primaryAction) {
           Button("Export") {
             exportRun()
           }
+          .accessibilityIdentifier("agents.mcpRunDetail.export")
         }
         ToolbarItem(placement: .primaryAction) {
           Button("Compare") {
@@ -404,6 +406,7 @@ struct MCPRunDetailView: View {
             showingCompareSheet = true
           }
           .disabled(allRuns.filter { $0.id != run.id }.isEmpty)
+          .accessibilityIdentifier("agents.mcpRunDetail.compare")
         }
         #endif
       }
@@ -449,6 +452,7 @@ struct CompareRunSheet: View {
           }
         }
         .pickerStyle(.menu)
+        .accessibilityIdentifier("agents.mcpRunCompare.picker")
 
         HStack(alignment: .top, spacing: 12) {
           VStack(alignment: .leading, spacing: 6) {
@@ -490,6 +494,7 @@ struct CompareRunSheet: View {
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           Button("Done") { dismiss() }
+            .accessibilityIdentifier("agents.mcpRunCompare.done")
         }
       }
     }
