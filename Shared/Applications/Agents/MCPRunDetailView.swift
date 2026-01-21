@@ -26,6 +26,17 @@ struct MCPRunDetailView: View {
   @State private var isLoadingWorktreeStatus = false
   @State private var worktreeChangedFiles: [String: Int] = [:]
 
+  #if os(macOS)
+  private var activeRunInfo: MCPServerService.ActiveRunInfo? {
+    guard let chainId = UUID(uuidString: run.chainId) else { return nil }
+    return mcpServer.activeRuns.first { $0.chainId == chainId }
+  }
+
+  private var activeChain: AgentChain? {
+    mcpServer.agentManager.chains.first { $0.id.uuidString == run.chainId }
+  }
+  #endif
+
   init(run: MCPRunRecord) {
     self.run = run
     let chainId = run.chainId
@@ -179,6 +190,56 @@ struct MCPRunDetailView: View {
               }
             }
           }
+
+          #if os(macOS)
+          if let activeRun = activeRunInfo {
+            GroupBox("Active Run") {
+              VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                  Text(activeChain?.state.displayName ?? "Running")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                  Spacer()
+                  Text(activeRun.startedAt, style: .time)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                }
+                if let chain = activeChain, chain.pauseOnReview, case .reviewing = chain.state {
+                  Text("Paused for review gate")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .accessibilityIdentifier("agents.mcpRunDetail.activeRun.reviewGatePaused")
+                }
+                HStack(spacing: 8) {
+                  Button("Pause") {
+                    Task { await mcpServer.pauseRun(activeRun.id) }
+                  }
+                  .buttonStyle(.bordered)
+                  .accessibilityIdentifier("agents.mcpRunDetail.activeRun.\(run.id.uuidString).pause")
+
+                  Button("Resume") {
+                    Task { await mcpServer.resumeRun(activeRun.id) }
+                  }
+                  .buttonStyle(.bordered)
+                  .accessibilityIdentifier("agents.mcpRunDetail.activeRun.\(run.id.uuidString).resume")
+
+                  Button("Step") {
+                    Task { await mcpServer.stepRun(activeRun.id) }
+                  }
+                  .buttonStyle(.bordered)
+                  .accessibilityIdentifier("agents.mcpRunDetail.activeRun.\(run.id.uuidString).step")
+
+                  Button("Stop") {
+                    Task { await mcpServer.stopRun(activeRun.id) }
+                  }
+                  .buttonStyle(.bordered)
+                  .tint(.red)
+                  .accessibilityIdentifier("agents.mcpRunDetail.activeRun.\(run.id.uuidString).stop")
+                }
+              }
+            }
+          }
+          #endif
 
           if !worktreePaths.isEmpty {
             GroupBox("Worktrees") {
