@@ -267,14 +267,56 @@ struct CoreMLEmbeddingProvider: LocalRAGEmbeddingProvider, @unchecked Sendable {
   let dimensions: Int
 
   static func makeDefault(modelFolderName: String) -> CoreMLEmbeddingProvider? {
-    guard let baseURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
-      return nil
+    let modelDirectories = candidateModelDirectories(modelFolderName: modelFolderName)
+    let helperURL = firstExistingHelper(in: modelDirectories)
+    for directory in modelDirectories {
+      let modelURL = directory.appendingPathComponent("codebert-base-256.mlmodelc")
+      let vocabURL = directory.appendingPathComponent("codebert-base.vocab.json")
+      if FileManager.default.fileExists(atPath: modelURL.path) {
+        let fallbackHelper = directory.appendingPathComponent("tokenize_codebert.py")
+        return CoreMLEmbeddingProvider(
+          modelURL: modelURL,
+          vocabURL: vocabURL,
+          helperURL: helperURL ?? fallbackHelper,
+          maxLength: 256
+        )
+      }
     }
-    let modelsURL = baseURL.appendingPathComponent(modelFolderName, isDirectory: true)
-    let modelURL = modelsURL.appendingPathComponent("codebert-base-256.mlmodelc")
-    let vocabURL = modelsURL.appendingPathComponent("codebert-base.vocab.json")
-    let helperURL = modelsURL.appendingPathComponent("tokenize_codebert.py")
-    return CoreMLEmbeddingProvider(modelURL: modelURL, vocabURL: vocabURL, helperURL: helperURL, maxLength: 256)
+    return nil
+  }
+
+  private static func candidateModelDirectories(modelFolderName: String) -> [URL] {
+    var directories: [URL] = []
+    if let baseURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+      directories.append(baseURL)
+    }
+    if let bundleId = Bundle.main.bundleIdentifier {
+      let containerBase = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Containers")
+        .appendingPathComponent(bundleId)
+        .appendingPathComponent("Data/Library/Application Support")
+      directories.append(containerBase)
+    }
+
+    var seen = Set<String>()
+    return directories
+      .map { $0.appendingPathComponent(modelFolderName, isDirectory: true) }
+      .filter { url in
+        let path = url.standardizedFileURL.path
+        guard !seen.contains(path) else { return false }
+        seen.insert(path)
+        return true
+      }
+  }
+
+  private static func firstExistingHelper(in directories: [URL]) -> URL? {
+    for directory in directories {
+      let helperURL = directory.appendingPathComponent("tokenize_codebert.py")
+      if FileManager.default.fileExists(atPath: helperURL.path) {
+        return helperURL
+      }
+    }
+    return nil
   }
 
   init?(modelURL: URL, vocabURL: URL, helperURL: URL, maxLength: Int) {
