@@ -33,11 +33,10 @@ struct PIIScrubberView: View {
 
   var body: some View {
     ScrollView {
-      VStack(alignment: .leading, spacing: 16) {
+      VStack(alignment: .leading, spacing: LayoutSpacing.page) {
         GroupBox {
-          VStack(alignment: .leading, spacing: 12) {
-            Text("PII Scrubber")
-              .font(.headline)
+          VStack(alignment: .leading, spacing: LayoutSpacing.section) {
+            SectionHeader("PII Scrubber")
 
             LabeledContent("Input path") {
               TextField("/path/to/dump.sql", text: $inputPath)
@@ -100,7 +99,7 @@ struct PIIScrubberView: View {
               .accessibilityIdentifier("agents.piiScrubber.enableNER")
 
             LabeledContent("pii-scrubber path (optional)") {
-              HStack(spacing: 8) {
+              HStack(spacing: LayoutSpacing.item) {
                 TextField("Auto-detect from project", text: $toolPath)
                   .textFieldStyle(.roundedBorder)
                   .frame(minWidth: 320)
@@ -117,7 +116,7 @@ struct PIIScrubberView: View {
               }
             }
 
-            HStack(spacing: 12) {
+            HStack(spacing: LayoutSpacing.item) {
               Button(isRunning ? "Running..." : "Run Scrubber") {
                 Task { await runScrubber() }
               }
@@ -142,11 +141,10 @@ struct PIIScrubberView: View {
 
         if let report {
           GroupBox {
-            VStack(alignment: .leading, spacing: 8) {
-              Text("Audit Report")
-                .font(.headline)
+            VStack(alignment: .leading, spacing: LayoutSpacing.item) {
+              SectionHeader("Audit Report")
 
-              HStack(spacing: 12) {
+              HStack(spacing: LayoutSpacing.item) {
                 if let lastReportPath {
                   Button("Open Report") {
                     openReport(at: lastReportPath)
@@ -200,8 +198,8 @@ struct PIIScrubberView: View {
           }
         }
       }
-      .padding(.horizontal, 16)
-      .padding(.vertical, 12)
+      .padding(.horizontal, LayoutSpacing.page)
+      .padding(.vertical, LayoutSpacing.section)
     }
   }
 
