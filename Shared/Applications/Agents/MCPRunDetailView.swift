@@ -5,6 +5,7 @@
 //  Created on 1/19/26.
 //
 
+import Git
 import SwiftData
 import SwiftUI
 
@@ -22,6 +23,8 @@ struct MCPRunDetailView: View {
   #endif
   @State private var showingCompareSheet = false
   @State private var compareRun: MCPRunRecord?
+  @State private var isLoadingWorktreeStatus = false
+  @State private var worktreeChangedFiles: [String: Int] = [:]
 
   init(run: MCPRunRecord) {
     self.run = run
@@ -46,6 +49,40 @@ struct MCPRunDetailView: View {
       return [workingDirectory]
     }
     return []
+  }
+
+  private var implementerBranches: [String] {
+    let raw = run.implementerBranches
+    return raw.split(separator: "\n").map { String($0) }.filter { !$0.isEmpty }
+  }
+
+  private var mergeReadinessLabel: String {
+    if run.mergeConflictsCount > 0 {
+      return "Blocked"
+    }
+    return run.success ? "Ready" : "Pending"
+  }
+
+  private func refreshWorktreeStatus() async {
+    guard !worktreePaths.isEmpty else { return }
+    isLoadingWorktreeStatus = true
+    defer { isLoadingWorktreeStatus = false }
+
+    var status: [String: Int] = [:]
+    for path in worktreePaths {
+      let repository = Model.Repository(
+        name: URL(fileURLWithPath: path).lastPathComponent,
+        path: path
+      )
+      do {
+        let output = try await Commands.simple(arguments: ["status", "--porcelain"], in: repository)
+        let changedFiles = output.filter { !$0.isEmpty }.count
+        status[path] = changedFiles
+      } catch {
+        status[path] = 0
+      }
+    }
+    worktreeChangedFiles = status
   }
 
   #if os(macOS)
@@ -152,6 +189,16 @@ struct MCPRunDetailView: View {
                       .font(.caption2)
                       .foregroundStyle(.secondary)
                       .lineLimit(1)
+                    if let changed = worktreeChangedFiles[path], changed > 0 {
+                      Chip(
+                        text: "\(changed) changed",
+                        font: .caption2,
+                        foreground: .orange,
+                        background: Color.orange.opacity(0.15),
+                        horizontalPadding: 6,
+                        verticalPadding: 2
+                      )
+                    }
                     Spacer()
                     #if os(macOS)
                     Button("Open") {
@@ -161,12 +208,40 @@ struct MCPRunDetailView: View {
                     #endif
                   }
                 }
+                if isLoadingWorktreeStatus {
+                  Text("Checking worktree status...")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                }
                 #if os(macOS)
                 Button("Clean Worktrees") {
                   Task { await mcpServer.cleanupWorktrees(paths: worktreePaths) }
                 }
                 .buttonStyle(.bordered)
                 #endif
+              }
+            }
+          }
+
+          GroupBox("Merge Readiness") {
+            VStack(alignment: .leading, spacing: 6) {
+              HStack {
+                Text("Status")
+                  .font(.caption)
+                Spacer()
+                Text(mergeReadinessLabel)
+                  .font(.caption)
+                  .foregroundStyle(run.mergeConflictsCount > 0 ? .red : .green)
+              }
+              if run.mergeConflictsCount > 0 {
+                Text("Conflicts detected: \(run.mergeConflictsCount)")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              }
+              if !implementerBranches.isEmpty {
+                Text("Implementer branches: \(implementerBranches.joined(separator: ", "))")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
               }
             }
           }
@@ -298,6 +373,9 @@ struct MCPRunDetailView: View {
         .padding(.horizontal, 4)
       }
       .navigationTitle("MCP Run")
+      .task {
+        await refreshWorktreeStatus()
+      }
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           Button("Done") {
