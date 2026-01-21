@@ -18,6 +18,8 @@ struct MCPDashboardView: View {
   @State private var showingCleanupConfirmation = false
   @State private var overrideReviewLoopEnabled = false
   @State private var overrideReviewLoopValue = false
+  @State private var overridePauseOnReviewEnabled = false
+  @State private var overridePauseOnReviewValue = false
   @State private var overrideAllowModelSelection = false
   @State private var overrideAllowScaling = false
   @State private var overrideMaxImplementersEnabled = false
@@ -56,6 +58,9 @@ struct MCPDashboardView: View {
     var overrides = MCPServerService.RunOverrides()
     if overrideReviewLoopEnabled {
       overrides.enableReviewLoop = overrideReviewLoopValue
+    }
+    if overridePauseOnReviewEnabled {
+      overrides.pauseOnReview = overridePauseOnReviewValue
     }
     overrides.allowPlannerModelSelection = overrideAllowModelSelection
     overrides.allowPlannerImplementerScaling = overrideAllowScaling
@@ -465,6 +470,13 @@ struct MCPDashboardView: View {
               Toggle("Enable review loop", isOn: $overrideReviewLoopValue)
                 .padding(.leading, 12)
                 .accessibilityIdentifier("agents.mcpDashboard.overrides.reviewLoopEnable")
+            }
+            Toggle("Override review pause", isOn: $overridePauseOnReviewEnabled)
+              .accessibilityIdentifier("agents.mcpDashboard.overrides.reviewPauseOverride")
+            if overridePauseOnReviewEnabled {
+              Toggle("Pause on review request", isOn: $overridePauseOnReviewValue)
+                .padding(.leading, 12)
+                .accessibilityIdentifier("agents.mcpDashboard.overrides.reviewPauseEnable")
             }
             Toggle("Allow planner model selection", isOn: $overrideAllowModelSelection)
               .accessibilityIdentifier("agents.mcpDashboard.overrides.allowModelSelection")

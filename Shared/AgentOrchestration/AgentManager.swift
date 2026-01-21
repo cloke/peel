@@ -1048,6 +1048,14 @@ public final class AgentChainRunner {
       return
     }
 
+    if chain.pauseOnReview {
+      chain.addStatusMessage("Reviewer requested changes. Paused before review loop.", type: .info)
+      if let gate = runGates[chain.id] {
+        await gate.pause()
+      }
+      await waitForGate(chain: chain)
+    }
+
     guard let implementerIndex = chain.agents.firstIndex(where: { $0.role == .implementer }),
           let reviewerIndex = chain.agents.firstIndex(where: { $0.role == .reviewer }) else {
       return
@@ -1742,6 +1750,7 @@ public final class MCPServerService {
 
   public struct RunOverrides {
     public var enableReviewLoop: Bool? = nil
+    public var pauseOnReview: Bool? = nil
     public var allowPlannerModelSelection: Bool = false
     public var allowPlannerImplementerScaling: Bool = false
     public var maxImplementers: Int? = nil
@@ -1788,6 +1797,9 @@ public final class MCPServerService {
     ]
     if let enableReviewLoop = overrides.enableReviewLoop {
       arguments["enableReviewLoop"] = enableReviewLoop
+    }
+    if let pauseOnReview = overrides.pauseOnReview {
+      arguments["pauseOnReview"] = pauseOnReview
     }
     arguments["allowPlannerModelSelection"] = overrides.allowPlannerModelSelection
     arguments["allowPlannerImplementerScaling"] = overrides.allowPlannerImplementerScaling
@@ -3018,6 +3030,7 @@ public final class MCPServerService {
     let chainSpec = arguments["chainSpec"] as? [String: Any]
     let workingDirectory = arguments["workingDirectory"] as? String
     let enableReviewLoop = arguments["enableReviewLoop"] as? Bool
+    let pauseOnReview = arguments["pauseOnReview"] as? Bool
     let allowPlannerModelSelection = arguments["allowPlannerModelSelection"] as? Bool ?? false
     let allowPlannerImplementerScaling = arguments["allowPlannerImplementerScaling"] as? Bool ?? false
     let maxImplementers = arguments["maxImplementers"] as? Int
@@ -3085,6 +3098,9 @@ public final class MCPServerService {
     chain.runSource = .mcp
     if let enableReviewLoop {
       chain.enableReviewLoop = enableReviewLoop
+    }
+    if let pauseOnReview {
+      chain.pauseOnReview = pauseOnReview
     }
 
     let runOptions = AgentChainRunner.ChainRunOptions(
@@ -3952,6 +3968,7 @@ public final class MCPServerService {
             "prompt": ["type": "string"],
             "workingDirectory": ["type": "string"],
             "enableReviewLoop": ["type": "boolean"],
+            "pauseOnReview": ["type": "boolean"],
             "allowPlannerModelSelection": ["type": "boolean"],
             "allowPlannerImplementerScaling": ["type": "boolean"],
             "maxImplementers": ["type": "integer"],
@@ -4033,6 +4050,7 @@ public final class MCPServerService {
                   "prompt": ["type": "string"],
                   "workingDirectory": ["type": "string"],
                   "enableReviewLoop": ["type": "boolean"],
+                  "pauseOnReview": ["type": "boolean"],
                   "allowPlannerModelSelection": ["type": "boolean"],
                   "allowPlannerImplementerScaling": ["type": "boolean"],
                   "maxImplementers": ["type": "integer"],
