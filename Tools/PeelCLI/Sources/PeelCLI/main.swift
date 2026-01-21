@@ -8,6 +8,23 @@ struct CLIOptions {
   var templateName: String?
   var workingDirectory: String?
   var enableReviewLoop: Bool?
+  var allowPlannerModelSelection: Bool?
+  var allowPlannerImplementerScaling: Bool?
+  var maxImplementers: Int?
+  var maxPremiumCost: Double?
+  var priority: Int?
+  var timeoutSeconds: Double?
+  var runsJSONPath: String?
+  var batchParallel: Bool?
+  var returnImmediately: Bool?
+  var keepWorkspace: Bool?
+  var runId: String?
+  var limit: Int?
+  var includeResults: Bool?
+  var includeOutputs: Bool?
+  var chainId: String?
+  var repoPath: String?
+  var chainSpecJSONPath: String?
 }
 
 enum CLIError: LocalizedError {
@@ -57,6 +74,57 @@ private func parseArguments() throws -> CLIOptions {
       options.enableReviewLoop = true
     case "--disable-review-loop":
       options.enableReviewLoop = false
+    case "--allow-planner-model-selection":
+      options.allowPlannerModelSelection = true
+    case "--allow-planner-implementer-scaling":
+      options.allowPlannerImplementerScaling = true
+    case "--max-implementers":
+      guard let value = iterator.next(), let maxImplementers = Int(value) else {
+        throw CLIError.message("--max-implementers requires an integer value")
+      }
+      options.maxImplementers = maxImplementers
+    case "--max-premium-cost":
+      guard let value = iterator.next(), let maxPremiumCost = Double(value) else {
+        throw CLIError.message("--max-premium-cost requires a number value")
+      }
+      options.maxPremiumCost = maxPremiumCost
+    case "--priority":
+      guard let value = iterator.next(), let priority = Int(value) else {
+        throw CLIError.message("--priority requires an integer value")
+      }
+      options.priority = priority
+    case "--timeout-seconds":
+      guard let value = iterator.next(), let timeoutSeconds = Double(value) else {
+        throw CLIError.message("--timeout-seconds requires a number value")
+      }
+      options.timeoutSeconds = timeoutSeconds
+    case "--runs-json":
+      options.runsJSONPath = iterator.next()
+    case "--parallel":
+      options.batchParallel = true
+    case "--sequential":
+      options.batchParallel = false
+    case "--return-immediately":
+      options.returnImmediately = true
+    case "--keep-workspace":
+      options.keepWorkspace = true
+    case "--run-id":
+      options.runId = iterator.next()
+    case "--limit":
+      guard let value = iterator.next(), let limit = Int(value) else {
+        throw CLIError.message("--limit requires an integer value")
+      }
+      options.limit = limit
+    case "--include-results":
+      options.includeResults = true
+    case "--include-outputs":
+      options.includeOutputs = true
+    case "--chain-id":
+      options.chainId = iterator.next()
+    case "--repo-path":
+      options.repoPath = iterator.next()
+    case "--chain-spec-json":
+      options.chainSpecJSONPath = iterator.next()
     case "-h", "--help":
       print(usageText())
       exit(EXIT_SUCCESS)
@@ -95,10 +163,91 @@ private func run(options: CLIOptions) async throws {
     if let templateName = options.templateName { arguments["templateName"] = templateName }
     if let workingDirectory = options.workingDirectory { arguments["workingDirectory"] = workingDirectory }
     if let enableReviewLoop = options.enableReviewLoop { arguments["enableReviewLoop"] = enableReviewLoop }
+    if let allowPlannerModelSelection = options.allowPlannerModelSelection {
+      arguments["allowPlannerModelSelection"] = allowPlannerModelSelection
+    }
+    if let allowPlannerImplementerScaling = options.allowPlannerImplementerScaling {
+      arguments["allowPlannerImplementerScaling"] = allowPlannerImplementerScaling
+    }
+    if let maxImplementers = options.maxImplementers { arguments["maxImplementers"] = maxImplementers }
+    if let maxPremiumCost = options.maxPremiumCost { arguments["maxPremiumCost"] = maxPremiumCost }
+    if let priority = options.priority { arguments["priority"] = priority }
+    if let timeoutSeconds = options.timeoutSeconds { arguments["timeoutSeconds"] = timeoutSeconds }
+    if let returnImmediately = options.returnImmediately {
+      arguments["returnImmediately"] = returnImmediately
+    }
+    if let keepWorkspace = options.keepWorkspace {
+      arguments["keepWorkspace"] = keepWorkspace
+    }
+    if let chainSpecPath = options.chainSpecJSONPath {
+      let url = URL(fileURLWithPath: chainSpecPath)
+      let data = try Data(contentsOf: url)
+      let json = try JSONSerialization.jsonObject(with: data, options: [])
+      guard let spec = json as? [String: Any] else {
+        throw CLIError.message("--chain-spec-json must be a JSON object")
+      }
+      arguments["chainSpec"] = spec
+    }
 
     try await printRPCResult(method: "tools/call", params: [
       "name": "chains.run",
       "arguments": arguments
+    ], port: options.port)
+  case "chains-run-batch":
+    guard let runsPath = options.runsJSONPath, !runsPath.isEmpty else {
+      throw CLIError.message("chains-run-batch requires --runs-json <path>")
+    }
+    let url = URL(fileURLWithPath: runsPath)
+    let data = try Data(contentsOf: url)
+    let json = try JSONSerialization.jsonObject(with: data, options: [])
+    let runs: [[String: Any]]
+    if let root = json as? [String: Any], let list = root["runs"] as? [[String: Any]] {
+      runs = list
+    } else if let list = json as? [[String: Any]] {
+      runs = list
+    } else {
+      throw CLIError.message("--runs-json must be an array or object with 'runs'")
+    }
+
+    var arguments: [String: Any] = ["runs": runs]
+    if let parallel = options.batchParallel {
+      arguments["parallel"] = parallel
+    }
+
+    try await printRPCResult(method: "tools/call", params: [
+      "name": "chains.runBatch",
+      "arguments": arguments
+    ], port: options.port)
+  case "chains-run-status":
+    guard let runId = options.runId, !runId.isEmpty else {
+      throw CLIError.message("chains-run-status requires --run-id <uuid>")
+    }
+    try await printRPCResult(method: "tools/call", params: [
+      "name": "chains.run.status",
+      "arguments": ["runId": runId]
+    ], port: options.port)
+  case "chains-run-list":
+    var arguments: [String: Any] = [:]
+    if let limit = options.limit { arguments["limit"] = limit }
+    if let chainId = options.chainId { arguments["chainId"] = chainId }
+    if let runId = options.runId { arguments["runId"] = runId }
+    if let includeResults = options.includeResults { arguments["includeResults"] = includeResults }
+    if let includeOutputs = options.includeOutputs { arguments["includeOutputs"] = includeOutputs }
+    try await printRPCResult(method: "tools/call", params: [
+      "name": "chains.run.list",
+      "arguments": arguments
+    ], port: options.port)
+  case "workspaces-agent-list":
+    var arguments: [String: Any] = [:]
+    if let repoPath = options.repoPath { arguments["repoPath"] = repoPath }
+    try await printRPCResult(method: "tools/call", params: [
+      "name": "workspaces.agent.list",
+      "arguments": arguments
+    ], port: options.port)
+  case "workspaces-agent-cleanup-status":
+    try await printRPCResult(method: "tools/call", params: [
+      "name": "workspaces.agent.cleanup.status",
+      "arguments": [:]
     ], port: options.port)
   case "server-stop":
     try await printRPCResult(method: "tools/call", params: [
@@ -138,6 +287,14 @@ private func usageText() -> String {
     tools-list
     templates-list
     chains-run --prompt <text> [--template-id <uuid> | --template-name <name>] [--working-directory <path>] [--enable-review-loop|--disable-review-loop]
+      [--allow-planner-model-selection] [--allow-planner-implementer-scaling]
+      [--max-implementers <int>] [--max-premium-cost <number>] [--priority <int>] [--timeout-seconds <number>] [--return-immediately]
+      [--chain-spec-json <path>]
+    chains-run-batch --runs-json <path> [--parallel|--sequential]
+    chains-run-status --run-id <uuid>
+    chains-run-list [--limit <int>] [--chain-id <id>] [--run-id <uuid>] [--include-results] [--include-outputs]
+    workspaces-agent-list [--repo-path <path>]
+    workspaces-agent-cleanup-status
     server-stop
     app-quit
   """

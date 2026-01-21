@@ -585,6 +585,10 @@ public final class CLIService {
       onOutput: onOutput,
       onCompletionDetected: { await completionSignal.markCompleted() }
     )
+    let activityMonitor = ActivityMonitor()
+    let startTime = Date()
+    let idleTimeout: TimeInterval = 300
+    let maxRuntime: TimeInterval = 900
 
     // Terminate the process if we see Copilot's final stats marker but the process hangs
     Task {
@@ -594,12 +598,37 @@ public final class CLIService {
         process.terminate()
       }
     }
+
+    Task {
+      while process.isRunning {
+        try? await Task.sleep(for: .seconds(10))
+        if await completionSignal.isCompleted() {
+          return
+        }
+        let idleExceeded = await activityMonitor.idleExceeded(threshold: idleTimeout)
+        let runtimeExceeded = Date().timeIntervalSince(startTime) > maxRuntime
+        if idleExceeded || runtimeExceeded {
+          Task { @MainActor in
+            await mcpLog.warning("Copilot stream timeout", metadata: [
+              "model": modelName,
+              "role": roleName,
+              "workingDirectory": workingDirectory ?? "",
+              "idleSeconds": "\(Int(await activityMonitor.idleSeconds()))",
+              "runtimeSeconds": "\(Int(Date().timeIntervalSince(startTime)))"
+            ])
+          }
+          process.terminate()
+          return
+        }
+      }
+    }
     
     // Set up readability handlers for immediate streaming
     stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
       let data = handle.availableData
       if !data.isEmpty {
         Task {
+          await activityMonitor.markOutput()
           await accumulator.appendStdout(data)
         }
       }
@@ -609,6 +638,7 @@ public final class CLIService {
       let data = handle.availableData
       if !data.isEmpty {
         Task {
+          await activityMonitor.markOutput()
           await accumulator.appendStderr(data)
         }
       }
@@ -769,6 +799,22 @@ public final class CLIService {
     }
   }
 
+  private actor ActivityMonitor {
+    private var lastOutputAt = Date()
+
+    func markOutput() {
+      lastOutputAt = Date()
+    }
+
+    func idleSeconds() -> TimeInterval {
+      Date().timeIntervalSince(lastOutputAt)
+    }
+
+    func idleExceeded(threshold: TimeInterval) -> Bool {
+      Date().timeIntervalSince(lastOutputAt) > threshold
+    }
+  }
+
   private actor CompletionSignal {
     private var completed = false
     private var continuations: [CheckedContinuation<Void, Never>] = []
@@ -778,6 +824,10 @@ public final class CLIService {
       completed = true
       continuations.forEach { $0.resume() }
       continuations.removeAll()
+    }
+
+    func isCompleted() -> Bool {
+      completed
     }
 
     func waitForCompletion() async {
