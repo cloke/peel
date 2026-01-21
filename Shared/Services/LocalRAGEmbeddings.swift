@@ -117,6 +117,90 @@ protocol LocalRAGTokenizer: Sendable {
   func encode(_ text: String, maxLength: Int) -> ([Int32], [Int32])
 }
 
+struct ExternalTokenizer: LocalRAGTokenizer {
+  let scriptURL: URL
+  let modelId: String
+
+  init?(scriptURL: URL, modelId: String) {
+    guard FileManager.default.isExecutableFile(atPath: scriptURL.path) ||
+            FileManager.default.fileExists(atPath: scriptURL.path) else {
+      return nil
+    }
+    self.scriptURL = scriptURL
+    self.modelId = modelId
+  }
+
+  func encode(_ text: String, maxLength: Int) -> ([Int32], [Int32]) {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+    process.arguments = [
+      scriptURL.path,
+      "--model-id", modelId,
+      "--max-length", String(maxLength),
+      "--text", text
+    ]
+
+    let outputPipe = Pipe()
+    let errorPipe = Pipe()
+    process.standardOutput = outputPipe
+    process.standardError = errorPipe
+
+    do {
+      try process.run()
+      process.waitUntilExit()
+    } catch {
+      return fallbackEncoding(text: text, maxLength: maxLength)
+    }
+
+    guard process.terminationStatus == 0 else {
+      return fallbackEncoding(text: text, maxLength: maxLength)
+    }
+
+    let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+    guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let idsAny = json["input_ids"],
+          let maskAny = json["attention_mask"] else {
+      return fallbackEncoding(text: text, maxLength: maxLength)
+    }
+
+    let ids = parseIntArray(idsAny, maxLength: maxLength)
+    let mask = parseIntArray(maskAny, maxLength: maxLength)
+    return (ids.map(Int32.init), mask.map(Int32.init))
+  }
+
+  private func parseIntArray(_ value: Any, maxLength: Int) -> [Int] {
+    if let array = value as? [Int] {
+      return normalize(array, maxLength: maxLength)
+    }
+    if let array = value as? [NSNumber] {
+      return normalize(array.map { $0.intValue }, maxLength: maxLength)
+    }
+    return Array(repeating: 0, count: maxLength)
+  }
+
+  private func normalize(_ array: [Int], maxLength: Int) -> [Int] {
+    if array.count == maxLength {
+      return array
+    }
+    if array.count > maxLength {
+      return Array(array.prefix(maxLength))
+    }
+    return array + Array(repeating: 0, count: maxLength - array.count)
+  }
+
+  private func fallbackEncoding(text: String, maxLength: Int) -> ([Int32], [Int32]) {
+    let words = text.split { $0.isWhitespace || $0.isNewline }
+    var ids = [Int](repeating: 0, count: maxLength)
+    var mask = [Int](repeating: 0, count: maxLength)
+    let count = min(words.count, maxLength)
+    for index in 0..<count {
+      ids[index] = 1
+      mask[index] = 1
+    }
+    return (ids.map(Int32.init), mask.map(Int32.init))
+  }
+}
+
 struct SimpleVocabTokenizer: LocalRAGTokenizer {
   private let vocab: [String: Int]
   private let unknownId: Int
@@ -189,12 +273,20 @@ struct CoreMLEmbeddingProvider: LocalRAGEmbeddingProvider, @unchecked Sendable {
     let modelsURL = baseURL.appendingPathComponent(modelFolderName, isDirectory: true)
     let modelURL = modelsURL.appendingPathComponent("codebert-base-256.mlmodelc")
     let vocabURL = modelsURL.appendingPathComponent("codebert-base.vocab.json")
-    return CoreMLEmbeddingProvider(modelURL: modelURL, vocabURL: vocabURL, maxLength: 256)
+    let helperURL = modelsURL.appendingPathComponent("tokenize_codebert.py")
+    return CoreMLEmbeddingProvider(modelURL: modelURL, vocabURL: vocabURL, helperURL: helperURL, maxLength: 256)
   }
 
-  init?(modelURL: URL, vocabURL: URL, maxLength: Int) {
+  init?(modelURL: URL, vocabURL: URL, helperURL: URL, maxLength: Int) {
     guard FileManager.default.fileExists(atPath: modelURL.path) else { return nil }
-    guard let tokenizer = SimpleVocabTokenizer(vocabURL: vocabURL) else { return nil }
+    let tokenizer: LocalRAGTokenizer
+    if let externalTokenizer = ExternalTokenizer(scriptURL: helperURL, modelId: "microsoft/codebert-base") {
+      tokenizer = externalTokenizer
+    } else if let fallbackTokenizer = SimpleVocabTokenizer(vocabURL: vocabURL) {
+      tokenizer = fallbackTokenizer
+    } else {
+      return nil
+    }
     guard let model = try? MLModel(contentsOf: modelURL) else { return nil }
     guard let outputName = model.modelDescription.outputDescriptionsByName.keys.first else { return nil }
 

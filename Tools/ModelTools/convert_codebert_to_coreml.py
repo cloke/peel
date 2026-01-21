@@ -57,6 +57,11 @@ def convert(model_id: str, seq_len: int, output_path: Path):
         import json
         json.dump(vocab, handle)
 
+    helper_path = Path(__file__).parent / "tokenize_codebert.py"
+    if helper_path.exists():
+        target = output_path.parent / helper_path.name
+        target.write_text(helper_path.read_text(encoding="utf-8"), encoding="utf-8")
+
 
 def main():
     parser = argparse.ArgumentParser()
