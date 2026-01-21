@@ -32,6 +32,10 @@ public final class AgentChain: Identifiable {
   /// Enable review loop - if reviewer requests changes, re-run implementer
   public var enableReviewLoop: Bool = false
 
+  /// Planner can override implementer count/models
+  public var plannerOverridesAllowed: Bool = false
+  public var plannerOverridesApplied: Bool = false
+
   /// Pause if reviewer requests changes (do not auto re-run)
   public var pauseOnReview: Bool = false
   
@@ -130,6 +134,8 @@ public final class AgentChain: Identifiable {
     currentReviewIteration = 0
     results = []
     clearLiveStatus()
+    plannerOverridesAllowed = false
+    plannerOverridesApplied = false
     for agent in agents {
       agent.clearTask()
       agent.updateState(.idle)
@@ -198,21 +204,54 @@ public struct PlannerDecision: Codable, Sendable {
 
   /// Parse planner decision from agent output (extracts JSON)
   public static func parse(from output: String) -> PlannerDecision? {
-    let jsonPattern = #"\{[\s\S]*?\"tasks\"[\s\S]*?\}"#
-    guard let regex = try? NSRegularExpression(pattern: jsonPattern, options: []),
-          let match = regex.firstMatch(in: output, range: NSRange(output.startIndex..., in: output)),
-          let range = Range(match.range, in: output) else {
-      return nil
+    let candidates: [String] = {
+      if let fenced = extractCodeFence(from: output) {
+        return [fenced, output]
+      }
+      return [output]
+    }()
+
+    for candidate in candidates {
+      guard let jsonString = extractFirstJSONObject(in: candidate) else { continue }
+      guard let jsonData = jsonString.data(using: .utf8) else { continue }
+      let decoder = JSONDecoder()
+      decoder.keyDecodingStrategy = .convertFromSnakeCase
+      if let decision = try? decoder.decode(PlannerDecision.self, from: jsonData) {
+        return decision
+      }
     }
 
-    let jsonString = String(output[range])
-    guard let jsonData = jsonString.data(using: .utf8) else {
-      return nil
+    return nil
+  }
+
+  private static func extractCodeFence(from output: String) -> String? {
+    guard let fenceStart = output.range(of: "```") else { return nil }
+    let afterStart = output[fenceStart.upperBound...]
+    guard let fenceEnd = afterStart.range(of: "```") else { return nil }
+    return String(afterStart[..<fenceEnd.lowerBound])
+  }
+
+  private static func extractFirstJSONObject(in text: String) -> String? {
+    var depth = 0
+    var startIndex: String.Index?
+
+    for index in text.indices {
+      let char = text[index]
+      if char == "{" {
+        if depth == 0 {
+          startIndex = index
+        }
+        depth += 1
+      } else if char == "}" {
+        guard depth > 0 else { continue }
+        depth -= 1
+        if depth == 0, let startIndex {
+          return String(text[startIndex...index])
+        }
+      }
     }
 
-    let decoder = JSONDecoder()
-    decoder.keyDecodingStrategy = .convertFromSnakeCase
-    return try? decoder.decode(PlannerDecision.self, from: jsonData)
+    return nil
   }
 }
 
@@ -317,6 +356,10 @@ public enum ReviewVerdict: String, Codable, Sendable {
        lowercased.contains("approved") && lowercased.contains("no further action") {
       return .approved
     }
+
+    if lowercased.contains("approved") && !lowercased.contains("not approved") {
+      return .approved
+    }
     
     if lowercased.contains("❌ **reject") ||
        lowercased.contains("❌ reject") ||
@@ -330,7 +373,6 @@ public enum ReviewVerdict: String, Codable, Sendable {
     // Check for change requests
      if lowercased.contains("needs changes") ||
        lowercased.contains("need changes") ||
-       lowercased.contains("requested changes") ||
        lowercased.contains("change requests") ||
        lowercased.contains("requires changes") ||
        lowercased.contains("should be changed") ||

@@ -385,6 +385,19 @@ public final class AgentChainRunner {
     chain.runStartTime = Date()
     chain.state = .running(agentIndex: 0)
     chain.addStatusMessage("Starting chain execution...", type: .info)
+    if let runOptions {
+      chain.plannerOverridesAllowed = runOptions.allowPlannerImplementerScaling
+        || runOptions.allowPlannerModelSelection
+        || runOptions.maxImplementers != nil
+        || runOptions.maxPremiumCost != nil
+      chain.plannerOverridesApplied = false
+      if chain.plannerOverridesAllowed {
+        chain.addStatusMessage("Planner overrides pending (showing template agents)", type: .info)
+      }
+    } else {
+      chain.plannerOverridesAllowed = false
+      chain.plannerOverridesApplied = false
+    }
 
     do {
       try checkCancellation(chain: chain)
@@ -608,6 +621,9 @@ public final class AgentChainRunner {
         chain.addStatusMessage("Cost cap exceeded after downgrades", type: .error)
       }
     }
+
+    chain.plannerOverridesApplied = true
+    chain.addStatusMessage("Planner overrides applied", type: .info)
 
     chain.agents = preAgents + implementers + postAgents
   }
@@ -1369,6 +1385,7 @@ public final class MCPServerService {
   private var activeRunsById: [UUID: ActiveRunInfo] = [:]
   private var activeRunChains: [UUID: AgentChain] = [:]
   private var chainQueue: [ChainQueueEntry] = []
+  private var completedRunsById: [UUID: (completedAt: Date, payload: [String: Any])] = [:]
 
   private let listenerQueue = DispatchQueue(label: "MCPServer.Listener")
   private var listener: NWListener?
@@ -2044,6 +2061,21 @@ public final class MCPServerService {
     case "chains.run":
       return await handleChainRun(id: id, arguments: arguments)
 
+    case "chains.runBatch":
+      return await handleChainRunBatch(id: id, arguments: arguments)
+
+    case "chains.run.status":
+      return handleChainRunStatus(id: id, arguments: arguments)
+
+    case "chains.run.list":
+      return handleChainRunList(id: id, arguments: arguments)
+
+    case "workspaces.agent.list":
+      return handleAgentWorkspacesList(id: id, arguments: arguments)
+
+    case "workspaces.agent.cleanup.status":
+      return handleAgentWorkspacesCleanupStatus(id: id)
+
     case "chains.stop":
       return await handleChainStop(id: id, arguments: arguments)
 
@@ -2651,6 +2683,187 @@ public final class MCPServerService {
     return object
   }
 
+  private func handleChainRunStatus(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    guard let runIdString = arguments["runId"] as? String,
+          let runId = UUID(uuidString: runIdString) else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing or invalid runId"))
+    }
+
+    let formatter = ISO8601DateFormatter()
+
+    if let runInfo = activeRunsById[runId] {
+      let chain = activeRunChains[runId]
+      let result: [String: Any] = [
+        "runId": runIdString,
+        "status": "running",
+        "state": chain?.state.displayName as Any,
+        "agentCount": chain?.agents.count as Any,
+        "resultsCount": chain?.results.count as Any,
+        "templateName": runInfo.templateName,
+        "prompt": runInfo.prompt,
+        "workingDirectory": runInfo.workingDirectory as Any,
+        "startedAt": formatter.string(from: runInfo.startedAt),
+        "priority": runInfo.priority,
+        "timeoutSeconds": runInfo.timeoutSeconds as Any
+      ]
+      return (200, makeRPCResult(id: id, result: result))
+    }
+
+    if let queuedIndex = chainQueue.firstIndex(where: { $0.id == runId }) {
+      let entry = chainQueue[queuedIndex]
+      let result: [String: Any] = [
+        "runId": runIdString,
+        "status": "queued",
+        "position": queuedIndex + 1,
+        "enqueuedAt": formatter.string(from: entry.enqueuedAt),
+        "priority": entry.priority
+      ]
+      return (200, makeRPCResult(id: id, result: result))
+    }
+
+    if let completed = completedRunsById[runId] {
+      let result: [String: Any] = [
+        "runId": runIdString,
+        "status": "completed",
+        "completedAt": formatter.string(from: completed.completedAt),
+        "result": completed.payload
+      ]
+      return (200, makeRPCResult(id: id, result: result))
+    }
+
+    return (404, makeRPCError(id: id, code: -32004, message: "Run not found"))
+  }
+
+  private func handleChainRunList(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    guard let dataService else {
+      return (500, makeRPCError(id: id, code: -32001, message: "Run history unavailable"))
+    }
+
+    let limit = arguments["limit"] as? Int ?? 20
+    let chainId = arguments["chainId"] as? String
+    let runIdString = arguments["runId"] as? String
+    let includeResults = arguments["includeResults"] as? Bool ?? false
+    let includeOutputs = arguments["includeOutputs"] as? Bool ?? false
+
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+    func splitLines(_ value: String) -> [String] {
+      value
+        .split(whereSeparator: { $0.isNewline })
+        .map { String($0) }
+        .filter { !$0.isEmpty }
+    }
+
+    var runs: [MCPRunRecord] = []
+
+    if let runIdString, let runId = UUID(uuidString: runIdString) {
+      let recent = dataService.getRecentMCPRuns(limit: max(200, limit))
+      if let found = recent.first(where: { $0.id == runId }) {
+        runs = [found]
+      } else {
+        return (404, makeRPCError(id: id, code: -32004, message: "Run not found"))
+      }
+    } else if let chainId, !chainId.isEmpty {
+      if let record = dataService.getMCPRun(forChainId: chainId) {
+        runs = [record]
+      }
+    } else {
+      runs = dataService.getRecentMCPRuns(limit: min(max(limit, 1), 200))
+    }
+
+    let payload: [[String: Any]] = runs.map { run in
+      var runPayload: [String: Any] = [
+        "runId": run.id.uuidString,
+        "chainId": run.chainId,
+        "templateId": run.templateId,
+        "templateName": run.templateName,
+        "prompt": run.prompt,
+        "workingDirectory": run.workingDirectory as Any,
+        "implementerBranches": splitLines(run.implementerBranches),
+        "implementerWorkspacePaths": splitLines(run.implementerWorkspacePaths),
+        "screenshotPaths": splitLines(run.screenshotPaths),
+        "success": run.success,
+        "errorMessage": run.errorMessage as Any,
+        "noWorkReason": run.noWorkReason as Any,
+        "mergeConflictsCount": run.mergeConflictsCount,
+        "resultCount": run.resultCount,
+        "validationStatus": run.validationStatus as Any,
+        "validationReasons": splitLines(run.validationReasons ?? ""),
+        "createdAt": formatter.string(from: run.createdAt)
+      ]
+
+      if includeResults, !run.chainId.isEmpty {
+        let results = dataService.getMCPRunResults(chainId: run.chainId)
+        runPayload["results"] = results.map { result in
+          var resultPayload: [String: Any] = [
+            "agentId": result.agentId,
+            "agentName": result.agentName,
+            "model": result.model,
+            "prompt": result.prompt,
+            "premiumCost": result.premiumCost,
+            "reviewVerdict": result.reviewVerdict as Any,
+            "createdAt": formatter.string(from: result.createdAt)
+          ]
+          if includeOutputs {
+            resultPayload["output"] = result.output
+          }
+          return resultPayload
+        }
+      }
+
+      return runPayload
+    }
+
+    return (200, makeRPCResult(id: id, result: ["runs": payload]))
+  }
+
+  private func handleAgentWorkspacesList(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    let repoPath = arguments["repoPath"] as? String
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+    let workspaces = agentManager.workspaceManager.workspaces
+      .filter { workspace in
+        guard let repoPath else { return true }
+        return workspace.parentRepositoryPath.path == repoPath
+      }
+      .map { workspace in
+        [
+          "id": workspace.id.uuidString,
+          "name": workspace.name,
+          "path": workspace.path.path,
+          "parentRepositoryPath": workspace.parentRepositoryPath.path,
+          "branch": workspace.branch,
+          "headCommit": workspace.headCommit as Any,
+          "status": workspace.status.rawValue,
+          "assignedAgentId": workspace.assignedAgentId?.uuidString as Any,
+          "createdAt": formatter.string(from: workspace.createdAt),
+          "lastAccessedAt": formatter.string(from: workspace.lastAccessedAt),
+          "isLocked": workspace.isLocked,
+          "lockReason": workspace.lockReason as Any,
+          "errorMessage": workspace.errorMessage as Any,
+          "activeFiles": workspace.activeFiles
+        ]
+      }
+
+    return (200, makeRPCResult(id: id, result: ["workspaces": workspaces]))
+  }
+
+  private func handleAgentWorkspacesCleanupStatus(id: Any?) -> (Int, Data) {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+    let result: [String: Any] = [
+      "isCleaning": isCleaningAgentWorkspaces,
+      "lastCleanupAt": lastCleanupAt.map { formatter.string(from: $0) } as Any,
+      "lastCleanupSummary": lastCleanupSummary as Any,
+      "lastCleanupError": lastCleanupError as Any
+    ]
+
+    return (200, makeRPCResult(id: id, result: result))
+  }
+
   private func handleChainRun(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
     guard let prompt = arguments["prompt"] as? String else {
       await mcpLog.warning("chains.run missing prompt")
@@ -2665,6 +2878,7 @@ public final class MCPServerService {
 
     let templateId = arguments["templateId"] as? String
     let templateName = arguments["templateName"] as? String
+    let chainSpec = arguments["chainSpec"] as? [String: Any]
     let workingDirectory = arguments["workingDirectory"] as? String
     let enableReviewLoop = arguments["enableReviewLoop"] as? Bool
     let allowPlannerModelSelection = arguments["allowPlannerModelSelection"] as? Bool ?? false
@@ -2673,6 +2887,8 @@ public final class MCPServerService {
     let maxPremiumCost = arguments["maxPremiumCost"] as? Double
     let priority = arguments["priority"] as? Int ?? 0
     let timeoutSeconds = arguments["timeoutSeconds"] as? Double
+    let returnImmediately = arguments["returnImmediately"] as? Bool ?? false
+    let keepWorkspace = arguments["keepWorkspace"] as? Bool ?? false
 
     let (enqueuedAt, wasCancelled, queuePosition) = await acquireChainRunSlot(runId: runId, priority: priority)
     if wasCancelled {
@@ -2683,6 +2899,9 @@ public final class MCPServerService {
 
     let templates = agentManager.allTemplates
     let template: ChainTemplate? = {
+      if let chainSpec {
+        return parseChainSpec(chainSpec)
+      }
       if let templateId, let uuid = UUID(uuidString: templateId) {
         return templates.first { $0.id == uuid }
       }
@@ -2694,7 +2913,8 @@ public final class MCPServerService {
 
     guard let template else {
       await mcpLog.warning("Template not found", metadata: ["runId": runId.uuidString])
-      return (400, makeRPCError(id: id, code: -32602, message: "Template not found"))
+      let message = chainSpec == nil ? "Template not found" : "Invalid chainSpec"
+      return (400, makeRPCError(id: id, code: -32602, message: message))
     }
 
     var chainWorkspace: AgentWorkspace?
@@ -2778,77 +2998,136 @@ public final class MCPServerService {
         ])
       }
     }
-    defer {
-      activeChainTasks[runId] = nil
-      activeChainRunIds.remove(runId)
-      activeChainTimeouts[runId]?.cancel()
-      activeChainTimeouts[runId] = nil
-      activeRunsById[runId] = nil
-      activeRunChains[runId] = nil
+    let cleanupRun: () -> Void = {
+      self.activeChainTasks[runId] = nil
+      self.activeChainRunIds.remove(runId)
+      self.activeChainTimeouts[runId]?.cancel()
+      self.activeChainTimeouts[runId] = nil
+      self.activeRunsById[runId] = nil
+      self.activeRunChains[runId] = nil
+    }
+    let finalizeRun: (AgentChainRunner.RunSummary) async -> Void = { summary in
+      if !keepWorkspace {
+        if let chainWorkspace {
+          try? await self.agentManager.workspaceManager.cleanupWorkspace(chainWorkspace, force: true)
+        }
+        if self.autoCleanupWorkspaces {
+          await self.cleanupAgentWorkspaces()
+        }
+      }
+      if let errorMessage = summary.errorMessage {
+        await self.mcpLog.error("Chain run failed", metadata: [
+          "runId": runId.uuidString,
+          "template": template.name,
+          "error": errorMessage
+        ])
+      } else {
+        await self.mcpLog.info("Chain run completed", metadata: [
+          "runId": runId.uuidString,
+          "template": template.name,
+          "results": "\(summary.results.count)",
+          "mergeConflicts": "\(summary.mergeConflicts.count)"
+        ])
+      }
+
+      if let ds = self.dataService {
+        let workspacePaths = [chainWorkingDirectory].compactMap { $0 }
+        let workspaceBranches = [chainWorkspace?.branch].compactMap { $0 }
+        let _ = ds.recordMCPRun(
+          chainId: chain.id.uuidString,
+          templateId: template.id.uuidString,
+          templateName: template.name,
+          prompt: prompt,
+          workingDirectory: workingDirectory,
+          implementerBranches: workspaceBranches,
+          implementerWorkspacePaths: workspacePaths,
+          screenshotPaths: summary.results.compactMap { $0.screenshotPath },
+          success: summary.errorMessage == nil,
+          errorMessage: summary.errorMessage,
+          mergeConflictsCount: summary.mergeConflicts.count,
+          resultCount: summary.results.count,
+          validationStatus: summary.validationResult?.status.rawValue,
+          validationReasons: summary.validationResult?.reasons ?? [],
+          noWorkReason: summary.noWorkReason
+        )
+
+        for res in summary.results {
+          ds.recordMCPRunResult(
+            chainId: chain.id.uuidString,
+            agentId: res.agentId.uuidString,
+            agentName: res.agentName,
+            model: res.model,
+            prompt: res.prompt,
+            output: res.output,
+            premiumCost: res.premiumCost,
+            reviewVerdict: res.reviewVerdict?.rawValue
+          )
+        }
+      }
+
+      var completedPayload: [String: Any] = [
+        "runId": runId.uuidString,
+        "chain": [
+          "id": chain.id.uuidString,
+          "name": chain.name,
+          "state": summary.stateDescription,
+          "gated": summary.noWorkReason != nil,
+          "noWorkReason": summary.noWorkReason as Any
+        ],
+        "success": summary.errorMessage == nil,
+        "errorMessage": summary.errorMessage as Any,
+        "mergeConflicts": summary.mergeConflicts,
+        "results": self.summarizeResults(summary.results)
+      ]
+
+      if let validationResult = summary.validationResult {
+        completedPayload["validation"] = validationResult.toDictionary()
+      }
+
+      self.completedRunsById[runId] = (Date(), completedPayload)
+      if self.completedRunsById.count > 50 {
+        let sorted = self.completedRunsById.sorted { $0.value.completedAt < $1.value.completedAt }
+        for (id, _) in sorted.prefix(self.completedRunsById.count - 50) {
+          self.completedRunsById.removeValue(forKey: id)
+        }
+      }
+
+      cleanupRun()
+    }
+
+    if returnImmediately {
+      Task { @MainActor in
+        let summary = await runTask.value
+        await finalizeRun(summary)
+      }
+      let result: [String: Any] = [
+        "queue": [
+          "runId": runId.uuidString,
+          "queued": enqueuedAt != nil,
+          "position": queuePosition as Any,
+          "waitSeconds": enqueuedAt.map { Date().timeIntervalSince($0) } as Any,
+          "maxConcurrent": maxConcurrentChains,
+          "maxQueued": maxQueuedChains
+        ],
+        "chain": [
+          "id": chain.id.uuidString,
+          "name": chain.name,
+          "state": "queued",
+          "gated": false,
+          "noWorkReason": NSNull()
+        ],
+        "async": true
+      ]
+      return (200, makeRPCResult(id: id, result: result))
     }
 
     let summary = await runTask.value
-    if let chainWorkspace {
-      try? await agentManager.workspaceManager.cleanupWorkspace(chainWorkspace, force: true)
-    }
-    if autoCleanupWorkspaces {
-      await cleanupAgentWorkspaces()
-    }
-    if let errorMessage = summary.errorMessage {
-      await mcpLog.error("Chain run failed", metadata: [
-        "runId": runId.uuidString,
-        "template": template.name,
-        "error": errorMessage
-      ])
-    } else {
-      await mcpLog.info("Chain run completed", metadata: [
-        "runId": runId.uuidString,
-        "template": template.name,
-        "results": "\(summary.results.count)",
-        "mergeConflicts": "\(summary.mergeConflicts.count)"
-      ])
-    }
+    await finalizeRun(summary)
+
     let queueWaitSeconds: Double? = {
       guard let enqueuedAt else { return nil }
       return Date().timeIntervalSince(enqueuedAt)
     }()
-
-    if let ds = dataService {
-      let workspacePaths = [chainWorkingDirectory].compactMap { $0 }
-      let workspaceBranches = [chainWorkspace?.branch].compactMap { $0 }
-      // Record the run and link it to the agent chain id
-      let _ = ds.recordMCPRun(
-        chainId: chain.id.uuidString,
-        templateId: template.id.uuidString,
-        templateName: template.name,
-        prompt: prompt,
-        workingDirectory: workingDirectory,
-        implementerBranches: workspaceBranches,
-        implementerWorkspacePaths: workspacePaths,
-        screenshotPaths: summary.results.compactMap { $0.screenshotPath },
-        success: summary.errorMessage == nil,
-        errorMessage: summary.errorMessage,
-        mergeConflictsCount: summary.mergeConflicts.count,
-        resultCount: summary.results.count,
-        validationStatus: summary.validationResult?.status.rawValue,
-        validationReasons: summary.validationResult?.reasons ?? [],
-        noWorkReason: summary.noWorkReason
-      )
-
-      // Persist individual agent results linked by chainId
-      for res in summary.results {
-        ds.recordMCPRunResult(
-          chainId: chain.id.uuidString,
-          agentId: res.agentId.uuidString,
-          agentName: res.agentName,
-          model: res.model,
-          prompt: res.prompt,
-          output: res.output,
-          premiumCost: res.premiumCost,
-          reviewVerdict: res.reviewVerdict?.rawValue
-        )
-      }
-    }
 
     var result: [String: Any] = [
       "queue": [
@@ -2871,12 +3150,100 @@ public final class MCPServerService {
       "mergeConflicts": summary.mergeConflicts,
       "results": summarizeResults(summary.results)
     ]
-    
+
     if let validationResult = summary.validationResult {
       result["validation"] = validationResult.toDictionary()
     }
 
     return (200, makeRPCResult(id: id, result: result))
+  }
+
+  private func handleChainRunBatch(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let runs = arguments["runs"] as? [[String: Any]], !runs.isEmpty else {
+      await mcpLog.warning("chains.runBatch missing runs")
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing runs"))
+    }
+
+    let parallel = arguments["parallel"] as? Bool ?? true
+    var results = Array(repeating: [String: Any](), count: runs.count)
+
+    var serializedRuns: [(index: Int, data: Data)] = []
+    for (index, runArguments) in runs.enumerated() {
+      if let data = try? JSONSerialization.data(withJSONObject: runArguments, options: []) {
+        serializedRuns.append((index, data))
+      } else {
+        results[index] = [
+          "index": index,
+          "status": 400,
+          "error": ["code": -32602, "message": "Run arguments are not valid JSON"]
+        ]
+      }
+    }
+
+    let decodePayload: (Int, Int, Data) -> [String: Any] = { index, status, data in
+      var payload: [String: Any] = [
+        "index": index,
+        "status": status
+      ]
+      if let object = try? JSONSerialization.jsonObject(with: data, options: []),
+         let dict = object as? [String: Any] {
+        if let result = dict["result"] {
+          payload["result"] = result
+        }
+        if let error = dict["error"] {
+          payload["error"] = error
+        }
+      } else {
+        payload["error"] = ["code": -32603, "message": "Invalid response JSON"]
+      }
+      return payload
+    }
+
+    if parallel {
+      await withTaskGroup(of: (Int, Int, Data).self) { group in
+        for item in serializedRuns {
+          group.addTask {
+            guard let object = try? JSONSerialization.jsonObject(with: item.data, options: []),
+                  let runArguments = object as? [String: Any] else {
+              let errorPayload = [
+                "jsonrpc": "2.0",
+                "id": NSNull(),
+                "error": ["code": -32602, "message": "Run arguments are not valid JSON"]
+              ]
+              let data = (try? JSONSerialization.data(withJSONObject: errorPayload, options: [])) ?? Data()
+              return (item.index, 400, data)
+            }
+            let (status, data) = await self.handleChainRun(id: nil, arguments: runArguments)
+            return (item.index, status, data)
+          }
+        }
+
+        for await (index, status, data) in group {
+          results[index] = decodePayload(index, status, data)
+        }
+      }
+    } else {
+      for item in serializedRuns {
+        guard let object = try? JSONSerialization.jsonObject(with: item.data, options: []),
+              let runArguments = object as? [String: Any] else {
+          results[item.index] = [
+            "index": item.index,
+            "status": 400,
+            "error": ["code": -32602, "message": "Run arguments are not valid JSON"]
+          ]
+          continue
+        }
+        let (status, data) = await handleChainRun(id: nil, arguments: runArguments)
+        results[item.index] = decodePayload(item.index, status, data)
+      }
+    }
+
+    let response: [String: Any] = [
+      "parallel": parallel,
+      "count": runs.count,
+      "runs": results
+    ]
+    return (200, makeRPCResult(id: id, result: response))
   }
 
   private func handleChainStop(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
@@ -3423,6 +3790,28 @@ public final class MCPServerService {
           "properties": [
             "templateId": ["type": "string"],
             "templateName": ["type": "string"],
+            "chainSpec": [
+              "type": "object",
+              "properties": [
+                "name": ["type": "string"],
+                "description": ["type": "string"],
+                "steps": [
+                  "type": "array",
+                  "items": [
+                    "type": "object",
+                    "properties": [
+                      "role": ["type": "string"],
+                      "model": ["type": "string"],
+                      "name": ["type": "string"],
+                      "frameworkHint": ["type": "string"],
+                      "customInstructions": ["type": "string"]
+                    ],
+                    "required": ["role", "model"]
+                  ]
+                ]
+              ],
+              "required": ["steps"]
+            ],
             "prompt": ["type": "string"],
             "workingDirectory": ["type": "string"],
             "enableReviewLoop": ["type": "boolean"],
@@ -3431,9 +3820,95 @@ public final class MCPServerService {
             "maxImplementers": ["type": "integer"],
             "maxPremiumCost": ["type": "number"],
             "priority": ["type": "integer"],
-            "timeoutSeconds": ["type": "number"]
+            "timeoutSeconds": ["type": "number"],
+            "returnImmediately": ["type": "boolean"],
+            "keepWorkspace": ["type": "boolean"]
           ],
           "required": ["prompt"]
+        ],
+        category: .chains,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "chains.run.status",
+        description: "Get status for a running or queued chain by runId",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"]
+          ],
+          "required": ["runId"]
+        ],
+        category: .chains,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "chains.run.list",
+        description: "List recent chain runs and optional logs",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "limit": ["type": "integer"],
+            "chainId": ["type": "string"],
+            "runId": ["type": "string"],
+            "includeResults": ["type": "boolean"],
+            "includeOutputs": ["type": "boolean"]
+          ]
+        ],
+        category: .chains,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "workspaces.agent.list",
+        description: "List agent workspaces and their status",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": ["type": "string"]
+          ]
+        ],
+        category: .state,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "workspaces.agent.cleanup.status",
+        description: "Get agent worktree cleanup status",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .state,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "chains.runBatch",
+        description: "Run multiple chains (optionally in parallel)",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runs": [
+              "type": "array",
+              "items": [
+                "type": "object",
+                "properties": [
+                  "templateId": ["type": "string"],
+                  "templateName": ["type": "string"],
+                  "prompt": ["type": "string"],
+                  "workingDirectory": ["type": "string"],
+                  "enableReviewLoop": ["type": "boolean"],
+                  "allowPlannerModelSelection": ["type": "boolean"],
+                  "allowPlannerImplementerScaling": ["type": "boolean"],
+                  "maxImplementers": ["type": "integer"],
+                  "maxPremiumCost": ["type": "number"],
+                  "priority": ["type": "integer"],
+                  "timeoutSeconds": ["type": "number"]
+                ],
+                "required": ["prompt"]
+              ]
+            ],
+            "parallel": ["type": "boolean"]
+          ],
+          "required": ["runs"]
         ],
         category: .chains,
         isMutating: true
@@ -3747,6 +4222,43 @@ public final class MCPServerService {
       }
       return item
     }
+  }
+
+  private func parseChainSpec(_ spec: [String: Any]) -> ChainTemplate? {
+    let name = (spec["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let description = spec["description"] as? String ?? ""
+    guard let stepsValue = spec["steps"] as? [[String: Any]], !stepsValue.isEmpty else {
+      return nil
+    }
+
+    let steps: [AgentStepTemplate] = stepsValue.compactMap { step in
+      guard let roleValue = step["role"] as? String,
+            let role = AgentRole.fromString(roleValue),
+            let modelValue = step["model"] as? String,
+            let model = CopilotModel.fromString(modelValue) else {
+        return nil
+      }
+      let stepName = (step["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+      let frameworkHintValue = (step["frameworkHint"] as? String) ?? FrameworkHint.auto.rawValue
+      let frameworkHint = FrameworkHint(rawValue: frameworkHintValue) ?? .auto
+      let customInstructions = step["customInstructions"] as? String
+      return AgentStepTemplate(
+        role: role,
+        model: model,
+        name: stepName?.isEmpty == false ? stepName! : role.displayName,
+        frameworkHint: frameworkHint,
+        customInstructions: customInstructions
+      )
+    }
+
+    guard steps.count == stepsValue.count else { return nil }
+
+    return ChainTemplate(
+      name: name?.isEmpty == false ? name! : "Dynamic Chain",
+      description: description,
+      steps: steps,
+      isBuiltIn: false
+    )
   }
 
   private func makeRPCResult(id: Any?, result: Any) -> Data {

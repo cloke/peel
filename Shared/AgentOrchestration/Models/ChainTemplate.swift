@@ -168,6 +168,20 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         validationConfig: .default
       )
     )
+    templates.append(
+      ChainTemplate(
+        name: "MCP Harness (Free)",
+        description: "Planner with parallel implementers and a reviewer using free/low-cost models",
+        steps: [
+          AgentStepTemplate(role: .planner, model: .gpt5Mini, name: "Planner"),
+          AgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer A"),
+          AgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer B"),
+          AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
+        ],
+        isBuiltIn: true,
+        validationConfig: .default
+      )
+    )
   #else
     templates.append(
       ChainTemplate(
@@ -176,6 +190,19 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         steps: [
           AgentStepTemplate(role: .planner, model: .claudeSonnet45, name: "Planner"),
           AgentStepTemplate(role: .implementer, model: .claudeSonnet45, name: "Implementer A"),
+          AgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer B"),
+          AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
+        ],
+        isBuiltIn: true
+      )
+    )
+    templates.append(
+      ChainTemplate(
+        name: "MCP Harness (Free)",
+        description: "Planner with parallel implementers and a reviewer using free/low-cost models",
+        steps: [
+          AgentStepTemplate(role: .planner, model: .gpt5Mini, name: "Planner"),
+          AgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer A"),
           AgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer B"),
           AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
         ],

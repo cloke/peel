@@ -23,6 +23,10 @@ struct ChainDetailView: View {
   @State private var mergeConflicts: [String] = []
   @State private var showingSaveTemplate = false
 
+  private var plannerDecision: PlannerDecision? {
+    chain.results.first(where: { $0.plannerDecision != nil })?.plannerDecision
+  }
+
   /// Calculate total duration from run start time
   private var totalDuration: String? {
     guard let startTime = chain.runStartTime,
@@ -102,6 +106,15 @@ struct ChainDetailView: View {
         // Agents in chain
         VStack(alignment: .leading, spacing: 12) {
           Label("Agents in Chain", systemImage: "list.number").font(.headline)
+
+          if chain.plannerOverridesAllowed {
+            let message = chain.plannerOverridesApplied
+              ? "Planner overrides applied (agents updated)"
+              : "Planner overrides pending (showing template agents)"
+            Label(message, systemImage: "wand.and.stars")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
 
           // Group agents by role: planner, implementers, reviewer
           let agentsWithIndex = Array(chain.agents.enumerated())
@@ -491,25 +504,53 @@ struct ChainDetailView: View {
         .lineLimit(2)
 
       // Model and cost info
-      HStack(spacing: 4) {
-        Text(agent.model.displayName)
-          .font(.caption)
-          .foregroundStyle(.secondary)
+      VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: 4) {
+          if let result = chain.results.first(where: { $0.agentId == agent.id }) {
+            Text("Actual: \(result.model)")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Text("•")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Text("\(result.premiumCost.premiumMultiplierString()) used")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          } else {
+            Text(agent.model.displayName)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
 
-        if let result = chain.results.first(where: { $0.agentId == agent.id }) {
-          Text("•")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-          Text("\(result.premiumCost.premiumMultiplierString()) used")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        } else if agent.state.isActive {
-          Text("•")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-          Label(agent.state.displayName, systemImage: agent.state.iconName)
-            .font(.caption)
-            .foregroundStyle(agent.state.color)
+          if agent.state.isActive {
+            Text("•")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Label(agent.state.displayName, systemImage: agent.state.iconName)
+              .font(.caption)
+              .foregroundStyle(agent.state.color)
+          }
+        }
+
+        if agent.role == .implementer,
+           let decision = plannerDecision {
+          let implementers = chain.agents.filter { $0.role == .implementer }
+          if let implIndex = implementers.firstIndex(where: { $0.id == agent.id }),
+             implIndex < decision.tasks.count,
+             let recommended = decision.tasks[implIndex].recommendedModel {
+            if recommended != agent.model.displayName {
+              Text("Planner rec: \(recommended)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+              Text("Assigned: \(agent.model.displayName)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            } else {
+              Text("Planner: \(recommended)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+          }
         }
       }
     }
