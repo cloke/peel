@@ -67,6 +67,11 @@ struct MCPRunDetailView: View {
     return raw.split(separator: "\n").map { String($0) }.filter { !$0.isEmpty }
   }
 
+  private var mergeConflictPaths: [String] {
+    let raw = run.mergeConflicts
+    return raw.split(separator: "\n").map { String($0) }.filter { !$0.isEmpty }
+  }
+
   private var mergeReadinessLabel: String {
     if run.mergeConflictsCount > 0 {
       return "Blocked"
@@ -313,6 +318,34 @@ struct MCPRunDetailView: View {
                   .font(.caption2)
                   .foregroundStyle(.secondary)
                   .accessibilityIdentifier("agents.mcpRunDetail.mergeReadiness.branches")
+              }
+            }
+          }
+
+          if !mergeConflictPaths.isEmpty {
+            GroupBox("Merge Conflicts") {
+              VStack(alignment: .leading, spacing: 8) {
+                ForEach(mergeConflictPaths, id: \.self) { path in
+                  HStack {
+                    Text(path)
+                      .font(.caption.monospaced())
+                      .foregroundStyle(.secondary)
+                      .lineLimit(1)
+                    Spacer()
+                    #if os(macOS)
+                    Button("VS Code") {
+                      Task { try? await VSCodeService.shared.openFile(path) }
+                    }
+                    .buttonStyle(.link)
+                    .accessibilityIdentifier("agents.mcpRunDetail.mergeConflicts.openVSCode")
+                    Button("Open") {
+                      NSWorkspace.shared.open(URL(fileURLWithPath: path))
+                    }
+                    .buttonStyle(.link)
+                    .accessibilityIdentifier("agents.mcpRunDetail.mergeConflicts.openFinder")
+                    #endif
+                  }
+                }
               }
             }
           }

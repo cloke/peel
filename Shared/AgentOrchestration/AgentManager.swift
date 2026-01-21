@@ -3198,6 +3198,7 @@ public final class MCPServerService {
           success: summary.errorMessage == nil,
           errorMessage: summary.errorMessage,
           mergeConflictsCount: summary.mergeConflicts.count,
+          mergeConflicts: summary.mergeConflicts,
           resultCount: summary.results.count,
           validationStatus: summary.validationResult?.status.rawValue,
           validationReasons: summary.validationResult?.reasons ?? [],

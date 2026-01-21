@@ -197,6 +197,7 @@ final class MCPRunRecord {
   var errorMessage: String?
   var noWorkReason: String?
   var mergeConflictsCount: Int = 0
+  var mergeConflicts: String = ""
   var resultCount: Int = 0
   var validationStatus: String?
   var validationReasons: String?
@@ -216,6 +217,7 @@ final class MCPRunRecord {
     errorMessage: String? = nil,
     noWorkReason: String? = nil,
     mergeConflictsCount: Int = 0,
+    mergeConflicts: String = "",
     resultCount: Int = 0,
     validationStatus: String? = nil,
     validationReasons: String? = nil,
@@ -233,6 +235,7 @@ final class MCPRunRecord {
     self.errorMessage = errorMessage
     self.noWorkReason = noWorkReason
     self.mergeConflictsCount = mergeConflictsCount
+    self.mergeConflicts = mergeConflicts
     self.resultCount = resultCount
     self.validationStatus = validationStatus
     self.validationReasons = validationReasons

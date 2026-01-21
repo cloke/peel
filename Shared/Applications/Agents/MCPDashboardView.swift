@@ -649,6 +649,17 @@ struct MCPDashboardView: View {
                       .foregroundStyle(run.success ? .green : .red)
                     Text(run.templateName)
                       .font(.subheadline)
+                    if run.mergeConflictsCount > 0 {
+                      Chip(
+                        text: "\(run.mergeConflictsCount) conflicts",
+                        font: .caption2,
+                        foreground: .orange,
+                        background: Color.orange.opacity(0.15),
+                        horizontalPadding: 6,
+                        verticalPadding: 2
+                      )
+                      .accessibilityIdentifier("agents.mcpDashboard.runHistory.\(run.id.uuidString).conflicts")
+                    }
                     Spacer()
                     Text(run.createdAt, style: .time)
                       .font(.caption2)

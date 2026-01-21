@@ -111,6 +111,7 @@ struct GithubReviewAgentSheet: View {
 
               TextField("Path to local repository", text: $selectedRepoPath)
                 .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("github.reviewAgent.repoPath")
 
               HStack(spacing: 8) {
                 Button("Browse…") {
@@ -120,8 +121,10 @@ struct GithubReviewAgentSheet: View {
                   }
                 }
                 .buttonStyle(.bordered)
+                .accessibilityIdentifier("github.reviewAgent.repoBrowse")
 
                 Toggle("Open in VS Code", isOn: $openInVSCode)
+                  .accessibilityIdentifier("github.reviewAgent.openInVSCode")
               }
 
               if !service.recentRepositories.isEmpty {
@@ -170,6 +173,7 @@ struct GithubReviewAgentSheet: View {
                 }
               }
               .pickerStyle(.menu)
+              .accessibilityIdentifier("github.reviewAgent.template")
             }
           }
 
@@ -180,6 +184,7 @@ struct GithubReviewAgentSheet: View {
               TextEditor(text: $prompt)
                 .frame(minHeight: 120)
                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.2)))
+                .accessibilityIdentifier("github.reviewAgent.prompt")
             }
           }
 
@@ -213,6 +218,7 @@ struct GithubReviewAgentSheet: View {
         dismiss()
       }
       .keyboardShortcut(.cancelAction)
+      .accessibilityIdentifier("github.reviewAgent.cancel")
 
       Spacer()
 
@@ -222,6 +228,7 @@ struct GithubReviewAgentSheet: View {
       .buttonStyle(.borderedProminent)
       .disabled(isRunning || selectedRepoPath.isEmpty || pullRequest == nil || repository == nil)
       .keyboardShortcut(.defaultAction)
+      .accessibilityIdentifier("github.reviewAgent.run")
     }
     .padding()
   }
