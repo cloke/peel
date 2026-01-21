@@ -49,6 +49,7 @@ struct PullRequestDetailView: View {
           Label("Review Locally", systemImage: "arrow.down.to.line.circle")
         }
         .buttonStyle(.bordered)
+        .accessibilityIdentifier("github.pullRequest.reviewLocally")
         .help("Create a worktree to review this PR locally")
 
         Button {
@@ -58,6 +59,7 @@ struct PullRequestDetailView: View {
         }
         .buttonStyle(.borderedProminent)
         .disabled(reviewWithAgentProvider == nil)
+        .accessibilityIdentifier("github.pullRequest.reviewWithAgent")
         .help("Create a worktree and run an agent review")
         #endif
       }
