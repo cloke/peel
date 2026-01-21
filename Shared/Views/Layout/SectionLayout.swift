@@ -8,10 +8,10 @@
 import SwiftUI
 
 enum LayoutSpacing {
-  static let page: CGFloat = 16
-  static let section: CGFloat = 12
-  static let item: CGFloat = 8
-  static let indent: CGFloat = 16
+  static let page: CGFloat = 20
+  static let section: CGFloat = 16
+  static let item: CGFloat = 10
+  static let indent: CGFloat = 20
 }
 
 struct SectionHeader: View {
