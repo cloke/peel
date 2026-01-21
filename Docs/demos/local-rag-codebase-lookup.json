@@ -1,0 +1,91 @@
+{
+  "id": "local-rag-codebase-lookup",
+  "title": "Local RAG: Fast codebase lookup",
+  "description": "Show how Local RAG vector search locates code faster and provides grounded snippets for prompts.",
+  "preconditions": [
+    "Peel built and launchable",
+    "Local RAG indexing completed for KitchenSink",
+    "Core ML assets installed (if using Core ML provider)"
+  ],
+  "continueToken": "continue",
+  "steps": [
+    {
+      "type": "app.launch",
+      "command": "./Tools/build-and-launch.sh --wait-for-server"
+    },
+    {
+      "type": "app.activate"
+    },
+    {
+      "type": "pause",
+      "message": "Topic: Local RAG dashboard. Type continue to move the UI to Local RAG."
+    },
+    {
+      "type": "ui.navigate",
+      "path": "agents"
+    },
+    {
+      "type": "ui.tap",
+      "path": "agents.localRag"
+    },
+    {
+      "type": "ui.snapshot"
+    },
+    {
+      "type": "pause",
+      "message": "Topic: Provider + assets (Core ML status). Type continue to fetch MCP status."
+    },
+    {
+      "type": "mcp.call",
+      "tool": "rag.status",
+      "arguments": {}
+    },
+    {
+      "type": "pause",
+      "message": "Topic: Run a vector search inside the UI. Type continue to populate the query and search."
+    },
+    {
+      "type": "ui.setText",
+      "path": "agents.localRag.query",
+      "message": "Core ML embedding provider selection Local RAG"
+    },
+    {
+      "type": "ui.select",
+      "path": "agents.localRag.mode",
+      "message": "vector"
+    },
+    {
+      "type": "ui.select",
+      "path": "agents.localRag.limit",
+      "message": "5"
+    },
+    {
+      "type": "ui.tap",
+      "path": "agents.localRag.search"
+    },
+    {
+      "type": "pause",
+      "message": "Topic: Show the UI results and compare to MCP output. Type continue to fetch MCP search output."
+    },
+    {
+      "type": "mcp.call",
+      "tool": "rag.search",
+      "arguments": {
+        "query": "Core ML embedding provider selection Local RAG",
+        "mode": "vector",
+        "limit": 5
+      }
+    },
+    {
+      "type": "prompt.compose",
+      "template": "Use these snippets to answer: Where is the embedding provider selected, and how does it fall back? Provide file paths and a short summary.",
+      "inputs": [
+        "Top 2 snippets from rag.search"
+      ]
+    },
+    {
+      "type": "pause",
+      "message": "Topic: Explain how Local RAG grounded the answer. Type continue to proceed."
+    }
+  ]
+}
