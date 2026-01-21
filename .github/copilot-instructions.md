@@ -61,6 +61,13 @@ Peel is a macOS/iOS SwiftUI application for managing GitHub, Git repositories, a
 | roadmap-audit | `Tools/PeelSkills/` | Verify roadmap claims against code |
 | file-rewrite | `Tools/PeelSkills/` | Write files reliably (no shell escaping) |
 
+### Local RAG Core ML Embeddings (Dev Setup)
+- Core ML embedding artifacts are **not** committed.
+- Use `Tools/ModelTools/convert_codebert_to_coreml.py` to generate a `.mlpackage` and vocab.
+- Compile with `coremlc` and copy to:
+  `~/Library/Containers/crunchy-bananas.Peel/Data/Library/Application Support/Peel/RAG/Models/`
+- Output folder `Tools/ModelTools/output/` is ignored.
+
 ### Skills (Agent Tools)
 
 **Before editing roadmap/plan files:**

@@ -33,6 +33,27 @@ xcodebuild -scheme "Peel (macOS)" -configuration Debug build
 2. **Git** - Open a local repository folder
 3. **Brew** - Just works (requires Homebrew installed)
 
+### Optional: Local RAG Core ML Embeddings
+Core ML embedding artifacts are **not** committed. To use CodeBERT embeddings locally:
+
+1. Generate the Core ML model and vocab:
+```bash
+python3 Tools/ModelTools/convert_codebert_to_coreml.py \
+	--model-id microsoft/codebert-base \
+	--seq-len 256 \
+	--output Tools/ModelTools/output/codebert-base-256.mlpackage
+```
+
+2. Compile and copy assets into app support:
+```bash
+xcrun coremlc compile Tools/ModelTools/output/codebert-base-256.mlpackage Tools/ModelTools/output
+mkdir -p "$HOME/Library/Containers/crunchy-bananas.Peel/Data/Library/Application Support/Peel/RAG/Models"
+cp -R Tools/ModelTools/output/codebert-base-256.mlmodelc "$HOME/Library/Containers/crunchy-bananas.Peel/Data/Library/Application Support/Peel/RAG/Models/"
+cp Tools/ModelTools/output/codebert-base.vocab.json "$HOME/Library/Containers/crunchy-bananas.Peel/Data/Library/Application Support/Peel/RAG/Models/"
+```
+
+3. Restart Peel and check Agents → Local RAG. `rag.status` should report `CoreMLEmbeddingProvider`.
+
 ---
 
 ## Project Structure
