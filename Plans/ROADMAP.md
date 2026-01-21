@@ -6,7 +6,7 @@ tags:
   - peel
   - agent-orchestration
   - mcp
-updated: 2026-01-20
+updated: 2026-01-21
 audience:
   - ai-agent
   - developer
@@ -75,7 +75,7 @@ github_issues:
     status: closed
     title: iOS feature parity audit
   - number: 39
-    status: open
+    status: closed
     title: Add chain templates gallery
   - number: 40
     status: open
@@ -93,8 +93,11 @@ github_issues:
     status: closed
     title: Local RAG v1 repo scan + chunking
   - number: 74
-    status: open
+    status: closed
     title: Local RAG v1 embedding provider (Core ML)
+  - number: 78
+    status: open
+    title: Parallel worktree runner with Local RAG grounding
   - number: 75
     status: closed
     title: Local RAG v1 query API + MCP hook
