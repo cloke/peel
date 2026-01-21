@@ -769,6 +769,7 @@ public final class AgentChainRunner {
     let repoURL = URL(fileURLWithPath: workingDirectory)
     let repository = Model.Repository(name: repoURL.lastPathComponent, path: workingDirectory)
 
+    var ragContexts: [UUID: String] = [:]
     for index in indices {
       try checkCancellation(chain: chain)
       let agent = chain.agents[index]
@@ -792,12 +793,23 @@ public final class AgentChainRunner {
       ])
       agent.workspace = workspace
       agent.workingDirectory = workspace.path.path
+
+      let ragQuery = localRagQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      ? prompt
+      : localRagQuery
+      if let ragContext = await buildRagContext(query: ragQuery, repoPath: workspace.path.path) {
+        ragContexts[agent.id] = ragContext
+      }
     }
 
     var results: [Int: AgentChainResult] = [:]
     try await withThrowingTaskGroup(of: (Int, AgentChainResult).self) { group in
       for index in indices {
         let agent = chain.agents[index]
+        let agentContext = [context, ragContexts[agent.id]].compactMap { value in
+          let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+          return trimmed.isEmpty ? nil : trimmed
+        }.joined(separator: "\n\n")
         group.addTask {
           try await Task { @MainActor in
             try self.checkCancellation(chain: chain)
@@ -814,7 +826,7 @@ public final class AgentChainRunner {
               at: index,
               chain: chain,
               prompt: prompt,
-              contextOverride: context
+              contextOverride: agentContext
             )
             await self.mcpLog.info("Parallel implementer complete", metadata: [
               "chainId": chain.id.uuidString,
@@ -1662,6 +1674,32 @@ public final class MCPServerService {
     lastRagSearchResults = results
     lastRagError = nil
     return results
+  }
+
+  private func buildRagContext(query: String, repoPath: String) async -> String? {
+    let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedQuery.isEmpty else { return nil }
+
+    do {
+      let results = try await searchRag(
+        query: trimmedQuery,
+        mode: localRagSearchMode,
+        repoPath: repoPath,
+        limit: localRagSearchLimit
+      )
+      guard !results.isEmpty else { return nil }
+
+      let snippets = results.map { result in
+        "- \(result.filePath) [\(result.startLine)-\(result.endLine)]:\n\(result.snippet)"
+      }
+      return ([
+        "Local RAG context for: \"\(trimmedQuery)\"",
+        snippets.joined(separator: "\n\n")
+      ]).joined(separator: "\n")
+    } catch {
+      await mcpLog.warning("Local RAG context build failed", metadata: ["error": error.localizedDescription])
+      return nil
+    }
   }
 
   public struct RunOverrides {
