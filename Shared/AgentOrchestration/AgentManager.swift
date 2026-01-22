@@ -2990,6 +2990,10 @@ public final class MCPServerService {
       result["completedAt"] = formatter.string(from: completedAt)
     }
 
+    if case .failed(let reason) = run.status {
+      result["failureReason"] = reason
+    }
+
     if includeDetails {
       result["executions"] = run.executions.map { encodeExecution($0) }
     }
@@ -3028,6 +3032,20 @@ public final class MCPServerService {
     }
     if !execution.mergeConflicts.isEmpty {
       result["mergeConflicts"] = execution.mergeConflicts
+    }
+    if !execution.output.isEmpty {
+      result["output"] = execution.output
+    }
+    if let diffSummary = execution.diffSummary, !diffSummary.isEmpty {
+      result["diffSummary"] = diffSummary
+    }
+    switch execution.status {
+    case .failed(let reason):
+      result["failureReason"] = reason
+    case .rejected(let reason):
+      result["rejectionReason"] = reason
+    default:
+      break
     }
 
     return result
