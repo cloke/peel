@@ -225,6 +225,12 @@ final class ParallelWorktreeRunner {
   
   /// The workspace service for worktree management
   private let workspaceService: AgentWorkspaceService
+
+  /// Agent manager for creating chains/agents
+  private let agentManager: AgentManager
+
+  /// Chain runner for executing tasks
+  private let chainRunner: AgentChainRunner
   
   /// Local RAG store for grounding
   private var ragStore: LocalRAGStore?
@@ -235,8 +241,14 @@ final class ParallelWorktreeRunner {
   /// Active tasks for each execution
   private var executionTasks: [UUID: Task<Void, Never>] = [:]
   
-  init(workspaceService: AgentWorkspaceService) {
+  init(
+    workspaceService: AgentWorkspaceService,
+    agentManager: AgentManager,
+    chainRunner: AgentChainRunner
+  ) {
     self.workspaceService = workspaceService
+    self.agentManager = agentManager
+    self.chainRunner = chainRunner
   }
   
   /// Set the RAG store for grounding
@@ -444,26 +456,125 @@ final class ParallelWorktreeRunner {
     }
   }
   
-  /// Execute a task in a worktree (stub for integration)
+  /// Execute a task in a worktree using the agent chain runner
   private func executeTask(
     prompt: String,
     worktreePath: String,
     task: WorktreeTask
   ) async -> TaskExecutionResult {
-    // This would integrate with your existing chain runner
-    // For now, return a placeholder result
-    
-    // Simulate some work
-    try? await Task.sleep(for: .milliseconds(100))
-    
-    return TaskExecutionResult(
-      output: "Task executed successfully",
-      diffSummary: nil,
-      filesChanged: 0,
-      insertions: 0,
-      deletions: 0,
-      mergeConflicts: nil
+    let template = preferredTemplate()
+    let chain = makeChain(from: template, workingDirectory: worktreePath, taskTitle: task.title)
+
+    #if os(macOS)
+    let validationConfig = template?.validationConfig
+    #else
+    let validationConfig: ValidationConfiguration? = nil
+    #endif
+
+    let runSummary = await chainRunner.runChain(
+      chain,
+      prompt: prompt,
+      validationConfig: validationConfig
     )
+
+    let output = summarizeOutputs(runSummary.results, errorMessage: runSummary.errorMessage)
+    let diffStats = computeDiffStats(in: worktreePath)
+
+    await cleanupChain(chain)
+
+    return TaskExecutionResult(
+      output: output,
+      diffSummary: diffStats.summary,
+      filesChanged: diffStats.filesChanged,
+      insertions: diffStats.insertions,
+      deletions: diffStats.deletions,
+      mergeConflicts: runSummary.mergeConflicts
+    )
+  }
+
+  private func preferredTemplate() -> ChainTemplate? {
+    let templates = agentManager.allTemplates
+    if let free = templates.first(where: { $0.name == "MCP Harness (Free)" }) {
+      return free
+    }
+    if let quick = templates.first(where: { $0.name == "Quick Fix" }) {
+      return quick
+    }
+    return templates.first
+  }
+
+  private func makeChain(
+    from template: ChainTemplate?,
+    workingDirectory: String,
+    taskTitle: String
+  ) -> AgentChain {
+    if let template {
+      return agentManager.createChainFromTemplate(template, workingDirectory: workingDirectory)
+    }
+
+    let chain = agentManager.createChain(name: taskTitle, workingDirectory: workingDirectory)
+    let agent = agentManager.createAgent(
+      name: "Implementer",
+      type: .copilot,
+      role: .implementer,
+      model: .gpt5Mini,
+      workingDirectory: workingDirectory
+    )
+    chain.addAgent(agent)
+    return chain
+  }
+
+  private func summarizeOutputs(_ results: [AgentChainResult], errorMessage: String?) -> String {
+    var sections: [String] = []
+    if let errorMessage, !errorMessage.isEmpty {
+      sections.append("Error: \(errorMessage)")
+    }
+    for result in results {
+      sections.append("[\(result.agentName)]\n\(result.output)")
+    }
+    return sections.joined(separator: "\n\n")
+  }
+
+  private func computeDiffStats(in worktreePath: String) -> (summary: String?, filesChanged: Int, insertions: Int, deletions: Int) {
+    let numstat = runGit(args: ["diff", "--numstat"], at: worktreePath)
+    let lines = numstat.split(separator: "\n")
+    var filesChanged = 0
+    var insertions = 0
+    var deletions = 0
+    for line in lines {
+      let parts = line.split(separator: "\t")
+      guard parts.count >= 3 else { continue }
+      filesChanged += 1
+      if let ins = Int(parts[0]) {
+        insertions += ins
+      }
+      if let del = Int(parts[1]) {
+        deletions += del
+      }
+    }
+    let summary = filesChanged > 0 ? runGit(args: ["diff", "--stat"], at: worktreePath) : nil
+    return (summary?.isEmpty == false ? summary : nil, filesChanged, insertions, deletions)
+  }
+
+  private func runGit(args: [String], at path: String) -> String {
+    let process = Process()
+    process.currentDirectoryURL = URL(fileURLWithPath: path)
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+    process.arguments = args
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = pipe
+    try? process.run()
+    process.waitUntilExit()
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+  }
+
+  private func cleanupChain(_ chain: AgentChain) async {
+    for agent in chain.agents {
+      await agentManager.removeAgent(agent)
+    }
+    agentManager.removeChain(chain)
   }
   
   private struct TaskExecutionResult {
