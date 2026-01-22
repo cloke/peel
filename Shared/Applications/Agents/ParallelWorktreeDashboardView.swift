@@ -35,10 +35,18 @@ struct ParallelWorktreeDashboardView: View {
   
   @ViewBuilder
   private func mainContent(runner: ParallelWorktreeRunner) -> some View {
-    NavigationSplitView {
-      sidebarContent(runner: runner)
-    } detail: {
+    HSplitView {
+      // Left: Run list
+      VStack(spacing: 0) {
+        runListHeader
+        Divider()
+        runList(runner: runner)
+      }
+      .frame(minWidth: 220, idealWidth: 260, maxWidth: 320)
+      
+      // Right: Detail
       detailContent(runner: runner)
+        .frame(minWidth: 400)
     }
     .navigationTitle("Parallel Worktrees")
     .sheet(isPresented: $showingNewRunSheet) {
@@ -48,36 +56,45 @@ struct ParallelWorktreeDashboardView: View {
     }
   }
   
+  private var runListHeader: some View {
+    HStack {
+      Text("Runs")
+        .font(.headline)
+      Spacer()
+      Button {
+        showingNewRunSheet = true
+      } label: {
+        Image(systemName: "plus")
+      }
+      .buttonStyle(.borderless)
+      .accessibilityIdentifier("parallelRuns.newRun")
+    }
+    .padding(.horizontal, 12)
+    .padding(.vertical, 8)
+  }
+  
   @ViewBuilder
-  private func sidebarContent(runner: ParallelWorktreeRunner) -> some View {
-    List(selection: $selectedRun) {
-      if runner.runs.isEmpty {
-        ContentUnavailableView {
-          Label("No Parallel Runs", systemImage: "square.stack.3d.up")
-        } description: {
-          Text("Create a parallel run to execute multiple tasks in isolated worktrees.")
-        } actions: {
-          Button("New Parallel Run") {
-            showingNewRunSheet = true
-          }
+  private func runList(runner: ParallelWorktreeRunner) -> some View {
+    if runner.runs.isEmpty {
+      ContentUnavailableView {
+        Label("No Parallel Runs", systemImage: "arrow.triangle.branch")
+      } description: {
+        Text("Create a parallel run to execute multiple tasks in isolated worktrees.")
+      } actions: {
+        Button("New Parallel Run") {
+          showingNewRunSheet = true
         }
-      } else {
+        .buttonStyle(.borderedProminent)
+      }
+      .frame(maxHeight: .infinity)
+    } else {
+      List(selection: $selectedRun) {
         ForEach(runner.runs) { run in
           ParallelRunRow(run: run)
             .tag(run)
         }
       }
-    }
-    .listStyle(.sidebar)
-    .toolbar {
-      ToolbarItem(placement: .primaryAction) {
-        Button {
-          showingNewRunSheet = true
-        } label: {
-          Label("New Run", systemImage: "plus")
-        }
-        .accessibilityIdentifier("parallelRuns.newRun")
-      }
+      .listStyle(.plain)
     }
   }
   
