@@ -76,17 +76,20 @@ struct ParallelWorktreeDashboardView: View {
   @ViewBuilder
   private func runList(runner: ParallelWorktreeRunner) -> some View {
     if runner.runs.isEmpty {
-      ContentUnavailableView {
-        Label("No Parallel Runs", systemImage: "arrow.triangle.branch")
-      } description: {
-        Text("Create a parallel run to execute multiple tasks in isolated worktrees.")
-      } actions: {
+      VStack(alignment: .leading, spacing: 12) {
+        ContentUnavailableView {
+          Label("No Parallel Runs", systemImage: "arrow.triangle.branch")
+        } description: {
+          Text("Create a parallel run to execute multiple tasks in isolated worktrees.")
+        }
+
         Button("New Parallel Run") {
           showingNewRunSheet = true
         }
         .buttonStyle(.borderedProminent)
       }
-      .frame(maxHeight: .infinity)
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+      .padding(16)
     } else {
       List(selection: $selectedRun) {
         ForEach(runner.runs) { run in
@@ -113,6 +116,8 @@ struct ParallelWorktreeDashboardView: View {
       } description: {
         Text("Select a parallel run from the sidebar to view details.")
       }
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+      .padding(24)
     }
   }
 }
