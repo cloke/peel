@@ -494,11 +494,14 @@ final class ParallelWorktreeRunner {
 
   private func preferredTemplate() -> ChainTemplate? {
     let templates = agentManager.allTemplates
-    if let free = templates.first(where: { $0.name == "MCP Harness (Free)" }) {
-      return free
+    if let freeReview = templates.first(where: { $0.name == "Free Review" }) {
+      return freeReview
     }
     if let quick = templates.first(where: { $0.name == "Quick Fix" }) {
       return quick
+    }
+    if let free = templates.first(where: { $0.name == "MCP Harness (Free)" }) {
+      return free
     }
     return templates.first
   }
