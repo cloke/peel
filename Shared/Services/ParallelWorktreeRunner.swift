@@ -323,7 +323,7 @@ final class ParallelWorktreeRunner {
     do {
       // Create worktree
       let timestamp = Int(Date().timeIntervalSince1970)
-      let sanitizedName = execution.task.title.replacingOccurrences(of: " ", with: "-").lowercased()
+      let sanitizedName = sanitizeBranchComponent(execution.task.title)
       let branchName = "parallel/\(sanitizedName)-\(timestamp)"
       
       let worktreePath = try await workspaceService.createWorktreeForChain(
@@ -373,6 +373,25 @@ final class ParallelWorktreeRunner {
       execution.status = .failed(error.localizedDescription)
       execution.completedAt = Date()
     }
+  }
+
+  private func sanitizeBranchComponent(_ title: String) -> String {
+    let allowed = CharacterSet.alphanumerics
+    let slug = title
+      .lowercased()
+      .map { allowed.contains($0.unicodeScalars.first!) ? $0 : "-" }
+      .reduce(into: "") { result, character in
+        if character == "-" {
+          if !result.hasSuffix("-") {
+            result.append(character)
+          }
+        } else {
+          result.append(character)
+        }
+      }
+      .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+
+    return slug.isEmpty ? "task" : slug
   }
   
   /// Build a prompt grounded with RAG snippets
