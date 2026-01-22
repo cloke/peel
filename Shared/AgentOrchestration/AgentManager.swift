@@ -1521,7 +1521,11 @@ public final class MCPServerService {
     }
 
     // Initialize parallel worktree runner
-    self.parallelWorktreeRunner = ParallelWorktreeRunner(workspaceService: agentManager.workspaceManager)
+    self.parallelWorktreeRunner = ParallelWorktreeRunner(
+      workspaceService: agentManager.workspaceManager,
+      agentManager: agentManager,
+      chainRunner: chainRunner
+    )
     self.parallelWorktreeRunner?.setRAGStore(localRagStore)
 
     if isEnabled {
