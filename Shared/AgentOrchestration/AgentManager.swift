@@ -1223,6 +1223,7 @@ public final class MCPServerService {
 
   public enum ToolCategory: String, CaseIterable {
     case chains
+    case parallelWorktrees
     case logs
     case server
     case app
@@ -1234,6 +1235,7 @@ public final class MCPServerService {
     var displayName: String {
       switch self {
       case .chains: return "Chains"
+      case .parallelWorktrees: return "Parallel Worktrees"
       case .logs: return "Logs"
       case .server: return "Server"
       case .app: return "App"
@@ -1436,6 +1438,7 @@ public final class MCPServerService {
   let translationValidatorService = TranslationValidatorService()
   let piiScrubberService = PIIScrubberService()
   private let localRagStore = LocalRAGStore()
+  private(set) var parallelWorktreeRunner: ParallelWorktreeRunner?
 
   public struct ActiveRunInfo: Identifiable {
     public let id: UUID
@@ -1514,6 +1517,10 @@ public final class MCPServerService {
       self.maxQueuedChains = 10
     }
     loadToolPermissions()
+
+    // Initialize parallel worktree runner
+    self.parallelWorktreeRunner = ParallelWorktreeRunner(workspaceService: agentManager.workspaceManager)
+    self.parallelWorktreeRunner?.setRAGStore(localRagStore)
 
     if isEnabled {
       start()
@@ -2257,6 +2264,31 @@ public final class MCPServerService {
     case "pii.scrub":
       return await handlePIIScrub(id: id, arguments: arguments)
 
+    // Parallel Worktree Tools
+    case "parallel.create":
+      return await handleParallelCreate(id: id, arguments: arguments)
+
+    case "parallel.start":
+      return await handleParallelStart(id: id, arguments: arguments)
+
+    case "parallel.status":
+      return handleParallelStatus(id: id, arguments: arguments)
+
+    case "parallel.list":
+      return handleParallelList(id: id, arguments: arguments)
+
+    case "parallel.approve":
+      return handleParallelApprove(id: id, arguments: arguments)
+
+    case "parallel.reject":
+      return handleParallelReject(id: id, arguments: arguments)
+
+    case "parallel.merge":
+      return await handleParallelMerge(id: id, arguments: arguments)
+
+    case "parallel.cancel":
+      return await handleParallelCancel(id: id, arguments: arguments)
+
     default:
       await mcpLog.warning("Unknown tool", metadata: ["name": name])
       return (400, makeRPCError(id: id, code: -32601, message: "Unknown tool"))
@@ -2652,6 +2684,362 @@ public final class MCPServerService {
       await mcpLog.warning("PII scrubber failed", metadata: ["error": error.localizedDescription])
       return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
     }
+  }
+
+  // MARK: - Parallel Worktree Handlers
+
+  private func handleParallelCreate(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let runner = parallelWorktreeRunner else {
+      return (500, makeRPCError(id: id, code: -32001, message: "Parallel worktree runner not initialized"))
+    }
+
+    guard let name = (arguments["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !name.isEmpty else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing name"))
+    }
+
+    guard let projectPath = (arguments["projectPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !projectPath.isEmpty else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing projectPath"))
+    }
+
+    guard let tasksArray = arguments["tasks"] as? [[String: Any]], !tasksArray.isEmpty else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing or empty tasks array"))
+    }
+
+    let baseBranch = (arguments["baseBranch"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "HEAD"
+    let targetBranch = arguments["targetBranch"] as? String
+    let requireReviewGate = arguments["requireReviewGate"] as? Bool ?? true
+    let autoMergeOnApproval = arguments["autoMergeOnApproval"] as? Bool ?? false
+
+    // Parse tasks
+    let tasks: [WorktreeTask] = tasksArray.compactMap { taskDict in
+      guard let title = (taskDict["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !title.isEmpty,
+            let prompt = (taskDict["prompt"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !prompt.isEmpty else {
+        return nil
+      }
+      let description = taskDict["description"] as? String ?? ""
+      let focusPaths = taskDict["focusPaths"] as? [String] ?? []
+      return WorktreeTask(
+        title: title,
+        description: description,
+        prompt: prompt,
+        focusPaths: focusPaths
+      )
+    }
+
+    guard tasks.count == tasksArray.count else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Invalid task format - each task needs title and prompt"))
+    }
+
+    let run = runner.createRun(
+      name: name,
+      projectPath: projectPath,
+      tasks: tasks,
+      baseBranch: baseBranch,
+      targetBranch: targetBranch,
+      requireReviewGate: requireReviewGate,
+      autoMergeOnApproval: autoMergeOnApproval
+    )
+
+    await mcpLog.info("Parallel run created", metadata: [
+      "runId": run.id.uuidString,
+      "name": name,
+      "taskCount": "\(tasks.count)"
+    ])
+
+    return (200, makeRPCResult(id: id, result: encodeParallelRun(run)))
+  }
+
+  private func handleParallelStart(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let runner = parallelWorktreeRunner else {
+      return (500, makeRPCError(id: id, code: -32001, message: "Parallel worktree runner not initialized"))
+    }
+
+    guard let runIdString = arguments["runId"] as? String,
+          let runId = UUID(uuidString: runIdString) else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing or invalid runId"))
+    }
+
+    guard let run = runner.getRun(id: runId) else {
+      return (404, makeRPCError(id: id, code: -32004, message: "Run not found"))
+    }
+
+    await mcpLog.info("Starting parallel run", metadata: ["runId": runId.uuidString])
+
+    // Start the run in a task so we don't block
+    Task {
+      do {
+        try await runner.startRun(run)
+        await mcpLog.info("Parallel run completed", metadata: [
+          "runId": runId.uuidString,
+          "status": run.status.displayName
+        ])
+      } catch {
+        await mcpLog.error(error, context: "Parallel run failed")
+      }
+    }
+
+    return (200, makeRPCResult(id: id, result: [
+      "runId": runId.uuidString,
+      "status": "starting"
+    ]))
+  }
+
+  private func handleParallelStatus(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    guard let runner = parallelWorktreeRunner else {
+      return (500, makeRPCError(id: id, code: -32001, message: "Parallel worktree runner not initialized"))
+    }
+
+    guard let runIdString = arguments["runId"] as? String,
+          let runId = UUID(uuidString: runIdString) else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing or invalid runId"))
+    }
+
+    guard let run = runner.getRun(id: runId) else {
+      return (404, makeRPCError(id: id, code: -32004, message: "Run not found"))
+    }
+
+    return (200, makeRPCResult(id: id, result: encodeParallelRun(run, includeDetails: true)))
+  }
+
+  private func handleParallelList(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    guard let runner = parallelWorktreeRunner else {
+      return (500, makeRPCError(id: id, code: -32001, message: "Parallel worktree runner not initialized"))
+    }
+
+    let includeCompleted = arguments["includeCompleted"] as? Bool ?? false
+
+    let runs = runner.runs.filter { run in
+      if includeCompleted { return true }
+      switch run.status {
+      case .completed, .cancelled, .failed: return false
+      default: return true
+      }
+    }
+
+    let result: [[String: Any]] = runs.map { encodeParallelRun($0) }
+    return (200, makeRPCResult(id: id, result: ["runs": result]))
+  }
+
+  private func handleParallelApprove(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    guard let runner = parallelWorktreeRunner else {
+      return (500, makeRPCError(id: id, code: -32001, message: "Parallel worktree runner not initialized"))
+    }
+
+    guard let runIdString = arguments["runId"] as? String,
+          let runId = UUID(uuidString: runIdString) else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing or invalid runId"))
+    }
+
+    guard let run = runner.getRun(id: runId) else {
+      return (404, makeRPCError(id: id, code: -32004, message: "Run not found"))
+    }
+
+    let approveAll = arguments["approveAll"] as? Bool ?? false
+
+    if approveAll {
+      runner.approveAllPending(in: run)
+      return (200, makeRPCResult(id: id, result: [
+        "runId": runId.uuidString,
+        "approved": "all",
+        "pendingReviewCount": run.pendingReviewCount
+      ]))
+    }
+
+    guard let executionIdString = arguments["executionId"] as? String,
+          let executionId = UUID(uuidString: executionIdString) else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing executionId (or set approveAll=true)"))
+    }
+
+    guard let execution = run.executions.first(where: { $0.id == executionId }) else {
+      return (404, makeRPCError(id: id, code: -32004, message: "Execution not found"))
+    }
+
+    runner.approveExecution(execution, in: run)
+    return (200, makeRPCResult(id: id, result: [
+      "runId": runId.uuidString,
+      "executionId": executionId.uuidString,
+      "status": execution.status.displayName
+    ]))
+  }
+
+  private func handleParallelReject(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    guard let runner = parallelWorktreeRunner else {
+      return (500, makeRPCError(id: id, code: -32001, message: "Parallel worktree runner not initialized"))
+    }
+
+    guard let runIdString = arguments["runId"] as? String,
+          let runId = UUID(uuidString: runIdString) else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing or invalid runId"))
+    }
+
+    guard let run = runner.getRun(id: runId) else {
+      return (404, makeRPCError(id: id, code: -32004, message: "Run not found"))
+    }
+
+    guard let executionIdString = arguments["executionId"] as? String,
+          let executionId = UUID(uuidString: executionIdString) else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing executionId"))
+    }
+
+    guard let execution = run.executions.first(where: { $0.id == executionId }) else {
+      return (404, makeRPCError(id: id, code: -32004, message: "Execution not found"))
+    }
+
+    let reason = arguments["reason"] as? String ?? "Rejected via MCP"
+    runner.rejectExecution(execution, reason: reason)
+
+    return (200, makeRPCResult(id: id, result: [
+      "runId": runId.uuidString,
+      "executionId": executionId.uuidString,
+      "status": execution.status.displayName
+    ]))
+  }
+
+  private func handleParallelMerge(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let runner = parallelWorktreeRunner else {
+      return (500, makeRPCError(id: id, code: -32001, message: "Parallel worktree runner not initialized"))
+    }
+
+    guard let runIdString = arguments["runId"] as? String,
+          let runId = UUID(uuidString: runIdString) else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing or invalid runId"))
+    }
+
+    guard let run = runner.getRun(id: runId) else {
+      return (404, makeRPCError(id: id, code: -32004, message: "Run not found"))
+    }
+
+    let mergeAll = arguments["mergeAll"] as? Bool ?? false
+
+    do {
+      if mergeAll {
+        try await runner.mergeAllApproved(in: run)
+        return (200, makeRPCResult(id: id, result: [
+          "runId": runId.uuidString,
+          "merged": "all",
+          "mergedCount": run.mergedCount
+        ]))
+      }
+
+      guard let executionIdString = arguments["executionId"] as? String,
+            let executionId = UUID(uuidString: executionIdString) else {
+        return (400, makeRPCError(id: id, code: -32602, message: "Missing executionId (or set mergeAll=true)"))
+      }
+
+      guard let execution = run.executions.first(where: { $0.id == executionId }) else {
+        return (404, makeRPCError(id: id, code: -32004, message: "Execution not found"))
+      }
+
+      try await runner.mergeExecution(execution, in: run)
+      return (200, makeRPCResult(id: id, result: [
+        "runId": runId.uuidString,
+        "executionId": executionId.uuidString,
+        "status": execution.status.displayName
+      ]))
+    } catch {
+      await mcpLog.warning("Parallel merge failed", metadata: ["error": error.localizedDescription])
+      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
+    }
+  }
+
+  private func handleParallelCancel(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let runner = parallelWorktreeRunner else {
+      return (500, makeRPCError(id: id, code: -32001, message: "Parallel worktree runner not initialized"))
+    }
+
+    guard let runIdString = arguments["runId"] as? String,
+          let runId = UUID(uuidString: runIdString) else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing or invalid runId"))
+    }
+
+    guard let run = runner.getRun(id: runId) else {
+      return (404, makeRPCError(id: id, code: -32004, message: "Run not found"))
+    }
+
+    await runner.cancelRun(run)
+
+    await mcpLog.info("Parallel run cancelled", metadata: ["runId": runId.uuidString])
+
+    return (200, makeRPCResult(id: id, result: [
+      "runId": runId.uuidString,
+      "status": "cancelled"
+    ]))
+  }
+
+  private func encodeParallelRun(_ run: ParallelWorktreeRun, includeDetails: Bool = false) -> [String: Any] {
+    let formatter = ISO8601DateFormatter()
+    var result: [String: Any] = [
+      "id": run.id.uuidString,
+      "name": run.name,
+      "projectPath": run.projectPath,
+      "baseBranch": run.baseBranch,
+      "status": run.status.displayName,
+      "progress": run.progress,
+      "executionCount": run.executions.count,
+      "pendingReviewCount": run.pendingReviewCount,
+      "readyToMergeCount": run.readyToMergeCount,
+      "mergedCount": run.mergedCount,
+      "failedCount": run.failedCount,
+      "requireReviewGate": run.requireReviewGate,
+      "autoMergeOnApproval": run.autoMergeOnApproval,
+      "createdAt": formatter.string(from: run.createdAt)
+    ]
+
+    if let targetBranch = run.targetBranch {
+      result["targetBranch"] = targetBranch
+    }
+    if let startedAt = run.startedAt {
+      result["startedAt"] = formatter.string(from: startedAt)
+    }
+    if let completedAt = run.completedAt {
+      result["completedAt"] = formatter.string(from: completedAt)
+    }
+
+    if includeDetails {
+      result["executions"] = run.executions.map { encodeExecution($0) }
+    }
+
+    return result
+  }
+
+  private func encodeExecution(_ execution: ParallelWorktreeExecution) -> [String: Any] {
+    let formatter = ISO8601DateFormatter()
+    var result: [String: Any] = [
+      "id": execution.id.uuidString,
+      "taskTitle": execution.task.title,
+      "taskDescription": execution.task.description,
+      "status": execution.status.displayName,
+      "filesChanged": execution.filesChanged,
+      "insertions": execution.insertions,
+      "deletions": execution.deletions,
+      "ragSnippetCount": execution.ragSnippets.count,
+      "mergeConflictCount": execution.mergeConflicts.count
+    ]
+
+    if let worktreePath = execution.worktreePath {
+      result["worktreePath"] = worktreePath
+    }
+    if let branchName = execution.branchName {
+      result["branchName"] = branchName
+    }
+    if let startedAt = execution.startedAt {
+      result["startedAt"] = formatter.string(from: startedAt)
+    }
+    if let completedAt = execution.completedAt {
+      result["completedAt"] = formatter.string(from: completedAt)
+    }
+    if let duration = execution.duration {
+      result["durationSeconds"] = duration
+    }
+    if !execution.mergeConflicts.isEmpty {
+      result["mergeConflicts"] = execution.mergeConflicts
+    }
+
+    return result
   }
 
   private func handleRagStatus(id: Any?) async -> (Int, Data) {
@@ -4297,6 +4685,137 @@ public final class MCPServerService {
           "required": ["inputPath", "outputPath"]
         ],
         category: .diagnostics,
+        isMutating: true
+      ),
+      // Parallel Worktree Tools
+      ToolDefinition(
+        name: "parallel.create",
+        description: "Create a new parallel worktree run with multiple tasks",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "name": ["type": "string"],
+            "projectPath": ["type": "string"],
+            "baseBranch": ["type": "string"],
+            "targetBranch": ["type": "string"],
+            "requireReviewGate": ["type": "boolean"],
+            "autoMergeOnApproval": ["type": "boolean"],
+            "tasks": [
+              "type": "array",
+              "items": [
+                "type": "object",
+                "properties": [
+                  "title": ["type": "string"],
+                  "description": ["type": "string"],
+                  "prompt": ["type": "string"],
+                  "focusPaths": [
+                    "type": "array",
+                    "items": ["type": "string"]
+                  ]
+                ],
+                "required": ["title", "prompt"]
+              ]
+            ]
+          ],
+          "required": ["name", "projectPath", "tasks"]
+        ],
+        category: .parallelWorktrees,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "parallel.start",
+        description: "Start a pending parallel worktree run",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"]
+          ],
+          "required": ["runId"]
+        ],
+        category: .parallelWorktrees,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "parallel.status",
+        description: "Get status of a parallel worktree run",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"]
+          ],
+          "required": ["runId"]
+        ],
+        category: .parallelWorktrees,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "parallel.list",
+        description: "List all parallel worktree runs",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "includeCompleted": ["type": "boolean"]
+          ]
+        ],
+        category: .parallelWorktrees,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "parallel.approve",
+        description: "Approve an execution in a parallel run",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"],
+            "executionId": ["type": "string"],
+            "approveAll": ["type": "boolean"]
+          ],
+          "required": ["runId"]
+        ],
+        category: .parallelWorktrees,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "parallel.reject",
+        description: "Reject an execution in a parallel run",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"],
+            "executionId": ["type": "string"],
+            "reason": ["type": "string"]
+          ],
+          "required": ["runId", "executionId"]
+        ],
+        category: .parallelWorktrees,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "parallel.merge",
+        description: "Merge approved executions in a parallel run",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"],
+            "executionId": ["type": "string"],
+            "mergeAll": ["type": "boolean"]
+          ],
+          "required": ["runId"]
+        ],
+        category: .parallelWorktrees,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "parallel.cancel",
+        description: "Cancel a parallel worktree run",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"]
+          ],
+          "required": ["runId"]
+        ],
+        category: .parallelWorktrees,
         isMutating: true
       )
     ]

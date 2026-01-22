@@ -19,6 +19,7 @@ enum InfrastructureView: String, Hashable {
   case translationValidation = "translation-validation"
   case localRag = "local-rag"
   case piiScrubber = "pii-scrubber"
+  case parallelWorktrees = "parallel-worktrees"
 }
 
 /// Main view for AI Agent Orchestration
@@ -87,6 +88,9 @@ struct Agents_RootView: View {
       case "agents.piiScrubber":
         selectedInfrastructure = .piiScrubber
         mcpServer.recordUIActionHandled(action.controlId)
+      case "agents.parallelWorktrees":
+        selectedInfrastructure = .parallelWorktrees
+        mcpServer.recordUIActionHandled(action.controlId)
       default:
         break
       }
@@ -149,6 +153,8 @@ struct Agents_RootView: View {
         LocalRAGDashboardView(mcpServer: mcpServer)
       case .piiScrubber:
         PIIScrubberView()
+      case .parallelWorktrees:
+        ParallelWorktreeDashboardView(mcpServer: mcpServer)
       }
     } else if let chain = agentManager.selectedChain {
       ChainDetailView(chain: chain, agentManager: agentManager, cliService: cliService, sessionTracker: sessionTracker)

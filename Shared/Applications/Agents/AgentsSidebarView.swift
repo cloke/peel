@@ -181,6 +181,15 @@ struct AgentsSidebarView: View {
           .tag("infra:translation-validation")
 
           HStack {
+            Image(systemName: "arrow.triangle.branch")
+              .foregroundStyle(.mint)
+            Text("Parallel Worktrees")
+            Spacer()
+          }
+          .accessibilityIdentifier("agents.parallelWorktrees")
+          .tag("infra:parallel-worktrees")
+
+          HStack {
             Image(systemName: "shield.checkered")
               .foregroundStyle(.purple)
             Text("VM Isolation")
