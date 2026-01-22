@@ -7,6 +7,7 @@ tags:
   - agent-orchestration
   - mcp
 updated: 2026-01-21
+last_health_check: 2026-01-21
 audience:
   - ai-agent
   - developer
@@ -45,7 +46,7 @@ github_issues:
     status: closed
     title: Improve empty states in Agents UI
   - number: 29
-    status: closed
+    status: open
     title: Add Review with Agent button for PRs
   - number: 30
     status: open
