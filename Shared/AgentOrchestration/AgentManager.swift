@@ -20,7 +20,6 @@ import TaskRunner
 @MainActor
 @Observable
 public final class AgentManager {
-  private let mcpLog = MCPLogService.shared
   /// All registered agents
   public private(set) var agents: [Agent] = []
   
@@ -255,6 +254,58 @@ public final class AgentManager {
   
 }
 
+@MainActor
+public final class MCPTelemetryAdapter: MCPTelemetryProviding {
+  private let logService: MCPLogService
+  private let sessionTracker: SessionTracker
+
+  public init(
+    logService: MCPLogService = .shared,
+    sessionTracker: SessionTracker
+  ) {
+    self.logService = logService
+    self.sessionTracker = sessionTracker
+  }
+
+  public func info(_ message: String, metadata: [String: String] = [:]) async {
+    await logService.info(message, metadata: metadata)
+  }
+
+  public func warning(_ message: String, metadata: [String: String] = [:]) async {
+    await logService.warning(message, metadata: metadata)
+  }
+
+  public func error(_ message: String, metadata: [String: String] = [:]) async {
+    await logService.error(message, metadata: metadata)
+  }
+
+  public func error(_ error: Error, context: String, metadata: [String: String] = [:]) async {
+    await logService.error(error, context: context, metadata: metadata)
+  }
+
+  public func logPath() async -> String {
+    await logService.logPath()
+  }
+
+  public func tail(lines: Int) async -> String {
+    await logService.tail(lines: lines)
+  }
+
+  public func recordChainRun(_ chain: Any) {
+    if let typed = chain as? AgentChain {
+      sessionTracker.recordChainRun(typed)
+    }
+  }
+
+  public var totalPremiumUsed: Double {
+    sessionTracker.totalPremiumUsed
+  }
+
+  public var totalFreeUsed: Int {
+    sessionTracker.totalFreeUsed
+  }
+}
+
 // MARK: - Agent Chain Runner
 
 @MainActor
@@ -348,9 +399,8 @@ public final class AgentChainRunner {
 
   private let agentManager: AgentManager
   private let cliService: CLIService
-  private let sessionTracker: SessionTracker
+  private let telemetryProvider: MCPTelemetryProviding
   private let validationRunner = ValidationRunner()
-  private let mcpLog = MCPLogService.shared
   private let mergeCoordinator = MergeCoordinator.shared
   private let screenshotService = ScreenshotService()
   private let localRagStore = LocalRAGStore()
@@ -359,11 +409,11 @@ public final class AgentChainRunner {
   public init(
     agentManager: AgentManager,
     cliService: CLIService,
-    sessionTracker: SessionTracker
+    telemetryProvider: MCPTelemetryProviding
   ) {
     self.agentManager = agentManager
     self.cliService = cliService
-    self.sessionTracker = sessionTracker
+    self.telemetryProvider = telemetryProvider
   }
 
   public func runChain(
@@ -415,7 +465,7 @@ public final class AgentChainRunner {
       )
 
       if case .complete = chain.state {
-        sessionTracker.recordChainRun(chain)
+        telemetryProvider.recordChainRun(chain)
       } else {
         try checkCancellation(chain: chain)
         if chain.enableReviewLoop {
@@ -424,7 +474,7 @@ public final class AgentChainRunner {
 
         chain.state = .complete
         chain.addStatusMessage("✓ Chain completed successfully!", type: .complete)
-        sessionTracker.recordChainRun(chain)
+        telemetryProvider.recordChainRun(chain)
       }
     } catch {
       switch error {
@@ -512,7 +562,7 @@ public final class AgentChainRunner {
     let reason = "Peel chain execution: \(chain.name)"
     var assertionId: IOPMAssertionID = 0
     let result = IOPMAssertionCreateWithName(
-      kIOPMAssertionTypeNoDisplaySleep as CFString,
+      kIOPMAssertionTypeNoIdleSleep as CFString,
       IOPMAssertionLevel(kIOPMAssertionLevelOn),
       reason as CFString,
       &assertionId
@@ -789,7 +839,7 @@ public final class AgentChainRunner {
         task: task,
         agentId: agent.id
       )
-      await mcpLog.info("Parallel implementer workspace created", metadata: [
+      await telemetryProvider.info("Parallel implementer workspace created", metadata: [
         "chainId": chain.id.uuidString,
         "agentId": agent.id.uuidString,
         "agentName": agent.name,
@@ -820,7 +870,7 @@ public final class AgentChainRunner {
         group.addTask {
           try await Task { @MainActor in
             try self.checkCancellation(chain: chain)
-            await self.mcpLog.info("Parallel implementer start", metadata: [
+            await self.telemetryProvider.info("Parallel implementer start", metadata: [
               "chainId": chain.id.uuidString,
               "agentId": agent.id.uuidString,
               "agentName": agent.name,
@@ -835,7 +885,7 @@ public final class AgentChainRunner {
               prompt: prompt,
               contextOverride: agentContext
             )
-            await self.mcpLog.info("Parallel implementer complete", metadata: [
+            await self.telemetryProvider.info("Parallel implementer complete", metadata: [
               "chainId": chain.id.uuidString,
               "agentId": agent.id.uuidString,
               "agentName": agent.name,
@@ -884,7 +934,7 @@ public final class AgentChainRunner {
         snippets.joined(separator: "\n\n")
       ]).joined(separator: "\n")
     } catch {
-      await mcpLog.warning("Local RAG context build failed", metadata: ["error": error.localizedDescription])
+      await telemetryProvider.warning("Local RAG context build failed", metadata: ["error": error.localizedDescription])
       return nil
     }
   }
@@ -904,7 +954,7 @@ public final class AgentChainRunner {
 
     let statusLines = try await Commands.simple(arguments: ["status", "--porcelain"], in: repository)
     if statusLines.contains(where: { !$0.isEmpty }) {
-      await mcpLog.warning("Merge aborted: dirty working tree", metadata: ["repo": workingDirectory])
+      await telemetryProvider.warning("Merge aborted: dirty working tree", metadata: ["repo": workingDirectory])
       throw NSError(
         domain: "AgentChain",
         code: 3,
@@ -921,7 +971,7 @@ public final class AgentChainRunner {
         _ = try? await Commands.simple(arguments: ["merge", "--abort"], in: repository)
         let conflictLines = try? await Commands.simple(arguments: ["diff", "--name-only", "--diff-filter=U"], in: repository)
         conflicts = conflictLines?.filter { !$0.isEmpty } ?? []
-        await mcpLog.warning("Merge conflicts detected", metadata: [
+        await telemetryProvider.warning("Merge conflicts detected", metadata: [
           "repo": workingDirectory,
           "conflicts": conflicts.joined(separator: ", ")
         ])
@@ -942,7 +992,7 @@ public final class AgentChainRunner {
     try checkCancellation(chain: chain)
     let context = contextOverride ?? chain.contextForAgent(at: index)
 
-    await mcpLog.info("Agent run start", metadata: [
+    await telemetryProvider.info("Agent run start", metadata: [
       "chainId": chain.id.uuidString,
       "agentId": agent.id.uuidString,
       "agentName": agent.name,
@@ -999,7 +1049,7 @@ public final class AgentChainRunner {
         plannerDecision: plannerDecision
       )
       agent.updateState(.complete)
-      await mcpLog.info("Agent run complete", metadata: [
+      await telemetryProvider.info("Agent run complete", metadata: [
         "chainId": chain.id.uuidString,
         "agentId": agent.id.uuidString,
         "agentName": agent.name,
@@ -1013,17 +1063,17 @@ public final class AgentChainRunner {
         let url = try await screenshotService.capture(label: "\(chain.id.uuidString)-\(agent.name)")
         result.screenshotPath = url.path
         chain.addStatusMessage("📸 Screenshot captured", type: .tool)
-        await mcpLog.info("Screenshot saved", metadata: ["path": url.path])
+        await telemetryProvider.info("Screenshot saved", metadata: ["path": url.path])
       } catch {
         // Non-fatal: log and continue
-        await mcpLog.warning("Screenshot failed", metadata: ["error": error.localizedDescription])
+        await telemetryProvider.warning("Screenshot failed", metadata: ["error": error.localizedDescription])
         chain.addStatusMessage("Screenshot failed: \(error.localizedDescription)", type: .error)
       }
 
       return result
     } catch {
       if case ChainError.cancelled = error {
-        await mcpLog.warning("Agent run cancelled", metadata: [
+        await telemetryProvider.warning("Agent run cancelled", metadata: [
           "agent": agent.name,
           "role": agent.role.displayName,
           "model": agent.model.displayName
@@ -1031,7 +1081,7 @@ public final class AgentChainRunner {
         agent.updateState(.failed(message: "Cancelled"))
         throw error
       }
-      await mcpLog.error(error, context: "Agent run failed", metadata: [
+      await telemetryProvider.error(error, context: "Agent run failed", metadata: [
         "agent": agent.name,
         "role": agent.role.displayName,
         "model": agent.model.displayName
@@ -1206,13 +1256,14 @@ public final class AgentChainRunner {
 @MainActor
 @Observable
 public final class MCPServerService {
-  private let mcpLog = MCPLogService.shared
+  private let telemetryProvider: MCPTelemetryProviding
   private enum StorageKey {
     static let enabled = "mcp.server.enabled"
     static let port = "mcp.server.port"
     static let maxConcurrentChains = "mcp.server.maxConcurrentChains"
     static let maxQueuedChains = "mcp.server.maxQueuedChains"
     static let autoCleanupWorkspaces = "mcp.server.autoCleanupWorkspaces"
+    static let sleepPreventionEnabled = "mcp.server.sleepPreventionEnabled"
     static let localRagRepoPath = "localrag.repoPath"
     static let localRagQuery = "localrag.query"
     static let localRagSearchMode = "localrag.searchMode"
@@ -1294,44 +1345,6 @@ public final class MCPServerService {
     }
   }
 
-  public struct ControlDoc: Identifiable {
-    public let controlId: String
-    public let values: [String]
-
-    public var id: String { controlId }
-  }
-
-  public struct ViewControlDoc: Identifiable {
-    public let viewId: String
-    public let title: String
-    public let controls: [ControlDoc]
-
-    public var id: String { viewId }
-  }
-
-  public struct UIAction: Identifiable {
-    public let id: UUID
-    public let controlId: String
-
-    public init(controlId: String) {
-      self.id = UUID()
-      self.controlId = controlId
-    }
-  }
-
-  public struct UIActionRecord: Identifiable {
-    public let id: UUID
-    public let controlId: String
-    public let status: String
-    public let timestamp: Date
-
-    public init(controlId: String, status: String, timestamp: Date = Date()) {
-      self.id = UUID()
-      self.controlId = controlId
-      self.status = status
-      self.timestamp = timestamp
-    }
-  }
 
   public var isEnabled: Bool {
     didSet {
@@ -1377,6 +1390,13 @@ public final class MCPServerService {
       UserDefaults.standard.set(autoCleanupWorkspaces, forKey: StorageKey.autoCleanupWorkspaces)
     }
   }
+  
+  public var sleepPreventionEnabled: Bool {
+    didSet {
+      UserDefaults.standard.set(sleepPreventionEnabled, forKey: StorageKey.sleepPreventionEnabled)
+      updateSleepPrevention()
+    }
+  }
 
   public private(set) var isRunning: Bool = false
   public var lastError: String?
@@ -1387,9 +1407,9 @@ public final class MCPServerService {
   public private(set) var lastBlockedToolAt: Date?
   public private(set) var lastToolRequiresForeground: Bool?
   public private(set) var lastToolRequiresForegroundAt: Date?
-  public private(set) var lastUIActionHandled: String?
-  public private(set) var lastUIActionHandledAt: Date?
-  public private(set) var recentUIActions: [UIActionRecord] = []
+  public var lastUIActionHandled: String? { uiAutomationProvider.lastUIActionHandled }
+  public var lastUIActionHandledAt: Date? { uiAutomationProvider.lastUIActionHandledAt }
+  public var recentUIActions: [UIActionRecord] { uiAutomationProvider.recentUIActions }
   public var isAppActive: Bool {
     NSApp.isActive
   }
@@ -1401,7 +1421,10 @@ public final class MCPServerService {
   public private(set) var lastCleanupAt: Date?
   public private(set) var lastCleanupSummary: String?
   public private(set) var lastCleanupError: String?
-  public var lastUIAction: UIAction?
+  public var lastUIAction: UIAction? {
+    get { uiAutomationProvider.lastUIAction }
+    set { uiAutomationProvider.lastUIAction = newValue }
+  }
   public var localRagRepoPath: String = "" {
     didSet { UserDefaults.standard.set(localRagRepoPath, forKey: StorageKey.localRagRepoPath) }
   }
@@ -1432,6 +1455,7 @@ public final class MCPServerService {
   public let cliService: CLIService
   public let sessionTracker: SessionTracker
   private let chainRunner: AgentChainRunner
+  private let uiAutomationProvider: MCPUIAutomationProviding
   private var dataService: DataService?
   private let screenshotService = ScreenshotService()
   let translationValidatorService = TranslationValidatorService()
@@ -1471,6 +1495,7 @@ public final class MCPServerService {
   private var listener: NWListener?
   private var connections: [UUID: NWConnection] = [:]
   private var connectionStates: [UUID: ConnectionState] = [:]
+  private var sleepPreventionAssertionId: IOPMAssertionID?
   private let permissionsStore: MCPToolPermissionsProviding
   public private(set) var permissionsVersion: Int = 0
 
@@ -1480,24 +1505,30 @@ public final class MCPServerService {
 
   public init(
     agentManager: AgentManager = AgentManager(),
-    cliService: CLIService = CLIService(),
+    cliService: CLIService? = nil,
     sessionTracker: SessionTracker = SessionTracker(),
+    telemetryProvider: MCPTelemetryProviding? = nil,
+    uiAutomationProvider: MCPUIAutomationProviding = MCPUIAutomationStore(),
     permissionsStore: MCPToolPermissionsProviding = MCPToolPermissionsStore()
   ) {
     self.agentManager = agentManager
-    self.cliService = cliService
     self.sessionTracker = sessionTracker
+    let resolvedTelemetry = telemetryProvider ?? MCPTelemetryAdapter(sessionTracker: sessionTracker)
+    self.telemetryProvider = resolvedTelemetry
+    self.cliService = cliService ?? CLIService(telemetryProvider: resolvedTelemetry)
+    self.uiAutomationProvider = uiAutomationProvider
     self.permissionsStore = permissionsStore
     self.chainRunner = AgentChainRunner(
       agentManager: agentManager,
-      cliService: cliService,
-      sessionTracker: sessionTracker
+      cliService: self.cliService,
+      telemetryProvider: resolvedTelemetry
     )
     self.isEnabled = UserDefaults.standard.bool(forKey: StorageKey.enabled)
     self.port = UserDefaults.standard.integer(forKey: StorageKey.port)
     self.maxConcurrentChains = UserDefaults.standard.integer(forKey: StorageKey.maxConcurrentChains)
     self.maxQueuedChains = UserDefaults.standard.integer(forKey: StorageKey.maxQueuedChains)
     self.autoCleanupWorkspaces = UserDefaults.standard.bool(forKey: StorageKey.autoCleanupWorkspaces)
+    self.sleepPreventionEnabled = UserDefaults.standard.bool(forKey: StorageKey.sleepPreventionEnabled)
     self.localRagRepoPath = UserDefaults.standard.string(forKey: StorageKey.localRagRepoPath) ?? ""
     self.localRagQuery = UserDefaults.standard.string(forKey: StorageKey.localRagQuery) ?? ""
     let storedMode = UserDefaults.standard.string(forKey: StorageKey.localRagSearchMode) ?? RAGSearchMode.text.rawValue
@@ -1527,6 +1558,8 @@ public final class MCPServerService {
       chainRunner: chainRunner
     )
     self.parallelWorktreeRunner?.setRAGStore(localRagStore)
+    
+  updateSleepPrevention()
 
     if isEnabled {
       start()
@@ -1546,26 +1579,7 @@ public final class MCPServerService {
   }
 
   public var uiControlDocs: [ViewControlDoc] {
-    var docs = availableViewIds().map { viewId -> ViewControlDoc in
-      let controls = availableControlIds(for: viewId)
-      let values = controlValues(for: viewId)
-      let controlDocs = controls.map { controlId in
-        ControlDoc(controlId: controlId, values: stringValues(values[controlId]))
-      }
-      return ViewControlDoc(viewId: viewId, title: viewTitle(for: viewId), controls: controlDocs)
-    }
-
-    let toolControls = availableToolControlIds().map { controlId in
-      ControlDoc(controlId: controlId, values: [])
-    }
-    if !toolControls.isEmpty {
-      docs.insert(
-        ViewControlDoc(viewId: "tool-shortcuts", title: "Tool Shortcuts", controls: toolControls),
-        at: 0
-      )
-    }
-
-    return docs
+    uiAutomationProvider.uiControlDocs
   }
 
   public func tools(in category: ToolCategory) -> [ToolDefinition] {
@@ -1745,7 +1759,7 @@ public final class MCPServerService {
         snippets.joined(separator: "\n\n")
       ]).joined(separator: "\n")
     } catch {
-      await mcpLog.warning("Local RAG context build failed", metadata: ["error": error.localizedDescription])
+      await telemetryProvider.warning("Local RAG context build failed", metadata: ["error": error.localizedDescription])
       return nil
     }
   }
@@ -2033,7 +2047,7 @@ public final class MCPServerService {
     var statusCode = 500
     defer {
       let durationMs = Int(Date().timeIntervalSince(startTime) * 1000)
-      Task { await mcpLog.info("RPC complete", metadata: [
+      Task { await telemetryProvider.info("RPC complete", metadata: [
         "method": methodForLog,
         "durationMs": "\(durationMs)",
         "status": "\(statusCode)"
@@ -2044,7 +2058,7 @@ public final class MCPServerService {
     do {
       let json = try JSONSerialization.jsonObject(with: body, options: [])
       guard let dict = json as? [String: Any] else {
-        await mcpLog.warning("Invalid RPC request: non-object JSON")
+        await telemetryProvider.warning("Invalid RPC request: non-object JSON")
         methodForLog = "invalid"
         statusCode = 400
         return (400, makeRPCError(id: nil, code: -32600, message: "Invalid Request"))
@@ -2083,12 +2097,12 @@ public final class MCPServerService {
         return result
 
       default:
-        await mcpLog.warning("RPC method not found", metadata: ["method": method])
+        await telemetryProvider.warning("RPC method not found", metadata: ["method": method])
         statusCode = 400
         return (400, makeRPCError(id: id, code: -32601, message: "Method not found"))
       }
     } catch {
-      await mcpLog.error(error, context: "RPC handling failed")
+      await telemetryProvider.error(error, context: "RPC handling failed")
       statusCode = 500
       return (500, makeRPCError(id: nil, code: -32603, message: error.localizedDescription))
     }
@@ -2096,12 +2110,12 @@ public final class MCPServerService {
 
   private func handleToolCall(id: Any?, params: [String: Any]?) async -> (Int, Data) {
     guard let params, let name = params["name"] as? String else {
-      await mcpLog.warning("Invalid tool call params")
+      await telemetryProvider.warning("Invalid tool call params")
       return (400, makeRPCError(id: id, code: -32602, message: "Invalid params"))
     }
 
     guard let tool = toolDefinition(named: name) else {
-      await mcpLog.warning("Unknown tool", metadata: ["name": name])
+      await telemetryProvider.warning("Unknown tool", metadata: ["name": name])
       return (400, makeRPCError(id: id, code: -32601, message: "Unknown tool"))
     }
 
@@ -2109,12 +2123,12 @@ public final class MCPServerService {
     lastToolRequiresForegroundAt = Date()
 
     if tool.requiresForeground && !NSApp.isActive {
-      await mcpLog.warning("Foreground tool called while app inactive", metadata: ["name": tool.name])
+      await telemetryProvider.warning("Foreground tool called while app inactive", metadata: ["name": tool.name])
       recordUIActionForegroundNeeded(tool.name)
     }
 
     if !isToolEnabled(name) {
-      await mcpLog.warning("Tool disabled", metadata: ["name": name, "category": tool.category.rawValue])
+      await telemetryProvider.warning("Tool disabled", metadata: ["name": name, "category": tool.category.rawValue])
       lastBlockedTool = name
       lastBlockedToolAt = Date()
       return (400, makeRPCError(id: id, code: -32010, message: "Tool disabled"))
@@ -2215,11 +2229,11 @@ public final class MCPServerService {
       return await handleQueueCancel(id: id, arguments: arguments)
 
     case "logs.mcp.path":
-      return (200, makeRPCResult(id: id, result: ["path": await mcpLog.logPath()]))
+      return (200, makeRPCResult(id: id, result: ["path": await telemetryProvider.logPath()]))
 
     case "logs.mcp.tail":
       let lines = arguments["lines"] as? Int ?? 200
-      let text = await mcpLog.tail(lines: lines)
+      let text = await telemetryProvider.tail(lines: lines)
       return (200, makeRPCResult(id: id, result: ["text": text]))
 
     case "server.restart":
@@ -2230,6 +2244,12 @@ public final class MCPServerService {
 
     case "server.status":
       return handleServerStatus(id: id)
+
+    case "server.sleep.prevent":
+      return handleServerSleepPreventionSet(id: id, arguments: arguments)
+
+    case "server.sleep.prevent.status":
+      return handleServerSleepPreventionStatus(id: id)
 
     case "server.stop":
       stop()
@@ -2249,7 +2269,7 @@ public final class MCPServerService {
         let url = try await screenshotService.capture(label: label)
         return (200, makeRPCResult(id: id, result: ["path": url.path]))
       } catch {
-        await mcpLog.warning("Screenshot tool failed", metadata: ["error": error.localizedDescription])
+        await telemetryProvider.warning("Screenshot tool failed", metadata: ["error": error.localizedDescription])
         return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
       }
 
@@ -2278,6 +2298,9 @@ public final class MCPServerService {
     case "parallel.reject":
       return handleParallelReject(id: id, arguments: arguments)
 
+    case "parallel.reviewed":
+      return handleParallelReviewed(id: id, arguments: arguments)
+
     case "parallel.merge":
       return await handleParallelMerge(id: id, arguments: arguments)
 
@@ -2285,7 +2308,7 @@ public final class MCPServerService {
       return await handleParallelCancel(id: id, arguments: arguments)
 
     default:
-      await mcpLog.warning("Unknown tool", metadata: ["name": name])
+      await telemetryProvider.warning("Unknown tool", metadata: ["name": name])
       return (400, makeRPCError(id: id, code: -32601, message: "Unknown tool"))
     }
   }
@@ -2628,7 +2651,7 @@ public final class MCPServerService {
         "summary": encodeJSON(summary)
       ]))
     } catch {
-      await mcpLog.warning("Translation validation failed", metadata: ["error": error.localizedDescription])
+      await telemetryProvider.warning("Translation validation failed", metadata: ["error": error.localizedDescription])
       return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
     }
   }
@@ -2676,7 +2699,7 @@ public final class MCPServerService {
       }
       return (200, makeRPCResult(id: id, result: payload))
     } catch {
-      await mcpLog.warning("PII scrubber failed", metadata: ["error": error.localizedDescription])
+      await telemetryProvider.warning("PII scrubber failed", metadata: ["error": error.localizedDescription])
       return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
     }
   }
@@ -2706,6 +2729,11 @@ public final class MCPServerService {
     let targetBranch = arguments["targetBranch"] as? String
     let requireReviewGate = arguments["requireReviewGate"] as? Bool ?? true
     let autoMergeOnApproval = arguments["autoMergeOnApproval"] as? Bool ?? false
+    let templateName = (arguments["templateName"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let allowPlannerModelSelection = arguments["allowPlannerModelSelection"] as? Bool
+    let allowPlannerImplementerScaling = arguments["allowPlannerImplementerScaling"] as? Bool
+    let maxImplementers = arguments["maxImplementers"] as? Int
+    let maxPremiumCost = arguments["maxPremiumCost"] as? Double
 
     // Parse tasks
     let tasks: [WorktreeTask] = tasksArray.compactMap { taskDict in
@@ -2729,6 +2757,19 @@ public final class MCPServerService {
       return (400, makeRPCError(id: id, code: -32602, message: "Invalid task format - each task needs title and prompt"))
     }
 
+    let hasRunOptions = allowPlannerModelSelection != nil
+      || allowPlannerImplementerScaling != nil
+      || maxImplementers != nil
+      || maxPremiumCost != nil
+    let runOptions = hasRunOptions
+      ? AgentChainRunner.ChainRunOptions(
+        allowPlannerModelSelection: allowPlannerModelSelection ?? false,
+        allowPlannerImplementerScaling: allowPlannerImplementerScaling ?? false,
+        maxImplementers: maxImplementers,
+        maxPremiumCost: maxPremiumCost
+      )
+      : nil
+
     let run = runner.createRun(
       name: name,
       projectPath: projectPath,
@@ -2736,10 +2777,12 @@ public final class MCPServerService {
       baseBranch: baseBranch,
       targetBranch: targetBranch,
       requireReviewGate: requireReviewGate,
-      autoMergeOnApproval: autoMergeOnApproval
+      autoMergeOnApproval: autoMergeOnApproval,
+      templateName: templateName,
+      runOptions: runOptions
     )
 
-    await mcpLog.info("Parallel run created", metadata: [
+    await telemetryProvider.info("Parallel run created", metadata: [
       "runId": run.id.uuidString,
       "name": name,
       "taskCount": "\(tasks.count)"
@@ -2762,18 +2805,18 @@ public final class MCPServerService {
       return (404, makeRPCError(id: id, code: -32004, message: "Run not found"))
     }
 
-    await mcpLog.info("Starting parallel run", metadata: ["runId": runId.uuidString])
+    await telemetryProvider.info("Starting parallel run", metadata: ["runId": runId.uuidString])
 
     // Start the run in a task so we don't block
     Task {
       do {
         try await runner.startRun(run)
-        await mcpLog.info("Parallel run completed", metadata: [
+        await telemetryProvider.info("Parallel run completed", metadata: [
           "runId": runId.uuidString,
           "status": run.status.displayName
         ])
       } catch {
-        await mcpLog.error(error, context: "Parallel run failed")
+        await telemetryProvider.error(error, context: "Parallel run failed")
       }
     }
 
@@ -2885,8 +2928,50 @@ public final class MCPServerService {
     }
 
     let reason = arguments["reason"] as? String ?? "Rejected via MCP"
-    runner.rejectExecution(execution, reason: reason)
+    runner.rejectExecution(execution, in: run, reason: reason)
 
+    return (200, makeRPCResult(id: id, result: [
+      "runId": runId.uuidString,
+      "executionId": executionId.uuidString,
+      "status": execution.status.displayName
+    ]))
+  }
+
+  private func handleParallelReviewed(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    guard let runner = parallelWorktreeRunner else {
+      return (500, makeRPCError(id: id, code: -32001, message: "Parallel worktree runner not initialized"))
+    }
+
+    guard let runIdString = arguments["runId"] as? String,
+          let runId = UUID(uuidString: runIdString) else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing or invalid runId"))
+    }
+
+    guard let run = runner.getRun(id: runId) else {
+      return (404, makeRPCError(id: id, code: -32004, message: "Run not found"))
+    }
+
+    let reviewAll = arguments["reviewAll"] as? Bool ?? false
+
+    if reviewAll {
+      runner.markAllReviewed(in: run)
+      return (200, makeRPCResult(id: id, result: [
+        "runId": runId.uuidString,
+        "reviewed": "all",
+        "pendingReviewCount": run.pendingReviewCount
+      ]))
+    }
+
+    guard let executionIdString = arguments["executionId"] as? String,
+          let executionId = UUID(uuidString: executionIdString) else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing executionId (or set reviewAll=true)"))
+    }
+
+    guard let execution = run.executions.first(where: { $0.id == executionId }) else {
+      return (404, makeRPCError(id: id, code: -32004, message: "Execution not found"))
+    }
+
+    runner.markReviewed(execution, in: run)
     return (200, makeRPCResult(id: id, result: [
       "runId": runId.uuidString,
       "executionId": executionId.uuidString,
@@ -2936,7 +3021,7 @@ public final class MCPServerService {
         "status": execution.status.displayName
       ]))
     } catch {
-      await mcpLog.warning("Parallel merge failed", metadata: ["error": error.localizedDescription])
+      await telemetryProvider.warning("Parallel merge failed", metadata: ["error": error.localizedDescription])
       return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
     }
   }
@@ -2957,7 +3042,7 @@ public final class MCPServerService {
 
     await runner.cancelRun(run)
 
-    await mcpLog.info("Parallel run cancelled", metadata: ["runId": runId.uuidString])
+    await telemetryProvider.info("Parallel run cancelled", metadata: ["runId": runId.uuidString])
 
     return (200, makeRPCResult(id: id, result: [
       "runId": runId.uuidString,
@@ -2986,6 +3071,19 @@ public final class MCPServerService {
 
     if let targetBranch = run.targetBranch {
       result["targetBranch"] = targetBranch
+    }
+    if let templateName = run.templateName {
+      result["templateName"] = templateName
+    }
+    if let runOptions = run.runOptions {
+      result["allowPlannerModelSelection"] = runOptions.allowPlannerModelSelection
+      result["allowPlannerImplementerScaling"] = runOptions.allowPlannerImplementerScaling
+      if let maxImplementers = runOptions.maxImplementers {
+        result["maxImplementers"] = maxImplementers
+      }
+      if let maxPremiumCost = runOptions.maxPremiumCost {
+        result["maxPremiumCost"] = maxPremiumCost
+      }
     }
     if let startedAt = run.startedAt {
       result["startedAt"] = formatter.string(from: startedAt)
@@ -3087,7 +3185,7 @@ public final class MCPServerService {
       }
       return (200, makeRPCResult(id: id, result: result))
     } catch {
-      await mcpLog.warning("Local RAG init failed", metadata: ["error": error.localizedDescription])
+      await telemetryProvider.warning("Local RAG init failed", metadata: ["error": error.localizedDescription])
       return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
     }
   }
@@ -3110,7 +3208,7 @@ public final class MCPServerService {
       ]
       return (200, makeRPCResult(id: id, result: result))
     } catch {
-      await mcpLog.warning("Local RAG index failed", metadata: ["error": error.localizedDescription])
+      await telemetryProvider.warning("Local RAG index failed", metadata: ["error": error.localizedDescription])
       return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
     }
   }
@@ -3137,7 +3235,7 @@ public final class MCPServerService {
       }
       return (200, makeRPCResult(id: id, result: ["mode": mode, "results": payload]))
     } catch {
-      await mcpLog.warning("Local RAG search failed", metadata: ["error": error.localizedDescription])
+      await telemetryProvider.warning("Local RAG search failed", metadata: ["error": error.localizedDescription])
       return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
     }
   }
@@ -3156,7 +3254,7 @@ public final class MCPServerService {
       let info = try LocalRAGModelDescriptor.describe(modelURL: url)
       return (200, makeRPCResult(id: id, result: ["model": info, "url": url.path]))
     } catch {
-      await mcpLog.warning("Local RAG model describe failed", metadata: ["error": error.localizedDescription])
+      await telemetryProvider.warning("Local RAG model describe failed", metadata: ["error": error.localizedDescription])
       return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
     }
   }
@@ -3416,13 +3514,13 @@ public final class MCPServerService {
 
   private func handleChainRun(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
     guard let prompt = arguments["prompt"] as? String else {
-      await mcpLog.warning("chains.run missing prompt")
+      await telemetryProvider.warning("chains.run missing prompt")
       return (400, makeRPCError(id: id, code: -32602, message: "Missing prompt"))
     }
 
     let runId = UUID()
     if activeChainRuns >= maxConcurrentChains, chainQueue.count >= maxQueuedChains {
-      await mcpLog.warning("Chain queue full", metadata: ["runId": runId.uuidString])
+      await telemetryProvider.warning("Chain queue full", metadata: ["runId": runId.uuidString])
       return (429, makeRPCError(id: id, code: -32000, message: "Chain queue is full"))
     }
 
@@ -3443,7 +3541,7 @@ public final class MCPServerService {
 
     let (enqueuedAt, wasCancelled, queuePosition) = await acquireChainRunSlot(runId: runId, priority: priority)
     if wasCancelled {
-      await mcpLog.warning("Queued chain cancelled", metadata: ["runId": runId.uuidString])
+      await telemetryProvider.warning("Queued chain cancelled", metadata: ["runId": runId.uuidString])
       return (400, makeRPCError(id: id, code: -32005, message: "Queued run cancelled"))
     }
     defer { releaseChainRunSlot(runId: runId) }
@@ -3463,7 +3561,7 @@ public final class MCPServerService {
     }()
 
     guard let template else {
-      await mcpLog.warning("Template not found", metadata: ["runId": runId.uuidString])
+      await telemetryProvider.warning("Template not found", metadata: ["runId": runId.uuidString])
       let message = chainSpec == nil ? "Template not found" : "Invalid chainSpec"
       return (400, makeRPCError(id: id, code: -32602, message: message))
     }
@@ -3471,7 +3569,7 @@ public final class MCPServerService {
     var chainWorkspace: AgentWorkspace?
     var chainWorkingDirectory = workingDirectory ?? agentManager.lastUsedWorkingDirectory
     if chainWorkingDirectory == nil {
-      await mcpLog.warning("chains.run missing workingDirectory", metadata: ["runId": runId.uuidString])
+      await telemetryProvider.warning("chains.run missing workingDirectory", metadata: ["runId": runId.uuidString])
       return (400, makeRPCError(id: id, code: -32602, message: "Missing workingDirectory"))
     }
     if let workingDirectory = chainWorkingDirectory {
@@ -3491,7 +3589,7 @@ public final class MCPServerService {
         chainWorkspace = workspace
         chainWorkingDirectory = workspace.path.path
       } catch {
-        await mcpLog.error(error, context: "Failed to create chain workspace")
+        await telemetryProvider.error(error, context: "Failed to create chain workspace")
       }
     }
 
@@ -3511,7 +3609,7 @@ public final class MCPServerService {
       maxPremiumCost: maxPremiumCost
     )
 
-    await mcpLog.info("Chain run started", metadata: [
+    await telemetryProvider.info("Chain run started", metadata: [
       "runId": runId.uuidString,
       "template": template.name,
       "workingDirectory": chainWorkingDirectory ?? "",
@@ -3546,7 +3644,7 @@ public final class MCPServerService {
         try? await Task.sleep(for: .seconds(timeoutSeconds))
         guard let self, !(self.activeChainTasks[runId]?.isCancelled ?? true) else { return }
         self.activeChainTasks[runId]?.cancel()
-        await self.mcpLog.warning("Chain timeout exceeded", metadata: [
+        await self.telemetryProvider.warning("Chain timeout exceeded", metadata: [
           "runId": runId.uuidString,
           "timeoutSeconds": "\(timeoutSeconds)"
         ])
@@ -3570,13 +3668,13 @@ public final class MCPServerService {
         }
       }
       if let errorMessage = summary.errorMessage {
-        await self.mcpLog.error("Chain run failed", metadata: [
+        await self.telemetryProvider.error("Chain run failed", metadata: [
           "runId": runId.uuidString,
           "template": template.name,
           "error": errorMessage
         ])
       } else {
-        await self.mcpLog.info("Chain run completed", metadata: [
+        await self.telemetryProvider.info("Chain run completed", metadata: [
           "runId": runId.uuidString,
           "template": template.name,
           "results": "\(summary.results.count)",
@@ -3715,7 +3813,7 @@ public final class MCPServerService {
 
   private func handleChainRunBatch(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
     guard let runs = arguments["runs"] as? [[String: Any]], !runs.isEmpty else {
-      await mcpLog.warning("chains.runBatch missing runs")
+      await telemetryProvider.warning("chains.runBatch missing runs")
       return (400, makeRPCError(id: id, code: -32602, message: "Missing runs"))
     }
 
@@ -3808,7 +3906,7 @@ public final class MCPServerService {
     if cancelAll {
       let runIds = Array(activeChainTasks.keys)
       runIds.forEach { activeChainTasks[$0]?.cancel() }
-      await mcpLog.warning("Chain cancellation requested", metadata: ["runIds": runIds.map { $0.uuidString }.joined(separator: ",")])
+      await telemetryProvider.warning("Chain cancellation requested", metadata: ["runIds": runIds.map { $0.uuidString }.joined(separator: ",")])
       return (200, makeRPCResult(id: id, result: ["cancelled": runIds.map { $0.uuidString }]))
     }
 
@@ -3821,7 +3919,7 @@ public final class MCPServerService {
     }
 
     task.cancel()
-    await mcpLog.warning("Chain cancellation requested", metadata: ["runId": runId.uuidString])
+    await telemetryProvider.warning("Chain cancellation requested", metadata: ["runId": runId.uuidString])
     return (200, makeRPCResult(id: id, result: ["cancelled": [runId.uuidString]]))
   }
 
@@ -3833,7 +3931,7 @@ public final class MCPServerService {
     }
 
     await chainRunner.pause(chainId: chain.id)
-    await mcpLog.info("Chain paused", metadata: ["runId": runId.uuidString])
+    await telemetryProvider.info("Chain paused", metadata: ["runId": runId.uuidString])
     return (200, makeRPCResult(id: id, result: ["paused": runId.uuidString]))
   }
 
@@ -3845,7 +3943,7 @@ public final class MCPServerService {
     }
 
     await chainRunner.resume(chainId: chain.id)
-    await mcpLog.info("Chain resumed", metadata: ["runId": runId.uuidString])
+    await telemetryProvider.info("Chain resumed", metadata: ["runId": runId.uuidString])
     return (200, makeRPCResult(id: id, result: ["resumed": runId.uuidString]))
   }
 
@@ -3857,7 +3955,7 @@ public final class MCPServerService {
     }
 
     await chainRunner.step(chainId: chain.id)
-    await mcpLog.info("Chain step", metadata: ["runId": runId.uuidString])
+    await telemetryProvider.info("Chain step", metadata: ["runId": runId.uuidString])
     return (200, makeRPCResult(id: id, result: ["step": runId.uuidString]))
   }
 
@@ -3908,9 +4006,63 @@ public final class MCPServerService {
       "enabled": isEnabled,
       "running": isRunning,
       "port": port,
-      "lastError": lastError as Any
+      "lastError": lastError as Any,
+      "sleepPreventionEnabled": sleepPreventionEnabled,
+      "sleepPreventionActive": sleepPreventionAssertionId != nil
     ]
     return (200, makeRPCResult(id: id, result: status))
+  }
+  
+  private func handleServerSleepPreventionSet(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    guard let enabled = arguments["enabled"] as? Bool else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing enabled flag"))
+    }
+
+    sleepPreventionEnabled = enabled
+    return (200, makeRPCResult(id: id, result: [
+      "enabled": sleepPreventionEnabled,
+      "active": sleepPreventionAssertionId != nil
+    ]))
+  }
+
+  private func handleServerSleepPreventionStatus(id: Any?) -> (Int, Data) {
+    return (200, makeRPCResult(id: id, result: [
+      "enabled": sleepPreventionEnabled,
+      "active": sleepPreventionAssertionId != nil
+    ]))
+  }
+
+  private func updateSleepPrevention() {
+    if sleepPreventionEnabled {
+      startSleepPrevention()
+    } else {
+      stopSleepPrevention()
+    }
+  }
+
+  private func startSleepPrevention() {
+    guard sleepPreventionAssertionId == nil else { return }
+    let reason = "Peel MCP server sleep prevention"
+    var assertionId: IOPMAssertionID = 0
+    let result = IOPMAssertionCreateWithName(
+      kIOPMAssertionTypeNoIdleSleep as CFString,
+      IOPMAssertionLevel(kIOPMAssertionLevelOn),
+      reason as CFString,
+      &assertionId
+    )
+    if result == kIOReturnSuccess {
+      sleepPreventionAssertionId = assertionId
+    } else {
+      Task { @MainActor in
+        await telemetryProvider.warning("Failed to enable sleep prevention", metadata: ["code": "\(result)"])
+      }
+    }
+  }
+
+  private func stopSleepPrevention() {
+    guard let assertionId = sleepPreventionAssertionId else { return }
+    IOPMAssertionRelease(assertionId)
+    sleepPreventionAssertionId = nil
   }
 
   private func waitForServerStart(timeoutSeconds: Double = 2.0) async {
@@ -4028,7 +4180,7 @@ public final class MCPServerService {
     }
 
     if cancelQueuedRunInternal(runId: runId) {
-      await mcpLog.warning("Queued chain cancelled", metadata: ["runId": runId.uuidString])
+      await telemetryProvider.warning("Queued chain cancelled", metadata: ["runId": runId.uuidString])
       return (200, makeRPCResult(id: id, result: ["cancelled": runId.uuidString]))
     }
 
@@ -4619,6 +4771,29 @@ public final class MCPServerService {
         isMutating: false
       ),
       ToolDefinition(
+        name: "server.sleep.prevent",
+        description: "Enable or disable system sleep prevention",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "enabled": ["type": "boolean"]
+          ],
+          "required": ["enabled"]
+        ],
+        category: .server,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "server.sleep.prevent.status",
+        description: "Get sleep prevention status",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .server,
+        isMutating: false
+      ),
+      ToolDefinition(
         name: "app.quit",
         description: "Quit the Peel app",
         inputSchema: [
@@ -4706,6 +4881,11 @@ public final class MCPServerService {
             "targetBranch": ["type": "string"],
             "requireReviewGate": ["type": "boolean"],
             "autoMergeOnApproval": ["type": "boolean"],
+            "templateName": ["type": "string"],
+            "allowPlannerModelSelection": ["type": "boolean"],
+            "allowPlannerImplementerScaling": ["type": "boolean"],
+            "maxImplementers": ["type": "integer"],
+            "maxPremiumCost": ["type": "number"],
             "tasks": [
               "type": "array",
               "items": [
@@ -4792,6 +4972,21 @@ public final class MCPServerService {
             "reason": ["type": "string"]
           ],
           "required": ["runId", "executionId"]
+        ],
+        category: .parallelWorktrees,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "parallel.reviewed",
+        description: "Mark an execution as reviewed without approving",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"],
+            "executionId": ["type": "string"],
+            "reviewAll": ["type": "boolean"]
+          ],
+          "required": ["runId"]
         ],
         category: .parallelWorktrees,
         isMutating: true
@@ -4979,40 +5174,23 @@ public final class MCPServerService {
   }
 
   public func recordUIActionHandled(_ controlId: String) {
-    lastUIActionHandled = controlId
-    lastUIActionHandledAt = Date()
-    appendUIActionRecord(controlId: controlId, status: "handled")
+    uiAutomationProvider.recordUIActionHandled(controlId)
   }
 
   public func recordUIActionRequested(_ controlId: String) {
-    appendUIActionRecord(controlId: controlId, status: "requested")
+    uiAutomationProvider.recordUIActionRequested(controlId)
   }
 
   public func recordUIActionForegroundNeeded(_ controlId: String) {
-    appendUIActionRecord(controlId: controlId, status: "foreground-needed")
-  }
-
-  private func appendUIActionRecord(controlId: String, status: String) {
-    let record = UIActionRecord(controlId: controlId, status: status)
-    recentUIActions.insert(record, at: 0)
-    if recentUIActions.count > 25 {
-      recentUIActions.removeLast(recentUIActions.count - 25)
-    }
+    uiAutomationProvider.recordUIActionForegroundNeeded(controlId)
   }
 
   private func availableViewIds() -> [String] {
-    ["agents", "workspaces", "brew", "git", "github"]
+    uiAutomationProvider.availableViewIds()
   }
 
   private func viewTitle(for viewId: String) -> String {
-    switch viewId {
-    case "agents": return "Agents"
-    case "workspaces": return "Workspaces"
-    case "brew": return "Homebrew"
-    case "git": return "Git"
-    case "github": return "GitHub"
-    default: return viewId.capitalized
-    }
+    uiAutomationProvider.viewTitle(for: viewId)
   }
 
   private func groups(for tool: ToolDefinition) -> [ToolGroup] {
@@ -5032,111 +5210,16 @@ public final class MCPServerService {
     return groups
   }
 
-  private func stringValues(_ value: Any?) -> [String] {
-    if let strings = value as? [String] {
-      return strings
-    }
-    return []
-  }
-
   private func availableToolControlIds() -> [String] {
-    availableViewIds().map { "tool.\($0)" }
+    uiAutomationProvider.availableToolControlIds()
   }
 
   private func availableControlIds(for viewId: String?) -> [String] {
-    switch viewId {
-    case "agents":
-      return [
-        "agents.newAgent",
-        "agents.newChain",
-        "agents.mcpDashboard",
-        "agents.cliSetup",
-        "agents.sessionSummary",
-        "agents.vmIsolation",
-        "agents.translationValidation",
-        "agents.localRag",
-        "agents.piiScrubber",
-        "agents.localRag.refresh",
-        "agents.localRag.repoPath",
-        "agents.localRag.init",
-        "agents.localRag.index",
-        "agents.localRag.query",
-        "agents.localRag.mode",
-        "agents.localRag.limit",
-        "agents.localRag.search",
-        "agents.localRag.useCoreML"
-      ]
-    case "github":
-      return [
-        "github.login",
-        "github.refresh",
-        "github.showArchived",
-        "github.logout",
-        "github.selectFavorite",
-        "github.selectRecentPR"
-      ]
-    case "brew":
-      return ["brew.source", "brew.search"]
-    case "workspaces":
-      return [
-        "workspaces.refresh",
-        "workspaces.addWorkspace",
-        "workspaces.createWorktree",
-        "workspaces.openInVSCode",
-        "workspaces.selectWorkspace",
-        "workspaces.selectRepo",
-        "workspaces.selectWorktree",
-        "workspaces.selectWorktreeName",
-        "workspaces.openSelectedWorktree",
-        "workspaces.removeSelectedWorktree"
-      ]
-    case "git":
-      return ["git.openRepository", "git.cloneRepository", "git.openInVSCode", "git.selectRepo"]
-    default:
-      return []
-    }
+    uiAutomationProvider.availableControlIds(for: viewId)
   }
 
   private func controlValues(for viewId: String?) -> [String: Any] {
-    switch viewId {
-    case "github":
-      let favoriteKeys = UserDefaults.standard.stringArray(forKey: "github.availableFavoriteKeys") ?? []
-      let recentPRKeys = UserDefaults.standard.stringArray(forKey: "github.availableRecentPRKeys") ?? []
-      return [
-        "github.selectFavorite": favoriteKeys,
-        "github.selectRecentPR": recentPRKeys
-      ]
-    case "brew":
-      return [
-        "brew.source": ["Installed", "Available"]
-      ]
-    case "workspaces":
-      let workspaceNames = UserDefaults.standard.stringArray(forKey: "workspaces.availableNames") ?? []
-      let repoNames = UserDefaults.standard.stringArray(forKey: "workspaces.availableRepoNames") ?? []
-      let worktreePaths = UserDefaults.standard.stringArray(forKey: "workspaces.availableWorktreePaths") ?? []
-      let worktreeNames = UserDefaults.standard.stringArray(forKey: "workspaces.availableWorktreeNames") ?? []
-      return [
-        "workspaces.selectWorkspace": workspaceNames,
-        "workspaces.selectRepo": repoNames,
-        "workspaces.selectWorktree": worktreePaths,
-        "workspaces.selectWorktreeName": worktreeNames
-      ]
-    case "agents":
-      let limits = (1...25).map { String($0) }
-      return [
-        "agents.localRag.mode": RAGSearchMode.allCases.map { $0.rawValue },
-        "agents.localRag.limit": limits
-      ]
-    case "git":
-      let repoPaths = UserDefaults.standard.stringArray(forKey: "git.availableRepoPaths") ?? []
-      let repoNames = UserDefaults.standard.stringArray(forKey: "git.availableRepoNames") ?? []
-      return [
-        "git.selectRepo": repoPaths,
-        "git.selectRepoNames": repoNames
-      ]
-    default:
-      return [:]
-    }
+    uiAutomationProvider.controlValues(for: viewId)
   }
 
   private func dedupeStrings(_ values: [String]?) -> [String] {
@@ -5145,19 +5228,15 @@ public final class MCPServerService {
   }
 
   private func currentToolId() -> String? {
-    UserDefaults.standard.string(forKey: "current-tool")
+    uiAutomationProvider.currentToolId()
   }
 
   private func setCurrentToolId(_ toolId: String) {
-    UserDefaults.standard.set(toolId, forKey: "current-tool")
+    uiAutomationProvider.setCurrentToolId(toolId)
   }
 
   private func worktreeNameMapFromDefaults() -> [String: String] {
-    guard let data = UserDefaults.standard.data(forKey: "workspaces.availableWorktreeNameMap"),
-          let decoded = try? JSONDecoder().decode([String: String].self, from: data) else {
-      return [:]
-    }
-    return decoded
+    uiAutomationProvider.worktreeNameMapFromDefaults()
   }
 }
 

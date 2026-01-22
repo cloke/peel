@@ -63,7 +63,7 @@ public final class CLIService {
   public var installOutput: [String] = []
   
   private let executor = ProcessExecutor()
-  private let mcpLog = MCPLogService.shared
+  private let telemetryProvider: MCPTelemetryProviding
   private let statusCacheTTL: TimeInterval = 12 * 60 * 60
   private let statusEncoder = JSONEncoder()
   private let statusDecoder = JSONDecoder()
@@ -96,7 +96,8 @@ public final class CLIService {
   
   // MARK: - Init
   
-  public init() {
+  public init(telemetryProvider: MCPTelemetryProviding = MCPTelemetryAdapter(sessionTracker: SessionTracker())) {
+    self.telemetryProvider = telemetryProvider
     loadCachedStatuses()
   }
   
@@ -587,7 +588,7 @@ public final class CLIService {
     )
     let activityMonitor = ActivityMonitor()
     let startTime = Date()
-    let idleTimeout: TimeInterval = 300
+    let idleTimeout: TimeInterval = 900
     let maxRuntime: TimeInterval = 900
 
     // Terminate the process if we see Copilot's final stats marker but the process hangs
@@ -609,7 +610,7 @@ public final class CLIService {
         let runtimeExceeded = Date().timeIntervalSince(startTime) > maxRuntime
         if idleExceeded || runtimeExceeded {
           Task { @MainActor in
-            await mcpLog.warning("Copilot stream timeout", metadata: [
+            await telemetryProvider.warning("Copilot stream timeout", metadata: [
               "model": modelName,
               "role": roleName,
               "workingDirectory": workingDirectory ?? "",
@@ -668,7 +669,7 @@ public final class CLIService {
       let (stdoutData, stderrData) = await accumulator.getFinalData()
       let diagnostics = await accumulator.getDiagnostics()
       if !diagnostics.completionDetected {
-        await mcpLog.warning("Copilot stream completed without stats marker", metadata: [
+        await telemetryProvider.warning("Copilot stream completed without stats marker", metadata: [
           "model": modelName,
           "role": roleName,
           "workingDirectory": workingDirectory ?? "",
@@ -687,7 +688,7 @@ public final class CLIService {
         process.terminate()
       }
       Task { @MainActor in
-        await mcpLog.warning("Copilot stream cancelled", metadata: [
+        await telemetryProvider.warning("Copilot stream cancelled", metadata: [
           "model": modelName,
           "role": roleName,
           "workingDirectory": workingDirectory ?? ""
