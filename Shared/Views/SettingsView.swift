@@ -121,6 +121,7 @@ private struct MCPToolSettingsSection: View {
   @Bindable var mcpServer: MCPServerService
 
   var body: some View {
+    let _ = mcpServer.permissionsVersion
     VStack(alignment: .leading, spacing: 12) {
       HStack(spacing: 12) {
         Button("Enable All") {

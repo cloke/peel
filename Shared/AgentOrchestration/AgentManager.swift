@@ -1213,7 +1213,6 @@ public final class MCPServerService {
     static let maxConcurrentChains = "mcp.server.maxConcurrentChains"
     static let maxQueuedChains = "mcp.server.maxQueuedChains"
     static let autoCleanupWorkspaces = "mcp.server.autoCleanupWorkspaces"
-    static let toolPermissions = "mcp.server.toolPermissions"
     static let localRagRepoPath = "localrag.repoPath"
     static let localRagQuery = "localrag.query"
     static let localRagSearchMode = "localrag.searchMode"
@@ -1472,11 +1471,8 @@ public final class MCPServerService {
   private var listener: NWListener?
   private var connections: [UUID: NWConnection] = [:]
   private var connectionStates: [UUID: ConnectionState] = [:]
-  private var toolPermissions: [String: Bool] = [:] {
-    didSet {
-      persistToolPermissions()
-    }
-  }
+  private let permissionsStore: MCPToolPermissionsProviding
+  public private(set) var permissionsVersion: Int = 0
 
   private struct ConnectionState {
     var buffer = Data()
@@ -1485,11 +1481,13 @@ public final class MCPServerService {
   public init(
     agentManager: AgentManager = AgentManager(),
     cliService: CLIService = CLIService(),
-    sessionTracker: SessionTracker = SessionTracker()
+    sessionTracker: SessionTracker = SessionTracker(),
+    permissionsStore: MCPToolPermissionsProviding = MCPToolPermissionsStore()
   ) {
     self.agentManager = agentManager
     self.cliService = cliService
     self.sessionTracker = sessionTracker
+    self.permissionsStore = permissionsStore
     self.chainRunner = AgentChainRunner(
       agentManager: agentManager,
       cliService: cliService,
@@ -1516,7 +1514,11 @@ public final class MCPServerService {
     if self.maxQueuedChains == 0 {
       self.maxQueuedChains = 10
     }
-    loadToolPermissions()
+    if let store = permissionsStore as? MCPToolPermissionsStore {
+      store.onChange = { [weak self] in
+        self?.permissionsVersion &+= 1
+      }
+    }
 
     // Initialize parallel worktree runner
     self.parallelWorktreeRunner = ParallelWorktreeRunner(workspaceService: agentManager.workspaceManager)
@@ -1617,37 +1619,26 @@ public final class MCPServerService {
   }
 
   public func setCategoryEnabled(_ category: ToolCategory, enabled: Bool) {
-    var updated = toolPermissions
-    for tool in tools(in: category) {
-      updated[tool.name] = enabled
-    }
-    toolPermissions = updated
+    updateToolsEnabled(tools(in: category), enabled: enabled)
   }
 
   public func setGroupEnabled(_ group: ToolGroup, enabled: Bool) {
-    var updated = toolPermissions
-    for tool in tools(in: group) {
-      updated[tool.name] = enabled
-    }
-    toolPermissions = updated
+    updateToolsEnabled(tools(in: group), enabled: enabled)
   }
 
   public func setAllToolsEnabled(_ enabled: Bool) {
-    var updated: [String: Bool] = [:]
-    for tool in toolDefinitions {
-      updated[tool.name] = enabled
-    }
-    toolPermissions = updated
+    updateToolsEnabled(toolDefinitions, enabled: enabled)
   }
 
   public func isToolEnabled(_ name: String) -> Bool {
     guard toolDefinition(named: name) != nil else { return false }
-    return true
+    return permissionsStore.isToolEnabled(name)
   }
 
   public func setToolEnabled(_ name: String, enabled: Bool) {
     guard toolDefinition(named: name) != nil else { return }
-    toolPermissions[name] = enabled
+    permissionsStore.setToolEnabled(name, enabled: enabled)
+    permissionsVersion &+= 1
   }
 
   public struct QueuedRunInfo: Identifiable {
@@ -4091,22 +4082,15 @@ public final class MCPServerService {
     lastCleanupSummary = "Removed \(removedWorktrees) worktrees, deleted \(deletedBranches) branches\(errorNote)."
   }
 
-  private func loadToolPermissions() {
-    guard let data = UserDefaults.standard.data(forKey: StorageKey.toolPermissions),
-          let decoded = try? JSONDecoder().decode([String: Bool].self, from: data) else {
-      toolPermissions = [:]
-      return
-    }
-    toolPermissions = decoded
-  }
-
-  private func persistToolPermissions() {
-    guard let data = try? JSONEncoder().encode(toolPermissions) else { return }
-    UserDefaults.standard.set(data, forKey: StorageKey.toolPermissions)
-  }
-
   private func defaultToolEnabled(_ tool: ToolDefinition) -> Bool {
     true
+  }
+
+  private func updateToolsEnabled(_ tools: [ToolDefinition], enabled: Bool) {
+    for tool in tools {
+      permissionsStore.setToolEnabled(tool.name, enabled: enabled)
+    }
+    permissionsVersion &+= 1
   }
 
   private func toolDefinition(named name: String) -> ToolDefinition? {
