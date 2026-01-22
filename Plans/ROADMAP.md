@@ -6,8 +6,8 @@ tags:
   - peel
   - agent-orchestration
   - mcp
-updated: 2026-01-21
-last_health_check: 2026-01-21
+updated: 2026-01-22
+last_health_check: 2026-01-22
 audience:
   - ai-agent
   - developer
@@ -99,6 +99,21 @@ github_issues:
   - number: 78
     status: open
     title: Parallel worktree runner with Local RAG grounding
+  - number: 79
+    status: open
+    title: Refactor MCP tool permissions for package-ready interface
+  - number: 80
+    status: open
+    title: Extract MCP tool registry into package
+  - number: 81
+    status: open
+    title: Define MCP telemetry provider protocol
+  - number: 82
+    status: open
+    title: Define MCP UI automation provider protocol
+  - number: 83
+    status: open
+    title: Cohesive Workspaces/Worktrees navigation
   - number: 75
     status: closed
     title: Local RAG v1 query API + MCP hook

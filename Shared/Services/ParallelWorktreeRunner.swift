@@ -43,6 +43,7 @@ enum ParallelWorktreeStatus: Sendable, Equatable {
   case creatingWorktree
   case running
   case awaitingReview
+  case reviewed
   case approved
   case rejected(String)
   case merging
@@ -52,7 +53,7 @@ enum ParallelWorktreeStatus: Sendable, Equatable {
   
   var isTerminal: Bool {
     switch self {
-    case .merged, .failed, .cancelled, .rejected: return true
+    case .merged, .failed, .cancelled, .rejected, .reviewed: return true
     default: return false
     }
   }
@@ -63,6 +64,7 @@ enum ParallelWorktreeStatus: Sendable, Equatable {
     case .creatingWorktree: return "Creating Worktree"
     case .running: return "Running"
     case .awaitingReview: return "Awaiting Review"
+    case .reviewed: return "Reviewed"
     case .approved: return "Approved"
     case .rejected: return "Rejected"
     case .merging: return "Merging"
@@ -125,6 +127,8 @@ final class ParallelWorktreeRun: Identifiable, @unchecked Sendable, Hashable {
   let projectPath: String
   let baseBranch: String
   var targetBranch: String?
+  var templateName: String?
+  var runOptions: AgentChainRunner.ChainRunOptions?
   var executions: [ParallelWorktreeExecution] = []
   var createdAt: Date
   var startedAt: Date?
@@ -183,7 +187,7 @@ final class ParallelWorktreeRun: Identifiable, @unchecked Sendable, Hashable {
     // Only count successful completions (merged, approved, awaiting review) - not cancelled/failed
     let completed = executions.filter { execution in
       switch execution.status {
-      case .merged, .approved, .awaitingReview:
+      case .merged, .approved, .awaitingReview, .reviewed:
         return true
       default:
         return false
@@ -234,6 +238,8 @@ final class ParallelWorktreeRunner {
   
   /// Local RAG store for grounding
   private var ragStore: LocalRAGStore?
+
+  private let mcpLog = MCPLogService.shared
   
   /// Max concurrent worktrees
   var maxConcurrentWorktrees: Int = 4
@@ -266,7 +272,9 @@ final class ParallelWorktreeRunner {
     baseBranch: String = "HEAD",
     targetBranch: String? = nil,
     requireReviewGate: Bool = true,
-    autoMergeOnApproval: Bool = false
+    autoMergeOnApproval: Bool = false,
+    templateName: String? = nil,
+    runOptions: AgentChainRunner.ChainRunOptions? = nil
   ) -> ParallelWorktreeRun {
     let run = ParallelWorktreeRun(
       name: name,
@@ -276,6 +284,8 @@ final class ParallelWorktreeRunner {
     )
     run.targetBranch = targetBranch
     run.autoMergeOnApproval = autoMergeOnApproval
+    run.templateName = templateName
+    run.runOptions = runOptions
     
     // Create executions for each task
     for task in tasks {
@@ -284,6 +294,16 @@ final class ParallelWorktreeRunner {
     }
     
     runs.append(run)
+    Task {
+      await mcpLog.info("Parallel run created", metadata: [
+        "runId": run.id.uuidString,
+        "name": name,
+        "taskCount": "\(tasks.count)",
+        "templateName": templateName ?? "",
+        "plannerModelSelection": "\(runOptions?.allowPlannerModelSelection ?? false)",
+        "plannerScaling": "\(runOptions?.allowPlannerImplementerScaling ?? false)"
+      ])
+    }
     return run
   }
   
@@ -295,18 +315,25 @@ final class ParallelWorktreeRunner {
     
     run.status = .running
     run.startedAt = Date()
+    await mcpLog.info("Parallel run started", metadata: [
+      "runId": run.id.uuidString,
+      "templateName": run.templateName ?? "",
+      "taskCount": "\(run.executions.count)",
+      "projectPath": run.projectPath
+    ])
     
     // Ground each task with RAG snippets
     await groundTasksWithRAG(run)
     
     // Execute tasks in parallel with concurrency limit
+    let concurrencyLimit = run.templateName == "Free Review" ? 1 : maxConcurrentWorktrees
     await withTaskGroup(of: Void.self) { group in
       var activeCount = 0
       var pendingExecutions = run.executions.filter { $0.status == .pending }
       
       while !pendingExecutions.isEmpty || activeCount > 0 {
         // Start new tasks up to the limit
-        while activeCount < maxConcurrentWorktrees, let execution = pendingExecutions.first {
+        while activeCount < concurrencyLimit, let execution = pendingExecutions.first {
           pendingExecutions.removeFirst()
           activeCount += 1
           
@@ -331,6 +358,12 @@ final class ParallelWorktreeRunner {
   private func executeWorktree(_ execution: ParallelWorktreeExecution, in run: ParallelWorktreeRun) async {
     execution.status = .creatingWorktree
     execution.startedAt = Date()
+
+    await mcpLog.info("Parallel worktree starting", metadata: [
+      "runId": run.id.uuidString,
+      "executionId": execution.id.uuidString,
+      "taskTitle": execution.task.title
+    ])
     
     do {
       // Create worktree
@@ -350,14 +383,16 @@ final class ParallelWorktreeRunner {
       execution.status = .running
       
       // Build the grounded prompt
-      let groundedPrompt = buildGroundedPrompt(for: execution)
+      let includeRAG = run.templateName != "Free Review"
+      let groundedPrompt = buildGroundedPrompt(for: execution, includeRAG: includeRAG)
       
       // Execute the task (this would integrate with your existing chain runner)
       // For now, we simulate the execution
       let result = await executeTask(
         prompt: groundedPrompt,
         worktreePath: worktreePath,
-        task: execution.task
+        task: execution.task,
+        run: run
       )
       
       // Update execution with results
@@ -380,10 +415,23 @@ final class ParallelWorktreeRunner {
       }
       
       execution.completedAt = Date()
+
+      await mcpLog.info("Parallel worktree completed", metadata: [
+        "runId": run.id.uuidString,
+        "executionId": execution.id.uuidString,
+        "filesChanged": "\(execution.filesChanged)",
+        "insertions": "\(execution.insertions)",
+        "deletions": "\(execution.deletions)",
+        "status": execution.status.displayName
+      ])
       
     } catch {
       execution.status = .failed(error.localizedDescription)
       execution.completedAt = Date()
+      await mcpLog.error(error, context: "Parallel worktree failed", metadata: [
+        "runId": run.id.uuidString,
+        "executionId": execution.id.uuidString
+      ])
     }
   }
 
@@ -407,14 +455,14 @@ final class ParallelWorktreeRunner {
   }
   
   /// Build a prompt grounded with RAG snippets
-  private func buildGroundedPrompt(for execution: ParallelWorktreeExecution) -> String {
+  private func buildGroundedPrompt(for execution: ParallelWorktreeExecution, includeRAG: Bool) -> String {
     var prompt = execution.task.prompt
-    
-    if !execution.ragSnippets.isEmpty {
+
+    if includeRAG, !execution.ragSnippets.isEmpty {
       var contextSection = "\n\n## Relevant Code Context\n\n"
       contextSection += "The following code snippets are relevant to this task:\n\n"
       
-      for snippet in execution.ragSnippets.prefix(5) {
+      for snippet in execution.ragSnippets.prefix(2) {
         contextSection += "### \(snippet.filePath) (lines \(snippet.startLine)-\(snippet.endLine))\n"
         contextSection += "```\n\(snippet.snippet)\n```\n\n"
       }
@@ -460,40 +508,99 @@ final class ParallelWorktreeRunner {
   private func executeTask(
     prompt: String,
     worktreePath: String,
-    task: WorktreeTask
+    task: WorktreeTask,
+    run: ParallelWorktreeRun
   ) async -> TaskExecutionResult {
-    let template = preferredTemplate()
-    let chain = makeChain(from: template, workingDirectory: worktreePath, taskTitle: task.title)
+    let template = preferredTemplate(for: run)
+    let maxAttempts = 2
+    var attempt = 1
+    var lastSummary: AgentChainRunner.RunSummary?
+    var lastOutput = ""
 
-    #if os(macOS)
-    let validationConfig = template?.validationConfig
-    #else
-    let validationConfig: ValidationConfiguration? = nil
-    #endif
+    while attempt <= maxAttempts {
+      let chain = makeChain(from: template, workingDirectory: worktreePath, taskTitle: task.title)
 
-    let runSummary = await chainRunner.runChain(
-      chain,
-      prompt: prompt,
-      validationConfig: validationConfig
-    )
+      #if os(macOS)
+      let validationConfig = template?.validationConfig
+      #else
+      let validationConfig: ValidationConfiguration? = nil
+      #endif
 
-    let output = summarizeOutputs(runSummary.results, errorMessage: runSummary.errorMessage)
+      let runSummary = await chainRunner.runChain(
+        chain,
+        prompt: prompt,
+        validationConfig: validationConfig,
+        runOptions: run.runOptions
+      )
+
+      lastSummary = runSummary
+      lastOutput = summarizeOutputs(runSummary.results, errorMessage: runSummary.errorMessage)
+
+      let normalizedOutput = lastOutput.lowercased()
+      let hitRateLimit = normalizedOutput.contains("rate limit")
+        || normalizedOutput.contains("copilot failed")
+        || (runSummary.errorMessage?.lowercased().contains("rate limit") ?? false)
+
+      if hitRateLimit && attempt < maxAttempts {
+        await mcpLog.warning("Rate limit detected, retrying task", metadata: [
+          "taskTitle": task.title,
+          "attempt": "\(attempt)",
+          "nextAttempt": "\(attempt + 1)"
+        ])
+        await cleanupChain(chain)
+        try? await Task.sleep(for: .seconds(60))
+        attempt += 1
+        continue
+      }
+
+      await cleanupChain(chain)
+      break
+    }
+
     let diffStats = computeDiffStats(in: worktreePath)
+    let gitStatus = runGit(args: ["status", "-sb"], at: worktreePath)
 
-    await cleanupChain(chain)
+    if let runSummary = lastSummary {
+      await mcpLog.info("Parallel worktree run summary", metadata: [
+        "chainId": runSummary.chainId.uuidString,
+        "taskTitle": task.title,
+        "state": runSummary.stateDescription,
+        "noWork": runSummary.noWorkReason ?? "",
+        "filesChanged": "\(diffStats.filesChanged)",
+        "insertions": "\(diffStats.insertions)",
+        "deletions": "\(diffStats.deletions)",
+        "gitStatus": gitStatus.replacingOccurrences(of: "\n", with: " ")
+      ])
+    }
 
     return TaskExecutionResult(
-      output: output,
+      output: lastOutput,
       diffSummary: diffStats.summary,
       filesChanged: diffStats.filesChanged,
       insertions: diffStats.insertions,
       deletions: diffStats.deletions,
-      mergeConflicts: runSummary.mergeConflicts
+      mergeConflicts: lastSummary?.mergeConflicts ?? []
     )
   }
 
-  private func preferredTemplate() -> ChainTemplate? {
+  private func preferredTemplate(for run: ParallelWorktreeRun) -> ChainTemplate? {
     let templates = agentManager.allTemplates
+    if let templateName = run.templateName,
+       let match = templates.first(where: { $0.name == templateName }) {
+      return match
+    }
+    if let runOptions = run.runOptions,
+       runOptions.allowPlannerModelSelection
+        || runOptions.allowPlannerImplementerScaling
+        || runOptions.maxImplementers != nil
+        || runOptions.maxPremiumCost != nil {
+      if let codeReview = templates.first(where: { $0.name == "Code Review" }) {
+        return codeReview
+      }
+      if let harness = templates.first(where: { $0.name == "MCP Harness" }) {
+        return harness
+      }
+    }
     if let freeReview = templates.first(where: { $0.name == "Free Review" }) {
       return freeReview
     }
@@ -623,15 +730,30 @@ final class ParallelWorktreeRunner {
   }
   
   /// Reject an execution
-  func rejectExecution(_ execution: ParallelWorktreeExecution, reason: String) {
+  func rejectExecution(_ execution: ParallelWorktreeExecution, in run: ParallelWorktreeRun, reason: String) {
     guard execution.status == .awaitingReview else { return }
     execution.status = .rejected(reason)
+    updateRunStatus(run)
+  }
+
+  /// Mark an execution as reviewed (without approval)
+  func markReviewed(_ execution: ParallelWorktreeExecution, in run: ParallelWorktreeRun) {
+    guard execution.status == .awaitingReview else { return }
+    execution.status = .reviewed
+    updateRunStatus(run)
   }
   
   /// Approve all pending executions
   func approveAllPending(in run: ParallelWorktreeRun) {
     for execution in run.executions where execution.status == .awaitingReview {
       approveExecution(execution, in: run)
+    }
+  }
+
+  /// Mark all pending executions as reviewed
+  func markAllReviewed(in run: ParallelWorktreeRun) {
+    for execution in run.executions where execution.status == .awaitingReview {
+      markReviewed(execution, in: run)
     }
   }
   

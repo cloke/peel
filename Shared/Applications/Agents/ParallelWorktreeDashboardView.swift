@@ -554,7 +554,7 @@ struct ExecutionCard: View {
       TextField("Reason", text: $rejectReason)
       Button("Cancel", role: .cancel) {}
       Button("Reject", role: .destructive) {
-        runner.rejectExecution(execution, reason: rejectReason)
+        runner.rejectExecution(execution, in: run, reason: rejectReason)
         rejectReason = ""
       }
     } message: {
@@ -579,6 +579,9 @@ struct ExecutionCard: View {
     case .awaitingReview:
       Image(systemName: "eye.circle.fill")
         .foregroundStyle(.orange)
+    case .reviewed:
+      Image(systemName: "checkmark.circle")
+        .foregroundStyle(.secondary)
     case .approved:
       Image(systemName: "checkmark.circle.fill")
         .foregroundStyle(.green)
@@ -612,6 +615,14 @@ struct ExecutionCard: View {
         .buttonStyle(.borderedProminent)
         .tint(.green)
         .accessibilityIdentifier("execution.approve.\(execution.id)")
+
+        Button {
+          runner.markReviewed(execution, in: run)
+        } label: {
+          Label("Reviewed", systemImage: "checkmark.circle")
+        }
+        .buttonStyle(.bordered)
+        .accessibilityIdentifier("execution.reviewed.\(execution.id)")
         
         Button {
           showingRejectDialog = true
