@@ -40,6 +40,7 @@ struct WorkspacesDashboardView: View {
   @State private var showingCreateWorktree = false
   @State private var selectedRepo: WorkspaceRepo?
   @State private var worktreeStatuses: [UUID: WorktreeStatus] = [:]
+  @AppStorage(wrappedValue: .workspaces, "current-tool") private var currentTool: CurrentTool
   @AppStorage("workspaces.selectedWorkspaceName") private var selectedWorkspaceName: String = ""
   @AppStorage("workspaces.selectedRepoName") private var selectedRepoName: String = ""
   @AppStorage("workspaces.selectedWorktreePath") private var selectedWorktreePath: String = ""
@@ -240,7 +241,8 @@ struct WorkspacesDashboardView: View {
         WorkspaceHeader(
           workspace: workspace,
           worktreeCount: nonMainWorktrees.count,
-          onRefresh: refreshAll
+          onRefresh: refreshAll,
+          onParallelWorktrees: openParallelWorktrees
         )
       }
       
@@ -299,7 +301,8 @@ struct WorkspacesDashboardView: View {
         repo: repo,
         worktreeCount: worktreeCount(for: repo),
         onBack: { selectedRepo = nil },
-        onRefresh: refreshAll
+        onRefresh: refreshAll,
+        onParallelWorktrees: openParallelWorktrees
       )
       Divider()
       let repoWorktrees = service.worktrees.filter { service.repoName(for: $0) == repo.name && !$0.isMain }
@@ -310,13 +313,17 @@ struct WorkspacesDashboardView: View {
         ContentUnavailableView {
           Label("No Worktrees for \(repo.name)", systemImage: "arrow.triangle.branch")
         } description: {
-          Text("Create a worktree for this repository to work in isolation")
+          Text("Create a worktree for this repository to work in isolation. Workspaces group repos; worktrees are checkouts.")
         } actions: {
           Button("Create Worktree") {
             selectedRepo = repo
             showingCreateWorktree = true
           }
           .buttonStyle(.borderedProminent)
+          Button("Parallel Worktrees") {
+            openParallelWorktrees()
+          }
+          .buttonStyle(.bordered)
         }
       } else {
         ScrollView {
@@ -355,7 +362,7 @@ struct WorkspacesDashboardView: View {
     ContentUnavailableView {
       Label("No Active Worktrees", systemImage: "arrow.triangle.branch")
     } description: {
-      Text("Create a worktree to work on a feature in isolation")
+      Text("Create a worktree to work on a feature in isolation. Workspaces group repos; worktrees are checkouts.")
     } actions: {
       if let repo = service.repos.first {
         Button("Create Worktree") {
@@ -364,6 +371,10 @@ struct WorkspacesDashboardView: View {
         }
         .buttonStyle(.borderedProminent)
       }
+      Button("Parallel Worktrees") {
+        openParallelWorktrees()
+      }
+      .buttonStyle(.bordered)
     }
   }
   
@@ -371,12 +382,16 @@ struct WorkspacesDashboardView: View {
     ContentUnavailableView {
       Label("No Workspace Selected", systemImage: "folder.badge.gearshape")
     } description: {
-      Text("Add a workspace to manage its worktrees")
+      Text("Add a workspace to manage repositories and worktrees")
     } actions: {
       Button("Add Workspace") {
         showingAddWorkspace = true
       }
       .buttonStyle(.borderedProminent)
+      Button("Parallel Worktrees") {
+        openParallelWorktrees()
+      }
+      .buttonStyle(.bordered)
     }
   }
   
@@ -406,6 +421,11 @@ struct WorkspacesDashboardView: View {
       await service.loadReposAndWorktrees()
       await loadStatuses()
     }
+  }
+
+  private func openParallelWorktrees() {
+    UserDefaults.standard.set("infra:parallel-worktrees", forKey: "agents.selectedInfrastructure")
+    currentTool = .agents
   }
 
   private func syncSelectionFromStoredValues() {
@@ -504,6 +524,7 @@ struct WorkspaceHeader: View {
   let workspace: Workspace
   let worktreeCount: Int
   let onRefresh: () -> Void
+  let onParallelWorktrees: () -> Void
   
   var body: some View {
     HStack {
@@ -521,6 +542,13 @@ struct WorkspaceHeader: View {
         onRefresh()
       } label: {
         Label("Refresh", systemImage: "arrow.clockwise")
+      }
+      .buttonStyle(.bordered)
+
+      Button {
+        onParallelWorktrees()
+      } label: {
+        Label("Parallel Worktrees", systemImage: "arrow.triangle.branch")
       }
       .buttonStyle(.bordered)
       
@@ -543,6 +571,7 @@ struct RepoHeader: View {
   let worktreeCount: Int
   let onBack: () -> Void
   let onRefresh: () -> Void
+  let onParallelWorktrees: () -> Void
   
   var body: some View {
     HStack {
@@ -569,6 +598,13 @@ struct RepoHeader: View {
         onRefresh()
       } label: {
         Label("Refresh", systemImage: "arrow.clockwise")
+      }
+      .buttonStyle(.bordered)
+
+      Button {
+        onParallelWorktrees()
+      } label: {
+        Label("Parallel Worktrees", systemImage: "arrow.triangle.branch")
       }
       .buttonStyle(.bordered)
       
