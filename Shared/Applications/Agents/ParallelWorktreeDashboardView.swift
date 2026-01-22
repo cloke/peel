@@ -118,13 +118,14 @@ struct ParallelRunRow: View {
       }
       
       HStack(spacing: 8) {
-        ProgressView(value: run.progress)
+        ProgressView(value: progressValue)
           .progressViewStyle(.linear)
+          .tint(progressColor)
           .frame(maxWidth: 100)
         
         Text(run.status.displayName)
           .font(.caption)
-          .foregroundStyle(.secondary)
+          .foregroundStyle(statusTextColor)
       }
       
       if run.pendingReviewCount > 0 {
@@ -134,6 +135,36 @@ struct ParallelRunRow: View {
       }
     }
     .padding(.vertical, 4)
+  }
+  
+  private var progressValue: Double {
+    switch run.status {
+    case .cancelled, .failed:
+      // Show how far we got before cancellation/failure
+      return run.progress
+    default:
+      return run.progress
+    }
+  }
+  
+  private var progressColor: Color {
+    switch run.status {
+    case .completed: return .green
+    case .cancelled: return .secondary
+    case .failed: return .red
+    case .awaitingReview: return .orange
+    default: return .blue
+    }
+  }
+  
+  private var statusTextColor: Color {
+    switch run.status {
+    case .completed: return .green
+    case .cancelled: return .secondary
+    case .failed: return .red
+    case .awaitingReview: return .orange
+    default: return .secondary
+    }
   }
   
   @ViewBuilder

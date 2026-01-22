@@ -180,7 +180,15 @@ final class ParallelWorktreeRun: Identifiable, @unchecked Sendable, Hashable {
   
   var progress: Double {
     guard !executions.isEmpty else { return 0 }
-    let completed = executions.filter { $0.status.isTerminal || $0.status == .approved || $0.status == .awaitingReview }.count
+    // Only count successful completions (merged, approved, awaiting review) - not cancelled/failed
+    let completed = executions.filter { execution in
+      switch execution.status {
+      case .merged, .approved, .awaitingReview:
+        return true
+      default:
+        return false
+      }
+    }.count
     return Double(completed) / Double(executions.count)
   }
   
