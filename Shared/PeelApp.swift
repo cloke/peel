@@ -341,6 +341,7 @@ final class DataService {
       pendingReviewCount: run.pendingReviewCount,
       readyToMergeCount: run.readyToMergeCount,
       mergedCount: run.mergedCount,
+      rejectedCount: run.rejectedCount,
       failedCount: run.failedCount,
       hungCount: run.hungExecutionCount,
       requireReviewGate: run.requireReviewGate,
@@ -567,6 +568,24 @@ final class DataService {
       return "- \(title)\(metaLine)\n\n\(skill.body)"
     }.joined(separator: "\n\n")
     return ("## Repo Skills\n\n\(body)", skills)
+  }
+
+  func repoGuidanceSkillsBlockAndMarkApplied(repoPath: String, limit: Int = 6) -> String? {
+    let skills = listRepoGuidanceSkills(repoPath: repoPath, includeInactive: false, limit: limit)
+    guard !skills.isEmpty else { return nil }
+    let body = skills.enumerated().map { index, skill in
+      let title = skill.title.isEmpty ? "Skill \(index + 1)" : skill.title
+      let tags = skill.tags.trimmingCharacters(in: .whitespacesAndNewlines)
+      let source = skill.source.trimmingCharacters(in: .whitespacesAndNewlines)
+      let meta = [
+        tags.isEmpty ? nil : "Tags: \(tags)",
+        source.isEmpty ? nil : "Source: \(source)"
+      ].compactMap { $0 }.joined(separator: " · ")
+      let metaLine = meta.isEmpty ? "" : "\n\(meta)"
+      return "- \(title)\(metaLine)\n\n\(skill.body)"
+    }.joined(separator: "\n\n")
+    markRepoGuidanceSkillsApplied(skills)
+    return "## Repo Skills\n\n\(body)"
   }
 
   func markRepoGuidanceSkillsApplied(_ skills: [RepoGuidanceSkill]) {

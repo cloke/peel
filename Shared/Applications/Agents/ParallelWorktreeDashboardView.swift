@@ -155,6 +155,11 @@ struct ParallelRunRow: View {
           .font(.caption2)
           .foregroundStyle(.orange)
       }
+      if run.rejectedCount > 0 {
+        Text("\(run.rejectedCount) rejected")
+          .font(.caption2)
+          .foregroundStyle(.red)
+      }
       if run.hungExecutionCount > 0 {
         Text("\(run.hungExecutionCount) possibly hung")
           .font(.caption2)
@@ -341,6 +346,7 @@ struct ParallelRunDetailView: View {
         statBox(title: "Pending Review", value: "\(run.pendingReviewCount)", color: .orange)
         statBox(title: "Ready to Merge", value: "\(run.readyToMergeCount)", color: .green)
         statBox(title: "Merged", value: "\(run.mergedCount)", color: .blue)
+        statBox(title: "Rejected", value: "\(run.rejectedCount)", color: .red)
         statBox(title: "Failed", value: "\(run.failedCount)", color: .red)
         statBox(title: "Hung", value: "\(run.hungExecutionCount)", color: .red)
       }

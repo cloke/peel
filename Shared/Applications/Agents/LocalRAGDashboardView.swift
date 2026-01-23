@@ -482,9 +482,9 @@ struct LocalRAGDashboardView: View {
       return
     }
     skillsError = nil
-    if let selectedSkillId,
+    if let currentSkillId = selectedSkillId,
        let updated = mcpServer.updateRepoGuidanceSkill(
-        id: selectedSkillId,
+      id: currentSkillId,
         repoPath: trimmedRepo,
         title: skillTitle,
         body: trimmedBody,

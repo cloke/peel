@@ -230,6 +230,10 @@ final class ParallelWorktreeRun: Identifiable, @unchecked Sendable, Hashable {
   var pendingReviewCount: Int {
     executions.filter { $0.status == .awaitingReview }.count
   }
+
+  var rejectedCount: Int {
+    executions.filter { if case .rejected = $0.status { return true }; return false }.count
+  }
   
   var readyToMergeCount: Int {
     executions.filter { $0.isReadyToMerge }.count
@@ -638,13 +642,10 @@ final class ParallelWorktreeRunner {
     var sections: [String] = []
     if let dataService {
       let skillsBlock = await MainActor.run {
-        dataService.repoGuidanceSkillsBlock(repoPath: repoPath)
+        dataService.repoGuidanceSkillsBlockAndMarkApplied(repoPath: repoPath)
       }
-      if let (block, skills) = skillsBlock {
+      if let block = skillsBlock {
         sections.append(block)
-        await MainActor.run {
-          dataService.markRepoGuidanceSkillsApplied(skills)
-        }
       }
     }
     guard let ragStore else {

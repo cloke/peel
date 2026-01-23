@@ -298,6 +298,7 @@ final class ParallelRunSnapshot {
   var pendingReviewCount: Int = 0
   var readyToMergeCount: Int = 0
   var mergedCount: Int = 0
+  var rejectedCount: Int = 0
   var failedCount: Int = 0
   var hungCount: Int = 0
   var requireReviewGate: Bool = true
@@ -321,6 +322,7 @@ final class ParallelRunSnapshot {
     pendingReviewCount: Int,
     readyToMergeCount: Int,
     mergedCount: Int,
+    rejectedCount: Int,
     failedCount: Int,
     hungCount: Int,
     requireReviewGate: Bool,
@@ -344,6 +346,7 @@ final class ParallelRunSnapshot {
     self.pendingReviewCount = pendingReviewCount
     self.readyToMergeCount = readyToMergeCount
     self.mergedCount = mergedCount
+    self.rejectedCount = rejectedCount
     self.failedCount = failedCount
     self.hungCount = hungCount
     self.requireReviewGate = requireReviewGate
