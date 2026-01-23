@@ -38,6 +38,9 @@ public final class AgentChain: Identifiable {
 
   /// Pause if reviewer requests changes (do not auto re-run)
   public var pauseOnReview: Bool = false
+
+  /// Operator guidance injected mid-run (applies to remaining agents)
+  public var operatorGuidance: [String] = []
   
   /// Maximum review iterations before giving up
   public var maxReviewIterations: Int = 3
@@ -70,6 +73,13 @@ public final class AgentChain: Identifiable {
     liveStatusMessages = []
     runStartTime = Date()
     currentAgentStartTime = nil
+  }
+
+  public func addOperatorGuidance(_ guidance: String) {
+    let trimmed = guidance.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return }
+    operatorGuidance.append(trimmed)
+    addStatusMessage("Operator guidance added", type: .info)
   }
   
   public enum ChainState: Equatable {

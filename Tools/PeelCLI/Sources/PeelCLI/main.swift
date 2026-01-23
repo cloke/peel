@@ -25,6 +25,8 @@ struct CLIOptions {
   var chainId: String?
   var repoPath: String?
   var chainSpecJSONPath: String?
+  var toolName: String?
+  var argumentsJSONPath: String?
 }
 
 enum CLIError: LocalizedError {
@@ -125,6 +127,10 @@ private func parseArguments() throws -> CLIOptions {
       options.repoPath = iterator.next()
     case "--chain-spec-json":
       options.chainSpecJSONPath = iterator.next()
+    case "--tool-name":
+      options.toolName = iterator.next()
+    case "--arguments-json":
+      options.argumentsJSONPath = iterator.next()
     case "-h", "--help":
       print(usageText())
       exit(EXIT_SUCCESS)
@@ -148,6 +154,15 @@ private func run(options: CLIOptions) async throws {
   switch command {
   case "tools-list":
     try await printRPCResult(method: "tools/list", params: nil, port: options.port)
+  case "tools-call":
+    guard let toolName = options.toolName, !toolName.isEmpty else {
+      throw CLIError.message("tools-call requires --tool-name <name>")
+    }
+    let arguments = try loadArgumentsJSON(options.argumentsJSONPath)
+    try await printRPCResult(method: "tools/call", params: [
+      "name": toolName,
+      "arguments": arguments
+    ], port: options.port)
   case "templates-list":
     try await printRPCResult(method: "tools/call", params: [
       "name": "templates.list",
@@ -237,6 +252,28 @@ private func run(options: CLIOptions) async throws {
       "name": "chains.run.list",
       "arguments": arguments
     ], port: options.port)
+  case "parallel-create":
+    let arguments = try loadArgumentsJSON(options.argumentsJSONPath)
+    try await printRPCResult(method: "tools/call", params: [
+      "name": "parallel.create",
+      "arguments": arguments
+    ], port: options.port)
+  case "parallel-start":
+    guard let runId = options.runId, !runId.isEmpty else {
+      throw CLIError.message("parallel-start requires --run-id <uuid>")
+    }
+    try await printRPCResult(method: "tools/call", params: [
+      "name": "parallel.start",
+      "arguments": ["runId": runId]
+    ], port: options.port)
+  case "parallel-status":
+    guard let runId = options.runId, !runId.isEmpty else {
+      throw CLIError.message("parallel-status requires --run-id <uuid>")
+    }
+    try await printRPCResult(method: "tools/call", params: [
+      "name": "parallel.status",
+      "arguments": ["runId": runId]
+    ], port: options.port)
   case "workspaces-agent-list":
     var arguments: [String: Any] = [:]
     if let repoPath = options.repoPath { arguments["repoPath"] = repoPath }
@@ -285,6 +322,7 @@ private func usageText() -> String {
 
   Commands:
     tools-list
+    tools-call --tool-name <name> [--arguments-json <path>]
     templates-list
     chains-run --prompt <text> [--template-id <uuid> | --template-name <name>] [--working-directory <path>] [--enable-review-loop|--disable-review-loop]
       [--allow-planner-model-selection] [--allow-planner-implementer-scaling]
@@ -293,11 +331,28 @@ private func usageText() -> String {
     chains-run-batch --runs-json <path> [--parallel|--sequential]
     chains-run-status --run-id <uuid>
     chains-run-list [--limit <int>] [--chain-id <id>] [--run-id <uuid>] [--include-results] [--include-outputs]
+    parallel-create --arguments-json <path>
+    parallel-start --run-id <uuid>
+    parallel-status --run-id <uuid>
     workspaces-agent-list [--repo-path <path>]
     workspaces-agent-cleanup-status
     server-stop
     app-quit
   """
+}
+
+private func loadArgumentsJSON(_ path: String?) throws -> [String: Any] {
+  guard let path else {
+    return [:]
+  }
+
+  let url = URL(fileURLWithPath: path)
+  let data = try Data(contentsOf: url)
+  let json = try JSONSerialization.jsonObject(with: data, options: [])
+  guard let dict = json as? [String: Any] else {
+    throw CLIError.message("--arguments-json must be a JSON object")
+  }
+  return dict
 }
 
 private func writeError(_ message: String) {

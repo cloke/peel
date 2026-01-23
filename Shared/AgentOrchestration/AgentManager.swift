@@ -259,8 +259,13 @@ public final class MCPTelemetryAdapter: MCPTelemetryProviding {
   private let logService: MCPLogService
   private let sessionTracker: SessionTracker
 
-  public init(
-    logService: MCPLogService = .shared,
+  public init(sessionTracker: SessionTracker) {
+    self.logService = .shared
+    self.sessionTracker = sessionTracker
+  }
+
+  init(
+    logService: MCPLogService,
     sessionTracker: SessionTracker
   ) {
     self.logService = logService
@@ -1002,7 +1007,7 @@ public final class AgentChainRunner {
     ])
 
     let fullPrompt = agent.buildPrompt(
-      userPrompt: prompt,
+      userPrompt: applyOperatorGuidance(prompt, chain: chain),
       context: context.isEmpty ? nil : context
     )
     agent.updateState(.working)
@@ -1089,6 +1094,19 @@ public final class AgentChainRunner {
       agent.updateState(.failed(message: error.localizedDescription))
       throw error
     }
+  }
+
+  private func applyOperatorGuidance(_ prompt: String, chain: AgentChain) -> String {
+    guard !chain.operatorGuidance.isEmpty else { return prompt }
+    let guidanceBlock = chain.operatorGuidance
+      .enumerated()
+      .map { index, entry in "\(index + 1). \(entry)" }
+      .joined(separator: "\n")
+    return [
+      prompt,
+      "\n\n## Operator Guidance\n",
+      guidanceBlock
+    ].joined()
   }
 
   private func runReviewLoop(chain: AgentChain, prompt: String) async throws {
@@ -1680,6 +1698,9 @@ public final class MCPServerService {
     if dataService == nil {
       dataService = DataService(modelContext: modelContext)
     }
+    if let dataService {
+      parallelWorktreeRunner?.setDataService(dataService)
+    }
   }
 
   public func refreshRagSummary() async {
@@ -1696,6 +1717,116 @@ public final class MCPServerService {
       lastRagError = error.localizedDescription
       lastRagRefreshAt = Date()
     }
+  }
+
+  public func listRepoGuidanceSkills(
+    repoPath: String? = nil,
+    includeInactive: Bool = false,
+    limit: Int? = nil
+  ) -> [RepoGuidanceSkill] {
+    dataService?.listRepoGuidanceSkills(repoPath: repoPath, includeInactive: includeInactive, limit: limit) ?? []
+  }
+
+  @discardableResult
+  public func addRepoGuidanceSkill(
+    repoPath: String,
+    title: String,
+    body: String,
+    source: String = "manual",
+    tags: String = "",
+    priority: Int = 0,
+    isActive: Bool = true
+  ) -> RepoGuidanceSkill? {
+    dataService?.addRepoGuidanceSkill(
+      repoPath: repoPath,
+      title: title,
+      body: body,
+      source: source,
+      tags: tags,
+      priority: priority,
+      isActive: isActive
+    )
+  }
+
+  @discardableResult
+  public func updateRepoGuidanceSkill(
+    id: UUID,
+    repoPath: String? = nil,
+    title: String? = nil,
+    body: String? = nil,
+    source: String? = nil,
+    tags: String? = nil,
+    priority: Int? = nil,
+    isActive: Bool? = nil
+  ) -> RepoGuidanceSkill? {
+    dataService?.updateRepoGuidanceSkill(
+      id: id,
+      repoPath: repoPath,
+      title: title,
+      body: body,
+      source: source,
+      tags: tags,
+      priority: priority,
+      isActive: isActive
+    )
+  }
+
+  @discardableResult
+  public func deleteRepoGuidanceSkill(id: UUID) -> Bool {
+    dataService?.deleteRepoGuidanceSkill(id: id) ?? false
+  }
+
+  private func buildRepoGuidance(repoPath: String) async -> String? {
+    var sections: [String] = []
+    if let dataService,
+       let (skillsBlock, skills) = dataService.repoGuidanceSkillsBlock(repoPath: repoPath) {
+      sections.append(skillsBlock)
+      dataService.markRepoGuidanceSkillsApplied(skills)
+    }
+
+    let queries = [
+      ".rubocop.yml",
+      "rubocop",
+      ".eslintrc",
+      "eslint",
+      "ruff",
+      "flake8",
+      "pyproject.toml lint",
+      "swiftlint",
+      "prettier",
+      "style guide",
+      "lint"
+    ]
+    var snippets: [LocalRAGSearchResult] = []
+    for query in queries {
+      do {
+        let results = try await localRagStore.search(query: query, repoPath: repoPath, limit: 2)
+        snippets.append(contentsOf: results)
+      } catch {
+        await telemetryProvider.warning("Repo guidance search failed", metadata: [
+          "query": query,
+          "error": error.localizedDescription
+        ])
+      }
+    }
+
+    let unique = Dictionary(grouping: snippets, by: { $0.filePath })
+      .compactMap { $0.value.first }
+      .prefix(4)
+    if !unique.isEmpty {
+      let guidance = unique.map { result in
+        let header = "- Follow repo lint/style rules in \(result.filePath)"
+        let snippet = result.snippet
+          .split(separator: "\n")
+          .prefix(8)
+          .joined(separator: "\n")
+        return "\(header)\n\n\(snippet)"
+      }.joined(separator: "\n\n")
+      sections.append("## Repo Guidance\n\n\(guidance)")
+    }
+
+    guard !sections.isEmpty else { return nil }
+    return sections.joined(separator: "\n\n")
   }
 
   func initializeRag(extensionPath: String? = nil) async throws {
@@ -2058,7 +2189,7 @@ public final class MCPServerService {
     do {
       let json = try JSONSerialization.jsonObject(with: body, options: [])
       guard let dict = json as? [String: Any] else {
-        await telemetryProvider.warning("Invalid RPC request: non-object JSON")
+        await telemetryProvider.warning("Invalid RPC request: non-object JSON", metadata: [:])
         methodForLog = "invalid"
         statusCode = 400
         return (400, makeRPCError(id: nil, code: -32600, message: "Invalid Request"))
@@ -2102,7 +2233,7 @@ public final class MCPServerService {
         return (400, makeRPCError(id: id, code: -32601, message: "Method not found"))
       }
     } catch {
-      await telemetryProvider.error(error, context: "RPC handling failed")
+      await telemetryProvider.error(error, context: "RPC handling failed", metadata: [:])
       statusCode = 500
       return (500, makeRPCError(id: nil, code: -32603, message: error.localizedDescription))
     }
@@ -2110,7 +2241,7 @@ public final class MCPServerService {
 
   private func handleToolCall(id: Any?, params: [String: Any]?) async -> (Int, Data) {
     guard let params, let name = params["name"] as? String else {
-      await telemetryProvider.warning("Invalid tool call params")
+      await telemetryProvider.warning("Invalid tool call params", metadata: [:])
       return (400, makeRPCError(id: id, code: -32602, message: "Invalid params"))
     }
 
@@ -2185,6 +2316,18 @@ public final class MCPServerService {
     case "rag.ui.status":
       return await handleRagUIStatus(id: id)
 
+    case "rag.skills.list":
+      return handleRagSkillsList(id: id, arguments: arguments)
+
+    case "rag.skills.add":
+      return handleRagSkillsAdd(id: id, arguments: arguments)
+
+    case "rag.skills.update":
+      return handleRagSkillsUpdate(id: id, arguments: arguments)
+
+    case "rag.skills.delete":
+      return handleRagSkillsDelete(id: id, arguments: arguments)
+
     case "templates.list":
       let templates = templateList()
       return (200, makeRPCResult(id: id, result: ["templates": templates]))
@@ -2215,6 +2358,9 @@ public final class MCPServerService {
 
     case "chains.resume":
       return await handleChainResume(id: id, arguments: arguments)
+
+    case "chains.instruct":
+      return await handleChainInstruct(id: id, arguments: arguments)
 
     case "chains.step":
       return await handleChainStep(id: id, arguments: arguments)
@@ -2303,6 +2449,15 @@ public final class MCPServerService {
 
     case "parallel.merge":
       return await handleParallelMerge(id: id, arguments: arguments)
+
+    case "parallel.pause":
+      return await handleParallelPause(id: id, arguments: arguments)
+
+    case "parallel.resume":
+      return await handleParallelResume(id: id, arguments: arguments)
+
+    case "parallel.instruct":
+      return handleParallelInstruct(id: id, arguments: arguments)
 
     case "parallel.cancel":
       return await handleParallelCancel(id: id, arguments: arguments)
@@ -2802,7 +2957,22 @@ public final class MCPServerService {
     }
 
     guard let run = runner.getRun(id: runId) else {
-      return (404, makeRPCError(id: id, code: -32004, message: "Run not found"))
+      await telemetryProvider.warning("Parallel run not found", metadata: [
+        "runId": runIdString,
+        "knownRunCount": "\(runner.runs.count)"
+      ])
+      let knownRuns = runner.runs.map { encodeParallelRun($0) }
+      return (404, makeRPCError(
+        id: id,
+        code: -32004,
+        message: "Run not found",
+        data: [
+          "runId": runIdString,
+          "knownRunCount": runner.runs.count,
+          "knownRuns": knownRuns,
+          "hint": "Run not found. The app may have restarted or the run was removed. Use parallel.list to refresh."
+        ]
+      ))
     }
 
     await telemetryProvider.info("Starting parallel run", metadata: ["runId": runId.uuidString])
@@ -2816,7 +2986,7 @@ public final class MCPServerService {
           "status": run.status.displayName
         ])
       } catch {
-        await telemetryProvider.error(error, context: "Parallel run failed")
+        await telemetryProvider.error(error, context: "Parallel run failed", metadata: [:])
       }
     }
 
@@ -2837,7 +3007,22 @@ public final class MCPServerService {
     }
 
     guard let run = runner.getRun(id: runId) else {
-      return (404, makeRPCError(id: id, code: -32004, message: "Run not found"))
+      Task { await telemetryProvider.warning("Parallel run not found", metadata: [
+        "runId": runIdString,
+        "knownRunCount": "\(runner.runs.count)"
+      ]) }
+      let knownRuns = runner.runs.map { encodeParallelRun($0) }
+      return (404, makeRPCError(
+        id: id,
+        code: -32004,
+        message: "Run not found",
+        data: [
+          "runId": runIdString,
+          "knownRunCount": runner.runs.count,
+          "knownRuns": knownRuns,
+          "hint": "Run not found. The app may have restarted or the run was removed. Use parallel.list to refresh."
+        ]
+      ))
     }
 
     return (200, makeRPCResult(id: id, result: encodeParallelRun(run, includeDetails: true)))
@@ -2873,7 +3058,42 @@ public final class MCPServerService {
     }
 
     guard let run = runner.getRun(id: runId) else {
-      return (404, makeRPCError(id: id, code: -32004, message: "Run not found"))
+      let snapshot = dataService?.getLatestParallelRunSnapshot(runId: runIdString)
+      let snapshotPayload: [String: Any]? = snapshot.map { record in
+        [
+          "runId": record.runId,
+          "name": record.name,
+          "projectPath": record.projectPath,
+          "baseBranch": record.baseBranch,
+          "targetBranch": record.targetBranch as Any,
+          "templateName": record.templateName as Any,
+          "status": record.status,
+          "progress": record.progress,
+          "executionCount": record.executionCount,
+          "pendingReviewCount": record.pendingReviewCount,
+          "readyToMergeCount": record.readyToMergeCount,
+          "mergedCount": record.mergedCount,
+          "failedCount": record.failedCount,
+          "hungCount": record.hungCount,
+          "requireReviewGate": record.requireReviewGate,
+          "autoMergeOnApproval": record.autoMergeOnApproval,
+          "guidanceCount": record.operatorGuidanceCount,
+          "createdAt": record.createdAt.iso8601,
+          "updatedAt": record.updatedAt.iso8601,
+          "lastUpdatedAt": record.lastUpdatedAt?.iso8601 as Any,
+          "executions": record.executionsJSON
+        ]
+      }
+      return (404, makeRPCError(
+        id: id,
+        code: -32004,
+        message: "Run not found",
+        data: [
+          "runId": runIdString,
+          "snapshot": snapshotPayload as Any,
+          "hint": "Run not found. The app may have restarted or the run was removed. Use parallel.list to refresh."
+        ]
+      ))
     }
 
     let approveAll = arguments["approveAll"] as? Bool ?? false
@@ -3026,6 +3246,75 @@ public final class MCPServerService {
     }
   }
 
+  private func handleParallelPause(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let runner = parallelWorktreeRunner else {
+      return (500, makeRPCError(id: id, code: -32001, message: "Parallel worktree runner not initialized"))
+    }
+
+    guard let runIdString = arguments["runId"] as? String,
+          let runId = UUID(uuidString: runIdString) else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing or invalid runId"))
+    }
+
+    guard let run = runner.getRun(id: runId) else {
+      return (404, makeRPCError(id: id, code: -32004, message: "Run not found"))
+    }
+
+    await runner.pauseRun(run)
+    await telemetryProvider.info("Parallel run paused", metadata: ["runId": runId.uuidString])
+    return (200, makeRPCResult(id: id, result: ["runId": runId.uuidString, "paused": true]))
+  }
+
+  private func handleParallelResume(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let runner = parallelWorktreeRunner else {
+      return (500, makeRPCError(id: id, code: -32001, message: "Parallel worktree runner not initialized"))
+    }
+
+    guard let runIdString = arguments["runId"] as? String,
+          let runId = UUID(uuidString: runIdString) else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing or invalid runId"))
+    }
+
+    guard let run = runner.getRun(id: runId) else {
+      return (404, makeRPCError(id: id, code: -32004, message: "Run not found"))
+    }
+
+    await runner.resumeRun(run)
+    await telemetryProvider.info("Parallel run resumed", metadata: ["runId": runId.uuidString])
+    return (200, makeRPCResult(id: id, result: ["runId": runId.uuidString, "paused": false]))
+  }
+
+  private func handleParallelInstruct(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    guard let runner = parallelWorktreeRunner else {
+      return (500, makeRPCError(id: id, code: -32001, message: "Parallel worktree runner not initialized"))
+    }
+
+    guard let runIdString = arguments["runId"] as? String,
+          let runId = UUID(uuidString: runIdString) else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing or invalid runId"))
+    }
+
+    guard let guidance = arguments["guidance"] as? String else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing guidance"))
+    }
+
+    guard let run = runner.getRun(id: runId) else {
+      return (404, makeRPCError(id: id, code: -32004, message: "Run not found"))
+    }
+
+    var executionId: UUID?
+    if let executionIdString = arguments["executionId"] as? String {
+      executionId = UUID(uuidString: executionIdString)
+    }
+
+    runner.addGuidance(guidance, to: run, executionId: executionId)
+    return (200, makeRPCResult(id: id, result: [
+      "runId": runId.uuidString,
+      "executionId": executionId?.uuidString as Any,
+      "guidanceCount": run.operatorGuidance.count
+    ]))
+  }
+
   private func handleParallelCancel(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
     guard let runner = parallelWorktreeRunner else {
       return (500, makeRPCError(id: id, code: -32001, message: "Parallel worktree runner not initialized"))
@@ -3064,6 +3353,9 @@ public final class MCPServerService {
       "readyToMergeCount": run.readyToMergeCount,
       "mergedCount": run.mergedCount,
       "failedCount": run.failedCount,
+      "hungCount": run.hungExecutionCount,
+      "isPaused": run.isPaused,
+      "guidanceCount": run.operatorGuidance.count,
       "requireReviewGate": run.requireReviewGate,
       "autoMergeOnApproval": run.autoMergeOnApproval,
       "createdAt": formatter.string(from: run.createdAt)
@@ -3091,6 +3383,9 @@ public final class MCPServerService {
     if let completedAt = run.completedAt {
       result["completedAt"] = formatter.string(from: completedAt)
     }
+    if let lastUpdatedAt = run.lastUpdatedAt {
+      result["lastUpdatedAt"] = formatter.string(from: lastUpdatedAt)
+    }
 
     if case .failed(let reason) = run.status {
       result["failureReason"] = reason
@@ -3114,7 +3409,8 @@ public final class MCPServerService {
       "insertions": execution.insertions,
       "deletions": execution.deletions,
       "ragSnippetCount": execution.ragSnippets.count,
-      "mergeConflictCount": execution.mergeConflicts.count
+      "mergeConflictCount": execution.mergeConflicts.count,
+      "guidanceCount": execution.operatorGuidance.count
     ]
 
     if let worktreePath = execution.worktreePath {
@@ -3313,6 +3609,24 @@ public final class MCPServerService {
       "pendingUIAction": lastUIAction?.controlId as Any
     ]
 
+    if let dataService {
+      let repoFilter = localRagRepoPath.trimmingCharacters(in: .whitespacesAndNewlines)
+      let skills = dataService.listRepoGuidanceSkills(
+        repoPath: repoFilter.isEmpty ? nil : repoFilter,
+        includeInactive: true,
+        limit: 20
+      )
+      let activeCount = skills.filter { $0.isActive }.count
+      let inactiveCount = skills.count - activeCount
+      let skillsPayload = skills.prefix(10).map { encodeRepoGuidanceSkill($0, formatter: formatter) }
+      payload["skills"] = [
+        "repoPath": repoFilter.isEmpty ? nil : repoFilter as Any,
+        "activeCount": activeCount,
+        "inactiveCount": inactiveCount,
+        "skills": skillsPayload
+      ]
+    }
+
     if let error = lastRagError {
       payload["error"] = error
     }
@@ -3321,6 +3635,109 @@ public final class MCPServerService {
     }
 
     return (200, makeRPCResult(id: id, result: payload))
+  }
+
+  private func encodeRepoGuidanceSkill(_ skill: RepoGuidanceSkill, formatter: ISO8601DateFormatter) -> [String: Any] {
+    var payload: [String: Any] = [
+      "id": skill.id.uuidString,
+      "repoPath": skill.repoPath,
+      "title": skill.title,
+      "body": skill.body,
+      "source": skill.source,
+      "tags": skill.tags,
+      "priority": skill.priority,
+      "isActive": skill.isActive,
+      "appliedCount": skill.appliedCount,
+      "createdAt": formatter.string(from: skill.createdAt),
+      "updatedAt": formatter.string(from: skill.updatedAt)
+    ]
+    if let lastAppliedAt = skill.lastAppliedAt {
+      payload["lastAppliedAt"] = formatter.string(from: lastAppliedAt)
+    }
+    return payload
+  }
+
+  private func handleRagSkillsList(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    guard let dataService else {
+      return (500, makeRPCError(id: id, code: -32001, message: "Data service not initialized"))
+    }
+    let repoPath = (arguments["repoPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let includeInactive = arguments["includeInactive"] as? Bool ?? false
+    let limit = arguments["limit"] as? Int
+    let formatter = ISO8601DateFormatter()
+    let skills = dataService.listRepoGuidanceSkills(
+      repoPath: repoPath?.isEmpty == false ? repoPath : nil,
+      includeInactive: includeInactive,
+      limit: limit
+    )
+    let payload = skills.map { encodeRepoGuidanceSkill($0, formatter: formatter) }
+    return (200, makeRPCResult(id: id, result: ["skills": payload]))
+  }
+
+  private func handleRagSkillsAdd(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    guard let dataService else {
+      return (500, makeRPCError(id: id, code: -32001, message: "Data service not initialized"))
+    }
+    guard let repoPath = arguments["repoPath"] as? String,
+          let title = arguments["title"] as? String,
+          let body = arguments["body"] as? String else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing repoPath, title, or body"))
+    }
+    let source = arguments["source"] as? String ?? "manual"
+    let tags = arguments["tags"] as? String ?? ""
+    let priority = arguments["priority"] as? Int ?? 0
+    let isActive = arguments["isActive"] as? Bool ?? true
+    let skill = dataService.addRepoGuidanceSkill(
+      repoPath: repoPath,
+      title: title,
+      body: body,
+      source: source,
+      tags: tags,
+      priority: priority,
+      isActive: isActive
+    )
+    let formatter = ISO8601DateFormatter()
+    return (200, makeRPCResult(id: id, result: ["skill": encodeRepoGuidanceSkill(skill, formatter: formatter)]))
+  }
+
+  private func handleRagSkillsUpdate(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    guard let dataService else {
+      return (500, makeRPCError(id: id, code: -32001, message: "Data service not initialized"))
+    }
+    guard let skillIdString = arguments["skillId"] as? String,
+          let skillId = UUID(uuidString: skillIdString) else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing or invalid skillId"))
+    }
+    let skill = dataService.updateRepoGuidanceSkill(
+      id: skillId,
+      repoPath: arguments["repoPath"] as? String,
+      title: arguments["title"] as? String,
+      body: arguments["body"] as? String,
+      source: arguments["source"] as? String,
+      tags: arguments["tags"] as? String,
+      priority: arguments["priority"] as? Int,
+      isActive: arguments["isActive"] as? Bool
+    )
+    guard let skill else {
+      return (404, makeRPCError(id: id, code: -32004, message: "Skill not found"))
+    }
+    let formatter = ISO8601DateFormatter()
+    return (200, makeRPCResult(id: id, result: ["skill": encodeRepoGuidanceSkill(skill, formatter: formatter)]))
+  }
+
+  private func handleRagSkillsDelete(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    guard let dataService else {
+      return (500, makeRPCError(id: id, code: -32001, message: "Data service not initialized"))
+    }
+    guard let skillIdString = arguments["skillId"] as? String,
+          let skillId = UUID(uuidString: skillIdString) else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing or invalid skillId"))
+    }
+    let deleted = dataService.deleteRepoGuidanceSkill(id: skillId)
+    if !deleted {
+      return (404, makeRPCError(id: id, code: -32004, message: "Skill not found"))
+    }
+    return (200, makeRPCResult(id: id, result: ["deleted": skillId.uuidString]))
   }
 
   private func encodeJSON<T: Encodable>(_ value: T) -> [String: Any] {
@@ -3514,7 +3931,7 @@ public final class MCPServerService {
 
   private func handleChainRun(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
     guard let prompt = arguments["prompt"] as? String else {
-      await telemetryProvider.warning("chains.run missing prompt")
+      await telemetryProvider.warning("chains.run missing prompt", metadata: [:])
       return (400, makeRPCError(id: id, code: -32602, message: "Missing prompt"))
     }
 
@@ -3589,7 +4006,7 @@ public final class MCPServerService {
         chainWorkspace = workspace
         chainWorkingDirectory = workspace.path.path
       } catch {
-        await telemetryProvider.error(error, context: "Failed to create chain workspace")
+        await telemetryProvider.error(error, context: "Failed to create chain workspace", metadata: [:])
       }
     }
 
@@ -3600,6 +4017,10 @@ public final class MCPServerService {
     }
     if let pauseOnReview {
       chain.pauseOnReview = pauseOnReview
+    }
+    if let repoPath = chainWorkingDirectory,
+       let guidance = await buildRepoGuidance(repoPath: repoPath) {
+      chain.addOperatorGuidance(guidance)
     }
 
     let runOptions = AgentChainRunner.ChainRunOptions(
@@ -3813,7 +4234,7 @@ public final class MCPServerService {
 
   private func handleChainRunBatch(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
     guard let runs = arguments["runs"] as? [[String: Any]], !runs.isEmpty else {
-      await telemetryProvider.warning("chains.runBatch missing runs")
+      await telemetryProvider.warning("chains.runBatch missing runs", metadata: [:])
       return (400, makeRPCError(id: id, code: -32602, message: "Missing runs"))
     }
 
@@ -3945,6 +4366,25 @@ public final class MCPServerService {
     await chainRunner.resume(chainId: chain.id)
     await telemetryProvider.info("Chain resumed", metadata: ["runId": runId.uuidString])
     return (200, makeRPCResult(id: id, result: ["resumed": runId.uuidString]))
+  }
+
+  private func handleChainInstruct(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let runIdString = arguments["runId"] as? String,
+          let runId = UUID(uuidString: runIdString),
+          let chain = activeRunChains[runId] else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing or invalid runId"))
+    }
+
+    guard let guidance = arguments["guidance"] as? String else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing guidance"))
+    }
+
+    chain.addOperatorGuidance(guidance)
+    await telemetryProvider.info("Chain guidance injected", metadata: [
+      "runId": runId.uuidString,
+      "guidanceLength": "\(guidance.count)"
+    ])
+    return (200, makeRPCResult(id: id, result: ["runId": runId.uuidString, "guidanceCount": chain.operatorGuidance.count]))
   }
 
   private func handleChainStep(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
@@ -4473,6 +4913,72 @@ public final class MCPServerService {
         isMutating: false
       ),
       ToolDefinition(
+        name: "rag.skills.list",
+        description: "List repo guidance skills",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": ["type": "string"],
+            "includeInactive": ["type": "boolean"],
+            "limit": ["type": "integer"]
+          ]
+        ],
+        category: .rag,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "rag.skills.add",
+        description: "Add a repo guidance skill",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": ["type": "string"],
+            "title": ["type": "string"],
+            "body": ["type": "string"],
+            "source": ["type": "string"],
+            "tags": ["type": "string"],
+            "priority": ["type": "integer"],
+            "isActive": ["type": "boolean"]
+          ],
+          "required": ["repoPath", "title", "body"]
+        ],
+        category: .rag,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "rag.skills.update",
+        description: "Update a repo guidance skill",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "skillId": ["type": "string"],
+            "repoPath": ["type": "string"],
+            "title": ["type": "string"],
+            "body": ["type": "string"],
+            "source": ["type": "string"],
+            "tags": ["type": "string"],
+            "priority": ["type": "integer"],
+            "isActive": ["type": "boolean"]
+          ],
+          "required": ["skillId"]
+        ],
+        category: .rag,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "rag.skills.delete",
+        description: "Delete a repo guidance skill",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "skillId": ["type": "string"]
+          ],
+          "required": ["skillId"]
+        ],
+        category: .rag,
+        isMutating: true
+      ),
+      ToolDefinition(
         name: "templates.list",
         description: "List available chain templates",
         inputSchema: [
@@ -4650,6 +5156,20 @@ public final class MCPServerService {
             "runId": ["type": "string"]
           ],
           "required": ["runId"]
+        ],
+        category: .chains,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "chains.instruct",
+        description: "Inject operator guidance into a running chain",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"],
+            "guidance": ["type": "string"]
+          ],
+          "required": ["runId", "guidance"]
         ],
         category: .chains,
         isMutating: true
@@ -5007,6 +5527,47 @@ public final class MCPServerService {
         isMutating: true
       ),
       ToolDefinition(
+        name: "parallel.pause",
+        description: "Pause a parallel run (halts new executions and pauses active chains)",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"]
+          ],
+          "required": ["runId"]
+        ],
+        category: .parallelWorktrees,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "parallel.resume",
+        description: "Resume a paused parallel run",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"]
+          ],
+          "required": ["runId"]
+        ],
+        category: .parallelWorktrees,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "parallel.instruct",
+        description: "Inject operator guidance into a parallel run or execution",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"],
+            "executionId": ["type": "string"],
+            "guidance": ["type": "string"]
+          ],
+          "required": ["runId", "guidance"]
+        ],
+        category: .parallelWorktrees,
+        isMutating: true
+      ),
+      ToolDefinition(
         name: "parallel.cancel",
         description: "Cancel a parallel worktree run",
         inputSchema: [
@@ -5146,11 +5707,15 @@ public final class MCPServerService {
     return (try? JSONSerialization.data(withJSONObject: payload, options: [])) ?? Data()
   }
 
-  private func makeRPCError(id: Any?, code: Int, message: String) -> Data {
+  private func makeRPCError(id: Any?, code: Int, message: String, data: [String: Any]? = nil) -> Data {
+    var errorPayload: [String: Any] = ["code": code, "message": message]
+    if let data {
+      errorPayload["data"] = data
+    }
     let payload: [String: Any] = [
       "jsonrpc": "2.0",
       "id": id as Any,
-      "error": ["code": code, "message": message]
+      "error": errorPayload
     ]
     return (try? JSONSerialization.data(withJSONObject: payload, options: [])) ?? Data()
   }

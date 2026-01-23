@@ -281,3 +281,121 @@ final class MCPRunResultRecord {
     self.createdAt = createdAt
   }
 }
+
+/// Snapshot of a parallel worktree run (device-local)
+@Model
+final class ParallelRunSnapshot {
+  var id: UUID = UUID()
+  var runId: String = ""
+  var name: String = ""
+  var projectPath: String = ""
+  var baseBranch: String = ""
+  var targetBranch: String?
+  var templateName: String?
+  var status: String = ""
+  var progress: Double = 0
+  var executionCount: Int = 0
+  var pendingReviewCount: Int = 0
+  var readyToMergeCount: Int = 0
+  var mergedCount: Int = 0
+  var failedCount: Int = 0
+  var hungCount: Int = 0
+  var requireReviewGate: Bool = true
+  var autoMergeOnApproval: Bool = false
+  var operatorGuidanceCount: Int = 0
+  var executionsJSON: String = ""
+  var createdAt: Date = Date()
+  var updatedAt: Date = Date()
+  var lastUpdatedAt: Date?
+
+  init(
+    runId: String,
+    name: String,
+    projectPath: String,
+    baseBranch: String,
+    targetBranch: String? = nil,
+    templateName: String? = nil,
+    status: String,
+    progress: Double,
+    executionCount: Int,
+    pendingReviewCount: Int,
+    readyToMergeCount: Int,
+    mergedCount: Int,
+    failedCount: Int,
+    hungCount: Int,
+    requireReviewGate: Bool,
+    autoMergeOnApproval: Bool,
+    operatorGuidanceCount: Int,
+    executionsJSON: String,
+    createdAt: Date = Date(),
+    updatedAt: Date = Date(),
+    lastUpdatedAt: Date? = nil
+  ) {
+    self.id = UUID()
+    self.runId = runId
+    self.name = name
+    self.projectPath = projectPath
+    self.baseBranch = baseBranch
+    self.targetBranch = targetBranch
+    self.templateName = templateName
+    self.status = status
+    self.progress = progress
+    self.executionCount = executionCount
+    self.pendingReviewCount = pendingReviewCount
+    self.readyToMergeCount = readyToMergeCount
+    self.mergedCount = mergedCount
+    self.failedCount = failedCount
+    self.hungCount = hungCount
+    self.requireReviewGate = requireReviewGate
+    self.autoMergeOnApproval = autoMergeOnApproval
+    self.operatorGuidanceCount = operatorGuidanceCount
+    self.executionsJSON = executionsJSON
+    self.createdAt = createdAt
+    self.updatedAt = updatedAt
+    self.lastUpdatedAt = lastUpdatedAt
+  }
+}
+
+/// Repo-scoped guidance skill (device-local)
+@Model
+final class RepoGuidanceSkill {
+  var id: UUID = UUID()
+  var repoPath: String = ""
+  var title: String = ""
+  var body: String = ""
+  var source: String = "manual"
+  var tags: String = ""
+  var priority: Int = 0
+  var isActive: Bool = true
+  var appliedCount: Int = 0
+  var createdAt: Date = Date()
+  var updatedAt: Date = Date()
+  var lastAppliedAt: Date?
+
+  init(
+    repoPath: String,
+    title: String,
+    body: String,
+    source: String = "manual",
+    tags: String = "",
+    priority: Int = 0,
+    isActive: Bool = true,
+    appliedCount: Int = 0,
+    createdAt: Date = Date(),
+    updatedAt: Date = Date(),
+    lastAppliedAt: Date? = nil
+  ) {
+    self.id = UUID()
+    self.repoPath = repoPath
+    self.title = title
+    self.body = body
+    self.source = source
+    self.tags = tags
+    self.priority = priority
+    self.isActive = isActive
+    self.appliedCount = appliedCount
+    self.createdAt = createdAt
+    self.updatedAt = updatedAt
+    self.lastAppliedAt = lastAppliedAt
+  }
+}

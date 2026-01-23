@@ -82,7 +82,14 @@ final class ParallelWorktreeExecution: Identifiable, @unchecked Sendable {
   let task: WorktreeTask
   var worktreePath: String?
   var branchName: String?
-  var status: ParallelWorktreeStatus = .pending
+  var chainId: UUID?
+  var status: ParallelWorktreeStatus = .pending {
+    didSet {
+      guard oldValue != status else { return }
+      lastStatusChangeAt = Date()
+    }
+  }
+  var lastStatusChangeAt: Date = Date()
   var startedAt: Date?
   var completedAt: Date?
   var output: String = ""
@@ -92,6 +99,7 @@ final class ParallelWorktreeExecution: Identifiable, @unchecked Sendable {
   var deletions: Int = 0
   var mergeConflicts: [String] = []
   var ragSnippets: [RAGSnippet] = []
+  var operatorGuidance: [String] = []
   
   /// RAG snippet injected into the prompt
   struct RAGSnippet: Identifiable, Sendable {
@@ -136,6 +144,8 @@ final class ParallelWorktreeRun: Identifiable, @unchecked Sendable, Hashable {
   var status: RunStatus = .pending
   var requireReviewGate: Bool = true
   var autoMergeOnApproval: Bool = false
+  var isPaused: Bool = false
+  var operatorGuidance: [String] = []
   
   enum RunStatus: Sendable, Equatable {
     case pending
@@ -195,6 +205,27 @@ final class ParallelWorktreeRun: Identifiable, @unchecked Sendable, Hashable {
     }.count
     return Double(completed) / Double(executions.count)
   }
+
+  static let hungThreshold: TimeInterval = 15 * 60
+
+  var lastUpdatedAt: Date? {
+    executions.map(\.lastStatusChangeAt).max()
+  }
+
+  var hungExecutionCount: Int {
+    executions.filter { execution in
+      switch execution.status {
+      case .running, .creatingWorktree:
+        return Date().timeIntervalSince(execution.lastStatusChangeAt) > Self.hungThreshold
+      default:
+        return false
+      }
+    }.count
+  }
+
+  var hasHungExecutions: Bool {
+    hungExecutionCount > 0
+  }
   
   var pendingReviewCount: Int {
     executions.filter { $0.status == .awaitingReview }.count
@@ -219,6 +250,56 @@ final class ParallelWorktreeRun: Identifiable, @unchecked Sendable, Hashable {
 @MainActor
 @Observable
 final class ParallelWorktreeRunner {
+  private actor ParallelRunGate {
+    enum Mode {
+      case running
+      case paused
+      case step
+    }
+
+    private var mode: Mode = .running
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func waitIfPaused() async {
+      switch mode {
+      case .running:
+        return
+      case .step:
+        mode = .paused
+        return
+      case .paused:
+        await withCheckedContinuation { continuation in
+          self.continuation = continuation
+        }
+        if mode == .step {
+          mode = .paused
+        }
+      }
+    }
+
+    func pause() {
+      mode = .paused
+    }
+
+    func resume() {
+      mode = .running
+      continuation?.resume()
+      continuation = nil
+    }
+
+    func step() {
+      switch mode {
+      case .running:
+        mode = .step
+      case .paused:
+        mode = .step
+        continuation?.resume()
+        continuation = nil
+      case .step:
+        return
+      }
+    }
+  }
   /// All parallel runs managed by this runner
   private(set) var runs: [ParallelWorktreeRun] = []
   
@@ -246,6 +327,9 @@ final class ParallelWorktreeRunner {
   
   /// Active tasks for each execution
   private var executionTasks: [UUID: Task<Void, Never>] = [:]
+  private var runGates: [UUID: ParallelRunGate] = [:]
+  private var activeChainIds: [UUID: UUID] = [:]
+  private var dataService: DataService?
   
   init(
     workspaceService: AgentWorkspaceService,
@@ -260,6 +344,10 @@ final class ParallelWorktreeRunner {
   /// Set the RAG store for grounding
   func setRAGStore(_ store: LocalRAGStore) {
     self.ragStore = store
+  }
+
+  func setDataService(_ service: DataService) {
+    dataService = service
   }
   
   // MARK: - Run Management
@@ -294,6 +382,7 @@ final class ParallelWorktreeRunner {
     }
     
     runs.append(run)
+    recordSnapshot(for: run)
     Task {
       await mcpLog.info("Parallel run created", metadata: [
         "runId": run.id.uuidString,
@@ -312,9 +401,16 @@ final class ParallelWorktreeRunner {
     guard run.status == .pending else {
       throw ParallelRunError.invalidState("Run is not in pending state")
     }
-    
+    let gate = ParallelRunGate()
+    runGates[run.id] = gate
+    defer { runGates[run.id] = nil }
     run.status = .running
     run.startedAt = Date()
+    recordSnapshot(for: run)
+    if let guidance = await buildRepoGuidance(repoPath: run.projectPath) {
+      run.operatorGuidance.append(guidance)
+      recordSnapshot(for: run)
+    }
     await mcpLog.info("Parallel run started", metadata: [
       "runId": run.id.uuidString,
       "templateName": run.templateName ?? "",
@@ -352,12 +448,59 @@ final class ParallelWorktreeRunner {
     
     // Update run status based on results
     updateRunStatus(run)
+    recordSnapshot(for: run)
+  }
+
+  func pauseRun(_ run: ParallelWorktreeRun) async {
+    run.isPaused = true
+    if let gate = runGates[run.id] {
+      await gate.pause()
+    }
+    let chainIds: [UUID] = run.executions.compactMap { execution in
+      guard execution.status == .running, let chainId = execution.chainId else { return nil }
+      return chainId
+    }
+    for chainId in chainIds {
+      await chainRunner.pause(chainId: chainId)
+    }
+    recordSnapshot(for: run)
+  }
+
+  func resumeRun(_ run: ParallelWorktreeRun) async {
+    run.isPaused = false
+    if let gate = runGates[run.id] {
+      await gate.resume()
+    }
+    let chainIds: [UUID] = run.executions.compactMap { execution in
+      guard execution.status == .running, let chainId = execution.chainId else { return nil }
+      return chainId
+    }
+    for chainId in chainIds {
+      await chainRunner.resume(chainId: chainId)
+    }
+    recordSnapshot(for: run)
+  }
+
+  func addGuidance(_ guidance: String, to run: ParallelWorktreeRun, executionId: UUID? = nil) {
+    let trimmed = guidance.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return }
+    if let executionId,
+       let execution = run.executions.first(where: { $0.id == executionId }) {
+      execution.operatorGuidance.append(trimmed)
+    } else {
+      run.operatorGuidance.append(trimmed)
+    }
+    recordSnapshot(for: run)
   }
   
   /// Execute a single worktree task
   private func executeWorktree(_ execution: ParallelWorktreeExecution, in run: ParallelWorktreeRun) async {
+    if let gate = runGates[run.id] {
+      await gate.waitIfPaused()
+    }
     execution.status = .creatingWorktree
     execution.startedAt = Date()
+    recordSnapshot(for: run)
 
     await mcpLog.info("Parallel worktree starting", metadata: [
       "runId": run.id.uuidString,
@@ -381,10 +524,11 @@ final class ParallelWorktreeRunner {
       execution.worktreePath = worktreePath
       execution.branchName = branchName
       execution.status = .running
+      recordSnapshot(for: run)
       
       // Build the grounded prompt
       let includeRAG = run.templateName != "Free Review"
-      let groundedPrompt = buildGroundedPrompt(for: execution, includeRAG: includeRAG)
+      let groundedPrompt = buildGroundedPrompt(for: execution, run: run, includeRAG: includeRAG)
       
       // Execute the task (this would integrate with your existing chain runner)
       // For now, we simulate the execution
@@ -392,7 +536,8 @@ final class ParallelWorktreeRunner {
         prompt: groundedPrompt,
         worktreePath: worktreePath,
         task: execution.task,
-        run: run
+        run: run,
+        execution: execution
       )
       
       // Update execution with results
@@ -415,6 +560,7 @@ final class ParallelWorktreeRunner {
       }
       
       execution.completedAt = Date()
+      recordSnapshot(for: run)
 
       await mcpLog.info("Parallel worktree completed", metadata: [
         "runId": run.id.uuidString,
@@ -428,6 +574,7 @@ final class ParallelWorktreeRunner {
     } catch {
       execution.status = .failed(error.localizedDescription)
       execution.completedAt = Date()
+      recordSnapshot(for: run)
       await mcpLog.error(error, context: "Parallel worktree failed", metadata: [
         "runId": run.id.uuidString,
         "executionId": execution.id.uuidString
@@ -455,7 +602,11 @@ final class ParallelWorktreeRunner {
   }
   
   /// Build a prompt grounded with RAG snippets
-  private func buildGroundedPrompt(for execution: ParallelWorktreeExecution, includeRAG: Bool) -> String {
+  private func buildGroundedPrompt(
+    for execution: ParallelWorktreeExecution,
+    run: ParallelWorktreeRun,
+    includeRAG: Bool
+  ) -> String {
     var prompt = execution.task.prompt
 
     if includeRAG, !execution.ragSnippets.isEmpty {
@@ -470,7 +621,78 @@ final class ParallelWorktreeRunner {
       prompt = contextSection + "\n## Task\n\n" + prompt
     }
     
+    let guidance = (run.operatorGuidance + execution.operatorGuidance)
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+    if !guidance.isEmpty {
+      let guidanceBlock = guidance.enumerated()
+        .map { index, entry in "\(index + 1). \(entry)" }
+        .joined(separator: "\n")
+      prompt += "\n\n## Operator Guidance\n\n" + guidanceBlock + "\n"
+    }
+
     return prompt
+  }
+
+  private func buildRepoGuidance(repoPath: String) async -> String? {
+    var sections: [String] = []
+    if let dataService {
+      let skillsBlock = await MainActor.run {
+        dataService.repoGuidanceSkillsBlock(repoPath: repoPath)
+      }
+      if let (block, skills) = skillsBlock {
+        sections.append(block)
+        await MainActor.run {
+          dataService.markRepoGuidanceSkillsApplied(skills)
+        }
+      }
+    }
+    guard let ragStore else {
+      return sections.isEmpty ? nil : sections.joined(separator: "\n\n")
+    }
+    let queries = [
+      ".rubocop.yml",
+      "rubocop",
+      ".eslintrc",
+      "eslint",
+      "ruff",
+      "flake8",
+      "pyproject.toml lint",
+      "swiftlint",
+      "prettier",
+      "style guide",
+      "lint"
+    ]
+    var snippets: [LocalRAGSearchResult] = []
+    for query in queries {
+      do {
+        let results = try await ragStore.search(query: query, repoPath: repoPath, limit: 2)
+        snippets.append(contentsOf: results)
+      } catch {
+        await mcpLog.warning("Repo guidance search failed", metadata: [
+          "query": query,
+          "error": error.localizedDescription
+        ])
+      }
+    }
+
+    let unique = Dictionary(grouping: snippets, by: { $0.filePath })
+      .compactMap { $0.value.first }
+      .prefix(4)
+    if !unique.isEmpty {
+      let guidance = unique.map { result in
+        let header = "- Follow repo lint/style rules in \(result.filePath)"
+        let snippet = result.snippet
+          .split(separator: "\n")
+          .prefix(8)
+          .joined(separator: "\n")
+        return "\(header)\n\n\(snippet)"
+      }.joined(separator: "\n\n")
+      sections.append("## Repo Guidance\n\n\(guidance)")
+    }
+
+    guard !sections.isEmpty else { return nil }
+    return sections.joined(separator: "\n\n")
   }
   
   /// Ground tasks with RAG snippets
@@ -509,7 +731,8 @@ final class ParallelWorktreeRunner {
     prompt: String,
     worktreePath: String,
     task: WorktreeTask,
-    run: ParallelWorktreeRun
+    run: ParallelWorktreeRun,
+    execution: ParallelWorktreeExecution
   ) async -> TaskExecutionResult {
     let template = preferredTemplate(for: run)
     let maxAttempts = 2
@@ -519,6 +742,11 @@ final class ParallelWorktreeRunner {
 
     while attempt <= maxAttempts {
       let chain = makeChain(from: template, workingDirectory: worktreePath, taskTitle: task.title)
+      if let gate = runGates[run.id] {
+        await gate.waitIfPaused()
+      }
+      execution.chainId = chain.id
+      activeChainIds[execution.id] = chain.id
 
       #if os(macOS)
       let validationConfig = template?.validationConfig
@@ -554,6 +782,7 @@ final class ParallelWorktreeRunner {
       }
 
       await cleanupChain(chain)
+      activeChainIds.removeValue(forKey: execution.id)
       break
     }
 
@@ -581,6 +810,10 @@ final class ParallelWorktreeRunner {
       deletions: diffStats.deletions,
       mergeConflicts: lastSummary?.mergeConflicts ?? []
     )
+  }
+
+  private func recordSnapshot(for run: ParallelWorktreeRun) {
+    dataService?.recordParallelRunSnapshot(run: run)
   }
 
   private func preferredTemplate(for run: ParallelWorktreeRun) -> ChainTemplate? {
@@ -846,6 +1079,7 @@ final class ParallelWorktreeRunner {
   /// Cancel a run
   func cancelRun(_ run: ParallelWorktreeRun) async {
     run.status = .cancelled
+    recordSnapshot(for: run)
     
     // Cancel all pending executions
     for execution in run.executions {
@@ -867,6 +1101,7 @@ final class ParallelWorktreeRunner {
     }
     
     run.completedAt = Date()
+    recordSnapshot(for: run)
   }
   
   /// Remove a completed run

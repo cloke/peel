@@ -6,8 +6,8 @@ tags:
   - peel
   - agent-orchestration
   - mcp
-updated: 2026-01-22
-last_health_check: 2026-01-22
+updated: 2026-01-23
+last_health_check: 2026-01-23
 audience:
   - ai-agent
   - developer
@@ -114,6 +114,24 @@ github_issues:
   - number: 83
     status: open
     title: Cohesive Workspaces/Worktrees navigation
+  - number: 84
+    status: open
+    title: MCP prompt rules + planner selection guardrails
+  - number: 85
+    status: open
+    title: CLI: add safe polling helper for MCP runs
+  - number: 86
+    status: open
+    title: MCP run status: add rejected count
+  - number: 87
+    status: open
+    title: RAG feedback loop for CI failures on MCP-generated PRs
+  - number: 88
+    status: open
+    title: Detect and surface hung MCP executions
+  - number: 89
+    status: open
+    title: parallel.status 404s while UI shows active run
   - number: 75
     status: closed
     title: Local RAG v1 query API + MCP hook
@@ -204,7 +222,7 @@ related_docs:
 | **PII Scrubber (Baseline)** | #8 - CLI + MCP + UI for deterministic scrubbing |
 | **MCP UI Automation** | #66 - Tool registry, permissions, UI actions |
 | **MCP Tool Grouping** | #68 - Grouped toggles for tool categories |
-| **Local RAG (Core)** | #72-75 - SQLite store, scanning, embeddings, search |
+| **Local RAG (Core)** | #72-75 - SQLite store, scanning, embeddings, search + repo guidance skills |
 
 ### 📋 Phase 1C Polish (Closed)
 
@@ -228,8 +246,17 @@ _No open items._
 | Issue | Title | Notes |
 |-------|-------|-------|
 | [#30](https://github.com/cloke/peel/issues/30) | Conflict resolution UI | Merge conflicts |
-| [#39](https://github.com/cloke/peel/issues/39) | Templates gallery | Built-in templates |
 | [#40](https://github.com/cloke/peel/issues/40) | Feedback loop | Watch and retry |
+
+### 📋 MCP Reliability (Open)
+
+| Issue | Title | Notes |
+|-------|-------|-------|
+| [#84](https://github.com/cloke/peel/issues/84) | MCP prompt rules + planner guardrails | Safety defaults |
+| [#85](https://github.com/cloke/peel/issues/85) | CLI safe polling helper | Avoid stale polling |
+| [#86](https://github.com/cloke/peel/issues/86) | MCP run status: rejected count | Status completeness |
+| [#88](https://github.com/cloke/peel/issues/88) | Detect hung MCP executions | Hung detection + logs |
+| [#89](https://github.com/cloke/peel/issues/89) | parallel.status 404s | Recovery + UI warning |
 
 ---
 
@@ -349,6 +376,7 @@ _No open items._
 - Screenshot capture with ScreenCaptureKit integration
 - Cost caps and planner-driven model selection
 - PII scrubber enhancements: config rules, COPY parsing, NER, MCP `pii.scrub` support
+- Repo guidance skills stored locally and injected into chain/parallel prompts
 
 ---
 
@@ -444,6 +472,11 @@ Planner -> splits task -> creates branches
 ### Track G: Documentation (2 issues)
 ```
 31,38
+```
+
+### Track H: MCP Reliability (5 issues)
+```
+84,85,86,88,89
 ```
 - #31 ✅ PII scrubber design document
 - #38 ✅ iOS feature parity audit

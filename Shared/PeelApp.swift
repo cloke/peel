@@ -33,6 +33,8 @@ struct PeelApp: App {
       DeviceSettings.self,
       MCPRunRecord.self,
       MCPRunResultRecord.self,
+      ParallelRunSnapshot.self,
+      RepoGuidanceSkill.self,
     ])
     
     let modelConfiguration = ModelConfiguration(
@@ -320,6 +322,262 @@ final class DataService {
       predicate: #Predicate { $0.chainId == chainId }
     )
     return try? modelContext.fetch(descriptor).first
+  }
+
+  // MARK: - Parallel Run Snapshots
+
+  @discardableResult
+  func recordParallelRunSnapshot(run: ParallelWorktreeRun) -> ParallelRunSnapshot {
+    let snapshot = ParallelRunSnapshot(
+      runId: run.id.uuidString,
+      name: run.name,
+      projectPath: run.projectPath,
+      baseBranch: run.baseBranch,
+      targetBranch: run.targetBranch,
+      templateName: run.templateName,
+      status: run.status.displayName,
+      progress: run.progress,
+      executionCount: run.executions.count,
+      pendingReviewCount: run.pendingReviewCount,
+      readyToMergeCount: run.readyToMergeCount,
+      mergedCount: run.mergedCount,
+      failedCount: run.failedCount,
+      hungCount: run.hungExecutionCount,
+      requireReviewGate: run.requireReviewGate,
+      autoMergeOnApproval: run.autoMergeOnApproval,
+      operatorGuidanceCount: run.operatorGuidance.count,
+      executionsJSON: encodeParallelExecutions(run),
+      createdAt: run.createdAt,
+      updatedAt: Date(),
+      lastUpdatedAt: run.lastUpdatedAt
+    )
+    modelContext.insert(snapshot)
+    cleanupOldParallelRunSnapshots()
+    try? modelContext.save()
+    return snapshot
+  }
+
+  func getLatestParallelRunSnapshot(runId: String) -> ParallelRunSnapshot? {
+    guard !runId.isEmpty else { return nil }
+    let descriptor = FetchDescriptor<ParallelRunSnapshot>(
+      predicate: #Predicate { $0.runId == runId },
+      sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
+    )
+    return try? modelContext.fetch(descriptor).first
+  }
+
+  private func cleanupOldParallelRunSnapshots(keeping limit: Int = 200) {
+    let descriptor = FetchDescriptor<ParallelRunSnapshot>(sortBy: [SortDescriptor(\.updatedAt, order: .reverse)])
+    guard let records = try? modelContext.fetch(descriptor), records.count > limit else {
+      return
+    }
+    for record in records.suffix(from: limit) {
+      modelContext.delete(record)
+    }
+    try? modelContext.save()
+  }
+
+  private func encodeParallelExecutions(_ run: ParallelWorktreeRun) -> String {
+    let formatter = ISO8601DateFormatter()
+    let payload = run.executions.map { execution in
+      var result: [String: Any] = [
+        "id": execution.id.uuidString,
+        "taskTitle": execution.task.title,
+        "taskDescription": execution.task.description,
+        "status": execution.status.displayName,
+        "filesChanged": execution.filesChanged,
+        "insertions": execution.insertions,
+        "deletions": execution.deletions,
+        "mergeConflictCount": execution.mergeConflicts.count,
+        "guidanceCount": execution.operatorGuidance.count
+      ]
+      if let chainId = execution.chainId {
+        result["chainId"] = chainId.uuidString
+      }
+      if let worktreePath = execution.worktreePath {
+        result["worktreePath"] = worktreePath
+      }
+      if let branchName = execution.branchName {
+        result["branchName"] = branchName
+      }
+      result["lastStatusChangeAt"] = formatter.string(from: execution.lastStatusChangeAt)
+      if let startedAt = execution.startedAt {
+        result["startedAt"] = formatter.string(from: startedAt)
+      }
+      if let completedAt = execution.completedAt {
+        result["completedAt"] = formatter.string(from: completedAt)
+      }
+      if !execution.mergeConflicts.isEmpty {
+        result["mergeConflicts"] = execution.mergeConflicts
+      }
+      return result
+    }
+
+    guard let data = try? JSONSerialization.data(withJSONObject: payload, options: []),
+          let json = String(data: data, encoding: .utf8) else {
+      return ""
+    }
+    return json
+  }
+
+  // MARK: - Repo Guidance Skills
+
+  @discardableResult
+  func addRepoGuidanceSkill(
+    repoPath: String,
+    title: String,
+    body: String,
+    source: String = "manual",
+    tags: String = "",
+    priority: Int = 0,
+    isActive: Bool = true
+  ) -> RepoGuidanceSkill {
+    let trimmedRepo = repoPath.trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmedSource = source.trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmedTags = tags.trimmingCharacters(in: .whitespacesAndNewlines)
+    let skill = RepoGuidanceSkill(
+      repoPath: trimmedRepo,
+      title: trimmedTitle.isEmpty ? "Skill" : trimmedTitle,
+      body: trimmedBody,
+      source: trimmedSource.isEmpty ? "manual" : trimmedSource,
+      tags: trimmedTags,
+      priority: priority,
+      isActive: isActive,
+      appliedCount: 0,
+      createdAt: Date(),
+      updatedAt: Date(),
+      lastAppliedAt: nil
+    )
+    modelContext.insert(skill)
+    try? modelContext.save()
+    return skill
+  }
+
+  func updateRepoGuidanceSkill(
+    id: UUID,
+    repoPath: String? = nil,
+    title: String? = nil,
+    body: String? = nil,
+    source: String? = nil,
+    tags: String? = nil,
+    priority: Int? = nil,
+    isActive: Bool? = nil
+  ) -> RepoGuidanceSkill? {
+    let descriptor = FetchDescriptor<RepoGuidanceSkill>(predicate: #Predicate { $0.id == id })
+    guard let skill = try? modelContext.fetch(descriptor).first else { return nil }
+    if let repoPath {
+      let trimmed = repoPath.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !trimmed.isEmpty {
+        skill.repoPath = trimmed
+      }
+    }
+    if let title {
+      let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !trimmed.isEmpty {
+        skill.title = trimmed
+      }
+    }
+    if let body {
+      let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !trimmed.isEmpty {
+        skill.body = trimmed
+      }
+    }
+    if let source {
+      let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !trimmed.isEmpty {
+        skill.source = trimmed
+      }
+    }
+    if let tags {
+      skill.tags = tags.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    if let priority {
+      skill.priority = priority
+    }
+    if let isActive {
+      skill.isActive = isActive
+    }
+    skill.updatedAt = Date()
+    try? modelContext.save()
+    return skill
+  }
+
+  @discardableResult
+  func deleteRepoGuidanceSkill(id: UUID) -> Bool {
+    let descriptor = FetchDescriptor<RepoGuidanceSkill>(predicate: #Predicate { $0.id == id })
+    guard let skill = try? modelContext.fetch(descriptor).first else { return false }
+    modelContext.delete(skill)
+    try? modelContext.save()
+    return true
+  }
+
+  func listRepoGuidanceSkills(
+    repoPath: String? = nil,
+    includeInactive: Bool = false,
+    limit: Int? = nil
+  ) -> [RepoGuidanceSkill] {
+    let trimmedRepo = repoPath?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let predicate: Predicate<RepoGuidanceSkill>?
+    if let trimmedRepo, !trimmedRepo.isEmpty {
+      if includeInactive {
+        predicate = #Predicate { $0.repoPath == trimmedRepo }
+      } else {
+        predicate = #Predicate { $0.repoPath == trimmedRepo && $0.isActive }
+      }
+    } else if includeInactive {
+      predicate = nil
+    } else {
+      predicate = #Predicate { $0.isActive }
+    }
+
+    let sort = [
+      SortDescriptor(\RepoGuidanceSkill.priority, order: .reverse),
+      SortDescriptor(\RepoGuidanceSkill.updatedAt, order: .reverse)
+    ]
+
+    let descriptor: FetchDescriptor<RepoGuidanceSkill>
+    if let predicate {
+      descriptor = FetchDescriptor(predicate: predicate, sortBy: sort)
+    } else {
+      descriptor = FetchDescriptor(sortBy: sort)
+    }
+    if let limit {
+      var limited = descriptor
+      limited.fetchLimit = limit
+      return (try? modelContext.fetch(limited)) ?? []
+    }
+    return (try? modelContext.fetch(descriptor)) ?? []
+  }
+
+  func repoGuidanceSkillsBlock(repoPath: String, limit: Int = 6) -> (String, [RepoGuidanceSkill])? {
+    let skills = listRepoGuidanceSkills(repoPath: repoPath, includeInactive: false, limit: limit)
+    guard !skills.isEmpty else { return nil }
+    let body = skills.enumerated().map { index, skill in
+      let title = skill.title.isEmpty ? "Skill \(index + 1)" : skill.title
+      let tags = skill.tags.trimmingCharacters(in: .whitespacesAndNewlines)
+      let source = skill.source.trimmingCharacters(in: .whitespacesAndNewlines)
+      let meta = [
+        tags.isEmpty ? nil : "Tags: \(tags)",
+        source.isEmpty ? nil : "Source: \(source)"
+      ].compactMap { $0 }.joined(separator: " · ")
+      let metaLine = meta.isEmpty ? "" : "\n\(meta)"
+      return "- \(title)\(metaLine)\n\n\(skill.body)"
+    }.joined(separator: "\n\n")
+    return ("## Repo Skills\n\n\(body)", skills)
+  }
+
+  func markRepoGuidanceSkillsApplied(_ skills: [RepoGuidanceSkill]) {
+    guard !skills.isEmpty else { return }
+    let now = Date()
+    for skill in skills {
+      skill.appliedCount += 1
+      skill.lastAppliedAt = now
+      skill.updatedAt = now
+    }
+    try? modelContext.save()
   }
 
   // MARK: - MCP Run Results

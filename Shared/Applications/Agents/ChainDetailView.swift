@@ -686,7 +686,7 @@ struct ChainDetailView: View {
     let runner = AgentChainRunner(
       agentManager: agentManager,
       cliService: cliService,
-      sessionTracker: sessionTracker
+      telemetryProvider: MCPTelemetryAdapter(sessionTracker: sessionTracker)
     )
     let summary = await runner.runChain(chain, prompt: prompt)
     mergeConflicts = summary.mergeConflicts

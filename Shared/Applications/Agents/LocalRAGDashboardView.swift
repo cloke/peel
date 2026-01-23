@@ -5,6 +5,7 @@
 //  Created on 1/19/26.
 //
 
+import SwiftData
 import SwiftUI
 
 struct LocalRAGDashboardView: View {
@@ -14,12 +15,27 @@ struct LocalRAGDashboardView: View {
   private var query: Binding<String> { $mcpServer.localRagQuery }
   private var searchMode: Binding<MCPServerService.RAGSearchMode> { $mcpServer.localRagSearchMode }
   private var limit: Binding<Int> { $mcpServer.localRagSearchLimit }
+  @Query(sort: [
+    SortDescriptor(\RepoGuidanceSkill.priority, order: .reverse),
+    SortDescriptor(\RepoGuidanceSkill.updatedAt, order: .reverse)
+  ]) private var repoSkills: [RepoGuidanceSkill]
   @State private var isInitializing = false
   @State private var isIndexing = false
   @State private var isSearching = false
   @State private var lastIndexReport: LocalRAGIndexReport?
   @State private var results: [LocalRAGSearchResult] = []
   @State private var errorMessage: String?
+  @State private var skillsRepoFilter: String = ""
+  @State private var includeInactiveSkills = false
+  @State private var selectedSkillId: UUID?
+  @State private var skillRepoPath: String = ""
+  @State private var skillTitle: String = ""
+  @State private var skillBody: String = ""
+  @State private var skillSource: String = "manual"
+  @State private var skillTags: String = ""
+  @State private var skillPriority: Int = 0
+  @State private var skillActive: Bool = true
+  @State private var skillsError: String?
 
   var body: some View {
     ScrollView {
@@ -240,6 +256,137 @@ struct LocalRAGDashboardView: View {
             }
           }
         }
+
+        GroupBox {
+          VStack(alignment: .leading, spacing: LayoutSpacing.item) {
+            SectionHeader("Repo Skills")
+
+            TextField("Filter repo path", text: $skillsRepoFilter)
+              .textFieldStyle(.roundedBorder)
+              .accessibilityIdentifier("agents.localRag.skills.filterPath")
+
+            Toggle("Include inactive skills", isOn: $includeInactiveSkills)
+              .toggleStyle(.switch)
+              .font(.caption)
+              .accessibilityIdentifier("agents.localRag.skills.showInactive")
+
+            HStack(spacing: LayoutSpacing.item) {
+              Button("New Skill") {
+                resetSkillEditor()
+              }
+              .buttonStyle(.bordered)
+              .accessibilityIdentifier("agents.localRag.skills.new")
+
+              Button("Save Skill") {
+                saveSkill()
+              }
+              .buttonStyle(.borderedProminent)
+              .disabled(skillBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+              .accessibilityIdentifier("agents.localRag.skills.save")
+
+              Button("Delete Skill") {
+                deleteSelectedSkill()
+              }
+              .buttonStyle(.bordered)
+              .disabled(selectedSkillId == nil)
+              .accessibilityIdentifier("agents.localRag.skills.delete")
+            }
+
+            if let skillsError {
+              Text(skillsError)
+                .font(.caption)
+                .foregroundStyle(.red)
+            }
+
+            if filteredSkills.isEmpty {
+              Text("No skills yet")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else {
+              VStack(alignment: .leading, spacing: LayoutSpacing.item) {
+                ForEach(filteredSkills) { skill in
+                  Button {
+                    selectSkill(skill)
+                  } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                      HStack {
+                        Text(skill.title.isEmpty ? "Untitled" : skill.title)
+                          .font(.caption)
+                          .foregroundStyle(.primary)
+                        if !skill.isActive {
+                          Text("Inactive")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text("Priority \(skill.priority)")
+                          .font(.caption2)
+                          .foregroundStyle(.secondary)
+                      }
+                      Text(skill.repoPath)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                      if !skill.tags.isEmpty {
+                        Text("Tags: \(skill.tags)")
+                          .font(.caption2)
+                          .foregroundStyle(.secondary)
+                      }
+                      Text("Applied \(skill.appliedCount)×")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    }
+                  }
+                  .buttonStyle(.plain)
+
+                  if skill.id != filteredSkills.last?.id {
+                    Divider()
+                  }
+                }
+              }
+            }
+
+            Divider()
+
+            TextField("Skill repo path", text: $skillRepoPath)
+              .textFieldStyle(.roundedBorder)
+              .accessibilityIdentifier("agents.localRag.skills.repoPath")
+
+            TextField("Title", text: $skillTitle)
+              .textFieldStyle(.roundedBorder)
+              .accessibilityIdentifier("agents.localRag.skills.title")
+
+            HStack(spacing: LayoutSpacing.item) {
+              TextField("Source", text: $skillSource)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("agents.localRag.skills.source")
+
+              TextField("Tags", text: $skillTags)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("agents.localRag.skills.tags")
+            }
+
+            Stepper(value: $skillPriority, in: -5...10) {
+              Text("Priority: \(skillPriority)")
+                .font(.caption)
+            }
+            .accessibilityIdentifier("agents.localRag.skills.priority")
+
+            Toggle("Active", isOn: $skillActive)
+              .toggleStyle(.switch)
+              .font(.caption)
+              .accessibilityIdentifier("agents.localRag.skills.active")
+
+            TextEditor(text: $skillBody)
+              .font(.caption)
+              .frame(minHeight: 140)
+              .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                  .stroke(Color.secondary.opacity(0.3))
+              )
+              .accessibilityIdentifier("agents.localRag.skills.body")
+          }
+        }
       }
       .padding(.horizontal, LayoutSpacing.page)
       .padding(.vertical, LayoutSpacing.section)
@@ -248,6 +395,12 @@ struct LocalRAGDashboardView: View {
     .task {
       if repoPath.wrappedValue.isEmpty {
         repoPath.wrappedValue = mcpServer.agentManager.lastUsedWorkingDirectory ?? ""
+      }
+      if skillsRepoFilter.isEmpty {
+        skillsRepoFilter = repoPath.wrappedValue
+      }
+      if skillRepoPath.isEmpty {
+        skillRepoPath = repoPath.wrappedValue
       }
       await mcpServer.refreshRagSummary()
     }
@@ -266,10 +419,102 @@ struct LocalRAGDashboardView: View {
       case "agents.localRag.search":
         Task { await runSearch() }
         mcpServer.recordUIActionHandled(action.controlId)
+      case "agents.localRag.skills.new":
+        resetSkillEditor()
+        mcpServer.recordUIActionHandled(action.controlId)
+      case "agents.localRag.skills.save":
+        saveSkill()
+        mcpServer.recordUIActionHandled(action.controlId)
+      case "agents.localRag.skills.delete":
+        deleteSelectedSkill()
+        mcpServer.recordUIActionHandled(action.controlId)
       default:
         break
       }
       mcpServer.lastUIAction = nil
+    }
+  }
+
+  private var filteredSkills: [RepoGuidanceSkill] {
+    let filter = skillsRepoFilter.trimmingCharacters(in: .whitespacesAndNewlines)
+    return repoSkills.filter { skill in
+      let matchesRepo = filter.isEmpty ? true : skill.repoPath == filter
+      let matchesActive = includeInactiveSkills ? true : skill.isActive
+      return matchesRepo && matchesActive
+    }
+  }
+
+  private func selectSkill(_ skill: RepoGuidanceSkill) {
+    selectedSkillId = skill.id
+    skillRepoPath = skill.repoPath
+    skillTitle = skill.title
+    skillBody = skill.body
+    skillSource = skill.source
+    skillTags = skill.tags
+    skillPriority = skill.priority
+    skillActive = skill.isActive
+    skillsError = nil
+  }
+
+  private func resetSkillEditor() {
+    selectedSkillId = nil
+    skillRepoPath = skillsRepoFilter.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      ? repoPath.wrappedValue
+      : skillsRepoFilter
+    skillTitle = ""
+    skillBody = ""
+    skillSource = "manual"
+    skillTags = ""
+    skillPriority = 0
+    skillActive = true
+    skillsError = nil
+  }
+
+  private func saveSkill() {
+    let trimmedRepo = skillRepoPath.trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmedBody = skillBody.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedRepo.isEmpty else {
+      skillsError = "Repo path is required"
+      return
+    }
+    guard !trimmedBody.isEmpty else {
+      skillsError = "Skill body is required"
+      return
+    }
+    skillsError = nil
+    if let selectedSkillId,
+       let updated = mcpServer.updateRepoGuidanceSkill(
+        id: selectedSkillId,
+        repoPath: trimmedRepo,
+        title: skillTitle,
+        body: trimmedBody,
+        source: skillSource,
+        tags: skillTags,
+        priority: skillPriority,
+        isActive: skillActive
+       ) {
+      selectedSkillId = updated.id
+    } else if let created = mcpServer.addRepoGuidanceSkill(
+      repoPath: trimmedRepo,
+      title: skillTitle,
+      body: trimmedBody,
+      source: skillSource,
+      tags: skillTags,
+      priority: skillPriority,
+      isActive: skillActive
+    ) {
+      selectedSkillId = created.id
+    } else {
+      skillsError = "Failed to save skill"
+    }
+  }
+
+  private func deleteSelectedSkill() {
+    guard let selectedSkillId else { return }
+    if mcpServer.deleteRepoGuidanceSkill(id: selectedSkillId) {
+      resetSkillEditor()
+    } else {
+      skillsError = "Failed to delete skill"
     }
   }
 
