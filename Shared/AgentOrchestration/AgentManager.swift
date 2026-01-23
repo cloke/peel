@@ -1719,7 +1719,7 @@ public final class MCPServerService {
     }
   }
 
-  public func listRepoGuidanceSkills(
+  func listRepoGuidanceSkills(
     repoPath: String? = nil,
     includeInactive: Bool = false,
     limit: Int? = nil
@@ -1728,7 +1728,7 @@ public final class MCPServerService {
   }
 
   @discardableResult
-  public func addRepoGuidanceSkill(
+  func addRepoGuidanceSkill(
     repoPath: String,
     title: String,
     body: String,
@@ -1749,7 +1749,7 @@ public final class MCPServerService {
   }
 
   @discardableResult
-  public func updateRepoGuidanceSkill(
+  func updateRepoGuidanceSkill(
     id: UUID,
     repoPath: String? = nil,
     title: String? = nil,
@@ -3073,6 +3073,7 @@ public final class MCPServerService {
           "pendingReviewCount": record.pendingReviewCount,
           "readyToMergeCount": record.readyToMergeCount,
           "mergedCount": record.mergedCount,
+          "rejectedCount": record.rejectedCount,
           "failedCount": record.failedCount,
           "hungCount": record.hungCount,
           "requireReviewGate": record.requireReviewGate,
@@ -3352,6 +3353,7 @@ public final class MCPServerService {
       "pendingReviewCount": run.pendingReviewCount,
       "readyToMergeCount": run.readyToMergeCount,
       "mergedCount": run.mergedCount,
+      "rejectedCount": run.rejectedCount,
       "failedCount": run.failedCount,
       "hungCount": run.hungExecutionCount,
       "isPaused": run.isPaused,
