@@ -4,7 +4,7 @@
 
 **Version:** 0.9 (Pre-release)  
 **Platforms:** macOS 26+, iOS 26  
-**Last Updated:** January 21, 2026
+**Last Updated:** January 23, 2026
 
 ---
 
@@ -206,6 +206,16 @@ For higher quality embeddings, install the CodeBERT model:
 
 RAG is automatically used to ground agent prompts with relevant code context.
 
+#### Repo Skills (Learning Defaults)
+
+Peel can store **repo guidance skills** — short, repo-scoped rules derived from your edits and feedback. These skills:
+
+- Live locally on-device (not synced by default)
+- Are injected into chain and parallel prompts
+- Track usage count to inform future defaults
+
+Use the Local RAG dashboard to add, edit, and disable skills. Over time, this lets your development feedback become reusable defaults when shipping.
+
 ---
 
 ### Parallel Worktrees
@@ -257,6 +267,10 @@ Create Run → Start → [Tasks execute in parallel worktrees]
 #### RAG Grounding
 
 Each task automatically receives relevant code snippets from Local RAG based on the task description.
+
+#### Operator Guidance
+
+Parallel runs can be paused and updated mid-flight with additional guidance. The guidance is appended to subsequent prompts.
 
 ---
 
@@ -470,13 +484,18 @@ The MCP server exposes these tool categories via JSON-RPC at `http://127.0.0.1:8
 
 | Tool | Description |
 |------|-------------|
-| `chains.create` | Create a new chain |
-| `chains.start` | Start chain execution |
+| `chains.run` | Run a chain template with a prompt |
+| `chains.run.status` | Get status for a running or queued chain |
+| `chains.run.list` | List recent chain runs |
+| `chains.runBatch` | Run multiple chains |
+| `chains.pause` | Pause a running chain |
+| `chains.resume` | Resume a paused chain |
+| `chains.step` | Step a paused chain to the next agent |
+| `chains.instruct` | Inject operator guidance into a running chain |
+| `chains.queue.status` | Get chain queue status |
+| `chains.queue.configure` | Configure chain queue limits |
+| `chains.queue.cancel` | Cancel a queued chain |
 | `chains.stop` | Stop a running chain |
-| `chains.status` | Get chain status |
-| `chains.list` | List all chains |
-| `chains.approve` | Approve current review gate |
-| `chains.reject` | Reject with feedback |
 
 ### Templates
 
@@ -491,9 +510,15 @@ The MCP server exposes these tool categories via JSON-RPC at `http://127.0.0.1:8
 | Tool | Description |
 |------|-------------|
 | `rag.status` | Get RAG store status |
+| `rag.init` | Initialize the RAG database |
 | `rag.index` | Index a repository |
 | `rag.search` | Search indexed code |
-| `rag.repos` | List indexed repositories |
+| `rag.model.describe` | Describe the embedding model |
+| `rag.ui.status` | Fetch Local RAG dashboard snapshot |
+| `rag.skills.list` | List repo guidance skills |
+| `rag.skills.add` | Add a repo guidance skill |
+| `rag.skills.update` | Update a repo guidance skill |
+| `rag.skills.delete` | Delete a repo guidance skill |
 
 ### Parallel Worktrees
 
@@ -505,7 +530,11 @@ The MCP server exposes these tool categories via JSON-RPC at `http://127.0.0.1:8
 | `parallel.list` | List all runs |
 | `parallel.approve` | Approve execution |
 | `parallel.reject` | Reject execution |
+| `parallel.reviewed` | Mark execution reviewed without approving |
 | `parallel.merge` | Merge approved changes |
+| `parallel.pause` | Pause a parallel run |
+| `parallel.resume` | Resume a paused run |
+| `parallel.instruct` | Inject guidance into a run or execution |
 | `parallel.cancel` | Cancel run |
 
 ### Git
@@ -524,7 +553,10 @@ The MCP server exposes these tool categories via JSON-RPC at `http://127.0.0.1:8
 | `pii.scrub` | Scrub PII from files |
 | `translation.validate` | Validate translations |
 | `ui.navigate` | Navigate app UI |
-| `ui.click` | Trigger UI action |
+| `ui.tap` | Trigger UI action |
+| `ui.setText` | Set text for a control |
+| `ui.toggle` | Toggle a control |
+| `ui.select` | Select a value for a control |
 
 ### Example Request
 

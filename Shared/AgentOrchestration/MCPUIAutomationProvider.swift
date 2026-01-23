@@ -167,7 +167,19 @@ public final class MCPUIAutomationStore: MCPUIAutomationProviding {
         "agents.localRag.mode",
         "agents.localRag.limit",
         "agents.localRag.search",
-        "agents.localRag.useCoreML"
+        "agents.localRag.useCoreML",
+        "agents.localRag.skills.filterPath",
+        "agents.localRag.skills.showInactive",
+        "agents.localRag.skills.new",
+        "agents.localRag.skills.save",
+        "agents.localRag.skills.delete",
+        "agents.localRag.skills.repoPath",
+        "agents.localRag.skills.title",
+        "agents.localRag.skills.source",
+        "agents.localRag.skills.tags",
+        "agents.localRag.skills.priority",
+        "agents.localRag.skills.active",
+        "agents.localRag.skills.body"
       ]
     case "github":
       return [

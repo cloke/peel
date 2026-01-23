@@ -342,7 +342,7 @@ Task:
     let runner = AgentChainRunner(
       agentManager: mcpServer.agentManager,
       cliService: mcpServer.cliService,
-      sessionTracker: mcpServer.sessionTracker
+      telemetryProvider: MCPTelemetryAdapter(sessionTracker: mcpServer.sessionTracker)
     )
     let summary = await runner.runChain(chain, prompt: prompt)
     lastSummary = summary
