@@ -45,16 +45,6 @@ struct AgentsSidebarView: View {
             Label("Running Now", systemImage: "bolt.fill")
               .foregroundStyle(.blue)
           }
-        } else if idleChains.isEmpty {
-          Section {
-            ContentUnavailableView {
-              Label("No Chains Yet", systemImage: "link")
-                .font(.title3)
-            } description: {
-              Text("Use the footer to create a chain.")
-                .font(.caption)
-            }
-          }
         }
 
         if !idleChains.isEmpty {
@@ -75,17 +65,7 @@ struct AgentsSidebarView: View {
           }
         }
 
-        if agentManager.activeAgents.isEmpty && agentManager.idleAgents.isEmpty {
-          Section("Agents") {
-            ContentUnavailableView {
-              Label("No Agents Yet", systemImage: "cpu")
-                .font(.title3)
-            } description: {
-              Text("Use the footer to create an agent.")
-                .font(.caption)
-            }
-          }
-        } else {
+        if !agentManager.activeAgents.isEmpty || !agentManager.idleAgents.isEmpty {
           Section("Agents") {
             ForEach(agentManager.idleAgents) { agent in
               AgentRowView(agent: agent)
