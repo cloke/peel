@@ -62,29 +62,8 @@ struct NewAgentSheet: View {
           }
 
           Section("Model") {
-            Picker("Model", selection: $model) {
-              Section("Free") {
-                ForEach(CopilotModel.allCases.filter { $0.isFree }) { m in
-                  ModelLabelView(model: m).tag(m)
-                }
-              }
-              Section("Claude") {
-                ForEach(CopilotModel.allCases.filter { $0.isClaude }) { m in
-                  ModelLabelView(model: m).tag(m)
-                }
-              }
-              Section("GPT") {
-                ForEach(CopilotModel.allCases.filter { $0.isGPT && !$0.isFree }) { m in
-                  ModelLabelView(model: m).tag(m)
-                }
-              }
-              Section("Gemini") {
-                ForEach(CopilotModel.allCases.filter { $0.isGemini && !$0.isFree }) { m in
-                  ModelLabelView(model: m).tag(m)
-                }
-              }
-            }
-            .accessibilityIdentifier("agents.newAgent.model")
+            CopilotModelPicker(selection: $model)
+              .accessibilityIdentifier("agents.newAgent.model")
           }
         }
 
