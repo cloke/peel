@@ -12,7 +12,6 @@ public struct GitRootView: View {
   @State private var selection: GitDestination?
   @State private var worktreeDetailItem: WorktreeDetailItem?
   @AppStorage("git.selectedBranchName") private var selectedBranchName: String = ""
-  @AppStorage("git.selectedRepoPath") private var selectedRepoPath: String = ""
   @AppStorage("git.selectedSidebarItem") private var selectedSidebarItem: String = ""
   let onOpenInVSCode: ((String) -> Void)?
   
@@ -31,31 +30,16 @@ public struct GitRootView: View {
     NavigationSplitView {
       List(selection: $selection) {
         Section {
-          Menu {
-            ForEach(availableRepoPaths(), id: \.self) { path in
-              Button {
-                selectedRepoPath = path
-              } label: {
-                VStack(alignment: .leading, spacing: 2) {
-                  Text(repoDisplayName(for: path))
-                  Text(path)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-              }
-            }
-          } label: {
-            VStack(alignment: .leading, spacing: 4) {
-              Text(repository.name)
-                .font(.headline)
-              Text(repository.path)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            }
-            .padding(.vertical, 4)
+          VStack(alignment: .leading, spacing: 4) {
+            Text(repository.name)
+              .font(.headline)
+            Text(repository.path)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
+              .truncationMode(.middle)
           }
+          .padding(.vertical, 4)
         }
         Section("Repository") {
           LocalChangesListView()
@@ -171,14 +155,6 @@ public struct GitRootView: View {
     default:
       break
     }
-  }
-
-  private func availableRepoPaths() -> [String] {
-    UserDefaults.standard.stringArray(forKey: "git.availableRepoPaths") ?? []
-  }
-
-  private func repoDisplayName(for path: String) -> String {
-    URL(fileURLWithPath: path).lastPathComponent
   }
 }
 #endif
