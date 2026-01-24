@@ -37,8 +37,6 @@
 //  - Snapshot-rewind for reproducibility
 //
 
-#if os(macOS)
-
 import Foundation
 import Darwin
 @preconcurrency import Virtualization
@@ -2224,4 +2222,3 @@ enum VMError: LocalizedError {
   }
 }
 
-#endif // os(macOS)

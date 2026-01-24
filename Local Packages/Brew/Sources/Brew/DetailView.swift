@@ -9,8 +9,7 @@
 import SwiftUI
 import Observation
 import TaskRunner
-
-#if canImport(AppKit)
+import AppKit
 import Foundation
 
 /// Brew command executor using modern ProcessExecutor actor.
@@ -57,10 +56,6 @@ struct Commands {
     await executor.stream(brewExecutable, arguments: arguments)
   }
 }
-#else
-struct Commands {
-}
-#endif
 
 
 extension DetailView {
@@ -148,7 +143,6 @@ struct DetailView: View {
   var additionalCommand: [String] = []
   
   var body: some View {
-    #if os(macOS)
     VSplitView {
       VStack(spacing: 12) {
         if viewModel.isLoading {
@@ -224,9 +218,6 @@ struct DetailView: View {
     .task(id: name) {
       await viewModel.details(of: name)
     }
-    #else
-    Text("This view is not available on iOS")
-    #endif
   }
 }
 

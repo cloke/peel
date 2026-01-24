@@ -6,8 +6,6 @@
 //
 
 import Foundation
-
-#if os(macOS)
 import AppKit
 import Git
 
@@ -165,4 +163,3 @@ public enum VSCodeError: LocalizedError {
     }
   }
 }
-#endif
