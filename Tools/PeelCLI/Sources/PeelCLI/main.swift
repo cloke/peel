@@ -286,6 +286,8 @@ private func run(options: CLIOptions) async throws {
       "name": "workspaces.agent.cleanup.status",
       "arguments": [:]
     ], port: options.port)
+  case "rag-pattern-check":
+    try await runRagPatternCheck(options: options)
   case "server-stop":
     try await printRPCResult(method: "tools/call", params: [
       "name": "server.stop",
@@ -336,9 +338,66 @@ private func usageText() -> String {
     parallel-status --run-id <uuid>
     workspaces-agent-list [--repo-path <path>]
     workspaces-agent-cleanup-status
+    rag-pattern-check [--repo-path <path>] [--limit <int>]
     server-stop
     app-quit
   """
+}
+
+private func runRagPatternCheck(options: CLIOptions) async throws {
+  let client = MCPClient(port: options.port)
+  let repoPath = options.repoPath
+  let limit = options.limit ?? 5
+
+  let patterns: [(label: String, query: String)] = [
+    ("ObservableObject", "ObservableObject"),
+    ("@Published", "@Published"),
+    ("@StateObject", "@StateObject"),
+    ("@ObservedObject", "@ObservedObject"),
+    ("NavigationView", "NavigationView"),
+    ("Combine import", "import Combine"),
+    ("DispatchQueue.main", "DispatchQueue.main"),
+    ("try!", "try!"),
+    ("DateFormatter alloc", "DateFormatter()")
+  ]
+
+  var totalMatches = 0
+  for pattern in patterns {
+    var arguments: [String: Any] = [
+      "query": pattern.query,
+      "mode": "text",
+      "limit": limit
+    ]
+    if let repoPath { arguments["repoPath"] = repoPath }
+
+    let response = try await client.call(method: "tools/call", params: [
+      "name": "rag.search",
+      "arguments": arguments
+    ])
+
+    let matchCount = extractResultCount(from: response)
+    if matchCount > 0 {
+      totalMatches += matchCount
+      print("- \(pattern.label): \(matchCount) match(es)")
+    }
+  }
+
+  if totalMatches == 0 {
+    print("No pattern matches found.")
+  }
+}
+
+private func extractResultCount(from response: [String: Any]) -> Int {
+  if let result = response["result"] as? [String: Any] {
+    if let inner = result["result"] as? [String: Any],
+       let results = inner["results"] as? [Any] {
+      return results.count
+    }
+    if let results = result["results"] as? [Any] {
+      return results.count
+    }
+  }
+  return 0
 }
 
 private func loadArgumentsJSON(_ path: String?) throws -> [String: Any] {
