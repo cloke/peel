@@ -56,7 +56,6 @@ private struct DiffLineRow: View {
       Text(line.line)
         .font(.body.monospaced())
         .padding(.vertical, 2)
-      Spacer(minLength: 0)
     }
     .padding(.horizontal, 8)
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -129,6 +128,7 @@ public struct DiffView: View {
       .textSelection(.enabled)
       .padding(.top, 4)
     }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .onAppear {
       #if DEBUG
       logger.notice("Diff render appear (files: \(diff.files.count))")
