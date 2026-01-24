@@ -9,6 +9,7 @@
 
 import SwiftUI
 import SwiftData
+import PeelUI
 #if canImport(Github)
 import Github
 #endif
@@ -369,45 +370,20 @@ struct Github_RootView: View {
 struct FavoriteRepositoryDestination: View {
   let favorite: FavoriteRepository
   
-  @State private var repository: Github.Repository?
-  @State private var owner: Github.User?
-  @State private var isLoading = true
-  @State private var error: String?
-  
   var body: some View {
-    Group {
-      if isLoading {
-        ProgressView("Loading repository...")
-      } else if let error {
-        VStack {
-          Text("Failed to load repository")
-            .font(.headline)
-          Text(error)
-            .foregroundStyle(.secondary)
-          Button("Retry") {
-            Task { await loadRepository() }
-          }
-        }
-      } else if let repository, let owner {
-        RepositoryContainerView(organization: owner, repository: repository)
-      }
-    }
-    .task {
-      await loadRepository()
-    }
-  }
-  
-  private func loadRepository() async {
-    isLoading = true
-    error = nil
-    do {
-      async let repoTask = Github.repository(owner: favorite.ownerLogin, name: favorite.repoName)
-      async let ownerTask = Github.user(login: favorite.ownerLogin)
-      (repository, owner) = try await (repoTask, ownerTask)
-    } catch {
-      self.error = error.localizedDescription
-    }
-    isLoading = false
+    AsyncContentView(
+      load: {
+        async let repoTask = Github.repository(owner: favorite.ownerLogin, name: favorite.repoName)
+        async let ownerTask = Github.user(login: favorite.ownerLogin)
+        return try await (repo: repoTask, owner: ownerTask)
+      },
+      isEmpty: { _ in false },
+      content: { data in
+        RepositoryContainerView(organization: data.owner, repository: data.repo)
+      },
+      loadingView: { ProgressView("Loading repository...") },
+      emptyView: { EmptyView() }
+    )
   }
 }
 
