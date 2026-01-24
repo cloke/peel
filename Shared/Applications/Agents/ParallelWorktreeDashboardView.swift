@@ -16,7 +16,7 @@ struct ParallelWorktreeDashboardView: View {
     mcpServer.parallelWorktreeRunner
   }
   
-  @State private var selectedRun: ParallelWorktreeRun?
+  @State private var selectedRunId: UUID?
   @State private var selectedExecution: ParallelWorktreeExecution?
   @State private var showingNewRunSheet = false
   @State private var expandedExecutions: Set<UUID> = []
@@ -51,7 +51,7 @@ struct ParallelWorktreeDashboardView: View {
     .navigationTitle("Parallel Worktrees")
     .sheet(isPresented: $showingNewRunSheet) {
       NewParallelRunSheet(runner: runner) { run in
-        selectedRun = run
+        selectedRunId = run.id
       }
     }
   }
@@ -91,19 +91,30 @@ struct ParallelWorktreeDashboardView: View {
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
       .padding(16)
     } else {
-      List(selection: $selectedRun) {
+      List(selection: $selectedRunId) {
         ForEach(runner.runs) { run in
           ParallelRunRow(run: run)
-            .tag(run)
+            .tag(run.id)
         }
       }
       .listStyle(.plain)
+      .onAppear {
+        if selectedRunId == nil {
+          selectedRunId = runner.runs.first?.id
+        }
+      }
+      .onChange(of: runner.runs.map(\.id)) { _, newIds in
+        if let selectedRunId, newIds.contains(selectedRunId) {
+          return
+        }
+        selectedRunId = newIds.first
+      }
     }
   }
   
   @ViewBuilder
   private func detailContent(runner: ParallelWorktreeRunner) -> some View {
-    if let run = selectedRun {
+    if let selectedRunId, let run = runner.runs.first(where: { $0.id == selectedRunId }) {
       ParallelRunDetailView(
         run: run,
         runner: runner,
@@ -294,42 +305,83 @@ struct ParallelRunDetailView: View {
   @ViewBuilder
   private var runHeader: some View {
     VStack(alignment: .leading, spacing: 8) {
-      HStack {
-        VStack(alignment: .leading) {
-          Text("Project")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-          Text(run.projectPath)
-            .font(.system(.body, design: .monospaced))
+      ViewThatFits(in: .horizontal) {
+        HStack {
+          VStack(alignment: .leading) {
+            Text("Project")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Text(run.projectPath)
+              .font(.system(.body, design: .monospaced))
+              .lineLimit(1)
+              .truncationMode(.middle)
+          }
+          
+          Spacer()
+          
+          VStack(alignment: .trailing) {
+            Text("Base Branch")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Text(run.baseBranch)
+              .font(.system(.body, design: .monospaced))
+          }
         }
         
-        Spacer()
-        
-        VStack(alignment: .trailing) {
-          Text("Base Branch")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-          Text(run.baseBranch)
-            .font(.system(.body, design: .monospaced))
+        VStack(alignment: .leading, spacing: 8) {
+          VStack(alignment: .leading) {
+            Text("Project")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Text(run.projectPath)
+              .font(.system(.body, design: .monospaced))
+              .lineLimit(2)
+              .truncationMode(.middle)
+          }
+          VStack(alignment: .leading) {
+            Text("Base Branch")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Text(run.baseBranch)
+              .font(.system(.body, design: .monospaced))
+          }
         }
       }
       
-      HStack {
-        VStack(alignment: .leading) {
-          Text("Created")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-          Text(run.createdAt, style: .relative)
+      ViewThatFits(in: .horizontal) {
+        HStack {
+          VStack(alignment: .leading) {
+            Text("Created")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Text(run.createdAt, style: .relative)
+          }
+          
+          Spacer()
+          
+          VStack(alignment: .trailing) {
+            Text("Status")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Text(run.status.displayName)
+              .fontWeight(.medium)
+          }
         }
         
-        Spacer()
-        
-        VStack(alignment: .trailing) {
-          Text("Status")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-          Text(run.status.displayName)
-            .fontWeight(.medium)
+        VStack(alignment: .leading, spacing: 8) {
+          VStack(alignment: .leading) {
+            Text("Created")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Text(run.createdAt, style: .relative)
+          }
+          VStack(alignment: .leading) {
+            Text("Status")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Text(run.status.displayName)
+              .fontWeight(.medium)
+          }
         }
       }
     }
@@ -341,7 +393,7 @@ struct ParallelRunDetailView: View {
       Text("Progress")
         .font(.headline)
       
-      HStack(spacing: 24) {
+      LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 16)], spacing: 12) {
         statBox(title: "Total", value: "\(run.executions.count)", color: .primary)
         statBox(title: "Pending Review", value: "\(run.pendingReviewCount)", color: .orange)
         statBox(title: "Ready to Merge", value: "\(run.readyToMergeCount)", color: .green)
@@ -668,8 +720,9 @@ struct ExecutionCard: View {
         .buttonStyle(.bordered)
         
         Button {
-          let url = URL(fileURLWithPath: path)
-          NSWorkspace.shared.open(url)
+          Task {
+            try? await VSCodeService.shared.open(path: path)
+          }
         } label: {
           Label("Open in VS Code", systemImage: "terminal")
         }
