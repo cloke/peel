@@ -186,6 +186,7 @@ struct AgentsSidebarView: View {
               sidebarToken(icon: "square.stack.3d.up", color: .blue, value: parallelWorktreeStatus.totalExecutions)
               sidebarToken(icon: "bolt.fill", color: .mint, value: parallelWorktreeStatus.runningExecutions)
               sidebarToken(icon: "hourglass", color: .orange, value: parallelWorktreeStatus.awaitingReviewExecutions)
+              sidebarToken(icon: "hand.thumbsdown.fill", color: .red, value: parallelWorktreeStatus.rejectedExecutions)
               sidebarToken(icon: "checkmark.circle", color: .green, value: parallelWorktreeStatus.readyToMergeExecutions)
               sidebarToken(icon: "xmark.octagon", color: .red, value: parallelWorktreeStatus.failedExecutions)
               sidebarToken(icon: "exclamationmark.triangle", color: .yellow, value: parallelWorktreeStatus.hungExecutions)
@@ -385,6 +386,7 @@ private struct ParallelWorktreeSummary {
   let totalExecutions: Int
   let runningExecutions: Int
   let awaitingReviewExecutions: Int
+  let rejectedExecutions: Int
   let readyToMergeExecutions: Int
   let failedExecutions: Int
   let hungExecutions: Int
@@ -414,6 +416,7 @@ private struct ParallelWorktreeSummary {
       }.count
     }
     awaitingReviewExecutions = runs.reduce(0) { $0 + $1.pendingReviewCount }
+    rejectedExecutions = runs.reduce(0) { $0 + $1.rejectedCount }
     readyToMergeExecutions = runs.reduce(0) { $0 + $1.readyToMergeCount }
     failedExecutions = runs.reduce(0) { $0 + $1.failedCount }
     hungExecutions = runs.reduce(0) { $0 + $1.hungExecutionCount }
