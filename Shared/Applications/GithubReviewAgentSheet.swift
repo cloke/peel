@@ -7,6 +7,8 @@
 
 import SwiftUI
 import Github
+import PeelUI
+
 struct PRReviewAgentTarget: Identifiable {
   let id: UUID
   let recentPR: RecentPRInfo?
@@ -95,10 +97,10 @@ struct GithubReviewAgentSheet: View {
       ProgressView("Loading PR...")
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     } else if let errorMessage {
-      Text(errorMessage)
-        .font(.caption)
-        .foregroundStyle(.red)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      ErrorView(message: errorMessage) {
+        Task { await loadPRIfNeeded() }
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
     } else {
       ScrollView {
         VStack(alignment: .leading, spacing: 16) {
