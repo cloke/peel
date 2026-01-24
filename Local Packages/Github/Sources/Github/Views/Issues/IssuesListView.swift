@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import PeelUI
 
 struct IssueListItemView: View {
   let issue: Github.Issue
@@ -23,56 +24,36 @@ struct IssueListItemView: View {
 
 struct IssuesListView: View {
   let repository: Github.Repository
-  
-  @State private var issues = [Github.Issue]()
-  @State private var isLoading = true
-  @State private var isShowingCreateIssue = false {
-    didSet {
-      if isShowingCreateIssue == false {
-        Task {
-          try? await loadData()
-        }
-      }
-    }
-  }
-  
-  func loadData() async throws {
-    isLoading = true
-    defer { isLoading = false }
-    issues = try await Github.issues(from: repository)
-  }
+  @State private var showingCreateIssue = false
+  @State private var refreshID = UUID()
   
   var body: some View {
-    VStack {
-      Button {
-        isShowingCreateIssue = true
-      } label: { Label("Create Issue", systemImage: "plus") }
-      if isLoading {
-        ProgressView()
-      } else if !issues.isEmpty {
+    AsyncContentView(
+      load: { try await Github.issues(from: repository) },
+      content: { issues in
         List(issues) { issue in
-          VStack {
-            NavigationLink(destination: IssueDetailView(issue: issue)) {
-              IssueListItemView(issue: issue)
-            }
-            Divider()
+          NavigationLink(destination: IssueDetailView(issue: issue)) {
+            IssueListItemView(issue: issue)
           }
         }
-      } else {
-        Text("No issues found")
+      },
+      emptyView: { EmptyStateView("No Issues", systemImage: "list.bullet") }
+    )
+    .id(refreshID)
+    .toolbar {
+      Button {
+        showingCreateIssue = true
+      } label: {
+        Label("Create Issue", systemImage: "plus")
       }
     }
-    .task(id: repository.id) {
-      try? await loadData()
+    .sheet(isPresented: $showingCreateIssue) {
+      IssueCreateView(showSheet: $showingCreateIssue, repository: repository)
     }
-    .sheet(isPresented: $isShowingCreateIssue, onDismiss: { isShowingCreateIssue = false }) {
-      IssueCreateView(showSheet: $isShowingCreateIssue, repository: repository)
+    .onChange(of: showingCreateIssue) { _, isShowing in
+      if !isShowing {
+        refreshID = UUID()  // Trigger reload when sheet closes
+      }
     }
   }
 }
-
-//struct IssuesLisView_Previews: PreviewProvider {
-//  static var previews: some View {
-//    Text("Hello, World!")
-//  }
-//}
