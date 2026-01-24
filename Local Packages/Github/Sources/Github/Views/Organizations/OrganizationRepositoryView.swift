@@ -1,16 +1,16 @@
 //
 //  OrganizationRepositoryView.swift
-//  OrganizationRepositoryView
+//  Lazy-loading organization repository list
 //
 //  Created by Cory Loken on 7/19/21.
 //
 
+import PeelUI
 import SwiftUI
 
 public struct OrganizationRepositoryView: View {
-  @State var isLoading = true
-  @State var isExpanded = false
-  @State private var repositories = [Github.Repository]()
+  @State private var state: ViewState<[Github.Repository]> = .idle
+  @State private var isExpanded = false
   @AppStorage("github-show-archived") private var showArchivedRepos = false
   
   let organization: Github.User
@@ -21,40 +21,42 @@ public struct OrganizationRepositoryView: View {
   
   public var body: some View {
     DisclosureGroup(isExpanded: $isExpanded) {
-      if isLoading {
+      switch state {
+      case .idle:
+        EmptyView()
+      case .loading:
         ProgressView()
-      }
-      ForEach(repositories) { repository in
-        NavigationLink(
-          destination: RepositoryContainerView(organization: organization, repository: repository),
-          label: { Text(repository.name) }
-        )
+      case .error(let message):
+        Label(message, systemImage: "exclamationmark.triangle")
+          .foregroundStyle(.secondary)
+          .font(.caption)
+      case .loaded(let repositories):
+        ForEach(repositories) { repository in
+          NavigationLink(destination: RepositoryContainerView(organization: organization, repository: repository)) {
+            Text(repository.name)
+          }
+        }
       }
     } label: {
       Text(organization.login ?? "")
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .onTapGesture {
-          withAnimation {
-            isExpanded.toggle()
-          }
-        }
+        .onTapGesture { withAnimation { isExpanded.toggle() } }
     }
-    .onChange(of: isExpanded) { _, newValue in
-      if newValue {
-        Task {
-          let repos = try await Github.loadRepositories(organization: organization.login ?? "")
-          repositories = showArchivedRepos ? repos : repos.filter { $0.archived != true }
-          isLoading = false
-        }
-      }
-      
+    .onChange(of: isExpanded) { _, expanded in
+      guard expanded, case .idle = state else { return }
+      Task { await loadRepositories() }
+    }
+  }
+  
+  private func loadRepositories() async {
+    state = .loading
+    do {
+      let repos = try await Github.loadRepositories(organization: organization.login ?? "")
+      let filtered = showArchivedRepos ? repos : repos.filter { $0.archived != true }
+      state = .loaded(filtered)
+    } catch {
+      state = .error(error.localizedDescription)
     }
   }
 }
-
-//struct OrganizationRepositoryView_Previews: PreviewProvider {
-//  static var previews: some View {
-//    OrganizationRepositoryView(organization: Github.Organization())
-//  }
-//}
