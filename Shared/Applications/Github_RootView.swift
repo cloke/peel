@@ -191,27 +191,15 @@ struct Github_RootView: View {
         syncAutomationSelection()
       }
       #if os(macOS)
-      .onChange(of: mcpServer.lastUIAction?.id) {
-        guard let action = mcpServer.lastUIAction else { return }
-        switch action.controlId {
-        case "github.login":
-          Task { await authorizeAndLoad() }
-          mcpServer.recordUIActionHandled(action.controlId)
-        case "github.refresh":
-          Task { await loadProfile() }
-          mcpServer.recordUIActionHandled(action.controlId)
-        case "github.logout":
-          Task {
-            await Github.reauthorize()
-            hasToken = false
-            viewModel.me = nil
-            organizations = []
-          }
-          mcpServer.recordUIActionHandled(action.controlId)
-        default:
-          break
+      .mcpActions(mcpServer) {
+        MCPActionMapping.async("github.login") { await authorizeAndLoad() }
+        MCPActionMapping.async("github.refresh") { await loadProfile() }
+        MCPActionMapping.async("github.logout") {
+          await Github.reauthorize()
+          hasToken = false
+          viewModel.me = nil
+          organizations = []
         }
-        mcpServer.lastUIAction = nil
       }
       #endif
       } detail: {

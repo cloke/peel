@@ -71,27 +71,15 @@ struct Git_RootView: View {
         syncSelectedRepoFromStorage()
       }
 #if os(macOS)
-      .onChange(of: mcpServer.lastUIAction?.id) {
-        guard let action = mcpServer.lastUIAction else { return }
-        switch action.controlId {
-        case "git.openRepository":
-          addRepository()
-          mcpServer.recordUIActionHandled(action.controlId)
-        case "git.cloneRepository":
-          isCloning = true
-          mcpServer.recordUIActionHandled(action.controlId)
-        case "git.openInVSCode":
+      .mcpActions(mcpServer) {
+        MCPActionMapping("git.openRepository") { addRepository() }
+        MCPActionMapping("git.cloneRepository") { isCloning = true }
+        MCPActionMapping("git.openInVSCode") {
           let path = viewModel.selectedRepository.path
           if !path.isEmpty {
-            Task {
-              try? await VSCodeService.shared.open(path: path)
-            }
-            mcpServer.recordUIActionHandled(action.controlId)
+            Task { try? await VSCodeService.shared.open(path: path) }
           }
-        default:
-          break
         }
-        mcpServer.lastUIAction = nil
       }
 #endif
   }
