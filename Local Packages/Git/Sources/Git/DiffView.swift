@@ -81,58 +81,53 @@ public struct DiffView: View {
   }
   
   public var body: some View {
-    GeometryReader { geometry in
-      ScrollView([.horizontal, .vertical]) {
-        LazyVStack(alignment: .leading, spacing: 0) {
-          Spacer(minLength: 4)
-          ForEach(diff.files) { file in
-            let isExpanded = Binding(
-              get: { expandedFiles.contains(file.id) },
-              set: { newValue in
-                if newValue {
-                  expandedFiles.insert(file.id)
-                } else {
-                  expandedFiles.remove(file.id)
-                }
+    ScrollView([.horizontal, .vertical]) {
+      LazyVStack(alignment: .leading, spacing: 0) {
+        ForEach(diff.files) { file in
+          let isExpanded = Binding(
+            get: { expandedFiles.contains(file.id) },
+            set: { newValue in
+              if newValue {
+                expandedFiles.insert(file.id)
+              } else {
+                expandedFiles.remove(file.id)
               }
-            )
-            VStack(alignment: .leading, spacing: 0) {
-              Button {
-                isExpanded.wrappedValue.toggle()
-              } label: {
-                HStack(spacing: 6) {
-                  Image(systemName: isExpanded.wrappedValue ? "chevron.down" : "chevron.right")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                  Text(file.label)
-                    .font(.headline)
-                    .textSelection(.disabled)
-                  Spacer(minLength: 0)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+            }
+          )
+          VStack(alignment: .leading, spacing: 0) {
+            Button {
+              isExpanded.wrappedValue.toggle()
+            } label: {
+              HStack(spacing: 6) {
+                Image(systemName: isExpanded.wrappedValue ? "chevron.down" : "chevron.right")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+                Text(file.label)
+                  .font(.headline)
+                  .textSelection(.disabled)
+                Spacer(minLength: 0)
               }
-              .buttonStyle(.plain)
+              .padding(.vertical, 4)
+              .padding(.horizontal, 8)
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
 
-              if isExpanded.wrappedValue {
-                ForEach(file.chunks) { chunk in
-                  ChunkHeaderView(text: chunk.chunk)
-                  ForEach(chunk.lines) { line in
-                    DiffLineRow(line: line, showLineNumbers: line.lineNumber != 0)
-                      .background(lineColor(line.status))
-                  }
+            if isExpanded.wrappedValue {
+              ForEach(file.chunks) { chunk in
+                ChunkHeaderView(text: chunk.chunk)
+                ForEach(chunk.lines) { line in
+                  DiffLineRow(line: line, showLineNumbers: line.lineNumber != 0)
+                    .background(lineColor(line.status))
                 }
               }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 4)
           }
         }
-        .textSelection(.enabled)
-        .frame(minWidth: geometry.size.width, minHeight: geometry.size.height, alignment: .topLeading)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
       }
-      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+      .textSelection(.enabled)
+      .padding(.top, 4)
     }
     .onAppear {
       #if DEBUG
