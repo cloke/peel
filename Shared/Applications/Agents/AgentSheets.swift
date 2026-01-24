@@ -36,29 +36,8 @@ struct NewAgentSheet: View {
         // Role and Model picker for Copilot agents
         if type == .copilot {
           Section("Role") {
-            Picker("Role", selection: $role) {
-              ForEach(AgentRole.allCases) { r in
-                Label {
-                  VStack(alignment: .leading) {
-                    Text(r.displayName)
-                    Text(r.description)
-                      .font(.caption)
-                      .foregroundStyle(.secondary)
-                  }
-                } icon: {
-                  Image(systemName: r.iconName)
-                }
-                .tag(r)
-              }
-            }
-            .pickerStyle(.inline)
-            .accessibilityIdentifier("agents.newAgent.role")
-
-            if !role.canWrite {
-              Label("This role cannot edit files", systemImage: "lock.fill")
-                .font(.caption)
-                .foregroundStyle(.orange)
-            }
+            AgentRolePicker(selection: $role)
+              .accessibilityIdentifier("agents.newAgent.role")
           }
 
           Section("Model") {
