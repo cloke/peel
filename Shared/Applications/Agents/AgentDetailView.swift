@@ -61,22 +61,22 @@ struct AgentDetailView: View {
             )) {
               Section("Free") {
                 ForEach(CopilotModel.allCases.filter { $0.isFree }) { m in
-                  Text(m.displayNameWithCost).tag(m)
+                  ModelLabelView(model: m).tag(m)
                 }
               }
               Section("Claude") {
                 ForEach(CopilotModel.allCases.filter { $0.isClaude }) { m in
-                  Text(m.displayNameWithCost).tag(m)
+                  ModelLabelView(model: m).tag(m)
                 }
               }
               Section("GPT") {
                 ForEach(CopilotModel.allCases.filter { $0.isGPT && !$0.isFree }) { m in
-                  Text(m.displayNameWithCost).tag(m)
+                  ModelLabelView(model: m).tag(m)
                 }
               }
               Section("Gemini") {
                 ForEach(CopilotModel.allCases.filter { $0.isGemini && !$0.isFree }) { m in
-                  Text(m.displayNameWithCost).tag(m)
+                  ModelLabelView(model: m).tag(m)
                 }
               }
             }

@@ -35,15 +35,14 @@ public enum CopilotModel: String, Codable, CaseIterable, Identifiable, Sendable 
     metadata.displayName
   }
   
-  /// Display name with premium cost (right-aligned)
+  /// Cost label for UI formatting
+  public var costLabel: String {
+    premiumCost == 0 ? "Free" : premiumCost.premiumMultiplierString()
+  }
+
+  /// Display name with premium cost
   public var displayNameWithCost: String {
-    let costStr: String
-    if premiumCost == 0 {
-      costStr = "Free"
-    } else {
-      costStr = premiumCost.premiumMultiplierString()
-    }
-    return "\(displayName) · \(costStr)"
+    "\(displayName) · \(costLabel)"
   }
   
   /// Premium requests cost per use (0 = free tier)

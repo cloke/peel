@@ -176,17 +176,17 @@ struct NewChainSheet: View {
             Picker("Model", selection: $agent1Model) {
               Section("Free") {
                 ForEach(CopilotModel.allCases.filter { $0.isFree }) { m in
-                  Text(m.displayNameWithCost).tag(m)
+                  ModelLabelView(model: m).tag(m)
                 }
               }
               Section("Claude") {
                 ForEach(CopilotModel.allCases.filter { $0.isClaude }) { m in
-                  Text(m.displayNameWithCost).tag(m)
+                  ModelLabelView(model: m).tag(m)
                 }
               }
               Section("GPT") {
                 ForEach(CopilotModel.allCases.filter { $0.isGPT && !$0.isFree }) { m in
-                  Text(m.displayNameWithCost).tag(m)
+                  ModelLabelView(model: m).tag(m)
                 }
               }
             }
@@ -217,17 +217,17 @@ struct NewChainSheet: View {
             Picker("Model", selection: $agent2Model) {
               Section("Free") {
                 ForEach(CopilotModel.allCases.filter { $0.isFree }) { m in
-                  Text(m.displayNameWithCost).tag(m)
+                  ModelLabelView(model: m).tag(m)
                 }
               }
               Section("Claude") {
                 ForEach(CopilotModel.allCases.filter { $0.isClaude }) { m in
-                  Text(m.displayNameWithCost).tag(m)
+                  ModelLabelView(model: m).tag(m)
                 }
               }
               Section("GPT") {
                 ForEach(CopilotModel.allCases.filter { $0.isGPT && !$0.isFree }) { m in
-                  Text(m.displayNameWithCost).tag(m)
+                  ModelLabelView(model: m).tag(m)
                 }
               }
             }
