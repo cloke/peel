@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import PeelUI
 
 #if os(macOS)
 public struct CreateWorktreeView: View {

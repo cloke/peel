@@ -7,6 +7,7 @@
 
 import SwiftUI
 import OSLog
+import PeelUI
 
 #if os(macOS)
 struct ListItem: Identifiable {
@@ -144,11 +145,7 @@ public struct BranchListView: View {
     } header: {
       Label(label, systemImage: sectionIcon)
     }
-    .alert("Push Failed", isPresented: .constant(pushError != nil)) {
-      Button("OK") { pushError = nil }
-    } message: {
-      Text(pushError ?? "")
-    }
+    .errorAlert("Push Failed", message: $pushError)
     .sheet(isPresented: $isShowing) {
       BranchRepositoryView() { [self] in
         isShowing = false

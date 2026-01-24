@@ -90,11 +90,16 @@ public struct EmptyStateView: View {
 }
 
 /// A view modifier that shows an error alert
-struct ErrorAlertModifier: ViewModifier {
+public struct ErrorAlertModifier: ViewModifier {
   @Binding var errorMessage: String?
   let title: String
   
-  func body(content: Content) -> some View {
+  public init(errorMessage: Binding<String?>, title: String) {
+    self._errorMessage = errorMessage
+    self.title = title
+  }
+  
+  public func body(content: Content) -> some View {
     content
       .alert(title, isPresented: .constant(errorMessage != nil)) {
         Button("OK") { errorMessage = nil }
@@ -104,7 +109,7 @@ struct ErrorAlertModifier: ViewModifier {
   }
 }
 
-extension View {
+public extension View {
   /// Adds an error alert that shows when errorMessage is non-nil
   func errorAlert(_ title: String = "Error", message: Binding<String?>) -> some View {
     modifier(ErrorAlertModifier(errorMessage: message, title: title))
