@@ -387,103 +387,104 @@ struct FavoriteRepositoryDestination: View {
   }
 }
 
+/// Data loaded for a PR detail view
+private struct PRDetails {
+  let pullRequest: Github.PullRequest
+  let repository: Github.Repository
+  let owner: Github.User?
+  let descriptionText: String
+}
+
 /// Loads and displays a recent PR
 struct RecentPRDestination: View {
   @Environment(\.reviewWithAgentProvider) private var reviewWithAgentProvider
   let recentPR: RecentPRInfo
   
-  @State private var isLoading = true
-  @State private var error: String?
-  @State private var pullRequest: Github.PullRequest?
-  @State private var repository: Github.Repository?
-  @State private var owner: Github.User?
-  @State private var descriptionText: String = ""
+  @State private var state: ViewState<PRDetails> = .idle
   @State private var showingReviewLocally = false
   
   var body: some View {
     Group {
-      if isLoading {
+      switch state {
+      case .idle:
+        Color.clear
+          .task { await loadPullRequestDetails() }
+      case .loading:
         ProgressView("Loading PR...")
-      } else if let error {
-        VStack {
-          Text("Failed to load PR")
-            .font(.headline)
-          Text(error)
-            .foregroundStyle(.secondary)
+      case .error(let message):
+        ErrorView(title: "Failed to load PR", message: message) {
+          Task { await loadPullRequestDetails() }
         }
-      } else if let pullRequest, let repository {
-        ScrollView {
-          VStack(alignment: .leading, spacing: 16) {
-            headerView(pullRequest: pullRequest, repository: repository)
-
-            Divider()
-
-            if !descriptionText.isEmpty {
-              VStack(alignment: .leading, spacing: 8) {
-                Text("Description")
-                  .font(.headline)
-                Text(.init(descriptionText))
-                  .font(.body)
-                  .foregroundStyle(.primary)
-              }
-            }
-
-            metadataGrid(pullRequest: pullRequest, repository: repository)
-
-            HStack(spacing: 12) {
-              if let urlString = pullRequest.html_url ?? recentPR.htmlURL,
-                 let url = URL(string: urlString) {
-                Link(destination: url) {
-                  Label("Open in Browser", systemImage: "safari")
-                }
-                .buttonStyle(.borderedProminent)
-              }
-              Button {
-                showingReviewLocally = true
-              } label: {
-                Label("Review Locally", systemImage: "arrow.down.to.line.circle")
-              }
-              .buttonStyle(.bordered)
-              #if !os(macOS)
-              .hidden()
-              #endif
-
-              Button {
-                reviewWithAgentProvider?.reviewWithAgent(pr: pullRequest, repo: repository)
-              } label: {
-                Label("Review with Agent", systemImage: "sparkles")
-              }
-              .buttonStyle(.borderedProminent)
-              .disabled(reviewWithAgentProvider == nil)
-            }
-          }
-          .padding()
-        }
-      } else {
-        Text("PR details unavailable")
-          .foregroundStyle(.secondary)
+      case .loaded(let details):
+        loadedContent(details)
       }
-    }
-    .task {
-      await loadPullRequestDetails()
     }
     #if os(macOS)
     .sheet(isPresented: $showingReviewLocally) {
-      if let pullRequest, let repository {
-        ReviewLocallySheet(pullRequest: pullRequest, repository: repository)
+      if case .loaded(let details) = state {
+        ReviewLocallySheet(pullRequest: details.pullRequest, repository: details.repository)
       }
     }
     #endif
   }
+  
+  @ViewBuilder
+  private func loadedContent(_ details: PRDetails) -> some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 16) {
+        headerView(pullRequest: details.pullRequest, repository: details.repository)
+
+        Divider()
+
+        if !details.descriptionText.isEmpty {
+          VStack(alignment: .leading, spacing: 8) {
+            Text("Description")
+              .font(.headline)
+            Text(.init(details.descriptionText))
+              .font(.body)
+              .foregroundStyle(.primary)
+          }
+        }
+
+        metadataGrid(pullRequest: details.pullRequest, repository: details.repository)
+
+        HStack(spacing: 12) {
+          if let urlString = details.pullRequest.html_url ?? recentPR.htmlURL,
+             let url = URL(string: urlString) {
+            Link(destination: url) {
+              Label("Open in Browser", systemImage: "safari")
+            }
+            .buttonStyle(.borderedProminent)
+          }
+          Button {
+            showingReviewLocally = true
+          } label: {
+            Label("Review Locally", systemImage: "arrow.down.to.line.circle")
+          }
+          .buttonStyle(.bordered)
+          #if !os(macOS)
+          .hidden()
+          #endif
+
+          Button {
+            reviewWithAgentProvider?.reviewWithAgent(pr: details.pullRequest, repo: details.repository)
+          } label: {
+            Label("Review with Agent", systemImage: "sparkles")
+          }
+          .buttonStyle(.borderedProminent)
+          .disabled(reviewWithAgentProvider == nil)
+        }
+      }
+      .padding()
+    }
+  }
 
   private func loadPullRequestDetails() async {
-    isLoading = true
-    error = nil
-    defer { isLoading = false }
+    state = .loading
 
     let parts = recentPR.repoFullName.split(separator: "/")
     guard parts.count == 2 else {
-      error = "Invalid repository name"
+      state = .error("Invalid repository name")
       return
     }
 
@@ -494,12 +495,15 @@ struct RecentPRDestination: View {
       async let repoTask = Github.repository(owner: ownerLogin, name: repoName)
       async let prTask = Github.pullRequest(owner: ownerLogin, repository: repoName, number: recentPR.prNumber)
       let (repo, pr) = try await (repoTask, prTask)
-      repository = repo
-      pullRequest = pr
-      owner = pr.base.user ?? repo.owner
-      descriptionText = (pr.body ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+      let details = PRDetails(
+        pullRequest: pr,
+        repository: repo,
+        owner: pr.base.user ?? repo.owner,
+        descriptionText: (pr.body ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+      )
+      state = .loaded(details)
     } catch {
-      self.error = error.localizedDescription
+      state = .error(error.localizedDescription)
     }
   }
 

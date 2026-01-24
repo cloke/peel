@@ -10,6 +10,7 @@
 import SwiftUI
 import AppKit
 import Virtualization
+import PeelUI
 
 /// Dashboard view for VM Isolation status and management
 private enum VMIsolationSection: String, CaseIterable, Identifiable {
@@ -34,7 +35,6 @@ private enum VMIsolationSection: String, CaseIterable, Identifiable {
 struct VMIsolationDashboardView: View {
   @Environment(VMIsolationService.self) private var service
   @State private var errorMessage: String?
-  @State private var showingError = false
   @State private var isDownloading = false
   @State private var missingDependencies: [VMToolDependency] = []
   @State private var showingDependenciesPrompt = false
@@ -75,11 +75,7 @@ struct VMIsolationDashboardView: View {
         showingDependenciesPrompt = true
       }
     }
-    .alert("Error", isPresented: $showingError) {
-      Button("OK") { }
-    } message: {
-      Text(errorMessage ?? "Unknown error")
-    }
+    .errorAlert(message: $errorMessage)
     .alert("Install Dependencies?", isPresented: $showingDependenciesPrompt) {
       Button("Install") {
         Task {
@@ -214,7 +210,6 @@ struct VMIsolationDashboardView: View {
                   try await service.setupLinuxVM()
                 } catch {
                   errorMessage = "Failed to setup Linux VM: \(error.localizedDescription)"
-                  showingError = true
                 }
                 isDownloading = false
               }
@@ -261,7 +256,6 @@ struct VMIsolationDashboardView: View {
                   try await service.downloadMacOSRestoreImage()
                 } catch {
                   errorMessage = "Failed to download macOS image: \(error.localizedDescription)"
-                  showingError = true
                 }
                 isDownloading = false
               }
@@ -366,7 +360,6 @@ struct VMIsolationDashboardView: View {
                 try await service.stopLinuxVM()
               } catch {
                 errorMessage = "Failed to stop VM: \(error.localizedDescription)"
-                showingError = true
               }
             }
           } label: {
@@ -382,7 +375,6 @@ struct VMIsolationDashboardView: View {
                 try await service.startLinuxVM()
               } catch {
                 errorMessage = "Failed to start VM: \(error.localizedDescription)"
-                showingError = true
               }
               isStartingVM = false
             }
@@ -421,7 +413,6 @@ struct VMIsolationDashboardView: View {
                 try await service.resetLinuxVM()
               } catch {
                 errorMessage = "Failed to reset VM: \(error.localizedDescription)"
-                showingError = true
               }
               isDownloading = false
             }
@@ -544,7 +535,6 @@ struct VMIsolationDashboardView: View {
                 try await service.stopMacOSVM()
               } catch {
                 errorMessage = "Failed to stop macOS VM: \(error.localizedDescription)"
-                showingError = true
               }
             }
           } label: {
@@ -560,7 +550,6 @@ struct VMIsolationDashboardView: View {
                 try await service.startMacOSVM()
               } catch {
                 errorMessage = "Failed to start macOS VM: \(error.localizedDescription)"
-                showingError = true
               }
               isStartingMacOSVM = false
             }
@@ -613,7 +602,6 @@ struct VMIsolationDashboardView: View {
                 try await service.installMacOSVM()
               } catch {
                 errorMessage = "Failed to install macOS VM: \(error.localizedDescription)"
-                showingError = true
               }
             }
           } label: {
@@ -664,7 +652,6 @@ struct VMIsolationDashboardView: View {
       missingDependencies = service.missingToolDependencies()
     } catch {
       errorMessage = "Failed to install dependencies: \(error.localizedDescription)"
-      showingError = true
     }
     isInstallingDependencies = false
   }
