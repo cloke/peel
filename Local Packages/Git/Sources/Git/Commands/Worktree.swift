@@ -15,7 +15,7 @@ import Foundation
 
 /// Represents a git worktree
 public struct Worktree: Identifiable, Equatable {
-  public let id: UUID
+  public let id: String
   public let path: String
   public let head: String
   public let branch: String?
@@ -32,7 +32,7 @@ public struct Worktree: Identifiable, Equatable {
   }
   
   public init(
-    id: UUID = UUID(),
+    id: String? = nil,
     path: String,
     head: String,
     branch: String? = nil,
@@ -43,7 +43,7 @@ public struct Worktree: Identifiable, Equatable {
     pruneReason: String? = nil,
     isBare: Bool = false
   ) {
-    self.id = id
+    self.id = id ?? path
     self.path = path
     self.head = head
     self.branch = branch

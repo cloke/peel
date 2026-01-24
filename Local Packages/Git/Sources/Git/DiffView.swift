@@ -20,7 +20,7 @@ private struct LineNumberView: View {
       Text(newNumber.map(String.init) ?? "")
         .opacity(status == "-" ? 0 : 1)
     }
-    .frame(width: 64, alignment: .trailing)
+    .frame(width: 56, alignment: .trailing)
     .foregroundStyle(.secondary)
   }
 }
@@ -47,7 +47,7 @@ private struct DiffLineRow: View {
     HStack(spacing: 8) {
       Text(line.status)
         .font(.caption.monospaced())
-        .frame(width: 10, alignment: .center)
+        .frame(width: 8, alignment: .center)
         .foregroundStyle(statusColor(line.status))
       if showLineNumbers {
         LineNumberView(status: line.status, oldNumber: line.oldLineNumber, newNumber: line.newLineNumber)
@@ -74,6 +74,7 @@ private struct DiffLineRow: View {
 public struct DiffView: View {
   public var diff: Diff
   private let logger = Logger(subsystem: "Peel", category: "Git.DiffRender")
+  @State private var expandedFiles: Set<UUID> = []
   
   public init(diff: Diff) {
     self.diff = diff
@@ -85,18 +86,43 @@ public struct DiffView: View {
         LazyVStack(alignment: .leading, spacing: 0) {
           Spacer(minLength: 4)
           ForEach(diff.files) { file in
-            DisclosureGroup {
-              ForEach(file.chunks) { chunk in
-                ChunkHeaderView(text: chunk.chunk)
-                ForEach(chunk.lines) { line in
-                  DiffLineRow(line: line, showLineNumbers: line.lineNumber != 0)
-                    .background(lineColor(line.status))
+            let isExpanded = Binding(
+              get: { expandedFiles.contains(file.id) },
+              set: { newValue in
+                if newValue {
+                  expandedFiles.insert(file.id)
+                } else {
+                  expandedFiles.remove(file.id)
                 }
               }
-            } label: {
-              Text(file.label)
-                .font(.headline)
+            )
+            VStack(alignment: .leading, spacing: 0) {
+              Button {
+                isExpanded.wrappedValue.toggle()
+              } label: {
+                HStack(spacing: 6) {
+                  Image(systemName: isExpanded.wrappedValue ? "chevron.down" : "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                  Text(file.label)
+                    .font(.headline)
+                    .textSelection(.disabled)
+                  Spacer(minLength: 0)
+                }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+              }
+              .buttonStyle(.plain)
+
+              if isExpanded.wrappedValue {
+                ForEach(file.chunks) { chunk in
+                  ChunkHeaderView(text: chunk.chunk)
+                  ForEach(chunk.lines) { line in
+                    DiffLineRow(line: line, showLineNumbers: line.lineNumber != 0)
+                      .background(lineColor(line.status))
+                  }
+                }
+              }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 4)
@@ -114,6 +140,7 @@ public struct DiffView: View {
       #endif
     }
     .onChange(of: diff.id) { _, _ in
+      expandedFiles = Set(diff.files.map(\.id))
       let fileCount = diff.files.count
       let chunkCount = diff.files.reduce(0) { $0 + $1.chunks.count }
       let lineCount = diff.files.reduce(0) { total, file in

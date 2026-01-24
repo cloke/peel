@@ -35,7 +35,8 @@ struct Git_RootView: View {
           repositories: viewModel.repositories,
           selectedRepository: $viewModel.selectedRepository,
           onAddRepository: { addRepository() },
-          onCloneRepository: { isCloning = true }
+          onCloneRepository: { isCloning = true },
+          onRemoveRepository: { removeSelectedRepository() }
         )
       }
       .alert("Repository Not Found", isPresented: $repoNotFoundError) {
@@ -164,6 +165,32 @@ struct Git_RootView: View {
     }
     viewModel.repositories.append(repo)
     viewModel.selectedRepository = repo
+  }
+
+  private func removeSelectedRepository() {
+    let path = viewModel.selectedRepository.path
+    guard !path.isEmpty else { return }
+
+    let pathDescriptor = FetchDescriptor<LocalRepositoryPath>(
+      predicate: #Predicate { $0.localPath == path }
+    )
+
+    if let localPath = try? modelContext.fetch(pathDescriptor).first {
+      if let repo = syncedRepos.first(where: { $0.id == localPath.repositoryId }) {
+        modelContext.delete(repo)
+      }
+      modelContext.delete(localPath)
+      try? modelContext.save()
+    }
+
+    viewModel.repositories.removeAll(where: { $0.path == path })
+    if let nextRepo = viewModel.repositories.first {
+      viewModel.selectedRepository = nextRepo
+      selectedRepoPath = nextRepo.path
+    } else {
+      viewModel.selectedRepository = Model.Repository(name: "N/A", path: "")
+      selectedRepoPath = ""
+    }
   }
   
   private func loadFromSwiftData() {

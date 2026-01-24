@@ -29,7 +29,7 @@ struct WorkspacesDashboardView: View {
   @State private var showingAddWorkspace = false
   @State private var showingCreateWorktree = false
   @State private var selectedRepo: WorkspaceRepo?
-  @State private var worktreeStatuses: [UUID: WorktreeStatus] = [:]
+  @State private var worktreeStatuses: [String: WorktreeStatus] = [:]
   @AppStorage(wrappedValue: .workspaces, "current-tool") private var currentTool: CurrentTool
   @AppStorage("workspaces.selectedWorkspaceName") private var selectedWorkspaceName: String = ""
   @AppStorage("workspaces.selectedRepoName") private var selectedRepoName: String = ""
@@ -675,7 +675,7 @@ struct WorktreeSection: View {
   let repoName: String
   let worktrees: [Git.Worktree]
   let trackedWorktreesByPath: [String: TrackedWorktree]
-  let statuses: [UUID: WorktreeStatus]
+  let statuses: [String: WorktreeStatus]
   let onOpen: (Git.Worktree) -> Void
   let onRemove: (Git.Worktree) -> Void
   let onCreate: () -> Void

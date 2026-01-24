@@ -81,7 +81,7 @@ extension Model {
   
   @Observable
   public class Branch: Identifiable {
-    public var id = UUID()
+    public var id: String { name }
     /// Name of the branch
     var name: String
     /// Status of branch from branch command. ie. result started with "*"
