@@ -191,15 +191,27 @@ struct Github_RootView: View {
         syncAutomationSelection()
       }
       #if os(macOS)
-      .mcpActions(mcpServer) {
-        MCPActionMapping.async("github.login") { await authorizeAndLoad() }
-        MCPActionMapping.async("github.refresh") { await loadProfile() }
-        MCPActionMapping.async("github.logout") {
-          await Github.reauthorize()
-          hasToken = false
-          viewModel.me = nil
-          organizations = []
+      .onChange(of: mcpServer.lastUIAction?.id) {
+        guard let action = mcpServer.lastUIAction else { return }
+        switch action.controlId {
+        case "github.login":
+          Task { await authorizeAndLoad() }
+          mcpServer.recordUIActionHandled(action.controlId)
+        case "github.refresh":
+          Task { await loadProfile() }
+          mcpServer.recordUIActionHandled(action.controlId)
+        case "github.logout":
+          Task {
+            await Github.reauthorize()
+            hasToken = false
+            viewModel.me = nil
+            organizations = []
+          }
+          mcpServer.recordUIActionHandled(action.controlId)
+        default:
+          break
         }
+        mcpServer.lastUIAction = nil
       }
       #endif
       } detail: {
@@ -357,20 +369,45 @@ struct Github_RootView: View {
 struct FavoriteRepositoryDestination: View {
   let favorite: FavoriteRepository
   
+  @State private var repository: Github.Repository?
+  @State private var owner: Github.User?
+  @State private var isLoading = true
+  @State private var error: String?
+  
   var body: some View {
-    AsyncContentView(
-      load: {
-        async let repoTask = Github.repository(owner: favorite.ownerLogin, name: favorite.repoName)
-        async let ownerTask = Github.user(login: favorite.ownerLogin)
-        return try await (repo: repoTask, owner: ownerTask)
-      },
-      isEmpty: { _ in false },
-      content: { data in
-        RepositoryContainerView(organization: data.owner, repository: data.repo)
-      },
-      loadingView: { ProgressView("Loading repository...") },
-      emptyView: { EmptyView() }
-    )
+    Group {
+      if isLoading {
+        ProgressView("Loading repository...")
+      } else if let error {
+        VStack {
+          Text("Failed to load repository")
+            .font(.headline)
+          Text(error)
+            .foregroundStyle(.secondary)
+          Button("Retry") {
+            Task { await loadRepository() }
+          }
+        }
+      } else if let repository, let owner {
+        RepositoryContainerView(organization: owner, repository: repository)
+      }
+    }
+    .task {
+      await loadRepository()
+    }
+  }
+  
+  private func loadRepository() async {
+    isLoading = true
+    error = nil
+    do {
+      async let repoTask = Github.repository(owner: favorite.ownerLogin, name: favorite.repoName)
+      async let ownerTask = Github.user(login: favorite.ownerLogin)
+      (repository, owner) = try await (repoTask, ownerTask)
+    } catch {
+      self.error = error.localizedDescription
+    }
+    isLoading = false
   }
 }
 

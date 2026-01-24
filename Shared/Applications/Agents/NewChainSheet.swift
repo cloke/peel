@@ -160,11 +160,37 @@ struct NewChainSheet: View {
                 .fontWeight(.medium)
             }
 
-            AgentRolePickerCompact(selection: $agent1Role)
-              .accessibilityIdentifier("agents.newChain.agent1.role")
+            Picker("Role", selection: $agent1Role) {
+              ForEach(AgentRole.allCases) { r in
+                Label(r.displayName, systemImage: r.iconName).tag(r)
+              }
+            }
+            .accessibilityIdentifier("agents.newChain.agent1.role")
 
-            CopilotModelPicker(selection: $agent1Model)
-              .accessibilityIdentifier("agents.newChain.agent1.model")
+            if !agent1Role.canWrite {
+              Label("Read-only: cannot edit files", systemImage: "lock.fill")
+                .font(.caption)
+                .foregroundStyle(.orange)
+            }
+
+            Picker("Model", selection: $agent1Model) {
+              Section("Free") {
+                ForEach(CopilotModel.allCases.filter { $0.isFree }) { m in
+                  ModelLabelView(model: m).tag(m)
+                }
+              }
+              Section("Claude") {
+                ForEach(CopilotModel.allCases.filter { $0.isClaude }) { m in
+                  ModelLabelView(model: m).tag(m)
+                }
+              }
+              Section("GPT") {
+                ForEach(CopilotModel.allCases.filter { $0.isGPT && !$0.isFree }) { m in
+                  ModelLabelView(model: m).tag(m)
+                }
+              }
+            }
+            .accessibilityIdentifier("agents.newChain.agent1.model")
           }
 
           Section {
@@ -175,11 +201,37 @@ struct NewChainSheet: View {
                 .fontWeight(.medium)
             }
 
-            AgentRolePickerCompact(selection: $agent2Role)
-              .accessibilityIdentifier("agents.newChain.agent2.role")
+            Picker("Role", selection: $agent2Role) {
+              ForEach(AgentRole.allCases) { r in
+                Label(r.displayName, systemImage: r.iconName).tag(r)
+              }
+            }
+            .accessibilityIdentifier("agents.newChain.agent2.role")
 
-            CopilotModelPicker(selection: $agent2Model)
-              .accessibilityIdentifier("agents.newChain.agent2.model")
+            if !agent2Role.canWrite {
+              Label("Read-only: cannot edit files", systemImage: "lock.fill")
+                .font(.caption)
+                .foregroundStyle(.orange)
+            }
+
+            Picker("Model", selection: $agent2Model) {
+              Section("Free") {
+                ForEach(CopilotModel.allCases.filter { $0.isFree }) { m in
+                  ModelLabelView(model: m).tag(m)
+                }
+              }
+              Section("Claude") {
+                ForEach(CopilotModel.allCases.filter { $0.isClaude }) { m in
+                  ModelLabelView(model: m).tag(m)
+                }
+              }
+              Section("GPT") {
+                ForEach(CopilotModel.allCases.filter { $0.isGPT && !$0.isFree }) { m in
+                  ModelLabelView(model: m).tag(m)
+                }
+              }
+            }
+            .accessibilityIdentifier("agents.newChain.agent2.model")
           }
 
           Section {

@@ -15,7 +15,8 @@ let package = Package(
   dependencies: [
     // Dependencies declare other packages that this package depends on.
     // CrunchyCommon removed - migrated to Shared/Extensions
-    .package(url: "https://github.com/crunchybananas/TaskRunner.git", branch: "main")
+    .package(url: "https://github.com/crunchybananas/TaskRunner.git", branch: "main"),
+    .package(name: "PeelUI", path: "../PeelUI")
   ],
   targets: [
     // Targets are the basic building blocks of a package. A target can define a module or a test suite.
@@ -23,7 +24,8 @@ let package = Package(
     .target(
       name: "Git",
       dependencies: [
-        .product(name: "TaskRunner", package: "TaskRunner", condition: .when(platforms: [.macOS]))
+        .product(name: "TaskRunner", package: "TaskRunner", condition: .when(platforms: [.macOS])),
+        "PeelUI"
       ]
     ),
     
