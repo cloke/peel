@@ -20,7 +20,7 @@ struct BranchListItemView: View {
 
   private let logger = Logger(subsystem: "Peel", category: "Git.BranchRow")
   
-  @Binding var branch: Model.Branch
+  let branch: Model.Branch
   let refreshToken: UUID
 
   public var type: Model.BranchType
@@ -82,71 +82,67 @@ public struct BranchListView: View {
   @State private var isShowing = false
   @State private var pushError: String?
   @State private var refreshToken = UUID()
-  // TODO: Should we persist this as state?
   @State private var isExpanded = false
   @State private var hasLoadedBranches = false
   @State private var multiSelection = Set<UUID>()
-  
   
   @Binding public var localBranches: [Model.Branch]
   public var label: String
   public var location: Model.BranchType = .remote
     
   public var body: some View {
-    DisclosureGroup(isExpanded: $isExpanded) {
+    Section(isExpanded: $isExpanded) {
       if localBranches.isEmpty {
         Text("No branches")
           .foregroundStyle(.secondary)
           .font(.caption)
-      }
-      ForEach($localBranches) { $branch in
-        BranchListItemView(
-          branch: $branch,
-          refreshToken: refreshToken,
-          type: location,
-          selected: {},
-          activated: {
-            Task { @MainActor in
-              let name = branch.name
-              _ = try await Commands.checkout(branch: name, from: repository)
-              repository.activate(branch: branch)
-              refreshToken = UUID()
-            }
-          },
-          push: {
-            Task {
-              let currentBranch = branch
-              do {
-                try await repository.push(branch: currentBranch)
+      } else {
+        ForEach(localBranches) { branch in
+          BranchListItemView(
+            branch: branch,
+            refreshToken: refreshToken,
+            type: location,
+            selected: {},
+            activated: {
+              Task { @MainActor in
+                let name = branch.name
+                _ = try await Commands.checkout(branch: name, from: repository)
+                repository.activate(branch: branch)
                 refreshToken = UUID()
-              } catch {
-                pushError = "Failed to push \(currentBranch.name): \(error.localizedDescription)"
+              }
+            },
+            push: {
+              Task {
+                do {
+                  try await repository.push(branch: branch)
+                  refreshToken = UUID()
+                } catch {
+                  pushError = "Failed to push \(branch.name): \(error.localizedDescription)"
+                }
               }
             }
+          )
+          .tag(GitDestination.history(branch.name))
+          .font(.footnote)
+          .contentShape(Rectangle())
+          .onTapGesture {
+            selection = .history(branch.name)
+            UserDefaults.standard.set(branch.name, forKey: "git.selectedBranchName")
           }
-        )
-        .tag(GitDestination.history(branch.name))
-        .font(.footnote)
-        .contentShape(Rectangle())
-        .onTapGesture {
-          selection = .history(branch.name)
-          UserDefaults.standard.set(branch.name, forKey: "git.selectedBranchName")
-        }
-        .contextMenu {
-          Button {
-            Task {
-              try? await repository.delete(branches: [branch])
+          .contextMenu {
+            Button {
+              Task {
+                try? await repository.delete(branches: [branch])
+              }
+            } label: {
+              Text("Delete Branch")
+              Image(systemName: "trash")
             }
-          } label: {
-            Text("Delete Branch")
-            Image(systemName: "trash")
           }
         }
       }
-    } label: {
+    } header: {
       Label(label, systemImage: sectionIcon)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
     }
     .alert("Push Failed", isPresented: .constant(pushError != nil)) {
       Button("OK") { pushError = nil }
@@ -174,8 +170,15 @@ public struct BranchListView: View {
     .onChange(of: isExpanded) { _, newValue in
       guard location == .remote, newValue, !hasLoadedBranches else { return }
       Task { @MainActor in
-        await repository.loadBranches(branchType: .remote)
-        hasLoadedBranches = true
+        // Load branches without triggering animations
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+          Task {
+            await repository.loadBranches(branchType: .remote)
+            hasLoadedBranches = true
+          }
+        }
       }
     }
   }
