@@ -7,8 +7,6 @@
 
 import Foundation
 import Observation
-
-#if os(macOS)
 import Git
 
 /// Manages isolated workspaces for AI agents and chain worktrees using git worktrees
@@ -455,16 +453,4 @@ private extension String {
   }
 }
 
-#else
-// iOS stub - workspaces not supported
-@MainActor
-@Observable
-public final class AgentWorkspaceService {
-  public struct ChainWorktree: Identifiable {
-    public let id = UUID()
-  }
-  public private(set) var workspaces: [AgentWorkspace] = []
-  public private(set) var activeChainWorktrees: [ChainWorktree] = []
-  public init() {}
-}
-#endif
+

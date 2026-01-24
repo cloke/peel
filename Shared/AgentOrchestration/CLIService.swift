@@ -9,8 +9,6 @@
 import Foundation
 import TaskRunner
 
-#if os(macOS)
-
 /// Service for detecting and interacting with AI CLI tools
 @MainActor
 @Observable
@@ -872,6 +870,7 @@ public final class CLIService {
   }
 }
 
+
 public enum CLIError: LocalizedError {
   case notAvailable(String)
   case executionFailed(String)
@@ -883,21 +882,3 @@ public enum CLIError: LocalizedError {
     }
   }
 }
-
-#else
-@MainActor
-@Observable
-public final class CLIService {
-  public enum CLIStatus: Equatable { case notInstalled; var isAvailable: Bool { false } }
-  public enum InstallStep: Equatable { case idle }
-  public var copilotStatus: CLIStatus = .notInstalled
-  public var claudeStatus: CLIStatus = .notInstalled
-  public var copilotInstallStep: InstallStep = .idle
-  public var installOutput: [String] = []
-  public init() {}
-  public func checkAllCLIs(force: Bool = false) async {}
-  public func resetInstall() {}
-  public static let copilotInstallInstructions = ""
-  public static let claudeInstallInstructions = ""
-}
-#endif

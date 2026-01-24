@@ -6,8 +6,6 @@
 //
 
 import Foundation
-
-#if os(macOS)
 import FoundationModels
 
 /// Service for interacting with Apple's on-device Foundation Models
@@ -148,4 +146,4 @@ public enum AppleAIError: LocalizedError {
   }
 }
 
-#endif
+

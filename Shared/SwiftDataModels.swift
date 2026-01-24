@@ -7,6 +7,9 @@
 
 import Foundation
 import SwiftData
+#if os(iOS)
+import UIKit
+#endif
 
 // MARK: - SwiftData Models
 // CloudKit-compatible: all properties have defaults, no unique constraints
@@ -164,7 +167,11 @@ final class DeviceSettings {
   @MainActor
   init() {
     self.id = UUID()
+    #if os(macOS)
     self.deviceName = Host.current().localizedName ?? "Mac"
+    #else
+    self.deviceName = UIDevice.current.name
+    #endif
     self.currentTool = "github"
     self.lastUsedAt = Date()
   }

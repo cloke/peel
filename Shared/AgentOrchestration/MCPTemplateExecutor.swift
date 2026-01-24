@@ -1,6 +1,4 @@
 import Foundation
-
-#if os(macOS)
 import Observation
 
 public struct MCPTemplateExecutor {
@@ -41,4 +39,4 @@ public struct MCPTemplateExecutor {
     return summary
   }
 }
-#endif
+

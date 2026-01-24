@@ -7,8 +7,6 @@
 
 import Foundation
 
-#if os(macOS)
-
 /// Configuration for validation rules
 public struct ValidationConfiguration: Codable, Hashable, Sendable {
   public enum RuleType: String, Codable, Sendable {
@@ -64,4 +62,4 @@ public struct ValidationConfiguration: Codable, Hashable, Sendable {
   }
 }
 
-#endif
+
