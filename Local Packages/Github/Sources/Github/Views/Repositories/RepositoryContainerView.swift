@@ -11,9 +11,11 @@ public struct RepositoryContainerView: View {
   let organization: Github.User
   let repository: Github.Repository
   
-  // TODO: make this reference an enum
-  @State private var currentTab = "Pulls"
-  @State private var selection = 1
+  private enum Tab: Int {
+    case insights, pullRequests, commits, issues, actions
+  }
+  
+  @State private var selection = Tab.pullRequests
   
   public init(organization: Github.User, repository: Github.Repository) {
     self.organization = organization
@@ -25,19 +27,19 @@ public struct RepositoryContainerView: View {
       TabView(selection: $selection) {
         RepositoryInsightsView(repository: repository)
           .tabItem { Text("Insights") }
-          .tag(0)
+          .tag(Tab.insights)
         PullRequestsView(organization: organization, repository: repository)
           .tabItem { Text("Pull Requests") }
-          .tag(1)
+          .tag(Tab.pullRequests)
         CommitsListView(repository: repository)
           .tabItem { Text("Commits") }
-          .tag(2)
+          .tag(Tab.commits)
         IssuesListView(repository: repository)
           .tabItem { Text("Issues") }
-          .tag(3)
+          .tag(Tab.issues)
         ActionsView(repository: repository)
           .tabItem { Text("Actions") }
-          .tag(4)
+          .tag(Tab.actions)
       }
       .navigationTitle(repository.full_name ?? repository.name)
     }

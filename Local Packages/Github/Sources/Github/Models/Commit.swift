@@ -54,18 +54,8 @@ extension Github {
     var email: String
     var date: String?
     
-    // TODO: This code should go into crunchy common as "relative date style". Could it be a modifier? Text("something").relativeDate()
     var dateFormatted: String {
-      let formatter = DateFormatter()
-      formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZ"
-      if let date = date, let formatted = formatter.date(from: date) {
-        formatter.doesRelativeDateFormatting = true
-        formatter.locale = Locale(identifier: "en_US")
-        formatter.dateStyle = .long
-        formatter.timeStyle = .short
-        return formatter.string(from: formatted)
-      }
-      return ""
+      date?.dateFromGithubFormat?.relativeFormatted ?? ""
     }
     
     public static func == (lhs: Github.CommitUser, rhs: Github.CommitUser) -> Bool {

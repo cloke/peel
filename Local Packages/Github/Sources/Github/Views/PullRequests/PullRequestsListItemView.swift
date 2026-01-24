@@ -45,7 +45,7 @@ struct PullRequestsListItemView: View {
         Text(prState)
           .font(.headline)
         Spacer()
-        Text(pullRequest.dateFormated)
+        Text(pullRequest.dateFormatted)
           .font(.subheadline)
       }
       .task {
