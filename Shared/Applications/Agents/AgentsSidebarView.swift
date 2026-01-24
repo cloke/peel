@@ -17,6 +17,7 @@ struct AgentsSidebarView: View {
   @Binding var selectedInfrastructure: InfrastructureView?
   @AppStorage("vm.isolation.section") private var vmIsolationSection = "overview"
   @AppStorage("vm.isolation.sidebar.expanded") private var vmIsolationSidebarExpanded = true
+  @State private var parallelWorktreeStatus: ParallelWorktreeSummary = .empty
 
   // Track selection as a string: "chain:id" or "agent:id" or "infra:key"
   @State private var selection: String?
@@ -167,9 +168,32 @@ struct AgentsSidebarView: View {
               .foregroundStyle(.mint)
             Text("Parallel Worktrees")
             Spacer()
+            if parallelWorktreeStatus.totalRuns > 0 {
+              Chip(
+                text: "Runs \(parallelWorktreeStatus.totalRuns)",
+                foreground: .mint,
+                background: .mint.opacity(0.2)
+              )
+            }
           }
           .accessibilityIdentifier("agents.parallelWorktrees")
           .tag("infra:parallel-worktrees")
+
+          if parallelWorktreeStatus.totalRuns > 0 {
+            HStack(spacing: 8) {
+              sidebarToken(icon: "tray.full", color: .secondary, value: parallelWorktreeStatus.totalRuns)
+              sidebarToken(icon: "clock", color: .secondary, value: parallelWorktreeStatus.pendingRuns)
+              sidebarToken(icon: "square.stack.3d.up", color: .blue, value: parallelWorktreeStatus.totalExecutions)
+              sidebarToken(icon: "bolt.fill", color: .mint, value: parallelWorktreeStatus.runningExecutions)
+              sidebarToken(icon: "hourglass", color: .orange, value: parallelWorktreeStatus.awaitingReviewExecutions)
+              sidebarToken(icon: "checkmark.circle", color: .green, value: parallelWorktreeStatus.readyToMergeExecutions)
+              sidebarToken(icon: "xmark.octagon", color: .red, value: parallelWorktreeStatus.failedExecutions)
+              sidebarToken(icon: "exclamationmark.triangle", color: .yellow, value: parallelWorktreeStatus.hungExecutions)
+              Spacer()
+            }
+            .font(.caption2)
+            .padding(.leading, 24)
+          }
         }
 
         Section {
@@ -234,7 +258,15 @@ struct AgentsSidebarView: View {
       } else if selectedInfrastructure == .vmIsolation {
         selection = "infra:vm-isolation:\(vmIsolationSection)"
       }
+      refreshParallelWorktreeStatus()
     }
+    .onChange(of: mcpServer.parallelWorktreeRunner?.runs.count ?? 0) { _, _ in
+      refreshParallelWorktreeStatus()
+    }
+  }
+
+  private func refreshParallelWorktreeStatus() {
+    parallelWorktreeStatus = ParallelWorktreeSummary(runs: mcpServer.parallelWorktreeRunner?.runs ?? [])
   }
 
   private func handleSelection(_ value: String?) {
@@ -292,6 +324,18 @@ struct AgentsSidebarView: View {
     }
   }
 
+  @ViewBuilder
+  private func sidebarToken(icon: String, color: Color, value: Int) -> some View {
+    if value > 0 {
+      HStack(spacing: 4) {
+        Image(systemName: icon)
+          .foregroundStyle(color)
+        Text("\(value)")
+          .foregroundStyle(.secondary)
+      }
+    }
+  }
+
   private func vmIsolationRow(title: String, icon: String, section: String) -> some View {
     HStack {
       Image(systemName: icon)
@@ -331,5 +375,47 @@ struct AgentsSidebarView: View {
     case .checking: return "Checking..."
     case .error: return "Error"
     }
+  }
+}
+
+private struct ParallelWorktreeSummary {
+  let totalRuns: Int
+  let pendingRuns: Int
+  let activeRuns: Int
+  let totalExecutions: Int
+  let runningExecutions: Int
+  let awaitingReviewExecutions: Int
+  let readyToMergeExecutions: Int
+  let failedExecutions: Int
+  let hungExecutions: Int
+
+  static let empty = ParallelWorktreeSummary(runs: [])
+
+  init(runs: [ParallelWorktreeRun]) {
+    totalRuns = runs.count
+    pendingRuns = runs.filter { $0.status == .pending }.count
+    activeRuns = runs.filter { run in
+      switch run.status {
+      case .running, .awaitingReview, .merging:
+        return true
+      default:
+        return false
+      }
+    }.count
+    totalExecutions = runs.reduce(0) { $0 + $1.executions.count }
+    runningExecutions = runs.reduce(0) { total, run in
+      total + run.executions.filter { execution in
+        switch execution.status {
+        case .running, .creatingWorktree:
+          return true
+        default:
+          return false
+        }
+      }.count
+    }
+    awaitingReviewExecutions = runs.reduce(0) { $0 + $1.pendingReviewCount }
+    readyToMergeExecutions = runs.reduce(0) { $0 + $1.readyToMergeCount }
+    failedExecutions = runs.reduce(0) { $0 + $1.failedCount }
+    hungExecutions = runs.reduce(0) { $0 + $1.hungExecutionCount }
   }
 }
