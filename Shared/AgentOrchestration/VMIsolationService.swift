@@ -514,7 +514,9 @@ struct VMPool: Sendable {
 /// ```
 @MainActor
 @Observable
-final class VMIsolationService {
+public final class VMIsolationService {
+  static let macOSDisplaySize = CGSize(width: 1680, height: 1050)
+  static let macOSDisplayPPI: Int = 220
   
   // MARK: - State
   
@@ -555,6 +557,8 @@ final class VMIsolationService {
   /// Whether a Linux VM is currently running
   var isLinuxVMRunning: Bool { runningLinuxVM?.state == .running }
   var isMacOSVMRunning: Bool { runningMacOSVM?.state == .running }
+
+  var macOSVirtualMachine: VZVirtualMachine? { runningMacOSVM }
   
   /// Console output from the running VM
   private(set) var consoleOutput: String = ""
@@ -611,7 +615,7 @@ final class VMIsolationService {
   
   // MARK: - Initialization
   
-  init() {
+  public init() {
     let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first 
       ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
     self.vmBasePath = appSupport.appendingPathComponent("KitchenSync/VMs", isDirectory: true)
@@ -794,6 +798,30 @@ final class VMIsolationService {
     
     // Re-setup
     try await setupLinuxVM()
+  }
+
+  /// Reset macOS VM by removing the VM bundle (and optionally the restore image)
+  func resetMacOSVM(deleteRestoreImage: Bool = false) async throws {
+    statusMessage = "Resetting macOS VM..."
+
+    if runningMacOSVM != nil {
+      try await stopMacOSVM()
+    }
+
+    macOSInstaller = nil
+    isMacOSInstalling = false
+
+    if FileManager.default.fileExists(atPath: macOSVMBundlePath.path) {
+      try FileManager.default.removeItem(at: macOSVMBundlePath)
+    }
+
+    if deleteRestoreImage, let restorePath = macOSRestoreImagePath {
+      try? FileManager.default.removeItem(at: restorePath)
+      macOSRestoreImagePath = nil
+      isMacOSReady = false
+    }
+
+    statusMessage = buildStatusMessage()
   }
   
   /// Download and set up a Linux VM
@@ -1036,7 +1064,13 @@ final class VMIsolationService {
     config.storageDevices = [blockDevice]
 
     let graphics = VZMacGraphicsDeviceConfiguration()
-    graphics.displays = [VZMacGraphicsDisplayConfiguration(widthInPixels: 1280, heightInPixels: 800, pixelsPerInch: 160)]
+    graphics.displays = [
+      VZMacGraphicsDisplayConfiguration(
+        widthInPixels: Int(VMIsolationService.macOSDisplaySize.width),
+        heightInPixels: Int(VMIsolationService.macOSDisplaySize.height),
+        pixelsPerInch: VMIsolationService.macOSDisplayPPI
+      )
+    ]
     config.graphicsDevices = [graphics]
 
     if #available(macOS 13.0, *) {
@@ -1375,6 +1409,10 @@ final class VMIsolationService {
 
     let installer = VZMacOSInstaller(virtualMachine: vm, restoringFromImageAt: restoreImage.url)
     macOSInstaller = installer
+
+    defer {
+      macOSInstaller = nil
+    }
 
     try await withCheckedThrowingContinuation { continuation in
       installer.install { result in

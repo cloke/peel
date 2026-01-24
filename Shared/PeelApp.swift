@@ -17,7 +17,14 @@ import AppKit
 @main
 struct PeelApp: App {
   @Environment(\.openURL) var openURL
-  @State private var mcpServer = MCPServerService()
+  @State private var vmIsolationService = VMIsolationService()
+  @State private var mcpServer: MCPServerService
+
+  init() {
+    let vmService = VMIsolationService()
+    _vmIsolationService = State(initialValue: vmService)
+    _mcpServer = State(initialValue: MCPServerService(vmIsolationService: vmService))
+  }
   
   /// SwiftData model container
   /// To enable iCloud later, change cloudKitDatabase to .automatic
@@ -58,6 +65,7 @@ struct PeelApp: App {
           OAuthSwift.handle(url: url)
         }
         .environment(mcpServer)
+        .environment(vmIsolationService)
     }
     .modelContainer(sharedModelContainer)
     #if os(macOS)
@@ -74,6 +82,7 @@ struct PeelApp: App {
     Settings {
       SettingsView()
         .environment(mcpServer)
+        .environment(vmIsolationService)
     }
     .modelContainer(sharedModelContainer)
 #endif
