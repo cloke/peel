@@ -91,7 +91,7 @@ extension ListRowLayout where Accessory == EmptyView {
   }
 }
 
-extension ListRowLayout where Icon == Image {
+extension ListRowLayout where Icon == AnyView {
   /// Creates a row with a system image icon.
   public init(
     title: String,
@@ -107,15 +107,17 @@ extension ListRowLayout where Icon == Image {
       spacing: spacing,
       iconWidth: nil,
       icon: {
-        Image(systemName: systemImage)
-          .foregroundStyle(iconColor)
+        AnyView(
+          Image(systemName: systemImage)
+            .foregroundStyle(iconColor)
+        )
       },
       accessory: accessory
     )
   }
 }
 
-extension ListRowLayout where Icon == Image, Accessory == EmptyView {
+extension ListRowLayout where Icon == AnyView, Accessory == EmptyView {
   /// Creates a simple row with just a system image and title.
   public init(
     title: String,
@@ -129,15 +131,17 @@ extension ListRowLayout where Icon == Image, Accessory == EmptyView {
       spacing: 12,
       iconWidth: nil,
       icon: {
-        Image(systemName: systemImage)
-          .foregroundStyle(iconColor)
+        AnyView(
+          Image(systemName: systemImage)
+            .foregroundStyle(iconColor)
+        )
       },
       accessory: { EmptyView() }
     )
   }
 }
 
-extension ListRowLayout where Icon == Image, Accessory == Text {
+extension ListRowLayout where Icon == AnyView, Accessory == Text {
   /// Creates a row with a system image and text accessory.
   public init(
     title: String,
@@ -152,8 +156,10 @@ extension ListRowLayout where Icon == Image, Accessory == Text {
       spacing: 12,
       iconWidth: nil,
       icon: {
-        Image(systemName: systemImage)
-          .foregroundStyle(iconColor)
+        AnyView(
+          Image(systemName: systemImage)
+            .foregroundStyle(iconColor)
+        )
       },
       accessory: {
         Text(badge)
