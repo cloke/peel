@@ -17,6 +17,7 @@ let package = Package(
     .package(url: "https://github.com/OAuthSwift/OAuthSwift.git", .upToNextMajor(from: "2.2.0")),
     // CrunchyCommon removed - migrated to Shared/Extensions
     .package(name: "Git", path: "../Git"),
+    .package(name: "PeelUI", path: "../PeelUI"),
     .package(url: "https://github.com/gonzalezreal/MarkdownUI", from: "0.0.0"),
   ],
   targets: [
@@ -24,7 +25,7 @@ let package = Package(
     // Targets can depend on other targets in this package, and on products in packages this package depends on.
     .target(
       name: "Github",
-      dependencies: ["OAuthSwift", "MarkdownUI", "Git"]),
+      dependencies: ["OAuthSwift", "MarkdownUI", "Git", "PeelUI"]),
     .testTarget(
       name: "GithubTests",
       dependencies: ["Github"]),

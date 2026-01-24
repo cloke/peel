@@ -36,13 +36,55 @@ struct NewAgentSheet: View {
         // Role and Model picker for Copilot agents
         if type == .copilot {
           Section("Role") {
-            AgentRolePicker(selection: $role)
-              .accessibilityIdentifier("agents.newAgent.role")
+            Picker("Role", selection: $role) {
+              ForEach(AgentRole.allCases) { r in
+                Label {
+                  VStack(alignment: .leading) {
+                    Text(r.displayName)
+                    Text(r.description)
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                  }
+                } icon: {
+                  Image(systemName: r.iconName)
+                }
+                .tag(r)
+              }
+            }
+            .pickerStyle(.inline)
+            .accessibilityIdentifier("agents.newAgent.role")
+
+            if !role.canWrite {
+              Label("This role cannot edit files", systemImage: "lock.fill")
+                .font(.caption)
+                .foregroundStyle(.orange)
+            }
           }
 
           Section("Model") {
-            CopilotModelPicker(selection: $model)
-              .accessibilityIdentifier("agents.newAgent.model")
+            Picker("Model", selection: $model) {
+              Section("Free") {
+                ForEach(CopilotModel.allCases.filter { $0.isFree }) { m in
+                  ModelLabelView(model: m).tag(m)
+                }
+              }
+              Section("Claude") {
+                ForEach(CopilotModel.allCases.filter { $0.isClaude }) { m in
+                  ModelLabelView(model: m).tag(m)
+                }
+              }
+              Section("GPT") {
+                ForEach(CopilotModel.allCases.filter { $0.isGPT && !$0.isFree }) { m in
+                  ModelLabelView(model: m).tag(m)
+                }
+              }
+              Section("Gemini") {
+                ForEach(CopilotModel.allCases.filter { $0.isGemini && !$0.isFree }) { m in
+                  ModelLabelView(model: m).tag(m)
+                }
+              }
+            }
+            .accessibilityIdentifier("agents.newAgent.model")
           }
         }
 

@@ -7,6 +7,7 @@
 
 import SwiftUI
 import MarkdownUI
+import PeelUI
 
 struct PullRequestDetailView: View {
   @Environment(\.recentPRsProvider) private var recentPRsProvider
@@ -108,9 +109,6 @@ struct PullRequestListView: View {
 }
 
 public struct PullRequestsView: View {
-  @State private var pullRequests = [Github.PullRequest]()
-  @State private var isLoading = true
-  
   public let organization: Github.User
   public let repository: Github.Repository
   
@@ -120,29 +118,13 @@ public struct PullRequestsView: View {
   }
   
   public var body: some View {
-    VStack {
-      if isLoading {
-        ProgressView()
-      } else if !pullRequests.isEmpty {
+    AsyncContentView(
+      load: { try await Github.pullRequests(from: repository) },
+      content: { pullRequests in
         PullRequestListView(organization: organization, repository: repository, pullRequests: pullRequests)
-      } else {
-        Text("No Pull Requests Found")
-      }
-    }
-    .task(id: repository.id) {
-      isLoading = true
-      defer { isLoading = false }
-      do {
-        let results = try await Github.pullRequests(from: repository)
-        try Task.checkCancellation()
-        pullRequests = results
-      } catch is CancellationError {
-        // Ignore cancellations when leaving the tab.
-      } catch {
-        if let urlError = error as? URLError, urlError.code == .cancelled {
-          return
-        }
-      }
-    }
+      },
+      emptyView: { EmptyStateView("No Pull Requests", systemImage: "list.bullet") }
+    )
+    .id(repository.id)
   }
 }

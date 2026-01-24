@@ -55,10 +55,31 @@ struct AgentDetailView: View {
         if agent.type == .copilot {
           HStack {
             Text("Model").font(.subheadline).foregroundStyle(.secondary)
-            CopilotModelPicker(selection: Binding(
+            Picker("", selection: Binding(
               get: { agent.model },
               set: { agent.model = $0 }
-            ))
+            )) {
+              Section("Free") {
+                ForEach(CopilotModel.allCases.filter { $0.isFree }) { m in
+                  ModelLabelView(model: m).tag(m)
+                }
+              }
+              Section("Claude") {
+                ForEach(CopilotModel.allCases.filter { $0.isClaude }) { m in
+                  ModelLabelView(model: m).tag(m)
+                }
+              }
+              Section("GPT") {
+                ForEach(CopilotModel.allCases.filter { $0.isGPT && !$0.isFree }) { m in
+                  ModelLabelView(model: m).tag(m)
+                }
+              }
+              Section("Gemini") {
+                ForEach(CopilotModel.allCases.filter { $0.isGemini && !$0.isFree }) { m in
+                  ModelLabelView(model: m).tag(m)
+                }
+              }
+            }
             .labelsHidden()
             .frame(maxWidth: 250)
             .accessibilityIdentifier("agents.agentDetail.modelPicker")
@@ -67,13 +88,14 @@ struct AgentDetailView: View {
           // Role picker
           HStack {
             Text("Role").font(.subheadline).foregroundStyle(.secondary)
-            AgentRolePickerCompact(
-              selection: Binding(
-                get: { agent.role },
-                set: { agent.role = $0 }
-              ),
-              showReadOnlyWarning: false
-            )
+            Picker("", selection: Binding(
+              get: { agent.role },
+              set: { agent.role = $0 }
+            )) {
+              ForEach(AgentRole.allCases) { r in
+                Label(r.displayName, systemImage: r.iconName).tag(r)
+              }
+            }
             .labelsHidden()
             .frame(maxWidth: 150)
             .accessibilityIdentifier("agents.agentDetail.rolePicker")

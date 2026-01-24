@@ -84,23 +84,41 @@ struct WorkspacesDashboardView: View {
     .onChange(of: selectedWorktreeName) { _, _ in
       syncSelectionFromStoredValues()
     }
-    .mcpActions(mcpServer) {
-      MCPActionMapping.async("workspaces.refresh") { await service.loadReposAndWorktrees() }
-      MCPActionMapping("workspaces.addWorkspace") { showingAddWorkspace = true }
-      MCPActionMapping("workspaces.createWorktree") {
-        if selectedRepo != nil { showingCreateWorktree = true }
-      }
-      MCPActionMapping("workspaces.openInVSCode") {
-        if let repo = selectedRepo {
-          Task { try? await VSCodeService.shared.open(path: repo.path, newWindow: true) }
+    .onChange(of: mcpServer.lastUIAction?.id) {
+      guard let action = mcpServer.lastUIAction else { return }
+      switch action.controlId {
+      case "workspaces.refresh":
+        Task { await service.loadReposAndWorktrees() }
+        mcpServer.recordUIActionHandled(action.controlId)
+      case "workspaces.addWorkspace":
+        showingAddWorkspace = true
+        mcpServer.recordUIActionHandled(action.controlId)
+      case "workspaces.createWorktree":
+        if selectedRepo != nil {
+          showingCreateWorktree = true
+          mcpServer.recordUIActionHandled(action.controlId)
         }
+      case "workspaces.openInVSCode":
+        if let repo = selectedRepo {
+          Task {
+            try? await VSCodeService.shared.open(path: repo.path, newWindow: true)
+          }
+          mcpServer.recordUIActionHandled(action.controlId)
+        }
+      case "workspaces.openSelectedWorktree":
+        if let worktree = selectedWorktree() {
+          openWorktree(worktree)
+          mcpServer.recordUIActionHandled(action.controlId)
+        }
+      case "workspaces.removeSelectedWorktree":
+        if let worktree = selectedWorktree() {
+          removeWorktree(worktree)
+          mcpServer.recordUIActionHandled(action.controlId)
+        }
+      default:
+        break
       }
-      MCPActionMapping("workspaces.openSelectedWorktree") {
-        if let worktree = selectedWorktree() { openWorktree(worktree) }
-      }
-      MCPActionMapping("workspaces.removeSelectedWorktree") {
-        if let worktree = selectedWorktree() { removeWorktree(worktree) }
-      }
+      mcpServer.lastUIAction = nil
     }
     .sheet(isPresented: $showingAddWorkspace) {
       AddWorkspaceSheet(service: service)

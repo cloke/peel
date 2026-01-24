@@ -55,18 +55,46 @@ struct Agents_RootView: View {
       mcpServer.configure(modelContext: modelContext)
       await cliService.checkAllCLIs()
     }
-    .mcpActions(mcpServer) {
-      MCPActionMapping("agents.newAgent") { showingNewAgentSheet = true }
-      MCPActionMapping("agents.newChain") { showingNewChainSheet = true }
-      MCPActionMapping("agents.mcpDashboard") { selectedInfrastructure = .mcpDashboard }
-      MCPActionMapping("agents.cliSetup") { showingSetupSheet = true }
-      MCPActionMapping("agents.sessionSummary") { showingSessionSummary = true }
-      MCPActionMapping("agents.vmIsolation") { selectedInfrastructure = .vmIsolation }
-      MCPActionMapping("agents.translationValidation") { selectedInfrastructure = .translationValidation }
-      MCPActionMapping("agents.templateGallery") { selectedInfrastructure = .templateGallery }
-      MCPActionMapping("agents.localRag") { selectedInfrastructure = .localRag }
-      MCPActionMapping("agents.piiScrubber") { selectedInfrastructure = .piiScrubber }
-      MCPActionMapping("agents.parallelWorktrees") { selectedInfrastructure = .parallelWorktrees }
+    .onChange(of: mcpServer.lastUIAction?.id) {
+      guard let action = mcpServer.lastUIAction else { return }
+      switch action.controlId {
+      case "agents.newAgent":
+        showingNewAgentSheet = true
+        mcpServer.recordUIActionHandled(action.controlId)
+      case "agents.newChain":
+        showingNewChainSheet = true
+        mcpServer.recordUIActionHandled(action.controlId)
+      case "agents.mcpDashboard":
+        selectedInfrastructure = .mcpDashboard
+        mcpServer.recordUIActionHandled(action.controlId)
+      case "agents.cliSetup":
+        showingSetupSheet = true
+        mcpServer.recordUIActionHandled(action.controlId)
+      case "agents.sessionSummary":
+        showingSessionSummary = true
+        mcpServer.recordUIActionHandled(action.controlId)
+      case "agents.vmIsolation":
+        selectedInfrastructure = .vmIsolation
+        mcpServer.recordUIActionHandled(action.controlId)
+      case "agents.translationValidation":
+        selectedInfrastructure = .translationValidation
+        mcpServer.recordUIActionHandled(action.controlId)
+      case "agents.templateGallery":
+        selectedInfrastructure = .templateGallery
+        mcpServer.recordUIActionHandled(action.controlId)
+      case "agents.localRag":
+        selectedInfrastructure = .localRag
+        mcpServer.recordUIActionHandled(action.controlId)
+      case "agents.piiScrubber":
+        selectedInfrastructure = .piiScrubber
+        mcpServer.recordUIActionHandled(action.controlId)
+      case "agents.parallelWorktrees":
+        selectedInfrastructure = .parallelWorktrees
+        mcpServer.recordUIActionHandled(action.controlId)
+      default:
+        break
+      }
+      mcpServer.lastUIAction = nil
     }
     .onChange(of: selectedInfrastructure) { _, newValue in
       if let newValue {
