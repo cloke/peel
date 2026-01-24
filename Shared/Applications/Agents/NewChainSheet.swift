@@ -160,18 +160,8 @@ struct NewChainSheet: View {
                 .fontWeight(.medium)
             }
 
-            Picker("Role", selection: $agent1Role) {
-              ForEach(AgentRole.allCases) { r in
-                Label(r.displayName, systemImage: r.iconName).tag(r)
-              }
-            }
-            .accessibilityIdentifier("agents.newChain.agent1.role")
-
-            if !agent1Role.canWrite {
-              Label("Read-only: cannot edit files", systemImage: "lock.fill")
-                .font(.caption)
-                .foregroundStyle(.orange)
-            }
+            AgentRolePickerCompact(selection: $agent1Role)
+              .accessibilityIdentifier("agents.newChain.agent1.role")
 
             CopilotModelPicker(selection: $agent1Model)
               .accessibilityIdentifier("agents.newChain.agent1.model")
@@ -185,18 +175,8 @@ struct NewChainSheet: View {
                 .fontWeight(.medium)
             }
 
-            Picker("Role", selection: $agent2Role) {
-              ForEach(AgentRole.allCases) { r in
-                Label(r.displayName, systemImage: r.iconName).tag(r)
-              }
-            }
-            .accessibilityIdentifier("agents.newChain.agent2.role")
-
-            if !agent2Role.canWrite {
-              Label("Read-only: cannot edit files", systemImage: "lock.fill")
-                .font(.caption)
-                .foregroundStyle(.orange)
-            }
+            AgentRolePickerCompact(selection: $agent2Role)
+              .accessibilityIdentifier("agents.newChain.agent2.role")
 
             CopilotModelPicker(selection: $agent2Model)
               .accessibilityIdentifier("agents.newChain.agent2.model")

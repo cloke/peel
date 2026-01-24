@@ -67,14 +67,13 @@ struct AgentDetailView: View {
           // Role picker
           HStack {
             Text("Role").font(.subheadline).foregroundStyle(.secondary)
-            Picker("", selection: Binding(
-              get: { agent.role },
-              set: { agent.role = $0 }
-            )) {
-              ForEach(AgentRole.allCases) { r in
-                Label(r.displayName, systemImage: r.iconName).tag(r)
-              }
-            }
+            AgentRolePickerCompact(
+              selection: Binding(
+                get: { agent.role },
+                set: { agent.role = $0 }
+              ),
+              showReadOnlyWarning: false
+            )
             .labelsHidden()
             .frame(maxWidth: 150)
             .accessibilityIdentifier("agents.agentDetail.rolePicker")
