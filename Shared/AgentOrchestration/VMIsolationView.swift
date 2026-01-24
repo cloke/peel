@@ -14,6 +14,24 @@ import AppKit
 import Virtualization
 
 /// Dashboard view for VM Isolation status and management
+private enum VMIsolationSection: String, CaseIterable, Identifiable {
+  case overview
+  case linux
+  case macos
+  case pools
+
+  var id: String { rawValue }
+
+  var title: String {
+    switch self {
+    case .overview: "Overview"
+    case .linux: "Linux"
+    case .macos: "macOS"
+    case .pools: "Pools"
+    }
+  }
+}
+
 struct VMIsolationDashboardView: View {
   @Environment(VMIsolationService.self) private var service
   @State private var errorMessage: String?
@@ -26,40 +44,23 @@ struct VMIsolationDashboardView: View {
   @State private var isStartingMacOSVM = false
   @State private var macOSVMWindowController: NSWindowController?
   @AppStorage("vm.macos.viewer.scaleMode") private var macOSViewerScaleMode = "fit"
+  @AppStorage("vm.isolation.section") private var selectedSectionRawValue = VMIsolationSection.overview.rawValue
+
+  private var selectedSection: VMIsolationSection {
+    get { VMIsolationSection(rawValue: selectedSectionRawValue) ?? .overview }
+    set { selectedSectionRawValue = newValue.rawValue }
+  }
   
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 20) {
         // Header
         statusHeader
+
+        sectionPicker
         
         if service.isVirtualizationAvailable {
-          // Environment tiers explanation
-          environmentTiersSection
-          
-          // Setup status
-          setupStatusSection
-          
-          // Test VM section (when Linux is ready)
-          if service.isLinuxReady {
-            testVMSection
-            consoleSection
-          }
-
-          if service.isMacOSReady {
-            testMacOSVMSection
-          }
-          
-          // VM Pools
-          if service.isLinuxReady || service.isMacOSReady {
-            poolsSection
-          }
-          
-          // Active Tasks
-          activeTasksSection
-          
-          // Recent History
-          historySection
+          sectionContent
         } else {
           unavailableView
         }
@@ -111,6 +112,45 @@ struct VMIsolationDashboardView: View {
     }
     .padding()
     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+  }
+
+  private var sectionPicker: some View {
+    Picker("Section", selection: $selectedSectionRawValue) {
+      ForEach(VMIsolationSection.allCases) { section in
+        Text(section.title).tag(section.rawValue)
+      }
+    }
+    .pickerStyle(.segmented)
+  }
+
+  @ViewBuilder
+  private var sectionContent: some View {
+    switch selectedSection {
+    case .overview:
+      environmentTiersSection
+      setupStatusSection
+      activeTasksSection
+      historySection
+    case .linux:
+      if service.isLinuxReady {
+        testVMSection
+        consoleSection
+      } else {
+        setupStatusSection
+      }
+    case .macos:
+      if service.isMacOSReady {
+        testMacOSVMSection
+      } else {
+        setupStatusSection
+      }
+    case .pools:
+      if service.isLinuxReady || service.isMacOSReady {
+        poolsSection
+      } else {
+        setupStatusSection
+      }
+    }
   }
   
   // MARK: - Environment Tiers
