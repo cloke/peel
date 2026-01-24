@@ -15,6 +15,7 @@ struct AgentsSidebarView: View {
   @Binding var showingNewChainSheet: Bool
   @Binding var showingNewAgentSheet: Bool
   @Binding var selectedInfrastructure: InfrastructureView?
+  @AppStorage("vm.isolation.section") private var vmIsolationSection = "overview"
 
   // Track selection as a string: "chain:id" or "agent:id" or "infra:key"
   @State private var selection: String?
@@ -168,15 +169,13 @@ struct AgentsSidebarView: View {
           }
           .accessibilityIdentifier("agents.parallelWorktrees")
           .tag("infra:parallel-worktrees")
+        }
 
-          HStack {
-            Image(systemName: "shield.checkered")
-              .foregroundStyle(.purple)
-            Text("VM Isolation")
-            Spacer()
-          }
-          .accessibilityIdentifier("agents.vmIsolation")
-          .tag("infra:vm-isolation")
+        Section("VM Isolation") {
+          vmIsolationRow(title: "Overview", icon: "shield.checkered", section: "overview")
+          vmIsolationRow(title: "Linux", icon: "server.rack", section: "linux")
+          vmIsolationRow(title: "macOS", icon: "desktopcomputer", section: "macos")
+          vmIsolationRow(title: "Pools", icon: "square.grid.2x2", section: "pools")
         }
         #endif
       }
@@ -229,6 +228,8 @@ struct AgentsSidebarView: View {
         selection = "chain:\(chain.id.uuidString)"
       } else if let agent = agentManager.selectedAgent {
         selection = "agent:\(agent.id.uuidString)"
+      } else if selectedInfrastructure == .vmIsolation {
+        selection = "infra:vm-isolation:\(vmIsolationSection)"
       }
     }
   }
@@ -261,7 +262,14 @@ struct AgentsSidebarView: View {
       agentManager.selectedAgent = nil
       agentManager.selectedChain = nil
       let key = String(value.dropFirst(6))
-      selectedInfrastructure = InfrastructureView(rawValue: key)
+      if key.hasPrefix("vm-isolation") {
+        selectedInfrastructure = .vmIsolation
+        if let section = key.split(separator: ":").dropFirst().first {
+          vmIsolationSection = String(section)
+        }
+      } else {
+        selectedInfrastructure = InfrastructureView(rawValue: key)
+      }
       if let controlId = infrastructureControlId(for: key) {
         mcpServer.recordUIActionHandled(controlId)
       }
@@ -274,10 +282,22 @@ struct AgentsSidebarView: View {
     case "template-gallery": return "agents.templateGallery"
     case "local-rag": return "agents.localRag"
     case "translation-validation": return "agents.translationValidation"
-    case "vm-isolation": return "agents.vmIsolation"
+    case "vm-isolation", "vm-isolation:overview", "vm-isolation:linux", "vm-isolation:macos", "vm-isolation:pools":
+      return "agents.vmIsolation"
     case "pii-scrubber": return "agents.piiScrubber"
     default: return nil
     }
+  }
+
+  private func vmIsolationRow(title: String, icon: String, section: String) -> some View {
+    HStack {
+      Image(systemName: icon)
+        .foregroundStyle(.purple)
+      Text(title)
+      Spacer()
+    }
+    .accessibilityIdentifier("agents.vmIsolation")
+    .tag("infra:vm-isolation:\(section)")
   }
 
   private var copilotStatusIcon: String {
