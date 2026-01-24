@@ -10,10 +10,12 @@
 #if os(macOS)
 
 import SwiftUI
+import AppKit
+import Virtualization
 
 /// Dashboard view for VM Isolation status and management
 struct VMIsolationDashboardView: View {
-  @State private var service = VMIsolationService()
+  @Environment(VMIsolationService.self) private var service
   @State private var errorMessage: String?
   @State private var showingError = false
   @State private var isDownloading = false
@@ -22,6 +24,8 @@ struct VMIsolationDashboardView: View {
   @State private var isInstallingDependencies = false
   @State private var consoleInput = ""
   @State private var isStartingMacOSVM = false
+  @State private var macOSVMWindowController: NSWindowController?
+  @AppStorage("vm.macos.viewer.scaleMode") private var macOSViewerScaleMode = "fit"
   
   var body: some View {
     ScrollView {
@@ -533,6 +537,27 @@ struct VMIsolationDashboardView: View {
           .buttonStyle(.borderedProminent)
           .disabled(isStartingMacOSVM || service.isMacOSInstalling)
         }
+
+        if #available(macOS 12.0, *), let vm = service.macOSVirtualMachine, service.isMacOSVMRunning {
+          Button {
+            showMacOSVMWindow(vm)
+          } label: {
+            Label("Open VM Viewer", systemImage: "rectangle.on.rectangle")
+          }
+          .buttonStyle(.bordered)
+
+          Picker("Scale", selection: $macOSViewerScaleMode) {
+            Text("Fit").tag("fit")
+            Text("Fill").tag("fill")
+          }
+          .pickerStyle(.segmented)
+          .frame(width: 140)
+          .onChange(of: macOSViewerScaleMode) { _, _ in
+            if let vm = service.macOSVirtualMachine {
+              showMacOSVMWindow(vm)
+            }
+          }
+        }
       }
       .padding()
       .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
@@ -573,6 +598,19 @@ struct VMIsolationDashboardView: View {
     }
     .padding()
     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+  }
+
+  @available(macOS 12.0, *)
+  private func showMacOSVMWindow(_ virtualMachine: VZVirtualMachine) {
+    if let controller = macOSVMWindowController {
+      controller.close()
+    }
+
+    let mode: MacOSVMWindowController.ScaleMode = macOSViewerScaleMode == "fill" ? .fill : .fit
+    let controller = MacOSVMWindowController(virtualMachine: virtualMachine, scaleMode: mode)
+    macOSVMWindowController = controller
+    controller.showWindow(nil)
+    controller.window?.makeKeyAndOrderFront(nil)
   }
 
   private var dependencyPromptMessage: String {
@@ -681,6 +719,82 @@ struct VMIsolationDashboardView: View {
     }
     .frame(maxWidth: .infinity)
     .padding(.vertical, 40)
+  }
+}
+
+@available(macOS 12.0, *)
+private final class MacOSVMWindowController: NSWindowController {
+  enum ScaleMode {
+    case fit
+    case fill
+  }
+
+  private let virtualMachine: VZVirtualMachine
+  private let scaleMode: ScaleMode
+
+  init(virtualMachine: VZVirtualMachine, scaleMode: ScaleMode) {
+    self.virtualMachine = virtualMachine
+    self.scaleMode = scaleMode
+
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 1100, height: 720),
+      styleMask: [.titled, .closable, .resizable, .miniaturizable],
+      backing: .buffered,
+      defer: false
+    )
+    window.title = "macOS VM Viewer"
+    window.isReleasedWhenClosed = false
+    window.minSize = NSSize(width: 640, height: 480)
+
+    let container = VZAspectFitContainerView(
+      virtualMachine: virtualMachine,
+      displaySize: VMIsolationService.macOSDisplaySize,
+      scaleMode: scaleMode
+    )
+    window.contentView = container
+
+    super.init(window: window)
+  }
+
+  required init?(coder: NSCoder) {
+    nil
+  }
+}
+
+@available(macOS 12.0, *)
+private final class VZAspectFitContainerView: NSView {
+  private let vmView = VZVirtualMachineView()
+  private let displaySize: CGSize
+  private let scaleMode: MacOSVMWindowController.ScaleMode
+
+  init(virtualMachine: VZVirtualMachine, displaySize: CGSize, scaleMode: MacOSVMWindowController.ScaleMode) {
+    self.displaySize = displaySize
+    self.scaleMode = scaleMode
+    super.init(frame: .zero)
+    wantsLayer = true
+    vmView.virtualMachine = virtualMachine
+    addSubview(vmView)
+  }
+
+  required init?(coder: NSCoder) {
+    nil
+  }
+
+  override func layout() {
+    super.layout()
+    guard bounds.width > 0, bounds.height > 0 else { return }
+
+    let aspectWidth = displaySize.width
+    let aspectHeight = displaySize.height
+    let scale = scaleMode == .fill
+      ? max(bounds.width / aspectWidth, bounds.height / aspectHeight)
+      : min(bounds.width / aspectWidth, bounds.height / aspectHeight)
+    let targetWidth = aspectWidth * scale
+    let targetHeight = aspectHeight * scale
+    let originX = (bounds.width - targetWidth) / 2
+    let originY = (bounds.height - targetHeight) / 2
+
+    vmView.frame = NSRect(x: originX, y: originY, width: targetWidth, height: targetHeight)
   }
 }
 
@@ -943,6 +1057,7 @@ struct VMTaskResultRow: View {
     VMIsolationDashboardView()
   }
   .frame(width: 700, height: 900)
+  .environment(VMIsolationService())
 }
 
 #endif // os(macOS)

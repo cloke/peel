@@ -1299,6 +1299,7 @@ public final class MCPServerService {
     case ui
     case state
     case rag
+    case vm
 
     var displayName: String {
       switch self {
@@ -1311,6 +1312,7 @@ public final class MCPServerService {
       case .ui: return "UI Automation"
       case .state: return "State"
       case .rag: return "Local RAG"
+      case .vm: return "VM Isolation"
       }
     }
   }
@@ -1478,6 +1480,7 @@ public final class MCPServerService {
   private let screenshotService = ScreenshotService()
   let translationValidatorService = TranslationValidatorService()
   let piiScrubberService = PIIScrubberService()
+  private let vmIsolationService: VMIsolationService
   private let localRagStore = LocalRAGStore()
   private(set) var parallelWorktreeRunner: ParallelWorktreeRunner?
 
@@ -1527,18 +1530,21 @@ public final class MCPServerService {
     sessionTracker: SessionTracker = SessionTracker(),
     telemetryProvider: MCPTelemetryProviding? = nil,
     uiAutomationProvider: MCPUIAutomationProviding = MCPUIAutomationStore(),
-    permissionsStore: MCPToolPermissionsProviding = MCPToolPermissionsStore()
+    permissionsStore: MCPToolPermissionsProviding = MCPToolPermissionsStore(),
+    vmIsolationService: VMIsolationService = VMIsolationService()
   ) {
     self.agentManager = agentManager
     self.sessionTracker = sessionTracker
     let resolvedTelemetry = telemetryProvider ?? MCPTelemetryAdapter(sessionTracker: sessionTracker)
     self.telemetryProvider = resolvedTelemetry
-    self.cliService = cliService ?? CLIService(telemetryProvider: resolvedTelemetry)
+    let resolvedCLIService = cliService ?? CLIService(telemetryProvider: resolvedTelemetry)
+    self.cliService = resolvedCLIService
     self.uiAutomationProvider = uiAutomationProvider
     self.permissionsStore = permissionsStore
+    self.vmIsolationService = vmIsolationService
     self.chainRunner = AgentChainRunner(
       agentManager: agentManager,
-      cliService: self.cliService,
+      cliService: resolvedCLIService,
       telemetryProvider: resolvedTelemetry
     )
     self.isEnabled = UserDefaults.standard.bool(forKey: StorageKey.enabled)
@@ -1576,8 +1582,8 @@ public final class MCPServerService {
       chainRunner: chainRunner
     )
     self.parallelWorktreeRunner?.setRAGStore(localRagStore)
-    
-  updateSleepPrevention()
+
+    updateSleepPrevention()
 
     if isEnabled {
       start()
@@ -2382,6 +2388,24 @@ public final class MCPServerService {
       let text = await telemetryProvider.tail(lines: lines)
       return (200, makeRPCResult(id: id, result: ["text": text]))
 
+    case "vm.macos.status":
+      return await handleMacOSVMStatus(id: id)
+
+    case "vm.macos.restore.download":
+      return await handleMacOSVMRestoreDownload(id: id)
+
+    case "vm.macos.install":
+      return await handleMacOSVMInstall(id: id)
+
+    case "vm.macos.start":
+      return await handleMacOSVMStart(id: id)
+
+    case "vm.macos.stop":
+      return await handleMacOSVMStop(id: id)
+
+    case "vm.macos.reset":
+      return await handleMacOSVMReset(id: id, arguments: arguments)
+
     case "server.restart":
       return await handleServerRestart(id: id)
 
@@ -2807,6 +2831,78 @@ public final class MCPServerService {
       ]))
     } catch {
       await telemetryProvider.warning("Translation validation failed", metadata: ["error": error.localizedDescription])
+      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
+    }
+  }
+
+  // MARK: - VM Isolation Handlers
+
+  private func handleMacOSVMStatus(id: Any?) async -> (Int, Data) {
+    await vmIsolationService.initialize()
+
+    let status: [String: Any] = [
+      "virtualizationAvailable": vmIsolationService.isVirtualizationAvailable,
+      "macOSReady": vmIsolationService.isMacOSReady,
+      "macOSRestoreImagePath": vmIsolationService.macOSRestoreImagePath?.path as Any,
+      "macOSInstalled": vmIsolationService.isMacOSVMInstalled,
+      "macOSRunning": vmIsolationService.isMacOSVMRunning,
+      "statusMessage": vmIsolationService.statusMessage
+    ]
+    return (200, makeRPCResult(id: id, result: status))
+  }
+
+  private func handleMacOSVMRestoreDownload(id: Any?) async -> (Int, Data) {
+    do {
+      await vmIsolationService.initialize()
+      try await vmIsolationService.downloadMacOSRestoreImage()
+      return await handleMacOSVMStatus(id: id)
+    } catch {
+      await telemetryProvider.warning("macOS restore download failed", metadata: ["error": error.localizedDescription])
+      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
+    }
+  }
+
+  private func handleMacOSVMInstall(id: Any?) async -> (Int, Data) {
+    do {
+      await vmIsolationService.initialize()
+      try await vmIsolationService.installMacOSVM()
+      return await handleMacOSVMStatus(id: id)
+    } catch {
+      await telemetryProvider.warning("macOS VM install failed", metadata: ["error": error.localizedDescription])
+      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
+    }
+  }
+
+  private func handleMacOSVMStart(id: Any?) async -> (Int, Data) {
+    do {
+      await vmIsolationService.initialize()
+      try await vmIsolationService.startMacOSVM()
+      return await handleMacOSVMStatus(id: id)
+    } catch {
+      await telemetryProvider.warning("macOS VM start failed", metadata: ["error": error.localizedDescription])
+      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
+    }
+  }
+
+  private func handleMacOSVMStop(id: Any?) async -> (Int, Data) {
+    do {
+      await vmIsolationService.initialize()
+      try await vmIsolationService.stopMacOSVM()
+      return await handleMacOSVMStatus(id: id)
+    } catch {
+      await telemetryProvider.warning("macOS VM stop failed", metadata: ["error": error.localizedDescription])
+      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
+    }
+  }
+
+  private func handleMacOSVMReset(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    let deleteRestoreImage = arguments["deleteRestoreImage"] as? Bool ?? false
+    do {
+      await vmIsolationService.initialize()
+      try await vmIsolationService.resetMacOSVM(deleteRestoreImage: deleteRestoreImage)
+      return await handleMacOSVMStatus(id: id)
+    } catch {
+      await telemetryProvider.warning("macOS VM reset failed", metadata: ["error": error.localizedDescription])
       return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
     }
   }
@@ -5246,6 +5342,68 @@ public final class MCPServerService {
         ],
         category: .logs,
         isMutating: false
+      ),
+      ToolDefinition(
+        name: "vm.macos.status",
+        description: "Get macOS VM readiness and status",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .vm,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "vm.macos.restore.download",
+        description: "Download the macOS restore image",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .vm,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "vm.macos.install",
+        description: "Install macOS into the VM disk",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .vm,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "vm.macos.start",
+        description: "Start the macOS VM",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .vm,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "vm.macos.stop",
+        description: "Stop the macOS VM",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .vm,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "vm.macos.reset",
+        description: "Delete the macOS VM bundle and reset install state",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "deleteRestoreImage": ["type": "boolean"]
+          ]
+        ],
+        category: .vm,
+        isMutating: true
       ),
       ToolDefinition(
         name: "server.stop",
