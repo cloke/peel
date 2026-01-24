@@ -32,21 +32,7 @@ public enum CopilotModel: String, Codable, CaseIterable, Identifiable, Sendable 
   public var id: String { rawValue }
   
   public var displayName: String {
-    switch self {
-    case .claudeSonnet45: return "Claude Sonnet 4.5"
-    case .claudeHaiku45: return "Claude Haiku 4.5"
-    case .claudeOpus45: return "Claude Opus 4.5"
-    case .claudeSonnet4: return "Claude Sonnet 4"
-    case .gpt51CodexMax: return "GPT 5.1 Codex Max"
-    case .gpt51Codex: return "GPT 5.1 Codex"
-    case .gpt52: return "GPT 5.2"
-    case .gpt51: return "GPT 5.1"
-    case .gpt5: return "GPT 5"
-    case .gpt51CodexMini: return "GPT 5.1 Codex Mini"
-    case .gpt5Mini: return "GPT 5 Mini"
-    case .gpt41: return "GPT 4.1"
-    case .gemini3Pro: return "Gemini 3 Pro"
-    }
+    metadata.displayName
   }
   
   /// Display name with premium cost (right-aligned)
@@ -57,21 +43,12 @@ public enum CopilotModel: String, Codable, CaseIterable, Identifiable, Sendable 
     } else {
       costStr = premiumCost.premiumMultiplierString()
     }
-    // Pad to align costs on the right
-    let padding = String(repeating: " ", count: max(0, 22 - displayName.count))
-    return "\(displayName)\(padding)\(costStr)"
+    return "\(displayName) · \(costStr)"
   }
   
   /// Premium requests cost per use (0 = free tier)
   public var premiumCost: Double {
-    switch self {
-    case .claudeOpus45: return 3.0
-    case .claudeHaiku45: return 0.33
-    case .gpt41: return 0.0  // Free tier
-    case .gpt5Mini: return 0.0  // Free tier (likely)
-    case .gemini3Pro: return 0.0  // Free tier (likely)
-    default: return 1.0
-    }
+    metadata.premiumCost
   }
   
   /// Whether this is a free-tier model
@@ -80,45 +57,72 @@ public enum CopilotModel: String, Codable, CaseIterable, Identifiable, Sendable 
   }
   
   public var shortName: String {
-    switch self {
-    case .claudeSonnet45: return "Sonnet 4.5"
-    case .claudeHaiku45: return "Haiku 4.5"
-    case .claudeOpus45: return "Opus 4.5"
-    case .claudeSonnet4: return "Sonnet 4"
-    case .gpt51CodexMax: return "Codex Max"
-    case .gpt51Codex: return "Codex"
-    case .gpt52: return "5.2"
-    case .gpt51: return "5.1"
-    case .gpt5: return "5"
-    case .gpt51CodexMini: return "Codex Mini"
-    case .gpt5Mini: return "5 Mini"
-    case .gpt41: return "4.1"
-    case .gemini3Pro: return "Gemini 3"
-    }
+    metadata.shortName
   }
   
   public var isClaude: Bool {
-    switch self {
-    case .claudeSonnet45, .claudeHaiku45, .claudeOpus45, .claudeSonnet4:
-      return true
-    default:
-      return false
-    }
+    metadata.family == .claude
   }
   
   public var isGPT: Bool {
-    rawValue.hasPrefix("gpt")
+    metadata.family == .gpt
   }
   
   public var isGemini: Bool {
-    rawValue.hasPrefix("gemini")
+    metadata.family == .gemini
   }
   
   /// Group header for picker
   public var family: String {
-    if isClaude { return "Claude" }
-    if isGemini { return "Gemini" }
-    return "GPT"
+    metadata.family.displayName
+  }
+
+  public enum ModelFamily: String, CaseIterable, Identifiable, Sendable {
+    case claude
+    case gpt
+    case gemini
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+      switch self {
+      case .claude: return "Claude"
+      case .gpt: return "GPT"
+      case .gemini: return "Gemini"
+      }
+    }
+  }
+
+  private struct Metadata {
+    let displayName: String
+    let shortName: String
+    let premiumCost: Double
+    let family: ModelFamily
+  }
+
+  private static let metadataMap: [CopilotModel: Metadata] = [
+    .claudeSonnet45: Metadata(displayName: "Claude Sonnet 4.5", shortName: "Sonnet 4.5", premiumCost: 1.0, family: .claude),
+    .claudeHaiku45: Metadata(displayName: "Claude Haiku 4.5", shortName: "Haiku 4.5", premiumCost: 0.33, family: .claude),
+    .claudeOpus45: Metadata(displayName: "Claude Opus 4.5", shortName: "Opus 4.5", premiumCost: 3.0, family: .claude),
+    .claudeSonnet4: Metadata(displayName: "Claude Sonnet 4", shortName: "Sonnet 4", premiumCost: 1.0, family: .claude),
+    .gpt51CodexMax: Metadata(displayName: "GPT 5.1 Codex Max", shortName: "Codex Max", premiumCost: 1.0, family: .gpt),
+    .gpt51Codex: Metadata(displayName: "GPT 5.1 Codex", shortName: "Codex", premiumCost: 1.0, family: .gpt),
+    .gpt52: Metadata(displayName: "GPT 5.2", shortName: "5.2", premiumCost: 1.0, family: .gpt),
+    .gpt51: Metadata(displayName: "GPT 5.1", shortName: "5.1", premiumCost: 1.0, family: .gpt),
+    .gpt5: Metadata(displayName: "GPT 5", shortName: "5", premiumCost: 1.0, family: .gpt),
+    .gpt51CodexMini: Metadata(displayName: "GPT 5.1 Codex Mini", shortName: "Codex Mini", premiumCost: 1.0, family: .gpt),
+    .gpt5Mini: Metadata(displayName: "GPT 5 Mini", shortName: "5 Mini", premiumCost: 0.0, family: .gpt),
+    .gpt41: Metadata(displayName: "GPT 4.1", shortName: "4.1", premiumCost: 0.0, family: .gpt),
+    .gemini3Pro: Metadata(displayName: "Gemini 3 Pro", shortName: "Gemini 3", premiumCost: 0.0, family: .gemini)
+  ]
+
+  private var metadata: Metadata {
+    Self.metadataMap[self] ?? Metadata(
+      displayName: rawValue,
+      shortName: rawValue,
+      premiumCost: 1.0,
+      family: .gpt
+    )
   }
 
   public static func fromString(_ value: String) -> CopilotModel? {
@@ -181,9 +185,11 @@ public enum AgentRole: String, Codable, CaseIterable, Identifiable, Sendable {
   
   /// System prompt prefix that defines the agent's role clearly
   public var systemPrompt: String {
-    switch self {
-    case .planner:
-      return """
+    Self.systemPrompts[self] ?? ""
+  }
+
+  private static let systemPrompts: [AgentRole: String] = [
+    .planner: """
         You are a PLANNER agent. Your role is to:
         - Analyze code and understand the codebase
         - Create detailed plans and identify issues
@@ -216,9 +222,8 @@ public enum AgentRole: String, Codable, CaseIterable, Identifiable, Sendable {
           "noWorkReason": "Why no work is required"
         }
         
-        """
-    case .implementer:
-      return """
+        """,
+    .implementer: """
         You are an IMPLEMENTER agent. Your role is to:
         - Execute the plan provided by the Planner
         - Make precise, targeted code changes
@@ -229,9 +234,8 @@ public enum AgentRole: String, Codable, CaseIterable, Identifiable, Sendable {
         Focus on implementing exactly what was planned. If the plan is unclear,
         make reasonable decisions but stay close to the original intent.
         
-        """
-    case .reviewer:
-      return """
+        """,
+    .reviewer: """
         You are a REVIEWER agent. Your role is to:
         - Review the changes made by the Implementer
         - Check for bugs, edge cases, and code quality issues
@@ -243,8 +247,7 @@ public enum AgentRole: String, Codable, CaseIterable, Identifiable, Sendable {
         Be specific about any issues found and suggest how to fix them.
         
         """
-    }
-  }
+  ]
 
   public static func fromString(_ value: String) -> AgentRole? {
     let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -288,27 +291,11 @@ public enum AgentState: Equatable {
   case failed(message: String)
   
   public var displayName: String {
-    switch self {
-    case .idle: return "Idle"
-    case .planning: return "Planning"
-    case .working: return "Working"
-    case .blocked: return "Blocked"
-    case .testing: return "Testing"
-    case .complete: return "Complete"
-    case .failed: return "Failed"
-    }
+    metadata.displayName
   }
   
   public var iconName: String {
-    switch self {
-    case .idle: return "circle"
-    case .planning: return "lightbulb"
-    case .working: return "gearshape.2"
-    case .blocked: return "exclamationmark.triangle"
-    case .testing: return "checkmark.circle"
-    case .complete: return "checkmark.circle.fill"
-    case .failed: return "xmark.circle.fill"
-    }
+    metadata.iconName
   }
   
   public var isActive: Bool {
@@ -319,14 +306,39 @@ public enum AgentState: Equatable {
   }
   
   public var color: Color {
+    metadata.color
+  }
+
+  private struct Metadata {
+    let displayName: String
+    let iconName: String
+    let color: Color
+  }
+
+  private static let idleMetadata = Metadata(displayName: "Idle", iconName: "circle", color: .gray)
+  private static let planningMetadata = Metadata(displayName: "Planning", iconName: "lightbulb", color: .yellow)
+  private static let workingMetadata = Metadata(displayName: "Working", iconName: "gearshape.2", color: .blue)
+  private static let blockedMetadata = Metadata(displayName: "Blocked", iconName: "exclamationmark.triangle", color: .orange)
+  private static let testingMetadata = Metadata(displayName: "Testing", iconName: "checkmark.circle", color: .purple)
+  private static let completeMetadata = Metadata(displayName: "Complete", iconName: "checkmark.circle.fill", color: .green)
+  private static let failedMetadata = Metadata(displayName: "Failed", iconName: "xmark.circle.fill", color: .red)
+
+  private var metadata: Metadata {
     switch self {
-    case .idle: return .gray
-    case .planning: return .yellow
-    case .working: return .blue
-    case .blocked: return .orange
-    case .testing: return .purple
-    case .complete: return .green
-    case .failed: return .red
+    case .idle:
+      return Self.idleMetadata
+    case .planning:
+      return Self.planningMetadata
+    case .working:
+      return Self.workingMetadata
+    case .blocked:
+      return Self.blockedMetadata
+    case .testing:
+      return Self.testingMetadata
+    case .complete:
+      return Self.completeMetadata
+    case .failed:
+      return Self.failedMetadata
     }
   }
 }
