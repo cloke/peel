@@ -6,13 +6,17 @@
 //
 
 import SwiftUI
+import OSLog
 
 #if os(macOS)
 struct FileListView: View {
   @Bindable var repository: Model.Repository
   @State private var commitMessage: String = ""
   @State private var diff = Diff()
+  @State private var selectedFilePath: String = ""
   @FocusState private var commitIsFocused: Bool
+  @AppStorage("git.selectedStatusPath") private var selectedStatusPath: String = ""
+  private let logger = Logger(subsystem: "Peel", category: "Git.LocalChanges")
   
   var body: some View {
     HSplitView {
@@ -60,7 +64,7 @@ struct FileListView: View {
           .padding(.vertical, 4)
         }
         
-        List {
+        List(selection: $selectedFilePath) {
           Section("Changes") {
             if repository.status.isEmpty {
               ContentUnavailableView {
@@ -77,9 +81,13 @@ struct FileListView: View {
                   .onTapGesture {
                     Task {
                       let str = file.path
-                      diff = try await Commands.diff(repository: repository, path: str)
+                      selectedFilePath = str
+                      selectedStatusPath = str
+                      await loadDiff(for: str, source: "tap")
                     }
                   }
+                  .listRowInsets(EdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8))
+                  .tag(file.path)
                   .contextMenu {
                     Button {} label: {
                       Text("Ignore")
@@ -107,16 +115,35 @@ struct FileListView: View {
         }
         .listStyle(.inset)
       }
-      .frame(minWidth: 0, idealWidth: 360)
+      .frame(minWidth: 200, idealWidth: 280, maxWidth: 360)
       
       DiffView(diff: diff)
-        .frame(minWidth: 0)
+        .frame(minWidth: 0, idealWidth: 0)
+        .layoutPriority(1)
     }
     .navigationTitle("Local Changes")
     .task {
       await repository.refreshStatus()
+      persistAvailableStatusPaths()
+    }
+    .onChange(of: repository.status.map { $0.path }) { _, _ in
+      persistAvailableStatusPaths()
+    }
+    .onChange(of: selectedStatusPath) { _, newValue in
+      guard !newValue.isEmpty else { return }
+      selectedFilePath = newValue
+      if let file = repository.status.first(where: { $0.path == newValue }) {
+        Task {
+          await loadDiff(for: file.path, source: "selection")
+        }
+      }
     }
     .environment(repository)
+  }
+
+  private func persistAvailableStatusPaths() {
+    let paths = repository.status.map { $0.path }.sorted()
+    UserDefaults.standard.set(paths, forKey: "git.availableStatusPaths")
   }
   
   func color(status: FileStatus) -> Color {
@@ -127,6 +154,25 @@ struct FileListView: View {
     case .untracked: return .purple
     case .deleted: return .red
     default: return .clear
+    }
+  }
+
+  private func loadDiff(for path: String, source: String) async {
+    let startTime = Date()
+    #if DEBUG
+    logger.notice("Diff load start for \(path, privacy: .public) (source: \(source, privacy: .public))")
+    #endif
+    do {
+      let newDiff = try await Commands.diff(repository: repository, path: path)
+      diff = newDiff
+      let durationMs = Int(Date().timeIntervalSince(startTime) * 1000)
+      #if DEBUG
+      logger.notice("Diff load finished for \(path, privacy: .public) in \(durationMs)ms (files: \(newDiff.files.count), source: \(source, privacy: .public))")
+      #endif
+    } catch {
+      #if DEBUG
+      logger.notice("Diff load failed for \(path, privacy: .public) (source: \(source, privacy: .public)): \(error.localizedDescription, privacy: .public)")
+      #endif
     }
   }
 }

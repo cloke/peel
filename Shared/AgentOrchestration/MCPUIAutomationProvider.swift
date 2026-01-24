@@ -204,7 +204,16 @@ public final class MCPUIAutomationStore: MCPUIAutomationProviding {
         "workspaces.removeSelectedWorktree"
       ]
     case "git":
-      return ["git.openRepository", "git.cloneRepository", "git.openInVSCode", "git.selectRepo"]
+      return [
+        "git.openRepository",
+        "git.cloneRepository",
+        "git.openInVSCode",
+        "git.selectSidebarItem",
+        "git.selectRepo",
+        "git.selectStatusPath",
+        "git.selectBranch",
+        "git.selectCommit"
+      ]
     default:
       return []
     }
@@ -243,9 +252,16 @@ public final class MCPUIAutomationStore: MCPUIAutomationProviding {
     case "git":
       let repoPaths = UserDefaults.standard.stringArray(forKey: "git.availableRepoPaths") ?? []
       let repoNames = UserDefaults.standard.stringArray(forKey: "git.availableRepoNames") ?? []
+      let statusPaths = UserDefaults.standard.stringArray(forKey: "git.availableStatusPaths") ?? []
+      let branchNames = UserDefaults.standard.stringArray(forKey: "git.availableLocalBranchNames") ?? []
+      let commitShas = UserDefaults.standard.stringArray(forKey: "git.availableCommitShas") ?? []
       return [
+        "git.selectSidebarItem": ["localChanges", "history"],
         "git.selectRepo": repoPaths,
-        "git.selectRepoNames": repoNames
+        "git.selectRepoNames": repoNames,
+        "git.selectStatusPath": statusPaths,
+        "git.selectBranch": branchNames,
+        "git.selectCommit": commitShas
       ]
     default:
       return [:]

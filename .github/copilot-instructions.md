@@ -98,6 +98,14 @@ When the user asks to **start a chain**, **use the MCP CLI** instead of manually
 
 **If local changes exist:** commit and push first (unless user says not to).
 
+### MCP CLI Temp Files (IMPORTANT)
+When invoking MCP tools via `Tools/PeelCLI`, write argument JSON files to the repo-local tmp directory instead of `/tmp`.
+
+Preferred path:
+- `tmp/peel-mcp-args.json` (create `tmp/` if needed)
+
+Reason: avoids system temp permission prompts and keeps artifacts scoped to the project.
+
 ### Execution Guardrails (IMPORTANT)
 - If a skill or better docs would have prevented confusion, **pause and ask** for clarification or propose adding a skill/doc before continuing.
 - Prefer **one decisive action** over trying multiple approaches. If the first attempt is uncertain, stop and ask rather than trying 10 things.

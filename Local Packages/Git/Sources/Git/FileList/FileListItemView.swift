@@ -36,6 +36,8 @@ struct FileListItemView: View {
       Text(file.status.rawValue.replacingOccurrences(of: ".", with: ""))
         .bold()
     }
+    .padding(.vertical, 4)
+    .contentShape(Rectangle())
   }
   
   func icon(from path: String) -> String {

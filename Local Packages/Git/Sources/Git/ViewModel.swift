@@ -60,6 +60,8 @@ public struct Diff: Identifiable {
         public var line = ""
         /// The line status. +/- for added / deleted
         public var status = ""
+        public var oldLineNumber: Int?
+        public var newLineNumber: Int?
         public var lineNumber = 0
       }
     }

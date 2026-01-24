@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import OSLog
 
 #if os(macOS)
 struct ListItem: Identifiable {
@@ -16,6 +17,8 @@ struct ListItem: Identifiable {
 struct BranchListItemView: View {
   @Environment(Model.Repository.self) var repository
   @State private var upDown = ""
+
+  private let logger = Logger(subsystem: "Peel", category: "Git.BranchRow")
   
   @Binding var branch: Model.Branch
   let refreshToken: UUID
@@ -36,13 +39,25 @@ struct BranchListItemView: View {
         .task(id: refreshToken) {
           do {
             if type == .local {
+              let remoteNames = Set(repository.remoteBranches.map { name in
+                name.name.replacingOccurrences(of: "refs/heads/", with: "")
+              })
+              let hasUpstream = remoteNames.contains(branch.name)
+              guard hasUpstream else {
+                upDown = ""
+                return
+              }
+              let startTime = Date()
               let status = try await Commands.revList(repository: repository, branchA: "origin/\(branch.name)", branchB: branch.name)
               upDown = "(⇣\(status.0) / \(status.1) ⇡)"
+              let durationMs = Int(Date().timeIntervalSince(startTime) * 1000)
+              logger.debug("rev-list \(branch.name) in \(durationMs)ms")
             } else {
               upDown = ""
             }
           } catch {
             upDown = ""
+            logger.error("rev-list failed for \(branch.name): \(String(describing: error))")
           }
         }
       Button {
@@ -69,6 +84,7 @@ public struct BranchListView: View {
   @State private var refreshToken = UUID()
   // TODO: Should we persist this as state?
   @State private var isExpanded = false
+  @State private var hasLoadedBranches = false
   @State private var multiSelection = Set<UUID>()
   
   
@@ -114,6 +130,7 @@ public struct BranchListView: View {
         .contentShape(Rectangle())
         .onTapGesture {
           selection = .history(localBranches[index].name)
+          UserDefaults.standard.set(localBranches[index].name, forKey: "git.selectedBranchName")
         }
         .contextMenu {
           Button {
@@ -157,6 +174,13 @@ public struct BranchListView: View {
       } label: {
         Text("Create Branch")
         Image(systemName: "arrow.triangle.branch")
+      }
+    }
+    .onChange(of: isExpanded) { _, newValue in
+      guard location == .remote, newValue, !hasLoadedBranches else { return }
+      Task { @MainActor in
+        await repository.loadBranches(branchType: .remote)
+        hasLoadedBranches = true
       }
     }
   }
