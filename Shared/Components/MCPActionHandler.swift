@@ -98,10 +98,13 @@ extension View {
 // MARK: - Convenience for async actions
 
 extension MCPActionMapping {
-  /// Creates a mapping that runs an async action.
-  public static func async(_ controlId: String, action: @escaping () async -> Void) -> MCPActionMapping {
+  /// Creates a mapping that runs an async action on the main actor.
+  @MainActor
+  public static func async(_ controlId: String, action: @MainActor @escaping () async -> Void) -> MCPActionMapping {
     MCPActionMapping(controlId) {
-      Task { await action() }
+      Task { @MainActor in
+        await action()
+      }
     }
   }
 }
