@@ -59,37 +59,23 @@ struct LocalRAGDashboardView: View {
               Text("Schema: v\(status.schemaVersion) · Embeddings: \(status.providerName)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-              let coreMLAssets = [
-                status.coreMLModelPresent ? "model" : nil,
-                status.coreMLVocabPresent ? "vocab" : nil,
-                status.coreMLTokenizerHelperPresent ? "tokenizer" : nil
-              ].compactMap { $0 }.joined(separator: ", ")
-              if !coreMLAssets.isEmpty {
-                Text("Core ML assets: \(coreMLAssets)")
-                  .font(.caption2)
-                  .foregroundStyle(.secondary)
-              } else {
-                Text("Core ML assets missing")
-                  .font(.caption2)
-                  .foregroundStyle(.secondary)
-              }
+              Text(coreMLAssetsSummary(status))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
               Toggle("Use Core ML embeddings (CodeBERT)", isOn: useCoreML)
                 .font(.caption)
                 .toggleStyle(.switch)
                 .accessibilityIdentifier("agents.localRag.useCoreML")
-              if useCoreML.wrappedValue && !status.coreMLTokenizerHelperPresent {
-                Text("Warning: tokenizer helper missing — embeddings will be low quality")
+              if useCoreML.wrappedValue {
+                ForEach(coreMLWarnings(status), id: \.self) { warning in
+                  Text("Warning: \(warning)")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                }
+                Text("Restart required to apply Core ML setting")
                   .font(.caption2)
-                  .foregroundStyle(.orange)
+                  .foregroundStyle(.secondary)
               }
-              if useCoreML.wrappedValue && (!status.coreMLModelPresent || !status.coreMLVocabPresent) {
-                Text("Warning: Core ML assets missing — falling back to system embeddings")
-                  .font(.caption2)
-                  .foregroundStyle(.orange)
-              }
-              Text("Restart required to apply Core ML setting")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
               Text("Extension loaded: \(status.extensionLoaded ? "Yes" : "No")")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -105,6 +91,7 @@ struct LocalRAGDashboardView: View {
             }
 
             if let stats = mcpServer.ragStats {
+              Divider()
               Text("Repos: \(stats.repoCount) · Files: \(stats.fileCount) · Chunks: \(stats.chunkCount)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -151,6 +138,10 @@ struct LocalRAGDashboardView: View {
               .textFieldStyle(.roundedBorder)
               .accessibilityIdentifier("agents.localRag.repoPath")
 
+            Text("Used for indexing and as an optional search scope.")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+
             HStack(spacing: LayoutSpacing.item) {
               Button("Init DB") {
                 Task { await initializeDatabase() }
@@ -195,9 +186,18 @@ struct LocalRAGDashboardView: View {
           VStack(alignment: .leading, spacing: LayoutSpacing.item) {
             SectionHeader("Search")
 
-            TextField("Query", text: query)
-              .textFieldStyle(.roundedBorder)
-              .accessibilityIdentifier("agents.localRag.query")
+            HStack(spacing: LayoutSpacing.item) {
+              TextField("Query", text: query)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("agents.localRag.query")
+
+              Button("Search") {
+                Task { await runSearch() }
+              }
+              .buttonStyle(.bordered)
+              .disabled(isSearching || query.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+              .accessibilityIdentifier("agents.localRag.search")
+            }
 
             HStack {
               Picker("Mode", selection: searchMode) {
@@ -213,14 +213,13 @@ struct LocalRAGDashboardView: View {
                   .font(.caption)
               }
               .accessibilityIdentifier("agents.localRag.limit")
+              Spacer()
+              if !results.isEmpty {
+                Text("Results: \(results.count)")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              }
             }
-
-            Button("Search") {
-              Task { await runSearch() }
-            }
-            .buttonStyle(.bordered)
-            .disabled(isSearching || query.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            .accessibilityIdentifier("agents.localRag.search")
 
             if isSearching {
               ProgressView()
@@ -228,7 +227,7 @@ struct LocalRAGDashboardView: View {
             }
 
             if results.isEmpty {
-              Text("No results yet")
+              Text("Run a search to see results.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             } else {
@@ -567,5 +566,40 @@ struct LocalRAGDashboardView: View {
 
   private func formatBytes(_ bytes: Int) -> String {
     ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
+  }
+
+  private func coreMLAssetsSummary(_ status: LocalRAGStore.Status) -> String {
+    let present = [
+      status.coreMLModelPresent ? "model" : nil,
+      status.coreMLVocabPresent ? "vocab" : nil,
+      status.coreMLTokenizerHelperPresent ? "tokenizer" : nil
+    ].compactMap { $0 }
+    let missing = [
+      status.coreMLModelPresent ? nil : "model",
+      status.coreMLVocabPresent ? nil : "vocab",
+      status.coreMLTokenizerHelperPresent ? nil : "tokenizer"
+    ].compactMap { $0 }
+
+    if present.isEmpty && missing.isEmpty {
+      return "Core ML assets: unknown"
+    }
+    if missing.isEmpty {
+      return "Core ML assets: \(present.joined(separator: ", "))"
+    }
+    if present.isEmpty {
+      return "Core ML assets: missing \(missing.joined(separator: ", "))"
+    }
+    return "Core ML assets: \(present.joined(separator: ", ")) · missing \(missing.joined(separator: ", "))"
+  }
+
+  private func coreMLWarnings(_ status: LocalRAGStore.Status) -> [String] {
+    var warnings: [String] = []
+    if !status.coreMLTokenizerHelperPresent {
+      warnings.append("tokenizer helper missing — embeddings will be low quality")
+    }
+    if !status.coreMLModelPresent || !status.coreMLVocabPresent {
+      warnings.append("model/vocab missing — falling back to system embeddings")
+    }
+    return warnings
   }
 }
