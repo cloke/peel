@@ -1,4 +1,3 @@
-#if os(macOS)
 import Foundation
 import AppKit
 import CoreGraphics
@@ -152,6 +151,7 @@ actor ScreenshotService {
   }
 }
 
+
 @available(macOS 12.3, *)
 private final class ScreenshotStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
   private var continuation: CheckedContinuation<CGImage, Error>?
@@ -222,10 +222,3 @@ private final class CaptureCancellationState: @unchecked Sendable {
     }
   }
 }
-#else
-actor ScreenshotService {
-  func capture(label: String? = nil) async throws -> URL {
-    throw NSError(domain: "ScreenshotService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not supported on this platform"]) as Error
-  }
-}
-#endif

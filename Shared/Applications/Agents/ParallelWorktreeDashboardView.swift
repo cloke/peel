@@ -7,8 +7,6 @@
 
 import SwiftUI
 
-#if os(macOS)
-
 struct ParallelWorktreeDashboardView: View {
   var mcpServer: MCPServerService
   
@@ -875,4 +873,3 @@ struct NewParallelRunSheet: View {
   }
 }
 
-#endif

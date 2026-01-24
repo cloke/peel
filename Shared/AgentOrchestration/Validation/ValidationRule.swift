@@ -7,8 +7,6 @@
 
 import Foundation
 
-#if os(macOS)
-
 /// Protocol for validation rules that can be run on chain execution results
 public protocol ValidationRule: Sendable {
   /// Name of the validation rule
@@ -229,4 +227,4 @@ public struct HeuristicValidationRule: ValidationRule {
   }
 }
 
-#endif
+

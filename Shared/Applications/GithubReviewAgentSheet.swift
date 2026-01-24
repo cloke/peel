@@ -7,8 +7,6 @@
 
 import SwiftUI
 import Github
-
-#if os(macOS)
 struct PRReviewAgentTarget: Identifiable {
   let id: UUID
   let recentPR: RecentPRInfo?
@@ -348,4 +346,3 @@ Task:
     lastSummary = summary
   }
 }
-#endif

@@ -6,8 +6,6 @@
 //
 
 import Foundation
-
-#if os(macOS)
 @MainActor
 public protocol MCPTelemetryProviding: AnyObject {
   func info(_ message: String, metadata: [String: String]) async
@@ -20,15 +18,5 @@ public protocol MCPTelemetryProviding: AnyObject {
   var totalPremiumUsed: Double { get }
   var totalFreeUsed: Int { get }
 }
-
-#else
-@MainActor
-public protocol MCPTelemetryProviding: AnyObject { }
-
-@MainActor
-public final class MCPTelemetryAdapter: MCPTelemetryProviding {
-  public init() {}
-}
-#endif
 
 

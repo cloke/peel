@@ -7,8 +7,6 @@
 
 import Foundation
 import Observation
-
-#if os(macOS)
 import AppKit
 import Git
 import IOKit.pwr_mgt
@@ -253,6 +251,7 @@ public final class AgentManager {
   }
   
 }
+
 
 @MainActor
 public final class MCPTelemetryAdapter: MCPTelemetryProviding {
@@ -5994,15 +5993,3 @@ private actor MergeCoordinator {
     waiters[key] = nil
   }
 }
-
-#else
-// iOS stub
-@MainActor
-@Observable
-public final class AgentManager {
-  public private(set) var agents: [Agent] = []
-  public let workspaceManager = AgentWorkspaceService()
-  public var selectedAgent: Agent?
-  public init() {}
-}
-#endif

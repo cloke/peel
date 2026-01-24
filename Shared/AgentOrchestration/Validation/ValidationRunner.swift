@@ -7,8 +7,6 @@
 
 import Foundation
 
-#if os(macOS)
-
 /// Runs validation rules on chain execution results
 public actor ValidationRunner {
   
@@ -38,4 +36,4 @@ public actor ValidationRunner {
   }
 }
 
-#endif
+

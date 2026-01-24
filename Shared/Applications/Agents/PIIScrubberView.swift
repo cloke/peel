@@ -6,11 +6,7 @@
 //
 
 import SwiftUI
-#if os(macOS)
 import AppKit
-#endif
-
-#if os(macOS)
 struct PIIScrubberView: View {
   @Environment(MCPServerService.self) private var mcpServer
   @State private var inputPath = ""
@@ -233,20 +229,15 @@ struct PIIScrubberView: View {
   }
 
   private func openReport(at path: String) {
-    #if os(macOS)
     NSWorkspace.shared.open(URL(fileURLWithPath: path))
-    #endif
   }
 
   private func exportReport(from path: String) {
-    #if os(macOS)
     let panel = NSSavePanel()
     panel.nameFieldStringValue = URL(fileURLWithPath: path).lastPathComponent
     panel.canCreateDirectories = true
     if panel.runModal() == .OK, let destination = panel.url {
       try? FileManager.default.copyItem(at: URL(fileURLWithPath: path), to: destination)
     }
-    #endif
   }
 }
-#endif

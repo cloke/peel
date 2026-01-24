@@ -6,8 +6,6 @@
 //
 
 import SwiftUI
-
-#if os(macOS)
 struct TranslationValidationView: View {
   @Environment(MCPServerService.self) private var mcpServer
   @State private var rootPath = ""
@@ -358,14 +356,3 @@ private struct KeyListView: View {
     }
   }
 }
-#else
-struct TranslationValidationView: View {
-  var body: some View {
-    ContentUnavailableView(
-      "Translation Validation",
-      systemImage: "character.book.closed",
-      description: Text("Available on macOS only.")
-    )
-  }
-}
-#endif

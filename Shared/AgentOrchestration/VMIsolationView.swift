@@ -7,8 +7,6 @@
 //  UI for monitoring and managing VM-isolated agent execution.
 //
 
-#if os(macOS)
-
 import SwiftUI
 import AppKit
 import Virtualization
@@ -31,6 +29,7 @@ private enum VMIsolationSection: String, CaseIterable, Identifiable {
     }
   }
 }
+
 
 struct VMIsolationDashboardView: View {
   @Environment(VMIsolationService.self) private var service
@@ -1100,4 +1099,3 @@ struct VMTaskResultRow: View {
   .environment(VMIsolationService())
 }
 
-#endif // os(macOS)
