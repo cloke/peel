@@ -7,8 +7,6 @@
 
 import Foundation
 import Observation
-
-#if os(macOS)
 import Git
 
 // MARK: - Models
@@ -749,11 +747,7 @@ final class ParallelWorktreeRunner {
       execution.chainId = chain.id
       activeChainIds[execution.id] = chain.id
 
-      #if os(macOS)
       let validationConfig = template?.validationConfig
-      #else
-      let validationConfig: ValidationConfiguration? = nil
-      #endif
 
       let runSummary = await chainRunner.runChain(
         chain,
@@ -1000,7 +994,7 @@ final class ParallelWorktreeRunner {
     }
     
         guard execution.worktreePath != nil,
-          let branchName = execution.branchName else {
+              let branchName = execution.branchName else {
       throw ParallelRunError.missingWorktree
     }
     
@@ -1152,5 +1146,3 @@ enum ParallelRunError: LocalizedError {
     }
   }
 }
-
-#endif
