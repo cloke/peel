@@ -6,24 +6,12 @@ tags:
   - peel
   - agent-orchestration
   - mcp
-updated: 2026-01-23
+updated: 2026-01-24
 last_health_check: 2026-01-23
 audience:
   - ai-agent
   - developer
 github_issues:
-  - number: 8
-    status: closed
-    title: Create PII scrubber CLI tool
-  - number: 76
-    status: closed
-    title: PII scrubber enhancements (NER, rules, audit UX)
-  - number: 16
-    status: closed
-    title: MCP activity log + cleanup actions
-  - number: 21
-    status: closed
-    title: MCP screenshot capture tool
   - number: 22
     status: open
     title: MCP automation framework package
@@ -33,36 +21,12 @@ github_issues:
   - number: 24
     status: open
     title: MLX integration
-  - number: 25
-    status: closed
-    title: Dynamic chain scaling and model selection
-  - number: 26
-    status: closed
-    title: Automate MCP test plan validation
-  - number: 27
-    status: closed
-    title: Fix Alpine Linux VM boot to full OS
-  - number: 28
-    status: closed
-    title: Improve empty states in Agents UI
   - number: 29
     status: open
     title: Add Review with Agent button for PRs
   - number: 30
     status: open
     title: Add merge conflict resolution UI
-  - number: 31
-    status: closed
-    title: PII scrubber design document
-  - number: 32
-    status: closed
-    title: Prevent system sleep during MCP chain
-  - number: 33
-    status: closed
-    title: Add MCP run timeline visualization
-  - number: 34
-    status: closed
-    title: Optional auto-cleanup worktrees
   - number: 35
     status: open
     title: Screen capture to Vision analysis
@@ -72,29 +36,23 @@ github_issues:
   - number: 37
     status: open
     title: Cross-machine distributed actors
-  - number: 38
-    status: closed
-    title: iOS feature parity audit
-  - number: 39
-    status: closed
-    title: Add chain templates gallery
   - number: 40
     status: open
     title: Agent feedback loop - watch and retry
   - number: 41
     status: open
     title: Budget-aware agent scheduler
-  - number: 42
-    status: closed
-    title: Local RAG for codebase context
-  - number: 72
-    status: closed
-    title: Local RAG v1 SQLite store
-  - number: 73
-    status: closed
-    title: Local RAG v1 repo scan + chunking
+  - number: 43
+    status: open
+    title: Deterministic replay for agent runs
+  - number: 44
+    status: open
+    title: Multi-agent quorum for destructive actions
+  - number: 52
+    status: open
+    title: Fix screenshot capture to preserve sidebar/vibrancy
   - number: 74
-    status: closed
+    status: open
     title: Local RAG v1 embedding provider (Core ML)
   - number: 78
     status: open
@@ -105,12 +63,6 @@ github_issues:
   - number: 80
     status: open
     title: Extract MCP tool registry into package
-  - number: 81
-    status: open
-    title: Define MCP telemetry provider protocol
-  - number: 82
-    status: open
-    title: Define MCP UI automation provider protocol
   - number: 83
     status: open
     title: Cohesive Workspaces/Worktrees navigation
@@ -132,36 +84,18 @@ github_issues:
   - number: 89
     status: open
     title: parallel.status 404s while UI shows active run
-  - number: 75
-    status: closed
-    title: Local RAG v1 query API + MCP hook
-  - number: 43
+  - number: 106
     status: open
-    title: Deterministic replay for agent runs
-  - number: 44
+    title: VM Isolation: macOS VM for Xcode isolation
+  - number: 107
     status: open
-    title: Multi-agent quorum for destructive actions
-  - number: 54
-    status: closed
-    title: VM bootstrap for GitHub auth + repo provisioning
-  - number: 55
-    status: closed
-    title: Translation parity validator (tio-front-end baseline)
-  - number: 56
-    status: closed
-    title: Translation validator: discover locales and parse YAML
-  - number: 67
-    status: closed
-    title: Headless MCP/CLI feasibility
-  - number: 58
-    status: closed
-    title: Translation validator: suggestions view (read-only)
-  - number: 66
-    status: closed
-    title: MCP UI automation tools + permissions
-  - number: 68
-    status: closed
-    title: MCP tool grouping toggles
+    title: GPU shared cache service
+  - number: 108
+    status: open
+    title: ANE micro-services for fast local agent tasks
+  - number: 109
+    status: open
+    title: Voice notifications + quick reply commands
 code_locations:
   - file: Shared/AgentOrchestration/AgentManager.swift
     lines: 260-500
@@ -200,79 +134,45 @@ related_docs:
 
 ---
 
-## Current State Summary
+## Phase 1C: Polish (Open)
 
-### ✅ Complete
-
-| Area | Details |
-|------|---------|
-| **SwiftUI Modernization** | All 3 packages (Git, Brew, GitHub) use @Observable, @MainActor, Swift 6 |
-| **SwiftData + iCloud** | CloudKit-compatible models, TrackedWorktree persistence working |
-| **Agent Orchestration** | NavigationSplitView, chain templates, role-based agents, parallel execution |
-| **CLI Integration** | Tool detection, streaming output, model selection, state persistence |
-| **MCP Server** | JSON-RPC server, templates.list, chains.run, server control |
-| **Parallel Agents** | TaskGroup execution, merge agent, planner structured output |
-| **MCP Validation** | Automated correctness checks for chain execution results |
-| **Session Tracking** | Premium cost tracking, session summary export |
-| **Settings/Preferences** | MCP toggle, port config, status display |
-| **MCP Activity Log** | #16 - Persist/display run history, cleanup actions |
-| **Screenshot Capture** | #21 - ScreenCaptureKit integration for chain runs |
-| **Dynamic Scaling** | #25 - Cost caps and model selection |
-| **Translation Validator** | #55–#58 - CLI + MCP + UI suggestions + Apple on-device checks |
-| **PII Scrubber (Baseline)** | #8 - CLI + MCP + UI for deterministic scrubbing |
-| **MCP UI Automation** | #66 - Tool registry, permissions, UI actions |
-| **MCP Tool Grouping** | #68 - Grouped toggles for tool categories |
-| **Local RAG (Core)** | #72-75 - SQLite store, scanning, embeddings, search + repo guidance skills |
-
-### 📋 Phase 1C Polish (Closed)
-
-| Issue | Title | Status |
-|-------|-------|--------|
-| [#26](https://github.com/cloke/peel/issues/26) | Automate MCP test plan | ✅ Closed |
-| [#27](https://github.com/cloke/peel/issues/27) | Fix Alpine VM boot | ✅ Closed |
-| [#28](https://github.com/cloke/peel/issues/28) | Agents UI polish | ✅ Closed |
-| [#32](https://github.com/cloke/peel/issues/32) | Sleep prevention | ✅ Closed |
-| [#33](https://github.com/cloke/peel/issues/33) | MCP run timeline | ✅ Closed |
-| [#66](https://github.com/cloke/peel/issues/66) | MCP UI automation | ✅ Closed |
-| [#68](https://github.com/cloke/peel/issues/68) | Tool grouping toggles | ✅ Closed |
-| [#67](https://github.com/cloke/peel/issues/67) | Headless MCP/CLI feasibility | ✅ Closed |
-
-### 📋 Phase 1C Polish (Open)
-
-_No open items._
-
-### 📋 Agent Features (Open)
+### 📋 Agent Features
 
 | Issue | Title | Notes |
 |-------|-------|-------|
+| [#29](https://github.com/cloke/peel/issues/29) | Review with Agent button | PR review entry point |
 | [#30](https://github.com/cloke/peel/issues/30) | Conflict resolution UI | Merge conflicts |
 | [#40](https://github.com/cloke/peel/issues/40) | Feedback loop | Watch and retry |
+| [#83](https://github.com/cloke/peel/issues/83) | Cohesive Workspaces/Worktrees navigation | Unify navigation paths |
 
-### 📋 MCP Reliability (Open)
+### 📋 Parallel Agents
+
+| Issue | Title | Notes |
+|-------|-------|-------|
+| [#78](https://github.com/cloke/peel/issues/78) | Parallel worktree runner with Local RAG grounding | Context-aware parallel runs |
+
+### 📋 MCP Packaging
+
+| Issue | Title | Notes |
+|-------|-------|-------|
+| [#22](https://github.com/cloke/peel/issues/22) | MCP automation framework package | Reusable framework |
+| [#79](https://github.com/cloke/peel/issues/79) | Refactor MCP tool permissions | Package-ready interface |
+| [#80](https://github.com/cloke/peel/issues/80) | Extract MCP tool registry | Package separation |
+
+### 📋 MCP Reliability
 
 | Issue | Title | Notes |
 |-------|-------|-------|
 | [#84](https://github.com/cloke/peel/issues/84) | MCP prompt rules + planner guardrails | Safety defaults |
 | [#85](https://github.com/cloke/peel/issues/85) | CLI safe polling helper | Avoid stale polling |
 | [#86](https://github.com/cloke/peel/issues/86) | MCP run status: rejected count | Status completeness |
+| [#87](https://github.com/cloke/peel/issues/87) | RAG feedback loop for CI failures | Retry + guidance feedback |
 | [#88](https://github.com/cloke/peel/issues/88) | Detect hung MCP executions | Hung detection + logs |
 | [#89](https://github.com/cloke/peel/issues/89) | parallel.status 404s | Recovery + UI warning |
 
 ---
 
 ## Phase 2: Local AI Foundation
-
-### ✅ Completed
-
-| Issue | Title | Status |
-|-------|-------|--------|
-| [#8](https://github.com/cloke/peel/issues/8) | PII Scrubber CLI | ✅ Closed |
-| [#72](https://github.com/cloke/peel/issues/72) | Local RAG: SQLite store | ✅ Closed |
-| [#73](https://github.com/cloke/peel/issues/73) | Local RAG: Repo scan + chunking | ✅ Closed |
-| [#75](https://github.com/cloke/peel/issues/75) | Local RAG: Query API + MCP | ✅ Closed |
-| [#42](https://github.com/cloke/peel/issues/42) | Local RAG: Codebase context | ✅ Closed |
-| [#76](https://github.com/cloke/peel/issues/76) | PII Scrubber Enhancements | ✅ Closed |
-| [#31](https://github.com/cloke/peel/issues/31) | PII Design Doc | ✅ Closed |
 
 ### 🔄 In Progress
 
@@ -284,10 +184,10 @@ _No open items._
 
 | Issue | Title | Description |
 |-------|-------|-------------|
-| [#22](https://github.com/cloke/peel/issues/22) | MCP Automation Package | Reusable framework |
 | [#23](https://github.com/cloke/peel/issues/23) | XPC Tool Broker | Sandboxed execution |
 | [#24](https://github.com/cloke/peel/issues/24) | MLX Integration | Local inference |
 | [#41](https://github.com/cloke/peel/issues/41) | Budget Scheduler | Resource allocation |
+| [#108](https://github.com/cloke/peel/issues/108) | ANE micro-services | Fast on-device tasks |
 
 ---
 
@@ -297,10 +197,10 @@ _No open items._
 |-------|-------|-------------|
 | [#35](https://github.com/cloke/peel/issues/35) | Vision Pipeline | Screen capture → analysis |
 | [#36](https://github.com/cloke/peel/issues/36) | Voice Commands | On-device Whisper |
+| [#109](https://github.com/cloke/peel/issues/109) | Voice notifications + quick replies | Task completion + commands |
 | [#37](https://github.com/cloke/peel/issues/37) | Distributed Actors | Multi-Mac scale |
-| [#54](https://github.com/cloke/peel/issues/54) | VM bootstrap auth | ✅ Closed (Docs/guides/VM_BOOTSTRAP_GITHUB_AUTH.md) |
-| - | macOS VM | Full Xcode isolation |
-| - | GPU Shared Cache | MLX caching service |
+| [#106](https://github.com/cloke/peel/issues/106) | macOS VM isolation | Full Xcode isolation |
+| [#107](https://github.com/cloke/peel/issues/107) | GPU shared cache service | MLX caching service |
 
 ---
 
@@ -310,73 +210,6 @@ _No open items._
 |-------|-------|-------------|
 | [#43](https://github.com/cloke/peel/issues/43) | Deterministic Replay | Audit trail |
 | [#44](https://github.com/cloke/peel/issues/44) | Multi-Agent Quorum | Safety consensus |
-
----
-
-## Documentation
-
-| Issue | Title | Description |
-|-------|-------|-------------|
-| [#38](https://github.com/cloke/peel/issues/38) | iOS Feature Audit | Platform parity |
-
----
-
-## Active Work: Phase 1C
-
-### Phase 1C Status (January 20, 2026)
-
-**Completed:**
-- [x] #8 PII scrubber baseline (CLI + MCP + UI)
-- [x] #16 MCP Activity Log + Cleanup
-- [x] #17 Planner gating: skip implementers when "no work"
-- [x] #18 Show planner prompt in Chain Activity / MCP Run detail
-- [x] #19 Clarify Assign Task behavior
-- [x] #21 MCP screenshot capture tool
-- [x] #25 Dynamic chain scaling + model selection
-- [x] #26 Automate MCP test plan validation
-- [x] #27 Fix Alpine VM boot to full OS
-- [x] #28 Improve empty states in Agents UI
-- [x] #32 Prevent system sleep during chain execution
-- [x] #33 Add MCP run timeline visualization
-- [x] #66 MCP UI automation tools + permissions
-- [x] #68 MCP tool grouping toggles
-- [x] #72 Local RAG: SQLite store
-- [x] #73 Local RAG: Repo scan + chunking
-- [x] #75 Local RAG: Query API + MCP hook
-
-**In Progress:**
-- [ ] #76 PII scrubber enhancements (NER, rules, audit UX)
-  - [x] Config rules (YAML/JSON) + COPY parsing
-  - [x] NER detection (names/orgs/places)
-  - [x] Audit report UI + export
-  - [ ] Config validation error surfacing (optional polish)
-- [ ] #42 Local RAG for codebase context
-  - [x] SQLite store + brute-force cosine similarity
-  - [x] File scanning + chunking (code-aware)
-  - [x] System embedding provider (NLEmbedding)
-  - [x] NLEmbedding crash fix (text sanitization)
-  - [ ] Large repo benchmark (tio-workspace)
-  - [ ] sqlite-vec evaluation (if needed for scale)
-- [ ] #74 Local RAG: Embedding provider (Core ML)
-  - [x] System embeddings (NLEmbedding) - working
-  - [ ] Core ML model integration - blocked on model selection
-
-**Code Quality (Jan 20):**
-- [x] Extracted TranslationValidatorService (~520 lines) from AgentManager
-- [x] Extracted PIIScrubberService (~220 lines) from AgentManager
-- [x] AgentManager reduced from 4,710 → 3,996 lines
-
-**Open Polish Items:**
-- [ ] #67 Headless MCP/CLI feasibility
-
-**Recent Progress:**
-- Added `chains.stop` MCP endpoint to cancel active chain runs
-- Enforced `workingDirectory` for `chains.run` to prevent whole-disk scans
-- Added parallel chain helper script (`Tools/run-chains-parallel.sh`)
-- Screenshot capture with ScreenCaptureKit integration
-- Cost caps and planner-driven model selection
-- PII scrubber enhancements: config rules, COPY parsing, NER, MCP `pii.scrub` support
-- Repo guidance skills stored locally and injected into chain/parallel prompts
 
 ---
 
@@ -412,71 +245,71 @@ Planner -> splits task -> creates branches
 
 ## Issue Queues (Pick a Track)
 
-### Track A: Finish Local RAG (2 issues)
+### Track A: Local RAG (1 issue)
 ```
-42,74
+74
 ```
-- #42 ✅ Local RAG for codebase context (benchmark + sqlite-vec decision)
 - #74 Local RAG v1: Embedding provider (Core ML)
 
-### Track B: Agent UX Polish (6 issues)
+### Track B: Agent UX (4 issues)
 ```
-70,39,40,29,30,69
+29,30,40,83
 ```
-- #70 ✅ Auto-cleanup agent worktrees on completion
-- #39 Add chain templates gallery
-- #40 Agent feedback loop - watch and retry
-- #29 Add Review with Agent button for PRs
+- #29 Review with Agent button for PRs
 - #30 Add merge conflict resolution UI
-- #69 ✅ Conflict resolution UI for parallel agents (dup of #30)
+- #40 Agent feedback loop - watch and retry
+- #83 Cohesive Workspaces/Worktrees navigation
 
-### Track C: Charts & Analytics (6 issues)
+### Track C: Charts & Analytics (1 issue)
 ```
-65,59,61,62,63,64
+64
 ```
-- #65 ✅ Add agent usage charts
-- #59 ✅ Add PR throughput & cycle time charts
-- #61 ✅ Add PR review load chart
-- #62 ✅ Add repo health trend charts
-- #63 ✅ Add GitHub Actions reliability chart
 - #64 Add Homebrew activity charts
 
-### Track D: Local AI Foundation (3 issues)
+### Track D: MCP Packaging & Parallel (4 issues)
 ```
-24,23,41
+22,78,79,80
 ```
-- #24 MLX integration
+- #22 MCP automation framework package
+- #78 Parallel worktree runner with Local RAG grounding
+- #79 Refactor MCP tool permissions for package-ready interface
+- #80 Extract MCP tool registry into package
+
+### Track E: Local AI Foundation (4 issues)
+```
+23,24,41,108
+```
 - #23 XPC tool broker
+- #24 MLX integration
 - #41 Budget-aware agent scheduler
+- #108 ANE micro-services
 
-### Track E: Polish & Cleanup (4 issues)
+### Track F: Polish & Cleanup (1 issue)
 ```
-67,52,76,71
+52
 ```
-- #67 ✅ Headless MCP/CLI feasibility
 - #52 Fix screenshot capture to preserve sidebar/vibrancy
-- #76 ✅ PII scrubber enhancements
-- #71 ✅ PR review with agent workflow (dup of #29)
 
-### Track F: Phase 3 / Future (6 issues)
+### Track G: Phase 3 / Future (8 issues)
 ```
-35,36,37,54,43,44
+35,36,109,37,106,107,43,44
 ```
 - #35 Screen capture to Vision analysis pipeline
 - #36 Voice commands via on-device Whisper
+- #109 Voice notifications + quick replies
 - #37 Cross-machine distributed actors
-- #54 ✅ VM bootstrap: GitHub auth + repo provisioning
+- #106 macOS VM isolation
+- #107 GPU shared cache service
 - #43 Deterministic replay for agent runs
 - #44 Multi-agent quorum for destructive actions
 
-### Track G: Documentation (2 issues)
+### Track H: MCP Reliability (6 issues)
 ```
-31,38
+84,85,86,87,88,89
 ```
-
-### Track H: MCP Reliability (5 issues)
-```
-84,85,86,88,89
-```
-- #31 ✅ PII scrubber design document
-- #38 ✅ iOS feature parity audit
+- #84 MCP prompt rules + planner guardrails
+- #85 CLI safe polling helper
+- #86 MCP run status: rejected count
+- #87 RAG feedback loop for CI failures on MCP-generated PRs
+- #88 Detect hung MCP executions
+- #89 parallel.status 404s while UI shows active run
