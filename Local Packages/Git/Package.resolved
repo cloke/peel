@@ -1,0 +1,14 @@
+{
+  "pins" : [
+    {
+      "identity" : "taskrunner",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/crunchybananas/TaskRunner.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "b3766b11ca4031b3cd90b9f82d274a21de47ecec"
+      }
+    }
+  ],
+  "version" : 2
+}

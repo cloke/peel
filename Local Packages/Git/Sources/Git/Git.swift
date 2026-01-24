@@ -11,6 +11,9 @@ public struct GitRootView: View {
   @Bindable public var repository: Model.Repository
   @State private var selection: GitDestination?
   @State private var worktreeDetailItem: WorktreeDetailItem?
+  @AppStorage("git.selectedBranchName") private var selectedBranchName: String = ""
+  @AppStorage("git.selectedRepoPath") private var selectedRepoPath: String = ""
+  @AppStorage("git.selectedSidebarItem") private var selectedSidebarItem: String = ""
   let onOpenInVSCode: ((String) -> Void)?
   
   public init(
@@ -27,6 +30,33 @@ public struct GitRootView: View {
   public var body: some View {
     NavigationSplitView {
       List(selection: $selection) {
+        Section {
+          Menu {
+            ForEach(availableRepoPaths(), id: \.self) { path in
+              Button {
+                selectedRepoPath = path
+              } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                  Text(repoDisplayName(for: path))
+                  Text(path)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+              }
+            }
+          } label: {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(repository.name)
+                .font(.headline)
+              Text(repository.path)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            }
+            .padding(.vertical, 4)
+          }
+        }
         Section("Repository") {
           LocalChangesListView()
             .tag(GitDestination.localChanges)
@@ -69,6 +99,19 @@ public struct GitRootView: View {
     .navigationSplitViewStyle(.balanced)
     .navigationTitle(repository.name)
     .environment(repository)
+    .onChange(of: repository.localBranches.map { $0.name }) { _, _ in
+      persistAvailableBranches()
+    }
+    .task {
+      syncSelectionFromStorage()
+    }
+    .onChange(of: selectedSidebarItem) { _, _ in
+      syncSelectionFromStorage()
+    }
+    .onChange(of: selectedBranchName) { _, newValue in
+      guard !newValue.isEmpty else { return }
+      selection = .history(newValue)
+    }
     .sheet(item: $worktreeDetailItem, onDismiss: {
       worktreeDetailItem = nil
     }) { item in
@@ -110,6 +153,32 @@ public struct GitRootView: View {
         }
       )
     }
+  }
+
+  private func persistAvailableBranches() {
+    let names = repository.localBranches.map { $0.name }.sorted()
+    UserDefaults.standard.set(names, forKey: "git.availableLocalBranchNames")
+  }
+
+  private func syncSelectionFromStorage() {
+    switch selectedSidebarItem {
+    case "localChanges":
+      selection = .localChanges
+    case "history":
+      if !selectedBranchName.isEmpty {
+        selection = .history(selectedBranchName)
+      }
+    default:
+      break
+    }
+  }
+
+  private func availableRepoPaths() -> [String] {
+    UserDefaults.standard.stringArray(forKey: "git.availableRepoPaths") ?? []
+  }
+
+  private func repoDisplayName(for path: String) -> String {
+    URL(fileURLWithPath: path).lastPathComponent
   }
 }
 #endif

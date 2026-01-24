@@ -16,13 +16,13 @@ actor ScreenshotService {
     case timedOut
   }
 
-  func capture(label: String? = nil) async throws -> URL {
+  func capture(label: String? = nil, outputDir: String? = nil) async throws -> URL {
     guard #available(macOS 12.3, *) else {
       throw ScreenshotError.notSupported
     }
 
     if let image = await captureAppWindowImage() {
-      return try saveImage(image, label: label)
+      return try saveImage(image, label: label, outputDir: outputDir)
     }
 
     let hasPermission = await MainActor.run { CGPreflightScreenCaptureAccess() }
@@ -60,7 +60,7 @@ actor ScreenshotService {
     let filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
 
     let image = try await captureImage(filter: filter, configuration: configuration)
-    return try saveImage(image, label: label)
+    return try saveImage(image, label: label, outputDir: outputDir)
   }
 
   @MainActor
@@ -76,17 +76,24 @@ actor ScreenshotService {
     return rep.cgImage
   }
 
-  private func saveImage(_ image: CGImage, label: String?) throws -> URL {
+  private func saveImage(_ image: CGImage, label: String?, outputDir: String?) throws -> URL {
     let rep = NSBitmapImageRep(cgImage: image)
     guard let data = rep.representation(using: .png, properties: [:]) else {
       throw ScreenshotError.captureFailed
     }
 
     let fm = FileManager.default
-    let appSupport = try fm.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-    let peelDir = appSupport.appendingPathComponent("Peel", isDirectory: true)
-    let screenshotsDir = peelDir.appendingPathComponent("Screenshots", isDirectory: true)
-    try? fm.createDirectory(at: screenshotsDir, withIntermediateDirectories: true)
+    let screenshotsDir: URL
+    if let outputDir, !outputDir.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      let expandedPath = (outputDir as NSString).expandingTildeInPath
+      screenshotsDir = URL(fileURLWithPath: expandedPath, isDirectory: true)
+      try? fm.createDirectory(at: screenshotsDir, withIntermediateDirectories: true)
+    } else {
+      let appSupport = try fm.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+      let peelDir = appSupport.appendingPathComponent("Peel", isDirectory: true)
+      screenshotsDir = peelDir.appendingPathComponent("Screenshots", isDirectory: true)
+      try? fm.createDirectory(at: screenshotsDir, withIntermediateDirectories: true)
+    }
 
     let timestamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
     let safeLabel = (label ?? "screenshot").replacingOccurrences(of: " ", with: "_")

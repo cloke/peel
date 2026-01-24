@@ -69,10 +69,12 @@ extension Model {
     
     @available(macOS 12, *)
     @MainActor
-    func load() async {
+    func load(includeRemote: Bool = false) async {
       // TODO: Use a task group
       await loadBranches(branchType: .local)
-      await loadBranches(branchType: .remote)
+      if includeRemote {
+        await loadBranches(branchType: .remote)
+      }
       await refreshStatus()
     }
     

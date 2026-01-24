@@ -9,6 +9,9 @@
 /// https://git-scm.com/docs/git-branch
 
 import SwiftUI
+import OSLog
+
+private let branchLogger = Logger(subsystem: "Peel", category: "Git.Branch")
 
 #if os(macOS)
 extension Commands {
@@ -23,16 +26,21 @@ extension Commands {
     }
     
     static func list(from branchType: Model.BranchType, on repository: Model.Repository) async throws -> [Model.Branch] {
+      let startTime = Date()
       let array = branchType == .remote ?
-        try await Commands.simple(arguments: ["ls-remote", "--heads", "origin"], in: repository) :
+        try await Commands.simple(arguments: ["for-each-ref", "--format=%(refname:short)", "refs/remotes"], in: repository) :
         try await Commands.simple(arguments: ["branch", "-l"], in: repository)
 
-
-      return array.map {
+      let durationMs = Int(Date().timeIntervalSince(startTime) * 1000)
+      return array.compactMap {
+        if branchType == .remote {
+          let name = $0.trimmingCharacters(in: .whitespacesAndNewlines)
+          guard !name.isEmpty, !name.contains("->") else { return nil }
+          return Model.Branch(name: name, isActive: false)
+        }
+        _ = durationMs
         return Model.Branch(
-          name: branchType == .remote ?
-            ($0.split(separator: "\t").last?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "Who Knows") :
-            $0.replacingOccurrences(of: "*", with: "").trimmingCharacters(in: .whitespacesAndNewlines),
+          name: $0.replacingOccurrences(of: "*", with: "").trimmingCharacters(in: .whitespacesAndNewlines),
           isActive: false
         )
       }

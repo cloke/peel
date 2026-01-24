@@ -1673,6 +1673,9 @@ public final class MCPServerService {
 
   public func isToolEnabled(_ name: String) -> Bool {
     guard toolDefinition(named: name) != nil else { return false }
+    if name.hasPrefix("ui.") {
+      return true
+    }
     return permissionsStore.isToolEnabled(name)
   }
 
@@ -2434,8 +2437,19 @@ public final class MCPServerService {
 
     case "screenshot.capture":
       let label = arguments["label"] as? String
+      let requestedOutputDir = arguments["outputDir"] as? String
+      let outputDir: String?
+    #if DEBUG
+      if let requestedOutputDir, !requestedOutputDir.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        outputDir = requestedOutputDir
+      } else {
+        outputDir = (NSTemporaryDirectory() as NSString).appendingPathComponent("KitchenSync/Screenshots")
+      }
+    #else
+      outputDir = requestedOutputDir
+    #endif
       do {
-        let url = try await screenshotService.capture(label: label)
+        let url = try await screenshotService.capture(label: label, outputDir: outputDir)
         return (200, makeRPCResult(id: id, result: ["path": url.path]))
       } catch {
         await telemetryProvider.warning("Screenshot tool failed", metadata: ["error": error.localizedDescription])
@@ -2651,6 +2665,26 @@ public final class MCPServerService {
       return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value, "path": path]))
     case "git.selectRepo":
       UserDefaults.standard.set(value, forKey: "git.selectedRepoPath")
+      recordUIActionRequested(controlId)
+      recordUIActionHandled(controlId)
+      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
+    case "git.selectSidebarItem":
+      UserDefaults.standard.set(value, forKey: "git.selectedSidebarItem")
+      recordUIActionRequested(controlId)
+      recordUIActionHandled(controlId)
+      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
+    case "git.selectStatusPath":
+      UserDefaults.standard.set(value, forKey: "git.selectedStatusPath")
+      recordUIActionRequested(controlId)
+      recordUIActionHandled(controlId)
+      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
+    case "git.selectBranch":
+      UserDefaults.standard.set(value, forKey: "git.selectedBranchName")
+      recordUIActionRequested(controlId)
+      recordUIActionHandled(controlId)
+      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
+    case "git.selectCommit":
+      UserDefaults.standard.set(value, forKey: "git.selectedCommitSha")
       recordUIActionRequested(controlId)
       recordUIActionHandled(controlId)
       return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
@@ -5500,7 +5534,8 @@ public final class MCPServerService {
         inputSchema: [
           "type": "object",
           "properties": [
-            "label": ["type": "string"]
+            "label": ["type": "string"],
+            "outputDir": ["type": "string"]
           ]
         ],
         category: .diagnostics,

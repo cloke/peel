@@ -13,6 +13,9 @@
 // Huge help from https://github.com/guillermomuntaner/GitDiff/
 
 import Foundation
+import OSLog
+
+private let diffLogger = Logger(subsystem: "Peel", category: "Git.Diff")
 
 #if os(macOS)
 /// Functions that are defined in the git reference
@@ -20,14 +23,40 @@ import Foundation
 extension Commands {
   /// Processes a diff based on direct file paths
   static func diff(repository: Model.Repository, path: String) async throws -> Diff {
+    let commandStart = Date()
     let lines = try await Self.simple(arguments: ["diff", path], in: repository)
-    return Self.processDiff(lines: lines)
+    let commandDurationMs = Int(Date().timeIntervalSince(commandStart) * 1000)
+    let processStart = Date()
+    let diff = Self.processDiff(lines: lines)
+    let processDurationMs = Int(Date().timeIntervalSince(processStart) * 1000)
+    let fileCount = diff.files.count
+    let chunkCount = diff.files.reduce(0) { $0 + $1.chunks.count }
+    let lineCount = diff.files.reduce(0) { total, file in
+      total + file.chunks.reduce(0) { $0 + $1.lines.count }
+    }
+    #if DEBUG
+    diffLogger.notice("Diff for \(path, privacy: .public) in \(commandDurationMs)ms (process: \(processDurationMs)ms, files: \(fileCount), chunks: \(chunkCount), lines: \(lineCount))")
+    #endif
+    return diff
   }
   
   /// Processes a diff based on specific commits
   static func diff(commit: String, on repository: Model.Repository) async throws -> Diff {
+    let commandStart = Date()
     let lines = try await Self.simple(arguments: ["diff", "\(commit)~", commit], in: repository)
-    return Self.processDiff(lines: lines)
+    let commandDurationMs = Int(Date().timeIntervalSince(commandStart) * 1000)
+    let processStart = Date()
+    let diff = Self.processDiff(lines: lines)
+    let processDurationMs = Int(Date().timeIntervalSince(processStart) * 1000)
+    let fileCount = diff.files.count
+    let chunkCount = diff.files.reduce(0) { $0 + $1.chunks.count }
+    let lineCount = diff.files.reduce(0) { total, file in
+      total + file.chunks.reduce(0) { $0 + $1.lines.count }
+    }
+    #if DEBUG
+    diffLogger.notice("Diff for \(commit, privacy: .public) in \(commandDurationMs)ms (process: \(processDurationMs)ms, files: \(fileCount), chunks: \(chunkCount), lines: \(lineCount))")
+    #endif
+    return diff
   }
   
   public static func processDiff(lines: [String]) -> Diff {
@@ -36,10 +65,10 @@ extension Commands {
     // that has been validated and will always succeed. Using do/catch would add
     // unnecessary error handling for an impossible failure case.
     let regex = try! NSRegularExpression(
-      pattern: "^(?:(?:@@ -(\\d+),?(\\d+)? \\+(\\d+),?(\\d+)? @@)|([-+\\s])(.*))",
+      pattern: "^@@ -(\\d+),?(\\d+)? \\+(\\d+),?(\\d+)? @@",
       options: [])
-    var lineNumber = 0
-    var lineOffset = 0
+    var oldLineNumber = 0
+    var newLineNumber = 0
     var numberingLines = false
     
     var currentFile: Diff.File? = nil
@@ -58,8 +87,8 @@ extension Commands {
         }
         currentChunk = nil
         currentFile = Diff.File(label: string)
-        lineNumber = 1 // Probably not the right place
-        lineOffset = 0
+        oldLineNumber = 0
+        newLineNumber = 0
         numberingLines = false
         continue
         
@@ -75,30 +104,51 @@ extension Commands {
         currentChunk = Diff.File.Chunk()
         currentChunk?.chunk = match?.group(0, in: line) ?? ""
         
-        lineNumber = Int(match?.group(3, in: line) ?? "0") ?? 0
+        oldLineNumber = Int(match?.group(1, in: line) ?? "0") ?? 0
+        newLineNumber = Int(match?.group(3, in: line) ?? "0") ?? 0
         currentChunk?.parsedObjectName = line.replacingOccurrences(of: (match?.group(0, in: line) ?? ""), with: "")
         //        if line.count > 0 {
         //           This will be the class name that git adds
         //          currentChunk?.lines.append(Diff.File.Chunk.Line(line: line, status: String(line.first ?? Character(" ")), lineNumber: lineNumber))
         //        }
-        lineOffset = 0
         numberingLines = true
         
         // Ignore these lines. Do we need them?
       case _ where line.trimmingCharacters(in: .whitespaces).starts(with: "---"): ()
       case _ where line.trimmingCharacters(in: .whitespaces).starts(with: "+++"): ()
+      case _ where line.starts(with: "\\ No newline at end of file"): ()
         
         // Build up actual line diffs
-      case _ where line.trimmingCharacters(in: .whitespaces).starts(with: "-") && numberingLines:
-        lineOffset -= 1
-        currentChunk?.lines.append(Diff.File.Chunk.Line(line: line, status: String(line.first ?? Character(" ")), lineNumber: lineNumber))
-        lineNumber += 1
+      case _ where line.starts(with: "-") && numberingLines:
+        currentChunk?.lines.append(Diff.File.Chunk.Line(
+          line: line,
+          status: "-",
+          oldLineNumber: oldLineNumber,
+          newLineNumber: nil,
+          lineNumber: oldLineNumber
+        ))
+        oldLineNumber += 1
         
-      case _ where (line.trimmingCharacters(in: .whitespaces).starts(with: "+") || line.starts(with: " ")) && numberingLines:
-        lineNumber += lineOffset
-        lineOffset = 0
-        currentChunk?.lines.append(Diff.File.Chunk.Line(line: line, status: String(line.first ?? Character(" ")), lineNumber: lineNumber))
-        lineNumber += 1
+      case _ where line.starts(with: "+") && numberingLines:
+        currentChunk?.lines.append(Diff.File.Chunk.Line(
+          line: line,
+          status: "+",
+          oldLineNumber: nil,
+          newLineNumber: newLineNumber,
+          lineNumber: newLineNumber
+        ))
+        newLineNumber += 1
+        
+      case _ where line.starts(with: " ") && numberingLines:
+        currentChunk?.lines.append(Diff.File.Chunk.Line(
+          line: line,
+          status: " ",
+          oldLineNumber: oldLineNumber,
+          newLineNumber: newLineNumber,
+          lineNumber: newLineNumber
+        ))
+        oldLineNumber += 1
+        newLineNumber += 1
         
       default: ()
       }
