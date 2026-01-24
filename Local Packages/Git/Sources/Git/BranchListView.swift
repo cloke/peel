@@ -93,49 +93,49 @@ public struct BranchListView: View {
   public var location: Model.BranchType = .remote
     
   public var body: some View {
-    Section(isExpanded: $isExpanded) {
+    DisclosureGroup(isExpanded: $isExpanded) {
       if localBranches.isEmpty {
         Text("No branches")
           .foregroundStyle(.secondary)
           .font(.caption)
       }
-      ForEach(localBranches.indices, id: \.self) { index in
+      ForEach($localBranches) { $branch in
         BranchListItemView(
-          branch: $localBranches[index],
+          branch: $branch,
           refreshToken: refreshToken,
           type: location,
           selected: {},
           activated: {
             Task { @MainActor in
-              let branch = localBranches[index].name
-              _ = try await Commands.checkout(branch: branch , from: repository)
-              repository.activate(branch: localBranches[index])
+              let name = branch.name
+              _ = try await Commands.checkout(branch: name, from: repository)
+              repository.activate(branch: branch)
               refreshToken = UUID()
             }
           },
           push: {
             Task {
-              let branch = localBranches[index]
+              let currentBranch = branch
               do {
-                try await repository.push(branch: branch)
+                try await repository.push(branch: currentBranch)
                 refreshToken = UUID()
               } catch {
-                pushError = "Failed to push \(branch.name): \(error.localizedDescription)"
+                pushError = "Failed to push \(currentBranch.name): \(error.localizedDescription)"
               }
             }
           }
         )
-        .tag(GitDestination.history(localBranches[index].name))
+        .tag(GitDestination.history(branch.name))
         .font(.footnote)
         .contentShape(Rectangle())
         .onTapGesture {
-          selection = .history(localBranches[index].name)
-          UserDefaults.standard.set(localBranches[index].name, forKey: "git.selectedBranchName")
+          selection = .history(branch.name)
+          UserDefaults.standard.set(branch.name, forKey: "git.selectedBranchName")
         }
         .contextMenu {
           Button {
             Task {
-              try? await repository.delete(branches: [localBranches[index]])
+              try? await repository.delete(branches: [branch])
             }
           } label: {
             Text("Delete Branch")
@@ -143,15 +143,10 @@ public struct BranchListView: View {
           }
         }
       }
-    } header: {
-      Button {
-        withAnimation { isExpanded.toggle() }
-      } label: {
-        Label(label, systemImage: sectionIcon)
-          .frame(maxWidth: .infinity, alignment: .leading)
-      }
-      .buttonStyle(.plain)
-      .contentShape(Rectangle())
+    } label: {
+      Label(label, systemImage: sectionIcon)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
     }
     .alert("Push Failed", isPresented: .constant(pushError != nil)) {
       Button("OK") { pushError = nil }

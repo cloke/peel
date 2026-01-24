@@ -13,17 +13,20 @@ public struct RepositoriesMenuToolbarItem: ToolbarContent {
   private let repositories: [Model.Repository]
   private let onAddRepository: (() -> Void)?
   private let onCloneRepository: (() -> Void)?
+  private let onRemoveRepository: (() -> Void)?
   
   public init(
     repositories: [Model.Repository],
     selectedRepository: Binding<Model.Repository>,
     onAddRepository: (() -> Void)? = nil,
-    onCloneRepository: (() -> Void)? = nil
+    onCloneRepository: (() -> Void)? = nil,
+    onRemoveRepository: (() -> Void)? = nil
   ) {
     self.repositories = repositories
     self._selectedRepository = selectedRepository
     self.onAddRepository = onAddRepository
     self.onCloneRepository = onCloneRepository
+    self.onRemoveRepository = onRemoveRepository
   }
   
   public var body: some ToolbarContent {
@@ -34,6 +37,9 @@ public struct RepositoriesMenuToolbarItem: ToolbarContent {
         }
         if let onCloneRepository {
           Button("Clone Repository…", action: onCloneRepository)
+        }
+        if let onRemoveRepository {
+          Button("Remove Repository…", action: onRemoveRepository)
         }
         if onAddRepository != nil || onCloneRepository != nil {
           Divider()
