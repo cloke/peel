@@ -7,8 +7,6 @@
 
 import Foundation
 import Observation
-
-#if os(macOS)
 public struct ControlDoc: Identifiable {
   public let controlId: String
   public let values: [String]
@@ -285,74 +283,3 @@ public final class MCPUIAutomationStore: MCPUIAutomationProviding {
     return []
   }
 }
-#else
-@MainActor
-public protocol MCPUIAutomationProviding: AnyObject { }
-
-public struct ControlDoc: Identifiable {
-  public let controlId: String
-  public let values: [String]
-  public var id: String { controlId }
-  public init(controlId: String, values: [String]) {
-    self.controlId = controlId
-    self.values = values
-  }
-}
-
-public struct ViewControlDoc: Identifiable {
-  public let viewId: String
-  public let title: String
-  public let controls: [ControlDoc]
-  public var id: String { viewId }
-  public init(viewId: String, title: String, controls: [ControlDoc]) {
-    self.viewId = viewId
-    self.title = title
-    self.controls = controls
-  }
-}
-
-public struct UIAction: Identifiable {
-  public let id: UUID
-  public let controlId: String
-  public init(controlId: String) {
-    self.id = UUID()
-    self.controlId = controlId
-  }
-}
-
-public struct UIActionRecord: Identifiable {
-  public let id: UUID
-  public let controlId: String
-  public let status: String
-  public let timestamp: Date
-  public init(controlId: String, status: String, timestamp: Date = Date()) {
-    self.id = UUID()
-    self.controlId = controlId
-    self.status = status
-    self.timestamp = timestamp
-  }
-}
-
-@MainActor
-@Observable
-public final class MCPUIAutomationStore: MCPUIAutomationProviding {
-  public init() {}
-  public var uiControlDocs: [ViewControlDoc] { [] }
-  public var recentUIActions: [UIActionRecord] { [] }
-  public var lastUIAction: UIAction? = nil
-  public var lastUIActionHandled: String? = nil
-  public var lastUIActionHandledAt: Date? = nil
-
-  public func availableViewIds() -> [String] { [] }
-  public func viewTitle(for viewId: String) -> String { viewId }
-  public func availableToolControlIds() -> [String] { [] }
-  public func availableControlIds(for viewId: String?) -> [String] { [] }
-  public func controlValues(for viewId: String?) -> [String: Any] { [:] }
-  public func currentToolId() -> String? { nil }
-  public func setCurrentToolId(_ toolId: String) { }
-  public func worktreeNameMapFromDefaults() -> [String: String] { [:] }
-  public func recordUIActionHandled(_ controlId: String) { }
-  public func recordUIActionRequested(_ controlId: String) { }
-  public func recordUIActionForegroundNeeded(_ controlId: String) { }
-}
-#endif
