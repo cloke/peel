@@ -31,7 +31,7 @@ public struct WorktreeListView: View {
   }
   
   public var body: some View {
-    DisclosureGroup(isExpanded: $isExpanded) {
+    Section(isExpanded: $isExpanded) {
       if isLoading {
         ProgressView()
           .frame(maxWidth: .infinity, alignment: .center)
@@ -63,10 +63,8 @@ public struct WorktreeListView: View {
       }
       .buttonStyle(.plain)
       .tint(.accentColor)
-    } label: {
+    } header: {
       Label("Worktrees", systemImage: "square.stack.3d.down.right")
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
     }
     .task {
       await loadWorktrees()

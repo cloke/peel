@@ -14,24 +14,21 @@ struct StashListView: View {
   @State private var isExpanded = false
   
   var body: some View {
-    DisclosureGroup(isExpanded: $isExpanded) {
+    Section(isExpanded: $isExpanded) {
       if stashes.isEmpty {
         Text("No stashes")
           .font(.caption)
           .foregroundStyle(.secondary)
       } else {
-        VStack(alignment: .leading, spacing: 6) {
-          ForEach(stashes, id: \.self) { stash in
-            Text(stash)
-              .font(.caption)
-              .foregroundStyle(.secondary)
-              .lineLimit(1)
-              .truncationMode(.middle)
-          }
+        ForEach(stashes, id: \.self) { stash in
+          Text(stash)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
       }
-    } label: {
+    } header: {
       HStack(spacing: 8) {
         Label("Stash", systemImage: "archivebox")
         Spacer()
@@ -47,7 +44,6 @@ struct StashListView: View {
           .help("Refresh")
         }
       }
-      .contentShape(Rectangle())
     }
     .onChange(of: isExpanded) { _, value in
       if isExpanded == true {

@@ -90,7 +90,12 @@ extension Model {
     @available(macOS 12, *)
     @MainActor
     func activate(branch: Model.Branch) {
-      localBranches.forEach { $0.isActive = $0.id == branch.id ? true : false }
+      // Update branches in place for struct-based Branch model
+      localBranches = localBranches.map { b in
+        var updated = b
+        updated.isActive = b.id == branch.id
+        return updated
+      }
     }
     
     @available(macOS 12, *)

@@ -79,17 +79,19 @@ extension Model {
     case local = "-l", remote = "-r"
   }
   
-  @Observable
-  public class Branch: Identifiable {
-    public var id: String { name }
+  /// Branch model - uses struct for stable identity in SwiftUI lists.
+  /// The `id` is the branch name, ensuring consistent identity during updates.
+  public struct Branch: Identifiable, Equatable, Hashable {
+    public let id: String
     /// Name of the branch
-    var name: String
+    public var name: String
     /// Status of branch from branch command. ie. result started with "*"
-    var isActive: Bool
+    public var isActive: Bool
     
-    var isSelected = false
+    public var isSelected = false
     
-    init(name: String, isActive: Bool) {
+    public init(name: String, isActive: Bool) {
+      self.id = name  // Use name as stable ID
       self.name = name
       self.isActive = isActive
     }
