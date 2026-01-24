@@ -190,7 +190,10 @@ public class ViewModel {
       }
       
       let repository = Model.Repository(name: $0.path.components(separatedBy: "/").last ?? "Unknown Name", path: $0.path)
-      repositories.append(repository)
+      // Avoid duplicates
+      if !repositories.contains(where: { $0.path == repository.path }) {
+        repositories.append(repository)
+      }
       selectedRepository = repository
     }
   }
