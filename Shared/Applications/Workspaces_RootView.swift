@@ -10,25 +10,15 @@
 
 import Foundation
 import SwiftUI
+import AppKit
+import Git
 
 /// Main view for Workspace & Worktree management
 struct Workspaces_RootView: View {
   var body: some View {
-    #if os(macOS)
     WorkspacesDashboardView()
-    #else
-    ContentUnavailableView(
-      "Workspaces",
-      systemImage: "desktopcomputer",
-      description: Text("Workspace management is only available on macOS")
-    )
-    #endif
   }
 }
-
-#if os(macOS)
-import AppKit
-import Git
 
 // MARK: - macOS Dashboard View
 
@@ -1089,12 +1079,8 @@ struct CreateWorktreeSheet: View {
   }
 }
 
-#endif
-
 // MARK: - Preview
 
-#if os(macOS)
 #Preview {
   Workspaces_RootView()
 }
-#endif

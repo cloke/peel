@@ -10,8 +10,6 @@
 
 import Foundation
 import Git
-
-#if os(macOS)
 import AppKit
 import SwiftData
 
@@ -760,5 +758,3 @@ public final class WorkspaceDashboardService {
     Worktree(path: "", branch: nil, head: "", isMain: false, isDetached: true)
   }
 }
-
-#endif

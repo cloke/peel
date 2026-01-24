@@ -12,18 +12,14 @@ import SwiftData
 import Github
 
 struct Github_RootView: View {
-#if os(macOS)
   @Environment(MCPServerService.self) private var mcpServer
-#endif
   @Environment(\.modelContext) private var modelContext
   @Query(sort: \GitHubFavorite.addedAt, order: .reverse) private var favoriteRecords: [GitHubFavorite]
   @Query(sort: \RecentPullRequest.viewedAt, order: .reverse) private var recentPRRecords: [RecentPullRequest]
   @State public var viewModel = Github.ViewModel()
   @State private var dataProvider: GitHubDataProvider?
-#if os(macOS)
   @State private var reviewAgentCoordinator = PRReviewAgentCoordinator()
   @State private var reviewAgentTarget: PRReviewAgentTarget?
-#endif
   
   @State private var organizations = [Github.User]()
   @State private var columnVisibility = NavigationSplitViewVisibility.all
@@ -175,11 +171,7 @@ struct Github_RootView: View {
             .padding(.horizontal)
             .padding(.vertical, 10)
           }
-          #if os(macOS)
           .background(Color(nsColor: .windowBackgroundColor))
-          #else
-          .background(Color(.systemBackground))
-          #endif
         }
       }
       .task {
@@ -187,7 +179,6 @@ struct Github_RootView: View {
         persistAutomationTargets()
         syncAutomationSelection()
       }
-#if os(macOS)
       .onChange(of: mcpServer.lastUIAction?.id) {
         guard let action = mcpServer.lastUIAction else { return }
         switch action.controlId {
@@ -210,7 +201,6 @@ struct Github_RootView: View {
         }
         mcpServer.lastUIAction = nil
       }
-#endif
       } detail: {
         NavigationStack {
           detailRootView
@@ -220,21 +210,17 @@ struct Github_RootView: View {
     .environment(viewModel)
     .favoritesProvider(dataProvider)
     .recentPRsProvider(dataProvider)
-#if os(macOS)
     .reviewWithAgentProvider(reviewAgentCoordinator)
     .sheet(item: $reviewAgentTarget) { target in
       GithubReviewAgentSheet(target: target)
     }
-#endif
     .onAppear {
       dataProvider = GitHubDataProvider(modelContext: modelContext)
       persistAutomationTargets()
       syncAutomationSelection()
-#if os(macOS)
       reviewAgentCoordinator.onReview = { pr, repo in
         reviewAgentTarget = PRReviewAgentTarget.from(pullRequest: pr, repository: repo)
       }
-#endif
     }
     .onChange(of: favoriteRecords) { _, _ in
       persistAutomationTargets()
@@ -252,9 +238,7 @@ struct Github_RootView: View {
     }
     .frame(idealHeight: 400)
     .toolbar {
-#if os(macOS)
       ToolSelectionToolbar()
-#endif
       ToolbarItem(placement: .navigation) {
         Menu {
           Toggle("Show Archived Repos", isOn: $showArchivedRepos)
@@ -417,10 +401,7 @@ struct RecentPRDestination: View {
   @State private var repository: Github.Repository?
   @State private var owner: Github.User?
   @State private var descriptionText: String = ""
-
-#if os(macOS)
   @State private var showingReviewLocally = false
-#endif
   
   var body: some View {
     Group {
@@ -460,8 +441,6 @@ struct RecentPRDestination: View {
                 }
                 .buttonStyle(.borderedProminent)
               }
-
-#if os(macOS)
               Button {
                 showingReviewLocally = true
               } label: {
@@ -476,7 +455,6 @@ struct RecentPRDestination: View {
               }
               .buttonStyle(.borderedProminent)
               .disabled(reviewWithAgentProvider == nil)
-#endif
             }
           }
           .padding()
@@ -489,13 +467,11 @@ struct RecentPRDestination: View {
     .task {
       await loadPullRequestDetails()
     }
-#if os(macOS)
     .sheet(isPresented: $showingReviewLocally) {
       if let pullRequest, let repository {
         ReviewLocallySheet(pullRequest: pullRequest, repository: repository)
       }
     }
-#endif
   }
 
   private func loadPullRequestDetails() async {
@@ -608,7 +584,6 @@ struct RecentPRDestination: View {
 
 // MARK: - GitHub Data Provider
 
-#if os(macOS)
 @MainActor
 final class PRReviewAgentCoordinator: PRReviewAgentProvider {
   var onReview: ((Github.PullRequest, Github.Repository) -> Void)?
@@ -617,7 +592,6 @@ final class PRReviewAgentCoordinator: PRReviewAgentProvider {
     onReview?(pr, repo)
   }
 }
-#endif
 
 /// Provides GitHub favorites and recent PRs backed by SwiftData
 @MainActor
