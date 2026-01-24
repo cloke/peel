@@ -999,7 +999,7 @@ final class ParallelWorktreeRunner {
       throw ParallelRunError.invalidState("Execution must be approved before merging")
     }
     
-    guard let worktreePath = execution.worktreePath,
+        guard execution.worktreePath != nil,
           let branchName = execution.branchName else {
       throw ParallelRunError.missingWorktree
     }
