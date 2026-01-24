@@ -7,164 +7,113 @@
 
 import Charts
 import SwiftUI
+import PeelUI
 
 struct RepositoryInsightsView: View {
   let repository: Github.Repository
 
-  @State private var isLoading = true
-  @State private var issuePoints: [RepoTrendPoint] = []
-  @State private var prPoints: [RepoTrendPoint] = []
-  @State private var errorMessage: String?
-
-  private static let isoFormatter: ISO8601DateFormatter = {
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return formatter
-  }()
-  private static let fallbackFormatter = ISO8601DateFormatter()
-  private let calendar = Calendar.current
-  private let chartWeeks = 12
-
   var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 12) {
-        if isLoading {
-          ProgressView()
-        } else if let errorMessage {
-          Text(errorMessage)
-            .font(.caption)
-            .foregroundStyle(.red)
-        } else {
-          GroupBox {
-            VStack(alignment: .leading, spacing: 8) {
-              Text("Repo Health: Open Issues")
-                .font(.headline)
-              if issuePoints.isEmpty {
-                Text("No issue trend data yet")
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
-              } else {
-                Chart(issuePoints) { point in
-                  LineMark(
-                    x: .value("Week", point.weekStart, unit: .weekOfYear),
-                    y: .value("Open Issues", point.count)
-                  )
-                  .foregroundStyle(.purple)
-                  PointMark(
-                    x: .value("Week", point.weekStart, unit: .weekOfYear),
-                    y: .value("Open Issues", point.count)
-                  )
-                  .foregroundStyle(.purple)
-                }
-                .chartXAxis {
-                  AxisMarks(values: .stride(by: .weekOfYear, count: 2))
-                }
-                .frame(height: 160)
-              }
-            }
-            .padding(.vertical, 4)
+    AsyncContentView(
+      load: { try await loadInsightsData(for: repository) },
+      isEmpty: { $0.issuePoints.isEmpty && $0.prPoints.isEmpty },
+      content: { data in
+        ScrollView {
+          VStack(alignment: .leading, spacing: 12) {
+            TrendChart(title: "Repo Health: Open Issues", points: data.issuePoints, color: .purple)
+            TrendChart(title: "Repo Health: Open PRs", points: data.prPoints, color: .blue)
           }
+          .padding(.horizontal, 16)
+          .padding(.vertical, 12)
+        }
+      },
+      loadingView: { ProgressView() },
+      emptyView: { EmptyStateView("No Data", systemImage: "chart.line.downtrend.xyaxis") }
+    )
+    .id(repository.id)
+  }
+}
 
-          GroupBox {
-            VStack(alignment: .leading, spacing: 8) {
-              Text("Repo Health: Open PRs")
-                .font(.headline)
-              if prPoints.isEmpty {
-                Text("No PR trend data yet")
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
-              } else {
-                Chart(prPoints) { point in
-                  LineMark(
-                    x: .value("Week", point.weekStart, unit: .weekOfYear),
-                    y: .value("Open PRs", point.count)
-                  )
-                  .foregroundStyle(.blue)
-                  PointMark(
-                    x: .value("Week", point.weekStart, unit: .weekOfYear),
-                    y: .value("Open PRs", point.count)
-                  )
-                  .foregroundStyle(.blue)
-                }
-                .chartXAxis {
-                  AxisMarks(values: .stride(by: .weekOfYear, count: 2))
-                }
-                .frame(height: 160)
-              }
-            }
-            .padding(.vertical, 4)
+// MARK: - Data Loading
+
+private struct InsightsData {
+  let issuePoints: [RepoTrendPoint]
+  let prPoints: [RepoTrendPoint]
+}
+
+private func loadInsightsData(for repository: Github.Repository) async throws -> InsightsData {
+  async let issuesTask = Github.issues(from: repository, state: "all")
+  async let prsTask = Github.pullRequests(from: repository, state: "all")
+  
+  let (allIssues, pullRequests) = try await (issuesTask, prsTask)
+  let issues = allIssues.filter { $0.pull_request == nil }
+  
+  let calendar = Calendar.current
+  let weeks = chartWeekStarts(calendar: calendar)
+  
+  let issueItems = issues.compactMap { makeItem(created: $0.created_at, closed: $0.closed_at) }
+  let prItems = pullRequests.compactMap { makeItem(created: $0.created_at, closed: $0.closed_at) }
+  
+  return InsightsData(
+    issuePoints: weeks.map { RepoTrendPoint(weekStart: $0, count: openCount(items: issueItems, weekStart: $0, calendar: calendar)) },
+    prPoints: weeks.map { RepoTrendPoint(weekStart: $0, count: openCount(items: prItems, weekStart: $0, calendar: calendar)) }
+  )
+}
+
+private func chartWeekStarts(calendar: Calendar, weeks: Int = 12) -> [Date] {
+  let now = Date()
+  let currentWeekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? now
+  let start = calendar.date(byAdding: .weekOfYear, value: -(weeks - 1), to: currentWeekStart) ?? currentWeekStart
+  return (0..<weeks).compactMap { calendar.date(byAdding: .weekOfYear, value: $0, to: start) }
+}
+
+private func makeItem(created: String?, closed: String?) -> RepoTrendItem? {
+  guard let createdDate = parseDate(created) else { return nil }
+  return RepoTrendItem(createdAt: createdDate, closedAt: parseDate(closed))
+}
+
+private func openCount(items: [RepoTrendItem], weekStart: Date, calendar: Calendar) -> Int {
+  guard let weekEnd = calendar.date(byAdding: .day, value: 7, to: weekStart) else { return 0 }
+  return items.reduce(0) { total, item in
+    guard item.createdAt <= weekEnd else { return total }
+    if let closed = item.closedAt, closed <= weekEnd { return total }
+    return total + 1
+  }
+}
+
+private func parseDate(_ value: String?) -> Date? {
+  guard let value else { return nil }
+  let isoFormatter = ISO8601DateFormatter()
+  isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+  if let parsed = isoFormatter.date(from: value) { return parsed }
+  return ISO8601DateFormatter().date(from: value)
+}
+
+// MARK: - Supporting Views
+
+private struct TrendChart: View {
+  let title: String
+  let points: [RepoTrendPoint]
+  let color: Color
+  
+  var body: some View {
+    GroupBox {
+      VStack(alignment: .leading, spacing: 8) {
+        Text(title).font(.headline)
+        if points.isEmpty {
+          Text("No data yet").font(.caption).foregroundStyle(.secondary)
+        } else {
+          Chart(points) { point in
+            LineMark(x: .value("Week", point.weekStart, unit: .weekOfYear), y: .value("Count", point.count))
+              .foregroundStyle(color)
+            PointMark(x: .value("Week", point.weekStart, unit: .weekOfYear), y: .value("Count", point.count))
+              .foregroundStyle(color)
           }
+          .chartXAxis { AxisMarks(values: .stride(by: .weekOfYear, count: 2)) }
+          .frame(height: 160)
         }
       }
-      .padding(.horizontal, 16)
-      .padding(.vertical, 12)
+      .padding(.vertical, 4)
     }
-    .task(id: repository.id) {
-      await loadInsights()
-    }
-  }
-
-  private func loadInsights() async {
-    isLoading = true
-    errorMessage = nil
-    defer { isLoading = false }
-
-    do {
-      let allIssues = try await Github.issues(from: repository, state: "all")
-      let issues = allIssues.filter { $0.pull_request == nil }
-      let pullRequests = try await Github.pullRequests(from: repository, state: "all")
-
-      let issueItems = issues.compactMap { issue in
-        makeItem(created: issue.created_at, closed: issue.closed_at)
-      }
-      let prItems = pullRequests.compactMap { pr in
-        makeItem(created: pr.created_at, closed: pr.closed_at)
-      }
-
-      let weeks = chartWeekStarts
-      issuePoints = weeks.map { week in
-        RepoTrendPoint(weekStart: week, count: openCount(items: issueItems, weekStart: week))
-      }
-      prPoints = weeks.map { week in
-        RepoTrendPoint(weekStart: week, count: openCount(items: prItems, weekStart: week))
-      }
-    } catch {
-      errorMessage = "Failed to load insights: \(error.localizedDescription)"
-      issuePoints = []
-      prPoints = []
-    }
-  }
-
-  private func makeItem(created: String?, closed: String?) -> RepoTrendItem? {
-    guard let createdDate = parseDate(created) else { return nil }
-    let closedDate = parseDate(closed)
-    return RepoTrendItem(createdAt: createdDate, closedAt: closedDate)
-  }
-
-  private func openCount(items: [RepoTrendItem], weekStart: Date) -> Int {
-    guard let weekEnd = calendar.date(byAdding: .day, value: 7, to: weekStart) else { return 0 }
-    return items.reduce(0) { total, item in
-      guard item.createdAt <= weekEnd else { return total }
-      if let closed = item.closedAt, closed <= weekEnd {
-        return total
-      }
-      return total + 1
-    }
-  }
-
-  private var chartWeekStarts: [Date] {
-    let now = Date()
-    let currentWeekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? now
-    let start = calendar.date(byAdding: .weekOfYear, value: -(chartWeeks - 1), to: currentWeekStart) ?? currentWeekStart
-    return (0..<chartWeeks).compactMap { calendar.date(byAdding: .weekOfYear, value: $0, to: start) }
-  }
-
-  private func parseDate(_ value: String?) -> Date? {
-    guard let value else { return nil }
-    if let parsed = Self.isoFormatter.date(from: value) {
-      return parsed
-    }
-    return Self.fallbackFormatter.date(from: value)
   }
 }
 
