@@ -2,7 +2,7 @@
 title: MCP Test Plan
 status: active
 created: 2026-01-18
-updated: 2026-01-18
+updated: 2026-01-24
 tags: [mcp, testing, qa]
 audience: [developers, testers]
 code_locations:
@@ -104,7 +104,6 @@ related_docs:
 3. Run `chains.run` with `MCP Harness` on a clean worktree.
 
 ## Next Steps
-- [x] Add persistent MCP run log + cleanup action (issue #16).
 - [ ] Implement validation pipeline for MCP runs (issue #13).
 - [ ] Add MCP Activity run detail panel (prompt/output/validation summary).
 - [ ] Add MCP run timeline (agent status + tool events).

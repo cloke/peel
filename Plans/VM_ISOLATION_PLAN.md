@@ -2,7 +2,7 @@
 title: VM Isolation Plan
 status: partial
 created: 2025-11-01
-updated: 2026-01-18
+updated: 2026-01-24
 tags: [vm, isolation, security, virtualization]
 audience: [developers]
 code_locations:
@@ -16,20 +16,14 @@ related_docs:
 
 # VM Isolation Plan
 
-**Updated:** January 18, 2026  
-**Status:** Linux VM working (boots to CLI), macOS VM not yet  
+**Updated:** January 24, 2026  
+**Status:** macOS VM not yet  
 **Priority:** Low (future feature)
 
 ---
 
 ## Current State
 
-- ✅ Linux VM boots to command line
-- ✅ Kernel + initramfs download works
-- ✅ VZLinuxBootLoader with extracted raw kernel
-- ✅ Console output ANSI escape codes stripped
-- ✅ UI labels updated (Alpine Linux)
-- ✅ State management (VM cleanup on stop)
 - ❌ macOS VM not working yet
 
 ---
@@ -38,8 +32,6 @@ related_docs:
 
 1. **Mount Failure:** Boot drops to initramfs shell - need rootfs or netboot config
 2. **Kernel Format:** Alpine vmlinuz is EFI PE - must use `extractEmbeddedKernel` (gzip scan)
-3. **State Management:** ✅ FIXED - Delegates now properly clear VM state on unexpected stop
-4. **Console Output:** ✅ FIXED - ANSI escape codes are now stripped from console output
 
 ---
 
@@ -117,7 +109,6 @@ For testing, enable the netboot configuration:
 - [ ] Enable network for package installation
 
 ### 2. Console Improvements
-- [x] Strip ANSI escape codes from output ✅
 - [ ] Add filtering/search in console view
 - [ ] Consider throttle adjustments (currently 0.25s/4KB)
 
@@ -137,7 +128,6 @@ Suggested implementation:
 - **Build Server**: Network + persistent disk image, full rootfs
 
 ### 4. State Management
-- [x] Clear VM state on unexpected stop ✅
 - [ ] Add VM health monitoring
 - [ ] Auto-restart on crash (optional)
 

@@ -2,7 +2,7 @@
 title: MCP Agent Workflow
 status: active
 created: 2026-01-18
-updated: 2026-01-18
+updated: 2026-01-24
 tags: [mcp, agent-orchestration, api]
 audience: [ai-agents, developers]
 code_locations:
@@ -295,4 +295,3 @@ requests.post("http://127.0.0.1:8765/rpc", json={
 ## Open Issues
 
 - [#13](https://github.com/cloke/peel/issues/13) - Add validation pipeline for MCP runs
-- [#16](https://github.com/cloke/peel/issues/16) - MCP activity log + cleanup actions

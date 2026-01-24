@@ -2,10 +2,10 @@
 title: Local RAG for Codebase Context
 status: draft
 created: 2026-01-19
-updated: 2026-01-19
+updated: 2026-01-24
 audience: [developers]
 related_issues:
-  - https://github.com/cloke/peel/issues/42
+  - https://github.com/cloke/peel/issues/74
 related_docs:
   - Plans/ROADMAP.md
   - Plans/apple-agent-big-ideas.md
@@ -120,27 +120,9 @@ QueryService
 3. **Tiered Memory**: hot/warm/cold eviction strategy.
 4. **Deduper + Cache**: cross-agent embedding cache.
 
-## Phase 1 Actionable Plan
-1. **SQLite vector store** ([#72](https://github.com/cloke/peel/issues/72))
-  - Implement `LocalRAGStore` and schema creation.
-2. **Repo scan + chunking** ([#73](https://github.com/cloke/peel/issues/73))
-  - Git-aware scanner, deterministic chunker, incremental updates.
-3. **Core ML embeddings** ([#74](https://github.com/cloke/peel/issues/74))
+## Phase 1 Remaining Work
+1. **Core ML embeddings** ([#74](https://github.com/cloke/peel/issues/74))
   - `EmbeddingProvider` protocol and Core ML backend.
-4. **Query API + MCP hook** ([#75](https://github.com/cloke/peel/issues/75))
-  - Top-k vector search and MCP tool exposure.
-
-## Implementation Updates
-- 2026-01-19: Added `LocalRAGStore` schema init + MCP tools (`rag.status`, `rag.init`, `rag.index`).
-- 2026-01-19: Added repo scanning + chunking pipeline (stubbed indexing without embeddings).
-- 2026-01-19: Added `rag.search` MCP tool (text match stub over chunks).
-- 2026-01-19: Added hash-based embedding provider + vector search stub (`rag.search` mode: `vector`).
-- 2026-01-19: Added Core ML embedding provider scaffold (awaiting model asset + output mapping).
-- 2026-01-19: Added `rag.model.describe` MCP tool to validate Core ML model bundle metadata.
-- 2026-01-19: Removed incompatible Core ML model bundle (spec unsupported); continuing with hash-embedding fallback while we select a compatible model.
-- 2026-01-19: Switched default embedding provider to NaturalLanguage `NLEmbedding` (system sentence embeddings).
-- 2026-01-19: Attempted jina-embeddings-v2-small-en Core ML export; coremlc fails to parse model spec on Xcode 26, so removed from repo.
-- 2026-01-19: Enabled Local RAG MCP tools by default (dev validation) to allow `rag.init`/`rag.index` without manual permissions.
 
 ## Open Questions
 - Preferred embedding model (local vs API)?

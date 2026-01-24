@@ -161,6 +161,7 @@ Maximum throughput with maximum safety:
 4. **Continuous listening mode** (**throughput**) — Background voice activation with wake word detection.
 5. **Feedback loop orchestrator** (**orchestration**, **wwdc**) — Closed loop: voice command → agent action → visual confirmation → voice report.
 6. **Dictation-to-code** (**tools**) — Voice-driven coding with real-time syntax awareness.
+7. **Voice notifications + quick replies** (**tools**, **orchestration**) — Task completion announcements with simple spoken commands (see [#109](https://github.com/cloke/peel/issues/109)).
 
 ## PII Scrubbing & Data Sanitization
 
@@ -196,9 +197,9 @@ Maximum throughput with maximum safety:
 
 ## Next Bets (Top Picks)
 
-1. **Per‑task micro‑VMs** — strongest isolation; enables aggressive agent experimentation.
-2. **GPU shared cache service** — high throughput gains across multi‑agent runs.
-3. **ANE micro‑services** — offload common tasks and free GPU for heavier models.
-4. **XPC tool brokers** — clean boundary between agents and system actions.
-5. **Budget‑aware scheduler** — maximizes parallel throughput under strict hardware limits.
+1. **Per‑task micro‑VMs** — strongest isolation; enables aggressive agent experimentation. ([#106](https://github.com/cloke/peel/issues/106))
+2. **GPU shared cache service** — high throughput gains across multi‑agent runs. ([#107](https://github.com/cloke/peel/issues/107))
+3. **ANE micro‑services** — offload common tasks and free GPU for heavier models. ([#108](https://github.com/cloke/peel/issues/108))
+4. **XPC tool brokers** — clean boundary between agents and system actions. ([#23](https://github.com/cloke/peel/issues/23))
+5. **Budget‑aware scheduler** — maximizes parallel throughput under strict hardware limits. ([#41](https://github.com/cloke/peel/issues/41))
 
