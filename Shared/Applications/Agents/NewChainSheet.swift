@@ -173,24 +173,8 @@ struct NewChainSheet: View {
                 .foregroundStyle(.orange)
             }
 
-            Picker("Model", selection: $agent1Model) {
-              Section("Free") {
-                ForEach(CopilotModel.allCases.filter { $0.isFree }) { m in
-                  ModelLabelView(model: m).tag(m)
-                }
-              }
-              Section("Claude") {
-                ForEach(CopilotModel.allCases.filter { $0.isClaude }) { m in
-                  ModelLabelView(model: m).tag(m)
-                }
-              }
-              Section("GPT") {
-                ForEach(CopilotModel.allCases.filter { $0.isGPT && !$0.isFree }) { m in
-                  ModelLabelView(model: m).tag(m)
-                }
-              }
-            }
-            .accessibilityIdentifier("agents.newChain.agent1.model")
+            CopilotModelPicker(selection: $agent1Model)
+              .accessibilityIdentifier("agents.newChain.agent1.model")
           }
 
           Section {
@@ -214,24 +198,8 @@ struct NewChainSheet: View {
                 .foregroundStyle(.orange)
             }
 
-            Picker("Model", selection: $agent2Model) {
-              Section("Free") {
-                ForEach(CopilotModel.allCases.filter { $0.isFree }) { m in
-                  ModelLabelView(model: m).tag(m)
-                }
-              }
-              Section("Claude") {
-                ForEach(CopilotModel.allCases.filter { $0.isClaude }) { m in
-                  ModelLabelView(model: m).tag(m)
-                }
-              }
-              Section("GPT") {
-                ForEach(CopilotModel.allCases.filter { $0.isGPT && !$0.isFree }) { m in
-                  ModelLabelView(model: m).tag(m)
-                }
-              }
-            }
-            .accessibilityIdentifier("agents.newChain.agent2.model")
+            CopilotModelPicker(selection: $agent2Model)
+              .accessibilityIdentifier("agents.newChain.agent2.model")
           }
 
           Section {
