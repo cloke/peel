@@ -8,6 +8,7 @@
 
 import SwiftUI
 import Observation
+import PeelUI
 
 enum PackageSource: String, CaseIterable, Identifiable {
   case installed = "Installed"
@@ -104,7 +105,7 @@ extension SidebarNavigationView {
 
 public struct SidebarNavigationView: View {
   @State private var results = SearchResults()
-  @State private var viewModel = ViewModel()
+  @Bindable private var viewModel = ViewModel()
   @AppStorage("brew.source") private var sourceRaw: String = PackageSource.installed.rawValue
   @AppStorage("brew.searchText") private var storedSearchText: String = ""
   @State private var selection: String?
@@ -195,11 +196,7 @@ public struct SidebarNavigationView: View {
         }
       }
     }
-    .alert("Error", isPresented: .constant(viewModel.errorMessage != nil)) {
-      Button("OK") { viewModel.errorMessage = nil }
-    } message: {
-      Text(viewModel.errorMessage ?? "")
-    }
+    .errorAlert(message: $viewModel.errorMessage)
   }
 }
 

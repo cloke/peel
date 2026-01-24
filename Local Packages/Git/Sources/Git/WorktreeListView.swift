@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import PeelUI
 
 #if os(macOS)
 import AppKit
@@ -91,11 +92,7 @@ public struct WorktreeListView: View {
         Text("This will remove the worktree at:\n\(worktree.path)")
       }
     }
-    .alert("Error", isPresented: .constant(errorMessage != nil)) {
-      Button("OK") { errorMessage = nil }
-    } message: {
-      Text(errorMessage ?? "")
-    }
+    .errorAlert(message: $errorMessage)
   }
   
   private func loadWorktrees() async {
