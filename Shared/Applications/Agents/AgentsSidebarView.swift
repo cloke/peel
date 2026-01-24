@@ -16,6 +16,7 @@ struct AgentsSidebarView: View {
   @Binding var showingNewAgentSheet: Bool
   @Binding var selectedInfrastructure: InfrastructureView?
   @AppStorage("vm.isolation.section") private var vmIsolationSection = "overview"
+  @AppStorage("vm.isolation.sidebar.expanded") private var vmIsolationSidebarExpanded = true
 
   // Track selection as a string: "chain:id" or "agent:id" or "infra:key"
   @State private var selection: String?
@@ -171,11 +172,13 @@ struct AgentsSidebarView: View {
           .tag("infra:parallel-worktrees")
         }
 
-        Section("VM Isolation") {
-          vmIsolationRow(title: "Overview", icon: "shield.checkered", section: "overview")
-          vmIsolationRow(title: "Linux", icon: "server.rack", section: "linux")
-          vmIsolationRow(title: "macOS", icon: "desktopcomputer", section: "macos")
-          vmIsolationRow(title: "Pools", icon: "square.grid.2x2", section: "pools")
+        Section {
+          DisclosureGroup("VM Isolation", isExpanded: $vmIsolationSidebarExpanded) {
+            vmIsolationRow(title: "Overview", icon: "shield.checkered", section: "overview")
+            vmIsolationRow(title: "Linux", icon: "server.rack", section: "linux")
+            vmIsolationRow(title: "macOS", icon: "desktopcomputer", section: "macos")
+            vmIsolationRow(title: "Pools", icon: "square.grid.2x2", section: "pools")
+          }
         }
         #endif
       }
