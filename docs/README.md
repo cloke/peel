@@ -18,6 +18,7 @@ Technical reference material.
 | Doc | Description |
 |-----|-------------|
 | [CODE_AUDIT_INDEX](reference/CODE_AUDIT_INDEX.md) | File-by-file audit, patterns to avoid |
+| [RAG_PATTERN_INDEX](reference/RAG_PATTERN_INDEX.md) | Preferred patterns and anti-patterns for RAG checks |
 
 ---
 
