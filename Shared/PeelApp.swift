@@ -401,6 +401,14 @@ final class DataService {
     return try? modelContext.fetch(descriptor).first
   }
 
+  func getRecentParallelRunSnapshots(limit: Int = 10) -> [ParallelRunSnapshot] {
+    var descriptor = FetchDescriptor<ParallelRunSnapshot>(
+      sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
+    )
+    descriptor.fetchLimit = limit
+    return (try? modelContext.fetch(descriptor)) ?? []
+  }
+
   private func cleanupOldParallelRunSnapshots(keeping limit: Int = 200) {
     let descriptor = FetchDescriptor<ParallelRunSnapshot>(sortBy: [SortDescriptor(\.updatedAt, order: .reverse)])
     guard let records = try? modelContext.fetch(descriptor), records.count > limit else {

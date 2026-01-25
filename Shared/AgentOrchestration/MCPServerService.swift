@@ -29,6 +29,7 @@ public final class MCPServerService {
     static let maxQueuedChains = "mcp.server.maxQueuedChains"
     static let autoCleanupWorkspaces = "mcp.server.autoCleanupWorkspaces"
     static let sleepPreventionEnabled = "mcp.server.sleepPreventionEnabled"
+    static let localRagEnabled = "localrag.enabled"
     static let localRagRepoPath = "localrag.repoPath"
     static let localRagQuery = "localrag.query"
     static let localRagSearchMode = "localrag.searchMode"
@@ -187,6 +188,9 @@ public final class MCPServerService {
     get { uiAutomationProvider.lastUIAction }
     set { uiAutomationProvider.lastUIAction = newValue }
   }
+  public var localRagEnabled: Bool = true {
+    didSet { UserDefaults.standard.set(localRagEnabled, forKey: StorageKey.localRagEnabled) }
+  }
   public var localRagRepoPath: String = "" {
     didSet { UserDefaults.standard.set(localRagRepoPath, forKey: StorageKey.localRagRepoPath) }
   }
@@ -202,6 +206,109 @@ public final class MCPServerService {
   public var localRagUseCoreML: Bool = false {
     didSet { UserDefaults.standard.set(localRagUseCoreML, forKey: StorageKey.localRagUseCoreML) }
   }
+
+  // MARK: - Prompt Rules & Guardrails
+
+  /// Rules that are automatically prepended to prompts during chain execution
+  public struct PromptRules: Codable, Sendable {
+    public var globalPrefix: String
+    public var enforcePlannerModel: String?
+    public var maxPremiumCostDefault: Double?
+    public var requireRagByDefault: Bool
+    public var perTemplateOverrides: [String: TemplateOverride]
+
+    public struct TemplateOverride: Codable, Sendable {
+      public var promptPrefix: String?
+      public var enforcePlannerModel: String?
+      public var maxPremiumCost: Double?
+      public var requireRag: Bool?
+    }
+
+    public init(
+      globalPrefix: String = "",
+      enforcePlannerModel: String? = nil,
+      maxPremiumCostDefault: Double? = nil,
+      requireRagByDefault: Bool = false,
+      perTemplateOverrides: [String: TemplateOverride] = [:]
+    ) {
+      self.globalPrefix = globalPrefix
+      self.enforcePlannerModel = enforcePlannerModel
+      self.maxPremiumCostDefault = maxPremiumCostDefault
+      self.requireRagByDefault = requireRagByDefault
+      self.perTemplateOverrides = perTemplateOverrides
+    }
+
+    public static let `default` = PromptRules()
+  }
+
+  public var promptRules: PromptRules {
+    didSet { savePromptRules() }
+  }
+
+  /// Apply prompt rules to a prompt and options before chain execution
+  public func applyPromptRules(
+    prompt: String,
+    templateName: String?,
+    options: AgentChainRunner.ChainRunOptions?
+  ) -> (prompt: String, options: AgentChainRunner.ChainRunOptions) {
+    var finalPrompt = prompt
+    var finalOptions = options ?? AgentChainRunner.ChainRunOptions()
+
+    // Apply global prefix
+    if !promptRules.globalPrefix.isEmpty {
+      finalPrompt = promptRules.globalPrefix + "\n\n" + finalPrompt
+    }
+
+    // Apply template-specific overrides
+    if let templateName, let override = promptRules.perTemplateOverrides[templateName] {
+      if let prefix = override.promptPrefix, !prefix.isEmpty {
+        finalPrompt = prefix + "\n\n" + finalPrompt
+      }
+      if let enforcedModel = override.enforcePlannerModel {
+        // Log that we're enforcing a planner model
+        Task { await telemetryProvider.info("Enforcing planner model from template override", metadata: [
+          "templateName": templateName,
+          "enforcedModel": enforcedModel
+        ]) }
+      }
+      if let maxCost = override.maxPremiumCost {
+        finalOptions = AgentChainRunner.ChainRunOptions(
+          allowPlannerModelSelection: finalOptions.allowPlannerModelSelection,
+          allowImplementerModelOverride: finalOptions.allowImplementerModelOverride,
+          allowPlannerImplementerScaling: finalOptions.allowPlannerImplementerScaling,
+          maxImplementers: finalOptions.maxImplementers,
+          maxPremiumCost: maxCost
+        )
+      }
+    }
+
+    // Apply global defaults if not overridden
+    if let maxCost = promptRules.maxPremiumCostDefault, finalOptions.maxPremiumCost == nil {
+      finalOptions = AgentChainRunner.ChainRunOptions(
+        allowPlannerModelSelection: finalOptions.allowPlannerModelSelection,
+        allowImplementerModelOverride: finalOptions.allowImplementerModelOverride,
+        allowPlannerImplementerScaling: finalOptions.allowPlannerImplementerScaling,
+        maxImplementers: finalOptions.maxImplementers,
+        maxPremiumCost: maxCost
+      )
+    }
+
+    return (finalPrompt, finalOptions)
+  }
+
+  private func loadPromptRules() -> PromptRules {
+    guard let data = UserDefaults.standard.data(forKey: "mcp.server.promptRules"),
+          let rules = try? JSONDecoder().decode(PromptRules.self, from: data) else {
+      return .default
+    }
+    return rules
+  }
+
+  private func savePromptRules() {
+    guard let data = try? JSONEncoder().encode(promptRules) else { return }
+    UserDefaults.standard.set(data, forKey: "mcp.server.promptRules")
+  }
+
   private(set) var ragStatus: LocalRAGStore.Status?
   private(set) var ragStats: LocalRAGStore.Stats?
   private(set) var ragUsage = RAGUsageStats()
@@ -301,6 +408,12 @@ public final class MCPServerService {
     self.maxQueuedChains = UserDefaults.standard.integer(forKey: StorageKey.maxQueuedChains)
     self.autoCleanupWorkspaces = UserDefaults.standard.bool(forKey: StorageKey.autoCleanupWorkspaces)
     self.sleepPreventionEnabled = UserDefaults.standard.bool(forKey: StorageKey.sleepPreventionEnabled)
+    // Default RAG enabled to true if not explicitly set
+    if UserDefaults.standard.object(forKey: StorageKey.localRagEnabled) == nil {
+      self.localRagEnabled = true
+    } else {
+      self.localRagEnabled = UserDefaults.standard.bool(forKey: StorageKey.localRagEnabled)
+    }
     self.localRagRepoPath = UserDefaults.standard.string(forKey: StorageKey.localRagRepoPath) ?? ""
     self.localRagQuery = UserDefaults.standard.string(forKey: StorageKey.localRagQuery) ?? ""
     let storedMode = UserDefaults.standard.string(forKey: StorageKey.localRagSearchMode) ?? RAGSearchMode.text.rawValue
@@ -308,6 +421,13 @@ public final class MCPServerService {
     let storedLimit = UserDefaults.standard.integer(forKey: StorageKey.localRagSearchLimit)
     self.localRagSearchLimit = storedLimit == 0 ? 5 : storedLimit
     self.localRagUseCoreML = UserDefaults.standard.bool(forKey: StorageKey.localRagUseCoreML)
+    // Initialize prompt rules from UserDefaults
+    if let data = UserDefaults.standard.data(forKey: "mcp.server.promptRules"),
+       let rules = try? JSONDecoder().decode(PromptRules.self, from: data) {
+      self.promptRules = rules
+    } else {
+      self.promptRules = .default
+    }
     if self.port == 0 {
       self.port = 8765
     }
@@ -1247,6 +1367,12 @@ public final class MCPServerService {
     case "chains.queue.cancel":
       return await handleQueueCancel(id: id, arguments: arguments)
 
+    case "chains.promptRules.get":
+      return handlePromptRulesGet(id: id)
+
+    case "chains.promptRules.set":
+      return handlePromptRulesSet(id: id, arguments: arguments)
+
     case "logs.mcp.path":
       return (200, makeRPCResult(id: id, result: ["path": await telemetryProvider.logPath()]))
 
@@ -2003,26 +2129,59 @@ public final class MCPServerService {
       return (400, makeRPCError(id: id, code: -32602, message: "Missing or invalid runId"))
     }
 
-    guard let run = runner.getRun(id: runId) else {
-      Task { await telemetryProvider.warning("Parallel run not found", metadata: [
-        "runId": runIdString,
-        "knownRunCount": "\(runner.runs.count)"
-      ]) }
-      let knownRuns = runner.runs.map { encodeParallelRun($0) }
-      return (404, makeRPCError(
-        id: id,
-        code: -32004,
-        message: "Run not found",
-        data: [
-          "runId": runIdString,
-          "knownRunCount": runner.runs.count,
-          "knownRuns": knownRuns,
-          "hint": "Run not found. The app may have restarted or the run was removed. Use parallel.list to refresh."
-        ]
-      ))
+    // First try in-memory
+    if let run = runner.getRun(id: runId) {
+      return (200, makeRPCResult(id: id, result: encodeParallelRun(run, includeDetails: true)))
     }
 
-    return (200, makeRPCResult(id: id, result: encodeParallelRun(run, includeDetails: true)))
+    // Fall back to SwiftData snapshot
+    if let snapshot = dataService?.getLatestParallelRunSnapshot(runId: runIdString) {
+      let snapshotPayload: [String: Any] = [
+        "runId": snapshot.runId,
+        "name": snapshot.name,
+        "projectPath": snapshot.projectPath,
+        "baseBranch": snapshot.baseBranch,
+        "targetBranch": snapshot.targetBranch as Any,
+        "templateName": snapshot.templateName as Any,
+        "status": snapshot.status,
+        "progress": snapshot.progress,
+        "executionCount": snapshot.executionCount,
+        "pendingReviewCount": snapshot.pendingReviewCount,
+        "readyToMergeCount": snapshot.readyToMergeCount,
+        "mergedCount": snapshot.mergedCount,
+        "rejectedCount": snapshot.rejectedCount,
+        "failedCount": snapshot.failedCount,
+        "hungCount": snapshot.hungCount,
+        "requireReviewGate": snapshot.requireReviewGate,
+        "autoMergeOnApproval": snapshot.autoMergeOnApproval,
+        "guidanceCount": snapshot.operatorGuidanceCount,
+        "createdAt": snapshot.createdAt.iso8601,
+        "updatedAt": snapshot.updatedAt.iso8601,
+        "lastUpdatedAt": snapshot.lastUpdatedAt?.iso8601 as Any,
+        "executions": snapshot.executionsJSON,
+        "fromSnapshot": true,
+        "hint": "Run restored from persistence. The app may have restarted."
+      ]
+      return (200, makeRPCResult(id: id, result: snapshotPayload))
+    }
+
+    // No data found anywhere
+    Task { await telemetryProvider.warning("Parallel run not found", metadata: [
+      "runId": runIdString,
+      "knownRunCount": "\(runner.runs.count)"
+    ]) }
+    let knownRuns = runner.runs.map { encodeParallelRun($0) }
+    return (404, makeRPCError(
+      id: id,
+      code: -32004,
+      message: "Run not found",
+      data: [
+        "runId": runIdString,
+        "knownRunCount": runner.runs.count,
+        "knownRuns": knownRuns,
+        "hint": "Run not found. The app may have restarted or the run was removed. Use parallel.list to refresh."
+      ]
+    ))
   }
 
   private func handleParallelList(id: Any?, arguments: [String: Any]) -> (Int, Data) {
@@ -2031,6 +2190,7 @@ public final class MCPServerService {
     }
 
     let includeCompleted = arguments["includeCompleted"] as? Bool ?? false
+    let includeSnapshots = arguments["includeSnapshots"] as? Bool ?? true
 
     let runs = runner.runs.filter { run in
       if includeCompleted { return true }
@@ -2040,7 +2200,43 @@ public final class MCPServerService {
       }
     }
 
-    let result: [[String: Any]] = runs.map { encodeParallelRun($0) }
+    var result: [[String: Any]] = runs.map { encodeParallelRun($0) }
+    let inMemoryRunIds = Set(runs.map { $0.id.uuidString })
+
+    // Also include recent snapshots that aren't in memory
+    if includeSnapshots, let snapshots = dataService?.getRecentParallelRunSnapshots(limit: 10) {
+      for snapshot in snapshots {
+        // Skip if already in memory
+        guard !inMemoryRunIds.contains(snapshot.runId) else { continue }
+        // Skip completed if not requested
+        if !includeCompleted {
+          let status = snapshot.status.lowercased()
+          if status == "completed" || status == "cancelled" || status == "failed" { continue }
+        }
+        let snapshotPayload: [String: Any] = [
+          "runId": snapshot.runId,
+          "name": snapshot.name,
+          "projectPath": snapshot.projectPath,
+          "baseBranch": snapshot.baseBranch,
+          "targetBranch": snapshot.targetBranch as Any,
+          "templateName": snapshot.templateName as Any,
+          "status": snapshot.status,
+          "progress": snapshot.progress,
+          "executionCount": snapshot.executionCount,
+          "pendingReviewCount": snapshot.pendingReviewCount,
+          "readyToMergeCount": snapshot.readyToMergeCount,
+          "mergedCount": snapshot.mergedCount,
+          "rejectedCount": snapshot.rejectedCount,
+          "failedCount": snapshot.failedCount,
+          "hungCount": snapshot.hungCount,
+          "createdAt": snapshot.createdAt.iso8601,
+          "updatedAt": snapshot.updatedAt.iso8601,
+          "fromSnapshot": true
+        ]
+        result.append(snapshotPayload)
+      }
+    }
+
     return (200, makeRPCResult(id: id, result: ["runs": result]))
   }
 
@@ -2934,7 +3130,7 @@ public final class MCPServerService {
   }
 
   private func handleChainRun(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    guard let prompt = arguments["prompt"] as? String else {
+    guard let rawPrompt = arguments["prompt"] as? String else {
       await telemetryProvider.warning("chains.run missing prompt", metadata: [:])
       return (400, makeRPCError(id: id, code: -32602, message: "Missing prompt"))
     }
@@ -2960,7 +3156,7 @@ public final class MCPServerService {
     let timeoutSeconds = arguments["timeoutSeconds"] as? Double
     let returnImmediately = arguments["returnImmediately"] as? Bool ?? false
     let keepWorkspace = arguments["keepWorkspace"] as? Bool ?? false
-    let requireRagUsage = arguments["requireRagUsage"] as? Bool ?? false
+    let requireRagUsage = arguments["requireRagUsage"] as? Bool ?? promptRules.requireRagByDefault
 
     let (enqueuedAt, wasCancelled, queuePosition) = await acquireChainRunSlot(runId: runId, priority: priority)
     if wasCancelled {
@@ -3000,7 +3196,7 @@ public final class MCPServerService {
       let repository = Model.Repository(name: repoURL.lastPathComponent, path: workingDirectory)
       let task = AgentTask(
         title: "MCP Chain: \(template.name)",
-        prompt: prompt,
+        prompt: rawPrompt,
         repositoryPath: workingDirectory
       )
 
@@ -3034,19 +3230,26 @@ public final class MCPServerService {
       )
     }
 
-    let runOptions = AgentChainRunner.ChainRunOptions(
+    // Apply prompt rules and guardrails
+    let initialOptions = AgentChainRunner.ChainRunOptions(
       allowPlannerModelSelection: allowPlannerModelSelection,
       allowImplementerModelOverride: allowImplementerModelOverride,
       allowPlannerImplementerScaling: allowPlannerImplementerScaling,
       maxImplementers: maxImplementers,
       maxPremiumCost: maxPremiumCost
     )
+    let (prompt, runOptions) = applyPromptRules(
+      prompt: rawPrompt,
+      templateName: template.name,
+      options: initialOptions
+    )
 
     await telemetryProvider.info("Chain run started", metadata: [
       "runId": runId.uuidString,
       "template": template.name,
       "workingDirectory": chainWorkingDirectory ?? "",
-      "queued": enqueuedAt == nil ? "false" : "true"
+      "queued": enqueuedAt == nil ? "false" : "true",
+      "promptRulesApplied": !promptRules.globalPrefix.isEmpty || promptRules.perTemplateOverrides[template.name] != nil ? "true" : "false"
     ])
 
     activeRunChains[runId] = chain
@@ -3662,6 +3865,67 @@ public final class MCPServerService {
     return (404, makeRPCError(id: id, code: -32004, message: "Queued run not found"))
   }
 
+  // MARK: - Prompt Rules Handlers
+
+  private func handlePromptRulesGet(id: Any?) -> (Int, Data) {
+    var overrides: [String: [String: Any]] = [:]
+    for (templateName, override) in promptRules.perTemplateOverrides {
+      var dict: [String: Any] = [:]
+      if let prefix = override.promptPrefix { dict["promptPrefix"] = prefix }
+      if let model = override.enforcePlannerModel { dict["enforcePlannerModel"] = model }
+      if let cost = override.maxPremiumCost { dict["maxPremiumCost"] = cost }
+      if let rag = override.requireRag { dict["requireRag"] = rag }
+      overrides[templateName] = dict
+    }
+
+    let result: [String: Any] = [
+      "globalPrefix": promptRules.globalPrefix,
+      "enforcePlannerModel": promptRules.enforcePlannerModel as Any,
+      "maxPremiumCostDefault": promptRules.maxPremiumCostDefault as Any,
+      "requireRagByDefault": promptRules.requireRagByDefault,
+      "perTemplateOverrides": overrides
+    ]
+    return (200, makeRPCResult(id: id, result: result))
+  }
+
+  private func handlePromptRulesSet(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    var rules = promptRules
+
+    if let globalPrefix = arguments["globalPrefix"] as? String {
+      rules.globalPrefix = globalPrefix
+    }
+    if let enforcePlannerModel = arguments["enforcePlannerModel"] as? String {
+      rules.enforcePlannerModel = enforcePlannerModel.isEmpty ? nil : enforcePlannerModel
+    }
+    if let maxPremiumCostDefault = arguments["maxPremiumCostDefault"] as? Double {
+      rules.maxPremiumCostDefault = maxPremiumCostDefault
+    }
+    if let requireRagByDefault = arguments["requireRagByDefault"] as? Bool {
+      rules.requireRagByDefault = requireRagByDefault
+    }
+    if let overrides = arguments["perTemplateOverrides"] as? [String: [String: Any]] {
+      for (templateName, overrideDict) in overrides {
+        var override = rules.perTemplateOverrides[templateName] ?? PromptRules.TemplateOverride()
+        if let prefix = overrideDict["promptPrefix"] as? String {
+          override.promptPrefix = prefix.isEmpty ? nil : prefix
+        }
+        if let model = overrideDict["enforcePlannerModel"] as? String {
+          override.enforcePlannerModel = model.isEmpty ? nil : model
+        }
+        if let cost = overrideDict["maxPremiumCost"] as? Double {
+          override.maxPremiumCost = cost
+        }
+        if let rag = overrideDict["requireRag"] as? Bool {
+          override.requireRag = rag
+        }
+        rules.perTemplateOverrides[templateName] = override
+      }
+    }
+
+    promptRules = rules
+    return (200, makeRPCResult(id: id, result: ["updated": true]))
+  }
+
   public func cleanupAgentWorkspaces() async {
     guard !isCleaningAgentWorkspaces else { return }
     isCleaningAgentWorkspaces = true
@@ -4257,6 +4521,32 @@ public final class MCPServerService {
             "runId": ["type": "string"]
           ],
           "required": ["runId"]
+        ],
+        category: .chains,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "chains.promptRules.get",
+        description: "Get current prompt rules and guardrails configuration",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .chains,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "chains.promptRules.set",
+        description: "Update prompt rules and guardrails. Partial updates supported.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "globalPrefix": ["type": "string", "description": "Text prepended to all prompts"],
+            "enforcePlannerModel": ["type": "string", "description": "Model name to enforce for planner"],
+            "maxPremiumCostDefault": ["type": "number", "description": "Default max premium cost"],
+            "requireRagByDefault": ["type": "boolean", "description": "Require RAG usage by default"],
+            "perTemplateOverrides": ["type": "object", "description": "Per-template overrides keyed by template name"]
+          ]
         ],
         category: .chains,
         isMutating: true

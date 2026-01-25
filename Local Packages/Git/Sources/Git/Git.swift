@@ -88,6 +88,8 @@ public struct GitRootView: View {
         )
       }
       .listStyle(.sidebar)
+      .animation(.none, value: repository.localBranches.count)
+      .animation(.none, value: repository.remoteBranches.count)
     } detail: {
       switch selection {
       case .localChanges:

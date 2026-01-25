@@ -82,6 +82,67 @@ struct SettingsView: View {
             }
           }
 
+          Section("Local RAG") {
+            Toggle(
+              "Enable Local RAG",
+              isOn: Binding(
+                get: { mcpServer.localRagEnabled },
+                set: { mcpServer.localRagEnabled = $0 }
+              )
+            )
+            Text("Use local codebase indexing to provide context to agents.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+
+            if mcpServer.localRagEnabled {
+              Toggle(
+                "Use Core ML embeddings",
+                isOn: Binding(
+                  get: { mcpServer.localRagUseCoreML },
+                  set: { mcpServer.localRagUseCoreML = $0 }
+                )
+              )
+              Text("Requires local Core ML model setup. Falls back to text search if unavailable.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+              Picker("Default search mode", selection: Binding(
+                get: { mcpServer.localRagSearchMode },
+                set: { mcpServer.localRagSearchMode = $0 }
+              )) {
+                Text("Text").tag(MCPServerService.RAGSearchMode.text)
+                Text("Vector").tag(MCPServerService.RAGSearchMode.vector)
+              }
+              .pickerStyle(.segmented)
+
+              Stepper(
+                "Search limit: \(mcpServer.localRagSearchLimit)",
+                value: Binding(
+                  get: { mcpServer.localRagSearchLimit },
+                  set: { mcpServer.localRagSearchLimit = $0 }
+                ),
+                in: 1...20
+              )
+
+              if let status = mcpServer.ragStatus {
+                VStack(alignment: .leading, spacing: 4) {
+                  Text("DB: \(status.exists ? "Ready" : "Not initialized")")
+                    .font(.caption)
+                    .foregroundStyle(status.exists ? .green : .secondary)
+                  Text("Embeddings: \(status.providerName)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+              }
+
+              if let stats = mcpServer.ragStats {
+                Text("Indexed: \(stats.fileCount) files, \(stats.chunkCount) chunks")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+            }
+          }
+
           Section("MCP Tools") {
             MCPToolSettingsSection(mcpServer: mcpServer)
           }
@@ -132,6 +193,25 @@ private struct MCPToolSettingsSection: View {
       case .voyeur: return "Voyeur"
       }
     }
+
+    var icon: String {
+      switch self {
+      case .yolo: return "bolt.fill"
+      case .paranoid: return "lock.shield"
+      case .voyeur: return "eye"
+      }
+    }
+
+    var description: String {
+      switch self {
+      case .yolo:
+        return "Full power mode. Enables all tools including file writes, git operations, and shell commands. Best for trusted development workflows."
+      case .paranoid:
+        return "Read-only safety. Only background-safe tools that can't modify your system. Great for exploration and code review."
+      case .voyeur:
+        return "Screenshot observer. Read-only tools plus screenshot capture for visual verification. Useful for UI testing."
+      }
+    }
   }
 
   @Bindable var mcpServer: MCPServerService
@@ -140,21 +220,37 @@ private struct MCPToolSettingsSection: View {
   var body: some View {
     let _ = mcpServer.permissionsVersion
     VStack(alignment: .leading, spacing: 12) {
-      VStack(alignment: .leading, spacing: 6) {
-        Text("Presets")
+      VStack(alignment: .leading, spacing: 8) {
+        Text("Quick Presets")
           .font(.headline)
-        Picker("Tool Preset", selection: $selectedPreset) {
-          ForEach(ToolPreset.allCases) { preset in
-            Text(preset.label).tag(preset)
-          }
-        }
-        .pickerStyle(.segmented)
-        .onChange(of: selectedPreset) { _, newValue in
-          applyPreset(newValue)
-        }
-        Text("YOLO: enable all tools. Paranoid: read-only. Voyeur: screenshots + read-only.")
+        Text("Choose a preset to quickly configure tool permissions based on your trust level.")
           .font(.caption)
           .foregroundStyle(.secondary)
+
+        HStack(spacing: 8) {
+          ForEach(ToolPreset.allCases) { preset in
+            PresetButton(
+              preset: preset,
+              isSelected: selectedPreset == preset,
+              onSelect: {
+                selectedPreset = preset
+                applyPreset(preset)
+              }
+            )
+          }
+        }
+        
+        // Show description for selected preset
+        HStack(alignment: .top, spacing: 8) {
+          Image(systemName: selectedPreset.icon)
+            .foregroundStyle(.tint)
+          Text(selectedPreset.description)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .padding(8)
+        .background(Color.accentColor.opacity(0.1))
+        .cornerRadius(6)
       }
 
       HStack(spacing: 12) {
@@ -277,6 +373,34 @@ private struct MCPToolSettingsSection: View {
       mcpServer.setAllToolsEnabled(false)
       mcpServer.setGroupEnabled(.backgroundSafe, enabled: true)
       mcpServer.setGroupEnabled(.screenshots, enabled: true)
+    }
+  }
+
+  private struct PresetButton: View {
+    let preset: ToolPreset
+    let isSelected: Bool
+    let onSelect: () -> Void
+
+    var body: some View {
+      Button(action: onSelect) {
+        VStack(spacing: 4) {
+          Image(systemName: preset.icon)
+            .font(.title2)
+          Text(preset.label)
+            .font(.caption)
+            .fontWeight(isSelected ? .semibold : .regular)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
+        .cornerRadius(8)
+        .overlay(
+          RoundedRectangle(cornerRadius: 8)
+            .stroke(isSelected ? Color.accentColor : Color.secondary.opacity(0.3), lineWidth: 1)
+        )
+      }
+      .buttonStyle(.plain)
+      .help(preset.description)
     }
   }
 }
