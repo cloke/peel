@@ -29,6 +29,16 @@ Technical reference material.
 ./Tools/build-and-launch.sh --wait-for-server
 ```
 
+### Roadmap Sync (Project 1)
+```bash
+./Tools/roadmap-sync.sh
+```
+
+Options:
+- `--start-date YYYY-MM-DD` start scheduling on a specific date
+- `--remove-done` remove items marked Done from the project
+- `--repo owner/repo` sync open issues from a different repo
+
 ### Key Source Files
 | Area | File |
 |------|------|

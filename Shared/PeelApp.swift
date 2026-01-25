@@ -42,6 +42,7 @@ struct PeelApp: App {
       MCPRunResultRecord.self,
       ParallelRunSnapshot.self,
       RepoGuidanceSkill.self,
+      CIFailureRecord.self,
     ])
     
     let modelConfiguration = ModelConfiguration(
