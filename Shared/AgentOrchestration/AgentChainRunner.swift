@@ -937,11 +937,13 @@ public final class AgentChainRunner {
     return (displayLine, .progress)
   }
 
-  enum ChainError: LocalizedError {
+  enum ChainError: LocalizedError, SimpleMessageError {
     case reviewRejected(reason: String)
     case cancelled
 
-    var errorDescription: String? {
+    var errorDescription: String? { defaultErrorDescription }
+
+    var messageValue: String? {
       switch self {
       case .reviewRejected(let reason):
         return "Review rejected: \(reason.prefix(200))..."

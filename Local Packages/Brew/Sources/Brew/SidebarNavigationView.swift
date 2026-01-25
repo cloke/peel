@@ -68,44 +68,46 @@ extension SidebarNavigationView {
     var isLoading = false
     var errorMessage: String?
     
-    func installed() async {
+    private func performAction(
+      _ action: () async throws -> [String],
+      errorPrefix: String
+    ) async {
       isLoading = true
       errorMessage = nil
       outputStream = []
       
       do {
-        let results = try await Commands.simple(arguments: Command.BrewInstalled)
-        outputStream = results
+        outputStream = try await action()
       } catch {
-        errorMessage = "Failed to get installed packages: \(error.localizedDescription)"
+        errorMessage = "\(errorPrefix): \(error.localizedDescription)"
       }
       
       isLoading = false
     }
+
+    func installed() async {
+      await performAction(
+        { try await Commands.simple(arguments: Command.BrewInstalled) },
+        errorPrefix: "Failed to get installed packages"
+      )
+    }
     
     func available(term: String) async {
-      isLoading = true
-      errorMessage = nil
-      outputStream = []
-      
-      var command = Command.BrewAvailable
-      command.append(term)
-      
-      do {
-        let results = try await Commands.simple(arguments: command)
-        outputStream = results
-      } catch {
-        errorMessage = "Failed to search packages: \(error.localizedDescription)"
-      }
-      
-      isLoading = false
+      await performAction(
+        {
+          var command = Command.BrewAvailable
+          command.append(term)
+          return try await Commands.simple(arguments: command)
+        },
+        errorPrefix: "Failed to search packages"
+      )
     }
   }
 }
 
 public struct SidebarNavigationView: View {
   @State private var results = SearchResults()
-  @Bindable private var viewModel = ViewModel()
+  @State private var viewModel = ViewModel()
   @AppStorage("brew.source") private var sourceRaw: String = PackageSource.installed.rawValue
   @AppStorage("brew.searchText") private var storedSearchText: String = ""
   @State private var selection: String?

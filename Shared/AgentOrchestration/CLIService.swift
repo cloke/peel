@@ -871,11 +871,13 @@ public final class CLIService {
 }
 
 
-public enum CLIError: LocalizedError {
+public enum CLIError: LocalizedError, SimpleMessageError {
   case notAvailable(String)
   case executionFailed(String)
   
-  public var errorDescription: String? {
+  public var errorDescription: String? { defaultErrorDescription }
+
+  var messageValue: String? {
     switch self {
     case .notAvailable(let msg): return msg
     case .executionFailed(let msg): return msg
