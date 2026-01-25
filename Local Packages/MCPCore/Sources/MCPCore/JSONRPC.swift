@@ -323,6 +323,7 @@ public enum JSONRPCResponseBuilder {
     public static let internalError = -32603
 
     // MCP-specific error codes (application-defined range: -32000 to -32099)
+    public static let notFound = -32004
     public static let toolDisabled = -32010
     public static let unknownViewId = -32020
     public static let backNotSupported = -32021
