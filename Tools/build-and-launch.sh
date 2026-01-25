@@ -56,6 +56,37 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Lock file to prevent concurrent invocations (relaunch storm prevention)
+LOCK_FILE="${PROJECT_DIR}/tmp/.build-launch.lock"
+LOCK_MAX_AGE=300  # 5 minutes max lock age
+
+cleanup_lock() {
+  rm -f "$LOCK_FILE"
+}
+
+# Check for stale lock file (older than LOCK_MAX_AGE)
+if [[ -f "$LOCK_FILE" ]]; then
+  lock_age=$(( $(date +%s) - $(stat -f %m "$LOCK_FILE") ))
+  if [[ $lock_age -gt $LOCK_MAX_AGE ]]; then
+    echo "⚠️  Removing stale lock file (age: ${lock_age}s)"
+    rm -f "$LOCK_FILE"
+  fi
+fi
+
+# Try to acquire lock
+mkdir -p "$(dirname "$LOCK_FILE")"
+if [[ -f "$LOCK_FILE" ]]; then
+  lock_pid=$(cat "$LOCK_FILE" 2>/dev/null || echo "")
+  echo "❌ Another build-and-launch is in progress (PID: ${lock_pid})"
+  echo "   Lock file: ${LOCK_FILE}"
+  echo "   If this is stale, delete the lock file and retry."
+  exit 1
+fi
+
+# Create lock file with our PID
+echo $$ > "$LOCK_FILE"
+trap cleanup_lock EXIT
+
 echo "🍊 Peel Build & Launch Script"
 echo "=============================="
 echo "Project: ${PROJECT_DIR}"

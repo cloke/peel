@@ -141,6 +141,7 @@ public struct BranchListView: View {
             }
           }
         }
+        .animation(.none, value: localBranches.map(\.id))
       }
     } header: {
       Label(label, systemImage: sectionIcon)
@@ -168,14 +169,14 @@ public struct BranchListView: View {
       guard location == .remote, newValue, !hasLoadedBranches else { return }
       Task { @MainActor in
         // Load branches without triggering animations
+        hasLoadedBranches = true  // Set immediately to prevent re-entry
         var transaction = Transaction()
         transaction.disablesAnimations = true
-        withTransaction(transaction) {
-          Task {
-            await repository.loadBranches(branchType: .remote)
-            hasLoadedBranches = true
-          }
+        _ = withTransaction(transaction) {
+          // Synchronous state update happens here if needed
         }
+        // Perform async load outside transaction
+        await repository.loadBranches(branchType: .remote)
       }
     }
   }
