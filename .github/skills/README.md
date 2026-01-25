@@ -10,3 +10,4 @@ This folder contains reusable skill docs for common workflows.
 - start-mcp-chain.md — Launch Peel with MCP and run a chain via CLI.
 - commit-and-push.md — Commit and push local changes.
 - mcp-cli-quick-check.md — Verify MCP server and tools/list.
+- dogfood-mcp-rag-validation.md — Dogfood MCP chains and validate RAG + UX feedback.
