@@ -7,7 +7,7 @@ tags:
   - agent-orchestration
   - mcp
 updated: 2026-01-25
-last_health_check: 2026-01-23
+last_health_check: 2026-01-25
 audience:
   - ai-agent
   - developer
@@ -15,163 +15,260 @@ audience:
 
 # Peel Roadmap
 
-> **Sprint Model**: One forever sprint. Treat "days" as hours of focused work.
+> **Sprint Model**: One forever sprint. Treat "days" as **hours** of focused work.
+> 
+> **Archived Issues**: See [Plans/Archive/CLOSED_ISSUES.md](Archive/CLOSED_ISSUES.md)
 
 ---
 
 ## Quick Stats (Jan 25, 2026)
 
-| Phase | Status | Issues |
-|-------|--------|--------|
-| 1C: Polish | 🔄 Active | ~19 |
-| 2: Local AI | 📋 Next | ~5 |
-| 3: Isolation | 📋 Future | ~8 |
-| Backlog | 📋 Unscheduled | ~24 |
-
-**Recently Completed (Jan 25 session):**
-- #79 MCP tool permissions interface (already existed - protocol + store)
-- #84 MCP prompt rules + guardrails (chains.promptRules.get/set tools)
-- #135 Relaunch storms fix (lock file mechanism)
-- #88 Hung execution detection (already implemented, verified)
-- #125 RAG pattern index (already existed)
-- #126 RAG-based pattern check (PeelCLI rag-pattern-check)
-- #129 Use RAG index for checks (integrated)
-- #113 Git sidebar jitter fix
-- #89 parallel.status 404s fix (snapshot fallback)
-- #137 RAG toggle in UI
-- #131 MCP tool preset onboarding
-- #124 PeelUI button styles
-- #123 AsyncContentView adoption verified
+| Metric | Count |
+|--------|-------|
+| **Closed** | 73 ✅ |
+| **Open - Phase 1C** | 18 |
+| **Open - Phase 2** | 5 |
+| **Open - Phase 3** | 9 |
+| **Open - Distributed Tasks** | 16 |
+| **Open - Backlog** | 17 |
+| **Total Open** | 65 |
 
 ---
 
-## Implementation Queue (Prioritized)
+## Phase 1C: Polish & MCP Reliability
 
-### 🔥 Priority 1: Bugs & Stability (do first)
-
-All bugs resolved! ✅
-
-### 🎯 Priority 2: MCP + RAG Integration (main track)
-
-| # | Issue | Est | Dependencies |
-|---|-------|-----|--------------|
-| 1 | [#78](https://github.com/cloke/peel/issues/78) Parallel runner with RAG grounding | 4h | None |
-| 2 | [#87](https://github.com/cloke/peel/issues/87) RAG feedback for CI failures | 3h | #78 |
-| 3 | [#139](https://github.com/cloke/peel/issues/139) Diff-only pattern check | 1h | None |
-
-### 🛠️ Priority 3: MCP Packaging (prep for reuse)
-
-| # | Issue | Est | Dependencies |
-|---|-------|-----|--------------|
-| 4 | [#80](https://github.com/cloke/peel/issues/80) Extract tool registry | 3h | None |
-| 5 | [#121](https://github.com/cloke/peel/issues/121) Split MCPServerService | 4h | Helps #80 |
-
-### 📊 Priority 4: UX Polish
-
-| # | Issue | Est | Dependencies |
-|---|-------|-----|--------------|
-| 8 | [#127](https://github.com/cloke/peel/issues/127) Local RAG results UX | 2h | None |
-| 9 | [#136](https://github.com/cloke/peel/issues/136) RAG session insights | 2h | #127 |
-| 10 | [#138](https://github.com/cloke/peel/issues/138) Document MCP permissions | 2h | #79 |
-| 11 | [#83](https://github.com/cloke/peel/issues/83) Workspaces/Worktrees nav | 3h | None |
-| 20 | [#29](https://github.com/cloke/peel/issues/29) Review with Agent button | 3h | None |
-| 21 | [#30](https://github.com/cloke/peel/issues/30) Merge conflict UI | 4h | None |
-
-### 🔮 Priority 5: Phase 2 - Local AI Foundation
-
-| # | Issue | Est | Dependencies |
-|---|-------|-----|--------------|
-| 22 | [#74](https://github.com/cloke/peel/issues/74) Core ML embedding provider | 4h | None |
-| 23 | [#23](https://github.com/cloke/peel/issues/23) XPC tool broker | 6h | #79 |
-| 24 | [#24](https://github.com/cloke/peel/issues/24) MLX integration | 8h | None |
-| 25 | [#133](https://github.com/cloke/peel/issues/133) Pre-planner with HF RAG | 4h | #128 |
-| 26 | [#128](https://github.com/cloke/peel/issues/128) HF model analysis for RAG | 4h | #24 |
-| 27 | [#41](https://github.com/cloke/peel/issues/41) Budget-aware scheduler | 6h | #24 |
-| 28 | [#108](https://github.com/cloke/peel/issues/108) ANE micro-services | 6h | #24 |
-
-### 🌐 Priority 6: Phase 3 - Full Isolation
-
-| # | Issue | Est | Dependencies |
-|---|-------|-----|--------------|
-| 29 | [#106](https://github.com/cloke/peel/issues/106) macOS VM isolation | 8h | None |
-| 30 | [#107](https://github.com/cloke/peel/issues/107) GPU shared cache | 6h | #24 |
-| 31 | [#35](https://github.com/cloke/peel/issues/35) Vision pipeline | 6h | None |
-| 32 | [#36](https://github.com/cloke/peel/issues/36) Voice commands (Whisper) | 6h | #24 |
-| 33 | [#109](https://github.com/cloke/peel/issues/109) Voice notifications | 4h | #36 |
-| 34 | [#37](https://github.com/cloke/peel/issues/37) Distributed actors | 8h | #106 |
-| 35 | [#43](https://github.com/cloke/peel/issues/43) Deterministic replay | 6h | None |
-| 36 | [#44](https://github.com/cloke/peel/issues/44) Multi-agent quorum | 4h | #43 |
-
----
-
-## Phase Definitions
-
-### Phase 1C: Polish & MCP Reliability
 **Goal**: Make MCP chains reliable for daily use. RAG integration. UX polish.
 
-**Labels**: `phase-1c`
+### Track A: RAG Integration (Critical Path)
 
-**Key Outcomes**:
-- MCP chains don't hang or produce stale UI
-- RAG provides relevant code context to agents
-- Tool permissions are clear and configurable
+These issues build on each other - complete in order.
 
-### Phase 2: Local AI Foundation
+| Order | # | Title | Est | Deps | Status |
+|-------|---|-------|-----|------|--------|
+| 1 | [#139](https://github.com/cloke/peel/issues/139) | Add diff-only mode to rag-pattern-check | 1h | None | 🟡 Ready |
+| 2 | [#127](https://github.com/cloke/peel/issues/127) | Add Local RAG results UX | 2h | None | 🟡 Ready |
+| 3 | [#136](https://github.com/cloke/peel/issues/136) | Dogfood RAG UX: session insights | 2h | #127 | ⚪ Blocked |
+| 4 | [#130](https://github.com/cloke/peel/issues/130) | Document Local RAG model acquisition | 2h | None | 🟡 Ready |
+| 5 | [#132](https://github.com/cloke/peel/issues/132) | RAG loop test workflow | 2h | #127 | ⚪ Blocked |
+| 6 | [#134](https://github.com/cloke/peel/issues/134) | Project audit tooling | 3h | #132 | ⚪ Blocked |
+| 7 | [#141](https://github.com/cloke/peel/issues/141) | RAG Indexing Performance Optimization | 3h | None | 🟡 Ready |
+| 8 | [#78](https://github.com/cloke/peel/issues/78) | Parallel runner with RAG grounding | 4h | #127 | ⚪ Blocked |
+| 9 | [#87](https://github.com/cloke/peel/issues/87) | RAG feedback for CI failures | 3h | #78 | ⚪ Blocked |
+
+**Track A Total**: ~22h
+
+### Track B: MCP Packaging & Tools
+
+Independent work that prepares MCP for extraction.
+
+| Order | # | Title | Est | Deps | Status |
+|-------|---|-------|-----|------|--------|
+| 1 | [#121](https://github.com/cloke/peel/issues/121) | Split MCPServerService by tool category | 4h | None | 🟡 Ready |
+| 2 | [#80](https://github.com/cloke/peel/issues/80) | Extract MCP tool registry into package | 3h | #121 | ⚪ Blocked |
+| 3 | [#138](https://github.com/cloke/peel/issues/138) | Document MCP tool permissions | 2h | None | 🟡 Ready |
+| 4 | [#85](https://github.com/cloke/peel/issues/85) | CLI: safe polling helper for MCP runs | 2h | None | 🟡 Ready |
+| 5 | [#140](https://github.com/cloke/peel/issues/140) | Add Prompt Rules UI in Settings | 2h | None | 🟡 Ready |
+
+**Track B Total**: ~13h
+
+### Track C: UX Polish
+
+Can be done in any order, low dependencies.
+
+| Order | # | Title | Est | Deps | Status |
+|-------|---|-------|-----|------|--------|
+| 1 | [#83](https://github.com/cloke/peel/issues/83) | Cohesive Workspaces/Worktrees navigation | 3h | None | 🟡 Ready |
+| 2 | [#29](https://github.com/cloke/peel/issues/29) | Add Review with Agent button for PRs | 3h | None | 🟡 Ready |
+| 3 | [#30](https://github.com/cloke/peel/issues/30) | Add merge conflict resolution UI | 4h | None | 🟡 Ready |
+| 4 | [#52](https://github.com/cloke/peel/issues/52) | Fix screenshot capture vibrancy | 2h | None | 🟡 Ready |
+| 5 | [#64](https://github.com/cloke/peel/issues/64) | Add Homebrew activity charts | 2h | None | 🟡 Ready |
+| 6 | [#40](https://github.com/cloke/peel/issues/40) | Agent feedback loop - watch and retry | 4h | None | 🟡 Ready |
+
+**Track C Total**: ~18h
+
+**Phase 1C Grand Total**: ~53h (~7 days focused work)
+
+---
+
+## Phase 2: Local AI Foundation
+
 **Goal**: Run AI locally for cost/privacy. XPC isolation for safety.
 
-**Labels**: `phase-2`
+**Prerequisite**: Phase 1C RAG integration complete.
 
-**Key Outcomes**:
-- MLX models run locally
-- XPC broker isolates dangerous operations
-- Budget scheduler manages resources
+| Order | # | Title | Est | Deps | Status |
+|-------|---|-------|-----|------|--------|
+| 1 | [#128](https://github.com/cloke/peel/issues/128) | Add Hugging Face model analysis for RAG | 4h | P1C done | ⚪ Blocked |
+| 2 | [#133](https://github.com/cloke/peel/issues/133) | Pre-planner using HF RAG | 4h | #128 | ⚪ Blocked |
+| 3 | [#24](https://github.com/cloke/peel/issues/24) | MLX integration | 8h | None | 🟡 Ready |
+| 4 | [#23](https://github.com/cloke/peel/issues/23) | XPC tool broker | 6h | None | 🟡 Ready |
+| 5 | [#41](https://github.com/cloke/peel/issues/41) | Budget-aware agent scheduler | 6h | #24 | ⚪ Blocked |
+| 6 | [#108](https://github.com/cloke/peel/issues/108) | ANE micro-services | 6h | #24 | ⚪ Blocked |
 
-### Phase 3: Full Isolation & Scale
+**Phase 2 Total**: ~34h (~4-5 days focused work)
+
+---
+
+## Phase 3: Full Isolation & Scale
+
 **Goal**: VMs for full isolation. Multi-machine scale. Voice/vision.
 
-**Labels**: `phase-3`
+**Prerequisite**: Phase 2 local AI working.
 
-**Key Outcomes**:
-- macOS VMs for Xcode isolation
-- Distributed actors across machines
-- Voice commands for hands-free operation
+### Track A: VM Isolation
+
+| Order | # | Title | Est | Deps | Status |
+|-------|---|-------|-----|------|--------|
+| 1 | [#106](https://github.com/cloke/peel/issues/106) | macOS VM for Xcode isolation | 8h | None | 🟡 Ready |
+| 2 | [#107](https://github.com/cloke/peel/issues/107) | GPU shared cache service | 6h | #24 | ⚪ Blocked |
+
+### Track B: Voice/Vision
+
+| Order | # | Title | Est | Deps | Status |
+|-------|---|-------|-----|------|--------|
+| 1 | [#35](https://github.com/cloke/peel/issues/35) | Screen capture to Vision analysis | 6h | None | 🟡 Ready |
+| 2 | [#36](https://github.com/cloke/peel/issues/36) | Voice commands via Whisper | 6h | #24 | ⚪ Blocked |
+| 3 | [#109](https://github.com/cloke/peel/issues/109) | Voice notifications + quick reply | 4h | #36 | ⚪ Blocked |
+
+### Track C: Multi-Agent
+
+| Order | # | Title | Est | Deps | Status |
+|-------|---|-------|-----|------|--------|
+| 1 | [#43](https://github.com/cloke/peel/issues/43) | Deterministic replay for agent runs | 6h | None | 🟡 Ready |
+| 2 | [#44](https://github.com/cloke/peel/issues/44) | Multi-agent quorum for destructive actions | 4h | #43 | ⚪ Blocked |
+| 3 | [#37](https://github.com/cloke/peel/issues/37) | Cross-machine distributed actors | 8h | #106 | ⚪ Blocked |
+
+**Phase 3 Total**: ~48h (~6 days focused work)
+
+---
+
+## Phase 4: Distributed Task Execution (CloudKit)
+
+**Goal**: Offload compute to other machines (Mac Studio) via CloudKit.
+
+**Prerequisite**: Phase 3 isolation patterns established.
+
+These issues form a logical implementation sequence:
+
+### Stage 1: Design & Schema (do first)
+| # | Title | Est |
+|---|-------|-----|
+| [#143](https://github.com/cloke/peel/issues/143) | CloudKit schema design | 4h |
+| [#150](https://github.com/cloke/peel/issues/150) | Task types + payload spec | 3h |
+| [#148](https://github.com/cloke/peel/issues/148) | Security + auth model | 4h |
+| [#154](https://github.com/cloke/peel/issues/154) | CloudKit limits + cost analysis | 2h |
+
+### Stage 2: Core Protocol
+| # | Title | Est |
+|---|-------|-----|
+| [#144](https://github.com/cloke/peel/issues/144) | Leasing + heartbeat protocol | 4h |
+| [#151](https://github.com/cloke/peel/issues/151) | Failure modes + retries | 4h |
+| [#152](https://github.com/cloke/peel/issues/152) | Observability + metrics | 3h |
+
+### Stage 3: Implementation
+| # | Title | Est |
+|---|-------|-----|
+| [#145](https://github.com/cloke/peel/issues/145) | Worker daemon prototype (Mac Studio) | 6h |
+| [#146](https://github.com/cloke/peel/issues/146) | Client submit + result sync | 4h |
+| [#142](https://github.com/cloke/peel/issues/142) | Distributed task execution via CloudKit | 6h |
+
+### Stage 4: UX & Polish
+| # | Title | Est |
+|---|-------|-----|
+| [#147](https://github.com/cloke/peel/issues/147) | CloudKit sharing UX | 3h |
+| [#153](https://github.com/cloke/peel/issues/153) | UI flows (macOS/iOS) | 4h |
+| [#155](https://github.com/cloke/peel/issues/155) | Dev tooling + test harness | 4h |
+
+### Stage 5: Production Ready
+| # | Title | Est |
+|---|-------|-----|
+| [#156](https://github.com/cloke/peel/issues/156) | Worker packaging + background scheduling | 4h |
+| [#157](https://github.com/cloke/peel/issues/157) | Entitlements + sandbox review | 3h |
+| [#149](https://github.com/cloke/peel/issues/149) | LAN direct transport (optional) | 6h |
+
+**Phase 4 Total**: ~64h (~8 days focused work)
 
 ---
 
 ## Backlog (Unscheduled)
 
-These issues are valid but not prioritized for current phases:
+These are valid ideas not yet prioritized. Pick from here when phases complete.
 
-| Issue | Title | Category |
-|-------|-------|----------|
-| [#40](https://github.com/cloke/peel/issues/40) | Agent feedback loop | agent |
-| [#52](https://github.com/cloke/peel/issues/52) | Screenshot vibrancy | ux |
-| [#64](https://github.com/cloke/peel/issues/64) | Homebrew charts | ux |
-| [#85](https://github.com/cloke/peel/issues/85) | CLI polling helper | mcp |
-| [#86](https://github.com/cloke/peel/issues/86) | MCP rejected count | mcp |
-| [#90](https://github.com/cloke/peel/issues/90) | Repo guidance defaults | mcp |
-| [#91](https://github.com/cloke/peel/issues/91) | VS Code MCP extension | mcp |
-| [#92](https://github.com/cloke/peel/issues/92) | Parallel quality check | mcp |
-| [#93](https://github.com/cloke/peel/issues/93) | Low-signal guardrails | agent |
-| [#94](https://github.com/cloke/peel/issues/94) | Reduce plan-only responses | agent |
-| [#95](https://github.com/cloke/peel/issues/95) | Pooled macOS VMs | infra |
-| [#96](https://github.com/cloke/peel/issues/96) | VM viewer scaling | bug |
-| [#97](https://github.com/cloke/peel/issues/97) | VM section tabs | ux |
-| [#99](https://github.com/cloke/peel/issues/99) | Target membership audit | infra |
-| [#100](https://github.com/cloke/peel/issues/100) | CopilotModel metadata | infra |
-| [#102](https://github.com/cloke/peel/issues/102) | Model family flags | infra |
-| [#103](https://github.com/cloke/peel/issues/103) | AgentRole prompts | agent |
-| [#104](https://github.com/cloke/peel/issues/104) | AgentState metadata | agent |
-| [#105](https://github.com/cloke/peel/issues/105) | iOS GitHub flow | ux |
-| [#110](https://github.com/cloke/peel/issues/110) | Diff viewer refresh | git |
-| [#111](https://github.com/cloke/peel/issues/111) | Per-repo scratch area | infra |
-| [#112](https://github.com/cloke/peel/issues/112) | Stage/revert hunks | git |
-| [#122](https://github.com/cloke/peel/issues/122) | Split WorktreeListView | infra |
-| [#123](https://github.com/cloke/peel/issues/123) | Adopt AsyncContentView | ux |
-| [#124](https://github.com/cloke/peel/issues/124) | PeelUI button styles | ux |
-| [#130](https://github.com/cloke/peel/issues/130) | RAG model docs | documentation |
-| [#132](https://github.com/cloke/peel/issues/132) | RAG loop test workflow | rag |
-| [#134](https://github.com/cloke/peel/issues/134) | Project audit tooling | rag |
+### MCP & Agent Polish
+| # | Title | Category |
+|---|-------|----------|
+| [#90](https://github.com/cloke/peel/issues/90) | Decide how to package repo guidance skills defaults | mcp |
+| [#91](https://github.com/cloke/peel/issues/91) | VS Code extension for MCP parallel batching | mcp |
+| [#92](https://github.com/cloke/peel/issues/92) | Parallel run quality check run | mcp |
+| [#93](https://github.com/cloke/peel/issues/93) | Guardrails for low-signal parallel runs | mcp |
+| [#94](https://github.com/cloke/peel/issues/94) | Reduce plan-only responses in templates | mcp |
+
+### Infrastructure & Refactoring
+| # | Title | Category |
+|---|-------|----------|
+| [#99](https://github.com/cloke/peel/issues/99) | Audit target membership for macOS-only files | infra |
+| [#100](https://github.com/cloke/peel/issues/100) | Refactor CopilotModel metadata mapping | infra |
+| [#102](https://github.com/cloke/peel/issues/102) | Unify model family and helper flags | infra |
+| [#103](https://github.com/cloke/peel/issues/103) | Extract AgentRole system prompts | infra |
+| [#104](https://github.com/cloke/peel/issues/104) | Refactor AgentState UI metadata | infra |
+| [#122](https://github.com/cloke/peel/issues/122) | Split WorktreeListView into separate files | infra |
+
+### UX & Git
+| # | Title | Category |
+|---|-------|----------|
+| [#96](https://github.com/cloke/peel/issues/96) | VM Viewer: aspect-fit scaling still clips | bug |
+| [#97](https://github.com/cloke/peel/issues/97) | VM Isolation: add segmented tabs | ux |
+| [#105](https://github.com/cloke/peel/issues/105) | Define iOS GitHub review flow | ux |
+| [#110](https://github.com/cloke/peel/issues/110) | Refactor diff viewer for modern UI | git |
+| [#111](https://github.com/cloke/peel/issues/111) | Add per-repo scratch area for artifacts | infra |
+| [#112](https://github.com/cloke/peel/issues/112) | Git diff: stage/revert hunk actions | git |
+
+### VM (Stretch)
+| # | Title | Category |
+|---|-------|----------|
+| [#95](https://github.com/cloke/peel/issues/95) | VM Isolation: pooled preconfigured macOS VMs | infra |
+
+---
+
+## Recommended Work Order
+
+For maximum efficiency, work these in parallel where possible:
+
+### Week 1 (Now → ~8h)
+**Focus: Quick wins + RAG foundation**
+
+| Track | Issues | Hours |
+|-------|--------|-------|
+| RAG | #139 (diff-only), #127 (UX), #141 (perf) | 6h |
+| MCP | #138 (docs), #140 (prompt UI) | 4h |
+
+### Week 2 (~8h)
+**Focus: RAG completion + MCP extraction**
+
+| Track | Issues | Hours |
+|-------|--------|-------|
+| RAG | #136 (dogfood), #130 (docs), #132 (test) | 6h |
+| MCP | #121 (split service), #85 (polling) | 6h |
+
+### Week 3 (~8h)
+**Focus: UX polish + parallel runner**
+
+| Track | Issues | Hours |
+|-------|--------|-------|
+| UX | #83 (nav), #29 (review btn), #52 (screenshot) | 8h |
+| RAG | #78 (parallel runner) | 4h |
+
+### Week 4 (~8h)
+**Focus: Complete Phase 1C**
+
+| Track | Issues | Hours |
+|-------|--------|-------|
+| RAG | #134 (audit), #87 (CI feedback) | 6h |
+| MCP | #80 (extract registry) | 3h |
+| UX | #30 (merge UI), #64 (brew charts) | 6h |
+
+### Week 5+ 
+**Phase 2 begins** - MLX, XPC, HuggingFace integration
 
 ---
 
@@ -203,6 +300,17 @@ File Scanner → Chunker → Embeddings → SQLite Store
                               Agent Prompt Injection
 ```
 
+### Distributed Tasks Flow (Phase 4)
+```
+Client (MacBook)                     Worker (Mac Studio)
+      │                                     │
+      ├─── CKRecord (task) ────────────────►│
+      │                                     ├─── Lease + Execute
+      │◄───────────── CKRecord (result) ────┤
+      │                                     │
+      └─── Poll / Subscribe ────────────────┘
+```
+
 ---
 
 ## References
@@ -211,6 +319,7 @@ File Scanner → Chunker → Embeddings → SQLite Store
 - [LOCAL_RAG_PLAN.md](LOCAL_RAG_PLAN.md) - RAG architecture
 - [PII_SCRUBBER_DESIGN.md](PII_SCRUBBER_DESIGN.md) - Privacy scrubbing
 - [VM_ISOLATION_PLAN.md](VM_ISOLATION_PLAN.md) - VM isolation design
+- [Archive/CLOSED_ISSUES.md](Archive/CLOSED_ISSUES.md) - Completed work
 
 ---
 
