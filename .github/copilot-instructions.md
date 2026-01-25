@@ -545,6 +545,11 @@ struct MyView: View {
 4. Add error handling
 5. Consider both macOS and iOS if applicable
 
+### RAG Pattern Check (Preferred)
+- After meaningful edits, run the Local RAG pattern check:
+  - `Tools/PeelCLI/.build/debug/peel-mcp rag-pattern-check --repo-path /path/to/repo`
+- Use the results to avoid reintroducing deprecated patterns.
+
 ### When Refactoring
 1. Check `SWIFTUI_MODERNIZATION_PLAN.md` for migration patterns
 2. Update one file/component at a time
