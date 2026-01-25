@@ -423,6 +423,9 @@ public final class MCPServerService {
     if name.hasPrefix("ui.") {
       return true
     }
+    if UserDefaults.standard.bool(forKey: "mcp.server.allowAllTools") {
+      return true
+    }
     return permissionsStore.isToolEnabled(name)
   }
 
