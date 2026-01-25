@@ -279,6 +279,36 @@ struct LocalRAGDashboardView: View {
                 }
               }
             }
+
+            if let lastAt = mcpServer.lastRagSearchAt {
+              Divider()
+              VStack(alignment: .leading, spacing: 4) {
+                Text("Last search")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+                Text(lastAt, style: .time)
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+                if let query = mcpServer.lastRagSearchQuery {
+                  Text("Query: \(query)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                }
+                if let mode = mcpServer.lastRagSearchMode {
+                  Text("Mode: \(mode.rawValue) · Limit: \(mcpServer.lastRagSearchLimit ?? 0)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                }
+                if let repoPath = mcpServer.lastRagSearchRepoPath {
+                  Text("Repo: \(repoPath)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                }
+                Text("Results: \(mcpServer.lastRagSearchResults.count)")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              }
+            }
           }
         }
 
