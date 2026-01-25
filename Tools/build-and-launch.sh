@@ -9,6 +9,7 @@
 #   --port PORT           MCP server port (default: 8765)
 #   --wait-for-server     Wait until MCP server is responding before exiting
 #   --skip-build          Skip build, just launch existing app
+#   --allow-while-chains-running  Allow build/launch even if MCP chains are running
 #   --help                Show this help message
 #
 
@@ -22,6 +23,8 @@ APP_NAME="Peel.app"
 MCP_PORT=8765
 WAIT_FOR_SERVER=false
 SKIP_BUILD=false
+ALLOW_DURING_CHAINS=false
+PEELCLI_PATH="${PROJECT_DIR}/Tools/PeelCLI/.build/debug/peel-mcp"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -36,6 +39,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-build)
       SKIP_BUILD=true
+      shift
+      ;;
+    --allow-while-chains-running)
+      ALLOW_DURING_CHAINS=true
       shift
       ;;
     --help|-h)
@@ -54,6 +61,40 @@ echo "=============================="
 echo "Project: ${PROJECT_DIR}"
 echo "MCP Port: ${MCP_PORT}"
 echo ""
+
+mcp_server_ready() {
+  local response
+  response=$(curl -s -X POST \
+    -H "Content-Type: application/json" \
+    -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
+    "http://127.0.0.1:${MCP_PORT}/rpc" 2>/dev/null || echo "")
+  [[ "$response" == *"tools"* ]]
+}
+
+chains_running() {
+  if [[ ! -x "$PEELCLI_PATH" ]]; then
+    return 1
+  fi
+  local output
+  output=$("$PEELCLI_PATH" --port "$MCP_PORT" chains-run-list --limit 25 2>/dev/null || true)
+  echo "$output" | grep -q '"status" : "running"' && return 0
+  echo "$output" | grep -q '"status" : "queued"' && return 0
+  return 1
+}
+
+if [[ "$ALLOW_DURING_CHAINS" == "false" ]] && pgrep -x "Peel" > /dev/null 2>&1; then
+  if ! mcp_server_ready; then
+    echo "⚠️  Peel is running but MCP server is not responding."
+    echo "    Refusing to relaunch to avoid interrupting active chains."
+    echo "    Re-run with --allow-while-chains-running to override."
+    exit 1
+  fi
+  if chains_running; then
+    echo "⚠️  MCP chains are running. Refusing to build/launch to avoid overload."
+    echo "    Re-run with --allow-while-chains-running to override."
+    exit 1
+  fi
+fi
 
 # Kill any existing Peel instances
 if pgrep -x "Peel" > /dev/null 2>&1; then
