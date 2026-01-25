@@ -192,20 +192,6 @@ private struct MCPToolSettingsSection: View {
 
       ForEach(mcpServer.toolCategories, id: \.self) { category in
         VStack(alignment: .leading, spacing: 6) {
-
-  private func applyPreset(_ preset: ToolPreset) {
-    switch preset {
-    case .yolo:
-      mcpServer.setAllToolsEnabled(true)
-    case .paranoid:
-      mcpServer.setAllToolsEnabled(false)
-      mcpServer.setGroupEnabled(.backgroundSafe, enabled: true)
-    case .voyeur:
-      mcpServer.setAllToolsEnabled(false)
-      mcpServer.setGroupEnabled(.backgroundSafe, enabled: true)
-      mcpServer.setGroupEnabled(.screenshots, enabled: true)
-    }
-  }
           HStack {
             Toggle(
               category.displayName,
@@ -277,6 +263,20 @@ private struct MCPToolSettingsSection: View {
           }
         }
       }
+    }
+  }
+
+  private func applyPreset(_ preset: ToolPreset) {
+    switch preset {
+    case .yolo:
+      mcpServer.setAllToolsEnabled(true)
+    case .paranoid:
+      mcpServer.setAllToolsEnabled(false)
+      mcpServer.setGroupEnabled(.backgroundSafe, enabled: true)
+    case .voyeur:
+      mcpServer.setAllToolsEnabled(false)
+      mcpServer.setGroupEnabled(.backgroundSafe, enabled: true)
+      mcpServer.setGroupEnabled(.screenshots, enabled: true)
     }
   }
 }
