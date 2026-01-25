@@ -159,10 +159,10 @@ extension MCPChainTemplate {
         isBuiltIn: true
       ),
 
-      // MCP Harness
+      // Parallel Validation: Planner + parallel implementers + reviewer
       MCPChainTemplate(
-        name: "MCP Harness",
-        description: "Planner with parallel implementers and a reviewer (MCP validation)",
+        name: "Parallel Validation",
+        description: "Planner with parallel implementers and a reviewer",
         steps: [
           MCPAgentStepTemplate(role: .planner, model: .claudeSonnet45, name: "Planner"),
           MCPAgentStepTemplate(role: .implementer, model: .claudeSonnet45, name: "Implementer A"),
@@ -172,28 +172,14 @@ extension MCPChainTemplate {
         isBuiltIn: true
       ),
 
-      // MCP Harness (Free)
+      // Parallel Validation (Free): Same but with free/low-cost models
       MCPChainTemplate(
-        name: "MCP Harness (Free)",
+        name: "Parallel Validation (Free)",
         description: "Planner with parallel implementers and a reviewer using free/low-cost models",
         steps: [
           MCPAgentStepTemplate(role: .planner, model: .gpt5Mini, name: "Planner"),
           MCPAgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer A"),
           MCPAgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer B"),
-          MCPAgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
-        ],
-        isBuiltIn: true
-      ),
-
-      // MCP Roadmap (3x Cost)
-      MCPChainTemplate(
-        name: "MCP Roadmap (3x Cost)",
-        description: "Planner + 3 implementers + reviewer using free/low-cost models",
-        steps: [
-          MCPAgentStepTemplate(role: .planner, model: .gpt41, name: "Planner"),
-          MCPAgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer A"),
-          MCPAgentStepTemplate(role: .implementer, model: .gpt41, name: "Implementer B"),
-          MCPAgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer C"),
           MCPAgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
         ],
         isBuiltIn: true
