@@ -14,6 +14,7 @@ struct CLIOptions {
   var maxPremiumCost: Double?
   var priority: Int?
   var timeoutSeconds: Double?
+  var requireRagUsage: Bool?
   var runsJSONPath: String?
   var batchParallel: Bool?
   var returnImmediately: Bool?
@@ -100,6 +101,8 @@ private func parseArguments() throws -> CLIOptions {
         throw CLIError.message("--timeout-seconds requires a number value")
       }
       options.timeoutSeconds = timeoutSeconds
+    case "--require-rag-usage":
+      options.requireRagUsage = true
     case "--runs-json":
       options.runsJSONPath = iterator.next()
     case "--parallel":
@@ -188,6 +191,7 @@ private func run(options: CLIOptions) async throws {
     if let maxPremiumCost = options.maxPremiumCost { arguments["maxPremiumCost"] = maxPremiumCost }
     if let priority = options.priority { arguments["priority"] = priority }
     if let timeoutSeconds = options.timeoutSeconds { arguments["timeoutSeconds"] = timeoutSeconds }
+    if let requireRagUsage = options.requireRagUsage { arguments["requireRagUsage"] = requireRagUsage }
     if let returnImmediately = options.returnImmediately {
       arguments["returnImmediately"] = returnImmediately
     }
@@ -328,7 +332,7 @@ private func usageText() -> String {
     templates-list
     chains-run --prompt <text> [--template-id <uuid> | --template-name <name>] [--working-directory <path>] [--enable-review-loop|--disable-review-loop]
       [--allow-planner-model-selection] [--allow-planner-implementer-scaling]
-      [--max-implementers <int>] [--max-premium-cost <number>] [--priority <int>] [--timeout-seconds <number>] [--return-immediately]
+      [--max-implementers <int>] [--max-premium-cost <number>] [--priority <int>] [--timeout-seconds <number>] [--require-rag-usage] [--return-immediately]
       [--chain-spec-json <path>]
     chains-run-batch --runs-json <path> [--parallel|--sequential]
     chains-run-status --run-id <uuid>
