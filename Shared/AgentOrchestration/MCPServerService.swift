@@ -68,6 +68,67 @@ public final class MCPServerService {
     case vector
   }
 
+  public enum RAGUserAction: String, CaseIterable {
+    case copyPath
+    case copySnippet
+    case openFile
+    case markHelpful
+    case markIrrelevant
+  }
+
+  public struct RAGUsageStats {
+    public var searches: Int = 0
+    public var textSearches: Int = 0
+    public var vectorSearches: Int = 0
+    public var emptySearches: Int = 0
+    public var totalResults: Int = 0
+    public var copyCount: Int = 0
+    public var openCount: Int = 0
+    public var helpfulCount: Int = 0
+    public var irrelevantCount: Int = 0
+    public var indexRuns: Int = 0
+    public var skillsAdded: Int = 0
+    public var skillsUpdated: Int = 0
+    public var skillsDeleted: Int = 0
+    public var lastSearchAt: Date?
+    public var lastIndexAt: Date?
+    public var lastCopyAt: Date?
+    public var lastOpenAt: Date?
+    public var lastHelpfulAt: Date?
+    public var lastIrrelevantAt: Date?
+    public var lastSkillChangeAt: Date?
+
+    public init() {}
+  }
+
+  public struct RAGSessionEvent: Identifiable {
+    public enum Kind: String, CaseIterable {
+      case search
+      case index
+      case copy
+      case open
+      case helpful
+      case irrelevant
+      case skillAdded
+      case skillUpdated
+      case skillDeleted
+    }
+
+    public let id: UUID
+    public let timestamp: Date
+    public let title: String
+    public let detail: String?
+    public let kind: Kind
+
+    public init(timestamp: Date, title: String, detail: String? = nil, kind: Kind) {
+      self.id = UUID()
+      self.timestamp = timestamp
+      self.title = title
+      self.detail = detail
+      self.kind = kind
+    }
+  }
+
   public enum ToolGroup: String, CaseIterable {
     case screenshots
     case uiNavigation
@@ -208,6 +269,10 @@ public final class MCPServerService {
   }
   private(set) var ragStatus: LocalRAGStore.Status?
   private(set) var ragStats: LocalRAGStore.Stats?
+  private(set) var ragUsage = RAGUsageStats()
+  private(set) var ragSessionEvents: [RAGSessionEvent] = []
+  private(set) var lastRagIndexReport: LocalRAGIndexReport?
+  private(set) var lastRagIndexAt: Date?
   private(set) var lastRagRefreshAt: Date?
   private(set) var lastRagError: String?
   private(set) var lastRagSearchQuery: String?
@@ -495,7 +560,7 @@ public final class MCPServerService {
     priority: Int = 0,
     isActive: Bool = true
   ) -> RepoGuidanceSkill? {
-    dataService?.addRepoGuidanceSkill(
+    let created = dataService?.addRepoGuidanceSkill(
       repoPath: repoPath,
       title: title,
       body: body,
@@ -504,6 +569,16 @@ public final class MCPServerService {
       priority: priority,
       isActive: isActive
     )
+    if created != nil {
+      ragUsage.skillsAdded += 1
+      ragUsage.lastSkillChangeAt = Date()
+      appendRagEvent(
+        kind: .skillAdded,
+        title: "Skill added",
+        detail: title.isEmpty ? repoPath : title
+      )
+    }
+    return created
   }
 
   @discardableResult
@@ -517,7 +592,7 @@ public final class MCPServerService {
     priority: Int? = nil,
     isActive: Bool? = nil
   ) -> RepoGuidanceSkill? {
-    dataService?.updateRepoGuidanceSkill(
+    let updated = dataService?.updateRepoGuidanceSkill(
       id: id,
       repoPath: repoPath,
       title: title,
@@ -527,11 +602,31 @@ public final class MCPServerService {
       priority: priority,
       isActive: isActive
     )
+    if let updated {
+      ragUsage.skillsUpdated += 1
+      ragUsage.lastSkillChangeAt = Date()
+      appendRagEvent(
+        kind: .skillUpdated,
+        title: "Skill updated",
+        detail: updated.title.isEmpty ? updated.repoPath : updated.title
+      )
+    }
+    return updated
   }
 
   @discardableResult
   public func deleteRepoGuidanceSkill(id: UUID) -> Bool {
-    dataService?.deleteRepoGuidanceSkill(id: id) ?? false
+    let deleted = dataService?.deleteRepoGuidanceSkill(id: id) ?? false
+    if deleted {
+      ragUsage.skillsDeleted += 1
+      ragUsage.lastSkillChangeAt = Date()
+      appendRagEvent(
+        kind: .skillDeleted,
+        title: "Skill deleted",
+        detail: nil
+      )
+    }
+    return deleted
   }
 
   private func buildRepoGuidance(repoPath: String) async -> String? {
@@ -599,6 +694,15 @@ public final class MCPServerService {
     let report = try await localRagStore.indexRepository(path: repoPath)
     ragStatus = await localRagStore.status()
     ragStats = try await localRagStore.stats()
+    ragUsage.indexRuns += 1
+    ragUsage.lastIndexAt = Date()
+    lastRagIndexReport = report
+    lastRagIndexAt = Date()
+    appendRagEvent(
+      kind: .index,
+      title: "Indexed \(report.filesIndexed) files · \(report.chunksIndexed) chunks",
+      detail: report.repoPath
+    )
     lastRagError = nil
     lastRagRefreshAt = Date()
     return report
@@ -617,6 +721,23 @@ public final class MCPServerService {
     case .text:
       results = try await localRagStore.search(query: query, repoPath: repoPath, limit: limit)
     }
+    ragUsage.searches += 1
+    ragUsage.totalResults += results.count
+    if results.isEmpty {
+      ragUsage.emptySearches += 1
+    }
+    switch mode {
+    case .text:
+      ragUsage.textSearches += 1
+    case .vector:
+      ragUsage.vectorSearches += 1
+    }
+    ragUsage.lastSearchAt = Date()
+    appendRagEvent(
+      kind: .search,
+      title: "Search · \(results.count) results",
+      detail: query
+    )
     lastRagSearchQuery = query
     lastRagSearchMode = mode
     lastRagSearchRepoPath = repoPath
@@ -625,6 +746,52 @@ public final class MCPServerService {
     lastRagSearchResults = results
     lastRagError = nil
     return results
+  }
+
+  func recordRagUserAction(_ action: RAGUserAction, result: LocalRAGSearchResult? = nil) {
+    let now = Date()
+    switch action {
+    case .copyPath, .copySnippet:
+      ragUsage.copyCount += 1
+      ragUsage.lastCopyAt = now
+      appendRagEvent(
+        kind: .copy,
+        title: "Snippet copied",
+        detail: result?.filePath
+      )
+    case .openFile:
+      ragUsage.openCount += 1
+      ragUsage.lastOpenAt = now
+      appendRagEvent(
+        kind: .open,
+        title: "Opened file",
+        detail: result?.filePath
+      )
+    case .markHelpful:
+      ragUsage.helpfulCount += 1
+      ragUsage.lastHelpfulAt = now
+      appendRagEvent(
+        kind: .helpful,
+        title: "Marked helpful",
+        detail: result?.filePath
+      )
+    case .markIrrelevant:
+      ragUsage.irrelevantCount += 1
+      ragUsage.lastIrrelevantAt = now
+      appendRagEvent(
+        kind: .irrelevant,
+        title: "Marked not useful",
+        detail: result?.filePath
+      )
+    }
+  }
+
+  private func appendRagEvent(kind: RAGSessionEvent.Kind, title: String, detail: String?) {
+    let event = RAGSessionEvent(timestamp: Date(), title: title, detail: detail, kind: kind)
+    ragSessionEvents.insert(event, at: 0)
+    if ragSessionEvents.count > 50 {
+      ragSessionEvents.removeLast(ragSessionEvents.count - 50)
+    }
   }
 
   private func buildRagContext(query: String, repoPath: String) async -> String? {

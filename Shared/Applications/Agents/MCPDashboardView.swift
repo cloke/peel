@@ -351,6 +351,29 @@ struct MCPDashboardView: View {
                     .foregroundStyle(.secondary)
                 }
               }
+              let usage = mcpServer.ragUsage
+              if usage.searches > 0 || usage.indexRuns > 0 || usage.skillsAdded + usage.skillsUpdated + usage.skillsDeleted > 0 {
+                Divider()
+                let avgResults = usage.searches > 0
+                  ? Double(usage.totalResults) / Double(max(usage.searches, 1))
+                  : 0
+                Text("Session searches: \(usage.searches) · Avg results: \(avgResults, specifier: "%.1f") · Empty: \(usage.emptySearches)")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+                Text("Interactions: \(usage.copyCount) copies · \(usage.openCount) opens · Helpful: \(usage.helpfulCount) · Not useful: \(usage.irrelevantCount)")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+                if let report = mcpServer.lastRagIndexReport {
+                  Text("Last session index: \(report.filesIndexed) files · \(report.chunksIndexed) chunks")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                }
+                if usage.skillsAdded + usage.skillsUpdated + usage.skillsDeleted > 0 {
+                  Text("Skills: +\(usage.skillsAdded) · ~\(usage.skillsUpdated) · -\(usage.skillsDeleted)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                }
+              }
               if let error = mcpServer.lastRagError {
                 Text(error)
                   .font(.caption)

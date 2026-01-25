@@ -247,14 +247,31 @@ struct LocalRAGDashboardView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
 
                       HStack(spacing: 8) {
-                        Button("Copy Path") { copyToPasteboard(result.filePath) }
+                        Button("Copy Path") {
+                          copyToPasteboard(result.filePath)
+                          mcpServer.recordRagUserAction(.copyPath, result: result)
+                        }
                           .buttonStyle(.bordered)
-                        Button("Copy Snippet") { copyToPasteboard(result.snippet) }
+                        Button("Copy Snippet") {
+                          copyToPasteboard(result.snippet)
+                          mcpServer.recordRagUserAction(.copySnippet, result: result)
+                        }
                           .buttonStyle(.bordered)
 #if os(macOS)
-                        Button("Open File") { openResult(result) }
+                        Button("Open File") {
+                          openResult(result)
+                          mcpServer.recordRagUserAction(.openFile, result: result)
+                        }
                           .buttonStyle(.bordered)
 #endif
+                        Button("Helpful") {
+                          mcpServer.recordRagUserAction(.markHelpful, result: result)
+                        }
+                        .buttonStyle(.bordered)
+                        Button("Not useful") {
+                          mcpServer.recordRagUserAction(.markIrrelevant, result: result)
+                        }
+                        .buttonStyle(.bordered)
                       }
                     }
                   } label: {
@@ -307,6 +324,83 @@ struct LocalRAGDashboardView: View {
                 Text("Results: \(mcpServer.lastRagSearchResults.count)")
                   .font(.caption2)
                   .foregroundStyle(.secondary)
+              }
+            }
+          }
+        }
+
+        GroupBox {
+          VStack(alignment: .leading, spacing: LayoutSpacing.item) {
+            SectionHeader("Session Insights")
+
+            let usage = mcpServer.ragUsage
+            let searchCount = max(1, usage.searches)
+            let avgResults = Double(usage.totalResults) / Double(searchCount)
+            let feedbackCount = usage.helpfulCount + usage.irrelevantCount
+            let helpfulRate = feedbackCount > 0 ? Double(usage.helpfulCount) / Double(feedbackCount) : nil
+
+            Text("Searches: \(usage.searches) · Text: \(usage.textSearches) · Vector: \(usage.vectorSearches)")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Text("Avg results: \(avgResults, specifier: "%.1f") · Empty: \(usage.emptySearches)")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+            Text("Interactions: \(usage.copyCount) copies · \(usage.openCount) opens")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+            Text("Feedback: \(usage.helpfulCount) helpful · \(usage.irrelevantCount) not useful")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+            if let helpfulRate {
+              Text("Helpfulness rate: \(helpfulRate * 100, specifier: "%.0f")%")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+
+            if let report = mcpServer.lastRagIndexReport {
+              Divider()
+              Text("Last index: \(displayPath(for: report.repoPath))")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              Text("Added \(report.filesIndexed) files · \(report.chunksIndexed) chunks")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+              if let indexedAt = mcpServer.lastRagIndexAt {
+                Text(indexedAt, style: .time)
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              }
+            }
+
+            if usage.skillsAdded + usage.skillsUpdated + usage.skillsDeleted > 0 {
+              Divider()
+              Text("Skills: +\(usage.skillsAdded) · ~\(usage.skillsUpdated) · -\(usage.skillsDeleted)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+
+            if mcpServer.ragSessionEvents.isEmpty {
+              Text("No session activity yet")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            } else {
+              Divider()
+              VStack(alignment: .leading, spacing: 4) {
+                ForEach(mcpServer.ragSessionEvents.prefix(6)) { event in
+                  VStack(alignment: .leading, spacing: 2) {
+                    Text(event.title)
+                      .font(.caption)
+                    if let detail = event.detail, !detail.isEmpty {
+                      Text(detail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    }
+                    Text(event.timestamp, style: .time)
+                      .font(.caption2)
+                      .foregroundStyle(.secondary)
+                  }
+                }
               }
             }
           }
