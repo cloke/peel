@@ -118,11 +118,45 @@ struct SettingsView: View {
 
 #if os(macOS)
 private struct MCPToolSettingsSection: View {
+  private enum ToolPreset: String, CaseIterable, Identifiable {
+    case yolo
+    case paranoid
+    case voyeur
+
+    var id: String { rawValue }
+
+    var label: String {
+      switch self {
+      case .yolo: return "YOLO"
+      case .paranoid: return "Paranoid"
+      case .voyeur: return "Voyeur"
+      }
+    }
+  }
+
   @Bindable var mcpServer: MCPServerService
+  @State private var selectedPreset: ToolPreset = .yolo
 
   var body: some View {
     let _ = mcpServer.permissionsVersion
     VStack(alignment: .leading, spacing: 12) {
+      VStack(alignment: .leading, spacing: 6) {
+        Text("Presets")
+          .font(.headline)
+        Picker("Tool Preset", selection: $selectedPreset) {
+          ForEach(ToolPreset.allCases) { preset in
+            Text(preset.label).tag(preset)
+          }
+        }
+        .pickerStyle(.segmented)
+        .onChange(of: selectedPreset) { _, newValue in
+          applyPreset(newValue)
+        }
+        Text("YOLO: enable all tools. Paranoid: read-only. Voyeur: screenshots + read-only.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+
       HStack(spacing: 12) {
         Button("Enable All") {
           mcpServer.setAllToolsEnabled(true)
@@ -158,6 +192,20 @@ private struct MCPToolSettingsSection: View {
 
       ForEach(mcpServer.toolCategories, id: \.self) { category in
         VStack(alignment: .leading, spacing: 6) {
+
+  private func applyPreset(_ preset: ToolPreset) {
+    switch preset {
+    case .yolo:
+      mcpServer.setAllToolsEnabled(true)
+    case .paranoid:
+      mcpServer.setAllToolsEnabled(false)
+      mcpServer.setGroupEnabled(.backgroundSafe, enabled: true)
+    case .voyeur:
+      mcpServer.setAllToolsEnabled(false)
+      mcpServer.setGroupEnabled(.backgroundSafe, enabled: true)
+      mcpServer.setGroupEnabled(.screenshots, enabled: true)
+    }
+  }
           HStack {
             Toggle(
               category.displayName,
