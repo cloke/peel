@@ -28,6 +28,7 @@ struct CLIOptions {
   var chainSpecJSONPath: String?
   var toolName: String?
   var argumentsJSONPath: String?
+  var diffOnly: Bool = false
 }
 
 enum CLIError: LocalizedError {
@@ -134,6 +135,8 @@ private func parseArguments() throws -> CLIOptions {
       options.toolName = iterator.next()
     case "--arguments-json":
       options.argumentsJSONPath = iterator.next()
+    case "--diff-only":
+      options.diffOnly = true
     case "-h", "--help":
       print(usageText())
       exit(EXIT_SUCCESS)
@@ -342,16 +345,16 @@ private func usageText() -> String {
     parallel-status --run-id <uuid>
     workspaces-agent-list [--repo-path <path>]
     workspaces-agent-cleanup-status
-    rag-pattern-check [--repo-path <path>] [--limit <int>]
+    rag-pattern-check [--repo-path <path>] [--limit <int>] [--diff-only]
     server-stop
     app-quit
   """
 }
 
 private func runRagPatternCheck(options: CLIOptions) async throws {
-  let client = MCPClient(port: options.port)
   let repoPath = options.repoPath
   let limit = options.limit ?? 5
+  let diffOnly = options.diffOnly
 
   let patterns: [(label: String, query: String)] = [
     ("ObservableObject", "ObservableObject"),
@@ -365,29 +368,92 @@ private func runRagPatternCheck(options: CLIOptions) async throws {
     ("DateFormatter alloc", "DateFormatter()")
   ]
 
+  if diffOnly {
+    // Scan only staged changes using git diff --cached
+    try runDiffOnlyPatternCheck(patterns: patterns, repoPath: repoPath)
+  } else {
+    // Full RAG search via MCP
+    let client = MCPClient(port: options.port)
+    var totalMatches = 0
+    for pattern in patterns {
+      var arguments: [String: Any] = [
+        "query": pattern.query,
+        "mode": "text",
+        "limit": limit
+      ]
+      if let repoPath { arguments["repoPath"] = repoPath }
+
+      let response = try await client.call(method: "tools/call", params: [
+        "name": "rag.search",
+        "arguments": arguments
+      ])
+
+      let matchCount = extractResultCount(from: response)
+      if matchCount > 0 {
+        totalMatches += matchCount
+        print("- \(pattern.label): \(matchCount) match(es)")
+      }
+    }
+
+    if totalMatches == 0 {
+      print("No pattern matches found.")
+    }
+  }
+}
+
+private func runDiffOnlyPatternCheck(patterns: [(label: String, query: String)], repoPath: String?) throws {
+  // Get staged diff content
+  let workDir = repoPath ?? FileManager.default.currentDirectoryPath
+  let process = Process()
+  process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+  process.arguments = ["diff", "--cached", "--no-color"]
+  process.currentDirectoryURL = URL(fileURLWithPath: workDir)
+
+  let pipe = Pipe()
+  process.standardOutput = pipe
+  process.standardError = FileHandle.nullDevice
+
+  try process.run()
+  process.waitUntilExit()
+
+  let data = pipe.fileHandleForReading.readDataToEndOfFile()
+  let diffOutput = String(data: data, encoding: .utf8) ?? ""
+
+  if diffOutput.isEmpty {
+    print("No staged changes found.")
+    return
+  }
+
+  // Parse diff and extract only added lines (lines starting with +, but not +++)
+  let addedLines = diffOutput
+    .split(separator: "\n", omittingEmptySubsequences: false)
+    .filter { $0.hasPrefix("+") && !$0.hasPrefix("+++") }
+    .map { String($0.dropFirst()) }  // Remove the leading +
+    .joined(separator: "\n")
+
+  if addedLines.isEmpty {
+    print("No added lines in staged changes.")
+    return
+  }
+
   var totalMatches = 0
   for pattern in patterns {
-    var arguments: [String: Any] = [
-      "query": pattern.query,
-      "mode": "text",
-      "limit": limit
-    ]
-    if let repoPath { arguments["repoPath"] = repoPath }
-
-    let response = try await client.call(method: "tools/call", params: [
-      "name": "rag.search",
-      "arguments": arguments
-    ])
-
-    let matchCount = extractResultCount(from: response)
+    var matchCount = 0
+    for line in addedLines.split(separator: "\n", omittingEmptySubsequences: false) {
+      if line.contains(pattern.query) {
+        matchCount += 1
+      }
+    }
     if matchCount > 0 {
       totalMatches += matchCount
-      print("- \(pattern.label): \(matchCount) match(es)")
+      print("- \(pattern.label): \(matchCount) match(es) in staged changes")
     }
   }
 
   if totalMatches == 0 {
-    print("No pattern matches found.")
+    print("No pattern matches in staged changes. ✅")
+  } else {
+    print("\nTotal: \(totalMatches) deprecated pattern(s) found in staged changes.")
   }
 }
 
