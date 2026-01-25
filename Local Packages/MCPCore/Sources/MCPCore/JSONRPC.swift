@@ -268,3 +268,71 @@ public struct AnyCodable: Codable, Sendable, Hashable {
     }
   }
 }
+
+// MARK: - RPC Response Builders
+
+/// Helper functions for building JSON-RPC responses
+public enum JSONRPCResponseBuilder {
+  /// Create a successful JSON-RPC result response as Data
+  /// - Parameters:
+  ///   - id: The request ID (can be Any? for compatibility)
+  ///   - result: The result value as a dictionary
+  /// - Returns: JSON-encoded response data
+  public static func makeResult(id: Any?, result: Any) -> Data {
+    let payload: [String: Any] = [
+      "jsonrpc": "2.0",
+      "id": id as Any,
+      "result": result
+    ]
+    return (try? JSONSerialization.data(withJSONObject: payload, options: [])) ?? Data()
+  }
+
+  /// Create an error JSON-RPC response as Data
+  /// - Parameters:
+  ///   - id: The request ID (can be Any? for compatibility)
+  ///   - code: The error code
+  ///   - message: The error message
+  ///   - data: Optional additional error data
+  /// - Returns: JSON-encoded response data
+  public static func makeError(id: Any?, code: Int, message: String, data: [String: Any]? = nil) -> Data {
+    var errorPayload: [String: Any] = ["code": code, "message": message]
+    if let data {
+      errorPayload["data"] = data
+    }
+    let payload: [String: Any] = [
+      "jsonrpc": "2.0",
+      "id": id as Any,
+      "error": errorPayload
+    ]
+    return (try? JSONSerialization.data(withJSONObject: payload, options: [])) ?? Data()
+  }
+
+  /// Convenience: Create an error response without data
+  public static func makeError(id: Any?, code: Int, message: String) -> Data {
+    makeError(id: id, code: code, message: message, data: nil)
+  }
+
+  // MARK: - Standard Error Codes
+
+  /// Standard JSON-RPC and MCP error codes
+  public enum ErrorCode {
+    public static let parseError = -32700
+    public static let invalidRequest = -32600
+    public static let methodNotFound = -32601
+    public static let invalidParams = -32602
+    public static let internalError = -32603
+
+    // MCP-specific error codes (application-defined range: -32000 to -32099)
+    public static let toolDisabled = -32010
+    public static let unknownViewId = -32020
+    public static let backNotSupported = -32021
+    public static let unknownControlId = -32022
+    public static let setTextNotSupported = -32024
+    public static let toggleNotSupported = -32025
+    public static let selectNotSupported = -32026
+    public static let chainNotFound = -32030
+    public static let ragError = -32040
+    public static let vmError = -32050
+    public static let parallelError = -32060
+  }
+}
