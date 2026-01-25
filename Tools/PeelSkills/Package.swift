@@ -9,6 +9,7 @@ let package = Package(
   products: [
     .executable(name: "gh-issue-sync", targets: ["GHIssueSync"]),
     .executable(name: "roadmap-audit", targets: ["RoadmapAudit"]),
+    .executable(name: "pattern-audit", targets: ["PatternAudit"]),
     .executable(name: "file-rewrite", targets: ["FileRewrite"]),
     .executable(name: "translation-validator", targets: ["TranslationValidator"]),
     .executable(name: "pii-scrubber", targets: ["PIIScrubber"])
@@ -33,6 +34,13 @@ let package = Package(
         .product(name: "Yams", package: "Yams")
       ],
       path: "Sources/RoadmapAudit"
+    ),
+    .executableTarget(
+      name: "PatternAudit",
+      dependencies: [
+        .product(name: "ArgumentParser", package: "swift-argument-parser")
+      ],
+      path: "Sources/PatternAudit"
     ),
     .executableTarget(
       name: "FileRewrite",
