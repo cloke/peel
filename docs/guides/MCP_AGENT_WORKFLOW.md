@@ -21,6 +21,57 @@ controls, while MCP runs proceed in parallel.
 
 ---
 
+## Dogfooding MCP Workflow (Primary)
+
+Use this flow when Peel is expected to build features via MCP and you validate them.
+
+1. **Build + launch Peel with MCP**
+  - Use the build-and-launch script and wait for the server.
+2. **Run a chain with a planner + implementers + reviewer**
+  - Require the planner to use Local RAG before task breakdown.
+  - Reviewer validates code quality and RAG relevance.
+3. **Validate results**
+  - Confirm code changes align with plan and project patterns.
+  - Run RAG pattern checks after edits.
+4. **Record feedback**
+  - Note when RAG was right/wrong and what snippets misled the plan.
+
+---
+
+## Safety Rules (Non-Negotiable)
+
+- **Never use blanket checkout** (e.g., `git checkout -- .` or multi-file checkout without confirmation).
+- If unexpected files are modified, **assume an agent forgot to commit** and **do not discard work**.
+- Prefer **stash-first** when uncertain: stash changes (including untracked), then investigate.
+- Always verify agent workspaces and MCP run history before discarding anything.
+
+---
+
+## Recovery Playbook (When Changes Appear Unexpected)
+
+1. **Stop and inspect**
+  - Check `git status` and identify which files were touched.
+2. **Stash safely**
+  - Use a stash that includes untracked files.
+3. **Inspect MCP artifacts**
+  - List agent workspaces and MCP run history to understand provenance.
+4. **Decide**
+  - Either restore the changes (apply stash) or move them into a targeted commit.
+
+---
+
+## RAG UX Validation Checklist
+
+Use this checklist for dogfooding:
+
+- **Planner uses RAG** at least once per chain.
+- **RAG snippets are relevant** (target: ≥2 out of 3 prompts).
+- **Reviewer notes false positives** and whether the plan should have ignored them.
+- **UX surfaces** in Peel show the latest RAG status, query, and snippet list.
+
+
+---
+
 ## Why Build-Then-Launch?
 
 The MCP server runs inside the Peel app. This creates a chicken-and-egg problem:
