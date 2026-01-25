@@ -376,6 +376,10 @@ public final class MCPServerService {
   private let localRagStore = LocalRAGStore()
   private(set) var parallelWorktreeRunner: ParallelWorktreeRunner?
 
+  // MARK: - Tool Handlers (extracted from this file for maintainability)
+
+  private var uiToolsHandler: UIToolsHandler
+
   public struct ActiveRunInfo: Identifiable {
     public let id: UUID
     public let chainId: UUID
@@ -427,6 +431,9 @@ public final class MCPServerService {
     permissionsStore: MCPToolPermissionsProviding = MCPToolPermissionsStore(),
     vmIsolationService: VMIsolationService = VMIsolationService()
   ) {
+    // Initialize tool handlers first (before self is fully initialized)
+    self.uiToolsHandler = UIToolsHandler()
+
     self.agentManager = agentManager
     self.sessionTracker = sessionTracker
     let resolvedTelemetry = telemetryProvider ?? MCPTelemetryAdapter(sessionTracker: sessionTracker)
@@ -499,6 +506,9 @@ public final class MCPServerService {
       chainRunner: chainRunner
     )
     self.parallelWorktreeRunner?.setRAGStore(localRagStore)
+
+    // Wire up tool handler delegates (must be after self is fully initialized)
+    self.uiToolsHandler.delegate = self
 
     updateSleepPrevention()
 
@@ -1317,27 +1327,14 @@ public final class MCPServerService {
 
     let arguments = params["arguments"] as? [String: Any] ?? [:]
 
+    // Delegate to extracted tool handlers first
+    if uiToolsHandler.supportedTools.contains(name) {
+      return await uiToolsHandler.handle(name: name, id: id, arguments: arguments)
+    }
+
+    // Fall through to inline handlers (to be extracted in future)
     switch name {
-    case "ui.tap":
-      return handleUITap(id: id, arguments: arguments)
-
-    case "ui.setText":
-      return handleUISetText(id: id, arguments: arguments)
-
-    case "ui.toggle":
-      return handleUIToggle(id: id, arguments: arguments)
-
-    case "ui.select":
-      return handleUISelect(id: id, arguments: arguments)
-
-    case "ui.navigate":
-      return handleUINavigate(id: id, arguments: arguments)
-
-    case "ui.back":
-      return handleUIBack(id: id)
-
-    case "ui.snapshot":
-      return handleUISnapshot(id: id)
+    // UI tools are now handled by UIToolsHandler above
 
     case "state.get":
       return handleStateGet(id: id)
@@ -1559,232 +1556,7 @@ public final class MCPServerService {
     }
   }
 
-  private func handleUINavigate(id: Any?, arguments: [String: Any]) -> (Int, Data) {
-    guard let viewId = (arguments["viewId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
-          !viewId.isEmpty else {
-      return (400, makeRPCError(id: id, code: -32602, message: "Missing viewId"))
-    }
-
-    guard availableViewIds().contains(viewId) else {
-      return (404, makeRPCError(id: id, code: -32020, message: "Unknown viewId"))
-    }
-
-    recordUIActionRequested("ui.navigate:\(viewId)")
-    setCurrentToolId(viewId)
-    recordUIActionHandled("ui.navigate:\(viewId)")
-    return (200, makeRPCResult(id: id, result: ["viewId": viewId, "status": "navigated"]))
-  }
-
-  private func handleUITap(id: Any?, arguments: [String: Any]) -> (Int, Data) {
-    guard let controlId = (arguments["controlId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
-          !controlId.isEmpty else {
-      return (400, makeRPCError(id: id, code: -32602, message: "Missing controlId"))
-    }
-
-    let currentViewId = currentToolId()
-    let availableControls = availableToolControlIds() + availableControlIds(for: currentViewId)
-    guard availableControls.contains(controlId) else {
-      return (404, makeRPCError(id: id, code: -32022, message: "Unknown controlId"))
-    }
-
-    recordUIActionRequested(controlId)
-    if controlId.hasPrefix("tool.") {
-      let toolId = controlId.replacingOccurrences(of: "tool.", with: "")
-      setCurrentToolId(toolId)
-      recordUIActionHandled(controlId)
-      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "status": "tapped"]))
-    }
-
-    if controlId.hasPrefix("agents.") {
-      UserDefaults.standard.set(controlId, forKey: "agents.selectedInfrastructure")
-    }
-
-    lastUIAction = UIAction(controlId: controlId)
-    return (200, makeRPCResult(id: id, result: ["controlId": controlId, "status": "queued"]))
-  }
-
-  private func handleUISetText(id: Any?, arguments: [String: Any]) -> (Int, Data) {
-    guard let controlId = (arguments["controlId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
-          !controlId.isEmpty else {
-      return (400, makeRPCError(id: id, code: -32602, message: "Missing controlId"))
-    }
-    let value = arguments["value"] as? String ?? ""
-
-    switch controlId {
-    case "brew.search":
-      UserDefaults.standard.set(value, forKey: "brew.searchText")
-      recordUIActionRequested(controlId)
-      recordUIActionHandled(controlId)
-      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
-    case "agents.localRag.repoPath":
-      localRagRepoPath = value
-      recordUIActionRequested(controlId)
-      recordUIActionHandled(controlId)
-      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
-    case "agents.localRag.query":
-      localRagQuery = value
-      recordUIActionRequested(controlId)
-      recordUIActionHandled(controlId)
-      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
-    default:
-      break
-    }
-    return (400, makeRPCError(id: id, code: -32024, message: "setText not supported"))
-  }
-
-  private func handleUIToggle(id: Any?, arguments: [String: Any]) -> (Int, Data) {
-    guard let controlId = (arguments["controlId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
-          !controlId.isEmpty else {
-      return (400, makeRPCError(id: id, code: -32602, message: "Missing controlId"))
-    }
-    let value = arguments["on"] as? Bool
-
-    switch controlId {
-    case "github.showArchived":
-      let current = UserDefaults.standard.bool(forKey: "github-show-archived")
-      let next = value ?? !current
-      UserDefaults.standard.set(next, forKey: "github-show-archived")
-      recordUIActionRequested(controlId)
-      recordUIActionHandled(controlId)
-      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": next]))
-    case "agents.localRag.useCoreML":
-      let current = UserDefaults.standard.bool(forKey: StorageKey.localRagUseCoreML)
-      let next = value ?? !current
-      localRagUseCoreML = next
-      recordUIActionRequested(controlId)
-      recordUIActionHandled(controlId)
-      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": next]))
-    default:
-      return (400, makeRPCError(id: id, code: -32025, message: "toggle not supported"))
-    }
-  }
-
-  private func handleUISelect(id: Any?, arguments: [String: Any]) -> (Int, Data) {
-    guard let controlId = (arguments["controlId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
-          !controlId.isEmpty else {
-      return (400, makeRPCError(id: id, code: -32602, message: "Missing controlId"))
-    }
-    let value = (arguments["value"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-
-    switch controlId {
-    case "brew.source":
-      guard value == "Installed" || value == "Available" else {
-        return (400, makeRPCError(id: id, code: -32602, message: "Invalid value"))
-      }
-      UserDefaults.standard.set(value, forKey: "brew.source")
-      recordUIActionRequested(controlId)
-      recordUIActionHandled(controlId)
-      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
-    case "agents.localRag.mode":
-      let normalized = value.lowercased()
-      guard let mode = RAGSearchMode(rawValue: normalized) else {
-        return (400, makeRPCError(id: id, code: -32602, message: "Invalid value"))
-      }
-      localRagSearchMode = mode
-      recordUIActionRequested(controlId)
-      recordUIActionHandled(controlId)
-      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": mode.rawValue]))
-    case "agents.localRag.limit":
-      guard let parsed = Int(value), (1...25).contains(parsed) else {
-        return (400, makeRPCError(id: id, code: -32602, message: "Invalid value"))
-      }
-      localRagSearchLimit = parsed
-      recordUIActionRequested(controlId)
-      recordUIActionHandled(controlId)
-      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": parsed]))
-    case "workspaces.selectWorkspace":
-      UserDefaults.standard.set(value, forKey: "workspaces.selectedWorkspaceName")
-      recordUIActionRequested(controlId)
-      recordUIActionHandled(controlId)
-      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
-    case "workspaces.selectRepo":
-      UserDefaults.standard.set(value, forKey: "workspaces.selectedRepoName")
-      recordUIActionRequested(controlId)
-      recordUIActionHandled(controlId)
-      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
-    case "workspaces.selectWorktree":
-      UserDefaults.standard.set(value, forKey: "workspaces.selectedWorktreePath")
-      recordUIActionRequested(controlId)
-      recordUIActionHandled(controlId)
-      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
-    case "workspaces.selectWorktreeName":
-      let nameMap = worktreeNameMapFromDefaults()
-      guard let path = nameMap[value], !path.isEmpty else {
-        return (400, makeRPCError(id: id, code: -32602, message: "Unknown worktree name"))
-      }
-      UserDefaults.standard.set(value, forKey: "workspaces.selectedWorktreeName")
-      UserDefaults.standard.set(path, forKey: "workspaces.selectedWorktreePath")
-      recordUIActionRequested(controlId)
-      recordUIActionHandled(controlId)
-      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value, "path": path]))
-    case "git.selectRepo":
-      UserDefaults.standard.set(value, forKey: "git.selectedRepoPath")
-      recordUIActionRequested(controlId)
-      recordUIActionHandled(controlId)
-      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
-    case "git.selectSidebarItem":
-      UserDefaults.standard.set(value, forKey: "git.selectedSidebarItem")
-      recordUIActionRequested(controlId)
-      recordUIActionHandled(controlId)
-      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
-    case "git.selectStatusPath":
-      UserDefaults.standard.set(value, forKey: "git.selectedStatusPath")
-      recordUIActionRequested(controlId)
-      recordUIActionHandled(controlId)
-      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
-    case "git.selectBranch":
-      UserDefaults.standard.set(value, forKey: "git.selectedBranchName")
-      recordUIActionRequested(controlId)
-      recordUIActionHandled(controlId)
-      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
-    case "git.selectCommit":
-      UserDefaults.standard.set(value, forKey: "git.selectedCommitSha")
-      recordUIActionRequested(controlId)
-      recordUIActionHandled(controlId)
-      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
-    case "github.selectFavorite":
-      UserDefaults.standard.set(value, forKey: "github.selectedFavoriteKey")
-      UserDefaults.standard.set("", forKey: "github.selectedRecentPRKey")
-      recordUIActionRequested(controlId)
-      recordUIActionHandled(controlId)
-      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
-    case "github.selectRecentPR":
-      UserDefaults.standard.set(value, forKey: "github.selectedRecentPRKey")
-      UserDefaults.standard.set("", forKey: "github.selectedFavoriteKey")
-      recordUIActionRequested(controlId)
-      recordUIActionHandled(controlId)
-      return (200, makeRPCResult(id: id, result: ["controlId": controlId, "value": value]))
-    default:
-      return (400, makeRPCError(id: id, code: -32026, message: "select not supported"))
-    }
-  }
-
-  private func handleUIBack(id: Any?) -> (Int, Data) {
-    guard let current = currentToolId() else {
-      return (400, makeRPCError(id: id, code: -32021, message: "Back not supported"))
-    }
-
-    let viewIds = availableViewIds()
-    guard let index = viewIds.firstIndex(of: current), index > 0 else {
-      return (400, makeRPCError(id: id, code: -32021, message: "Back not supported"))
-    }
-    let previous = viewIds[index - 1]
-    setCurrentToolId(previous)
-    return (200, makeRPCResult(id: id, result: ["viewId": previous, "status": "navigated"]))
-  }
-
-  private func handleUISnapshot(id: Any?) -> (Int, Data) {
-    let currentViewId = currentToolId()
-    let controls = availableToolControlIds() + availableControlIds(for: currentViewId)
-    let controlValues = controlValues(for: currentViewId)
-    let snapshot: [String: Any] = [
-      "currentViewId": currentViewId as Any,
-      "availableViewIds": availableViewIds(),
-      "controls": controls,
-      "controlValues": controlValues
-    ]
-    return (200, makeRPCResult(id: id, result: snapshot))
-  }
+  // UI tool handlers moved to UIToolsHandler.swift (#158)
 
   private func handleStateGet(id: Any?) -> (Int, Data) {
     let showArchived = UserDefaults.standard.bool(forKey: "github-show-archived")
@@ -5277,10 +5049,6 @@ public final class MCPServerService {
     uiAutomationProvider.recordUIActionForegroundNeeded(controlId)
   }
 
-  private func availableViewIds() -> [String] {
-    uiAutomationProvider.availableViewIds()
-  }
-
   private func viewTitle(for viewId: String) -> String {
     uiAutomationProvider.viewTitle(for: viewId)
   }
@@ -5302,32 +5070,40 @@ public final class MCPServerService {
     return groups
   }
 
-  private func availableToolControlIds() -> [String] {
-    uiAutomationProvider.availableToolControlIds()
-  }
-
-  private func availableControlIds(for viewId: String?) -> [String] {
-    uiAutomationProvider.availableControlIds(for: viewId)
-  }
-
-  private func controlValues(for viewId: String?) -> [String: Any] {
-    uiAutomationProvider.controlValues(for: viewId)
-  }
-
   private func dedupeStrings(_ values: [String]?) -> [String] {
     guard let values else { return [] }
     return Array(Set(values)).sorted()
   }
+}
 
-  private func currentToolId() -> String? {
+// MARK: - MCPToolHandlerDelegate Conformance
+
+extension MCPServerService: MCPToolHandlerDelegate {
+  public func availableViewIds() -> [String] {
+    uiAutomationProvider.availableViewIds()
+  }
+
+  public func availableToolControlIds() -> [String] {
+    uiAutomationProvider.availableToolControlIds()
+  }
+
+  public func availableControlIds(for viewId: String?) -> [String] {
+    uiAutomationProvider.availableControlIds(for: viewId)
+  }
+
+  public func controlValues(for viewId: String?) -> [String: Any] {
+    uiAutomationProvider.controlValues(for: viewId)
+  }
+
+  public func currentToolId() -> String? {
     uiAutomationProvider.currentToolId()
   }
 
-  private func setCurrentToolId(_ toolId: String) {
-    uiAutomationProvider.setCurrentToolId(toolId)
+  public func setCurrentToolId(_ viewId: String) {
+    uiAutomationProvider.setCurrentToolId(viewId)
   }
 
-  private func worktreeNameMapFromDefaults() -> [String: String] {
+  public func worktreeNameMapFromDefaults() -> [String: String] {
     uiAutomationProvider.worktreeNameMapFromDefaults()
   }
 }
