@@ -305,6 +305,8 @@ public final class MCPServerService {
     public let startedAt: Date
     public let priority: Int
     public let timeoutSeconds: Double?
+    public let requireRagUsage: Bool
+    public let ragSearchAtStart: Date?
   }
 
   private struct ChainQueueEntry {
@@ -835,6 +837,7 @@ public final class MCPServerService {
     public var maxPremiumCost: Double? = nil
     public var priority: Int = 0
     public var timeoutSeconds: Double? = nil
+    public var requireRagUsage: Bool? = nil
 
     public init() {}
   }
@@ -893,6 +896,9 @@ public final class MCPServerService {
     }
     if let timeoutSeconds = overrides.timeoutSeconds {
       arguments["timeoutSeconds"] = timeoutSeconds
+    }
+    if let requireRagUsage = overrides.requireRagUsage {
+      arguments["requireRagUsage"] = requireRagUsage
     }
     _ = await handleChainRun(id: nil, arguments: arguments)
   }
@@ -2831,7 +2837,8 @@ public final class MCPServerService {
         "workingDirectory": runInfo.workingDirectory as Any,
         "startedAt": formatter.string(from: runInfo.startedAt),
         "priority": runInfo.priority,
-        "timeoutSeconds": runInfo.timeoutSeconds as Any
+        "timeoutSeconds": runInfo.timeoutSeconds as Any,
+        "requireRagUsage": runInfo.requireRagUsage
       ]
       return (200, makeRPCResult(id: id, result: result))
     }
@@ -3018,6 +3025,7 @@ public final class MCPServerService {
     let timeoutSeconds = arguments["timeoutSeconds"] as? Double
     let returnImmediately = arguments["returnImmediately"] as? Bool ?? false
     let keepWorkspace = arguments["keepWorkspace"] as? Bool ?? false
+    let requireRagUsage = arguments["requireRagUsage"] as? Bool ?? false
 
     let (enqueuedAt, wasCancelled, queuePosition) = await acquireChainRunSlot(runId: runId, priority: priority)
     if wasCancelled {
@@ -3085,6 +3093,11 @@ public final class MCPServerService {
        let guidance = await buildRepoGuidance(repoPath: repoPath) {
       chain.addOperatorGuidance(guidance)
     }
+    if requireRagUsage {
+      chain.addOperatorGuidance(
+        "RAG tool usage is required for this run. Call a rag.* tool (e.g., rag.search) before planning; missing usage will emit a validation warning."
+      )
+    }
 
     let runOptions = AgentChainRunner.ChainRunOptions(
       allowPlannerModelSelection: allowPlannerModelSelection,
@@ -3111,7 +3124,9 @@ public final class MCPServerService {
       enqueuedAt: enqueuedAt,
       startedAt: Date(),
       priority: priority,
-      timeoutSeconds: timeoutSeconds
+      timeoutSeconds: timeoutSeconds,
+      requireRagUsage: requireRagUsage,
+      ragSearchAtStart: lastRagSearchAt
     )
 
     let runTask = Task { @MainActor in
@@ -3167,6 +3182,27 @@ public final class MCPServerService {
         ])
       }
 
+      let combinedValidationResult: ValidationResult? = {
+        guard let runInfo = self.activeRunsById[runId], runInfo.requireRagUsage else {
+          return summary.validationResult
+        }
+
+        let lastSearchAt = self.lastRagSearchAt ?? self.ragUsage.lastSearchAt
+        let usedDuringRun = lastSearchAt != nil && lastSearchAt! >= runInfo.startedAt
+        let baselineIsSame = lastSearchAt == runInfo.ragSearchAtStart
+
+        if usedDuringRun && !baselineIsSame {
+          return summary.validationResult
+        }
+
+        let reason = "RAG usage required but no rag.search recorded during the run. lastSearchAt=\(lastSearchAt?.description ?? \"nil\")"
+        let warning = ValidationResult.warning(reasons: [reason])
+        if let existing = summary.validationResult {
+          return ValidationResult.combine([existing, warning])
+        }
+        return warning
+      }()
+
       if let ds = self.dataService {
         let workspacePaths = [chainWorkingDirectory].compactMap { $0 }
         let workspaceBranches = [chainWorkspace?.branch].compactMap { $0 }
@@ -3184,8 +3220,8 @@ public final class MCPServerService {
           mergeConflictsCount: summary.mergeConflicts.count,
           mergeConflicts: summary.mergeConflicts,
           resultCount: summary.results.count,
-          validationStatus: summary.validationResult?.status.rawValue,
-          validationReasons: summary.validationResult?.reasons ?? [],
+          validationStatus: combinedValidationResult?.status.rawValue,
+          validationReasons: combinedValidationResult?.reasons ?? [],
           noWorkReason: summary.noWorkReason
         )
 
@@ -3218,7 +3254,7 @@ public final class MCPServerService {
         "results": self.summarizeResults(summary.results)
       ]
 
-      if let validationResult = summary.validationResult {
+      if let validationResult = combinedValidationResult {
         completedPayload["validation"] = validationResult.toDictionary()
       }
 
@@ -3289,8 +3325,8 @@ public final class MCPServerService {
       "results": summarizeResults(summary.results)
     ]
 
-    if let validationResult = summary.validationResult {
-      result["validation"] = validationResult.toDictionary()
+      if let validationResult = combinedValidationResult {
+        result["validation"] = validationResult.toDictionary()
     }
 
     return (200, makeRPCResult(id: id, result: result))
@@ -4094,7 +4130,8 @@ public final class MCPServerService {
             "priority": ["type": "integer"],
             "timeoutSeconds": ["type": "number"],
             "returnImmediately": ["type": "boolean"],
-            "keepWorkspace": ["type": "boolean"]
+            "keepWorkspace": ["type": "boolean"],
+            "requireRagUsage": ["type": "boolean"]
           ],
           "required": ["prompt"]
         ],
