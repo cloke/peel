@@ -760,9 +760,10 @@ public final class MCPServerService {
     ragUsage.lastIndexAt = Date()
     lastRagIndexReport = report
     lastRagIndexAt = Date()
+    let skipInfo = report.filesSkipped > 0 ? " (\(report.filesSkipped) unchanged)" : ""
     appendRagEvent(
       kind: .index,
-      title: "Indexed \(report.filesIndexed) files · \(report.chunksIndexed) chunks",
+      title: "Indexed \(report.filesIndexed) files\(skipInfo) · \(report.chunksIndexed) chunks",
       detail: report.repoPath
     )
     lastRagError = nil
@@ -2697,9 +2698,12 @@ public final class MCPServerService {
         "repoId": report.repoId,
         "repoPath": report.repoPath,
         "filesIndexed": report.filesIndexed,
+        "filesSkipped": report.filesSkipped,
         "chunksIndexed": report.chunksIndexed,
         "bytesScanned": report.bytesScanned,
-        "durationMs": report.durationMs
+        "durationMs": report.durationMs,
+        "embeddingCount": report.embeddingCount,
+        "embeddingDurationMs": report.embeddingDurationMs
       ]
       return (200, makeRPCResult(id: id, result: result))
     } catch {

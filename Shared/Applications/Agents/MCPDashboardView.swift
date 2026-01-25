@@ -365,7 +365,8 @@ struct MCPDashboardView: View {
                   .font(.caption2)
                   .foregroundStyle(.secondary)
                 if let report = mcpServer.lastRagIndexReport {
-                  Text("Last session index: \(report.filesIndexed) files · \(report.chunksIndexed) chunks")
+                  let skipInfo = report.filesSkipped > 0 ? " (\(report.filesSkipped) skipped)" : ""
+                  Text("Last session index: \(report.filesIndexed) files\(skipInfo) · \(report.chunksIndexed) chunks")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 }

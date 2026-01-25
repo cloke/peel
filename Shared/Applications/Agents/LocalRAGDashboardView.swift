@@ -169,7 +169,8 @@ struct LocalRAGDashboardView: View {
             }
 
             if let report = lastIndexReport {
-              Text("Indexed \(report.filesIndexed) files · \(report.chunksIndexed) chunks · \(formatBytes(report.bytesScanned))")
+              let skipInfo = report.filesSkipped > 0 ? " · \(report.filesSkipped) skipped" : ""
+              Text("Indexed \(report.filesIndexed) files\(skipInfo) · \(report.chunksIndexed) chunks · \(formatBytes(report.bytesScanned))")
                 .font(.caption)
                 .foregroundStyle(.secondary)
               Text("Duration: \(report.durationMs) ms")
@@ -362,7 +363,8 @@ struct LocalRAGDashboardView: View {
               Text("Last index: \(displayPath(for: report.repoPath))")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-              Text("Added \(report.filesIndexed) files · \(report.chunksIndexed) chunks")
+              let skipInfo = report.filesSkipped > 0 ? " (\(report.filesSkipped) skipped)" : ""
+              Text("Added \(report.filesIndexed) files\(skipInfo) · \(report.chunksIndexed) chunks")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
               if let indexedAt = mcpServer.lastRagIndexAt {
