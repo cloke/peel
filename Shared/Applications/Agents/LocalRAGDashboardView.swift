@@ -7,6 +7,11 @@
 
 import SwiftData
 import SwiftUI
+#if os(macOS)
+import AppKit
+#else
+import UIKit
+#endif
 
 struct LocalRAGDashboardView: View {
   @Bindable var mcpServer: MCPServerService
@@ -234,19 +239,40 @@ struct LocalRAGDashboardView: View {
               VStack(alignment: .leading, spacing: LayoutSpacing.item) {
                 ForEach(results.indices, id: \.self) { index in
                   let result = results[index]
-                  VStack(alignment: .leading, spacing: 4) {
-                    Text(result.filePath)
-                      .font(.caption)
-                      .foregroundStyle(.secondary)
-                      .lineLimit(1)
-                    Text("Lines \(result.startLine)-\(result.endLine)")
-                      .font(.caption2)
-                      .foregroundStyle(.secondary)
-                    Text(result.snippet)
-                      .font(.caption)
-                      .lineLimit(3)
-                      .textSelection(.enabled)
+                  DisclosureGroup {
+                    VStack(alignment: .leading, spacing: 8) {
+                      Text(result.snippet)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                      HStack(spacing: 8) {
+                        Button("Copy Path") { copyToPasteboard(result.filePath) }
+                          .buttonStyle(.bordered)
+                        Button("Copy Snippet") { copyToPasteboard(result.snippet) }
+                          .buttonStyle(.bordered)
+#if os(macOS)
+                        Button("Open File") { openResult(result) }
+                          .buttonStyle(.bordered)
+#endif
+                      }
+                    }
+                  } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                      Text(displayPath(for: result.filePath))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                      Text("Lines \(result.startLine)-\(result.endLine)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                      Text(result.snippet)
+                        .font(.caption)
+                        .lineLimit(2)
+                        .textSelection(.enabled)
+                    }
                   }
+
                   if index != results.indices.last {
                     Divider()
                   }
@@ -602,4 +628,29 @@ struct LocalRAGDashboardView: View {
     }
     return warnings
   }
+
+  private func displayPath(for path: String) -> String {
+    let trimmedRepo = repoPath.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedRepo.isEmpty, path.hasPrefix(trimmedRepo) else {
+      return path
+    }
+    let relative = path.dropFirst(trimmedRepo.count)
+    let cleaned = relative.hasPrefix("/") ? relative.dropFirst() : relative
+    return String(cleaned)
+  }
+
+  private func copyToPasteboard(_ text: String) {
+#if os(macOS)
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(text, forType: .string)
+#else
+    UIPasteboard.general.string = text
+#endif
+  }
+
+#if os(macOS)
+  private func openResult(_ result: LocalRAGSearchResult) {
+    NSWorkspace.shared.openFile(result.filePath)
+  }
+#endif
 }
