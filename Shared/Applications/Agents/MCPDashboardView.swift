@@ -17,6 +17,7 @@ struct MCPDashboardView: View {
   @Query(sort: \MCPRunResultRecord.createdAt, order: .reverse) private var mcpRunResults: [MCPRunResultRecord]
   @State private var selectedRun: MCPRunRecord?
   @State private var showingCleanupConfirmation = false
+  @State private var showingClearHistoryConfirmation = false
   @State private var overrideReviewLoopEnabled = false
   @State private var overrideReviewLoopValue = false
   @State private var overridePauseOnReviewEnabled = false
@@ -804,6 +805,29 @@ struct MCPDashboardView: View {
               Text("Last cleanup: \(lastCleanupAt.formatted(date: .abbreviated, time: .shortened))")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+            }
+
+            Divider()
+            Text("Clear MCP run history")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Button {
+              showingClearHistoryConfirmation = true
+            } label: {
+              Label("Clear Run History", systemImage: "trash.slash")
+            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier("agents.mcpDashboard.cleanup.clearRuns")
+            .confirmDialog(
+              "Clear MCP run history?",
+              isPresented: $showingClearHistoryConfirmation,
+              confirmLabel: "Clear",
+              confirmRole: .destructive,
+              confirmIdentifier: "agents.mcpDashboard.cleanup.clearRuns.confirm",
+              cancelIdentifier: "agents.mcpDashboard.cleanup.clearRuns.cancel",
+              message: "This deletes all stored MCP run records and results. This cannot be undone."
+            ) {
+              mcpServer.clearMCPRunHistory()
             }
           }
         }

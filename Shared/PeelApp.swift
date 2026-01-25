@@ -333,6 +333,31 @@ final class DataService {
     return try? modelContext.fetch(descriptor).first
   }
 
+  func clearMCPRunHistory() {
+    let runDescriptor = FetchDescriptor<MCPRunRecord>()
+    if let runs = try? modelContext.fetch(runDescriptor) {
+      for run in runs {
+        modelContext.delete(run)
+      }
+    }
+
+    let resultDescriptor = FetchDescriptor<MCPRunResultRecord>()
+    if let results = try? modelContext.fetch(resultDescriptor) {
+      for result in results {
+        modelContext.delete(result)
+      }
+    }
+
+    let snapshotDescriptor = FetchDescriptor<ParallelRunSnapshot>()
+    if let snapshots = try? modelContext.fetch(snapshotDescriptor) {
+      for snapshot in snapshots {
+        modelContext.delete(snapshot)
+      }
+    }
+
+    try? modelContext.save()
+  }
+
   // MARK: - Parallel Run Snapshots
 
   @discardableResult
