@@ -379,6 +379,7 @@ public final class MCPServerService {
   // MARK: - Tool Handlers (extracted from this file for maintainability)
 
   private var uiToolsHandler: UIToolsHandler
+  private var vmToolsHandler: VMToolsHandler
 
   public struct ActiveRunInfo: Identifiable {
     public let id: UUID
@@ -433,6 +434,7 @@ public final class MCPServerService {
   ) {
     // Initialize tool handlers first (before self is fully initialized)
     self.uiToolsHandler = UIToolsHandler()
+    self.vmToolsHandler = VMToolsHandler(vmIsolationService: vmIsolationService, telemetryProvider: telemetryProvider ?? MCPTelemetryAdapter(sessionTracker: sessionTracker))
 
     self.agentManager = agentManager
     self.sessionTracker = sessionTracker
@@ -1331,6 +1333,9 @@ public final class MCPServerService {
     if uiToolsHandler.supportedTools.contains(name) {
       return await uiToolsHandler.handle(name: name, id: id, arguments: arguments)
     }
+    if vmToolsHandler.supportedTools.contains(name) {
+      return await vmToolsHandler.handle(name: name, id: id, arguments: arguments)
+    }
 
     // Fall through to inline handlers (to be extracted in future)
     switch name {
@@ -1441,23 +1446,7 @@ public final class MCPServerService {
       let text = await telemetryProvider.tail(lines: lines)
       return (200, makeRPCResult(id: id, result: ["text": text]))
 
-    case "vm.macos.status":
-      return await handleMacOSVMStatus(id: id)
-
-    case "vm.macos.restore.download":
-      return await handleMacOSVMRestoreDownload(id: id)
-
-    case "vm.macos.install":
-      return await handleMacOSVMInstall(id: id)
-
-    case "vm.macos.start":
-      return await handleMacOSVMStart(id: id)
-
-    case "vm.macos.stop":
-      return await handleMacOSVMStop(id: id)
-
-    case "vm.macos.reset":
-      return await handleMacOSVMReset(id: id, arguments: arguments)
+    // VM tools are now handled by VMToolsHandler above
 
     case "server.restart":
       return await handleServerRestart(id: id)
@@ -1694,78 +1683,7 @@ public final class MCPServerService {
     }
   }
 
-  // MARK: - VM Isolation Handlers
-
-  private func handleMacOSVMStatus(id: Any?) async -> (Int, Data) {
-    await vmIsolationService.initialize()
-
-    let status: [String: Any] = [
-      "virtualizationAvailable": vmIsolationService.isVirtualizationAvailable,
-      "macOSReady": vmIsolationService.isMacOSReady,
-      "macOSRestoreImagePath": vmIsolationService.macOSRestoreImagePath?.path as Any,
-      "macOSInstalled": vmIsolationService.isMacOSVMInstalled,
-      "macOSRunning": vmIsolationService.isMacOSVMRunning,
-      "statusMessage": vmIsolationService.statusMessage
-    ]
-    return (200, makeRPCResult(id: id, result: status))
-  }
-
-  private func handleMacOSVMRestoreDownload(id: Any?) async -> (Int, Data) {
-    do {
-      await vmIsolationService.initialize()
-      try await vmIsolationService.downloadMacOSRestoreImage()
-      return await handleMacOSVMStatus(id: id)
-    } catch {
-      await telemetryProvider.warning("macOS restore download failed", metadata: ["error": error.localizedDescription])
-      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
-    }
-  }
-
-  private func handleMacOSVMInstall(id: Any?) async -> (Int, Data) {
-    do {
-      await vmIsolationService.initialize()
-      try await vmIsolationService.installMacOSVM()
-      return await handleMacOSVMStatus(id: id)
-    } catch {
-      await telemetryProvider.warning("macOS VM install failed", metadata: ["error": error.localizedDescription])
-      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
-    }
-  }
-
-  private func handleMacOSVMStart(id: Any?) async -> (Int, Data) {
-    do {
-      await vmIsolationService.initialize()
-      try await vmIsolationService.startMacOSVM()
-      return await handleMacOSVMStatus(id: id)
-    } catch {
-      await telemetryProvider.warning("macOS VM start failed", metadata: ["error": error.localizedDescription])
-      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
-    }
-  }
-
-  private func handleMacOSVMStop(id: Any?) async -> (Int, Data) {
-    do {
-      await vmIsolationService.initialize()
-      try await vmIsolationService.stopMacOSVM()
-      return await handleMacOSVMStatus(id: id)
-    } catch {
-      await telemetryProvider.warning("macOS VM stop failed", metadata: ["error": error.localizedDescription])
-      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
-    }
-  }
-
-  private func handleMacOSVMReset(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    let deleteRestoreImage = arguments["deleteRestoreImage"] as? Bool ?? false
-    do {
-      await vmIsolationService.initialize()
-      try await vmIsolationService.resetMacOSVM(deleteRestoreImage: deleteRestoreImage)
-      return await handleMacOSVMStatus(id: id)
-    } catch {
-      await telemetryProvider.warning("macOS VM reset failed", metadata: ["error": error.localizedDescription])
-      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
-    }
-  }
-
+  // VM tool handlers moved to VMToolsHandler.swift (#161)
 
   private func handlePIIScrub(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
     let inputPath = (arguments["inputPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
