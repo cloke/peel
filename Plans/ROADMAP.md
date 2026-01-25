@@ -6,310 +6,214 @@ tags:
   - peel
   - agent-orchestration
   - mcp
-updated: 2026-01-24
+updated: 2026-01-25
 last_health_check: 2026-01-23
 audience:
   - ai-agent
   - developer
-github_issues:
-  - number: 22
-    status: open
-    title: MCP automation framework package
-  - number: 23
-    status: open
-    title: XPC tool broker
-  - number: 24
-    status: open
-    title: MLX integration
-  - number: 29
-    status: open
-    title: Add Review with Agent button for PRs
-  - number: 30
-    status: open
-    title: Add merge conflict resolution UI
-  - number: 35
-    status: open
-    title: Screen capture to Vision analysis
-  - number: 36
-    status: open
-    title: Voice commands via on-device Whisper
-  - number: 37
-    status: open
-    title: Cross-machine distributed actors
-  - number: 40
-    status: open
-    title: Agent feedback loop - watch and retry
-  - number: 41
-    status: open
-    title: Budget-aware agent scheduler
-  - number: 43
-    status: open
-    title: Deterministic replay for agent runs
-  - number: 44
-    status: open
-    title: Multi-agent quorum for destructive actions
-  - number: 52
-    status: open
-    title: Fix screenshot capture to preserve sidebar/vibrancy
-  - number: 74
-    status: open
-    title: Local RAG v1 embedding provider (Core ML)
-  - number: 78
-    status: open
-    title: Parallel worktree runner with Local RAG grounding
-  - number: 79
-    status: open
-    title: Refactor MCP tool permissions for package-ready interface
-  - number: 80
-    status: open
-    title: Extract MCP tool registry into package
-  - number: 83
-    status: open
-    title: Cohesive Workspaces/Worktrees navigation
-  - number: 84
-    status: open
-    title: MCP prompt rules + planner selection guardrails
-  - number: 85
-    status: open
-    title: CLI: add safe polling helper for MCP runs
-  - number: 86
-    status: open
-    title: MCP run status: add rejected count
-  - number: 87
-    status: open
-    title: RAG feedback loop for CI failures on MCP-generated PRs
-  - number: 88
-    status: open
-    title: Detect and surface hung MCP executions
-  - number: 89
-    status: open
-    title: parallel.status 404s while UI shows active run
-  - number: 106
-    status: open
-    title: VM Isolation: macOS VM for Xcode isolation
-  - number: 107
-    status: open
-    title: GPU shared cache service
-  - number: 108
-    status: open
-    title: ANE micro-services for fast local agent tasks
-  - number: 109
-    status: open
-    title: Voice notifications + quick reply commands
-code_locations:
-  - file: Shared/AgentOrchestration/AgentManager.swift
-    lines: 260-500
-    description: AgentChainRunner and parallel execution (reduced to ~4K lines)
-  - file: Shared/AgentOrchestration/MCPTemplateExecutor.swift
-    description: MCP chain template execution
-  - file: Shared/Views/SettingsView.swift
-    description: MCP server toggle and settings
-  - file: Shared/Services/LocalRAGStore.swift
-    description: Local RAG SQLite store, file scanner, chunker
-  - file: Shared/Services/LocalRAGEmbeddings.swift
-    description: Embedding providers (system w/ text sanitization, hash, Core ML scaffold)
-  - file: Shared/Services/TranslationValidatorService.swift
-    description: Translation validation service (extracted from AgentManager)
-  - file: Shared/Services/PIIScrubberService.swift
-    description: PII scrubber service (extracted from AgentManager)
-  - file: Shared/Applications/Agents/LocalRAGDashboardView.swift
-    description: Local RAG dashboard UI
-  - file: Shared/Applications/Agents/PIIScrubberView.swift
-    description: PII scrubber UI with audit report display/export
-  - file: Tools/PeelSkills/Sources/PIIScrubber/PIIScrubber.swift
-    description: PII scrubber CLI tool
-related_docs:
-  - AGENT_ORCHESTRATION_PLAN.md
-  - PARALLEL_AGENTS_PLAN.md
-  - LOCAL_RAG_PLAN.md
-  - MCP_AGENT_WORKFLOW.md
-  - PII_SCRUBBER_DESIGN.md
-  - Docs/guides/AGENTS_UX_AUDIT.md
-  - Docs/guides/MCP_HEADLESS_FEASIBILITY.md
-  - Docs/guides/IOS_FEATURE_MATRIX.md
-  - Docs/guides/VM_BOOTSTRAP_GITHUB_AUTH.md
 ---
 
 # Peel Roadmap
 
----
-
-## Phase 1C: Polish (Open)
-
-### 📋 Agent Features
-
-| Issue | Title | Notes |
-|-------|-------|-------|
-| [#29](https://github.com/cloke/peel/issues/29) | Review with Agent button | PR review entry point |
-| [#30](https://github.com/cloke/peel/issues/30) | Conflict resolution UI | Merge conflicts |
-| [#40](https://github.com/cloke/peel/issues/40) | Feedback loop | Watch and retry |
-| [#83](https://github.com/cloke/peel/issues/83) | Cohesive Workspaces/Worktrees navigation | Unify navigation paths |
-
-### 📋 Parallel Agents
-
-| Issue | Title | Notes |
-|-------|-------|-------|
-| [#78](https://github.com/cloke/peel/issues/78) | Parallel worktree runner with Local RAG grounding | Context-aware parallel runs |
-
-### 📋 MCP Packaging
-
-| Issue | Title | Notes |
-|-------|-------|-------|
-| [#22](https://github.com/cloke/peel/issues/22) | MCP automation framework package | Reusable framework |
-| [#79](https://github.com/cloke/peel/issues/79) | Refactor MCP tool permissions | Package-ready interface |
-| [#80](https://github.com/cloke/peel/issues/80) | Extract MCP tool registry | Package separation |
-
-### 📋 MCP Reliability
-
-| Issue | Title | Notes |
-|-------|-------|-------|
-| [#84](https://github.com/cloke/peel/issues/84) | MCP prompt rules + planner guardrails | Safety defaults |
-| [#85](https://github.com/cloke/peel/issues/85) | CLI safe polling helper | Avoid stale polling |
-| [#86](https://github.com/cloke/peel/issues/86) | MCP run status: rejected count | Status completeness |
-| [#87](https://github.com/cloke/peel/issues/87) | RAG feedback loop for CI failures | Retry + guidance feedback |
-| [#88](https://github.com/cloke/peel/issues/88) | Detect hung MCP executions | Hung detection + logs |
-| [#89](https://github.com/cloke/peel/issues/89) | parallel.status 404s | Recovery + UI warning |
+> **Sprint Model**: One forever sprint. Treat "days" as hours of focused work.
 
 ---
 
-## Phase 2: Local AI Foundation
+## Quick Stats (Jan 25, 2026)
 
-### 🔄 In Progress
+| Phase | Status | Issues |
+|-------|--------|--------|
+| 1C: Polish | 🔄 Active | ~25 |
+| 2: Local AI | 📋 Next | ~5 |
+| 3: Isolation | 📋 Future | ~8 |
+| Backlog | 📋 Unscheduled | ~24 |
 
-| Issue | Title | Notes |
-|-------|-------|-------|
-| [#74](https://github.com/cloke/peel/issues/74) | Local RAG: Embedding provider | System embeddings working (w/ crash fix), Core ML blocked |
-
-### 📋 Open
-
-| Issue | Title | Description |
-|-------|-------|-------------|
-| [#23](https://github.com/cloke/peel/issues/23) | XPC Tool Broker | Sandboxed execution |
-| [#24](https://github.com/cloke/peel/issues/24) | MLX Integration | Local inference |
-| [#41](https://github.com/cloke/peel/issues/41) | Budget Scheduler | Resource allocation |
-| [#108](https://github.com/cloke/peel/issues/108) | ANE micro-services | Fast on-device tasks |
+**Recently Completed:**
+- #22 MCPCore package extraction (Jan 25)
+- MCP server with 66 tools
+- Local RAG store with system embeddings
+- PII scrubber with audit reports
 
 ---
 
-## Phase 3: Full Isolation & Scale
+## Implementation Queue (Prioritized)
 
-| Issue | Title | Description |
-|-------|-------|-------------|
-| [#35](https://github.com/cloke/peel/issues/35) | Vision Pipeline | Screen capture → analysis |
-| [#36](https://github.com/cloke/peel/issues/36) | Voice Commands | On-device Whisper |
-| [#109](https://github.com/cloke/peel/issues/109) | Voice notifications + quick replies | Task completion + commands |
-| [#37](https://github.com/cloke/peel/issues/37) | Distributed Actors | Multi-Mac scale |
-| [#106](https://github.com/cloke/peel/issues/106) | macOS VM isolation | Full Xcode isolation |
-| [#107](https://github.com/cloke/peel/issues/107) | GPU shared cache service | MLX caching service |
+### 🔥 Priority 1: Bugs & Stability (do first)
+
+| # | Issue | Est | Why First |
+|---|-------|-----|-----------|
+| 1 | [#135](https://github.com/cloke/peel/issues/135) Relaunch storms | 2h | Blocking MCP reliability |
+| 2 | [#89](https://github.com/cloke/peel/issues/89) parallel.status 404s | 1h | Stale UI during runs |
+| 3 | [#88](https://github.com/cloke/peel/issues/88) Hung execution detection | 2h | Surface stuck runs |
+| 4 | [#113](https://github.com/cloke/peel/issues/113) Git sidebar jitter | 1h | Polish annoyance |
+
+### 🎯 Priority 2: MCP + RAG Integration (main track)
+
+| # | Issue | Est | Dependencies |
+|---|-------|-----|--------------|
+| 5 | [#84](https://github.com/cloke/peel/issues/84) MCP prompt rules + guardrails | 3h | None |
+| 6 | [#125](https://github.com/cloke/peel/issues/125) RAG pattern index | 2h | None |
+| 7 | [#126](https://github.com/cloke/peel/issues/126) RAG-based pattern check | 2h | #125 |
+| 8 | [#129](https://github.com/cloke/peel/issues/129) Use RAG index for checks | 1h | #125 |
+| 9 | [#78](https://github.com/cloke/peel/issues/78) Parallel runner with RAG grounding | 4h | #125, #126 |
+| 10 | [#87](https://github.com/cloke/peel/issues/87) RAG feedback for CI failures | 3h | #78 |
+
+### 🛠️ Priority 3: MCP Packaging (prep for reuse)
+
+| # | Issue | Est | Dependencies |
+|---|-------|-----|--------------|
+| 11 | [#79](https://github.com/cloke/peel/issues/79) MCP tool permissions interface | 3h | None |
+| 12 | [#80](https://github.com/cloke/peel/issues/80) Extract tool registry | 3h | #79 |
+| 13 | [#121](https://github.com/cloke/peel/issues/121) Split MCPServerService | 4h | Helps #80 |
+
+### 📊 Priority 4: UX Polish
+
+| # | Issue | Est | Dependencies |
+|---|-------|-----|--------------|
+| 14 | [#127](https://github.com/cloke/peel/issues/127) Local RAG results UX | 2h | None |
+| 15 | [#136](https://github.com/cloke/peel/issues/136) RAG session insights | 2h | #127 |
+| 16 | [#137](https://github.com/cloke/peel/issues/137) RAG toggle in UI | 1h | None |
+| 17 | [#138](https://github.com/cloke/peel/issues/138) Document MCP permissions | 2h | #79 |
+| 18 | [#131](https://github.com/cloke/peel/issues/131) MCP tool preset onboarding | 2h | None |
+| 19 | [#83](https://github.com/cloke/peel/issues/83) Workspaces/Worktrees nav | 3h | None |
+| 20 | [#29](https://github.com/cloke/peel/issues/29) Review with Agent button | 3h | None |
+| 21 | [#30](https://github.com/cloke/peel/issues/30) Merge conflict UI | 4h | None |
+
+### 🔮 Priority 5: Phase 2 - Local AI Foundation
+
+| # | Issue | Est | Dependencies |
+|---|-------|-----|--------------|
+| 22 | [#74](https://github.com/cloke/peel/issues/74) Core ML embedding provider | 4h | None |
+| 23 | [#23](https://github.com/cloke/peel/issues/23) XPC tool broker | 6h | #79 |
+| 24 | [#24](https://github.com/cloke/peel/issues/24) MLX integration | 8h | None |
+| 25 | [#133](https://github.com/cloke/peel/issues/133) Pre-planner with HF RAG | 4h | #128 |
+| 26 | [#128](https://github.com/cloke/peel/issues/128) HF model analysis for RAG | 4h | #24 |
+| 27 | [#41](https://github.com/cloke/peel/issues/41) Budget-aware scheduler | 6h | #24 |
+| 28 | [#108](https://github.com/cloke/peel/issues/108) ANE micro-services | 6h | #24 |
+
+### 🌐 Priority 6: Phase 3 - Full Isolation
+
+| # | Issue | Est | Dependencies |
+|---|-------|-----|--------------|
+| 29 | [#106](https://github.com/cloke/peel/issues/106) macOS VM isolation | 8h | None |
+| 30 | [#107](https://github.com/cloke/peel/issues/107) GPU shared cache | 6h | #24 |
+| 31 | [#35](https://github.com/cloke/peel/issues/35) Vision pipeline | 6h | None |
+| 32 | [#36](https://github.com/cloke/peel/issues/36) Voice commands (Whisper) | 6h | #24 |
+| 33 | [#109](https://github.com/cloke/peel/issues/109) Voice notifications | 4h | #36 |
+| 34 | [#37](https://github.com/cloke/peel/issues/37) Distributed actors | 8h | #106 |
+| 35 | [#43](https://github.com/cloke/peel/issues/43) Deterministic replay | 6h | None |
+| 36 | [#44](https://github.com/cloke/peel/issues/44) Multi-agent quorum | 4h | #43 |
 
 ---
 
-## Safety & Reliability
+## Phase Definitions
 
-| Issue | Title | Description |
-|-------|-------|-------------|
-| [#43](https://github.com/cloke/peel/issues/43) | Deterministic Replay | Audit trail |
-| [#44](https://github.com/cloke/peel/issues/44) | Multi-Agent Quorum | Safety consensus |
+### Phase 1C: Polish & MCP Reliability
+**Goal**: Make MCP chains reliable for daily use. RAG integration. UX polish.
+
+**Labels**: `phase-1c`
+
+**Key Outcomes**:
+- MCP chains don't hang or produce stale UI
+- RAG provides relevant code context to agents
+- Tool permissions are clear and configurable
+
+### Phase 2: Local AI Foundation
+**Goal**: Run AI locally for cost/privacy. XPC isolation for safety.
+
+**Labels**: `phase-2`
+
+**Key Outcomes**:
+- MLX models run locally
+- XPC broker isolates dangerous operations
+- Budget scheduler manages resources
+
+### Phase 3: Full Isolation & Scale
+**Goal**: VMs for full isolation. Multi-machine scale. Voice/vision.
+
+**Labels**: `phase-3`
+
+**Key Outcomes**:
+- macOS VMs for Xcode isolation
+- Distributed actors across machines
+- Voice commands for hands-free operation
 
 ---
 
-## Architecture: Parallel Agents
+## Backlog (Unscheduled)
 
+These issues are valid but not prioritized for current phases:
+
+| Issue | Title | Category |
+|-------|-------|----------|
+| [#40](https://github.com/cloke/peel/issues/40) | Agent feedback loop | agent |
+| [#52](https://github.com/cloke/peel/issues/52) | Screenshot vibrancy | ux |
+| [#64](https://github.com/cloke/peel/issues/64) | Homebrew charts | ux |
+| [#85](https://github.com/cloke/peel/issues/85) | CLI polling helper | mcp |
+| [#86](https://github.com/cloke/peel/issues/86) | MCP rejected count | mcp |
+| [#90](https://github.com/cloke/peel/issues/90) | Repo guidance defaults | mcp |
+| [#91](https://github.com/cloke/peel/issues/91) | VS Code MCP extension | mcp |
+| [#92](https://github.com/cloke/peel/issues/92) | Parallel quality check | mcp |
+| [#93](https://github.com/cloke/peel/issues/93) | Low-signal guardrails | agent |
+| [#94](https://github.com/cloke/peel/issues/94) | Reduce plan-only responses | agent |
+| [#95](https://github.com/cloke/peel/issues/95) | Pooled macOS VMs | infra |
+| [#96](https://github.com/cloke/peel/issues/96) | VM viewer scaling | bug |
+| [#97](https://github.com/cloke/peel/issues/97) | VM section tabs | ux |
+| [#99](https://github.com/cloke/peel/issues/99) | Target membership audit | infra |
+| [#100](https://github.com/cloke/peel/issues/100) | CopilotModel metadata | infra |
+| [#102](https://github.com/cloke/peel/issues/102) | Model family flags | infra |
+| [#103](https://github.com/cloke/peel/issues/103) | AgentRole prompts | agent |
+| [#104](https://github.com/cloke/peel/issues/104) | AgentState metadata | agent |
+| [#105](https://github.com/cloke/peel/issues/105) | iOS GitHub flow | ux |
+| [#110](https://github.com/cloke/peel/issues/110) | Diff viewer refresh | git |
+| [#111](https://github.com/cloke/peel/issues/111) | Per-repo scratch area | infra |
+| [#112](https://github.com/cloke/peel/issues/112) | Stage/revert hunks | git |
+| [#122](https://github.com/cloke/peel/issues/122) | Split WorktreeListView | infra |
+| [#123](https://github.com/cloke/peel/issues/123) | Adopt AsyncContentView | ux |
+| [#124](https://github.com/cloke/peel/issues/124) | PeelUI button styles | ux |
+| [#130](https://github.com/cloke/peel/issues/130) | RAG model docs | documentation |
+| [#132](https://github.com/cloke/peel/issues/132) | RAG loop test workflow | rag |
+| [#134](https://github.com/cloke/peel/issues/134) | Project audit tooling | rag |
+
+---
+
+## Architecture Reference
+
+### MCP Chain Flow
 ```
-Planner -> splits task -> creates branches
-    |
-+------------+------------+------------+
-| Agent 1    | Agent 2    | Agent 3    |
-| Worktree A | Worktree B | Worktree C |
-+-----+------+-----+------+-----+------+
-      +------------+------------+
-                   v
-            Merge Agent
-                   |
-            Feature Branch
+User Prompt
+    ↓
+MCPServerService (66 tools)
+    ↓
+Planner Agent → Task Split
+    ↓
++--------+--------+--------+
+| Agent1 | Agent2 | Agent3 |  (parallel worktrees)
++--------+--------+--------+
+    ↓
+Merge Agent → Feature Branch
+    ↓
+Review Gate
+```
+
+### Local RAG Flow
+```
+File Scanner → Chunker → Embeddings → SQLite Store
+                                          ↓
+                              Query → Top-K Results
+                                          ↓
+                              Agent Prompt Injection
 ```
 
 ---
 
 ## References
 
-- [AGENT_ORCHESTRATION_PLAN.md](AGENT_ORCHESTRATION_PLAN.md)
-- [PARALLEL_AGENTS_PLAN.md](PARALLEL_AGENTS_PLAN.md)
-- [VM_ISOLATION_PLAN.md](VM_ISOLATION_PLAN.md)
-- [MCP_AGENT_WORKFLOW.md](MCP_AGENT_WORKFLOW.md)
-- [LOCAL_RAG_PLAN.md](LOCAL_RAG_PLAN.md)
-- [HEALTH_CHECK_ACTION_PLAN_2026-01-20.md](HEALTH_CHECK_ACTION_PLAN_2026-01-20.md) - Latest action plan
-- [Sessions/HEALTH_CHECK_2026-01-19.md](../Sessions/HEALTH_CHECK_2026-01-19.md) - Full health audit
+- [MCP_AGENT_WORKFLOW.md](MCP_AGENT_WORKFLOW.md) - MCP usage guide
+- [LOCAL_RAG_PLAN.md](LOCAL_RAG_PLAN.md) - RAG architecture
+- [PII_SCRUBBER_DESIGN.md](PII_SCRUBBER_DESIGN.md) - Privacy scrubbing
+- [VM_ISOLATION_PLAN.md](VM_ISOLATION_PLAN.md) - VM isolation design
 
 ---
 
-## Issue Queues (Pick a Track)
-
-### Track A: Local RAG (1 issue)
-```
-74
-```
-- #74 Local RAG v1: Embedding provider (Core ML)
-
-### Track B: Agent UX (4 issues)
-```
-29,30,40,83
-```
-- #29 Review with Agent button for PRs
-- #30 Add merge conflict resolution UI
-- #40 Agent feedback loop - watch and retry
-- #83 Cohesive Workspaces/Worktrees navigation
-
-### Track C: Charts & Analytics (1 issue)
-```
-64
-```
-- #64 Add Homebrew activity charts
-
-### Track D: MCP Packaging & Parallel (4 issues)
-```
-22,78,79,80
-```
-- #22 MCP automation framework package
-- #78 Parallel worktree runner with Local RAG grounding
-- #79 Refactor MCP tool permissions for package-ready interface
-- #80 Extract MCP tool registry into package
-
-### Track E: Local AI Foundation (4 issues)
-```
-23,24,41,108
-```
-- #23 XPC tool broker
-- #24 MLX integration
-- #41 Budget-aware agent scheduler
-- #108 ANE micro-services
-
-### Track F: Polish & Cleanup (1 issue)
-```
-52
-```
-- #52 Fix screenshot capture to preserve sidebar/vibrancy
-
-### Track G: Phase 3 / Future (8 issues)
-```
-35,36,109,37,106,107,43,44
-```
-- #35 Screen capture to Vision analysis pipeline
-- #36 Voice commands via on-device Whisper
-- #109 Voice notifications + quick replies
-- #37 Cross-machine distributed actors
-- #106 macOS VM isolation
-- #107 GPU shared cache service
-- #43 Deterministic replay for agent runs
-- #44 Multi-agent quorum for destructive actions
-
-### Track H: MCP Reliability (6 issues)
-```
-84,85,86,87,88,89
-```
-- #84 MCP prompt rules + planner guardrails
-- #85 CLI safe polling helper
-- #86 MCP run status: rejected count
-- #87 RAG feedback loop for CI failures on MCP-generated PRs
-- #88 Detect hung MCP executions
-- #89 parallel.status 404s while UI shows active run
+**Last Updated**: January 25, 2026
