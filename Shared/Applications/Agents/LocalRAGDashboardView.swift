@@ -650,7 +650,7 @@ struct LocalRAGDashboardView: View {
 
 #if os(macOS)
   private func openResult(_ result: LocalRAGSearchResult) {
-    NSWorkspace.shared.openFile(result.filePath)
+    NSWorkspace.shared.open(URL(fileURLWithPath: result.filePath))
   }
 #endif
 }
