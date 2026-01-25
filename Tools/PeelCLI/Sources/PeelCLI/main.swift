@@ -29,6 +29,7 @@ struct CLIOptions {
   var toolName: String?
   var argumentsJSONPath: String?
   var diffOnly: Bool = false
+  var outputPath: String?
 }
 
 enum CLIError: LocalizedError {
@@ -137,6 +138,8 @@ private func parseArguments() throws -> CLIOptions {
       options.argumentsJSONPath = iterator.next()
     case "--diff-only":
       options.diffOnly = true
+    case "--output", "-o":
+      options.outputPath = iterator.next()
     case "-h", "--help":
       print(usageText())
       exit(EXIT_SUCCESS)
@@ -295,6 +298,8 @@ private func run(options: CLIOptions) async throws {
     ], port: options.port)
   case "rag-pattern-check":
     try await runRagPatternCheck(options: options)
+  case "rag-audit":
+    try await runRagAudit(options: options)
   case "server-stop":
     try await printRPCResult(method: "tools/call", params: [
       "name": "server.stop",
@@ -346,6 +351,7 @@ private func usageText() -> String {
     workspaces-agent-list [--repo-path <path>]
     workspaces-agent-cleanup-status
     rag-pattern-check [--repo-path <path>] [--limit <int>] [--diff-only]
+    rag-audit --repo-path <path> [--output <path>] [--limit <int>]
     server-stop
     app-quit
   """
@@ -455,6 +461,171 @@ private func runDiffOnlyPatternCheck(patterns: [(label: String, query: String)],
   } else {
     print("\nTotal: \(totalMatches) deprecated pattern(s) found in staged changes.")
   }
+}
+
+// MARK: - RAG Audit
+
+struct AuditResult {
+  let pattern: String
+  let filePath: String
+  let startLine: Int
+  let endLine: Int
+  let snippet: String
+}
+
+private func runRagAudit(options: CLIOptions) async throws {
+  guard let repoPath = options.repoPath else {
+    throw CLIError.message("rag-audit requires --repo-path")
+  }
+
+  let client = MCPClient(port: options.port)
+  let limit = options.limit ?? 20
+
+  let patterns: [(label: String, query: String, severity: String)] = [
+    ("ObservableObject", "ObservableObject", "warning"),
+    ("@Published", "@Published", "warning"),
+    ("@StateObject", "@StateObject", "warning"),
+    ("@ObservedObject", "@ObservedObject", "warning"),
+    ("NavigationView", "NavigationView", "warning"),
+    ("Combine import", "import Combine", "info"),
+    ("DispatchQueue.main", "DispatchQueue.main", "warning"),
+    ("try!", "try!", "error"),
+    ("DateFormatter alloc", "DateFormatter()", "info")
+  ]
+
+  var allResults: [(pattern: String, severity: String, results: [[String: Any]])] = []
+  var totalMatches = 0
+
+  print("🔍 Running RAG audit on \(repoPath)...\n")
+
+  for pattern in patterns {
+    let arguments: [String: Any] = [
+      "query": pattern.query,
+      "repoPath": repoPath,
+      "mode": "text",
+      "limit": limit
+    ]
+
+    let response = try await client.call(method: "tools/call", params: [
+      "name": "rag.search",
+      "arguments": arguments
+    ])
+
+    let results = extractResultsArray(from: response)
+    if !results.isEmpty {
+      allResults.append((pattern.label, pattern.severity, results))
+      totalMatches += results.count
+      print("  \(pattern.label): \(results.count) match(es)")
+    }
+  }
+
+  // Generate markdown report
+  let report = generateAuditReport(repoPath: repoPath, results: allResults, totalMatches: totalMatches)
+
+  if let outputPath = options.outputPath {
+    try report.write(toFile: outputPath, atomically: true, encoding: .utf8)
+    print("\n📄 Report written to: \(outputPath)")
+  } else {
+    print("\n" + report)
+  }
+}
+
+private func extractResultsArray(from response: [String: Any]) -> [[String: Any]] {
+  if let result = response["result"] as? [String: Any] {
+    if let inner = result["result"] as? [String: Any],
+       let results = inner["results"] as? [[String: Any]] {
+      return results
+    }
+    if let results = result["results"] as? [[String: Any]] {
+      return results
+    }
+  }
+  return []
+}
+
+private func generateAuditReport(
+  repoPath: String,
+  results: [(pattern: String, severity: String, results: [[String: Any]])],
+  totalMatches: Int
+) -> String {
+  let dateFormatter = ISO8601DateFormatter()
+  let timestamp = dateFormatter.string(from: Date())
+
+  var lines: [String] = []
+  lines.append("# RAG Audit Report")
+  lines.append("")
+  lines.append("**Repository:** `\(repoPath)`")
+  lines.append("**Generated:** \(timestamp)")
+  lines.append("**Total Matches:** \(totalMatches)")
+  lines.append("")
+
+  if results.isEmpty {
+    lines.append("✅ No deprecated patterns found!")
+    return lines.joined(separator: "\n")
+  }
+
+  // Summary table
+  lines.append("## Summary")
+  lines.append("")
+  lines.append("| Pattern | Severity | Count |")
+  lines.append("|---------|----------|-------|")
+  for (pattern, severity, matches) in results {
+    let icon = severity == "error" ? "🔴" : (severity == "warning" ? "🟡" : "🔵")
+    lines.append("| \(pattern) | \(icon) \(severity) | \(matches.count) |")
+  }
+  lines.append("")
+
+  // Detailed findings
+  lines.append("## Detailed Findings")
+  lines.append("")
+
+  for (pattern, severity, matches) in results {
+    let icon = severity == "error" ? "🔴" : (severity == "warning" ? "🟡" : "🔵")
+    lines.append("### \(icon) \(pattern)")
+    lines.append("")
+
+    for match in matches {
+      let filePath = match["filePath"] as? String ?? "unknown"
+      let startLine = match["startLine"] as? Int ?? 0
+      let endLine = match["endLine"] as? Int ?? 0
+      let snippet = match["snippet"] as? String ?? ""
+
+      // Make relative path
+      let relativePath = filePath.hasPrefix(repoPath)
+        ? String(filePath.dropFirst(repoPath.count + 1))
+        : filePath
+
+      lines.append("- [\(relativePath)#L\(startLine)-L\(endLine)](\(relativePath)#L\(startLine)-L\(endLine))")
+
+      // Show first line of snippet
+      if let firstLine = snippet.split(separator: "\n", omittingEmptySubsequences: true).first {
+        let trimmed = firstLine.trimmingCharacters(in: .whitespaces)
+        if !trimmed.isEmpty {
+          lines.append("  ```")
+          lines.append("  \(String(trimmed.prefix(80)))")
+          lines.append("  ```")
+        }
+      }
+    }
+    lines.append("")
+  }
+
+  // Recommendations
+  lines.append("## Recommendations")
+  lines.append("")
+  lines.append("| Pattern | Modern Alternative |")
+  lines.append("|---------|-------------------|")
+  lines.append("| `ObservableObject` | Use `@Observable` macro |")
+  lines.append("| `@Published` | Properties in `@Observable` class |")
+  lines.append("| `@StateObject` | Use `@State` with `@Observable` |")
+  lines.append("| `@ObservedObject` | Use `@Bindable` or `@Environment` |")
+  lines.append("| `NavigationView` | Use `NavigationStack` |")
+  lines.append("| `DispatchQueue.main` | Use `@MainActor` |")
+  lines.append("| `try!` | Use `do/catch` or `try?` |")
+  lines.append("")
+  lines.append("See `Docs/reference/CODE_AUDIT_INDEX.md` for migration guides.")
+
+  return lines.joined(separator: "\n")
 }
 
 private func extractResultCount(from response: [String: Any]) -> Int {
