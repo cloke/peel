@@ -33,6 +33,136 @@ final class ParallelToolsHandler {
     ]
   }
 
+  // MARK: - Helper Methods (reduces boilerplate)
+
+  private func runnerNotInitializedError(id: Any?) -> (Int, Data) {
+    (500, JSONRPCResponseBuilder.makeError(
+      id: id,
+      code: JSONRPCResponseBuilder.ErrorCode.internalError,
+      message: "Parallel worktree runner not initialized"
+    ))
+  }
+
+  private func missingParamError(id: Any?, param: String) -> (Int, Data) {
+    (400, JSONRPCResponseBuilder.makeError(
+      id: id,
+      code: JSONRPCResponseBuilder.ErrorCode.invalidParams,
+      message: "Missing \(param)"
+    ))
+  }
+
+  private func invalidParamError(id: Any?, param: String, reason: String? = nil) -> (Int, Data) {
+    (400, JSONRPCResponseBuilder.makeError(
+      id: id,
+      code: JSONRPCResponseBuilder.ErrorCode.invalidParams,
+      message: reason ?? "Invalid \(param)"
+    ))
+  }
+
+  private func runNotFoundError(id: Any?, runId: String, runner: ParallelWorktreeRunner) -> (Int, Data) {
+    let knownRuns = runner.runs.map { encodeParallelRun($0) }
+    return (404, JSONRPCResponseBuilder.makeError(
+      id: id,
+      code: JSONRPCResponseBuilder.ErrorCode.notFound,
+      message: "Run not found",
+      data: [
+        "runId": runId,
+        "knownRunCount": runner.runs.count,
+        "knownRuns": knownRuns,
+        "hint": "Run not found. The app may have restarted or the run was removed. Use parallel.list to refresh."
+      ]
+    ))
+  }
+
+  // Helper type for Result-based validation with (Int, Data) error responses
+  private enum ValidationResult<T> {
+    case success(T)
+    case failure(Int, Data)
+    
+    var value: T? {
+      if case .success(let v) = self { return v }
+      return nil
+    }
+    
+    var errorResponse: (Int, Data)? {
+      if case .failure(let code, let data) = self { return (code, data) }
+      return nil
+    }
+  }
+
+  private func getRunner(id: Any?) -> ValidationResult<ParallelWorktreeRunner> {
+    guard let runner = delegate?.parallelWorktreeRunner else {
+      let error = runnerNotInitializedError(id: id)
+      return .failure(error.0, error.1)
+    }
+    return .success(runner)
+  }
+
+  private func getString(_ key: String, from arguments: [String: Any], id: Any?) -> ValidationResult<String> {
+    guard let value = (arguments[key] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !value.isEmpty else {
+      let error = missingParamError(id: id, param: key)
+      return .failure(error.0, error.1)
+    }
+    return .success(value)
+  }
+
+  private func getUUID(_ key: String, from arguments: [String: Any], id: Any?) -> ValidationResult<UUID> {
+    guard let stringValue = arguments[key] as? String,
+          let uuid = UUID(uuidString: stringValue) else {
+      let error = missingParamError(id: id, param: key)
+      return .failure(error.0, error.1)
+    }
+    return .success(uuid)
+  }
+
+  private func getRun(
+    runId: UUID,
+    from runner: ParallelWorktreeRunner,
+    id: Any?
+  ) -> ValidationResult<ParallelWorktreeRun> {
+    guard let run = runner.getRun(id: runId) else {
+      let error = runNotFoundError(id: id, runId: runId.uuidString, runner: runner)
+      return .failure(error.0, error.1)
+    }
+    return .success(run)
+  }
+
+  private func getExecution(
+    executionId: UUID,
+    from run: ParallelWorktreeRun,
+    id: Any?
+  ) -> ValidationResult<ParallelWorktreeExecution> {
+    guard let execution = run.executions.first(where: { $0.id == executionId }) else {
+      let error = (404, JSONRPCResponseBuilder.makeError(
+        id: id,
+        code: JSONRPCResponseBuilder.ErrorCode.notFound,
+        message: "Execution not found"
+      ))
+      return .failure(error.0, error.1)
+    }
+    return .success(execution)
+  }
+
+  private func optionalString(_ key: String, from arguments: [String: Any], default defaultValue: String? = nil) -> String? {
+    guard let value = (arguments[key] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !value.isEmpty else {
+      return defaultValue
+    }
+    return value
+  }
+
+  private func optionalBool(_ key: String, from arguments: [String: Any], default defaultValue: Bool) -> Bool {
+    (arguments[key] as? Bool) ?? defaultValue
+  }
+
+  private func optionalUUID(_ key: String, from arguments: [String: Any]) -> UUID? {
+    guard let stringValue = arguments[key] as? String else { return nil }
+    return UUID(uuidString: stringValue)
+  }
+
+  // MARK: - Main Handler
+
   func handle(
     name: String,
     id: Any?,
@@ -75,45 +205,27 @@ final class ParallelToolsHandler {
   // MARK: - Private Handlers
 
   private func handleCreate(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    guard let runner = delegate?.parallelWorktreeRunner else {
-      return (500, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.internalError,
-        message: "Parallel worktree runner not initialized"
-      ))
+    guard case .success(let runner) = getRunner(id: id) else {
+      return runnerNotInitializedError(id: id)
     }
 
-    guard let name = (arguments["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
-          !name.isEmpty else {
-      return (400, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.invalidParams,
-        message: "Missing name"
-      ))
+    guard case .success(let name) = getString("name", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "name")
     }
 
-    guard let projectPath = (arguments["projectPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
-          !projectPath.isEmpty else {
-      return (400, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.invalidParams,
-        message: "Missing projectPath"
-      ))
+    guard case .success(let projectPath) = getString("projectPath", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "projectPath")
     }
 
     guard let tasksArray = arguments["tasks"] as? [[String: Any]], !tasksArray.isEmpty else {
-      return (400, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.invalidParams,
-        message: "Missing or empty tasks array"
-      ))
+      return missingParamError(id: id, param: "tasks")
     }
 
-    let baseBranch = (arguments["baseBranch"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "HEAD"
+    let baseBranch = optionalString("baseBranch", from: arguments, default: "HEAD") ?? "HEAD"
     let targetBranch = arguments["targetBranch"] as? String
-    let requireReviewGate = arguments["requireReviewGate"] as? Bool ?? true
-    let autoMergeOnApproval = arguments["autoMergeOnApproval"] as? Bool ?? false
-    let templateName = (arguments["templateName"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let requireReviewGate = optionalBool("requireReviewGate", from: arguments, default: true)
+    let autoMergeOnApproval = optionalBool("autoMergeOnApproval", from: arguments, default: false)
+    let templateName = optionalString("templateName", from: arguments)
     let allowPlannerModelSelection = arguments["allowPlannerModelSelection"] as? Bool
     let allowImplementerModelOverride = arguments["allowImplementerModelOverride"] as? Bool
     let allowPlannerImplementerScaling = arguments["allowPlannerImplementerScaling"] as? Bool
@@ -139,11 +251,7 @@ final class ParallelToolsHandler {
     }
 
     guard tasks.count == tasksArray.count else {
-      return (400, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.invalidParams,
-        message: "Invalid task format - each task needs title and prompt"
-      ))
+      return invalidParamError(id: id, param: "tasks", reason: "Invalid task format - each task needs title and prompt")
     }
 
     let hasRunOptions = allowPlannerModelSelection != nil
@@ -183,40 +291,20 @@ final class ParallelToolsHandler {
   }
 
   private func handleStart(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    guard let runner = delegate?.parallelWorktreeRunner else {
-      return (500, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.internalError,
-        message: "Parallel worktree runner not initialized"
-      ))
+    guard case .success(let runner) = getRunner(id: id) else {
+      return runnerNotInitializedError(id: id)
     }
 
-    guard let runIdString = arguments["runId"] as? String,
-          let runId = UUID(uuidString: runIdString) else {
-      return (400, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.invalidParams,
-        message: "Missing or invalid runId"
-      ))
+    guard case .success(let runId) = getUUID("runId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "runId")
     }
 
     guard let run = runner.getRun(id: runId) else {
       await delegate?.parallelTelemetryProvider.warning("Parallel run not found", metadata: [
-        "runId": runIdString,
+        "runId": runId.uuidString,
         "knownRunCount": "\(runner.runs.count)"
       ])
-      let knownRuns = runner.runs.map { encodeParallelRun($0) }
-      return (404, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.notFound,
-        message: "Run not found",
-        data: [
-          "runId": runIdString,
-          "knownRunCount": runner.runs.count,
-          "knownRuns": knownRuns,
-          "hint": "Run not found. The app may have restarted or the run was removed. Use parallel.list to refresh."
-        ]
-      ))
+      return runNotFoundError(id: id, runId: runId.uuidString, runner: runner)
     }
 
     await delegate?.parallelTelemetryProvider.info("Starting parallel run", metadata: ["runId": runId.uuidString])
@@ -241,21 +329,12 @@ final class ParallelToolsHandler {
   }
 
   private func handleStatus(id: Any?, arguments: [String: Any]) -> (Int, Data) {
-    guard let runner = delegate?.parallelWorktreeRunner else {
-      return (500, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.internalError,
-        message: "Parallel worktree runner not initialized"
-      ))
+    guard case .success(let runner) = getRunner(id: id) else {
+      return runnerNotInitializedError(id: id)
     }
 
-    guard let runIdString = arguments["runId"] as? String,
-          let runId = UUID(uuidString: runIdString) else {
-      return (400, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.invalidParams,
-        message: "Missing or invalid runId"
-      ))
+    guard case .success(let runId) = getUUID("runId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "runId")
     }
 
     // First try in-memory
@@ -264,7 +343,7 @@ final class ParallelToolsHandler {
     }
 
     // Fall back to SwiftData snapshot
-    if let snapshot = delegate?.parallelDataService?.getLatestParallelRunSnapshot(runId: runIdString) {
+    if let snapshot = delegate?.parallelDataService?.getLatestParallelRunSnapshot(runId: runId.uuidString) {
       let snapshotPayload: [String: Any] = [
         "runId": snapshot.runId,
         "name": snapshot.name,
@@ -366,25 +445,16 @@ final class ParallelToolsHandler {
   }
 
   private func handleApprove(id: Any?, arguments: [String: Any]) -> (Int, Data) {
-    guard let runner = delegate?.parallelWorktreeRunner else {
-      return (500, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.internalError,
-        message: "Parallel worktree runner not initialized"
-      ))
+    guard case .success(let runner) = getRunner(id: id) else {
+      return runnerNotInitializedError(id: id)
     }
 
-    guard let runIdString = arguments["runId"] as? String,
-          let runId = UUID(uuidString: runIdString) else {
-      return (400, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.invalidParams,
-        message: "Missing or invalid runId"
-      ))
+    guard case .success(let runId) = getUUID("runId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "runId")
     }
 
-    guard let run = runner.getRun(id: runId) else {
-      let snapshot = delegate?.parallelDataService?.getLatestParallelRunSnapshot(runId: runIdString)
+    guard case .success(let run) = getRun(runId: runId, from: runner, id: id) else {
+      let snapshot = delegate?.parallelDataService?.getLatestParallelRunSnapshot(runId: runId.uuidString)
       let snapshotPayload: [String: Any]? = snapshot.map { record in
         [
           "runId": record.runId,
@@ -399,14 +469,14 @@ final class ParallelToolsHandler {
         code: JSONRPCResponseBuilder.ErrorCode.notFound,
         message: "Run not found",
         data: [
-          "runId": runIdString,
+          "runId": runId.uuidString,
           "snapshot": snapshotPayload as Any,
           "hint": "Run not found. The app may have restarted or the run was removed. Use parallel.list to refresh."
         ]
       ))
     }
 
-    let approveAll = arguments["approveAll"] as? Bool ?? false
+    let approveAll = optionalBool("approveAll", from: arguments, default: false)
 
     if approveAll {
       runner.approveAllPending(in: run)
@@ -417,16 +487,11 @@ final class ParallelToolsHandler {
       ]))
     }
 
-    guard let executionIdString = arguments["executionId"] as? String,
-          let executionId = UUID(uuidString: executionIdString) else {
-      return (400, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.invalidParams,
-        message: "Missing executionId (or set approveAll=true)"
-      ))
+    guard case .success(let executionId) = getUUID("executionId", from: arguments, id: id) else {
+      return invalidParamError(id: id, param: "executionId", reason: "Missing executionId (or set approveAll=true)")
     }
 
-    guard let execution = run.executions.first(where: { $0.id == executionId }) else {
+    guard case .success(let execution) = getExecution(executionId: executionId, from: run, id: id) else {
       return (404, JSONRPCResponseBuilder.makeError(
         id: id,
         code: JSONRPCResponseBuilder.ErrorCode.notFound,
@@ -443,41 +508,23 @@ final class ParallelToolsHandler {
   }
 
   private func handleReject(id: Any?, arguments: [String: Any]) -> (Int, Data) {
-    guard let runner = delegate?.parallelWorktreeRunner else {
-      return (500, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.internalError,
-        message: "Parallel worktree runner not initialized"
-      ))
+    guard case .success(let runner) = getRunner(id: id) else {
+      return runnerNotInitializedError(id: id)
     }
 
-    guard let runIdString = arguments["runId"] as? String,
-          let runId = UUID(uuidString: runIdString) else {
-      return (400, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.invalidParams,
-        message: "Missing or invalid runId"
-      ))
+    guard case .success(let runId) = getUUID("runId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "runId")
     }
 
-    guard let run = runner.getRun(id: runId) else {
-      return (404, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.notFound,
-        message: "Run not found"
-      ))
+    guard case .success(let run) = getRun(runId: runId, from: runner, id: id) else {
+      return runNotFoundError(id: id, runId: runId.uuidString, runner: runner)
     }
 
-    guard let executionIdString = arguments["executionId"] as? String,
-          let executionId = UUID(uuidString: executionIdString) else {
-      return (400, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.invalidParams,
-        message: "Missing executionId"
-      ))
+    guard case .success(let executionId) = getUUID("executionId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "executionId")
     }
 
-    guard let execution = run.executions.first(where: { $0.id == executionId }) else {
+    guard case .success(let execution) = getExecution(executionId: executionId, from: run, id: id) else {
       return (404, JSONRPCResponseBuilder.makeError(
         id: id,
         code: JSONRPCResponseBuilder.ErrorCode.notFound,
@@ -485,7 +532,7 @@ final class ParallelToolsHandler {
       ))
     }
 
-    let reason = arguments["reason"] as? String ?? "Rejected via MCP"
+    let reason = optionalString("reason", from: arguments, default: "Rejected via MCP") ?? "Rejected via MCP"
     runner.rejectExecution(execution, in: run, reason: reason)
 
     return (200, JSONRPCResponseBuilder.makeResult(id: id, result: [
@@ -496,32 +543,19 @@ final class ParallelToolsHandler {
   }
 
   private func handleReviewed(id: Any?, arguments: [String: Any]) -> (Int, Data) {
-    guard let runner = delegate?.parallelWorktreeRunner else {
-      return (500, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.internalError,
-        message: "Parallel worktree runner not initialized"
-      ))
+    guard case .success(let runner) = getRunner(id: id) else {
+      return runnerNotInitializedError(id: id)
     }
 
-    guard let runIdString = arguments["runId"] as? String,
-          let runId = UUID(uuidString: runIdString) else {
-      return (400, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.invalidParams,
-        message: "Missing or invalid runId"
-      ))
+    guard case .success(let runId) = getUUID("runId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "runId")
     }
 
-    guard let run = runner.getRun(id: runId) else {
-      return (404, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.notFound,
-        message: "Run not found"
-      ))
+    guard case .success(let run) = getRun(runId: runId, from: runner, id: id) else {
+      return runNotFoundError(id: id, runId: runId.uuidString, runner: runner)
     }
 
-    let reviewAll = arguments["reviewAll"] as? Bool ?? false
+    let reviewAll = optionalBool("reviewAll", from: arguments, default: false)
 
     if reviewAll {
       runner.markAllReviewed(in: run)
@@ -532,16 +566,11 @@ final class ParallelToolsHandler {
       ]))
     }
 
-    guard let executionIdString = arguments["executionId"] as? String,
-          let executionId = UUID(uuidString: executionIdString) else {
-      return (400, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.invalidParams,
-        message: "Missing executionId (or set reviewAll=true)"
-      ))
+    guard case .success(let executionId) = getUUID("executionId", from: arguments, id: id) else {
+      return invalidParamError(id: id, param: "executionId", reason: "Missing executionId (or set reviewAll=true)")
     }
 
-    guard let execution = run.executions.first(where: { $0.id == executionId }) else {
+    guard case .success(let execution) = getExecution(executionId: executionId, from: run, id: id) else {
       return (404, JSONRPCResponseBuilder.makeError(
         id: id,
         code: JSONRPCResponseBuilder.ErrorCode.notFound,
@@ -558,32 +587,19 @@ final class ParallelToolsHandler {
   }
 
   private func handleMerge(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    guard let runner = delegate?.parallelWorktreeRunner else {
-      return (500, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.internalError,
-        message: "Parallel worktree runner not initialized"
-      ))
+    guard case .success(let runner) = getRunner(id: id) else {
+      return runnerNotInitializedError(id: id)
     }
 
-    guard let runIdString = arguments["runId"] as? String,
-          let runId = UUID(uuidString: runIdString) else {
-      return (400, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.invalidParams,
-        message: "Missing or invalid runId"
-      ))
+    guard case .success(let runId) = getUUID("runId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "runId")
     }
 
-    guard let run = runner.getRun(id: runId) else {
-      return (404, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.notFound,
-        message: "Run not found"
-      ))
+    guard case .success(let run) = getRun(runId: runId, from: runner, id: id) else {
+      return runNotFoundError(id: id, runId: runId.uuidString, runner: runner)
     }
 
-    let mergeAll = arguments["mergeAll"] as? Bool ?? false
+    let mergeAll = optionalBool("mergeAll", from: arguments, default: false)
 
     do {
       if mergeAll {
@@ -595,16 +611,11 @@ final class ParallelToolsHandler {
         ]))
       }
 
-      guard let executionIdString = arguments["executionId"] as? String,
-            let executionId = UUID(uuidString: executionIdString) else {
-        return (400, JSONRPCResponseBuilder.makeError(
-          id: id,
-          code: JSONRPCResponseBuilder.ErrorCode.invalidParams,
-          message: "Missing executionId (or set mergeAll=true)"
-        ))
+      guard case .success(let executionId) = getUUID("executionId", from: arguments, id: id) else {
+        return invalidParamError(id: id, param: "executionId", reason: "Missing executionId (or set mergeAll=true)")
       }
 
-      guard let execution = run.executions.first(where: { $0.id == executionId }) else {
+      guard case .success(let execution) = getExecution(executionId: executionId, from: run, id: id) else {
         return (404, JSONRPCResponseBuilder.makeError(
           id: id,
           code: JSONRPCResponseBuilder.ErrorCode.notFound,
@@ -629,29 +640,16 @@ final class ParallelToolsHandler {
   }
 
   private func handlePause(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    guard let runner = delegate?.parallelWorktreeRunner else {
-      return (500, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.internalError,
-        message: "Parallel worktree runner not initialized"
-      ))
+    guard case .success(let runner) = getRunner(id: id) else {
+      return runnerNotInitializedError(id: id)
     }
 
-    guard let runIdString = arguments["runId"] as? String,
-          let runId = UUID(uuidString: runIdString) else {
-      return (400, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.invalidParams,
-        message: "Missing or invalid runId"
-      ))
+    guard case .success(let runId) = getUUID("runId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "runId")
     }
 
-    guard let run = runner.getRun(id: runId) else {
-      return (404, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.notFound,
-        message: "Run not found"
-      ))
+    guard case .success(let run) = getRun(runId: runId, from: runner, id: id) else {
+      return runNotFoundError(id: id, runId: runId.uuidString, runner: runner)
     }
 
     await runner.pauseRun(run)
@@ -660,29 +658,16 @@ final class ParallelToolsHandler {
   }
 
   private func handleResume(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    guard let runner = delegate?.parallelWorktreeRunner else {
-      return (500, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.internalError,
-        message: "Parallel worktree runner not initialized"
-      ))
+    guard case .success(let runner) = getRunner(id: id) else {
+      return runnerNotInitializedError(id: id)
     }
 
-    guard let runIdString = arguments["runId"] as? String,
-          let runId = UUID(uuidString: runIdString) else {
-      return (400, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.invalidParams,
-        message: "Missing or invalid runId"
-      ))
+    guard case .success(let runId) = getUUID("runId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "runId")
     }
 
-    guard let run = runner.getRun(id: runId) else {
-      return (404, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.notFound,
-        message: "Run not found"
-      ))
+    guard case .success(let run) = getRun(runId: runId, from: runner, id: id) else {
+      return runNotFoundError(id: id, runId: runId.uuidString, runner: runner)
     }
 
     await runner.resumeRun(run)
@@ -691,43 +676,23 @@ final class ParallelToolsHandler {
   }
 
   private func handleInstruct(id: Any?, arguments: [String: Any]) -> (Int, Data) {
-    guard let runner = delegate?.parallelWorktreeRunner else {
-      return (500, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.internalError,
-        message: "Parallel worktree runner not initialized"
-      ))
+    guard case .success(let runner) = getRunner(id: id) else {
+      return runnerNotInitializedError(id: id)
     }
 
-    guard let runIdString = arguments["runId"] as? String,
-          let runId = UUID(uuidString: runIdString) else {
-      return (400, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.invalidParams,
-        message: "Missing or invalid runId"
-      ))
+    guard case .success(let runId) = getUUID("runId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "runId")
     }
 
-    guard let guidance = arguments["guidance"] as? String else {
-      return (400, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.invalidParams,
-        message: "Missing guidance"
-      ))
+    guard case .success(let guidance) = getString("guidance", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "guidance")
     }
 
-    guard let run = runner.getRun(id: runId) else {
-      return (404, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.notFound,
-        message: "Run not found"
-      ))
+    guard case .success(let run) = getRun(runId: runId, from: runner, id: id) else {
+      return runNotFoundError(id: id, runId: runId.uuidString, runner: runner)
     }
 
-    var executionId: UUID?
-    if let executionIdString = arguments["executionId"] as? String {
-      executionId = UUID(uuidString: executionIdString)
-    }
+    let executionId = optionalUUID("executionId", from: arguments)
 
     runner.addGuidance(guidance, to: run, executionId: executionId)
     return (200, JSONRPCResponseBuilder.makeResult(id: id, result: [
@@ -738,29 +703,16 @@ final class ParallelToolsHandler {
   }
 
   private func handleCancel(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    guard let runner = delegate?.parallelWorktreeRunner else {
-      return (500, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.internalError,
-        message: "Parallel worktree runner not initialized"
-      ))
+    guard case .success(let runner) = getRunner(id: id) else {
+      return runnerNotInitializedError(id: id)
     }
 
-    guard let runIdString = arguments["runId"] as? String,
-          let runId = UUID(uuidString: runIdString) else {
-      return (400, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.invalidParams,
-        message: "Missing or invalid runId"
-      ))
+    guard case .success(let runId) = getUUID("runId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "runId")
     }
 
-    guard let run = runner.getRun(id: runId) else {
-      return (404, JSONRPCResponseBuilder.makeError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.notFound,
-        message: "Run not found"
-      ))
+    guard case .success(let run) = getRun(runId: runId, from: runner, id: id) else {
+      return runNotFoundError(id: id, runId: runId.uuidString, runner: runner)
     }
 
     await runner.cancelRun(run)
