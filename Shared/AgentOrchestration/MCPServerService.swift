@@ -2335,7 +2335,10 @@ public final class MCPServerService {
       "exists": status.exists,
       "schemaVersion": status.schemaVersion,
       "extensionLoaded": status.extensionLoaded,
-      "embeddingProvider": status.providerName
+      "embeddingProvider": status.providerName,
+      "coreMLModelPresent": status.coreMLModelPresent,
+      "coreMLVocabPresent": status.coreMLVocabPresent,
+      "coreMLTokenizerHelperPresent": status.coreMLTokenizerHelperPresent
     ]
     if let lastInitializedAt = status.lastInitializedAt {
       result["lastInitializedAt"] = formatter.string(from: lastInitializedAt)
