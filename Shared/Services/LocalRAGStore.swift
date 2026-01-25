@@ -21,6 +21,43 @@ struct LocalRAGIndexReport: Sendable {
   let embeddingDurationMs: Int
 }
 
+/// Progress updates during indexing operations
+enum LocalRAGIndexProgress: Sendable {
+  case scanning(fileCount: Int)
+  case analyzing(current: Int, total: Int, fileName: String)
+  case embedding(current: Int, total: Int)
+  case storing(current: Int, total: Int)
+  case complete(report: LocalRAGIndexReport)
+  
+  var description: String {
+    switch self {
+    case .scanning(let count):
+      return "Scanning files... (\(count) found)"
+    case .analyzing(let current, let total, let fileName):
+      return "Analyzing \(current)/\(total): \(fileName)"
+    case .embedding(let current, let total):
+      return "Generating embeddings... \(current)/\(total)"
+    case .storing(let current, let total):
+      return "Storing chunks... \(current)/\(total)"
+    case .complete(let report):
+      return "Complete: \(report.filesIndexed) files, \(report.chunksIndexed) chunks in \(report.durationMs)ms"
+    }
+  }
+  
+  var progress: Double {
+    switch self {
+    case .scanning: return 0.1
+    case .analyzing(let current, let total, _): return 0.1 + 0.3 * Double(current) / Double(max(1, total))
+    case .embedding(let current, let total): return 0.4 + 0.4 * Double(current) / Double(max(1, total))
+    case .storing(let current, let total): return 0.8 + 0.2 * Double(current) / Double(max(1, total))
+    case .complete: return 1.0
+    }
+  }
+}
+
+/// Callback type for progress updates
+typealias LocalRAGProgressCallback = @Sendable (LocalRAGIndexProgress) -> Void
+
 struct LocalRAGSearchResult: Sendable {
   let filePath: String
   let startLine: Int
@@ -197,12 +234,64 @@ struct LocalRAGFileScanner {
   private func isTextFile(url: URL) -> Bool {
     let ext = url.pathExtension.lowercased()
     if ext.isEmpty { return false }
-    return [
-      "swift", "md", "txt", "json", "yml", "yaml", "toml", "rb", "py",
-      "js", "ts", "tsx", "jsx", "html", "css", "scss", "sql", "sh",
-      "zsh", "bash", "cfg", "ini", "plist", "xml"
-    ].contains(ext)
+    return Self.supportedExtensions.contains(ext)
   }
+
+  /// Comprehensive list of code and config file extensions for RAG indexing.
+  /// Organized by category for maintainability.
+  private static let supportedExtensions: Set<String> = {
+    var extensions = Set<String>()
+
+    // Swift / Apple
+    extensions.formUnion(["swift"])
+
+    // JavaScript / TypeScript ecosystem
+    extensions.formUnion(["js", "ts", "tsx", "jsx", "mjs", "cjs", "mts", "cts"])
+
+    // Ember / Glimmer (CRITICAL for tio-front-end)
+    extensions.formUnion(["gts", "gjs", "hbs"])
+
+    // Web frameworks
+    extensions.formUnion(["vue", "svelte", "astro"])
+
+    // Ruby
+    extensions.formUnion(["rb", "rake", "gemspec", "erb"])
+
+    // Python
+    extensions.formUnion(["py", "pyi", "pyx"])
+
+    // Systems languages
+    extensions.formUnion(["rs", "go", "c", "h", "cpp", "hpp", "cc", "cxx"])
+
+    // JVM languages
+    extensions.formUnion(["java", "kt", "kts", "scala", "groovy", "gradle"])
+
+    // Markup & documentation
+    extensions.formUnion(["md", "mdx", "txt", "rst", "adoc"])
+
+    // Data formats
+    extensions.formUnion(["json", "jsonc", "json5", "yml", "yaml", "toml", "xml", "plist"])
+
+    // Styles
+    extensions.formUnion(["css", "scss", "sass", "less", "styl"])
+
+    // HTML / templates
+    extensions.formUnion(["html", "htm", "ejs", "njk", "liquid"])
+
+    // Shell / scripts
+    extensions.formUnion(["sh", "bash", "zsh", "fish", "ps1", "bat", "cmd"])
+
+    // Database / query
+    extensions.formUnion(["sql", "graphql", "gql", "prisma"])
+
+    // Infrastructure / DevOps
+    extensions.formUnion(["dockerfile", "tf", "hcl", "proto"])
+
+    // Config files
+    extensions.formUnion(["cfg", "ini", "conf", "env"])
+
+    return extensions
+  }()
 
   private func readFile(url: URL) -> LocalRAGScannedFile? {
     guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
@@ -232,20 +321,79 @@ struct LocalRAGFileScanner {
 
   private func languageFor(url: URL) -> String {
     switch url.pathExtension.lowercased() {
+    // Swift / Apple
     case "swift": return "Swift"
-    case "md": return "Markdown"
-    case "rb": return "Ruby"
-    case "py": return "Python"
-    case "js", "jsx": return "JavaScript"
-    case "ts", "tsx": return "TypeScript"
+
+    // JavaScript / TypeScript ecosystem
+    case "js", "jsx", "mjs", "cjs": return "JavaScript"
+    case "ts", "tsx", "mts", "cts": return "TypeScript"
+
+    // Ember / Glimmer
+    case "gts": return "Glimmer TypeScript"
+    case "gjs": return "Glimmer JavaScript"
+    case "hbs": return "Handlebars"
+
+    // Web frameworks
+    case "vue": return "Vue"
+    case "svelte": return "Svelte"
+    case "astro": return "Astro"
+
+    // Ruby
+    case "rb", "rake", "gemspec": return "Ruby"
+    case "erb": return "ERB"
+
+    // Python
+    case "py", "pyi", "pyx": return "Python"
+
+    // Systems languages
+    case "rs": return "Rust"
+    case "go": return "Go"
+    case "c", "h": return "C"
+    case "cpp", "hpp", "cc", "cxx": return "C++"
+
+    // JVM languages
+    case "java": return "Java"
+    case "kt", "kts": return "Kotlin"
+    case "scala": return "Scala"
+    case "groovy", "gradle": return "Groovy"
+
+    // Markup & documentation
+    case "md", "mdx": return "Markdown"
+    case "txt": return "Text"
+    case "rst": return "reStructuredText"
+    case "adoc": return "AsciiDoc"
+
+    // Data formats
+    case "json", "jsonc", "json5": return "JSON"
     case "yml", "yaml": return "YAML"
-    case "json": return "JSON"
     case "toml": return "TOML"
-    case "html": return "HTML"
-    case "css", "scss": return "CSS"
+    case "xml", "plist": return "XML"
+
+    // Styles
+    case "css", "scss", "sass", "less", "styl": return "CSS"
+
+    // HTML / templates
+    case "html", "htm": return "HTML"
+    case "ejs", "njk", "liquid": return "Template"
+
+    // Shell / scripts
+    case "sh", "bash", "zsh", "fish": return "Shell"
+    case "ps1": return "PowerShell"
+    case "bat", "cmd": return "Batch"
+
+    // Database / query
     case "sql": return "SQL"
-    case "sh", "zsh", "bash": return "Shell"
-    case "plist", "xml": return "XML"
+    case "graphql", "gql": return "GraphQL"
+    case "prisma": return "Prisma"
+
+    // Infrastructure / DevOps
+    case "dockerfile": return "Dockerfile"
+    case "tf", "hcl": return "Terraform"
+    case "proto": return "Protocol Buffers"
+
+    // Config files
+    case "cfg", "ini", "conf", "env": return "Config"
+
     default: return url.pathExtension.uppercased()
     }
   }
@@ -539,12 +687,20 @@ actor LocalRAGStore {
     return deletedFiles
   }
 
+  /// Index a repository without progress reporting
   func indexRepository(path: String) async throws -> LocalRAGIndexReport {
+    try await indexRepository(path: path, progress: nil)
+  }
+  
+  /// Index a repository with progress reporting callback
+  func indexRepository(path: String, progress: LocalRAGProgressCallback?) async throws -> LocalRAGIndexReport {
     let startTime = Date()
     _ = try initialize()
 
     let repoURL = URL(fileURLWithPath: path)
     let scannedFiles = scanner.scan(rootURL: repoURL)
+    progress?(.scanning(fileCount: scannedFiles.count))
+    
     let repoId = stableId(for: path)
     let repoName = repoURL.lastPathComponent
     let now = dateFormatter.string(from: Date())
@@ -575,7 +731,9 @@ actor LocalRAGStore {
     var allMissingEmbeddings: [MissingEmbedding] = []
     var seenTextHashes = Set<String>()
 
-    for file in scannedFiles {
+    for (fileIndex, file) in scannedFiles.enumerated() {
+      progress?(.analyzing(current: fileIndex + 1, total: scannedFiles.count, fileName: URL(fileURLWithPath: file.path).lastPathComponent))
+      
       let fileId = stableId(for: "\(repoId):\(file.path)")
       let fileHash = stableId(for: file.text)
 
@@ -614,6 +772,7 @@ actor LocalRAGStore {
     var embeddingCache: [String: [Float]] = [:]
 
     if !allMissingEmbeddings.isEmpty {
+      progress?(.embedding(current: 0, total: allMissingEmbeddings.count))
       let embedStart = Date()
       let textsToEmbed = allMissingEmbeddings.map { $0.text }
       let embeddings = try await embeddingProvider.embed(texts: textsToEmbed)
@@ -623,6 +782,9 @@ actor LocalRAGStore {
 
       // Cache all new embeddings
       for (index, missing) in allMissingEmbeddings.enumerated() {
+        if index % 50 == 0 {
+          progress?(.embedding(current: index, total: allMissingEmbeddings.count))
+        }
         guard index < embeddings.count else { break }
         let vector = embeddings[index]
         embeddingCache[missing.textHash] = vector
@@ -630,10 +792,12 @@ actor LocalRAGStore {
           try upsertCacheEmbedding(textHash: missing.textHash, vector: vector)
         }
       }
+      progress?(.embedding(current: allMissingEmbeddings.count, total: allMissingEmbeddings.count))
     }
 
     // Phase 3: Store files and chunks
-    for fileData in filesToProcess {
+    for (fileIndex, fileData) in filesToProcess.enumerated() {
+      progress?(.storing(current: fileIndex + 1, total: filesToProcess.count))
       try upsertFile(
         id: fileData.fileId,
         repoId: repoId,
@@ -676,7 +840,7 @@ actor LocalRAGStore {
     }
 
     let durationMs = Int(Date().timeIntervalSince(startTime) * 1000)
-    return LocalRAGIndexReport(
+    let report = LocalRAGIndexReport(
       repoId: repoId,
       repoPath: path,
       filesIndexed: filesToProcess.count,
@@ -687,6 +851,8 @@ actor LocalRAGStore {
       embeddingCount: embeddingCount,
       embeddingDurationMs: embeddingDurationMs
     )
+    progress?(.complete(report: report))
+    return report
   }
 
   func search(query: String, repoPath: String? = nil, limit: Int = 10) async throws -> [LocalRAGSearchResult] {
@@ -694,12 +860,24 @@ actor LocalRAGStore {
     guard !trimmedQuery.isEmpty else { return [] }
     try openIfNeeded()
 
+    // Split query into words for better matching across lines
+    // "error handling" becomes: text LIKE '%error%' AND text LIKE '%handling%'
+    let words = trimmedQuery
+      .components(separatedBy: .whitespacesAndNewlines)
+      .filter { !$0.isEmpty }
+
+    // Build WHERE clause
+    var whereClauses = [String]()
+    for _ in words {
+      whereClauses.append("chunks.text LIKE ?")
+    }
+
     let sqlBase = """
     SELECT files.path, chunks.start_line, chunks.end_line, chunks.text
     FROM chunks
     JOIN files ON files.id = chunks.file_id
     JOIN repos ON repos.id = files.repo_id
-    WHERE chunks.text LIKE ?
+    WHERE (\(whereClauses.joined(separator: " AND ")))
     """
 
     let sql: String
@@ -710,8 +888,11 @@ actor LocalRAGStore {
     }
 
     return try queryRows(sql: sql) { statement in
-      bindText(statement, 1, "%\(trimmedQuery)%")
-      var bindIndex: Int32 = 2
+      var bindIndex: Int32 = 1
+      for word in words {
+        bindText(statement, bindIndex, "%\(word)%")
+        bindIndex += 1
+      }
       if let repoPath {
         bindText(statement, bindIndex, repoPath)
         bindIndex += 1
