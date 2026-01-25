@@ -20,8 +20,8 @@ struct MCPDashboardView: View {
   @State private var overrideReviewLoopValue = false
   @State private var overridePauseOnReviewEnabled = false
   @State private var overridePauseOnReviewValue = false
-  @State private var overrideAllowModelSelection = false
-  @State private var overrideAllowScaling = false
+  @State private var overrideAllowModelSelection = true
+  @State private var overrideAllowScaling = true
   @State private var overrideMaxImplementersEnabled = false
   @State private var overrideMaxImplementers = 2
   @State private var overrideMaxPremiumEnabled = false
