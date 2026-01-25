@@ -232,71 +232,15 @@ struct LocalRAGDashboardView: View {
                 .scaleEffect(0.8)
             }
 
-            if results.isEmpty {
-              Text("Run a search to see results.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            } else {
-              VStack(alignment: .leading, spacing: LayoutSpacing.item) {
-                ForEach(results.indices, id: \.self) { index in
-                  let result = results[index]
-                  DisclosureGroup {
-                    VStack(alignment: .leading, spacing: 8) {
-                      Text(result.snippet)
-                        .font(.system(.caption, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                      HStack(spacing: 8) {
-                        Button("Copy Path") {
-                          copyToPasteboard(result.filePath)
-                          mcpServer.recordRagUserAction(.copyPath, result: result)
-                        }
-                          .buttonStyle(.bordered)
-                        Button("Copy Snippet") {
-                          copyToPasteboard(result.snippet)
-                          mcpServer.recordRagUserAction(.copySnippet, result: result)
-                        }
-                          .buttonStyle(.bordered)
-#if os(macOS)
-                        Button("Open File") {
-                          openResult(result)
-                          mcpServer.recordRagUserAction(.openFile, result: result)
-                        }
-                          .buttonStyle(.bordered)
-#endif
-                        Button("Helpful") {
-                          mcpServer.recordRagUserAction(.markHelpful, result: result)
-                        }
-                        .buttonStyle(.bordered)
-                        Button("Not useful") {
-                          mcpServer.recordRagUserAction(.markIrrelevant, result: result)
-                        }
-                        .buttonStyle(.bordered)
-                      }
-                    }
-                  } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                      Text(displayPath(for: result.filePath))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                      Text("Lines \(result.startLine)-\(result.endLine)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                      Text(result.snippet)
-                        .font(.caption)
-                        .lineLimit(2)
-                        .textSelection(.enabled)
-                    }
-                  }
-
-                  if index != results.indices.last {
-                    Divider()
-                  }
-                }
-              }
-            }
+            RAGSearchResultsView(
+              results: results,
+              query: query.wrappedValue,
+              repoPath: repoPath.wrappedValue,
+              mcpServer: mcpServer,
+              onCopyPath: { result in copyToPasteboard(result.filePath) },
+              onCopySnippet: { result in copyToPasteboard(result.snippet) },
+              onOpenFile: { result in openResult(result) }
+            )
 
             if let lastAt = mcpServer.lastRagSearchAt {
               Divider()
@@ -773,3 +717,238 @@ struct LocalRAGDashboardView: View {
   }
 #endif
 }
+
+// MARK: - RAG Search Results View
+
+/// Displays search results with file path, line range, and snippet preview.
+/// Provides quick actions: copy path, copy snippet, open file, and feedback.
+struct RAGSearchResultsView: View {
+  let results: [LocalRAGSearchResult]
+  let query: String
+  let repoPath: String
+  let mcpServer: MCPServerService
+  var onCopyPath: (LocalRAGSearchResult) -> Void = { _ in }
+  var onCopySnippet: (LocalRAGSearchResult) -> Void = { _ in }
+  var onOpenFile: (LocalRAGSearchResult) -> Void = { _ in }
+
+  @State private var expandedIndices: Set<Int> = []
+
+  var body: some View {
+    if results.isEmpty {
+      emptyStateView
+    } else {
+      resultsListView
+    }
+  }
+
+  @ViewBuilder
+  private var emptyStateView: some View {
+    VStack(spacing: 8) {
+      if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        Image(systemName: "magnifyingglass")
+          .font(.title2)
+          .foregroundStyle(.secondary)
+        Text("Enter a query to search")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+        Text("Use text mode for exact matches, vector mode for semantic search.")
+          .font(.caption2)
+          .foregroundStyle(.tertiary)
+      } else {
+        Image(systemName: "doc.questionmark")
+          .font(.title2)
+          .foregroundStyle(.secondary)
+        Text("No results found")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+        if !repoPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+          Text("Try clearing the repo filter or using a different search mode.")
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+        } else {
+          Text("Try a different query or search mode.")
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+        }
+      }
+    }
+    .frame(maxWidth: .infinity)
+    .padding(.vertical, 16)
+  }
+
+  private var resultsListView: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      ForEach(results.indices, id: \.self) { index in
+        RAGSearchResultRow(
+          result: results[index],
+          repoPath: repoPath,
+          isExpanded: expandedIndices.contains(index),
+          onToggle: { toggleExpanded(index) },
+          onCopyPath: { onCopyPath(results[index]); mcpServer.recordRagUserAction(.copyPath, result: results[index]) },
+          onCopySnippet: { onCopySnippet(results[index]); mcpServer.recordRagUserAction(.copySnippet, result: results[index]) },
+          onOpenFile: { onOpenFile(results[index]); mcpServer.recordRagUserAction(.openFile, result: results[index]) },
+          onMarkHelpful: { mcpServer.recordRagUserAction(.markHelpful, result: results[index]) },
+          onMarkIrrelevant: { mcpServer.recordRagUserAction(.markIrrelevant, result: results[index]) }
+        )
+
+        if index != results.indices.last {
+          Divider()
+            .padding(.vertical, 4)
+        }
+      }
+    }
+  }
+
+  private func toggleExpanded(_ index: Int) {
+    if expandedIndices.contains(index) {
+      expandedIndices.remove(index)
+    } else {
+      expandedIndices.insert(index)
+    }
+  }
+}
+
+// MARK: - RAG Search Result Row
+
+/// Individual search result row with expandable snippet preview.
+struct RAGSearchResultRow: View {
+  let result: LocalRAGSearchResult
+  let repoPath: String
+  let isExpanded: Bool
+  var onToggle: () -> Void = {}
+  var onCopyPath: () -> Void = {}
+  var onCopySnippet: () -> Void = {}
+  var onOpenFile: () -> Void = {}
+  var onMarkHelpful: () -> Void = {}
+  var onMarkIrrelevant: () -> Void = {}
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      // Header row - always visible
+      Button(action: onToggle) {
+        HStack(alignment: .top, spacing: 8) {
+          Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .frame(width: 12)
+
+          VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 4) {
+              Image(systemName: languageIcon(for: result.filePath))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+              Text(displayPath)
+                .font(.caption)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            }
+
+            HStack(spacing: 8) {
+              Label("L\(result.startLine)–\(result.endLine)", systemImage: "text.line.first.and.arrowtriangle.forward")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+              Text(snippetPreview)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+            }
+          }
+
+          Spacer()
+        }
+      }
+      .buttonStyle(.plain)
+
+      // Expanded content
+      if isExpanded {
+        VStack(alignment: .leading, spacing: 8) {
+          // Full snippet with syntax highlighting styling
+          ScrollView(.horizontal, showsIndicators: false) {
+            Text(result.snippet)
+              .font(.system(.caption, design: .monospaced))
+              .textSelection(.enabled)
+              .frame(maxWidth: .infinity, alignment: .leading)
+          }
+          .padding(8)
+          .background(Color.primary.opacity(0.03))
+          .clipShape(RoundedRectangle(cornerRadius: 6))
+
+          // Action buttons
+          HStack(spacing: 8) {
+            Button(action: onCopyPath) {
+              Label("Copy Path", systemImage: "doc.on.clipboard")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+
+            Button(action: onCopySnippet) {
+              Label("Copy Snippet", systemImage: "text.quote")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+
+#if os(macOS)
+            Button(action: onOpenFile) {
+              Label("Open", systemImage: "arrow.up.forward.app")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+#endif
+
+            Spacer()
+
+            Button(action: onMarkHelpful) {
+              Image(systemName: "hand.thumbsup")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .tint(.green)
+
+            Button(action: onMarkIrrelevant) {
+              Image(systemName: "hand.thumbsdown")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .tint(.red)
+          }
+        }
+        .padding(.leading, 20)
+      }
+    }
+    .padding(.vertical, 4)
+  }
+
+  private var displayPath: String {
+    let trimmedRepo = repoPath.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedRepo.isEmpty, result.filePath.hasPrefix(trimmedRepo) else {
+      // Show just filename if no repo context
+      return URL(fileURLWithPath: result.filePath).lastPathComponent
+    }
+    let relative = result.filePath.dropFirst(trimmedRepo.count)
+    let cleaned = relative.hasPrefix("/") ? relative.dropFirst() : relative
+    return String(cleaned)
+  }
+
+  private var snippetPreview: String {
+    let firstLine = result.snippet.split(separator: "\n", omittingEmptySubsequences: true).first ?? ""
+    let trimmed = firstLine.trimmingCharacters(in: .whitespaces)
+    return trimmed.isEmpty ? "(empty)" : String(trimmed.prefix(60))
+  }
+
+  private func languageIcon(for path: String) -> String {
+    let ext = URL(fileURLWithPath: path).pathExtension.lowercased()
+    switch ext {
+    case "swift": return "swift"
+    case "py": return "chevron.left.forwardslash.chevron.right"
+    case "js", "ts", "jsx", "tsx": return "j.square"
+    case "rs": return "r.square"
+    case "rb": return "r.square.fill"
+    case "md": return "doc.richtext"
+    case "json", "yaml", "yml": return "curlybraces"
+    default: return "doc.text"
+    }
+  }
+}
+
