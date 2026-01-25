@@ -35,6 +35,8 @@ public final class MCPServerService {
     static let localRagSearchMode = "localrag.searchMode"
     static let localRagSearchLimit = "localrag.searchLimit"
     static let localRagUseCoreML = "localrag.useCoreML"
+    static let ragUsageStats = "localrag.usageStats"
+    static let ragSessionEvents = "localrag.sessionEvents"
   }
 
   // Tool types from MCPCore
@@ -55,7 +57,7 @@ public final class MCPServerService {
     case markIrrelevant
   }
 
-  public struct RAGUsageStats {
+  public struct RAGUsageStats: Codable {
     public var searches: Int = 0
     public var textSearches: Int = 0
     public var vectorSearches: Int = 0
@@ -76,12 +78,29 @@ public final class MCPServerService {
     public var lastHelpfulAt: Date?
     public var lastIrrelevantAt: Date?
     public var lastSkillChangeAt: Date?
+    public var sessionStartedAt: Date?
 
-    public init() {}
+    public init() {
+      self.sessionStartedAt = Date()
+    }
+
+    /// False positive rate: irrelevant / (helpful + irrelevant)
+    public var falsePositiveRate: Double? {
+      let total = helpfulCount + irrelevantCount
+      guard total > 0 else { return nil }
+      return Double(irrelevantCount) / Double(total)
+    }
+
+    /// Helpfulness rate: helpful / (helpful + irrelevant)
+    public var helpfulnessRate: Double? {
+      let total = helpfulCount + irrelevantCount
+      guard total > 0 else { return nil }
+      return Double(helpfulCount) / Double(total)
+    }
   }
 
-  public struct RAGSessionEvent: Identifiable {
-    public enum Kind: String, CaseIterable {
+  public struct RAGSessionEvent: Identifiable, Codable {
+    public enum Kind: String, CaseIterable, Codable {
       case search
       case index
       case copy
@@ -309,6 +328,26 @@ public final class MCPServerService {
     UserDefaults.standard.set(data, forKey: "mcp.server.promptRules")
   }
 
+  private func saveRagUsageStats() {
+    guard let data = try? JSONEncoder().encode(ragUsage) else { return }
+    UserDefaults.standard.set(data, forKey: StorageKey.ragUsageStats)
+  }
+
+  private func saveRagSessionEvents() {
+    // Keep only last 50 events to avoid unbounded growth
+    let eventsToSave = Array(ragSessionEvents.suffix(50))
+    guard let data = try? JSONEncoder().encode(eventsToSave) else { return }
+    UserDefaults.standard.set(data, forKey: StorageKey.ragSessionEvents)
+  }
+
+  /// Clears persisted RAG session data (for starting fresh)
+  public func clearRagSessionData() {
+    ragUsage = RAGUsageStats()
+    ragSessionEvents = []
+    saveRagUsageStats()
+    saveRagSessionEvents()
+  }
+
   private(set) var ragStatus: LocalRAGStore.Status?
   private(set) var ragStats: LocalRAGStore.Stats?
   private(set) var ragUsage = RAGUsageStats()
@@ -427,6 +466,16 @@ public final class MCPServerService {
       self.promptRules = rules
     } else {
       self.promptRules = .default
+    }
+    // Load persisted RAG usage stats
+    if let data = UserDefaults.standard.data(forKey: StorageKey.ragUsageStats),
+       let stats = try? JSONDecoder().decode(RAGUsageStats.self, from: data) {
+      self.ragUsage = stats
+    }
+    // Load persisted RAG session events (limit to last 50)
+    if let data = UserDefaults.standard.data(forKey: StorageKey.ragSessionEvents),
+       let events = try? JSONDecoder().decode([RAGSessionEvent].self, from: data) {
+      self.ragSessionEvents = Array(events.suffix(50))
     }
     if self.port == 0 {
       self.port = 8765
@@ -634,6 +683,7 @@ public final class MCPServerService {
         title: "Skill added",
         detail: title.isEmpty ? repoPath : title
       )
+      saveRagUsageStats()
     }
     return created
   }
@@ -667,6 +717,7 @@ public final class MCPServerService {
         title: "Skill updated",
         detail: updated.title.isEmpty ? updated.repoPath : updated.title
       )
+      saveRagUsageStats()
     }
     return updated
   }
@@ -682,6 +733,7 @@ public final class MCPServerService {
         title: "Skill deleted",
         detail: nil
       )
+      saveRagUsageStats()
     }
     return deleted
   }
@@ -768,6 +820,7 @@ public final class MCPServerService {
     )
     lastRagError = nil
     lastRagRefreshAt = Date()
+    saveRagUsageStats()
     return report
   }
 
@@ -808,6 +861,7 @@ public final class MCPServerService {
     lastRagSearchAt = Date()
     lastRagSearchResults = results
     lastRagError = nil
+    saveRagUsageStats()
     return results
   }
 
@@ -847,6 +901,7 @@ public final class MCPServerService {
         detail: result?.filePath
       )
     }
+    saveRagUsageStats()
   }
 
   private func appendRagEvent(kind: RAGSessionEvent.Kind, title: String, detail: String?) {
@@ -855,6 +910,7 @@ public final class MCPServerService {
     if ragSessionEvents.count > 50 {
       ragSessionEvents.removeLast(ragSessionEvents.count - 50)
     }
+    saveRagSessionEvents()
   }
 
   private func buildRagContext(query: String, repoPath: String) async -> String? {
@@ -1321,6 +1377,12 @@ public final class MCPServerService {
 
     case "rag.skills.delete":
       return handleRagSkillsDelete(id: id, arguments: arguments)
+
+    case "rag.repos.list":
+      return await handleRagReposList(id: id)
+
+    case "rag.repos.delete":
+      return await handleRagReposDelete(id: id, arguments: arguments)
 
     case "templates.list":
       let templates = templateList()
@@ -2943,6 +3005,52 @@ public final class MCPServerService {
     return (200, makeRPCResult(id: id, result: ["deleted": skillId.uuidString]))
   }
 
+  private func handleRagReposList(id: Any?) async -> (Int, Data) {
+    do {
+      let repos = try await localRagStore.listRepos()
+      let formatter = ISO8601DateFormatter()
+      let repoList = repos.map { repo -> [String: Any] in
+        var dict: [String: Any] = [
+          "id": repo.id,
+          "name": repo.name,
+          "rootPath": repo.rootPath,
+          "fileCount": repo.fileCount,
+          "chunkCount": repo.chunkCount
+        ]
+        if let lastIndexedAt = repo.lastIndexedAt {
+          dict["lastIndexedAt"] = formatter.string(from: lastIndexedAt)
+        }
+        return dict
+      }
+      return (200, makeRPCResult(id: id, result: ["repos": repoList]))
+    } catch {
+      await telemetryProvider.warning("Local RAG list repos failed", metadata: ["error": error.localizedDescription])
+      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
+    }
+  }
+
+  private func handleRagReposDelete(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    let repoId = arguments["repoId"] as? String
+    let repoPath = arguments["repoPath"] as? String
+
+    guard repoId != nil || repoPath != nil else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Must provide repoId or repoPath"))
+    }
+
+    do {
+      let deletedFiles = try await localRagStore.deleteRepo(repoId: repoId, repoPath: repoPath)
+      return (200, makeRPCResult(id: id, result: [
+        "deleted": true,
+        "filesDeleted": deletedFiles,
+        "repoId": repoId as Any,
+        "repoPath": repoPath as Any
+      ]))
+    } catch {
+      await telemetryProvider.warning("Local RAG delete repo failed", metadata: ["error": error.localizedDescription])
+      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
+    }
+  }
+
   private func encodeJSON<T: Encodable>(_ value: T) -> [String: Any] {
     guard let data = try? JSONEncoder().encode(value),
           let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -4277,6 +4385,29 @@ public final class MCPServerService {
             "skillId": ["type": "string"]
           ],
           "required": ["skillId"]
+        ],
+        category: .rag,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "rag.repos.list",
+        description: "List all indexed repositories with stats",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .rag,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "rag.repos.delete",
+        description: "Delete an indexed repository and all its data (files, chunks, embeddings)",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoId": ["type": "string", "description": "The repo ID (hash) to delete"],
+            "repoPath": ["type": "string", "description": "The repo path to delete (alternative to repoId)"]
+          ]
         ],
         category: .rag,
         isMutating: true

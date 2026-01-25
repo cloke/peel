@@ -276,31 +276,95 @@ struct LocalRAGDashboardView: View {
 
         GroupBox {
           VStack(alignment: .leading, spacing: LayoutSpacing.item) {
-            SectionHeader("Session Insights")
+            HStack {
+              SectionHeader("Session Insights")
+              Spacer()
+              if mcpServer.ragUsage.searches > 0 {
+                Button("Clear") {
+                  mcpServer.clearRagSessionData()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+              }
+            }
 
             let usage = mcpServer.ragUsage
             let searchCount = max(1, usage.searches)
             let avgResults = Double(usage.totalResults) / Double(searchCount)
-            let feedbackCount = usage.helpfulCount + usage.irrelevantCount
-            let helpfulRate = feedbackCount > 0 ? Double(usage.helpfulCount) / Double(feedbackCount) : nil
 
-            Text("Searches: \(usage.searches) · Text: \(usage.textSearches) · Vector: \(usage.vectorSearches)")
-              .font(.caption)
+            // Session start info
+            if let sessionStart = usage.sessionStartedAt {
+              Text("Session started: \(sessionStart, style: .relative) ago")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            }
+
+            // Search stats
+            HStack(spacing: 16) {
+              VStack(alignment: .leading, spacing: 2) {
+                Text("\(usage.searches)")
+                  .font(.title2.bold())
+                Text("Searches")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              }
+              VStack(alignment: .leading, spacing: 2) {
+                Text("\(avgResults, specifier: "%.1f")")
+                  .font(.title2.bold())
+                Text("Avg Results")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              }
+              VStack(alignment: .leading, spacing: 2) {
+                Text("\(usage.emptySearches)")
+                  .font(.title2.bold())
+                  .foregroundStyle(usage.emptySearches > 0 ? .orange : .primary)
+                Text("Empty")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              }
+            }
+
+            Text("Text: \(usage.textSearches) · Vector: \(usage.vectorSearches)")
+              .font(.caption2)
               .foregroundStyle(.secondary)
-            Text("Avg results: \(avgResults, specifier: "%.1f") · Empty: \(usage.emptySearches)")
+
+            Divider()
+
+            // Feedback & helpfulness
+            if let helpfulRate = usage.helpfulnessRate, let fpRate = usage.falsePositiveRate {
+              HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 2) {
+                  HStack(spacing: 4) {
+                    Image(systemName: "hand.thumbsup.fill")
+                      .foregroundStyle(.green)
+                    Text("\(helpfulRate * 100, specifier: "%.0f")%")
+                      .font(.title3.bold())
+                  }
+                  Text("Helpful")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                  HStack(spacing: 4) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                      .foregroundStyle(fpRate > 0.3 ? .red : .orange)
+                    Text("\(fpRate * 100, specifier: "%.0f")%")
+                      .font(.title3.bold())
+                  }
+                  Text("False Positive")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                }
+              }
+            }
+
+            Text("Feedback: \(usage.helpfulCount) helpful · \(usage.irrelevantCount) not useful")
               .font(.caption2)
               .foregroundStyle(.secondary)
             Text("Interactions: \(usage.copyCount) copies · \(usage.openCount) opens")
               .font(.caption2)
               .foregroundStyle(.secondary)
-            Text("Feedback: \(usage.helpfulCount) helpful · \(usage.irrelevantCount) not useful")
-              .font(.caption2)
-              .foregroundStyle(.secondary)
-            if let helpfulRate {
-              Text("Helpfulness rate: \(helpfulRate * 100, specifier: "%.0f")%")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            }
 
             if let report = mcpServer.lastRagIndexReport {
               Divider()
