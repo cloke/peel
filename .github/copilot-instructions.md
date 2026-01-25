@@ -111,6 +111,36 @@ Reason: avoids system temp permission prompts and keeps artifacts scoped to the 
 - If a skill or better docs would have prevented confusion, **pause and ask** for clarification or propose adding a skill/doc before continuing.
 - Prefer **one decisive action** over trying multiple approaches. If the first attempt is uncertain, stop and ask rather than trying 10 things.
 
+### RAG Search Before Writing Code (IMPORTANT)
+
+**Before writing new utility code, helpers, or patterns**, search the RAG to avoid reinventing the wheel:
+
+```bash
+# Text search for exact names (best for finding existing utilities)
+echo '{"query": "JSONRPCResponseBuilder", "repoPath": "/path/to/repo", "mode": "text", "limit": 10}' > tmp/peel-mcp-args.json
+Tools/PeelCLI/.build/debug/peel-mcp tools-call --tool-name rag.search --arguments-json tmp/peel-mcp-args.json
+
+# Vector search for concepts (best for "how does X work")
+echo '{"query": "error handling response pattern", "repoPath": "/path/to/repo", "mode": "vector", "limit": 5}' > tmp/peel-mcp-args.json
+Tools/PeelCLI/.build/debug/peel-mcp tools-call --tool-name rag.search --arguments-json tmp/peel-mcp-args.json
+```
+
+**When to search RAG first:**
+| Task | Query Example |
+|------|---------------|
+| Adding MCP tool response code | `"makeResult makeError"` (text) |
+| Creating error handling | `"error handling pattern"` (vector) |
+| Adding validation logic | `"guard let arguments validation"` (text) |
+| Building UI patterns | `"SwiftUI view pattern"` (vector) |
+| Working with protocols | `"protocol delegate handler"` (text) |
+
+**Key reusable code locations found via RAG:**
+- `MCPCore/JSONRPC.swift` — `JSONRPCResponseBuilder.makeResult/makeError`, `ErrorCode` constants
+- `MCPToolHandler.swift` — Protocol + delegate pattern for tool handlers
+- `LocalizedError+Helper.swift` — Error protocol helpers
+
+**Rule: If you're about to write a helper function, search first.**
+
 ---
 
 ## Model Selection for Cost Optimization

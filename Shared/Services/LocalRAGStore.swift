@@ -44,11 +44,12 @@ struct LocalRAGChunk: Sendable {
 }
 
 struct LocalRAGChunker {
-  var maxLines: Int = 200
-  var overlapLines: Int = 20
+  var maxLines: Int = 100  // Reduced from 200 for better granularity
+  var minLines: Int = 20   // Don't create tiny chunks
+  var overlapLines: Int = 10
 
   func chunk(text: String) -> [LocalRAGChunk] {
-    let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+    let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map { String($0) }
     guard !lines.isEmpty else { return [] }
 
     var chunks: [LocalRAGChunk] = []
@@ -56,7 +57,14 @@ struct LocalRAGChunker {
 
     var start = 0
     while start < lines.count {
-      let end = min(lines.count, start + maxLines)
+      // Find a good end point - prefer semantic boundaries
+      var end = min(lines.count, start + maxLines)
+
+      // If not at file end, try to find a semantic boundary
+      if end < lines.count {
+        end = findSemanticBoundary(lines: lines, from: start, preferredEnd: end)
+      }
+
       let slice = lines[start..<end]
       let chunkText = slice.joined(separator: "\n")
       let tokenCount = approximateTokenCount(for: chunkText)
@@ -73,6 +81,64 @@ struct LocalRAGChunker {
     }
 
     return chunks
+  }
+
+  /// Find a semantic boundary (MARK comment, type definition, extension, etc.)
+  /// Search backwards from preferredEnd to find a good split point
+  private func findSemanticBoundary(lines: [String], from start: Int, preferredEnd: Int) -> Int {
+    // Patterns that indicate semantic boundaries (start of new sections)
+    let boundaryPatterns = [
+      "// MARK: -",           // Swift section markers
+      "// MARK:",
+      "// FIXME:",
+      "// TODO:",
+      "// ===",               // Section dividers
+      "// ---",
+      "struct ",              // Type definitions
+      "class ",
+      "enum ",
+      "protocol ",
+      "extension ",
+      "actor ",
+      "func ",                // Top-level functions
+      "public func ",
+      "private func ",
+      "internal func ",
+      "@MainActor",           // Attributes that start declarations
+      "@Observable",
+      "## ",                  // Markdown headers
+      "### ",
+      "#### ",
+    ]
+
+    // Search backwards from preferredEnd, but not past minLines from start
+    let searchStart = max(start + minLines, preferredEnd - 30)
+
+    for i in stride(from: preferredEnd - 1, through: searchStart, by: -1) {
+      let trimmed = lines[i].trimmingCharacters(in: .whitespaces)
+
+      // Check if this line starts a new semantic block
+      for pattern in boundaryPatterns {
+        if trimmed.hasPrefix(pattern) {
+          // Found a boundary - return the line BEFORE this (end of previous section)
+          return i
+        }
+      }
+
+      // Also break on blank lines followed by comments or declarations
+      if trimmed.isEmpty && i + 1 < lines.count {
+        let nextTrimmed = lines[i + 1].trimmingCharacters(in: .whitespaces)
+        if nextTrimmed.hasPrefix("//") || nextTrimmed.hasPrefix("///") ||
+           nextTrimmed.hasPrefix("struct") || nextTrimmed.hasPrefix("class") ||
+           nextTrimmed.hasPrefix("func") || nextTrimmed.hasPrefix("enum") ||
+           nextTrimmed.hasPrefix("extension") || nextTrimmed.hasPrefix("protocol") {
+          return i + 1
+        }
+      }
+    }
+
+    // No good boundary found, use the preferred end
+    return preferredEnd
   }
 
   private func approximateTokenCount(for text: String) -> Int {
