@@ -42,6 +42,20 @@ Verifies implementation status against roadmap claims.
 - Line ranges are valid
 - Features marked "complete" have corresponding code
 
+### pattern-audit
+
+Scans Swift files for deprecated patterns (from the RAG pattern index).
+
+```bash
+.build/debug/pattern-audit --source-root ../..
+
+# JSON output
+.build/debug/pattern-audit --source-root ../.. --output json
+
+# Verbose with file locations
+.build/debug/pattern-audit --source-root ../.. --verbose
+```
+
 ### file-rewrite
 
 Reliable file writing that avoids shell escaping issues.
@@ -117,6 +131,7 @@ swift build -c release
 # Install to /usr/local/bin (optional)
 cp .build/release/gh-issue-sync /usr/local/bin/
 cp .build/release/roadmap-audit /usr/local/bin/
+cp .build/release/pattern-audit /usr/local/bin/
 cp .build/release/file-rewrite /usr/local/bin/
 cp .build/release/pii-scrubber /usr/local/bin/
 ```
