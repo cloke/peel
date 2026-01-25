@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import MCPCore
 import TaskRunner
 
 /// Service for detecting and interacting with AI CLI tools

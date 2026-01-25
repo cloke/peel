@@ -36,7 +36,7 @@ public enum MCPCopilotModel: String, Codable, CaseIterable, Identifiable, Sendab
 
   /// Cost label for UI formatting
   public var costLabel: String {
-    premiumCost == 0 ? "Free" : premiumCost.premiumMultiplierString
+    premiumCost == 0 ? "Free" : premiumCost.premiumMultiplierString()
   }
 
   /// Display name with premium cost
@@ -138,27 +138,40 @@ public enum MCPCopilotModel: String, Codable, CaseIterable, Identifiable, Sendab
   }
 }
 
+// MARK: - Premium Cost Formatting
+
+private enum PremiumCostFormatting {
+  static let formatter: NumberFormatter = {
+    let formatter = NumberFormatter()
+    formatter.numberStyle = .decimal
+    formatter.minimumFractionDigits = 2
+    formatter.maximumFractionDigits = 2
+    formatter.roundingMode = .halfUp
+    return formatter
+  }()
+}
+
 // MARK: - Double Extension for Premium Cost
 
 extension Double {
-  /// Format as premium multiplier string (e.g., "1x", "0.33x", "3x")
-  public var premiumMultiplierString: String {
-    if self == 0 {
-      return "Free"
-    } else if self == 1 {
-      return "1x"
-    } else if self < 1 {
-      return String(format: "%.2gx", self)
-    } else {
-      return String(format: "%.0fx", self)
-    }
+  /// Normalized premium cost (treats tiny values as 0)
+  public var normalizedPremiumCost: Double {
+    abs(self) < 0.005 ? 0 : self
+  }
+
+  /// Format as premium multiplier string (e.g., "1.00×", "0.33×", "3.00×")
+  public func premiumMultiplierString() -> String {
+    let value = normalizedPremiumCost
+    let numberString = PremiumCostFormatting.formatter.string(from: NSNumber(value: value)) ?? "\(value)"
+    return "\(numberString)×"
   }
 
   /// Format as premium cost display
   public var premiumCostDisplay: String {
-    if self == 0 {
+    let value = normalizedPremiumCost
+    if value == 0 {
       return "Free"
     }
-    return String(format: "%.2f premium", self)
+    return "\(premiumMultiplierString()) Premium"
   }
 }

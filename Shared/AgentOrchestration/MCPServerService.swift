@@ -9,6 +9,7 @@ import AppKit
 import Foundation
 import Git
 import IOKit.pwr_mgt
+import MCPCore
 import Network
 import Observation
 import OSLog
@@ -35,33 +36,10 @@ public final class MCPServerService {
     static let localRagUseCoreML = "localrag.useCoreML"
   }
 
-  public enum ToolCategory: String, CaseIterable {
-    case chains
-    case parallelWorktrees
-    case logs
-    case server
-    case app
-    case diagnostics
-    case ui
-    case state
-    case rag
-    case vm
-
-    var displayName: String {
-      switch self {
-      case .chains: return "Chains"
-      case .parallelWorktrees: return "Parallel Worktrees"
-      case .logs: return "Logs"
-      case .server: return "Server"
-      case .app: return "App"
-      case .diagnostics: return "Diagnostics"
-      case .ui: return "UI Automation"
-      case .state: return "State"
-      case .rag: return "Local RAG"
-      case .vm: return "VM Isolation"
-      }
-    }
-  }
+  // Tool types from MCPCore
+  public typealias ToolCategory = MCPToolCategory
+  public typealias ToolGroup = MCPToolGroup
+  public typealias ToolDefinition = MCPToolDefinition
 
   public enum RAGSearchMode: String, CaseIterable {
     case text
@@ -126,49 +104,6 @@ public final class MCPServerService {
       self.title = title
       self.detail = detail
       self.kind = kind
-    }
-  }
-
-  public enum ToolGroup: String, CaseIterable {
-    case screenshots
-    case uiNavigation
-    case mutating
-    case backgroundSafe
-
-    var displayName: String {
-      switch self {
-      case .screenshots: return "Screenshots"
-      case .uiNavigation: return "UI Navigation"
-      case .mutating: return "Mutating"
-      case .backgroundSafe: return "Background-safe"
-      }
-    }
-  }
-
-  public struct ToolDefinition: Identifiable {
-    public let name: String
-    public let description: String
-    public let inputSchema: [String: Any]
-    public let category: ToolCategory
-    public let isMutating: Bool
-    public let requiresForeground: Bool
-
-    public var id: String { name }
-
-    public init(
-      name: String,
-      description: String,
-      inputSchema: [String: Any],
-      category: ToolCategory,
-      isMutating: Bool,
-      requiresForeground: Bool = false
-    ) {
-      self.name = name
-      self.description = description
-      self.inputSchema = inputSchema
-      self.category = category
-      self.isMutating = isMutating
-      self.requiresForeground = requiresForeground
     }
   }
 
