@@ -629,6 +629,11 @@ public final class MCPServerService {
     return deleted
   }
 
+  func clearMCPRunHistory() {
+    dataService?.clearMCPRunHistory()
+    sessionTracker.resetSession()
+  }
+
   private func buildRepoGuidance(repoPath: String) async -> String? {
     var sections: [String] = []
     if let dataService,
