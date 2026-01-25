@@ -278,7 +278,7 @@ actor LocalRAGStore {
         .appendingPathComponent("Library/Containers")
         .appendingPathComponent(bundleId)
         .appendingPathComponent("Data/Library/Application Support")
-      directories.append(containerBase)
+      directories.append(containerBase.appendingPathComponent("Peel/RAG", isDirectory: true))
     }
 
     var seen = Set<String>()
