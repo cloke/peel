@@ -77,9 +77,12 @@ struct LocalRAGDashboardView: View {
                     .font(.caption2)
                     .foregroundStyle(.orange)
                 }
+              }
+              // Only show restart message if setting doesn't match current provider
+              if needsCoreMLRestart(wantsCoreML: useCoreML.wrappedValue, providerName: status.providerName) {
                 Text("Restart required to apply Core ML setting")
                   .font(.caption2)
-                  .foregroundStyle(.secondary)
+                  .foregroundStyle(.orange)
               }
               Text("Extension loaded: \(status.extensionLoaded ? "Yes" : "No")")
                 .font(.caption)
@@ -754,6 +757,13 @@ struct LocalRAGDashboardView: View {
 
   private func coreMLWarnings(_ status: LocalRAGStore.Status) -> [String] {
     status.assetWarnings()
+  }
+
+  /// Returns true if a restart is needed to apply the Core ML setting
+  private func needsCoreMLRestart(wantsCoreML: Bool, providerName: String) -> Bool {
+    let isCoreMLProvider = providerName.contains("CoreML")
+    // Restart needed if setting doesn't match current provider
+    return wantsCoreML != isCoreMLProvider
   }
 
   private func displayPath(for path: String) -> String {
