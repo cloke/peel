@@ -344,6 +344,135 @@ actor LocalRAGStore {
     )
   }
 
+  struct RepoInfo {
+    let id: String
+    let name: String
+    let rootPath: String
+    let lastIndexedAt: Date?
+    let fileCount: Int
+    let chunkCount: Int
+  }
+
+  func listRepos() throws -> [RepoInfo] {
+    try openIfNeeded()
+    try ensureSchema()
+
+    let sql = """
+      SELECT r.id, r.name, r.root_path, r.last_indexed_at,
+             (SELECT COUNT(*) FROM files WHERE repo_id = r.id) as file_count,
+             (SELECT COUNT(*) FROM chunks c JOIN files f ON c.file_id = f.id WHERE f.repo_id = r.id) as chunk_count
+      FROM repos r
+      ORDER BY r.name
+      """
+
+    guard let db else {
+      throw LocalRAGError.sqlite("Database not initialized")
+    }
+
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let statement else {
+      let message = String(cString: sqlite3_errmsg(db))
+      throw LocalRAGError.sqlite(message)
+    }
+    defer { sqlite3_finalize(statement) }
+
+    var repos: [RepoInfo] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+      let id = String(cString: sqlite3_column_text(statement, 0))
+      let name = String(cString: sqlite3_column_text(statement, 1))
+      let rootPath = String(cString: sqlite3_column_text(statement, 2))
+      let lastIndexedAtStr = sqlite3_column_text(statement, 3).map { String(cString: $0) }
+      let lastIndexedAt = lastIndexedAtStr.flatMap { dateFormatter.date(from: $0) }
+      let fileCount = Int(sqlite3_column_int(statement, 4))
+      let chunkCount = Int(sqlite3_column_int(statement, 5))
+
+      repos.append(RepoInfo(
+        id: id,
+        name: name,
+        rootPath: rootPath,
+        lastIndexedAt: lastIndexedAt,
+        fileCount: fileCount,
+        chunkCount: chunkCount
+      ))
+    }
+    return repos
+  }
+
+  func deleteRepo(repoId: String? = nil, repoPath: String? = nil) throws -> Int {
+    try openIfNeeded()
+    try ensureSchema()
+
+    guard let db else {
+      throw LocalRAGError.sqlite("Database not initialized")
+    }
+
+    // Determine target repo ID
+    let targetId: String
+    if let repoId {
+      targetId = repoId
+    } else if let repoPath {
+      targetId = stableId(for: repoPath)
+    } else {
+      throw LocalRAGError.sqlite("Must provide repoId or repoPath")
+    }
+
+    // Count files before deletion
+    let countSql = "SELECT COUNT(*) FROM files WHERE repo_id = ?"
+    var countStmt: OpaquePointer?
+    sqlite3_prepare_v2(db, countSql, -1, &countStmt, nil)
+    defer { sqlite3_finalize(countStmt) }
+    sqlite3_bind_text(countStmt, 1, targetId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+    var deletedFiles = 0
+    if sqlite3_step(countStmt) == SQLITE_ROW {
+      deletedFiles = Int(sqlite3_column_int(countStmt, 0))
+    }
+
+    // Delete orphaned embeddings (chunks that belong to files of this repo)
+    let deleteEmbeddingsSql = """
+      DELETE FROM embeddings WHERE chunk_id IN (
+        SELECT c.id FROM chunks c
+        JOIN files f ON c.file_id = f.id
+        WHERE f.repo_id = ?
+      )
+      """
+    var embStmt: OpaquePointer?
+    sqlite3_prepare_v2(db, deleteEmbeddingsSql, -1, &embStmt, nil)
+    defer { sqlite3_finalize(embStmt) }
+    sqlite3_bind_text(embStmt, 1, targetId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+    sqlite3_step(embStmt)
+
+    // Delete chunks
+    let deleteChunksSql = """
+      DELETE FROM chunks WHERE file_id IN (
+        SELECT id FROM files WHERE repo_id = ?
+      )
+      """
+    var chunkStmt: OpaquePointer?
+    sqlite3_prepare_v2(db, deleteChunksSql, -1, &chunkStmt, nil)
+    defer { sqlite3_finalize(chunkStmt) }
+    sqlite3_bind_text(chunkStmt, 1, targetId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+    sqlite3_step(chunkStmt)
+
+    // Delete files
+    let deleteFilesSql = "DELETE FROM files WHERE repo_id = ?"
+    var fileStmt: OpaquePointer?
+    sqlite3_prepare_v2(db, deleteFilesSql, -1, &fileStmt, nil)
+    defer { sqlite3_finalize(fileStmt) }
+    sqlite3_bind_text(fileStmt, 1, targetId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+    sqlite3_step(fileStmt)
+
+    // Delete repo
+    let deleteRepoSql = "DELETE FROM repos WHERE id = ?"
+    var repoStmt: OpaquePointer?
+    sqlite3_prepare_v2(db, deleteRepoSql, -1, &repoStmt, nil)
+    defer { sqlite3_finalize(repoStmt) }
+    sqlite3_bind_text(repoStmt, 1, targetId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+    sqlite3_step(repoStmt)
+
+    return deletedFiles
+  }
+
   func indexRepository(path: String) async throws -> LocalRAGIndexReport {
     let startTime = Date()
     _ = try initialize()
@@ -362,83 +491,129 @@ actor LocalRAGStore {
     var embeddingDurationMs = 0
     var skippedUnchanged = 0
 
+    // Phase 1: Collect all files to process and identify missing embeddings
+    struct FileToProcess {
+      let file: LocalRAGScannedFile
+      let fileId: String
+      let fileHash: String
+      let chunks: [LocalRAGChunk]
+      let chunkHashes: [String]
+    }
+
+    struct MissingEmbedding {
+      let textHash: String
+      let text: String
+    }
+
+    var filesToProcess: [FileToProcess] = []
+    var allMissingEmbeddings: [MissingEmbedding] = []
+    var seenTextHashes = Set<String>()
+
     for file in scannedFiles {
       let fileId = stableId(for: "\(repoId):\(file.path)")
       let fileHash = stableId(for: file.text)
 
       // Incremental indexing: skip unchanged files
-      if let existingHash = try fetchFileHash(fileId: fileId), existingHash == fileHash {
+      let existingHash = try fetchFileHashByPath(repoId: repoId, path: file.path)
+      if let existingHash, existingHash == fileHash {
         skippedUnchanged += 1
         bytesScanned += file.byteCount
         continue
       }
 
+      let chunks = chunker.chunk(text: file.text)
+      let chunkHashes = chunks.map { stableId(for: $0.text) }
+
+      // Find missing embeddings for this file
+      for (index, textHash) in chunkHashes.enumerated() {
+        if !seenTextHashes.contains(textHash) {
+          let cached = try fetchCachedEmbedding(textHash: textHash)
+          if cached == nil {
+            allMissingEmbeddings.append(MissingEmbedding(textHash: textHash, text: chunks[index].text))
+          }
+          seenTextHashes.insert(textHash)
+        }
+      }
+
+      filesToProcess.append(FileToProcess(
+        file: file,
+        fileId: fileId,
+        fileHash: fileHash,
+        chunks: chunks,
+        chunkHashes: chunkHashes
+      ))
+    }
+
+    // Phase 2: Batch embed all missing texts at once
+    var embeddingCache: [String: [Float]] = [:]
+
+    if !allMissingEmbeddings.isEmpty {
+      let embedStart = Date()
+      let textsToEmbed = allMissingEmbeddings.map { $0.text }
+      let embeddings = try await embeddingProvider.embed(texts: textsToEmbed)
+      let embedDuration = Int(Date().timeIntervalSince(embedStart) * 1000)
+      embeddingDurationMs = embedDuration
+      embeddingCount = embeddings.count
+
+      // Cache all new embeddings
+      for (index, missing) in allMissingEmbeddings.enumerated() {
+        guard index < embeddings.count else { break }
+        let vector = embeddings[index]
+        embeddingCache[missing.textHash] = vector
+        if !vector.isEmpty {
+          try upsertCacheEmbedding(textHash: missing.textHash, vector: vector)
+        }
+      }
+    }
+
+    // Phase 3: Store files and chunks
+    for fileData in filesToProcess {
       try upsertFile(
-        id: fileId,
+        id: fileData.fileId,
         repoId: repoId,
-        path: file.path,
-        hash: fileHash,
-        language: file.language,
+        path: fileData.file.path,
+        hash: fileData.fileHash,
+        language: fileData.file.language,
         updatedAt: now
       )
-      try deleteChunks(for: fileId)
+      try deleteChunks(for: fileData.fileId)
 
-      let chunks = chunker.chunk(text: file.text)
-      let chunkTexts = chunks.map { $0.text }
-      let chunkHashes = chunkTexts.map { stableId(for: $0) }
-
-      var embeddings = Array(repeating: [Float](), count: chunks.count)
-      var missingIndexes: [Int] = []
-
-      for (index, textHash) in chunkHashes.enumerated() {
-        if let cached = try fetchCachedEmbedding(textHash: textHash) {
-          embeddings[index] = cached
-        } else {
-          missingIndexes.append(index)
-        }
-      }
-
-      if !missingIndexes.isEmpty {
-        let missingTexts = missingIndexes.map { chunkTexts[$0] }
-        let embedStart = Date()
-        let missingEmbeddings = try await embeddingProvider.embed(texts: missingTexts)
-        let embedDuration = Int(Date().timeIntervalSince(embedStart) * 1000)
-        embeddingDurationMs += embedDuration
-        embeddingCount += missingEmbeddings.count
-        for (offset, index) in missingIndexes.enumerated() {
-          guard offset < missingEmbeddings.count else { break }
-          let vector = missingEmbeddings[offset]
-          embeddings[index] = vector
-          if !vector.isEmpty {
-            try upsertCacheEmbedding(textHash: chunkHashes[index], vector: vector)
-          }
-        }
-      }
-
-      for (index, chunk) in chunks.enumerated() {
-        let chunkId = stableId(for: "\(fileId):\(chunk.startLine):\(chunk.endLine):\(chunk.text)")
+      for (index, chunk) in fileData.chunks.enumerated() {
+        let chunkId = stableId(for: "\(fileData.fileId):\(chunk.startLine):\(chunk.endLine):\(chunk.text)")
         try upsertChunk(
           id: chunkId,
-          fileId: fileId,
+          fileId: fileData.fileId,
           startLine: chunk.startLine,
           endLine: chunk.endLine,
           text: chunk.text,
           tokenCount: chunk.tokenCount
         )
-        if index < embeddings.count {
-          try upsertEmbedding(chunkId: chunkId, vector: embeddings[index])
+
+        // Get embedding from cache or newly computed
+        let textHash = fileData.chunkHashes[index]
+        let embedding: [Float]
+        if let cached = embeddingCache[textHash] {
+          embedding = cached
+        } else if let dbCached = try fetchCachedEmbedding(textHash: textHash) {
+          embedding = dbCached
+        } else {
+          embedding = []
+        }
+
+        if !embedding.isEmpty {
+          try upsertEmbedding(chunkId: chunkId, vector: embedding)
         }
       }
 
-      chunkCount += chunks.count
-      bytesScanned += file.byteCount
+      chunkCount += fileData.chunks.count
+      bytesScanned += fileData.file.byteCount
     }
 
     let durationMs = Int(Date().timeIntervalSince(startTime) * 1000)
     return LocalRAGIndexReport(
       repoId: repoId,
       repoPath: path,
-      filesIndexed: scannedFiles.count - skippedUnchanged,
+      filesIndexed: filesToProcess.count,
       filesSkipped: skippedUnchanged,
       chunksIndexed: chunkCount,
       bytesScanned: bytesScanned,
@@ -729,9 +904,15 @@ actor LocalRAGStore {
   }
 
   private func upsertRepo(id: String, name: String, rootPath: String, lastIndexedAt: String) throws {
+    // Use INSERT ... ON CONFLICT ... DO UPDATE to avoid triggering CASCADE DELETE
+    // INSERT OR REPLACE would delete the repo row and cascade delete all files!
     let sql = """
-    INSERT OR REPLACE INTO repos (id, name, root_path, last_indexed_at)
+    INSERT INTO repos (id, name, root_path, last_indexed_at)
     VALUES (?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name,
+      root_path = excluded.root_path,
+      last_indexed_at = excluded.last_indexed_at
     """
     try execute(sql: sql) { statement in
       bindText(statement, 1, id)
@@ -755,7 +936,31 @@ actor LocalRAGStore {
     defer { sqlite3_finalize(statement) }
 
     bindText(statement, 1, fileId)
-    if sqlite3_step(statement) == SQLITE_ROW,
+    let stepResult = sqlite3_step(statement)
+    if stepResult == SQLITE_ROW,
+       let text = sqlite3_column_text(statement, 0) {
+      return String(cString: text)
+    }
+    return nil
+  }
+
+  private func fetchFileHashByPath(repoId: String, path: String) throws -> String? {
+    let sql = "SELECT hash FROM files WHERE repo_id = ? AND path = ?"
+    guard let db else {
+      throw LocalRAGError.sqlite("Database not initialized")
+    }
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let statement else {
+      let message = String(cString: sqlite3_errmsg(db))
+      throw LocalRAGError.sqlite(message)
+    }
+    defer { sqlite3_finalize(statement) }
+
+    bindText(statement, 1, repoId)
+    bindText(statement, 2, path)
+    let stepResult = sqlite3_step(statement)
+    if stepResult == SQLITE_ROW,
        let text = sqlite3_column_text(statement, 0) {
       return String(cString: text)
     }
@@ -770,9 +975,16 @@ actor LocalRAGStore {
     language: String,
     updatedAt: String
   ) throws {
+    // Use INSERT ... ON CONFLICT to avoid cascade delete of chunks
     let sql = """
-    INSERT OR REPLACE INTO files (id, repo_id, path, hash, language, updated_at)
+    INSERT INTO files (id, repo_id, path, hash, language, updated_at)
     VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      repo_id = excluded.repo_id,
+      path = excluded.path,
+      hash = excluded.hash,
+      language = excluded.language,
+      updated_at = excluded.updated_at
     """
     try execute(sql: sql) { statement in
       bindText(statement, 1, id)
@@ -837,7 +1049,9 @@ actor LocalRAGStore {
   }
 
   private func bindText(_ statement: OpaquePointer, _ index: Int32, _ value: String) {
-    sqlite3_bind_text(statement, index, (value as NSString).utf8String, -1, sqliteTransient)
+    // Use SQLITE_TRANSIENT to have SQLite make a copy of the string data
+    let cString = (value as NSString).utf8String
+    sqlite3_bind_text(statement, index, cString, -1, sqliteTransient)
   }
 
   private func upsertEmbedding(chunkId: String, vector: [Float]) throws {
