@@ -68,7 +68,7 @@ public final class AgentWorkspaceService {
     )
 
     let timestamp = Int(Date().timeIntervalSince1970)
-    let sanitizedChainName = chainName.replacingOccurrences(of: " ", with: "-").lowercased()
+    let sanitizedChainName = BranchNameSanitizer.sanitize(chainName)
     let worktreeName = "chain-\(sanitizedChainName)-\(timestamp)"
     let worktreePath = chainWorktreeBaseDir.appendingPathComponent(worktreeName).path
     let branch = branchName ?? "chain/\(sanitizedChainName)-\(timestamp)"
@@ -106,7 +106,7 @@ public final class AgentWorkspaceService {
   ) async throws -> [String] {
     var paths: [String] = []
     let timestamp = Int(Date().timeIntervalSince1970)
-    let sanitizedChainName = chainName.replacingOccurrences(of: " ", with: "-").lowercased()
+    let sanitizedChainName = BranchNameSanitizer.sanitize(chainName)
     let baseBranchName = baseBranch ?? "chain/\(sanitizedChainName)-\(timestamp)"
 
     for index in 0..<count {

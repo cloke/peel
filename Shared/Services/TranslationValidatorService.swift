@@ -440,8 +440,8 @@ final class TranslationValidatorService {
     localeSample: String,
     redactSamples: Bool
   ) async throws -> AppleAISuspectResponse {
-    let sanitizedBase = redactSamples ? sanitizeForPrompt(baseSample) : baseSample
-    let sanitizedLocale = redactSamples ? sanitizeForPrompt(localeSample) : localeSample
+    let sanitizedBase = redactSamples ? TextSanitizer.sanitizeForPrompt(baseSample) : baseSample
+    let sanitizedLocale = redactSamples ? TextSanitizer.sanitizeForPrompt(localeSample) : localeSample
     let instructions = "You are a localization QA expert. Return only strict JSON. No extra text."
     let prompt = """
     Determine if this translation is acceptable for the target locale.
@@ -497,25 +497,6 @@ final class TranslationValidatorService {
           let end = text.lastIndex(of: "}") else { return nil }
     guard end > start else { return nil }
     return String(text[start...end])
-  }
-
-  private func sanitizeForPrompt(_ text: String) -> String {
-    if text.isEmpty { return text }
-    var sanitized = text
-    let patterns: [String] = [
-      "[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}",
-      "\\b\\d{3}[- .]?\\d{2}[- .]?\\d{4}\\b",
-      "\\+?\\d[\\d\n\t().-]{7,}",
-      "\\b\\d{4,}\\b"
-    ]
-    let replacements = ["<email>", "<ssn>", "<phone>", "<number>"]
-    for (pattern, replacement) in zip(patterns, replacements) {
-      if let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) {
-        let range = NSRange(sanitized.startIndex..., in: sanitized)
-        sanitized = regex.stringByReplacingMatches(in: sanitized, range: range, withTemplate: replacement)
-      }
-    }
-    return sanitized
   }
 }
 #endif

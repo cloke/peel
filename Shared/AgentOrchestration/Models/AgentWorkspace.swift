@@ -176,13 +176,7 @@ extension AgentWorkspace {
       return branch
     }
     
-    // Sanitize title for branch name
-    let sanitized = task.title
-      .lowercased()
-      .replacingOccurrences(of: " ", with: "-")
-      .replacingOccurrences(of: "[^a-z0-9-]", with: "", options: .regularExpression)
-      .prefix(40)
-    
+    let sanitized = String(BranchNameSanitizer.sanitize(task.title).prefix(40))
     return "agent/\(sanitized)-\(task.id.uuidString.prefix(8))"
   }
 }
