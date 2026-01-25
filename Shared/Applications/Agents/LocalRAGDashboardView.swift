@@ -649,14 +649,7 @@ struct LocalRAGDashboardView: View {
   }
 
   private func coreMLWarnings(_ status: LocalRAGStore.Status) -> [String] {
-    var warnings: [String] = []
-    if !status.coreMLTokenizerHelperPresent {
-      warnings.append("tokenizer helper missing — embeddings will be low quality")
-    }
-    if !status.coreMLModelPresent || !status.coreMLVocabPresent {
-      warnings.append("model/vocab missing — falling back to system embeddings")
-    }
-    return warnings
+    status.assetWarnings()
   }
 
   private func displayPath(for path: String) -> String {

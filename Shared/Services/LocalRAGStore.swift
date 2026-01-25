@@ -195,6 +195,19 @@ actor LocalRAGStore {
     let coreMLModelPresent: Bool
     let coreMLVocabPresent: Bool
     let coreMLTokenizerHelperPresent: Bool
+    
+    /// Returns user-facing warning messages for missing Core ML assets.
+    /// Extracted from duplicated UI logic in LocalRAGDashboardView.swift lines ~653-658.
+    func assetWarnings() -> [String] {
+      var warnings: [String] = []
+      if !coreMLTokenizerHelperPresent {
+        warnings.append("tokenizer helper missing — embeddings will be low quality")
+      }
+      if !coreMLModelPresent || !coreMLVocabPresent {
+        warnings.append("model/vocab missing — falling back to system embeddings")
+      }
+      return warnings
+    }
   }
 
   struct Stats: Sendable {
