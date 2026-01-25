@@ -2,9 +2,13 @@
 //  MCPCoreTypeAliases.swift
 //  Peel
 //
-//  Type aliases to bridge MCPCore types with existing app types.
-//  This provides a gradual migration path - existing code continues
-//  to work while we move toward using MCPCore types directly.
+//  Central import point for MCPCore types.
+//  
+//  Primary type aliases are defined in their respective files:
+//  - Agent.swift: CopilotModel, AgentRole, AgentType, FrameworkHint
+//  - MCPServerService.swift: ToolCategory, ToolGroup, ToolDefinition
+//
+//  This file provides additional aliases for direct MCPCore type access.
 //
 //  Created for issue #22 - MCP automation framework package
 //
@@ -12,67 +16,26 @@
 import Foundation
 import MCPCore
 
-// MARK: - JSON-RPC Type Aliases
-// These can be used directly from MCPCore
-
-// MARK: - Tool Definition Type Aliases
-// Note: The app currently defines these nested in MCPServerService.
-// These aliases allow gradual migration to MCPCore types.
-
-/// Alias for MCPCore tool category
-public typealias MCPToolCategoryCore = MCPCore.MCPToolCategory
-
-/// Alias for MCPCore tool group
-public typealias MCPToolGroupCore = MCPCore.MCPToolGroup
-
-/// Alias for MCPCore tool definition
-public typealias MCPToolDefinitionCore = MCPCore.MCPToolDefinition
-
-// MARK: - Agent Type Aliases
-
-/// Alias for MCPCore agent role
-public typealias MCPAgentRoleCore = MCPCore.MCPAgentRole
-
-/// Alias for MCPCore agent type
-public typealias MCPAgentTypeCore = MCPCore.MCPAgentType
-
-/// Alias for MCPCore agent state
-public typealias MCPAgentStateCore = MCPCore.MCPAgentState
-
-/// Alias for MCPCore framework hint
-public typealias MCPFrameworkHintCore = MCPCore.MCPFrameworkHint
-
-/// Alias for MCPCore copilot model
-public typealias MCPCopilotModelCore = MCPCore.MCPCopilotModel
-
-// MARK: - Chain Template Type Aliases
-
-/// Alias for MCPCore chain template
-public typealias MCPChainTemplateCore = MCPCore.MCPChainTemplate
-
-/// Alias for MCPCore agent step template
-public typealias MCPAgentStepTemplateCore = MCPCore.MCPAgentStepTemplate
-
 // MARK: - DTO Type Aliases
 
-/// Alias for MCPCore run record DTO
+/// Run record for serialization
 public typealias MCPRunRecordDTO = MCPCore.MCPRunRecordDTO
 
-/// Alias for MCPCore run result DTO
+/// Run result for serialization
 public typealias MCPRunResultDTO = MCPCore.MCPRunResultDTO
 
-/// Alias for MCPCore chain run status
+/// Chain run status enum
 public typealias MCPChainRunStatus = MCPCore.MCPChainRunStatus
 
-/// Alias for MCPCore server status
+/// Server status struct
 public typealias MCPServerStatusCore = MCPCore.MCPServerStatus
 
 // MARK: - Protocol Aliases
 
-/// Alias for MCPCore data persisting protocol
+/// Data persistence protocol
 public typealias MCPDataPersistingProtocol = MCPCore.MCPDataPersisting
 
-// MARK: - JSON-RPC Aliases (for direct use)
+// MARK: - JSON-RPC Aliases
 
 public typealias JSONRPCRequest = MCPCore.JSONRPCRequest
 public typealias JSONRPCResponse = MCPCore.JSONRPCResponse
@@ -80,3 +43,12 @@ public typealias JSONRPCError = MCPCore.JSONRPCError
 public typealias JSONRPCId = MCPCore.JSONRPCId
 public typealias JSONRPCParams = MCPCore.JSONRPCParams
 public typealias AnyCodable = MCPCore.AnyCodable
+
+// MARK: - MCPCore Type Access
+// For files that need direct access to MCPCore types without their own import
+
+/// Direct access to MCPCore chain template (portable version without validationConfig)
+public typealias MCPChainTemplateCore = MCPCore.MCPChainTemplate
+
+/// Direct access to MCPCore agent step template
+public typealias MCPAgentStepTemplateCore = MCPCore.MCPAgentStepTemplate

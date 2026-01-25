@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import MCPCore
 
 /// A reusable template for creating agent chains
 public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {

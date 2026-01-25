@@ -10,6 +10,7 @@ import Observation
 import AppKit
 import Git
 import IOKit.pwr_mgt
+import MCPCore
 import Network
 import SwiftData
 import TaskRunner
