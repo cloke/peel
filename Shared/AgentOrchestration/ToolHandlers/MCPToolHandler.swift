@@ -106,3 +106,124 @@ extension MCPToolHandler {
     JSONRPCResponseBuilder.makeError(id: id, code: code, message: message)
   }
 }
+// MARK: - Common Error Responses
+
+/// Extension providing common error response helpers to reduce boilerplate
+extension MCPToolHandler {
+  /// Return error for handler not configured (missing delegate)
+  public func notConfiguredError(id: Any?) -> (Int, Data) {
+    (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Handler not configured"))
+  }
+
+  /// Return error for missing required parameter
+  public func missingParamError(id: Any?, param: String) -> (Int, Data) {
+    (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "Missing \(param)"))
+  }
+
+  /// Return error for invalid parameter value
+  public func invalidParamError(id: Any?, param: String, reason: String? = nil) -> (Int, Data) {
+    let message = reason ?? "Invalid \(param)"
+    return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: message))
+  }
+
+  /// Return error for resource not found
+  public func notFoundError(id: Any?, what: String) -> (Int, Data) {
+    (404, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.notFound, message: "\(what) not found"))
+  }
+
+  /// Return error for internal failure
+  public func internalError(id: Any?, message: String) -> (Int, Data) {
+    (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: message))
+  }
+}
+
+// MARK: - Parameter Extraction Helpers
+
+/// Error type that wraps an HTTP response tuple for use with Result
+public struct ParamError: Error {
+  public let code: Int
+  public let data: Data
+  
+  public var response: (Int, Data) { (code, data) }
+  
+  public init(_ response: (Int, Data)) {
+    self.code = response.0
+    self.data = response.1
+  }
+}
+
+/// Extension providing parameter extraction with automatic error handling
+extension MCPToolHandler {
+  /// Result type for parameter extraction - either the value or an error response
+  public typealias ParamResult<T> = Result<T, ParamError>
+
+  /// Extract a required string parameter, trimmed and non-empty
+  public func requireString(_ key: String, from arguments: [String: Any], id: Any?) -> ParamResult<String> {
+    guard let value = (arguments[key] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !value.isEmpty else {
+      return .failure(ParamError(missingParamError(id: id, param: key)))
+    }
+    return .success(value)
+  }
+
+  /// Extract an optional string parameter, trimmed (returns nil if missing or empty)
+  public func optionalString(_ key: String, from arguments: [String: Any], default defaultValue: String? = nil) -> String? {
+    guard let value = (arguments[key] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !value.isEmpty else {
+      return defaultValue
+    }
+    return value
+  }
+
+  /// Extract a required integer parameter
+  public func requireInt(_ key: String, from arguments: [String: Any], id: Any?) -> ParamResult<Int> {
+    guard let value = arguments[key] as? Int else {
+      return .failure(ParamError(missingParamError(id: id, param: key)))
+    }
+    return .success(value)
+  }
+
+  /// Extract an optional integer parameter
+  public func optionalInt(_ key: String, from arguments: [String: Any], default defaultValue: Int? = nil) -> Int? {
+    (arguments[key] as? Int) ?? defaultValue
+  }
+
+  /// Extract a required UUID parameter (from string)
+  public func requireUUID(_ key: String, from arguments: [String: Any], id: Any?) -> ParamResult<UUID> {
+    guard let stringValue = (arguments[key] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !stringValue.isEmpty else {
+      return .failure(ParamError(missingParamError(id: id, param: key)))
+    }
+    guard let uuid = UUID(uuidString: stringValue) else {
+      return .failure(ParamError(invalidParamError(id: id, param: key, reason: "Invalid UUID format")))
+    }
+    return .success(uuid)
+  }
+
+  /// Extract an optional UUID parameter
+  public func optionalUUID(_ key: String, from arguments: [String: Any]) -> UUID? {
+    guard let stringValue = arguments[key] as? String else { return nil }
+    return UUID(uuidString: stringValue)
+  }
+
+  /// Extract a required boolean parameter
+  public func requireBool(_ key: String, from arguments: [String: Any], id: Any?) -> ParamResult<Bool> {
+    guard let value = arguments[key] as? Bool else {
+      return .failure(ParamError(missingParamError(id: id, param: key)))
+    }
+    return .success(value)
+  }
+
+  /// Extract an optional boolean parameter
+  public func optionalBool(_ key: String, from arguments: [String: Any], default defaultValue: Bool) -> Bool {
+    (arguments[key] as? Bool) ?? defaultValue
+  }
+
+  /// Extract a required array parameter
+  public func requireArray<T>(_ key: String, from arguments: [String: Any], id: Any?) -> ParamResult<[T]> {
+    guard let value = arguments[key] as? [T], !value.isEmpty else {
+      return .failure(ParamError(missingParamError(id: id, param: key)))
+    }
+    return .success(value)
+  }
+}

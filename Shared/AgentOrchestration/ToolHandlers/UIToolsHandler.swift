@@ -51,13 +51,10 @@ public final class UIToolsHandler: MCPToolHandler {
   // MARK: - ui.navigate
 
   private func handleNavigate(id: Any?, arguments: [String: Any]) -> (Int, Data) {
-    guard let delegate else {
-      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Handler not configured"))
-    }
+    guard let delegate else { return notConfiguredError(id: id) }
 
-    guard let viewId = (arguments["viewId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
-          !viewId.isEmpty else {
-      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "Missing viewId"))
+    guard case .success(let viewId) = requireString("viewId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "viewId")
     }
 
     guard delegate.availableViewIds().contains(viewId) else {
@@ -73,13 +70,10 @@ public final class UIToolsHandler: MCPToolHandler {
   // MARK: - ui.tap
 
   private func handleTap(id: Any?, arguments: [String: Any]) -> (Int, Data) {
-    guard let delegate else {
-      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Handler not configured"))
-    }
+    guard let delegate else { return notConfiguredError(id: id) }
 
-    guard let controlId = (arguments["controlId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
-          !controlId.isEmpty else {
-      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "Missing controlId"))
+    guard case .success(let controlId) = requireString("controlId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "controlId")
     }
 
     let currentViewId = delegate.currentToolId()
@@ -107,13 +101,10 @@ public final class UIToolsHandler: MCPToolHandler {
   // MARK: - ui.setText
 
   private func handleSetText(id: Any?, arguments: [String: Any]) -> (Int, Data) {
-    guard let delegate else {
-      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Handler not configured"))
-    }
+    guard let delegate else { return notConfiguredError(id: id) }
 
-    guard let controlId = (arguments["controlId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
-          !controlId.isEmpty else {
-      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "Missing controlId"))
+    guard case .success(let controlId) = requireString("controlId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "controlId")
     }
     let value = arguments["value"] as? String ?? ""
 
@@ -142,13 +133,10 @@ public final class UIToolsHandler: MCPToolHandler {
   // MARK: - ui.toggle
 
   private func handleToggle(id: Any?, arguments: [String: Any]) -> (Int, Data) {
-    guard let delegate else {
-      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Handler not configured"))
-    }
+    guard let delegate else { return notConfiguredError(id: id) }
 
-    guard let controlId = (arguments["controlId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
-          !controlId.isEmpty else {
-      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "Missing controlId"))
+    guard case .success(let controlId) = requireString("controlId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "controlId")
     }
     let value = arguments["on"] as? Bool
 
@@ -175,20 +163,17 @@ public final class UIToolsHandler: MCPToolHandler {
   // MARK: - ui.select
 
   private func handleSelect(id: Any?, arguments: [String: Any]) -> (Int, Data) {
-    guard let delegate else {
-      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Handler not configured"))
-    }
+    guard let delegate else { return notConfiguredError(id: id) }
 
-    guard let controlId = (arguments["controlId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
-          !controlId.isEmpty else {
-      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "Missing controlId"))
+    guard case .success(let controlId) = requireString("controlId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "controlId")
     }
-    let value = (arguments["value"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let value = optionalString("value", from: arguments) ?? ""
 
     switch controlId {
     case "brew.source":
       guard value == "Installed" || value == "Available" else {
-        return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "Invalid value"))
+        return invalidParamError(id: id, param: "value", reason: "Must be 'Installed' or 'Available'")
       }
       UserDefaults.standard.set(value, forKey: "brew.source")
       delegate.recordUIActionRequested(controlId)
@@ -198,7 +183,7 @@ public final class UIToolsHandler: MCPToolHandler {
     case "agents.localRag.mode":
       let normalized = value.lowercased()
       guard let mode = MCPServerService.RAGSearchMode(rawValue: normalized) else {
-        return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "Invalid value"))
+        return invalidParamError(id: id, param: "value", reason: "Invalid RAG mode")
       }
       delegate.localRagSearchMode = mode
       delegate.recordUIActionRequested(controlId)
@@ -207,7 +192,7 @@ public final class UIToolsHandler: MCPToolHandler {
 
     case "agents.localRag.limit":
       guard let parsed = Int(value), (1...25).contains(parsed) else {
-        return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "Invalid value"))
+        return invalidParamError(id: id, param: "value", reason: "Must be 1-25")
       }
       delegate.localRagSearchLimit = parsed
       delegate.recordUIActionRequested(controlId)
@@ -295,9 +280,7 @@ public final class UIToolsHandler: MCPToolHandler {
   // MARK: - ui.back
 
   private func handleBack(id: Any?) -> (Int, Data) {
-    guard let delegate else {
-      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Handler not configured"))
-    }
+    guard let delegate else { return notConfiguredError(id: id) }
 
     guard let current = delegate.currentToolId() else {
       return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.backNotSupported, message: "Back not supported"))
@@ -315,9 +298,7 @@ public final class UIToolsHandler: MCPToolHandler {
   // MARK: - ui.snapshot
 
   private func handleSnapshot(id: Any?) -> (Int, Data) {
-    guard let delegate else {
-      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Handler not configured"))
-    }
+    guard let delegate else { return notConfiguredError(id: id) }
 
     let currentViewId = delegate.currentToolId()
     let controls = delegate.availableToolControlIds() + delegate.availableControlIds(for: currentViewId)
