@@ -29,6 +29,7 @@ audience:
 | Backlog | 📋 Unscheduled | ~24 |
 
 **Recently Completed (Jan 25 session):**
+- #79 MCP tool permissions interface (already existed - protocol + store)
 - #84 MCP prompt rules + guardrails (chains.promptRules.get/set tools)
 - #135 Relaunch storms fix (lock file mechanism)
 - #88 Hung execution detection (already implemented, verified)
@@ -62,9 +63,8 @@ All bugs resolved! ✅
 
 | # | Issue | Est | Dependencies |
 |---|-------|-----|--------------|
-| 5 | [#79](https://github.com/cloke/peel/issues/79) MCP tool permissions interface | 3h | None |
-| 6 | [#80](https://github.com/cloke/peel/issues/80) Extract tool registry | 3h | #79 |
-| 7 | [#121](https://github.com/cloke/peel/issues/121) Split MCPServerService | 4h | Helps #80 |
+| 4 | [#80](https://github.com/cloke/peel/issues/80) Extract tool registry | 3h | None |
+| 5 | [#121](https://github.com/cloke/peel/issues/121) Split MCPServerService | 4h | Helps #80 |
 
 ### 📊 Priority 4: UX Polish
 

@@ -13,6 +13,7 @@ struct LocalRAGIndexReport: Sendable {
   let repoId: String
   let repoPath: String
   let filesIndexed: Int
+  let filesSkipped: Int
   let chunksIndexed: Int
   let bytesScanned: Int
   let durationMs: Int
@@ -359,10 +360,19 @@ actor LocalRAGStore {
     var bytesScanned = 0
     var embeddingCount = 0
     var embeddingDurationMs = 0
+    var skippedUnchanged = 0
 
     for file in scannedFiles {
       let fileId = stableId(for: "\(repoId):\(file.path)")
       let fileHash = stableId(for: file.text)
+
+      // Incremental indexing: skip unchanged files
+      if let existingHash = try fetchFileHash(fileId: fileId), existingHash == fileHash {
+        skippedUnchanged += 1
+        bytesScanned += file.byteCount
+        continue
+      }
+
       try upsertFile(
         id: fileId,
         repoId: repoId,
@@ -428,7 +438,8 @@ actor LocalRAGStore {
     return LocalRAGIndexReport(
       repoId: repoId,
       repoPath: path,
-      filesIndexed: scannedFiles.count,
+      filesIndexed: scannedFiles.count - skippedUnchanged,
+      filesSkipped: skippedUnchanged,
       chunksIndexed: chunkCount,
       bytesScanned: bytesScanned,
       durationMs: durationMs,
@@ -728,6 +739,27 @@ actor LocalRAGStore {
       bindText(statement, 3, rootPath)
       bindText(statement, 4, lastIndexedAt)
     }
+  }
+
+  private func fetchFileHash(fileId: String) throws -> String? {
+    let sql = "SELECT hash FROM files WHERE id = ?"
+    guard let db else {
+      throw LocalRAGError.sqlite("Database not initialized")
+    }
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let statement else {
+      let message = String(cString: sqlite3_errmsg(db))
+      throw LocalRAGError.sqlite(message)
+    }
+    defer { sqlite3_finalize(statement) }
+
+    bindText(statement, 1, fileId)
+    if sqlite3_step(statement) == SQLITE_ROW,
+       let text = sqlite3_column_text(statement, 0) {
+      return String(cString: text)
+    }
+    return nil
   }
 
   private func upsertFile(
