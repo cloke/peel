@@ -3195,7 +3195,7 @@ public final class MCPServerService {
           return summary.validationResult
         }
 
-        let reason = "RAG usage required but no rag.search recorded during the run. lastSearchAt=\(lastSearchAt?.description ?? \"nil\")"
+        let reason = "RAG usage required but no rag.search recorded during the run. lastSearchAt=\(lastSearchAt?.description ?? "nil")"
         let warning = ValidationResult.warning(reasons: [reason])
         if let existing = summary.validationResult {
           return ValidationResult.combine([existing, warning])
@@ -3325,8 +3325,8 @@ public final class MCPServerService {
       "results": summarizeResults(summary.results)
     ]
 
-      if let validationResult = combinedValidationResult {
-        result["validation"] = validationResult.toDictionary()
+    if let validationResult = summary.validationResult {
+      result["validation"] = validationResult.toDictionary()
     }
 
     return (200, makeRPCResult(id: id, result: result))
