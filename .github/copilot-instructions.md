@@ -781,6 +781,7 @@ Why:
 
 **MCP development/testing:** it is OK to launch via the script, since MCP requires the app to be running.
 Use `Tools/build-and-launch.sh --wait-for-server` (or `--skip-build` if a build already exists).
+The script now **refuses to relaunch** if MCP chains are running or if Peel is running but MCP is unresponsive, unless you pass `--allow-while-chains-running`.
 
 Normal dev flow:
 1. Build the project: `xcodebuild -scheme "Peel (macOS)" build`
@@ -791,6 +792,7 @@ MCP flow:
 1. Run `Tools/build-and-launch.sh --wait-for-server`
 2. Use `Tools/PeelCLI` to call MCP endpoints
 3. Stop the server or quit the app when done
+4. If chains are running, avoid relaunching; use `--skip-build` or wait until chains finish
 
 ```bash
 # ✅ DO: Just build (normal dev)
