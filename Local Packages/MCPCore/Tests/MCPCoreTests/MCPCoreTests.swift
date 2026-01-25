@@ -93,7 +93,7 @@ final class MCPCoreTests: XCTestCase {
     let templates = MCPChainTemplate.builtInTemplates
     XCTAssertFalse(templates.isEmpty)
     XCTAssertTrue(templates.contains { $0.name == "Code Review" })
-    XCTAssertTrue(templates.contains { $0.name == "MCP Harness" })
+    XCTAssertTrue(templates.contains { $0.name == "Parallel Validation" })
   }
 
   // MARK: - DTO Tests
