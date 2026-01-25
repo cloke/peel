@@ -5,6 +5,7 @@
 //  Created on 1/19/26.
 //
 
+import PeelUI
 import SwiftUI
 
 // MARK: - New Agent Sheet
@@ -257,14 +258,13 @@ struct CLISetupSheet: View {
           Button("Done") { dismiss() }
             .accessibilityIdentifier("agents.cliSetup.done")
         }
-        ToolbarItem(placement: .primaryAction) {
-          Button {
-            cliService.resetInstall()
-            Task { await cliService.checkAllCLIs(force: true) }
-          } label: {
-            Label("Refresh", systemImage: "arrow.clockwise")
-          }
-          .accessibilityIdentifier("agents.cliSetup.refresh")
+        RefreshToolbarItem(
+          placement: .primaryAction,
+          label: "Refresh",
+          accessibilityIdentifier: "agents.cliSetup.refresh"
+        ) {
+          cliService.resetInstall()
+          Task { await cliService.checkAllCLIs(force: true) }
         }
       }
     }.frame(minWidth: 550, minHeight: 500)

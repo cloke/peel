@@ -657,6 +657,7 @@ public final class MCPServerService {
     public var enableReviewLoop: Bool? = nil
     public var pauseOnReview: Bool? = nil
     public var allowPlannerModelSelection: Bool = false
+    public var allowImplementerModelOverride: Bool = false
     public var allowPlannerImplementerScaling: Bool = false
     public var maxImplementers: Int? = nil
     public var maxPremiumCost: Double? = nil
@@ -707,6 +708,7 @@ public final class MCPServerService {
       arguments["pauseOnReview"] = pauseOnReview
     }
     arguments["allowPlannerModelSelection"] = overrides.allowPlannerModelSelection
+    arguments["allowImplementerModelOverride"] = overrides.allowImplementerModelOverride
     arguments["allowPlannerImplementerScaling"] = overrides.allowPlannerImplementerScaling
     if let maxImplementers = overrides.maxImplementers {
       arguments["maxImplementers"] = maxImplementers
@@ -1765,6 +1767,7 @@ public final class MCPServerService {
     let autoMergeOnApproval = arguments["autoMergeOnApproval"] as? Bool ?? false
     let templateName = (arguments["templateName"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
     let allowPlannerModelSelection = arguments["allowPlannerModelSelection"] as? Bool
+    let allowImplementerModelOverride = arguments["allowImplementerModelOverride"] as? Bool
     let allowPlannerImplementerScaling = arguments["allowPlannerImplementerScaling"] as? Bool
     let maxImplementers = arguments["maxImplementers"] as? Int
     let maxPremiumCost = arguments["maxPremiumCost"] as? Double
@@ -1792,12 +1795,14 @@ public final class MCPServerService {
     }
 
     let hasRunOptions = allowPlannerModelSelection != nil
+      || allowImplementerModelOverride != nil
       || allowPlannerImplementerScaling != nil
       || maxImplementers != nil
       || maxPremiumCost != nil
     let runOptions = hasRunOptions
       ? AgentChainRunner.ChainRunOptions(
         allowPlannerModelSelection: allowPlannerModelSelection ?? false,
+        allowImplementerModelOverride: allowImplementerModelOverride ?? false,
         allowPlannerImplementerScaling: allowPlannerImplementerScaling ?? false,
         maxImplementers: maxImplementers,
         maxPremiumCost: maxPremiumCost
@@ -2250,6 +2255,7 @@ public final class MCPServerService {
     }
     if let runOptions = run.runOptions {
       result["allowPlannerModelSelection"] = runOptions.allowPlannerModelSelection
+      result["allowImplementerModelOverride"] = runOptions.allowImplementerModelOverride
       result["allowPlannerImplementerScaling"] = runOptions.allowPlannerImplementerScaling
       if let maxImplementers = runOptions.maxImplementers {
         result["maxImplementers"] = maxImplementers
@@ -2832,6 +2838,7 @@ public final class MCPServerService {
     let enableReviewLoop = arguments["enableReviewLoop"] as? Bool
     let pauseOnReview = arguments["pauseOnReview"] as? Bool
     let allowPlannerModelSelection = arguments["allowPlannerModelSelection"] as? Bool ?? false
+    let allowImplementerModelOverride = arguments["allowImplementerModelOverride"] as? Bool ?? false
     let allowPlannerImplementerScaling = arguments["allowPlannerImplementerScaling"] as? Bool ?? false
     let maxImplementers = arguments["maxImplementers"] as? Int
     let maxPremiumCost = arguments["maxPremiumCost"] as? Double
@@ -2909,6 +2916,7 @@ public final class MCPServerService {
 
     let runOptions = AgentChainRunner.ChainRunOptions(
       allowPlannerModelSelection: allowPlannerModelSelection,
+      allowImplementerModelOverride: allowImplementerModelOverride,
       allowPlannerImplementerScaling: allowPlannerImplementerScaling,
       maxImplementers: maxImplementers,
       maxPremiumCost: maxPremiumCost
@@ -3907,6 +3915,7 @@ public final class MCPServerService {
             "enableReviewLoop": ["type": "boolean"],
             "pauseOnReview": ["type": "boolean"],
             "allowPlannerModelSelection": ["type": "boolean"],
+            "allowImplementerModelOverride": ["type": "boolean"],
             "allowPlannerImplementerScaling": ["type": "boolean"],
             "maxImplementers": ["type": "integer"],
             "maxPremiumCost": ["type": "number"],
@@ -3989,6 +3998,7 @@ public final class MCPServerService {
                   "enableReviewLoop": ["type": "boolean"],
                   "pauseOnReview": ["type": "boolean"],
                   "allowPlannerModelSelection": ["type": "boolean"],
+                  "allowImplementerModelOverride": ["type": "boolean"],
                   "allowPlannerImplementerScaling": ["type": "boolean"],
                   "maxImplementers": ["type": "integer"],
                   "maxPremiumCost": ["type": "number"],
@@ -4350,6 +4360,7 @@ public final class MCPServerService {
             "autoMergeOnApproval": ["type": "boolean"],
             "templateName": ["type": "string"],
             "allowPlannerModelSelection": ["type": "boolean"],
+            "allowImplementerModelOverride": ["type": "boolean"],
             "allowPlannerImplementerScaling": ["type": "boolean"],
             "maxImplementers": ["type": "integer"],
             "maxPremiumCost": ["type": "number"],

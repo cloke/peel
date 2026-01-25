@@ -75,17 +75,20 @@ public final class AgentChainRunner {
 
   public struct ChainRunOptions: Sendable {
     public let allowPlannerModelSelection: Bool
+    public let allowImplementerModelOverride: Bool
     public let allowPlannerImplementerScaling: Bool
     public let maxImplementers: Int?
     public let maxPremiumCost: Double?
 
     public init(
       allowPlannerModelSelection: Bool = false,
+      allowImplementerModelOverride: Bool = false,
       allowPlannerImplementerScaling: Bool = false,
       maxImplementers: Int? = nil,
       maxPremiumCost: Double? = nil
     ) {
       self.allowPlannerModelSelection = allowPlannerModelSelection
+      self.allowImplementerModelOverride = allowImplementerModelOverride
       self.allowPlannerImplementerScaling = allowPlannerImplementerScaling
       self.maxImplementers = maxImplementers
       self.maxPremiumCost = maxPremiumCost
@@ -325,6 +328,7 @@ public final class AgentChainRunner {
     }
 
     var implementers = implementerIndices.map { chain.agents[$0] }
+    var newImplementerIds: Set<UUID> = []
 
     if desiredCount < implementers.count {
       let removed = implementers.suffix(from: desiredCount)
@@ -344,11 +348,16 @@ public final class AgentChainRunner {
           workingDirectory: chain.workingDirectory
         )
         implementers.append(agent)
+        newImplementerIds.insert(agent.id)
       }
     }
 
     if options.allowPlannerModelSelection {
       for (index, agent) in implementers.enumerated() {
+        if options.allowImplementerModelOverride,
+           !newImplementerIds.contains(agent.id) {
+          continue
+        }
         guard index < tasks.count,
               let modelName = tasks[index].recommendedModel,
               let model = CopilotModel.fromString(modelName) else {
@@ -356,7 +365,11 @@ public final class AgentChainRunner {
         }
         agent.model = model
       }
-      chain.addStatusMessage("Applied planner model recommendations", type: .info)
+      if options.allowImplementerModelOverride {
+        chain.addStatusMessage("Applied planner model recommendations for new implementers", type: .info)
+      } else {
+        chain.addStatusMessage("Applied planner model recommendations", type: .info)
+      }
     }
 
     if let maxPremiumCost = options.maxPremiumCost, maxPremiumCost >= 0 {
