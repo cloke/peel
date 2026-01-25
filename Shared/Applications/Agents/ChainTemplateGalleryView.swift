@@ -5,6 +5,7 @@
 //  Created on 1/21/26.
 //
 
+import PeelUI
 import SwiftUI
 
 struct ChainTemplateGalleryView: View {
@@ -43,7 +44,7 @@ struct ChainTemplateGalleryView: View {
       .padding(20)
     }
     .navigationTitle("Template Gallery")
-    .confirmationDialog(
+    .confirmDialog(
       "Delete Template",
       isPresented: Binding(
         get: { templateToDelete != nil },
@@ -51,19 +52,14 @@ struct ChainTemplateGalleryView: View {
           if !isPresented { templateToDelete = nil }
         }
       ),
-      titleVisibility: .visible
+      confirmLabel: "Delete",
+      confirmRole: .destructive,
+      message: "This cannot be undone."
     ) {
-      Button("Delete", role: .destructive) {
-        if let templateToDelete {
-          agentManager.deleteTemplate(templateToDelete)
-        }
-        templateToDelete = nil
+      if let templateToDelete {
+        agentManager.deleteTemplate(templateToDelete)
       }
-      Button("Cancel", role: .cancel) {
-        templateToDelete = nil
-      }
-    } message: {
-      Text("This cannot be undone.")
+      templateToDelete = nil
     }
   }
 
@@ -164,7 +160,7 @@ private struct TemplateCard: View {
         Spacer()
 
         if let onDelete {
-          Button(role: .destructive) {
+          DestructiveActionButton {
             onDelete()
           } label: {
             Image(systemName: "trash")

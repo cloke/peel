@@ -6,6 +6,7 @@
 //
 
 import Charts
+import PeelUI
 import SwiftData
 import SwiftUI
 
@@ -21,6 +22,7 @@ struct MCPDashboardView: View {
   @State private var overridePauseOnReviewEnabled = false
   @State private var overridePauseOnReviewValue = false
   @State private var overrideAllowModelSelection = true
+  @State private var overrideAllowImplementerModelOverride = true
   @State private var overrideAllowScaling = true
   @State private var overrideMaxImplementersEnabled = false
   @State private var overrideMaxImplementers = 2
@@ -63,6 +65,7 @@ struct MCPDashboardView: View {
       overrides.pauseOnReview = overridePauseOnReviewValue
     }
     overrides.allowPlannerModelSelection = overrideAllowModelSelection
+    overrides.allowImplementerModelOverride = overrideAllowImplementerModelOverride
     overrides.allowPlannerImplementerScaling = overrideAllowScaling
     if overrideMaxImplementersEnabled {
       overrides.maxImplementers = max(1, overrideMaxImplementers)
@@ -487,6 +490,8 @@ struct MCPDashboardView: View {
               SectionHeader("Planner Controls", style: .secondary)
               Toggle("Allow planner model selection", isOn: $overrideAllowModelSelection)
                 .accessibilityIdentifier("agents.mcpDashboard.overrides.allowModelSelection")
+              Toggle("Allow implementer model override", isOn: $overrideAllowImplementerModelOverride)
+                .accessibilityIdentifier("agents.mcpDashboard.overrides.allowImplementerModelOverride")
               Toggle("Allow planner implementer scaling", isOn: $overrideAllowScaling)
                 .accessibilityIdentifier("agents.mcpDashboard.overrides.allowScaling")
             }
@@ -744,17 +749,18 @@ struct MCPDashboardView: View {
             .buttonStyle(.bordered)
             .disabled(mcpServer.isCleaningAgentWorkspaces)
             .accessibilityIdentifier("agents.mcpDashboard.cleanup.start")
-            .confirmationDialog("Remove agent worktrees and branches?", isPresented: $showingCleanupConfirmation, titleVisibility: .visible) {
-              Button("Confirm", role: .destructive) {
-                Task {
-                  await mcpServer.cleanupAgentWorkspaces()
-                }
+            .confirmDialog(
+              "Remove agent worktrees and branches?",
+              isPresented: $showingCleanupConfirmation,
+              confirmLabel: "Confirm",
+              confirmRole: .destructive,
+              confirmIdentifier: "agents.mcpDashboard.cleanup.confirm",
+              cancelIdentifier: "agents.mcpDashboard.cleanup.cancel",
+              message: "This will delete worktrees and branches created by the MCP run. This cannot be undone."
+            ) {
+              Task {
+                await mcpServer.cleanupAgentWorkspaces()
               }
-              .accessibilityIdentifier("agents.mcpDashboard.cleanup.confirm")
-              Button("Cancel", role: .cancel) {}
-                .accessibilityIdentifier("agents.mcpDashboard.cleanup.cancel")
-            } message: {
-              Text("This will delete worktrees and branches created by the MCP run. This cannot be undone.")
             }
 
             if mcpServer.isCleaningAgentWorkspaces {

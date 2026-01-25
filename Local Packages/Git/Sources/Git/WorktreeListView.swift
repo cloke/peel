@@ -78,18 +78,20 @@ public struct WorktreeListView: View {
         }
       )
     }
-    .alert("Delete Worktree?", isPresented: .constant(worktreeToDelete != nil)) {
-      Button("Cancel", role: .cancel) {
-        worktreeToDelete = nil
-      }
-      Button("Delete", role: .destructive) {
-        if let worktree = worktreeToDelete {
-          Task { await deleteWorktree(worktree) }
+    .confirmAlert(
+      "Delete Worktree?",
+      isPresented: Binding(
+        get: { worktreeToDelete != nil },
+        set: { isPresented in
+          if !isPresented { worktreeToDelete = nil }
         }
-      }
-    } message: {
+      ),
+      confirmLabel: "Delete",
+      confirmRole: .destructive,
+      message: worktreeToDelete.map { "This will remove the worktree at:\n\($0.path)" }
+    ) {
       if let worktree = worktreeToDelete {
-        Text("This will remove the worktree at:\n\(worktree.path)")
+        Task { await deleteWorktree(worktree) }
       }
     }
     .errorAlert(message: $errorMessage)
@@ -283,7 +285,7 @@ struct WorktreeRowView: View {
         
         Divider()
         
-        Button(role: .destructive) {
+        DestructiveActionButton {
           onDelete()
         } label: {
           Label("Delete Worktree", systemImage: "trash")
@@ -400,9 +402,11 @@ struct WorktreeDetailSheet: View {
           onToggleLock()
         }
         .disabled(worktree.isMain)
-        Button("Remove", role: .destructive) {
+        DestructiveActionButton {
           onDelete()
           dismiss()
+        } label: {
+          Text("Remove")
         }
         .disabled(worktree.isMain)
       }

@@ -8,10 +8,11 @@
 //  Works with any project - multi-repo workspaces, single repos, or folders.
 //
 
-import Foundation
-import SwiftUI
 import AppKit
+import Foundation
 import Git
+import PeelUI
+import SwiftUI
 
 /// Main view for Workspace & Worktree management
 struct Workspaces_RootView: View {
@@ -153,8 +154,10 @@ struct WorkspacesDashboardView: View {
                 Task { await service.loadReposAndWorktrees() }
               }
               Divider()
-              Button("Remove", systemImage: "trash", role: .destructive) {
+              DestructiveActionButton {
                 service.removeWorkspace(workspace)
+              } label: {
+                Label("Remove", systemImage: "trash")
               }
             }
         }
@@ -208,13 +211,8 @@ struct WorkspacesDashboardView: View {
     .listStyle(.sidebar)
     .navigationTitle("Workspaces")
     .toolbar {
-      ToolbarItem(placement: .automatic) {
-        Button {
-          Task { await service.loadReposAndWorktrees() }
-        } label: {
-          Image(systemName: "arrow.clockwise")
-        }
-        .help("Refresh")
+      RefreshToolbarItem(placement: .automatic, accessibilityIdentifier: "workspaces.refresh") {
+        Task { await service.loadReposAndWorktrees() }
       }
     }
   }
