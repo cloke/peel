@@ -111,6 +111,40 @@ Reason: avoids system temp permission prompts and keeps artifacts scoped to the 
 - If a skill or better docs would have prevented confusion, **pause and ask** for clarification or propose adding a skill/doc before continuing.
 - Prefer **one decisive action** over trying multiple approaches. If the first attempt is uncertain, stop and ask rather than trying 10 things.
 
+### RAG-First Search Strategy (CRITICAL)
+
+**ALWAYS use RAG search BEFORE grep_search or reading files directly.**
+
+```
+✅ CORRECT workflow:
+   1. rag.search (vector or text) → get relevant file list
+   2. read_file on top results
+   3. make changes
+
+❌ WRONG workflow:
+   1. grep_search or semantic_search
+   2. read files
+   3. make changes
+```
+
+**Search modes:**
+- `mode: "vector"` — Semantic search (e.g., "how does authentication work")
+- `mode: "text"` — Exact keyword match (e.g., "@tracked", "validateForm")
+
+**Example RAG-first flow:**
+```bash
+# 1. Search RAG first
+curl -X POST http://127.0.0.1:8765/rpc -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rag.search","arguments":{"query":"form validation error handling","repoPath":"/path/to/repo","mode":"vector","limit":10}}}'
+
+# 2. Read files returned by RAG
+# 3. Make targeted changes
+```
+
+**Only use grep_search when:**
+- RAG returns no results AND you've tried both vector and text modes
+- The repo is not indexed (check with `rag.repos.list` first)
+
 ### RAG Search Before Writing Code (IMPORTANT)
 
 **Before writing new utility code, helpers, or patterns**, search the RAG to avoid reinventing the wheel:
