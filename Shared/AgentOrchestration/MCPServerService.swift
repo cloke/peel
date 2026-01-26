@@ -901,14 +901,15 @@ public final class MCPServerService {
     query: String,
     mode: RAGSearchMode,
     repoPath: String? = nil,
-    limit: Int = 10
+    limit: Int = 10,
+    matchAll: Bool = true
   ) async throws -> [LocalRAGSearchResult] {
     let results: [LocalRAGSearchResult]
     switch mode {
     case .vector:
       results = try await localRagStore.searchVector(query: query, repoPath: repoPath, limit: limit)
     case .text:
-      results = try await localRagStore.search(query: query, repoPath: repoPath, limit: limit)
+      results = try await localRagStore.search(query: query, repoPath: repoPath, limit: limit, matchAll: matchAll)
     }
     ragUsage.searches += 1
     ragUsage.totalResults += results.count
@@ -1464,6 +1465,15 @@ public final class MCPServerService {
 
     case "rag.repos.delete":
       return await handleRagReposDelete(id: id, arguments: arguments)
+
+    case "rag.stats":
+      return await handleRagStats(id: id, arguments: arguments)
+
+    case "rag.largeFiles":
+      return await handleRagLargeFiles(id: id, arguments: arguments)
+
+    case "rag.constructTypes":
+      return await handleRagConstructTypes(id: id, arguments: arguments)
 
     case "templates.list":
       let templates = templateList()
@@ -2042,10 +2052,11 @@ public final class MCPServerService {
     // Filter options
     let excludeTests = arguments["excludeTests"] as? Bool ?? false
     let constructTypeFilter = arguments["constructType"] as? String
+    let matchAll = arguments["matchAll"] as? Bool ?? true
 
     do {
       let resolvedMode: RAGSearchMode = mode.lowercased() == "vector" ? .vector : .text
-      var results = try await searchRag(query: query, mode: resolvedMode, repoPath: repoPath, limit: limit * 2) // fetch extra for filtering
+      var results = try await searchRag(query: query, mode: resolvedMode, repoPath: repoPath, limit: limit * 2, matchAll: matchAll) // fetch extra for filtering
       
       // Apply filters
       if excludeTests {
@@ -2064,7 +2075,8 @@ public final class MCPServerService {
           "startLine": result.startLine,
           "endLine": result.endLine,
           "snippet": result.snippet,
-          "isTest": result.isTest
+          "isTest": result.isTest,
+          "lineCount": result.lineCount
         ]
         // Include metadata if available
         if let constructType = result.constructType {
@@ -2084,6 +2096,80 @@ public final class MCPServerService {
       return (200, makeRPCResult(id: id, result: ["mode": mode, "results": payload]))
     } catch {
       await telemetryProvider.warning("Local RAG search failed", metadata: ["error": error.localizedDescription])
+      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
+    }
+  }
+
+  /// Handle rag.stats - get index statistics for a repository
+  private func handleRagStats(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    let repoPath = (arguments["repoPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let repoPath, !repoPath.isEmpty else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing repoPath"))
+    }
+
+    do {
+      let stats = try await localRagStore.getIndexStats(repoPath: repoPath)
+      let result: [String: Any] = [
+        "fileCount": stats.fileCount,
+        "chunkCount": stats.chunkCount,
+        "embeddingCount": stats.embeddingCount,
+        "totalLines": stats.totalLines
+      ]
+      return (200, makeRPCResult(id: id, result: result))
+    } catch {
+      await telemetryProvider.warning("RAG stats failed", metadata: ["error": error.localizedDescription])
+      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
+    }
+  }
+
+  /// Handle rag.largeFiles - find files with the most chunks/lines
+  private func handleRagLargeFiles(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    let repoPath = (arguments["repoPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let repoPath, !repoPath.isEmpty else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing repoPath"))
+    }
+    let limit = arguments["limit"] as? Int ?? 20
+    let minLines = arguments["minLines"] as? Int ?? 100
+
+    do {
+      let files = try await localRagStore.getLargeFiles(repoPath: repoPath, limit: limit)
+      let filtered = files.filter { $0.totalLines >= minLines }
+      let payload: [[String: Any]] = filtered.map { file in
+        var item: [String: Any] = [
+          "filePath": file.path,
+          "totalLines": file.totalLines,
+          "chunkCount": file.chunkCount
+        ]
+        if let lang = file.language {
+          item["language"] = lang
+        }
+        return item
+      }
+      return (200, makeRPCResult(id: id, result: ["files": payload, "count": payload.count]))
+    } catch {
+      await telemetryProvider.warning("RAG large files query failed", metadata: ["error": error.localizedDescription])
+      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
+    }
+  }
+
+  /// Handle rag.constructTypes - get breakdown of construct types in a repo
+  private func handleRagConstructTypes(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    let repoPath = (arguments["repoPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let repoPath, !repoPath.isEmpty else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing repoPath"))
+    }
+
+    do {
+      let stats = try await localRagStore.getConstructTypeStats(repoPath: repoPath)
+      let payload: [[String: Any]] = stats.map { stat in
+        [
+          "type": stat.type,
+          "count": stat.count
+        ]
+      }
+      return (200, makeRPCResult(id: id, result: ["types": payload]))
+    } catch {
+      await telemetryProvider.warning("RAG construct types query failed", metadata: ["error": error.localizedDescription])
       return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
     }
   }
@@ -3681,14 +3767,30 @@ public final class MCPServerService {
       ),
       ToolDefinition(
         name: "rag.search",
-        description: "Search indexed content (text match stub)",
+        description: """
+        Search indexed code content. Returns matching chunks with metadata.
+        
+        Modes:
+        - "text" (default): Keyword search across chunk text and construct names
+        - "vector": Semantic similarity search using embeddings
+        
+        Filters:
+        - excludeTests: Skip test/spec files
+        - constructType: Filter by type (e.g., "component", "function", "classDecl")
+        - matchAll: For text mode - true=AND all words, false=OR any word (default true)
+        
+        Results include: filePath, startLine, endLine, snippet, constructType, constructName, language, isTest, lineCount, score (vector only)
+        """,
         inputSchema: [
           "type": "object",
           "properties": [
-            "query": ["type": "string"],
-            "repoPath": ["type": "string"],
-            "limit": ["type": "integer"],
-            "mode": ["type": "string"]
+            "query": ["type": "string", "description": "Search query"],
+            "repoPath": ["type": "string", "description": "Filter to specific repo"],
+            "limit": ["type": "integer", "description": "Max results (default 10)"],
+            "mode": ["type": "string", "enum": ["text", "vector"], "description": "Search mode: text (keyword) or vector (semantic)"],
+            "excludeTests": ["type": "boolean", "description": "Exclude test/spec files"],
+            "constructType": ["type": "string", "description": "Filter by construct type"],
+            "matchAll": ["type": "boolean", "description": "Text mode: true=AND all words, false=OR any word"]
           ],
           "required": ["query"]
         ],
@@ -3853,6 +3955,43 @@ public final class MCPServerService {
         ],
         category: .rag,
         isMutating: true
+      ),
+      ToolDefinition(
+        name: "rag.stats",
+        description: "Get index statistics: file count, chunk count, embedding count, total lines. Optionally filter by repo.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": ["type": "string", "description": "Optional repo path to filter stats"]
+          ]
+        ],
+        category: .rag,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "rag.largeFiles",
+        description: "Find the largest files in the index by line count. Useful for finding refactor candidates.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": ["type": "string", "description": "Optional repo path to filter"],
+            "limit": ["type": "integer", "description": "Max files to return (default 20)"]
+          ]
+        ],
+        category: .rag,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "rag.constructTypes",
+        description: "Get distribution of construct types (class, function, component, etc.) in the index.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": ["type": "string", "description": "Optional repo path to filter"]
+          ]
+        ],
+        category: .rag,
+        isMutating: false
       ),
       ToolDefinition(
         name: "templates.list",
