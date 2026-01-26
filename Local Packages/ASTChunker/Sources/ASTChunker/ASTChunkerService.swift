@@ -14,8 +14,23 @@ public struct ASTChunkerService: Sendable {
   public static let defaultMaxChunkLines = 150
   
   private let swiftChunker = SwiftChunker()
+  private let rubyChunker: RubyChunker?
   
-  public init() {}
+  public init(
+    treeSitterLibPath: String? = nil,
+    treeSitterCLIPath: String? = nil
+  ) {
+    // Initialize Ruby chunker if tree-sitter is available
+    let cliPath = treeSitterCLIPath ?? "/opt/homebrew/bin/tree-sitter"
+    let libPath = treeSitterLibPath ?? (("~/code/tree-sitter-grammars/tree-sitter-ruby/ruby.dylib" as NSString).expandingTildeInPath)
+    
+    if FileManager.default.fileExists(atPath: cliPath) &&
+       FileManager.default.fileExists(atPath: libPath) {
+      self.rubyChunker = RubyChunker(treeSitterLibPath: libPath, treeSitterCLIPath: cliPath)
+    } else {
+      self.rubyChunker = nil
+    }
+  }
   
   /// Chunk source code with automatic language detection
   /// - Parameters:
@@ -33,6 +48,11 @@ public struct ASTChunkerService: Sendable {
     switch language {
     case "swift":
       return swiftChunker.chunk(source: source, maxChunkLines: maxChunkLines)
+    case "ruby":
+      if let rubyChunker = rubyChunker {
+        return rubyChunker.chunk(source: source, maxChunkLines: maxChunkLines)
+      }
+      return fallbackChunk(source: source, language: language, maxChunkLines: maxChunkLines)
     default:
       return fallbackChunk(source: source, language: language, maxChunkLines: maxChunkLines)
     }

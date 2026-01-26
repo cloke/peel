@@ -1,0 +1,263 @@
+//
+//  RubyChunker.swift
+//  ASTChunker
+//
+//  Ruby AST chunker using tree-sitter for parsing.
+//
+
+import Foundation
+
+/// Ruby AST chunker using tree-sitter
+public struct RubyChunker: LanguageChunker, Sendable {
+  public static let language = "ruby"
+  public static let fileExtensions: Set<String> = ["rb", "rake", "gemspec", "ru"]
+  
+  /// Path to tree-sitter dynamic library for Ruby
+  private let treeSitterLibPath: String
+  
+  /// Path to tree-sitter CLI
+  private let treeSitterCLIPath: String
+  
+  public init(
+    treeSitterLibPath: String = "~/code/tree-sitter-grammars/tree-sitter-ruby/ruby.dylib",
+    treeSitterCLIPath: String = "/opt/homebrew/bin/tree-sitter"
+  ) {
+    self.treeSitterLibPath = (treeSitterLibPath as NSString).expandingTildeInPath
+    self.treeSitterCLIPath = treeSitterCLIPath
+  }
+  
+  public func chunk(source: String, maxChunkLines: Int = 200) -> [ASTChunk] {
+    // Write source to temp file
+    let tempFile = FileManager.default.temporaryDirectory.appendingPathComponent("ruby_\(UUID().uuidString).rb")
+    
+    do {
+      try source.write(to: tempFile, atomically: true, encoding: .utf8)
+      defer { try? FileManager.default.removeItem(at: tempFile) }
+      
+      // Parse with tree-sitter
+      guard let ast = parseWithTreeSitter(file: tempFile.path) else {
+        return fallbackChunk(source: source)
+      }
+      
+      // Extract chunks from AST
+      let chunks = extractChunks(from: ast, source: source, maxChunkLines: maxChunkLines)
+      return chunks.isEmpty ? fallbackChunk(source: source) : chunks
+      
+    } catch {
+      return fallbackChunk(source: source)
+    }
+  }
+  
+  // MARK: - Tree-sitter Integration
+  
+  /// Timeout for tree-sitter parsing (in seconds)
+  private let parseTimeout: TimeInterval = 5.0
+  
+  private func parseWithTreeSitter(file: String) -> String? {
+    let process = Process()
+    let pipe = Pipe()
+    
+    process.executableURL = URL(fileURLWithPath: treeSitterCLIPath)
+    process.arguments = [
+      "parse",
+      "-l", treeSitterLibPath,
+      "--lang-name", "ruby",
+      "--timeout", "3000000",  // 3 seconds in microseconds
+      file
+    ]
+    process.standardOutput = pipe
+    process.standardError = FileHandle.nullDevice
+    
+    do {
+      try process.run()
+      
+      // Wait with timeout to prevent hanging
+      let deadline = Date().addingTimeInterval(parseTimeout)
+      while process.isRunning && Date() < deadline {
+        Thread.sleep(forTimeInterval: 0.1)
+      }
+      
+      if process.isRunning {
+        // Process timed out - kill it
+        process.terminate()
+        return nil
+      }
+      
+      guard process.terminationStatus == 0 else { return nil }
+      
+      let data = pipe.fileHandleForReading.readDataToEndOfFile()
+      return String(data: data, encoding: .utf8)
+    } catch {
+      return nil
+    }
+  }
+  
+  // MARK: - AST Parsing
+  
+  private func extractChunks(from ast: String, source: String, maxChunkLines: Int) -> [ASTChunk] {
+    let lines = source.components(separatedBy: "\n")
+    var chunks: [ASTChunk] = []
+    
+    // Parse top-level constructs from tree-sitter output
+    let constructs = parseTopLevelConstructs(from: ast, sourceLines: lines)
+    
+    for construct in constructs {
+      if construct.endLine - construct.startLine + 1 <= maxChunkLines {
+        // Construct fits in one chunk
+        let text = extractLines(from: lines, start: construct.startLine, end: construct.endLine)
+        chunks.append(ASTChunk(
+          constructType: construct.type,
+          constructName: construct.name,
+          startLine: construct.startLine + 1, // Convert to 1-indexed
+          endLine: construct.endLine + 1,
+          text: text,
+          language: Self.language
+        ))
+      } else {
+        // Split large construct by methods
+        let methodChunks = splitByMethods(construct: construct, ast: ast, lines: lines, maxChunkLines: maxChunkLines)
+        chunks.append(contentsOf: methodChunks)
+      }
+    }
+    
+    return chunks
+  }
+  
+  private struct ParsedConstruct {
+    let type: ASTChunk.ConstructType
+    let name: String?
+    let startLine: Int  // 0-indexed
+    let endLine: Int    // 0-indexed
+  }
+  
+  private func parseTopLevelConstructs(from ast: String, sourceLines: [String]) -> [ParsedConstruct] {
+    var constructs: [ParsedConstruct] = []
+    let lines = ast.components(separatedBy: "\n")
+    
+    // Scan for class/module declarations and extract their info
+    for line in lines {
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+      
+      // Match: (class [0, 0] - [15, 3] or (module [0, 0] - [10, 3]
+      if let match = parseClassOrModuleLine(trimmed) {
+        // Extract name from the source code at startLine
+        let name = extractNameFromSource(sourceLines: sourceLines, line: match.startLine, type: match.type)
+        
+        constructs.append(ParsedConstruct(
+          type: mapConstructType(match.type),
+          name: name,
+          startLine: match.startLine,
+          endLine: match.endLine
+        ))
+      }
+    }
+    
+    return constructs
+  }
+  
+  private func parseClassOrModuleLine(_ line: String) -> (type: String, startLine: Int, endLine: Int)? {
+    // Match: (class [0, 0] - [15, 3] or (module [0, 0] - [10, 3]
+    // Only match at start of line (top-level)
+    let pattern = #"^\((\w+) \[(\d+), \d+\] - \[(\d+), \d+\]"#
+    guard let regex = try? NSRegularExpression(pattern: pattern),
+          let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) else {
+      return nil
+    }
+    
+    guard let typeRange = Range(match.range(at: 1), in: line),
+          let startRange = Range(match.range(at: 2), in: line),
+          let endRange = Range(match.range(at: 3), in: line) else {
+      return nil
+    }
+    
+    let type = String(line[typeRange])
+    
+    // Only care about class and module
+    guard type == "class" || type == "module" else { return nil }
+    
+    let startLine = Int(line[startRange]) ?? 0
+    let endLine = Int(line[endRange]) ?? 0
+    
+    return (type: type, startLine: startLine, endLine: endLine)
+  }
+  
+  private func extractNameFromSource(sourceLines: [String], line: Int, type: String) -> String? {
+    guard line < sourceLines.count else { return nil }
+    
+    let sourceLine = sourceLines[line]
+    
+    // Match: class ClassName or module ModuleName
+    // Also handle: class ClassName < ParentClass
+    let pattern: String
+    switch type {
+    case "class":
+      pattern = #"class\s+([A-Z]\w*)"#
+    case "module":
+      pattern = #"module\s+([A-Z]\w*)"#
+    default:
+      return nil
+    }
+    
+    guard let regex = try? NSRegularExpression(pattern: pattern),
+          let match = regex.firstMatch(in: sourceLine, range: NSRange(sourceLine.startIndex..., in: sourceLine)),
+          let nameRange = Range(match.range(at: 1), in: sourceLine) else {
+      return nil
+    }
+    
+    return String(sourceLine[nameRange])
+  }
+  
+  private func mapConstructType(_ type: String) -> ASTChunk.ConstructType {
+    switch type {
+    case "class": return .classDecl
+    case "module": return .module
+    case "method", "singleton_method": return .method
+    case "call": return .function  // method calls at top level
+    default: return .unknown
+    }
+  }
+  
+  private func splitByMethods(construct: ParsedConstruct, ast: String, lines: [String], maxChunkLines: Int) -> [ASTChunk] {
+    // For now, just split into fixed-size chunks
+    // Full implementation would parse method boundaries from AST
+    var chunks: [ASTChunk] = []
+    var currentStart = construct.startLine
+    
+    while currentStart <= construct.endLine {
+      let currentEnd = min(currentStart + maxChunkLines - 1, construct.endLine)
+      let text = extractLines(from: lines, start: currentStart, end: currentEnd)
+      
+      chunks.append(ASTChunk(
+        constructType: construct.type,
+        constructName: construct.name,
+        startLine: currentStart + 1,
+        endLine: currentEnd + 1,
+        text: text,
+        language: Self.language
+      ))
+      
+      currentStart = currentEnd + 1
+    }
+    
+    return chunks
+  }
+  
+  private func extractLines(from lines: [String], start: Int, end: Int) -> String {
+    let safeStart = max(0, start)
+    let safeEnd = min(lines.count - 1, end)
+    guard safeStart <= safeEnd else { return "" }
+    return lines[safeStart...safeEnd].joined(separator: "\n")
+  }
+  
+  private func fallbackChunk(source: String) -> [ASTChunk] {
+    let lineCount = source.components(separatedBy: "\n").count
+    return [ASTChunk(
+      constructType: .file,
+      constructName: nil,
+      startLine: 1,
+      endLine: lineCount,
+      text: source,
+      language: Self.language
+    )]
+  }
+}
