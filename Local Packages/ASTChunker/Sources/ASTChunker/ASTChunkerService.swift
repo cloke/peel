@@ -15,10 +15,12 @@ public struct ASTChunkerService: Sendable {
   
   private let swiftChunker = SwiftChunker()
   private let rubyChunker: RubyChunker?
+  private let glimmerChunker: GlimmerChunker?
   
   public init(
     treeSitterLibPath: String? = nil,
-    treeSitterCLIPath: String? = nil
+    treeSitterCLIPath: String? = nil,
+    glimmerLibPath: String? = nil
   ) {
     // Initialize Ruby chunker if tree-sitter is available
     let cliPath = treeSitterCLIPath ?? "/opt/homebrew/bin/tree-sitter"
@@ -30,6 +32,10 @@ public struct ASTChunkerService: Sendable {
     } else {
       self.rubyChunker = nil
     }
+    
+    // Initialize Glimmer (GTS/GJS) chunker
+    let glimmerChunker = GlimmerChunker()
+    self.glimmerChunker = glimmerChunker.isAvailable ? glimmerChunker : nil
   }
   
   /// Chunk source code with automatic language detection
@@ -53,6 +59,14 @@ public struct ASTChunkerService: Sendable {
         return rubyChunker.chunk(source: source, maxChunkLines: maxChunkLines)
       }
       return fallbackChunk(source: source, language: language, maxChunkLines: maxChunkLines)
+    case "gts", "gjs":
+      if let glimmerChunker = glimmerChunker {
+        return glimmerChunker.chunk(source: source, maxChunkLines: maxChunkLines)
+      }
+      return fallbackChunk(source: source, language: language, maxChunkLines: maxChunkLines)
+    case "typescript":
+      // For now, fall back to line-based chunking for non-GTS TypeScript
+      return fallbackChunk(source: source, language: language, maxChunkLines: maxChunkLines)
     default:
       return fallbackChunk(source: source, language: language, maxChunkLines: maxChunkLines)
     }
@@ -74,8 +88,16 @@ public struct ASTChunkerService: Sendable {
       return "ruby"
     }
     
-    // TypeScript/JavaScript (for future)
-    if ["ts", "tsx", "js", "jsx", "mts", "cts", "mjs", "cjs", "gts", "gjs"].contains(ext) {
+    // GTS/GJS (Glimmer TypeScript/JavaScript)
+    if ext == "gts" {
+      return "gts"
+    }
+    if ext == "gjs" {
+      return "gjs"
+    }
+    
+    // TypeScript/JavaScript (regular, without Glimmer templates)
+    if ["ts", "tsx", "js", "jsx", "mts", "cts", "mjs", "cjs"].contains(ext) {
       return "typescript"
     }
     

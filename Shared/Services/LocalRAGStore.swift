@@ -196,12 +196,13 @@ struct LocalRAGChunker {
   }
 }
 
-/// Hybrid chunker that uses AST-aware chunking for supported languages (Swift, Ruby)
+/// Hybrid chunker that uses AST-aware chunking for supported languages (Swift, Ruby, GTS)
 /// and falls back to line-based chunking for others.
 struct HybridChunker {
   private let lineChunker = LocalRAGChunker()
   private let swiftChunker = SwiftChunker()
   private let rubyChunker: RubyChunker?
+  private let glimmerChunker: GlimmerChunker?
   
   /// Languages that have AST chunker support
   private var astSupportedLanguages: Set<String> {
@@ -209,23 +210,36 @@ struct HybridChunker {
     if rubyChunker != nil {
       languages.insert("Ruby")
     }
+    if glimmerChunker != nil {
+      languages.insert("Glimmer TypeScript")
+      languages.insert("Glimmer JavaScript")
+    }
     return languages
   }
   
   init() {
-    // Initialize Ruby chunker if tree-sitter is available
     let cliPath = "/opt/homebrew/bin/tree-sitter"
-    let libPath = ("~/code/tree-sitter-grammars/tree-sitter-ruby/ruby.dylib" as NSString).expandingTildeInPath
     
+    // Initialize Ruby chunker if tree-sitter is available
+    let rubyLibPath = ("~/code/tree-sitter-grammars/tree-sitter-ruby/ruby.dylib" as NSString).expandingTildeInPath
     if FileManager.default.fileExists(atPath: cliPath) &&
-       FileManager.default.fileExists(atPath: libPath) {
-      self.rubyChunker = RubyChunker(treeSitterLibPath: libPath, treeSitterCLIPath: cliPath)
+       FileManager.default.fileExists(atPath: rubyLibPath) {
+      self.rubyChunker = RubyChunker(treeSitterLibPath: rubyLibPath, treeSitterCLIPath: cliPath)
     } else {
       self.rubyChunker = nil
     }
+    
+    // Initialize Glimmer chunker if tree-sitter grammar is available
+    let glimmerChunker = GlimmerChunker()
+    self.glimmerChunker = glimmerChunker.isAvailable ? glimmerChunker : nil
+    
+    print("[HybridChunker] Ruby chunker available: \(rubyChunker != nil)")
+    print("[HybridChunker] Glimmer chunker available: \(glimmerChunker.isAvailable)")
+    print("[HybridChunker] AST supported languages: \(astSupportedLanguages)")
   }
   
   func chunk(text: String, language: String) -> [LocalRAGChunk] {
+    print("[HybridChunker] chunk called with language: \(language)")
     // Use AST chunking for supported languages
     if astSupportedLanguages.contains(language) {
       let chunks = chunkWithAST(text: text, language: language)
@@ -234,6 +248,7 @@ struct HybridChunker {
     }
     
     // Fall back to line-based chunking
+    print("[HybridChunker] Falling back to line-based chunking for \(language)")
     return lineChunker.chunk(text: text)
   }
   
@@ -246,6 +261,12 @@ struct HybridChunker {
     case "Ruby":
       if let rubyChunker = rubyChunker {
         astChunks = rubyChunker.chunk(source: text)
+      } else {
+        return lineChunker.chunk(text: text)
+      }
+    case "Glimmer TypeScript", "Glimmer JavaScript":
+      if let glimmerChunker = glimmerChunker {
+        astChunks = glimmerChunker.chunk(source: text)
       } else {
         return lineChunker.chunk(text: text)
       }
@@ -278,7 +299,22 @@ struct LocalRAGFileScanner {
     "node_modules",
     "coverage",
     "tmp",
-    "Carthage"
+    "Carthage",
+    ".turbo",
+    "__snapshots__",
+    "vendor"
+  ]
+  
+  /// Files that are always excluded regardless of extension
+  private let excludedFiles: Set<String> = [
+    "pnpm-lock.yaml",
+    "package-lock.json",
+    "yarn.lock",
+    "Gemfile.lock",
+    "Podfile.lock",
+    "Cargo.lock",
+    "composer.lock",
+    "poetry.lock"
   ]
 
   func scan(rootURL: URL) -> [LocalRAGFileCandidate] {
@@ -318,7 +354,12 @@ struct LocalRAGFileScanner {
 
   private func shouldSkip(url: URL, rootURL: URL, ignorePatterns: [String]) -> Bool {
     let lastComponent = url.lastPathComponent
+    // Skip excluded directories
     if excludedDirectories.contains(lastComponent) {
+      return true
+    }
+    // Skip excluded files (lock files, etc.)
+    if excludedFiles.contains(lastComponent) {
       return true
     }
     if matchesIgnore(url: url, rootURL: rootURL, patterns: ignorePatterns) {
