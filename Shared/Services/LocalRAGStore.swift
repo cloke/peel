@@ -768,25 +768,36 @@ actor LocalRAGStore {
       ))
     }
 
-    // Phase 2: Batch embed all missing texts at once
+    // Phase 2: Batch embed all missing texts in smaller chunks to avoid GPU memory issues
+    // MLX Metal backend can crash with large batches, so we limit to 4 texts per batch
+    // The quantized model (4bit-DWQ) has memory issues with larger batches
     var embeddingCache: [String: [Float]] = [:]
+    let embeddingBatchSize = 4
 
     if !allMissingEmbeddings.isEmpty {
       progress?(.embedding(current: 0, total: allMissingEmbeddings.count))
       let embedStart = Date()
-      let textsToEmbed = allMissingEmbeddings.map { $0.text }
-      let embeddings = try await embeddingProvider.embed(texts: textsToEmbed)
+      var allEmbeddings: [[Float]] = []
+      
+      // Process in batches to avoid GPU memory exhaustion
+      for batchStart in stride(from: 0, to: allMissingEmbeddings.count, by: embeddingBatchSize) {
+        let batchEnd = min(batchStart + embeddingBatchSize, allMissingEmbeddings.count)
+        let batchTexts = allMissingEmbeddings[batchStart..<batchEnd].map { $0.text }
+        
+        let batchEmbeddings = try await embeddingProvider.embed(texts: batchTexts)
+        allEmbeddings.append(contentsOf: batchEmbeddings)
+        
+        progress?(.embedding(current: batchEnd, total: allMissingEmbeddings.count))
+      }
+      
       let embedDuration = Int(Date().timeIntervalSince(embedStart) * 1000)
       embeddingDurationMs = embedDuration
-      embeddingCount = embeddings.count
+      embeddingCount = allEmbeddings.count
 
       // Cache all new embeddings
       for (index, missing) in allMissingEmbeddings.enumerated() {
-        if index % 50 == 0 {
-          progress?(.embedding(current: index, total: allMissingEmbeddings.count))
-        }
-        guard index < embeddings.count else { break }
-        let vector = embeddings[index]
+        guard index < allEmbeddings.count else { break }
+        let vector = allEmbeddings[index]
         embeddingCache[missing.textHash] = vector
         if !vector.isEmpty {
           try upsertCacheEmbedding(textHash: missing.textHash, vector: vector)

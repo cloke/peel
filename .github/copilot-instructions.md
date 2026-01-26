@@ -141,6 +141,35 @@ Tools/PeelCLI/.build/debug/peel-mcp tools-call --tool-name rag.search --argument
 
 **Rule: If you're about to write a helper function, search first.**
 
+### RAG Database Management via MCP (IMPORTANT)
+
+**Always use MCP tools** to manage the RAG database—never delete or modify `rag.sqlite` directly:
+
+| Task | MCP Tool | Example |
+|------|----------|---------|
+| Check status | `rag.status` | Verify DB exists, schema version, provider |
+| List repos | `rag.repos.list` | See what's indexed with file/chunk counts |
+| Delete repo | `rag.repos.delete` | Remove repo to force clean re-index |
+| Re-index | `rag.index` with `forceReindex: true` | Rebuild embeddings |
+| Test embeddings | `rag.embedding.test` | Verify dimensions and timing |
+| Set provider | `rag.config` with `action: "set"` | Switch between mlx/coreml/system |
+
+**Why not delete the sqlite file directly:**
+- The app may hold open database handles → causes "disk I/O error"
+- Database recreation may not match expected schema
+- Loses all indexed repos, not just the one you want to reset
+
+**Proper workflow for resetting a repo's embeddings:**
+```bash
+# 1. Delete the specific repo
+curl -X POST http://127.0.0.1:8765/rpc -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rag.repos.delete","arguments":{"repoPath":"/path/to/repo"}}}'
+
+# 2. Re-index
+curl -X POST http://127.0.0.1:8765/rpc -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rag.index","arguments":{"repoPath":"/path/to/repo"}}}'
+```
+
 ---
 
 ## Model Selection for Cost Optimization

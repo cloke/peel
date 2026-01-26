@@ -87,8 +87,12 @@ struct MLXEmbeddingModelConfig: Sendable {
     let availableMemoryGB = getAvailableMemoryGB()
     let tier: MLXEmbeddingModelTier
     
+    // TEMPORARY: Force medium tier to avoid quantized model GPU crashes
+    // The Qwen3-4bit-DWQ model causes MLX Metal command buffer errors
+    // See: https://github.com/ml-explore/mlx-swift/issues
+    // TODO: Re-enable large tier once MLX quantized model bug is fixed
     if availableMemoryGB >= 24 {
-      tier = .large
+      tier = .medium  // Was .large - crashes with quantized models
     } else if availableMemoryGB >= 12 {
       tier = .medium
     } else {
@@ -131,6 +135,7 @@ actor MLXEmbeddingProvider: LocalRAGEmbeddingProvider {
   /// Create provider with auto-detected best model for the machine
   init(forCodeSearch: Bool = true) {
     let config = MLXEmbeddingModelConfig.recommendedModel(forCodeSearch: forCodeSearch)
+    print("[MLX] Selected model: \(config.name) (tier: \(config.tier), dims: \(config.dimensions), hf: \(config.huggingFaceId))")
     self.config = config
     self.dimensions = config.dimensions
   }
@@ -198,17 +203,37 @@ actor MLXEmbeddingProvider: LocalRAGEmbeddingProvider {
         }
       )
       
-      // Create attention mask
-      let mask = (padded .!= padTokenId)
+      // Create attention mask (1 for real tokens, 0 for padding)
+      let attentionMask = (padded .!= padTokenId)
       let tokenTypes = MLXArray.zeros(like: padded)
       
-      // Run model and pooling
-      let modelOutput = model(padded, positionIds: nil, tokenTypeIds: tokenTypes, attentionMask: mask)
-      let pooledResult = pooling(modelOutput, normalize: true, applyLayerNorm: true)
+      // Run model to get hidden states
+      let modelOutput = model(padded, positionIds: nil, tokenTypeIds: tokenTypes, attentionMask: attentionMask)
+      
+      // Use mean pooling if the loaded pooling strategy is .none (missing config file case)
+      // Many embedding models like Qwen3 don't include 1_Pooling/config.json
+      let effectivePooling: Pooling
+      if pooling.strategy == .none {
+        effectivePooling = Pooling(strategy: .mean)
+      } else {
+        effectivePooling = pooling
+      }
+      
+      // Apply pooling with mask for proper mean calculation
+      let pooledResult = effectivePooling(modelOutput, mask: attentionMask, normalize: true, applyLayerNorm: true)
       
       // Evaluate and convert to Float arrays
+      // pooledResult shape should be [batch, hidden_dim]
       pooledResult.eval()
-      return pooledResult.map { $0.asArray(Float.self) }
+      
+      // Convert each batch item to a Float array
+      let batchSize = pooledResult.dim(0)
+      var embeddings: [[Float]] = []
+      for i in 0..<batchSize {
+        let embedding = pooledResult[i].asArray(Float.self)
+        embeddings.append(embedding)
+      }
+      return embeddings
     }
     
     return results
