@@ -21,17 +21,23 @@ audience:
 
 ---
 
-## Quick Stats (Jan 25, 2026)
+## Quick Stats (Jan 26, 2026)
 
 | Metric | Count |
 |--------|-------|
-| **Closed** | 73 ✅ |
+| **Closed** | 74 ✅ |
 | **Open - Phase 1C** | 18 |
 | **Open - Phase 2** | 5 |
 | **Open - Phase 3** | 9 |
 | **Open - Distributed Tasks** | 16 |
 | **Open - Backlog** | 17 |
-| **Total Open** | 65 |
+| **Total Open** | 61 |
+
+### Recent Changes
+- ✅ **#24 MLX integration** - Complete! Native Swift embeddings working
+- 🔄 **#128** - Updated: HF for reranking (not embeddings, MLX handles those)
+- 🔄 **#133** - Updated: Pre-planner now uses MLX-backed RAG
+- 🆕 **#163** - Qwen3-4bit GPU crash workaround (tracking MLX-swift fix)
 
 ---
 
@@ -98,14 +104,14 @@ Can be done in any order, low dependencies.
 
 | Order | # | Title | Est | Deps | Status |
 |-------|---|-------|-----|------|--------|
-| 1 | [#128](https://github.com/cloke/peel/issues/128) | Add Hugging Face model analysis for RAG | 4h | P1C done | ⚪ Blocked |
-| 2 | [#133](https://github.com/cloke/peel/issues/133) | Pre-planner using HF RAG | 4h | #128 | ⚪ Blocked |
-| 3 | [#24](https://github.com/cloke/peel/issues/24) | MLX integration | 8h | None | � In Progress |
+| 1 | [#24](https://github.com/cloke/peel/issues/24) | MLX integration | 8h | None | ✅ Complete |
+| 2 | [#128](https://github.com/cloke/peel/issues/128) | Add Hugging Face reranking for RAG | 4h | #24 | 🟡 Ready |
+| 3 | [#133](https://github.com/cloke/peel/issues/133) | Pre-planner using RAG | 4h | #24 | 🟡 Ready |
 | 4 | [#23](https://github.com/cloke/peel/issues/23) | XPC tool broker | 6h | None | 🟡 Ready |
 | 5 | [#41](https://github.com/cloke/peel/issues/41) | Budget-aware agent scheduler | 6h | #24 | 🟡 Ready |
 | 6 | [#108](https://github.com/cloke/peel/issues/108) | ANE micro-services | 6h | #24 | 🟡 Ready |
 
-**Phase 2 Total**: ~34h (~4-5 days focused work)
+**Phase 2 Total**: ~26h (~3-4 days focused work) - *MLX done!*
 
 ---
 
