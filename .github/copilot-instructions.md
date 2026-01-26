@@ -309,6 +309,15 @@ If an issue template file exists in .github/ISSUE_TEMPLATE, prefer:
 gh issue create --repo cloke/peel --template <template-file>
 ```
 
+### Issue Body Formatting (IMPORTANT)
+To avoid escaped newline formatting in issue bodies, use the repo script instead of inline `gh issue create` bodies:
+
+```bash
+Tools/gh-issue-create.sh --repo cloke/peel --title "Title" --body-file /path/to/body.md
+# or pipe from stdin
+cat /path/to/body.md | Tools/gh-issue-create.sh --repo cloke/peel --title "Title"
+```
+
 ### Delegating to GitHub Copilot Workspace
 For simple, well-defined tasks, you can delegate to Copilot Workspace:
 1. Open issue in browser: `gh issue view <number> --repo cloke/peel --web`
