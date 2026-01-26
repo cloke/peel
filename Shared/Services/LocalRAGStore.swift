@@ -69,6 +69,13 @@ struct LocalRAGSearchResult: Sendable {
   let startLine: Int
   let endLine: Int
   let snippet: String
+  
+  // Metadata for agent understanding
+  let constructType: String?    // "class", "function", "component", etc.
+  let constructName: String?    // "UserService", "validateForm", etc.
+  let language: String?         // "Swift", "Ruby", "Glimmer TypeScript"
+  let isTest: Bool              // true if in test/spec directory
+  let score: Float?             // relevance score for vector search
 }
 
 struct LocalRAGFileCandidate: Sendable {
@@ -90,6 +97,19 @@ struct LocalRAGChunk: Sendable {
   let endLine: Int
   let text: String
   let tokenCount: Int
+  
+  // AST metadata (nil for line-based chunks)
+  let constructType: String?
+  let constructName: String?
+  
+  init(startLine: Int, endLine: Int, text: String, tokenCount: Int, constructType: String? = nil, constructName: String? = nil) {
+    self.startLine = startLine
+    self.endLine = endLine
+    self.text = text
+    self.tokenCount = tokenCount
+    self.constructType = constructType
+    self.constructName = constructName
+  }
 }
 
 struct LocalRAGChunker {
@@ -275,13 +295,15 @@ struct HybridChunker {
       return lineChunker.chunk(text: text)
     }
     
-    // Convert ASTChunk to LocalRAGChunk
+    // Convert ASTChunk to LocalRAGChunk, preserving metadata
     return astChunks.map { astChunk in
       LocalRAGChunk(
         startLine: astChunk.startLine,
         endLine: astChunk.endLine,
         text: astChunk.text,
-        tokenCount: astChunk.estimatedTokenCount
+        tokenCount: astChunk.estimatedTokenCount,
+        constructType: astChunk.constructType.rawValue,
+        constructName: astChunk.constructName
       )
     }
   }
@@ -935,12 +957,17 @@ actor LocalRAGStore {
       }
 
       guard let file = scanner.loadFile(candidate: candidate) else { continue }
+      
+      // Compute relative path for storage (portable across machines)
+      let relativePath = file.path.hasPrefix(path + "/") 
+        ? String(file.path.dropFirst(path.count + 1))
+        : file.path
 
-      let fileId = stableId(for: "\(repoId):\(file.path)")
+      let fileId = stableId(for: "\(repoId):\(relativePath)")
       let fileHash = stableId(for: file.text)
 
       // Incremental indexing: skip unchanged files
-      let existingHash = try fetchFileHashByPath(repoId: repoId, path: file.path)
+      let existingHash = try fetchFileHashByPath(repoId: repoId, path: relativePath)
       if let existingHash, existingHash == fileHash {
         skippedUnchanged += 1
         bytesScanned += file.byteCount
@@ -1004,7 +1031,7 @@ actor LocalRAGStore {
       try upsertFile(
         id: fileId,
         repoId: repoId,
-        path: file.path,
+        path: relativePath,
         hash: fileHash,
         language: file.language,
         updatedAt: now
@@ -1019,7 +1046,9 @@ actor LocalRAGStore {
           startLine: chunk.startLine,
           endLine: chunk.endLine,
           text: chunk.text,
-          tokenCount: chunk.tokenCount
+          tokenCount: chunk.tokenCount,
+          constructType: chunk.constructType,
+          constructName: chunk.constructName
         )
 
         let textHash = chunkHashes[index]
@@ -1078,7 +1107,8 @@ actor LocalRAGStore {
     }
 
     let sqlBase = """
-    SELECT files.path, chunks.start_line, chunks.end_line, chunks.text
+    SELECT repos.root_path || '/' || files.path, chunks.start_line, chunks.end_line, chunks.text,
+           chunks.construct_type, chunks.construct_name, files.language
     FROM chunks
     JOIN files ON files.id = chunks.file_id
     JOIN repos ON repos.id = files.repo_id
@@ -1092,7 +1122,7 @@ actor LocalRAGStore {
       sql = sqlBase + " ORDER BY files.path LIMIT ?"
     }
 
-    return try queryRows(sql: sql) { statement in
+    return try querySearchResults(sql: sql, withScore: false) { statement in
       var bindIndex: Int32 = 1
       for word in words {
         bindText(statement, bindIndex, "%\(word)%")
@@ -1132,7 +1162,8 @@ actor LocalRAGStore {
 
     let candidateLimit = max(limit * 50, 200)
     let sqlBase = """
-    SELECT files.path, chunks.start_line, chunks.end_line, chunks.text, embeddings.embedding
+    SELECT repos.root_path || '/' || files.path, chunks.start_line, chunks.end_line, chunks.text, embeddings.embedding,
+           chunks.construct_type, chunks.construct_name, files.language
     FROM embeddings
     JOIN chunks ON chunks.id = embeddings.chunk_id
     JOIN files ON files.id = chunks.file_id
@@ -1164,7 +1195,12 @@ actor LocalRAGStore {
         filePath: row.filePath,
         startLine: row.startLine,
         endLine: row.endLine,
-        snippet: snippet
+        snippet: snippet,
+        constructType: row.constructType,
+        constructName: row.constructName,
+        language: row.language,
+        isTest: isTestFile(row.filePath),
+        score: score
       )
       return (result, score)
     }
@@ -1206,9 +1242,14 @@ actor LocalRAGStore {
     try exec("CREATE TABLE IF NOT EXISTS rag_meta (key TEXT PRIMARY KEY, value TEXT)")
     try exec("CREATE TABLE IF NOT EXISTS repos (id TEXT PRIMARY KEY, name TEXT, root_path TEXT, last_indexed_at TEXT)")
     try exec("CREATE TABLE IF NOT EXISTS files (id TEXT PRIMARY KEY, repo_id TEXT, path TEXT, hash TEXT, language TEXT, updated_at TEXT, FOREIGN KEY(repo_id) REFERENCES repos(id) ON DELETE CASCADE)")
-    try exec("CREATE TABLE IF NOT EXISTS chunks (id TEXT PRIMARY KEY, file_id TEXT, start_line INTEGER, end_line INTEGER, text TEXT, token_count INTEGER, FOREIGN KEY(file_id) REFERENCES files(id) ON DELETE CASCADE)")
+    try exec("CREATE TABLE IF NOT EXISTS chunks (id TEXT PRIMARY KEY, file_id TEXT, start_line INTEGER, end_line INTEGER, text TEXT, token_count INTEGER, construct_type TEXT, construct_name TEXT, FOREIGN KEY(file_id) REFERENCES files(id) ON DELETE CASCADE)")
     try exec("CREATE TABLE IF NOT EXISTS embeddings (chunk_id TEXT PRIMARY KEY, embedding BLOB, FOREIGN KEY(chunk_id) REFERENCES chunks(id) ON DELETE CASCADE)")
     try exec("CREATE TABLE IF NOT EXISTS cache_embeddings (text_hash TEXT PRIMARY KEY, embedding BLOB, updated_at TEXT)")
+    
+    // Add metadata columns to existing chunks table (migration for existing DBs)
+    // Ignore "duplicate column name" errors
+    try? exec("ALTER TABLE chunks ADD COLUMN construct_type TEXT")
+    try? exec("ALTER TABLE chunks ADD COLUMN construct_name TEXT")
 
     let now = dateFormatter.string(from: Date())
     try exec("INSERT OR IGNORE INTO rag_meta (key, value) VALUES ('schema_version', '1')")
@@ -1288,6 +1329,9 @@ actor LocalRAGStore {
     let endLine: Int
     let text: String
     let embeddingData: Data
+    let constructType: String?
+    let constructName: String?
+    let language: String?
   }
 
   private func queryEmbeddingRows(
@@ -1315,6 +1359,15 @@ actor LocalRAGStore {
       let text = String(cString: sqlite3_column_text(statement, 3))
       let blobPointer = sqlite3_column_blob(statement, 4)
       let blobSize = sqlite3_column_bytes(statement, 4)
+      
+      // Metadata columns (5, 6, 7)
+      let constructType: String? = sqlite3_column_type(statement, 5) != SQLITE_NULL 
+        ? String(cString: sqlite3_column_text(statement, 5)) : nil
+      let constructName: String? = sqlite3_column_type(statement, 6) != SQLITE_NULL
+        ? String(cString: sqlite3_column_text(statement, 6)) : nil
+      let language: String? = sqlite3_column_type(statement, 7) != SQLITE_NULL
+        ? String(cString: sqlite3_column_text(statement, 7)) : nil
+      
       if let blobPointer, blobSize > 0 {
         let data = Data(bytes: blobPointer, count: Int(blobSize))
         rows.append(
@@ -1323,7 +1376,10 @@ actor LocalRAGStore {
             startLine: startLine,
             endLine: endLine,
             text: text,
-            embeddingData: data
+            embeddingData: data,
+            constructType: constructType,
+            constructName: constructName,
+            language: language
           )
         )
       }
@@ -1331,9 +1387,25 @@ actor LocalRAGStore {
 
     return rows
   }
-
-  private func queryRows(
+  
+  /// Detect if file path indicates a test file
+  private func isTestFile(_ path: String) -> Bool {
+    let lowercased = path.lowercased()
+    return lowercased.contains("/test/") ||
+           lowercased.contains("/tests/") ||
+           lowercased.contains("/spec/") ||
+           lowercased.contains("_test.") ||
+           lowercased.contains("-test.") ||
+           lowercased.contains("_spec.") ||
+           lowercased.contains("-spec.") ||
+           lowercased.contains(".test.") ||
+           lowercased.contains(".spec.")
+  }
+  
+  /// Query search results with metadata
+  private func querySearchResults(
     sql: String,
+    withScore: Bool,
     binder: (OpaquePointer) -> Void
   ) throws -> [LocalRAGSearchResult] {
     guard let db else {
@@ -1356,12 +1428,26 @@ actor LocalRAGStore {
       let endLine = Int(sqlite3_column_int(statement, 2))
       let text = String(cString: sqlite3_column_text(statement, 3))
       let snippet = String(text.prefix(240))
+      
+      // Metadata columns (4, 5, 6)
+      let constructType: String? = sqlite3_column_type(statement, 4) != SQLITE_NULL
+        ? String(cString: sqlite3_column_text(statement, 4)) : nil
+      let constructName: String? = sqlite3_column_type(statement, 5) != SQLITE_NULL
+        ? String(cString: sqlite3_column_text(statement, 5)) : nil
+      let language: String? = sqlite3_column_type(statement, 6) != SQLITE_NULL
+        ? String(cString: sqlite3_column_text(statement, 6)) : nil
+      
       results.append(
         LocalRAGSearchResult(
           filePath: path,
           startLine: startLine,
           endLine: endLine,
-          snippet: snippet
+          snippet: snippet,
+          constructType: constructType,
+          constructName: constructName,
+          language: language,
+          isTest: isTestFile(path),
+          score: nil
         )
       )
     }
@@ -1468,11 +1554,13 @@ actor LocalRAGStore {
     startLine: Int,
     endLine: Int,
     text: String,
-    tokenCount: Int
+    tokenCount: Int,
+    constructType: String?,
+    constructName: String?
   ) throws {
     let sql = """
-    INSERT OR REPLACE INTO chunks (id, file_id, start_line, end_line, text, token_count)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO chunks (id, file_id, start_line, end_line, text, token_count, construct_type, construct_name)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """
     try execute(sql: sql) { statement in
       bindText(statement, 1, id)
@@ -1481,6 +1569,16 @@ actor LocalRAGStore {
       sqlite3_bind_int(statement, 4, Int32(endLine))
       bindText(statement, 5, text)
       sqlite3_bind_int(statement, 6, Int32(tokenCount))
+      if let constructType {
+        bindText(statement, 7, constructType)
+      } else {
+        sqlite3_bind_null(statement, 7)
+      }
+      if let constructName {
+        bindText(statement, 8, constructName)
+      } else {
+        sqlite3_bind_null(statement, 8)
+      }
     }
   }
 

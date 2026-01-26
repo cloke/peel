@@ -2038,17 +2038,48 @@ public final class MCPServerService {
     let repoPath = (arguments["repoPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
     let limit = arguments["limit"] as? Int ?? 10
     let mode = (arguments["mode"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "text"
+    
+    // Filter options
+    let excludeTests = arguments["excludeTests"] as? Bool ?? false
+    let constructTypeFilter = arguments["constructType"] as? String
 
     do {
       let resolvedMode: RAGSearchMode = mode.lowercased() == "vector" ? .vector : .text
-      let results = try await searchRag(query: query, mode: resolvedMode, repoPath: repoPath, limit: limit)
-      let payload = results.map { result in
-        [
+      var results = try await searchRag(query: query, mode: resolvedMode, repoPath: repoPath, limit: limit * 2) // fetch extra for filtering
+      
+      // Apply filters
+      if excludeTests {
+        results = results.filter { !$0.isTest }
+      }
+      if let typeFilter = constructTypeFilter?.lowercased(), !typeFilter.isEmpty {
+        results = results.filter { ($0.constructType?.lowercased() ?? "") == typeFilter }
+      }
+      
+      // Trim to requested limit after filtering
+      results = Array(results.prefix(limit))
+      
+      let payload: [[String: Any]] = results.map { result in
+        var item: [String: Any] = [
           "filePath": result.filePath,
           "startLine": result.startLine,
           "endLine": result.endLine,
-          "snippet": result.snippet
+          "snippet": result.snippet,
+          "isTest": result.isTest
         ]
+        // Include metadata if available
+        if let constructType = result.constructType {
+          item["constructType"] = constructType
+        }
+        if let constructName = result.constructName {
+          item["name"] = constructName
+        }
+        if let language = result.language {
+          item["language"] = language
+        }
+        if let score = result.score {
+          item["score"] = score
+        }
+        return item
       }
       return (200, makeRPCResult(id: id, result: ["mode": mode, "results": payload]))
     } catch {
