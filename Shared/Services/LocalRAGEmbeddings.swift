@@ -14,6 +14,7 @@ import SwiftBPETokenizer
 protocol LocalRAGEmbeddingProvider: Sendable {
   func embed(texts: [String]) async throws -> [[Float]]
   var dimensions: Int { get }
+  var modelName: String { get }
 }
 
 /// Provider preference for embedding generation
@@ -122,6 +123,7 @@ enum LocalRAGEmbeddingProviderFactory {
 struct SystemEmbeddingProvider: LocalRAGEmbeddingProvider, @unchecked Sendable {
   let embedding: NLEmbedding
   let dimensions: Int
+  let modelName: String = "Apple NLEmbedding"
 
   /// Maximum text length to avoid CoreNLP issues
   private let maxTextLength = 10_000
@@ -452,6 +454,7 @@ struct CoreMLEmbeddingProvider: LocalRAGEmbeddingProvider, @unchecked Sendable {
   let maxLength: Int
   let outputName: String
   let dimensions: Int
+  let modelName: String = "CodeBERT-base-256"
 
   static func makeDefault(modelFolderName: String) -> CoreMLEmbeddingProvider? {
     let modelDirectories = candidateModelDirectories(modelFolderName: modelFolderName)
@@ -651,6 +654,7 @@ struct LocalRAGModelDescriptor {
 
 struct HashEmbeddingProvider: LocalRAGEmbeddingProvider {
   let dimensions: Int = 128
+  let modelName: String = "Hash-based (no semantic)"
 
   func embed(texts: [String]) async throws -> [[Float]] {
     texts.map { text in

@@ -1,7 +1,7 @@
 # RAG Embedding Model Evaluation
 
 **Date:** 2026-01-25  
-**Updated:** 2026-01-25 (MLX implementation added)  
+**Updated:** 2026-01-26 (MLX implementation tested, quantized model bug found)  
 **Test Corpus:** tio-front-end (Ember/TypeScript, 1,846 files, 4,043 chunks)  
 **Test Type:** Vector semantic search for refactoring patterns
 
@@ -11,16 +11,17 @@
 
 | Provider | Vector Search Quality | Speed | Recommended Use |
 |----------|----------------------|-------|-----------------|
-| **MLX (mlx-swift-lm)** | 🔄 Testing | TBD | **New default (macOS)** |
+| **MLX nomic-embed-text-v1.5** | ✅ Good | ~5 emb/s | **Current default (macOS)** |
 | **Text Search (any)** | ✅ Excellent | Fast | **Primary method for code search** |
 | CodeBERT (CoreML) | ⚠️ Poor | ~90s index | Legacy fallback |
 | Apple NLEmbedding | ❌ Very Poor | ~10s index | Not for code |
+| ⚠️ MLX Qwen3-4bit | 🔴 CRASHES | N/A | Disabled - GPU bugs |
 
-**Key Finding:** For code search, **text/keyword search significantly outperforms vector search** with local models tested so far. However, **MLX with code-specific models** (Qwen3-Embedding, jina) is now implemented and may provide better results.
+**Key Finding:** For code search, **text/keyword search significantly outperforms vector search** with local models tested so far. However, **MLX with nomic-embed-text-v1.5** now provides reasonable semantic search as a complement to text search.
 
 ---
 
-## ✅ NEW: MLX Native Swift Implementation (Jan 25, 2026)
+## ✅ MLX Native Swift Implementation (Jan 25-26, 2026)
 
 ### What Changed
 
@@ -28,6 +29,15 @@
 - Created `MLXEmbeddingProvider` - **pure Swift, no Python**
 - MLX is now the **default provider on macOS**
 - Auto-selects model tier based on available memory
+- **Bug Fix:** Mean pooling for correct embedding dimensions
+
+### Known Issues
+
+⚠️ **Qwen3-Embedding-0.6B-4bit-DWQ CRASHES** (Issue #163)
+- The quantized 4-bit model causes Metal GPU command buffer errors
+- Crash in `mlx::core::gpu::check_error(MTL::CommandBuffer*)`
+- Stack: `QuantizedMatmul::eval_gpu` → `MetalAllocator::malloc`
+- **Workaround:** Force medium tier (nomic) for all machines until MLX-swift fixes this
 
 ### Architecture
 
@@ -45,11 +55,22 @@ Native MLX inference (CPU + GPU + Neural Engine)
 
 ### Available Model Tiers
 
-| Tier | RAM Required | Model | Dimensions | Best For |
-|------|--------------|-------|------------|----------|
-| **Small** | 8GB+ | all-MiniLM-L6-v2 | 384 | Fast inference, limited RAM |
-| **Medium** | 16GB+ | nomic-embed-text-v1.5 | 768 | Balanced |
-| **Large** | 32GB+ | Qwen3-Embedding-0.6B-4bit | 1024 | Code search, quality |
+| Tier | RAM | Model | Dims | Status | Notes |
+|------|-----|-------|------|--------|-------|
+| **Small** | 8GB+ | all-MiniLM-L6-v2 | 384 | ✅ Works | Fast, general purpose |
+| **Medium** | 16GB+ | nomic-embed-text-v1.5 | 768 | ✅ Works | **Current default** |
+| **Large** | 24GB+ | Qwen3-Embedding-0.6B-4bit | 1024 | 🔴 Crashes | Disabled until MLX fix |
+
+### Model/Machine Matrix
+
+| Machine Memory | Selected Model | Dimensions | Status |
+|----------------|----------------|------------|--------|
+| < 12GB | all-MiniLM-L6-v2 | 384 | ✅ |
+| 12-24GB | nomic-embed-text-v1.5 | 768 | ✅ |
+| 24GB+ | nomic-embed-text-v1.5 | 768 | ✅ (forced) |
+| 256GB (planned) | nomic-embed-text-v1.5 | 768 | 🔄 Test tomorrow |
+
+**TODO:** Re-enable Qwen3 for 24GB+ machines once MLX-swift quantized model bug is fixed.
 
 ### Provider Priority (Auto Mode)
 

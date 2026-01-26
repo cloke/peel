@@ -125,11 +125,13 @@ actor MLXEmbeddingProvider: LocalRAGEmbeddingProvider {
   private var isLoaded = false
   
   nonisolated let dimensions: Int
+  nonisolated let modelName: String
   
   /// Create provider with specific model configuration
   init(config: MLXEmbeddingModelConfig) {
     self.config = config
     self.dimensions = config.dimensions
+    self.modelName = config.name
   }
   
   /// Create provider with auto-detected best model for the machine
@@ -138,6 +140,7 @@ actor MLXEmbeddingProvider: LocalRAGEmbeddingProvider {
     print("[MLX] Selected model: \(config.name) (tier: \(config.tier), dims: \(config.dimensions), hf: \(config.huggingFaceId))")
     self.config = config
     self.dimensions = config.dimensions
+    self.modelName = config.name
   }
   
   /// Load the model (lazy - called on first embed)

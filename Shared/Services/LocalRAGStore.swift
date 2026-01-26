@@ -407,6 +407,8 @@ actor LocalRAGStore {
     let extensionLoaded: Bool
     let lastInitializedAt: Date?
     let providerName: String
+    let embeddingModelName: String
+    let embeddingDimensions: Int
     let coreMLModelPresent: Bool
     let coreMLVocabPresent: Bool
     let coreMLTokenizerHelperPresent: Bool
@@ -493,6 +495,8 @@ actor LocalRAGStore {
       extensionLoaded: extensionLoaded,
       lastInitializedAt: lastInitializedAt,
       providerName: String(describing: type(of: embeddingProvider)),
+      embeddingModelName: embeddingProvider.modelName,
+      embeddingDimensions: embeddingProvider.dimensions,
       coreMLModelPresent: modelPresent,
       coreMLVocabPresent: vocabPresent,
       coreMLTokenizerHelperPresent: helperPresent
