@@ -79,6 +79,15 @@ struct LocalRAGDashboardView: View {
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: LayoutSpacing.page) {
+        // MARK: - Quick Stats Header
+        if let status = mcpServer.ragStatus {
+          RAGQuickStatsView(
+            status: status,
+            stats: mcpServer.ragStats,
+            repoCount: mcpServer.ragRepos.count
+          )
+        }
+        
         // MARK: - Indexed Repositories
         GroupBox {
           VStack(alignment: .leading, spacing: LayoutSpacing.item) {
@@ -969,6 +978,70 @@ struct RAGSearchResultRow: View {
     case "json", "yaml", "yml": return "curlybraces"
     default: return "doc.text"
     }
+  }
+}
+
+// MARK: - Quick Stats Header View
+
+/// Displays a compact summary of RAG status including model and stats
+struct RAGQuickStatsView: View {
+  let status: LocalRAGStore.Status
+  let stats: LocalRAGStore.Stats?
+  let repoCount: Int
+  
+  var body: some View {
+    HStack(spacing: 16) {
+      // Model info
+      VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: 4) {
+          Image(systemName: "cpu")
+            .foregroundStyle(.blue)
+          Text(status.embeddingModelName)
+            .font(.headline)
+        }
+        Text("\(status.embeddingDimensions) dimensions · \(status.providerName)")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+      
+      Spacer()
+      
+      // Stats pills
+      HStack(spacing: 12) {
+        StatPill(value: repoCount, label: "repos", icon: "folder.fill")
+        
+        if let stats {
+          StatPill(value: stats.fileCount, label: "files", icon: "doc")
+          StatPill(value: stats.chunkCount, label: "chunks", icon: "text.alignleft")
+        }
+      }
+    }
+    .padding(.horizontal, 12)
+    .padding(.vertical, 8)
+    .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 8))
+  }
+}
+
+/// A compact stat display pill
+private struct StatPill: View {
+  let value: Int
+  let label: String
+  let icon: String
+  
+  var body: some View {
+    HStack(spacing: 4) {
+      Image(systemName: icon)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+      Text("\(value)")
+        .font(.system(.caption, design: .rounded, weight: .medium))
+      Text(label)
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+    }
+    .padding(.horizontal, 8)
+    .padding(.vertical, 4)
+    .background(.fill.tertiary, in: Capsule())
   }
 }
 
