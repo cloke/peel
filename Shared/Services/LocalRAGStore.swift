@@ -76,6 +76,9 @@ struct LocalRAGSearchResult: Sendable {
   let language: String?         // "Swift", "Ruby", "Glimmer TypeScript"
   let isTest: Bool              // true if in test/spec directory
   let score: Float?             // relevance score for vector search
+  
+  /// Number of lines in this chunk
+  var lineCount: Int { endLine - startLine + 1 }
 }
 
 struct LocalRAGFileCandidate: Sendable {
@@ -218,11 +221,15 @@ struct LocalRAGChunker {
 
 /// Hybrid chunker that uses AST-aware chunking for supported languages (Swift, Ruby, GTS)
 /// and falls back to line-based chunking for others.
+/// Note: TypeScript AST chunking disabled due to performance issues with tree-sitter CLI approach.
+/// TypeScript files use line-based chunking which works well for RAG purposes.
 struct HybridChunker {
   private let lineChunker = LocalRAGChunker()
   private let swiftChunker = SwiftChunker()
   private let rubyChunker: RubyChunker?
   private let glimmerChunker: GlimmerChunker?
+  // TypeScript chunker disabled - tree-sitter CLI approach has O(n²) performance issues
+  // private let typescriptChunker: TypeScriptChunker?
   
   /// Languages that have AST chunker support
   private var astSupportedLanguages: Set<String> {
@@ -234,6 +241,7 @@ struct HybridChunker {
       languages.insert("Glimmer TypeScript")
       languages.insert("Glimmer JavaScript")
     }
+    // TypeScript/JavaScript use line-based chunking for now
     return languages
   }
   
@@ -252,6 +260,9 @@ struct HybridChunker {
     // Initialize Glimmer chunker if tree-sitter grammar is available
     let glimmerChunker = GlimmerChunker()
     self.glimmerChunker = glimmerChunker.isAvailable ? glimmerChunker : nil
+    
+    // TypeScript chunker disabled due to performance issues
+    // TODO: Revisit with tree-sitter Swift bindings or simpler regex approach
     
     print("[HybridChunker] Ruby chunker available: \(rubyChunker != nil)")
     print("[HybridChunker] Glimmer chunker available: \(glimmerChunker.isAvailable)")
@@ -290,6 +301,7 @@ struct HybridChunker {
       } else {
         return lineChunker.chunk(text: text)
       }
+    // TypeScript/JavaScript disabled - uses line-based chunking via default path
     default:
       // Should not reach here if astSupportedLanguages is correct
       return lineChunker.chunk(text: text)
@@ -338,6 +350,15 @@ struct LocalRAGFileScanner {
     "composer.lock",
     "poetry.lock"
   ]
+  
+  /// File patterns to exclude (checked against filename)
+  private let excludedPatterns: [String] = [
+    ".min.",      // Minified files: *.min.js, *.min.css, *.min.mjs
+    ".bundle.",   // Bundled files
+    ".chunk.",    // Webpack chunks
+    "-bundle.",
+    ".packed."
+  ]
 
   func scan(rootURL: URL) -> [LocalRAGFileCandidate] {
     guard let enumerator = FileManager.default.enumerator(
@@ -383,6 +404,13 @@ struct LocalRAGFileScanner {
     // Skip excluded files (lock files, etc.)
     if excludedFiles.contains(lastComponent) {
       return true
+    }
+    // Skip minified and bundled files
+    let lowercasedName = lastComponent.lowercased()
+    for pattern in excludedPatterns {
+      if lowercasedName.contains(pattern) {
+        return true
+      }
     }
     if matchesIgnore(url: url, rootURL: rootURL, patterns: ignorePatterns) {
       return true
@@ -952,8 +980,10 @@ actor LocalRAGStore {
 
     for (fileIndex, candidate) in scannedFiles.enumerated() {
       progress?(.analyzing(current: fileIndex + 1, total: scannedFiles.count, fileName: URL(fileURLWithPath: candidate.path).lastPathComponent))
-      if fileIndex % 50 == 0 {
-        logMemory("analyzing \(fileIndex + 1)/\(scannedFiles.count)")
+      
+      // Log memory more frequently during debugging
+      if fileIndex % 10 == 0 {
+        logMemory("analyzing \(fileIndex + 1)/\(scannedFiles.count): \(URL(fileURLWithPath: candidate.path).lastPathComponent)")
       }
 
       guard let file = scanner.loadFile(candidate: candidate) else { continue }
@@ -1089,22 +1119,25 @@ actor LocalRAGStore {
     return report
   }
 
-  func search(query: String, repoPath: String? = nil, limit: Int = 10) async throws -> [LocalRAGSearchResult] {
+  func search(query: String, repoPath: String? = nil, limit: Int = 10, matchAll: Bool = true) async throws -> [LocalRAGSearchResult] {
     let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmedQuery.isEmpty else { return [] }
     try openIfNeeded()
 
-    // Split query into words for better matching across lines
-    // "error handling" becomes: text LIKE '%error%' AND text LIKE '%handling%'
+    // Split query into words for matching
     let words = trimmedQuery
       .components(separatedBy: .whitespacesAndNewlines)
       .filter { !$0.isEmpty }
 
-    // Build WHERE clause
+    // Build WHERE clause - search both text and construct_name
+    // matchAll=true: all words must appear (AND)
+    // matchAll=false: any word can appear (OR) - better for multi-concept queries
     var whereClauses = [String]()
     for _ in words {
-      whereClauses.append("chunks.text LIKE ?")
+      whereClauses.append("(chunks.text LIKE ? OR chunks.construct_name LIKE ?)")
     }
+    
+    let joinOperator = matchAll ? " AND " : " OR "
 
     let sqlBase = """
     SELECT repos.root_path || '/' || files.path, chunks.start_line, chunks.end_line, chunks.text,
@@ -1112,7 +1145,7 @@ actor LocalRAGStore {
     FROM chunks
     JOIN files ON files.id = chunks.file_id
     JOIN repos ON repos.id = files.repo_id
-    WHERE (\(whereClauses.joined(separator: " AND ")))
+    WHERE (\(whereClauses.joined(separator: joinOperator)))
     """
 
     let sql: String
@@ -1125,8 +1158,10 @@ actor LocalRAGStore {
     return try querySearchResults(sql: sql, withScore: false) { statement in
       var bindIndex: Int32 = 1
       for word in words {
-        bindText(statement, bindIndex, "%\(word)%")
-        bindIndex += 1
+        let pattern = "%\(word)%"
+        bindText(statement, bindIndex, pattern)      // text LIKE
+        bindText(statement, bindIndex + 1, pattern)  // construct_name LIKE
+        bindIndex += 2
       }
       if let repoPath {
         bindText(statement, bindIndex, repoPath)
@@ -1142,6 +1177,161 @@ actor LocalRAGStore {
     let cleared = try queryInt("SELECT COUNT(*) FROM cache_embeddings")
     try exec("DELETE FROM cache_embeddings")
     return cleared
+  }
+  
+  // MARK: - Stats & Analytics
+  
+  /// Get construct type distribution for a repo
+  func getConstructTypeStats(repoPath: String? = nil) throws -> [(type: String, count: Int)] {
+    try openIfNeeded()
+    
+    let sql: String
+    if let repoPath {
+      sql = """
+      SELECT COALESCE(c.construct_type, 'unknown') as type, COUNT(*) as cnt
+      FROM chunks c
+      JOIN files f ON c.file_id = f.id
+      JOIN repos r ON f.repo_id = r.id
+      WHERE r.root_path = ?
+      GROUP BY type
+      ORDER BY cnt DESC
+      """
+    } else {
+      sql = """
+      SELECT COALESCE(c.construct_type, 'unknown') as type, COUNT(*) as cnt
+      FROM chunks c
+      GROUP BY type
+      ORDER BY cnt DESC
+      """
+    }
+    
+    guard let db else { throw LocalRAGError.sqlite("Database not initialized") }
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let statement else {
+      throw LocalRAGError.sqlite(String(cString: sqlite3_errmsg(db)))
+    }
+    defer { sqlite3_finalize(statement) }
+    
+    if let repoPath {
+      bindText(statement, 1, repoPath)
+    }
+    
+    var stats: [(type: String, count: Int)] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+      let type = String(cString: sqlite3_column_text(statement, 0))
+      let count = Int(sqlite3_column_int(statement, 1))
+      stats.append((type: type, count: count))
+    }
+    return stats
+  }
+  
+  /// Get largest files/chunks for a repo (useful for finding refactor targets)
+  func getLargeFiles(repoPath: String? = nil, limit: Int = 20) throws -> [(path: String, chunkCount: Int, totalLines: Int, language: String?)] {
+    try openIfNeeded()
+    
+    let sql: String
+    if let repoPath {
+      sql = """
+      SELECT r.root_path || '/' || f.path as full_path, 
+             COUNT(*) as chunk_count, 
+             SUM(c.end_line - c.start_line) as total_lines,
+             f.language
+      FROM chunks c
+      JOIN files f ON c.file_id = f.id
+      JOIN repos r ON f.repo_id = r.id
+      WHERE r.root_path = ?
+      GROUP BY f.id
+      ORDER BY total_lines DESC
+      LIMIT ?
+      """
+    } else {
+      sql = """
+      SELECT r.root_path || '/' || f.path as full_path, 
+             COUNT(*) as chunk_count, 
+             SUM(c.end_line - c.start_line) as total_lines,
+             f.language
+      FROM chunks c
+      JOIN files f ON c.file_id = f.id
+      JOIN repos r ON f.repo_id = r.id
+      GROUP BY f.id
+      ORDER BY total_lines DESC
+      LIMIT ?
+      """
+    }
+    
+    guard let db else { throw LocalRAGError.sqlite("Database not initialized") }
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let statement else {
+      throw LocalRAGError.sqlite(String(cString: sqlite3_errmsg(db)))
+    }
+    defer { sqlite3_finalize(statement) }
+    
+    if let repoPath {
+      bindText(statement, 1, repoPath)
+      sqlite3_bind_int(statement, 2, Int32(limit))
+    } else {
+      sqlite3_bind_int(statement, 1, Int32(limit))
+    }
+    
+    var files: [(path: String, chunkCount: Int, totalLines: Int, language: String?)] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+      let path = String(cString: sqlite3_column_text(statement, 0))
+      let chunkCount = Int(sqlite3_column_int(statement, 1))
+      let totalLines = Int(sqlite3_column_int(statement, 2))
+      let language: String? = sqlite3_column_type(statement, 3) != SQLITE_NULL
+        ? String(cString: sqlite3_column_text(statement, 3)) : nil
+      files.append((path: path, chunkCount: chunkCount, totalLines: totalLines, language: language))
+    }
+    return files
+  }
+  
+  /// Get overall index statistics
+  func getIndexStats(repoPath: String? = nil) throws -> (fileCount: Int, chunkCount: Int, embeddingCount: Int, totalLines: Int) {
+    try openIfNeeded()
+    
+    let fileCount: Int
+    let chunkCount: Int
+    let embeddingCount: Int
+    let totalLines: Int
+    
+    if let repoPath {
+      fileCount = try queryInt("""
+        SELECT COUNT(*) FROM files f
+        JOIN repos r ON f.repo_id = r.id
+        WHERE r.root_path = ?
+        """, bind: { stmt in bindText(stmt, 1, repoPath) })
+      
+      chunkCount = try queryInt("""
+        SELECT COUNT(*) FROM chunks c
+        JOIN files f ON c.file_id = f.id
+        JOIN repos r ON f.repo_id = r.id
+        WHERE r.root_path = ?
+        """, bind: { stmt in bindText(stmt, 1, repoPath) })
+      
+      embeddingCount = try queryInt("""
+        SELECT COUNT(*) FROM embeddings e
+        JOIN chunks c ON e.chunk_id = c.id
+        JOIN files f ON c.file_id = f.id
+        JOIN repos r ON f.repo_id = r.id
+        WHERE r.root_path = ?
+        """, bind: { stmt in bindText(stmt, 1, repoPath) })
+      
+      totalLines = try queryInt("""
+        SELECT COALESCE(SUM(c.end_line - c.start_line), 0) FROM chunks c
+        JOIN files f ON c.file_id = f.id
+        JOIN repos r ON f.repo_id = r.id
+        WHERE r.root_path = ?
+        """, bind: { stmt in bindText(stmt, 1, repoPath) })
+    } else {
+      fileCount = try queryInt("SELECT COUNT(*) FROM files")
+      chunkCount = try queryInt("SELECT COUNT(*) FROM chunks")
+      embeddingCount = try queryInt("SELECT COUNT(*) FROM embeddings")
+      totalLines = try queryInt("SELECT COALESCE(SUM(end_line - start_line), 0) FROM chunks")
+    }
+    
+    return (fileCount: fileCount, chunkCount: chunkCount, embeddingCount: embeddingCount, totalLines: totalLines)
   }
 
   /// Generate embeddings for the given texts using the configured provider.
@@ -1297,6 +1487,24 @@ actor LocalRAGStore {
   private func queryInt(_ sql: String) throws -> Int {
     let value = try queryString(sql) ?? "0"
     return Int(value) ?? 0
+  }
+  
+  private func queryInt(_ sql: String, bind: (OpaquePointer) -> Void) throws -> Int {
+    guard let db else {
+      throw LocalRAGError.sqlite("Database not initialized")
+    }
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let statement else {
+      let message = String(cString: sqlite3_errmsg(db))
+      throw LocalRAGError.sqlite(message)
+    }
+    defer { sqlite3_finalize(statement) }
+    
+    bind(statement)
+    
+    guard sqlite3_step(statement) == SQLITE_ROW else { return 0 }
+    return Int(sqlite3_column_int(statement, 0))
   }
 
   private func queryRow(_ sql: String) throws -> (String, String)? {

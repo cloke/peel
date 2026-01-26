@@ -16,11 +16,14 @@ public struct ASTChunkerService: Sendable {
   private let swiftChunker = SwiftChunker()
   private let rubyChunker: RubyChunker?
   private let glimmerChunker: GlimmerChunker?
+  // TypeScript chunker disabled due to performance issues (hangs on large files)
+  // private let typescriptChunker: TypeScriptChunker?
   
   public init(
     treeSitterLibPath: String? = nil,
     treeSitterCLIPath: String? = nil,
-    glimmerLibPath: String? = nil
+    glimmerLibPath: String? = nil,
+    typescriptLibPath: String? = nil
   ) {
     // Initialize Ruby chunker if tree-sitter is available
     let cliPath = treeSitterCLIPath ?? "/opt/homebrew/bin/tree-sitter"
@@ -36,6 +39,10 @@ public struct ASTChunkerService: Sendable {
     // Initialize Glimmer (GTS/GJS) chunker
     let glimmerChunker = GlimmerChunker()
     self.glimmerChunker = glimmerChunker.isAvailable ? glimmerChunker : nil
+    
+    // TypeScript chunker disabled due to performance issues
+    // let typescriptChunker = TypeScriptChunker()
+    // self.typescriptChunker = typescriptChunker.isAvailable ? typescriptChunker : nil
   }
   
   /// Chunk source code with automatic language detection
@@ -65,7 +72,7 @@ public struct ASTChunkerService: Sendable {
       }
       return fallbackChunk(source: source, language: language, maxChunkLines: maxChunkLines)
     case "typescript":
-      // For now, fall back to line-based chunking for non-GTS TypeScript
+      // TypeScript AST chunker disabled - use fallback line-based chunking
       return fallbackChunk(source: source, language: language, maxChunkLines: maxChunkLines)
     default:
       return fallbackChunk(source: source, language: language, maxChunkLines: maxChunkLines)
