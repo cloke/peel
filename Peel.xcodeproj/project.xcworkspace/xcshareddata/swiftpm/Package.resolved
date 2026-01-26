@@ -155,6 +155,15 @@
         }
       },
       {
+        "package": "swift-syntax",
+        "repositoryURL": "https://github.com/swiftlang/swift-syntax",
+        "state": {
+          "branch": null,
+          "revision": "0687f71944021d616d34d922343dcef086855920",
+          "version": "600.0.1"
+        }
+      },
+      {
         "package": "swift-transformers",
         "repositoryURL": "https://github.com/huggingface/swift-transformers",
         "state": {

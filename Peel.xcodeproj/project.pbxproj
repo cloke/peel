@@ -15,6 +15,7 @@
 		046D40E426C56BBB003715AF /* OAuthSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 046D40E326C56BBB003715AF /* OAuthSwift */; };
 		046D40E726C56C5B003715AF /* Github in Frameworks */ = {isa = PBXBuildFile; productRef = 046D40E626C56C5B003715AF /* Github */; };
 		048086662A2D21E500536A3E /* Brew in Frameworks */ = {isa = PBXBuildFile; productRef = 048086652A2D21E500536A3E /* Brew */; };
+		04ASTCHK2F2E000100000002 /* ASTChunker in Frameworks */ = {isa = PBXBuildFile; productRef = 04ASTCHK2F2E000100000003 /* ASTChunker */; };
 		048F40F82853ED470007A9A4 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 048F40F72853ED060007A9A4 /* ContentView.swift */; };
 		04A7BD7F258E77D8000E55A8 /* Tests_iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD7E258E77D8000E55A8 /* Tests_iOS.swift */; };
 		04A7BD8A258E77D8000E55A8 /* Tests_macOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */; };
@@ -46,6 +47,9 @@
 		043A532125998D1E00980BE2 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		04510A5E2A2D20F1001DEF5B /* Git */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Git; path = "Local Packages/Git"; sourceTree = "<group>"; };
 		048086642A2D21A300536A3E /* Brew */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Brew; path = "Local Packages/Brew"; sourceTree = "<group>"; };
+		04ASTCHK2F2E000100000001 /* ASTChunker */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = ASTChunker; path = "Local Packages/ASTChunker"; sourceTree = "<group>"; };
+		04MCPCOR2F2E000100000001 /* MCPCore */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = MCPCore; path = "Local Packages/MCPCore"; sourceTree = "<group>"; };
+		04PEELUI2F2E000100000001 /* PeelUI */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = PeelUI; path = "Local Packages/PeelUI"; sourceTree = "<group>"; };
 		048F40F72853ED060007A9A4 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		04A7BD64258E77D7000E55A8 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		04A7BD6A258E77D8000E55A8 /* Peel.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Peel.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -142,6 +146,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				04ASTCHK2F2E000100000002 /* ASTChunker in Frameworks */,
 				03MLXEMB2F2B000100000001 /* MLXEmbedders in Frameworks */,
 				03BPETOK2F2A000100000001 /* SwiftBPETokenizer in Frameworks */,
 				048086662A2D21E500536A3E /* Brew in Frameworks */,
@@ -171,9 +176,12 @@
 		042D2CC32891E44100E162D3 /* Packages */ = {
 			isa = PBXGroup;
 			children = (
-				04F582A6269FD388003A8403 /* Github */,
-				04510A5E2A2D20F1001DEF5B /* Git */,
+				04ASTCHK2F2E000100000001 /* ASTChunker */,
 				048086642A2D21A300536A3E /* Brew */,
+				04510A5E2A2D20F1001DEF5B /* Git */,
+				04F582A6269FD388003A8403 /* Github */,
+				04MCPCOR2F2E000100000001 /* MCPCore */,
+				04PEELUI2F2E000100000001 /* PeelUI */,
 			);
 			name = Packages;
 			sourceTree = "<group>";
@@ -303,6 +311,7 @@
 				048086652A2D21E500536A3E /* Brew */,
 				046C6AAF2F1BE07D006CDAC7 /* TaskRunner */,
 				03MLXEMB2F2B000100000002 /* MLXEmbedders */,
+				04ASTCHK2F2E000100000003 /* ASTChunker */,
 			);
 			productName = "Peel (macOS)";
 			productReference = 04A7BD72258E77D8000E55A8 /* Peel.app */;
@@ -1038,6 +1047,10 @@
 		048086652A2D21E500536A3E /* Brew */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = Brew;
+		};
+		04ASTCHK2F2E000100000003 /* ASTChunker */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ASTChunker;
 		};
 		04D09EFC26A85E8100072702 /* OAuthSwift */ = {
 			isa = XCSwiftPackageProductDependency;
