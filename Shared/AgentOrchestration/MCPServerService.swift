@@ -1766,6 +1766,8 @@ public final class MCPServerService {
       "schemaVersion": status.schemaVersion,
       "extensionLoaded": status.extensionLoaded,
       "embeddingProvider": status.providerName,
+      "embeddingModel": status.embeddingModelName,
+      "embeddingDimensions": status.embeddingDimensions,
       "coreMLModelPresent": status.coreMLModelPresent,
       "coreMLVocabPresent": status.coreMLVocabPresent,
       "coreMLTokenizerHelperPresent": status.coreMLTokenizerHelperPresent,
