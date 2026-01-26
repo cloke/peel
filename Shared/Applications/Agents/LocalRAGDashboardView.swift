@@ -45,152 +45,77 @@ struct LocalRAGDashboardView: View {
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: LayoutSpacing.page) {
+        // MARK: - Indexed Repositories
         GroupBox {
           VStack(alignment: .leading, spacing: LayoutSpacing.item) {
             HStack {
-              SectionHeader("Local RAG")
+              SectionHeader("Indexed Repositories")
               Spacer()
-              Button("Refresh") {
+              Button {
                 Task { await mcpServer.refreshRagSummary() }
+              } label: {
+                Image(systemName: "arrow.clockwise")
               }
-              .buttonStyle(.bordered)
+              .buttonStyle(.borderless)
               .accessibilityIdentifier("agents.localRag.refresh")
             }
-
-            if let status = mcpServer.ragStatus {
-              Text("DB: \(status.dbPath)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-              Text("Schema: v\(status.schemaVersion) · Embeddings: \(status.providerName)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-              Text(coreMLAssetsSummary(status))
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-              Toggle("Use Core ML embeddings (CodeBERT)", isOn: useCoreML)
-                .font(.caption)
-                .toggleStyle(.switch)
-                .accessibilityIdentifier("agents.localRag.useCoreML")
-              if useCoreML.wrappedValue {
-                ForEach(coreMLWarnings(status), id: \.self) { warning in
-                  Text("Warning: \(warning)")
-                    .font(.caption2)
-                    .foregroundStyle(.orange)
+            
+            // Repo list
+            RAGReposListView(
+              repos: mcpServer.ragRepos,
+              currentlyIndexingPath: mcpServer.ragIndexingPath,
+              onDelete: { repo in
+                Task {
+                  do {
+                    _ = try await mcpServer.deleteRagRepo(repoId: repo.id)
+                  } catch {
+                    errorMessage = error.localizedDescription
+                  }
                 }
+              },
+              onReindex: { repo in
+                repoPath.wrappedValue = repo.rootPath
+                Task { await indexRepository() }
               }
-              // Only show restart message if setting doesn't match current provider
-              if needsCoreMLRestart(wantsCoreML: useCoreML.wrappedValue, providerName: status.providerName) {
-                Text("Restart required to apply Core ML setting")
-                  .font(.caption2)
-                  .foregroundStyle(.orange)
-              }
-              Text("Extension loaded: \(status.extensionLoaded ? "Yes" : "No")")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-              if let lastInit = status.lastInitializedAt {
-                Text("Last init: \(lastInit, style: .time)")
-                  .font(.caption2)
-                  .foregroundStyle(.secondary)
-              }
-            } else {
-              Text("No status yet")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-
-            if let stats = mcpServer.ragStats {
+            )
+            
+            // Indexing progress
+            if let progress = mcpServer.ragIndexProgress {
               Divider()
-              Text("Repos: \(stats.repoCount) · Files: \(stats.fileCount) · Chunks: \(stats.chunkCount)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-              Text("Embeddings: \(stats.embeddingCount) · Cache: \(stats.cacheEmbeddingCount)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-              Text("DB size: \(formatBytes(stats.dbSizeBytes))")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-              if let lastIndexedAt = stats.lastIndexedAt {
-                let repoLabel = stats.lastIndexedRepoPath ?? "(unknown repo)"
-                Text("Last index: \(repoLabel)")
+              HStack {
+                ProgressView(value: progress.progress)
+                  .progressViewStyle(.linear)
+                Text(progress.description)
                   .font(.caption)
                   .foregroundStyle(.secondary)
-                Text(lastIndexedAt, style: .time)
-                  .font(.caption2)
-                  .foregroundStyle(.secondary)
               }
             }
-
-            if let error = mcpServer.lastRagError {
-              Text(error)
-                .font(.caption)
-                .foregroundStyle(.red)
-            }
-            if let errorMessage {
-              Text(errorMessage)
-                .font(.caption)
-                .foregroundStyle(.red)
-            }
-            if let lastRefresh = mcpServer.lastRagRefreshAt {
-              Text("Updated \(lastRefresh, style: .time)")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            }
-          }
-        }
-
-        GroupBox {
-          VStack(alignment: .leading, spacing: LayoutSpacing.item) {
-            SectionHeader("Indexing")
-
-            TextField("Repository path", text: repoPath)
-              .textFieldStyle(.roundedBorder)
-              .accessibilityIdentifier("agents.localRag.repoPath")
-
-            Text("Used for indexing and as an optional search scope.")
-              .font(.caption2)
-              .foregroundStyle(.secondary)
-
+            
+            Divider()
+            
+            // Add new repo
             HStack(spacing: LayoutSpacing.item) {
-              Button("Init DB") {
-                Task { await initializeDatabase() }
-              }
-              .buttonStyle(.bordered)
-              .disabled(isInitializing)
-              .accessibilityIdentifier("agents.localRag.init")
-
-              Button("Index Repo") {
+              TextField("Repository path to index", text: repoPath)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("agents.localRag.repoPath")
+              
+              Button("Index") {
                 Task { await indexRepository() }
               }
               .buttonStyle(.borderedProminent)
               .disabled(isIndexing || repoPath.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
               .accessibilityIdentifier("agents.localRag.index")
             }
-
-            if isIndexing || isInitializing {
-              ProgressView()
-                .scaleEffect(0.8)
-            }
-
-            if let report = lastIndexReport {
-              let skipInfo = report.filesSkipped > 0 ? " · \(report.filesSkipped) skipped" : ""
-              Text("Indexed \(report.filesIndexed) files\(skipInfo) · \(report.chunksIndexed) chunks · \(formatBytes(report.bytesScanned))")
+            
+            if let errorMessage {
+              Text(errorMessage)
                 .font(.caption)
-                .foregroundStyle(.secondary)
-              Text("Duration: \(report.durationMs) ms")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-              if report.embeddingCount > 0 {
-                let perEmbedding = report.embeddingDurationMs > 0
-                  ? Double(report.embeddingDurationMs) / Double(max(report.embeddingCount, 1))
-                  : 0
-                Text("Embeddings: \(report.embeddingCount) vectors · \(report.embeddingDurationMs) ms (\(perEmbedding, specifier: "%.1f") ms/vector)")
-                  .font(.caption2)
-                  .foregroundStyle(.secondary)
-              }
+                .foregroundStyle(.red)
             }
           }
         }
 
+        // MARK: - Search
         GroupBox {
           VStack(alignment: .leading, spacing: LayoutSpacing.item) {
             SectionHeader("Search")
@@ -277,147 +202,74 @@ struct LocalRAGDashboardView: View {
           }
         }
 
-        GroupBox {
+        // MARK: - Database Info (Collapsible)
+        DisclosureGroup("Database & Settings") {
           VStack(alignment: .leading, spacing: LayoutSpacing.item) {
-            HStack {
-              SectionHeader("Session Insights")
-              Spacer()
-              if mcpServer.ragUsage.searches > 0 {
-                Button("Clear") {
-                  mcpServer.clearRagSessionData()
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+            if let status = mcpServer.ragStatus {
+              LabeledContent("Database", value: displayPath(for: status.dbPath))
+                .font(.caption)
+              LabeledContent("Schema Version", value: "v\(status.schemaVersion)")
+                .font(.caption)
+              LabeledContent("Embedding Provider", value: status.providerName)
+                .font(.caption)
+              
+              if let stats = mcpServer.ragStats {
+                Divider()
+                LabeledContent("Total Files", value: "\(stats.fileCount)")
+                  .font(.caption)
+                LabeledContent("Total Chunks", value: "\(stats.chunkCount)")
+                  .font(.caption)
+                LabeledContent("Cached Embeddings", value: "\(stats.cacheEmbeddingCount)")
+                  .font(.caption)
+                LabeledContent("Database Size", value: formatBytes(stats.dbSizeBytes))
+                  .font(.caption)
               }
-            }
-
-            let usage = mcpServer.ragUsage
-            let searchCount = max(1, usage.searches)
-            let avgResults = Double(usage.totalResults) / Double(searchCount)
-
-            // Session start info
-            if let sessionStart = usage.sessionStartedAt {
-              Text("Session started: \(sessionStart, style: .relative) ago")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-            }
-
-            // Search stats
-            HStack(spacing: 16) {
-              VStack(alignment: .leading, spacing: 2) {
-                Text("\(usage.searches)")
-                  .font(.title2.bold())
-                Text("Searches")
-                  .font(.caption2)
-                  .foregroundStyle(.secondary)
-              }
-              VStack(alignment: .leading, spacing: 2) {
-                Text("\(avgResults, specifier: "%.1f")")
-                  .font(.title2.bold())
-                Text("Avg Results")
-                  .font(.caption2)
-                  .foregroundStyle(.secondary)
-              }
-              VStack(alignment: .leading, spacing: 2) {
-                Text("\(usage.emptySearches)")
-                  .font(.title2.bold())
-                  .foregroundStyle(usage.emptySearches > 0 ? .orange : .primary)
-                Text("Empty")
-                  .font(.caption2)
-                  .foregroundStyle(.secondary)
-              }
-            }
-
-            Text("Text: \(usage.textSearches) · Vector: \(usage.vectorSearches)")
-              .font(.caption2)
-              .foregroundStyle(.secondary)
-
-            Divider()
-
-            // Feedback & helpfulness
-            if let helpfulRate = usage.helpfulnessRate, let fpRate = usage.falsePositiveRate {
-              HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 2) {
-                  HStack(spacing: 4) {
-                    Image(systemName: "hand.thumbsup.fill")
-                      .foregroundStyle(.green)
-                    Text("\(helpfulRate * 100, specifier: "%.0f")%")
-                      .font(.title3.bold())
-                  }
-                  Text("Helpful")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                  HStack(spacing: 4) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                      .foregroundStyle(fpRate > 0.3 ? .red : .orange)
-                    Text("\(fpRate * 100, specifier: "%.0f")%")
-                      .font(.title3.bold())
-                  }
-                  Text("False Positive")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                }
-              }
-            }
-
-            Text("Feedback: \(usage.helpfulCount) helpful · \(usage.irrelevantCount) not useful")
-              .font(.caption2)
-              .foregroundStyle(.secondary)
-            Text("Interactions: \(usage.copyCount) copies · \(usage.openCount) opens")
-              .font(.caption2)
-              .foregroundStyle(.secondary)
-
-            if let report = mcpServer.lastRagIndexReport {
+              
               Divider()
-              Text("Last index: \(displayPath(for: report.repoPath))")
+              
+              Toggle("Use Core ML embeddings (CodeBERT)", isOn: useCoreML)
+                .font(.caption)
+                .toggleStyle(.switch)
+                .accessibilityIdentifier("agents.localRag.useCoreML")
+              
+              if needsCoreMLRestart(wantsCoreML: useCoreML.wrappedValue, providerName: status.providerName) {
+                Label("Restart required to apply", systemImage: "exclamationmark.triangle")
+                  .font(.caption2)
+                  .foregroundStyle(.orange)
+              }
+              
+              Text(coreMLAssetsSummary(status))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+              
+              Button("Initialize Database") {
+                Task { await initializeDatabase() }
+              }
+              .buttonStyle(.bordered)
+              .disabled(isInitializing)
+              .accessibilityIdentifier("agents.localRag.init")
+            } else {
+              Text("Database not initialized")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-              let skipInfo = report.filesSkipped > 0 ? " (\(report.filesSkipped) skipped)" : ""
-              Text("Added \(report.filesIndexed) files\(skipInfo) · \(report.chunksIndexed) chunks")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-              if let indexedAt = mcpServer.lastRagIndexAt {
-                Text(indexedAt, style: .time)
-                  .font(.caption2)
-                  .foregroundStyle(.secondary)
+              
+              Button("Initialize Database") {
+                Task { await initializeDatabase() }
               }
+              .buttonStyle(.borderedProminent)
+              .disabled(isInitializing)
+              .accessibilityIdentifier("agents.localRag.init")
             }
-
-            if usage.skillsAdded + usage.skillsUpdated + usage.skillsDeleted > 0 {
-              Divider()
-              Text("Skills: +\(usage.skillsAdded) · ~\(usage.skillsUpdated) · -\(usage.skillsDeleted)")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            }
-
-            if mcpServer.ragSessionEvents.isEmpty {
-              Text("No session activity yet")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            } else {
-              Divider()
-              VStack(alignment: .leading, spacing: 4) {
-                ForEach(mcpServer.ragSessionEvents.prefix(6)) { event in
-                  VStack(alignment: .leading, spacing: 2) {
-                    Text(event.title)
-                      .font(.caption)
-                    if let detail = event.detail, !detail.isEmpty {
-                      Text(detail)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    }
-                    Text(event.timestamp, style: .time)
-                      .font(.caption2)
-                      .foregroundStyle(.secondary)
-                  }
-                }
-              }
+            
+            if let error = mcpServer.lastRagError {
+              Text(error)
+                .font(.caption)
+                .foregroundStyle(.red)
             }
           }
+          .padding(.vertical, 8)
         }
+        .padding(.horizontal, LayoutSpacing.item)
 
         GroupBox {
           VStack(alignment: .leading, spacing: LayoutSpacing.item) {

@@ -16,19 +16,102 @@ protocol LocalRAGEmbeddingProvider: Sendable {
   var dimensions: Int { get }
 }
 
+/// Provider preference for embedding generation
+enum EmbeddingProviderType: String, CaseIterable {
+  case mlx       // MLX native Swift (preferred - uses all Apple Silicon chips)
+  case coreml    // CoreML with pre-converted model
+  case system    // Apple NLEmbedding (built-in, no model download)
+  case hash      // Hash-based fallback (no semantic understanding)
+  case auto      // Auto-select best available
+}
+
 enum LocalRAGEmbeddingProviderFactory {
-  private static let useCoreMLKey = "localrag.useCoreML"
+  private static let providerKey = "localrag.provider"
+  private static let useCoreMLKey = "localrag.useCoreML"  // legacy
+  private static let useSystemKey = "localrag.useSystem"  // legacy
   private static let modelFolderName = "Peel/RAG/Models"
 
+  /// Get the configured provider preference
+  static var preferredProvider: EmbeddingProviderType {
+    get {
+      if let raw = UserDefaults.standard.string(forKey: providerKey),
+         let type = EmbeddingProviderType(rawValue: raw) {
+        return type
+      }
+      // Check legacy keys
+      if UserDefaults.standard.bool(forKey: useSystemKey) {
+        return .system
+      }
+      return .auto
+    }
+    set {
+      UserDefaults.standard.set(newValue.rawValue, forKey: providerKey)
+    }
+  }
+
   static func makeDefault() -> LocalRAGEmbeddingProvider {
-    let wantsCoreML = UserDefaults.standard.object(forKey: useCoreMLKey) as? Bool ?? false
-    if wantsCoreML,
-       let coreMLProvider = CoreMLEmbeddingProvider.makeDefault(modelFolderName: modelFolderName) {
-      return coreMLProvider
+    let preference = preferredProvider
+    print("[RAG] LocalRAGEmbeddingProviderFactory: preference=\(preference.rawValue)")
+    
+    switch preference {
+    case .mlx:
+      #if os(macOS)
+      print("[RAG] Using MLXEmbeddingProvider (native Swift + Apple Silicon)")
+      return MLXEmbeddingProvider(forCodeSearch: true)
+      #else
+      print("[RAG] MLX not available on iOS, falling back")
+      return makeFallbackProvider()
+      #endif
+      
+    case .coreml:
+      if let provider = CoreMLEmbeddingProvider.makeDefault(modelFolderName: modelFolderName) {
+        print("[RAG] Using CoreMLEmbeddingProvider")
+        return provider
+      }
+      print("[RAG] CoreML model not found, falling back")
+      return makeFallbackProvider()
+      
+    case .system:
+      if let provider = SystemEmbeddingProvider() {
+        print("[RAG] Using SystemEmbeddingProvider (Apple NLEmbedding)")
+        return provider
+      }
+      print("[RAG] SystemEmbeddingProvider not available, falling back")
+      return makeFallbackProvider()
+      
+    case .hash:
+      print("[RAG] Using HashEmbeddingProvider (no semantic understanding)")
+      return HashEmbeddingProvider()
+      
+    case .auto:
+      return makeAutoProvider()
     }
+  }
+  
+  /// Auto-select the best available provider
+  /// Priority: MLX > CoreML > System > Hash
+  private static func makeAutoProvider() -> LocalRAGEmbeddingProvider {
+    #if os(macOS)
+    // On macOS, prefer MLX for best Apple Silicon utilization
+    print("[RAG] Auto-selecting MLXEmbeddingProvider (best for Apple Silicon)")
+    return MLXEmbeddingProvider(forCodeSearch: true)
+    #else
+    // On iOS, try CoreML, then System, then Hash
     if let coreMLProvider = CoreMLEmbeddingProvider.makeDefault(modelFolderName: modelFolderName) {
+      print("[RAG] Auto-selected CoreMLEmbeddingProvider")
       return coreMLProvider
     }
+    if let provider = SystemEmbeddingProvider() {
+      print("[RAG] Auto-selected SystemEmbeddingProvider")
+      return provider
+    }
+    print("[RAG] Auto-selected HashEmbeddingProvider (fallback)")
+    return HashEmbeddingProvider()
+    #endif
+  }
+  
+  /// Fallback provider chain
+  private static func makeFallbackProvider() -> LocalRAGEmbeddingProvider {
     if let provider = SystemEmbeddingProvider() {
       return provider
     }

@@ -100,10 +100,10 @@ Can be done in any order, low dependencies.
 |-------|---|-------|-----|------|--------|
 | 1 | [#128](https://github.com/cloke/peel/issues/128) | Add Hugging Face model analysis for RAG | 4h | P1C done | ⚪ Blocked |
 | 2 | [#133](https://github.com/cloke/peel/issues/133) | Pre-planner using HF RAG | 4h | #128 | ⚪ Blocked |
-| 3 | [#24](https://github.com/cloke/peel/issues/24) | MLX integration | 8h | None | 🟡 Ready |
+| 3 | [#24](https://github.com/cloke/peel/issues/24) | MLX integration | 8h | None | � In Progress |
 | 4 | [#23](https://github.com/cloke/peel/issues/23) | XPC tool broker | 6h | None | 🟡 Ready |
-| 5 | [#41](https://github.com/cloke/peel/issues/41) | Budget-aware agent scheduler | 6h | #24 | ⚪ Blocked |
-| 6 | [#108](https://github.com/cloke/peel/issues/108) | ANE micro-services | 6h | #24 | ⚪ Blocked |
+| 5 | [#41](https://github.com/cloke/peel/issues/41) | Budget-aware agent scheduler | 6h | #24 | 🟡 Ready |
+| 6 | [#108](https://github.com/cloke/peel/issues/108) | ANE micro-services | 6h | #24 | 🟡 Ready |
 
 **Phase 2 Total**: ~34h (~4-5 days focused work)
 
@@ -120,14 +120,14 @@ Can be done in any order, low dependencies.
 | Order | # | Title | Est | Deps | Status |
 |-------|---|-------|-----|------|--------|
 | 1 | [#106](https://github.com/cloke/peel/issues/106) | macOS VM for Xcode isolation | 8h | None | 🟡 Ready |
-| 2 | [#107](https://github.com/cloke/peel/issues/107) | GPU shared cache service | 6h | #24 | ⚪ Blocked |
+| 2 | [#107](https://github.com/cloke/peel/issues/107) | GPU shared cache service | 6h | #24 | 🟡 Ready |
 
 ### Track B: Voice/Vision
 
 | Order | # | Title | Est | Deps | Status |
 |-------|---|-------|-----|------|--------|
 | 1 | [#35](https://github.com/cloke/peel/issues/35) | Screen capture to Vision analysis | 6h | None | 🟡 Ready |
-| 2 | [#36](https://github.com/cloke/peel/issues/36) | Voice commands via Whisper | 6h | #24 | ⚪ Blocked |
+| 2 | [#36](https://github.com/cloke/peel/issues/36) | Voice commands via Whisper | 6h | #24 | 🟡 Ready |
 | 3 | [#109](https://github.com/cloke/peel/issues/109) | Voice notifications + quick reply | 4h | #36 | ⚪ Blocked |
 
 ### Track C: Multi-Agent
