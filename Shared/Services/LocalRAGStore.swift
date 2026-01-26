@@ -219,13 +219,15 @@ struct LocalRAGChunker {
   }
 }
 
-/// Hybrid chunker that uses AST-aware chunking for supported languages (Swift, Ruby, GTS)
+/// Hybrid chunker that uses AST-aware chunking for supported languages (Ruby, GTS)
 /// and falls back to line-based chunking for others.
 /// Note: TypeScript AST chunking disabled due to performance issues with tree-sitter CLI approach.
-/// TypeScript files use line-based chunking which works well for RAG purposes.
+/// Note: Swift AST chunking disabled due to stack overflow on deeply nested files.
+/// TypeScript and Swift files use line-based chunking which works well for RAG purposes.
 struct HybridChunker {
   private let lineChunker = LocalRAGChunker()
-  private let swiftChunker = SwiftChunker()
+  // Swift chunker disabled - SwiftSyntax Parser causes stack overflow on deeply nested files
+  // private let swiftChunker = SwiftChunker()
   private let rubyChunker: RubyChunker?
   private let glimmerChunker: GlimmerChunker?
   // TypeScript chunker disabled - tree-sitter CLI approach has O(n²) performance issues
@@ -233,7 +235,8 @@ struct HybridChunker {
   
   /// Languages that have AST chunker support
   private var astSupportedLanguages: Set<String> {
-    var languages: Set<String> = ["Swift"]
+    // Swift disabled due to stack overflow on deeply nested files
+    var languages: Set<String> = []
     if rubyChunker != nil {
       languages.insert("Ruby")
     }
@@ -287,8 +290,9 @@ struct HybridChunker {
     let astChunks: [ASTChunk]
     
     switch language {
-    case "Swift":
-      astChunks = swiftChunker.chunk(source: text)
+    // Swift disabled due to stack overflow on deeply nested files
+    // case "Swift":
+    //   astChunks = swiftChunker.chunk(source: text)
     case "Ruby":
       if let rubyChunker = rubyChunker {
         astChunks = rubyChunker.chunk(source: text)
