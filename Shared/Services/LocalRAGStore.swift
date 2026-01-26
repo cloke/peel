@@ -196,14 +196,34 @@ struct LocalRAGChunker {
   }
 }
 
-/// Hybrid chunker that uses AST-aware chunking for supported languages (Swift)
+/// Hybrid chunker that uses AST-aware chunking for supported languages (Swift, Ruby)
 /// and falls back to line-based chunking for others.
 struct HybridChunker {
   private let lineChunker = LocalRAGChunker()
   private let swiftChunker = SwiftChunker()
+  private let rubyChunker: RubyChunker?
   
   /// Languages that have AST chunker support
-  private let astSupportedLanguages: Set<String> = ["Swift"]
+  private var astSupportedLanguages: Set<String> {
+    var languages: Set<String> = ["Swift"]
+    if rubyChunker != nil {
+      languages.insert("Ruby")
+    }
+    return languages
+  }
+  
+  init() {
+    // Initialize Ruby chunker if tree-sitter is available
+    let cliPath = "/opt/homebrew/bin/tree-sitter"
+    let libPath = ("~/code/tree-sitter-grammars/tree-sitter-ruby/ruby.dylib" as NSString).expandingTildeInPath
+    
+    if FileManager.default.fileExists(atPath: cliPath) &&
+       FileManager.default.fileExists(atPath: libPath) {
+      self.rubyChunker = RubyChunker(treeSitterLibPath: libPath, treeSitterCLIPath: cliPath)
+    } else {
+      self.rubyChunker = nil
+    }
+  }
   
   func chunk(text: String, language: String) -> [LocalRAGChunk] {
     // Use AST chunking for supported languages
@@ -223,6 +243,12 @@ struct HybridChunker {
     switch language {
     case "Swift":
       astChunks = swiftChunker.chunk(source: text)
+    case "Ruby":
+      if let rubyChunker = rubyChunker {
+        astChunks = rubyChunker.chunk(source: text)
+      } else {
+        return lineChunker.chunk(text: text)
+      }
     default:
       // Should not reach here if astSupportedLanguages is correct
       return lineChunker.chunk(text: text)
