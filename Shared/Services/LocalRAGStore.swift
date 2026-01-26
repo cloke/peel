@@ -6,8 +6,13 @@
 //
 
 import CryptoKit
+import Darwin
 import Foundation
 import SQLite3
+#if os(macOS)
+import MachO
+import MLX
+#endif
 
 struct LocalRAGIndexReport: Sendable {
   let repoId: String
@@ -63,6 +68,12 @@ struct LocalRAGSearchResult: Sendable {
   let startLine: Int
   let endLine: Int
   let snippet: String
+}
+
+struct LocalRAGFileCandidate: Sendable {
+  let path: String
+  let byteCount: Int
+  let language: String
 }
 
 struct LocalRAGScannedFile: Sendable {
@@ -191,12 +202,15 @@ struct LocalRAGFileScanner {
     ".build",
     ".swiftpm",
     "build",
+    "dist",
     "DerivedData",
     "node_modules",
+    "coverage",
+    "tmp",
     "Carthage"
   ]
 
-  func scan(rootURL: URL) -> [LocalRAGScannedFile] {
+  func scan(rootURL: URL) -> [LocalRAGFileCandidate] {
     guard let enumerator = FileManager.default.enumerator(
       at: rootURL,
       includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey],
@@ -205,28 +219,65 @@ struct LocalRAGFileScanner {
       return []
     }
 
-    var results: [LocalRAGScannedFile] = []
+    let ignorePatterns = loadIgnorePatterns(rootURL: rootURL)
+    var results: [LocalRAGFileCandidate] = []
 
     for case let fileURL as URL in enumerator {
-      if shouldSkip(url: fileURL) {
+      if shouldSkip(url: fileURL, rootURL: rootURL, ignorePatterns: ignorePatterns) {
         enumerator.skipDescendants()
         continue
       }
 
       guard isTextFile(url: fileURL) else { continue }
 
-      if let file = readFile(url: fileURL) {
-        results.append(file)
-      }
+      let size = fileSize(for: fileURL)
+      let byteCount = min(max(0, size), maxFileBytes)
+      guard byteCount > 0 else { continue }
+      results.append(
+        LocalRAGFileCandidate(
+          path: fileURL.path,
+          byteCount: byteCount,
+          language: languageFor(url: fileURL)
+        )
+      )
     }
 
     return results
   }
 
-  private func shouldSkip(url: URL) -> Bool {
+  private func shouldSkip(url: URL, rootURL: URL, ignorePatterns: [String]) -> Bool {
     let lastComponent = url.lastPathComponent
     if excludedDirectories.contains(lastComponent) {
       return true
+    }
+    if matchesIgnore(url: url, rootURL: rootURL, patterns: ignorePatterns) {
+      return true
+    }
+    return false
+  }
+
+  private func loadIgnorePatterns(rootURL: URL) -> [String] {
+    let ignoreURL = rootURL.appendingPathComponent(".ragignore")
+    guard let contents = try? String(contentsOf: ignoreURL, encoding: .utf8) else {
+      return []
+    }
+    return contents
+      .split(whereSeparator: { $0 == "\n" || $0 == "\r" })
+      .map { $0.trimmingCharacters(in: .whitespaces) }
+      .filter { !$0.isEmpty && !$0.hasPrefix("#") }
+  }
+
+  private func matchesIgnore(url: URL, rootURL: URL, patterns: [String]) -> Bool {
+    guard !patterns.isEmpty else { return false }
+    let path = url.path
+    let rootPath = rootURL.path.hasSuffix("/") ? rootURL.path : rootURL.path + "/"
+    let relative = path.hasPrefix(rootPath) ? String(path.dropFirst(rootPath.count)) : path
+    let fileName = url.lastPathComponent
+
+    for pattern in patterns {
+      if fnmatch(pattern, relative, 0) == 0 { return true }
+      if fnmatch(pattern, fileName, 0) == 0 { return true }
+      if pattern.hasSuffix("/") && relative.hasPrefix(pattern) { return true }
     }
     return false
   }
@@ -293,30 +344,35 @@ struct LocalRAGFileScanner {
     return extensions
   }()
 
-  private func readFile(url: URL) -> LocalRAGScannedFile? {
-    guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-          let fileSize = attrs[.size] as? NSNumber else {
-      return nil
-    }
-
-    let byteCount = min(fileSize.intValue, maxFileBytes)
-    guard byteCount > 0 else { return nil }
-
+  func loadFile(candidate: LocalRAGFileCandidate) -> LocalRAGScannedFile? {
+    let url = URL(fileURLWithPath: candidate.path)
     guard let data = try? Data(contentsOf: url, options: [.mappedIfSafe]) else {
       return nil
     }
 
-    let slice = data.prefix(byteCount)
+    let slice = data.prefix(candidate.byteCount)
     guard let text = String(data: slice, encoding: .utf8) else { return nil }
     let lineCount = text.split(separator: "\n", omittingEmptySubsequences: false).count
 
     return LocalRAGScannedFile(
-      path: url.path,
+      path: candidate.path,
       text: text,
       lineCount: lineCount,
-      byteCount: byteCount,
-      language: languageFor(url: url)
+      byteCount: candidate.byteCount,
+      language: candidate.language
     )
+  }
+
+  private func fileSize(for url: URL) -> Int {
+    if let values = try? url.resourceValues(forKeys: [.fileSizeKey]),
+       let size = values.fileSize {
+      return size
+    }
+    if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+       let fileSize = attrs[.size] as? NSNumber {
+      return fileSize.intValue
+    }
+    return 0
   }
 
   private func languageFor(url: URL) -> String {
@@ -475,6 +531,33 @@ actor LocalRAGStore {
     }
     self.dbURL = ragURL.appendingPathComponent("rag.sqlite")
   }
+
+#if os(macOS)
+  private func logMemory(_ label: String) {
+    var info = mach_task_basic_info()
+    var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
+    let result = withUnsafeMutablePointer(to: &info) { pointer in
+      pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { rebound in
+        task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), rebound, &count)
+      }
+    }
+
+    guard result == KERN_SUCCESS else {
+      print("[RAG] Memory \(label): unavailable (kern \(result))")
+      return
+    }
+
+    let rss = ByteCountFormatter.string(fromByteCount: Int64(info.resident_size), countStyle: .memory)
+    let vms = ByteCountFormatter.string(fromByteCount: Int64(info.virtual_size), countStyle: .memory)
+    print("[RAG] Memory \(label): RSS \(rss), VMS \(vms)")
+    let snapshot = MLX.Memory.snapshot()
+    let active = ByteCountFormatter.string(fromByteCount: Int64(snapshot.activeMemory), countStyle: .memory)
+    let cache = ByteCountFormatter.string(fromByteCount: Int64(snapshot.cacheMemory), countStyle: .memory)
+    print("[RAG] MLX Memory \(label): active \(active), cache \(cache)")
+  }
+#else
+  private func logMemory(_ label: String) { _ = label }
+#endif
 
 
   func status() -> Status {
@@ -700,9 +783,11 @@ actor LocalRAGStore {
   func indexRepository(path: String, progress: LocalRAGProgressCallback?) async throws -> LocalRAGIndexReport {
     let startTime = Date()
     _ = try initialize()
+    logMemory("index start")
 
     let repoURL = URL(fileURLWithPath: path)
     let scannedFiles = scanner.scan(rootURL: repoURL)
+    logMemory("after scan \(scannedFiles.count) files")
     progress?(.scanning(fileCount: scannedFiles.count))
     
     let repoId = stableId(for: path)
@@ -717,27 +802,28 @@ actor LocalRAGStore {
     var embeddingDurationMs = 0
     var skippedUnchanged = 0
 
-    // Phase 1: Collect all files to process and identify missing embeddings
-    struct FileToProcess {
-      let file: LocalRAGScannedFile
-      let fileId: String
-      let fileHash: String
-      let chunks: [LocalRAGChunk]
-      let chunkHashes: [String]
-    }
-
     struct MissingEmbedding {
       let textHash: String
       let text: String
     }
 
-    var filesToProcess: [FileToProcess] = []
-    var allMissingEmbeddings: [MissingEmbedding] = []
+    var filesIndexed = 0
     var seenTextHashes = Set<String>()
 
-    for (fileIndex, file) in scannedFiles.enumerated() {
-      progress?(.analyzing(current: fileIndex + 1, total: scannedFiles.count, fileName: URL(fileURLWithPath: file.path).lastPathComponent))
-      
+    // Batch embed missing texts in small chunks to avoid GPU memory issues
+    // MLX Metal backend can crash with large batches, so we limit to 4 texts per batch
+    // The quantized model (4bit-DWQ) has memory issues with larger batches
+    var embeddingCache: [String: [Float]] = [:]
+    let embeddingBatchSize = 4
+
+    for (fileIndex, candidate) in scannedFiles.enumerated() {
+      progress?(.analyzing(current: fileIndex + 1, total: scannedFiles.count, fileName: URL(fileURLWithPath: candidate.path).lastPathComponent))
+      if fileIndex % 50 == 0 {
+        logMemory("analyzing \(fileIndex + 1)/\(scannedFiles.count)")
+      }
+
+      guard let file = scanner.loadFile(candidate: candidate) else { continue }
+
       let fileId = stableId(for: "\(repoId):\(file.path)")
       let fileHash = stableId(for: file.text)
 
@@ -753,89 +839,78 @@ actor LocalRAGStore {
       let chunkHashes = chunks.map { stableId(for: $0.text) }
 
       // Find missing embeddings for this file
+      var missingEmbeddings: [MissingEmbedding] = []
       for (index, textHash) in chunkHashes.enumerated() {
         if !seenTextHashes.contains(textHash) {
           let cached = try fetchCachedEmbedding(textHash: textHash)
           if cached == nil {
-            allMissingEmbeddings.append(MissingEmbedding(textHash: textHash, text: chunks[index].text))
+            missingEmbeddings.append(MissingEmbedding(textHash: textHash, text: chunks[index].text))
           }
           seenTextHashes.insert(textHash)
         }
       }
 
-      filesToProcess.append(FileToProcess(
-        file: file,
-        fileId: fileId,
-        fileHash: fileHash,
-        chunks: chunks,
-        chunkHashes: chunkHashes
-      ))
-    }
+      if !missingEmbeddings.isEmpty {
+        progress?(.embedding(current: 0, total: missingEmbeddings.count))
+        let embedStart = Date()
 
-    // Phase 2: Batch embed all missing texts in smaller chunks to avoid GPU memory issues
-    // MLX Metal backend can crash with large batches, so we limit to 4 texts per batch
-    // The quantized model (4bit-DWQ) has memory issues with larger batches
-    var embeddingCache: [String: [Float]] = [:]
-    let embeddingBatchSize = 4
+        for batchStart in stride(from: 0, to: missingEmbeddings.count, by: embeddingBatchSize) {
+          let batchEnd = min(batchStart + embeddingBatchSize, missingEmbeddings.count)
+          let batchTexts = missingEmbeddings[batchStart..<batchEnd].map { $0.text }
 
-    if !allMissingEmbeddings.isEmpty {
-      progress?(.embedding(current: 0, total: allMissingEmbeddings.count))
-      let embedStart = Date()
-      var allEmbeddings: [[Float]] = []
-      
-      // Process in batches to avoid GPU memory exhaustion
-      for batchStart in stride(from: 0, to: allMissingEmbeddings.count, by: embeddingBatchSize) {
-        let batchEnd = min(batchStart + embeddingBatchSize, allMissingEmbeddings.count)
-        let batchTexts = allMissingEmbeddings[batchStart..<batchEnd].map { $0.text }
-        
-        let batchEmbeddings = try await embeddingProvider.embed(texts: batchTexts)
-        allEmbeddings.append(contentsOf: batchEmbeddings)
-        
-        progress?(.embedding(current: batchEnd, total: allMissingEmbeddings.count))
-      }
-      
-      let embedDuration = Int(Date().timeIntervalSince(embedStart) * 1000)
-      embeddingDurationMs = embedDuration
-      embeddingCount = allEmbeddings.count
+          let batchEmbeddings = try await embeddingProvider.embed(texts: batchTexts)
+          embeddingCount += batchEmbeddings.count
 
-      // Cache all new embeddings
-      for (index, missing) in allMissingEmbeddings.enumerated() {
-        guard index < allEmbeddings.count else { break }
-        let vector = allEmbeddings[index]
-        embeddingCache[missing.textHash] = vector
-        if !vector.isEmpty {
-          try upsertCacheEmbedding(textHash: missing.textHash, vector: vector)
+          for (offset, vector) in batchEmbeddings.enumerated() {
+            let missing = missingEmbeddings[batchStart + offset]
+            embeddingCache[missing.textHash] = vector
+            if !vector.isEmpty {
+              try upsertCacheEmbedding(textHash: missing.textHash, vector: vector)
+            }
+          }
+
+          progress?(.embedding(current: batchEnd, total: missingEmbeddings.count))
+
+#if os(macOS)
+          if LocalRAGEmbeddingProviderFactory.mlxClearCacheAfterBatch {
+            MLX.Memory.clearCache()
+            let snapshot = MLX.Memory.snapshot()
+            print("[RAG] MLX cache cleared. active=\(snapshot.activeMemory) cache=\(snapshot.cacheMemory)")
+          }
+#endif
+        }
+
+        let embedDuration = Int(Date().timeIntervalSince(embedStart) * 1000)
+        embeddingDurationMs += embedDuration
+        progress?(.embedding(current: missingEmbeddings.count, total: missingEmbeddings.count))
+        if fileIndex % 50 == 0 {
+          logMemory("after embedding \(fileIndex + 1)/\(scannedFiles.count)")
         }
       }
-      progress?(.embedding(current: allMissingEmbeddings.count, total: allMissingEmbeddings.count))
-    }
 
-    // Phase 3: Store files and chunks
-    for (fileIndex, fileData) in filesToProcess.enumerated() {
-      progress?(.storing(current: fileIndex + 1, total: filesToProcess.count))
+      progress?(.storing(current: filesIndexed + 1, total: scannedFiles.count))
       try upsertFile(
-        id: fileData.fileId,
+        id: fileId,
         repoId: repoId,
-        path: fileData.file.path,
-        hash: fileData.fileHash,
-        language: fileData.file.language,
+        path: file.path,
+        hash: fileHash,
+        language: file.language,
         updatedAt: now
       )
-      try deleteChunks(for: fileData.fileId)
+      try deleteChunks(for: fileId)
 
-      for (index, chunk) in fileData.chunks.enumerated() {
-        let chunkId = stableId(for: "\(fileData.fileId):\(chunk.startLine):\(chunk.endLine):\(chunk.text)")
+      for (index, chunk) in chunks.enumerated() {
+        let chunkId = stableId(for: "\(fileId):\(chunk.startLine):\(chunk.endLine):\(chunk.text)")
         try upsertChunk(
           id: chunkId,
-          fileId: fileData.fileId,
+          fileId: fileId,
           startLine: chunk.startLine,
           endLine: chunk.endLine,
           text: chunk.text,
           tokenCount: chunk.tokenCount
         )
 
-        // Get embedding from cache or newly computed
-        let textHash = fileData.chunkHashes[index]
+        let textHash = chunkHashes[index]
         let embedding: [Float]
         if let cached = embeddingCache[textHash] {
           embedding = cached
@@ -850,15 +925,18 @@ actor LocalRAGStore {
         }
       }
 
-      chunkCount += fileData.chunks.count
-      bytesScanned += fileData.file.byteCount
+      chunkCount += chunks.count
+      bytesScanned += file.byteCount
+      filesIndexed += 1
+      embeddingCache.removeAll(keepingCapacity: true)
     }
+    logMemory("index complete")
 
     let durationMs = Int(Date().timeIntervalSince(startTime) * 1000)
     let report = LocalRAGIndexReport(
       repoId: repoId,
       repoPath: path,
-      filesIndexed: filesToProcess.count,
+      filesIndexed: filesIndexed,
       filesSkipped: skippedUnchanged,
       chunksIndexed: chunkCount,
       bytesScanned: bytesScanned,
@@ -914,6 +992,14 @@ actor LocalRAGStore {
       }
       sqlite3_bind_int(statement, bindIndex, Int32(max(1, limit)))
     }
+  }
+
+  func clearEmbeddingCache() throws -> Int {
+    try openIfNeeded()
+    try ensureSchema()
+    let cleared = try queryInt("SELECT COUNT(*) FROM cache_embeddings")
+    try exec("DELETE FROM cache_embeddings")
+    return cleared
   }
 
   /// Generate embeddings for the given texts using the configured provider.

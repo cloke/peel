@@ -7,6 +7,7 @@
 
 import SwiftData
 import SwiftUI
+import UniformTypeIdentifiers
 #if os(macOS)
 import AppKit
 #else
@@ -15,7 +16,6 @@ import UIKit
 
 struct LocalRAGDashboardView: View {
   @Bindable var mcpServer: MCPServerService
-  private var useCoreML: Binding<Bool> { $mcpServer.localRagUseCoreML }
   private var repoPath: Binding<String> { $mcpServer.localRagRepoPath }
   private var query: Binding<String> { $mcpServer.localRagQuery }
   private var searchMode: Binding<MCPServerService.RAGSearchMode> { $mcpServer.localRagSearchMode }
@@ -41,6 +41,40 @@ struct LocalRAGDashboardView: View {
   @State private var skillPriority: Int = 0
   @State private var skillActive: Bool = true
   @State private var skillsError: String?
+  @State private var isRepoPickerPresented = false
+  @State private var embeddingSettingsChanged = false
+
+  private var providerSelection: Binding<EmbeddingProviderType> {
+    Binding(
+      get: { LocalRAGEmbeddingProviderFactory.preferredProvider },
+      set: { newValue in
+        LocalRAGEmbeddingProviderFactory.preferredProvider = newValue
+        mcpServer.localRagUseCoreML = (newValue == .coreml)
+        embeddingSettingsChanged = true
+      }
+    )
+  }
+
+  private var mlxModelSelection: Binding<String> {
+    Binding(
+      get: { LocalRAGEmbeddingProviderFactory.preferredMLXModelId ?? "" },
+      set: { newValue in
+        LocalRAGEmbeddingProviderFactory.preferredMLXModelId = newValue.isEmpty ? nil : newValue
+        embeddingSettingsChanged = true
+      }
+    )
+  }
+
+#if os(macOS)
+  private var downloadedMLXModelNames: [String] {
+    let configs = MLXEmbeddingModelConfig.availableModels
+    let downloaded = LocalRAGEmbeddingProviderFactory.downloadedMLXModels
+    let names = downloaded.map { id in
+      configs.first(where: { $0.huggingFaceId == id || $0.name == id })?.name ?? id
+    }
+    return Array(Set(names)).sorted()
+  }
+#endif
 
   var body: some View {
     ScrollView {
@@ -98,6 +132,11 @@ struct LocalRAGDashboardView: View {
               TextField("Repository path to index", text: repoPath)
                 .textFieldStyle(.roundedBorder)
                 .accessibilityIdentifier("agents.localRag.repoPath")
+
+              Button("Browse") {
+                isRepoPickerPresented = true
+              }
+              .buttonStyle(.bordered)
               
               Button("Index") {
                 Task { await indexRepository() }
@@ -226,21 +265,54 @@ struct LocalRAGDashboardView: View {
               }
               
               Divider()
-              
-              Toggle("Use Core ML embeddings (CodeBERT)", isOn: useCoreML)
-                .font(.caption)
-                .toggleStyle(.switch)
-                .accessibilityIdentifier("agents.localRag.useCoreML")
-              
-              if needsCoreMLRestart(wantsCoreML: useCoreML.wrappedValue, providerName: status.providerName) {
-                Label("Restart required to apply", systemImage: "exclamationmark.triangle")
-                  .font(.caption2)
-                  .foregroundStyle(.orange)
+              VStack(alignment: .leading, spacing: 8) {
+                Picker("Embedding Provider", selection: providerSelection) {
+                  Text("Auto").tag(EmbeddingProviderType.auto)
+                  Text("MLX").tag(EmbeddingProviderType.mlx)
+                  Text("Core ML").tag(EmbeddingProviderType.coreml)
+                  Text("System").tag(EmbeddingProviderType.system)
+                  Text("Hash (fallback)").tag(EmbeddingProviderType.hash)
+                }
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("agents.localRag.provider")
+
+#if os(macOS)
+                if providerSelection.wrappedValue == .mlx {
+                  Picker("MLX Model", selection: mlxModelSelection) {
+                    Text("Auto-select").tag("")
+                    ForEach(MLXEmbeddingModelConfig.availableModels, id: \.huggingFaceId) { model in
+                      let suffix = model.isCodeOptimized ? " (code)" : ""
+                      Text("\(model.name) · \(model.tier.description)\(suffix)")
+                        .tag(model.huggingFaceId)
+                    }
+                  }
+                  .pickerStyle(.menu)
+                  .accessibilityIdentifier("agents.localRag.mlxModel")
+
+                  if !downloadedMLXModelNames.isEmpty {
+                    Text("Downloaded: \(downloadedMLXModelNames.joined(separator: ", "))")
+                      .font(.caption2)
+                      .foregroundStyle(.secondary)
+                  } else {
+                    Text("Downloaded: none yet (models download on first use)")
+                      .font(.caption2)
+                      .foregroundStyle(.secondary)
+                  }
+                }
+#endif
+
+                if embeddingSettingsChanged {
+                  Label("Apply to reload embedding model", systemImage: "exclamationmark.triangle")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                }
+
+                if providerSelection.wrappedValue == .coreml {
+                  Text(coreMLAssetsSummary(status))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                }
               }
-              
-              Text(coreMLAssetsSummary(status))
-                .font(.caption2)
-                .foregroundStyle(.secondary)
               
               Button("Initialize Database") {
                 Task { await initializeDatabase() }
@@ -248,6 +320,13 @@ struct LocalRAGDashboardView: View {
               .buttonStyle(.bordered)
               .disabled(isInitializing)
               .accessibilityIdentifier("agents.localRag.init")
+
+              Button("Apply Embedding Settings") {
+                Task { await applyEmbeddingSettings() }
+              }
+              .buttonStyle(.bordered)
+              .disabled(!embeddingSettingsChanged || isInitializing || isIndexing)
+              .accessibilityIdentifier("agents.localRag.applyEmbedding")
             } else {
               Text("Database not initialized")
                 .font(.caption)
@@ -418,6 +497,20 @@ struct LocalRAGDashboardView: View {
       }
       await mcpServer.refreshRagSummary()
     }
+    .fileImporter(
+      isPresented: $isRepoPickerPresented,
+      allowedContentTypes: [.folder],
+      allowsMultipleSelection: false
+    ) { result in
+      switch result {
+      case .success(let urls):
+        if let selected = urls.first {
+          repoPath.wrappedValue = selected.path
+        }
+      case .failure(let error):
+        errorMessage = error.localizedDescription
+      }
+    }
     .onChange(of: mcpServer.lastUIAction?.id) {
       guard let action = mcpServer.lastUIAction else { return }
       switch action.controlId {
@@ -544,6 +637,14 @@ struct LocalRAGDashboardView: View {
     }
   }
 
+  private func applyEmbeddingSettings() async {
+    errorMessage = nil
+    isInitializing = true
+    defer { isInitializing = false }
+    await mcpServer.applyRagEmbeddingSettings()
+    embeddingSettingsChanged = false
+  }
+
   private func indexRepository() async {
     let trimmed = repoPath.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return }
@@ -551,8 +652,8 @@ struct LocalRAGDashboardView: View {
     isIndexing = true
     defer { isIndexing = false }
     do {
-      let report = try await mcpServer.indexRag(repoPath: trimmed)
-      lastIndexReport = report
+      try await mcpServer.indexRagRepo(path: trimmed)
+      lastIndexReport = mcpServer.lastRagIndexReport
     } catch {
       errorMessage = error.localizedDescription
     }
@@ -609,13 +710,6 @@ struct LocalRAGDashboardView: View {
 
   private func coreMLWarnings(_ status: LocalRAGStore.Status) -> [String] {
     status.assetWarnings()
-  }
-
-  /// Returns true if a restart is needed to apply the Core ML setting
-  private func needsCoreMLRestart(wantsCoreML: Bool, providerName: String) -> Bool {
-    let isCoreMLProvider = providerName.contains("CoreML")
-    // Restart needed if setting doesn't match current provider
-    return wantsCoreML != isCoreMLProvider
   }
 
   private func displayPath(for path: String) -> String {
