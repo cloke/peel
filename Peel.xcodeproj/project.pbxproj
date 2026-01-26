@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		03MLXEMB2F2B000100000001 /* MLXEmbedders in Frameworks */ = {isa = PBXBuildFile; productRef = 03MLXEMB2F2B000100000002 /* MLXEmbedders */; };
 		03BPETOK2F2A000100000001 /* SwiftBPETokenizer in Frameworks */ = {isa = PBXBuildFile; productRef = 03BPETOK2F2A000100000002 /* SwiftBPETokenizer */; };
 		040AAB7E26CB385800DE1CBF /* Git in Frameworks */ = {isa = PBXBuildFile; productRef = 040AAB7D26CB385800DE1CBF /* Git */; };
 		04510A582A2D200C001DEF5B /* Github in Frameworks */ = {isa = PBXBuildFile; productRef = 04510A572A2D200C001DEF5B /* Github */; };
@@ -141,6 +142,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				03MLXEMB2F2B000100000001 /* MLXEmbedders in Frameworks */,
 				03BPETOK2F2A000100000001 /* SwiftBPETokenizer in Frameworks */,
 				048086662A2D21E500536A3E /* Brew in Frameworks */,
 				04510A582A2D200C001DEF5B /* Github in Frameworks */,
@@ -300,6 +302,7 @@
 				04510A572A2D200C001DEF5B /* Github */,
 				048086652A2D21E500536A3E /* Brew */,
 				046C6AAF2F1BE07D006CDAC7 /* TaskRunner */,
+				03MLXEMB2F2B000100000002 /* MLXEmbedders */,
 			);
 			productName = "Peel (macOS)";
 			productReference = 04A7BD72258E77D8000E55A8 /* Peel.app */;
@@ -380,6 +383,7 @@
 				04DD2F49269E6AED000994E1 /* XCRemoteSwiftPackageReference "OAuthSwift" */,
 				046C6AAE2F1BE07D006CDAC7 /* XCRemoteSwiftPackageReference "TaskRunner" */,
 				03BPETOK2F2A000100000003 /* XCRemoteSwiftPackageReference "swift-bpe-tokenizer" */,
+				03MLXEMB2F2B000100000003 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
 			);
 			productRefGroup = 04A7BD6B258E77D8000E55A8 /* Products */;
 			projectDirPath = "";
@@ -964,6 +968,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		03MLXEMB2F2B000100000003 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ml-explore/mlx-swift-lm";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.30.0;
+			};
+		};
 		03BPETOK2F2A000100000003 /* XCRemoteSwiftPackageReference "swift-bpe-tokenizer" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/crunchybananas/swift-bpe-tokenizer";
@@ -991,6 +1003,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		03MLXEMB2F2B000100000002 /* MLXEmbedders */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03MLXEMB2F2B000100000003 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXEmbedders;
+		};
 		03BPETOK2F2A000100000002 /* SwiftBPETokenizer */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 03BPETOK2F2A000100000003 /* XCRemoteSwiftPackageReference "swift-bpe-tokenizer" */;

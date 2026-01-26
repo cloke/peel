@@ -352,6 +352,9 @@ public final class MCPServerService {
   private(set) var ragStats: LocalRAGStore.Stats?
   private(set) var ragUsage = RAGUsageStats()
   private(set) var ragSessionEvents: [RAGSessionEvent] = []
+  private(set) var ragRepos: [RAGRepoInfo] = []
+  private(set) var ragIndexingPath: String?
+  private(set) var ragIndexProgress: LocalRAGIndexProgress?
   private(set) var lastRagIndexReport: LocalRAGIndexReport?
   private(set) var lastRagIndexAt: Date?
   private(set) var lastRagRefreshAt: Date?
@@ -373,7 +376,7 @@ public final class MCPServerService {
   let translationValidatorService = TranslationValidatorService()
   let piiScrubberService = PIIScrubberService()
   private let vmIsolationService: VMIsolationService
-  private let localRagStore = LocalRAGStore()
+  private var localRagStore = LocalRAGStore()
   private(set) var parallelWorktreeRunner: ParallelWorktreeRunner?
 
   // MARK: - Tool Handlers (extracted from this file for maintainability)
@@ -651,15 +654,58 @@ public final class MCPServerService {
     do {
       let status = await localRagStore.status()
       let stats = try await localRagStore.stats()
+      let repos = try await localRagStore.listRepos()
       ragStatus = status
       ragStats = stats
+      ragRepos = repos.map { repo in
+        RAGRepoInfo(
+          id: repo.id,
+          name: repo.name,
+          rootPath: repo.rootPath,
+          lastIndexedAt: repo.lastIndexedAt,
+          fileCount: repo.fileCount,
+          chunkCount: repo.chunkCount
+        )
+      }
       lastRagError = nil
       lastRagRefreshAt = Date()
     } catch {
       ragStatus = await localRagStore.status()
       ragStats = nil
+      ragRepos = []
       lastRagError = error.localizedDescription
       lastRagRefreshAt = Date()
+    }
+  }
+
+  /// Delete a repository from the RAG index
+  public func deleteRagRepo(repoId: String) async throws -> Int {
+    let deleted = try await localRagStore.deleteRepo(repoId: repoId)
+    await refreshRagSummary()
+    return deleted
+  }
+  
+  /// Index a repository (called from UI)
+  func indexRagRepo(path: String) async throws {
+    ragIndexingPath = path
+    ragIndexProgress = nil
+    
+    do {
+      let report = try await localRagStore.indexRepository(path: path) { [weak self] progress in
+        Task { @MainActor in
+          self?.ragIndexProgress = progress
+        }
+      }
+      
+      ragIndexingPath = nil
+      ragIndexProgress = .complete(report: report)
+      lastRagIndexReport = report
+      lastRagIndexAt = Date()
+      await refreshRagSummary()
+    } catch {
+      ragIndexingPath = nil
+      ragIndexProgress = nil
+      throw error
     }
   }
 
@@ -1359,6 +1405,9 @@ public final class MCPServerService {
     case "rag.status":
       return await handleRagStatus(id: id)
 
+    case "rag.config":
+      return await handleRagConfig(id: id, arguments: arguments)
+
     case "rag.init":
       return await handleRagInit(id: id, arguments: arguments)
 
@@ -1370,6 +1419,9 @@ public final class MCPServerService {
 
     case "rag.model.describe":
       return await handleRagModelDescribe(id: id, arguments: arguments)
+
+    case "rag.embedding.test":
+      return await handleRagEmbeddingTest(id: id, arguments: arguments)
 
     case "rag.ui.status":
       return await handleRagUIStatus(id: id)
@@ -1716,12 +1768,100 @@ public final class MCPServerService {
       "embeddingProvider": status.providerName,
       "coreMLModelPresent": status.coreMLModelPresent,
       "coreMLVocabPresent": status.coreMLVocabPresent,
-      "coreMLTokenizerHelperPresent": status.coreMLTokenizerHelperPresent
+      "coreMLTokenizerHelperPresent": status.coreMLTokenizerHelperPresent,
+      "debugForceSystem": UserDefaults.standard.bool(forKey: "localrag.useSystem")
     ]
     if let lastInitializedAt = status.lastInitializedAt {
       result["lastInitializedAt"] = formatter.string(from: lastInitializedAt)
     }
     return (200, makeRPCResult(id: id, result: result))
+  }
+
+  /// Handle rag.config - get or set RAG configuration
+  /// Arguments:
+  ///   - action: "get" (default) or "set"
+  ///   - provider: "coreml", "system", or "hash" (for set action)
+  ///   - reinitialize: bool (default true) - recreate store with new provider
+  private func handleRagConfig(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    let action = (arguments["action"] as? String) ?? "get"
+
+    if action == "get" {
+      let currentProviderPref = LocalRAGEmbeddingProviderFactory.preferredProvider
+      let currentProvider = await localRagStore.status().providerName
+      #if os(macOS)
+      let availableProviders = ["mlx", "coreml", "system", "hash", "auto"]
+      #else
+      let availableProviders = ["coreml", "system", "hash", "auto"]
+      #endif
+      let result: [String: Any] = [
+        "currentProvider": currentProvider,
+        "preferredProvider": currentProviderPref.rawValue,
+        "availableProviders": availableProviders,
+        "note": "Use action='set' with provider='mlx' (best on macOS), 'system', 'coreml', 'hash', or 'auto'"
+      ]
+      return (200, makeRPCResult(id: id, result: result))
+    }
+
+    if action == "set" {
+      guard let provider = arguments["provider"] as? String else {
+        return (400, makeRPCError(id: id, code: -32602, message: "Missing 'provider' argument"))
+      }
+
+      let reinitialize = (arguments["reinitialize"] as? Bool) ?? true
+      
+      // Map provider string to EmbeddingProviderType
+      let providerType: EmbeddingProviderType
+      switch provider.lowercased() {
+      case "mlx":
+        #if os(macOS)
+        providerType = .mlx
+        #else
+        return (400, makeRPCError(id: id, code: -32602, message: "MLX is not available on iOS"))
+        #endif
+      case "system", "apple", "nlembedding":
+        providerType = .system
+      case "coreml", "codebert":
+        providerType = .coreml
+      case "hash":
+        providerType = .hash
+      case "auto":
+        providerType = .auto
+      default:
+        return (400, makeRPCError(id: id, code: -32602, message: "Unknown provider '\(provider)'. Use: mlx, coreml, system, hash, or auto"))
+      }
+      
+      // Set the new preference
+      LocalRAGEmbeddingProviderFactory.preferredProvider = providerType
+
+      var result: [String: Any] = [
+        "providerSet": providerType.rawValue,
+        "preferredProvider": providerType.rawValue
+      ]
+
+      if reinitialize {
+        // Recreate the store with the new provider
+        let newProvider = LocalRAGEmbeddingProviderFactory.makeDefault()
+        localRagStore = LocalRAGStore(embeddingProvider: newProvider)
+
+        // Initialize the new store
+        do {
+          let status = try await localRagStore.initialize(extensionPath: nil)
+          result["reinitialized"] = true
+          result["newProvider"] = status.providerName
+          result["note"] = "Store recreated. Existing indexes may need re-indexing if embedding dimensions changed."
+        } catch {
+          result["reinitialized"] = false
+          result["error"] = error.localizedDescription
+        }
+      } else {
+        result["reinitialized"] = false
+        result["note"] = "Preference saved. Restart app or call with reinitialize=true to apply."
+      }
+
+      return (200, makeRPCResult(id: id, result: result))
+    }
+
+    return (400, makeRPCError(id: id, code: -32602, message: "Unknown action '\(action)'. Use: get or set"))
   }
 
   private func handleRagInit(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
@@ -1751,8 +1891,26 @@ public final class MCPServerService {
       return (400, makeRPCError(id: id, code: -32602, message: "Missing repoPath"))
     }
 
+    // Track indexing state for UI
+    ragIndexingPath = repoPath
+    ragIndexProgress = nil
+    
     do {
-      let report = try await localRagStore.indexRepository(path: repoPath)
+      let report = try await localRagStore.indexRepository(path: repoPath) { [weak self] progress in
+        Task { @MainActor in
+          self?.ragIndexProgress = progress
+        }
+      }
+      
+      // Update UI state
+      ragIndexingPath = nil
+      ragIndexProgress = .complete(report: report)
+      lastRagIndexReport = report
+      lastRagIndexAt = Date()
+      
+      // Refresh repos list
+      await refreshRagSummary()
+      
       let result: [String: Any] = [
         "repoId": report.repoId,
         "repoPath": report.repoPath,
@@ -1766,6 +1924,8 @@ public final class MCPServerService {
       ]
       return (200, makeRPCResult(id: id, result: result))
     } catch {
+      ragIndexingPath = nil
+      ragIndexProgress = nil
       await telemetryProvider.warning("Local RAG index failed", metadata: ["error": error.localizedDescription])
       return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
     }
@@ -1814,6 +1974,84 @@ public final class MCPServerService {
     } catch {
       await telemetryProvider.warning("Local RAG model describe failed", metadata: ["error": error.localizedDescription])
       return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
+    }
+  }
+
+  /// Handle rag.embedding.test - test embedding generation with sample texts
+  private func handleRagEmbeddingTest(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let textsArg = arguments["texts"] else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Missing 'texts' argument"))
+    }
+    
+    let texts: [String]
+    if let textsArray = textsArg as? [String] {
+      texts = textsArray
+    } else if let singleText = textsArg as? String {
+      texts = [singleText]
+    } else {
+      return (400, makeRPCError(id: id, code: -32602, message: "Invalid 'texts' argument - expected array of strings"))
+    }
+    
+    // Limit to prevent abuse
+    let limitedTexts = Array(texts.prefix(5))
+    if limitedTexts.isEmpty {
+      return (400, makeRPCError(id: id, code: -32602, message: "Empty texts array"))
+    }
+    
+    let showVectors = (arguments["showVectors"] as? Bool) ?? false
+    
+    // Get current provider info
+    let status = await localRagStore.status()
+    let providerName = status.providerName
+    let preferredProvider = LocalRAGEmbeddingProviderFactory.preferredProvider
+    
+    // Time the embedding generation
+    let startTime = CFAbsoluteTimeGetCurrent()
+    
+    do {
+      let embeddings = try await localRagStore.generateEmbeddings(for: limitedTexts)
+      let elapsedMs = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
+      
+      var results: [[String: Any]] = []
+      for (index, text) in limitedTexts.enumerated() {
+        var item: [String: Any] = [
+          "index": index,
+          "text": String(text.prefix(100)) + (text.count > 100 ? "..." : ""),
+          "textLength": text.count,
+          "vectorDimensions": embeddings[index].count
+        ]
+        
+        if showVectors {
+          // Show first 10 values as preview
+          item["vectorPreview"] = Array(embeddings[index].prefix(10))
+        }
+        
+        results.append(item)
+      }
+      
+      let result: [String: Any] = [
+        "success": true,
+        "provider": providerName,
+        "preferredProvider": preferredProvider.rawValue,
+        "totalTexts": limitedTexts.count,
+        "elapsedMs": elapsedMs,
+        "dimensions": embeddings.first?.count ?? 0,
+        "results": results
+      ]
+      
+      return (200, makeRPCResult(id: id, result: result))
+      
+    } catch {
+      await telemetryProvider.warning("Embedding test failed", metadata: ["error": error.localizedDescription])
+      
+      let result: [String: Any] = [
+        "success": false,
+        "provider": providerName,
+        "preferredProvider": preferredProvider.rawValue,
+        "error": error.localizedDescription
+      ]
+      
+      return (500, makeRPCResult(id: id, result: result))
     }
   }
 
@@ -3257,6 +3495,20 @@ public final class MCPServerService {
         isMutating: false
       ),
       ToolDefinition(
+        name: "rag.config",
+        description: "Get or set RAG configuration (embedding provider). Use action='get' to see current config, action='set' with provider='mlx' (MLX native, best for Apple Silicon), 'system' (Apple NLEmbedding), 'coreml' (CoreML), or 'hash' (fallback).",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "action": ["type": "string", "enum": ["get", "set"], "default": "get"],
+            "provider": ["type": "string", "enum": ["mlx", "coreml", "system", "hash", "auto"]],
+            "reinitialize": ["type": "boolean", "default": true]
+          ]
+        ],
+        category: .rag,
+        isMutating: true
+      ),
+      ToolDefinition(
         name: "rag.init",
         description: "Initialize the Local RAG database schema",
         inputSchema: [
@@ -3299,13 +3551,27 @@ public final class MCPServerService {
       ),
       ToolDefinition(
         name: "rag.model.describe",
-        description: "Describe the Core ML embedding model",
+        description: "Describe the current embedding model (MLX, CoreML, System, or Hash)",
         inputSchema: [
           "type": "object",
           "properties": [
             "modelName": ["type": "string"],
             "extension": ["type": "string"]
           ]
+        ],
+        category: .rag,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "rag.embedding.test",
+        description: "Test embedding generation with sample texts. Returns embeddings and timing info.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "texts": ["type": "array", "items": ["type": "string"], "description": "Array of texts to embed (max 5)"],
+            "showVectors": ["type": "boolean", "default": false, "description": "Include first 10 values of each vector"]
+          ],
+          "required": ["texts"]
         ],
         category: .rag,
         isMutating: false

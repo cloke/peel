@@ -901,6 +901,12 @@ actor LocalRAGStore {
     }
   }
 
+  /// Generate embeddings for the given texts using the configured provider.
+  /// Exposed for testing MLX/embedding providers via MCP.
+  func generateEmbeddings(for texts: [String]) async throws -> [[Float]] {
+    try await embeddingProvider.embed(texts: texts)
+  }
+
   func searchVector(query: String, repoPath: String? = nil, limit: Int = 10) async throws -> [LocalRAGSearchResult] {
     let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmedQuery.isEmpty else { return [] }
