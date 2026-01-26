@@ -5,6 +5,7 @@
 //  Created on 1/19/26.
 //
 
+import ASTChunker
 import CryptoKit
 import Darwin
 import Foundation
@@ -192,6 +193,50 @@ struct LocalRAGChunker {
   private func approximateTokenCount(for text: String) -> Int {
     let words = text.split { $0.isWhitespace || $0.isNewline }
     return max(1, words.count)
+  }
+}
+
+/// Hybrid chunker that uses AST-aware chunking for supported languages (Swift)
+/// and falls back to line-based chunking for others.
+struct HybridChunker {
+  private let lineChunker = LocalRAGChunker()
+  private let swiftChunker = SwiftChunker()
+  
+  /// Languages that have AST chunker support
+  private let astSupportedLanguages: Set<String> = ["Swift"]
+  
+  func chunk(text: String, language: String) -> [LocalRAGChunk] {
+    // Use AST chunking for supported languages
+    if astSupportedLanguages.contains(language) {
+      let chunks = chunkWithAST(text: text, language: language)
+      print("[RAG] AST chunking \(language): \(chunks.count) chunks")
+      return chunks
+    }
+    
+    // Fall back to line-based chunking
+    return lineChunker.chunk(text: text)
+  }
+  
+  private func chunkWithAST(text: String, language: String) -> [LocalRAGChunk] {
+    let astChunks: [ASTChunk]
+    
+    switch language {
+    case "Swift":
+      astChunks = swiftChunker.chunk(source: text)
+    default:
+      // Should not reach here if astSupportedLanguages is correct
+      return lineChunker.chunk(text: text)
+    }
+    
+    // Convert ASTChunk to LocalRAGChunk
+    return astChunks.map { astChunk in
+      LocalRAGChunk(
+        startLine: astChunk.startLine,
+        endLine: astChunk.endLine,
+        text: astChunk.text,
+        tokenCount: astChunk.estimatedTokenCount
+      )
+    }
   }
 }
 
@@ -516,7 +561,7 @@ actor LocalRAGStore {
   private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
   private let scanner = LocalRAGFileScanner()
-  private let chunker = LocalRAGChunker()
+  private let chunker = HybridChunker()
   private let embeddingProvider: LocalRAGEmbeddingProvider
 
   private let dateFormatter = ISO8601DateFormatter()
@@ -835,7 +880,7 @@ actor LocalRAGStore {
         continue
       }
 
-      let chunks = chunker.chunk(text: file.text)
+      let chunks = chunker.chunk(text: file.text, language: file.language)
       let chunkHashes = chunks.map { stableId(for: $0.text) }
 
       // Find missing embeddings for this file
