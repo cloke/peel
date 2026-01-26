@@ -147,6 +147,18 @@ actor MLXEmbeddingProvider: LocalRAGEmbeddingProvider {
   private func ensureLoaded() async throws {
     guard !isLoaded else { return }
     
+    if let limitMB = LocalRAGEmbeddingProviderFactory.mlxCacheLimitMB {
+      let limitBytes = limitMB * 1_048_576
+      MLX.Memory.cacheLimit = limitBytes
+      let label = limitMB == 0 ? "disabled" : "\(limitMB)MB"
+      print("[MLX] Cache limit set to \(label)")
+    } else {
+      let bytes = defaultCacheLimitBytes()
+      MLX.Memory.cacheLimit = bytes
+      let label = ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .memory)
+      print("[MLX] Cache limit defaulted to 75% RAM (\(label))")
+    }
+
     print("[MLX] Loading model: \(config.name) (\(config.huggingFaceId))")
     let startTime = CFAbsoluteTimeGetCurrent()
     
@@ -165,9 +177,18 @@ actor MLXEmbeddingProvider: LocalRAGEmbeddingProvider {
     
     self.container = loadedContainer
     self.isLoaded = true
+    LocalRAGEmbeddingProviderFactory.recordDownloadedMLXModel(config.huggingFaceId)
     
     let elapsed = CFAbsoluteTimeGetCurrent() - startTime
     print("[MLX] Model loaded in \(String(format: "%.2f", elapsed))s")
+  }
+
+  private func defaultCacheLimitBytes() -> Int {
+    var size = 0
+    var sizeOfSize = MemoryLayout<Int>.size
+    sysctlbyname("hw.memsize", &size, &sizeOfSize, nil, 0)
+    let total = max(0, size)
+    return Int(Double(total) * 0.75)
   }
   
   nonisolated func embed(texts: [String]) async throws -> [[Float]] {

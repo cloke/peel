@@ -30,6 +30,10 @@ enum LocalRAGEmbeddingProviderFactory {
   private static let providerKey = "localrag.provider"
   private static let useCoreMLKey = "localrag.useCoreML"  // legacy
   private static let useSystemKey = "localrag.useSystem"  // legacy
+  private static let mlxModelIdKey = "localrag.mlxModelId"
+  private static let mlxDownloadedModelsKey = "localrag.mlxDownloadedModels"
+  private static let mlxCacheLimitMBKey = "localrag.mlxCacheLimitMB"
+  private static let mlxClearCacheAfterBatchKey = "localrag.mlxClearCacheAfterBatch"
   private static let modelFolderName = "Peel/RAG/Models"
 
   /// Get the configured provider preference
@@ -40,6 +44,9 @@ enum LocalRAGEmbeddingProviderFactory {
         return type
       }
       // Check legacy keys
+      if UserDefaults.standard.bool(forKey: useCoreMLKey) {
+        return .coreml
+      }
       if UserDefaults.standard.bool(forKey: useSystemKey) {
         return .system
       }
@@ -58,7 +65,7 @@ enum LocalRAGEmbeddingProviderFactory {
     case .mlx:
       #if os(macOS)
       print("[RAG] Using MLXEmbeddingProvider (native Swift + Apple Silicon)")
-      return MLXEmbeddingProvider(forCodeSearch: true)
+      return makePreferredMLX(forCodeSearch: true)
       #else
       print("[RAG] MLX not available on iOS, falling back")
       return makeFallbackProvider()
@@ -95,7 +102,7 @@ enum LocalRAGEmbeddingProviderFactory {
     #if os(macOS)
     // On macOS, prefer MLX for best Apple Silicon utilization
     print("[RAG] Auto-selecting MLXEmbeddingProvider (best for Apple Silicon)")
-    return MLXEmbeddingProvider(forCodeSearch: true)
+    return makePreferredMLX(forCodeSearch: true)
     #else
     // On iOS, try CoreML, then System, then Hash
     if let coreMLProvider = CoreMLEmbeddingProvider.makeDefault(modelFolderName: modelFolderName) {
@@ -118,6 +125,78 @@ enum LocalRAGEmbeddingProviderFactory {
     }
     return HashEmbeddingProvider()
   }
+
+  // MARK: - MLX Preferences (macOS)
+
+  static var preferredMLXModelId: String? {
+    get {
+      UserDefaults.standard.string(forKey: mlxModelIdKey)
+    }
+    set {
+      if let newValue, !newValue.isEmpty {
+        UserDefaults.standard.set(newValue, forKey: mlxModelIdKey)
+      } else {
+        UserDefaults.standard.removeObject(forKey: mlxModelIdKey)
+      }
+    }
+  }
+
+  static var downloadedMLXModels: [String] {
+    get {
+      UserDefaults.standard.stringArray(forKey: mlxDownloadedModelsKey) ?? []
+    }
+    set {
+      UserDefaults.standard.set(Array(Set(newValue)), forKey: mlxDownloadedModelsKey)
+    }
+  }
+
+  static func recordDownloadedMLXModel(_ modelId: String) {
+    guard !modelId.isEmpty else { return }
+    var current = downloadedMLXModels
+    current.append(modelId)
+    downloadedMLXModels = current
+  }
+
+  static var mlxCacheLimitMB: Int? {
+    get {
+      guard UserDefaults.standard.object(forKey: mlxCacheLimitMBKey) != nil else {
+        return nil
+      }
+      return UserDefaults.standard.integer(forKey: mlxCacheLimitMBKey)
+    }
+    set {
+      if let newValue {
+        UserDefaults.standard.set(newValue, forKey: mlxCacheLimitMBKey)
+      } else {
+        UserDefaults.standard.removeObject(forKey: mlxCacheLimitMBKey)
+      }
+    }
+  }
+
+  static var mlxClearCacheAfterBatch: Bool {
+    get {
+      UserDefaults.standard.bool(forKey: mlxClearCacheAfterBatchKey)
+    }
+    set {
+      UserDefaults.standard.set(newValue, forKey: mlxClearCacheAfterBatchKey)
+    }
+  }
+
+  #if os(macOS)
+  private static func makePreferredMLX(forCodeSearch: Bool = true) -> LocalRAGEmbeddingProvider {
+    if let selectedId = preferredMLXModelId,
+       let config = MLXEmbeddingModelConfig.availableModels.first(where: {
+         $0.huggingFaceId == selectedId || $0.name == selectedId
+       }) {
+      return MLXEmbeddingProvider(config: config)
+    }
+    return MLXEmbeddingProvider(forCodeSearch: forCodeSearch)
+  }
+  #else
+  private static func makePreferredMLX(forCodeSearch: Bool = true) -> LocalRAGEmbeddingProvider {
+    makeFallbackProvider()
+  }
+  #endif
 }
 
 struct SystemEmbeddingProvider: LocalRAGEmbeddingProvider, @unchecked Sendable {

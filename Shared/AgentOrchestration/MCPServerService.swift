@@ -865,6 +865,18 @@ public final class MCPServerService {
     lastRagRefreshAt = Date()
   }
 
+  func applyRagEmbeddingSettings() async {
+    localRagStore = LocalRAGStore()
+    parallelWorktreeRunner?.setRAGStore(localRagStore)
+    ragIndexingPath = nil
+    ragIndexProgress = nil
+    ragStatus = await localRagStore.status()
+    ragStats = try? await localRagStore.stats()
+    lastRagError = nil
+    lastRagRefreshAt = Date()
+    await refreshRagSummary()
+  }
+
   func indexRag(repoPath: String) async throws -> LocalRAGIndexReport {
     let report = try await localRagStore.indexRepository(path: repoPath)
     ragStatus = await localRagStore.status()
@@ -1417,8 +1429,17 @@ public final class MCPServerService {
     case "rag.search":
       return await handleRagSearch(id: id, arguments: arguments)
 
+    case "rag.cache.clear":
+      return await handleRagCacheClear(id: id)
+
     case "rag.model.describe":
       return await handleRagModelDescribe(id: id, arguments: arguments)
+
+    case "rag.model.list":
+      return await handleRagModelList(id: id)
+
+    case "rag.model.set":
+      return await handleRagModelSet(id: id, arguments: arguments)
 
     case "rag.embedding.test":
       return await handleRagEmbeddingTest(id: id, arguments: arguments)
@@ -1799,48 +1820,61 @@ public final class MCPServerService {
         "currentProvider": currentProvider,
         "preferredProvider": currentProviderPref.rawValue,
         "availableProviders": availableProviders,
+        "mlxCacheLimitMB": LocalRAGEmbeddingProviderFactory.mlxCacheLimitMB as Any,
+        "mlxClearCacheAfterBatch": LocalRAGEmbeddingProviderFactory.mlxClearCacheAfterBatch,
         "note": "Use action='set' with provider='mlx' (best on macOS), 'system', 'coreml', 'hash', or 'auto'"
       ]
       return (200, makeRPCResult(id: id, result: result))
     }
 
     if action == "set" {
-      guard let provider = arguments["provider"] as? String else {
-        return (400, makeRPCError(id: id, code: -32602, message: "Missing 'provider' argument"))
-      }
+      let provider = arguments["provider"] as? String
 
       let reinitialize = (arguments["reinitialize"] as? Bool) ?? true
-      
-      // Map provider string to EmbeddingProviderType
-      let providerType: EmbeddingProviderType
-      switch provider.lowercased() {
-      case "mlx":
-        #if os(macOS)
-        providerType = .mlx
-        #else
-        return (400, makeRPCError(id: id, code: -32602, message: "MLX is not available on iOS"))
-        #endif
-      case "system", "apple", "nlembedding":
-        providerType = .system
-      case "coreml", "codebert":
-        providerType = .coreml
-      case "hash":
-        providerType = .hash
-      case "auto":
-        providerType = .auto
-      default:
-        return (400, makeRPCError(id: id, code: -32602, message: "Unknown provider '\(provider)'. Use: mlx, coreml, system, hash, or auto"))
+      if let cacheLimit = arguments["mlxCacheLimitMB"] as? Int {
+        LocalRAGEmbeddingProviderFactory.mlxCacheLimitMB = cacheLimit
+      }
+      if (arguments["clearMlxCacheLimit"] as? Bool) == true {
+        LocalRAGEmbeddingProviderFactory.mlxCacheLimitMB = nil
+      }
+      if let clearAfterBatch = arguments["mlxClearCacheAfterBatch"] as? Bool {
+        LocalRAGEmbeddingProviderFactory.mlxClearCacheAfterBatch = clearAfterBatch
       }
       
-      // Set the new preference
-      LocalRAGEmbeddingProviderFactory.preferredProvider = providerType
+      var providerType: EmbeddingProviderType?
+      if let provider {
+        switch provider.lowercased() {
+        case "mlx":
+          #if os(macOS)
+          providerType = .mlx
+          #else
+          return (400, makeRPCError(id: id, code: -32602, message: "MLX is not available on iOS"))
+          #endif
+        case "system", "apple", "nlembedding":
+          providerType = .system
+        case "coreml", "codebert":
+          providerType = .coreml
+        case "hash":
+          providerType = .hash
+        case "auto":
+          providerType = .auto
+        default:
+          return (400, makeRPCError(id: id, code: -32602, message: "Unknown provider '\(provider)'. Use: mlx, coreml, system, hash, or auto"))
+        }
+      }
+
+      if let providerType {
+        LocalRAGEmbeddingProviderFactory.preferredProvider = providerType
+      }
 
       var result: [String: Any] = [
-        "providerSet": providerType.rawValue,
-        "preferredProvider": providerType.rawValue
+        "providerSet": providerType?.rawValue as Any,
+        "preferredProvider": LocalRAGEmbeddingProviderFactory.preferredProvider.rawValue,
+        "mlxCacheLimitMB": LocalRAGEmbeddingProviderFactory.mlxCacheLimitMB as Any,
+        "mlxClearCacheAfterBatch": LocalRAGEmbeddingProviderFactory.mlxClearCacheAfterBatch
       ]
 
-      if reinitialize {
+      if reinitialize, providerType != nil {
         // Recreate the store with the new provider
         let newProvider = LocalRAGEmbeddingProviderFactory.makeDefault()
         localRagStore = LocalRAGStore(embeddingProvider: newProvider)
@@ -1933,6 +1967,69 @@ public final class MCPServerService {
     }
   }
 
+  private func handleRagModelList(id: Any?) async -> (Int, Data) {
+#if os(macOS)
+    let preferred = LocalRAGEmbeddingProviderFactory.preferredMLXModelId ?? ""
+    let downloaded = LocalRAGEmbeddingProviderFactory.downloadedMLXModels
+    let models: [[String: Any]] = MLXEmbeddingModelConfig.availableModels.map { model in
+      [
+        "name": model.name,
+        "huggingFaceId": model.huggingFaceId,
+        "dimensions": model.dimensions,
+        "tier": model.tier.rawValue,
+        "isCodeOptimized": model.isCodeOptimized
+      ]
+    }
+    let result: [String: Any] = [
+      "preferredModelId": preferred,
+      "downloadedModelIds": downloaded,
+      "availableModels": models
+    ]
+    return (200, makeRPCResult(id: id, result: result))
+#else
+    return (400, makeRPCError(id: id, code: -32602, message: "MLX models are only available on macOS"))
+#endif
+  }
+
+  private func handleRagModelSet(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+#if os(macOS)
+    let modelId = (arguments["modelId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let reinitialize = (arguments["reinitialize"] as? Bool) ?? true
+
+    if !modelId.isEmpty {
+      let isKnown = MLXEmbeddingModelConfig.availableModels.contains(where: {
+        $0.huggingFaceId == modelId || $0.name == modelId
+      })
+      if !isKnown {
+        return (400, makeRPCError(id: id, code: -32602, message: "Unknown MLX modelId: \(modelId)"))
+      }
+    }
+
+    LocalRAGEmbeddingProviderFactory.preferredMLXModelId = modelId.isEmpty ? nil : modelId
+
+    var result: [String: Any] = [
+      "preferredModelId": LocalRAGEmbeddingProviderFactory.preferredMLXModelId ?? "",
+      "reinitialized": reinitialize
+    ]
+
+    if reinitialize {
+      let newProvider = LocalRAGEmbeddingProviderFactory.makeDefault()
+      localRagStore = LocalRAGStore(embeddingProvider: newProvider)
+      do {
+        let status = try await localRagStore.initialize(extensionPath: nil)
+        result["embeddingProvider"] = status.providerName
+        result["embeddingModel"] = status.embeddingModelName
+      } catch {
+        result["error"] = error.localizedDescription
+      }
+    }
+
+    return (200, makeRPCResult(id: id, result: result))
+#else
+    return (400, makeRPCError(id: id, code: -32602, message: "MLX models are only available on macOS"))
+#endif
+  }
+
   private func handleRagSearch(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
     let query = (arguments["query"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
     guard let query, !query.isEmpty else {
@@ -1956,6 +2053,19 @@ public final class MCPServerService {
       return (200, makeRPCResult(id: id, result: ["mode": mode, "results": payload]))
     } catch {
       await telemetryProvider.warning("Local RAG search failed", metadata: ["error": error.localizedDescription])
+      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
+    }
+  }
+
+  private func handleRagCacheClear(id: Any?) async -> (Int, Data) {
+    do {
+      let cleared = try await localRagStore.clearEmbeddingCache()
+      let result: [String: Any] = [
+        "cleared": cleared
+      ]
+      return (200, makeRPCResult(id: id, result: result))
+    } catch {
+      await telemetryProvider.warning("Local RAG cache clear failed", metadata: ["error": error.localizedDescription])
       return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
     }
   }
@@ -3504,7 +3614,10 @@ public final class MCPServerService {
           "properties": [
             "action": ["type": "string", "enum": ["get", "set"], "default": "get"],
             "provider": ["type": "string", "enum": ["mlx", "coreml", "system", "hash", "auto"]],
-            "reinitialize": ["type": "boolean", "default": true]
+            "reinitialize": ["type": "boolean", "default": true],
+            "mlxCacheLimitMB": ["type": "integer"],
+            "mlxClearCacheAfterBatch": ["type": "boolean"],
+            "clearMlxCacheLimit": ["type": "boolean"]
           ]
         ],
         category: .rag,
@@ -3552,6 +3665,16 @@ public final class MCPServerService {
         isMutating: false
       ),
       ToolDefinition(
+        name: "rag.cache.clear",
+        description: "Clear cached embeddings (cache_embeddings table)",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .rag,
+        isMutating: true
+      ),
+      ToolDefinition(
         name: "rag.model.describe",
         description: "Describe the current embedding model (MLX, CoreML, System, or Hash)",
         inputSchema: [
@@ -3563,6 +3686,29 @@ public final class MCPServerService {
         ],
         category: .rag,
         isMutating: false
+      ),
+      ToolDefinition(
+        name: "rag.model.list",
+        description: "List available MLX embedding models and current preference",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .rag,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "rag.model.set",
+        description: "Set preferred MLX embedding model by modelId (HuggingFace id or name). Use empty to reset to auto.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "modelId": ["type": "string"],
+            "reinitialize": ["type": "boolean", "default": true]
+          ]
+        ],
+        category: .rag,
+        isMutating: true
       ),
       ToolDefinition(
         name: "rag.embedding.test",
