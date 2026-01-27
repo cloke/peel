@@ -16,7 +16,7 @@ protocol RAGToolsHandlerDelegate: MCPToolHandlerDelegate {
   // MARK: - LocalRAGStore Access
   
   /// Search the RAG index
-  func searchRag(query: String, mode: MCPServerService.RAGSearchMode, repoPath: String?, limit: Int, matchAll: Bool) async throws -> [RAGToolSearchResult]
+  func searchRagForTool(query: String, mode: MCPServerService.RAGSearchMode, repoPath: String?, limit: Int, matchAll: Bool) async throws -> [RAGToolSearchResult]
   
   /// Get RAG database status
   func ragStatus() async -> RAGToolStatus
@@ -25,7 +25,7 @@ protocol RAGToolsHandlerDelegate: MCPToolHandlerDelegate {
   func initializeRag(extensionPath: String?) async throws -> RAGToolStatus
   
   /// Index a repository
-  func indexRepository(path: String, progressHandler: ((RAGToolIndexProgress) -> Void)?) async throws -> RAGToolIndexReport
+  func indexRepository(path: String, progressHandler: (@Sendable (RAGToolIndexProgress) -> Void)?) async throws -> RAGToolIndexReport
   
   /// List indexed repositories
   func listRagRepos() async throws -> [RAGToolRepoInfo]
@@ -54,31 +54,13 @@ protocol RAGToolsHandlerDelegate: MCPToolHandlerDelegate {
   func listRepoGuidanceSkills(repoPath: String?, includeInactive: Bool, limit: Int?) -> [RepoGuidanceSkill]
   
   /// Add a guidance skill
-  func addRepoGuidanceSkill(repoPath: String, title: String, body: String, source: String, tags: String, priority: Int, isActive: Bool) -> RepoGuidanceSkill
+  func addRepoGuidanceSkill(repoPath: String, title: String, body: String, source: String, tags: String, priority: Int, isActive: Bool) -> RepoGuidanceSkill?
   
   /// Update a guidance skill
   func updateRepoGuidanceSkill(id: UUID, repoPath: String?, title: String?, body: String?, source: String?, tags: String?, priority: Int?, isActive: Bool?) -> RepoGuidanceSkill?
   
   /// Delete a guidance skill
   func deleteRepoGuidanceSkill(id: UUID) -> Bool
-  
-  // MARK: - State Tracking
-  
-  /// Track last search parameters for UI
-  var lastRagSearchQuery: String? { get set }
-  var lastRagSearchMode: MCPServerService.RAGSearchMode? { get set }
-  var lastRagSearchRepoPath: String? { get set }
-  var lastRagSearchLimit: Int? { get set }
-  var lastRagSearchAt: Date? { get set }
-  var lastRagSearchResults: [RAGToolSearchResult] { get set }
-  var lastRagIndexReport: RAGToolIndexReport? { get set }
-  var lastRagIndexAt: Date? { get set }
-  var lastRagRefreshAt: Date? { get set }
-  var lastRagError: String? { get set }
-  
-  /// Indexing progress tracking
-  var ragIndexingPath: String? { get set }
-  var ragIndexProgress: RAGToolIndexProgress? { get set }
   
   // MARK: - Configuration
   
@@ -209,7 +191,7 @@ final class RAGToolsHandler: MCPToolHandler {
     
     do {
       let resolvedMode: MCPServerService.RAGSearchMode = mode.lowercased() == "vector" ? .vector : .text
-      var results = try await delegate.searchRag(query: query, mode: resolvedMode, repoPath: repoPath, limit: limit * 2, matchAll: matchAll)
+      var results = try await delegate.searchRagForTool(query: query, mode: resolvedMode, repoPath: repoPath, limit: limit * 2, matchAll: matchAll)
       
       // Apply filters
       if excludeTests {
@@ -259,20 +241,9 @@ final class RAGToolsHandler: MCPToolHandler {
       return missingParamError(id: id, param: "repoPath")
     }
     
-    delegate.ragIndexingPath = repoPath
-    delegate.ragIndexProgress = nil
-    
     do {
-      let report = try await delegate.indexRepository(path: repoPath) { progress in
-        Task { @MainActor in
-          delegate.ragIndexProgress = progress
-        }
-      }
-      
-      delegate.ragIndexingPath = nil
-      delegate.ragIndexProgress = .complete(report: report)
-      delegate.lastRagIndexReport = report
-      delegate.lastRagIndexAt = Date()
+      // Delegate handles all state tracking
+      let report = try await delegate.indexRepository(path: repoPath, progressHandler: nil)
       
       await delegate.refreshRagSummary()
       
@@ -289,8 +260,6 @@ final class RAGToolsHandler: MCPToolHandler {
       ]
       return (200, makeResult(id: id, result: result))
     } catch {
-      delegate.ragIndexingPath = nil
-      delegate.ragIndexProgress = nil
       await delegate.logWarning("Local RAG index failed", metadata: ["error": error.localizedDescription])
       return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
     }
@@ -386,6 +355,9 @@ final class RAGToolsHandler: MCPToolHandler {
       priority: priority,
       isActive: isActive
     )
+    guard let skill else {
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Failed to create skill"))
+    }
     let formatter = ISO8601DateFormatter()
     return (200, makeResult(id: id, result: ["skill": encodeSkill(skill, formatter: formatter)]))
   }

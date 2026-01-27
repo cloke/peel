@@ -384,6 +384,8 @@ public final class MCPServerService {
   private var uiToolsHandler: UIToolsHandler
   private var vmToolsHandler: VMToolsHandler
   private var parallelToolsHandler: ParallelToolsHandler
+  private var ragToolsHandler: RAGToolsHandler?
+  private var chainToolsHandler: ChainToolsHandler?
 
   public struct ActiveRunInfo: Identifiable {
     public let id: UUID
@@ -440,6 +442,8 @@ public final class MCPServerService {
     self.uiToolsHandler = UIToolsHandler()
     self.vmToolsHandler = VMToolsHandler(vmIsolationService: vmIsolationService, telemetryProvider: telemetryProvider ?? MCPTelemetryAdapter(sessionTracker: sessionTracker))
     self.parallelToolsHandler = ParallelToolsHandler()
+    self.ragToolsHandler = RAGToolsHandler()
+    self.chainToolsHandler = ChainToolsHandler()
 
     self.agentManager = agentManager
     self.sessionTracker = sessionTracker
@@ -517,6 +521,8 @@ public final class MCPServerService {
     // Wire up tool handler delegates (must be after self is fully initialized)
     self.uiToolsHandler.delegate = self
     self.parallelToolsHandler.delegate = self
+    self.ragToolsHandler?.delegate = self
+    self.chainToolsHandler?.delegate = self
 
     updateSleepPrevention()
 
@@ -1401,6 +1407,12 @@ public final class MCPServerService {
     if parallelToolsHandler.supportedTools.contains(name) {
       return await parallelToolsHandler.handle(name: name, id: id, arguments: arguments)
     }
+    if ragToolsHandler?.supportedTools.contains(name) == true {
+      return await ragToolsHandler!.handle(name: name, id: id, arguments: arguments)
+    }
+    if chainToolsHandler?.supportedTools.contains(name) == true {
+      return await chainToolsHandler!.handle(name: name, id: id, arguments: arguments)
+    }
 
     // Fall through to inline handlers (to be extracted in future)
     switch name {
@@ -1415,117 +1427,14 @@ public final class MCPServerService {
     case "state.list":
       return handleStateList(id: id)
 
-    case "rag.status":
-      return await handleRagStatus(id: id)
-
-    case "rag.config":
-      return await handleRagConfig(id: id, arguments: arguments)
-
-    case "rag.init":
-      return await handleRagInit(id: id, arguments: arguments)
-
-    case "rag.index":
-      return await handleRagIndex(id: id, arguments: arguments)
-
-    case "rag.search":
-      return await handleRagSearch(id: id, arguments: arguments)
-
-    case "rag.cache.clear":
-      return await handleRagCacheClear(id: id)
-
-    case "rag.model.describe":
-      return await handleRagModelDescribe(id: id, arguments: arguments)
-
-    case "rag.model.list":
-      return await handleRagModelList(id: id)
-
-    case "rag.model.set":
-      return await handleRagModelSet(id: id, arguments: arguments)
-
-    case "rag.embedding.test":
-      return await handleRagEmbeddingTest(id: id, arguments: arguments)
-
-    case "rag.ui.status":
-      return await handleRagUIStatus(id: id)
-
-    case "rag.skills.list":
-      return handleRagSkillsList(id: id, arguments: arguments)
-
-    case "rag.skills.add":
-      return handleRagSkillsAdd(id: id, arguments: arguments)
-
-    case "rag.skills.update":
-      return handleRagSkillsUpdate(id: id, arguments: arguments)
-
-    case "rag.skills.delete":
-      return handleRagSkillsDelete(id: id, arguments: arguments)
-
-    case "rag.repos.list":
-      return await handleRagReposList(id: id)
-
-    case "rag.repos.delete":
-      return await handleRagReposDelete(id: id, arguments: arguments)
-
-    case "rag.stats":
-      return await handleRagStats(id: id, arguments: arguments)
-
-    case "rag.largeFiles":
-      return await handleRagLargeFiles(id: id, arguments: arguments)
-
-    case "rag.constructTypes":
-      return await handleRagConstructTypes(id: id, arguments: arguments)
-
-    case "templates.list":
-      let templates = templateList()
-      return (200, makeRPCResult(id: id, result: ["templates": templates]))
-
-    case "chains.run":
-      return await handleChainRun(id: id, arguments: arguments)
-
-    case "chains.runBatch":
-      return await handleChainRunBatch(id: id, arguments: arguments)
-
-    case "chains.run.status":
-      return handleChainRunStatus(id: id, arguments: arguments)
-
-    case "chains.run.list":
-      return handleChainRunList(id: id, arguments: arguments)
+    // RAG tools are now handled by RAGToolsHandler above
+    // Chain tools are now handled by ChainToolsHandler above
 
     case "workspaces.agent.list":
       return handleAgentWorkspacesList(id: id, arguments: arguments)
 
     case "workspaces.agent.cleanup.status":
       return handleAgentWorkspacesCleanupStatus(id: id)
-
-    case "chains.stop":
-      return await handleChainStop(id: id, arguments: arguments)
-
-    case "chains.pause":
-      return await handleChainPause(id: id, arguments: arguments)
-
-    case "chains.resume":
-      return await handleChainResume(id: id, arguments: arguments)
-
-    case "chains.instruct":
-      return await handleChainInstruct(id: id, arguments: arguments)
-
-    case "chains.step":
-      return await handleChainStep(id: id, arguments: arguments)
-
-    case "chains.queue.status":
-      return (200, makeRPCResult(id: id, result: queueStatus()))
-
-    case "chains.queue.configure":
-      return handleQueueConfigure(id: id, arguments: arguments)
-
-    case "chains.queue.cancel":
-      return await handleQueueCancel(id: id, arguments: arguments)
-
-    case "chains.promptRules.get":
-      return handlePromptRulesGet(id: id)
-
-    case "chains.promptRules.set":
-      return handlePromptRulesSet(id: id, arguments: arguments)
 
     case "logs.mcp.path":
       return (200, makeRPCResult(id: id, result: ["path": await telemetryProvider.logPath()]))
@@ -1787,733 +1696,7 @@ public final class MCPServerService {
   }
 
   // Parallel tool handlers moved to ParallelToolsHandler.swift (#162)
-
-  private func handleRagStatus(id: Any?) async -> (Int, Data) {
-    let status = await localRagStore.status()
-    let formatter = ISO8601DateFormatter()
-    var result: [String: Any] = [
-      "dbPath": status.dbPath,
-      "exists": status.exists,
-      "schemaVersion": status.schemaVersion,
-      "extensionLoaded": status.extensionLoaded,
-      "embeddingProvider": status.providerName,
-      "embeddingModel": status.embeddingModelName,
-      "embeddingDimensions": status.embeddingDimensions,
-      "coreMLModelPresent": status.coreMLModelPresent,
-      "coreMLVocabPresent": status.coreMLVocabPresent,
-      "coreMLTokenizerHelperPresent": status.coreMLTokenizerHelperPresent,
-      "debugForceSystem": UserDefaults.standard.bool(forKey: "localrag.useSystem")
-    ]
-    if let lastInitializedAt = status.lastInitializedAt {
-      result["lastInitializedAt"] = formatter.string(from: lastInitializedAt)
-    }
-    return (200, makeRPCResult(id: id, result: result))
-  }
-
-  /// Handle rag.config - get or set RAG configuration
-  /// Arguments:
-  ///   - action: "get" (default) or "set"
-  ///   - provider: "coreml", "system", or "hash" (for set action)
-  ///   - reinitialize: bool (default true) - recreate store with new provider
-  private func handleRagConfig(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    let action = (arguments["action"] as? String) ?? "get"
-
-    if action == "get" {
-      let currentProviderPref = LocalRAGEmbeddingProviderFactory.preferredProvider
-      let currentProvider = await localRagStore.status().providerName
-      #if os(macOS)
-      let availableProviders = ["mlx", "coreml", "system", "hash", "auto"]
-      #else
-      let availableProviders = ["coreml", "system", "hash", "auto"]
-      #endif
-      let result: [String: Any] = [
-        "currentProvider": currentProvider,
-        "preferredProvider": currentProviderPref.rawValue,
-        "availableProviders": availableProviders,
-        "mlxCacheLimitMB": LocalRAGEmbeddingProviderFactory.mlxCacheLimitMB as Any,
-        "mlxClearCacheAfterBatch": LocalRAGEmbeddingProviderFactory.mlxClearCacheAfterBatch,
-        "note": "Use action='set' with provider='mlx' (best on macOS), 'system', 'coreml', 'hash', or 'auto'"
-      ]
-      return (200, makeRPCResult(id: id, result: result))
-    }
-
-    if action == "set" {
-      let provider = arguments["provider"] as? String
-
-      let reinitialize = (arguments["reinitialize"] as? Bool) ?? true
-      if let cacheLimit = arguments["mlxCacheLimitMB"] as? Int {
-        LocalRAGEmbeddingProviderFactory.mlxCacheLimitMB = cacheLimit
-      }
-      if (arguments["clearMlxCacheLimit"] as? Bool) == true {
-        LocalRAGEmbeddingProviderFactory.mlxCacheLimitMB = nil
-      }
-      if let clearAfterBatch = arguments["mlxClearCacheAfterBatch"] as? Bool {
-        LocalRAGEmbeddingProviderFactory.mlxClearCacheAfterBatch = clearAfterBatch
-      }
-      
-      var providerType: EmbeddingProviderType?
-      if let provider {
-        switch provider.lowercased() {
-        case "mlx":
-          #if os(macOS)
-          providerType = .mlx
-          #else
-          return (400, makeRPCError(id: id, code: -32602, message: "MLX is not available on iOS"))
-          #endif
-        case "system", "apple", "nlembedding":
-          providerType = .system
-        case "coreml", "codebert":
-          providerType = .coreml
-        case "hash":
-          providerType = .hash
-        case "auto":
-          providerType = .auto
-        default:
-          return (400, makeRPCError(id: id, code: -32602, message: "Unknown provider '\(provider)'. Use: mlx, coreml, system, hash, or auto"))
-        }
-      }
-
-      if let providerType {
-        LocalRAGEmbeddingProviderFactory.preferredProvider = providerType
-      }
-
-      var result: [String: Any] = [
-        "providerSet": providerType?.rawValue as Any,
-        "preferredProvider": LocalRAGEmbeddingProviderFactory.preferredProvider.rawValue,
-        "mlxCacheLimitMB": LocalRAGEmbeddingProviderFactory.mlxCacheLimitMB as Any,
-        "mlxClearCacheAfterBatch": LocalRAGEmbeddingProviderFactory.mlxClearCacheAfterBatch
-      ]
-
-      if reinitialize, providerType != nil {
-        // Recreate the store with the new provider
-        let newProvider = LocalRAGEmbeddingProviderFactory.makeDefault()
-        localRagStore = LocalRAGStore(embeddingProvider: newProvider)
-
-        // Initialize the new store
-        do {
-          let status = try await localRagStore.initialize(extensionPath: nil)
-          result["reinitialized"] = true
-          result["newProvider"] = status.providerName
-          result["note"] = "Store recreated. Existing indexes may need re-indexing if embedding dimensions changed."
-        } catch {
-          result["reinitialized"] = false
-          result["error"] = error.localizedDescription
-        }
-      } else {
-        result["reinitialized"] = false
-        result["note"] = "Preference saved. Restart app or call with reinitialize=true to apply."
-      }
-
-      return (200, makeRPCResult(id: id, result: result))
-    }
-
-    return (400, makeRPCError(id: id, code: -32602, message: "Unknown action '\(action)'. Use: get or set"))
-  }
-
-  private func handleRagInit(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    let extensionPath = arguments["extensionPath"] as? String
-    do {
-      let status = try await localRagStore.initialize(extensionPath: extensionPath)
-      let formatter = ISO8601DateFormatter()
-      var result: [String: Any] = [
-        "dbPath": status.dbPath,
-        "exists": status.exists,
-        "schemaVersion": status.schemaVersion,
-        "extensionLoaded": status.extensionLoaded
-      ]
-      if let lastInitializedAt = status.lastInitializedAt {
-        result["lastInitializedAt"] = formatter.string(from: lastInitializedAt)
-      }
-      return (200, makeRPCResult(id: id, result: result))
-    } catch {
-      await telemetryProvider.warning("Local RAG init failed", metadata: ["error": error.localizedDescription])
-      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
-    }
-  }
-
-  private func handleRagIndex(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    let repoPath = (arguments["repoPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard let repoPath, !repoPath.isEmpty else {
-      return (400, makeRPCError(id: id, code: -32602, message: "Missing repoPath"))
-    }
-
-    // Track indexing state for UI
-    ragIndexingPath = repoPath
-    ragIndexProgress = nil
-    
-    do {
-      let report = try await localRagStore.indexRepository(path: repoPath) { [weak self] progress in
-        Task { @MainActor in
-          self?.ragIndexProgress = progress
-        }
-      }
-      
-      // Update UI state
-      ragIndexingPath = nil
-      ragIndexProgress = .complete(report: report)
-      lastRagIndexReport = report
-      lastRagIndexAt = Date()
-      
-      // Refresh repos list
-      await refreshRagSummary()
-      
-      let result: [String: Any] = [
-        "repoId": report.repoId,
-        "repoPath": report.repoPath,
-        "filesIndexed": report.filesIndexed,
-        "filesSkipped": report.filesSkipped,
-        "chunksIndexed": report.chunksIndexed,
-        "bytesScanned": report.bytesScanned,
-        "durationMs": report.durationMs,
-        "embeddingCount": report.embeddingCount,
-        "embeddingDurationMs": report.embeddingDurationMs
-      ]
-      return (200, makeRPCResult(id: id, result: result))
-    } catch {
-      ragIndexingPath = nil
-      ragIndexProgress = nil
-      await telemetryProvider.warning("Local RAG index failed", metadata: ["error": error.localizedDescription])
-      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
-    }
-  }
-
-  private func handleRagModelList(id: Any?) async -> (Int, Data) {
-#if os(macOS)
-    let preferred = LocalRAGEmbeddingProviderFactory.preferredMLXModelId ?? ""
-    let downloaded = LocalRAGEmbeddingProviderFactory.downloadedMLXModels
-    let models: [[String: Any]] = MLXEmbeddingModelConfig.availableModels.map { model in
-      [
-        "name": model.name,
-        "huggingFaceId": model.huggingFaceId,
-        "dimensions": model.dimensions,
-        "tier": model.tier.rawValue,
-        "isCodeOptimized": model.isCodeOptimized
-      ]
-    }
-    let result: [String: Any] = [
-      "preferredModelId": preferred,
-      "downloadedModelIds": downloaded,
-      "availableModels": models
-    ]
-    return (200, makeRPCResult(id: id, result: result))
-#else
-    return (400, makeRPCError(id: id, code: -32602, message: "MLX models are only available on macOS"))
-#endif
-  }
-
-  private func handleRagModelSet(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-#if os(macOS)
-    let modelId = (arguments["modelId"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    let reinitialize = (arguments["reinitialize"] as? Bool) ?? true
-
-    if !modelId.isEmpty {
-      let isKnown = MLXEmbeddingModelConfig.availableModels.contains(where: {
-        $0.huggingFaceId == modelId || $0.name == modelId
-      })
-      if !isKnown {
-        return (400, makeRPCError(id: id, code: -32602, message: "Unknown MLX modelId: \(modelId)"))
-      }
-    }
-
-    LocalRAGEmbeddingProviderFactory.preferredMLXModelId = modelId.isEmpty ? nil : modelId
-
-    var result: [String: Any] = [
-      "preferredModelId": LocalRAGEmbeddingProviderFactory.preferredMLXModelId ?? "",
-      "reinitialized": reinitialize
-    ]
-
-    if reinitialize {
-      let newProvider = LocalRAGEmbeddingProviderFactory.makeDefault()
-      localRagStore = LocalRAGStore(embeddingProvider: newProvider)
-      do {
-        let status = try await localRagStore.initialize(extensionPath: nil)
-        result["embeddingProvider"] = status.providerName
-        result["embeddingModel"] = status.embeddingModelName
-      } catch {
-        result["error"] = error.localizedDescription
-      }
-    }
-
-    return (200, makeRPCResult(id: id, result: result))
-#else
-    return (400, makeRPCError(id: id, code: -32602, message: "MLX models are only available on macOS"))
-#endif
-  }
-
-  private func handleRagSearch(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    let query = (arguments["query"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard let query, !query.isEmpty else {
-      return (400, makeRPCError(id: id, code: -32602, message: "Missing query"))
-    }
-    let repoPath = (arguments["repoPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let limit = arguments["limit"] as? Int ?? 10
-    let mode = (arguments["mode"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "text"
-    
-    // Filter options
-    let excludeTests = arguments["excludeTests"] as? Bool ?? false
-    let constructTypeFilter = arguments["constructType"] as? String
-    let matchAll = arguments["matchAll"] as? Bool ?? true
-
-    do {
-      let resolvedMode: RAGSearchMode = mode.lowercased() == "vector" ? .vector : .text
-      var results = try await searchRag(query: query, mode: resolvedMode, repoPath: repoPath, limit: limit * 2, matchAll: matchAll) // fetch extra for filtering
-      
-      // Apply filters
-      if excludeTests {
-        results = results.filter { !$0.isTest }
-      }
-      if let typeFilter = constructTypeFilter?.lowercased(), !typeFilter.isEmpty {
-        results = results.filter { ($0.constructType?.lowercased() ?? "") == typeFilter }
-      }
-      
-      // Trim to requested limit after filtering
-      results = Array(results.prefix(limit))
-      
-      let payload: [[String: Any]] = results.map { result in
-        var item: [String: Any] = [
-          "filePath": result.filePath,
-          "startLine": result.startLine,
-          "endLine": result.endLine,
-          "snippet": result.snippet,
-          "isTest": result.isTest,
-          "lineCount": result.lineCount
-        ]
-        // Include metadata if available
-        if let constructType = result.constructType {
-          item["constructType"] = constructType
-        }
-        if let constructName = result.constructName {
-          item["name"] = constructName
-        }
-        if let language = result.language {
-          item["language"] = language
-        }
-        if let score = result.score {
-          item["score"] = score
-        }
-        return item
-      }
-      return (200, makeRPCResult(id: id, result: ["mode": mode, "results": payload]))
-    } catch {
-      await telemetryProvider.warning("Local RAG search failed", metadata: ["error": error.localizedDescription])
-      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
-    }
-  }
-
-  /// Handle rag.stats - get index statistics for a repository
-  private func handleRagStats(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    let repoPath = (arguments["repoPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard let repoPath, !repoPath.isEmpty else {
-      return (400, makeRPCError(id: id, code: -32602, message: "Missing repoPath"))
-    }
-
-    do {
-      let stats = try await localRagStore.getIndexStats(repoPath: repoPath)
-      let result: [String: Any] = [
-        "fileCount": stats.fileCount,
-        "chunkCount": stats.chunkCount,
-        "embeddingCount": stats.embeddingCount,
-        "totalLines": stats.totalLines
-      ]
-      return (200, makeRPCResult(id: id, result: result))
-    } catch {
-      await telemetryProvider.warning("RAG stats failed", metadata: ["error": error.localizedDescription])
-      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
-    }
-  }
-
-  /// Handle rag.largeFiles - find files with the most chunks/lines
-  private func handleRagLargeFiles(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    let repoPath = (arguments["repoPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard let repoPath, !repoPath.isEmpty else {
-      return (400, makeRPCError(id: id, code: -32602, message: "Missing repoPath"))
-    }
-    let limit = arguments["limit"] as? Int ?? 20
-    let minLines = arguments["minLines"] as? Int ?? 100
-
-    do {
-      let files = try await localRagStore.getLargeFiles(repoPath: repoPath, limit: limit)
-      let filtered = files.filter { $0.totalLines >= minLines }
-      let payload: [[String: Any]] = filtered.map { file in
-        var item: [String: Any] = [
-          "filePath": file.path,
-          "totalLines": file.totalLines,
-          "chunkCount": file.chunkCount
-        ]
-        if let lang = file.language {
-          item["language"] = lang
-        }
-        return item
-      }
-      return (200, makeRPCResult(id: id, result: ["files": payload, "count": payload.count]))
-    } catch {
-      await telemetryProvider.warning("RAG large files query failed", metadata: ["error": error.localizedDescription])
-      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
-    }
-  }
-
-  /// Handle rag.constructTypes - get breakdown of construct types in a repo
-  private func handleRagConstructTypes(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    let repoPath = (arguments["repoPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard let repoPath, !repoPath.isEmpty else {
-      return (400, makeRPCError(id: id, code: -32602, message: "Missing repoPath"))
-    }
-
-    do {
-      let stats = try await localRagStore.getConstructTypeStats(repoPath: repoPath)
-      let payload: [[String: Any]] = stats.map { stat in
-        [
-          "type": stat.type,
-          "count": stat.count
-        ]
-      }
-      return (200, makeRPCResult(id: id, result: ["types": payload]))
-    } catch {
-      await telemetryProvider.warning("RAG construct types query failed", metadata: ["error": error.localizedDescription])
-      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
-    }
-  }
-
-  private func handleRagCacheClear(id: Any?) async -> (Int, Data) {
-    do {
-      let cleared = try await localRagStore.clearEmbeddingCache()
-      let result: [String: Any] = [
-        "cleared": cleared
-      ]
-      return (200, makeRPCResult(id: id, result: result))
-    } catch {
-      await telemetryProvider.warning("Local RAG cache clear failed", metadata: ["error": error.localizedDescription])
-      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
-    }
-  }
-
-  private func handleRagModelDescribe(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    let modelName = (arguments["modelName"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let modelExtension = (arguments["extension"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let resolvedName = modelName?.isEmpty == false ? modelName! : "bge-small-en-v1.5"
-    let resolvedExtension = modelExtension?.isEmpty == false ? modelExtension! : "mlpackage"
-
-    guard let url = Bundle.main.url(forResource: resolvedName, withExtension: resolvedExtension) else {
-      return (404, makeRPCError(id: id, code: -32021, message: "Model not found in bundle"))
-    }
-
-    do {
-      let info = try LocalRAGModelDescriptor.describe(modelURL: url)
-      return (200, makeRPCResult(id: id, result: ["model": info, "url": url.path]))
-    } catch {
-      await telemetryProvider.warning("Local RAG model describe failed", metadata: ["error": error.localizedDescription])
-      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
-    }
-  }
-
-  /// Handle rag.embedding.test - test embedding generation with sample texts
-  private func handleRagEmbeddingTest(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    guard let textsArg = arguments["texts"] else {
-      return (400, makeRPCError(id: id, code: -32602, message: "Missing 'texts' argument"))
-    }
-    
-    let texts: [String]
-    if let textsArray = textsArg as? [String] {
-      texts = textsArray
-    } else if let singleText = textsArg as? String {
-      texts = [singleText]
-    } else {
-      return (400, makeRPCError(id: id, code: -32602, message: "Invalid 'texts' argument - expected array of strings"))
-    }
-    
-    // Limit to prevent abuse
-    let limitedTexts = Array(texts.prefix(5))
-    if limitedTexts.isEmpty {
-      return (400, makeRPCError(id: id, code: -32602, message: "Empty texts array"))
-    }
-    
-    let showVectors = (arguments["showVectors"] as? Bool) ?? false
-    
-    // Get current provider info
-    let status = await localRagStore.status()
-    let providerName = status.providerName
-    let preferredProvider = LocalRAGEmbeddingProviderFactory.preferredProvider
-    
-    // Time the embedding generation
-    let startTime = CFAbsoluteTimeGetCurrent()
-    
-    do {
-      let embeddings = try await localRagStore.generateEmbeddings(for: limitedTexts)
-      let elapsedMs = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-      
-      var results: [[String: Any]] = []
-      for (index, text) in limitedTexts.enumerated() {
-        var item: [String: Any] = [
-          "index": index,
-          "text": String(text.prefix(100)) + (text.count > 100 ? "..." : ""),
-          "textLength": text.count,
-          "vectorDimensions": embeddings[index].count
-        ]
-        
-        if showVectors {
-          // Show first 10 values as preview
-          item["vectorPreview"] = Array(embeddings[index].prefix(10))
-        }
-        
-        results.append(item)
-      }
-      
-      let result: [String: Any] = [
-        "success": true,
-        "provider": providerName,
-        "preferredProvider": preferredProvider.rawValue,
-        "totalTexts": limitedTexts.count,
-        "elapsedMs": elapsedMs,
-        "dimensions": embeddings.first?.count ?? 0,
-        "results": results
-      ]
-      
-      return (200, makeRPCResult(id: id, result: result))
-      
-    } catch {
-      await telemetryProvider.warning("Embedding test failed", metadata: ["error": error.localizedDescription])
-      
-      let result: [String: Any] = [
-        "success": false,
-        "provider": providerName,
-        "preferredProvider": preferredProvider.rawValue,
-        "error": error.localizedDescription
-      ]
-      
-      return (500, makeRPCResult(id: id, result: result))
-    }
-  }
-
-  private func handleRagUIStatus(id: Any?) async -> (Int, Data) {
-    let formatter = ISO8601DateFormatter()
-    let status = await localRagStore.status()
-    let stats = try? await localRagStore.stats()
-
-    var payload: [String: Any] = [
-      "status": [
-        "dbPath": status.dbPath,
-        "exists": status.exists,
-        "schemaVersion": status.schemaVersion,
-        "extensionLoaded": status.extensionLoaded,
-        "embeddingProvider": status.providerName,
-        "lastInitializedAt": status.lastInitializedAt.map { formatter.string(from: $0) } as Any
-      ]
-    ]
-
-    if let stats {
-      payload["stats"] = [
-        "repoCount": stats.repoCount,
-        "fileCount": stats.fileCount,
-        "chunkCount": stats.chunkCount,
-        "embeddingCount": stats.embeddingCount,
-        "cacheEmbeddingCount": stats.cacheEmbeddingCount,
-        "dbSizeBytes": stats.dbSizeBytes,
-        "lastIndexedAt": stats.lastIndexedAt.map { formatter.string(from: $0) } as Any,
-        "lastIndexedRepoPath": stats.lastIndexedRepoPath as Any
-      ]
-    }
-
-    let searchPayload = lastRagSearchResults.prefix(10).map { result in
-      [
-        "filePath": result.filePath,
-        "startLine": result.startLine,
-        "endLine": result.endLine,
-        "snippet": result.snippet
-      ]
-    }
-
-    payload["lastSearch"] = [
-      "query": lastRagSearchQuery as Any,
-      "mode": lastRagSearchMode?.rawValue as Any,
-      "repoPath": lastRagSearchRepoPath as Any,
-      "limit": lastRagSearchLimit as Any,
-      "at": lastRagSearchAt.map { formatter.string(from: $0) } as Any,
-      "results": searchPayload
-    ]
-
-    payload["ui"] = [
-      "currentViewId": currentToolId() as Any,
-      "selectedInfrastructure": UserDefaults.standard.string(forKey: "agents.selectedInfrastructure") as Any,
-      "lastUIActionHandled": lastUIActionHandled as Any,
-      "pendingUIAction": lastUIAction?.controlId as Any
-    ]
-
-    if let dataService {
-      let repoFilter = localRagRepoPath.trimmingCharacters(in: .whitespacesAndNewlines)
-      let skills = dataService.listRepoGuidanceSkills(
-        repoPath: repoFilter.isEmpty ? nil : repoFilter,
-        includeInactive: true,
-        limit: 20
-      )
-      let activeCount = skills.filter { $0.isActive }.count
-      let inactiveCount = skills.count - activeCount
-      let skillsPayload = skills.prefix(10).map { encodeRepoGuidanceSkill($0, formatter: formatter) }
-      payload["skills"] = [
-        "repoPath": repoFilter.isEmpty ? nil : repoFilter as Any,
-        "activeCount": activeCount,
-        "inactiveCount": inactiveCount,
-        "skills": skillsPayload
-      ]
-    }
-
-    if let error = lastRagError {
-      payload["error"] = error
-    }
-    if let refreshedAt = lastRagRefreshAt {
-      payload["refreshedAt"] = formatter.string(from: refreshedAt)
-    }
-
-    return (200, makeRPCResult(id: id, result: payload))
-  }
-
-  private func encodeRepoGuidanceSkill(_ skill: RepoGuidanceSkill, formatter: ISO8601DateFormatter) -> [String: Any] {
-    var payload: [String: Any] = [
-      "id": skill.id.uuidString,
-      "repoPath": skill.repoPath,
-      "title": skill.title,
-      "body": skill.body,
-      "source": skill.source,
-      "tags": skill.tags,
-      "priority": skill.priority,
-      "isActive": skill.isActive,
-      "appliedCount": skill.appliedCount,
-      "createdAt": formatter.string(from: skill.createdAt),
-      "updatedAt": formatter.string(from: skill.updatedAt)
-    ]
-    if let lastAppliedAt = skill.lastAppliedAt {
-      payload["lastAppliedAt"] = formatter.string(from: lastAppliedAt)
-    }
-    return payload
-  }
-
-  private func handleRagSkillsList(id: Any?, arguments: [String: Any]) -> (Int, Data) {
-    guard let dataService else {
-      return (500, makeRPCError(id: id, code: -32001, message: "Data service not initialized"))
-    }
-    let repoPath = (arguments["repoPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let includeInactive = arguments["includeInactive"] as? Bool ?? false
-    let limit = arguments["limit"] as? Int
-    let formatter = ISO8601DateFormatter()
-    let skills = dataService.listRepoGuidanceSkills(
-      repoPath: repoPath?.isEmpty == false ? repoPath : nil,
-      includeInactive: includeInactive,
-      limit: limit
-    )
-    let payload = skills.map { encodeRepoGuidanceSkill($0, formatter: formatter) }
-    return (200, makeRPCResult(id: id, result: ["skills": payload]))
-  }
-
-  private func handleRagSkillsAdd(id: Any?, arguments: [String: Any]) -> (Int, Data) {
-    guard let dataService else {
-      return (500, makeRPCError(id: id, code: -32001, message: "Data service not initialized"))
-    }
-    guard let repoPath = arguments["repoPath"] as? String,
-          let title = arguments["title"] as? String,
-          let body = arguments["body"] as? String else {
-      return (400, makeRPCError(id: id, code: -32602, message: "Missing repoPath, title, or body"))
-    }
-    let source = arguments["source"] as? String ?? "manual"
-    let tags = arguments["tags"] as? String ?? ""
-    let priority = arguments["priority"] as? Int ?? 0
-    let isActive = arguments["isActive"] as? Bool ?? true
-    let skill = dataService.addRepoGuidanceSkill(
-      repoPath: repoPath,
-      title: title,
-      body: body,
-      source: source,
-      tags: tags,
-      priority: priority,
-      isActive: isActive
-    )
-    let formatter = ISO8601DateFormatter()
-    return (200, makeRPCResult(id: id, result: ["skill": encodeRepoGuidanceSkill(skill, formatter: formatter)]))
-  }
-
-  private func handleRagSkillsUpdate(id: Any?, arguments: [String: Any]) -> (Int, Data) {
-    guard let dataService else {
-      return (500, makeRPCError(id: id, code: -32001, message: "Data service not initialized"))
-    }
-    guard let skillIdString = arguments["skillId"] as? String,
-          let skillId = UUID(uuidString: skillIdString) else {
-      return (400, makeRPCError(id: id, code: -32602, message: "Missing or invalid skillId"))
-    }
-    let skill = dataService.updateRepoGuidanceSkill(
-      id: skillId,
-      repoPath: arguments["repoPath"] as? String,
-      title: arguments["title"] as? String,
-      body: arguments["body"] as? String,
-      source: arguments["source"] as? String,
-      tags: arguments["tags"] as? String,
-      priority: arguments["priority"] as? Int,
-      isActive: arguments["isActive"] as? Bool
-    )
-    guard let skill else {
-      return (404, makeRPCError(id: id, code: -32004, message: "Skill not found"))
-    }
-    let formatter = ISO8601DateFormatter()
-    return (200, makeRPCResult(id: id, result: ["skill": encodeRepoGuidanceSkill(skill, formatter: formatter)]))
-  }
-
-  private func handleRagSkillsDelete(id: Any?, arguments: [String: Any]) -> (Int, Data) {
-    guard let dataService else {
-      return (500, makeRPCError(id: id, code: -32001, message: "Data service not initialized"))
-    }
-    guard let skillIdString = arguments["skillId"] as? String,
-          let skillId = UUID(uuidString: skillIdString) else {
-      return (400, makeRPCError(id: id, code: -32602, message: "Missing or invalid skillId"))
-    }
-    let deleted = dataService.deleteRepoGuidanceSkill(id: skillId)
-    if !deleted {
-      return (404, makeRPCError(id: id, code: -32004, message: "Skill not found"))
-    }
-    return (200, makeRPCResult(id: id, result: ["deleted": skillId.uuidString]))
-  }
-
-  private func handleRagReposList(id: Any?) async -> (Int, Data) {
-    do {
-      let repos = try await localRagStore.listRepos()
-      let formatter = ISO8601DateFormatter()
-      let repoList = repos.map { repo -> [String: Any] in
-        var dict: [String: Any] = [
-          "id": repo.id,
-          "name": repo.name,
-          "rootPath": repo.rootPath,
-          "fileCount": repo.fileCount,
-          "chunkCount": repo.chunkCount
-        ]
-        if let lastIndexedAt = repo.lastIndexedAt {
-          dict["lastIndexedAt"] = formatter.string(from: lastIndexedAt)
-        }
-        return dict
-      }
-      return (200, makeRPCResult(id: id, result: ["repos": repoList]))
-    } catch {
-      await telemetryProvider.warning("Local RAG list repos failed", metadata: ["error": error.localizedDescription])
-      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
-    }
-  }
-
-  private func handleRagReposDelete(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    let repoId = arguments["repoId"] as? String
-    let repoPath = arguments["repoPath"] as? String
-
-    guard repoId != nil || repoPath != nil else {
-      return (400, makeRPCError(id: id, code: -32602, message: "Must provide repoId or repoPath"))
-    }
-
-    do {
-      let deletedFiles = try await localRagStore.deleteRepo(repoId: repoId, repoPath: repoPath)
-      return (200, makeRPCResult(id: id, result: [
-        "deleted": true,
-        "filesDeleted": deletedFiles,
-        "repoId": repoId as Any,
-        "repoPath": repoPath as Any
-      ]))
-    } catch {
-      await telemetryProvider.warning("Local RAG delete repo failed", metadata: ["error": error.localizedDescription])
-      return (500, makeRPCError(id: id, code: -32001, message: error.localizedDescription))
-    }
-  }
+  // RAG tool handlers moved to RAGToolsHandler.swift
 
   private func encodeJSON<T: Encodable>(_ value: T) -> [String: Any] {
     guard let data = try? JSONEncoder().encode(value),
@@ -2522,6 +1705,10 @@ public final class MCPServerService {
     }
     return object
   }
+
+  // MARK: - Chain Handler Methods (Internal)
+  // Note: These methods are kept for internal use by rerun() and handleChainRunBatch().
+  // MCP routing goes through ChainToolsHandler; these are internal helpers.
 
   private func handleChainRunStatus(id: Any?, arguments: [String: Any]) -> (Int, Data) {
     guard let runIdString = arguments["runId"] as? String,
@@ -3391,7 +2578,7 @@ public final class MCPServerService {
     }
   }
 
-  private func queueStatus() -> [String: Any] {
+  private func queueStatusDict() -> [String: Any] {
     return [
       "activeCount": activeChainRuns,
       "activeRunIds": activeChainRunIds.map { $0.uuidString },
@@ -3424,7 +2611,7 @@ public final class MCPServerService {
     if let maxQueued = arguments["maxQueued"] as? Int {
       maxQueuedChains = max(0, maxQueued)
     }
-    return (200, makeRPCResult(id: id, result: queueStatus()))
+    return (200, makeRPCResult(id: id, result: queueStatusDict()))
   }
 
   private func handleQueueCancel(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
@@ -4928,5 +4115,612 @@ extension MCPServerService: ParallelToolsHandlerDelegate {
 
   var parallelTelemetryProvider: MCPTelemetryProviding {
     telemetryProvider
+  }
+}
+
+// MARK: - RAGToolsHandlerDelegate
+
+extension MCPServerService: RAGToolsHandlerDelegate {
+  
+  // MARK: - LocalRAGStore Access
+  
+  func searchRagForTool(query: String, mode: RAGSearchMode, repoPath: String?, limit: Int, matchAll: Bool) async throws -> [RAGToolSearchResult] {
+    let results: [LocalRAGSearchResult]
+    if mode == .vector {
+      results = try await localRagStore.searchVector(query: query, repoPath: repoPath, limit: limit)
+    } else {
+      results = try await localRagStore.search(query: query, repoPath: repoPath, limit: limit, matchAll: matchAll)
+    }
+    return results.map { result in
+      RAGToolSearchResult(
+        filePath: result.filePath,
+        startLine: result.startLine,
+        endLine: result.endLine,
+        snippet: result.snippet,
+        isTest: result.isTest,
+        lineCount: result.lineCount,
+        constructType: result.constructType,
+        constructName: result.constructName,
+        language: result.language,
+        score: result.score.map { Double($0) }
+      )
+    }
+  }
+  
+  func ragStatus() async -> RAGToolStatus {
+    let status = await localRagStore.status()
+    return RAGToolStatus(
+      dbPath: status.dbPath,
+      exists: status.exists,
+      schemaVersion: status.schemaVersion,
+      extensionLoaded: status.extensionLoaded,
+      providerName: status.providerName,
+      embeddingModelName: status.embeddingModelName,
+      embeddingDimensions: status.embeddingDimensions,
+      coreMLModelPresent: status.coreMLModelPresent,
+      coreMLVocabPresent: status.coreMLVocabPresent,
+      coreMLTokenizerHelperPresent: status.coreMLTokenizerHelperPresent,
+      lastInitializedAt: status.lastInitializedAt
+    )
+  }
+  
+  func initializeRag(extensionPath: String?) async throws -> RAGToolStatus {
+    let status = try await localRagStore.initialize(extensionPath: extensionPath)
+    return RAGToolStatus(
+      dbPath: status.dbPath,
+      exists: status.exists,
+      schemaVersion: status.schemaVersion,
+      extensionLoaded: status.extensionLoaded,
+      providerName: status.providerName,
+      embeddingModelName: status.embeddingModelName,
+      embeddingDimensions: status.embeddingDimensions,
+      coreMLModelPresent: status.coreMLModelPresent,
+      coreMLVocabPresent: status.coreMLVocabPresent,
+      coreMLTokenizerHelperPresent: status.coreMLTokenizerHelperPresent,
+      lastInitializedAt: status.lastInitializedAt
+    )
+  }
+  
+  func indexRepository(path: String, progressHandler: (@Sendable (RAGToolIndexProgress) -> Void)?) async throws -> RAGToolIndexReport {
+    let report = try await localRagStore.indexRepository(path: path) { progress in
+      if let handler = progressHandler {
+        switch progress {
+        case .scanning(let fileCount):
+          handler(.scanning(filesFound: fileCount))
+        case .analyzing(let current, let total, _):
+          handler(.indexing(current: current, total: total))
+        case .embedding(let current, let total):
+          handler(.embedding(current: current, total: total))
+        case .storing:
+          break // RAGToolIndexProgress doesn't have storing case
+        case .complete(let localReport):
+          handler(.complete(report: RAGToolIndexReport(
+            repoId: localReport.repoId,
+            repoPath: localReport.repoPath,
+            filesIndexed: localReport.filesIndexed,
+            filesSkipped: localReport.filesSkipped,
+            chunksIndexed: localReport.chunksIndexed,
+            bytesScanned: localReport.bytesScanned,
+            durationMs: localReport.durationMs,
+            embeddingCount: localReport.embeddingCount,
+            embeddingDurationMs: localReport.embeddingDurationMs
+          )))
+        }
+      }
+    }
+    return RAGToolIndexReport(
+      repoId: report.repoId,
+      repoPath: report.repoPath,
+      filesIndexed: report.filesIndexed,
+      filesSkipped: report.filesSkipped,
+      chunksIndexed: report.chunksIndexed,
+      bytesScanned: report.bytesScanned,
+      durationMs: report.durationMs,
+      embeddingCount: report.embeddingCount,
+      embeddingDurationMs: report.embeddingDurationMs
+    )
+  }
+  
+  func listRagRepos() async throws -> [RAGToolRepoInfo] {
+    let repos = try await localRagStore.listRepos()
+    return repos.map { repo in
+      RAGToolRepoInfo(
+        id: repo.id,
+        name: repo.name,
+        rootPath: repo.rootPath,
+        fileCount: repo.fileCount,
+        chunkCount: repo.chunkCount,
+        lastIndexedAt: repo.lastIndexedAt
+      )
+    }
+  }
+  
+  func deleteRagRepo(repoId: String?, repoPath: String?) async throws -> Int {
+    return try await localRagStore.deleteRepo(repoId: repoId, repoPath: repoPath)
+  }
+  
+  func getIndexStats(repoPath: String) async throws -> RAGToolIndexStats {
+    let stats = try await localRagStore.getIndexStats(repoPath: repoPath)
+    return RAGToolIndexStats(
+      fileCount: stats.fileCount,
+      chunkCount: stats.chunkCount,
+      embeddingCount: stats.embeddingCount,
+      totalLines: stats.totalLines
+    )
+  }
+  
+  func getLargeFiles(repoPath: String, limit: Int) async throws -> [RAGToolLargeFile] {
+    let files = try await localRagStore.getLargeFiles(repoPath: repoPath, limit: limit)
+    return files.map { file in
+      RAGToolLargeFile(
+        path: file.path,
+        totalLines: file.totalLines,
+        chunkCount: file.chunkCount,
+        language: file.language
+      )
+    }
+  }
+  
+  func getConstructTypeStats(repoPath: String) async throws -> [RAGToolConstructTypeStat] {
+    let stats = try await localRagStore.getConstructTypeStats(repoPath: repoPath)
+    return stats.map { stat in
+      RAGToolConstructTypeStat(type: stat.type, count: stat.count)
+    }
+  }
+  
+  func clearRagCache() async throws -> Int {
+    return try await localRagStore.clearEmbeddingCache()
+  }
+  
+  func generateEmbeddings(for texts: [String]) async throws -> [[Float]] {
+    return try await localRagStore.generateEmbeddings(for: texts)
+  }
+  
+  // MARK: - Configuration (delegate accessors for existing methods)
+  // Note: listRepoGuidanceSkills, addRepoGuidanceSkill, updateRepoGuidanceSkill, 
+  // deleteRepoGuidanceSkill, and refreshRagSummary are already defined in MCPServerService
+  
+  var preferredEmbeddingProvider: EmbeddingProviderType {
+    get { LocalRAGEmbeddingProviderFactory.preferredProvider }
+    set { LocalRAGEmbeddingProviderFactory.preferredProvider = newValue }
+  }
+  
+  func ragStats() async throws -> RAGToolStats? {
+    let stats = try await localRagStore.stats()
+    return RAGToolStats(
+      repoCount: stats.repoCount,
+      fileCount: stats.fileCount,
+      chunkCount: stats.chunkCount,
+      embeddingCount: stats.embeddingCount,
+      cacheEmbeddingCount: stats.cacheEmbeddingCount,
+      dbSizeBytes: stats.dbSizeBytes,
+      lastIndexedAt: stats.lastIndexedAt,
+      lastIndexedRepoPath: stats.lastIndexedRepoPath
+    )
+  }
+  
+  func logWarning(_ message: String, metadata: [String: String]) async {
+    await telemetryProvider.warning(message, metadata: metadata)
+  }
+}
+
+// MARK: - ChainToolsHandlerDelegate
+
+extension MCPServerService: ChainToolsHandlerDelegate {
+  
+  // MARK: - Chain Lifecycle
+  
+  func startChain(
+    prompt: String,
+    repoPath: String,
+    templateId: String?,
+    templateName: String?,
+    options: ChainToolRunOptions
+  ) async throws -> ChainToolRunResult {
+    let runId = UUID()
+    
+    // Check queue limits
+    if activeChainRuns >= maxConcurrentChains, chainQueue.count >= maxQueuedChains {
+      await telemetryProvider.warning("Chain queue full", metadata: ["runId": runId.uuidString])
+      throw ChainError.queueFull
+    }
+    
+    // Find template
+    let templates = agentManager.allTemplates
+    let template: ChainTemplate? = {
+      if let templateId, let uuid = UUID(uuidString: templateId) {
+        return templates.first { $0.id == uuid }
+      }
+      if let templateName {
+        return templates.first { $0.name.lowercased() == templateName.lowercased() }
+      }
+      return templates.first
+    }()
+    
+    guard let template else {
+      throw ChainError.templateNotFound
+    }
+    
+    // Acquire run slot
+    let (enqueuedAt, wasCancelled, _) = await acquireChainRunSlot(runId: runId, priority: 0)
+    if wasCancelled {
+      throw ChainError.cancelled
+    }
+    
+    // Create workspace
+    let repoURL = URL(fileURLWithPath: repoPath)
+    let repository = Model.Repository(name: repoURL.lastPathComponent, path: repoPath)
+    let task = AgentTask(
+      title: "MCP Chain: \(template.name)",
+      prompt: prompt,
+      repositoryPath: repoPath
+    )
+    
+    var chainWorkingDirectory = repoPath
+    do {
+      let workspace = try await agentManager.workspaceManager.createWorkspace(
+        for: repository,
+        task: task
+      )
+      chainWorkingDirectory = workspace.path.path
+    } catch {
+      await telemetryProvider.error(error, context: "Failed to create chain workspace", metadata: [:])
+    }
+    
+    // Create and configure chain
+    let chain = agentManager.createChainFromTemplate(template, workingDirectory: chainWorkingDirectory)
+    chain.runSource = .mcp
+    
+    if let guidance = await buildRepoGuidance(repoPath: repoPath) {
+      chain.addOperatorGuidance(guidance)
+    }
+    if options.requireRag {
+      chain.addOperatorGuidance(
+        "RAG tool usage is required for this run. Call a rag.* tool (e.g., rag.search) before planning."
+      )
+    }
+    
+    // Apply prompt rules
+    let initialOptions = AgentChainRunner.ChainRunOptions(
+      allowPlannerModelSelection: false,
+      allowImplementerModelOverride: false,
+      allowPlannerImplementerScaling: false,
+      maxImplementers: nil,
+      maxPremiumCost: options.maxPremiumCost
+    )
+    let (finalPrompt, runOptions) = applyPromptRules(
+      prompt: prompt,
+      templateName: template.name,
+      options: initialOptions
+    )
+    
+    // Track the run
+    activeRunChains[runId] = chain
+    activeRunsById[runId] = ActiveRunInfo(
+      id: runId,
+      chainId: chain.id,
+      templateName: template.name,
+      prompt: finalPrompt,
+      workingDirectory: chainWorkingDirectory,
+      enqueuedAt: enqueuedAt,
+      startedAt: Date(),
+      priority: 0,
+      timeoutSeconds: nil,
+      requireRagUsage: options.requireRag,
+      ragSearchAtStart: lastRagSearchAt
+    )
+    
+    // Start the chain
+    Task { @MainActor in
+      await chainRunner.runChain(
+        chain,
+        prompt: finalPrompt,
+        validationConfig: template.validationConfig,
+        runOptions: runOptions
+      )
+      // Clean up after completion
+      activeRunChains.removeValue(forKey: runId)
+      if let info = activeRunsById.removeValue(forKey: runId) {
+        completedRunsById[runId] = (completedAt: Date(), payload: ["status": "completed", "prompt": info.prompt])
+      }
+      releaseChainRunSlot(runId: runId)
+    }
+    
+    return ChainToolRunResult(
+      chainId: runId.uuidString,
+      status: "started",
+      message: "Chain started with template: \(template.name)"
+    )
+  }
+  
+  func chainStatus(chainId: String) -> ChainToolStatus? {
+    guard let runId = UUID(uuidString: chainId) else { return nil }
+    
+    if let runInfo = activeRunsById[runId] {
+      let chain = activeRunChains[runId]
+      return ChainToolStatus(
+        chainId: chainId,
+        status: "running",
+        progress: Double(chain?.results.count ?? 0) / Double(max(chain?.agents.count ?? 1, 1)),
+        currentStep: chain?.results.count ?? 0,
+        totalSteps: chain?.agents.count ?? 0,
+        error: nil,
+        reviewGate: chain?.state.displayName.contains("review") == true ? chain?.state.displayName : nil,
+        startedAt: runInfo.startedAt
+      )
+    }
+    
+    if let queuedIndex = chainQueue.firstIndex(where: { $0.id == runId }) {
+      let entry = chainQueue[queuedIndex]
+      return ChainToolStatus(
+        chainId: chainId,
+        status: "queued",
+        progress: 0,
+        currentStep: 0,
+        totalSteps: 0,
+        error: nil,
+        reviewGate: nil,
+        startedAt: entry.enqueuedAt
+      )
+    }
+    
+    if let completed = completedRunsById[runId] {
+      return ChainToolStatus(
+        chainId: chainId,
+        status: "completed",
+        progress: 1.0,
+        currentStep: 0,
+        totalSteps: 0,
+        error: nil,
+        reviewGate: nil,
+        startedAt: completed.completedAt
+      )
+    }
+    
+    return nil
+  }
+  
+  func listChainRuns(limit: Int?, status: String?) -> [ChainToolRunSummary] {
+    var runs: [ChainToolRunSummary] = []
+    
+    // Add active runs
+    for (runId, info) in activeRunsById {
+      if status == nil || status == "running" {
+        runs.append(ChainToolRunSummary(
+          chainId: runId.uuidString,
+          status: "running",
+          prompt: info.prompt,
+          startedAt: info.startedAt,
+          completedAt: nil
+        ))
+      }
+    }
+    
+    // Add queued runs
+    for entry in chainQueue {
+      if status == nil || status == "queued" {
+        runs.append(ChainToolRunSummary(
+          chainId: entry.id.uuidString,
+          status: "queued",
+          prompt: "",
+          startedAt: entry.enqueuedAt,
+          completedAt: nil
+        ))
+      }
+    }
+    
+    // Add completed runs
+    for (runId, completed) in completedRunsById {
+      if status == nil || status == "completed" {
+        let prompt = (completed.payload["prompt"] as? String) ?? ""
+        runs.append(ChainToolRunSummary(
+          chainId: runId.uuidString,
+          status: "completed",
+          prompt: prompt,
+          startedAt: nil,
+          completedAt: completed.completedAt
+        ))
+      }
+    }
+    
+    // Sort by most recent first
+    runs.sort { ($0.startedAt ?? $0.completedAt ?? Date.distantPast) > ($1.startedAt ?? $1.completedAt ?? Date.distantPast) }
+    
+    if let limit {
+      return Array(runs.prefix(limit))
+    }
+    return runs
+  }
+  
+  func stopChain(chainId: String) async throws {
+    guard let runId = UUID(uuidString: chainId) else {
+      throw ChainError.invalidChainId
+    }
+    
+    // Cancel via task if running
+    if let task = activeChainTasks[runId] {
+      task.cancel()
+      await telemetryProvider.warning("Chain cancellation requested", metadata: ["runId": runId.uuidString])
+      return
+    }
+    
+    // Try to cancel from queue
+    if cancelQueuedRunInternal(runId: runId) {
+      return
+    }
+    
+    throw ChainError.notFound
+  }
+  
+  func pauseChain(chainId: String) async throws {
+    guard let runId = UUID(uuidString: chainId),
+          let chain = activeRunChains[runId] else {
+      throw ChainError.notFound
+    }
+    await chainRunner.pause(chainId: chain.id)
+  }
+  
+  func resumeChain(chainId: String) async throws {
+    guard let runId = UUID(uuidString: chainId),
+          let chain = activeRunChains[runId] else {
+      throw ChainError.notFound
+    }
+    await chainRunner.resume(chainId: chain.id)
+  }
+  
+  func instructChain(chainId: String, action: String, feedback: String?) async throws {
+    guard let runId = UUID(uuidString: chainId),
+          let chain = activeRunChains[runId] else {
+      throw ChainError.notFound
+    }
+    
+    // The instruct action adds guidance to the chain
+    // Actions: "guide" adds guidance, others are no-ops for now
+    if let feedback {
+      chain.addOperatorGuidance(feedback)
+    }
+  }
+  
+  func stepChain(chainId: String) async throws {
+    guard let runId = UUID(uuidString: chainId),
+          let chain = activeRunChains[runId] else {
+      throw ChainError.notFound
+    }
+    await chainRunner.step(chainId: chain.id)
+  }
+  
+  // MARK: - Templates
+  
+  func listTemplates() -> [ChainToolTemplate] {
+    agentManager.allTemplates.map { template in
+      ChainToolTemplate(
+        id: template.id.uuidString,
+        name: template.name,
+        description: template.description,
+        category: nil,
+        tags: nil
+      )
+    }
+  }
+  
+  func getTemplate(id: String?, name: String?) -> ChainToolTemplate? {
+    let templates = agentManager.allTemplates
+    let template: ChainTemplate? = {
+      if let id, let uuid = UUID(uuidString: id) {
+        return templates.first { $0.id == uuid }
+      }
+      if let name {
+        return templates.first { $0.name.lowercased() == name.lowercased() }
+      }
+      return nil
+    }()
+    
+    guard let template else { return nil }
+    return ChainToolTemplate(
+      id: template.id.uuidString,
+      name: template.name,
+      description: template.description,
+      category: nil,
+      tags: nil
+    )
+  }
+  
+  // MARK: - Queue Management
+  
+  func queueStatus() -> ChainToolQueueStatus {
+    ChainToolQueueStatus(
+      running: activeChainRuns,
+      queued: chainQueue.count,
+      maxConcurrent: maxConcurrentChains,
+      pauseNew: false  // Feature not implemented yet
+    )
+  }
+  
+  func configureQueue(maxConcurrent: Int?, pauseNew: Bool?) throws {
+    if let maxConcurrent {
+      guard maxConcurrent > 0 && maxConcurrent <= 10 else {
+        throw ChainError.invalidConfiguration("maxConcurrent must be between 1 and 10")
+      }
+      maxConcurrentChains = maxConcurrent
+    }
+    // pauseNew feature not implemented yet - silently ignore
+  }
+  
+  func cancelQueued(chainId: String) async throws {
+    guard let runId = UUID(uuidString: chainId) else {
+      throw ChainError.invalidChainId
+    }
+    if !cancelQueuedRunInternal(runId: runId) {
+      throw ChainError.notFound
+    }
+  }
+  
+  // MARK: - Prompt Rules
+  
+  func getPromptRules() -> PromptRules {
+    promptRules
+  }
+  
+  func setPromptRules(_ rules: PromptRules) throws {
+    promptRules = rules
+  }
+  
+  // MARK: - Batch Operations
+  
+  func runBatch(prompts: [ChainToolBatchItem], templateId: String?, templateName: String?) async throws -> [ChainToolRunResult] {
+    var results: [ChainToolRunResult] = []
+    
+    for item in prompts {
+      do {
+        let options = ChainToolRunOptions(
+          maxPremiumCost: nil,
+          requireRag: promptRules.requireRagByDefault,
+          skipReview: false,
+          dryRun: false
+        )
+        let result = try await startChain(
+          prompt: item.prompt,
+          repoPath: item.repoPath,
+          templateId: templateId,
+          templateName: templateName,
+          options: options
+        )
+        results.append(result)
+      } catch {
+        results.append(ChainToolRunResult(
+          chainId: "",
+          status: "error",
+          message: error.localizedDescription
+        ))
+      }
+    }
+    
+    return results
+  }
+}
+
+// MARK: - Chain Errors
+
+enum ChainError: LocalizedError {
+  case queueFull
+  case templateNotFound
+  case cancelled
+  case notFound
+  case invalidChainId
+  case missingFeedback
+  case invalidAction(String)
+  case invalidConfiguration(String)
+  
+  var errorDescription: String? {
+    switch self {
+    case .queueFull: return "Chain queue is full"
+    case .templateNotFound: return "Template not found"
+    case .cancelled: return "Chain run was cancelled"
+    case .notFound: return "Chain not found"
+    case .invalidChainId: return "Invalid chain ID"
+    case .missingFeedback: return "Feedback required for this action"
+    case .invalidAction(let action): return "Invalid action: \(action)"
+    case .invalidConfiguration(let msg): return "Invalid configuration: \(msg)"
+    }
   }
 }
