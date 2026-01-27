@@ -2941,11 +2941,12 @@ public final class MCPServerService {
       ),
       ToolDefinition(
         name: "rag.index",
-        description: "Index a repository path into the Local RAG database",
+        description: "Index a repository path into the Local RAG database. Use forceReindex=true to re-index all files regardless of whether they've changed.",
         inputSchema: [
           "type": "object",
           "properties": [
-            "repoPath": ["type": "string"]
+            "repoPath": ["type": "string"],
+            "forceReindex": ["type": "boolean", "default": false, "description": "If true, re-index all files even if unchanged. Useful after changing chunking or embedding settings."]
           ],
           "required": ["repoPath"]
         ],
@@ -4159,34 +4160,52 @@ extension MCPServerService: RAGToolsHandlerDelegate {
     )
   }
   
-  func indexRepository(path: String, progressHandler: (@Sendable (RAGToolIndexProgress) -> Void)?) async throws -> RAGToolIndexReport {
-    let report = try await localRagStore.indexRepository(path: path) { progress in
-      if let handler = progressHandler {
-        switch progress {
-        case .scanning(let fileCount):
-          handler(.scanning(filesFound: fileCount))
-        case .analyzing(let current, let total, _):
-          handler(.indexing(current: current, total: total))
-        case .embedding(let current, let total):
-          handler(.embedding(current: current, total: total))
-        case .storing:
-          break // RAGToolIndexProgress doesn't have storing case
-        case .complete(let localReport):
-          handler(.complete(report: RAGToolIndexReport(
-            repoId: localReport.repoId,
-            repoPath: localReport.repoPath,
-            filesIndexed: localReport.filesIndexed,
-            filesSkipped: localReport.filesSkipped,
-            chunksIndexed: localReport.chunksIndexed,
-            bytesScanned: localReport.bytesScanned,
-            durationMs: localReport.durationMs,
-            embeddingCount: localReport.embeddingCount,
-            embeddingDurationMs: localReport.embeddingDurationMs
-          )))
+  func indexRepository(path: String, forceReindex: Bool, progressHandler: (@Sendable (RAGToolIndexProgress) -> Void)?) async throws -> RAGToolIndexReport {
+    // Update UI state so dashboard shows progress
+    ragIndexingPath = path
+    ragIndexProgress = nil
+    
+    do {
+      let report = try await localRagStore.indexRepository(path: path, forceReindex: forceReindex) { [weak self] progress in
+        // Update UI progress state
+        Task { @MainActor in
+          self?.ragIndexProgress = progress
+        }
+        
+        // Also call the external progress handler if provided
+        if let handler = progressHandler {
+          switch progress {
+          case .scanning(let fileCount):
+            handler(.scanning(filesFound: fileCount))
+          case .analyzing(let current, let total, _):
+            handler(.indexing(current: current, total: total))
+          case .embedding(let current, let total):
+            handler(.embedding(current: current, total: total))
+          case .storing:
+            break // RAGToolIndexProgress doesn't have storing case
+          case .complete(let localReport):
+            handler(.complete(report: RAGToolIndexReport(
+              repoId: localReport.repoId,
+              repoPath: localReport.repoPath,
+              filesIndexed: localReport.filesIndexed,
+              filesSkipped: localReport.filesSkipped,
+              chunksIndexed: localReport.chunksIndexed,
+              bytesScanned: localReport.bytesScanned,
+              durationMs: localReport.durationMs,
+              embeddingCount: localReport.embeddingCount,
+              embeddingDurationMs: localReport.embeddingDurationMs
+            )))
+          }
         }
       }
-    }
-    return RAGToolIndexReport(
+      
+      // Update UI state on completion
+      ragIndexingPath = nil
+      ragIndexProgress = .complete(report: report)
+      lastRagIndexReport = report
+      lastRagIndexAt = Date()
+      
+      return RAGToolIndexReport(
       repoId: report.repoId,
       repoPath: report.repoPath,
       filesIndexed: report.filesIndexed,
@@ -4197,6 +4216,12 @@ extension MCPServerService: RAGToolsHandlerDelegate {
       embeddingCount: report.embeddingCount,
       embeddingDurationMs: report.embeddingDurationMs
     )
+    } catch {
+      // Clean up UI state on error
+      ragIndexingPath = nil
+      ragIndexProgress = nil
+      throw error
+    }
   }
   
   func listRagRepos() async throws -> [RAGToolRepoInfo] {
