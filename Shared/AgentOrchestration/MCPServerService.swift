@@ -3961,6 +3961,37 @@ public final class MCPServerService {
         ],
         category: .swarm,
         isMutating: true
+      ),
+      ToolDefinition(
+        name: "swarm.connect",
+        description: "Manually connect to a peer at a specific address. Use for debugging or when auto-discovery fails.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "address": [
+              "type": "string",
+              "description": "IP address or hostname of the peer"
+            ],
+            "port": [
+              "type": "integer",
+              "description": "Port number (default: 8766)"
+            ]
+          ],
+          "required": ["address"]
+        ],
+        category: .swarm,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "swarm.discovered",
+        description: "List peers discovered via Bonjour (not yet connected).",
+        inputSchema: [
+          "type": "object",
+          "properties": [:],
+          "required": []
+        ],
+        category: .swarm,
+        isMutating: false
       )
     ]
   }
