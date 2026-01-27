@@ -60,8 +60,11 @@ public final class BonjourDiscoveryService: @unchecked Sendable {
   /// The browser for discovering peers
   private var browser: NWBrowser?
   
-  /// The listener for advertising this device
-  private var listener: NWListener?
+  /// NetService for Bonjour advertising (doesn't require binding a port)
+  private var netService: NetService?
+  
+  /// NetService delegate wrapper
+  private lazy var netServiceDelegate = NetServiceDelegateWrapper(parent: self)
   
   /// Discovered peers by device ID
   public private(set) var discoveredPeers: [String: DiscoveredPeer] = [:]
@@ -126,6 +129,8 @@ public final class BonjourDiscoveryService: @unchecked Sendable {
   // MARK: - Advertising
   
   /// Start advertising this device as a Peel worker
+  /// Note: This only registers with Bonjour/mDNS. The actual TCP listener
+  /// is managed by PeerConnectionManager.
   public func startAdvertising(
     capabilities: WorkerCapabilities,
     port: UInt16 = BonjourDiscoveryService.defaultPort
@@ -135,39 +140,30 @@ public final class BonjourDiscoveryService: @unchecked Sendable {
     self.capabilities = capabilities
     self.advertisedPort = port
     
-    // Create listener
-    let parameters = NWParameters.tcp
-    parameters.includePeerToPeer = true
-    
-    listener = try NWListener(using: parameters, on: NWEndpoint.Port(rawValue: port)!)
-    
-    // Create service with TXT record
-    var txtRecord = NWTXTRecord()
-    txtRecord["deviceId"] = capabilities.deviceId
-    txtRecord["deviceName"] = capabilities.deviceName
-    txtRecord["platform"] = capabilities.platform.rawValue
-    txtRecord["gpuCores"] = String(capabilities.gpuCores)
-    txtRecord["memoryGB"] = String(capabilities.memoryGB)
-    
-    listener?.service = NWListener.Service(
-      name: capabilities.deviceName,
+    // Use NetService for Bonjour advertising (doesn't require binding a port)
+    let netService = NetService(
+      domain: "",
       type: Self.serviceType,
-      txtRecord: Data()
+      name: capabilities.deviceName,
+      port: Int32(port)
     )
     
-    listener?.stateUpdateHandler = { [weak self] state in
-      Task { @MainActor in
-        self?.handleListenerStateUpdate(state)
-      }
-    }
+    // Create TXT record data
+    var txtDict: [String: Data] = [:]
+    txtDict["deviceId"] = capabilities.deviceId.data(using: .utf8)
+    txtDict["deviceName"] = capabilities.deviceName.data(using: .utf8)
+    txtDict["platform"] = capabilities.platform.rawValue.data(using: .utf8)
+    txtDict["gpuCores"] = String(capabilities.gpuCores).data(using: .utf8)
+    txtDict["memoryGB"] = String(capabilities.memoryGB).data(using: .utf8)
     
-    listener?.newConnectionHandler = { [weak self] connection in
-      Task { @MainActor in
-        self?.handleNewConnection(connection)
-      }
-    }
+    let txtData = NetService.data(fromTXTRecord: txtDict)
+    netService.setTXTRecord(txtData)
     
-    listener?.start(queue: .main)
+    // Store and publish
+    self.netService = netService
+    netService.delegate = netServiceDelegate
+    netService.publish()
+    
     isAdvertising = true
     
     logger.info("Started advertising as '\(capabilities.deviceName)' on port \(port)")
@@ -175,8 +171,8 @@ public final class BonjourDiscoveryService: @unchecked Sendable {
   
   /// Stop advertising
   public func stopAdvertising() {
-    listener?.cancel()
-    listener = nil
+    netService?.stop()
+    netService = nil
     isAdvertising = false
     
     logger.info("Stopped advertising")
@@ -376,45 +372,41 @@ public final class BonjourDiscoveryService: @unchecked Sendable {
     handlePeerAdded(result)
   }
   
-  private func handleListenerStateUpdate(_ state: NWListener.State) {
-    switch state {
-    case .ready:
-      if let port = listener?.port {
-        logger.info("Listener ready on port \(port.rawValue)")
-      }
-      
-    case .failed(let error):
-      logger.error("Listener failed: \(error)")
-      delegate?.discoveryService(self, didFailWithError: error)
-      
-    case .cancelled:
-      logger.info("Listener cancelled")
-      
-    default:
-      break
+  // MARK: - NetService Delegate Handling
+  
+  fileprivate func handleNetServiceDidPublish(_ serviceName: String) {
+    logger.info("NetService published: \(serviceName)")
+  }
+  
+  fileprivate func handleNetServiceDidNotPublish(_ serviceName: String, error: [String: NSNumber]) {
+    logger.error("NetService publish failed for \(serviceName): \(error)")
+    let nsError = NSError(domain: "BonjourDiscovery", code: error[NetService.errorCode]?.intValue ?? -1, userInfo: nil)
+    delegate?.discoveryService(self, didFailWithError: nsError)
+  }
+}
+
+// MARK: - NetService Delegate Wrapper
+
+/// Wrapper to handle NetService delegate callbacks (NSObject requirement)
+private final class NetServiceDelegateWrapper: NSObject, NetServiceDelegate, @unchecked Sendable {
+  weak var parent: BonjourDiscoveryService?
+  
+  init(parent: BonjourDiscoveryService) {
+    self.parent = parent
+  }
+  
+  func netServiceDidPublish(_ sender: NetService) {
+    let serviceName = sender.name
+    Task { @MainActor [weak self] in
+      self?.parent?.handleNetServiceDidPublish(serviceName)
     }
   }
   
-  private func handleNewConnection(_ connection: NWConnection) {
-    logger.info("New incoming connection")
-    
-    // Accept the connection and handle it
-    // This will be wired up to the LocalNetworkActorSystem
-    connection.stateUpdateHandler = { [weak self] state in
-      switch state {
-      case .ready:
-        self?.logger.info("Connection ready")
-        // TODO: Hand off to actor system
-        
-      case .failed(let error):
-        self?.logger.error("Connection failed: \(error)")
-        
-      default:
-        break
-      }
+  func netService(_ sender: NetService, didNotPublish errorDict: [String: NSNumber]) {
+    let serviceName = sender.name
+    Task { @MainActor [weak self] in
+      self?.parent?.handleNetServiceDidNotPublish(serviceName, error: errorDict)
     }
-    
-    connection.start(queue: .main)
   }
 }
 
