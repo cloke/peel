@@ -91,6 +91,9 @@ public final class SwarmCoordinator {
   /// Chain executor for worker mode
   private var chainExecutor: ChainExecutorProtocol?
   
+  /// Pending task continuations (for async result delivery)
+  private var pendingTasks: [UUID: CheckedContinuation<ChainResult, Error>] = [:]
+  
   // MARK: - Initialization
   
   /// Private init for singleton pattern
@@ -170,20 +173,31 @@ public final class SwarmCoordinator {
     
     logger.info("Dispatching task \(request.id) to worker \(worker.name)")
     
-    // Send task and wait for result
-    try await connectionManager?.send(.taskRequest(request: request), to: worker.id)
-    
-    // For now, we'll implement a simple polling approach
-    // In a full implementation, we'd use continuations properly
-    
-    // Wait for result with timeout
-    let deadline = Date().addingTimeInterval(TimeInterval(request.timeoutSeconds))
-    while Date() < deadline {
-      try await Task.sleep(for: .milliseconds(100))
-      // Result will come via delegate
+    // Send task and wait for result using continuation
+    let result: ChainResult = try await withCheckedThrowingContinuation { continuation in
+      // Store continuation for when result arrives
+      pendingTasks[request.id] = continuation
+      
+      // Send task to worker
+      Task {
+        do {
+          try await connectionManager?.send(.taskRequest(request: request), to: worker.id)
+        } catch {
+          pendingTasks.removeValue(forKey: request.id)
+          continuation.resume(throwing: error)
+        }
+      }
+      
+      // Setup timeout
+      Task {
+        try? await Task.sleep(for: .seconds(Double(request.timeoutSeconds)))
+        if let cont = pendingTasks.removeValue(forKey: request.id) {
+          cont.resume(throwing: DistributedError.taskTimeout(taskId: request.id))
+        }
+      }
     }
     
-    throw DistributedError.taskTimeout(taskId: request.id)
+    return result
   }
   
   /// Select the best worker for a request
@@ -306,6 +320,16 @@ extension SwarmCoordinator: PeerConnectionDelegate {
       logger.debug("Task \(taskId) progress: \(progress) - \(message ?? "")")
       
     case .taskResult(let result):
+      // Resume the waiting continuation
+      if let continuation = pendingTasks.removeValue(forKey: result.requestId) {
+        continuation.resume(returning: result)
+      }
+      // Update counters
+      if result.status == .completed {
+        tasksCompleted += 1
+      } else {
+        tasksFailed += 1
+      }
       delegate?.swarmCoordinator(self, didEmit: .taskCompleted(result))
       
     default:
