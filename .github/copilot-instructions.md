@@ -845,6 +845,31 @@ final class MyModel {
 
 ## Agent Tool Usage
 
+### Shell Environment (CRITICAL)
+**This workspace uses zsh, NOT bash.** Avoid bash-specific syntax:
+
+```bash
+# ❌ WRONG - Bash heredocs fail in zsh with special characters
+cat << 'EOF' > file.txt
+content with $vars and "quotes"
+EOF
+
+# ✅ CORRECT - Use echo with proper quoting
+echo 'content with $vars and "quotes"' > file.txt
+
+# ✅ CORRECT - Use printf for multi-line
+printf '%s\n' 'line 1' 'line 2' > file.txt
+
+# ✅ CORRECT - Use the file-rewrite skill for complex content
+Tools/PeelSkills/.build/debug/file-rewrite path/to/file.md --stdin
+```
+
+**When writing files with special characters:**
+1. Prefer `create_file` tool over terminal commands
+2. Use `file-rewrite` skill for complex markdown/code
+3. Escape `$` as `\$` if you must use shell
+4. Use single quotes to prevent variable expansion
+
 ### MCP Validation & Test Runs (IMPORTANT)
 - For validation/tests (MCP runs, screenshot checks, harness tests), **use free/low-cost models only**.
 - Prefer templates that are explicitly low-cost (e.g., Free Review) and avoid premium models unless the user explicitly requests them.
