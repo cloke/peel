@@ -357,14 +357,13 @@ struct ChunkingResult: Sendable {
 
 /// Hybrid chunker that uses AST-aware chunking for supported languages (Swift, Ruby, GTS)
 /// and falls back to line-based chunking for others.
-/// Note: TypeScript AST chunking disabled due to performance issues with tree-sitter CLI approach.
+/// Note: TypeScript/JavaScript/GTS/GJS now use JavaScriptCore-based chunker.
 /// Swift uses subprocess isolation (ast-chunker-cli) to prevent stack overflow crashes.
 struct HybridChunker {
   private let lineChunker = LocalRAGChunker()
   private let rubyChunker: RubyChunker?
   private let glimmerChunker: GlimmerChunker?
-  // TypeScript chunker disabled - tree-sitter CLI approach has O(n²) performance issues
-  // private let typescriptChunker: TypeScriptChunker?
+  private let jsChunker: JSCoreTypeScriptChunker
   
   /// Path to ast-chunker-cli (resolved lazily)
   private let astChunkerCLIPath: String?
@@ -377,6 +376,9 @@ struct HybridChunker {
   
   /// Max file size for tree-sitter parsing (very large files are too slow)
   private let treeSitterMaxBytes = 500_000  // 500KB
+  
+  /// Max file size for JSCore parsing (very large files may be slow)
+  private let jsMaxBytes = 500_000  // 500KB
   
   /// Languages that have AST chunker support
   private var astSupportedLanguages: Set<String> {
@@ -392,7 +394,11 @@ struct HybridChunker {
       languages.insert("Glimmer TypeScript")
       languages.insert("Glimmer JavaScript")
     }
-    // TypeScript/JavaScript use line-based chunking for now
+    // TypeScript/JavaScript use JSCore chunker (issue #173)
+    if jsChunker.isAvailable {
+      languages.insert("TypeScript")
+      languages.insert("JavaScript")
+    }
     return languages
   }
   
@@ -447,12 +453,13 @@ struct HybridChunker {
     // Find ast-chunker-cli for Swift subprocess chunking
     self.astChunkerCLIPath = Self.findASTChunkerCLI()
     
-    // TypeScript chunker disabled due to performance issues
-    // TODO: Revisit with tree-sitter Swift bindings or simpler regex approach
+    // Initialize JSCore chunker for TypeScript/JavaScript (issue #173)
+    self.jsChunker = JSCoreTypeScriptChunker.shared
     
     print("[HybridChunker] Ruby chunker available: \(rubyChunker != nil)")
     print("[HybridChunker] Glimmer chunker available: \(glimmerChunker.isAvailable)")
     print("[HybridChunker] Swift CLI available: \(astChunkerCLIPath != nil) at \(astChunkerCLIPath ?? "N/A")")
+    print("[HybridChunker] JSCore TS/JS chunker available: \(jsChunker.isAvailable)")
     print("[HybridChunker] AST supported languages: \(astSupportedLanguages)")
   }
   
@@ -533,6 +540,18 @@ struct HybridChunker {
           failureMessage: "File too large: \(byteCount) bytes"
         )
       }
+    case "TypeScript", "JavaScript":
+      // Use JSCore chunker for TypeScript/JavaScript (issue #173)
+      if byteCount > jsMaxBytes {
+        print("[HybridChunker] File too large for JSCore (\(byteCount) bytes)")
+        return ChunkingResult(
+          chunks: lineChunker.chunk(text: text),
+          usedAST: false,
+          failureType: .timeout,
+          failureMessage: "File too large: \(byteCount) bytes"
+        )
+      }
+      return chunkJSWithJSCore(text: text, language: language, filePath: filePath)
     default:
       break
     }
@@ -708,6 +727,68 @@ struct HybridChunker {
     }
   }
   
+  // MARK: - TypeScript/JavaScript JSCore Chunking
+  
+  /// Chunk TypeScript/JavaScript using JavaScriptCore (issue #173)
+  private func chunkJSWithJSCore(text: String, language: String, filePath: String) -> ChunkingResult {
+    let fileName = (filePath as NSString).lastPathComponent
+    
+    // Map language string to file extension for JSCore chunker
+    let ext = mapLanguageToExtension(language, filePath: filePath)
+    
+    // Get chunks from JSCore chunker
+    let astChunks = jsChunker.chunk(source: text, language: ext)
+    
+    if astChunks.isEmpty {
+      print("[HybridChunker] JSCore returned empty for \(fileName)")
+      return ChunkingResult(
+        chunks: lineChunker.chunk(text: text),
+        usedAST: false,
+        failureType: .parseError,
+        failureMessage: "JSCore returned empty"
+      )
+    }
+    
+    // Convert ASTChunk to LocalRAGChunk
+    let chunks = astChunks.map { chunk in
+      LocalRAGChunk(
+        startLine: chunk.startLine,
+        endLine: chunk.endLine,
+        text: chunk.text,
+        tokenCount: chunk.estimatedTokenCount,
+        constructType: chunk.constructType.rawValue,
+        constructName: chunk.constructName
+      )
+    }
+    
+    print("[HybridChunker] JSCore: \(chunks.count) chunks for \(fileName)")
+    
+    return ChunkingResult(
+      chunks: chunks,
+      usedAST: true,
+      failureType: nil,
+      failureMessage: nil
+    )
+  }
+  
+  /// Map language string to file extension for JSCore chunker
+  private func mapLanguageToExtension(_ language: String, filePath: String) -> String {
+    // Try to get actual extension from file path
+    let ext = (filePath as NSString).pathExtension.lowercased()
+    if !ext.isEmpty && ["ts", "tsx", "js", "jsx", "mts", "cts", "mjs", "cjs", "gts", "gjs"].contains(ext) {
+      return ext
+    }
+    // Fall back to language name
+    switch language {
+    case "TypeScript":
+      return "ts"
+    case "JavaScript":
+      return "js"
+    default:
+      return "ts"
+    }
+  }
+  
   private func chunkWithAST(text: String, language: String) -> [LocalRAGChunk] {
     let astChunks: [ASTChunk]
     
@@ -729,7 +810,9 @@ struct HybridChunker {
       } else {
         return lineChunker.chunk(text: text)
       }
-    // TypeScript/JavaScript disabled - uses line-based chunking via default path
+    case "TypeScript", "JavaScript":
+      // Use JSCore chunker for TypeScript/JavaScript (issue #173)
+      astChunks = jsChunker.chunk(source: text, language: language == "TypeScript" ? "ts" : "js")
     default:
       // Should not reach here if astSupportedLanguages is correct
       return lineChunker.chunk(text: text)

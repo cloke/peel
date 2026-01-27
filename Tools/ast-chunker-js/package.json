@@ -1,0 +1,17 @@
+{
+  "name": "ast-chunker-js",
+  "version": "1.0.0",
+  "description": "JavaScript AST chunker for TypeScript/GTS files, bundled for JavaScriptCore",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/index.js --bundle --format=iife --global-name=ASTChunker --outfile=dist/ast-chunker.bundle.js --minify",
+    "build:dev": "esbuild src/index.js --bundle --format=iife --global-name=ASTChunker --outfile=dist/ast-chunker.bundle.js",
+    "test": "node test/test.mjs"
+  },
+  "dependencies": {
+    "@babel/parser": "^7.23.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.19.0"
+  }
+}
