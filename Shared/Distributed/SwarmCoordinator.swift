@@ -44,15 +44,18 @@ public protocol SwarmCoordinatorDelegate: AnyObject {
 @Observable
 public final class SwarmCoordinator {
   
+  /// Shared instance for app-wide access
+  public static let shared = SwarmCoordinator()
+  
   private let logger = Logger(subsystem: "com.peel.distributed", category: "SwarmCoordinator")
   
   // MARK: - Public State
   
-  /// Our role in the swarm
-  public let role: SwarmRole
+  /// Our role in the swarm (set when starting)
+  public private(set) var role: SwarmRole = .worker
   
   /// Our capabilities
-  public let capabilities: WorkerCapabilities
+  public private(set) var capabilities: WorkerCapabilities = WorkerCapabilities.current()
   
   /// Whether the swarm is active
   public private(set) var isActive = false
@@ -90,21 +93,22 @@ public final class SwarmCoordinator {
   
   // MARK: - Initialization
   
-  public init(
-    role: SwarmRole,
-    capabilities: WorkerCapabilities? = nil,
-    chainExecutor: ChainExecutorProtocol? = nil
-  ) {
-    self.role = role
-    self.capabilities = capabilities ?? WorkerCapabilities.current()
+  /// Private init for singleton pattern
+  private init() {}
+  
+  /// Configure with a chain executor (for worker mode task execution)
+  public func configure(chainExecutor: ChainExecutorProtocol?) {
     self.chainExecutor = chainExecutor
   }
   
   // MARK: - Lifecycle
   
-  /// Start the swarm coordinator
-  public func start(port: UInt16 = 8766) throws {
+  /// Start the swarm coordinator with the given role
+  public func start(role: SwarmRole, port: UInt16 = 8766) throws {
     guard !isActive else { return }
+    
+    self.role = role
+    self.capabilities = WorkerCapabilities.current()
     
     // Create connection manager
     connectionManager = PeerConnectionManager(capabilities: capabilities, port: port)

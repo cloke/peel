@@ -9,9 +9,8 @@ import os.log
 
 /// View showing distributed swarm status
 public struct SwarmStatusView: View {
-  @State private var coordinator: SwarmCoordinator?
+  @State private var coordinator = SwarmCoordinator.shared
   @State private var delegateWrapper = SwarmStatusCoordinatorWrapper()
-  @State private var isActive = false
   @State private var errorMessage: String?
   @State private var taskLog: [String] = []
   
@@ -23,7 +22,7 @@ public struct SwarmStatusView: View {
       
       Divider()
       
-      if isActive {
+      if coordinator.isActive {
         activeContent
       } else {
         inactiveContent
@@ -33,6 +32,7 @@ public struct SwarmStatusView: View {
       delegateWrapper.onEvent = { event in
         handleEvent(event)
       }
+      coordinator.delegate = delegateWrapper
     }
     .frame(minWidth: 400, minHeight: 300)
   }
@@ -47,10 +47,10 @@ public struct SwarmStatusView: View {
         
         HStack(spacing: 4) {
           Circle()
-            .fill(isActive ? Color.green : Color.secondary)
+            .fill(coordinator.isActive ? Color.green : Color.secondary)
             .frame(width: 8, height: 8)
           
-          Text(isActive ? "Active" : "Inactive")
+          Text(coordinator.isActive ? "Active (\(coordinator.role.rawValue))" : "Inactive")
             .font(.caption)
             .foregroundStyle(.secondary)
         }
@@ -58,7 +58,7 @@ public struct SwarmStatusView: View {
       
       Spacer()
       
-      if isActive {
+      if coordinator.isActive {
         Button("Stop") {
           stopSwarm()
         }
@@ -105,49 +105,45 @@ public struct SwarmStatusView: View {
         .padding(.horizontal)
         .padding(.top)
       
-      if let coordinator = coordinator {
-        if coordinator.connectedWorkers.isEmpty {
-          ContentUnavailableView {
-            Label("No Workers", systemImage: "desktopcomputer.trianglebadge.exclamationmark")
-          } description: {
-            Text("Waiting for workers to connect...")
-          }
-        } else {
-          List(coordinator.connectedWorkers, id: \.id) { worker in
-            WorkerRow(worker: worker)
-          }
-          .listStyle(.plain)
+      if coordinator.connectedWorkers.isEmpty {
+        ContentUnavailableView {
+          Label("No Workers", systemImage: "desktopcomputer.trianglebadge.exclamationmark")
+        } description: {
+          Text("Waiting for workers to connect...")
         }
+      } else {
+        List(coordinator.connectedWorkers, id: \.id) { worker in
+          WorkerRow(worker: worker)
+        }
+        .listStyle(.plain)
       }
       
       Spacer()
       
       // Local stats
-      if let coordinator = coordinator {
-        VStack(alignment: .leading, spacing: 4) {
-          Divider()
-          HStack {
-            Text("Role:")
-            Spacer()
-            Text(coordinator.role.rawValue.capitalized)
-              .foregroundStyle(.secondary)
-          }
-          HStack {
-            Text("Tasks Completed:")
-            Spacer()
-            Text("\(coordinator.tasksCompleted)")
-              .foregroundStyle(.secondary)
-          }
-          HStack {
-            Text("Tasks Failed:")
-            Spacer()
-            Text("\(coordinator.tasksFailed)")
-              .foregroundStyle(coordinator.tasksFailed > 0 ? .red : .secondary)
-          }
+      VStack(alignment: .leading, spacing: 4) {
+        Divider()
+        HStack {
+          Text("Role:")
+          Spacer()
+          Text(coordinator.role.rawValue.capitalized)
+            .foregroundStyle(.secondary)
         }
-        .font(.caption)
-        .padding()
+        HStack {
+          Text("Tasks Completed:")
+          Spacer()
+          Text("\(coordinator.tasksCompleted)")
+            .foregroundStyle(.secondary)
+        }
+        HStack {
+          Text("Tasks Failed:")
+          Spacer()
+          Text("\(coordinator.tasksFailed)")
+            .foregroundStyle(coordinator.tasksFailed > 0 ? .red : .secondary)
+        }
       }
+      .font(.caption)
+      .padding()
     }
   }
   
@@ -254,17 +250,10 @@ public struct SwarmStatusView: View {
   
   private func startSwarm(role: SwarmRole) {
     errorMessage = nil
-    
-    let newCoordinator = SwarmCoordinator(
-      role: role,
-      capabilities: WorkerCapabilities.current()
-    )
-    newCoordinator.delegate = delegateWrapper
+    coordinator.delegate = delegateWrapper
     
     do {
-      try newCoordinator.start()
-      coordinator = newCoordinator
-      isActive = true
+      try coordinator.start(role: role)
       log("Swarm started as \(role.rawValue)")
     } catch {
       errorMessage = error.localizedDescription
@@ -272,9 +261,7 @@ public struct SwarmStatusView: View {
   }
   
   private func stopSwarm() {
-    coordinator?.stop()
-    coordinator = nil
-    isActive = false
+    coordinator.stop()
     log("Swarm stopped")
   }
   
