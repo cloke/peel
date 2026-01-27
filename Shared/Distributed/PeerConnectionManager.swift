@@ -38,6 +38,28 @@ public struct ConnectedPeer: Identifiable, Sendable {
   }
 }
 
+// MARK: - Continuation Box
+
+/// Thread-safe helper for ensuring continuation is resumed exactly once
+private final class ContinuationBox: @unchecked Sendable {
+  private var _hasResumed = false
+  private let lock = NSLock()
+  
+  var hasResumed: Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return _hasResumed
+  }
+  
+  func tryResume() -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    if _hasResumed { return false }
+    _hasResumed = true
+    return true
+  }
+}
+
 // MARK: - Peer Connection
 
 /// Wraps an NWConnection with framing for our protocol
@@ -203,15 +225,25 @@ public final class PeerConnectionManager: @unchecked Sendable {
     let connection = NWConnection(to: endpoint, using: parameters)
     
     // Wait for connection to be ready
+    let box = ContinuationBox()
     try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-      connection.stateUpdateHandler = { state in
+      connection.stateUpdateHandler = { [weak connection] state in
         switch state {
         case .ready:
-          continuation.resume()
+          if box.tryResume() {
+            connection?.stateUpdateHandler = nil
+            continuation.resume()
+          }
         case .failed(let error):
-          continuation.resume(throwing: error)
+          if box.tryResume() {
+            connection?.stateUpdateHandler = nil
+            continuation.resume(throwing: error)
+          }
         case .cancelled:
-          continuation.resume(throwing: DistributedError.connectionFailed(deviceId: "unknown", reason: "Cancelled"))
+          if box.tryResume() {
+            connection?.stateUpdateHandler = nil
+            continuation.resume(throwing: DistributedError.connectionFailed(deviceId: "unknown", reason: "Cancelled"))
+          }
         default:
           break
         }
@@ -311,13 +343,35 @@ public final class PeerConnectionManager: @unchecked Sendable {
     logger.info("Incoming connection from \(String(describing: connection.endpoint))")
     
     // Wait for connection to be ready
-    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-      connection.stateUpdateHandler = { state in
-        if case .ready = state {
-          continuation.resume()
+    let box = ContinuationBox()
+    do {
+      try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+        connection.stateUpdateHandler = { [weak connection] state in
+          switch state {
+          case .ready:
+            if box.tryResume() {
+              connection?.stateUpdateHandler = nil
+              continuation.resume()
+            }
+          case .failed(let error):
+            if box.tryResume() {
+              connection?.stateUpdateHandler = nil
+              continuation.resume(throwing: error)
+            }
+          case .cancelled:
+            if box.tryResume() {
+              connection?.stateUpdateHandler = nil
+              continuation.resume(throwing: DistributedError.connectionFailed(deviceId: "unknown", reason: "Cancelled"))
+            }
+          default:
+            break
+          }
         }
+        connection.start(queue: .main)
       }
-      connection.start(queue: .main)
+    } catch {
+      logger.error("Incoming connection failed to become ready: \(error)")
+      return
     }
     
     let tempId = UUID().uuidString
