@@ -410,6 +410,12 @@
 				046C6AAE2F1BE07D006CDAC7 /* XCRemoteSwiftPackageReference "TaskRunner" */,
 				03BPETOK2F2A000100000003 /* XCRemoteSwiftPackageReference "swift-bpe-tokenizer" */,
 				03MLXEMB2F2B000100000003 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
+				04LOCPKG0001000000000001 /* XCLocalSwiftPackageReference "ASTChunker" */,
+				04LOCPKG0002000000000001 /* XCLocalSwiftPackageReference "MCPCore" */,
+				04LOCPKG0003000000000001 /* XCLocalSwiftPackageReference "PeelUI" */,
+				04LOCPKG0004000000000001 /* XCLocalSwiftPackageReference "Git" */,
+				04LOCPKG0005000000000001 /* XCLocalSwiftPackageReference "Github" */,
+				04LOCPKG0006000000000001 /* XCLocalSwiftPackageReference "Brew" */,
 			);
 			productRefGroup = 04A7BD6B258E77D8000E55A8 /* Products */;
 			projectDirPath = "";
@@ -1028,6 +1034,33 @@
 		};
 /* End XCRemoteSwiftPackageReference section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		04LOCPKG0001000000000001 /* XCLocalSwiftPackageReference "ASTChunker" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "Local Packages/ASTChunker";
+		};
+		04LOCPKG0002000000000001 /* XCLocalSwiftPackageReference "MCPCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "Local Packages/MCPCore";
+		};
+		04LOCPKG0003000000000001 /* XCLocalSwiftPackageReference "PeelUI" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "Local Packages/PeelUI";
+		};
+		04LOCPKG0004000000000001 /* XCLocalSwiftPackageReference "Git" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "Local Packages/Git";
+		};
+		04LOCPKG0005000000000001 /* XCLocalSwiftPackageReference "Github" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "Local Packages/Github";
+		};
+		04LOCPKG0006000000000001 /* XCLocalSwiftPackageReference "Brew" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "Local Packages/Brew";
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		03MLXEMB2F2B000100000002 /* MLXEmbedders */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -1041,10 +1074,12 @@
 		};
 		040AAB7D26CB385800DE1CBF /* Git */ = {
 			isa = XCSwiftPackageProductDependency;
+			package = 04LOCPKG0004000000000001 /* XCLocalSwiftPackageReference "Git" */;
 			productName = Git;
 		};
 		04510A572A2D200C001DEF5B /* Github */ = {
 			isa = XCSwiftPackageProductDependency;
+			package = 04LOCPKG0005000000000001 /* XCLocalSwiftPackageReference "Github" */;
 			productName = Github;
 		};
 		046C6AAF2F1BE07D006CDAC7 /* TaskRunner */ = {
@@ -1059,14 +1094,17 @@
 		};
 		046D40E626C56C5B003715AF /* Github */ = {
 			isa = XCSwiftPackageProductDependency;
+			package = 04LOCPKG0005000000000001 /* XCLocalSwiftPackageReference "Github" */;
 			productName = Github;
 		};
 		048086652A2D21E500536A3E /* Brew */ = {
 			isa = XCSwiftPackageProductDependency;
+			package = 04LOCPKG0006000000000001 /* XCLocalSwiftPackageReference "Brew" */;
 			productName = Brew;
 		};
 		04ASTCHK2F2E000100000003 /* ASTChunker */ = {
 			isa = XCSwiftPackageProductDependency;
+			package = 04LOCPKG0001000000000001 /* XCLocalSwiftPackageReference "ASTChunker" */;
 			productName = ASTChunker;
 		};
 		04D09EFC26A85E8100072702 /* OAuthSwift */ = {
