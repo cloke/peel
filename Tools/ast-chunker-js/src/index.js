@@ -280,7 +280,7 @@ function splitLargeNode(node, lines, templateRanges) {
       startLine: node.startLine,
       endLine: node.endLine,
       text: extractLines(lines, node.startLine, node.endLine),
-      constructType: 'class',
+      constructType: mapConstructType('class'),
       constructName: node.name,
       tokenCount: estimateTokens(lines, node.startLine, node.endLine)
     });

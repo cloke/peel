@@ -390,14 +390,12 @@ struct HybridChunker {
     if rubyChunker != nil {
       languages.insert("Ruby")
     }
-    if glimmerChunker != nil {
-      languages.insert("Glimmer TypeScript")
-      languages.insert("Glimmer JavaScript")
-    }
-    // TypeScript/JavaScript use JSCore chunker (issue #173)
+    // TypeScript/JavaScript/GTS/GJS use JSCore chunker (issue #173)
     if jsChunker.isAvailable {
       languages.insert("TypeScript")
       languages.insert("JavaScript")
+      languages.insert("Glimmer TypeScript")
+      languages.insert("Glimmer JavaScript")
     }
     return languages
   }
@@ -530,7 +528,7 @@ struct HybridChunker {
         )
       }
       return chunkSwiftWithSubprocess(text: text, filePath: filePath)
-    case "Ruby", "Glimmer TypeScript", "Glimmer JavaScript":
+    case "Ruby":
       if byteCount > treeSitterMaxBytes {
         print("[HybridChunker] File too large for tree-sitter (\(byteCount) bytes)")
         return ChunkingResult(
@@ -540,8 +538,8 @@ struct HybridChunker {
           failureMessage: "File too large: \(byteCount) bytes"
         )
       }
-    case "TypeScript", "JavaScript":
-      // Use JSCore chunker for TypeScript/JavaScript (issue #173)
+    case "TypeScript", "JavaScript", "Glimmer TypeScript", "Glimmer JavaScript":
+      // Use JSCore chunker for TypeScript/JavaScript/GTS/GJS (issue #173)
       if byteCount > jsMaxBytes {
         print("[HybridChunker] File too large for JSCore (\(byteCount) bytes)")
         return ChunkingResult(
@@ -805,11 +803,10 @@ struct HybridChunker {
         return lineChunker.chunk(text: text)
       }
     case "Glimmer TypeScript", "Glimmer JavaScript":
-      if let glimmerChunker = glimmerChunker {
-        astChunks = glimmerChunker.chunk(source: text)
-      } else {
-        return lineChunker.chunk(text: text)
-      }
+      // GTS/GJS: Use JSCore chunker for proper class-level AST chunks (issue #173)
+      // The JSCore chunker handles <template> preprocessing via regex
+      let lang = language == "Glimmer TypeScript" ? "gts" : "gjs"
+      astChunks = jsChunker.chunk(source: text, language: lang)
     case "TypeScript", "JavaScript":
       // Use JSCore chunker for TypeScript/JavaScript (issue #173)
       astChunks = jsChunker.chunk(source: text, language: language == "TypeScript" ? "ts" : "js")
