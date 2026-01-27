@@ -1,5 +1,25 @@
 # GitHub Copilot Instructions for Peel
 
+## ⚠️ CRITICAL: Shell Environment
+
+**This workspace uses zsh, NOT bash.** All terminals are zsh. Avoid bash-specific syntax:
+
+```bash
+# ❌ WRONG - Heredocs with special characters fail in zsh
+cat << 'EOF' > file.txt
+content with $vars
+EOF
+
+# ✅ CORRECT - Use echo, printf, or tools
+echo 'content with $vars' > file.txt
+printf '%s\n' 'line 1' 'line 2' > file.txt
+
+# ✅ CORRECT - Use create_file tool for complex content
+# ✅ CORRECT - Use file-rewrite skill for markdown/code
+```
+
+---
+
 ## Project Context
 
 Peel is a macOS/iOS SwiftUI application for managing GitHub, Git repositories, and Homebrew. "Peel back the layers" of your dev environment.
@@ -14,7 +34,7 @@ Peel is a macOS/iOS SwiftUI application for managing GitHub, Git repositories, a
 
 **Preferred (in order):**
 1. **Swift** — First choice for all Apple platform code, agents, services
-2. **Shell (bash/zsh)** — Scripting, automation, CLI tools
+2. **Shell (zsh)** — Scripting, automation, CLI tools
 3. **Rust** — Performance-critical components, CLI tools
 4. **Ruby** — Scripting, data processing, quick prototypes
 
