@@ -60,6 +60,83 @@ Use this flow when Peel is expected to build features via MCP and you validate t
 
 ---
 
+## MCP Tool Permissions
+
+Peel uses a tool permissions system that controls which MCP tools are available to agents.
+
+### How Permissions Work
+
+1. **Default State**: All tools are enabled by default.
+2. **Storage**: Permissions are persisted in UserDefaults under `mcp.server.toolPermissions`.
+3. **Granularity**: Individual tools can be enabled/disabled by name.
+
+### Verifying Tool Availability
+
+Before running a chain, verify that required tools are available:
+
+```bash
+# List all available tools
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
+  http://127.0.0.1:8765/rpc
+```
+
+The response includes only **enabled** tools. If a tool you need is missing, it may be disabled.
+
+### RAG Tool Verification
+
+To verify RAG tools are available and working:
+
+```bash
+# Check RAG status (database, provider, model)
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rag.status","arguments":{}}}' \
+  http://127.0.0.1:8765/rpc
+
+# Full UI status (includes search history, skills, errors)
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rag.ui.status","arguments":{}}}' \
+  http://127.0.0.1:8765/rpc
+```
+
+### Tool Categories
+
+| Category | Tools | Purpose |
+|----------|-------|---------|
+| **RAG** | `rag.status`, `rag.index`, `rag.search`, `rag.repos.*`, `rag.skills.*` | Local vector search |
+| **Chains** | `chains.run`, `chains.stop`, `chains.pause`, `chains.resume`, `chains.instruct` | Agent chain execution |
+| **Templates** | `templates.list`, `templates.create`, `templates.validate` | Chain template management |
+| **UI** | `ui.tap`, `ui.navigate`, `ui.snapshot`, `ui.setText` | UI automation |
+| **Server** | `server.status`, `server.restart`, `app.quit` | Server lifecycle |
+
+### Prompt Rule Enforcement
+
+Chain prompts can specify requirements via `promptRules`, but these are **advisory warnings**, not hard blocks:
+
+| Rule | Effect |
+|------|--------|
+| `requireRagUsage: true` | Warns if planner doesn't call any `rag.*` tools |
+| `maxPremiumCost: 0.5` | Warns if estimated cost exceeds threshold |
+| `globalPrefix: "..."` | Prepends text to all agent prompts |
+
+These rules don't prevent tool calls—they surface warnings in the chain result for review.
+
+### Verification Checklist
+
+Before running an agent chain:
+
+- [ ] **Tools listed**: `tools/list` shows expected tools
+- [ ] **RAG status**: `rag.status` returns `exists: true`
+- [ ] **Repos indexed**: `rag.repos.list` shows the target repository
+- [ ] **Template available**: `templates.list` includes your template
+
+If a tool appears missing:
+1. Check the tools list response for the tool name
+2. Tools may be disabled via Settings → MCP → Tool Permissions
+3. Some tools require initialization (e.g., `rag.init` before search)
+
+---
+
 ## RAG UX Validation Checklist
 
 Use this checklist for dogfooding:
