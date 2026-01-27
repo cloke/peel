@@ -9,7 +9,7 @@ import SwiftUI
 import Git
 
 enum CurrentTool: String, Identifiable, CaseIterable {
-  case agents = "agents", workspaces = "workspaces", brew = "brew", git = "git", github = "github"
+  case agents = "agents", workspaces = "workspaces", brew = "brew", git = "git", github = "github", swarm = "swarm"
   var id: String { rawValue }
 }
 
@@ -24,6 +24,7 @@ struct ContentView: View {
     case .brew: Brew_RootView()
     case .git: Git_RootView()
     case .github: Github_RootView()
+    case .swarm: SwarmStatusView()
     }
   }
 }

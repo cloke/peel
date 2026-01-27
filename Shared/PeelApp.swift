@@ -19,11 +19,24 @@ struct PeelApp: App {
   @Environment(\.openURL) var openURL
   @State private var vmIsolationService = VMIsolationService()
   @State private var mcpServer: MCPServerService
+  @State private var workerModeActive = false
 
   init() {
     let vmService = VMIsolationService()
     _vmIsolationService = State(initialValue: vmService)
     _mcpServer = State(initialValue: MCPServerService(vmIsolationService: vmService))
+    
+    // Check for worker mode (--worker flag)
+    if WorkerMode.shared.shouldRunInWorkerMode {
+      _workerModeActive = State(initialValue: true)
+      Task { @MainActor in
+        do {
+          try WorkerMode.shared.start()
+        } catch {
+          print("Failed to start worker mode: \(error)")
+        }
+      }
+    }
   }
   
   /// SwiftData model container
