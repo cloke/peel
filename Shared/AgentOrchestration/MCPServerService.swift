@@ -4317,120 +4317,50 @@ extension MCPServerService: ChainToolsHandlerDelegate {
     templateName: String?,
     options: ChainToolRunOptions
   ) async throws -> ChainToolRunResult {
-    let runId = UUID()
-    
-    // Check queue limits
-    if activeChainRuns >= maxConcurrentChains, chainQueue.count >= maxQueuedChains {
-      await telemetryProvider.warning("Chain queue full", metadata: ["runId": runId.uuidString])
-      throw ChainError.queueFull
+    // Delegate to the full-featured handleChainRun and convert the result
+    var arguments: [String: Any] = [
+      "prompt": prompt,
+      "workingDirectory": repoPath,
+      "requireRagUsage": options.requireRag
+    ]
+    if let templateId {
+      arguments["templateId"] = templateId
+    }
+    if let templateName {
+      arguments["templateName"] = templateName
+    }
+    if let maxPremiumCost = options.maxPremiumCost {
+      arguments["maxPremiumCost"] = maxPremiumCost
+    }
+    if options.skipReview {
+      arguments["enableReviewLoop"] = false
+    }
+    if options.dryRun {
+      arguments["returnImmediately"] = true
     }
     
-    // Find template
-    let templates = agentManager.allTemplates
-    let template: ChainTemplate? = {
-      if let templateId, let uuid = UUID(uuidString: templateId) {
-        return templates.first { $0.id == uuid }
-      }
-      if let templateName {
-        return templates.first { $0.name.lowercased() == templateName.lowercased() }
-      }
-      return templates.first
-    }()
+    let (status, data) = await handleChainRun(id: nil, arguments: arguments)
     
-    guard let template else {
-      throw ChainError.templateNotFound
-    }
-    
-    // Acquire run slot
-    let (enqueuedAt, wasCancelled, _) = await acquireChainRunSlot(runId: runId, priority: 0)
-    if wasCancelled {
-      throw ChainError.cancelled
-    }
-    
-    // Create workspace
-    let repoURL = URL(fileURLWithPath: repoPath)
-    let repository = Model.Repository(name: repoURL.lastPathComponent, path: repoPath)
-    let task = AgentTask(
-      title: "MCP Chain: \(template.name)",
-      prompt: prompt,
-      repositoryPath: repoPath
-    )
-    
-    var chainWorkingDirectory = repoPath
-    do {
-      let workspace = try await agentManager.workspaceManager.createWorkspace(
-        for: repository,
-        task: task
-      )
-      chainWorkingDirectory = workspace.path.path
-    } catch {
-      await telemetryProvider.error(error, context: "Failed to create chain workspace", metadata: [:])
-    }
-    
-    // Create and configure chain
-    let chain = agentManager.createChainFromTemplate(template, workingDirectory: chainWorkingDirectory)
-    chain.runSource = .mcp
-    
-    if let guidance = await buildRepoGuidance(repoPath: repoPath) {
-      chain.addOperatorGuidance(guidance)
-    }
-    if options.requireRag {
-      chain.addOperatorGuidance(
-        "RAG tool usage is required for this run. Call a rag.* tool (e.g., rag.search) before planning."
+    // Parse the response to extract runId
+    if status == 200,
+       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+       let result = json["result"] as? [String: Any],
+       let runId = result["runId"] as? String {
+      return ChainToolRunResult(
+        chainId: runId,
+        status: "started",
+        message: result["message"] as? String ?? "Chain started"
       )
     }
     
-    // Apply prompt rules
-    let initialOptions = AgentChainRunner.ChainRunOptions(
-      allowPlannerModelSelection: false,
-      allowImplementerModelOverride: false,
-      allowPlannerImplementerScaling: false,
-      maxImplementers: nil,
-      maxPremiumCost: options.maxPremiumCost
-    )
-    let (finalPrompt, runOptions) = applyPromptRules(
-      prompt: prompt,
-      templateName: template.name,
-      options: initialOptions
-    )
-    
-    // Track the run
-    activeRunChains[runId] = chain
-    activeRunsById[runId] = ActiveRunInfo(
-      id: runId,
-      chainId: chain.id,
-      templateName: template.name,
-      prompt: finalPrompt,
-      workingDirectory: chainWorkingDirectory,
-      enqueuedAt: enqueuedAt,
-      startedAt: Date(),
-      priority: 0,
-      timeoutSeconds: nil,
-      requireRagUsage: options.requireRag,
-      ragSearchAtStart: lastRagSearchAt
-    )
-    
-    // Start the chain
-    Task { @MainActor in
-      await chainRunner.runChain(
-        chain,
-        prompt: finalPrompt,
-        validationConfig: template.validationConfig,
-        runOptions: runOptions
-      )
-      // Clean up after completion
-      activeRunChains.removeValue(forKey: runId)
-      if let info = activeRunsById.removeValue(forKey: runId) {
-        completedRunsById[runId] = (completedAt: Date(), payload: ["status": "completed", "prompt": info.prompt])
-      }
-      releaseChainRunSlot(runId: runId)
+    // Parse error
+    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+       let error = json["error"] as? [String: Any],
+       let message = error["message"] as? String {
+      throw ChainError.startFailed(message)
     }
     
-    return ChainToolRunResult(
-      chainId: runId.uuidString,
-      status: "started",
-      message: "Chain started with template: \(template.name)"
-    )
+    throw ChainError.startFailed("Unknown error starting chain")
   }
   
   func chainStatus(chainId: String) -> ChainToolStatus? {
@@ -4710,6 +4640,7 @@ enum ChainError: LocalizedError {
   case missingFeedback
   case invalidAction(String)
   case invalidConfiguration(String)
+  case startFailed(String)
   
   var errorDescription: String? {
     switch self {
@@ -4721,6 +4652,7 @@ enum ChainError: LocalizedError {
     case .missingFeedback: return "Feedback required for this action"
     case .invalidAction(let action): return "Invalid action: \(action)"
     case .invalidConfiguration(let msg): return "Invalid configuration: \(msg)"
+    case .startFailed(let msg): return "Failed to start chain: \(msg)"
     }
   }
 }
