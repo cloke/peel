@@ -15,9 +15,6 @@ import MCPCore
 public final class SwarmToolsHandler: MCPToolHandler {
   public weak var delegate: MCPToolHandlerDelegate?
   
-  /// Reference to the swarm coordinator
-  private var coordinator: SwarmCoordinator?
-  
   public let supportedTools: Set<String> = [
     "swarm.start",
     "swarm.stop",
@@ -154,6 +151,12 @@ public final class SwarmToolsHandler: MCPToolHandler {
     ]
   }
   
+  // MARK: - Shared Coordinator Access
+  
+  private var coordinator: SwarmCoordinator {
+    SwarmCoordinator.shared
+  }
+  
   // MARK: - swarm.start
   
   private func handleStart(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
@@ -164,25 +167,20 @@ public final class SwarmToolsHandler: MCPToolHandler {
     
     let port = UInt16(arguments["port"] as? Int ?? 8766)
     
-    // Stop existing coordinator if any
-    coordinator?.stop()
-    
-    // Create new coordinator
-    let newCoordinator = SwarmCoordinator(
-      role: role,
-      capabilities: WorkerCapabilities.current()
-    )
+    // Stop existing coordinator if running
+    if coordinator.isActive {
+      coordinator.stop()
+    }
     
     do {
-      try newCoordinator.start(port: port)
-      coordinator = newCoordinator
+      try coordinator.start(role: role, port: port)
       
       return (200, makeResult(id: id, result: [
         "success": true,
         "role": role.rawValue,
         "port": Int(port),
-        "deviceName": newCoordinator.capabilities.deviceName,
-        "deviceId": newCoordinator.capabilities.deviceId
+        "deviceName": coordinator.capabilities.deviceName,
+        "deviceId": coordinator.capabilities.deviceId
       ]))
     } catch {
       return internalError(id: id, message: "Failed to start swarm: \(error.localizedDescription)")
@@ -192,7 +190,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
   // MARK: - swarm.stop
   
   private func handleStop(id: Any?) async -> (Int, Data) {
-    guard let coordinator = coordinator else {
+    guard coordinator.isActive else {
       return (200, makeResult(id: id, result: [
         "success": true,
         "message": "Swarm was not running"
@@ -200,7 +198,6 @@ public final class SwarmToolsHandler: MCPToolHandler {
     }
     
     coordinator.stop()
-    self.coordinator = nil
     
     return (200, makeResult(id: id, result: [
       "success": true,
@@ -211,7 +208,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
   // MARK: - swarm.status
   
   private func handleStatus(id: Any?) -> (Int, Data) {
-    guard let coordinator = coordinator else {
+    guard coordinator.isActive else {
       return (200, makeResult(id: id, result: [
         "active": false,
         "role": NSNull(),
@@ -241,7 +238,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
   // MARK: - swarm.workers
   
   private func handleWorkers(id: Any?) -> (Int, Data) {
-    guard let coordinator = coordinator else {
+    guard coordinator.isActive else {
       return (200, makeResult(id: id, result: [
         "workers": []
       ]))
@@ -274,7 +271,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
   // MARK: - swarm.dispatch
   
   private func handleDispatch(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    guard let coordinator = coordinator else {
+    guard coordinator.isActive else {
       return internalError(id: id, message: "Swarm not running. Call swarm.start first.")
     }
     
@@ -333,7 +330,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
   // MARK: - swarm.connect
   
   private func handleConnect(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    guard let coordinator = coordinator else {
+    guard coordinator.isActive else {
       return internalError(id: id, message: "Swarm not running. Call swarm.start first.")
     }
     
@@ -357,7 +354,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
   // MARK: - swarm.discovered
   
   private func handleDiscovered(id: Any?) -> (Int, Data) {
-    guard let coordinator = coordinator else {
+    guard coordinator.isActive else {
       return (200, makeResult(id: id, result: [
         "discovered": [],
         "count": 0

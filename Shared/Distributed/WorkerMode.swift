@@ -42,15 +42,14 @@ public final class WorkerMode {
     let capabilities = WorkerCapabilities.current()
     logger.info("Starting worker mode on \(capabilities.deviceName)")
     
-    coordinator = SwarmCoordinator(
-      role: .worker,
-      capabilities: capabilities,
-      chainExecutor: chainExecutor
-    )
-    coordinator?.delegate = self
+    // Use the shared coordinator
+    let coordinator = SwarmCoordinator.shared
+    coordinator.configure(chainExecutor: chainExecutor)
+    coordinator.delegate = self
     
     let port = customPort ?? 8766
-    try coordinator?.start(port: port)
+    try coordinator.start(role: .worker, port: port)
+    self.coordinator = coordinator
     
     isRunning = true
     
