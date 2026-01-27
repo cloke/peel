@@ -146,6 +146,10 @@ struct SettingsView: View {
           Section("MCP Tools") {
             MCPToolSettingsSection(mcpServer: mcpServer)
           }
+
+          Section("Prompt Rules") {
+            PromptRulesSettingsSection(mcpServer: mcpServer)
+          }
         }
         .padding()
       }
@@ -402,6 +406,145 @@ private struct MCPToolSettingsSection: View {
       .buttonStyle(.plain)
       .help(preset.description)
     }
+  }
+}
+
+// MARK: - Prompt Rules Settings
+
+private struct PromptRulesSettingsSection: View {
+  @Bindable var mcpServer: MCPServerService
+  @State private var globalPrefix: String = ""
+  @State private var enforcePlannerModel: String = ""
+  @State private var maxPremiumCost: String = ""
+  @State private var requireRagByDefault: Bool = false
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("Configure rules that are automatically applied to all chain runs.")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+
+      VStack(alignment: .leading, spacing: 4) {
+        Text("Global Prefix")
+          .font(.subheadline)
+          .fontWeight(.medium)
+        TextEditor(text: $globalPrefix)
+          .font(.system(.body, design: .monospaced))
+          .frame(minHeight: 60, maxHeight: 120)
+          .overlay(
+            RoundedRectangle(cornerRadius: 4)
+              .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+          )
+        Text("Text prepended to all chain prompts. Use for project-specific instructions.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+
+      VStack(alignment: .leading, spacing: 4) {
+        Text("Enforce Planner Model")
+          .font(.subheadline)
+          .fontWeight(.medium)
+        TextField("e.g., gpt-4.1", text: $enforcePlannerModel)
+          .textFieldStyle(.roundedBorder)
+        Text("Force all planners to use this model, overriding template settings.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+
+      VStack(alignment: .leading, spacing: 4) {
+        Text("Default Max Premium Cost")
+          .font(.subheadline)
+          .fontWeight(.medium)
+        TextField("e.g., 0.5", text: $maxPremiumCost)
+          .textFieldStyle(.roundedBorder)
+        Text("Default cost limit for chains. Chains exceeding this emit a warning.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+
+      Toggle("Require RAG Usage by Default", isOn: $requireRagByDefault)
+      Text("Warn if the planner doesn't use any rag.* tools during execution.")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+
+      Divider()
+
+      HStack(spacing: 12) {
+        Button("Apply Changes") {
+          applyChanges()
+        }
+        .buttonStyle(.borderedProminent)
+
+        Button("Reset to Defaults") {
+          resetToDefaults()
+        }
+        .buttonStyle(.bordered)
+      }
+
+      // Show current state
+      if !mcpServer.promptRules.globalPrefix.isEmpty ||
+         mcpServer.promptRules.enforcePlannerModel != nil ||
+         mcpServer.promptRules.maxPremiumCostDefault != nil ||
+         mcpServer.promptRules.requireRagByDefault {
+        VStack(alignment: .leading, spacing: 4) {
+          Text("Active Rules")
+            .font(.caption)
+            .fontWeight(.medium)
+            .foregroundStyle(.secondary)
+          if !mcpServer.promptRules.globalPrefix.isEmpty {
+            Label("Global prefix: \(mcpServer.promptRules.globalPrefix.prefix(50))...", systemImage: "text.quote")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+          if let model = mcpServer.promptRules.enforcePlannerModel {
+            Label("Planner model: \(model)", systemImage: "cpu")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+          if let cost = mcpServer.promptRules.maxPremiumCostDefault {
+            Label("Max cost: \(cost, specifier: "%.2f")", systemImage: "dollarsign.circle")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+          if mcpServer.promptRules.requireRagByDefault {
+            Label("RAG required", systemImage: "checkmark.circle")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+        }
+        .padding(8)
+        .background(Color.accentColor.opacity(0.1))
+        .cornerRadius(6)
+      }
+    }
+    .onAppear {
+      loadCurrentRules()
+    }
+  }
+
+  private func loadCurrentRules() {
+    globalPrefix = mcpServer.promptRules.globalPrefix
+    enforcePlannerModel = mcpServer.promptRules.enforcePlannerModel ?? ""
+    if let cost = mcpServer.promptRules.maxPremiumCostDefault {
+      maxPremiumCost = String(format: "%.2f", cost)
+    } else {
+      maxPremiumCost = ""
+    }
+    requireRagByDefault = mcpServer.promptRules.requireRagByDefault
+  }
+
+  private func applyChanges() {
+    var rules = mcpServer.promptRules
+    rules.globalPrefix = globalPrefix
+    rules.enforcePlannerModel = enforcePlannerModel.isEmpty ? nil : enforcePlannerModel
+    rules.maxPremiumCostDefault = Double(maxPremiumCost)
+    rules.requireRagByDefault = requireRagByDefault
+    mcpServer.promptRules = rules
+  }
+
+  private func resetToDefaults() {
+    mcpServer.promptRules = .default
+    loadCurrentRules()
   }
 }
 #endif
