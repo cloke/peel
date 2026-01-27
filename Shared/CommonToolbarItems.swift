@@ -29,6 +29,9 @@ struct ToolSelectionToolbar: ToolbarContent {
         Label("GitHub", systemImage: "person.2")
           .labelStyle(.titleAndIcon)
           .tag(CurrentTool.github)
+        Label("Swarm", systemImage: "network")
+          .labelStyle(.titleAndIcon)
+          .tag(CurrentTool.swarm)
       }
       .pickerStyle(.segmented)
       .help("Switch between tools")
