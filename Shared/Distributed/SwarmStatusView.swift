@@ -35,6 +35,11 @@ public struct SwarmStatusView: View {
       coordinator.delegate = delegateWrapper
     }
     .frame(minWidth: 400, minHeight: 300)
+    #if os(macOS)
+    .toolbar {
+      ToolSelectionToolbar()
+    }
+    #endif
   }
   
   // MARK: - Header

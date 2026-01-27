@@ -445,7 +445,6 @@ public final class MCPServerService {
     self.parallelToolsHandler = ParallelToolsHandler()
     self.ragToolsHandler = RAGToolsHandler()
     self.chainToolsHandler = ChainToolsHandler()
-    self.swarmToolsHandler = SwarmToolsHandler()
 
     self.agentManager = agentManager
     self.sessionTracker = sessionTracker
@@ -461,6 +460,13 @@ public final class MCPServerService {
       cliService: resolvedCLIService,
       telemetryProvider: resolvedTelemetry
     )
+    
+    // Initialize SwarmToolsHandler with chainRunner and agentManager for distributed execution
+    self.swarmToolsHandler = SwarmToolsHandler(
+      chainRunner: self.chainRunner,
+      agentManager: agentManager
+    )
+    
     self.isEnabled = UserDefaults.standard.bool(forKey: StorageKey.enabled)
     self.port = UserDefaults.standard.integer(forKey: StorageKey.port)
     self.maxConcurrentChains = UserDefaults.standard.integer(forKey: StorageKey.maxConcurrentChains)
