@@ -358,29 +358,33 @@ struct ChunkingResult: Sendable {
 /// Hybrid chunker that uses AST-aware chunking for supported languages (Swift, Ruby, GTS)
 /// and falls back to line-based chunking for others.
 /// Note: TypeScript AST chunking disabled due to performance issues with tree-sitter CLI approach.
-/// Swift AST has a file size guard (100KB) to avoid stack overflow on deeply nested files.
+/// Swift uses subprocess isolation (ast-chunker-cli) to prevent stack overflow crashes.
 struct HybridChunker {
   private let lineChunker = LocalRAGChunker()
-  private let swiftChunker = SwiftChunker()
   private let rubyChunker: RubyChunker?
   private let glimmerChunker: GlimmerChunker?
   // TypeScript chunker disabled - tree-sitter CLI approach has O(n²) performance issues
   // private let typescriptChunker: TypeScriptChunker?
   
-  /// Max file size for Swift AST parsing (larger files risk stack overflow)
-  private let swiftASTMaxBytes = 80_000  // 80KB - reduced for safety
+  /// Path to ast-chunker-cli (resolved lazily)
+  private let astChunkerCLIPath: String?
+  
+  /// Subprocess timeout for Swift AST parsing
+  private let swiftSubprocessTimeout: TimeInterval = 5.0
+  
+  /// Max file size for Swift subprocess (very large files still timeout)
+  private let swiftSubprocessMaxBytes = 500_000  // 500KB
   
   /// Max file size for tree-sitter parsing (very large files are too slow)
   private let treeSitterMaxBytes = 500_000  // 500KB
   
   /// Languages that have AST chunker support
   private var astSupportedLanguages: Set<String> {
-    // Swift AST DISABLED: SwiftSyntax Parser has unbounded recursion that causes
-    // stack overflow on deeply nested files (closures in closures, etc.).
-    // File SIZE doesn't predict nesting depth, so no safe threshold exists.
-    // Line-based chunking works well for RAG purposes.
-    // TODO: Re-enable when we can run SwiftSyntax in a subprocess with stack limits.
     var languages: Set<String> = []
+    // Swift uses subprocess isolation via ast-chunker-cli (re-enabled in #177/#178)
+    if astChunkerCLIPath != nil {
+      languages.insert("Swift")
+    }
     if rubyChunker != nil {
       languages.insert("Ruby")
     }
@@ -390,6 +394,38 @@ struct HybridChunker {
     }
     // TypeScript/JavaScript use line-based chunking for now
     return languages
+  }
+  
+  /// Find the ast-chunker-cli binary
+  private static func findASTChunkerCLI() -> String? {
+    // Check in app bundle first
+    if let bundlePath = Bundle.main.executableURL?.deletingLastPathComponent()
+        .appendingPathComponent("ast-chunker-cli").path,
+       FileManager.default.fileExists(atPath: bundlePath) {
+      return bundlePath
+    }
+    
+    // Check Frameworks directory
+    if let frameworksPath = Bundle.main.privateFrameworksPath {
+      let cliPath = (frameworksPath as NSString).appendingPathComponent("ast-chunker-cli")
+      if FileManager.default.fileExists(atPath: cliPath) {
+        return cliPath
+      }
+    }
+    
+    // Development: check build directory
+    let devPaths = [
+      "~/code/KitchenSink/Local Packages/ASTChunker/.build/release/ast-chunker-cli",
+      "~/code/KitchenSink/Local Packages/ASTChunker/.build/debug/ast-chunker-cli",
+    ]
+    for path in devPaths {
+      let expanded = (path as NSString).expandingTildeInPath
+      if FileManager.default.fileExists(atPath: expanded) {
+        return expanded
+      }
+    }
+    
+    return nil
   }
   
   init() {
@@ -408,11 +444,15 @@ struct HybridChunker {
     let glimmerChunker = GlimmerChunker()
     self.glimmerChunker = glimmerChunker.isAvailable ? glimmerChunker : nil
     
+    // Find ast-chunker-cli for Swift subprocess chunking
+    self.astChunkerCLIPath = Self.findASTChunkerCLI()
+    
     // TypeScript chunker disabled due to performance issues
     // TODO: Revisit with tree-sitter Swift bindings or simpler regex approach
     
     print("[HybridChunker] Ruby chunker available: \(rubyChunker != nil)")
     print("[HybridChunker] Glimmer chunker available: \(glimmerChunker.isAvailable)")
+    print("[HybridChunker] Swift CLI available: \(astChunkerCLIPath != nil) at \(astChunkerCLIPath ?? "N/A")")
     print("[HybridChunker] AST supported languages: \(astSupportedLanguages)")
   }
   
@@ -472,15 +512,17 @@ struct HybridChunker {
     // Pre-flight checks based on language
     switch language {
     case "Swift":
-      if byteCount > swiftASTMaxBytes {
-        print("[HybridChunker] Swift file too large for AST (\(byteCount) bytes), using line chunking")
+      // Use subprocess isolation for Swift (handles crash/timeout safely)
+      if byteCount > swiftSubprocessMaxBytes {
+        print("[HybridChunker] Swift file too large for subprocess (\(byteCount) bytes), using line chunking")
         return ChunkingResult(
           chunks: lineChunker.chunk(text: text),
           usedAST: false,
-          failureType: .stackOverflow,
+          failureType: .timeout,
           failureMessage: "File too large: \(byteCount) bytes"
         )
       }
+      return chunkSwiftWithSubprocess(text: text, filePath: filePath)
     case "Ruby", "Glimmer TypeScript", "Glimmer JavaScript":
       if byteCount > treeSitterMaxBytes {
         print("[HybridChunker] File too large for tree-sitter (\(byteCount) bytes)")
@@ -495,7 +537,7 @@ struct HybridChunker {
       break
     }
     
-    // Attempt AST chunking
+    // Attempt AST chunking for non-Swift languages
     let astChunks = chunkWithAST(text: text, language: language)
     
     if astChunks.isEmpty {
@@ -515,22 +557,166 @@ struct HybridChunker {
     )
   }
   
+  // MARK: - Swift Subprocess Chunking
+  
+  /// JSON output structure from ast-chunker-cli
+  private struct CLIChunk: Codable {
+    let startLine: Int
+    let endLine: Int
+    let text: String
+    let constructType: String
+    let constructName: String?
+    let tokenCount: Int
+  }
+  
+  /// Chunk Swift file using subprocess isolation (issues #177, #178)
+  /// Subprocess approach prevents SwiftSyntax stack overflow from crashing the main app.
+  private func chunkSwiftWithSubprocess(text: String, filePath: String) -> ChunkingResult {
+    guard let cliPath = astChunkerCLIPath else {
+      print("[HybridChunker] Swift CLI not available, falling back to line chunking")
+      return ChunkingResult(
+        chunks: lineChunker.chunk(text: text),
+        usedAST: false,
+        failureType: nil,
+        failureMessage: "CLI not available"
+      )
+    }
+    
+    // Write source to temp file (CLI reads from file)
+    let tempDir = FileManager.default.temporaryDirectory
+    let tempFile = tempDir.appendingPathComponent("swift_\(UUID().uuidString).swift")
+    
+    do {
+      try text.write(to: tempFile, atomically: true, encoding: .utf8)
+    } catch {
+      print("[HybridChunker] Failed to write temp file: \(error)")
+      return ChunkingResult(
+        chunks: lineChunker.chunk(text: text),
+        usedAST: false,
+        failureType: .parseError,
+        failureMessage: "Failed to write temp file"
+      )
+    }
+    
+    defer {
+      try? FileManager.default.removeItem(at: tempFile)
+    }
+    
+    // Run ast-chunker-cli --json <file>
+    let process = Process()
+    let pipe = Pipe()
+    let errorPipe = Pipe()
+    
+    process.executableURL = URL(fileURLWithPath: cliPath)
+    process.arguments = ["--json", tempFile.path]
+    process.standardOutput = pipe
+    process.standardError = errorPipe
+    
+    // Async pipe reading to prevent deadlock on large output
+    var outputData = Data()
+    var errorData = Data()
+    let group = DispatchGroup()
+    
+    group.enter()
+    DispatchQueue.global(qos: .userInitiated).async {
+      outputData = pipe.fileHandleForReading.readDataToEndOfFile()
+      group.leave()
+    }
+    
+    group.enter()
+    DispatchQueue.global(qos: .userInitiated).async {
+      errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+      group.leave()
+    }
+    
+    do {
+      try process.run()
+      
+      // Wait with timeout
+      let result = group.wait(timeout: .now() + swiftSubprocessTimeout)
+      
+      if result == .timedOut {
+        process.terminate()
+        let fileName = (filePath as NSString).lastPathComponent
+        print("[HybridChunker] Swift CLI timeout for \(fileName)")
+        return ChunkingResult(
+          chunks: lineChunker.chunk(text: text),
+          usedAST: false,
+          failureType: .timeout,
+          failureMessage: "Subprocess timeout"
+        )
+      }
+      
+      process.waitUntilExit()
+      
+      if process.terminationStatus != 0 {
+        let errorMsg = String(data: errorData, encoding: .utf8) ?? "Unknown error"
+        let fileName = (filePath as NSString).lastPathComponent
+        print("[HybridChunker] Swift CLI failed for \(fileName): exit \(process.terminationStatus), \(errorMsg)")
+        return ChunkingResult(
+          chunks: lineChunker.chunk(text: text),
+          usedAST: false,
+          failureType: .crash,
+          failureMessage: "CLI exit \(process.terminationStatus)"
+        )
+      }
+      
+      // Parse JSON output
+      let decoder = JSONDecoder()
+      let cliChunks = try decoder.decode([CLIChunk].self, from: outputData)
+      
+      if cliChunks.isEmpty {
+        return ChunkingResult(
+          chunks: lineChunker.chunk(text: text),
+          usedAST: false,
+          failureType: .parseError,
+          failureMessage: "CLI returned empty chunks"
+        )
+      }
+      
+      // Convert to LocalRAGChunk
+      let chunks = cliChunks.map { cli in
+        LocalRAGChunk(
+          startLine: cli.startLine,
+          endLine: cli.endLine,
+          text: cli.text,
+          tokenCount: cli.tokenCount,
+          constructType: cli.constructType,
+          constructName: cli.constructName
+        )
+      }
+      
+      let fileName = (filePath as NSString).lastPathComponent
+      print("[HybridChunker] Swift subprocess: \(chunks.count) chunks for \(fileName)")
+      
+      return ChunkingResult(
+        chunks: chunks,
+        usedAST: true,
+        failureType: nil,
+        failureMessage: nil
+      )
+      
+    } catch {
+      let fileName = (filePath as NSString).lastPathComponent
+      print("[HybridChunker] Swift CLI error for \(fileName): \(error)")
+      return ChunkingResult(
+        chunks: lineChunker.chunk(text: text),
+        usedAST: false,
+        failureType: .parseError,
+        failureMessage: error.localizedDescription
+      )
+    }
+  }
+  
   private func chunkWithAST(text: String, language: String) -> [LocalRAGChunk] {
     let astChunks: [ASTChunk]
     
     switch language {
     case "Swift":
-      // Guard against stack overflow on large/deeply nested files
-      if text.utf8.count > swiftASTMaxBytes {
-        print("[HybridChunker] Swift file too large for AST (\(text.utf8.count) bytes), using line chunking")
-        return lineChunker.chunk(text: text)
-      }
-      astChunks = swiftChunker.chunk(source: text)
-      // If AST chunking returns empty (parse error), fall back to line chunking
-      if astChunks.isEmpty {
-        print("[HybridChunker] Swift AST returned empty, falling back to line chunking")
-        return lineChunker.chunk(text: text)
-      }
+      // Swift uses subprocess chunking via chunkSwiftWithSubprocess()
+      // This path should not be reached, but handle gracefully
+      print("[HybridChunker] Warning: Swift should use subprocess path")
+      return lineChunker.chunk(text: text)
     case "Ruby":
       if let rubyChunker = rubyChunker {
         astChunks = rubyChunker.chunk(source: text)

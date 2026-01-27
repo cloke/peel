@@ -1,15 +1,34 @@
 import Foundation
 import ASTChunker
 
+/// Output chunk for JSON mode (subprocess protocol)
+struct JSONChunk: Codable {
+  let startLine: Int
+  let endLine: Int
+  let text: String
+  let constructType: String
+  let constructName: String?
+  let tokenCount: Int
+}
+
 /// Simple CLI to test the AST chunker on real files
+/// JSON mode is used for subprocess isolation (--json <file>)
 @main
 struct CLI {
   static func main() {
     let args = CommandLine.arguments
 
+    // JSON mode for subprocess integration (issue #177)
+    if args.count >= 3 && args[1] == "--json" {
+      let filePath = args[2]
+      processFileJSON(filePath)
+      return
+    }
+
     guard args.count >= 2 else {
       print("Usage: ast-chunker-cli <file.swift> [--verbose]")
       print("       ast-chunker-cli <directory> [--verbose]")
+      print("       ast-chunker-cli --json <file.swift>  # For subprocess integration")
       return
     }
 
@@ -97,6 +116,49 @@ struct CLI {
         let preview = chunk.text.split(separator: "\n").prefix(3).joined(separator: "\n")
         print("  Preview: \(preview.prefix(80))...")
       }
+    }
+  }
+
+  /// JSON output for subprocess integration (used by HybridChunker)
+  static func processFileJSON(_ path: String) {
+    guard let source = try? String(contentsOfFile: path, encoding: .utf8) else {
+      fputs("Error: Cannot read file: \(path)\n", stderr)
+      exit(1)
+    }
+
+    let chunker = SwiftChunker()
+    let chunks = chunker.chunk(source: source)
+
+    if chunks.isEmpty {
+      // Output empty array (parse error or empty file)
+      print("[]")
+      return
+    }
+
+    let output = chunks.map { chunk in
+      JSONChunk(
+        startLine: chunk.startLine,
+        endLine: chunk.endLine,
+        text: chunk.text,
+        constructType: chunk.constructType.rawValue,
+        constructName: chunk.constructName,
+        tokenCount: chunk.estimatedTokenCount
+      )
+    }
+
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]  // Consistent output, no pretty print for speed
+    do {
+      let data = try encoder.encode(output)
+      if let json = String(data: data, encoding: .utf8) {
+        print(json)
+      } else {
+        fputs("Error: Failed to encode JSON\n", stderr)
+        exit(1)
+      }
+    } catch {
+      fputs("Error: JSON encoding failed: \(error)\n", stderr)
+      exit(1)
     }
   }
 }
