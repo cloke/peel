@@ -1,12 +1,46 @@
 # AST Chunking Stability Analysis & Plan
 
 **Date:** January 26, 2026  
-**Status:** REVERT REQUIRED  
+**Status:** ✅ STABILIZED  
 **Priority:** High - Blocking RAG stability
 
 ---
 
-## Problem Statement
+## Resolution Summary (January 26, 2026)
+
+### What Was Done
+
+1. **Fixed RubyChunker pipe deadlock** - Applied async pipe reading pattern from GlimmerChunker to prevent buffer deadlock on large AST outputs (>64KB)
+
+2. **Added ChunkingHealthTracker** - Records failures per file, enables auto-fallback on re-index, persists to `~/Library/Application Support/Peel/chunking_failures.json`
+
+3. **Added per-file error boundaries** - `HybridChunker.chunkSafe()` method with failure tracking and automatic line-based fallback
+
+4. **Disabled Swift AST chunking** - SwiftSyntax Parser has unbounded recursion causing stack overflow on deeply nested files (closures in closures). File SIZE doesn't predict nesting DEPTH, so no safe threshold exists. Line-based chunking works well for RAG purposes.
+
+5. **Enhanced LocalRAGIndexReport** - Now includes `astFilesChunked`, `lineFilesChunked`, `chunkingFailures` for diagnostics
+
+### Current State
+
+| Language | Chunker | Status |
+|----------|---------|--------|
+| Swift | SwiftSyntax | ❌ Disabled (stack overflow) |
+| Ruby | tree-sitter | ✅ Working (pipe fix applied) |
+| Glimmer (GTS/GJS) | tree-sitter | ✅ Working |
+| TypeScript/JavaScript | Line-based | ✅ Working |
+| Others | Line-based | ✅ Working |
+
+### Test Results
+
+```
+KitchenSink: 206 files, 469 chunks, 5.9s - ✅ No crash
+tio-front-end: 1806 files, 14822 chunks - ✅ No crash  
+tio-api: 2390 files, 3500 chunks, 10.7m - ✅ No crash (Ruby AST working)
+```
+
+---
+
+## Original Problem Statement
 
 AST-based chunking worked incrementally until TypeScript support was added. The trigger was scanning `application.ts` with the tree-sitter TypeScript chunker. Since then, the system has been unstable even after "disabling" TypeScript support.
 
@@ -16,14 +50,18 @@ AST-based chunking worked incrementally until TypeScript support was added. The 
 |--------|--------|--------|
 | Line-based chunking only | pre-`a5f44de` | ✅ Stable |
 | + Swift AST (SwiftSyntax) | `a5f44de` | ✅ Worked |
-| + Ruby AST (tree-sitter CLI) | `6e6c366` | ✅ Worked |
-| + Glimmer AST (tree-sitter CLI) | `54d4808` | ✅ Worked |
-| + TypeScript AST (tree-sitter CLI) | `54d4808` | ❌ **TRIGGER** - scanning application.ts caused memory explosion |
-| "Disable" TS in HybridChunker | `24b3955` | ❌ Still crashes |
-| "Disable" Swift AST too | `6a85d11` | ❌ Still crashes |
-| Re-enable Swift with size guard | current | ❌ Still crashes |
+| + Ruby AST (tree-sitter CLI) | `6e6c366` | ⚠️ Had pipe deadlock bug |
+| + Glimmer AST (tree-sitter CLI) | `54d4808` | ✅ Worked (had async pipe fix) |
+| + TypeScript AST (tree-sitter CLI) | `54d4808` | ❌ **TRIGGER** |
+| "Disable" TS in HybridChunker | `24b3955` | ❌ Still crashes (Swift stack overflow) |
+| "Disable" Swift AST too | `6a85d11` | ❌ Still crashes (Ruby pipe deadlock) |
+| Re-enable Swift with size guard | current | ❌ Still crashes (size ≠ nesting) |
+| **Fix Ruby pipe + disable Swift** | `HEAD` | ✅ **STABLE** |
 
-**Key insight:** The problem isn't just TypeScript. Something in the codebase changed during the TypeScript work that broke error isolation. Even with TypeScript "disabled", other chunkers now crash the app.
+### Root Causes Found
+
+1. **Ruby pipe deadlock**: RubyChunker read output AFTER process exit, causing deadlock when AST output >64KB
+2. **Swift stack overflow**: SwiftSyntax Parser uses unbounded recursion. Deeply nested closures cause stack overflow. File SIZE doesn't predict nesting DEPTH.
 
 ---
 
@@ -120,40 +158,77 @@ The TypeScript commit (`54d4808`) did more than add TypeScript support. It likel
 
 ---
 
-## Questions Resolved
+## Future Work: Re-enabling Swift AST
 
-- ~~Is AST chunking significantly better?~~ **Yes, when stable**
-- ~~Should we invest in tree-sitter-swift?~~ **After stability is restored**
-- **Current priority:** Revert to stable, then rebuild properly
+To safely re-enable Swift AST chunking, we need **subprocess isolation**:
+
+### Option 1: Task.detached with Stack Guard
+```swift
+// Run SwiftSyntax in a detached task with stack monitoring
+let result = try await withTimeout(seconds: 5) {
+  try await Task.detached(priority: .userInitiated) {
+    swiftChunker.chunk(source: text)
+  }.value
+}
+```
+**Problem**: Swift tasks share the process stack limit.
+
+### Option 2: Subprocess with CLI
+```swift
+// Run ast-chunker-cli (the CLI target in ASTChunker package) as subprocess
+let process = Process()
+process.executableURL = URL(fileURLWithPath: astChunkerCLIPath)
+process.arguments = ["--swift", tempFile.path]
+// ... async pipe reading pattern ...
+```
+**Pros**: Complete isolation. If CLI crashes, main app continues.
+**Cons**: Overhead of spawning process per file.
+
+### Option 3: tree-sitter Swift bindings
+Replace SwiftSyntax with tree-sitter-swift (like we use for Ruby).
+**Pros**: Same architecture as other chunkers, known to work.
+**Cons**: May lose some Swift-specific AST detail.
+
+### Recommended Path
+1. Build `ast-chunker-cli` target as part of app bundle
+2. Use subprocess isolation for Swift files only
+3. Fall back to line-based if subprocess times out or crashes
+4. Track failures with ChunkingHealthTracker
 
 ---
 
-## Commands for Next Session
+## Code Changes Made (January 26, 2026)
 
-```bash
-# 1. Find last stable commit (before TS work)
-git log --oneline -20 | grep -B2 "54d4808"
+### Files Modified:
+- `Local Packages/ASTChunker/Sources/ASTChunker/RubyChunker.swift` - Applied async pipe reading fix
+- `Shared/Services/LocalRAGStore.swift` - Added ChunkingHealthTracker, ChunkingResult, chunkSafe(), disabled Swift AST, enhanced index report
 
-# 2. Check what 54d4808 changed
-git show 54d4808 --stat
+### Key Code Patterns Added:
 
-# 3. Compare LocalRAGStore before/after TS work
-git diff 6e6c366..54d4808 -- Shared/Services/LocalRAGStore.swift
+#### Async Pipe Reading (prevents deadlock)
+```swift
+let group = DispatchGroup()
+group.enter()
+DispatchQueue.global(qos: .userInitiated).async {
+  outputData = outputHandle.readDataToEndOfFile()
+  group.leave()
+}
+// ... process.run() ...
+group.wait(timeout: .now() + parseTimeout)
+```
 
-# 4. Revert to pre-TS state for testing
-git checkout 6e6c366 -- Shared/Services/LocalRAGStore.swift
-git checkout 6e6c366 -- Local\ Packages/ASTChunker/
-
-# 5. Build and test
-./Tools/build-and-launch.sh --wait-for-server
+#### ChunkingHealthTracker (auto-fallback)
+```swift
+if healthTracker.shouldSkipAST(for: filePath, hash: fileHash) {
+  return lineChunker.chunk(text: text)  // Auto fallback
+}
 ```
 
 ---
 
-## Session Handoff Notes
+## Questions Resolved
 
-- This session has been running a long time with multiple quick-fix attempts
-- User correctly identified that "disable and retry" approach isn't working
-- Need fresh investigation starting from the TypeScript commit
-- **Do not make code changes without user approval**
-- **Do not fall back to "simpler" solutions without discussion**
+- ✅ **Root cause identified**: Two separate bugs - Ruby pipe deadlock + Swift unbounded recursion
+- ✅ **Is AST chunking significantly better?**: Yes, when stable (Ruby/Glimmer working)
+- ✅ **Should we invest in tree-sitter-swift?**: Consider as alternative to SwiftSyntax
+- ✅ **Current status**: STABLE with Ruby/Glimmer AST, Swift line-based

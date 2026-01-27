@@ -56,6 +56,7 @@ public struct RubyChunker: LanguageChunker, Sendable {
   private func parseWithTreeSitter(file: String) -> String? {
     let process = Process()
     let pipe = Pipe()
+    let errorPipe = Pipe()
     
     process.executableURL = URL(fileURLWithPath: treeSitterCLIPath)
     process.arguments = [
@@ -66,27 +67,50 @@ public struct RubyChunker: LanguageChunker, Sendable {
       file
     ]
     process.standardOutput = pipe
-    process.standardError = FileHandle.nullDevice
+    process.standardError = errorPipe
+    
+    // IMPORTANT: Read output asynchronously to prevent pipe buffer from filling up
+    // and blocking the process. For large AST outputs (>64KB), the pipe buffer
+    // fills and the process deadlocks waiting to write while we wait for it to exit.
+    var outputData = Data()
+    var errorData = Data()
+    
+    let outputHandle = pipe.fileHandleForReading
+    let errorHandle = errorPipe.fileHandleForReading
+    
+    // Use DispatchGroup to coordinate async reads
+    let group = DispatchGroup()
+    
+    group.enter()
+    DispatchQueue.global(qos: .userInitiated).async {
+      outputData = outputHandle.readDataToEndOfFile()
+      group.leave()
+    }
+    
+    group.enter()
+    DispatchQueue.global(qos: .userInitiated).async {
+      errorData = errorHandle.readDataToEndOfFile()
+      group.leave()
+    }
     
     do {
       try process.run()
       
-      // Wait with timeout to prevent hanging
-      let deadline = Date().addingTimeInterval(parseTimeout)
-      while process.isRunning && Date() < deadline {
-        Thread.sleep(forTimeInterval: 0.1)
-      }
+      // Wait for process with timeout
+      let result = group.wait(timeout: .now() + parseTimeout)
       
-      if process.isRunning {
-        // Process timed out - kill it
+      if result == .timedOut {
         process.terminate()
         return nil
       }
       
-      guard process.terminationStatus == 0 else { return nil }
+      process.waitUntilExit()
       
-      let data = pipe.fileHandleForReading.readDataToEndOfFile()
-      return String(data: data, encoding: .utf8)
+      if process.terminationStatus != 0 {
+        return nil
+      }
+      
+      return String(data: outputData, encoding: .utf8)
     } catch {
       return nil
     }

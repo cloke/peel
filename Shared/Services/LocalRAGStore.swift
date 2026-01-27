@@ -25,6 +25,11 @@ struct LocalRAGIndexReport: Sendable {
   let durationMs: Int
   let embeddingCount: Int
   let embeddingDurationMs: Int
+  
+  // AST chunking stats
+  let astFilesChunked: Int
+  let lineFilesChunked: Int
+  let chunkingFailures: Int
 }
 
 /// Progress updates during indexing operations
@@ -219,23 +224,162 @@ struct LocalRAGChunker {
   }
 }
 
-/// Hybrid chunker that uses AST-aware chunking for supported languages (Ruby, GTS)
+// MARK: - Chunking Health Tracker
+
+/// Tracks chunking failures to enable auto-fallback and diagnostics.
+/// Records failures per file so problematic files automatically use line-based chunking on re-index.
+struct ChunkingHealthTracker: Sendable {
+  
+  enum FailureType: String, Codable, Sendable {
+    case timeout = "timeout"
+    case crash = "crash"
+    case stackOverflow = "stack_overflow"
+    case parseError = "parse_error"
+    case unknown = "unknown"
+  }
+  
+  struct FailureRecord: Codable, Sendable {
+    let filePath: String
+    let language: String
+    let errorType: FailureType
+    let errorMessage: String?
+    let timestamp: Date
+    let fileHash: String
+  }
+  
+  private static let cacheURL: URL = {
+    let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+    let peelDir = appSupport.appendingPathComponent("Peel", isDirectory: true)
+    try? FileManager.default.createDirectory(at: peelDir, withIntermediateDirectories: true)
+    return peelDir.appendingPathComponent("chunking_failures.json")
+  }()
+  
+  private var failures: [FailureRecord] = []
+  private let maxFailures = 500  // Limit stored failures
+  
+  init() {
+    loadFailures()
+  }
+  
+  /// Check if we should skip AST chunking for a file based on previous failures
+  func shouldSkipAST(for filePath: String, hash: String) -> Bool {
+    failures.contains { $0.filePath == filePath && $0.fileHash == hash }
+  }
+  
+  /// Record a chunking failure
+  mutating func recordFailure(
+    filePath: String,
+    language: String,
+    errorType: FailureType,
+    errorMessage: String?,
+    fileHash: String
+  ) {
+    // Remove old failure for this file if any
+    failures.removeAll { $0.filePath == filePath }
+    
+    let record = FailureRecord(
+      filePath: filePath,
+      language: language,
+      errorType: errorType,
+      errorMessage: errorMessage,
+      timestamp: Date(),
+      fileHash: fileHash
+    )
+    failures.append(record)
+    
+    // Trim old failures if over limit
+    if failures.count > maxFailures {
+      failures = Array(failures.suffix(maxFailures))
+    }
+    
+    saveFailures()
+    print("[ChunkingHealth] Recorded failure: \(filePath) - \(errorType.rawValue)")
+  }
+  
+  /// Clear failures for files that have changed (hash differs)
+  mutating func clearStaleFailures(currentFiles: [(path: String, hash: String)]) {
+    let currentMap = Dictionary(uniqueKeysWithValues: currentFiles.map { ($0.path, $0.hash) })
+    let before = failures.count
+    failures.removeAll { record in
+      guard let currentHash = currentMap[record.filePath] else {
+        // File no longer exists - remove failure
+        return true
+      }
+      // File changed - remove old failure
+      return currentHash != record.fileHash
+    }
+    let removed = before - failures.count
+    if removed > 0 {
+      print("[ChunkingHealth] Cleared \(removed) stale failures")
+      saveFailures()
+    }
+  }
+  
+  /// Get all current failures for diagnostics
+  func getFailures() -> [FailureRecord] {
+    failures
+  }
+  
+  /// Get failures grouped by language
+  func failuresByLanguage() -> [String: Int] {
+    Dictionary(grouping: failures, by: { $0.language }).mapValues { $0.count }
+  }
+  
+  private mutating func loadFailures() {
+    guard FileManager.default.fileExists(atPath: Self.cacheURL.path),
+          let data = try? Data(contentsOf: Self.cacheURL),
+          let decoded = try? JSONDecoder().decode([FailureRecord].self, from: data) else {
+      return
+    }
+    failures = decoded
+    print("[ChunkingHealth] Loaded \(failures.count) failure records")
+  }
+  
+  private func saveFailures() {
+    do {
+      let data = try JSONEncoder().encode(failures)
+      try data.write(to: Self.cacheURL)
+    } catch {
+      print("[ChunkingHealth] Failed to save: \(error)")
+    }
+  }
+}
+
+// MARK: - Hybrid Chunker
+
+/// Result of chunking with metadata about how it was processed
+struct ChunkingResult: Sendable {
+  let chunks: [LocalRAGChunk]
+  let usedAST: Bool
+  let failureType: ChunkingHealthTracker.FailureType?
+  let failureMessage: String?
+}
+
+/// Hybrid chunker that uses AST-aware chunking for supported languages (Swift, Ruby, GTS)
 /// and falls back to line-based chunking for others.
 /// Note: TypeScript AST chunking disabled due to performance issues with tree-sitter CLI approach.
-/// Note: Swift AST chunking disabled due to stack overflow on deeply nested files.
-/// TypeScript and Swift files use line-based chunking which works well for RAG purposes.
+/// Swift AST has a file size guard (100KB) to avoid stack overflow on deeply nested files.
 struct HybridChunker {
   private let lineChunker = LocalRAGChunker()
-  // Swift chunker disabled - SwiftSyntax Parser causes stack overflow on deeply nested files
-  // private let swiftChunker = SwiftChunker()
+  private let swiftChunker = SwiftChunker()
   private let rubyChunker: RubyChunker?
   private let glimmerChunker: GlimmerChunker?
   // TypeScript chunker disabled - tree-sitter CLI approach has O(n²) performance issues
   // private let typescriptChunker: TypeScriptChunker?
   
+  /// Max file size for Swift AST parsing (larger files risk stack overflow)
+  private let swiftASTMaxBytes = 80_000  // 80KB - reduced for safety
+  
+  /// Max file size for tree-sitter parsing (very large files are too slow)
+  private let treeSitterMaxBytes = 500_000  // 500KB
+  
   /// Languages that have AST chunker support
   private var astSupportedLanguages: Set<String> {
-    // Swift disabled due to stack overflow on deeply nested files
+    // Swift AST DISABLED: SwiftSyntax Parser has unbounded recursion that causes
+    // stack overflow on deeply nested files (closures in closures, etc.).
+    // File SIZE doesn't predict nesting depth, so no safe threshold exists.
+    // Line-based chunking works well for RAG purposes.
+    // TODO: Re-enable when we can run SwiftSyntax in a subprocess with stack limits.
     var languages: Set<String> = []
     if rubyChunker != nil {
       languages.insert("Ruby")
@@ -272,6 +416,41 @@ struct HybridChunker {
     print("[HybridChunker] AST supported languages: \(astSupportedLanguages)")
   }
   
+  /// Chunk with full error tracking and health-aware fallback
+  func chunkSafe(
+    text: String,
+    language: String,
+    filePath: String,
+    fileHash: String,
+    healthTracker: ChunkingHealthTracker
+  ) -> ChunkingResult {
+    // Check if we should skip AST for this file due to previous failures
+    if healthTracker.shouldSkipAST(for: filePath, hash: fileHash) {
+      print("[HybridChunker] Skipping AST for \(filePath) due to previous failure")
+      return ChunkingResult(
+        chunks: lineChunker.chunk(text: text),
+        usedAST: false,
+        failureType: nil,
+        failureMessage: "Skipped due to previous failure"
+      )
+    }
+    
+    // Use AST chunking for supported languages
+    if astSupportedLanguages.contains(language) {
+      let result = chunkWithASTSafe(text: text, language: language, filePath: filePath)
+      return result
+    }
+    
+    // Fall back to line-based chunking
+    return ChunkingResult(
+      chunks: lineChunker.chunk(text: text),
+      usedAST: false,
+      failureType: nil,
+      failureMessage: nil
+    )
+  }
+  
+  /// Legacy method for backward compatibility
   func chunk(text: String, language: String) -> [LocalRAGChunk] {
     print("[HybridChunker] chunk called with language: \(language)")
     // Use AST chunking for supported languages
@@ -286,13 +465,72 @@ struct HybridChunker {
     return lineChunker.chunk(text: text)
   }
   
+  /// Safe AST chunking with error capture
+  private func chunkWithASTSafe(text: String, language: String, filePath: String) -> ChunkingResult {
+    let byteCount = text.utf8.count
+    
+    // Pre-flight checks based on language
+    switch language {
+    case "Swift":
+      if byteCount > swiftASTMaxBytes {
+        print("[HybridChunker] Swift file too large for AST (\(byteCount) bytes), using line chunking")
+        return ChunkingResult(
+          chunks: lineChunker.chunk(text: text),
+          usedAST: false,
+          failureType: .stackOverflow,
+          failureMessage: "File too large: \(byteCount) bytes"
+        )
+      }
+    case "Ruby", "Glimmer TypeScript", "Glimmer JavaScript":
+      if byteCount > treeSitterMaxBytes {
+        print("[HybridChunker] File too large for tree-sitter (\(byteCount) bytes)")
+        return ChunkingResult(
+          chunks: lineChunker.chunk(text: text),
+          usedAST: false,
+          failureType: .timeout,
+          failureMessage: "File too large: \(byteCount) bytes"
+        )
+      }
+    default:
+      break
+    }
+    
+    // Attempt AST chunking
+    let astChunks = chunkWithAST(text: text, language: language)
+    
+    if astChunks.isEmpty {
+      return ChunkingResult(
+        chunks: lineChunker.chunk(text: text),
+        usedAST: false,
+        failureType: .parseError,
+        failureMessage: "AST returned empty"
+      )
+    }
+    
+    return ChunkingResult(
+      chunks: astChunks,
+      usedAST: true,
+      failureType: nil,
+      failureMessage: nil
+    )
+  }
+  
   private func chunkWithAST(text: String, language: String) -> [LocalRAGChunk] {
     let astChunks: [ASTChunk]
     
     switch language {
-    // Swift disabled due to stack overflow on deeply nested files
-    // case "Swift":
-    //   astChunks = swiftChunker.chunk(source: text)
+    case "Swift":
+      // Guard against stack overflow on large/deeply nested files
+      if text.utf8.count > swiftASTMaxBytes {
+        print("[HybridChunker] Swift file too large for AST (\(text.utf8.count) bytes), using line chunking")
+        return lineChunker.chunk(text: text)
+      }
+      astChunks = swiftChunker.chunk(source: text)
+      // If AST chunking returns empty (parse error), fall back to line chunking
+      if astChunks.isEmpty {
+        print("[HybridChunker] Swift AST returned empty, falling back to line chunking")
+        return lineChunker.chunk(text: text)
+      }
     case "Ruby":
       if let rubyChunker = rubyChunker {
         astChunks = rubyChunker.chunk(source: text)
@@ -684,6 +922,7 @@ actor LocalRAGStore {
   private let scanner = LocalRAGFileScanner()
   private let chunker = HybridChunker()
   private let embeddingProvider: LocalRAGEmbeddingProvider
+  private var healthTracker = ChunkingHealthTracker()
 
   private let dateFormatter = ISO8601DateFormatter()
 
@@ -750,6 +989,35 @@ actor LocalRAGStore {
       coreMLVocabPresent: vocabPresent,
       coreMLTokenizerHelperPresent: helperPresent
     )
+  }
+  
+  /// Get chunking health information including failures
+  struct ChunkingHealthInfo: Sendable {
+    let totalFailures: Int
+    let failuresByLanguage: [String: Int]
+    let recentFailures: [(path: String, language: String, errorType: String, timestamp: Date)]
+  }
+  
+  func getChunkingHealth() -> ChunkingHealthInfo {
+    let failures = healthTracker.getFailures()
+    let byLanguage = healthTracker.failuresByLanguage()
+    let recent = failures.suffix(20).map { (
+      path: $0.filePath,
+      language: $0.language,
+      errorType: $0.errorType.rawValue,
+      timestamp: $0.timestamp
+    )}
+    return ChunkingHealthInfo(
+      totalFailures: failures.count,
+      failuresByLanguage: byLanguage,
+      recentFailures: recent
+    )
+  }
+  
+  /// Clear chunking failures (useful after code changes)
+  func clearChunkingFailures() {
+    healthTracker = ChunkingHealthTracker()
+    print("[RAG] Cleared all chunking failures")
   }
 
   private func candidateModelDirectories(primary: URL) -> [URL] {
@@ -967,6 +1235,11 @@ actor LocalRAGStore {
     var embeddingCount = 0
     var embeddingDurationMs = 0
     var skippedUnchanged = 0
+    
+    // AST chunking stats
+    var astFilesChunked = 0
+    var lineFilesChunked = 0
+    var chunkingFailures = 0
 
     struct MissingEmbedding {
       let textHash: String
@@ -1008,7 +1281,35 @@ actor LocalRAGStore {
         continue
       }
 
-      let chunks = chunker.chunk(text: file.text, language: file.language)
+      // Use safe chunking with health tracking
+      let chunkResult = chunker.chunkSafe(
+        text: file.text,
+        language: file.language,
+        filePath: relativePath,
+        fileHash: fileHash,
+        healthTracker: healthTracker
+      )
+      
+      // Track chunking stats
+      if chunkResult.usedAST {
+        astFilesChunked += 1
+      } else {
+        lineFilesChunked += 1
+      }
+      
+      // Record any failures to health tracker for future runs
+      if let failureType = chunkResult.failureType {
+        chunkingFailures += 1
+        healthTracker.recordFailure(
+          filePath: relativePath,
+          language: file.language,
+          errorType: failureType,
+          errorMessage: chunkResult.failureMessage,
+          fileHash: fileHash
+        )
+      }
+      
+      let chunks = chunkResult.chunks
       let chunkHashes = chunks.map { stableId(for: $0.text) }
 
       // Find missing embeddings for this file
@@ -1106,6 +1407,9 @@ actor LocalRAGStore {
       embeddingCache.removeAll(keepingCapacity: true)
     }
     logMemory("index complete")
+    
+    // Log AST stats
+    print("[RAG] AST stats: \(astFilesChunked) AST, \(lineFilesChunked) line-based, \(chunkingFailures) failures")
 
     let durationMs = Int(Date().timeIntervalSince(startTime) * 1000)
     let report = LocalRAGIndexReport(
@@ -1117,7 +1421,10 @@ actor LocalRAGStore {
       bytesScanned: bytesScanned,
       durationMs: durationMs,
       embeddingCount: embeddingCount,
-      embeddingDurationMs: embeddingDurationMs
+      embeddingDurationMs: embeddingDurationMs,
+      astFilesChunked: astFilesChunked,
+      lineFilesChunked: lineFilesChunked,
+      chunkingFailures: chunkingFailures
     )
     progress?(.complete(report: report))
     return report
