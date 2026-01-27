@@ -194,15 +194,95 @@ public protocol ChainExecutorProtocol: Sendable {
 @available(macOS 15.0, iOS 18.0, *)
 @MainActor
 public final class DefaultChainExecutor: ChainExecutorProtocol, Sendable {
+  private let chainRunner: AgentChainRunner
+  private let agentManager: AgentManager
   
-  public init() {}
+  public init(chainRunner: AgentChainRunner, agentManager: AgentManager) {
+    self.chainRunner = chainRunner
+    self.agentManager = agentManager
+  }
   
   public func execute(request: ChainRequest) async throws -> [ChainOutput] {
-    // This will be implemented to call AgentChainRunner
-    // For now, throw not implemented
+    // Validate working directory exists
+    guard FileManager.default.fileExists(atPath: request.workingDirectory) else {
+      throw DistributedError.taskExecutionFailed(
+        taskId: request.id,
+        reason: "Working directory not found: \(request.workingDirectory)"
+      )
+    }
+    
+    // Load or find the template
+    let template = try loadTemplate(name: request.templateName)
+    
+    // Create the chain from template using AgentManager
+    let chain = agentManager.createChainFromTemplate(template, workingDirectory: request.workingDirectory)
+    
+    // Run the chain
+    let summary = await chainRunner.runChain(
+      chain,
+      prompt: request.prompt
+    )
+    
+    // Convert summary to outputs
+    var outputs: [ChainOutput] = []
+    
+    // Add individual agent outputs from results
+    for (index, result) in summary.results.enumerated() {
+      outputs.append(ChainOutput(
+        type: .text,
+        name: "agent_\(index)_\(result.agentName)",
+        content: result.output
+      ))
+    }
+    
+    // Calculate totals from results
+    let totalPremiumCost = summary.results.reduce(0.0) { $0 + $1.premiumCost }
+    let hasError = summary.errorMessage != nil
+    
+    // Add summary info
+    outputs.append(ChainOutput(
+      type: .log,
+      name: "summary",
+      content: """
+        Chain: \(summary.chainName)
+        State: \(summary.stateDescription)
+        Agents Run: \(summary.results.count)
+        Premium Cost: \(String(format: "%.2f", totalPremiumCost))
+        Status: \(hasError ? "failed" : "completed")
+        """
+    ))
+    
+    if let error = summary.errorMessage {
+      throw DistributedError.taskExecutionFailed(
+        taskId: request.id,
+        reason: error
+      )
+    }
+    
+    return outputs
+  }
+  
+  private func loadTemplate(name: String) throws -> ChainTemplate {
+    // First try to find by name in all templates (built-in + saved)
+    if let template = agentManager.allTemplates.first(where: { $0.name == name }) {
+      return template
+    }
+    
+    // Try case-insensitive match
+    if let template = agentManager.allTemplates.first(where: { $0.name.lowercased() == name.lowercased() }) {
+      return template
+    }
+    
+    // Try to load default template
+    if name == "default" || name.isEmpty {
+      if let defaultTemplate = agentManager.allTemplates.first {
+        return defaultTemplate
+      }
+    }
+    
     throw DistributedError.taskExecutionFailed(
-      taskId: request.id,
-      reason: "Chain execution not yet integrated"
+      taskId: UUID(),
+      reason: "Template not found: \(name). Available templates: \(agentManager.allTemplates.map { $0.name }.joined(separator: ", "))"
     )
   }
 }

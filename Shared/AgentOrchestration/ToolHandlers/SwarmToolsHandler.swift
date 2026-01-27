@@ -15,6 +15,12 @@ import MCPCore
 public final class SwarmToolsHandler: MCPToolHandler {
   public weak var delegate: MCPToolHandlerDelegate?
   
+  /// Chain runner for executing tasks (needed for worker mode)
+  private let chainRunner: AgentChainRunner?
+  
+  /// Agent manager for finding chain templates and creating chains
+  private let agentManager: AgentManager?
+  
   public let supportedTools: Set<String> = [
     "swarm.start",
     "swarm.stop",
@@ -25,7 +31,10 @@ public final class SwarmToolsHandler: MCPToolHandler {
     "swarm.discovered"
   ]
   
-  public init() {}
+  public init(chainRunner: AgentChainRunner? = nil, agentManager: AgentManager? = nil) {
+    self.chainRunner = chainRunner
+    self.agentManager = agentManager
+  }
   
   public func handle(name: String, id: Any?, arguments: [String: Any]) async -> (Int, Data) {
     switch name {
@@ -172,6 +181,17 @@ public final class SwarmToolsHandler: MCPToolHandler {
       coordinator.stop()
     }
     
+    // Configure chain executor for worker/hybrid roles
+    if role == .worker || role == .hybrid {
+      if let chainRunner = chainRunner, let agentManager = agentManager {
+        let executor = DefaultChainExecutor(chainRunner: chainRunner, agentManager: agentManager)
+        coordinator.configure(chainExecutor: executor)
+      } else {
+        // No executor available - log warning but allow start (will return mock results)
+        print("Warning: Starting swarm without chain executor - tasks will return mock results")
+      }
+    }
+    
     do {
       try coordinator.start(role: role, port: port)
       
@@ -180,7 +200,8 @@ public final class SwarmToolsHandler: MCPToolHandler {
         "role": role.rawValue,
         "port": Int(port),
         "deviceName": coordinator.capabilities.deviceName,
-        "deviceId": coordinator.capabilities.deviceId
+        "deviceId": coordinator.capabilities.deviceId,
+        "hasChainExecutor": chainRunner != nil
       ]))
     } catch {
       return internalError(id: id, message: "Failed to start swarm: \(error.localizedDescription)")
