@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		04ASTCLI2F3B000100000001 /* ast-chunker-cli in CopyFiles */ = {isa = PBXBuildFile; fileRef = 04ASTCLI2F3B000100000002 /* ast-chunker-cli */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		03MLXEMB2F2B000100000001 /* MLXEmbedders in Frameworks */ = {isa = PBXBuildFile; productRef = 03MLXEMB2F2B000100000002 /* MLXEmbedders */; };
 		03BPETOK2F2A000100000001 /* SwiftBPETokenizer in Frameworks */ = {isa = PBXBuildFile; productRef = 03BPETOK2F2A000100000002 /* SwiftBPETokenizer */; };
 		040AAB7E26CB385800DE1CBF /* Git in Frameworks */ = {isa = PBXBuildFile; productRef = 040AAB7D26CB385800DE1CBF /* Git */; };
@@ -44,6 +45,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		04ASTCLI2F3B000100000002 /* ast-chunker-cli */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = "ast-chunker-cli"; path = "Tools/Binaries/ast-chunker-cli"; sourceTree = "<group>"; };
 		043A532125998D1E00980BE2 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		04510A5E2A2D20F1001DEF5B /* Git */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Git; path = "Local Packages/Git"; sourceTree = "<group>"; };
 		048086642A2D21A300536A3E /* Brew */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Brew; path = "Local Packages/Brew"; sourceTree = "<group>"; };
@@ -69,6 +71,19 @@
 		0B1E3C9B2FABCDEF00112233 /* DataServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataServiceTests.swift; sourceTree = "<group>"; };
 		D1EDC3CED1C274FD0649E03C /* ValidationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ValidationTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		04ASTCLI2F3B000100000003 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 6;
+			files = (
+				04ASTCLI2F3B000100000001 /* ast-chunker-cli in CopyFiles */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
 		04913BD12F0F4ED7001EF810 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
@@ -196,6 +211,7 @@
 		04A7BD5D258E77D7000E55A8 = {
 			isa = PBXGroup;
 			children = (
+				04ASTCLI2F3B000100000002 /* ast-chunker-cli */,
 				042793A42F0DEAE7002A5499 /* Plans */,
 				042D2CC32891E44100E162D3 /* Packages */,
 				043A532125998D1E00980BE2 /* README.md */,
@@ -296,6 +312,7 @@
 				04A7BD6E258E77D8000E55A8 /* Sources */,
 				04A7BD6F258E77D8000E55A8 /* Frameworks */,
 				04A7BD70258E77D8000E55A8 /* Resources */,
+				04ASTCLI2F3B000100000003 /* CopyFiles */,
 			);
 			buildRules = (
 			);
