@@ -122,10 +122,10 @@ struct LocalRAGDashboardView: View {
               }
             )
             
-            // Indexing progress
-            if let progress = mcpServer.ragIndexProgress {
+            // Indexing progress - only show while in progress, not after complete
+            if let progress = mcpServer.ragIndexProgress, !progress.isComplete {
               Divider()
-              HStack {
+              VStack(alignment: .leading, spacing: 4) {
                 ProgressView(value: progress.progress)
                   .progressViewStyle(.linear)
                 Text(progress.description)

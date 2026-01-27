@@ -64,6 +64,11 @@ enum LocalRAGIndexProgress: Sendable {
     case .complete: return 1.0
     }
   }
+  
+  var isComplete: Bool {
+    if case .complete = self { return true }
+    return false
+  }
 }
 
 /// Callback type for progress updates
