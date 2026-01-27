@@ -282,6 +282,8 @@ public final class SwarmCoordinator {
 
 extension SwarmCoordinator: PeerConnectionDelegate {
   public func connectionManager(_ manager: PeerConnectionManager, didConnect peer: ConnectedPeer) {
+    // Remove any existing entry with the same ID (handles reconnect case)
+    connectedWorkers.removeAll { $0.id == peer.id }
     connectedWorkers.append(peer)
     delegate?.swarmCoordinator(self, didEmit: .workerConnected(peer))
     logger.info("Worker connected: \(peer.name)")
