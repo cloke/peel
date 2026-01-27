@@ -1,0 +1,445 @@
+// DistributedTypes.swift
+// Peel
+//
+// Created by Copilot on 2026-01-27.
+// Shared types for distributed task execution between Peel instances.
+
+import Foundation
+
+// MARK: - Chain Request
+
+/// A request to execute a chain on a remote worker
+public struct ChainRequest: Codable, Sendable, Identifiable {
+  public let id: UUID
+  public let templateName: String
+  public let prompt: String
+  public let workingDirectory: String
+  public let priority: ChainPriority
+  public let requiredCapabilities: RequiredCapabilities?
+  public let createdAt: Date
+  public let timeoutSeconds: Int
+  
+  public init(
+    id: UUID = UUID(),
+    templateName: String,
+    prompt: String,
+    workingDirectory: String,
+    priority: ChainPriority = .normal,
+    requiredCapabilities: RequiredCapabilities? = nil,
+    createdAt: Date = Date(),
+    timeoutSeconds: Int = 300
+  ) {
+    self.id = id
+    self.templateName = templateName
+    self.prompt = prompt
+    self.workingDirectory = workingDirectory
+    self.priority = priority
+    self.requiredCapabilities = requiredCapabilities
+    self.createdAt = createdAt
+    self.timeoutSeconds = timeoutSeconds
+  }
+}
+
+// MARK: - Chain Priority
+
+/// Priority level for chain execution (renamed from TaskPriority to avoid collision)
+public enum ChainPriority: Int, Codable, Sendable, Comparable {
+  case low = 0
+  case normal = 1
+  case high = 2
+  case critical = 3
+  
+  public static func < (lhs: ChainPriority, rhs: ChainPriority) -> Bool {
+    lhs.rawValue < rhs.rawValue
+  }
+}
+
+// MARK: - Required Capabilities
+
+/// Minimum capabilities a worker must have to execute a task
+public struct RequiredCapabilities: Codable, Sendable {
+  public let minGPUCores: Int?
+  public let minMemoryGB: Int?
+  public let requiredRepos: [String]?
+  public let requiresNeuralEngine: Bool
+  
+  public init(
+    minGPUCores: Int? = nil,
+    minMemoryGB: Int? = nil,
+    requiredRepos: [String]? = nil,
+    requiresNeuralEngine: Bool = false
+  ) {
+    self.minGPUCores = minGPUCores
+    self.minMemoryGB = minMemoryGB
+    self.requiredRepos = requiredRepos
+    self.requiresNeuralEngine = requiresNeuralEngine
+  }
+  
+  /// Check if a worker's capabilities meet these requirements
+  public func isSatisfiedBy(_ capabilities: WorkerCapabilities) -> Bool {
+    if let minGPU = minGPUCores, capabilities.gpuCores < minGPU {
+      return false
+    }
+    if let minMem = minMemoryGB, capabilities.memoryGB < minMem {
+      return false
+    }
+    if let repos = requiredRepos {
+      let indexed = Set(capabilities.indexedRepos)
+      if !repos.allSatisfy({ indexed.contains($0) }) {
+        return false
+      }
+    }
+    if requiresNeuralEngine && capabilities.neuralEngineCores == 0 {
+      return false
+    }
+    return true
+  }
+}
+
+// MARK: - Chain Result
+
+/// The result of executing a chain on a worker
+public struct ChainResult: Codable, Sendable {
+  public let requestId: UUID
+  public let status: ChainStatus
+  public let outputs: [ChainOutput]
+  public let duration: TimeInterval
+  public let workerDeviceId: String
+  public let workerDeviceName: String
+  public let completedAt: Date
+  public let errorMessage: String?
+  
+  public init(
+    requestId: UUID,
+    status: ChainStatus,
+    outputs: [ChainOutput] = [],
+    duration: TimeInterval,
+    workerDeviceId: String,
+    workerDeviceName: String,
+    completedAt: Date = Date(),
+    errorMessage: String? = nil
+  ) {
+    self.requestId = requestId
+    self.status = status
+    self.outputs = outputs
+    self.duration = duration
+    self.workerDeviceId = workerDeviceId
+    self.workerDeviceName = workerDeviceName
+    self.completedAt = completedAt
+    self.errorMessage = errorMessage
+  }
+}
+
+// MARK: - Chain Status
+
+public enum ChainStatus: String, Codable, Sendable {
+  case pending
+  case claimed
+  case running
+  case completed
+  case failed
+  case cancelled
+  case timedOut
+}
+
+// MARK: - Chain Output
+
+/// A single output artifact from chain execution
+public struct ChainOutput: Codable, Sendable {
+  public let type: OutputType
+  public let name: String
+  public let content: String?
+  public let filePath: String?
+  public let mimeType: String?
+  
+  public enum OutputType: String, Codable, Sendable {
+    case text
+    case file
+    case diff
+    case log
+  }
+  
+  public init(type: OutputType, name: String, content: String? = nil, filePath: String? = nil, mimeType: String? = nil) {
+    self.type = type
+    self.name = name
+    self.content = content
+    self.filePath = filePath
+    self.mimeType = mimeType
+  }
+}
+
+// MARK: - Worker Capabilities
+
+/// Hardware and software capabilities of a worker node
+public struct WorkerCapabilities: Codable, Sendable, Identifiable {
+  public var id: String { deviceId }
+  
+  public let deviceId: String
+  public let deviceName: String
+  public let platform: Platform
+  
+  // Hardware
+  public let gpuCores: Int
+  public let neuralEngineCores: Int
+  public let memoryGB: Int
+  public let storageAvailableGB: Int
+  
+  // Software
+  public let embeddingModel: String?
+  public let embeddingDimensions: Int?
+  public let indexedRepos: [String]
+  
+  // Network
+  public let lanAddress: String?
+  public let lanPort: UInt16?
+  
+  public enum Platform: String, Codable, Sendable {
+    case macOS
+    case iOS
+    case visionOS
+  }
+  
+  public init(
+    deviceId: String,
+    deviceName: String,
+    platform: Platform,
+    gpuCores: Int,
+    neuralEngineCores: Int,
+    memoryGB: Int,
+    storageAvailableGB: Int,
+    embeddingModel: String? = nil,
+    embeddingDimensions: Int? = nil,
+    indexedRepos: [String] = [],
+    lanAddress: String? = nil,
+    lanPort: UInt16? = nil
+  ) {
+    self.deviceId = deviceId
+    self.deviceName = deviceName
+    self.platform = platform
+    self.gpuCores = gpuCores
+    self.neuralEngineCores = neuralEngineCores
+    self.memoryGB = memoryGB
+    self.storageAvailableGB = storageAvailableGB
+    self.embeddingModel = embeddingModel
+    self.embeddingDimensions = embeddingDimensions
+    self.indexedRepos = indexedRepos
+    self.lanAddress = lanAddress
+    self.lanPort = lanPort
+  }
+  
+  /// Create capabilities from current device
+  public static func current(
+    indexedRepos: [String] = [],
+    embeddingModel: String? = nil,
+    embeddingDimensions: Int? = nil,
+    lanAddress: String? = nil,
+    lanPort: UInt16? = nil
+  ) -> WorkerCapabilities {
+    let processInfo = ProcessInfo.processInfo
+    
+    #if os(macOS)
+    let platform = Platform.macOS
+    #elseif os(iOS)
+    let platform = Platform.iOS
+    #elseif os(visionOS)
+    let platform = Platform.visionOS
+    #else
+    let platform = Platform.macOS
+    #endif
+    
+    // Get device ID (persistent across launches)
+    let deviceId = Self.getDeviceId()
+    
+    return WorkerCapabilities(
+      deviceId: deviceId,
+      deviceName: processInfo.hostName,
+      platform: platform,
+      gpuCores: Self.getGPUCores(),
+      neuralEngineCores: Self.getNeuralEngineCores(),
+      memoryGB: Int(processInfo.physicalMemory / 1_073_741_824), // bytes to GB
+      storageAvailableGB: Self.getAvailableStorageGB(),
+      embeddingModel: embeddingModel,
+      embeddingDimensions: embeddingDimensions,
+      indexedRepos: indexedRepos,
+      lanAddress: lanAddress,
+      lanPort: lanPort
+    )
+  }
+  
+  private static func getDeviceId() -> String {
+    #if os(macOS)
+    // Use hardware UUID on macOS
+    let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPlatformExpertDevice"))
+    defer { IOObjectRelease(service) }
+    
+    if let uuidData = IORegistryEntryCreateCFProperty(service, kIOPlatformUUIDKey as CFString, kCFAllocatorDefault, 0) {
+      return uuidData.takeRetainedValue() as? String ?? UUID().uuidString
+    }
+    return UUID().uuidString
+    #else
+    // Use identifierForVendor on iOS
+    return UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
+    #endif
+  }
+  
+  private static func getGPUCores() -> Int {
+    // This is approximate - Metal doesn't expose exact core count
+    // M1: 7-8, M1 Pro: 14-16, M1 Max: 24-32, M1 Ultra: 48-64
+    // M2: 8-10, M2 Pro: 16-19, M2 Max: 30-38, M2 Ultra: 60-76
+    // For now, return a reasonable default based on memory
+    let memoryGB = ProcessInfo.processInfo.physicalMemory / 1_073_741_824
+    switch memoryGB {
+    case 0..<16: return 8    // Base chips
+    case 16..<32: return 16  // Pro chips
+    case 32..<64: return 32  // Max chips
+    default: return 64       // Ultra chips
+    }
+  }
+  
+  private static func getNeuralEngineCores() -> Int {
+    // All Apple Silicon has 16-core ANE
+    #if arch(arm64)
+    return 16
+    #else
+    return 0
+    #endif
+  }
+  
+  private static func getAvailableStorageGB() -> Int {
+    let fileURL = URL(fileURLWithPath: NSHomeDirectory())
+    do {
+      let values = try fileURL.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+      if let capacity = values.volumeAvailableCapacityForImportantUsage {
+        return Int(capacity / 1_073_741_824)
+      }
+    } catch {
+      // Ignore
+    }
+    return 0
+  }
+}
+
+// MARK: - Worker Status
+
+/// Current status of a worker node
+public struct WorkerStatus: Codable, Sendable {
+  public let deviceId: String
+  public let state: WorkerState
+  public let currentTaskId: UUID?
+  public let lastHeartbeat: Date
+  public let uptimeSeconds: TimeInterval
+  public let tasksCompleted: Int
+  public let tasksFailed: Int
+  
+  public enum WorkerState: String, Codable, Sendable {
+    case idle
+    case busy
+    case offline
+    case error
+  }
+  
+  public init(
+    deviceId: String,
+    state: WorkerState,
+    currentTaskId: UUID? = nil,
+    lastHeartbeat: Date = Date(),
+    uptimeSeconds: TimeInterval = 0,
+    tasksCompleted: Int = 0,
+    tasksFailed: Int = 0
+  ) {
+    self.deviceId = deviceId
+    self.state = state
+    self.currentTaskId = currentTaskId
+    self.lastHeartbeat = lastHeartbeat
+    self.uptimeSeconds = uptimeSeconds
+    self.tasksCompleted = tasksCompleted
+    self.tasksFailed = tasksFailed
+  }
+}
+
+// MARK: - Distributed Errors
+
+/// Errors that can occur during distributed task execution
+public enum DistributedError: Error, Codable, Sendable {
+  case noWorkersAvailable
+  case workerNotFound(deviceId: String)
+  case connectionFailed(deviceId: String, reason: String)
+  case taskClaimFailed(taskId: UUID, reason: String)
+  case taskExecutionFailed(taskId: UUID, reason: String)
+  case taskTimeout(taskId: UUID)
+  case serializationFailed(reason: String)
+  case capabilitiesMismatch(required: String, available: String)
+  case actorSystemNotReady
+  case invalidMessage(reason: String)
+}
+
+extension DistributedError: LocalizedError {
+  public var errorDescription: String? {
+    switch self {
+    case .noWorkersAvailable:
+      return "No workers are currently available"
+    case .workerNotFound(let deviceId):
+      return "Worker not found: \(deviceId)"
+    case .connectionFailed(let deviceId, let reason):
+      return "Connection to \(deviceId) failed: \(reason)"
+    case .taskClaimFailed(let taskId, let reason):
+      return "Failed to claim task \(taskId): \(reason)"
+    case .taskExecutionFailed(let taskId, let reason):
+      return "Task \(taskId) execution failed: \(reason)"
+    case .taskTimeout(let taskId):
+      return "Task \(taskId) timed out"
+    case .serializationFailed(let reason):
+      return "Serialization failed: \(reason)"
+    case .capabilitiesMismatch(let required, let available):
+      return "Capabilities mismatch - required: \(required), available: \(available)"
+    case .actorSystemNotReady:
+      return "Actor system is not ready"
+    case .invalidMessage(let reason):
+      return "Invalid message: \(reason)"
+    }
+  }
+}
+
+// MARK: - Protocol Messages
+
+/// Messages sent between brain and worker over the wire
+public enum PeerMessage: Codable, Sendable {
+  case hello(capabilities: WorkerCapabilities)
+  case helloAck(capabilities: WorkerCapabilities)
+  case heartbeat(status: WorkerStatus)
+  case heartbeatAck
+  case taskRequest(request: ChainRequest)
+  case taskAccepted(taskId: UUID)
+  case taskRejected(taskId: UUID, reason: String)
+  case taskProgress(taskId: UUID, progress: Double, message: String?)
+  case taskResult(result: ChainResult)
+  case taskCancel(taskId: UUID)
+  case goodbye
+  
+  /// Unique identifier for message type (for logging)
+  public var messageType: String {
+    switch self {
+    case .hello: return "hello"
+    case .helloAck: return "helloAck"
+    case .heartbeat: return "heartbeat"
+    case .heartbeatAck: return "heartbeatAck"
+    case .taskRequest: return "taskRequest"
+    case .taskAccepted: return "taskAccepted"
+    case .taskRejected: return "taskRejected"
+    case .taskProgress: return "taskProgress"
+    case .taskResult: return "taskResult"
+    case .taskCancel: return "taskCancel"
+    case .goodbye: return "goodbye"
+    }
+  }
+}
+
+// MARK: - IOKit Import for macOS
+
+#if os(macOS)
+import IOKit
+#endif
+
+#if os(iOS)
+import UIKit
+#endif
