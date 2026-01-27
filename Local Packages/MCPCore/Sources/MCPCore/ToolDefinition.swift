@@ -21,6 +21,7 @@ public enum MCPToolCategory: String, CaseIterable, Codable, Sendable {
   case state
   case rag
   case vm
+  case swarm
 
   public var displayName: String {
     switch self {
@@ -34,6 +35,7 @@ public enum MCPToolCategory: String, CaseIterable, Codable, Sendable {
     case .state: return "State"
     case .rag: return "Local RAG"
     case .vm: return "VM Isolation"
+    case .swarm: return "Distributed Swarm"
     }
   }
 }

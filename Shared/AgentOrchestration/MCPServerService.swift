@@ -386,6 +386,7 @@ public final class MCPServerService {
   private var parallelToolsHandler: ParallelToolsHandler
   private var ragToolsHandler: RAGToolsHandler?
   private var chainToolsHandler: ChainToolsHandler?
+  private var swarmToolsHandler: SwarmToolsHandler
 
   public struct ActiveRunInfo: Identifiable {
     public let id: UUID
@@ -444,6 +445,7 @@ public final class MCPServerService {
     self.parallelToolsHandler = ParallelToolsHandler()
     self.ragToolsHandler = RAGToolsHandler()
     self.chainToolsHandler = ChainToolsHandler()
+    self.swarmToolsHandler = SwarmToolsHandler()
 
     self.agentManager = agentManager
     self.sessionTracker = sessionTracker
@@ -523,6 +525,7 @@ public final class MCPServerService {
     self.parallelToolsHandler.delegate = self
     self.ragToolsHandler?.delegate = self
     self.chainToolsHandler?.delegate = self
+    self.swarmToolsHandler.delegate = self
 
     updateSleepPrevention()
 
@@ -1412,6 +1415,9 @@ public final class MCPServerService {
     }
     if chainToolsHandler?.supportedTools.contains(name) == true {
       return await chainToolsHandler!.handle(name: name, id: id, arguments: arguments)
+    }
+    if swarmToolsHandler.supportedTools.contains(name) {
+      return await swarmToolsHandler.handle(name: name, id: id, arguments: arguments)
     }
 
     // Fall through to inline handlers (to be extracted in future)
@@ -3874,6 +3880,86 @@ public final class MCPServerService {
           "required": ["runId"]
         ],
         category: .parallelWorktrees,
+        isMutating: true
+      ),
+      // MARK: - Swarm Tools
+      ToolDefinition(
+        name: "swarm.start",
+        description: "Start the distributed swarm coordinator. Role can be 'brain' (dispatch work), 'worker' (execute work), or 'hybrid' (both).",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "role": [
+              "type": "string",
+              "enum": ["brain", "worker", "hybrid"],
+              "description": "The role for this Peel instance in the swarm"
+            ],
+            "port": [
+              "type": "integer",
+              "description": "Port to listen on (default: 8766)"
+            ]
+          ],
+          "required": ["role"]
+        ],
+        category: .swarm,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "swarm.stop",
+        description: "Stop the distributed swarm coordinator and disconnect from all peers.",
+        inputSchema: [
+          "type": "object",
+          "properties": [:],
+          "required": []
+        ],
+        category: .swarm,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "swarm.status",
+        description: "Get the current swarm status including role, active state, and statistics.",
+        inputSchema: [
+          "type": "object",
+          "properties": [:],
+          "required": []
+        ],
+        category: .swarm,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "swarm.workers",
+        description: "List all connected workers with their capabilities.",
+        inputSchema: [
+          "type": "object",
+          "properties": [:],
+          "required": []
+        ],
+        category: .swarm,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "swarm.dispatch",
+        description: "Dispatch a task to the swarm for execution by a worker.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "prompt": [
+              "type": "string",
+              "description": "The prompt/task to execute"
+            ],
+            "templateId": [
+              "type": "string",
+              "description": "Optional template ID to use"
+            ],
+            "priority": [
+              "type": "string",
+              "enum": ["low", "normal", "high", "critical"],
+              "description": "Task priority (default: normal)"
+            ]
+          ],
+          "required": ["prompt"]
+        ],
+        category: .swarm,
         isMutating: true
       )
     ]
