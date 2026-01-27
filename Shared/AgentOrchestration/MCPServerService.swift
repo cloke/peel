@@ -29,6 +29,7 @@ public final class MCPServerService {
     static let maxQueuedChains = "mcp.server.maxQueuedChains"
     static let autoCleanupWorkspaces = "mcp.server.autoCleanupWorkspaces"
     static let sleepPreventionEnabled = "mcp.server.sleepPreventionEnabled"
+    static let lanModeEnabled = "mcp.server.lanModeEnabled"
     static let localRagEnabled = "localrag.enabled"
     static let localRagRepoPath = "localrag.repoPath"
     static let localRagQuery = "localrag.query"
@@ -177,6 +178,19 @@ public final class MCPServerService {
     didSet {
       UserDefaults.standard.set(sleepPreventionEnabled, forKey: StorageKey.sleepPreventionEnabled)
       updateSleepPrevention()
+    }
+  }
+
+  /// When enabled, MCP server accepts connections from LAN (not just localhost).
+  /// WARNING: Only enable on trusted networks. No authentication is performed.
+  public var lanModeEnabled: Bool {
+    didSet {
+      UserDefaults.standard.set(lanModeEnabled, forKey: StorageKey.lanModeEnabled)
+      // Restart server if running to apply change
+      if isRunning {
+        stop()
+        start()
+      }
     }
   }
 
@@ -473,6 +487,7 @@ public final class MCPServerService {
     self.maxQueuedChains = UserDefaults.standard.integer(forKey: StorageKey.maxQueuedChains)
     self.autoCleanupWorkspaces = UserDefaults.standard.bool(forKey: StorageKey.autoCleanupWorkspaces)
     self.sleepPreventionEnabled = UserDefaults.standard.bool(forKey: StorageKey.sleepPreventionEnabled)
+    self.lanModeEnabled = UserDefaults.standard.bool(forKey: StorageKey.lanModeEnabled)
     // Default RAG enabled to true if not explicitly set
     if UserDefaults.standard.object(forKey: StorageKey.localRagEnabled) == nil {
       self.localRagEnabled = true
@@ -1184,7 +1199,8 @@ public final class MCPServerService {
   }
 
   private func handleConnection(_ connection: NWConnection) {
-    guard isLocalConnection(connection) else {
+    // In LAN mode, accept all connections; otherwise only localhost
+    guard lanModeEnabled || isLocalConnection(connection) else {
       connection.cancel()
       return
     }
@@ -1472,6 +1488,9 @@ public final class MCPServerService {
 
     case "server.sleep.prevent.status":
       return handleServerSleepPreventionStatus(id: id)
+
+    case "server.lan":
+      return handleServerLanModeSet(id: id, arguments: arguments)
 
     case "server.stop":
       stop()
@@ -2461,11 +2480,25 @@ public final class MCPServerService {
       "port": port,
       "lastError": lastError as Any,
       "sleepPreventionEnabled": sleepPreventionEnabled,
-      "sleepPreventionActive": sleepPreventionAssertionId != nil
+      "sleepPreventionActive": sleepPreventionAssertionId != nil,
+      "lanModeEnabled": lanModeEnabled
     ]
     return (200, JSONRPCResponseBuilder.makeResult(id: id, result: status))
   }
   
+  private func handleServerLanModeSet(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    guard let enabled = arguments["enabled"] as? Bool else {
+      return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Missing enabled flag"))
+    }
+
+    lanModeEnabled = enabled
+    var result: [String: Any] = ["lanModeEnabled": lanModeEnabled]
+    if enabled {
+      result["warning"] = "LAN mode enabled - MCP server accepts connections from any device on the network. Only use on trusted networks."
+    }
+    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: result))
+  }
+
   private func handleServerSleepPreventionSet(id: Any?, arguments: [String: Any]) -> (Int, Data) {
     guard let enabled = arguments["enabled"] as? Bool else {
       return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Missing enabled flag"))
@@ -3618,6 +3651,19 @@ public final class MCPServerService {
         ],
         category: .server,
         isMutating: false
+      ),
+      ToolDefinition(
+        name: "server.lan",
+        description: "Enable or disable LAN mode (accept MCP connections from network, not just localhost). WARNING: Only use on trusted networks - no authentication.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "enabled": ["type": "boolean", "description": "true to enable LAN mode, false to restrict to localhost only"]
+          ],
+          "required": ["enabled"]
+        ],
+        category: .server,
+        isMutating: true
       ),
       ToolDefinition(
         name: "app.quit",
