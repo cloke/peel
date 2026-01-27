@@ -368,11 +368,30 @@ public final class BonjourDiscoveryService: @unchecked Sendable {
   }
   
   private func handlePeerRemoved(_ result: NWBrowser.Result) {
-    if case let .service(name, _, _, _) = result.endpoint {
-      if discoveredPeers.removeValue(forKey: name) != nil {
-        delegate?.discoveryService(self, didLose: name)
-        logger.info("Lost peer: \(name)")
+    // Get deviceId from TXT record if available, otherwise use service name
+    var deviceId: String? = nil
+    
+    if case let .bonjour(txtRecord) = result.metadata {
+      let txtDict = txtRecord.dictionary
+      if let recordedDeviceId = txtDict["deviceId"], !recordedDeviceId.isEmpty {
+        deviceId = recordedDeviceId
       }
+    }
+    
+    // If we don't have deviceId from TXT, try to find by service name
+    if deviceId == nil, case let .service(name, _, _, _) = result.endpoint {
+      // Look for a peer with matching name
+      for (key, peer) in discoveredPeers {
+        if peer.name == name {
+          deviceId = key
+          break
+        }
+      }
+    }
+    
+    if let deviceId = deviceId, discoveredPeers.removeValue(forKey: deviceId) != nil {
+      delegate?.discoveryService(self, didLose: deviceId)
+      logger.info("Lost peer: \(deviceId)")
     }
   }
   
