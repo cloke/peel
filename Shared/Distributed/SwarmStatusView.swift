@@ -99,7 +99,8 @@ public struct SwarmStatusView: View {
   
   private var workersSection: some View {
     VStack(alignment: .leading, spacing: 8) {
-      Text("Connected Workers")
+      // Title adapts based on role
+      Text(sectionTitle)
         .font(.subheadline)
         .foregroundStyle(.secondary)
         .padding(.horizontal)
@@ -107,13 +108,13 @@ public struct SwarmStatusView: View {
       
       if coordinator.connectedWorkers.isEmpty {
         ContentUnavailableView {
-          Label("No Workers", systemImage: "desktopcomputer.trianglebadge.exclamationmark")
+          Label(emptyStateTitle, systemImage: emptyStateIcon)
         } description: {
-          Text("Waiting for workers to connect...")
+          Text(emptyStateDescription)
         }
       } else {
         List(coordinator.connectedWorkers, id: \.id) { worker in
-          WorkerRow(worker: worker)
+          PeerRow(peer: worker, role: coordinator.role)
         }
         .listStyle(.plain)
       }
@@ -128,6 +129,14 @@ public struct SwarmStatusView: View {
           Spacer()
           Text(coordinator.role.rawValue.capitalized)
             .foregroundStyle(.secondary)
+        }
+        if coordinator.role == .worker {
+          HStack {
+            Text("Current Task:")
+            Spacer()
+            Text(coordinator.currentTask?.id.uuidString.prefix(8).description ?? "Idle")
+              .foregroundStyle(.secondary)
+          }
         }
         HStack {
           Text("Tasks Completed:")
@@ -144,6 +153,52 @@ public struct SwarmStatusView: View {
       }
       .font(.caption)
       .padding()
+    }
+  }
+  
+  // MARK: - Role-Aware Labels
+  
+  private var sectionTitle: String {
+    switch coordinator.role {
+    case .brain:
+      return "Connected Workers"
+    case .worker:
+      return "Connected to Brain"
+    case .hybrid:
+      return "Connected Peers"
+    }
+  }
+  
+  private var emptyStateTitle: String {
+    switch coordinator.role {
+    case .brain:
+      return "No Workers"
+    case .worker:
+      return "No Brain Connected"
+    case .hybrid:
+      return "No Peers"
+    }
+  }
+  
+  private var emptyStateIcon: String {
+    switch coordinator.role {
+    case .brain:
+      return "desktopcomputer.trianglebadge.exclamationmark"
+    case .worker:
+      return "brain.head.profile"
+    case .hybrid:
+      return "network"
+    }
+  }
+  
+  private var emptyStateDescription: String {
+    switch coordinator.role {
+    case .brain:
+      return "Waiting for workers to connect..."
+    case .worker:
+      return "Waiting for brain to connect..."
+    case .hybrid:
+      return "Waiting for peers to connect..."
     }
   }
   
@@ -293,21 +348,29 @@ public struct SwarmStatusView: View {
   }
 }
 
-// MARK: - Worker Row
+// MARK: - Peer Row
 
-struct WorkerRow: View {
-  let worker: ConnectedPeer
+struct PeerRow: View {
+  let peer: ConnectedPeer
+  let role: SwarmRole
   
   var body: some View {
     HStack(spacing: 12) {
-      Image(systemName: worker.capabilities.gpuCores > 0 ? "desktopcomputer" : "laptopcomputer")
-        .foregroundStyle(.secondary)
+      Image(systemName: peerIcon)
+        .foregroundStyle(iconColor)
       
       VStack(alignment: .leading, spacing: 2) {
-        Text(worker.name)
-          .font(.body)
+        HStack(spacing: 4) {
+          Text(peer.name)
+            .font(.body)
+          if role == .worker {
+            Text("(Brain)")
+              .font(.caption)
+              .foregroundStyle(.blue)
+          }
+        }
         
-        Text("\(worker.capabilities.gpuCores) GPU • \(worker.capabilities.neuralEngineCores) Neural • \(worker.capabilities.memoryGB)GB")
+        Text("\(peer.capabilities.gpuCores) GPU • \(peer.capabilities.neuralEngineCores) Neural • \(peer.capabilities.memoryGB)GB")
           .font(.caption)
           .foregroundStyle(.secondary)
       }
@@ -319,6 +382,20 @@ struct WorkerRow: View {
         .frame(width: 6, height: 6)
     }
     .padding(.vertical, 4)
+  }
+  
+  private var peerIcon: String {
+    if role == .worker {
+      // We're a worker, so connected peer is the brain
+      return "brain.head.profile"
+    } else {
+      // We're brain/hybrid, so this is a worker
+      return peer.capabilities.gpuCores > 30 ? "desktopcomputer" : "laptopcomputer"
+    }
+  }
+  
+  private var iconColor: Color {
+    role == .worker ? .blue : .secondary
   }
 }
 
