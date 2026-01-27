@@ -321,27 +321,36 @@ public final class BonjourDiscoveryService: @unchecked Sendable {
   }
   
   private func handlePeerAdded(_ result: NWBrowser.Result) {
-    // Parse TXT record
-    let txtDict: [String: String] = [:]
-    if case .bonjour(_) = result.metadata {
-      // NWTXTRecord doesn't have direct iteration, parse manually
-      // For now, we'll get deviceId from service name
-    }
-    
-    // Get device ID from endpoint or generate one
-    let deviceId: String
+    // Get service name from endpoint
     let serviceName: String
-    
     if case let .service(name, _, _, _) = result.endpoint {
       serviceName = name
-      deviceId = name // Use service name as device ID for now
     } else {
       serviceName = "Unknown"
-      deviceId = UUID().uuidString
     }
     
-    // Skip if it's ourselves
+    // Parse TXT record to get deviceId
+    var txtDict: [String: String] = [:]
+    var deviceId: String = serviceName  // fallback to service name
+    
+    if case let .bonjour(txtRecord) = result.metadata {
+      // Parse NWTXTRecord - dictionary is [String: String]
+      txtDict = txtRecord.dictionary
+      // Use deviceId from TXT record if present
+      if let recordedDeviceId = txtDict["deviceId"], !recordedDeviceId.isEmpty {
+        deviceId = recordedDeviceId
+      }
+    }
+    
+    // Skip if it's ourselves (compare by deviceId)
     if let myCapabilities = capabilities, deviceId == myCapabilities.deviceId {
+      logger.debug("Skipping self-discovery: \(serviceName)")
+      return
+    }
+    
+    // Also skip if the service name matches our device name (backup check)
+    if let myCapabilities = capabilities, serviceName == myCapabilities.deviceName {
+      logger.debug("Skipping self-discovery by name: \(serviceName)")
       return
     }
     
@@ -355,7 +364,7 @@ public final class BonjourDiscoveryService: @unchecked Sendable {
     discoveredPeers[deviceId] = peer
     delegate?.discoveryService(self, didDiscover: peer)
     
-    logger.info("Discovered peer: \(serviceName)")
+    logger.info("Discovered peer: \(serviceName) (deviceId: \(deviceId))")
   }
   
   private func handlePeerRemoved(_ result: NWBrowser.Result) {
