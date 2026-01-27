@@ -335,12 +335,27 @@ public struct SwarmStatusView: View {
       
     case .taskReceived(let request):
       log("Task received: \(request.id)")
+      log("  Template: \(request.templateName)")
+      log("  Prompt: \(request.prompt.prefix(100))...")
       
     case .taskStarted(let id):
       log("Task started: \(id)")
       
     case .taskCompleted(let result):
       log("Task completed: \(result.requestId) (\(String(format: "%.2fs", result.duration)))")
+      log("  Status: \(result.status.rawValue)")
+      log("  Worker: \(result.workerDeviceName)")
+      if !result.outputs.isEmpty {
+        log("  Outputs: \(result.outputs.count) items")
+        for output in result.outputs.prefix(3) {
+          let content = output.content ?? "(no content)"
+          let preview = content.prefix(200).replacingOccurrences(of: "\n", with: " ")
+          log("    [\(output.name)] \(preview)...")
+        }
+      }
+      if let error = result.errorMessage {
+        log("  Error: \(error)")
+      }
       
     case .taskFailed(let id, let error):
       log("Task failed: \(id) - \(error.localizedDescription)")
