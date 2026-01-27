@@ -30,6 +30,12 @@ struct CLIOptions {
   var argumentsJSONPath: String?
   var diffOnly: Bool = false
   var outputPath: String?
+  // Polling options
+  var pollInterval: Double = 5.0
+  var pollMaxDuration: Double = 3600.0
+  var pollBackoff: Double = 1.5
+  var pollMaxInterval: Double = 30.0
+  var pollLogPath: String?
 }
 
 enum CLIError: LocalizedError {
@@ -136,6 +142,28 @@ private func parseArguments() throws -> CLIOptions {
       options.toolName = iterator.next()
     case "--arguments-json":
       options.argumentsJSONPath = iterator.next()
+    case "--poll-interval":
+      guard let value = iterator.next(), let interval = Double(value) else {
+        throw CLIError.message("--poll-interval requires a number value")
+      }
+      options.pollInterval = interval
+    case "--poll-max-duration":
+      guard let value = iterator.next(), let duration = Double(value) else {
+        throw CLIError.message("--poll-max-duration requires a number value")
+      }
+      options.pollMaxDuration = duration
+    case "--poll-backoff":
+      guard let value = iterator.next(), let backoff = Double(value) else {
+        throw CLIError.message("--poll-backoff requires a number value")
+      }
+      options.pollBackoff = backoff
+    case "--poll-max-interval":
+      guard let value = iterator.next(), let maxInterval = Double(value) else {
+        throw CLIError.message("--poll-max-interval requires a number value")
+      }
+      options.pollMaxInterval = maxInterval
+    case "--poll-log":
+      options.pollLogPath = iterator.next()
     case "--diff-only":
       options.diffOnly = true
     case "--output", "-o":
@@ -296,6 +324,11 @@ private func run(options: CLIOptions) async throws {
       "name": "workspaces.agent.cleanup.status",
       "arguments": [:]
     ], port: options.port)
+  case "chains-poll":
+    guard let runId = options.runId, !runId.isEmpty else {
+      throw CLIError.message("chains-poll requires --run-id <uuid>")
+    }
+    try await runChainsPoll(options: options, runId: runId)
   case "rag-pattern-check":
     try await runRagPatternCheck(options: options)
   case "rag-audit":
@@ -345,6 +378,7 @@ private func usageText() -> String {
     chains-run-batch --runs-json <path> [--parallel|--sequential]
     chains-run-status --run-id <uuid>
     chains-run-list [--limit <int>] [--chain-id <id>] [--run-id <uuid>] [--include-results] [--include-outputs]
+    chains-poll --run-id <uuid> [--poll-interval <sec>] [--poll-max-duration <sec>] [--poll-backoff <factor>] [--poll-max-interval <sec>] [--poll-log <path>]
     parallel-create --arguments-json <path>
     parallel-start --run-id <uuid>
     parallel-status --run-id <uuid>
@@ -354,8 +388,156 @@ private func usageText() -> String {
     rag-audit --repo-path <path> [--output <path>] [--limit <int>]
     server-stop
     app-quit
+
+  Polling Options (for chains-poll):
+    --poll-interval <sec>      Initial poll interval in seconds (default: 5)
+    --poll-max-duration <sec>  Maximum total polling time in seconds (default: 3600)
+    --poll-backoff <factor>    Backoff multiplier after each poll (default: 1.5)
+    --poll-max-interval <sec>  Maximum poll interval after backoff (default: 30)
+    --poll-log <path>          Path to write status snapshots for debugging
   """
 }
+
+// MARK: - Chains Polling
+
+/// Poll a chain run status with exponential backoff until completion or timeout
+private func runChainsPoll(options: CLIOptions, runId: String) async throws {
+  let client = MCPClient(port: options.port)
+  let startTime = Date()
+  var currentInterval = options.pollInterval
+  var pollCount = 0
+  var lastStatus: String?
+  var inReviewGate = false
+
+  // Open log file if specified
+  var logFileHandle: FileHandle?
+  if let logPath = options.pollLogPath {
+    FileManager.default.createFile(atPath: logPath, contents: nil, attributes: nil)
+    logFileHandle = FileHandle(forWritingAtPath: logPath)
+  }
+  defer { logFileHandle?.closeFile() }
+
+  func log(_ message: String) {
+    let timestamp = ISO8601DateFormatter().string(from: Date())
+    let line = "[\(timestamp)] \(message)\n"
+    if let handle = logFileHandle, let data = line.data(using: .utf8) {
+      handle.write(data)
+    }
+  }
+
+  log("Starting poll for runId: \(runId)")
+  log("Settings: interval=\(options.pollInterval)s, maxDuration=\(options.pollMaxDuration)s, backoff=\(options.pollBackoff)x, maxInterval=\(options.pollMaxInterval)s")
+
+  while true {
+    pollCount += 1
+    let elapsed = Date().timeIntervalSince(startTime)
+
+    // Check timeout
+    if elapsed >= options.pollMaxDuration {
+      log("Max duration exceeded (\(Int(elapsed))s >= \(Int(options.pollMaxDuration))s)")
+      writeError("Polling timed out after \(Int(elapsed)) seconds (\(pollCount) polls)")
+      throw CLIError.message("Polling timed out after \(Int(elapsed)) seconds")
+    }
+
+    // Fetch status
+    let response: [String: Any]
+    do {
+      response = try await client.call(method: "tools/call", params: [
+        "name": "chains.run.status",
+        "arguments": ["runId": runId]
+      ])
+    } catch {
+      log("Poll \(pollCount) failed: \(error.localizedDescription)")
+      writeError("Poll \(pollCount) failed: \(error.localizedDescription)")
+      // Apply backoff and continue
+      currentInterval = min(currentInterval * options.pollBackoff, options.pollMaxInterval)
+      try await Task.sleep(nanoseconds: UInt64(currentInterval * 1_000_000_000))
+      continue
+    }
+
+    // Extract status from response
+    let status = extractChainStatus(from: response)
+    let isComplete = status == "completed" || status == "failed" || status == "cancelled" || status == "stopped"
+    let isReviewGate = extractReviewGate(from: response)
+
+    // Log status change
+    if status != lastStatus {
+      log("Poll \(pollCount): status changed to '\(status ?? "unknown")'")
+      lastStatus = status
+    }
+
+    // Detect review gate entry
+    if isReviewGate && !inReviewGate {
+      inReviewGate = true
+      log("Poll \(pollCount): REVIEW GATE DETECTED")
+      print("⚠️  Review gate reached - chain awaiting approval")
+    }
+
+    // Log snapshot to file
+    if let data = try? JSONSerialization.data(withJSONObject: response, options: [.prettyPrinted]),
+       let text = String(data: data, encoding: .utf8) {
+      log("Status snapshot:\n\(text)")
+    }
+
+    // Check completion
+    if isComplete {
+      log("Poll \(pollCount): Chain completed with status '\(status ?? "unknown")'")
+      print("✅ Chain completed: \(status ?? "unknown")")
+      // Print final result
+      let data = try JSONSerialization.data(withJSONObject: response, options: [.prettyPrinted])
+      if let text = String(data: data, encoding: .utf8) {
+        print(text)
+      }
+      return
+    }
+
+    // Progress indicator
+    let statusStr = status ?? "unknown"
+    let intervalStr = String(format: "%.1f", currentInterval)
+    print("⏳ [\(pollCount)] Status: \(statusStr) | Elapsed: \(Int(elapsed))s | Next poll in \(intervalStr)s")
+
+    // Sleep with backoff
+    try await Task.sleep(nanoseconds: UInt64(currentInterval * 1_000_000_000))
+    currentInterval = min(currentInterval * options.pollBackoff, options.pollMaxInterval)
+  }
+}
+
+/// Extract the chain status string from a chains.run.status response
+private func extractChainStatus(from response: [String: Any]) -> String? {
+  // Response structure: { result: { result: { status: "..." } } } or { result: { status: "..." } }
+  if let result = response["result"] as? [String: Any] {
+    if let inner = result["result"] as? [String: Any], let status = inner["status"] as? String {
+      return status
+    }
+    if let status = result["status"] as? String {
+      return status
+    }
+  }
+  return nil
+}
+
+/// Check if the chain is in a review gate state
+private func extractReviewGate(from response: [String: Any]) -> Bool {
+  if let result = response["result"] as? [String: Any] {
+    if let inner = result["result"] as? [String: Any] {
+      if let awaitingReview = inner["awaitingReview"] as? Bool, awaitingReview {
+        return true
+      }
+      if let status = inner["status"] as? String, status == "review_gate" {
+        return true
+      }
+    }
+    if let awaitingReview = result["awaitingReview"] as? Bool, awaitingReview {
+      return true
+    }
+    if let status = result["status"] as? String, status == "review_gate" {
+      return true
+    }
+  }
+  return false
+}
+
+// MARK: - RAG Pattern Check
 
 private func runRagPatternCheck(options: CLIOptions) async throws {
   let repoPath = options.repoPath
