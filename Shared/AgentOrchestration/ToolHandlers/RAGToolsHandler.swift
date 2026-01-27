@@ -25,7 +25,7 @@ protocol RAGToolsHandlerDelegate: MCPToolHandlerDelegate {
   func initializeRag(extensionPath: String?) async throws -> RAGToolStatus
   
   /// Index a repository
-  func indexRepository(path: String, progressHandler: (@Sendable (RAGToolIndexProgress) -> Void)?) async throws -> RAGToolIndexReport
+  func indexRepository(path: String, forceReindex: Bool, progressHandler: (@Sendable (RAGToolIndexProgress) -> Void)?) async throws -> RAGToolIndexReport
   
   /// List indexed repositories
   func listRagRepos() async throws -> [RAGToolRepoInfo]
@@ -241,9 +241,11 @@ final class RAGToolsHandler: MCPToolHandler {
       return missingParamError(id: id, param: "repoPath")
     }
     
+    let forceReindex = optionalBool("forceReindex", from: arguments, default: false)
+    
     do {
       // Delegate handles all state tracking
-      let report = try await delegate.indexRepository(path: repoPath, progressHandler: nil)
+      let report = try await delegate.indexRepository(path: repoPath, forceReindex: forceReindex, progressHandler: nil)
       
       await delegate.refreshRagSummary()
       

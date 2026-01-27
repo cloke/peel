@@ -1476,11 +1476,11 @@ actor LocalRAGStore {
 
   /// Index a repository without progress reporting
   func indexRepository(path: String) async throws -> LocalRAGIndexReport {
-    try await indexRepository(path: path, progress: nil)
+    try await indexRepository(path: path, forceReindex: false, progress: nil)
   }
   
   /// Index a repository with progress reporting callback
-  func indexRepository(path: String, progress: LocalRAGProgressCallback?) async throws -> LocalRAGIndexReport {
+  func indexRepository(path: String, forceReindex: Bool = false, progress: LocalRAGProgressCallback?) async throws -> LocalRAGIndexReport {
     let startTime = Date()
     _ = try initialize()
     logMemory("index start")
@@ -1539,12 +1539,14 @@ actor LocalRAGStore {
       let fileId = stableId(for: "\(repoId):\(relativePath)")
       let fileHash = stableId(for: file.text)
 
-      // Incremental indexing: skip unchanged files
-      let existingHash = try fetchFileHashByPath(repoId: repoId, path: relativePath)
-      if let existingHash, existingHash == fileHash {
-        skippedUnchanged += 1
-        bytesScanned += file.byteCount
-        continue
+      // Incremental indexing: skip unchanged files (unless forceReindex is true)
+      if !forceReindex {
+        let existingHash = try fetchFileHashByPath(repoId: repoId, path: relativePath)
+        if let existingHash, existingHash == fileHash {
+          skippedUnchanged += 1
+          bytesScanned += file.byteCount
+          continue
+        }
       }
 
       // Use safe chunking with health tracking
