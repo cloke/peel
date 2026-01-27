@@ -69,6 +69,11 @@ public final class SwarmCoordinator {
   /// Tasks failed since start
   public private(set) var tasksFailed = 0
   
+  /// Discovered peers (for debugging - from Bonjour discovery)
+  public var discoveredPeers: [DiscoveredPeer] {
+    Array(discoveryService?.discoveredPeers.values ?? [:].values)
+  }
+  
   // MARK: - Private State
   
   /// Connection manager

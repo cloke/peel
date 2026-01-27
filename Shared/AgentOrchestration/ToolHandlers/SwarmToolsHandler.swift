@@ -23,7 +23,9 @@ public final class SwarmToolsHandler: MCPToolHandler {
     "swarm.stop",
     "swarm.status",
     "swarm.workers",
-    "swarm.dispatch"
+    "swarm.dispatch",
+    "swarm.connect",
+    "swarm.discovered"
   ]
   
   public init() {}
@@ -40,6 +42,10 @@ public final class SwarmToolsHandler: MCPToolHandler {
       return handleWorkers(id: id)
     case "swarm.dispatch":
       return await handleDispatch(id: id, arguments: arguments)
+    case "swarm.connect":
+      return await handleConnect(id: id, arguments: arguments)
+    case "swarm.discovered":
+      return handleDiscovered(id: id)
     default:
       return (404, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.methodNotFound, message: "Unknown tool"))
     }
@@ -116,6 +122,33 @@ public final class SwarmToolsHandler: MCPToolHandler {
             ]
           ],
           "required": ["prompt"]
+        ]
+      ],
+      [
+        "name": "swarm.connect",
+        "description": "Manually connect to a peer at a specific address. Use for debugging or when auto-discovery fails.",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "address": [
+              "type": "string",
+              "description": "IP address or hostname of the peer"
+            ],
+            "port": [
+              "type": "integer",
+              "description": "Port number (default: 8766)"
+            ]
+          ],
+          "required": ["address"]
+        ]
+      ],
+      [
+        "name": "swarm.discovered",
+        "description": "List peers discovered via Bonjour (not yet connected).",
+        "inputSchema": [
+          "type": "object",
+          "properties": [:],
+          "required": []
         ]
       ]
     ]
@@ -294,6 +327,56 @@ public final class SwarmToolsHandler: MCPToolHandler {
       "success": true,
       "taskId": request.id.uuidString,
       "message": "Task dispatched"
+    ]))
+  }
+  
+  // MARK: - swarm.connect
+  
+  private func handleConnect(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let coordinator = coordinator else {
+      return internalError(id: id, message: "Swarm not running. Call swarm.start first.")
+    }
+    
+    guard case .success(let address) = requireString("address", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "address")
+    }
+    
+    let port = UInt16(arguments["port"] as? Int ?? 8766)
+    
+    do {
+      try await coordinator.connectToWorker(address: address, port: port)
+      return (200, makeResult(id: id, result: [
+        "success": true,
+        "message": "Connection initiated to \(address):\(port)"
+      ]))
+    } catch {
+      return internalError(id: id, message: "Failed to connect: \(error.localizedDescription)")
+    }
+  }
+  
+  // MARK: - swarm.discovered
+  
+  private func handleDiscovered(id: Any?) -> (Int, Data) {
+    guard let coordinator = coordinator else {
+      return (200, makeResult(id: id, result: [
+        "discovered": [],
+        "count": 0
+      ]))
+    }
+    
+    let discovered = coordinator.discoveredPeers.map { peer in
+      [
+        "id": peer.id,
+        "name": peer.name,
+        "isResolved": peer.isResolved,
+        "resolvedAddress": peer.resolvedAddress as Any,
+        "resolvedPort": peer.resolvedPort.map { Int($0) } as Any
+      ] as [String: Any]
+    }
+    
+    return (200, makeResult(id: id, result: [
+      "discovered": discovered,
+      "count": discovered.count
     ]))
   }
 }
