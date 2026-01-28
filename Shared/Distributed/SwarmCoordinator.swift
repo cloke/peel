@@ -544,6 +544,20 @@ public final class SwarmCoordinator {
         )
         
         outputs = try await executor.execute(request: modifiedRequest)
+        
+        // Commit and push any changes made by the agent
+        if useWorktreeIsolation, let branchName = createdBranchName {
+          let commitMessage = "[\(branchName)] Swarm task: \(request.prompt.prefix(50))"
+          let didCommit = try await worktreeManager.commitAndPushChanges(
+            taskId: request.id,
+            commitMessage: commitMessage
+          )
+          if didCommit {
+            logger.info("Committed and pushed changes for task \(request.id) on branch \(branchName)")
+          } else {
+            logger.info("No changes to commit for task \(request.id)")
+          }
+        }
       } else {
         // Mock execution
         logger.warning("No chain executor, returning mock result")
