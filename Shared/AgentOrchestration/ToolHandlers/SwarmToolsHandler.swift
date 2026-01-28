@@ -30,7 +30,8 @@ public final class SwarmToolsHandler: MCPToolHandler {
     "swarm.connect",
     "swarm.discovered",
     "swarm.tasks",
-    "swarm.update-workers"
+    "swarm.update-workers",
+    "swarm.direct-command"
   ]
   
   public init(chainRunner: AgentChainRunner? = nil, agentManager: AgentManager? = nil) {
@@ -58,6 +59,8 @@ public final class SwarmToolsHandler: MCPToolHandler {
       return handleTasks(id: id, arguments: arguments)
     case "swarm.update-workers":
       return await handleUpdateWorkers(id: id, arguments: arguments)
+    case "swarm.direct-command":
+      return await handleDirectCommand(id: id, arguments: arguments)
     default:
       return (404, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.methodNotFound, message: "Unknown tool"))
     }
@@ -554,5 +557,52 @@ public final class SwarmToolsHandler: MCPToolHandler {
       "workersUpdated": dispatched.filter { ($0["status"] as? String) == "dispatched" }.count,
       "workers": dispatched
     ]))
+  }
+  
+  // MARK: - swarm.direct-command (for testing)
+  
+  private func handleDirectCommand(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard coordinator.isActive else {
+      return internalError(id: id, message: "Swarm is not active")
+    }
+    
+    guard coordinator.role == .brain || coordinator.role == .hybrid else {
+      return internalError(id: id, message: "Only brain can send direct commands")
+    }
+    
+    guard let command = arguments["command"] as? String else {
+      return internalError(id: id, message: "Missing 'command' argument")
+    }
+    
+    let args = arguments["args"] as? [String] ?? []
+    let workingDirectory = arguments["workingDirectory"] as? String
+    let workerId = arguments["workerId"] as? String
+    
+    // If no specific worker, send to first available
+    let targetWorker: ConnectedPeer
+    if let workerId = workerId {
+      guard let worker = coordinator.connectedWorkers.first(where: { $0.id == workerId }) else {
+        return internalError(id: id, message: "Worker not found: \(workerId)")
+      }
+      targetWorker = worker
+    } else {
+      guard let worker = coordinator.connectedWorkers.first else {
+        return internalError(id: id, message: "No workers connected")
+      }
+      targetWorker = worker
+    }
+    
+    do {
+      try await coordinator.sendDirectCommand(command, args: args, workingDirectory: workingDirectory, to: targetWorker.id)
+      return (200, makeResult(id: id, result: [
+        "success": true,
+        "message": "Direct command sent to \(targetWorker.name)",
+        "workerId": targetWorker.id,
+        "command": command,
+        "args": args
+      ]))
+    } catch {
+      return internalError(id: id, message: "Failed to send command: \(error.localizedDescription)")
+    }
   }
 }

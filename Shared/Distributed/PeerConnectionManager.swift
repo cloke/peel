@@ -80,6 +80,7 @@ private actor PeerConnectionActor {
   
   func send(_ message: PeerMessage) async throws {
     let data = try JSONEncoder().encode(message)
+    print("📡 PeerConnection.send: \(data.count) bytes to \(peerId ?? "unknown")")
     // Frame the message with length prefix (4 bytes, big endian)
     var length = UInt32(data.count).bigEndian
     var framedData = Data(bytes: &length, count: 4)
@@ -88,8 +89,10 @@ private actor PeerConnectionActor {
     try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
       connection.send(content: framedData, completion: .contentProcessed { error in
         if let error = error {
+          print("📡 PeerConnection.send FAILED: \(error)")
           continuation.resume(throwing: error)
         } else {
+          print("📡 PeerConnection.send completed successfully")
           continuation.resume()
         }
       })
@@ -419,11 +422,13 @@ public final class PeerConnectionManager: @unchecked Sendable {
     while isRunning {
       do {
         let message = try await conn.receiveMessage()
+        print("📬 receiveLoop: Got message from \(peerId)")
         await MainActor.run {
           handleMessage(message, from: peerId)
         }
       } catch {
         logger.error("Receive error from \(peerId): \(error)")
+        print("❌ receiveLoop error from \(peerId): \(error)")
         await MainActor.run {
           connections.removeValue(forKey: peerId)
           if connectedPeers.removeValue(forKey: peerId) != nil {
@@ -436,6 +441,7 @@ public final class PeerConnectionManager: @unchecked Sendable {
   }
   
   private func handleMessage(_ message: PeerMessage, from peerId: String) {
+    print("📬 handleMessage: \(message) from \(peerId)")
     switch message {
     case .taskResult(let result):
       logger.info("Received result for task \(result.requestId)")
