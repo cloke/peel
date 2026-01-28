@@ -982,13 +982,14 @@ public final class MCPServerService {
     matchAll: Bool = true
   ) async throws -> [LocalRAGSearchResult] {
     let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    let results: [LocalRAGSearchResult]
-    switch mode {
-    case .vector:
-      results = try await localRagStore.searchVector(query: trimmedQuery, repoPath: repoPath, limit: limit)
-    case .text:
-      results = try await localRagStore.search(query: trimmedQuery, repoPath: repoPath, limit: limit, matchAll: matchAll)
-    }
+    let results = try await runRagSearch(
+      query: trimmedQuery,
+      mode: mode,
+      repoPath: repoPath,
+      limit: limit,
+      matchAll: matchAll,
+      recordHints: true
+    )
     ragUsage.searches += 1
     ragUsage.totalResults += results.count
     if results.isEmpty {
@@ -1028,6 +1029,36 @@ public final class MCPServerService {
 
   func refreshRagQueryHints() async {
     await refreshRagQueryHints(query: nil, repoPath: nil, mode: nil, resultCount: nil)
+  }
+
+  private func runRagSearch(
+    query: String,
+    mode: RAGSearchMode,
+    repoPath: String?,
+    limit: Int,
+    matchAll: Bool,
+    recordHints: Bool
+  ) async throws -> [LocalRAGSearchResult] {
+    let results: [LocalRAGSearchResult]
+    switch mode {
+    case .vector:
+      results = try await localRagStore.searchVector(query: query, repoPath: repoPath, limit: limit)
+    case .text:
+      results = try await localRagStore.search(query: query, repoPath: repoPath, limit: limit, matchAll: matchAll)
+    }
+    if recordHints, !results.isEmpty {
+      do {
+        try await localRagStore.recordQueryHint(
+          query: query,
+          repoPath: repoPath,
+          mode: mode.rawValue,
+          resultCount: results.count
+        )
+      } catch {
+        await telemetryProvider.warning("RAG query hint insert failed", metadata: ["error": error.localizedDescription])
+      }
+    }
+    return results
   }
 
   private func refreshRagQueryHints(query: String?, repoPath: String?, mode: RAGSearchMode?, resultCount: Int?) async {
@@ -1511,27 +1542,27 @@ public final class MCPServerService {
     let arguments = params["arguments"] as? [String: Any] ?? [:]
 
     // Delegate to extracted tool handlers first
-    if uiToolsHandler.supportedTools.contains(name) {
-      return await uiToolsHandler.handle(name: name, id: id, arguments: arguments)
+    if uiToolsHandler.supportedTools.contains(resolvedName) {
+      return await uiToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
     }
-    if vmToolsHandler.supportedTools.contains(name) {
-      return await vmToolsHandler.handle(name: name, id: id, arguments: arguments)
+    if vmToolsHandler.supportedTools.contains(resolvedName) {
+      return await vmToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
     }
-    if parallelToolsHandler.supportedTools.contains(name) {
-      return await parallelToolsHandler.handle(name: name, id: id, arguments: arguments)
+    if parallelToolsHandler.supportedTools.contains(resolvedName) {
+      return await parallelToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
     }
-    if ragToolsHandler?.supportedTools.contains(name) == true {
-      return await ragToolsHandler!.handle(name: name, id: id, arguments: arguments)
+    if ragToolsHandler?.supportedTools.contains(resolvedName) == true {
+      return await ragToolsHandler!.handle(name: resolvedName, id: id, arguments: arguments)
     }
-    if chainToolsHandler?.supportedTools.contains(name) == true {
-      return await chainToolsHandler!.handle(name: name, id: id, arguments: arguments)
+    if chainToolsHandler?.supportedTools.contains(resolvedName) == true {
+      return await chainToolsHandler!.handle(name: resolvedName, id: id, arguments: arguments)
     }
-    if swarmToolsHandler.supportedTools.contains(name) {
-      return await swarmToolsHandler.handle(name: name, id: id, arguments: arguments)
+    if swarmToolsHandler.supportedTools.contains(resolvedName) {
+      return await swarmToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
     }
 
     // Fall through to inline handlers (to be extracted in future)
-    switch name {
+    switch resolvedName {
     // UI tools are now handled by UIToolsHandler above
 
     case "state.get":
@@ -4241,7 +4272,14 @@ public final class MCPServerService {
       return name
     }
     let match = toolDefinitions.first { sanitizedToolName($0.name) == name }
-    return match?.name
+    if let match {
+      return match.name
+    }
+    let dotted = name.replacingOccurrences(of: "_", with: ".")
+    if toolDefinition(named: dotted) != nil {
+      return dotted
+    }
+    return nil
   }
 
   private func scheduleAppQuit() {
@@ -4455,24 +4493,15 @@ extension MCPServerService: RAGToolsHandlerDelegate {
   // MARK: - LocalRAGStore Access
   
   func searchRagForTool(query: String, mode: RAGSearchMode, repoPath: String?, limit: Int, matchAll: Bool) async throws -> [RAGToolSearchResult] {
-    let results: [LocalRAGSearchResult]
-    if mode == .vector {
-      results = try await localRagStore.searchVector(query: query, repoPath: repoPath, limit: limit)
-    } else {
-      results = try await localRagStore.search(query: query, repoPath: repoPath, limit: limit, matchAll: matchAll)
-    }
-    if !results.isEmpty {
-      do {
-        try await localRagStore.recordQueryHint(
-          query: query,
-          repoPath: repoPath,
-          mode: mode.rawValue,
-          resultCount: results.count
-        )
-      } catch {
-        await telemetryProvider.warning("RAG query hint insert failed", metadata: ["error": error.localizedDescription])
-      }
-    }
+    let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    let results = try await runRagSearch(
+      query: trimmedQuery,
+      mode: mode,
+      repoPath: repoPath,
+      limit: limit,
+      matchAll: matchAll,
+      recordHints: true
+    )
     return results.map { result in
       RAGToolSearchResult(
         filePath: result.filePath,
