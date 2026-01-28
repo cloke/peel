@@ -272,12 +272,14 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
   
   /// Get the git commit hash embedded at build time
   private static func getGitCommitHash() -> String? {
-    // Try to get commit hash from Info.plist (set at build time)
-    if let hash = Bundle.main.object(forInfoDictionaryKey: "GitCommitHash") as? String, !hash.isEmpty {
-      return hash
+    // Prefer repo hash for runtime accuracy, then fall back to Info.plist
+    if let repoHash = getGitCommitFromRepo(), !repoHash.isEmpty {
+      return repoHash
     }
-    // Fallback: try to read from git in the repo
-    return getGitCommitFromRepo()
+    if let plistHash = Bundle.main.object(forInfoDictionaryKey: "GitCommitHash") as? String, !plistHash.isEmpty {
+      return plistHash
+    }
+    return nil
   }
   
   /// Try to get git commit hash from the repository
