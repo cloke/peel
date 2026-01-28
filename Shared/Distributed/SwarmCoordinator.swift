@@ -72,6 +72,12 @@ public final class SwarmCoordinator {
   /// Tasks failed since start
   public private(set) var tasksFailed = 0
   
+  /// Completed task results (most recent first, capped at 50)
+  public private(set) var completedResults: [ChainResult] = []
+  
+  /// Maximum number of results to keep
+  private let maxStoredResults = 50
+  
   /// Discovered peers (for debugging - from Bonjour discovery)
   public var discoveredPeers: [DiscoveredPeer] {
     Array(discoveryService?.discoveredPeers.values ?? [:].values)
@@ -324,11 +330,16 @@ extension SwarmCoordinator: PeerConnectionDelegate {
       if let continuation = pendingTasks.removeValue(forKey: result.requestId) {
         continuation.resume(returning: result)
       }
-      // Update counters
+      // Update counters and store result
       if result.status == .completed {
         tasksCompleted += 1
       } else {
         tasksFailed += 1
+      }
+      // Store result (most recent first, capped)
+      completedResults.insert(result, at: 0)
+      if completedResults.count > maxStoredResults {
+        completedResults.removeLast()
       }
       delegate?.swarmCoordinator(self, didEmit: .taskCompleted(result))
       
