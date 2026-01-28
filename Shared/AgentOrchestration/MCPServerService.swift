@@ -550,7 +550,10 @@ public final class MCPServerService {
 
     // If running in worker mode, inject the chain executor into the already-running SwarmCoordinator
     // This enables workers to actually execute chains instead of returning mock results
-    if WorkerMode.shared.shouldRunInWorkerMode || SwarmCoordinator.shared.role == .worker || SwarmCoordinator.shared.role == .hybrid {
+    let isWorkerMode = WorkerMode.shared.shouldRunInWorkerMode
+    let swarmRole = SwarmCoordinator.shared.role
+    print("🔍 MCPServerService init: isWorkerMode=\(isWorkerMode), swarmRole=\(swarmRole)")
+    if isWorkerMode || swarmRole == .worker || swarmRole == .hybrid {
       let executor = DefaultChainExecutor(chainRunner: chainRunner, agentManager: agentManager)
       SwarmCoordinator.shared.configure(chainExecutor: executor)
       print("✅ SwarmCoordinator configured with chain executor for worker mode")
