@@ -285,8 +285,41 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
     // Find repo path from bundle location
     let bundlePath = Bundle.main.bundlePath
     let components = bundlePath.components(separatedBy: "/")
-    guard let buildIndex = components.firstIndex(of: "build") else { return nil }
-    let repoPath = components.prefix(buildIndex).joined(separator: "/")
+    
+    // Try multiple strategies to find the repo root
+    var repoPath: String? = nil
+    
+    // Strategy 1: Look for "build" folder (standard Xcode project structure)
+    if let buildIndex = components.firstIndex(of: "build") {
+      repoPath = components.prefix(buildIndex).joined(separator: "/")
+    }
+    
+    // Strategy 2: Look for DerivedData and walk up to find .git
+    if repoPath == nil, let derivedIndex = components.firstIndex(of: "DerivedData") {
+      // DerivedData is typically in ~/Library/Developer/Xcode/DerivedData
+      // Try common code locations: ~/code/<reponame>
+      if let userIndex = components.firstIndex(of: "Users"), userIndex + 1 < components.count {
+        let username = components[userIndex + 1]
+        let homeDir = "/Users/\(username)"
+        // Check common code locations
+        for codeDir in ["code", "Code", "Developer", "Projects", "dev"] {
+          let potentialPath = "\(homeDir)/\(codeDir)"
+          if FileManager.default.fileExists(atPath: potentialPath) {
+            // Look for Peel/KitchenSink repo
+            for repoName in ["KitchenSink", "kitchen-sink", "Peel", "peel"] {
+              let testPath = "\(potentialPath)/\(repoName)"
+              if FileManager.default.fileExists(atPath: "\(testPath)/.git") {
+                repoPath = testPath
+                break
+              }
+            }
+          }
+          if repoPath != nil { break }
+        }
+      }
+    }
+    
+    guard let repoPath = repoPath else { return nil }
     
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
