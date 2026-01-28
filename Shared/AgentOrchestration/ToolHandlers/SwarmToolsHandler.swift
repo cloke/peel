@@ -333,6 +333,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
       "tasksFailed": coordinator.tasksFailed,
       "currentTask": coordinator.currentTask?.id.uuidString as Any,
       "gitCommitHash": coordinator.capabilities.gitCommitHash as Any,
+      "worktreeDebug": coordinator.getWorktreeDebugInfo(),
       "capabilities": [
         "deviceName": coordinator.capabilities.deviceName,
         "deviceId": coordinator.capabilities.deviceId,
