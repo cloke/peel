@@ -445,6 +445,7 @@ public final class PeerConnectionManager: @unchecked Sendable {
     case .heartbeat(let status):
       // Update peer status
       logger.debug("Heartbeat from \(peerId): \(status.state.rawValue)")
+      delegate?.connectionManager(self, didReceive: message, from: peerId)
       
     default:
       // Forward to delegate
