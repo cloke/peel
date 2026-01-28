@@ -542,10 +542,9 @@ public final class SwarmToolsHandler: MCPToolHandler {
     
     for worker in workers {
       do {
-        // Worker will auto-detect repo path from its bundle location
-        // Pass script name relative to repo - worker figures out the absolute path
+        // Run self-update script - worker will detect its own repo working dir
         try await coordinator.sendDirectCommand(
-          "Tools/self-update.sh",
+          "./Tools/self-update.sh",
           args: [],
           workingDirectory: nil,  // Worker will auto-detect
           to: worker.id
