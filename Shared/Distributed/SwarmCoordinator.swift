@@ -78,6 +78,16 @@ public final class SwarmCoordinator {
   /// Maximum number of results to keep
   private let maxStoredResults = 50
   
+  /// Pending direct command continuations (for awaiting results)
+  private var pendingDirectCommands: [UUID: CheckedContinuation<DirectCommandResult, Never>] = [:]
+  
+  /// Result from a direct command execution
+  public struct DirectCommandResult: Sendable {
+    public let exitCode: Int32
+    public let output: String
+    public let error: String?
+  }
+  
   /// Discovered peers (for debugging - from Bonjour discovery)
   public var discoveredPeers: [DiscoveredPeer] {
     Array(discoveryService?.discoveredPeers.values ?? [:].values)
@@ -246,6 +256,59 @@ public final class SwarmCoordinator {
     print("📤 Message created: \(message)")
     try await connectionManager?.send(message, to: workerId)
     print("📤 Message sent successfully")
+  }
+  
+  /// Send a direct shell command and wait for result (with timeout)
+  /// - Parameters:
+  ///   - command: The executable path
+  ///   - args: Arguments to pass
+  ///   - workingDirectory: Optional working directory
+  ///   - workerId: Target worker ID
+  ///   - timeout: Maximum time to wait for result (default 30s)
+  /// - Returns: The command result with exit code, stdout, and stderr
+  public func sendDirectCommandAndWait(
+    _ command: String,
+    args: [String] = [],
+    workingDirectory: String? = nil,
+    to workerId: String,
+    timeout: Duration = .seconds(30)
+  ) async throws -> DirectCommandResult {
+    guard role == .brain || role == .hybrid else {
+      throw DistributedError.actorSystemNotReady
+    }
+    
+    guard connectedWorkers.contains(where: { $0.id == workerId }) else {
+      throw DistributedError.noWorkersAvailable
+    }
+    
+    let id = UUID()
+    logger.info("Sending direct command (waiting): \(command) to \(workerId)")
+    
+    // Set up continuation to receive result
+    let result: DirectCommandResult = await withCheckedContinuation { continuation in
+      pendingDirectCommands[id] = continuation
+      
+      Task {
+        let message = PeerMessage.directCommand(id: id, command: command, args: args, workingDirectory: workingDirectory)
+        do {
+          try await connectionManager?.send(message, to: workerId)
+        } catch {
+          // If send fails, resume with error result
+          pendingDirectCommands.removeValue(forKey: id)
+          continuation.resume(returning: DirectCommandResult(exitCode: -1, output: "", error: error.localizedDescription))
+        }
+      }
+      
+      // Set up timeout
+      Task {
+        try? await Task.sleep(for: timeout)
+        if let cont = pendingDirectCommands.removeValue(forKey: id) {
+          cont.resume(returning: DirectCommandResult(exitCode: -1, output: "", error: "Timeout waiting for command result"))
+        }
+      }
+    }
+    
+    return result
   }
   
   /// Select the best worker for a request
@@ -488,6 +551,10 @@ extension SwarmCoordinator: PeerConnectionDelegate {
       }
       if !output.isEmpty {
         logger.debug("Direct command output: \(output.prefix(500))")
+      }
+      // Resume any pending continuation waiting for this result
+      if let continuation = pendingDirectCommands.removeValue(forKey: id) {
+        continuation.resume(returning: DirectCommandResult(exitCode: exitCode, output: output, error: error))
       }
       
     default:
