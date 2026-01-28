@@ -123,6 +123,70 @@ public final class SwarmWorktreeManager {
     return worktreePath
   }
   
+  /// Commit and push any changes in the worktree
+  /// - Parameters:
+  ///   - taskId: The task ID
+  ///   - commitMessage: Message for the commit
+  /// - Returns: True if changes were committed and pushed, false if no changes
+  public func commitAndPushChanges(
+    taskId: UUID,
+    commitMessage: String
+  ) async throws -> Bool {
+    guard let info = activeWorktrees[taskId] else {
+      logger.warning("No worktree found for task \(taskId)")
+      return false
+    }
+    
+    let worktreePath = info.worktreePath
+    let branchName = info.branchName
+    
+    // Check if there are any changes to commit
+    let statusResult = try await runGitCommand(
+      args: ["status", "--porcelain"],
+      in: worktreePath
+    )
+    
+    if statusResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      logger.info("No changes to commit in worktree for task \(taskId)")
+      return false
+    }
+    
+    logger.info("Committing changes in worktree for task \(taskId)")
+    
+    // Stage all changes
+    let addResult = try await runGitCommand(
+      args: ["add", "."],
+      in: worktreePath
+    )
+    if addResult.exitCode != 0 {
+      logger.error("git add failed: \(addResult.stderr)")
+      throw WorktreeError.gitCommandFailed("git add failed: \(addResult.stderr)")
+    }
+    
+    // Commit
+    let commitResult = try await runGitCommand(
+      args: ["commit", "-m", commitMessage],
+      in: worktreePath
+    )
+    if commitResult.exitCode != 0 {
+      logger.error("git commit failed: \(commitResult.stderr)")
+      throw WorktreeError.gitCommandFailed("git commit failed: \(commitResult.stderr)")
+    }
+    
+    // Push to origin
+    let pushResult = try await runGitCommand(
+      args: ["push", "-u", "origin", branchName],
+      in: worktreePath
+    )
+    if pushResult.exitCode != 0 {
+      logger.error("git push failed: \(pushResult.stderr)")
+      throw WorktreeError.gitCommandFailed("git push failed: \(pushResult.stderr)")
+    }
+    
+    logger.info("Successfully committed and pushed changes for task \(taskId) on branch \(branchName)")
+    return true
+  }
+  
   /// Remove a worktree for a completed/failed task
   /// - Parameters:
   ///   - taskId: The task ID

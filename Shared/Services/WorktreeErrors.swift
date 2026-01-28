@@ -20,6 +20,7 @@ public enum WorktreeError: LocalizedError {
   case branchCreationFailed(String)
   case gitNotAvailable
   case notSupported
+  case gitCommandFailed(String)
   
   public var errorDescription: String? {
     switch self {
@@ -47,6 +48,8 @@ public enum WorktreeError: LocalizedError {
       return "Git is not available"
     case .notSupported:
       return "Workspaces are only supported on macOS"
+    case .gitCommandFailed(let message):
+      return "Git command failed: \(message)"
     }
   }
 }
