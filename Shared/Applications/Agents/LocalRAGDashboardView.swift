@@ -534,6 +534,7 @@ struct LocalRAGDashboardView: View {
         skillRepoPath = repoPath.wrappedValue
       }
       await mcpServer.refreshRagSummary()
+      await mcpServer.refreshRagQueryHints()
     }
     .fileImporter(
       isPresented: $isRepoPickerPresented,

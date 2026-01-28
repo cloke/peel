@@ -38,7 +38,6 @@ public final class MCPServerService {
     static let localRagUseCoreML = "localrag.useCoreML"
     static let ragUsageStats = "localrag.usageStats"
     static let ragSessionEvents = "localrag.sessionEvents"
-    static let ragQueryHints = "localrag.queryHints"
   }
 
   // Tool types from MCPCore
@@ -138,14 +137,14 @@ public final class MCPServerService {
     public var useCount: Int
     public var lastUsedAt: Date
 
-    public init(query: String, repoPath: String?, mode: RAGSearchMode, resultCount: Int) {
+    public init(query: String, repoPath: String?, mode: RAGSearchMode, resultCount: Int, useCount: Int = 1, lastUsedAt: Date = Date()) {
       self.id = UUID()
       self.query = query
       self.repoPath = repoPath
       self.mode = mode
       self.resultCount = resultCount
-      self.useCount = 1
-      self.lastUsedAt = Date()
+      self.useCount = useCount
+      self.lastUsedAt = lastUsedAt
     }
 
     var key: String {
@@ -381,13 +380,6 @@ public final class MCPServerService {
     UserDefaults.standard.set(data, forKey: StorageKey.ragSessionEvents)
   }
 
-  private func saveRagQueryHints() {
-    // Keep only last 25 hints to avoid unbounded growth
-    let hintsToSave = Array(ragQueryHints.prefix(25))
-    guard let data = try? JSONEncoder().encode(hintsToSave) else { return }
-    UserDefaults.standard.set(data, forKey: StorageKey.ragQueryHints)
-  }
-
   /// Clears persisted RAG session data (for starting fresh)
   public func clearRagSessionData() {
     ragUsage = RAGUsageStats()
@@ -395,7 +387,6 @@ public final class MCPServerService {
     ragQueryHints = []
     saveRagUsageStats()
     saveRagSessionEvents()
-    saveRagQueryHints()
   }
 
   private(set) var ragStatus: LocalRAGStore.Status?
@@ -554,11 +545,6 @@ public final class MCPServerService {
     if let data = UserDefaults.standard.data(forKey: StorageKey.ragSessionEvents),
        let events = try? JSONDecoder().decode([RAGSessionEvent].self, from: data) {
       self.ragSessionEvents = Array(events.suffix(50))
-    }
-    // Load persisted RAG query hints
-    if let data = UserDefaults.standard.data(forKey: StorageKey.ragQueryHints),
-       let hints = try? JSONDecoder().decode([RAGQueryHint].self, from: data) {
-      self.ragQueryHints = Array(hints.prefix(25))
     }
     if self.port == 0 {
       self.port = 8765
@@ -1016,7 +1002,7 @@ public final class MCPServerService {
     }
     ragUsage.lastSearchAt = Date()
     if !results.isEmpty {
-      recordRagQueryHint(query: trimmedQuery, repoPath: repoPath, mode: mode, resultCount: results.count)
+      await refreshRagQueryHints(query: trimmedQuery, repoPath: repoPath, mode: mode, resultCount: results.count)
     }
     appendRagEvent(
       kind: .search,
@@ -1031,7 +1017,6 @@ public final class MCPServerService {
     lastRagSearchResults = results
     lastRagError = nil
     saveRagUsageStats()
-    saveRagQueryHints()
     return results
   }
 
@@ -1041,33 +1026,28 @@ public final class MCPServerService {
     return Array(hints.prefix(limit))
   }
 
-  private func recordRagQueryHint(query: String, repoPath: String?, mode: RAGSearchMode, resultCount: Int) {
-    let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty else { return }
-    var updated: [RAGQueryHint] = []
-    updated.reserveCapacity(ragQueryHints.count + 1)
-    var didUpdate = false
-    let key = RAGQueryHint(query: trimmed, repoPath: repoPath, mode: mode, resultCount: resultCount).key
+  func refreshRagQueryHints() async {
+    await refreshRagQueryHints(query: nil, repoPath: nil, mode: nil, resultCount: nil)
+  }
 
-    for var hint in ragQueryHints {
-      if hint.key == key {
-        hint.resultCount = resultCount
-        hint.useCount += 1
-        hint.lastUsedAt = Date()
-        updated.append(hint)
-        didUpdate = true
-      } else {
-        updated.append(hint)
+  private func refreshRagQueryHints(query: String?, repoPath: String?, mode: RAGSearchMode?, resultCount: Int?) async {
+    do {
+      if let query, let mode, let resultCount {
+        try await localRagStore.recordQueryHint(query: query, repoPath: repoPath, mode: mode.rawValue, resultCount: resultCount)
       }
-    }
-
-    if !didUpdate {
-      updated.append(RAGQueryHint(query: trimmed, repoPath: repoPath, mode: mode, resultCount: resultCount))
-    }
-
-    ragQueryHints = updated.sorted { $0.lastUsedAt > $1.lastUsedAt }
-    if ragQueryHints.count > 25 {
-      ragQueryHints = Array(ragQueryHints.prefix(25))
+      let hints = try await localRagStore.fetchQueryHints(limit: 25)
+      ragQueryHints = hints.map {
+        RAGQueryHint(
+          query: $0.query,
+          repoPath: $0.repoPath,
+          mode: RAGSearchMode(rawValue: $0.mode) ?? .text,
+          resultCount: $0.resultCount,
+          useCount: $0.useCount,
+          lastUsedAt: $0.lastUsedAt
+        )
+      }
+    } catch {
+      await telemetryProvider.warning("RAG query hints refresh failed", metadata: ["error": error.localizedDescription])
     }
   }
 
@@ -4619,8 +4599,9 @@ extension MCPServerService: RAGToolsHandlerDelegate {
     )
   }
 
-  func getRagQueryHints(limit: Int?) -> [RAGQueryHint] {
-    ragQueryHints(limit: limit)
+  func getRagQueryHints(limit: Int?) async -> [RAGQueryHint] {
+    await refreshRagQueryHints()
+    return ragQueryHints(limit: limit)
   }
   
   func logWarning(_ message: String, metadata: [String: String]) async {

@@ -74,7 +74,7 @@ protocol RAGToolsHandlerDelegate: MCPToolHandlerDelegate {
   func ragStats() async throws -> RAGToolStats?
 
   /// Get recent successful query hints
-  func getRagQueryHints(limit: Int?) -> [MCPServerService.RAGQueryHint]
+  func getRagQueryHints(limit: Int?) async -> [MCPServerService.RAGQueryHint]
   
   /// Log a telemetry warning
   func logWarning(_ message: String, metadata: [String: String]) async
@@ -243,7 +243,7 @@ final class RAGToolsHandler: MCPToolHandler {
 
   private func handleQueryHints(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
     let limit = optionalInt("limit", from: arguments, default: 10) ?? 10
-    let hints = delegate.getRagQueryHints(limit: limit)
+    let hints = await delegate.getRagQueryHints(limit: limit)
     let formatter = ISO8601DateFormatter()
     let payload: [[String: Any]] = hints.map { hint in
       var item: [String: Any] = [
