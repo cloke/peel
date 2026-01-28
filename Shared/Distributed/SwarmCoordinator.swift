@@ -486,6 +486,26 @@ public final class SwarmCoordinator {
   private func handleTaskRequest(_ request: ChainRequest, from peerId: String) async {
     guard role == .worker || role == .hybrid else { return }
     
+    // Resolve the working directory for this machine using RepoRegistry
+    let resolvedWorkingDirectory = RepoRegistry.shared.resolveWorkingDirectory(for: request)
+    logger.info("Task \(request.id): resolved workingDirectory '\(request.workingDirectory)' -> '\(resolvedWorkingDirectory)'")
+    
+    // Check if the resolved path exists
+    guard FileManager.default.fileExists(atPath: resolvedWorkingDirectory) else {
+      logger.error("Task \(request.id): Working directory not found: \(resolvedWorkingDirectory)")
+      let result = ChainResult(
+        requestId: request.id,
+        status: .failed,
+        duration: 0,
+        workerDeviceId: capabilities.deviceId,
+        workerDeviceName: capabilities.deviceName,
+        errorMessage: "Working directory not found on worker: \(resolvedWorkingDirectory). Remote URL: \(request.repoRemoteURL ?? "none"). Register this repo with the worker."
+      )
+      try? await connectionManager?.send(.taskResult(result: result), to: peerId)
+      tasksFailed += 1
+      return
+    }
+    
     // Check with delegate if we should execute
     if let delegate = delegate, !delegate.swarmCoordinator(self, shouldExecute: request) {
       // Reject task
@@ -526,7 +546,7 @@ public final class SwarmCoordinator {
           
           worktreePath = try await worktreeManager.createWorktree(
             taskId: request.id,
-            repoPath: request.workingDirectory,
+            repoPath: resolvedWorkingDirectory,
             branchName: branchName,
             baseBranch: "origin/main"
           )
@@ -542,6 +562,7 @@ public final class SwarmCoordinator {
           templateName: request.templateName,
           prompt: request.prompt,
           workingDirectory: effectiveWorkingDirectory,
+          repoRemoteURL: request.repoRemoteURL,
           priority: request.priority,
           requiredCapabilities: request.requiredCapabilities,
           createdAt: request.createdAt,

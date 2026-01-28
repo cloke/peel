@@ -34,7 +34,9 @@ public final class SwarmToolsHandler: MCPToolHandler {
     "swarm.direct-command",
     "swarm.branch-queue",
     "swarm.pr-queue",
-    "swarm.create-pr"
+    "swarm.create-pr",
+    "swarm.register-repo",
+    "swarm.repos"
   ]
   
   public init(chainRunner: AgentChainRunner? = nil, agentManager: AgentManager? = nil) {
@@ -70,6 +72,10 @@ public final class SwarmToolsHandler: MCPToolHandler {
       return handlePRQueue(id: id, arguments: arguments)
     case "swarm.create-pr":
       return await handleCreatePR(id: id, arguments: arguments)
+    case "swarm.register-repo":
+      return await handleRegisterRepo(id: id, arguments: arguments)
+    case "swarm.repos":
+      return handleRepos(id: id)
     default:
       return (404, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.methodNotFound, message: "Unknown tool"))
     }
@@ -242,6 +248,33 @@ public final class SwarmToolsHandler: MCPToolHandler {
           ],
           "required": ["taskId"]
         ]
+      ],
+      [
+        "name": "swarm.register-repo",
+        "description": "Register a local repository path with the swarm. This maps the repo's git remote URL to the local path, enabling distributed tasks to work across machines with different folder structures.",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "path": [
+              "type": "string",
+              "description": "The local path to the git repository"
+            ],
+            "remoteURL": [
+              "type": "string",
+              "description": "Optional: Explicit remote URL (if not provided, will be auto-detected from the git repo)"
+            ]
+          ],
+          "required": ["path"]
+        ]
+      ],
+      [
+        "name": "swarm.repos",
+        "description": "List all registered repositories and their remote URL mappings.",
+        "inputSchema": [
+          "type": "object",
+          "properties": [:],
+          "required": []
+        ]
       ]
     ]
   }
@@ -261,6 +294,13 @@ public final class SwarmToolsHandler: MCPToolHandler {
     }
     
     let port = UInt16(arguments["port"] as? Int ?? 8766)
+    
+    // Auto-register repos from arguments (if provided)
+    if let repos = arguments["repos"] as? [String] {
+      for repoPath in repos {
+        await RepoRegistry.shared.registerRepo(at: repoPath)
+      }
+    }
     
     // Stop existing coordinator if running
     if coordinator.isActive {
@@ -287,7 +327,8 @@ public final class SwarmToolsHandler: MCPToolHandler {
         "port": Int(port),
         "deviceName": coordinator.capabilities.deviceName,
         "deviceId": coordinator.capabilities.deviceId,
-        "hasChainExecutor": chainRunner != nil
+        "hasChainExecutor": chainRunner != nil,
+        "registeredRepos": RepoRegistry.shared.registeredRepos.count
       ]))
     } catch {
       return internalError(id: id, message: "Failed to start swarm: \(error.localizedDescription)")
@@ -424,11 +465,15 @@ public final class SwarmToolsHandler: MCPToolHandler {
     let priorityInt = optionalInt("priority", from: arguments, default: 1) ?? 1
     let priority = ChainPriority(rawValue: priorityInt) ?? .normal
     
-    // Create request
+    // Get the remote URL for this repo (stable identifier across machines)
+    let repoRemoteURL = await RepoRegistry.shared.registerRepo(at: workingDirectory)
+    
+    // Create request with both path (for local) and remote URL (for remote workers)
     let request = ChainRequest(
       templateName: templateName,
       prompt: prompt,
       workingDirectory: workingDirectory,
+      repoRemoteURL: repoRemoteURL,
       priority: priority
     )
     
@@ -784,6 +829,54 @@ public final class SwarmToolsHandler: MCPToolHandler {
       "message": "PR creation queued",
       "taskId": taskIdStr,
       "branchName": completed.branchName
+    ]))
+  }
+  
+  // MARK: - swarm.register-repo
+  
+  private func handleRegisterRepo(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard case .success(let path) = requireString("path", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "path")
+    }
+    
+    // Check if path exists
+    guard FileManager.default.fileExists(atPath: path) else {
+      return internalError(id: id, message: "Path does not exist: \(path)")
+    }
+    
+    // If explicit remoteURL provided, use it
+    if let remoteURL = optionalString("remoteURL", from: arguments) {
+      RepoRegistry.shared.registerRepo(remoteURL: remoteURL, localPath: path)
+      return (200, makeResult(id: id, result: [
+        "success": true,
+        "remoteURL": RepoRegistry.shared.normalizeRemoteURL(remoteURL),
+        "localPath": path
+      ]))
+    }
+    
+    // Auto-detect remote URL
+    if let remoteURL = await RepoRegistry.shared.registerRepo(at: path) {
+      return (200, makeResult(id: id, result: [
+        "success": true,
+        "remoteURL": remoteURL,
+        "localPath": path
+      ]))
+    } else {
+      return internalError(id: id, message: "Could not detect git remote URL for \(path). Is this a git repository?")
+    }
+  }
+  
+  // MARK: - swarm.repos
+  
+  private func handleRepos(id: Any?) -> (Int, Data) {
+    let repos = RepoRegistry.shared.registeredRepos
+    
+    return (200, makeResult(id: id, result: [
+      "count": repos.count,
+      "repos": repos.map { [
+        "remoteURL": $0.remoteURL,
+        "localPath": $0.localPath
+      ] }
     ]))
   }
 }
