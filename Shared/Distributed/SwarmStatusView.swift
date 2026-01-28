@@ -9,6 +9,7 @@ import os.log
 
 /// View showing distributed swarm status
 public struct SwarmStatusView: View {
+  @Environment(MCPServerService.self) private var mcpServer
   @State private var coordinator = SwarmCoordinator.shared
   @State private var delegateWrapper = SwarmStatusCoordinatorWrapper()
   @State private var errorMessage: String?
@@ -311,6 +312,11 @@ public struct SwarmStatusView: View {
   private func startSwarm(role: SwarmRole) {
     errorMessage = nil
     coordinator.delegate = delegateWrapper
+    
+    // Configure chain executor for worker/hybrid roles so they can actually execute chains
+    if role == .worker || role == .hybrid {
+      mcpServer.configureSwarmExecutor()
+    }
     
     do {
       try coordinator.start(role: role)
