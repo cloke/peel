@@ -91,9 +91,10 @@ public protocol MCPToolHandlerDelegate: AnyObject {
 
 /// Extension providing convenient response builders using MCPCore
 extension MCPToolHandler {
-  /// Create a successful RPC result response
+  /// Create a successful MCP-compliant tool result response
+  /// Uses the content array format required by the MCP specification
   public func makeResult(id: Any?, result: [String: Any]) -> Data {
-    JSONRPCResponseBuilder.makeResult(id: id, result: result)
+    JSONRPCResponseBuilder.makeToolResult(id: id, result: result)
   }
 
   /// Create an error RPC response

@@ -287,7 +287,7 @@ final class ParallelToolsHandler {
       "taskCount": "\(tasks.count)"
     ])
 
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: encodeParallelRun(run)))
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: encodeParallelRun(run)))
   }
 
   private func handleStart(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
@@ -322,7 +322,7 @@ final class ParallelToolsHandler {
       }
     }
 
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: [
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
       "runId": runId.uuidString,
       "status": "starting"
     ]))
@@ -339,7 +339,7 @@ final class ParallelToolsHandler {
 
     // First try in-memory
     if let run = runner.getRun(id: runId) {
-      return (200, JSONRPCResponseBuilder.makeResult(id: id, result: encodeParallelRun(run, includeDetails: true)))
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: encodeParallelRun(run, includeDetails: true)))
     }
 
     // Fall back to SwiftData snapshot
@@ -369,7 +369,7 @@ final class ParallelToolsHandler {
         "executions": snapshot.executionsJSON,
         "source": "snapshot"
       ]
-      return (200, JSONRPCResponseBuilder.makeResult(id: id, result: snapshotPayload))
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: snapshotPayload))
     }
 
     return (404, JSONRPCResponseBuilder.makeError(
@@ -437,7 +437,7 @@ final class ParallelToolsHandler {
       }
     }
 
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: [
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
       "runs": runPayloads,
       "snapshots": snapshots,
       "totalCount": runPayloads.count
@@ -480,7 +480,7 @@ final class ParallelToolsHandler {
 
     if approveAll {
       runner.approveAllPending(in: run)
-      return (200, JSONRPCResponseBuilder.makeResult(id: id, result: [
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
         "runId": runId.uuidString,
         "approved": "all",
         "pendingReviewCount": run.pendingReviewCount
@@ -500,7 +500,7 @@ final class ParallelToolsHandler {
     }
 
     runner.approveExecution(execution, in: run)
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: [
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
       "runId": runId.uuidString,
       "executionId": executionId.uuidString,
       "status": execution.status.displayName
@@ -535,7 +535,7 @@ final class ParallelToolsHandler {
     let reason = optionalString("reason", from: arguments, default: "Rejected via MCP") ?? "Rejected via MCP"
     runner.rejectExecution(execution, in: run, reason: reason)
 
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: [
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
       "runId": runId.uuidString,
       "executionId": executionId.uuidString,
       "status": execution.status.displayName
@@ -559,7 +559,7 @@ final class ParallelToolsHandler {
 
     if reviewAll {
       runner.markAllReviewed(in: run)
-      return (200, JSONRPCResponseBuilder.makeResult(id: id, result: [
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
         "runId": runId.uuidString,
         "reviewed": "all",
         "pendingReviewCount": run.pendingReviewCount
@@ -579,7 +579,7 @@ final class ParallelToolsHandler {
     }
 
     runner.markReviewed(execution, in: run)
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: [
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
       "runId": runId.uuidString,
       "executionId": executionId.uuidString,
       "status": execution.status.displayName
@@ -604,7 +604,7 @@ final class ParallelToolsHandler {
     do {
       if mergeAll {
         try await runner.mergeAllApproved(in: run)
-        return (200, JSONRPCResponseBuilder.makeResult(id: id, result: [
+        return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
           "runId": runId.uuidString,
           "merged": "all",
           "mergedCount": run.mergedCount
@@ -624,7 +624,7 @@ final class ParallelToolsHandler {
       }
 
       try await runner.mergeExecution(execution, in: run)
-      return (200, JSONRPCResponseBuilder.makeResult(id: id, result: [
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
         "runId": runId.uuidString,
         "executionId": executionId.uuidString,
         "status": execution.status.displayName
@@ -654,7 +654,7 @@ final class ParallelToolsHandler {
 
     await runner.pauseRun(run)
     await delegate?.parallelTelemetryProvider.info("Parallel run paused", metadata: ["runId": runId.uuidString])
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: ["runId": runId.uuidString, "paused": true]))
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["runId": runId.uuidString, "paused": true]))
   }
 
   private func handleResume(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
@@ -672,7 +672,7 @@ final class ParallelToolsHandler {
 
     await runner.resumeRun(run)
     await delegate?.parallelTelemetryProvider.info("Parallel run resumed", metadata: ["runId": runId.uuidString])
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: ["runId": runId.uuidString, "paused": false]))
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["runId": runId.uuidString, "paused": false]))
   }
 
   private func handleInstruct(id: Any?, arguments: [String: Any]) -> (Int, Data) {
@@ -695,7 +695,7 @@ final class ParallelToolsHandler {
     let executionId = optionalUUID("executionId", from: arguments)
 
     runner.addGuidance(guidance, to: run, executionId: executionId)
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: [
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
       "runId": runId.uuidString,
       "executionId": executionId?.uuidString as Any,
       "guidanceCount": run.operatorGuidance.count
@@ -719,7 +719,7 @@ final class ParallelToolsHandler {
 
     await delegate?.parallelTelemetryProvider.info("Parallel run cancelled", metadata: ["runId": runId.uuidString])
 
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: [
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
       "runId": runId.uuidString,
       "status": "cancelled"
     ]))

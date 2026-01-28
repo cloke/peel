@@ -287,6 +287,53 @@ public enum JSONRPCResponseBuilder {
     return (try? JSONSerialization.data(withJSONObject: payload, options: [])) ?? Data()
   }
 
+  /// Create a MCP-compliant tool result response as Data
+  /// The MCP specification requires tool results to be wrapped in a `content` array
+  /// with objects containing `type` and `text` fields.
+  /// - Parameters:
+  ///   - id: The request ID (can be Any? for compatibility)
+  ///   - result: The result value (will be JSON-serialized into content text)
+  ///   - isError: Whether this represents an error result (default: false)
+  /// - Returns: JSON-encoded response data in MCP content format
+  public static func makeToolResult(id: Any?, result: Any, isError: Bool = false) -> Data {
+    // Serialize the result to JSON string for the text field
+    let textContent: String
+    if let stringResult = result as? String {
+      textContent = stringResult
+    } else if let data = try? JSONSerialization.data(withJSONObject: result, options: [.sortedKeys]),
+              let jsonString = String(data: data, encoding: .utf8) {
+      textContent = jsonString
+    } else {
+      textContent = String(describing: result)
+    }
+
+    var contentItem: [String: Any] = [
+      "type": "text",
+      "text": textContent
+    ]
+
+    let mcpResult: [String: Any] = [
+      "content": [contentItem],
+      "isError": isError
+    ]
+
+    let payload: [String: Any] = [
+      "jsonrpc": "2.0",
+      "id": id as Any,
+      "result": mcpResult
+    ]
+    return (try? JSONSerialization.data(withJSONObject: payload, options: [])) ?? Data()
+  }
+
+  /// Create a MCP-compliant tool error result
+  /// - Parameters:
+  ///   - id: The request ID
+  ///   - message: The error message
+  /// - Returns: JSON-encoded response data in MCP content format with isError=true
+  public static func makeToolError(id: Any?, message: String) -> Data {
+    makeToolResult(id: id, result: ["error": message], isError: true)
+  }
+
   /// Create an error JSON-RPC response as Data
   /// - Parameters:
   ///   - id: The request ID (can be Any? for compatibility)
