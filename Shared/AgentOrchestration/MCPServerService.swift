@@ -4174,6 +4174,35 @@ public final class MCPServerService {
         ],
         category: .swarm,
         isMutating: true
+      ),
+      ToolDefinition(
+        name: "swarm.direct-command",
+        description: "Execute a shell command directly on a worker without LLM involvement. Useful for debugging and administrative tasks.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "command": [
+              "type": "string",
+              "description": "The command to execute"
+            ],
+            "args": [
+              "type": "array",
+              "items": ["type": "string"],
+              "description": "Command arguments"
+            ],
+            "workingDirectory": [
+              "type": "string",
+              "description": "Working directory for the command (optional)"
+            ],
+            "workerId": [
+              "type": "string",
+              "description": "Specific worker ID to target (optional, defaults to first available)"
+            ]
+          ],
+          "required": ["command"]
+        ],
+        category: .swarm,
+        isMutating: true
       )
     ]
   }
