@@ -9,6 +9,7 @@ import SwiftUI
 
 struct ParallelWorktreeDashboardView: View {
   var mcpServer: MCPServerService
+  @AppStorage("current-tool") private var currentTool: CurrentTool = .agents
   
   private var runner: ParallelWorktreeRunner? {
     mcpServer.parallelWorktreeRunner
@@ -59,6 +60,10 @@ struct ParallelWorktreeDashboardView: View {
       Text("Runs")
         .font(.headline)
       Spacer()
+      Button("Workspaces") {
+        currentTool = .workspaces
+      }
+      .buttonStyle(.bordered)
       Button {
         showingNewRunSheet = true
       } label: {
@@ -78,7 +83,7 @@ struct ParallelWorktreeDashboardView: View {
         ContentUnavailableView {
           Label("No Parallel Runs", systemImage: "arrow.triangle.branch")
         } description: {
-          Text("Create a parallel run to execute multiple tasks in isolated worktrees.")
+          Text("Create a parallel run to execute tasks in isolated worktrees (repo checkouts).")
         }
 
         Button("New Parallel Run") {

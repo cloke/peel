@@ -301,7 +301,7 @@ struct WorkspacesDashboardView: View {
         ContentUnavailableView {
           Label("No Worktrees for \(repo.name)", systemImage: "arrow.triangle.branch")
         } description: {
-          Text("Create a worktree for this repository to work in isolation. Workspaces group repos; worktrees are checkouts.")
+          Text("Create a worktree (a repo checkout) to work in isolation. Workspaces group repositories.")
         } actions: {
           Button("Create Worktree") {
             selectedRepo = repo
@@ -350,7 +350,7 @@ struct WorkspacesDashboardView: View {
     ContentUnavailableView {
       Label("No Active Worktrees", systemImage: "arrow.triangle.branch")
     } description: {
-      Text("Create a worktree to work on a feature in isolation. Workspaces group repos; worktrees are checkouts.")
+      Text("Create a worktree (a repo checkout) to work on a feature in isolation. Workspaces group repositories.")
     } actions: {
       if let repo = service.repos.first {
         Button("Create Worktree") {
@@ -370,7 +370,7 @@ struct WorkspacesDashboardView: View {
     ContentUnavailableView {
       Label("No Workspace Selected", systemImage: "folder.badge.gearshape")
     } description: {
-      Text("Add a workspace to manage repositories and worktrees")
+      Text("Add a workspace to manage repositories. Worktrees are checkouts for isolated work.")
     } actions: {
       Button("Add Workspace") {
         showingAddWorkspace = true
