@@ -371,19 +371,25 @@ public final class SwarmCoordinator {
       }
     }
     
-    // Resolve the command path - if relative, make it absolute using working dir
-    let absoluteCommand: String
-    if command.hasPrefix("/") {
-      absoluteCommand = command
-    } else {
-      absoluteCommand = "\(effectiveWorkingDir)/\(command)"
-    }
-    
-    logger.info("Resolved command path: \(absoluteCommand) in \(effectiveWorkingDir)")
+    // Resolve the command - use /bin/sh -c for shell commands to get PATH resolution
+    // If command is absolute path, use it directly; otherwise use shell
+    let useShell = !command.hasPrefix("/")
     
     let process = Process()
-    process.executableURL = URL(fileURLWithPath: absoluteCommand)
-    process.arguments = args
+    if useShell {
+      // Use shell to resolve command via PATH
+      process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+      let fullCommand = ([command] + args).map { arg in
+        // Escape arguments for shell
+        arg.contains(" ") || arg.contains("\"") ? "'\(arg.replacingOccurrences(of: "'", with: "'\\''"))'" : arg
+      }.joined(separator: " ")
+      process.arguments = ["-c", fullCommand]
+      logger.info("Executing via shell: /bin/zsh -c '\(fullCommand)' in \(effectiveWorkingDir)")
+    } else {
+      process.executableURL = URL(fileURLWithPath: command)
+      process.arguments = args
+      logger.info("Executing direct: \(command) \(args.joined(separator: " ")) in \(effectiveWorkingDir)")
+    }
     process.currentDirectoryURL = URL(fileURLWithPath: effectiveWorkingDir)
     
     let stdout = Pipe()
