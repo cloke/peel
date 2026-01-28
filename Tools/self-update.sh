@@ -4,7 +4,9 @@
 
 set -e
 
-REPO_DIR="${1:-/Users/cloken/code/KitchenSink}"
+# Detect repo directory from script location
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SCHEME="Peel (macOS)"
 
 cd "$REPO_DIR"
@@ -30,13 +32,12 @@ AFTER=$(git rev-parse HEAD)
 
 if [ "$BEFORE" = "$AFTER" ]; then
   echo "✅ Already up to date ($BEFORE)"
-  echo ""
-  echo "Restarting anyway? (y/n)"
-  read -r response
-  if [ "$response" != "y" ]; then
-    echo "Cancelled."
+  # Non-interactive: skip rebuild if no changes unless --force flag
+  if [ "$1" != "--force" ]; then
+    echo "   No changes to build. Use --force to rebuild anyway."
     exit 0
   fi
+  echo "   Forcing rebuild..."
 else
   echo "✅ Updated: $BEFORE → $AFTER"
   git log --oneline -3
