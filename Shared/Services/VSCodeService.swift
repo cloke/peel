@@ -14,6 +14,11 @@ public actor VSCodeService {
   public static let shared = VSCodeService()
   
   private init() {}
+
+  public enum ConfigTarget: Sendable {
+    case user
+    case workspace(path: String)
+  }
   
   /// Find the VS Code executable
   public func findVSCode() -> String? {
@@ -148,11 +153,71 @@ public actor VSCodeService {
     
     try process.run()
   }
+
+  /// Install MCP server configuration into VS Code settings
+  /// - Parameters:
+  ///   - serverName: Name of the MCP server entry
+  ///   - serverURL: URL for the MCP server (e.g. http://127.0.0.1:8765/rpc)
+  ///   - scope: User or workspace settings scope
+  /// - Returns: Path to the settings file written
+  public func installMCPConfig(
+    serverName: String,
+    serverURL: String,
+    scope: ConfigTarget
+  ) throws -> String {
+    let settingsURL = try settingsURL(for: scope)
+    let settingsDir = settingsURL.deletingLastPathComponent()
+    try FileManager.default.createDirectory(at: settingsDir, withIntermediateDirectories: true)
+
+    var settings = try readSettings(from: settingsURL)
+    var mcpServers = settings["mcp.servers"] as? [String: Any] ?? [:]
+    mcpServers[serverName] = [
+      "type": "http",
+      "url": serverURL
+    ]
+    settings["mcp.servers"] = mcpServers
+
+    try writeSettings(settings, to: settingsURL)
+    return settingsURL.path
+  }
+
+  private func settingsURL(for scope: ConfigTarget) throws -> URL {
+    switch scope {
+    case .user:
+      let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
+      return appSupport
+        .appendingPathComponent("Code", isDirectory: true)
+        .appendingPathComponent("User", isDirectory: true)
+        .appendingPathComponent("settings.json")
+    case .workspace(let path):
+      guard FileManager.default.fileExists(atPath: path) else {
+        throw VSCodeError.invalidWorkspacePath(path)
+      }
+      return URL(fileURLWithPath: path)
+        .appendingPathComponent(".vscode", isDirectory: true)
+        .appendingPathComponent("settings.json")
+    }
+  }
+
+  private func readSettings(from url: URL) throws -> [String: Any] {
+    guard FileManager.default.fileExists(atPath: url.path) else { return [:] }
+    let data = try Data(contentsOf: url)
+    guard !data.isEmpty else { return [:] }
+    let json = try JSONSerialization.jsonObject(with: data, options: [])
+    return json as? [String: Any] ?? [:]
+  }
+
+  private func writeSettings(_ settings: [String: Any], to url: URL) throws {
+    let data = try JSONSerialization.data(withJSONObject: settings, options: [.prettyPrinted, .sortedKeys])
+    try data.write(to: url, options: [.atomic])
+  }
 }
 
 public enum VSCodeError: LocalizedError {
   case notInstalled
   case failedToLaunch(String)
+  case invalidWorkspacePath(String)
   
   public var errorDescription: String? {
     switch self {
@@ -160,6 +225,8 @@ public enum VSCodeError: LocalizedError {
       return "VS Code is not installed. Please install it from https://code.visualstudio.com"
     case .failedToLaunch(let reason):
       return "Failed to launch VS Code: \(reason)"
+    case .invalidWorkspacePath(let path):
+      return "Invalid workspace path: \(path)"
     }
   }
 }
