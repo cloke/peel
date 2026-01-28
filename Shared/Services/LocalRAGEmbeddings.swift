@@ -258,193 +258,6 @@ protocol LocalRAGTokenizer: Sendable {
 protocol LocalRAGBatchTokenizer: LocalRAGTokenizer {
   func encodeBatch(_ texts: [String], maxLength: Int) -> [([Int32], [Int32])]
 }
-
-/// Batch tokenizer that calls Python once for all texts.
-/// ~100x faster than spawning Python per-text.
-struct BatchExternalTokenizer: LocalRAGBatchTokenizer {
-  let scriptURL: URL
-  let modelId: String
-  
-  init?(scriptURL: URL, modelId: String) {
-    guard FileManager.default.fileExists(atPath: scriptURL.path) else {
-      return nil
-    }
-    self.scriptURL = scriptURL
-    self.modelId = modelId
-  }
-  
-  func encode(_ text: String, maxLength: Int) -> ([Int32], [Int32]) {
-    // Single text - still use batch for consistency
-    let results = encodeBatch([text], maxLength: maxLength)
-    return results.first ?? fallbackEncoding(text: text, maxLength: maxLength)
-  }
-  
-  func encodeBatch(_ texts: [String], maxLength: Int) -> [([Int32], [Int32])] {
-    guard !texts.isEmpty else { return [] }
-    
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-    process.arguments = [
-      scriptURL.path,
-      "--model-id", modelId,
-      "--max-length", String(maxLength),
-      "--batch"
-    ]
-    
-    let inputPipe = Pipe()
-    let outputPipe = Pipe()
-    let errorPipe = Pipe()
-    process.standardInput = inputPipe
-    process.standardOutput = outputPipe
-    process.standardError = errorPipe
-    
-    do {
-      try process.run()
-      
-      // Write JSON array of texts to stdin
-      let jsonData = try JSONSerialization.data(withJSONObject: texts)
-      inputPipe.fileHandleForWriting.write(jsonData)
-      inputPipe.fileHandleForWriting.closeFile()
-      
-      process.waitUntilExit()
-    } catch {
-      return texts.map { fallbackEncoding(text: $0, maxLength: maxLength) }
-    }
-    
-    guard process.terminationStatus == 0 else {
-      return texts.map { fallbackEncoding(text: $0, maxLength: maxLength) }
-    }
-    
-    let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
-    guard let results = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-      return texts.map { fallbackEncoding(text: $0, maxLength: maxLength) }
-    }
-    
-    return results.enumerated().map { index, dict in
-      guard let idsAny = dict["input_ids"],
-            let maskAny = dict["attention_mask"] else {
-        return fallbackEncoding(text: texts[index], maxLength: maxLength)
-      }
-      let ids = parseIntArray(idsAny, maxLength: maxLength)
-      let mask = parseIntArray(maskAny, maxLength: maxLength)
-      return (ids.map(Int32.init), mask.map(Int32.init))
-    }
-  }
-  
-  private func parseIntArray(_ value: Any, maxLength: Int) -> [Int] {
-    if let array = value as? [Int] {
-      return normalize(array, maxLength: maxLength)
-    }
-    if let array = value as? [NSNumber] {
-      return normalize(array.map { $0.intValue }, maxLength: maxLength)
-    }
-    return Array(repeating: 0, count: maxLength)
-  }
-  
-  private func normalize(_ array: [Int], maxLength: Int) -> [Int] {
-    if array.count == maxLength { return array }
-    if array.count > maxLength { return Array(array.prefix(maxLength)) }
-    return array + Array(repeating: 0, count: maxLength - array.count)
-  }
-  
-  private func fallbackEncoding(text: String, maxLength: Int) -> ([Int32], [Int32]) {
-    let words = text.split { $0.isWhitespace || $0.isNewline }
-    var ids = [Int](repeating: 0, count: maxLength)
-    var mask = [Int](repeating: 0, count: maxLength)
-    let count = min(words.count, maxLength)
-    for index in 0..<count {
-      ids[index] = 1
-      mask[index] = 1
-    }
-    return (ids.map(Int32.init), mask.map(Int32.init))
-  }
-}
-
-/// Legacy per-text tokenizer (kept for fallback)
-struct ExternalTokenizer: LocalRAGTokenizer {
-  let scriptURL: URL
-  let modelId: String
-
-  init?(scriptURL: URL, modelId: String) {
-    guard FileManager.default.isExecutableFile(atPath: scriptURL.path) ||
-            FileManager.default.fileExists(atPath: scriptURL.path) else {
-      return nil
-    }
-    self.scriptURL = scriptURL
-    self.modelId = modelId
-  }
-
-  func encode(_ text: String, maxLength: Int) -> ([Int32], [Int32]) {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-    process.arguments = [
-      scriptURL.path,
-      "--model-id", modelId,
-      "--max-length", String(maxLength),
-      "--text", text
-    ]
-
-    let outputPipe = Pipe()
-    let errorPipe = Pipe()
-    process.standardOutput = outputPipe
-    process.standardError = errorPipe
-
-    do {
-      try process.run()
-      process.waitUntilExit()
-    } catch {
-      return fallbackEncoding(text: text, maxLength: maxLength)
-    }
-
-    guard process.terminationStatus == 0 else {
-      return fallbackEncoding(text: text, maxLength: maxLength)
-    }
-
-    let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
-    guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-          let idsAny = json["input_ids"],
-          let maskAny = json["attention_mask"] else {
-      return fallbackEncoding(text: text, maxLength: maxLength)
-    }
-
-    let ids = parseIntArray(idsAny, maxLength: maxLength)
-    let mask = parseIntArray(maskAny, maxLength: maxLength)
-    return (ids.map(Int32.init), mask.map(Int32.init))
-  }
-
-  private func parseIntArray(_ value: Any, maxLength: Int) -> [Int] {
-    if let array = value as? [Int] {
-      return normalize(array, maxLength: maxLength)
-    }
-    if let array = value as? [NSNumber] {
-      return normalize(array.map { $0.intValue }, maxLength: maxLength)
-    }
-    return Array(repeating: 0, count: maxLength)
-  }
-
-  private func normalize(_ array: [Int], maxLength: Int) -> [Int] {
-    if array.count == maxLength {
-      return array
-    }
-    if array.count > maxLength {
-      return Array(array.prefix(maxLength))
-    }
-    return array + Array(repeating: 0, count: maxLength - array.count)
-  }
-
-  private func fallbackEncoding(text: String, maxLength: Int) -> ([Int32], [Int32]) {
-    let words = text.split { $0.isWhitespace || $0.isNewline }
-    var ids = [Int](repeating: 0, count: maxLength)
-    var mask = [Int](repeating: 0, count: maxLength)
-    let count = min(words.count, maxLength)
-    for index in 0..<count {
-      ids[index] = 1
-      mask[index] = 1
-    }
-    return (ids.map(Int32.init), mask.map(Int32.init))
-  }
-}
-
 struct SimpleVocabTokenizer: LocalRAGTokenizer {
   private let vocab: [String: Int]
   private let unknownId: Int
@@ -537,18 +350,15 @@ struct CoreMLEmbeddingProvider: LocalRAGEmbeddingProvider, @unchecked Sendable {
 
   static func makeDefault(modelFolderName: String) -> CoreMLEmbeddingProvider? {
     let modelDirectories = candidateModelDirectories(modelFolderName: modelFolderName)
-    let helperURL = firstExistingHelper(in: modelDirectories)
     for directory in modelDirectories {
       let modelURL = directory.appendingPathComponent("codebert-base-256.mlmodelc")
       let vocabURL = directory.appendingPathComponent("codebert-base.vocab.json")
       let mergesURL = directory.appendingPathComponent("codebert-base.merges.txt")
       if FileManager.default.fileExists(atPath: modelURL.path) {
-        let fallbackHelper = directory.appendingPathComponent("tokenize_codebert.py")
         return CoreMLEmbeddingProvider(
           modelURL: modelURL,
           vocabURL: vocabURL,
           mergesURL: mergesURL,
-          helperURL: helperURL ?? fallbackHelper,
           maxLength: 256
         )
       }
@@ -580,24 +390,12 @@ struct CoreMLEmbeddingProvider: LocalRAGEmbeddingProvider, @unchecked Sendable {
       }
   }
 
-  private static func firstExistingHelper(in directories: [URL]) -> URL? {
-    for directory in directories {
-      let helperURL = directory.appendingPathComponent("tokenize_codebert.py")
-      if FileManager.default.fileExists(atPath: helperURL.path) {
-        return helperURL
-      }
-    }
-    return nil
-  }
-
-  init?(modelURL: URL, vocabURL: URL, mergesURL: URL, helperURL: URL, maxLength: Int) {
+  init?(modelURL: URL, vocabURL: URL, mergesURL: URL, maxLength: Int) {
     guard FileManager.default.fileExists(atPath: modelURL.path) else { return nil }
     
     // Priority order for tokenizers:
     // 1. Native Swift BPE (fastest - no subprocess at all!)
-    // 2. Batch Python tokenizer (one subprocess for all texts)
-    // 3. Single-call Python tokenizer (slowest - subprocess per text)
-    // 4. Simple vocab fallback (inaccurate but works)
+    // 2. Simple vocab fallback (inaccurate but works)
     
     let tokenizer: LocalRAGTokenizer
     let batchTokenizer: LocalRAGBatchTokenizer?
@@ -608,18 +406,6 @@ struct CoreMLEmbeddingProvider: LocalRAGEmbeddingProvider, @unchecked Sendable {
       batchTokenizer = swiftBPE
       #if DEBUG
       print("[RAG] Using native Swift BPE tokenizer (swift-bpe-tokenizer package)")
-      #endif
-    } else if let batch = BatchExternalTokenizer(scriptURL: helperURL, modelId: "microsoft/codebert-base") {
-      tokenizer = batch
-      batchTokenizer = batch
-      #if DEBUG
-      print("[RAG] Using batch Python tokenizer")
-      #endif
-    } else if let external = ExternalTokenizer(scriptURL: helperURL, modelId: "microsoft/codebert-base") {
-      tokenizer = external
-      batchTokenizer = nil
-      #if DEBUG
-      print("[RAG] Using single-call Python tokenizer (slow)")
       #endif
     } else if let fallback = SimpleVocabTokenizer(vocabURL: vocabURL) {
       tokenizer = fallback
@@ -652,7 +438,7 @@ struct CoreMLEmbeddingProvider: LocalRAGEmbeddingProvider, @unchecked Sendable {
     guard !texts.isEmpty else { return [] }
     guard dimensions > 0 else { throw LocalRAGEmbeddingError.unsupportedModel }
 
-    // Use batch tokenization if available (single Python call for all texts)
+    // Use batch tokenization if available
     let tokenizedTexts: [([Int32], [Int32])]
     if let batchTokenizer {
       tokenizedTexts = batchTokenizer.encodeBatch(texts, maxLength: maxLength)

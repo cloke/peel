@@ -696,13 +696,11 @@ struct LocalRAGDashboardView: View {
   private func coreMLAssetsSummary(_ status: LocalRAGStore.Status) -> String {
     let present = [
       status.coreMLModelPresent ? "model" : nil,
-      status.coreMLVocabPresent ? "vocab" : nil,
-      status.coreMLTokenizerHelperPresent ? "tokenizer" : nil
+      status.coreMLVocabPresent ? "vocab" : nil
     ].compactMap { $0 }
     let missing = [
       status.coreMLModelPresent ? nil : "model",
-      status.coreMLVocabPresent ? nil : "vocab",
-      status.coreMLTokenizerHelperPresent ? nil : "tokenizer"
+      status.coreMLVocabPresent ? nil : "vocab"
     ].compactMap { $0 }
 
     if present.isEmpty && missing.isEmpty {
