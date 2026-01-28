@@ -531,7 +531,7 @@ public final class SwarmCoordinator {
             baseBranch: "origin/main"
           )
           effectiveWorkingDirectory = worktreePath!
-          logger.info("Created worktree for task \(request.id): \(effectiveWorkingDirectory)")
+          logger.info("Created worktree for task \(request.id): path=\(effectiveWorkingDirectory), originalRepo=\(request.workingDirectory)")
         } else {
           effectiveWorkingDirectory = request.workingDirectory
         }
@@ -548,11 +548,14 @@ public final class SwarmCoordinator {
           timeoutSeconds: request.timeoutSeconds
         )
         
+        logger.info("Executing task \(request.id) with workingDirectory: \(modifiedRequest.workingDirectory)")
         outputs = try await executor.execute(request: modifiedRequest)
+        logger.info("Task \(request.id) execution complete, checking for changes in worktree")
         
         // Commit and push any changes made by the agent
         if useWorktreeIsolation, let branchName = createdBranchName {
           let commitMessage = "[\(branchName)] Swarm task: \(request.prompt.prefix(50))"
+          logger.info("Calling commitAndPushChanges for task \(request.id)")
           let didCommit = try await worktreeManager.commitAndPushChanges(
             taskId: request.id,
             commitMessage: commitMessage
