@@ -1,8 +1,8 @@
 ---
 title: Local RAG for Codebase Context
-status: draft
+status: partial
 created: 2026-01-19
-updated: 2026-01-24
+updated: 2026-01-27
 audience: [developers]
 related_issues:
   - https://github.com/cloke/peel/issues/74
@@ -15,6 +15,19 @@ related_docs:
 
 ## Summary
 Create an always-on, local vector index for repository context that powers fast semantic search for agents without uploading code. This introduces an embedded vector DB and a lightweight indexing pipeline with tiered memory (hot/warm/cold), deduplication, and an embedding cache.
+
+## Current Status (Jan 27, 2026)
+
+### Completed
+- Local SQLite-backed `LocalRAGStore` with schema for repos/files/chunks/embeddings
+- Repo scanning + chunking pipeline (line-based and AST where stable)
+- System embeddings via `NLEmbedding`
+- MCP tools (`rag.init`, `rag.index`, `rag.search`, `rag.status`) and basic UI
+
+### Remaining Work
+- Core ML embeddings provider (Issue #74)
+- Faster vector search (sqlite-vec) + hybrid reranking (see `RAG_ARCHITECTURE_V2.md`)
+- Performance benchmarking on large repos
 
 ## Goals
 - Local-only semantic search for repos in Peel workspaces.

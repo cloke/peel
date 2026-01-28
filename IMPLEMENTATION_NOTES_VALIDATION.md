@@ -195,4 +195,4 @@ xcodebuild test -scheme "Peel (macOS)" -only-testing:ValidationTests
 
 - Closes #13 (Add validation pipeline for MCP runs)
 - Related to #16 (MCP Activity Log - validation results will show here)
-- Complements MCP Test Plan (Plans/MCP_TEST_PLAN.md)
+- Complements MCP Test Plan (Docs/guides/MCP_TEST_PLAN.md)
