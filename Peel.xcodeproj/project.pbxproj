@@ -7,20 +7,20 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		04ASTCLI2F3B000100000001 /* ast-chunker-cli in CopyFiles */ = {isa = PBXBuildFile; fileRef = 04ASTCLI2F3B000100000002 /* ast-chunker-cli */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
-		03MLXEMB2F2B000100000001 /* MLXEmbedders in Frameworks */ = {isa = PBXBuildFile; productRef = 03MLXEMB2F2B000100000002 /* MLXEmbedders */; };
 		03BPETOK2F2A000100000001 /* SwiftBPETokenizer in Frameworks */ = {isa = PBXBuildFile; productRef = 03BPETOK2F2A000100000002 /* SwiftBPETokenizer */; };
+		03MLXEMB2F2B000100000001 /* MLXEmbedders in Frameworks */ = {isa = PBXBuildFile; productRef = 03MLXEMB2F2B000100000002 /* MLXEmbedders */; };
 		040AAB7E26CB385800DE1CBF /* Git in Frameworks */ = {isa = PBXBuildFile; productRef = 040AAB7D26CB385800DE1CBF /* Git */; };
 		04510A582A2D200C001DEF5B /* Github in Frameworks */ = {isa = PBXBuildFile; productRef = 04510A572A2D200C001DEF5B /* Github */; };
 		046C6AB02F1BE07D006CDAC7 /* TaskRunner in Frameworks */ = {isa = PBXBuildFile; productRef = 046C6AAF2F1BE07D006CDAC7 /* TaskRunner */; };
 		046D40E426C56BBB003715AF /* OAuthSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 046D40E326C56BBB003715AF /* OAuthSwift */; };
 		046D40E726C56C5B003715AF /* Github in Frameworks */ = {isa = PBXBuildFile; productRef = 046D40E626C56C5B003715AF /* Github */; };
 		048086662A2D21E500536A3E /* Brew in Frameworks */ = {isa = PBXBuildFile; productRef = 048086652A2D21E500536A3E /* Brew */; };
-		04ASTCHK2F2E000100000002 /* ASTChunker in Frameworks */ = {isa = PBXBuildFile; productRef = 04ASTCHK2F2E000100000003 /* ASTChunker */; };
 		048F40F82853ED470007A9A4 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 048F40F72853ED060007A9A4 /* ContentView.swift */; };
 		04A7BD7F258E77D8000E55A8 /* Tests_iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD7E258E77D8000E55A8 /* Tests_iOS.swift */; };
 		04A7BD8A258E77D8000E55A8 /* Tests_macOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */; };
 		04A7BD8F258E77D8000E55A8 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD64258E77D7000E55A8 /* ContentView.swift */; };
+		04ASTCHK2F2E000100000002 /* ASTChunker in Frameworks */ = {isa = PBXBuildFile; productRef = 04ASTCHK2F2E000100000003 /* ASTChunker */; };
+		04ASTCLI2F3B000100000001 /* ast-chunker-cli in CopyFiles */ = {isa = PBXBuildFile; fileRef = 04ASTCLI2F3B000100000002 /* ast-chunker-cli */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		04D09EFD26A85E8100072702 /* OAuthSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 04D09EFC26A85E8100072702 /* OAuthSwift */; };
 		0A11B6D12F1234567890ABCD /* PeelApp_iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A11B6D02F1234567890ABCD /* PeelApp_iOS.swift */; };
 		0B1E3C9C2FABCDEF00112233 /* DataServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B1E3C9B2FABCDEF00112233 /* DataServiceTests.swift */; };
@@ -44,14 +44,23 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		04ASTCLI2F3B000100000003 /* CopyFiles */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 6;
+			files = (
+				04ASTCLI2F3B000100000001 /* ast-chunker-cli in CopyFiles */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
-		04ASTCLI2F3B000100000002 /* ast-chunker-cli */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = "ast-chunker-cli"; path = "Tools/Binaries/ast-chunker-cli"; sourceTree = "<group>"; };
 		043A532125998D1E00980BE2 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		04510A5E2A2D20F1001DEF5B /* Git */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Git; path = "Local Packages/Git"; sourceTree = "<group>"; };
 		048086642A2D21A300536A3E /* Brew */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Brew; path = "Local Packages/Brew"; sourceTree = "<group>"; };
-		04ASTCHK2F2E000100000001 /* ASTChunker */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = ASTChunker; path = "Local Packages/ASTChunker"; sourceTree = "<group>"; };
-		04MCPCOR2F2E000100000001 /* MCPCore */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = MCPCore; path = "Local Packages/MCPCore"; sourceTree = "<group>"; };
-		04PEELUI2F2E000100000001 /* PeelUI */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = PeelUI; path = "Local Packages/PeelUI"; sourceTree = "<group>"; };
 		048F40F72853ED060007A9A4 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		04A7BD64258E77D7000E55A8 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		04A7BD6A258E77D8000E55A8 /* Peel.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Peel.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -65,25 +74,16 @@
 		04A7BD85258E77D8000E55A8 /* Tests macOS.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Tests macOS.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests_macOS.swift; sourceTree = "<group>"; };
 		04A7BD8B258E77D8000E55A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		04ASTCHK2F2E000100000001 /* ASTChunker */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = ASTChunker; path = "Local Packages/ASTChunker"; sourceTree = "<group>"; };
+		04ASTCLI2F3B000100000002 /* ast-chunker-cli */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = "ast-chunker-cli"; path = "Tools/Binaries/ast-chunker-cli"; sourceTree = "<group>"; };
 		04F4F9772596AAD7005B30B4 /* Peel.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Peel.entitlements; sourceTree = "<group>"; };
 		04F582A6269FD388003A8403 /* Github */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Github; path = "Local Packages/Github"; sourceTree = "<group>"; };
+		04MCPCOR2F2E000100000001 /* MCPCore */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = MCPCore; path = "Local Packages/MCPCore"; sourceTree = "<group>"; };
+		04PEELUI2F2E000100000001 /* PeelUI */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = PeelUI; path = "Local Packages/PeelUI"; sourceTree = "<group>"; };
 		0A11B6D02F1234567890ABCD /* PeelApp_iOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeelApp_iOS.swift; sourceTree = "<group>"; };
 		0B1E3C9B2FABCDEF00112233 /* DataServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataServiceTests.swift; sourceTree = "<group>"; };
 		D1EDC3CED1C274FD0649E03C /* ValidationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ValidationTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
-
-/* Begin PBXCopyFilesBuildPhase section */
-		04ASTCLI2F3B000100000003 /* CopyFiles */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 6;
-			files = (
-				04ASTCLI2F3B000100000001 /* ast-chunker-cli in CopyFiles */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
 		04913BD12F0F4ED7001EF810 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
@@ -410,12 +410,12 @@
 				046C6AAE2F1BE07D006CDAC7 /* XCRemoteSwiftPackageReference "TaskRunner" */,
 				03BPETOK2F2A000100000003 /* XCRemoteSwiftPackageReference "swift-bpe-tokenizer" */,
 				03MLXEMB2F2B000100000003 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
-				04LOCPKG0001000000000001 /* XCLocalSwiftPackageReference "ASTChunker" */,
-				04LOCPKG0002000000000001 /* XCLocalSwiftPackageReference "MCPCore" */,
-				04LOCPKG0003000000000001 /* XCLocalSwiftPackageReference "PeelUI" */,
-				04LOCPKG0004000000000001 /* XCLocalSwiftPackageReference "Git" */,
-				04LOCPKG0005000000000001 /* XCLocalSwiftPackageReference "Github" */,
-				04LOCPKG0006000000000001 /* XCLocalSwiftPackageReference "Brew" */,
+				04LOCPKG0001000000000001 /* XCLocalSwiftPackageReference "Local Packages/ASTChunker" */,
+				04LOCPKG0002000000000001 /* XCLocalSwiftPackageReference "Local Packages/MCPCore" */,
+				04LOCPKG0003000000000001 /* XCLocalSwiftPackageReference "Local Packages/PeelUI" */,
+				04LOCPKG0004000000000001 /* XCLocalSwiftPackageReference "Local Packages/Git" */,
+				04LOCPKG0005000000000001 /* XCLocalSwiftPackageReference "Local Packages/Github" */,
+				04LOCPKG0006000000000001 /* XCLocalSwiftPackageReference "Local Packages/Brew" */,
 			);
 			productRefGroup = 04A7BD6B258E77D8000E55A8 /* Products */;
 			projectDirPath = "";
@@ -999,21 +999,48 @@
 		};
 /* End XCConfigurationList section */
 
-/* Begin XCRemoteSwiftPackageReference section */
-		03MLXEMB2F2B000100000003 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/ml-explore/mlx-swift-lm";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 2.30.0;
-			};
+/* Begin XCLocalSwiftPackageReference section */
+		04LOCPKG0001000000000001 /* XCLocalSwiftPackageReference "Local Packages/ASTChunker" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "Local Packages/ASTChunker";
 		};
+		04LOCPKG0002000000000001 /* XCLocalSwiftPackageReference "Local Packages/MCPCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "Local Packages/MCPCore";
+		};
+		04LOCPKG0003000000000001 /* XCLocalSwiftPackageReference "Local Packages/PeelUI" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "Local Packages/PeelUI";
+		};
+		04LOCPKG0004000000000001 /* XCLocalSwiftPackageReference "Local Packages/Git" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "Local Packages/Git";
+		};
+		04LOCPKG0005000000000001 /* XCLocalSwiftPackageReference "Local Packages/Github" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "Local Packages/Github";
+		};
+		04LOCPKG0006000000000001 /* XCLocalSwiftPackageReference "Local Packages/Brew" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "Local Packages/Brew";
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
 		03BPETOK2F2A000100000003 /* XCRemoteSwiftPackageReference "swift-bpe-tokenizer" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/crunchybananas/swift-bpe-tokenizer";
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 1.0.0;
+			};
+		};
+		03MLXEMB2F2B000100000003 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ml-explore/mlx-swift-lm";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.30.0;
 			};
 		};
 		046C6AAE2F1BE07D006CDAC7 /* XCRemoteSwiftPackageReference "TaskRunner" */ = {
@@ -1034,52 +1061,25 @@
 		};
 /* End XCRemoteSwiftPackageReference section */
 
-/* Begin XCLocalSwiftPackageReference section */
-		04LOCPKG0001000000000001 /* XCLocalSwiftPackageReference "ASTChunker" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = "Local Packages/ASTChunker";
-		};
-		04LOCPKG0002000000000001 /* XCLocalSwiftPackageReference "MCPCore" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = "Local Packages/MCPCore";
-		};
-		04LOCPKG0003000000000001 /* XCLocalSwiftPackageReference "PeelUI" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = "Local Packages/PeelUI";
-		};
-		04LOCPKG0004000000000001 /* XCLocalSwiftPackageReference "Git" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = "Local Packages/Git";
-		};
-		04LOCPKG0005000000000001 /* XCLocalSwiftPackageReference "Github" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = "Local Packages/Github";
-		};
-		04LOCPKG0006000000000001 /* XCLocalSwiftPackageReference "Brew" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = "Local Packages/Brew";
-		};
-/* End XCLocalSwiftPackageReference section */
-
 /* Begin XCSwiftPackageProductDependency section */
-		03MLXEMB2F2B000100000002 /* MLXEmbedders */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 03MLXEMB2F2B000100000003 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
-			productName = MLXEmbedders;
-		};
 		03BPETOK2F2A000100000002 /* SwiftBPETokenizer */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 03BPETOK2F2A000100000003 /* XCRemoteSwiftPackageReference "swift-bpe-tokenizer" */;
 			productName = SwiftBPETokenizer;
 		};
+		03MLXEMB2F2B000100000002 /* MLXEmbedders */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03MLXEMB2F2B000100000003 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXEmbedders;
+		};
 		040AAB7D26CB385800DE1CBF /* Git */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 04LOCPKG0004000000000001 /* XCLocalSwiftPackageReference "Git" */;
+			package = 04LOCPKG0004000000000001 /* XCLocalSwiftPackageReference "Local Packages/Git" */;
 			productName = Git;
 		};
 		04510A572A2D200C001DEF5B /* Github */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 04LOCPKG0005000000000001 /* XCLocalSwiftPackageReference "Github" */;
+			package = 04LOCPKG0005000000000001 /* XCLocalSwiftPackageReference "Local Packages/Github" */;
 			productName = Github;
 		};
 		046C6AAF2F1BE07D006CDAC7 /* TaskRunner */ = {
@@ -1094,17 +1094,17 @@
 		};
 		046D40E626C56C5B003715AF /* Github */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 04LOCPKG0005000000000001 /* XCLocalSwiftPackageReference "Github" */;
+			package = 04LOCPKG0005000000000001 /* XCLocalSwiftPackageReference "Local Packages/Github" */;
 			productName = Github;
 		};
 		048086652A2D21E500536A3E /* Brew */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 04LOCPKG0006000000000001 /* XCLocalSwiftPackageReference "Brew" */;
+			package = 04LOCPKG0006000000000001 /* XCLocalSwiftPackageReference "Local Packages/Brew" */;
 			productName = Brew;
 		};
 		04ASTCHK2F2E000100000003 /* ASTChunker */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 04LOCPKG0001000000000001 /* XCLocalSwiftPackageReference "ASTChunker" */;
+			package = 04LOCPKG0001000000000001 /* XCLocalSwiftPackageReference "Local Packages/ASTChunker" */;
 			productName = ASTChunker;
 		};
 		04D09EFC26A85E8100072702 /* OAuthSwift */ = {
