@@ -287,12 +287,14 @@ public final class SwarmToolsHandler: MCPToolHandler {
       "tasksCompleted": coordinator.tasksCompleted,
       "tasksFailed": coordinator.tasksFailed,
       "currentTask": coordinator.currentTask?.id.uuidString as Any,
+      "gitCommitHash": coordinator.capabilities.gitCommitHash as Any,
       "capabilities": [
         "deviceName": coordinator.capabilities.deviceName,
         "deviceId": coordinator.capabilities.deviceId,
         "gpuCores": coordinator.capabilities.gpuCores,
         "neuralEngineCores": coordinator.capabilities.neuralEngineCores,
-        "memoryGB": coordinator.capabilities.memoryGB
+        "memoryGB": coordinator.capabilities.memoryGB,
+        "gitCommitHash": coordinator.capabilities.gitCommitHash as Any
       ]
     ]))
   }
@@ -306,10 +308,17 @@ public final class SwarmToolsHandler: MCPToolHandler {
       ]))
     }
     
+    // Get brain's commit hash for comparison
+    let brainCommitHash = coordinator.capabilities.gitCommitHash
+    
     let workers = coordinator.connectedWorkers.map { peer in
-      [
+      let workerHash = peer.capabilities.gitCommitHash
+      let inSync = brainCommitHash != nil && workerHash == brainCommitHash
+      return [
         "id": peer.id,
         "name": peer.name,
+        "gitCommitHash": workerHash as Any,
+        "inSync": inSync,
         "capabilities": [
           "deviceId": peer.capabilities.deviceId,
           "deviceName": peer.capabilities.deviceName,
@@ -319,14 +328,19 @@ public final class SwarmToolsHandler: MCPToolHandler {
           "memoryGB": peer.capabilities.memoryGB,
           "storageAvailableGB": peer.capabilities.storageAvailableGB,
           "embeddingModel": peer.capabilities.embeddingModel as Any,
-          "indexedRepos": peer.capabilities.indexedRepos
+          "indexedRepos": peer.capabilities.indexedRepos,
+          "gitCommitHash": workerHash as Any
         ]
       ] as [String: Any]
     }
     
+    let outOfSyncCount = workers.filter { ($0["inSync"] as? Bool) == false }.count
+    
     return (200, makeResult(id: id, result: [
       "workers": workers,
-      "count": workers.count
+      "count": workers.count,
+      "brainCommitHash": brainCommitHash as Any,
+      "outOfSyncCount": outOfSyncCount
     ]))
   }
   

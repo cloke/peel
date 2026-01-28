@@ -188,6 +188,7 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
   public let embeddingModel: String?
   public let embeddingDimensions: Int?
   public let indexedRepos: [String]
+  public let gitCommitHash: String?  // Short git commit hash for version sync
   
   // Network
   public let lanAddress: String?
@@ -210,6 +211,7 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
     embeddingModel: String? = nil,
     embeddingDimensions: Int? = nil,
     indexedRepos: [String] = [],
+    gitCommitHash: String? = nil,
     lanAddress: String? = nil,
     lanPort: UInt16? = nil
   ) {
@@ -223,6 +225,7 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
     self.embeddingModel = embeddingModel
     self.embeddingDimensions = embeddingDimensions
     self.indexedRepos = indexedRepos
+    self.gitCommitHash = gitCommitHash
     self.lanAddress = lanAddress
     self.lanPort = lanPort
   }
@@ -261,9 +264,48 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
       embeddingModel: embeddingModel,
       embeddingDimensions: embeddingDimensions,
       indexedRepos: indexedRepos,
+      gitCommitHash: Self.getGitCommitHash(),
       lanAddress: lanAddress,
       lanPort: lanPort
     )
+  }
+  
+  /// Get the git commit hash embedded at build time
+  private static func getGitCommitHash() -> String? {
+    // Try to get commit hash from Info.plist (set at build time)
+    if let hash = Bundle.main.object(forInfoDictionaryKey: "GitCommitHash") as? String, !hash.isEmpty {
+      return hash
+    }
+    // Fallback: try to read from git in the repo
+    return getGitCommitFromRepo()
+  }
+  
+  /// Try to get git commit hash from the repository
+  private static func getGitCommitFromRepo() -> String? {
+    // Find repo path from bundle location
+    let bundlePath = Bundle.main.bundlePath
+    let components = bundlePath.components(separatedBy: "/")
+    guard let buildIndex = components.firstIndex(of: "build") else { return nil }
+    let repoPath = components.prefix(buildIndex).joined(separator: "/")
+    
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+    process.arguments = ["rev-parse", "--short", "HEAD"]
+    process.currentDirectoryURL = URL(fileURLWithPath: repoPath)
+    
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = FileHandle.nullDevice
+    
+    do {
+      try process.run()
+      process.waitUntilExit()
+      let data = pipe.fileHandleForReading.readDataToEndOfFile()
+      let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+      return output?.isEmpty == false ? output : nil
+    } catch {
+      return nil
+    }
   }
   
   private static func getDeviceId() -> String {
