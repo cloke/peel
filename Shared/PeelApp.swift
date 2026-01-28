@@ -89,6 +89,12 @@ struct PeelApp: App {
           showAboutPanel()
         }
       }
+      CommandGroup(replacing: .help) {
+        Button("Peel Help") {
+          openHelpWindow()
+        }
+        .keyboardShortcut("?", modifiers: .command)
+      }
     }
     #endif
 
@@ -125,6 +131,22 @@ struct PeelApp: App {
       .applicationVersion: versionText,
       .credits: credits
     ])
+    NSApp.activate(ignoringOtherApps: true)
+  }
+  
+  private func openHelpWindow() {
+    // Create a new window for the help view
+    let helpView = HelpView()
+    let hostingController = NSHostingController(rootView: helpView)
+    
+    let window = NSWindow(contentViewController: hostingController)
+    window.title = "Peel Help"
+    window.setContentSize(NSSize(width: 900, height: 700))
+    window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+    window.center()
+    window.makeKeyAndOrderFront(nil)
+    
+    // Keep a reference to prevent deallocation
     NSApp.activate(ignoringOtherApps: true)
   }
 #endif
