@@ -31,7 +31,10 @@ public final class SwarmToolsHandler: MCPToolHandler {
     "swarm.discovered",
     "swarm.tasks",
     "swarm.update-workers",
-    "swarm.direct-command"
+    "swarm.direct-command",
+    "swarm.branch-queue",
+    "swarm.pr-queue",
+    "swarm.create-pr"
   ]
   
   public init(chainRunner: AgentChainRunner? = nil, agentManager: AgentManager? = nil) {
@@ -61,6 +64,12 @@ public final class SwarmToolsHandler: MCPToolHandler {
       return await handleUpdateWorkers(id: id, arguments: arguments)
     case "swarm.direct-command":
       return await handleDirectCommand(id: id, arguments: arguments)
+    case "swarm.branch-queue":
+      return handleBranchQueue(id: id, arguments: arguments)
+    case "swarm.pr-queue":
+      return handlePRQueue(id: id, arguments: arguments)
+    case "swarm.create-pr":
+      return await handleCreatePR(id: id, arguments: arguments)
     default:
       return (404, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.methodNotFound, message: "Unknown tool"))
     }
@@ -196,6 +205,42 @@ public final class SwarmToolsHandler: MCPToolHandler {
             ]
           ],
           "required": []
+        ]
+      ],
+      [
+        "name": "swarm.branch-queue",
+        "description": "View the branch queue status showing in-flight branches being worked on and completed branches ready for PR.",
+        "inputSchema": [
+          "type": "object",
+          "properties": [:],
+          "required": []
+        ]
+      ],
+      [
+        "name": "swarm.pr-queue",
+        "description": "View the PR queue status showing pending operations and created PRs with their labels.",
+        "inputSchema": [
+          "type": "object",
+          "properties": [:],
+          "required": []
+        ]
+      ],
+      [
+        "name": "swarm.create-pr",
+        "description": "Manually create a PR for a completed swarm task. Use when auto-PR is disabled or you want to create a PR for a specific task.",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "taskId": [
+              "type": "string",
+              "description": "The task ID to create a PR for (must be in completed branches)"
+            ],
+            "title": [
+              "type": "string",
+              "description": "Optional custom PR title (defaults to task prompt)"
+            ]
+          ],
+          "required": ["taskId"]
         ]
       ]
     ]
@@ -639,5 +684,102 @@ public final class SwarmToolsHandler: MCPToolHandler {
     } catch {
       return internalError(id: id, message: "Failed to send command: \(error.localizedDescription)")
     }
+  }
+  
+  // MARK: - swarm.branch-queue
+  
+  private func handleBranchQueue(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    let stats = coordinator.branchQueue.getStats()
+    let inFlight = coordinator.branchQueue.getAllInFlight().map { reservation -> [String: Any] in
+      [
+        "taskId": reservation.taskId.uuidString,
+        "branchName": reservation.branchName,
+        "repoPath": reservation.repoPath,
+        "workerId": reservation.workerId,
+        "createdAt": ISO8601DateFormatter().string(from: reservation.createdAt)
+      ]
+    }
+    
+    let completed = coordinator.branchQueue.getAllCompleted().map { branch -> [String: Any] in
+      [
+        "taskId": branch.taskId.uuidString,
+        "branchName": branch.branchName,
+        "repoPath": branch.repoPath,
+        "workerId": branch.workerId,
+        "completedAt": ISO8601DateFormatter().string(from: branch.completedAt),
+        "status": branch.status.rawValue
+      ]
+    }
+    
+    return (200, makeResult(id: id, result: [
+      "stats": [
+        "inFlightCount": stats.inFlightCount,
+        "completedCount": stats.completedCount,
+        "readyForPRCount": stats.readyForPRCount,
+        "needingReviewCount": stats.needingReviewCount
+      ],
+      "inFlight": inFlight,
+      "completed": completed
+    ]))
+  }
+  
+  // MARK: - swarm.pr-queue
+  
+  private func handlePRQueue(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    let prs = coordinator.prQueue.getAllPRs().map { pr -> [String: Any] in
+      [
+        "taskId": pr.taskId.uuidString,
+        "prNumber": pr.prNumber,
+        "prURL": pr.prURL,
+        "branchName": pr.branchName,
+        "repoPath": pr.repoPath,
+        "createdAt": ISO8601DateFormatter().string(from: pr.createdAt),
+        "labels": pr.labels.map(\.rawValue),
+        "status": pr.status.rawValue
+      ]
+    }
+    
+    return (200, makeResult(id: id, result: [
+      "pendingOperations": coordinator.prQueue.pendingCount,
+      "autoCreatePRs": coordinator.autoCreatePRs,
+      "prs": prs
+    ]))
+  }
+  
+  // MARK: - swarm.create-pr
+  
+  private func handleCreatePR(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let taskIdStr = arguments["taskId"] as? String,
+          let taskId = UUID(uuidString: taskIdStr) else {
+      return internalError(id: id, message: "Missing or invalid 'taskId'")
+    }
+    
+    // Get the completed branch info
+    guard let completed = coordinator.branchQueue.getCompleted(taskId: taskId) else {
+      return internalError(id: id, message: "No completed branch found for task \(taskIdStr)")
+    }
+    
+    // Find the task result for prompt/outputs
+    guard let result = coordinator.completedResults.first(where: { $0.requestId == taskId }) else {
+      return internalError(id: id, message: "No task result found for \(taskIdStr)")
+    }
+    
+    let prompt = arguments["title"] as? String ?? result.outputs.first?.content ?? "Swarm task"
+    let agentOutput = result.outputs.first { $0.name.contains("agent") }?.content
+    
+    coordinator.prQueue.createPRFromTask(
+      taskId: taskId,
+      branchName: completed.branchName,
+      repoPath: completed.repoPath,
+      prompt: prompt,
+      outputs: agentOutput
+    )
+    
+    return (200, makeResult(id: id, result: [
+      "success": true,
+      "message": "PR creation queued",
+      "taskId": taskIdStr,
+      "branchName": completed.branchName
+    ]))
   }
 }

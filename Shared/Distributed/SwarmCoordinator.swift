@@ -171,6 +171,15 @@ public final class SwarmCoordinator {
   /// Whether to use worktrees for task isolation (default: true)
   public var useWorktreeIsolation: Bool = true
   
+  /// Branch queue for tracking in-flight branches (brain/hybrid mode)
+  public let branchQueue = BranchQueue()
+  
+  /// PR queue for creating PRs from completed tasks (brain/hybrid mode)
+  public let prQueue = PRQueue()
+  
+  /// Whether to auto-create PRs for successful swarm tasks
+  public var autoCreatePRs: Bool = false
+  
   /// Pending task continuations (for async result delivery)
   private var pendingTasks: [UUID: CheckedContinuation<ChainResult, Error>] = [:]
   
@@ -301,7 +310,20 @@ public final class SwarmCoordinator {
       throw DistributedError.noWorkersAvailable
     }
     
-    logger.info("Dispatching task \(request.id) to worker \(worker.name)")
+    // Reserve a branch name in the queue to prevent collisions
+    let suggestedBranch = SwarmWorktreeManager.generateBranchName(
+      taskId: request.id,
+      prefix: "swarm",
+      hint: extractPromptHintForBranch(from: request.prompt)
+    )
+    let reservedBranch = branchQueue.reserveBranch(
+      taskId: request.id,
+      preferredName: suggestedBranch,
+      repoPath: request.workingDirectory,
+      workerId: worker.id
+    )
+    
+    logger.info("Dispatching task \(request.id) to worker \(worker.name) with branch \(reservedBranch)")
     
     // Send task and wait for result using continuation
     let result: ChainResult = try await withCheckedThrowingContinuation { continuation in
@@ -314,6 +336,7 @@ public final class SwarmCoordinator {
           try await connectionManager?.send(.taskRequest(request: request), to: worker.id)
         } catch {
           pendingTasks.removeValue(forKey: request.id)
+          branchQueue.releaseBranch(taskId: request.id)
           continuation.resume(throwing: error)
         }
       }
@@ -322,12 +345,20 @@ public final class SwarmCoordinator {
       Task {
         try? await Task.sleep(for: .seconds(Double(request.timeoutSeconds)))
         if let cont = pendingTasks.removeValue(forKey: request.id) {
+          branchQueue.releaseBranch(taskId: request.id)
           cont.resume(throwing: DistributedError.taskTimeout(taskId: request.id))
         }
       }
     }
     
     return result
+  }
+  
+  /// Extract a short hint from the prompt for branch naming
+  private func extractPromptHintForBranch(from prompt: String) -> String {
+    // Take first few words, truncate to 30 chars max
+    let words = prompt.split(separator: " ").prefix(5).joined(separator: " ")
+    return String(words.prefix(30))
   }
   
   /// Dispatch a chain to a specific worker (fire-and-forget for updates)
@@ -716,8 +747,26 @@ extension SwarmCoordinator: PeerConnectionDelegate {
       // Update counters and store result
       if result.status == .completed {
         tasksCompleted += 1
+        // Mark branch as completed successfully
+        branchQueue.completeBranch(taskId: result.requestId, status: .success)
+        
+        // Auto-create PR if enabled and branch info is available
+        if autoCreatePRs, let branchName = result.branchName, let repoPath = result.repoPath {
+          // Find the original prompt from outputs or use generic
+          let prompt = result.outputs.first { $0.name.contains("summary") }?.content ?? "Swarm task completed"
+          let agentOutput = result.outputs.first { $0.name.contains("agent") }?.content
+          prQueue.createPRFromTask(
+            taskId: result.requestId,
+            branchName: branchName,
+            repoPath: repoPath,
+            prompt: prompt,
+            outputs: agentOutput
+          )
+        }
       } else {
         tasksFailed += 1
+        // Mark branch as needing review
+        branchQueue.completeBranch(taskId: result.requestId, status: .needsReview)
       }
       // Store result (most recent first, capped)
       completedResults.insert(result, at: 0)
