@@ -165,23 +165,26 @@ public actor VSCodeService {
     serverURL: String,
     scope: ConfigTarget
   ) throws -> String {
-    let settingsURL = try settingsURL(for: scope)
-    let settingsDir = settingsURL.deletingLastPathComponent()
-    try FileManager.default.createDirectory(at: settingsDir, withIntermediateDirectories: true)
+    let configURL = try mcpConfigURL(for: scope)
+    let configDir = configURL.deletingLastPathComponent()
+    try FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
 
-    var settings = try readSettings(from: settingsURL)
-    var mcpServers = settings["mcp.servers"] as? [String: Any] ?? [:]
-    mcpServers[serverName] = [
+    var config = try readSettings(from: configURL)
+    var servers = config["servers"] as? [String: Any] ?? [:]
+    servers[serverName] = [
       "type": "http",
       "url": serverURL
     ]
-    settings["mcp.servers"] = mcpServers
+    config["servers"] = servers
+    if config["inputs"] == nil {
+      config["inputs"] = []
+    }
 
-    try writeSettings(settings, to: settingsURL)
-    return settingsURL.path
+    try writeSettings(config, to: configURL)
+    return configURL.path
   }
 
-  private func settingsURL(for scope: ConfigTarget) throws -> URL {
+  private func mcpConfigURL(for scope: ConfigTarget) throws -> URL {
     switch scope {
     case .user:
       let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -189,14 +192,14 @@ public actor VSCodeService {
       return appSupport
         .appendingPathComponent("Code", isDirectory: true)
         .appendingPathComponent("User", isDirectory: true)
-        .appendingPathComponent("settings.json")
+        .appendingPathComponent("mcp.json")
     case .workspace(let path):
       guard FileManager.default.fileExists(atPath: path) else {
         throw VSCodeError.invalidWorkspacePath(path)
       }
       return URL(fileURLWithPath: path)
         .appendingPathComponent(".vscode", isDirectory: true)
-        .appendingPathComponent("settings.json")
+        .appendingPathComponent("mcp.json")
     }
   }
 
