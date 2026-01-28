@@ -342,7 +342,6 @@ public final class SwarmToolsHandler: MCPToolHandler {
       return missingParamError(id: id, param: "prompt")
     }
     
-    let templateId = optionalString("templateId", from: arguments)
     let templateName = optionalString("templateName", from: arguments) ?? "default"
     let workingDirectory = optionalString("workingDirectory", from: arguments) ?? FileManager.default.currentDirectoryPath
     let priorityInt = optionalInt("priority", from: arguments, default: 1) ?? 1
