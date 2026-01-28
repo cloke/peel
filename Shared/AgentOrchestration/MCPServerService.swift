@@ -4163,6 +4163,10 @@ public final class MCPServerService {
               "type": "string",
               "description": "The prompt/task to execute"
             ],
+            "workingDirectory": [
+              "type": "string",
+              "description": "The git repository path on the worker where the task should execute (required for worktree isolation)"
+            ],
             "templateId": [
               "type": "string",
               "description": "Optional template ID to use"
@@ -4173,7 +4177,7 @@ public final class MCPServerService {
               "description": "Task priority (default: normal)"
             ]
           ],
-          "required": ["prompt"]
+          "required": ["prompt", "workingDirectory"]
         ],
         category: .swarm,
         isMutating: true

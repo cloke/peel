@@ -415,8 +415,11 @@ public final class SwarmToolsHandler: MCPToolHandler {
       return missingParamError(id: id, param: "prompt")
     }
     
+    guard case .success(let workingDirectory) = requireString("workingDirectory", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "workingDirectory")
+    }
+    
     let templateName = optionalString("templateName", from: arguments) ?? "default"
-    let workingDirectory = optionalString("workingDirectory", from: arguments) ?? FileManager.default.currentDirectoryPath
     let priorityInt = optionalInt("priority", from: arguments, default: 1) ?? 1
     let priority = ChainPriority(rawValue: priorityInt) ?? .normal
     
