@@ -206,6 +206,22 @@ public final class SwarmCoordinator {
     return result
   }
   
+  /// Dispatch a chain to a specific worker (fire-and-forget for updates)
+  public func dispatchToWorker(_ request: ChainRequest, workerId: String) async throws {
+    guard role == .brain || role == .hybrid else {
+      throw DistributedError.actorSystemNotReady
+    }
+    
+    guard connectedWorkers.contains(where: { $0.id == workerId }) else {
+      throw DistributedError.noWorkersAvailable
+    }
+    
+    logger.info("Dispatching task \(request.id) to specific worker \(workerId)")
+    
+    // Fire and forget - don't wait for result (worker will restart)
+    try await connectionManager?.send(.taskRequest(request: request), to: workerId)
+  }
+  
   /// Select the best worker for a request
   private func selectWorker(for request: ChainRequest) -> ConnectedPeer? {
     let candidates = connectedWorkers.filter { peer in

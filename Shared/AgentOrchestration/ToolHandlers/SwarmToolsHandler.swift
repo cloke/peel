@@ -29,7 +29,8 @@ public final class SwarmToolsHandler: MCPToolHandler {
     "swarm.dispatch",
     "swarm.connect",
     "swarm.discovered",
-    "swarm.tasks"
+    "swarm.tasks",
+    "swarm.update-workers"
   ]
   
   public init(chainRunner: AgentChainRunner? = nil, agentManager: AgentManager? = nil) {
@@ -55,6 +56,8 @@ public final class SwarmToolsHandler: MCPToolHandler {
       return handleDiscovered(id: id)
     case "swarm.tasks":
       return handleTasks(id: id, arguments: arguments)
+    case "swarm.update-workers":
+      return await handleUpdateWorkers(id: id, arguments: arguments)
     default:
       return (404, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.methodNotFound, message: "Unknown tool"))
     }
@@ -173,6 +176,20 @@ public final class SwarmToolsHandler: MCPToolHandler {
             "limit": [
               "type": "integer",
               "description": "Maximum number of results to return (default: 10)"
+            ]
+          ],
+          "required": []
+        ]
+      ],
+      [
+        "name": "swarm.update-workers",
+        "description": "Trigger all connected workers to pull latest code, rebuild, and restart. Workers will disconnect briefly during restart.",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "force": [
+              "type": "boolean",
+              "description": "Force rebuild even if no new commits (default: false)"
             ]
           ],
           "required": []
@@ -477,6 +494,81 @@ public final class SwarmToolsHandler: MCPToolHandler {
       "count": tasks.count,
       "totalCompleted": coordinator.tasksCompleted,
       "totalFailed": coordinator.tasksFailed
+    ]))
+  }
+  
+  // MARK: - swarm.update-workers
+  
+  private func handleUpdateWorkers(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard coordinator.isActive else {
+      return internalError(id: id, message: "Swarm is not active")
+    }
+    
+    guard coordinator.role == .brain || coordinator.role == .hybrid else {
+      return internalError(id: id, message: "Only brain can trigger worker updates")
+    }
+    
+    let workers = coordinator.connectedWorkers
+    guard !workers.isEmpty else {
+      return (200, makeResult(id: id, result: [
+        "success": false,
+        "message": "No workers connected",
+        "workersUpdated": 0
+      ]))
+    }
+    
+    let force = arguments["force"] as? Bool ?? false
+    
+    // Build the self-update prompt
+    // Workers will pull, rebuild, and restart via the self-update script
+    let updatePrompt = """
+    Execute the Peel self-update script to update this worker:
+    
+    Run: ./Tools/self-update.sh\(force ? " --force" : "")
+    
+    This will:
+    1. Pull latest code from git
+    2. Rebuild the app
+    3. Restart Peel in worker mode
+    
+    Report the output of the script.
+    """
+    
+    // Dispatch update task to each worker
+    var dispatched: [[String: Any]] = []
+    
+    for worker in workers {
+      let request = ChainRequest(
+        templateName: "Quick Fix",
+        prompt: updatePrompt,
+        workingDirectory: "/tmp",  // Script auto-detects repo from its location
+        priority: .high
+      )
+      
+      // Send to this specific worker
+      do {
+        // Dispatch without waiting for result (worker will restart)
+        try await coordinator.dispatchToWorker(request, workerId: worker.id)
+        dispatched.append([
+          "workerId": worker.id,
+          "workerName": worker.name,
+          "status": "dispatched"
+        ])
+      } catch {
+        dispatched.append([
+          "workerId": worker.id,
+          "workerName": worker.name,
+          "status": "failed",
+          "error": error.localizedDescription
+        ])
+      }
+    }
+    
+    return (200, makeResult(id: id, result: [
+      "success": true,
+      "message": "Update tasks dispatched. Workers will disconnect during restart.",
+      "workersUpdated": dispatched.filter { ($0["status"] as? String) == "dispatched" }.count,
+      "workers": dispatched
     ]))
   }
 }
