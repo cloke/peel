@@ -74,12 +74,24 @@ public final class SwarmCoordinator {
   
   /// Completed task results (most recent first, capped at 50)
   public private(set) var completedResults: [ChainResult] = []
+
+  /// Latest status reported by workers (brain/hybrid)
+  public private(set) var workerStatuses: [String: WorkerStatus] = [:]
   
   /// Maximum number of results to keep
   private let maxStoredResults = 50
   
   /// Pending direct command continuations (for awaiting results)
   private var pendingDirectCommands: [UUID: CheckedContinuation<DirectCommandResult, Never>] = [:]
+
+  /// Heartbeat loop task (worker/hybrid)
+  private var heartbeatTask: Task<Void, Never>?
+
+  /// Swarm start time for uptime tracking
+  private var startedAt: Date?
+
+  /// Interval between heartbeats
+  private let heartbeatInterval: Duration = .seconds(10)
   
   /// Result from a direct command execution
   public struct DirectCommandResult: Sendable {
@@ -168,6 +180,7 @@ public final class SwarmCoordinator {
     
     self.role = role
     self.capabilities = WorkerCapabilities.current()
+    self.startedAt = Date()
     
     // Create connection manager
     connectionManager = PeerConnectionManager(capabilities: capabilities, port: port)
@@ -186,11 +199,17 @@ public final class SwarmCoordinator {
     
     isActive = true
     logger.info("SwarmCoordinator started as \(self.role.rawValue)")
+
+    if role == .worker || role == .hybrid {
+      startHeartbeatLoop()
+    }
   }
   
   /// Stop the swarm coordinator
   public func stop() {
     isActive = false
+
+    stopHeartbeatLoop()
     
     discoveryService?.stopAdvertising()
     discoveryService?.stopDiscovery()
@@ -201,8 +220,51 @@ public final class SwarmCoordinator {
     
     connectedWorkers.removeAll()
     currentTask = nil
+    workerStatuses.removeAll()
+    startedAt = nil
     
     logger.info("SwarmCoordinator stopped")
+  }
+
+  // MARK: - Heartbeats
+
+  private func startHeartbeatLoop() {
+    stopHeartbeatLoop()
+    heartbeatTask = Task { [weak self] in
+      guard let self else { return }
+      while !Task.isCancelled && self.isActive {
+        await self.sendHeartbeat()
+        try? await Task.sleep(for: self.heartbeatInterval)
+      }
+    }
+  }
+
+  private func stopHeartbeatLoop() {
+    heartbeatTask?.cancel()
+    heartbeatTask = nil
+  }
+
+  private func currentWorkerStatus() -> WorkerStatus {
+    let state: WorkerStatus.WorkerState = currentTask == nil ? .idle : .busy
+    let uptime = Date().timeIntervalSince(startedAt ?? Date())
+    return WorkerStatus(
+      deviceId: capabilities.deviceId,
+      state: state,
+      currentTaskId: currentTask?.id,
+      lastHeartbeat: Date(),
+      uptimeSeconds: uptime,
+      tasksCompleted: tasksCompleted,
+      tasksFailed: tasksFailed
+    )
+  }
+
+  private func sendHeartbeat() async {
+    guard role == .worker || role == .hybrid else { return }
+    let status = currentWorkerStatus()
+    let peers = connectionManager?.getConnectedPeers() ?? []
+    for peer in peers {
+      try? await connectionManager?.send(.heartbeat(status: status), to: peer.id)
+    }
   }
   
   // MARK: - Brain Methods
@@ -357,9 +419,15 @@ public final class SwarmCoordinator {
       }
       return true
     }
-    
+
+    let available = candidates.filter { peer in
+      guard let status = workerStatuses[peer.id] else { return true }
+      return status.state != .busy && status.state != .offline
+    }
+
+    let ranked = available.isEmpty ? candidates : available
     // Prefer workers with more resources
-    return candidates.max { a, b in
+    return ranked.max { a, b in
       a.capabilities.gpuCores < b.capabilities.gpuCores
     }
   }
@@ -383,6 +451,7 @@ public final class SwarmCoordinator {
     currentTask = request
     delegate?.swarmCoordinator(self, didEmit: .taskReceived(request))
     delegate?.swarmCoordinator(self, didEmit: .taskStarted(request.id))
+    await sendHeartbeat()
     
     // Accept task
     try? await connectionManager?.send(.taskAccepted(taskId: request.id), to: peerId)
@@ -435,6 +504,7 @@ public final class SwarmCoordinator {
     
     currentTask = nil
     delegate?.swarmCoordinator(self, didEmit: .taskCompleted(result))
+    await sendHeartbeat()
     
     logger.info("Task \(request.id) completed: \(result.status.rawValue)")
   }
@@ -535,10 +605,25 @@ extension SwarmCoordinator: PeerConnectionDelegate {
     connectedWorkers.append(peer)
     delegate?.swarmCoordinator(self, didEmit: .workerConnected(peer))
     logger.info("Worker connected: \(peer.name)")
+
+    if role == .worker || role == .hybrid {
+      Task { await sendHeartbeat() }
+    }
   }
   
   public func connectionManager(_ manager: PeerConnectionManager, didDisconnect peerId: String) {
     connectedWorkers.removeAll { $0.id == peerId }
+    if let existing = workerStatuses[peerId] {
+      workerStatuses[peerId] = WorkerStatus(
+        deviceId: existing.deviceId,
+        state: .offline,
+        currentTaskId: existing.currentTaskId,
+        lastHeartbeat: Date(),
+        uptimeSeconds: existing.uptimeSeconds,
+        tasksCompleted: existing.tasksCompleted,
+        tasksFailed: existing.tasksFailed
+      )
+    }
     delegate?.swarmCoordinator(self, didEmit: .workerDisconnected(peerId))
     logger.info("Worker disconnected: \(peerId)")
   }
@@ -570,6 +655,10 @@ extension SwarmCoordinator: PeerConnectionDelegate {
         completedResults.removeLast()
       }
       delegate?.swarmCoordinator(self, didEmit: .taskCompleted(result))
+
+    case .heartbeat(let status):
+      workerStatuses[peerId] = status
+      Task { try? await connectionManager?.send(.heartbeatAck, to: peerId) }
       
     case .directCommand(let id, let command, let args, let workingDirectory):
       logger.info("Received directCommand: \(command) from \(peerId)")

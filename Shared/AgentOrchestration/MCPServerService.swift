@@ -21,6 +21,7 @@ import TaskRunner
 @MainActor
 @Observable
 public final class MCPServerService {
+  private let logger = Logger(subsystem: "com.peel.mcp", category: "MCPServerService")
   private let telemetryProvider: MCPTelemetryProviding
   private enum StorageKey {
     static let enabled = "mcp.server.enabled"
