@@ -1457,8 +1457,8 @@ public final class MCPServerService {
         return (200, JSONRPCResponseBuilder.makeResult(id: id, result: result))
 
       case "initialized", "notifications/initialized":
-        statusCode = 204
-        return (204, Data())
+        statusCode = 200
+        return (200, Data())
 
       case "tools/list":
         statusCode = 200
