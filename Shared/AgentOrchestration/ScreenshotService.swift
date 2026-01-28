@@ -68,7 +68,15 @@ actor ScreenshotService {
     let window = NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first(where: { window in
       window.isVisible && !window.isMiniaturized
     })
-    guard let window, let contentView = window.contentView else { return nil }
+    guard let window else { return nil }
+
+    let windowId = CGWindowID(window.windowNumber)
+    let imageOptions: CGWindowImageOption = [.boundsIgnoreFraming, .bestResolution]
+    if let image = CGWindowListCreateImage(.null, .optionIncludingWindow, windowId, imageOptions) {
+      return image
+    }
+
+    guard let contentView = window.contentView else { return nil }
     let bounds = contentView.bounds
     guard bounds.width > 0, bounds.height > 0 else { return nil }
     guard let rep = contentView.bitmapImageRepForCachingDisplay(in: bounds) else { return nil }
