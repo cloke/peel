@@ -91,6 +91,15 @@ struct LocalRAGSearchResult: Sendable {
   var lineCount: Int { endLine - startLine + 1 }
 }
 
+struct LocalRAGQueryHint: Sendable {
+  let query: String
+  let repoPath: String?
+  let mode: String
+  let resultCount: Int
+  let useCount: Int
+  let lastUsedAt: Date
+}
+
 struct LocalRAGFileCandidate: Sendable {
   let path: String
   let byteCount: Int
@@ -1922,6 +1931,76 @@ actor LocalRAGStore {
     try await embeddingProvider.embed(texts: texts)
   }
 
+  // MARK: - Query Hints
+
+  func recordQueryHint(query: String, repoPath: String?, mode: String, resultCount: Int) throws {
+    let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedQuery.isEmpty else { return }
+    try openIfNeeded()
+    try ensureSchema()
+
+    let normalizedRepo = repoPath?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let now = dateFormatter.string(from: Date())
+    let sql = """
+    INSERT INTO rag_query_hints (query, repo_path, mode, result_count, use_count, last_used_at)
+    VALUES (?, ?, ?, ?, 1, ?)
+    ON CONFLICT(query, repo_path, mode) DO UPDATE SET
+      result_count = excluded.result_count,
+      use_count = use_count + 1,
+      last_used_at = excluded.last_used_at
+    """
+
+    try execute(sql: sql) { statement in
+      bindText(statement, 1, trimmedQuery)
+      bindText(statement, 2, normalizedRepo)
+      bindText(statement, 3, mode)
+      sqlite3_bind_int(statement, 4, Int32(resultCount))
+      bindText(statement, 5, now)
+    }
+  }
+
+  func fetchQueryHints(limit: Int = 10) throws -> [LocalRAGQueryHint] {
+    try openIfNeeded()
+    try ensureSchema()
+    let sql = """
+    SELECT query, repo_path, mode, result_count, use_count, last_used_at
+    FROM rag_query_hints
+    ORDER BY last_used_at DESC
+    LIMIT ?
+    """
+
+    guard let db else { throw LocalRAGError.sqlite("Database not initialized") }
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let statement else {
+      throw LocalRAGError.sqlite(String(cString: sqlite3_errmsg(db)))
+    }
+    defer { sqlite3_finalize(statement) }
+
+    sqlite3_bind_int(statement, 1, Int32(max(1, limit)))
+
+    var hints: [LocalRAGQueryHint] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+      let query = String(cString: sqlite3_column_text(statement, 0))
+      let repoRaw = String(cString: sqlite3_column_text(statement, 1))
+      let mode = String(cString: sqlite3_column_text(statement, 2))
+      let resultCount = Int(sqlite3_column_int(statement, 3))
+      let useCount = Int(sqlite3_column_int(statement, 4))
+      let lastUsedRaw = String(cString: sqlite3_column_text(statement, 5))
+      let lastUsedAt = dateFormatter.date(from: lastUsedRaw) ?? Date()
+      let repoPath = repoRaw.isEmpty ? nil : repoRaw
+      hints.append(LocalRAGQueryHint(
+        query: query,
+        repoPath: repoPath,
+        mode: mode,
+        resultCount: resultCount,
+        useCount: useCount,
+        lastUsedAt: lastUsedAt
+      ))
+    }
+    return hints
+  }
+
   func searchVector(query: String, repoPath: String? = nil, limit: Int = 10) async throws -> [LocalRAGSearchResult] {
     let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmedQuery.isEmpty else { return [] }
@@ -2017,6 +2096,17 @@ actor LocalRAGStore {
     try exec("CREATE TABLE IF NOT EXISTS chunks (id TEXT PRIMARY KEY, file_id TEXT, start_line INTEGER, end_line INTEGER, text TEXT, token_count INTEGER, construct_type TEXT, construct_name TEXT, FOREIGN KEY(file_id) REFERENCES files(id) ON DELETE CASCADE)")
     try exec("CREATE TABLE IF NOT EXISTS embeddings (chunk_id TEXT PRIMARY KEY, embedding BLOB, FOREIGN KEY(chunk_id) REFERENCES chunks(id) ON DELETE CASCADE)")
     try exec("CREATE TABLE IF NOT EXISTS cache_embeddings (text_hash TEXT PRIMARY KEY, embedding BLOB, updated_at TEXT)")
+    try exec("""
+      CREATE TABLE IF NOT EXISTS rag_query_hints (
+        query TEXT COLLATE NOCASE NOT NULL,
+        repo_path TEXT NOT NULL DEFAULT '',
+        mode TEXT NOT NULL,
+        result_count INTEGER NOT NULL,
+        use_count INTEGER NOT NULL,
+        last_used_at TEXT NOT NULL,
+        PRIMARY KEY (query, repo_path, mode)
+      )
+      """)
     
     // Add metadata columns to existing chunks table (migration for existing DBs)
     // Ignore "duplicate column name" errors
@@ -2024,7 +2114,7 @@ actor LocalRAGStore {
     try? exec("ALTER TABLE chunks ADD COLUMN construct_name TEXT")
 
     let now = dateFormatter.string(from: Date())
-    try exec("INSERT OR IGNORE INTO rag_meta (key, value) VALUES ('schema_version', '1')")
+    try exec("INSERT OR IGNORE INTO rag_meta (key, value) VALUES ('schema_version', '2')")
     try exec("INSERT OR IGNORE INTO rag_meta (key, value) VALUES ('created_at', '\(now)')")
     try exec("INSERT OR REPLACE INTO rag_meta (key, value) VALUES ('updated_at', '\(now)')")
 
