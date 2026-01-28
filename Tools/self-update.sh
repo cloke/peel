@@ -32,12 +32,12 @@ AFTER=$(git rev-parse HEAD)
 
 if [ "$BEFORE" = "$AFTER" ]; then
   echo "✅ Already up to date ($BEFORE)"
-  # Non-interactive: skip rebuild if no changes unless --force flag
-  if [ "$1" != "--force" ]; then
-    echo "   No changes to build. Use --force to rebuild anyway."
+  # Default to rebuilding - use --skip-build to skip
+  if [ "$1" = "--skip-build" ]; then
+    echo "   Skipping rebuild."
     exit 0
   fi
-  echo "   Forcing rebuild..."
+  echo "   Rebuilding anyway (use --skip-build to skip)..."
 else
   echo "✅ Updated: $BEFORE → $AFTER"
   git log --oneline -3
