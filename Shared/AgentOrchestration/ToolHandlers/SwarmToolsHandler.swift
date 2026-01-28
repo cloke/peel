@@ -607,11 +607,14 @@ public final class SwarmToolsHandler: MCPToolHandler {
     }
     
     do {
-      try await coordinator.sendDirectCommand(command, args: args, workingDirectory: workingDirectory, to: targetWorker.id)
+      let result = try await coordinator.sendDirectCommandAndWait(command, args: args, workingDirectory: workingDirectory, to: targetWorker.id)
       return (200, makeResult(id: id, result: [
-        "success": true,
-        "message": "Direct command sent to \(targetWorker.name)",
+        "success": result.exitCode == 0,
+        "exitCode": result.exitCode,
+        "output": result.output.trimmingCharacters(in: .whitespacesAndNewlines),
+        "error": result.error as Any,
         "workerId": targetWorker.id,
+        "workerName": targetWorker.name,
         "command": command,
         "args": args
       ]))
