@@ -42,7 +42,6 @@ struct VMIsolationDashboardView: View {
   @State private var consoleInput = ""
   @State private var isStartingMacOSVM = false
   @State private var macOSVMWindowController: NSWindowController?
-  @AppStorage("vm.macos.viewer.scaleMode") private var macOSViewerScaleMode = "fit"
   @AppStorage("vm.isolation.section") private var selectedSectionRawValue = VMIsolationSection.overview.rawValue
 
   private var selectedSection: VMIsolationSection {
@@ -573,18 +572,6 @@ struct VMIsolationDashboardView: View {
             Label("Open VM Viewer", systemImage: "rectangle.on.rectangle")
           }
           .buttonStyle(.bordered)
-
-          Picker("Scale", selection: $macOSViewerScaleMode) {
-            Text("Fit").tag("fit")
-            Text("Fill").tag("fill")
-          }
-          .pickerStyle(.segmented)
-          .frame(width: 140)
-          .onChange(of: macOSViewerScaleMode) { _, _ in
-            if let vm = service.macOSVirtualMachine {
-              showMacOSVMWindow(vm)
-            }
-          }
         }
       }
       .padding()
@@ -633,8 +620,7 @@ struct VMIsolationDashboardView: View {
       controller.close()
     }
 
-    let mode: MacOSVMWindowController.ScaleMode = macOSViewerScaleMode == "fill" ? .fill : .fit
-    let controller = MacOSVMWindowController(virtualMachine: virtualMachine, scaleMode: mode)
+    let controller = MacOSVMWindowController(virtualMachine: virtualMachine)
     macOSVMWindowController = controller
     controller.showWindow(nil)
     controller.window?.makeKeyAndOrderFront(nil)
@@ -750,17 +736,10 @@ struct VMIsolationDashboardView: View {
 
 @available(macOS 12.0, *)
 private final class MacOSVMWindowController: NSWindowController {
-  enum ScaleMode {
-    case fit
-    case fill
-  }
-
   private let virtualMachine: VZVirtualMachine
-  private let scaleMode: ScaleMode
 
-  init(virtualMachine: VZVirtualMachine, scaleMode: ScaleMode) {
+  init(virtualMachine: VZVirtualMachine) {
     self.virtualMachine = virtualMachine
-    self.scaleMode = scaleMode
 
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 1100, height: 720),
@@ -774,8 +753,7 @@ private final class MacOSVMWindowController: NSWindowController {
 
     let container = VZAspectFitContainerView(
       virtualMachine: virtualMachine,
-      displaySize: VMIsolationService.macOSDisplaySize,
-      scaleMode: scaleMode
+      displaySize: VMIsolationService.macOSDisplaySize
     )
     window.contentView = container
 
@@ -791,14 +769,18 @@ private final class MacOSVMWindowController: NSWindowController {
 private final class VZAspectFitContainerView: NSView {
   private let vmView = VZVirtualMachineView()
   private let displaySize: CGSize
-  private let scaleMode: MacOSVMWindowController.ScaleMode
+  private var lastBackingScaleFactor: CGFloat = 1
 
-  init(virtualMachine: VZVirtualMachine, displaySize: CGSize, scaleMode: MacOSVMWindowController.ScaleMode) {
+  init(virtualMachine: VZVirtualMachine, displaySize: CGSize) {
     self.displaySize = displaySize
-    self.scaleMode = scaleMode
     super.init(frame: .zero)
     wantsLayer = true
+    vmView.wantsLayer = true
     vmView.virtualMachine = virtualMachine
+    vmView.autoresizingMask = [.width, .height]
+    if #available(macOS 14.0, *) {
+      vmView.automaticallyReconfiguresDisplay = true
+    }
     addSubview(vmView)
   }
 
@@ -806,21 +788,65 @@ private final class VZAspectFitContainerView: NSView {
     nil
   }
 
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    updateBackingScale()
+  }
+
+  override func viewDidChangeBackingProperties() {
+    super.viewDidChangeBackingProperties()
+    updateBackingScale()
+  }
+
   override func layout() {
     super.layout()
     guard bounds.width > 0, bounds.height > 0 else { return }
 
-    let aspectWidth = displaySize.width
-    let aspectHeight = displaySize.height
-    let scale = scaleMode == .fill
-      ? max(bounds.width / aspectWidth, bounds.height / aspectHeight)
-      : min(bounds.width / aspectWidth, bounds.height / aspectHeight)
+    if #available(macOS 14.0, *) {
+      vmView.frame = bounds
+      return
+    }
+
+    let baseSize = resolvedContentSize
+    let aspectWidth = baseSize.width
+    let aspectHeight = baseSize.height
+    let scale = min(bounds.width / aspectWidth, bounds.height / aspectHeight)
     let targetWidth = aspectWidth * scale
     let targetHeight = aspectHeight * scale
     let originX = (bounds.width - targetWidth) / 2
     let originY = (bounds.height - targetHeight) / 2
 
+    if vmView.bounds.size != baseSize {
+      vmView.bounds = NSRect(origin: .zero, size: baseSize)
+    }
     vmView.frame = NSRect(x: originX, y: originY, width: targetWidth, height: targetHeight)
+  }
+
+  private var resolvedContentSize: CGSize {
+    let intrinsic = vmView.intrinsicContentSize
+    if intrinsic.width > 0,
+       intrinsic.height > 0,
+       intrinsic.width != NSView.noIntrinsicMetric,
+       intrinsic.height != NSView.noIntrinsicMetric {
+      return intrinsic
+    }
+    let backingScale = resolvedBackingScaleFactor
+    return CGSize(width: displaySize.width / backingScale, height: displaySize.height / backingScale)
+  }
+
+  private var resolvedBackingScaleFactor: CGFloat {
+    if let windowScale = window?.backingScaleFactor {
+      return max(windowScale, 1)
+    }
+    return max(NSScreen.main?.backingScaleFactor ?? 1, 1)
+  }
+
+  private func updateBackingScale() {
+    let scale = resolvedBackingScaleFactor
+    guard abs(scale - lastBackingScaleFactor) > 0.01 else { return }
+    lastBackingScaleFactor = scale
+    vmView.layer?.contentsScale = scale
+    needsLayout = true
   }
 }
 
