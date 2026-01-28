@@ -4409,6 +4409,18 @@ extension MCPServerService: RAGToolsHandlerDelegate {
     } else {
       results = try await localRagStore.search(query: query, repoPath: repoPath, limit: limit, matchAll: matchAll)
     }
+    if !results.isEmpty {
+      do {
+        try await localRagStore.recordQueryHint(
+          query: query,
+          repoPath: repoPath,
+          mode: mode.rawValue,
+          resultCount: results.count
+        )
+      } catch {
+        await telemetryProvider.warning("RAG query hint insert failed", metadata: ["error": error.localizedDescription])
+      }
+    }
     return results.map { result in
       RAGToolSearchResult(
         filePath: result.filePath,
