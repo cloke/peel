@@ -1590,12 +1590,12 @@ public final class MCPServerService {
       return handleAgentWorkspacesCleanupStatus(id: id)
 
     case "logs.mcp.path":
-      return (200, JSONRPCResponseBuilder.makeResult(id: id, result: ["path": await telemetryProvider.logPath()]))
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["path": await telemetryProvider.logPath()]))
 
     case "logs.mcp.tail":
       let lines = arguments["lines"] as? Int ?? 200
       let text = await telemetryProvider.tail(lines: lines)
-      return (200, JSONRPCResponseBuilder.makeResult(id: id, result: ["text": text]))
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["text": text]))
 
     // VM tools are now handled by VMToolsHandler above
 
@@ -1619,15 +1619,15 @@ public final class MCPServerService {
 
     case "server.stop":
       stop()
-      return (200, JSONRPCResponseBuilder.makeResult(id: id, result: ["status": "stopped"]))
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["status": "stopped"]))
 
     case "app.quit":
       scheduleAppQuit()
-      return (200, JSONRPCResponseBuilder.makeResult(id: id, result: ["status": "quitting"]))
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["status": "quitting"]))
 
     case "app.activate":
       activateApp()
-      return (200, JSONRPCResponseBuilder.makeResult(id: id, result: ["status": "activated"]))
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["status": "activated"]))
 
     case "screenshot.capture":
       let label = arguments["label"] as? String
@@ -1644,7 +1644,7 @@ public final class MCPServerService {
     #endif
       do {
         let url = try await screenshotService.capture(label: label, outputDir: outputDir)
-        return (200, JSONRPCResponseBuilder.makeResult(id: id, result: ["path": url.path]))
+        return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["path": url.path]))
       } catch {
         await telemetryProvider.warning("Screenshot tool failed", metadata: ["error": error.localizedDescription])
         return (500, JSONRPCResponseBuilder.makeError(id: id, code: -32001, message: error.localizedDescription))
@@ -1732,7 +1732,7 @@ public final class MCPServerService {
       "lastToolRequiresForeground": lastToolRequiresForeground as Any,
       "recentUIActions": recentActions
     ]
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: state))
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: state))
   }
 
   private func handleStateList(id: Any?) -> (Int, Data) {
@@ -1761,7 +1761,7 @@ public final class MCPServerService {
       "toolGroupList": toolGroups.map { $0.rawValue },
       "currentViewId": currentViewId as Any
     ]
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: state))
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: state))
   }
 
   private func handleTranslationsValidate(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
@@ -1792,7 +1792,7 @@ public final class MCPServerService {
     do {
       let report = try await translationValidatorService.runValidator(options: options)
       let summary = report.summary()
-      return (200, JSONRPCResponseBuilder.makeResult(id: id, result: [
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
         "report": encodeJSON(report),
         "summary": encodeJSON(summary)
       ]))
@@ -1844,7 +1844,7 @@ public final class MCPServerService {
       if let report = result.report {
         payload["report"] = encodeJSON(report)
       }
-      return (200, JSONRPCResponseBuilder.makeResult(id: id, result: payload))
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: payload))
     } catch {
       await telemetryProvider.warning("PII scrubber failed", metadata: ["error": error.localizedDescription])
       return (500, JSONRPCResponseBuilder.makeError(id: id, code: -32001, message: error.localizedDescription))
@@ -1890,7 +1890,7 @@ public final class MCPServerService {
         "timeoutSeconds": runInfo.timeoutSeconds as Any,
         "requireRagUsage": runInfo.requireRagUsage
       ]
-      return (200, JSONRPCResponseBuilder.makeResult(id: id, result: result))
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: result))
     }
 
     if let queuedIndex = chainQueue.firstIndex(where: { $0.id == runId }) {
@@ -1902,7 +1902,7 @@ public final class MCPServerService {
         "enqueuedAt": formatter.string(from: entry.enqueuedAt),
         "priority": entry.priority
       ]
-      return (200, JSONRPCResponseBuilder.makeResult(id: id, result: result))
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: result))
     }
 
     if let completed = completedRunsById[runId] {
@@ -1912,7 +1912,7 @@ public final class MCPServerService {
         "completedAt": formatter.string(from: completed.completedAt),
         "result": completed.payload
       ]
-      return (200, JSONRPCResponseBuilder.makeResult(id: id, result: result))
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: result))
     }
 
     return (404, JSONRPCResponseBuilder.makeError(id: id, code: -32004, message: "Run not found"))
@@ -1999,7 +1999,7 @@ public final class MCPServerService {
       return runPayload
     }
 
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: ["runs": payload]))
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["runs": payload]))
   }
 
   private func handleAgentWorkspacesList(id: Any?, arguments: [String: Any]) -> (Int, Data) {
@@ -2031,7 +2031,7 @@ public final class MCPServerService {
         ]
       }
 
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: ["workspaces": workspaces]))
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["workspaces": workspaces]))
   }
 
   private func handleAgentWorkspacesCleanupStatus(id: Any?) -> (Int, Data) {
@@ -2045,7 +2045,7 @@ public final class MCPServerService {
       "lastCleanupError": lastCleanupError as Any
     ]
 
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: result))
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: result))
   }
 
   private func handleChainRun(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
@@ -2349,7 +2349,7 @@ public final class MCPServerService {
         ],
         "async": true
       ]
-      return (200, JSONRPCResponseBuilder.makeResult(id: id, result: result))
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: result))
     }
 
     let summary = await runTask.value
@@ -2386,7 +2386,7 @@ public final class MCPServerService {
       result["validation"] = validationResult.toDictionary()
     }
 
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: result))
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: result))
   }
 
   private func handleChainRunBatch(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
@@ -2474,7 +2474,7 @@ public final class MCPServerService {
       "count": runs.count,
       "runs": results
     ]
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: response))
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: response))
   }
 
   private func handleChainStop(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
@@ -2485,7 +2485,7 @@ public final class MCPServerService {
       let runIds = Array(activeChainTasks.keys)
       runIds.forEach { activeChainTasks[$0]?.cancel() }
       await telemetryProvider.warning("Chain cancellation requested", metadata: ["runIds": runIds.map { $0.uuidString }.joined(separator: ",")])
-      return (200, JSONRPCResponseBuilder.makeResult(id: id, result: ["cancelled": runIds.map { $0.uuidString }]))
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["cancelled": runIds.map { $0.uuidString }]))
     }
 
     guard let runIdString, let runId = UUID(uuidString: runIdString) else {
@@ -2498,7 +2498,7 @@ public final class MCPServerService {
 
     task.cancel()
     await telemetryProvider.warning("Chain cancellation requested", metadata: ["runId": runId.uuidString])
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: ["cancelled": [runId.uuidString]]))
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["cancelled": [runId.uuidString]]))
   }
 
   private func handleChainPause(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
@@ -2510,7 +2510,7 @@ public final class MCPServerService {
 
     await chainRunner.pause(chainId: chain.id)
     await telemetryProvider.info("Chain paused", metadata: ["runId": runId.uuidString])
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: ["paused": runId.uuidString]))
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["paused": runId.uuidString]))
   }
 
   private func handleChainResume(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
@@ -2522,7 +2522,7 @@ public final class MCPServerService {
 
     await chainRunner.resume(chainId: chain.id)
     await telemetryProvider.info("Chain resumed", metadata: ["runId": runId.uuidString])
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: ["resumed": runId.uuidString]))
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["resumed": runId.uuidString]))
   }
 
   private func handleChainInstruct(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
@@ -2541,7 +2541,7 @@ public final class MCPServerService {
       "runId": runId.uuidString,
       "guidanceLength": "\(guidance.count)"
     ])
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: ["runId": runId.uuidString, "guidanceCount": chain.operatorGuidance.count]))
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["runId": runId.uuidString, "guidanceCount": chain.operatorGuidance.count]))
   }
 
   private func handleChainStep(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
@@ -2553,7 +2553,7 @@ public final class MCPServerService {
 
     await chainRunner.step(chainId: chain.id)
     await telemetryProvider.info("Chain step", metadata: ["runId": runId.uuidString])
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: ["step": runId.uuidString]))
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["step": runId.uuidString]))
   }
 
   private func handleServerRestart(id: Any?) async -> (Int, Data) {
@@ -2562,7 +2562,7 @@ public final class MCPServerService {
     await waitForServerStart()
 
     if isRunning {
-      return (200, JSONRPCResponseBuilder.makeResult(id: id, result: ["running": true, "port": port]))
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["running": true, "port": port]))
     }
 
     return (500, JSONRPCResponseBuilder.makeError(id: id, code: -32001, message: lastError ?? "Failed to restart server"))
@@ -2592,7 +2592,7 @@ public final class MCPServerService {
     await waitForServerStart()
 
     if isRunning {
-      return (200, JSONRPCResponseBuilder.makeResult(id: id, result: ["running": true, "port": port]))
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["running": true, "port": port]))
     }
 
     return (500, JSONRPCResponseBuilder.makeError(id: id, code: -32003, message: lastError ?? "Failed to bind to port"))
@@ -2608,7 +2608,7 @@ public final class MCPServerService {
       "sleepPreventionActive": sleepPreventionAssertionId != nil,
       "lanModeEnabled": lanModeEnabled
     ]
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: status))
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: status))
   }
   
   private func handleServerLanModeSet(id: Any?, arguments: [String: Any]) -> (Int, Data) {
@@ -2621,7 +2621,7 @@ public final class MCPServerService {
     if enabled {
       result["warning"] = "LAN mode enabled - MCP server accepts connections from any device on the network. Only use on trusted networks."
     }
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: result))
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: result))
   }
 
   private func handleServerSleepPreventionSet(id: Any?, arguments: [String: Any]) -> (Int, Data) {
@@ -2630,14 +2630,14 @@ public final class MCPServerService {
     }
 
     sleepPreventionEnabled = enabled
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: [
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
       "enabled": sleepPreventionEnabled,
       "active": sleepPreventionAssertionId != nil
     ]))
   }
 
   private func handleServerSleepPreventionStatus(id: Any?) -> (Int, Data) {
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: [
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
       "enabled": sleepPreventionEnabled,
       "active": sleepPreventionAssertionId != nil
     ]))
@@ -2781,7 +2781,7 @@ public final class MCPServerService {
     if let maxQueued = arguments["maxQueued"] as? Int {
       maxQueuedChains = max(0, maxQueued)
     }
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: queueStatusDict()))
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: queueStatusDict()))
   }
 
   private func handleQueueCancel(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
@@ -2792,7 +2792,7 @@ public final class MCPServerService {
 
     if cancelQueuedRunInternal(runId: runId) {
       await telemetryProvider.warning("Queued chain cancelled", metadata: ["runId": runId.uuidString])
-      return (200, JSONRPCResponseBuilder.makeResult(id: id, result: ["cancelled": runId.uuidString]))
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["cancelled": runId.uuidString]))
     }
 
     return (404, JSONRPCResponseBuilder.makeError(id: id, code: -32004, message: "Queued run not found"))
@@ -2818,7 +2818,7 @@ public final class MCPServerService {
       "requireRagByDefault": promptRules.requireRagByDefault,
       "perTemplateOverrides": overrides
     ]
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: result))
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: result))
   }
 
   private func handlePromptRulesSet(id: Any?, arguments: [String: Any]) -> (Int, Data) {
@@ -2856,7 +2856,7 @@ public final class MCPServerService {
     }
 
     promptRules = rules
-    return (200, JSONRPCResponseBuilder.makeResult(id: id, result: ["updated": true]))
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["updated": true]))
   }
 
   public func cleanupAgentWorkspaces() async {
