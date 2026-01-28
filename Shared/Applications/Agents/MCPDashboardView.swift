@@ -9,7 +9,6 @@ import Charts
 import PeelUI
 import SwiftData
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct MCPDashboardView: View {
   @Bindable var mcpServer: MCPServerService
@@ -38,14 +37,6 @@ struct MCPDashboardView: View {
   @State private var lastLatencyRefresh: Date?
   @State private var isLoadingRag = false
   @State private var usageGranularity: UsageGranularity = .day
-  @State private var vscodeServerName = "Peel"
-  @State private var vscodeServerURL = "http://127.0.0.1:8765/rpc"
-  @State private var vscodeWriteToWorkspace = false
-  @State private var vscodeWorkspacePath = ""
-  @State private var vscodeConfigStatus: String?
-  @State private var vscodeConfigError: String?
-  @State private var isWorkspacePickerPresented = false
-  @State private var isWritingVSCodeConfig = false
 
   private enum UsageGranularity: String, CaseIterable {
     case day
@@ -186,39 +177,6 @@ struct MCPDashboardView: View {
     await mcpServer.refreshRagSummary()
   }
 
-  private func installVSCodeMCPConfig() async {
-    vscodeConfigError = nil
-    vscodeConfigStatus = nil
-    isWritingVSCodeConfig = true
-    defer { isWritingVSCodeConfig = false }
-
-    let scope: VSCodeService.ConfigTarget
-    if vscodeWriteToWorkspace {
-      let trimmedPath = vscodeWorkspacePath.trimmingCharacters(in: .whitespacesAndNewlines)
-      guard !trimmedPath.isEmpty else {
-        vscodeConfigError = "Choose a workspace folder first."
-        return
-      }
-      scope = .workspace(path: trimmedPath)
-    } else {
-      scope = .user
-    }
-
-    do {
-      let cleanName = vscodeServerName.trimmingCharacters(in: .whitespacesAndNewlines)
-      let name = cleanName.isEmpty ? "Peel" : cleanName
-      let url = vscodeServerURL.trimmingCharacters(in: .whitespacesAndNewlines)
-      let path = try await VSCodeService.shared.installMCPConfig(
-        serverName: name,
-        serverURL: url,
-        scope: scope
-      )
-      vscodeConfigStatus = "Updated VS Code settings: \(path)"
-    } catch {
-      vscodeConfigError = error.localizedDescription
-    }
-  }
-
   private func formatBytes(_ bytes: Int) -> String {
     ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
   }
@@ -249,50 +207,6 @@ struct MCPDashboardView: View {
                 verticalPadding: 4
               )
             }
-          }
-        }
-
-        GroupBox {
-          VStack(alignment: .leading, spacing: 8) {
-            Text("VS Code MCP Config")
-              .font(.headline)
-            Text("Install Peel as an MCP server in VS Code settings.")
-              .font(.caption)
-              .foregroundStyle(.secondary)
-
-            HStack(spacing: 12) {
-              TextField("Server Name", text: $vscodeServerName)
-                .textFieldStyle(.roundedBorder)
-              TextField("Server URL", text: $vscodeServerURL)
-                .textFieldStyle(.roundedBorder)
-            }
-
-            Toggle("Write to workspace settings (recommended only for shared repos)", isOn: $vscodeWriteToWorkspace)
-
-            if vscodeWriteToWorkspace {
-              HStack(spacing: 12) {
-                TextField("Workspace folder", text: $vscodeWorkspacePath)
-                  .textFieldStyle(.roundedBorder)
-                Button("Choose…") { isWorkspacePickerPresented = true }
-              }
-              .font(.caption)
-            }
-
-            if let status = vscodeConfigStatus {
-              Text(status)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-            if let error = vscodeConfigError {
-              Text(error)
-                .font(.caption)
-                .foregroundStyle(.red)
-            }
-
-            Button(isWritingVSCodeConfig ? "Installing…" : "Install VS Code MCP Config") {
-              Task { await installVSCodeMCPConfig() }
-            }
-            .disabled(isWritingVSCodeConfig)
           }
         }
 
@@ -942,24 +856,7 @@ struct MCPDashboardView: View {
     .sheet(item: $selectedRun) { run in
       MCPRunDetailView(run: run)
     }
-    .fileImporter(
-      isPresented: $isWorkspacePickerPresented,
-      allowedContentTypes: [.folder],
-      allowsMultipleSelection: false
-    ) { result in
-      switch result {
-      case .success(let urls):
-        if let selected = urls.first {
-          vscodeWorkspacePath = selected.path
-        }
-      case .failure(let error):
-        vscodeConfigError = error.localizedDescription
-      }
-    }
     .task {
-      if vscodeWorkspacePath.isEmpty {
-        vscodeWorkspacePath = mcpServer.agentManager.lastUsedWorkingDirectory ?? ""
-      }
       await loadLatencySamples()
       await refreshRagSummary()
     }
