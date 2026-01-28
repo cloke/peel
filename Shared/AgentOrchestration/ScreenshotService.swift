@@ -21,10 +21,6 @@ actor ScreenshotService {
       throw ScreenshotError.notSupported
     }
 
-    if let image = await captureAppWindowImage() {
-      return try saveImage(image, label: label, outputDir: outputDir)
-    }
-
     let hasPermission = await MainActor.run { CGPreflightScreenCaptureAccess() }
     if !hasPermission {
       if permissionRequested {
@@ -35,6 +31,10 @@ actor ScreenshotService {
       if !granted {
         throw ScreenshotError.permissionDenied
       }
+    }
+
+    if let image = try await captureAppWindowImage() {
+      return try saveImage(image, label: label, outputDir: outputDir)
     }
 
     let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
@@ -63,25 +63,41 @@ actor ScreenshotService {
     return try saveImage(image, label: label, outputDir: outputDir)
   }
 
-  @MainActor
-  private func captureAppWindowImage() -> CGImage? {
-    let window = NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first(where: { window in
-      window.isVisible && !window.isMiniaturized
-    })
-    guard let window else { return nil }
-
-    let windowId = CGWindowID(window.windowNumber)
-    let imageOptions: CGWindowImageOption = [.boundsIgnoreFraming, .bestResolution]
-    if let image = CGWindowListCreateImage(.null, .optionIncludingWindow, windowId, imageOptions) {
-      return image
+  @available(macOS 12.3, *)
+  private func captureAppWindowImage() async throws -> CGImage? {
+    let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+    guard #available(macOS 13.0, *), let window = findAppWindow(in: content) else {
+      return nil
     }
 
-    guard let contentView = window.contentView else { return nil }
-    let bounds = contentView.bounds
-    guard bounds.width > 0, bounds.height > 0 else { return nil }
-    guard let rep = contentView.bitmapImageRepForCachingDisplay(in: bounds) else { return nil }
-    contentView.cacheDisplay(in: bounds, to: rep)
-    return rep.cgImage
+    let configuration = SCStreamConfiguration()
+    configuration.scalesToFit = true
+    configuration.showsCursor = true
+    configuration.width = max(Int(window.frame.width), 1)
+    configuration.height = max(Int(window.frame.height), 1)
+
+    let filter = SCContentFilter(desktopIndependentWindow: window)
+    if #available(macOS 14.0, *) {
+      return try await captureSingleFrame(filter: filter, configuration: configuration)
+    }
+    return try await captureImage(filter: filter, configuration: configuration)
+  }
+
+  @available(macOS 14.0, *)
+  private func captureSingleFrame(filter: SCContentFilter, configuration: SCStreamConfiguration) async throws -> CGImage {
+    try await withCheckedThrowingContinuation { continuation in
+      SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration) { image, error in
+        if let error {
+          continuation.resume(throwing: error)
+          return
+        }
+        if let image {
+          continuation.resume(returning: image)
+        } else {
+          continuation.resume(throwing: ScreenshotError.captureFailed)
+        }
+      }
+    }
   }
 
   private func saveImage(_ image: CGImage, label: String?, outputDir: String?) throws -> URL {
