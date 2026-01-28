@@ -166,7 +166,6 @@ final class RAGToolsHandler: MCPToolHandler {
       "embeddingDimensions": status.embeddingDimensions,
       "coreMLModelPresent": status.coreMLModelPresent,
       "coreMLVocabPresent": status.coreMLVocabPresent,
-      "coreMLTokenizerHelperPresent": status.coreMLTokenizerHelperPresent,
       "debugForceSystem": UserDefaults.standard.bool(forKey: "localrag.useSystem")
     ]
     if let lastInitializedAt = status.lastInitializedAt {
@@ -540,10 +539,9 @@ struct RAGToolStatus {
   let embeddingDimensions: Int
   let coreMLModelPresent: Bool
   let coreMLVocabPresent: Bool
-  let coreMLTokenizerHelperPresent: Bool
   let lastInitializedAt: Date?
   
-  init(dbPath: String, exists: Bool, schemaVersion: Int, extensionLoaded: Bool, providerName: String, embeddingModelName: String, embeddingDimensions: Int, coreMLModelPresent: Bool, coreMLVocabPresent: Bool, coreMLTokenizerHelperPresent: Bool, lastInitializedAt: Date?) {
+  init(dbPath: String, exists: Bool, schemaVersion: Int, extensionLoaded: Bool, providerName: String, embeddingModelName: String, embeddingDimensions: Int, coreMLModelPresent: Bool, coreMLVocabPresent: Bool, lastInitializedAt: Date?) {
     self.dbPath = dbPath
     self.exists = exists
     self.schemaVersion = schemaVersion
@@ -553,7 +551,6 @@ struct RAGToolStatus {
     self.embeddingDimensions = embeddingDimensions
     self.coreMLModelPresent = coreMLModelPresent
     self.coreMLVocabPresent = coreMLVocabPresent
-    self.coreMLTokenizerHelperPresent = coreMLTokenizerHelperPresent
     self.lastInitializedAt = lastInitializedAt
   }
 }

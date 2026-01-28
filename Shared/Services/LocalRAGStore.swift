@@ -635,19 +635,22 @@ struct HybridChunker {
     process.standardError = errorPipe
     
     // Async pipe reading to prevent deadlock on large output
-    var outputData = Data()
-    var errorData = Data()
+    final class DataBox: @unchecked Sendable {
+      var data = Data()
+    }
+    let outputBox = DataBox()
+    let errorBox = DataBox()
     let group = DispatchGroup()
     
     group.enter()
     DispatchQueue.global(qos: .userInitiated).async {
-      outputData = pipe.fileHandleForReading.readDataToEndOfFile()
+      outputBox.data = pipe.fileHandleForReading.readDataToEndOfFile()
       group.leave()
     }
     
     group.enter()
     DispatchQueue.global(qos: .userInitiated).async {
-      errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+      errorBox.data = errorPipe.fileHandleForReading.readDataToEndOfFile()
       group.leave()
     }
     
@@ -671,6 +674,9 @@ struct HybridChunker {
       
       process.waitUntilExit()
       
+      let outputData = outputBox.data
+      let errorData = errorBox.data
+
       if process.terminationStatus != 0 {
         let errorMsg = String(data: errorData, encoding: .utf8) ?? "Unknown error"
         let fileName = (filePath as NSString).lastPathComponent
@@ -1142,15 +1148,11 @@ actor LocalRAGStore {
     let embeddingDimensions: Int
     let coreMLModelPresent: Bool
     let coreMLVocabPresent: Bool
-    let coreMLTokenizerHelperPresent: Bool
     
     /// Returns user-facing warning messages for missing Core ML assets.
     /// Extracted from duplicated UI logic in LocalRAGDashboardView.swift lines ~653-658.
     func assetWarnings() -> [String] {
       var warnings: [String] = []
-      if !coreMLTokenizerHelperPresent {
-        warnings.append("tokenizer helper missing — embeddings will be low quality")
-      }
       if !coreMLModelPresent || !coreMLVocabPresent {
         warnings.append("model/vocab missing — falling back to system embeddings")
       }
@@ -1244,9 +1246,6 @@ actor LocalRAGStore {
     let vocabPresent = modelsURLs.contains { url in
       FileManager.default.fileExists(atPath: url.appendingPathComponent("codebert-base.vocab.json").path)
     }
-    let helperPresent = modelsURLs.contains { url in
-      FileManager.default.fileExists(atPath: url.appendingPathComponent("tokenize_codebert.py").path)
-    }
     return Status(
       dbPath: dbURL.path,
       exists: FileManager.default.fileExists(atPath: dbURL.path),
@@ -1257,8 +1256,7 @@ actor LocalRAGStore {
       embeddingModelName: embeddingProvider.modelName,
       embeddingDimensions: embeddingProvider.dimensions,
       coreMLModelPresent: modelPresent,
-      coreMLVocabPresent: vocabPresent,
-      coreMLTokenizerHelperPresent: helperPresent
+      coreMLVocabPresent: vocabPresent
     )
   }
   
@@ -1770,7 +1768,7 @@ actor LocalRAGStore {
     try openIfNeeded()
     
     let sql: String
-    if let repoPath {
+    if repoPath != nil {
       sql = """
       SELECT COALESCE(c.construct_type, 'unknown') as type, COUNT(*) as cnt
       FROM chunks c
@@ -1815,7 +1813,7 @@ actor LocalRAGStore {
     try openIfNeeded()
     
     let sql: String
-    if let repoPath {
+    if repoPath != nil {
       sql = """
       SELECT r.root_path || '/' || f.path as full_path, 
              COUNT(*) as chunk_count, 

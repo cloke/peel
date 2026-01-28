@@ -4362,7 +4362,6 @@ extension MCPServerService: RAGToolsHandlerDelegate {
       embeddingDimensions: status.embeddingDimensions,
       coreMLModelPresent: status.coreMLModelPresent,
       coreMLVocabPresent: status.coreMLVocabPresent,
-      coreMLTokenizerHelperPresent: status.coreMLTokenizerHelperPresent,
       lastInitializedAt: status.lastInitializedAt
     )
   }
@@ -4379,7 +4378,6 @@ extension MCPServerService: RAGToolsHandlerDelegate {
       embeddingDimensions: status.embeddingDimensions,
       coreMLModelPresent: status.coreMLModelPresent,
       coreMLVocabPresent: status.coreMLVocabPresent,
-      coreMLTokenizerHelperPresent: status.coreMLTokenizerHelperPresent,
       lastInitializedAt: status.lastInitializedAt
     )
   }
