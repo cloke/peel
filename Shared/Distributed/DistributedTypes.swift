@@ -108,6 +108,10 @@ public struct ChainResult: Codable, Sendable {
   public let workerDeviceName: String
   public let completedAt: Date
   public let errorMessage: String?
+  /// Branch name created for this task (if worktree isolation was used)
+  public let branchName: String?
+  /// Path to the repo where the branch was created
+  public let repoPath: String?
   
   public init(
     requestId: UUID,
@@ -117,7 +121,9 @@ public struct ChainResult: Codable, Sendable {
     workerDeviceId: String,
     workerDeviceName: String,
     completedAt: Date = Date(),
-    errorMessage: String? = nil
+    errorMessage: String? = nil,
+    branchName: String? = nil,
+    repoPath: String? = nil
   ) {
     self.requestId = requestId
     self.status = status
@@ -127,6 +133,8 @@ public struct ChainResult: Codable, Sendable {
     self.workerDeviceName = workerDeviceName
     self.completedAt = completedAt
     self.errorMessage = errorMessage
+    self.branchName = branchName
+    self.repoPath = repoPath
   }
 }
 

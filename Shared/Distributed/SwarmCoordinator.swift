@@ -159,6 +159,18 @@ public final class SwarmCoordinator {
   /// Chain executor for worker mode
   private var chainExecutor: ChainExecutorProtocol?
   
+  /// Worktree manager for isolated task execution
+  private var _worktreeManager: SwarmWorktreeManager?
+  private var worktreeManager: SwarmWorktreeManager {
+    if _worktreeManager == nil {
+      _worktreeManager = SwarmWorktreeManager()
+    }
+    return _worktreeManager!
+  }
+  
+  /// Whether to use worktrees for task isolation (default: true)
+  public var useWorktreeIsolation: Bool = true
+  
   /// Pending task continuations (for async result delivery)
   private var pendingTasks: [UUID: CheckedContinuation<ChainResult, Error>] = [:]
   
@@ -459,12 +471,48 @@ public final class SwarmCoordinator {
     // Execute
     let startTime = Date()
     var result: ChainResult
+    var worktreePath: String?
+    var createdBranchName: String?
     
     do {
       let outputs: [ChainOutput]
       
       if let executor = chainExecutor {
-        outputs = try await executor.execute(request: request)
+        // Create isolated worktree if enabled
+        let effectiveWorkingDirectory: String
+        if useWorktreeIsolation {
+          let branchName = SwarmWorktreeManager.generateBranchName(
+            taskId: request.id,
+            prefix: "swarm",
+            hint: extractPromptHint(from: request.prompt)
+          )
+          createdBranchName = branchName
+          
+          worktreePath = try await worktreeManager.createWorktree(
+            taskId: request.id,
+            repoPath: request.workingDirectory,
+            branchName: branchName,
+            baseBranch: "origin/main"
+          )
+          effectiveWorkingDirectory = worktreePath!
+          logger.info("Created worktree for task \(request.id): \(effectiveWorkingDirectory)")
+        } else {
+          effectiveWorkingDirectory = request.workingDirectory
+        }
+        
+        // Create a modified request with the worktree path
+        let modifiedRequest = ChainRequest(
+          id: request.id,
+          templateName: request.templateName,
+          prompt: request.prompt,
+          workingDirectory: effectiveWorkingDirectory,
+          priority: request.priority,
+          requiredCapabilities: request.requiredCapabilities,
+          createdAt: request.createdAt,
+          timeoutSeconds: request.timeoutSeconds
+        )
+        
+        outputs = try await executor.execute(request: modifiedRequest)
       } else {
         // Mock execution
         logger.warning("No chain executor, returning mock result")
@@ -481,7 +529,9 @@ public final class SwarmCoordinator {
         outputs: outputs,
         duration: duration,
         workerDeviceId: capabilities.deviceId,
-        workerDeviceName: capabilities.deviceName
+        workerDeviceName: capabilities.deviceName,
+        branchName: createdBranchName,
+        repoPath: useWorktreeIsolation ? request.workingDirectory : nil
       )
       tasksCompleted += 1
       
@@ -493,10 +543,23 @@ public final class SwarmCoordinator {
         duration: duration,
         workerDeviceId: capabilities.deviceId,
         workerDeviceName: capabilities.deviceName,
-        errorMessage: error.localizedDescription
+        errorMessage: error.localizedDescription,
+        branchName: createdBranchName,
+        repoPath: useWorktreeIsolation ? request.workingDirectory : nil
       )
       tasksFailed += 1
       delegate?.swarmCoordinator(self, didEmit: .taskFailed(request.id, error))
+    }
+    
+    // Cleanup worktree after task completion
+    // Note: We don't delete the branch - the brain will handle PR creation
+    if useWorktreeIsolation && worktreePath != nil {
+      do {
+        try await worktreeManager.removeWorktree(taskId: request.id, force: false)
+        logger.info("Cleaned up worktree for task \(request.id)")
+      } catch {
+        logger.warning("Failed to cleanup worktree for task \(request.id): \(error)")
+      }
     }
     
     // Send result
@@ -507,6 +570,13 @@ public final class SwarmCoordinator {
     await sendHeartbeat()
     
     logger.info("Task \(request.id) completed: \(result.status.rawValue)")
+  }
+  
+  /// Extract a hint for branch naming from the prompt
+  private func extractPromptHint(from prompt: String) -> String {
+    // Take first few words, truncate to 30 chars max
+    let words = prompt.split(separator: " ").prefix(5).joined(separator: " ")
+    return String(words.prefix(30))
   }
   
   /// Handle direct command execution (worker mode) - no LLM involved
