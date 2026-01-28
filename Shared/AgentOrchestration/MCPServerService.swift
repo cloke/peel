@@ -565,6 +565,14 @@ public final class MCPServerService {
       start()
     }
   }
+  
+  /// Configure the SwarmCoordinator with a chain executor for worker mode
+  /// Called by SwarmStatusView when starting as worker/hybrid from UI
+  public func configureSwarmExecutor() {
+    let executor = DefaultChainExecutor(chainRunner: chainRunner, agentManager: agentManager)
+    SwarmCoordinator.shared.configure(chainExecutor: executor)
+    print("✅ SwarmCoordinator configured with chain executor via UI")
+  }
 
   public var toolCategories: [ToolCategory] {
     ToolCategory.allCases.filter { category in
