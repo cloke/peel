@@ -4319,6 +4319,37 @@ public final class MCPServerService {
         ],
         category: .swarm,
         isMutating: true
+      ),
+      ToolDefinition(
+        name: "swarm.register-repo",
+        description: "Register a local repository path with the swarm. This maps the repo's git remote URL to the local path, enabling distributed tasks to work across machines with different folder structures.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "path": [
+              "type": "string",
+              "description": "The local path to the git repository"
+            ],
+            "remoteURL": [
+              "type": "string",
+              "description": "Optional: Explicit remote URL (if not provided, will be auto-detected from the git repo)"
+            ]
+          ],
+          "required": ["path"]
+        ],
+        category: .swarm,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "swarm.repos",
+        description: "List all registered repositories and their remote URL mappings.",
+        inputSchema: [
+          "type": "object",
+          "properties": [:],
+          "required": []
+        ],
+        category: .swarm,
+        isMutating: false
       )
     ]
   }
