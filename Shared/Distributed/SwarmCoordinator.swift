@@ -93,6 +93,46 @@ public final class SwarmCoordinator {
     Array(discoveryService?.discoveredPeers.values ?? [:].values)
   }
   
+  // MARK: - Repo Detection
+  
+  /// Detect the repo path from the running app's bundle location
+  /// Works with both direct project builds (/code/repo/build/...) and DerivedData builds
+  private static func detectRepoPath() -> String? {
+    let bundlePath = Bundle.main.bundlePath
+    let components = bundlePath.components(separatedBy: "/")
+    
+    // Strategy 1: Look for "build" folder (standard Xcode project structure)
+    if let buildIndex = components.firstIndex(of: "build") {
+      let path = components.prefix(buildIndex).joined(separator: "/")
+      if FileManager.default.fileExists(atPath: "\(path)/.git") {
+        return path
+      }
+    }
+    
+    // Strategy 2: Look for DerivedData and search common code locations
+    if let _ = components.firstIndex(of: "DerivedData"),
+       let userIndex = components.firstIndex(of: "Users"),
+       userIndex + 1 < components.count {
+      let username = components[userIndex + 1]
+      let homeDir = "/Users/\(username)"
+      // Check common code locations
+      for codeDir in ["code", "Code", "Developer", "Projects", "dev"] {
+        let potentialPath = "\(homeDir)/\(codeDir)"
+        if FileManager.default.fileExists(atPath: potentialPath) {
+          // Look for Peel/KitchenSink repo
+          for repoName in ["KitchenSink", "kitchen-sink", "Peel", "peel"] {
+            let testPath = "\(potentialPath)/\(repoName)"
+            if FileManager.default.fileExists(atPath: "\(testPath)/.git") {
+              return testPath
+            }
+          }
+        }
+      }
+    }
+    
+    return nil
+  }
+  
   // MARK: - Private State
   
   /// Connection manager
@@ -414,44 +454,42 @@ public final class SwarmCoordinator {
     
     logger.info("Executing direct command: \(command) \(args.joined(separator: " "))")
     
-    // Determine the working directory
+    // Determine the working directory (repo root)
     // If none specified, try to find the Peel repo from the running app's bundle
     let effectiveWorkingDir: String
     if let dir = workingDirectory, !dir.isEmpty {
       effectiveWorkingDir = dir
     } else {
-      // Detect repo from bundle location
-      let bundlePath = Bundle.main.bundlePath
-      // e.g., /Users/user/code/KitchenSink/build/Build/Products/Debug/Peel.app
-      // We want: /Users/user/code/KitchenSink
-      let components = bundlePath.components(separatedBy: "/")
-      if let buildIndex = components.firstIndex(of: "build") {
-        effectiveWorkingDir = components.prefix(buildIndex).joined(separator: "/")
-      } else if let appIndex = components.lastIndex(where: { $0.hasSuffix(".app") }) {
-        effectiveWorkingDir = components.prefix(appIndex).joined(separator: "/")
-      } else {
-        effectiveWorkingDir = FileManager.default.currentDirectoryPath
-      }
+      effectiveWorkingDir = Self.detectRepoPath() ?? FileManager.default.currentDirectoryPath
+    }
+    
+    // If command is a relative path (like Tools/self-update.sh), make it absolute
+    let resolvedCommand: String
+    if !command.hasPrefix("/") && command.contains("/") {
+      // Relative path - make it absolute using working dir
+      resolvedCommand = "\(effectiveWorkingDir)/\(command)"
+    } else {
+      resolvedCommand = command
     }
     
     // Resolve the command - use /bin/sh -c for shell commands to get PATH resolution
     // If command is absolute path, use it directly; otherwise use shell
-    let useShell = !command.hasPrefix("/")
+    let useShell = !resolvedCommand.hasPrefix("/")
     
     let process = Process()
     if useShell {
       // Use shell to resolve command via PATH
       process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-      let fullCommand = ([command] + args).map { arg in
+      let fullCommand = ([resolvedCommand] + args).map { arg in
         // Escape arguments for shell
         arg.contains(" ") || arg.contains("\"") ? "'\(arg.replacingOccurrences(of: "'", with: "'\\''"))'" : arg
       }.joined(separator: " ")
       process.arguments = ["-c", fullCommand]
       logger.info("Executing via shell: /bin/zsh -c '\(fullCommand)' in \(effectiveWorkingDir)")
     } else {
-      process.executableURL = URL(fileURLWithPath: command)
+      process.executableURL = URL(fileURLWithPath: resolvedCommand)
       process.arguments = args
-      logger.info("Executing direct: \(command) \(args.joined(separator: " ")) in \(effectiveWorkingDir)")
+      logger.info("Executing direct: \(resolvedCommand) \(args.joined(separator: " ")) in \(effectiveWorkingDir)")
     }
     process.currentDirectoryURL = URL(fileURLWithPath: effectiveWorkingDir)
     
