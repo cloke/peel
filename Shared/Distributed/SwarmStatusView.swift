@@ -105,31 +105,8 @@ public struct SwarmStatusView: View {
   
   private var workersSection: some View {
     VStack(alignment: .leading, spacing: 8) {
-      // Title adapts based on role
-      Text(sectionTitle)
-        .font(.subheadline)
-        .foregroundStyle(.secondary)
-        .padding(.horizontal)
-        .padding(.top)
-      
-      if coordinator.connectedWorkers.isEmpty {
-        ContentUnavailableView {
-          Label(emptyStateTitle, systemImage: emptyStateIcon)
-        } description: {
-          Text(emptyStateDescription)
-        }
-      } else {
-        List(coordinator.connectedWorkers, id: \.id) { worker in
-          PeerRow(peer: worker, role: coordinator.role)
-        }
-        .listStyle(.plain)
-      }
-      
-      Spacer()
-      
-      // Local stats
+      // Local stats at top
       VStack(alignment: .leading, spacing: 4) {
-        Divider()
         HStack {
           Text("Role:")
           Spacer()
@@ -156,9 +133,30 @@ public struct SwarmStatusView: View {
           Text("\(coordinator.tasksFailed)")
             .foregroundStyle(coordinator.tasksFailed > 0 ? .red : .secondary)
         }
+        Divider()
       }
       .font(.caption)
-      .padding()
+      .padding(.horizontal)
+      .padding(.top)
+      
+      // Title adapts based on role
+      Text(sectionTitle)
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal)
+      
+      if coordinator.connectedWorkers.isEmpty {
+        Text(emptyStateDescription)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .padding(.horizontal)
+        Spacer()
+      } else {
+        List(coordinator.connectedWorkers, id: \.id) { worker in
+          PeerRow(peer: worker, role: coordinator.role)
+        }
+        .listStyle(.plain)
+      }
     }
   }
   
@@ -227,11 +225,11 @@ public struct SwarmStatusView: View {
       .padding(.top)
       
       if taskLog.isEmpty {
-        ContentUnavailableView {
-          Label("No Activity", systemImage: "clock")
-        } description: {
-          Text("Task activity will appear here")
-        }
+        Text("Task activity will appear here")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .padding(.horizontal)
+        Spacer()
       } else {
         ScrollViewReader { proxy in
           ScrollView {
