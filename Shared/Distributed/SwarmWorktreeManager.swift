@@ -132,8 +132,12 @@ public final class SwarmWorktreeManager {
     taskId: UUID,
     commitMessage: String
   ) async throws -> Bool {
+    logger.info("commitAndPushChanges called for task \(taskId)")
+    logger.info("Active worktrees count: \(self.activeWorktrees.count)")
+    logger.info("Active worktree keys: \(self.activeWorktrees.keys.map { $0.uuidString })")
+    
     guard let info = activeWorktrees[taskId] else {
-      logger.warning("No worktree found for task \(taskId)")
+      logger.warning("No worktree found for task \(taskId) - activeWorktrees: \(self.activeWorktrees.keys.map { $0.uuidString })")
       return false
     }
     
