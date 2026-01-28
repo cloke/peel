@@ -4273,6 +4273,48 @@ public final class MCPServerService {
         ],
         category: .swarm,
         isMutating: true
+      ),
+      ToolDefinition(
+        name: "swarm.branch-queue",
+        description: "View the branch queue status showing in-flight branches being worked on and completed branches ready for PR.",
+        inputSchema: [
+          "type": "object",
+          "properties": [:],
+          "required": []
+        ],
+        category: .swarm,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "swarm.pr-queue",
+        description: "View the PR queue status showing pending operations and created PRs with their labels.",
+        inputSchema: [
+          "type": "object",
+          "properties": [:],
+          "required": []
+        ],
+        category: .swarm,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "swarm.create-pr",
+        description: "Manually create a PR for a completed swarm task. Use when auto-PR is disabled or you want to create a PR for a specific task.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "taskId": [
+              "type": "string",
+              "description": "The task ID to create a PR for (must be in completed branches)"
+            ],
+            "title": [
+              "type": "string",
+              "description": "Optional custom PR title (defaults to task prompt)"
+            ]
+          ],
+          "required": ["taskId"]
+        ],
+        category: .swarm,
+        isMutating: true
       )
     ]
   }
