@@ -4044,6 +4044,26 @@ public final class MCPServerService {
         ],
         category: .swarm,
         isMutating: false
+      ),
+      ToolDefinition(
+        name: "swarm.tasks",
+        description: "Get completed task results from the swarm. Returns recent task outputs with worker info.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "taskId": [
+              "type": "string",
+              "description": "Optional: Get results for a specific task ID"
+            ],
+            "limit": [
+              "type": "integer",
+              "description": "Maximum number of results to return (default: 10)"
+            ]
+          ],
+          "required": []
+        ],
+        category: .swarm,
+        isMutating: false
       )
     ]
   }
