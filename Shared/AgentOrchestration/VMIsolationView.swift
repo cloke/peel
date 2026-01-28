@@ -16,6 +16,7 @@ import PeelUI
 private enum VMIsolationSection: String, CaseIterable, Identifiable {
   case overview
   case linux
+  case console
   case macos
   case pools
 
@@ -25,6 +26,7 @@ private enum VMIsolationSection: String, CaseIterable, Identifiable {
     switch self {
     case .overview: "Overview"
     case .linux: "Linux"
+    case .console: "Console"
     case .macos: "macOS"
     case .pools: "Pools"
     }
@@ -128,6 +130,11 @@ struct VMIsolationDashboardView: View {
     case .linux:
       if service.isLinuxReady {
         testVMSection
+      } else {
+        setupStatusSection
+      }
+    case .console:
+      if service.isLinuxReady {
         consoleSection
       } else {
         setupStatusSection
