@@ -4083,6 +4083,22 @@ public final class MCPServerService {
         ],
         category: .swarm,
         isMutating: false
+      ),
+      ToolDefinition(
+        name: "swarm.update-workers",
+        description: "Trigger all connected workers to pull latest code, rebuild, and restart. Workers will disconnect briefly during restart.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "force": [
+              "type": "boolean",
+              "description": "Force rebuild even if no new commits (default: false)"
+            ]
+          ],
+          "required": []
+        ],
+        category: .swarm,
+        isMutating: true
       )
     ]
   }
