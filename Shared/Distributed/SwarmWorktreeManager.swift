@@ -238,6 +238,24 @@ public final class SwarmWorktreeManager {
     Array(activeWorktrees.values)
   }
   
+  /// Get debug info about active worktrees
+  public func getDebugInfo() -> [String: Any] {
+    return [
+      "activeCount": activeWorktrees.count,
+      "activeTaskIds": activeWorktrees.keys.map { $0.uuidString },
+      "baseDir": worktreeBaseDir,
+      "worktrees": activeWorktrees.values.map { info in
+        [
+          "taskId": info.taskId.uuidString,
+          "path": info.worktreePath,
+          "branch": info.branchName,
+          "repoPath": info.repoPath,
+          "createdAt": ISO8601DateFormatter().string(from: info.createdAt)
+        ]
+      }
+    ]
+  }
+  
   /// Generate a unique branch name for a swarm task
   public static func generateBranchName(
     taskId: UUID,

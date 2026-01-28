@@ -193,6 +193,11 @@ public final class SwarmCoordinator {
     self.chainExecutor = chainExecutor
   }
   
+  /// Get debug info about active worktrees
+  public func getWorktreeDebugInfo() -> [String: Any] {
+    worktreeManager.getDebugInfo()
+  }
+  
   // MARK: - Lifecycle
   
   /// Start the swarm coordinator with the given role
