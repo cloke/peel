@@ -14,6 +14,8 @@ public struct ChainRequest: Codable, Sendable, Identifiable {
   public let templateName: String
   public let prompt: String
   public let workingDirectory: String
+  /// The git remote URL (e.g., git@github.com:user/repo.git) - stable identifier across machines
+  public let repoRemoteURL: String?
   public let priority: ChainPriority
   public let requiredCapabilities: RequiredCapabilities?
   public let createdAt: Date
@@ -24,6 +26,7 @@ public struct ChainRequest: Codable, Sendable, Identifiable {
     templateName: String,
     prompt: String,
     workingDirectory: String,
+    repoRemoteURL: String? = nil,
     priority: ChainPriority = .normal,
     requiredCapabilities: RequiredCapabilities? = nil,
     createdAt: Date = Date(),
@@ -33,6 +36,7 @@ public struct ChainRequest: Codable, Sendable, Identifiable {
     self.templateName = templateName
     self.prompt = prompt
     self.workingDirectory = workingDirectory
+    self.repoRemoteURL = repoRemoteURL
     self.priority = priority
     self.requiredCapabilities = requiredCapabilities
     self.createdAt = createdAt
