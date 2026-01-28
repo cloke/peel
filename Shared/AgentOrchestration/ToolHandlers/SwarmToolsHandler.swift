@@ -310,15 +310,26 @@ public final class SwarmToolsHandler: MCPToolHandler {
     
     // Get brain's commit hash for comparison
     let brainCommitHash = coordinator.capabilities.gitCommitHash
+    let formatter = ISO8601DateFormatter()
     
     let workers = coordinator.connectedWorkers.map { peer in
       let workerHash = peer.capabilities.gitCommitHash
       let inSync = brainCommitHash != nil && workerHash == brainCommitHash
+      let status = coordinator.workerStatuses[peer.id]
+      let statusPayload: [String: Any] = [
+        "state": status?.state.rawValue ?? "unknown",
+        "currentTaskId": status?.currentTaskId?.uuidString as Any,
+        "lastHeartbeat": status.map { formatter.string(from: $0.lastHeartbeat) } as Any,
+        "uptimeSeconds": status?.uptimeSeconds as Any,
+        "tasksCompleted": status?.tasksCompleted as Any,
+        "tasksFailed": status?.tasksFailed as Any
+      ]
       return [
         "id": peer.id,
         "name": peer.name,
         "gitCommitHash": workerHash as Any,
         "inSync": inSync,
+        "status": statusPayload,
         "capabilities": [
           "deviceId": peer.capabilities.deviceId,
           "deviceName": peer.capabilities.deviceName,

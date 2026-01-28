@@ -18,6 +18,7 @@
 | **Direct Commands** | ✅ Working | `swarm.direct-command` returns output synchronously |
 | **Worker Self-Update** | ✅ Working | `swarm.update-workers` pulls latest and rebuilds |
 | **Version Sync Tracking** | ✅ Working | `gitCommitHash` in capabilities, `inSync` in status |
+| **Worker Heartbeats** | ✅ Working | Periodic heartbeat with state, uptime, and task counts |
 | **Task Results** | ✅ Working | `swarm.tasks` shows history with durations/outputs |
 | **Task Log UI** | ✅ Working | Tasks appear in Mac Studio's task log view |
 
@@ -27,7 +28,7 @@
 swarm.start        - Start brain or worker mode
 swarm.stop         - Stop swarm participation
 swarm.status       - Show role, workers, capabilities
-swarm.workers      - List connected workers with inSync status
+swarm.workers      - List connected workers with status + inSync
 swarm.dispatch     - Send task to worker for LLM execution
 swarm.tasks        - Query task results/history
 swarm.direct-command   - Execute shell command on worker (sync)
@@ -72,10 +73,11 @@ Currently `swarm.dispatch` sends one task to one worker. Add:
 - `swarm.dispatch-parallel` - Send same task to multiple workers
 - `swarm.dispatch-split` - Split large task across workers
 
-### 2. **Worker Health Monitoring**
-- Periodic heartbeat with resource usage (CPU, memory, GPU utilization)
-- Auto-reconnect on worker restart
-- Brain notification when worker comes back online
+### 2. **Worker Health Monitoring (Partial ✅)**
+- ✅ Periodic heartbeat with state (idle/busy), uptime, and task counts
+- ⬜ Resource usage (CPU, memory, GPU utilization)
+- ⬜ Auto-reconnect on worker restart
+- ⬜ Brain notification when worker comes back online
 
 ### 3. **Task Queue & Scheduling**
 - Queue multiple tasks for sequential execution
