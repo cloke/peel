@@ -116,11 +116,8 @@ chains_running() {
 if [[ "$ALLOW_DURING_CHAINS" == "false" ]] && pgrep -x "Peel" > /dev/null 2>&1; then
   if ! mcp_server_ready; then
     echo "⚠️  Peel is running but MCP server is not responding."
-    echo "    Refusing to relaunch to avoid interrupting active chains."
-    echo "    Re-run with --allow-while-chains-running to override."
-    exit 1
-  fi
-  if chains_running; then
+    echo "    Proceeding with relaunch because no active chains can be verified."
+  elif chains_running; then
     echo "⚠️  MCP chains are running. Refusing to build/launch to avoid overload."
     echo "    Re-run with --allow-while-chains-running to override."
     exit 1
