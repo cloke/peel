@@ -580,11 +580,10 @@ public final class MCPServerService {
     // This enables workers to actually execute chains instead of returning mock results
     let isWorkerMode = WorkerMode.shared.shouldRunInWorkerMode
     let swarmRole = SwarmCoordinator.shared.role
-    print("🔍 MCPServerService init: isWorkerMode=\(isWorkerMode), swarmRole=\(swarmRole)")
     if isWorkerMode || swarmRole == .worker || swarmRole == .hybrid {
       let executor = DefaultChainExecutor(chainRunner: chainRunner, agentManager: agentManager)
       SwarmCoordinator.shared.configure(chainExecutor: executor)
-      print("✅ SwarmCoordinator configured with chain executor for worker mode")
+      logger.info("SwarmCoordinator configured with chain executor for worker mode")
     }
 
     updateSleepPrevention()
@@ -599,7 +598,7 @@ public final class MCPServerService {
   public func configureSwarmExecutor() {
     let executor = DefaultChainExecutor(chainRunner: chainRunner, agentManager: agentManager)
     SwarmCoordinator.shared.configure(chainExecutor: executor)
-    print("✅ SwarmCoordinator configured with chain executor via UI")
+    logger.info("SwarmCoordinator configured with chain executor via UI")
   }
 
   public var toolCategories: [ToolCategory] {
