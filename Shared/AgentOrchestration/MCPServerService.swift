@@ -1487,7 +1487,8 @@ public final class MCPServerService {
       return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Invalid params"))
     }
 
-    guard let tool = toolDefinition(named: name) else {
+    guard let resolvedName = resolveToolName(name),
+          let tool = toolDefinition(named: resolvedName) else {
       await telemetryProvider.warning("Unknown tool", metadata: ["name": name])
       return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32601, message: "Unknown tool"))
     }
@@ -1500,9 +1501,9 @@ public final class MCPServerService {
       recordUIActionForegroundNeeded(tool.name)
     }
 
-    if !isToolEnabled(name) {
-      await telemetryProvider.warning("Tool disabled", metadata: ["name": name, "category": tool.category.rawValue])
-      lastBlockedTool = name
+    if !isToolEnabled(resolvedName) {
+      await telemetryProvider.warning("Tool disabled", metadata: ["name": resolvedName, "category": tool.category.rawValue])
+      lastBlockedTool = resolvedName
       lastBlockedToolAt = Date()
       return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32010, message: "Tool disabled"))
     }
@@ -4215,7 +4216,8 @@ public final class MCPServerService {
   private func toolList() -> [[String: Any]] {
     toolDefinitions.map { tool in
       [
-        "name": tool.name,
+        "name": sanitizedToolName(tool.name),
+        "originalName": tool.name,
         "description": tool.description,
         "inputSchema": tool.inputSchema,
         "category": tool.category.rawValue,
@@ -4224,6 +4226,22 @@ public final class MCPServerService {
         "requiresForeground": tool.requiresForeground
       ]
     }
+  }
+
+  private func sanitizedToolName(_ name: String) -> String {
+    let lowercased = name.lowercased()
+    return lowercased.map { char in
+      let isAllowed = (char >= "a" && char <= "z") || (char >= "0" && char <= "9") || char == "_" || char == "-"
+      return isAllowed ? String(char) : "_"
+    }.joined()
+  }
+
+  private func resolveToolName(_ name: String) -> String? {
+    if toolDefinition(named: name) != nil {
+      return name
+    }
+    let match = toolDefinitions.first { sanitizedToolName($0.name) == name }
+    return match?.name
   }
 
   private func scheduleAppQuit() {
