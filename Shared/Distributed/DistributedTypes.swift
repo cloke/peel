@@ -414,6 +414,8 @@ public enum PeerMessage: Codable, Sendable {
   case taskProgress(taskId: UUID, progress: Double, message: String?)
   case taskResult(result: ChainResult)
   case taskCancel(taskId: UUID)
+  case directCommand(id: UUID, command: String, args: [String], workingDirectory: String?)
+  case directCommandResult(id: UUID, exitCode: Int32, output: String, error: String?)
   case goodbye
   
   /// Unique identifier for message type (for logging)
@@ -429,6 +431,8 @@ public enum PeerMessage: Codable, Sendable {
     case .taskProgress: return "taskProgress"
     case .taskResult: return "taskResult"
     case .taskCancel: return "taskCancel"
+    case .directCommand: return "directCommand"
+    case .directCommandResult: return "directCommandResult"
     case .goodbye: return "goodbye"
     }
   }

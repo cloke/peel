@@ -222,6 +222,28 @@ public final class SwarmCoordinator {
     try await connectionManager?.send(.taskRequest(request: request), to: workerId)
   }
   
+  /// Send a direct shell command to a specific worker (no LLM involved)
+  /// - Parameters:
+  ///   - command: The executable path
+  ///   - args: Arguments to pass
+  ///   - workingDirectory: Optional working directory
+  ///   - workerId: Target worker ID
+  /// - Note: Fire and forget - result comes back via delegate
+  public func sendDirectCommand(_ command: String, args: [String] = [], workingDirectory: String? = nil, to workerId: String) async throws {
+    guard role == .brain || role == .hybrid else {
+      throw DistributedError.actorSystemNotReady
+    }
+    
+    guard connectedWorkers.contains(where: { $0.id == workerId }) else {
+      throw DistributedError.noWorkersAvailable
+    }
+    
+    let id = UUID()
+    logger.info("Sending direct command to \(workerId): \(command)")
+    
+    try await connectionManager?.send(.directCommand(id: id, command: command, args: args, workingDirectory: workingDirectory), to: workerId)
+  }
+  
   /// Select the best worker for a request
   private func selectWorker(for request: ChainRequest) -> ConnectedPeer? {
     let candidates = connectedWorkers.filter { peer in
@@ -312,6 +334,83 @@ public final class SwarmCoordinator {
     
     logger.info("Task \(request.id) completed: \(result.status.rawValue)")
   }
+  
+  /// Handle direct command execution (worker mode) - no LLM involved
+  private func handleDirectCommand(id: UUID, command: String, args: [String], workingDirectory: String?, from peerId: String) async {
+    guard role == .worker || role == .hybrid else { return }
+    
+    logger.info("Executing direct command: \(command) \(args.joined(separator: " "))")
+    
+    // Determine the working directory
+    // If none specified, try to find the Peel repo from the running app's bundle
+    let effectiveWorkingDir: String
+    if let dir = workingDirectory, !dir.isEmpty {
+      effectiveWorkingDir = dir
+    } else {
+      // Detect repo from bundle location
+      let bundlePath = Bundle.main.bundlePath
+      // e.g., /Users/user/code/KitchenSink/build/Build/Products/Debug/Peel.app
+      // We want: /Users/user/code/KitchenSink
+      let components = bundlePath.components(separatedBy: "/")
+      if let buildIndex = components.firstIndex(of: "build") {
+        effectiveWorkingDir = components.prefix(buildIndex).joined(separator: "/")
+      } else if let appIndex = components.lastIndex(where: { $0.hasSuffix(".app") }) {
+        effectiveWorkingDir = components.prefix(appIndex).joined(separator: "/")
+      } else {
+        effectiveWorkingDir = FileManager.default.currentDirectoryPath
+      }
+    }
+    
+    // Resolve the command path - if relative, make it absolute using working dir
+    let absoluteCommand: String
+    if command.hasPrefix("/") {
+      absoluteCommand = command
+    } else {
+      absoluteCommand = "\(effectiveWorkingDir)/\(command)"
+    }
+    
+    logger.info("Resolved command path: \(absoluteCommand) in \(effectiveWorkingDir)")
+    
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: absoluteCommand)
+    process.arguments = args
+    process.currentDirectoryURL = URL(fileURLWithPath: effectiveWorkingDir)
+    
+    let stdout = Pipe()
+    let stderr = Pipe()
+    process.standardOutput = stdout
+    process.standardError = stderr
+    
+    var output = ""
+    var errorOutput: String? = nil
+    var exitCode: Int32 = -1
+    
+    do {
+      try process.run()
+      process.waitUntilExit()
+      exitCode = process.terminationStatus
+      
+      let outData = stdout.fileHandleForReading.readDataToEndOfFile()
+      output = String(data: outData, encoding: .utf8) ?? ""
+      
+      let errData = stderr.fileHandleForReading.readDataToEndOfFile()
+      let errStr = String(data: errData, encoding: .utf8) ?? ""
+      if !errStr.isEmpty {
+        errorOutput = errStr
+      }
+      
+    } catch {
+      errorOutput = error.localizedDescription
+    }
+    
+    // Send result back
+    try? await connectionManager?.send(
+      .directCommandResult(id: id, exitCode: exitCode, output: output, error: errorOutput),
+      to: peerId
+    )
+    
+    logger.info("Direct command \(id) finished with exit code \(exitCode)")
+  }
 }
 
 // MARK: - PeerConnectionDelegate
@@ -358,6 +457,20 @@ extension SwarmCoordinator: PeerConnectionDelegate {
         completedResults.removeLast()
       }
       delegate?.swarmCoordinator(self, didEmit: .taskCompleted(result))
+      
+    case .directCommand(let id, let command, let args, let workingDirectory):
+      Task {
+        await handleDirectCommand(id: id, command: command, args: args, workingDirectory: workingDirectory, from: peerId)
+      }
+      
+    case .directCommandResult(let id, let exitCode, let output, let error):
+      logger.info("Direct command \(id) completed with exit code \(exitCode)")
+      if let error = error, !error.isEmpty {
+        logger.warning("Direct command stderr: \(error)")
+      }
+      if !output.isEmpty {
+        logger.debug("Direct command output: \(output.prefix(500))")
+      }
       
     default:
       logger.debug("Received message: \(message.messageType) from \(peerId)")
