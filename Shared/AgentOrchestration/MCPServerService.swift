@@ -38,6 +38,7 @@ public final class MCPServerService {
     static let localRagUseCoreML = "localrag.useCoreML"
     static let ragUsageStats = "localrag.usageStats"
     static let ragSessionEvents = "localrag.sessionEvents"
+    static let ragQueryHints = "localrag.queryHints"
   }
 
   // Tool types from MCPCore
@@ -45,7 +46,7 @@ public final class MCPServerService {
   public typealias ToolGroup = MCPToolGroup
   public typealias ToolDefinition = MCPToolDefinition
 
-  public enum RAGSearchMode: String, CaseIterable {
+  public enum RAGSearchMode: String, CaseIterable, Codable {
     case text
     case vector
   }
@@ -125,6 +126,32 @@ public final class MCPServerService {
       self.title = title
       self.detail = detail
       self.kind = kind
+    }
+  }
+
+  public struct RAGQueryHint: Identifiable, Codable {
+    public let id: UUID
+    public let query: String
+    public let repoPath: String?
+    public let mode: RAGSearchMode
+    public var resultCount: Int
+    public var useCount: Int
+    public var lastUsedAt: Date
+
+    public init(query: String, repoPath: String?, mode: RAGSearchMode, resultCount: Int) {
+      self.id = UUID()
+      self.query = query
+      self.repoPath = repoPath
+      self.mode = mode
+      self.resultCount = resultCount
+      self.useCount = 1
+      self.lastUsedAt = Date()
+    }
+
+    var key: String {
+      let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+      let repo = repoPath?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+      return "\(normalized)|\(repo)|\(mode.rawValue)"
     }
   }
 
@@ -354,18 +381,28 @@ public final class MCPServerService {
     UserDefaults.standard.set(data, forKey: StorageKey.ragSessionEvents)
   }
 
+  private func saveRagQueryHints() {
+    // Keep only last 25 hints to avoid unbounded growth
+    let hintsToSave = Array(ragQueryHints.prefix(25))
+    guard let data = try? JSONEncoder().encode(hintsToSave) else { return }
+    UserDefaults.standard.set(data, forKey: StorageKey.ragQueryHints)
+  }
+
   /// Clears persisted RAG session data (for starting fresh)
   public func clearRagSessionData() {
     ragUsage = RAGUsageStats()
     ragSessionEvents = []
+    ragQueryHints = []
     saveRagUsageStats()
     saveRagSessionEvents()
+    saveRagQueryHints()
   }
 
   private(set) var ragStatus: LocalRAGStore.Status?
   private(set) var ragStats: LocalRAGStore.Stats?
   private(set) var ragUsage = RAGUsageStats()
   private(set) var ragSessionEvents: [RAGSessionEvent] = []
+  private(set) var ragQueryHints: [RAGQueryHint] = []
   private(set) var ragRepos: [RAGRepoInfo] = []
   private(set) var ragIndexingPath: String?
   private(set) var ragIndexProgress: LocalRAGIndexProgress?
@@ -517,6 +554,11 @@ public final class MCPServerService {
     if let data = UserDefaults.standard.data(forKey: StorageKey.ragSessionEvents),
        let events = try? JSONDecoder().decode([RAGSessionEvent].self, from: data) {
       self.ragSessionEvents = Array(events.suffix(50))
+    }
+    // Load persisted RAG query hints
+    if let data = UserDefaults.standard.data(forKey: StorageKey.ragQueryHints),
+       let hints = try? JSONDecoder().decode([RAGQueryHint].self, from: data) {
+      self.ragQueryHints = Array(hints.prefix(25))
     }
     if self.port == 0 {
       self.port = 8765
@@ -953,12 +995,13 @@ public final class MCPServerService {
     limit: Int = 10,
     matchAll: Bool = true
   ) async throws -> [LocalRAGSearchResult] {
+    let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
     let results: [LocalRAGSearchResult]
     switch mode {
     case .vector:
-      results = try await localRagStore.searchVector(query: query, repoPath: repoPath, limit: limit)
+      results = try await localRagStore.searchVector(query: trimmedQuery, repoPath: repoPath, limit: limit)
     case .text:
-      results = try await localRagStore.search(query: query, repoPath: repoPath, limit: limit, matchAll: matchAll)
+      results = try await localRagStore.search(query: trimmedQuery, repoPath: repoPath, limit: limit, matchAll: matchAll)
     }
     ragUsage.searches += 1
     ragUsage.totalResults += results.count
@@ -972,12 +1015,15 @@ public final class MCPServerService {
       ragUsage.vectorSearches += 1
     }
     ragUsage.lastSearchAt = Date()
+    if !results.isEmpty {
+      recordRagQueryHint(query: trimmedQuery, repoPath: repoPath, mode: mode, resultCount: results.count)
+    }
     appendRagEvent(
       kind: .search,
       title: "Search · \(results.count) results",
-      detail: query
+      detail: trimmedQuery
     )
-    lastRagSearchQuery = query
+    lastRagSearchQuery = trimmedQuery
     lastRagSearchMode = mode
     lastRagSearchRepoPath = repoPath
     lastRagSearchLimit = limit
@@ -985,7 +1031,44 @@ public final class MCPServerService {
     lastRagSearchResults = results
     lastRagError = nil
     saveRagUsageStats()
+    saveRagQueryHints()
     return results
+  }
+
+  func ragQueryHints(limit: Int? = 10) -> [RAGQueryHint] {
+    let hints = ragQueryHints.sorted { $0.lastUsedAt > $1.lastUsedAt }
+    guard let limit, limit > 0 else { return hints }
+    return Array(hints.prefix(limit))
+  }
+
+  private func recordRagQueryHint(query: String, repoPath: String?, mode: RAGSearchMode, resultCount: Int) {
+    let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return }
+    var updated: [RAGQueryHint] = []
+    updated.reserveCapacity(ragQueryHints.count + 1)
+    var didUpdate = false
+    let key = RAGQueryHint(query: trimmed, repoPath: repoPath, mode: mode, resultCount: resultCount).key
+
+    for var hint in ragQueryHints {
+      if hint.key == key {
+        hint.resultCount = resultCount
+        hint.useCount += 1
+        hint.lastUsedAt = Date()
+        updated.append(hint)
+        didUpdate = true
+      } else {
+        updated.append(hint)
+      }
+    }
+
+    if !didUpdate {
+      updated.append(RAGQueryHint(query: trimmed, repoPath: repoPath, mode: mode, resultCount: resultCount))
+    }
+
+    ragQueryHints = updated.sorted { $0.lastUsedAt > $1.lastUsedAt }
+    if ragQueryHints.count > 25 {
+      ragQueryHints = Array(ragQueryHints.prefix(25))
+    }
   }
 
   func recordRagUserAction(_ action: RAGUserAction, result: LocalRAGSearchResult? = nil) {
@@ -3050,6 +3133,18 @@ public final class MCPServerService {
         isMutating: false
       ),
       ToolDefinition(
+        name: "rag.queryHints",
+        description: "Return recent successful RAG queries with result counts.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "limit": ["type": "integer", "description": "Max hints to return (default 10)"]
+          ]
+        ],
+        category: .rag,
+        isMutating: false
+      ),
+      ToolDefinition(
         name: "rag.cache.clear",
         description: "Clear cached embeddings (cache_embeddings table)",
         inputSchema: [
@@ -4522,6 +4617,10 @@ extension MCPServerService: RAGToolsHandlerDelegate {
       lastIndexedAt: stats.lastIndexedAt,
       lastIndexedRepoPath: stats.lastIndexedRepoPath
     )
+  }
+
+  func getRagQueryHints(limit: Int?) -> [RAGQueryHint] {
+    ragQueryHints(limit: limit)
   }
   
   func logWarning(_ message: String, metadata: [String: String]) async {

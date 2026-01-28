@@ -72,6 +72,9 @@ protocol RAGToolsHandlerDelegate: MCPToolHandlerDelegate {
   
   /// Get RAG stats
   func ragStats() async throws -> RAGToolStats?
+
+  /// Get recent successful query hints
+  func getRagQueryHints(limit: Int?) -> [MCPServerService.RAGQueryHint]
   
   /// Log a telemetry warning
   func logWarning(_ message: String, metadata: [String: String]) async
@@ -95,6 +98,7 @@ final class RAGToolsHandler: MCPToolHandler {
     "rag.init",
     "rag.index",
     "rag.search",
+    "rag.queryHints",
     "rag.cache.clear",
     "rag.model.describe",
     "rag.model.list",
@@ -124,6 +128,8 @@ final class RAGToolsHandler: MCPToolHandler {
       return await handleStatus(id: id, delegate: ragDelegate)
     case "rag.search":
       return await handleSearch(id: id, arguments: arguments, delegate: ragDelegate)
+    case "rag.queryHints":
+      return await handleQueryHints(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.index":
       return await handleIndex(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.repos.list":
@@ -231,6 +237,28 @@ final class RAGToolsHandler: MCPToolHandler {
       await delegate.logWarning("Local RAG search failed", metadata: ["error": error.localizedDescription])
       return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
     }
+  }
+
+  // MARK: - rag.queryHints
+
+  private func handleQueryHints(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
+    let limit = optionalInt("limit", from: arguments, default: 10) ?? 10
+    let hints = delegate.getRagQueryHints(limit: limit)
+    let formatter = ISO8601DateFormatter()
+    let payload: [[String: Any]] = hints.map { hint in
+      var item: [String: Any] = [
+        "query": hint.query,
+        "mode": hint.mode.rawValue,
+        "resultCount": hint.resultCount,
+        "useCount": hint.useCount,
+        "lastUsedAt": formatter.string(from: hint.lastUsedAt)
+      ]
+      if let repoPath = hint.repoPath {
+        item["repoPath"] = repoPath
+      }
+      return item
+    }
+    return (200, makeResult(id: id, result: ["hints": payload]))
   }
   
   // MARK: - rag.index

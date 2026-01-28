@@ -218,6 +218,35 @@ struct LocalRAGDashboardView: View {
               onOpenFile: { result in openResult(result) }
             )
 
+            if !queryHints.isEmpty {
+              Divider()
+              VStack(alignment: .leading, spacing: 6) {
+                Text("Query hints")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+                ForEach(queryHints) { hint in
+                  Button {
+                    applyQueryHint(hint)
+                  } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                      Text(hint.query)
+                        .font(.caption)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                      HStack(spacing: 6) {
+                        Text(hint.mode.rawValue)
+                        Text("\(hint.resultCount) results")
+                        Text("used \(hint.useCount)×")
+                      }
+                      .font(.caption2)
+                      .foregroundStyle(.secondary)
+                    }
+                  }
+                  .buttonStyle(.plain)
+                }
+              }
+            }
+
             if let lastAt = mcpServer.lastRagSearchAt {
               Divider()
               VStack(alignment: .leading, spacing: 4) {
@@ -686,6 +715,18 @@ struct LocalRAGDashboardView: View {
       self.results = results
     } catch {
       errorMessage = error.localizedDescription
+    }
+  }
+
+  private var queryHints: [MCPServerService.RAGQueryHint] {
+    mcpServer.ragQueryHints(limit: 8)
+  }
+
+  private func applyQueryHint(_ hint: MCPServerService.RAGQueryHint) {
+    query.wrappedValue = hint.query
+    searchMode.wrappedValue = hint.mode
+    if let repoPath = hint.repoPath, !repoPath.isEmpty {
+      self.repoPath.wrappedValue = repoPath
     }
   }
 
