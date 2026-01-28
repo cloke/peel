@@ -289,13 +289,10 @@ public final class SwarmCoordinator {
     }
     
     let id = UUID()
-    print("📤 sendDirectCommand: id=\(id), command=\(command), to=\(workerId)")
     logger.info("Sending direct command to \(workerId): \(command)")
     
     let message = PeerMessage.directCommand(id: id, command: command, args: args, workingDirectory: workingDirectory)
-    print("📤 Message created: \(message)")
     try await connectionManager?.send(message, to: workerId)
-    print("📤 Message sent successfully")
   }
   
   /// Send a direct shell command and wait for result (with timeout)
@@ -444,11 +441,10 @@ public final class SwarmCoordinator {
   
   /// Handle direct command execution (worker mode) - no LLM involved
   private func handleDirectCommand(id: UUID, command: String, args: [String], workingDirectory: String?, from peerId: String) async {
-    print("📥 handleDirectCommand called: command=\(command), role=\(String(describing: role)), from=\(peerId)")
-    logger.info("handleDirectCommand called: command=\(command), role=\(String(describing: self.role))")
+    logger.info("handleDirectCommand: command=\(command), role=\(String(describing: self.role))")
     
     guard role == .worker || role == .hybrid else {
-      print("⚠️ handleDirectCommand: Not in worker mode (role=\(String(describing: role))), ignoring")
+      logger.warning("handleDirectCommand: Not in worker mode, ignoring")
       return
     }
     
@@ -576,7 +572,6 @@ extension SwarmCoordinator: PeerConnectionDelegate {
       delegate?.swarmCoordinator(self, didEmit: .taskCompleted(result))
       
     case .directCommand(let id, let command, let args, let workingDirectory):
-      print("📨 Received .directCommand message: id=\(id), command=\(command), from=\(peerId)")
       logger.info("Received directCommand: \(command) from \(peerId)")
       Task {
         await handleDirectCommand(id: id, command: command, args: args, workingDirectory: workingDirectory, from: peerId)
