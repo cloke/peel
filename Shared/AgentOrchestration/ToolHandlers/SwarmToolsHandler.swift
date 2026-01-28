@@ -28,7 +28,8 @@ public final class SwarmToolsHandler: MCPToolHandler {
     "swarm.workers",
     "swarm.dispatch",
     "swarm.connect",
-    "swarm.discovered"
+    "swarm.discovered",
+    "swarm.tasks"
   ]
   
   public init(chainRunner: AgentChainRunner? = nil, agentManager: AgentManager? = nil) {
@@ -52,6 +53,8 @@ public final class SwarmToolsHandler: MCPToolHandler {
       return await handleConnect(id: id, arguments: arguments)
     case "swarm.discovered":
       return handleDiscovered(id: id)
+    case "swarm.tasks":
+      return handleTasks(id: id, arguments: arguments)
     default:
       return (404, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.methodNotFound, message: "Unknown tool"))
     }
@@ -154,6 +157,24 @@ public final class SwarmToolsHandler: MCPToolHandler {
         "inputSchema": [
           "type": "object",
           "properties": [:],
+          "required": []
+        ]
+      ],
+      [
+        "name": "swarm.tasks",
+        "description": "Get completed task results. Returns recent task outputs from the swarm.",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "taskId": [
+              "type": "string",
+              "description": "Optional: Get results for a specific task ID"
+            ],
+            "limit": [
+              "type": "integer",
+              "description": "Maximum number of results to return (default: 10)"
+            ]
+          ],
           "required": []
         ]
       ]
@@ -395,6 +416,67 @@ public final class SwarmToolsHandler: MCPToolHandler {
     return (200, makeResult(id: id, result: [
       "discovered": discovered,
       "count": discovered.count
+    ]))
+  }
+  
+  // MARK: - swarm.tasks
+  
+  private func handleTasks(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    let limit = arguments["limit"] as? Int ?? 10
+    let taskId = arguments["taskId"] as? String
+    
+    let results = coordinator.completedResults
+    
+    // Filter by task ID if specified
+    let filtered: [ChainResult]
+    if let taskId = taskId, let uuid = UUID(uuidString: taskId) {
+      filtered = results.filter { $0.requestId == uuid }
+    } else {
+      filtered = Array(results.prefix(limit))
+    }
+    
+    // Convert to JSON-friendly format
+    let tasks = filtered.map { result -> [String: Any] in
+      var task: [String: Any] = [
+        "taskId": result.requestId.uuidString,
+        "status": result.status.rawValue,
+        "duration": result.duration,
+        "workerDeviceId": result.workerDeviceId,
+        "workerDeviceName": result.workerDeviceName
+      ]
+      
+      if let error = result.errorMessage {
+        task["error"] = error
+      }
+      
+      // Include output content (truncated for large outputs)
+      let outputs = result.outputs.map { output -> [String: Any] in
+        var out: [String: Any] = [
+          "name": output.name,
+          "type": output.type.rawValue
+        ]
+        if let content = output.content {
+          // Truncate large content for API response
+          let maxLen = 2000
+          if content.count > maxLen {
+            out["content"] = String(content.prefix(maxLen)) + "... (truncated, \(content.count) total chars)"
+            out["truncated"] = true
+          } else {
+            out["content"] = content
+          }
+        }
+        return out
+      }
+      task["outputs"] = outputs
+      
+      return task
+    }
+    
+    return (200, makeResult(id: id, result: [
+      "tasks": tasks,
+      "count": tasks.count,
+      "totalCompleted": coordinator.tasksCompleted,
+      "totalFailed": coordinator.tasksFailed
     ]))
   }
 }
