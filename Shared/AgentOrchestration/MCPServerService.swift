@@ -1447,13 +1447,18 @@ public final class MCPServerService {
       }
 
       switch method {
-      case "initialize":
+      case "initialize", "mcp/initialize":
         let result: [String: Any] = [
-          "serverInfo": ["name": "Peel MCP Test Harness", "version": "0.1"],
+          "protocolVersion": "2024-11-05",
+          "serverInfo": ["name": "Peel MCP Server", "version": "0.1"],
           "capabilities": ["tools": [:]]
         ]
         statusCode = 200
         return (200, JSONRPCResponseBuilder.makeResult(id: id, result: result))
+
+      case "initialized", "notifications/initialized":
+        statusCode = 204
+        return (204, Data())
 
       case "tools/list":
         statusCode = 200
