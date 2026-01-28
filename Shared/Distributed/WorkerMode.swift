@@ -44,7 +44,12 @@ public final class WorkerMode {
     
     // Use the shared coordinator
     let coordinator = SwarmCoordinator.shared
-    coordinator.configure(chainExecutor: chainExecutor)
+    
+    // Only configure executor if one is provided - don't overwrite existing
+    // MCPServerService.init() may have already configured the executor
+    if let executor = chainExecutor {
+      coordinator.configure(chainExecutor: executor)
+    }
     coordinator.delegate = self
     
     let port = customPort ?? 8766
