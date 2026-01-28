@@ -517,38 +517,23 @@ public final class SwarmToolsHandler: MCPToolHandler {
       ]))
     }
     
-    let force = arguments["force"] as? Bool ?? false
+    // Use direct command execution - no LLM involved
+    // The worker will detect its repo location from the running app's bundle
+    // The script path: Tools/self-update.sh (relative to repo root)
     
-    // Build the self-update prompt
-    // Workers will pull, rebuild, and restart via the self-update script
-    let updatePrompt = """
-    Execute the Peel self-update script to update this worker:
-    
-    Run: ./Tools/self-update.sh\(force ? " --force" : "")
-    
-    This will:
-    1. Pull latest code from git
-    2. Rebuild the app
-    3. Restart Peel in worker mode
-    
-    Report the output of the script.
-    """
-    
-    // Dispatch update task to each worker
+    // Dispatch direct command to each worker
     var dispatched: [[String: Any]] = []
     
     for worker in workers {
-      let request = ChainRequest(
-        templateName: "Quick Fix",
-        prompt: updatePrompt,
-        workingDirectory: "/tmp",  // Script auto-detects repo from its location
-        priority: .high
-      )
-      
-      // Send to this specific worker
       do {
-        // Dispatch without waiting for result (worker will restart)
-        try await coordinator.dispatchToWorker(request, workerId: worker.id)
+        // Worker will auto-detect repo path from its bundle location
+        // Pass script name relative to repo - worker figures out the absolute path
+        try await coordinator.sendDirectCommand(
+          "Tools/self-update.sh",
+          args: [],
+          workingDirectory: nil,  // Worker will auto-detect
+          to: worker.id
+        )
         dispatched.append([
           "workerId": worker.id,
           "workerName": worker.name,
@@ -566,7 +551,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
     
     return (200, makeResult(id: id, result: [
       "success": true,
-      "message": "Update tasks dispatched. Workers will disconnect during restart.",
+      "message": "Update commands dispatched. Workers will disconnect during restart.",
       "workersUpdated": dispatched.filter { ($0["status"] as? String) == "dispatched" }.count,
       "workers": dispatched
     ]))
