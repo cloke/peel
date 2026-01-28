@@ -119,7 +119,8 @@ public final class SwarmWorktreeManager {
     )
     activeWorktrees[taskId] = info
     
-    logger.info("Worktree created successfully: \(worktreePath) on branch \(branchName)")
+    logger.info("Worktree created - taskId: \(taskId.uuidString), path: \(worktreePath), branch: \(branchName)")
+    logger.info("activeWorktrees after create: \(self.activeWorktrees.count) entries, keys: \(self.activeWorktrees.keys.map { $0.uuidString })")
     return worktreePath
   }
   
