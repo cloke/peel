@@ -493,6 +493,14 @@ public final class SwarmToolsHandler: MCPToolHandler {
         task["error"] = error
       }
       
+      // Include branch info if worktree isolation was used
+      if let branchName = result.branchName {
+        task["branchName"] = branchName
+      }
+      if let repoPath = result.repoPath {
+        task["repoPath"] = repoPath
+      }
+      
       // Include output content (truncated for large outputs)
       let outputs = result.outputs.map { output -> [String: Any] in
         var out: [String: Any] = [
