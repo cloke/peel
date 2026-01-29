@@ -4250,6 +4250,26 @@ public final class MCPServerService {
         isMutating: true
       ),
       ToolDefinition(
+        name: "swarm.update-log",
+        description: "Fetch the latest lines from the worker self-update log.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "lines": [
+              "type": "integer",
+              "description": "Number of log lines to return (default: 200, max: 500)"
+            ],
+            "workerId": [
+              "type": "string",
+              "description": "Specific worker ID to target (optional, defaults to first available)"
+            ]
+          ],
+          "required": []
+        ],
+        category: .swarm,
+        isMutating: false
+      ),
+      ToolDefinition(
         name: "swarm.direct-command",
         description: "Execute a shell command directly on a worker without LLM involvement. Useful for debugging and administrative tasks.",
         inputSchema: [

@@ -31,6 +31,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
     "swarm.discovered",
     "swarm.tasks",
     "swarm.update-workers",
+    "swarm.update-log",
     "swarm.direct-command",
     "swarm.branch-queue",
     "swarm.pr-queue",
@@ -64,6 +65,8 @@ public final class SwarmToolsHandler: MCPToolHandler {
       return handleTasks(id: id, arguments: arguments)
     case "swarm.update-workers":
       return await handleUpdateWorkers(id: id, arguments: arguments)
+    case "swarm.update-log":
+      return await handleUpdateLog(id: id, arguments: arguments)
     case "swarm.direct-command":
       return await handleDirectCommand(id: id, arguments: arguments)
     case "swarm.branch-queue":
@@ -208,6 +211,24 @@ public final class SwarmToolsHandler: MCPToolHandler {
             "force": [
               "type": "boolean",
               "description": "Force rebuild even if no new commits (default: false)"
+            ]
+          ],
+          "required": []
+        ]
+      ],
+      [
+        "name": "swarm.update-log",
+        "description": "Fetch the latest lines from the worker self-update log.",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "lines": [
+              "type": "integer",
+              "description": "Number of log lines to return (default: 200, max: 500)"
+            ],
+            "workerId": [
+              "type": "string",
+              "description": "Specific worker ID to target (optional, defaults to first available)"
             ]
           ],
           "required": []
@@ -683,6 +704,53 @@ public final class SwarmToolsHandler: MCPToolHandler {
       "workersUpdated": dispatched.filter { ($0["status"] as? String) == "dispatched" }.count,
       "workers": dispatched
     ]))
+  }
+
+  // MARK: - swarm.update-log
+
+  private func handleUpdateLog(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard coordinator.isActive else {
+      return serviceNotActiveError(id: id, service: "Swarm", hint: "Call swarm.start with role 'brain' or 'hybrid' first")
+    }
+    
+    guard coordinator.role == .brain || coordinator.role == .hybrid else {
+      return internalError(id: id, message: "Only brain can fetch worker logs")
+    }
+    
+    let lines = min(max(arguments["lines"] as? Int ?? 200, 1), 500)
+    let workerId = arguments["workerId"] as? String
+    
+    let targetWorker: ConnectedPeer
+    if let workerId = workerId {
+      guard let worker = coordinator.connectedWorkers.first(where: { $0.id == workerId }) else {
+        return internalError(id: id, message: "Worker not found: \(workerId)")
+      }
+      targetWorker = worker
+    } else {
+      guard let worker = coordinator.connectedWorkers.first else {
+        return internalError(id: id, message: "No workers connected")
+      }
+      targetWorker = worker
+    }
+    
+    let logPath = "$HOME/Library/Logs/Peel/swarm-self-update.log"
+    let command = "/bin/zsh"
+    let args = ["-lc", "if [ -f \"\(logPath)\" ]; then tail -n \(lines) \"\(logPath)\"; else echo 'Log not found: \(logPath)'; fi"]
+    
+    do {
+      let result = try await coordinator.sendDirectCommandAndWait(command, args: args, workingDirectory: nil, to: targetWorker.id)
+      return (200, makeResult(id: id, result: [
+        "success": result.exitCode == 0,
+        "exitCode": result.exitCode,
+        "output": result.output.trimmingCharacters(in: .whitespacesAndNewlines),
+        "error": result.error as Any,
+        "workerId": targetWorker.id,
+        "workerName": targetWorker.name,
+        "lines": lines
+      ]))
+    } catch {
+      return internalError(id: id, message: "Failed to fetch update log: \(error.localizedDescription)")
+    }
   }
   
   // MARK: - swarm.direct-command (for testing)
