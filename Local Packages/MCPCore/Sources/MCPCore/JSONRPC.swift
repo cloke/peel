@@ -382,5 +382,6 @@ public enum JSONRPCResponseBuilder {
     public static let ragError = -32040
     public static let vmError = -32050
     public static let parallelError = -32060
+    public static let serviceNotActive = -32070
   }
 }

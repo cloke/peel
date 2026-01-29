@@ -446,7 +446,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
   
   private func handleDispatch(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
     guard coordinator.isActive else {
-      return internalError(id: id, message: "Swarm not running. Call swarm.start first.")
+      return serviceNotActiveError(id: id, service: "Swarm", hint: "Call swarm.start with role 'brain', 'worker', or 'hybrid' first")
     }
     
     guard coordinator.role == .brain || coordinator.role == .hybrid else {
@@ -511,7 +511,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
   
   private func handleConnect(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
     guard coordinator.isActive else {
-      return internalError(id: id, message: "Swarm not running. Call swarm.start first.")
+      return serviceNotActiveError(id: id, service: "Swarm", hint: "Call swarm.start with role 'brain', 'worker', or 'hybrid' first")
     }
     
     guard case .success(let address) = requireString("address", from: arguments, id: id) else {
@@ -630,7 +630,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
   
   private func handleUpdateWorkers(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
     guard coordinator.isActive else {
-      return internalError(id: id, message: "Swarm is not active")
+      return serviceNotActiveError(id: id, service: "Swarm", hint: "Call swarm.start with role 'brain' or 'hybrid' first")
     }
     
     guard coordinator.role == .brain || coordinator.role == .hybrid else {
@@ -689,7 +689,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
   
   private func handleDirectCommand(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
     guard coordinator.isActive else {
-      return internalError(id: id, message: "Swarm is not active")
+      return serviceNotActiveError(id: id, service: "Swarm", hint: "Call swarm.start with role 'brain' or 'hybrid' first")
     }
     
     guard coordinator.role == .brain || coordinator.role == .hybrid else {

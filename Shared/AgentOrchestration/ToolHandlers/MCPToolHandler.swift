@@ -136,6 +136,12 @@ extension MCPToolHandler {
   public func internalError(id: Any?, message: String) -> (Int, Data) {
     (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: message))
   }
+
+  /// Return error when a service/feature is not active (user can fix by enabling it)
+  public func serviceNotActiveError(id: Any?, service: String, hint: String? = nil) -> (Int, Data) {
+    let message = hint ?? "\(service) is not active. Enable it first to use this tool."
+    return (200, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.serviceNotActive, message: message))
+  }
 }
 
 // MARK: - Parameter Extraction Helpers
