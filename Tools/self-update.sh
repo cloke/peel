@@ -24,6 +24,7 @@ echo "Directory: $REPO_DIR"
 echo "Host: $(hostname)"
 echo "Branch: $(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'unknown')"
 echo "Commit: $(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
+echo "Self-update script version: 2"
 echo ""
 
 # Check for uncommitted changes
