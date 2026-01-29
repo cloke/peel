@@ -153,7 +153,7 @@ public struct SwarmStatusView: View {
         Spacer()
       } else {
         List(coordinator.connectedWorkers, id: \.id) { worker in
-          PeerRow(peer: worker, role: coordinator.role)
+          PeerRow(peer: worker, role: coordinator.role, status: coordinator.workerStatuses[worker.id])
         }
         .listStyle(.plain)
       }
@@ -377,6 +377,7 @@ public struct SwarmStatusView: View {
 struct PeerRow: View {
   let peer: ConnectedPeer
   let role: SwarmRole
+  let status: WorkerStatus?
   
   var body: some View {
     HStack(spacing: 12) {
@@ -397,6 +398,22 @@ struct PeerRow: View {
         Text("\(peer.capabilities.gpuCores) GPU • \(peer.capabilities.neuralEngineCores) Neural • \(peer.capabilities.memoryGB)GB")
           .font(.caption)
           .foregroundStyle(.secondary)
+
+        if let rag = status?.ragArtifacts {
+          if let staleReason = rag.staleReason {
+            Text("RAG stale • \(staleReason)")
+              .font(.caption2)
+              .foregroundStyle(.orange)
+          } else if let lastSyncedAt = rag.lastSyncedAt {
+            Text("RAG synced \(lastSyncedAt, format: .relative(presentation: .named))")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          } else {
+            Text("RAG artifacts: \(rag.manifestVersion)")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+        }
       }
       
       Spacer()

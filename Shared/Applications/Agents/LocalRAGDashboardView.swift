@@ -227,6 +227,9 @@ struct LocalRAGDashboardView: View {
   @State private var workspaceRepos: [String] = []
   @State private var selectedWorkspaceRepos: Set<String> = []
   @State private var workspaceDebugInfo: WorkspaceDetectionDebug?
+  @State private var swarmCoordinator = SwarmCoordinator.shared
+  @State private var selectedWorkerId: String?
+  @State private var syncError: String?
 
   private var providerSelection: Binding<EmbeddingProviderType> {
     Binding(
@@ -341,6 +344,98 @@ struct LocalRAGDashboardView: View {
             
             if let errorMessage {
               Text(errorMessage)
+                .font(.caption)
+                .foregroundStyle(.red)
+            }
+          }
+        }
+
+        // MARK: - Artifact Sync
+        GroupBox {
+          VStack(alignment: .leading, spacing: LayoutSpacing.item) {
+            SectionHeader("Artifact Sync")
+
+            if !swarmCoordinator.isActive {
+              Text("Start Swarm in brain or hybrid mode to sync artifacts with workers.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else if swarmCoordinator.connectedWorkers.isEmpty {
+              Text("No workers connected yet.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else {
+              let workers = swarmCoordinator.connectedWorkers
+              let selection = Binding<String>(
+                get: { selectedWorkerId ?? workers.first?.id ?? "" },
+                set: { selectedWorkerId = $0 }
+              )
+
+              Picker("Worker", selection: selection) {
+                ForEach(workers) { worker in
+                  Text(worker.name).tag(worker.id)
+                }
+              }
+              .pickerStyle(.menu)
+              .accessibilityIdentifier("agents.localRag.sync.worker")
+
+              HStack(spacing: LayoutSpacing.item) {
+                Button("Pull from Worker") {
+                  Task { await syncRagArtifacts(direction: .pull) }
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("agents.localRag.sync.pull")
+
+                Button("Push to Worker") {
+                  Task { await syncRagArtifacts(direction: .push) }
+                }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("agents.localRag.sync.push")
+              }
+
+              if let transfer = swarmCoordinator.ragTransfers.first(where: { $0.peerId == selection.wrappedValue }) {
+                VStack(alignment: .leading, spacing: 4) {
+                  ProgressView(value: transfer.progress)
+                    .progressViewStyle(.linear)
+                  Text(transferStatusLabel(transfer))
+                    .font(.caption2)
+                    .foregroundStyle(transfer.status == .failed ? .red : .secondary)
+                }
+              }
+
+              VStack(alignment: .leading, spacing: 6) {
+                ForEach(workers) { worker in
+                  RAGWorkerSyncRow(
+                    peer: worker,
+                    status: swarmCoordinator.workerStatuses[worker.id]
+                  )
+                }
+              }
+            }
+
+            if let status = mcpServer.ragArtifactStatus {
+              Divider()
+              VStack(alignment: .leading, spacing: 4) {
+                Text("Local bundle: \(status.manifestVersion)")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+                Text("Total size: \(formatBytes(status.totalBytes))")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+                if let lastSyncedAt = status.lastSyncedAt {
+                  Text("Last sync: \(lastSyncedAt, format: .relative(presentation: .named))")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                }
+                if let staleReason = status.staleReason {
+                  Text("Stale: \(staleReason)")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                }
+              }
+            }
+
+            if let syncError {
+              Text(syncError)
                 .font(.caption)
                 .foregroundStyle(.red)
             }
@@ -758,6 +853,12 @@ struct LocalRAGDashboardView: View {
       case "agents.localRag.skills.delete":
         deleteSelectedSkill()
         mcpServer.recordUIActionHandled(action.controlId)
+      case "agents.localRag.sync.pull":
+        Task { await syncRagArtifacts(direction: .pull) }
+        mcpServer.recordUIActionHandled(action.controlId)
+      case "agents.localRag.sync.push":
+        Task { await syncRagArtifacts(direction: .push) }
+        mcpServer.recordUIActionHandled(action.controlId)
       default:
         break
       }
@@ -1032,6 +1133,38 @@ struct LocalRAGDashboardView: View {
     }
   }
 
+  private func syncRagArtifacts(direction: RAGArtifactSyncDirection) async {
+    syncError = nil
+    do {
+      _ = try await swarmCoordinator.requestRagArtifactSync(
+        direction: direction,
+        workerId: selectedWorkerId
+      )
+    } catch {
+      syncError = error.localizedDescription
+    }
+  }
+
+  private func transferStatusLabel(_ transfer: RAGArtifactTransferState) -> String {
+    let bytes = "\(formatBytes(transfer.transferredBytes)) / \(formatBytes(transfer.totalBytes))"
+    let direction = transfer.direction == .pull ? "Pull" : "Push"
+    let role = transfer.role == .sender ? "Sending" : "Receiving"
+    switch transfer.status {
+    case .queued:
+      return "Queued \(direction)"
+    case .preparing:
+      return "Preparing \(direction)"
+    case .transferring:
+      return "\(role) · \(bytes)"
+    case .applying:
+      return "Applying bundle"
+    case .complete:
+      return "Complete"
+    case .failed:
+      return "Failed: \(transfer.errorMessage ?? "Unknown error")"
+    }
+  }
+
   private var queryHints: [MCPServerService.RAGQueryHint] {
     mcpServer.ragQueryHints(limit: 8)
   }
@@ -1098,6 +1231,42 @@ struct LocalRAGDashboardView: View {
     NSWorkspace.shared.open(URL(fileURLWithPath: result.filePath))
   }
 #endif
+}
+
+private struct RAGWorkerSyncRow: View {
+  let peer: ConnectedPeer
+  let status: WorkerStatus?
+
+  var body: some View {
+    HStack(alignment: .center, spacing: 8) {
+      Text(peer.name)
+        .font(.caption)
+        .foregroundStyle(.primary)
+      Spacer()
+      if let rag = status?.ragArtifacts {
+        if let staleReason = rag.staleReason {
+          Text("Stale")
+            .font(.caption2)
+            .foregroundStyle(.orange)
+          Text(staleReason)
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        } else if let lastSyncedAt = rag.lastSyncedAt {
+          Text(lastSyncedAt, format: .relative(presentation: .named))
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        } else {
+          Text(rag.manifestVersion)
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+      } else {
+        Text("No RAG status")
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+      }
+    }
+  }
 }
 
 // MARK: - RAG Search Results View

@@ -77,12 +77,21 @@ public final class SwarmCoordinator {
 
   /// Latest status reported by workers (brain/hybrid)
   public private(set) var workerStatuses: [String: WorkerStatus] = [:]
+
+  /// Local RAG artifact status (included in worker heartbeats)
+  public private(set) var localRagArtifactStatus: RAGArtifactStatus?
+
+  /// Recent RAG artifact transfers (for UI)
+  public private(set) var ragTransfers: [RAGArtifactTransferState] = []
   
   /// Maximum number of results to keep
   private let maxStoredResults = 50
   
   /// Pending direct command continuations (for awaiting results)
   private var pendingDirectCommands: [UUID: CheckedContinuation<DirectCommandResult, Never>] = [:]
+
+  /// Pending incoming RAG artifact transfers
+  private var incomingRagTransfers: [UUID: RAGIncomingTransfer] = [:]
 
   /// Heartbeat loop task (worker/hybrid)
   private var heartbeatTask: Task<Void, Never>?
@@ -98,6 +107,25 @@ public final class SwarmCoordinator {
     public let exitCode: Int32
     public let output: String
     public let error: String?
+  }
+
+  private final class RAGIncomingTransfer: @unchecked Sendable {
+    let id: UUID
+    let peerId: String
+    let direction: RAGArtifactSyncDirection
+    let tempURL: URL
+    var manifest: RAGArtifactManifest?
+    var expectedChunks: Int?
+    var receivedChunks = 0
+    var receivedBytes = 0
+    var fileHandle: FileHandle?
+
+    init(id: UUID, peerId: String, direction: RAGArtifactSyncDirection, tempURL: URL) {
+      self.id = id
+      self.peerId = peerId
+      self.direction = direction
+      self.tempURL = tempURL
+    }
   }
   
   /// Discovered peers (for debugging - from Bonjour discovery)
@@ -155,6 +183,9 @@ public final class SwarmCoordinator {
   
   /// Delegate
   public weak var delegate: SwarmCoordinatorDelegate?
+
+  /// Delegate for RAG artifact syncing
+  public weak var ragSyncDelegate: RAGArtifactSyncDelegate?
   
   /// Chain executor for worker mode
   private var chainExecutor: ChainExecutorProtocol?
@@ -247,6 +278,8 @@ public final class SwarmCoordinator {
     connectedWorkers.removeAll()
     currentTask = nil
     workerStatuses.removeAll()
+    incomingRagTransfers.removeAll()
+    ragTransfers.removeAll()
     startedAt = nil
     
     logger.info("SwarmCoordinator stopped")
@@ -280,7 +313,8 @@ public final class SwarmCoordinator {
       lastHeartbeat: Date(),
       uptimeSeconds: uptime,
       tasksCompleted: tasksCompleted,
-      tasksFailed: tasksFailed
+      tasksFailed: tasksFailed,
+      ragArtifacts: localRagArtifactStatus
     )
   }
 
@@ -456,6 +490,225 @@ public final class SwarmCoordinator {
     }
     
     return result
+  }
+
+  // MARK: - RAG Artifact Sync
+
+  public func updateLocalRagArtifactStatus(_ status: RAGArtifactStatus?) {
+    localRagArtifactStatus = status
+  }
+
+  public func requestRagArtifactSync(
+    direction: RAGArtifactSyncDirection,
+    workerId: String? = nil
+  ) async throws -> UUID {
+    guard role == .brain || role == .hybrid else {
+      throw DistributedError.actorSystemNotReady
+    }
+
+    let targetWorker: ConnectedPeer
+    if let workerId {
+      guard let worker = connectedWorkers.first(where: { $0.id == workerId }) else {
+        throw DistributedError.workerNotFound(deviceId: workerId)
+      }
+      targetWorker = worker
+    } else {
+      guard let worker = connectedWorkers.first else {
+        throw DistributedError.noWorkersAvailable
+      }
+      targetWorker = worker
+    }
+
+    let transferId = UUID()
+    let role: RAGArtifactTransferRole = direction == .push ? .sender : .receiver
+    recordRagTransfer(
+      RAGArtifactTransferState(
+        id: transferId,
+        peerId: targetWorker.id,
+        peerName: targetWorker.name,
+        direction: direction,
+        role: role,
+        status: .queued,
+        totalBytes: 0,
+        transferredBytes: 0,
+        startedAt: Date(),
+        completedAt: nil,
+        errorMessage: nil,
+        manifestVersion: nil
+      )
+    )
+
+    try await connectionManager?.send(
+      .ragArtifactsRequest(id: transferId, direction: direction),
+      to: targetWorker.id
+    )
+
+    if direction == .push {
+      Task { await sendRagArtifactBundle(transferId: transferId, to: targetWorker) }
+    }
+
+    return transferId
+  }
+
+  private func sendRagArtifactBundle(transferId: UUID, to peer: ConnectedPeer) async {
+    updateRagTransfer(transferId) { state in
+      state.status = .preparing
+    }
+
+    guard let ragSyncDelegate else {
+      await sendRagArtifactError(transferId: transferId, to: peer.id, message: "RAG sync delegate not configured")
+      return
+    }
+
+    do {
+      let bundle = try await ragSyncDelegate.createRagArtifactBundle()
+      let fileAttributes = try FileManager.default.attributesOfItem(atPath: bundle.bundleURL.path)
+      let fileSize = (fileAttributes[.size] as? NSNumber)?.intValue ?? bundle.bundleSizeBytes
+      let totalChunks = max(1, Int(ceil(Double(max(1, fileSize)) / Double(512 * 1024))))
+
+      updateRagTransfer(transferId) { state in
+        state.status = .transferring
+        state.totalBytes = fileSize
+        state.manifestVersion = bundle.manifest.version
+      }
+
+      try await connectionManager?.send(.ragArtifactsManifest(id: transferId, manifest: bundle.manifest), to: peer.id)
+
+      let handle = try FileHandle(forReadingFrom: bundle.bundleURL)
+      defer { try? handle.close() }
+
+      var chunkIndex = 0
+      while true {
+        let data = try handle.read(upToCount: 512 * 1024) ?? Data()
+        if data.isEmpty { break }
+        let base64 = data.base64EncodedString()
+        try await connectionManager?.send(
+          .ragArtifactsChunk(id: transferId, index: chunkIndex, total: totalChunks, data: base64),
+          to: peer.id
+        )
+        updateRagTransfer(transferId) { state in
+          state.transferredBytes += data.count
+        }
+        chunkIndex += 1
+      }
+
+      try await connectionManager?.send(.ragArtifactsComplete(id: transferId), to: peer.id)
+      updateRagTransfer(transferId) { state in
+        state.status = .complete
+        state.completedAt = Date()
+      }
+    } catch {
+      await sendRagArtifactError(transferId: transferId, to: peer.id, message: error.localizedDescription)
+      updateRagTransfer(transferId) { state in
+        state.status = .failed
+        state.errorMessage = error.localizedDescription
+        state.completedAt = Date()
+      }
+    }
+  }
+
+  private func prepareIncomingRagTransfer(id: UUID, from peerId: String, direction: RAGArtifactSyncDirection) {
+    let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("rag-artifacts-\(id).zip")
+    let transfer = RAGIncomingTransfer(id: id, peerId: peerId, direction: direction, tempURL: tempURL)
+    incomingRagTransfers[id] = transfer
+  }
+
+  private func handleRagArtifactsManifest(id: UUID, manifest: RAGArtifactManifest, from peerId: String) {
+    let transfer = incomingRagTransfers[id] ?? RAGIncomingTransfer(
+      id: id,
+      peerId: peerId,
+      direction: .pull,
+      tempURL: FileManager.default.temporaryDirectory.appendingPathComponent("rag-artifacts-\(id).zip")
+    )
+    transfer.manifest = manifest
+    transfer.receivedBytes = 0
+    transfer.receivedChunks = 0
+    incomingRagTransfers[id] = transfer
+
+    if FileManager.default.fileExists(atPath: transfer.tempURL.path) {
+      try? FileManager.default.removeItem(at: transfer.tempURL)
+    }
+    FileManager.default.createFile(atPath: transfer.tempURL.path, contents: Data())
+    transfer.fileHandle = try? FileHandle(forWritingTo: transfer.tempURL)
+
+    updateRagTransfer(id) { state in
+      state.status = .transferring
+      state.totalBytes = manifest.totalBytes
+      state.manifestVersion = manifest.version
+    }
+  }
+
+  private func handleRagArtifactsChunk(id: UUID, index: Int, total: Int, data: String) {
+    guard let transfer = incomingRagTransfers[id] else { return }
+    guard let decoded = Data(base64Encoded: data) else { return }
+    transfer.fileHandle?.seekToEndOfFile()
+    transfer.fileHandle?.write(decoded)
+    transfer.receivedChunks += 1
+    transfer.receivedBytes += decoded.count
+    transfer.expectedChunks = total
+
+    updateRagTransfer(id) { state in
+      state.transferredBytes = transfer.receivedBytes
+    }
+  }
+
+  private func handleRagArtifactsComplete(id: UUID, from peerId: String) async {
+    guard let transfer = incomingRagTransfers[id] else { return }
+    transfer.fileHandle?.closeFile()
+    transfer.fileHandle = nil
+
+    updateRagTransfer(id) { state in
+      state.status = .applying
+    }
+
+    guard let manifest = transfer.manifest, let ragSyncDelegate else {
+      updateRagTransfer(id) { state in
+        state.status = .failed
+        state.errorMessage = "Missing manifest or delegate"
+        state.completedAt = Date()
+      }
+      incomingRagTransfers.removeValue(forKey: id)
+      return
+    }
+
+    do {
+      try await ragSyncDelegate.applyRagArtifactBundle(
+        at: transfer.tempURL,
+        manifest: manifest,
+        from: peerId,
+        direction: transfer.direction
+      )
+      updateRagTransfer(id) { state in
+        state.status = .complete
+        state.completedAt = Date()
+      }
+    } catch {
+      updateRagTransfer(id) { state in
+        state.status = .failed
+        state.errorMessage = error.localizedDescription
+        state.completedAt = Date()
+      }
+    }
+
+    incomingRagTransfers.removeValue(forKey: id)
+  }
+
+  private func sendRagArtifactError(transferId: UUID, to peerId: String, message: String) async {
+    try? await connectionManager?.send(.ragArtifactsError(id: transferId, message: message), to: peerId)
+  }
+
+  private func updateRagTransfer(_ id: UUID, update: (inout RAGArtifactTransferState) -> Void) {
+    guard let index = ragTransfers.firstIndex(where: { $0.id == id }) else { return }
+    var state = ragTransfers[index]
+    update(&state)
+    ragTransfers[index] = state
+  }
+
+  private func recordRagTransfer(_ transfer: RAGArtifactTransferState) {
+    ragTransfers.insert(transfer, at: 0)
+    if ragTransfers.count > 50 {
+      ragTransfers.removeLast()
+    }
   }
   
   /// Select the best worker for a request
@@ -765,7 +1018,8 @@ extension SwarmCoordinator: PeerConnectionDelegate {
         lastHeartbeat: Date(),
         uptimeSeconds: existing.uptimeSeconds,
         tasksCompleted: existing.tasksCompleted,
-        tasksFailed: existing.tasksFailed
+        tasksFailed: existing.tasksFailed,
+        ragArtifacts: existing.ragArtifacts
       )
     }
     delegate?.swarmCoordinator(self, didEmit: .workerDisconnected(peerId))
@@ -839,6 +1093,65 @@ extension SwarmCoordinator: PeerConnectionDelegate {
       // Resume any pending continuation waiting for this result
       if let continuation = pendingDirectCommands.removeValue(forKey: id) {
         continuation.resume(returning: DirectCommandResult(exitCode: exitCode, output: output, error: error))
+      }
+
+    case .ragArtifactsRequest(let id, let direction):
+      let peer = connectedWorkers.first(where: { $0.id == peerId })
+      let peerName = peer?.name ?? "Peer"
+      if direction == .pull {
+        let transfer = RAGArtifactTransferState(
+          id: id,
+          peerId: peerId,
+          peerName: peerName,
+          direction: direction,
+          role: .sender,
+          status: .queued,
+          totalBytes: 0,
+          transferredBytes: 0,
+          startedAt: Date(),
+          completedAt: nil,
+          errorMessage: nil,
+          manifestVersion: nil
+        )
+        recordRagTransfer(transfer)
+        if let peer {
+          Task { await sendRagArtifactBundle(transferId: id, to: peer) }
+        } else {
+          Task { await sendRagArtifactError(transferId: id, to: peerId, message: "Peer not found") }
+        }
+      } else {
+        let transfer = RAGArtifactTransferState(
+          id: id,
+          peerId: peerId,
+          peerName: peerName,
+          direction: direction,
+          role: .receiver,
+          status: .queued,
+          totalBytes: 0,
+          transferredBytes: 0,
+          startedAt: Date(),
+          completedAt: nil,
+          errorMessage: nil,
+          manifestVersion: nil
+        )
+        recordRagTransfer(transfer)
+        prepareIncomingRagTransfer(id: id, from: peerId, direction: direction)
+      }
+
+    case .ragArtifactsManifest(let id, let manifest):
+      handleRagArtifactsManifest(id: id, manifest: manifest, from: peerId)
+
+    case .ragArtifactsChunk(let id, let index, let total, let data):
+      handleRagArtifactsChunk(id: id, index: index, total: total, data: data)
+
+    case .ragArtifactsComplete(let id):
+      Task { await handleRagArtifactsComplete(id: id, from: peerId) }
+
+    case .ragArtifactsError(let id, let message):
+      updateRagTransfer(id) { state in
+        state.status = .failed
+        state.errorMessage = message
+        state.completedAt = Date()
       }
       
     default:
