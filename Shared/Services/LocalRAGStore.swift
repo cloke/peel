@@ -124,13 +124,17 @@ struct LocalRAGChunk: Sendable {
   let constructType: String?
   let constructName: String?
   
-  init(startLine: Int, endLine: Int, text: String, tokenCount: Int, constructType: String? = nil, constructName: String? = nil) {
+  /// JSON-encoded metadata from AST analysis (decorators, protocols, imports, etc.)
+  let metadata: String?
+  
+  init(startLine: Int, endLine: Int, text: String, tokenCount: Int, constructType: String? = nil, constructName: String? = nil, metadata: String? = nil) {
     self.startLine = startLine
     self.endLine = endLine
     self.text = text
     self.tokenCount = tokenCount
     self.constructType = constructType
     self.constructName = constructName
+    self.metadata = metadata
   }
 }
 
@@ -598,6 +602,7 @@ struct HybridChunker {
     let constructType: String
     let constructName: String?
     let tokenCount: Int
+    let metadata: String?  // JSON-encoded ASTChunkMetadata
   }
   
   /// Chunk Swift file using subprocess isolation (issues #177, #178)
@@ -702,6 +707,11 @@ struct HybridChunker {
       let decoder = JSONDecoder()
       let cliChunks = try decoder.decode([CLIChunk].self, from: outputData)
       
+      // Log metadata stats for debugging
+      let fileName = (filePath as NSString).lastPathComponent
+      let chunksWithMeta = cliChunks.filter { $0.metadata != nil }.count
+      print("[HybridChunker] Swift CLI for \(fileName): \(cliChunks.count) chunks, \(chunksWithMeta) with metadata")
+      
       if cliChunks.isEmpty {
         return ChunkingResult(
           chunks: lineChunker.chunk(text: text),
@@ -719,11 +729,11 @@ struct HybridChunker {
           text: cli.text,
           tokenCount: cli.tokenCount,
           constructType: cli.constructType,
-          constructName: cli.constructName
+          constructName: cli.constructName,
+          metadata: cli.metadata
         )
       }
       
-      let fileName = (filePath as NSString).lastPathComponent
       print("[HybridChunker] Swift subprocess: \(chunks.count) chunks for \(fileName)")
       
       return ChunkingResult(
@@ -775,7 +785,8 @@ struct HybridChunker {
         text: chunk.text,
         tokenCount: chunk.estimatedTokenCount,
         constructType: chunk.constructType.rawValue,
-        constructName: chunk.constructName
+        constructName: chunk.constructName,
+        metadata: chunk.metadata.toJSON()
       )
     }
     
@@ -843,7 +854,8 @@ struct HybridChunker {
         text: astChunk.text,
         tokenCount: astChunk.estimatedTokenCount,
         constructType: astChunk.constructType.rawValue,
-        constructName: astChunk.constructName
+        constructName: astChunk.constructName,
+        metadata: astChunk.metadata.toJSON()
       )
     }
   }
@@ -1663,7 +1675,8 @@ actor LocalRAGStore {
           text: chunk.text,
           tokenCount: chunk.tokenCount,
           constructType: chunk.constructType,
-          constructName: chunk.constructName
+          constructName: chunk.constructName,
+          metadata: chunk.metadata
         )
 
         let textHash = chunkHashes[index]
@@ -2093,7 +2106,7 @@ actor LocalRAGStore {
     try exec("CREATE TABLE IF NOT EXISTS rag_meta (key TEXT PRIMARY KEY, value TEXT)")
     try exec("CREATE TABLE IF NOT EXISTS repos (id TEXT PRIMARY KEY, name TEXT, root_path TEXT, last_indexed_at TEXT)")
     try exec("CREATE TABLE IF NOT EXISTS files (id TEXT PRIMARY KEY, repo_id TEXT, path TEXT, hash TEXT, language TEXT, updated_at TEXT, FOREIGN KEY(repo_id) REFERENCES repos(id) ON DELETE CASCADE)")
-    try exec("CREATE TABLE IF NOT EXISTS chunks (id TEXT PRIMARY KEY, file_id TEXT, start_line INTEGER, end_line INTEGER, text TEXT, token_count INTEGER, construct_type TEXT, construct_name TEXT, FOREIGN KEY(file_id) REFERENCES files(id) ON DELETE CASCADE)")
+    try exec("CREATE TABLE IF NOT EXISTS chunks (id TEXT PRIMARY KEY, file_id TEXT, start_line INTEGER, end_line INTEGER, text TEXT, token_count INTEGER, construct_type TEXT, construct_name TEXT, metadata TEXT, FOREIGN KEY(file_id) REFERENCES files(id) ON DELETE CASCADE)")
     try exec("CREATE TABLE IF NOT EXISTS embeddings (chunk_id TEXT PRIMARY KEY, embedding BLOB, FOREIGN KEY(chunk_id) REFERENCES chunks(id) ON DELETE CASCADE)")
     try exec("CREATE TABLE IF NOT EXISTS cache_embeddings (text_hash TEXT PRIMARY KEY, embedding BLOB, updated_at TEXT)")
     try exec("""
@@ -2108,13 +2121,12 @@ actor LocalRAGStore {
       )
       """)
     
-    // Add metadata columns to existing chunks table (migration for existing DBs)
-    // Ignore "duplicate column name" errors
-    try? exec("ALTER TABLE chunks ADD COLUMN construct_type TEXT")
-    try? exec("ALTER TABLE chunks ADD COLUMN construct_name TEXT")
+    // Schema version 3: Added metadata column to chunks table
+    // During development, we just bump the version and users re-index.
+    // TODO: Add proper migration system before v1.0 release if needed.
 
     let now = dateFormatter.string(from: Date())
-    try exec("INSERT OR IGNORE INTO rag_meta (key, value) VALUES ('schema_version', '2')")
+    try exec("INSERT OR IGNORE INTO rag_meta (key, value) VALUES ('schema_version', '3')")
     try exec("INSERT OR IGNORE INTO rag_meta (key, value) VALUES ('created_at', '\(now)')")
     try exec("INSERT OR REPLACE INTO rag_meta (key, value) VALUES ('updated_at', '\(now)')")
 
@@ -2436,11 +2448,12 @@ actor LocalRAGStore {
     text: String,
     tokenCount: Int,
     constructType: String?,
-    constructName: String?
+    constructName: String?,
+    metadata: String?
   ) throws {
     let sql = """
-    INSERT OR REPLACE INTO chunks (id, file_id, start_line, end_line, text, token_count, construct_type, construct_name)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO chunks (id, file_id, start_line, end_line, text, token_count, construct_type, construct_name, metadata)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
     try execute(sql: sql) { statement in
       bindText(statement, 1, id)
@@ -2458,6 +2471,11 @@ actor LocalRAGStore {
         bindText(statement, 8, constructName)
       } else {
         sqlite3_bind_null(statement, 8)
+      }
+      if let metadata {
+        bindText(statement, 9, metadata)
+      } else {
+        sqlite3_bind_null(statement, 9)
       }
     }
   }

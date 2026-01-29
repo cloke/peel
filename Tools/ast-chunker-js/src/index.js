@@ -45,8 +45,11 @@ function parseAndChunk(source, language) {
       errorRecovery: true,
     });
     
+    // Extract file-level metadata (imports, etc.)
+    const fileMetadata = extractFileMetadata(ast, isGlimmer);
+    
     // Extract chunks from AST
-    const chunks = extractChunks(ast, source, templateRanges);
+    const chunks = extractChunks(ast, source, templateRanges, fileMetadata);
     
     return JSON.stringify(chunks);
   } catch (error) {
@@ -57,6 +60,55 @@ function parseAndChunk(source, language) {
       stack: error.stack
     });
   }
+}
+
+/**
+ * Extract file-level metadata from AST
+ */
+function extractFileMetadata(ast, isGlimmer) {
+  const imports = [];
+  const tioUiImports = [];
+  let usesEmberConcurrency = false;
+  const frameworks = [];
+  
+  for (const node of ast.program.body) {
+    if (node.type === 'ImportDeclaration') {
+      const source = node.source.value;
+      imports.push(source);
+      
+      // Detect ember-concurrency
+      if (source === 'ember-concurrency') {
+        usesEmberConcurrency = true;
+      }
+      
+      // Detect TIO-UI imports
+      if (source.startsWith('tio-ui/') || source === 'tio-ui') {
+        // Extract specific components imported
+        for (const specifier of node.specifiers) {
+          if (specifier.type === 'ImportSpecifier' && specifier.imported) {
+            tioUiImports.push(specifier.imported.name);
+          }
+        }
+      }
+      
+      // Detect frameworks from imports
+      if (source.startsWith('@glimmer/') || source.startsWith('@ember/')) {
+        if (!frameworks.includes('Ember')) frameworks.push('Ember');
+      }
+      if (source.startsWith('react')) {
+        if (!frameworks.includes('React')) frameworks.push('React');
+      }
+      if (source.startsWith('vue')) {
+        if (!frameworks.includes('Vue')) frameworks.push('Vue');
+      }
+    }
+  }
+  
+  if (isGlimmer && !frameworks.includes('Ember')) {
+    frameworks.push('Ember');
+  }
+  
+  return { imports, tioUiImports, usesEmberConcurrency, frameworks };
 }
 
 /**
@@ -97,9 +149,10 @@ function preprocessGlimmer(source) {
 /**
  * Extract chunks from Babel AST
  */
-function extractChunks(ast, originalSource, templateRanges) {
+function extractChunks(ast, originalSource, templateRanges, fileMetadata) {
   const lines = originalSource.split('\n');
   const chunks = [];
+  const hasTemplate = templateRanges.length > 0;
   
   // Collect top-level nodes
   const topLevelNodes = [];
@@ -120,14 +173,18 @@ function extractChunks(ast, originalSource, templateRanges) {
           type: 'imports',
           name: 'imports',
           startLine: importStart,
-          endLine: importEnd
+          endLine: importEnd,
+          metadata: {
+            imports: fileMetadata.imports,
+            frameworks: fileMetadata.frameworks,
+          }
         });
         importStart = null;
         importEnd = null;
       }
       
       // Process this node
-      const nodeInfo = extractNodeInfo(node, templateRanges);
+      const nodeInfo = extractNodeInfo(node, templateRanges, fileMetadata, hasTemplate);
       if (nodeInfo) {
         topLevelNodes.push(nodeInfo);
       }
@@ -140,7 +197,11 @@ function extractChunks(ast, originalSource, templateRanges) {
       type: 'imports',
       name: 'imports',
       startLine: importStart,
-      endLine: importEnd
+      endLine: importEnd,
+      metadata: {
+        imports: fileMetadata.imports,
+        frameworks: fileMetadata.frameworks,
+      }
     });
   }
   
@@ -156,11 +217,12 @@ function extractChunks(ast, originalSource, templateRanges) {
         text: extractLines(lines, node.startLine, node.endLine),
         constructType: mapConstructType(node.type),
         constructName: node.name,
-        tokenCount: estimateTokens(lines, node.startLine, node.endLine)
+        tokenCount: estimateTokens(lines, node.startLine, node.endLine),
+        metadata: node.metadata || {}
       });
     } else {
       // Split large node (e.g., class with many methods)
-      const subChunks = splitLargeNode(node, lines, templateRanges);
+      const subChunks = splitLargeNode(node, lines, templateRanges, fileMetadata);
       chunks.push(...subChunks);
     }
   }
@@ -171,32 +233,59 @@ function extractChunks(ast, originalSource, templateRanges) {
 /**
  * Extract info from a Babel AST node
  */
-function extractNodeInfo(node, templateRanges) {
+function extractNodeInfo(node, templateRanges, fileMetadata, hasTemplate) {
   const baseInfo = {
     startLine: node.loc.start.line,
     endLine: node.loc.end.line
   };
   
+  // Extract decorators if present
+  const decorators = extractDecorators(node);
+  
+  // Base metadata that applies to most constructs
+  const baseMetadata = {
+    decorators,
+    usesEmberConcurrency: fileMetadata.usesEmberConcurrency,
+    hasTemplate,
+    tioUiImports: fileMetadata.tioUiImports,
+    frameworks: fileMetadata.frameworks,
+  };
+  
   switch (node.type) {
     case 'ClassDeclaration':
-    case 'ClassExpression':
+    case 'ClassExpression': {
       // Check if this class contains a template (Glimmer component)
       const classEnd = expandForTemplates(baseInfo.endLine, templateRanges);
+      
+      // Extract superclass and protocols (interfaces)
+      const { superclass, protocols } = extractClassInheritance(node);
+      
+      // Extract property decorators from class body
+      const propertyDecorators = extractPropertyDecorators(node);
+      
       return {
         type: 'class',
         name: node.id?.name || 'anonymous',
         startLine: baseInfo.startLine,
-        endLine: classEnd
+        endLine: classEnd,
+        metadata: {
+          ...baseMetadata,
+          decorators: [...decorators, ...propertyDecorators],
+          superclass,
+          protocols,
+        }
       };
+    }
       
     case 'FunctionDeclaration':
       return {
         type: 'function',
         name: node.id?.name || 'anonymous',
-        ...baseInfo
+        ...baseInfo,
+        metadata: baseMetadata
       };
       
-    case 'VariableDeclaration':
+    case 'VariableDeclaration': {
       // Check for arrow functions or class expressions
       const decl = node.declarations[0];
       if (decl?.init?.type === 'ArrowFunctionExpression' ||
@@ -204,24 +293,32 @@ function extractNodeInfo(node, templateRanges) {
         return {
           type: 'function',
           name: decl.id?.name || 'anonymous',
-          ...baseInfo
+          ...baseInfo,
+          metadata: baseMetadata
         };
       }
       if (decl?.init?.type === 'ClassExpression') {
+        const { superclass, protocols } = extractClassInheritance(decl.init);
         return {
           type: 'class',
           name: decl.id?.name || 'anonymous',
-          ...baseInfo
+          ...baseInfo,
+          metadata: {
+            ...baseMetadata,
+            superclass,
+            protocols,
+          }
         };
       }
       // Skip simple variable declarations (too granular)
       return null;
+    }
       
     case 'ExportDefaultDeclaration':
     case 'ExportNamedDeclaration':
       // Recurse into the declaration
       if (node.declaration) {
-        const inner = extractNodeInfo(node.declaration, templateRanges);
+        const inner = extractNodeInfo(node.declaration, templateRanges, fileMetadata, hasTemplate);
         if (inner) {
           return { ...inner, startLine: baseInfo.startLine };
         }
@@ -232,26 +329,108 @@ function extractNodeInfo(node, templateRanges) {
       return {
         type: 'interface',
         name: node.id?.name || 'anonymous',
-        ...baseInfo
+        ...baseInfo,
+        metadata: baseMetadata
       };
       
     case 'TSTypeAliasDeclaration':
       return {
         type: 'type',
         name: node.id?.name || 'anonymous',
-        ...baseInfo
+        ...baseInfo,
+        metadata: baseMetadata
       };
       
     case 'TSEnumDeclaration':
       return {
         type: 'enum',
         name: node.id?.name || 'anonymous',
-        ...baseInfo
+        ...baseInfo,
+        metadata: baseMetadata
       };
       
     default:
       return null;
   }
+}
+
+/**
+ * Extract decorators from a node
+ */
+function extractDecorators(node) {
+  const decorators = [];
+  
+  if (node.decorators) {
+    for (const dec of node.decorators) {
+      if (dec.expression) {
+        if (dec.expression.type === 'Identifier') {
+          decorators.push('@' + dec.expression.name);
+        } else if (dec.expression.type === 'CallExpression' && dec.expression.callee) {
+          decorators.push('@' + (dec.expression.callee.name || dec.expression.callee.property?.name || 'unknown'));
+        }
+      }
+    }
+  }
+  
+  return decorators;
+}
+
+/**
+ * Extract property decorators from class body (e.g., @tracked, @service)
+ */
+function extractPropertyDecorators(classNode) {
+  const decorators = new Set();
+  
+  if (classNode.body && classNode.body.body) {
+    for (const member of classNode.body.body) {
+      if (member.decorators) {
+        for (const dec of member.decorators) {
+          if (dec.expression) {
+            let name;
+            if (dec.expression.type === 'Identifier') {
+              name = dec.expression.name;
+            } else if (dec.expression.type === 'CallExpression' && dec.expression.callee) {
+              name = dec.expression.callee.name || dec.expression.callee.property?.name;
+            }
+            if (name) {
+              decorators.add('@' + name);
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  return Array.from(decorators);
+}
+
+/**
+ * Extract superclass and implemented interfaces from a class
+ */
+function extractClassInheritance(classNode) {
+  let superclass = null;
+  const protocols = [];
+  
+  // Superclass
+  if (classNode.superClass) {
+    if (classNode.superClass.type === 'Identifier') {
+      superclass = classNode.superClass.name;
+    } else if (classNode.superClass.type === 'MemberExpression') {
+      // e.g., React.Component
+      superclass = classNode.superClass.object?.name + '.' + classNode.superClass.property?.name;
+    }
+  }
+  
+  // TypeScript implements clause
+  if (classNode.implements) {
+    for (const impl of classNode.implements) {
+      if (impl.expression?.name) {
+        protocols.push(impl.expression.name);
+      }
+    }
+  }
+  
+  return { superclass, protocols };
 }
 
 /**
@@ -270,8 +449,9 @@ function expandForTemplates(endLine, templateRanges) {
 /**
  * Split a large node into smaller chunks
  */
-function splitLargeNode(node, lines, templateRanges) {
+function splitLargeNode(node, lines, templateRanges, fileMetadata) {
   const chunks = [];
+  const metadata = node.metadata || {};
   
   if (node.type === 'class') {
     // For classes, we could split by methods
@@ -282,7 +462,8 @@ function splitLargeNode(node, lines, templateRanges) {
       text: extractLines(lines, node.startLine, node.endLine),
       constructType: mapConstructType('class'),
       constructName: node.name,
-      tokenCount: estimateTokens(lines, node.startLine, node.endLine)
+      tokenCount: estimateTokens(lines, node.startLine, node.endLine),
+      metadata
     });
   } else {
     // Default: single chunk
@@ -292,7 +473,8 @@ function splitLargeNode(node, lines, templateRanges) {
       text: extractLines(lines, node.startLine, node.endLine),
       constructType: mapConstructType(node.type),
       constructName: node.name,
-      tokenCount: estimateTokens(lines, node.startLine, node.endLine)
+      tokenCount: estimateTokens(lines, node.startLine, node.endLine),
+      metadata
     });
   }
   
@@ -332,7 +514,7 @@ function estimateTokens(lines, startLine, endLine) {
 // Export for JavaScriptCore
 globalThis.ASTChunker = {
   parseAndChunk,
-  version: '1.0.0'
+  version: '1.1.0'  // Bumped for metadata support
 };
 
 export { parseAndChunk };

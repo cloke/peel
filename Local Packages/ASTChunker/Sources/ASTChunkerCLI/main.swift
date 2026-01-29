@@ -9,6 +9,7 @@ struct JSONChunk: Codable {
   let constructType: String
   let constructName: String?
   let tokenCount: Int
+  let metadata: String?  // JSON-encoded ASTChunkMetadata
 }
 
 /// Simple CLI to test the AST chunker on real files
@@ -142,7 +143,8 @@ struct CLI {
         text: chunk.text,
         constructType: chunk.constructType.rawValue,
         constructName: chunk.constructName,
-        tokenCount: chunk.estimatedTokenCount
+        tokenCount: chunk.estimatedTokenCount,
+        metadata: chunk.metadata.toJSON()
       )
     }
 
