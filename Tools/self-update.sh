@@ -88,8 +88,11 @@ fi
 APP_PATH=$(printf '%s\n' "${DERIVED_APPS[@]}" 2>/dev/null | head -1)
 if [ -n "$APP_PATH" ]; then
   echo "Launching: $APP_PATH"
-  open "$APP_PATH" --args --worker
-  sleep 2
+  echo "Launching via detached open..."
+  nohup /bin/zsh -lc "/usr/bin/open -n \"$APP_PATH\" --args --worker" >/dev/null 2>&1 &
+  RELAUNCH_PID=$!
+  echo "Spawned relaunch process: $RELAUNCH_PID"
+  sleep 4
   if pgrep -x Peel >/dev/null 2>&1; then
     echo "✅ Peel restarted in worker mode"
   else
