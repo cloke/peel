@@ -766,12 +766,20 @@ public final class MCPServerService {
   }
   
   /// Index a repository (called from UI)
-  func indexRagRepo(path: String) async throws {
+  func indexRagRepo(
+    path: String,
+    allowWorkspace: Bool = false,
+    excludeSubrepos: Bool = true
+  ) async throws {
     ragIndexingPath = path
     ragIndexProgress = nil
     
     do {
-      let report = try await localRagStore.indexRepository(path: path) { [weak self] progress in
+      let report = try await localRagStore.indexRepository(
+        path: path,
+        allowWorkspace: allowWorkspace,
+        excludeSubrepos: excludeSubrepos
+      ) { [weak self] progress in
         Task { @MainActor in
           self?.ragIndexProgress = progress
         }
@@ -958,7 +966,12 @@ public final class MCPServerService {
   }
 
   func indexRag(repoPath: String) async throws -> LocalRAGIndexReport {
-    let report = try await localRagStore.indexRepository(path: repoPath)
+    let report = try await localRagStore.indexRepository(
+      path: repoPath,
+      allowWorkspace: false,
+      excludeSubrepos: true,
+      progress: nil
+    )
     ragStatus = await localRagStore.status()
     ragStats = try await localRagStore.stats()
     ragUsage.indexRuns += 1
@@ -3143,7 +3156,9 @@ public final class MCPServerService {
           "type": "object",
           "properties": [
             "repoPath": ["type": "string"],
-            "forceReindex": ["type": "boolean", "default": false, "description": "If true, re-index all files even if unchanged. Useful after changing chunking or embedding settings."]
+            "forceReindex": ["type": "boolean", "default": false, "description": "If true, re-index all files even if unchanged. Useful after changing chunking or embedding settings."],
+            "allowWorkspace": ["type": "boolean", "default": false, "description": "Allow indexing a workspace folder that contains multiple repos."],
+            "excludeSubrepos": ["type": "boolean", "default": true, "description": "When indexing a workspace, skip sub-repo folders (index only workspace-level content)." ]
           ],
           "required": ["repoPath"]
         ],
@@ -4868,13 +4883,24 @@ extension MCPServerService: RAGToolsHandlerDelegate {
     )
   }
   
-  func indexRepository(path: String, forceReindex: Bool, progressHandler: (@Sendable (RAGToolIndexProgress) -> Void)?) async throws -> RAGToolIndexReport {
+  func indexRepository(
+    path: String,
+    forceReindex: Bool,
+    allowWorkspace: Bool,
+    excludeSubrepos: Bool,
+    progressHandler: (@Sendable (RAGToolIndexProgress) -> Void)?
+  ) async throws -> RAGToolIndexReport {
     // Update UI state so dashboard shows progress
     ragIndexingPath = path
     ragIndexProgress = nil
     
     do {
-      let report = try await localRagStore.indexRepository(path: path, forceReindex: forceReindex) { [weak self] progress in
+      let report = try await localRagStore.indexRepository(
+        path: path,
+        forceReindex: forceReindex,
+        allowWorkspace: allowWorkspace,
+        excludeSubrepos: excludeSubrepos
+      ) { [weak self] progress in
         // Update UI progress state
         Task { @MainActor in
           self?.ragIndexProgress = progress

@@ -900,7 +900,7 @@ struct LocalRAGFileScanner {
     ".packed."
   ]
 
-  func scan(rootURL: URL) -> [LocalRAGFileCandidate] {
+  func scan(rootURL: URL, excludingRoots: [String] = []) -> [LocalRAGFileCandidate] {
     guard let enumerator = FileManager.default.enumerator(
       at: rootURL,
       includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey],
@@ -913,7 +913,7 @@ struct LocalRAGFileScanner {
     var results: [LocalRAGFileCandidate] = []
 
     for case let fileURL as URL in enumerator {
-      if shouldSkip(url: fileURL, rootURL: rootURL, ignorePatterns: ignorePatterns) {
+      if shouldSkip(url: fileURL, rootURL: rootURL, ignorePatterns: ignorePatterns, excludedRoots: excludingRoots) {
         enumerator.skipDescendants()
         continue
       }
@@ -935,8 +935,14 @@ struct LocalRAGFileScanner {
     return results
   }
 
-  private func shouldSkip(url: URL, rootURL: URL, ignorePatterns: [String]) -> Bool {
+  private func shouldSkip(url: URL, rootURL: URL, ignorePatterns: [String], excludedRoots: [String]) -> Bool {
     let lastComponent = url.lastPathComponent
+    let path = url.path
+    for root in excludedRoots {
+      if path == root || path.hasPrefix(root + "/") {
+        return true
+      }
+    }
     // Skip excluded directories
     if excludedDirectories.contains(lastComponent) {
       return true
@@ -1195,6 +1201,7 @@ actor LocalRAGStore {
   enum LocalRAGError: LocalizedError {
     case sqlite(String)
     case invalidPath
+    case workspaceDetected(rootPath: String, repoPaths: [String])
 
     var errorDescription: String? {
       switch self {
@@ -1202,6 +1209,10 @@ actor LocalRAGStore {
         return message
       case .invalidPath:
         return "Invalid database path"
+      case .workspaceDetected(let rootPath, let repoPaths):
+        let preview = repoPaths.prefix(6).joined(separator: "\n")
+        let suffix = repoPaths.count > 6 ? "\n…" : ""
+        return "Workspace detected at \(rootPath). Index sub-repos instead:\n\(preview)\(suffix)"
       }
     }
   }
@@ -1229,6 +1240,49 @@ actor LocalRAGStore {
       try? FileManager.default.createDirectory(at: ragURL, withIntermediateDirectories: true)
     }
     self.dbURL = ragURL.appendingPathComponent("rag.sqlite")
+  }
+
+  private func detectWorkspaceRepos(rootURL: URL) -> [String] {
+    let resolvedRoot = rootURL.resolvingSymlinksInPath()
+    guard let enumerator = FileManager.default.enumerator(
+      at: resolvedRoot,
+      includingPropertiesForKeys: [.isDirectoryKey],
+      options: [.skipsHiddenFiles]
+    ) else {
+      return []
+    }
+
+    let excluded = Set([".git", ".build", ".swiftpm", "build", "dist", "DerivedData", "node_modules", "coverage", "tmp", "Carthage", ".turbo", "__snapshots__", "vendor"])
+    let baseDepth = resolvedRoot.pathComponents.count
+    var repos: [String] = []
+
+    for case let url as URL in enumerator {
+      let depth = url.pathComponents.count - baseDepth
+      if depth <= 0 { continue }
+      if depth > 4 {
+        enumerator.skipDescendants()
+        continue
+      }
+      if excluded.contains(url.lastPathComponent) {
+        enumerator.skipDescendants()
+        continue
+      }
+      guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
+      if isGitRepo(at: url) {
+        repos.append(url.path)
+        enumerator.skipDescendants()
+      }
+    }
+
+    return Array(Set(repos)).sorted()
+  }
+
+  private func isGitRepo(at url: URL) -> Bool {
+    let gitURL = url.appendingPathComponent(".git")
+    var isDir = ObjCBool(false)
+    let exists = FileManager.default.fileExists(atPath: gitURL.path, isDirectory: &isDir)
+    if exists { return true }
+    return FileManager.default.fileExists(atPath: gitURL.path)
   }
 
 #if os(macOS)
@@ -1500,17 +1554,30 @@ actor LocalRAGStore {
 
   /// Index a repository without progress reporting
   func indexRepository(path: String) async throws -> LocalRAGIndexReport {
-    try await indexRepository(path: path, forceReindex: false, progress: nil)
+    try await indexRepository(path: path, forceReindex: false, allowWorkspace: false, excludeSubrepos: true, progress: nil)
   }
   
   /// Index a repository with progress reporting callback
-  func indexRepository(path: String, forceReindex: Bool = false, progress: LocalRAGProgressCallback?) async throws -> LocalRAGIndexReport {
+  func indexRepository(
+    path: String,
+    forceReindex: Bool = false,
+    allowWorkspace: Bool = false,
+    excludeSubrepos: Bool = true,
+    progress: LocalRAGProgressCallback?
+  ) async throws -> LocalRAGIndexReport {
     let startTime = Date()
     _ = try initialize()
     logMemory("index start")
 
     let repoURL = URL(fileURLWithPath: path)
-    let scannedFiles = scanner.scan(rootURL: repoURL)
+    let workspaceRepos = detectWorkspaceRepos(rootURL: repoURL)
+    if !allowWorkspace {
+      if workspaceRepos.count >= 2 {
+        throw LocalRAGError.workspaceDetected(rootPath: path, repoPaths: workspaceRepos)
+      }
+    }
+    let excludedRoots = (allowWorkspace && excludeSubrepos) ? workspaceRepos : []
+    let scannedFiles = scanner.scan(rootURL: repoURL, excludingRoots: excludedRoots)
     logMemory("after scan \(scannedFiles.count) files")
     progress?(.scanning(fileCount: scannedFiles.count))
     

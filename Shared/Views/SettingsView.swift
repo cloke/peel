@@ -21,21 +21,22 @@ struct SettingsView: View {
   @State private var vscodeConfigError: String?
   @State private var isWorkspacePickerPresented = false
   @State private var isWritingVSCodeConfig = false
+  @State private var showMCPTools = false
   
   var body: some View {
     TabView {
       #if os(macOS)
-      ScrollView {
-        Form {
-          Section("MCP Test Harness") {
-            Toggle(
-              "Enable MCP Server",
-              isOn: Binding(
-                get: { mcpServer.isEnabled },
-                set: { mcpServer.isEnabled = $0 }
-              )
+      SettingsPage {
+        SettingsSection("MCP Server") {
+          Toggle(
+            "Enable MCP Server",
+            isOn: Binding(
+              get: { mcpServer.isEnabled },
+              set: { mcpServer.isEnabled = $0 }
             )
+          )
 
+          VStack(alignment: .leading, spacing: 4) {
             Toggle(
               "Auto-clean agent worktrees",
               isOn: Binding(
@@ -46,65 +47,87 @@ struct SettingsView: View {
             Text("Remove agent worktrees after MCP runs complete.")
               .font(.caption)
               .foregroundStyle(.secondary)
+          }
 
-            HStack {
-              TextField(
-                "Port",
-                text: Binding(
-                  get: { String(mcpServer.port) },
-                  set: { newValue in
-                    if let value = Int(newValue) {
-                      mcpServer.port = value
-                    }
+          LabeledContent("Port") {
+            TextField(
+              "Port",
+              text: Binding(
+                get: { String(mcpServer.port) },
+                set: { newValue in
+                  if let value = Int(newValue) {
+                    mcpServer.port = value
                   }
-                )
+                }
               )
-              .frame(width: 80)
+            )
+            .frame(width: 80)
+          }
+        }
+
+        SettingsSection("MCP Status") {
+          let portInUse = mcpServer.lastError?.localizedCaseInsensitiveContains("address already in use") == true
+          let statusText = mcpServer.isRunning ? "Running" : (portInUse ? "Port in use" : "Stopped")
+          let statusStyle: StatusPill.Style = mcpServer.isRunning ? .success : (portInUse ? .warning : .neutral)
+          Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 8) {
+            GridRow {
+              Text("Server")
+                .foregroundStyle(.secondary)
+              StatusPill(text: statusText, style: statusStyle)
             }
-
-            Text(mcpServer.isRunning ? "Running on localhost:\(mcpServer.port)" : "Stopped")
-              .font(.caption)
-              .foregroundStyle(mcpServer.isRunning ? .green : .secondary)
-
-            Text("Active requests: \(mcpServer.activeRequests)")
-              .font(.caption)
-              .foregroundStyle(.secondary)
-
-            Text("Foreground tools: \(mcpServer.foregroundToolCount) · Background tools: \(mcpServer.backgroundToolCount)")
-              .font(.caption)
-              .foregroundStyle(.secondary)
-
-            Text("App active: \(mcpServer.isAppActive ? "Yes" : "No") · Frontmost: \(mcpServer.isAppFrontmost ? "Yes" : "No")")
-              .font(.caption)
-              .foregroundStyle(.secondary)
-
-            if let method = mcpServer.lastRequestMethod,
-               let timestamp = mcpServer.lastRequestAt {
-              Text("Last request: \(method) at \(timestamp.formatted(date: .omitted, time: .shortened))")
-                .font(.caption)
+            GridRow {
+              Text("Active requests")
+                .foregroundStyle(.secondary)
+              Text("\(mcpServer.activeRequests)")
+            }
+            GridRow {
+              Text("Tools")
+                .foregroundStyle(.secondary)
+              Text("\(mcpServer.foregroundToolCount) foreground · \(mcpServer.backgroundToolCount) background")
                 .foregroundStyle(.secondary)
             }
-
-            if let error = mcpServer.lastError {
-              Text(error)
-                .font(.caption)
-                .foregroundStyle(.red)
+            GridRow {
+              Text("App focus")
+                .foregroundStyle(.secondary)
+              Text("Active: \(mcpServer.isAppActive ? "Yes" : "No") · Frontmost: \(mcpServer.isAppFrontmost ? "Yes" : "No")")
+                .foregroundStyle(.secondary)
+            }
+            if let method = mcpServer.lastRequestMethod,
+               let timestamp = mcpServer.lastRequestAt {
+              GridRow {
+                Text("Last request")
+                  .foregroundStyle(.secondary)
+                Text("\(method) at \(timestamp.formatted(date: .omitted, time: .shortened))")
+                  .foregroundStyle(.secondary)
+              }
             }
           }
 
-          Section("Local RAG") {
-            Toggle(
-              "Enable Local RAG",
-              isOn: Binding(
-                get: { mcpServer.localRagEnabled },
-                set: { mcpServer.localRagEnabled = $0 }
-              )
-            )
-            Text("Use local codebase indexing to provide context to agents.")
+          if portInUse {
+            Text("Port \(mcpServer.port) is already in use. If MCP tools are working, another Peel instance is running and this can be ignored.")
               .font(.caption)
-              .foregroundStyle(.secondary)
+              .foregroundStyle(.orange)
+          } else if let error = mcpServer.lastError {
+            Text(error)
+              .font(.caption)
+              .foregroundStyle(.red)
+          }
+        }
 
-            if mcpServer.localRagEnabled {
+        SettingsSection("Local RAG") {
+          Toggle(
+            "Enable Local RAG",
+            isOn: Binding(
+              get: { mcpServer.localRagEnabled },
+              set: { mcpServer.localRagEnabled = $0 }
+            )
+          )
+          Text("Use local codebase indexing to provide context to agents.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+          if mcpServer.localRagEnabled {
+            VStack(alignment: .leading, spacing: 8) {
               Toggle(
                 "Use Core ML embeddings",
                 isOn: Binding(
@@ -135,7 +158,7 @@ struct SettingsView: View {
               )
 
               if let status = mcpServer.ragStatus {
-                VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 16) {
                   Text("DB: \(status.exists ? "Ready" : "Not initialized")")
                     .font(.caption)
                     .foregroundStyle(status.exists ? .green : .secondary)
@@ -152,17 +175,32 @@ struct SettingsView: View {
               }
             }
           }
+        }
 
-          Section("MCP Tools") {
-            MCPToolSettingsSection(mcpServer: mcpServer)
+        SettingsSection("MCP Tools") {
+          VStack(alignment: .leading, spacing: 8) {
+            Text("Advanced permissions for individual MCP tools and categories.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+
+            DisclosureGroup(isExpanded: $showMCPTools) {
+              MCPToolSettingsSection(mcpServer: mcpServer)
+                .padding(.top, 8)
+            } label: {
+              Text(showMCPTools ? "Hide tool permissions" : "Show tool permissions")
+                .font(.subheadline)
+                .fontWeight(.medium)
+            }
           }
+        }
 
-          Section("IDE Integration") {
+        SettingsSection("IDE Integration") {
+          VStack(alignment: .leading, spacing: 12) {
+            Text("Install Peel as an MCP server in VS Code (writes mcp.json).")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+
             VStack(alignment: .leading, spacing: 8) {
-              Text("Install Peel as an MCP server in VS Code (writes mcp.json).")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
               HStack(spacing: 12) {
                 TextField("Server Name", text: $vscodeServerName)
                   .textFieldStyle(.roundedBorder)
@@ -180,56 +218,52 @@ struct SettingsView: View {
                 }
                 .font(.caption)
               }
-
-              if let status = vscodeConfigStatus {
-                Text(status)
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
-              }
-              if let error = vscodeConfigError {
-                Text(error)
-                  .font(.caption)
-                  .foregroundStyle(.red)
-              }
-
-              Button(isWritingVSCodeConfig ? "Installing…" : "Install VS Code MCP Config") {
-                Task { await installVSCodeMCPConfig() }
-              }
-              .disabled(isWritingVSCodeConfig)
             }
-          }
 
-          Section("Prompt Rules") {
-            PromptRulesSettingsSection(mcpServer: mcpServer)
+            if let status = vscodeConfigStatus {
+              Text(status)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            if let error = vscodeConfigError {
+              Text(error)
+                .font(.caption)
+                .foregroundStyle(.red)
+            }
+
+            Button(isWritingVSCodeConfig ? "Installing…" : "Install VS Code MCP Config") {
+              Task { await installVSCodeMCPConfig() }
+            }
+            .disabled(isWritingVSCodeConfig)
           }
         }
-        .padding()
+
+        SettingsSection("Prompt Rules") {
+          PromptRulesSettingsSection(mcpServer: mcpServer)
+        }
       }
       .tabItem { Label("Local MCP", systemImage: "bolt.horizontal.circle") }
       #endif
 
-      ScrollView {
-        Form {
-          Section("About") {
-            VStack(alignment: .leading, spacing: 8) {
-              Text("Peel keeps GitHub, git, and Homebrew close at hand so you can stay in flow.")
-                .font(.callout)
-              Text("If this app saves you time, please consider supporting development.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-              HStack(spacing: 12) {
-                Link("GitHub", destination: URL(string: "https://github.com/cloke/peel")!)
-                Link("Donate", destination: URL(string: "https://github.com/sponsors/crunchybananas")!)
-              }
+      SettingsPage {
+        SettingsSection("About") {
+          VStack(alignment: .leading, spacing: 8) {
+            Text("Peel keeps GitHub, git, and Homebrew close at hand so you can stay in flow.")
+              .font(.callout)
+            Text("If this app saves you time, please consider supporting development.")
               .font(.caption)
+              .foregroundStyle(.secondary)
+            HStack(spacing: 12) {
+              Link("GitHub", destination: URL(string: "https://github.com/cloke/peel")!)
+              Link("Donate", destination: URL(string: "https://github.com/sponsors/crunchybananas")!)
             }
+            .font(.caption)
           }
         }
-        .padding()
       }
       .tabItem { Label("About", systemImage: "info.circle") }
     }
-    .frame(minWidth: 400, minHeight: 400)
+    .frame(minWidth: 680, idealWidth: 720, maxWidth: 900, minHeight: 560, idealHeight: 680, maxHeight: 900)
     .fileImporter(
       isPresented: $isWorkspacePickerPresented,
       allowedContentTypes: [.folder],
@@ -283,6 +317,90 @@ struct SettingsView: View {
       vscodeConfigStatus = "Updated VS Code settings: \(path)"
     } catch {
       vscodeConfigError = error.localizedDescription
+    }
+  }
+}
+
+private struct SettingsPage<Content: View>: View {
+  let content: Content
+
+  init(@ViewBuilder content: () -> Content) {
+    self.content = content()
+  }
+
+  var body: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 16) {
+        content
+      }
+      .frame(maxWidth: 720, alignment: .leading)
+      .padding(24)
+    }
+  }
+}
+
+private struct SettingsSection<Content: View>: View {
+  let title: String
+  let content: Content
+
+  init(_ title: String, @ViewBuilder content: () -> Content) {
+    self.title = title
+    self.content = content()
+  }
+
+  var body: some View {
+    GroupBox {
+      VStack(alignment: .leading, spacing: 12) {
+        content
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+    } label: {
+      Text(title)
+        .font(.headline)
+    }
+  }
+}
+
+private struct StatusPill: View {
+  enum Style {
+    case success
+    case warning
+    case neutral
+  }
+
+  let text: String
+  let style: Style
+
+  var body: some View {
+    Text(text)
+      .font(.caption)
+      .fontWeight(.semibold)
+      .padding(.horizontal, 8)
+      .padding(.vertical, 4)
+      .background(backgroundColor)
+      .foregroundStyle(foregroundColor)
+      .clipShape(Capsule())
+  }
+
+  private var backgroundColor: Color {
+    switch style {
+    case .success:
+      return Color.green.opacity(0.2)
+    case .warning:
+      return Color.orange.opacity(0.2)
+    case .neutral:
+      return Color.secondary.opacity(0.15)
+    }
+  }
+
+  private var foregroundColor: Color {
+    switch style {
+    case .success:
+      return .green
+    case .warning:
+      return .orange
+    case .neutral:
+      return .secondary
     }
   }
 }
