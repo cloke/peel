@@ -356,11 +356,11 @@ struct LocalRAGDashboardView: View {
             SectionHeader("Artifact Sync")
 
             if !swarmCoordinator.isActive {
-              Text("Start Swarm in brain or hybrid mode to sync artifacts with workers.")
+              Text("Start Swarm in Crown or hybrid mode to sync artifacts with peels.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             } else if swarmCoordinator.connectedWorkers.isEmpty {
-              Text("No workers connected yet.")
+              Text("No peels connected yet.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             } else {
@@ -370,7 +370,7 @@ struct LocalRAGDashboardView: View {
                 set: { selectedWorkerId = $0 }
               )
 
-              Picker("Worker", selection: selection) {
+              Picker("Peel", selection: selection) {
                 ForEach(workers) { worker in
                   Text(worker.name).tag(worker.id)
                 }
@@ -379,13 +379,13 @@ struct LocalRAGDashboardView: View {
               .accessibilityIdentifier("agents.localRag.sync.worker")
 
               HStack(spacing: LayoutSpacing.item) {
-                Button("Pull from Worker") {
+                Button("Pull from Peel") {
                   Task { await syncRagArtifacts(direction: .pull) }
                 }
                 .buttonStyle(.bordered)
                 .accessibilityIdentifier("agents.localRag.sync.pull")
 
-                Button("Push to Worker") {
+                Button("Push to Peel") {
                   Task { await syncRagArtifacts(direction: .push) }
                 }
                 .buttonStyle(.borderedProminent)

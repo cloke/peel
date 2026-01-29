@@ -2,7 +2,7 @@
 
 **Status:** Design Draft  
 **Created:** January 27, 2026  
-**Goal:** Enable Peel instances to form a swarm where a "brain" (Mac Studio) coordinates work across multiple devices.
+**Goal:** Enable Peel instances to form a swarm where a **Crown** (Mac Studio) coordinates work across multiple devices.
 
 ---
 
@@ -22,7 +22,7 @@
            ▼                  ▼                  ▼
 ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐
 │  Mac Studio      │  │  MacBook Pro     │  │  Mac Mini        │
-│  (Brain/Worker)  │  │  (Worker)        │  │  (Worker)        │
+│  (Crown/Peel)    │  │  (Peel)          │  │  (Peel)          │
 │                  │  │                  │  │                  │
 │  - Task dispatch │  │  - Poll tasks    │  │  - Poll tasks    │
 │  - Heavy compute │  │  - Execute       │  │  - Execute       │
@@ -100,15 +100,15 @@ distributed actor PeelWorker {
    - Bonjour service advertisement
    - Peer discovery and connection management
 
-3. **Create WorkerDaemon mode** (3h)
-   - Peel launches in headless "worker" mode
-   - Advertises via Bonjour
-   - Polls for tasks from brain
+3. **Create PeelDaemon mode** (3h)
+  - Peel launches in headless **Peel** mode
+  - Advertises via Bonjour
+  - Polls for tasks from Crown
 
-4. **Add Brain coordination** (4h)
-   - Task queue management
-   - Worker health monitoring
-   - Result aggregation
+4. **Add Crown coordination** (4h)
+  - Task queue management
+  - Peel health monitoring
+  - Result aggregation
 
 ---
 
@@ -131,14 +131,14 @@ CKRecord(recordType: "Task") {
   workingDirectory: String
   priority: Int64
   createdAt: Date
-  claimedBy: String? // worker device ID
+  claimedBy: String? // peel device ID
   claimedAt: Date?
   completedAt: Date?
   resultAsset: CKAsset? // compressed result
 }
 
-// WorkerRecord  
-CKRecord(recordType: "Worker") {
+// PeelRecord  
+CKRecord(recordType: "Peel") {
   deviceId: String (indexed)
   deviceName: String
   capabilities: Data // JSON: gpu cores, memory, models loaded
@@ -151,7 +151,7 @@ CKRecord(recordType: "Worker") {
 // LeaseRecord (prevents double-claim)
 CKRecord(recordType: "Lease") {
   taskId: String (indexed)
-  workerId: String
+  peelId: String
   expiresAt: Date
   renewedAt: Date
 }
@@ -163,13 +163,13 @@ CKRecord(recordType: "Lease") {
 ┌─────────────────────────────────────────────────────────┐
 │                    Task Lifecycle                        │
 ├─────────────────────────────────────────────────────────┤
-│  1. Brain creates Task (status: pending)                │
-│  2. Worker polls, finds pending task                    │
-│  3. Worker creates Lease, updates Task (status: claimed)│
-│  4. Worker executes, updates Task (status: running)     │
-│  5. Worker uploads result, updates Task (status: done)  │
-│  6. Brain receives CKSubscription notification          │
-│  7. Brain fetches result, deletes Task (or archives)    │
+│  1. Crown creates Task (status: pending)                │
+│  2. Peel polls, finds pending task                      │
+│  3. Peel creates Lease, updates Task (status: claimed)  │
+│  4. Peel executes, updates Task (status: running)       │
+│  5. Peel uploads result, updates Task (status: done)    │
+│  6. Crown receives CKSubscription notification          │
+│  7. Crown fetches result, deletes Task (or archives)    │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -177,7 +177,7 @@ CKRecord(recordType: "Lease") {
 
 ## Phase 3: Capability-Based Routing
 
-Workers advertise what they can do:
+Peels advertise what they can do:
 
 ```swift
 struct WorkerCapabilities: Codable {
@@ -203,30 +203,30 @@ struct WorkerCapabilities: Codable {
 }
 ```
 
-Brain routes tasks based on capabilities:
+Crown routes tasks based on capabilities:
 
 ```swift
-func selectWorker(for task: Task) async -> PeelWorker? {
-  let workers = await discoverWorkers()
+func selectPeel(for task: Task) async -> PeelWorker? {
+  let peels = await discoverPeels()
   
   // Filter by capability
-  let capable = workers.filter { worker in
-    if task.requiresGPU && worker.capabilities.gpuCores < 8 {
+  let capable = peels.filter { peel in
+    if task.requiresGPU && peel.capabilities.gpuCores < 8 {
       return false
     }
     if let requiredRepo = task.repoPath,
-       !worker.capabilities.indexedRepos.contains(requiredRepo) {
+       !peel.capabilities.indexedRepos.contains(requiredRepo) {
       return false
     }
     return true
   }
   
   // Prefer LAN if available
-  if let lanWorker = capable.first(where: { $0.capabilities.lanAddress != nil }) {
-    return lanWorker
+  if let lanPeel = capable.first(where: { $0.capabilities.lanAddress != nil }) {
+    return lanPeel
   }
   
-  // Fall back to any capable worker
+  // Fall back to any capable peel
   return capable.first
 }
 ```
@@ -240,13 +240,13 @@ func selectWorker(for task: Task) async -> PeelWorker? {
 - **CloudKit Sharing** = invite specific devices/users (Phase 3)
 
 ### Authorization
-- Workers can only execute chains, not access Brain's local files
+- Peels can only execute chains, not access Crown's local files
 - Results are encrypted at rest in CloudKit
 - LAN transport uses TLS
 
 ### Sandboxing
-- Worker runs chain in isolated worktree
-- No access to Brain's credentials/tokens
+- Peel runs chain in isolated worktree
+- No access to Crown's credentials/tokens
 - Task payloads are sanitized
 
 ---
@@ -256,15 +256,15 @@ func selectWorker(for task: Task) async -> PeelWorker? {
 The existing MCP tools work naturally:
 
 ```bash
-# From any Peel instance, dispatch to brain
+# From any Peel instance, dispatch to Crown
 curl -X POST http://127.0.0.1:8765/rpc -d '{
   "method": "tools/call",
   "params": {
     "name": "chains.run",
     "arguments": {
       "prompt": "Fix the login bug",
-      "distributed": true,  // NEW: route to best worker
-      "preferWorker": "mac-studio"  // NEW: optional affinity
+      "distributed": true,  // NEW: route to best peel
+      "preferPeel": "mac-studio"  // NEW: optional affinity
     }
   }
 }'
@@ -273,8 +273,8 @@ curl -X POST http://127.0.0.1:8765/rpc -d '{
 New tools for swarm management:
 
 ```
-swarm.workers.list     - List connected workers and status
-swarm.workers.ping     - Health check specific worker  
+swarm.workers.list     - List connected peels and status
+swarm.workers.ping     - Health check specific peel  
 swarm.tasks.list       - Show pending/running tasks
 swarm.tasks.cancel     - Cancel a distributed task
 swarm.capabilities     - Show aggregate swarm capabilities
@@ -288,16 +288,16 @@ swarm.capabilities     - Show aggregate swarm capabilities
 - [ ] Define `PeelWorker` distributed actor protocol
 - [ ] Build `LocalNetworkActorSystem` with WebSocket transport
 - [ ] Add Bonjour service advertisement/discovery
-- [ ] Create worker daemon launch mode
+- [ ] Create peel daemon launch mode
 
 ### Week 2: Task Execution
 - [ ] Implement task claim/execute/report cycle
-- [ ] Add heartbeat and worker health monitoring
-- [ ] Wire up chain execution on worker side
-- [ ] Return results to brain
+- [ ] Add heartbeat and peel health monitoring
+- [ ] Wire up chain execution on peel side
+- [ ] Return results to Crown
 
 ### Week 3: CloudKit Layer
-- [ ] Define CloudKit schema (Task, Worker, Lease)
+- [ ] Define CloudKit schema (Task, Peel, Lease)
 - [ ] Implement task persistence and sync
 - [ ] Add CKSubscription for push notifications
 - [ ] Handle offline/reconnect scenarios
@@ -312,10 +312,10 @@ swarm.capabilities     - Show aggregate swarm capabilities
 
 ## Open Questions
 
-1. **Worker identity**: Use device UUID? iCloud user ID? Custom registration?
+1. **Peel identity**: Use device UUID? iCloud user ID? Custom registration?
 2. **Task serialization**: Codable JSON? Protocol Buffers? FlatBuffers?
 3. **Large payloads**: Stream via CKAsset? Chunk and reassemble?
-4. **Conflict resolution**: What if two workers claim same task?
+4. **Conflict resolution**: What if two peels claim same task?
 5. **Rate limiting**: How to prevent runaway task spawning?
 
 ---
@@ -325,7 +325,7 @@ swarm.capabilities     - Show aggregate swarm capabilities
 - #142 - Distributed task execution via CloudKit (parent)
 - #143 - CloudKit schema design
 - #144 - Leasing + heartbeat protocol
-- #145 - Worker daemon prototype
+- #145 - Peel daemon prototype
 - #149 - LAN direct transport
 
 ---
@@ -334,5 +334,5 @@ swarm.capabilities     - Show aggregate swarm capabilities
 
 1. **Create #184**: LAN actor system prototype
 2. **Create #185**: Bonjour discovery service
-3. **Create #186**: Worker daemon mode
+3. **Create #186**: Peel daemon mode
 4. Start with hardcoded two-machine test before generalizing

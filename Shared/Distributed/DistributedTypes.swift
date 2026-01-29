@@ -180,7 +180,7 @@ public struct ChainOutput: Codable, Sendable {
   }
 }
 
-// MARK: - Worker Capabilities
+// MARK: - Peel Capabilities
 
 /// Hardware and software capabilities of a worker node
 public struct WorkerCapabilities: Codable, Sendable, Identifiable {
@@ -408,7 +408,7 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
   }
 }
 
-// MARK: - Worker Status
+// MARK: - Peel Status
 
 // MARK: - RAG Artifact Sync
 
@@ -555,9 +555,9 @@ extension DistributedError: LocalizedError {
   public var errorDescription: String? {
     switch self {
     case .noWorkersAvailable:
-      return "No workers are currently available"
+      return "No peels are currently available"
     case .workerNotFound(let deviceId):
-      return "Worker not found: \(deviceId)"
+      return "Peel not found: \(deviceId)"
     case .connectionFailed(let deviceId, let reason):
       return "Connection to \(deviceId) failed: \(reason)"
     case .taskClaimFailed(let taskId, let reason):

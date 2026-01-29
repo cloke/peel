@@ -11,36 +11,36 @@
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| **Brain/Worker Discovery** | ✅ Working | Bonjour/mDNS on `_peel-swarm._tcp` |
+| **Crown/Peel Discovery** | ✅ Working | Bonjour/mDNS on `_peel-swarm._tcp` |
 | **Peer Connection** | ✅ Working | TCP on port 8766 with length-prefixed JSON |
-| **Task Dispatch** | ✅ Working | `swarm.dispatch` sends to least-busy worker |
-| **Real Chain Execution** | ✅ Working | Workers execute via LLM with `DefaultChainExecutor` |
+| **Task Dispatch** | ✅ Working | `swarm.dispatch` sends to least-busy peel |
+| **Real Chain Execution** | ✅ Working | Peels execute via LLM with `DefaultChainExecutor` |
 | **Direct Commands** | ✅ Working | `swarm.direct-command` returns output synchronously |
-| **Worker Self-Update** | ✅ Working | `swarm.update-workers` pulls latest and rebuilds |
+| **Peel Self-Update** | ✅ Working | `swarm.update-workers` pulls latest and rebuilds |
 | **Version Sync Tracking** | ✅ Working | `gitCommitHash` in capabilities, `inSync` in status |
-| **Worker Heartbeats** | ✅ Working | Periodic heartbeat with state, uptime, and task counts |
+| **Peel Heartbeats** | ✅ Working | Periodic heartbeat with state, uptime, and task counts |
 | **Task Results** | ✅ Working | `swarm.tasks` shows history with durations/outputs |
 | **Task Log UI** | ✅ Working | Tasks appear in Mac Studio's task log view |
 
 ### MCP Tools Available
 
 ```
-swarm.start        - Start brain or worker mode
+swarm.start        - Start Crown or Peel mode (roles: brain/worker)
 swarm.stop         - Stop swarm participation
-swarm.status       - Show role, workers, capabilities
-swarm.workers      - List connected workers with status + inSync
-swarm.dispatch     - Send task to worker for LLM execution
+swarm.status       - Show role, peels, capabilities
+swarm.workers      - List connected peels with status + inSync
+swarm.dispatch     - Send task to peel for LLM execution
 swarm.tasks        - Query task results/history
-swarm.direct-command   - Execute shell command on worker (sync)
-swarm.update-workers   - Trigger git pull + rebuild on workers
+swarm.direct-command   - Execute shell command on peel (sync)
+swarm.update-workers   - Trigger git pull + rebuild on peels
 ```
 
 ### Validated Scenarios
 
-1. **Brain → Worker task dispatch**: Task dispatched via MCP, executed on Mac Studio, result returned
+1. **Crown → Peel task dispatch**: Task dispatched via MCP, executed on Mac Studio, result returned
 2. **Shell command execution**: `date`, `hostname`, etc. work correctly
-3. **Worker self-update**: Workers pull latest code and rebuild themselves
-4. **Version tracking**: Both brain and worker show same commit hash with `inSync: true`
+3. **Peel self-update**: Peels pull latest code and rebuild themselves
+4. **Version tracking**: Both Crown and Peel show same commit hash with `inSync: true`
 
 ---
 
@@ -54,8 +54,8 @@ swarm.update-workers   - Trigger git pull + rebuild on workers
 | [SwarmToolsHandler.swift](../Shared/AgentOrchestration/ToolHandlers/SwarmToolsHandler.swift) | MCP tool handlers |
 | [PeerConnectionManager.swift](../Shared/Distributed/PeerConnectionManager.swift) | Network connection management |
 | [DistributedTypes.swift](../Shared/Distributed/DistributedTypes.swift) | Types, capabilities, git hash detection |
-| [WorkerMode.swift](../Shared/Distributed/WorkerMode.swift) | Worker-specific CLI mode logic |
-| [self-update.sh](../Tools/self-update.sh) | Worker self-update script |
+| [WorkerMode.swift](../Shared/Distributed/WorkerMode.swift) | Peel-specific CLI mode logic |
+| [self-update.sh](../Tools/self-update.sh) | Peel self-update script |
 
 ### Key Patterns
 
@@ -69,15 +69,15 @@ swarm.update-workers   - Trigger git pull + rebuild on workers
 ## 🚀 Next Steps (Priority Order)
 
 ### 1. **Parallel Task Dispatch** 
-Currently `swarm.dispatch` sends one task to one worker. Add:
-- `swarm.dispatch-parallel` - Send same task to multiple workers
-- `swarm.dispatch-split` - Split large task across workers
+Currently `swarm.dispatch` sends one task to one peel. Add:
+- `swarm.dispatch-parallel` - Send same task to multiple peels
+- `swarm.dispatch-split` - Split large task across peels
 
-### 2. **Worker Health Monitoring (Partial ✅)**
+### 2. **Peel Health Monitoring (Partial ✅)**
 - ✅ Periodic heartbeat with state (idle/busy), uptime, and task counts
 - ⬜ Resource usage (CPU, memory, GPU utilization)
-- ⬜ Auto-reconnect on worker restart
-- ⬜ Brain notification when worker comes back online
+- ⬜ Auto-reconnect on peel restart
+- ⬜ Crown notification when peel comes back online
 
 ### 3. **Task Queue & Scheduling**
 - Queue multiple tasks for sequential execution
@@ -85,28 +85,28 @@ Currently `swarm.dispatch` sends one task to one worker. Add:
 - Task cancellation support
 
 ### 4. **Result Aggregation**
-- For parallel tasks, combine results from multiple workers
+- For parallel tasks, combine results from multiple peels
 - Voting/consensus for verification tasks
 - Diff comparison for code review tasks
 
 ### 5. **Swarm UI Improvements**
-- Worker status dashboard showing all workers
+- Peel status dashboard showing all peels
 - Real-time task progress visualization
 - Resource utilization graphs
 
 ### 6. **Error Recovery**
-- Retry failed tasks on different workers
+- Retry failed tasks on different peels
 - Timeout handling with graceful degradation
-- Worker blacklisting for repeated failures
+- Peel blacklisting for repeated failures
 
 ---
 
 ## 🐛 Known Issues / Limitations
 
-1. **Single task at a time per worker**: No queuing on worker side yet
+1. **Single task at a time per peel**: No queuing on peel side yet
 2. **No persistence**: Task history lost on restart
-3. **No authentication**: Workers trust any brain on local network
-4. **Mac Studio repo path**: Uses `/Users/coryloken/code/kitchen-sink` (different from brain's `KitchenSink`)
+3. **No authentication**: Peels trust any Crown on local network
+4. **Mac Studio repo path**: Uses `/Users/coryloken/code/kitchen-sink` (different from Crown's `KitchenSink`)
 
 ---
 
@@ -124,7 +124,7 @@ Currently `swarm.dispatch` sends one task to one worker. Add:
   - `PeerConnectionManager.swift` (send/receive/handleMessage)
   - `SwarmCoordinator.swift` (sendDirectCommand, handleDirectCommand)
   - `MCPServerService.swift` (init logging)
-- Kept operational logs in `WorkerMode.swift` (user-facing worker console)
+- Kept operational logs in `WorkerMode.swift` (user-facing peel console)
 - Converted to `logger.info()` where appropriate for proper logging
 
 ---
@@ -138,4 +138,4 @@ Currently `swarm.dispatch` sends one task to one worker. Add:
 ---
 
 **Last Updated:** 2026-01-28  
-**Commit:** bf5de5a (both brain and worker in sync)
+**Commit:** bf5de5a (both Crown and Peel in sync)

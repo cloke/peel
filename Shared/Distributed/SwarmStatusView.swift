@@ -56,7 +56,7 @@ public struct SwarmStatusView: View {
             .fill(coordinator.isActive ? Color.green : Color.secondary)
             .frame(width: 8, height: 8)
           
-          Text(coordinator.isActive ? "Active (\(coordinator.role.rawValue))" : "Inactive")
+          Text(coordinator.isActive ? "Active (\(roleDisplayName))" : "Inactive")
             .font(.caption)
             .foregroundStyle(.secondary)
         }
@@ -70,13 +70,13 @@ public struct SwarmStatusView: View {
         }
       } else {
         Menu {
-          Button("Start as Brain") {
+          Button("Start as Crown") {
             startSwarm(role: .brain)
           }
-          Button("Start as Worker") {
+          Button("Start as Peel") {
             startSwarm(role: .worker)
           }
-          Button("Start as Hybrid") {
+          Button("Start as Crown + Peel") {
             startSwarm(role: .hybrid)
           }
         } label: {
@@ -110,7 +110,7 @@ public struct SwarmStatusView: View {
         HStack {
           Text("Role:")
           Spacer()
-          Text(coordinator.role.rawValue.capitalized)
+          Text(roleDisplayName)
             .foregroundStyle(.secondary)
         }
         if coordinator.role == .worker {
@@ -165,9 +165,9 @@ public struct SwarmStatusView: View {
   private var sectionTitle: String {
     switch coordinator.role {
     case .brain:
-      return "Connected Workers"
+      return "Connected Peels"
     case .worker:
-      return "Connected to Brain"
+      return "Connected to Crown"
     case .hybrid:
       return "Connected Peers"
     }
@@ -176,9 +176,9 @@ public struct SwarmStatusView: View {
   private var emptyStateTitle: String {
     switch coordinator.role {
     case .brain:
-      return "No Workers"
+      return "No Peels"
     case .worker:
-      return "No Brain Connected"
+      return "No Crown Connected"
     case .hybrid:
       return "No Peers"
     }
@@ -189,7 +189,7 @@ public struct SwarmStatusView: View {
     case .brain:
       return "desktopcomputer.trianglebadge.exclamationmark"
     case .worker:
-      return "brain.head.profile"
+      return "crown"
     case .hybrid:
       return "network"
     }
@@ -198,9 +198,9 @@ public struct SwarmStatusView: View {
   private var emptyStateDescription: String {
     switch coordinator.role {
     case .brain:
-      return "Waiting for workers to connect..."
+      return "Waiting for peels to connect..."
     case .worker:
-      return "Waiting for brain to connect..."
+      return "Waiting for crown to connect..."
     case .hybrid:
       return "Waiting for peers to connect..."
     }
@@ -284,9 +284,9 @@ public struct SwarmStatusView: View {
         Text("Quick Start:")
           .font(.caption.bold())
         
-        Text("• **Brain**: Dispatches work to other machines")
-        Text("• **Worker**: Executes work from brain")
-        Text("• **Hybrid**: Does both")
+        Text("• **Crown**: Dispatches work to other machines")
+        Text("• **Peel**: Executes work from the Crown")
+        Text("• **Crown + Peel**: Does both")
         
         Text("\nOr run from terminal:")
           .font(.caption.bold())
@@ -318,7 +318,7 @@ public struct SwarmStatusView: View {
     
     do {
       try coordinator.start(role: role)
-      log("Swarm started as \(role.rawValue)")
+      log("Swarm started as \(roleDisplayName)")
     } catch {
       errorMessage = error.localizedDescription
     }
@@ -332,10 +332,10 @@ public struct SwarmStatusView: View {
   private func handleEvent(_ event: SwarmEvent) {
     switch event {
     case .workerConnected(let peer):
-      log("Worker connected: \(peer.name)")
+      log("\(peerRoleLabel) connected: \(peer.name)")
       
     case .workerDisconnected(let id):
-      log("Worker disconnected: \(id)")
+      log("\(peerRoleLabel) disconnected: \(id)")
       
     case .taskReceived(let request):
       log("Task received: \(request.id)")
@@ -348,7 +348,7 @@ public struct SwarmStatusView: View {
     case .taskCompleted(let result):
       log("Task completed: \(result.requestId) (\(String(format: "%.2fs", result.duration)))")
       log("  Status: \(result.status.rawValue)")
-      log("  Worker: \(result.workerDeviceName)")
+      log("  Peel: \(result.workerDeviceName)")
       if !result.outputs.isEmpty {
         log("  Outputs: \(result.outputs.count) items")
         for output in result.outputs.prefix(3) {
@@ -389,7 +389,7 @@ struct PeerRow: View {
           Text(peer.name)
             .font(.body)
           if role == .worker {
-            Text("(Brain)")
+            Text("(Crown)")
               .font(.caption)
               .foregroundStyle(.blue)
           }
@@ -427,16 +427,35 @@ struct PeerRow: View {
   
   private var peerIcon: String {
     if role == .worker {
-      // We're a worker, so connected peer is the brain
-      return "brain.head.profile"
+      // We're a peel, so connected peer is the crown
+      return "crown"
     } else {
-      // We're brain/hybrid, so this is a worker
+      // We're crown/hybrid, so this is a peel
       return peer.capabilities.gpuCores > 30 ? "desktopcomputer" : "laptopcomputer"
     }
   }
   
   private var iconColor: Color {
     role == .worker ? .blue : .secondary
+  }
+}
+
+// MARK: - Labels
+
+private extension SwarmStatusView {
+  var roleDisplayName: String {
+    switch coordinator.role {
+    case .brain:
+      return "Crown"
+    case .worker:
+      return "Peel"
+    case .hybrid:
+      return "Crown + Peel"
+    }
+  }
+  
+  var peerRoleLabel: String {
+    coordinator.role == .worker ? "Crown" : "Peel"
   }
 }
 

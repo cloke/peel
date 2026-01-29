@@ -327,7 +327,7 @@ public final class SwarmCoordinator {
     }
   }
   
-  // MARK: - Brain Methods
+  // MARK: - Crown Methods
   
   /// Connect to a worker at the given address (brain mode)
   public func connectToWorker(address: String, port: UInt16 = 8766) async throws {
@@ -502,7 +502,7 @@ public final class SwarmCoordinator {
     direction: RAGArtifactSyncDirection,
     workerId: String? = nil
   ) async throws -> UUID {
-    guard role == .brain || role == .hybrid else {
+    guard isActive else {
       throw DistributedError.actorSystemNotReady
     }
 
@@ -733,7 +733,7 @@ public final class SwarmCoordinator {
     }
   }
   
-  // MARK: - Worker Methods
+  // MARK: - Peel Methods
   
   /// Handle incoming task (worker mode)
   private func handleTaskRequest(_ request: ChainRequest, from peerId: String) async {
@@ -763,7 +763,7 @@ public final class SwarmCoordinator {
     if let delegate = delegate, !delegate.swarmCoordinator(self, shouldExecute: request) {
       // Reject task
       try? await connectionManager?.send(
-        .taskRejected(taskId: request.id, reason: "Worker declined"),
+        .taskRejected(taskId: request.id, reason: "Peel declined"),
         to: peerId
       )
       return
@@ -1001,7 +1001,7 @@ extension SwarmCoordinator: PeerConnectionDelegate {
     connectedWorkers.removeAll { $0.id == peer.id }
     connectedWorkers.append(peer)
     delegate?.swarmCoordinator(self, didEmit: .workerConnected(peer))
-    logger.info("Worker connected: \(peer.name)")
+    logger.info("Peel connected: \(peer.name)")
 
     if role == .worker || role == .hybrid {
       Task { await sendHeartbeat() }
@@ -1023,7 +1023,7 @@ extension SwarmCoordinator: PeerConnectionDelegate {
       )
     }
     delegate?.swarmCoordinator(self, didEmit: .workerDisconnected(peerId))
-    logger.info("Worker disconnected: \(peerId)")
+    logger.info("Peel disconnected: \(peerId)")
   }
   
   public func connectionManager(_ manager: PeerConnectionManager, didReceive message: PeerMessage, from peerId: String) {
