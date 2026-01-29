@@ -567,7 +567,8 @@ public final class SwarmCoordinator {
       let bundle = try await ragSyncDelegate.createRagArtifactBundle()
       let fileAttributes = try FileManager.default.attributesOfItem(atPath: bundle.bundleURL.path)
       let fileSize = (fileAttributes[.size] as? NSNumber)?.intValue ?? bundle.bundleSizeBytes
-      let totalChunks = max(1, Int(ceil(Double(max(1, fileSize)) / Double(512 * 1024))))
+      let chunkSize = 256 * 1024
+      let totalChunks = max(1, Int(ceil(Double(max(1, fileSize)) / Double(chunkSize))))
 
       logger.info("RAG sync bundle created: \(bundle.manifest.version), \(fileSize) bytes, \(totalChunks) chunks")
 
@@ -584,7 +585,7 @@ public final class SwarmCoordinator {
 
       var chunkIndex = 0
       while true {
-        let data = try handle.read(upToCount: 512 * 1024) ?? Data()
+        let data = try handle.read(upToCount: chunkSize) ?? Data()
         if data.isEmpty { break }
         let base64 = data.base64EncodedString()
         try await connectionManager?.send(
@@ -648,7 +649,16 @@ public final class SwarmCoordinator {
 
   private func handleRagArtifactsChunk(id: UUID, index: Int, total: Int, data: String) {
     guard let transfer = incomingRagTransfers[id] else { return }
-    guard let decoded = Data(base64Encoded: data) else { return }
+    guard let decoded = Data(base64Encoded: data) else {
+      updateRagTransfer(id) { state in
+        state.status = .failed
+        state.errorMessage = "Failed to decode artifact chunk"
+        state.completedAt = Date()
+      }
+      Task { await sendRagArtifactError(transferId: id, to: transfer.peerId, message: "Failed to decode artifact chunk") }
+      incomingRagTransfers.removeValue(forKey: id)
+      return
+    }
     transfer.fileHandle?.seekToEndOfFile()
     transfer.fileHandle?.write(decoded)
     transfer.receivedChunks += 1
@@ -668,6 +678,17 @@ public final class SwarmCoordinator {
     guard let transfer = incomingRagTransfers[id] else { return }
     transfer.fileHandle?.closeFile()
     transfer.fileHandle = nil
+
+    if let expected = transfer.expectedChunks, transfer.receivedChunks < expected {
+      updateRagTransfer(id) { state in
+        state.status = .failed
+        state.errorMessage = "Incomplete transfer (\(transfer.receivedChunks)/\(expected) chunks)"
+        state.completedAt = Date()
+      }
+      await sendRagArtifactError(transferId: id, to: peerId, message: "Incomplete transfer")
+      incomingRagTransfers.removeValue(forKey: id)
+      return
+    }
 
     updateRagTransfer(id) { state in
       state.status = .applying
