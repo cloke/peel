@@ -520,6 +520,7 @@ public final class SwarmCoordinator {
     }
 
     let transferId = UUID()
+    logger.info("RAG sync requested: \(direction.rawValue) to \(targetWorker.name) (\(targetWorker.id))")
     let role: RAGArtifactTransferRole = direction == .push ? .sender : .receiver
     recordRagTransfer(
       RAGArtifactTransferState(
@@ -555,6 +556,8 @@ public final class SwarmCoordinator {
       state.status = .preparing
     }
 
+    logger.info("RAG sync preparing bundle for \(peer.name) (\(peer.id))")
+
     guard let ragSyncDelegate else {
       await sendRagArtifactError(transferId: transferId, to: peer.id, message: "RAG sync delegate not configured")
       return
@@ -565,6 +568,8 @@ public final class SwarmCoordinator {
       let fileAttributes = try FileManager.default.attributesOfItem(atPath: bundle.bundleURL.path)
       let fileSize = (fileAttributes[.size] as? NSNumber)?.intValue ?? bundle.bundleSizeBytes
       let totalChunks = max(1, Int(ceil(Double(max(1, fileSize)) / Double(512 * 1024))))
+
+      logger.info("RAG sync bundle created: \(bundle.manifest.version), \(fileSize) bytes, \(totalChunks) chunks")
 
       updateRagTransfer(transferId) { state in
         state.status = .transferring
@@ -597,7 +602,9 @@ public final class SwarmCoordinator {
         state.status = .complete
         state.completedAt = Date()
       }
+      logger.info("RAG sync completed: \(transferId) to \(peer.name)")
     } catch {
+      logger.error("RAG sync failed: \(transferId) to \(peer.name) - \(error.localizedDescription)")
       await sendRagArtifactError(transferId: transferId, to: peer.id, message: error.localizedDescription)
       updateRagTransfer(transferId) { state in
         state.status = .failed
@@ -614,6 +621,7 @@ public final class SwarmCoordinator {
   }
 
   private func handleRagArtifactsManifest(id: UUID, manifest: RAGArtifactManifest, from peerId: String) {
+    logger.info("RAG sync received manifest \(manifest.version) from \(peerId)")
     let transfer = incomingRagTransfers[id] ?? RAGIncomingTransfer(
       id: id,
       peerId: peerId,
@@ -650,6 +658,10 @@ public final class SwarmCoordinator {
     updateRagTransfer(id) { state in
       state.transferredBytes = transfer.receivedBytes
     }
+
+    if index == 0 || transfer.receivedChunks == total {
+      logger.debug("RAG sync chunk \(index + 1)/\(total) received for \(id)")
+    }
   }
 
   private func handleRagArtifactsComplete(id: UUID, from peerId: String) async {
@@ -672,6 +684,7 @@ public final class SwarmCoordinator {
     }
 
     do {
+      logger.info("RAG sync applying bundle \(id) from \(peerId)")
       try await ragSyncDelegate.applyRagArtifactBundle(
         at: transfer.tempURL,
         manifest: manifest,
@@ -682,7 +695,9 @@ public final class SwarmCoordinator {
         state.status = .complete
         state.completedAt = Date()
       }
+      logger.info("RAG sync applied bundle \(id) from \(peerId)")
     } catch {
+      logger.error("RAG sync apply failed \(id) from \(peerId): \(error.localizedDescription)")
       updateRagTransfer(id) { state in
         state.status = .failed
         state.errorMessage = error.localizedDescription
@@ -694,6 +709,7 @@ public final class SwarmCoordinator {
   }
 
   private func sendRagArtifactError(transferId: UUID, to peerId: String, message: String) async {
+    logger.error("RAG sync error \(transferId) to \(peerId): \(message)")
     try? await connectionManager?.send(.ragArtifactsError(id: transferId, message: message), to: peerId)
   }
 
