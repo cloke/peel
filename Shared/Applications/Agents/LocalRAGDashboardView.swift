@@ -14,6 +14,185 @@ import AppKit
 import UIKit
 #endif
 
+private struct WorkspaceDetectionDebug: Sendable, Identifiable {
+  let id = UUID()
+  let rootPath: String
+  let resolvedRoot: String
+  let readableRoot: Bool
+  let scanError: String?
+  let directoriesScanned: Int
+  let excludedCount: Int
+  let gitMarkersFound: Int
+  let maxDepthReached: Int
+}
+
+private struct WorkspaceDetectionResult: Sendable {
+  let repos: [String]
+  let debug: WorkspaceDetectionDebug
+}
+
+private struct WorkspaceIndexSheet: View {
+  let rootPath: String
+  let repos: [String]
+  let debugInfo: WorkspaceDetectionDebug?
+  @Binding var selectedRepos: Set<String>
+  let onCancel: () -> Void
+  let onRescan: () -> Void
+  let onIndexWorkspace: (Bool) -> Void
+  let onIndexSelected: () -> Void
+  @State private var confirmWorkspaceIndex = false
+  @State private var excludeSubrepos = true
+  @State private var didAutoRescan = false
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      ScrollView {
+        VStack(alignment: .leading, spacing: 16) {
+          Text("Workspace detected")
+            .font(.title3)
+            .fontWeight(.semibold)
+
+          Text("This folder contains multiple repositories. Index them individually for better results, or index the whole workspace if you prefer.")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+
+          VStack(alignment: .leading, spacing: 8) {
+            Text("Workspace root")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Text(rootPath)
+              .font(.caption)
+              .multilineTextAlignment(.leading)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+
+          Divider()
+
+          VStack(alignment: .leading, spacing: 8) {
+            HStack {
+              Text("Select repositories")
+                .font(.headline)
+              Text("(\(repos.count))")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              Spacer()
+              Button("All") {
+                selectedRepos = Set(repos)
+              }
+              .buttonStyle(.borderless)
+              Button("None") {
+                selectedRepos = []
+              }
+              .buttonStyle(.borderless)
+            }
+
+            if repos.isEmpty {
+              Text("No git repositories were detected under this folder.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+              Button("Rescan") {
+                onRescan()
+              }
+              .buttonStyle(.borderless)
+            } else {
+              List(repos, id: \.self) { repo in
+                Toggle(isOn: Binding(
+                  get: { selectedRepos.contains(repo) },
+                  set: { isOn in
+                    if isOn {
+                      selectedRepos.insert(repo)
+                    } else {
+                      selectedRepos.remove(repo)
+                    }
+                  }
+                )) {
+                  Text(repo)
+                    .font(.caption)
+                    .lineLimit(2)
+                }
+                .toggleStyle(.checkbox)
+              }
+              .listStyle(.plain)
+              .frame(minHeight: 200, maxHeight: 260)
+              .scrollContentBackground(.hidden)
+              .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+          }
+
+          if let debugInfo {
+            DisclosureGroup("Detection details") {
+              VStack(alignment: .leading, spacing: 4) {
+                Text("Resolved root: \(debugInfo.resolvedRoot)")
+                Text("Readable root: \(debugInfo.readableRoot ? "Yes" : "No")")
+                if let scanError = debugInfo.scanError {
+                  Text("Scan error: \(scanError)")
+                }
+                Text("Directories scanned: \(debugInfo.directoriesScanned)")
+                Text("Excluded folders: \(debugInfo.excludedCount)")
+                Text("Git markers found: \(debugInfo.gitMarkersFound)")
+                Text("Max depth reached: \(debugInfo.maxDepthReached)")
+              }
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+              .fixedSize(horizontal: false, vertical: true)
+            }
+          }
+
+          if selectedRepos.count > 1 {
+            Text("Indexing multiple repositories runs sequentially. It can take a while and may make your Mac feel sluggish while it scans and embeds files.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+
+          Divider()
+
+          VStack(alignment: .leading, spacing: 6) {
+            Toggle("Allow indexing the entire workspace", isOn: $confirmWorkspaceIndex)
+              .toggleStyle(.switch)
+            Text("Whole-workspace indexing can be noisy and slower. Prefer sub-repos unless you really need cross-repo context right now.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .fixedSize(horizontal: false, vertical: true)
+
+            Toggle("Exclude sub-repos (index only workspace docs)", isOn: $excludeSubrepos)
+              .toggleStyle(.switch)
+              .disabled(!confirmWorkspaceIndex)
+            Text("Keeps the index focused on workspace-level docs and config. Turn off to index everything under the workspace.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+        }
+        .padding(.bottom, 8)
+      }
+
+      Divider()
+
+      HStack {
+        Button("Cancel", action: onCancel)
+        Spacer()
+        Button("Index Workspace") { onIndexWorkspace(excludeSubrepos) }
+          .buttonStyle(.bordered)
+          .disabled(!confirmWorkspaceIndex)
+        Button("Index Selected", action: onIndexSelected)
+          .buttonStyle(.borderedProminent)
+          .disabled(selectedRepos.isEmpty)
+      }
+    }
+    .padding(20)
+    .onAppear {
+      if !didAutoRescan && repos.isEmpty {
+        didAutoRescan = true
+        onRescan()
+      }
+    }
+  }
+}
+
 struct LocalRAGDashboardView: View {
   @Bindable var mcpServer: MCPServerService
   private var repoPath: Binding<String> { $mcpServer.localRagRepoPath }
@@ -43,6 +222,11 @@ struct LocalRAGDashboardView: View {
   @State private var skillsError: String?
   @State private var isRepoPickerPresented = false
   @State private var embeddingSettingsChanged = false
+  @State private var showWorkspaceSheet = false
+  @State private var workspaceRootPath: String = ""
+  @State private var workspaceRepos: [String] = []
+  @State private var selectedWorkspaceRepos: Set<String> = []
+  @State private var workspaceDebugInfo: WorkspaceDetectionDebug?
 
   private var providerSelection: Binding<EmbeddingProviderType> {
     Binding(
@@ -579,6 +763,30 @@ struct LocalRAGDashboardView: View {
       }
       mcpServer.lastUIAction = nil
     }
+    .sheet(isPresented: $showWorkspaceSheet) {
+      WorkspaceIndexSheet(
+        rootPath: workspaceRootPath,
+        repos: workspaceRepos,
+        debugInfo: workspaceDebugInfo,
+        selectedRepos: $selectedWorkspaceRepos,
+        onCancel: { showWorkspaceSheet = false },
+        onRescan: {
+          let detection = detectWorkspaceRepos(rootPath: workspaceRootPath)
+          workspaceDebugInfo = detection.debug
+          workspaceRepos = detection.repos
+          selectedWorkspaceRepos = Set(detection.repos)
+        },
+        onIndexWorkspace: { excludeSubrepos in
+          showWorkspaceSheet = false
+          Task { await indexWorkspaceRoot(excludeSubrepos: excludeSubrepos) }
+        },
+        onIndexSelected: {
+          showWorkspaceSheet = false
+          Task { await indexWorkspaceRepos() }
+        }
+      )
+      .frame(minWidth: 520, minHeight: 420)
+    }
   }
 
   private var filteredSkills: [RepoGuidanceSkill] {
@@ -687,6 +895,16 @@ struct LocalRAGDashboardView: View {
   private func indexRepository() async {
     let trimmed = repoPath.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return }
+    let detection = detectWorkspaceRepos(rootPath: trimmed)
+    workspaceDebugInfo = detection.debug
+    let workspaceCandidates = detection.repos
+    if workspaceCandidates.count >= 2 {
+      workspaceRootPath = trimmed
+      workspaceRepos = workspaceCandidates
+      selectedWorkspaceRepos = Set(workspaceCandidates)
+      showWorkspaceSheet = true
+      return
+    }
     errorMessage = nil
     isIndexing = true
     defer { isIndexing = false }
@@ -696,6 +914,101 @@ struct LocalRAGDashboardView: View {
     } catch {
       errorMessage = error.localizedDescription
     }
+  }
+
+  private func indexWorkspaceRoot(excludeSubrepos: Bool) async {
+    errorMessage = nil
+    isIndexing = true
+    defer { isIndexing = false }
+    do {
+      try await mcpServer.indexRagRepo(
+        path: workspaceRootPath,
+        allowWorkspace: true,
+        excludeSubrepos: excludeSubrepos
+      )
+      lastIndexReport = mcpServer.lastRagIndexReport
+    } catch {
+      errorMessage = error.localizedDescription
+    }
+  }
+
+  private func indexWorkspaceRepos() async {
+    let repos = workspaceRepos.filter { selectedWorkspaceRepos.contains($0) }
+    guard !repos.isEmpty else { return }
+    errorMessage = nil
+    isIndexing = true
+    defer { isIndexing = false }
+    for repo in repos {
+      repoPath.wrappedValue = repo
+      do {
+        try await mcpServer.indexRagRepo(path: repo)
+        lastIndexReport = mcpServer.lastRagIndexReport
+      } catch {
+        errorMessage = error.localizedDescription
+        break
+      }
+    }
+  }
+
+  private func detectWorkspaceRepos(rootPath: String) -> WorkspaceDetectionResult {
+    let rootURL = URL(fileURLWithPath: rootPath).resolvingSymlinksInPath()
+    let readableRoot = FileManager.default.isReadableFile(atPath: rootURL.path)
+    let excluded = Set([".git", ".build", ".swiftpm", "build", "dist", "DerivedData", "node_modules", "coverage", "tmp", "Carthage", ".turbo", "__snapshots__", "vendor"])
+    let maxDepth = 4
+    var repos: [String] = []
+    var directoriesScanned = 0
+    var excludedCount = 0
+    var gitMarkersFound = 0
+    var maxDepthReached = 0
+    var scanError: String? = nil
+
+    var queue: [(url: URL, depth: Int)] = [(rootURL, 0)]
+    while !queue.isEmpty {
+      let current = queue.removeFirst()
+      if current.depth > maxDepth { continue }
+      maxDepthReached = max(maxDepthReached, current.depth)
+      let children: [URL]
+      do {
+        children = try FileManager.default.contentsOfDirectory(
+          at: current.url,
+          includingPropertiesForKeys: [.isDirectoryKey],
+          options: [.skipsHiddenFiles]
+        )
+      } catch {
+        scanError = error.localizedDescription
+        continue
+      }
+
+      for child in children {
+        guard (try? child.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
+        if excluded.contains(child.lastPathComponent) {
+          excludedCount += 1
+          continue
+        }
+        directoriesScanned += 1
+        let gitMarker = child.appendingPathComponent(".git")
+        if FileManager.default.fileExists(atPath: gitMarker.path) {
+          repos.append(child.path)
+          gitMarkersFound += 1
+          continue
+        }
+        queue.append((child, current.depth + 1))
+      }
+    }
+
+    return WorkspaceDetectionResult(
+      repos: Array(Set(repos)).sorted(),
+      debug: WorkspaceDetectionDebug(
+        rootPath: rootPath,
+        resolvedRoot: rootURL.path,
+        readableRoot: readableRoot,
+        scanError: scanError,
+        directoriesScanned: directoriesScanned,
+        excludedCount: excludedCount,
+        gitMarkersFound: gitMarkersFound,
+        maxDepthReached: maxDepthReached
+      )
+    )
   }
 
   private func runSearch() async {
