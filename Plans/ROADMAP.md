@@ -174,7 +174,7 @@ These issues form a logical implementation sequence:
 ### Stage 3: Implementation
 | # | Title | Est |
 |---|-------|-----|
-| [#145](https://github.com/cloke/peel/issues/145) | Worker daemon prototype (Mac Studio) | 6h |
+| [#145](https://github.com/cloke/peel/issues/145) | Peel daemon prototype (Mac Studio) | 6h |
 | [#146](https://github.com/cloke/peel/issues/146) | Client submit + result sync | 4h |
 | [#142](https://github.com/cloke/peel/issues/142) | Distributed task execution via CloudKit | 6h |
 
@@ -188,7 +188,7 @@ These issues form a logical implementation sequence:
 ### Stage 5: Production Ready
 | # | Title | Est |
 |---|-------|-----|
-| [#156](https://github.com/cloke/peel/issues/156) | Worker packaging + background scheduling | 4h |
+| [#156](https://github.com/cloke/peel/issues/156) | Peel packaging + background scheduling | 4h |
 | [#157](https://github.com/cloke/peel/issues/157) | Entitlements + sandbox review | 3h |
 | [#149](https://github.com/cloke/peel/issues/149) | LAN direct transport (optional) | 6h |
 
@@ -308,7 +308,7 @@ File Scanner → Chunker → Embeddings → SQLite Store
 
 ### Distributed Tasks Flow (Phase 4)
 ```
-Client (MacBook)                     Worker (Mac Studio)
+Crown (MacBook)                      Peel (Mac Studio)
       │                                     │
       ├─── CKRecord (task) ────────────────►│
       │                                     ├─── Lease + Execute

@@ -8,7 +8,7 @@ import Foundation
 import Distributed
 import os.log
 
-// MARK: - Peel Worker Actor
+// MARK: - Peel Actor
 
 /// A distributed actor representing a Peel worker that can execute chains
 @available(macOS 15.0, iOS 18.0, *)

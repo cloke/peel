@@ -92,12 +92,12 @@ struct TaskRecord {
 
 ### Storage Flow
 
-1. **Brain creates task**:
+1. **Crown creates task**:
    - If `payload.count < 1_000_000`: Store inline in `payloadData`
    - If `payload.count < 100_000_000`: Write to temp file, create `CKAsset`
    - Else: Upload to S3/R2, store URL in `payloadURL`
 
-2. **Worker fetches task**:
+2. **Peel fetches task**:
    - If `payloadData` exists: Deserialize directly
    - If `payloadAsset` exists: Download asset, then deserialize
    - If `payloadURL` exists: Stream from external store
@@ -116,7 +116,7 @@ struct TaskRecord {
 struct ResultEnvelope: Codable {
   let version: String           // Matches request version
   let taskId: String
-  let workerId: String          // Device that executed
+  let peelId: String            // Device that executed
   let completedAt: Date
   let status: ResultStatus      // success, failure, timeout
   let error: String?            // Only present if status != success
@@ -138,7 +138,7 @@ enum ResultStatus: String, Codable {
 ```swift
 struct RAGIndexResult: Codable, TaskResult {
   let chunkCount: Int
-  let indexPath: String         // Path on worker's filesystem
+  let indexPath: String         // Path on peel's filesystem
   let duration: TimeInterval
   let indexSize: Int            // Bytes
   let errorsEncountered: Int

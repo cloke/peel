@@ -9,10 +9,10 @@
 
 ## Problem Solved
 
-When the brain dispatches a task with `workingDirectory: /Users/cloken/code/KitchenSink`, the worker receives that path but it doesn't exist on the worker machine. Different machines have the same repo at different paths:
+When the Crown dispatches a task with `workingDirectory: /Users/cloken/code/KitchenSink`, the Peel receives that path but it doesn't exist on the Peel machine. Different machines have the same repo at different paths:
 
-- Brain: `/Users/cloken/code/KitchenSink`
-- Worker: `/Users/bob/kitchen-sink` (example)
+- Crown: `/Users/cloken/code/KitchenSink`
+- Peel: `/Users/bob/kitchen-sink` (example)
 
 **Solution:** Use git remote URLs as stable identifiers. Both machines share the same remote (`github.com/cloke/peel`), so we map that to local paths on each machine.
 
@@ -44,26 +44,26 @@ When the brain dispatches a task with `workingDirectory: /Users/cloken/code/Kitc
 
 ## Current State
 
-1. ✅ Brain started with repo registered:
+1. ✅ Crown started with repo registered:
    ```
    remoteURL: github.com/cloke/peel
    localPath: /Users/cloken/code/KitchenSink
    ```
 
-2. ✅ Worker connected (256GB RAM, 64 GPU cores machine)
+2. ✅ Peel connected (256GB RAM, 64 GPU cores machine)
 
 3. ⚠️ Task dispatched but stuck in-flight:
    - Branch: `swarm/create-a-file-called-test-swar-09aaf1b6`
    - Status: in-flight for 4+ minutes
-   - Likely cause: **Worker hasn't registered its local repo path**
+  - Likely cause: **Peel hasn't registered its local repo path**
 
 ---
 
 ## Next Steps
 
-### 1. Register Repo on Worker (REQUIRED)
+### 1. Register Repo on Peel (REQUIRED)
 
-On the worker machine, run:
+On the Peel machine, run:
 ```bash
 curl -X POST http://127.0.0.1:8765/rpc \
   -H 'Content-Type: application/json' \
@@ -73,11 +73,11 @@ curl -X POST http://127.0.0.1:8765/rpc \
   }}'
 ```
 
-Replace `/path/to/local/repo` with the actual path where the worker has the Peel repo cloned.
+Replace `/path/to/local/repo` with the actual path where the Peel has the Peel repo cloned.
 
-### 2. Update Worker to Latest Code
+### 2. Update Peel to Latest Code
 
-The worker is at `c0e4371`, should be at `e6e991c`:
+The Peel is at `c0e4371`, should be at `e6e991c`:
 ```bash
 curl -X POST http://127.0.0.1:8765/rpc \
   -H 'Content-Type: application/json' \
@@ -89,7 +89,7 @@ curl -X POST http://127.0.0.1:8765/rpc \
 
 ### 3. Test Task Dispatch
 
-After worker registers its repo:
+After the Peel registers its repo:
 ```bash
 curl -X POST http://127.0.0.1:8765/rpc \
   -H 'Content-Type: application/json' \
@@ -120,8 +120,8 @@ Expected: Task shows `status: completed` with branch info.
 
 ## Future Improvements
 
-### Auto-Registration on Worker Start
-Modify `swarm.start` for worker role to auto-register repos:
+### Auto-Registration on Peel Start
+Modify `swarm.start` for worker role (Peel) to auto-register repos:
 ```json
 {
   "name": "swarm.start",
@@ -139,8 +139,8 @@ Currently RepoRegistry is in-memory. Consider:
 - Auto-discover repos in common locations
 
 ### Error Handling
-When worker can't resolve a path:
-- Return clear error message: "Repo not registered on worker"
+When a Peel can't resolve a path:
+- Return clear error message: "Repo not registered on peel"
 - Include the remote URL that needs to be registered
 - Suggest the `swarm.register-repo` command
 
@@ -152,7 +152,7 @@ When worker can't resolve a path:
 # Check swarm status
 curl -s http://127.0.0.1:8765/rpc -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"swarm.status","arguments":{}}}' | jq .
 
-# Check workers
+# Check peels
 curl -s http://127.0.0.1:8765/rpc -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"swarm.workers","arguments":{}}}' | jq .
 
 # Check registered repos

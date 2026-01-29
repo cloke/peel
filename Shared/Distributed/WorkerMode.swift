@@ -40,7 +40,7 @@ public final class WorkerMode {
     guard !isRunning else { return }
     
     let capabilities = WorkerCapabilities.current()
-    logger.info("Starting worker mode on \(capabilities.deviceName)")
+    logger.info("Starting peel mode on \(capabilities.deviceName)")
     
     // Use the shared coordinator
     let coordinator = SwarmCoordinator.shared
@@ -59,20 +59,20 @@ public final class WorkerMode {
     isRunning = true
     
     logger.info("""
-      Worker started:
+      Peel started:
         Device: \(capabilities.deviceName)
         Port: \(port)
         GPU Cores: \(capabilities.gpuCores)
         Neural Engine: \(capabilities.neuralEngineCores)
         Memory: \(capabilities.memoryGB)GB
       
-      Waiting for brain connection...
+      Waiting for Crown connection...
       """)
     
     // Print to stdout for visibility
     print("""
       ┌─────────────────────────────────────────────┐
-      │  🍊 Peel Worker Started                     │
+      │  🍌 Peel Node Started                       │
       ├─────────────────────────────────────────────┤
       │  Device: \(capabilities.deviceName.padding(toLength: 28, withPad: " ", startingAt: 0)) │
       │  Port: \(String(port).padding(toLength: 30, withPad: " ", startingAt: 0)) │
@@ -80,7 +80,7 @@ public final class WorkerMode {
       │  Neural: \(String(capabilities.neuralEngineCores).padding(toLength: 28, withPad: " ", startingAt: 0)) │
       │  RAM: \(String(format: "%d", capabilities.memoryGB).padding(toLength: 31, withPad: " ", startingAt: 0)) │
       ├─────────────────────────────────────────────┤
-      │  Status: Waiting for brain...              │
+      │  Status: Waiting for Crown...              │
       └─────────────────────────────────────────────┘
       """)
   }
@@ -90,7 +90,7 @@ public final class WorkerMode {
     coordinator?.stop()
     coordinator = nil
     isRunning = false
-    logger.info("Worker stopped")
+    logger.info("Peel stopped")
   }
 }
 
@@ -100,10 +100,10 @@ extension WorkerMode: SwarmCoordinatorDelegate {
   public func swarmCoordinator(_ coordinator: SwarmCoordinator, didEmit event: SwarmEvent) {
     switch event {
     case .workerConnected(let peer):
-      print("✅ Brain connected: \(peer.name)")
+      print("✅ Crown connected: \(peer.name)")
       
     case .workerDisconnected(let id):
-      print("❌ Brain disconnected: \(id)")
+      print("❌ Crown disconnected: \(id)")
       
     case .taskReceived(let request):
       print("📥 Task received: \(request.id)")

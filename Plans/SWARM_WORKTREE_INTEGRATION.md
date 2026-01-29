@@ -1,14 +1,14 @@
 # Swarm Worktree Integration Plan
 
 **Date:** 2026-01-28  
-**Status:** Phase 1 Implemented - Worker-side worktree isolation complete  
-**Issue:** Multiple swarm tasks executing on same worker stomp on each other's branches
+**Status:** Phase 1 Implemented - Peel-side worktree isolation complete  
+**Issue:** Multiple swarm tasks executing on same peel stomp on each other's branches
 
 ---
 
 ## Implementation Status
 
-### Phase 1: Worker-Side Worktree Isolation ✅ COMPLETE
+### Phase 1: Peel-Side Worktree Isolation ✅ COMPLETE
 
 - [x] Created `SwarmWorktreeManager` class (`Shared/Distributed/SwarmWorktreeManager.swift`)
 - [x] Modified `SwarmCoordinator.handleTaskRequest()` to use worktrees
@@ -16,7 +16,7 @@
 - [x] Added `useWorktreeIsolation` flag (defaults to `true`)
 - [x] Build passes
 
-### Phase 2: Branch Queue on Brain (Issue #201) - PENDING
+### Phase 2: Branch Queue on Crown (Issue #201) - PENDING
 
 ### Phase 3: PR/Merge Queue (Issue #202) - PENDING
 
@@ -24,7 +24,7 @@
 
 ## Problem Statement
 
-When the brain dispatches multiple tasks to a worker (or even one task that creates multiple branches), they all operate in the same git checkout. This causes:
+When the Crown dispatches multiple tasks to a peel (or even one task that creates multiple branches), they all operate in the same git checkout. This causes:
 
 1. **Branch conflicts** - Task A creates `refactor/foo`, Task B tries to checkout `origin/main` and fails
 2. **Dirty working directory** - Uncommitted changes from Task A break Task B
@@ -43,10 +43,10 @@ Every swarm task should execute in an **isolated git worktree**, similar to how 
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                          Brain (MacBook)                         │
+│                         Crown (MacBook)                          │
 │  ┌─────────────────────────────────────────────────────────────┐ │
 │  │                      BranchQueue                             │ │
-│  │  - Tracks branches in-flight across all workers              │ │
+│  │  - Tracks branches in-flight across all peels                │ │
 │  │  - Generates unique branch names                             │ │
 │  │  - Detects merge conflicts before they happen                │ │
 │  └─────────────────────────────────────────────────────────────┘ │
@@ -56,11 +56,11 @@ Every swarm task should execute in an **isolated git worktree**, similar to how 
                                │
                                ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                       Worker (Mac Studio)                        │
+│                        Peel (Mac Studio)                         │
 │                                                                   │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  │
 │  │ Main Repo       │  │ Worktree 1      │  │ Worktree 2      │  │
-│  │ ~/code/tio-fe   │  │ ~/worktrees/    │  │ ~/worktrees/    │
+│  │ ~/code/tio-fe   │  │ ~/worktrees/    │  │ ~/worktrees/    │  │
 │  │                 │  │ task-abc123/    │  │ task-def456/    │  │
 │  │ (untouched)     │  │                 │  │                 │  │
 │  │                 │  │ branch:         │  │ branch:         │  │
@@ -80,11 +80,11 @@ Every swarm task should execute in an **isolated git worktree**, similar to how 
 
 ## Implementation Plan
 
-### Phase 1: Worker-Side Worktree Isolation
+### Phase 1: Peel-Side Worktree Isolation
 
-**Goal:** Each task executes in an isolated worktree on the worker
+**Goal:** Each task executes in an isolated worktree on the peel
 
-#### 1.1 Add `SwarmWorktreeManager` to Worker
+#### 1.1 Add `SwarmWorktreeManager` to Peel
 
 ```swift
 // Shared/Distributed/SwarmWorktreeManager.swift
@@ -157,12 +157,11 @@ private func executeTask(_ request: ChainRequest) async {
 
 ---
 
-### Phase 2: Brain-Side Branch Queue
+### Phase 2: Crown-Side Branch Queue
 
 **Goal:** Prevent branch name collisions and track in-flight work
 
-#### 2.1 Add `BranchQueue` to Brain
-
+#### 2.1 Add `BranchQueue` to Crown
 ```swift
 // Shared/Distributed/BranchQueue.swift
 
@@ -225,8 +224,8 @@ final class BranchQueue {
 ```swift
 // In SwarmCoordinator
 public func dispatchChain(_ request: ChainRequest) async throws -> ChainResult {
-  // 1. Select worker
-  guard let worker = selectWorker(for: request) else {
+  // 1. Select peel
+  guard let peel = selectPeel(for: request) else {
     throw DistributedError.noWorkersAvailable
   }
   
@@ -240,14 +239,14 @@ public func dispatchChain(_ request: ChainRequest) async throws -> ChainResult {
       taskId: request.id,
       preferredName: suggestedBranch,
       repoPath: repoPath,
-      workerId: worker.id
+      workerId: peel.id
     )
     
     enhancedRequest.metadata["reservedBranch"] = reservedBranch
     enhancedRequest.metadata["useWorktree"] = true
   }
   
-  // 3. Send to worker with branch reservation
+  // 3. Send to peel with branch reservation
   // ...
 }
 ```
@@ -256,7 +255,6 @@ public func dispatchChain(_ request: ChainRequest) async throws -> ChainResult {
 
 ### Phase 3: Merge Queue
 
-**Goal:** Orderly merging of completed work back to main
 
 #### 3.1 Add Merge Queue for PR Creation
 
@@ -303,7 +301,6 @@ final class MergeQueue {
 
 ---
 
-## Configuration
 
 ### Swarm Task Options
 
@@ -348,8 +345,8 @@ Update `swarm.dispatch` to accept worktree options:
 
 ## Migration Path
 
-1. **v1 (immediate):** Add worktree isolation to workers - each task gets its own worktree
-2. **v2:** Add branch queue to brain - prevent name collisions
+1. **v1 (immediate):** Add worktree isolation to peels - each task gets its own worktree
+2. **v2:** Add branch queue to Crown - prevent name collisions
 3. **v3:** Add merge queue - orderly PR creation and merging
 4. **v4:** Conflict detection - check for merge conflicts before dispatch
 
@@ -359,14 +356,13 @@ Update `swarm.dispatch` to accept worktree options:
 
 1. **Worktree cleanup timing:** Immediately after task? After PR merged? After review?
 2. **Branch naming convention:** `swarm/task-{id}` vs user-specified vs template-based?
-3. **Repo discovery:** How does worker know which repo to use if not specified?
+3. **Repo discovery:** How does a peel know which repo to use if not specified?
 4. **Cross-repo tasks:** How to handle tasks that span multiple repos?
 5. **Merge conflict handling:** Retry on different base? Ask user? Auto-resolve?
 
 ---
 
-## Related Files
 
 - [ParallelWorktreeRunner.swift](../Shared/Services/ParallelWorktreeRunner.swift) - Local parallel execution (model to follow)
 - [SwarmCoordinator.swift](../Shared/Distributed/SwarmCoordinator.swift) - Current swarm implementation
-- [WorkspaceDashboardService.swift](../Shared/Services/WorkspaceDashboardService.swift) - Worktree creation utilities
+2. **Branch naming convention:** `swarm/task-{id}` vs user-specified vs template-based?

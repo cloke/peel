@@ -90,7 +90,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
     [
       [
         "name": "swarm.start",
-        "description": "Start the distributed swarm coordinator. Role can be 'brain' (dispatch work), 'worker' (execute work), or 'hybrid' (both).",
+        "description": "Start the distributed swarm coordinator. Role can be 'brain' (Crown: dispatches work), 'worker' (Peel: executes work), or 'hybrid' (Crown + Peel).",
         "inputSchema": [
           "type": "object",
           "properties": [
@@ -127,7 +127,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
       ],
       [
         "name": "swarm.workers",
-        "description": "List all connected workers with their capabilities.",
+        "description": "List all connected peels/trees with their capabilities.",
         "inputSchema": [
           "type": "object",
           "properties": [:],
@@ -136,7 +136,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
       ],
       [
         "name": "swarm.dispatch",
-        "description": "Dispatch a task to the swarm for execution by a worker.",
+        "description": "Dispatch a task to the swarm for execution by a peel.",
         "inputSchema": [
           "type": "object",
           "properties": [
@@ -204,7 +204,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
       ],
       [
         "name": "swarm.update-workers",
-        "description": "Trigger all connected workers to pull latest code, rebuild, and restart. Workers will disconnect briefly during restart.",
+        "description": "Trigger all connected peels/trees to pull latest code, rebuild, and restart. Nodes will disconnect briefly during restart.",
         "inputSchema": [
           "type": "object",
           "properties": [
@@ -218,7 +218,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
       ],
       [
         "name": "swarm.update-log",
-        "description": "Fetch the latest lines from the worker self-update log.",
+        "description": "Fetch the latest lines from the peel self-update log.",
         "inputSchema": [
           "type": "object",
           "properties": [
@@ -228,7 +228,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
             ],
             "workerId": [
               "type": "string",
-              "description": "Specific worker ID to target (optional, defaults to first available)"
+              "description": "Specific peel ID to target (optional, defaults to first available)"
             ]
           ],
           "required": []
@@ -680,7 +680,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
         try await coordinator.sendDirectCommand(
           "./Tools/self-update.sh",
           args: [],
-          workingDirectory: nil,  // Worker will auto-detect
+          workingDirectory: nil,  // Peel will auto-detect
           to: worker.id
         )
         dispatched.append([
@@ -723,7 +723,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
     let targetWorker: ConnectedPeer
     if let workerId = workerId {
       guard let worker = coordinator.connectedWorkers.first(where: { $0.id == workerId }) else {
-        return internalError(id: id, message: "Worker not found: \(workerId)")
+        return internalError(id: id, message: "Peel not found: \(workerId)")
       }
       targetWorker = worker
     } else {
@@ -776,7 +776,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
     let targetWorker: ConnectedPeer
     if let workerId = workerId {
       guard let worker = coordinator.connectedWorkers.first(where: { $0.id == workerId }) else {
-        return internalError(id: id, message: "Worker not found: \(workerId)")
+        return internalError(id: id, message: "Peel not found: \(workerId)")
       }
       targetWorker = worker
     } else {

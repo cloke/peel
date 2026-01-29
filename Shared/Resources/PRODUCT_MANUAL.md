@@ -350,13 +350,27 @@ Parallel runs can be paused and updated mid-flight with additional guidance. The
 
 **Location:** Sidebar → Tools → Swarm Dashboard
 
-Scale AI agent execution across multiple Mac devices on your network. A "coordinator" (typically a powerful Mac) dispatches tasks to "workers" (other Macs running Peel).
+Scale AI agent execution across multiple Mac devices on your network. Peel uses a banana-themed naming system to keep roles clear and fun.
+
+#### Naming (Banana Theme)
+
+| Term | Purpose |
+|------|---------|
+| **Crown** | The leader that coordinates tasks and queues across the swarm |
+| **Tree** | A powerful node that can build models and host heavy workloads |
+| **Peel** | A regular node that can execute tasks locally |
+| **Sprout** | An idle Peel that can ask for work automatically |
+| **Bunch** | The full swarm of connected devices |
+
+**Typical setup:** A Mac Studio acts as the **Crown + Tree**, while MacBooks act as **Peels** (and become **Sprouts** when idle).
+
+**API note:** MCP role values remain `brain` and `worker` for compatibility.
 
 #### Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Coordinator (Brain)                       │
+│                          Crown (Leader)                       │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
 │  │ Task Queue  │  │ PR Queue    │  │ Branch Queue│         │
 │  └─────────────┘  └─────────────┘  └─────────────┘         │
@@ -365,22 +379,22 @@ Scale AI agent execution across multiple Mac devices on your network. A "coordin
           ┌─────────────────┼─────────────────┐
           ▼                 ▼                 ▼
     ┌──────────┐      ┌──────────┐      ┌──────────┐
-    │ Worker 1 │      │ Worker 2 │      │ Worker 3 │
+    │ Peel 1   │      │ Peel 2   │      │ Tree 1   │
     │ (Mac Mini)│     │ (MacBook)│      │ (Mac Pro)│
     └──────────┘      └──────────┘      └──────────┘
 ```
 
 #### Starting the Swarm
 
-**On the Coordinator:**
+**On the Crown:**
 1. Navigate to Swarm Dashboard
-2. Click **Start Coordinator**
-3. Workers on the LAN will auto-discover and connect
+2. Click **Start Crown**
+3. Peels and Trees on the LAN will auto-discover and connect
 
-**On Workers:**
+**On Peels / Trees:**
 1. Launch Peel
-2. The worker will auto-discover the coordinator via Bonjour
-3. Register your local repository paths (so the worker knows where to execute)
+2. The node will auto-discover the Crown via Bonjour
+3. Register your local repository paths (so the node knows where to execute)
 
 #### Dispatching Tasks
 
@@ -417,7 +431,7 @@ curl -X POST http://127.0.0.1:8765/rpc \
 Swarm uses a **branch queue** to coordinate concurrent work on the same repository:
 
 - Each task reserves a unique branch name (e.g., `swarm/task-abc123`)
-- Workers create isolated worktrees for their assigned branches
+- Peels create isolated worktrees for their assigned branches
 - Prevents merge conflicts between parallel tasks
 - Auto-cleanup when tasks complete
 
@@ -438,27 +452,27 @@ curl -X POST http://127.0.0.1:8765/rpc \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"swarm.create-pr","arguments":{"taskId":"abc123"}}}'
 ```
 
-#### Worker Status
+#### Peel Status
 
 | Status | Icon | Description |
 |--------|------|-------------|
-| Connected | 🟢 | Worker online and ready |
+| Connected | 🟢 | Peel/Tree online and ready |
 | Busy | 🔵 | Executing a task |
-| Disconnected | 🔴 | Worker offline |
+| Disconnected | 🔴 | Peel/Tree offline |
 | Updating | 🔄 | Receiving code updates |
 
 #### Direct Commands
 
-Run shell commands directly on workers (useful for debugging):
+Run shell commands directly on Peels/Trees (useful for debugging):
 
 ```bash
 curl -X POST http://127.0.0.1:8765/rpc \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"swarm.direct-command","arguments":{"command":"git","args":["status"],"workerId":"worker-1"}}}'
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"swarm.direct-command","arguments":{"command":"git","args":["status"],"workerId":"peel-1"}}}'
 ```
 
-#### Updating Workers
+#### Updating Peels
 
-Push code updates to all connected workers:
+Push code updates to all connected Peels/Trees:
 
 ```bash
 curl -X POST http://127.0.0.1:8765/rpc \
@@ -771,11 +785,11 @@ The MCP server exposes these tool categories via JSON-RPC at `http://127.0.0.1:8
 | `swarm.status` | Get swarm coordinator status |
 | `swarm.dispatch` | Dispatch a task to the swarm |
 | `swarm.tasks` | Get completed task results |
-| `swarm.workers` | List connected workers |
+| `swarm.workers` | List connected peels |
 | `swarm.discovered` | List discovered peers on the network |
 | `swarm.connect` | Manually connect to a peer |
-| `swarm.direct-command` | Execute shell command on a worker |
-| `swarm.update-workers` | Push code updates to workers |
+| `swarm.direct-command` | Execute shell command on a peel |
+| `swarm.update-workers` | Push code updates to peels |
 | `swarm.register-repo` | Register a repository path with the swarm |
 | `swarm.repos` | List registered repositories |
 | `swarm.branch-queue` | Get branch queue status |
