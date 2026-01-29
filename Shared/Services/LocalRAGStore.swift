@@ -2679,10 +2679,16 @@ actor LocalRAGStore {
 
 // MARK: - Local RAG Artifacts (Sync)
 
-struct LocalRAGArtifactBundle: Sendable {
-  let manifest: RAGArtifactManifest
-  let bundleURL: URL
-  let bundleSizeBytes: Int
+public struct LocalRAGArtifactBundle: Sendable {
+  public let manifest: RAGArtifactManifest
+  public let bundleURL: URL
+  public let bundleSizeBytes: Int
+
+  public init(manifest: RAGArtifactManifest, bundleURL: URL, bundleSizeBytes: Int) {
+    self.manifest = manifest
+    self.bundleURL = bundleURL
+    self.bundleSizeBytes = bundleSizeBytes
+  }
 }
 
 enum LocalRAGArtifacts {
