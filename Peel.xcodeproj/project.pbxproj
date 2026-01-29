@@ -142,6 +142,7 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		0422A2DE2F2AD1E500186BBF /* Tools */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Tools; sourceTree = "<group>"; };
 		042793A42F0DEAE7002A5499 /* Plans */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Plans; sourceTree = "<group>"; };
 		04913BB52F0F4ED7001EF810 /* Shared */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (04913BD12F0F4ED7001EF810 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = Shared; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -223,6 +224,7 @@
 				04A7BD88258E77D8000E55A8 /* Tests macOS */,
 				04A7BD6B258E77D8000E55A8 /* Products */,
 				0467868025A0DBE400D5E87F /* Frameworks */,
+				0422A2DE2F2AD1E500186BBF /* Tools */,
 			);
 			sourceTree = "<group>";
 		};
@@ -309,6 +311,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 04A7BD97258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "Peel (macOS)" */;
 			buildPhases = (
+				04ASTBLD2F3B000100000004 /* Build ast-chunker-cli */,
 				04A7BD6E258E77D8000E55A8 /* Sources */,
 				04A7BD6F258E77D8000E55A8 /* Frameworks */,
 				04A7BD70258E77D8000E55A8 /* Resources */,
@@ -460,6 +463,29 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		04ASTBLD2F3B000100000004 /* Build ast-chunker-cli */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/Local Packages/ASTChunker/Sources/ASTChunkerCLI/main.swift",
+			);
+			name = "Build ast-chunker-cli";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/Tools/Binaries/ast-chunker-cli",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/zsh;
+			shellScript = "set -e\ncd \"${PROJECT_DIR}/Local Packages/ASTChunker\"\n\n# Check if rebuild needed\nBINARY=\"${PROJECT_DIR}/Tools/Binaries/ast-chunker-cli\"\nif [ ! -f \"$BINARY\" ] || [ -n \"$(find Sources -newer \"$BINARY\" -type f -name '*.swift' 2>/dev/null)\" ]; then\n    echo \"Building ast-chunker-cli...\"\n    swift build -c release --product ast-chunker-cli\n    mkdir -p \"${PROJECT_DIR}/Tools/Binaries\"\n    cp \".build/release/ast-chunker-cli\" \"$BINARY\"\n    echo \"ast-chunker-cli built successfully\"\nelse\n    echo \"ast-chunker-cli is up to date\"\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		04A7BD66258E77D8000E55A8 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -551,7 +577,7 @@
 				DEVELOPMENT_TEAM = UNX9FJDDXV;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -614,7 +640,7 @@
 				DEVELOPMENT_TEAM = UNX9FJDDXV;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;

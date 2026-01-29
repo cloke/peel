@@ -21,8 +21,9 @@ public struct SwiftChunker: LanguageChunker, Sendable {
     let lineMap = LineMap(source: source)
     var chunks: [ASTChunk] = []
     
-    // Collect imports
+    // Collect imports for metadata
     var importStatements: [ImportDeclSyntax] = []
+    var importNames: [String] = []
     
     // Process top-level statements
     for statement in sourceFile.statements {
@@ -31,6 +32,9 @@ public struct SwiftChunker: LanguageChunker, Sendable {
       // Collect imports to group them
       if let importDecl = item.as(ImportDeclSyntax.self) {
         importStatements.append(importDecl)
+        // Extract import path (e.g., "Foundation", "SwiftUI")
+        let importPath = importDecl.path.map { $0.name.text }.joined(separator: ".")
+        importNames.append(importPath)
         continue
       }
       
@@ -39,7 +43,8 @@ public struct SwiftChunker: LanguageChunker, Sendable {
         item,
         lineMap: lineMap,
         maxChunkLines: maxChunkLines,
-        chunks: &chunks
+        chunks: &chunks,
+        fileImports: importNames
       )
     }
     
@@ -49,13 +54,20 @@ public struct SwiftChunker: LanguageChunker, Sendable {
       let endLine = lineMap.line(for: importStatements.last!.endPosition)
       let text = lineMap.text(from: startLine, to: endLine)
       
+      // Detect frameworks from imports
+      let frameworks = detectFrameworks(from: importNames)
+      
       chunks.insert(ASTChunk(
         constructType: .imports,
         constructName: nil,
         startLine: startLine,
         endLine: endLine,
         text: text,
-        language: Self.language
+        language: Self.language,
+        metadata: ASTChunkMetadata(
+          imports: importNames,
+          frameworks: frameworks
+        )
       ), at: 0)
     }
     
@@ -70,6 +82,32 @@ public struct SwiftChunker: LanguageChunker, Sendable {
     return chunks
   }
   
+  // MARK: - Framework Detection
+  
+  private func detectFrameworks(from imports: [String]) -> [String] {
+    var frameworks: [String] = []
+    
+    let frameworkMapping: [String: String] = [
+      "SwiftUI": "SwiftUI",
+      "UIKit": "UIKit",
+      "AppKit": "AppKit",
+      "Combine": "Combine",
+      "SwiftData": "SwiftData",
+      "CoreData": "CoreData",
+      "Foundation": "Foundation",
+      "Observation": "Observation",
+      "JavaScriptCore": "JavaScriptCore",
+    ]
+    
+    for imp in imports {
+      if let framework = frameworkMapping[imp] {
+        frameworks.append(framework)
+      }
+    }
+    
+    return frameworks
+  }
+  
   // MARK: - Declaration Processing
   
   /// Process a code block item, checking for various declaration types
@@ -77,23 +115,24 @@ public struct SwiftChunker: LanguageChunker, Sendable {
     _ item: CodeBlockItemSyntax.Item,
     lineMap: LineMap,
     maxChunkLines: Int,
-    chunks: inout [ASTChunk]
+    chunks: inout [ASTChunk],
+    fileImports: [String]
   ) {
     // Try each declaration type we care about
     if let classDecl = item.as(ClassDeclSyntax.self) {
-      processDeclaration(classDecl, lineMap: lineMap, maxChunkLines: maxChunkLines, chunks: &chunks, parentName: nil)
+      processDeclaration(classDecl, lineMap: lineMap, maxChunkLines: maxChunkLines, chunks: &chunks, parentName: nil, fileImports: fileImports)
     } else if let structDecl = item.as(StructDeclSyntax.self) {
-      processDeclaration(structDecl, lineMap: lineMap, maxChunkLines: maxChunkLines, chunks: &chunks, parentName: nil)
+      processDeclaration(structDecl, lineMap: lineMap, maxChunkLines: maxChunkLines, chunks: &chunks, parentName: nil, fileImports: fileImports)
     } else if let enumDecl = item.as(EnumDeclSyntax.self) {
-      processDeclaration(enumDecl, lineMap: lineMap, maxChunkLines: maxChunkLines, chunks: &chunks, parentName: nil)
+      processDeclaration(enumDecl, lineMap: lineMap, maxChunkLines: maxChunkLines, chunks: &chunks, parentName: nil, fileImports: fileImports)
     } else if let protocolDecl = item.as(ProtocolDeclSyntax.self) {
-      processDeclaration(protocolDecl, lineMap: lineMap, maxChunkLines: maxChunkLines, chunks: &chunks, parentName: nil)
+      processDeclaration(protocolDecl, lineMap: lineMap, maxChunkLines: maxChunkLines, chunks: &chunks, parentName: nil, fileImports: fileImports)
     } else if let extensionDecl = item.as(ExtensionDeclSyntax.self) {
-      processDeclaration(extensionDecl, lineMap: lineMap, maxChunkLines: maxChunkLines, chunks: &chunks, parentName: nil)
+      processDeclaration(extensionDecl, lineMap: lineMap, maxChunkLines: maxChunkLines, chunks: &chunks, parentName: nil, fileImports: fileImports)
     } else if let actorDecl = item.as(ActorDeclSyntax.self) {
-      processDeclaration(actorDecl, lineMap: lineMap, maxChunkLines: maxChunkLines, chunks: &chunks, parentName: nil)
+      processDeclaration(actorDecl, lineMap: lineMap, maxChunkLines: maxChunkLines, chunks: &chunks, parentName: nil, fileImports: fileImports)
     } else if let funcDecl = item.as(FunctionDeclSyntax.self) {
-      processDeclaration(funcDecl, lineMap: lineMap, maxChunkLines: maxChunkLines, chunks: &chunks, parentName: nil)
+      processDeclaration(funcDecl, lineMap: lineMap, maxChunkLines: maxChunkLines, chunks: &chunks, parentName: nil, fileImports: fileImports)
     }
     // Ignore other statement types (variables, expressions, etc.)
   }
@@ -103,12 +142,16 @@ public struct SwiftChunker: LanguageChunker, Sendable {
     lineMap: LineMap,
     maxChunkLines: Int,
     chunks: inout [ASTChunk],
-    parentName: String?
+    parentName: String?,
+    fileImports: [String]
   ) {
     let (constructType, name) = extractTypeAndName(from: decl)
     
     // Skip unknown declarations
     guard constructType != .unknown else { return }
+    
+    // Extract metadata from the declaration
+    let metadata = extractMetadata(from: decl, fileImports: fileImports)
     
     // Use positionAfterSkippingLeadingTrivia to get actual declaration start (not leading whitespace)
     let startLine = lineMap.line(for: decl.positionAfterSkippingLeadingTrivia)
@@ -125,7 +168,8 @@ public struct SwiftChunker: LanguageChunker, Sendable {
         startLine: startLine,
         endLine: endLine,
         text: text,
-        language: Self.language
+        language: Self.language,
+        metadata: metadata
       ))
     } else {
       // Too large - split by members
@@ -135,9 +179,178 @@ public struct SwiftChunker: LanguageChunker, Sendable {
         constructName: fullName,
         lineMap: lineMap,
         maxChunkLines: maxChunkLines,
-        chunks: &chunks
+        chunks: &chunks,
+        metadata: metadata
       )
     }
+  }
+  
+  // MARK: - Metadata Extraction
+  
+  /// Extract structured metadata from a Swift declaration
+  private func extractMetadata(from decl: any DeclSyntaxProtocol, fileImports: [String]) -> ASTChunkMetadata {
+    var decorators: [String] = []
+    var protocols: [String] = []
+    var propertyWrappers: [String] = []
+    var superclass: String? = nil
+    var frameworks: [String] = []
+    
+    // Extract attributes (decorators)
+    if let withAttrs = decl.as(ClassDeclSyntax.self) {
+      decorators = extractAttributes(from: withAttrs.attributes)
+      (superclass, protocols) = extractInheritance(from: withAttrs.inheritanceClause)
+    } else if let withAttrs = decl.as(StructDeclSyntax.self) {
+      decorators = extractAttributes(from: withAttrs.attributes)
+      (_, protocols) = extractInheritance(from: withAttrs.inheritanceClause)
+    } else if let withAttrs = decl.as(EnumDeclSyntax.self) {
+      decorators = extractAttributes(from: withAttrs.attributes)
+      (_, protocols) = extractInheritance(from: withAttrs.inheritanceClause)
+    } else if let withAttrs = decl.as(ActorDeclSyntax.self) {
+      decorators = extractAttributes(from: withAttrs.attributes)
+      (_, protocols) = extractInheritance(from: withAttrs.inheritanceClause)
+    } else if let withAttrs = decl.as(ProtocolDeclSyntax.self) {
+      decorators = extractAttributes(from: withAttrs.attributes)
+      (_, protocols) = extractInheritance(from: withAttrs.inheritanceClause)
+    } else if let withAttrs = decl.as(ExtensionDeclSyntax.self) {
+      decorators = extractAttributes(from: withAttrs.attributes)
+      (_, protocols) = extractInheritance(from: withAttrs.inheritanceClause)
+    } else if let withAttrs = decl.as(FunctionDeclSyntax.self) {
+      decorators = extractAttributes(from: withAttrs.attributes)
+    }
+    
+    // Extract property wrappers from member declarations
+    if let memberBlock = getMemberBlock(from: decl) {
+      propertyWrappers = extractPropertyWrappers(from: memberBlock)
+    }
+    
+    // Detect frameworks based on decorators and imports
+    frameworks = detectFrameworksFromMetadata(decorators: decorators, protocols: protocols, imports: fileImports)
+    
+    return ASTChunkMetadata(
+      decorators: decorators,
+      protocols: protocols,
+      imports: [], // Only included in the imports chunk
+      superclass: superclass,
+      propertyWrappers: propertyWrappers,
+      frameworks: frameworks
+    )
+  }
+  
+  /// Extract @attributes from a declaration
+  private func extractAttributes(from attributes: AttributeListSyntax) -> [String] {
+    var result: [String] = []
+    
+    for element in attributes {
+      switch element {
+      case .attribute(let attr):
+        let name = attr.attributeName.trimmedDescription
+        result.append("@\(name)")
+      case .ifConfigDecl:
+        // Skip #if blocks
+        break
+      }
+    }
+    
+    return result
+  }
+  
+  /// Extract superclass and protocols from inheritance clause
+  private func extractInheritance(from clause: InheritanceClauseSyntax?) -> (superclass: String?, protocols: [String]) {
+    guard let clause else { return (nil, []) }
+    
+    var superclass: String? = nil
+    var protocols: [String] = []
+    
+    for (index, inherited) in clause.inheritedTypes.enumerated() {
+      let typeName = inherited.type.trimmedDescription
+      
+      // First item could be superclass (for classes) - heuristic: starts with uppercase, not a known protocol
+      if index == 0 && !isKnownProtocol(typeName) {
+        // Could be superclass or protocol - we'll treat first as potential superclass for classes
+        superclass = typeName
+      } else {
+        protocols.append(typeName)
+      }
+    }
+    
+    return (superclass, protocols)
+  }
+  
+  /// Check if a type name is a known Swift protocol
+  private func isKnownProtocol(_ name: String) -> Bool {
+    let knownProtocols: Set<String> = [
+      "View", "App", "Scene", "PreviewProvider",
+      "Sendable", "Equatable", "Hashable", "Codable", "Identifiable",
+      "Comparable", "CustomStringConvertible", "Error", "LocalizedError",
+      "ObservableObject", "Publisher", "Subscriber",
+      "Collection", "Sequence", "IteratorProtocol",
+      "RawRepresentable", "CaseIterable", "OptionSet",
+    ]
+    return knownProtocols.contains(name)
+  }
+  
+  /// Extract property wrappers from member variables
+  private func extractPropertyWrappers(from memberBlock: MemberBlockSyntax) -> [String] {
+    var wrappers: Set<String> = []
+    
+    for member in memberBlock.members {
+      if let varDecl = member.decl.as(VariableDeclSyntax.self) {
+        for element in varDecl.attributes {
+          if case .attribute(let attr) = element {
+            let name = attr.attributeName.trimmedDescription
+            // Common property wrappers
+            let propertyWrapperNames: Set<String> = [
+              "State", "Binding", "ObservedObject", "StateObject", "EnvironmentObject",
+              "Environment", "AppStorage", "SceneStorage", "FetchRequest", "Query",
+              "Published", "Bindable", "Observable",
+              "tracked", "service", "action", // Ember decorators
+            ]
+            if propertyWrapperNames.contains(name) {
+              wrappers.insert("@\(name)")
+            }
+          }
+        }
+      }
+    }
+    
+    return Array(wrappers).sorted()
+  }
+  
+  /// Detect frameworks from decorators and protocols
+  private func detectFrameworksFromMetadata(decorators: [String], protocols: [String], imports: [String]) -> [String] {
+    var frameworks: Set<String> = []
+    
+    // SwiftUI indicators
+    let swiftUIIndicators: Set<String> = ["@State", "@Binding", "@ObservedObject", "@StateObject", "@EnvironmentObject", "@Environment", "@AppStorage", "@Query"]
+    let swiftUIProtocols: Set<String> = ["View", "App", "Scene", "PreviewProvider"]
+    
+    if !decorators.filter({ swiftUIIndicators.contains($0) }).isEmpty ||
+       !protocols.filter({ swiftUIProtocols.contains($0) }).isEmpty ||
+       imports.contains("SwiftUI") {
+      frameworks.insert("SwiftUI")
+    }
+    
+    // Observation framework
+    if decorators.contains("@Observable") || decorators.contains("@Bindable") || imports.contains("Observation") {
+      frameworks.insert("Observation")
+    }
+    
+    // Combine
+    if decorators.contains("@Published") || imports.contains("Combine") {
+      frameworks.insert("Combine")
+    }
+    
+    // SwiftData
+    if decorators.contains("@Model") || imports.contains("SwiftData") {
+      frameworks.insert("SwiftData")
+    }
+    
+    // Concurrency
+    if decorators.contains("@MainActor") || decorators.contains("@globalActor") {
+      frameworks.insert("Concurrency")
+    }
+    
+    return Array(frameworks).sorted()
   }
   
   private func extractTypeAndName(from decl: any DeclSyntaxProtocol) -> (ASTChunk.ConstructType, String?) {
@@ -180,7 +393,8 @@ public struct SwiftChunker: LanguageChunker, Sendable {
     constructName: String?,
     lineMap: LineMap,
     maxChunkLines: Int,
-    chunks: inout [ASTChunk]
+    chunks: inout [ASTChunk],
+    metadata: ASTChunkMetadata
   ) {
     // Get member block if this is a type with members
     guard let memberBlock = getMemberBlock(from: decl) else {
@@ -193,7 +407,8 @@ public struct SwiftChunker: LanguageChunker, Sendable {
         lineMap: lineMap,
         maxChunkLines: maxChunkLines,
         constructType: constructType,
-        constructName: constructName
+        constructName: constructName,
+        metadata: metadata
       ))
       return
     }
@@ -235,7 +450,8 @@ public struct SwiftChunker: LanguageChunker, Sendable {
         lineMap: lineMap,
         maxChunkLines: maxChunkLines,
         constructType: constructType,
-        constructName: constructName
+        constructName: constructName,
+        metadata: metadata
       ))
       return
     }
@@ -256,7 +472,8 @@ public struct SwiftChunker: LanguageChunker, Sendable {
             startLine: currentStart,
             endLine: headerEnd,
             text: text,
-            language: Self.language
+            language: Self.language,
+            metadata: metadata
           ))
         }
       }
@@ -273,7 +490,8 @@ public struct SwiftChunker: LanguageChunker, Sendable {
           startLine: memberStart,
           endLine: memberEnd,
           text: text,
-          language: Self.language
+          language: Self.language,
+          metadata: metadata  // Inherit parent metadata
         ))
       } else {
         // Very large method - split by lines
@@ -283,7 +501,8 @@ public struct SwiftChunker: LanguageChunker, Sendable {
           lineMap: lineMap,
           maxChunkLines: maxChunkLines,
           constructType: memberType,
-          constructName: fullMemberName
+          constructName: fullMemberName,
+          metadata: metadata
         ))
       }
       
@@ -302,7 +521,8 @@ public struct SwiftChunker: LanguageChunker, Sendable {
           startLine: currentStart,
           endLine: declEnd,
           text: text,
-          language: Self.language
+          language: Self.language,
+          metadata: metadata
         ))
       }
     }
@@ -348,7 +568,8 @@ public struct SwiftChunker: LanguageChunker, Sendable {
     lineMap: LineMap,
     maxChunkLines: Int,
     constructType: ASTChunk.ConstructType,
-    constructName: String?
+    constructName: String?,
+    metadata: ASTChunkMetadata = ASTChunkMetadata()
   ) -> [ASTChunk] {
     var chunks: [ASTChunk] = []
     var current = startLine
@@ -363,7 +584,8 @@ public struct SwiftChunker: LanguageChunker, Sendable {
         startLine: current,
         endLine: chunkEnd,
         text: text,
-        language: Self.language
+        language: Self.language,
+        metadata: metadata
       ))
       
       current = chunkEnd + 1
@@ -380,7 +602,8 @@ public struct SwiftChunker: LanguageChunker, Sendable {
       lineMap: lineMap,
       maxChunkLines: maxChunkLines,
       constructType: .file,
-      constructName: nil
+      constructName: nil,
+      metadata: ASTChunkMetadata()
     )
   }
 }

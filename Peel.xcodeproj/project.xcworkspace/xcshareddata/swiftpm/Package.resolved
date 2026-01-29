@@ -101,6 +101,15 @@
         }
       },
       {
+        "package": "swift-argument-parser",
+        "repositoryURL": "https://github.com/apple/swift-argument-parser",
+        "state": {
+          "branch": null,
+          "revision": "c5d11a805e765f52ba34ec7284bd4fcd6ba68615",
+          "version": "1.7.0"
+        }
+      },
+      {
         "package": "swift-bpe-tokenizer",
         "repositoryURL": "https://github.com/crunchybananas/swift-bpe-tokenizer",
         "state": {
@@ -206,6 +215,15 @@
           "branch": null,
           "revision": "50843cbb8551db836adec2290bb4bc6bac5c1865",
           "version": "0.9.0"
+        }
+      },
+      {
+        "package": "Yams",
+        "repositoryURL": "https://github.com/jpsim/Yams",
+        "state": {
+          "branch": null,
+          "revision": "3d6871d5b4a5cd519adf233fbb576e0a2af71c17",
+          "version": "5.4.0"
         }
       }
     ]

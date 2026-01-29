@@ -126,6 +126,9 @@ public struct RubyChunker: LanguageChunker, Sendable {
     let constructs = parseTopLevelConstructs(from: ast, sourceLines: lines)
     
     for construct in constructs {
+      // Extract metadata from source
+      let metadata = extractRubyMetadata(from: lines, construct: construct)
+      
       if construct.endLine - construct.startLine + 1 <= maxChunkLines {
         // Construct fits in one chunk
         let text = extractLines(from: lines, start: construct.startLine, end: construct.endLine)
@@ -135,16 +138,140 @@ public struct RubyChunker: LanguageChunker, Sendable {
           startLine: construct.startLine + 1, // Convert to 1-indexed
           endLine: construct.endLine + 1,
           text: text,
-          language: Self.language
+          language: Self.language,
+          metadata: metadata
         ))
       } else {
         // Split large construct by methods
-        let methodChunks = splitByMethods(construct: construct, ast: ast, lines: lines, maxChunkLines: maxChunkLines)
+        let methodChunks = splitByMethods(construct: construct, ast: ast, lines: lines, maxChunkLines: maxChunkLines, metadata: metadata)
         chunks.append(contentsOf: methodChunks)
       }
     }
     
     return chunks
+  }
+  
+  // MARK: - Ruby Metadata Extraction
+  
+  /// Extract Ruby-specific metadata from source lines
+  private func extractRubyMetadata(from lines: [String], construct: ParsedConstruct) -> ASTChunkMetadata {
+    var superclass: String? = nil
+    var mixins: [String] = []
+    var callbacks: [String] = []
+    var associations: [String] = []
+    var frameworks: [String] = []
+    
+    // Only extract metadata for classes/modules
+    guard construct.type == .classDecl || construct.type == .module else {
+      return ASTChunkMetadata()
+    }
+    
+    let startLine = construct.startLine
+    let endLine = min(construct.endLine, startLine + 50) // Only scan first 50 lines for metadata
+    
+    for lineIdx in startLine...endLine {
+      guard lineIdx < lines.count else { break }
+      let line = lines[lineIdx].trimmingCharacters(in: .whitespaces)
+      
+      // Extract superclass: class Foo < Bar
+      if lineIdx == startLine, let superclassName = extractSuperclass(from: line) {
+        superclass = superclassName
+        
+        // Detect Rails framework from common superclasses
+        let railsControllers = ["ApplicationController", "ActionController::Base", "ActionController::API"]
+        let railsModels = ["ApplicationRecord", "ActiveRecord::Base"]
+        let railsJobs = ["ApplicationJob", "ActiveJob::Base"]
+        let railsMailers = ["ApplicationMailer", "ActionMailer::Base"]
+        
+        if railsControllers.contains(superclassName) {
+          frameworks.append("Rails")
+          frameworks.append("ActionController")
+        } else if railsModels.contains(superclassName) {
+          frameworks.append("Rails")
+          frameworks.append("ActiveRecord")
+        } else if railsJobs.contains(superclassName) {
+          frameworks.append("Rails")
+          frameworks.append("ActiveJob")
+        } else if railsMailers.contains(superclassName) {
+          frameworks.append("Rails")
+          frameworks.append("ActionMailer")
+        }
+      }
+      
+      // Extract mixins: include, extend, prepend
+      if let mixin = extractMixin(from: line) {
+        mixins.append(mixin)
+      }
+      
+      // Extract Rails callbacks
+      if let callback = extractCallback(from: line) {
+        callbacks.append(callback)
+      }
+      
+      // Extract ActiveRecord associations
+      if let association = extractAssociation(from: line) {
+        associations.append(association)
+      }
+    }
+    
+    return ASTChunkMetadata(
+      superclass: superclass,
+      mixins: mixins,
+      callbacks: callbacks,
+      associations: associations,
+      frameworks: Array(Set(frameworks)).sorted()
+    )
+  }
+  
+  /// Extract superclass from class declaration line
+  private func extractSuperclass(from line: String) -> String? {
+    // Match: class ClassName < SuperClassName
+    let pattern = #"class\s+\w+\s*<\s*([A-Z][\w:]*)"#
+    guard let regex = try? NSRegularExpression(pattern: pattern),
+          let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+          let superclassRange = Range(match.range(at: 1), in: line) else {
+      return nil
+    }
+    return String(line[superclassRange])
+  }
+  
+  /// Extract mixin from include/extend/prepend statements
+  private func extractMixin(from line: String) -> String? {
+    // Match: include ModuleName or extend ModuleName or prepend ModuleName
+    let pattern = #"^\s*(include|extend|prepend)\s+([A-Z][\w:]*)"#
+    guard let regex = try? NSRegularExpression(pattern: pattern),
+          let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+          let moduleRange = Range(match.range(at: 2), in: line) else {
+      return nil
+    }
+    return String(line[moduleRange])
+  }
+  
+  /// Extract Rails callback from before_action, after_create, etc.
+  private func extractCallback(from line: String) -> String? {
+    // Common Rails callbacks
+    let callbackPattern = #"^\s*(before_action|after_action|around_action|before_create|after_create|before_save|after_save|before_update|after_update|before_destroy|after_destroy|before_validation|after_validation|after_commit|after_rollback|after_initialize|after_find)\b"#
+    guard let regex = try? NSRegularExpression(pattern: callbackPattern),
+          let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+          let callbackRange = Range(match.range(at: 1), in: line) else {
+      return nil
+    }
+    return String(line[callbackRange])
+  }
+  
+  /// Extract ActiveRecord association
+  private func extractAssociation(from line: String) -> String? {
+    // Match: has_many :items, belongs_to :user, has_one :profile, has_and_belongs_to_many :tags
+    let pattern = #"^\s*(has_many|belongs_to|has_one|has_and_belongs_to_many)\s+:(\w+)"#
+    guard let regex = try? NSRegularExpression(pattern: pattern),
+          let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+          let typeRange = Range(match.range(at: 1), in: line),
+          let nameRange = Range(match.range(at: 2), in: line) else {
+      return nil
+    }
+    let assocType = String(line[typeRange])
+    let assocName = String(line[nameRange])
+    return "\(assocType) :\(assocName)"
   }
   
   private struct ParsedConstruct {
@@ -241,7 +368,7 @@ public struct RubyChunker: LanguageChunker, Sendable {
     }
   }
   
-  private func splitByMethods(construct: ParsedConstruct, ast: String, lines: [String], maxChunkLines: Int) -> [ASTChunk] {
+  private func splitByMethods(construct: ParsedConstruct, ast: String, lines: [String], maxChunkLines: Int, metadata: ASTChunkMetadata) -> [ASTChunk] {
     // For now, just split into fixed-size chunks
     // Full implementation would parse method boundaries from AST
     var chunks: [ASTChunk] = []
@@ -257,7 +384,8 @@ public struct RubyChunker: LanguageChunker, Sendable {
         startLine: currentStart + 1,
         endLine: currentEnd + 1,
         text: text,
-        language: Self.language
+        language: Self.language,
+        metadata: metadata
       ))
       
       currentStart = currentEnd + 1

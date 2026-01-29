@@ -166,15 +166,17 @@ public final class JSCoreTypeScriptChunker: @unchecked Sendable {
         return fallbackChunk(source: source)
       }
       
-      // Convert to ASTChunk
+      // Convert to ASTChunk with metadata
       return jsChunks.map { js in
-        ASTChunk(
+        let metadata = convertJSMetadata(js.metadata, language: language)
+        return ASTChunk(
           constructType: mapConstructType(js.constructType),
           constructName: js.constructName,
           startLine: js.startLine,
           endLine: js.endLine,
           text: js.text,
-          language: language
+          language: language,
+          metadata: metadata
         )
       }
       
@@ -193,6 +195,18 @@ public final class JSCoreTypeScriptChunker: @unchecked Sendable {
     let constructType: String
     let constructName: String?
     let tokenCount: Int
+    let metadata: JSChunkMetadata?
+  }
+  
+  private struct JSChunkMetadata: Codable {
+    let decorators: [String]?
+    let protocols: [String]?
+    let imports: [String]?
+    let superclass: String?
+    let usesEmberConcurrency: Bool?
+    let hasTemplate: Bool?
+    let tioUiImports: [String]?
+    let frameworks: [String]?
   }
   
   private struct JSErrorResponse: Codable {
@@ -232,6 +246,24 @@ public final class JSCoreTypeScriptChunker: @unchecked Sendable {
     default:
       return .unknown
     }
+  }
+  
+  /// Convert JS metadata to ASTChunkMetadata
+  private func convertJSMetadata(_ jsMetadata: JSChunkMetadata?, language: String) -> ASTChunkMetadata {
+    guard let js = jsMetadata else {
+      return ASTChunkMetadata()
+    }
+    
+    return ASTChunkMetadata(
+      decorators: js.decorators ?? [],
+      protocols: js.protocols ?? [],
+      imports: js.imports ?? [],
+      superclass: js.superclass,
+      usesEmberConcurrency: js.usesEmberConcurrency ?? false,
+      hasTemplate: js.hasTemplate ?? false,
+      tioUiImports: js.tioUiImports ?? [],
+      frameworks: js.frameworks ?? []
+    )
   }
   
   /// Escape source code for JavaScript string literal
