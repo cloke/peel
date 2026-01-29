@@ -177,7 +177,10 @@ public final class MCPUIAutomationStore: MCPUIAutomationProviding {
         "agents.localRag.skills.tags",
         "agents.localRag.skills.priority",
         "agents.localRag.skills.active",
-        "agents.localRag.skills.body"
+        "agents.localRag.skills.body",
+        "agents.localRag.sync.worker",
+        "agents.localRag.sync.pull",
+        "agents.localRag.sync.push"
       ]
     case "github":
       return [

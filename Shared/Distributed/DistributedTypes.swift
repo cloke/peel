@@ -410,6 +410,92 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
 
 // MARK: - Worker Status
 
+// MARK: - RAG Artifact Sync
+
+public enum RAGArtifactSyncDirection: String, Codable, Sendable {
+  case push
+  case pull
+}
+
+public enum RAGArtifactTransferRole: String, Sendable {
+  case sender
+  case receiver
+}
+
+public enum RAGArtifactTransferStatus: String, Sendable {
+  case queued
+  case preparing
+  case transferring
+  case applying
+  case complete
+  case failed
+}
+
+public struct RAGArtifactFileInfo: Codable, Sendable {
+  public let relativePath: String
+  public let sizeBytes: Int
+  public let sha256: String
+  public let modifiedAt: Date
+}
+
+public struct RAGArtifactRepoSnapshot: Codable, Sendable {
+  public let repoId: String
+  public let name: String
+  public let rootPath: String
+  public let remoteURL: String?
+  public let headSHA: String?
+  public let isDirty: Bool
+  public let lastCommitAt: Date?
+  public let lastIndexedAt: Date?
+
+  public var fingerprint: String {
+    let sha = headSHA ?? "unknown"
+    return isDirty ? "\(sha)-dirty" : sha
+  }
+}
+
+public struct RAGArtifactManifest: Codable, Sendable {
+  public let formatVersion: Int
+  public let version: String
+  public let createdAt: Date
+  public let schemaVersion: Int
+  public let totalBytes: Int
+  public let embeddingCacheCount: Int
+  public let lastIndexedAt: Date?
+  public let files: [RAGArtifactFileInfo]
+  public let repos: [RAGArtifactRepoSnapshot]
+}
+
+public struct RAGArtifactStatus: Codable, Sendable {
+  public let manifestVersion: String
+  public let totalBytes: Int
+  public let lastSyncedAt: Date?
+  public let lastSyncDirection: RAGArtifactSyncDirection?
+  public let repoCount: Int
+  public let lastIndexedAt: Date?
+  public let staleReason: String?
+}
+
+public struct RAGArtifactTransferState: Identifiable, Sendable {
+  public let id: UUID
+  public let peerId: String
+  public let peerName: String
+  public let direction: RAGArtifactSyncDirection
+  public let role: RAGArtifactTransferRole
+  public var status: RAGArtifactTransferStatus
+  public var totalBytes: Int
+  public var transferredBytes: Int
+  public var startedAt: Date
+  public var completedAt: Date?
+  public var errorMessage: String?
+  public var manifestVersion: String?
+
+  public var progress: Double {
+    guard totalBytes > 0 else { return status == .complete ? 1.0 : 0 }
+    return min(1, Double(transferredBytes) / Double(totalBytes))
+  }
+}
+
 /// Current status of a worker node
 public struct WorkerStatus: Codable, Sendable {
   public let deviceId: String
@@ -419,6 +505,7 @@ public struct WorkerStatus: Codable, Sendable {
   public let uptimeSeconds: TimeInterval
   public let tasksCompleted: Int
   public let tasksFailed: Int
+  public let ragArtifacts: RAGArtifactStatus?
   
   public enum WorkerState: String, Codable, Sendable {
     case idle
@@ -434,7 +521,8 @@ public struct WorkerStatus: Codable, Sendable {
     lastHeartbeat: Date = Date(),
     uptimeSeconds: TimeInterval = 0,
     tasksCompleted: Int = 0,
-    tasksFailed: Int = 0
+    tasksFailed: Int = 0,
+    ragArtifacts: RAGArtifactStatus? = nil
   ) {
     self.deviceId = deviceId
     self.state = state
@@ -443,6 +531,7 @@ public struct WorkerStatus: Codable, Sendable {
     self.uptimeSeconds = uptimeSeconds
     self.tasksCompleted = tasksCompleted
     self.tasksFailed = tasksFailed
+    self.ragArtifacts = ragArtifacts
   }
 }
 
@@ -505,6 +594,11 @@ public enum PeerMessage: Codable, Sendable {
   case taskCancel(taskId: UUID)
   case directCommand(id: UUID, command: String, args: [String], workingDirectory: String?)
   case directCommandResult(id: UUID, exitCode: Int32, output: String, error: String?)
+  case ragArtifactsRequest(id: UUID, direction: RAGArtifactSyncDirection)
+  case ragArtifactsManifest(id: UUID, manifest: RAGArtifactManifest)
+  case ragArtifactsChunk(id: UUID, index: Int, total: Int, data: String)
+  case ragArtifactsComplete(id: UUID)
+  case ragArtifactsError(id: UUID, message: String)
   case goodbye
   
   /// Unique identifier for message type (for logging)
@@ -522,6 +616,11 @@ public enum PeerMessage: Codable, Sendable {
     case .taskCancel: return "taskCancel"
     case .directCommand: return "directCommand"
     case .directCommandResult: return "directCommandResult"
+    case .ragArtifactsRequest: return "ragArtifactsRequest"
+    case .ragArtifactsManifest: return "ragArtifactsManifest"
+    case .ragArtifactsChunk: return "ragArtifactsChunk"
+    case .ragArtifactsComplete: return "ragArtifactsComplete"
+    case .ragArtifactsError: return "ragArtifactsError"
     case .goodbye: return "goodbye"
     }
   }

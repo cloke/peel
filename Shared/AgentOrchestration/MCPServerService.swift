@@ -402,6 +402,8 @@ public final class MCPServerService {
   private(set) var lastRagIndexAt: Date?
   private(set) var lastRagRefreshAt: Date?
   private(set) var lastRagError: String?
+  private(set) var ragArtifactStatus: RAGArtifactStatus?
+  private(set) var ragArtifactSyncError: String?
   private(set) var lastRagSearchQuery: String?
   private(set) var lastRagSearchMode: RAGSearchMode?
   private(set) var lastRagSearchRepoPath: String?
@@ -579,6 +581,7 @@ public final class MCPServerService {
     self.chainToolsHandler?.delegate = self
     self.swarmToolsHandler.delegate = self
     self.repoToolsHandler.delegate = self
+    SwarmCoordinator.shared.ragSyncDelegate = self
 
     // If running in worker mode, inject the chain executor into the already-running SwarmCoordinator
     // This enables workers to actually execute chains instead of returning mock results
@@ -595,6 +598,8 @@ public final class MCPServerService {
     if isEnabled {
       start()
     }
+
+    Task { await refreshRagArtifactStatus() }
   }
   
   /// Configure the SwarmCoordinator with a chain executor for worker mode
@@ -756,6 +761,41 @@ public final class MCPServerService {
       lastRagError = error.localizedDescription
       lastRagRefreshAt = Date()
     }
+    await refreshRagArtifactStatus()
+  }
+
+  private func refreshRagArtifactStatus() async {
+    guard let status = ragStatus else {
+      ragArtifactStatus = nil
+      SwarmCoordinator.shared.updateLocalRagArtifactStatus(nil)
+      return
+    }
+
+    let stats = try? await localRagStore.stats()
+    let repos = (try? await localRagStore.listRepos()) ?? []
+    let manifest = await LocalRAGArtifacts.buildManifest(status: status, stats: stats, repos: repos)
+    let lastSyncedAt = ragArtifactStatus?.lastSyncedAt
+    let lastSyncDirection = ragArtifactStatus?.lastSyncDirection
+    await updateRagArtifactStatus(from: manifest, lastSyncedAt: lastSyncedAt, direction: lastSyncDirection)
+  }
+
+  private func updateRagArtifactStatus(
+    from manifest: RAGArtifactManifest,
+    lastSyncedAt: Date?,
+    direction: RAGArtifactSyncDirection?
+  ) async {
+    let staleInfo = await LocalRAGArtifacts.stalenessInfo(for: manifest)
+    let status = RAGArtifactStatus(
+      manifestVersion: manifest.version,
+      totalBytes: manifest.totalBytes,
+      lastSyncedAt: lastSyncedAt,
+      lastSyncDirection: direction,
+      repoCount: manifest.repos.count,
+      lastIndexedAt: manifest.lastIndexedAt,
+      staleReason: staleInfo.1
+    )
+    ragArtifactStatus = status
+    SwarmCoordinator.shared.updateLocalRagArtifactStatus(status)
   }
 
   /// Delete a repository from the RAG index
@@ -5043,6 +5083,30 @@ extension MCPServerService: RAGToolsHandlerDelegate {
   
   func logWarning(_ message: String, metadata: [String: String]) async {
     await telemetryProvider.warning(message, metadata: metadata)
+  }
+}
+
+// MARK: - RAGArtifactSyncDelegate
+
+extension MCPServerService: RAGArtifactSyncDelegate {
+  public func createRagArtifactBundle() async throws -> LocalRAGArtifactBundle {
+    let status = await localRagStore.status()
+    let stats = try? await localRagStore.stats()
+    let repos = (try? await localRagStore.listRepos()) ?? []
+    return try await LocalRAGArtifacts.createBundle(status: status, stats: stats, repos: repos)
+  }
+
+  public func applyRagArtifactBundle(
+    at url: URL,
+    manifest: RAGArtifactManifest,
+    from peerId: String,
+    direction: RAGArtifactSyncDirection
+  ) async throws {
+    ragArtifactSyncError = nil
+    await localRagStore.closeDatabase()
+    try LocalRAGArtifacts.applyBundle(bundleURL: url, manifest: manifest)
+    await refreshRagSummary()
+    await updateRagArtifactStatus(from: manifest, lastSyncedAt: Date(), direction: direction)
   }
 }
 
