@@ -1215,6 +1215,7 @@ public final class MCPServerService {
   public struct RunOverrides {
     public var enableReviewLoop: Bool? = nil
     public var pauseOnReview: Bool? = nil
+    public var enablePrePlanner: Bool? = nil  // Issue #133
     public var allowPlannerModelSelection: Bool = false
     public var allowImplementerModelOverride: Bool = false
     public var allowPlannerImplementerScaling: Bool = false
@@ -1266,6 +1267,9 @@ public final class MCPServerService {
     }
     if let pauseOnReview = overrides.pauseOnReview {
       arguments["pauseOnReview"] = pauseOnReview
+    }
+    if let enablePrePlanner = overrides.enablePrePlanner {
+      arguments["enablePrePlanner"] = enablePrePlanner
     }
     arguments["allowPlannerModelSelection"] = overrides.allowPlannerModelSelection
     arguments["allowImplementerModelOverride"] = overrides.allowImplementerModelOverride
@@ -2119,6 +2123,7 @@ public final class MCPServerService {
     let workingDirectory = arguments["workingDirectory"] as? String
     let enableReviewLoop = arguments["enableReviewLoop"] as? Bool
     let pauseOnReview = arguments["pauseOnReview"] as? Bool
+    let enablePrePlanner = arguments["enablePrePlanner"] as? Bool  // Issue #133
     let allowPlannerModelSelection = arguments["allowPlannerModelSelection"] as? Bool ?? false
     let allowImplementerModelOverride = arguments["allowImplementerModelOverride"] as? Bool ?? false
     let allowPlannerImplementerScaling = arguments["allowPlannerImplementerScaling"] as? Bool ?? false
@@ -2191,6 +2196,9 @@ public final class MCPServerService {
     }
     if let pauseOnReview {
       chain.pauseOnReview = pauseOnReview
+    }
+    if let enablePrePlanner {
+      chain.enablePrePlanner = enablePrePlanner
     }
     if let repoPath = chainWorkingDirectory,
        let guidance = await buildRepoGuidance(repoPath: repoPath) {
@@ -3593,6 +3601,7 @@ public final class MCPServerService {
             "workingDirectory": ["type": "string"],
             "enableReviewLoop": ["type": "boolean"],
             "pauseOnReview": ["type": "boolean"],
+            "enablePrePlanner": ["type": "boolean", "description": "Enable RAG-grounded pre-planner step before main planner runs"],
             "allowPlannerModelSelection": ["type": "boolean"],
             "allowImplementerModelOverride": ["type": "boolean"],
             "allowPlannerImplementerScaling": ["type": "boolean"],
@@ -3677,6 +3686,7 @@ public final class MCPServerService {
                   "workingDirectory": ["type": "string"],
                   "enableReviewLoop": ["type": "boolean"],
                   "pauseOnReview": ["type": "boolean"],
+                  "enablePrePlanner": ["type": "boolean"],
                   "allowPlannerModelSelection": ["type": "boolean"],
                   "allowImplementerModelOverride": ["type": "boolean"],
                   "allowPlannerImplementerScaling": ["type": "boolean"],
