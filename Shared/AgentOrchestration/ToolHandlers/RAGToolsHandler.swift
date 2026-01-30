@@ -127,6 +127,19 @@ protocol RAGToolsHandlerDelegate: MCPToolHandlerDelegate {
   
   /// Log a telemetry warning
   func logWarning(_ message: String, metadata: [String: String]) async
+  
+  // MARK: - AI Analysis (#198)
+  
+  #if os(macOS)
+  /// Analyze un-analyzed chunks using MLX LLM
+  func analyzeRagChunks(repoPath: String?, limit: Int, progress: (@Sendable (Int, Int) -> Void)?) async throws -> Int
+  
+  /// Get count of un-analyzed chunks
+  func getUnanalyzedChunkCount(repoPath: String?) async throws -> Int
+  
+  /// Get count of analyzed chunks
+  func getAnalyzedChunkCount(repoPath: String?) async throws -> Int
+  #endif
 }
 
 // MARK: - RAG Tools Handler
@@ -168,7 +181,9 @@ final class RAGToolsHandler: MCPToolHandler {
     "rag.dependents",      // Issue #176: What depends on a file
     "rag.structural",      // Issue #174: Query by file structure (lines, methods, size)
     "rag.similar",         // Issue #175: Find semantically similar code
-    "rag.reranker.config"  // Issue #128: HF reranker configuration
+    "rag.reranker.config", // Issue #128: HF reranker configuration
+    "rag.analyze",         // Issue #198: Analyze chunks with MLX LLM (macOS only)
+    "rag.analyze.status",  // Issue #198: Get AI analysis status (macOS only)
   ]
   
   init() {}
@@ -219,6 +234,18 @@ final class RAGToolsHandler: MCPToolHandler {
       return await handleSimilar(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.reranker.config":
       return handleRerankerConfig(id: id, arguments: arguments)
+    case "rag.analyze":
+      #if os(macOS)
+      return await handleAnalyze(id: id, arguments: arguments, delegate: ragDelegate)
+      #else
+      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "rag.analyze is only available on macOS"))
+      #endif
+    case "rag.analyze.status":
+      #if os(macOS)
+      return await handleAnalyzeStatus(id: id, arguments: arguments, delegate: ragDelegate)
+      #else
+      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "rag.analyze.status is only available on macOS"))
+      #endif
     default:
       // For tools not yet extracted, return method not found
       // The MCPServerService will handle these until full extraction is complete
@@ -963,6 +990,83 @@ final class RAGToolsHandler: MCPToolHandler {
       return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "Unknown action: \(action). Use 'get', 'set', or 'test'"))
     }
   }
+  
+  // MARK: - AI Analysis (#198)
+  
+  #if os(macOS)
+  private func handleAnalyze(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
+    let repoPath = optionalString("repoPath", from: arguments)
+    let limit = arguments["limit"] as? Int ?? 100
+    
+    do {
+      // Check if there are chunks to analyze
+      let unanalyzedCount = try await delegate.getUnanalyzedChunkCount(repoPath: repoPath)
+      if unanalyzedCount == 0 {
+        return (200, makeResult(id: id, result: [
+          "message": "No un-analyzed chunks found",
+          "chunksAnalyzed": 0,
+          "unanalyzedRemaining": 0
+        ]))
+      }
+      
+      // Get recommended model info
+      let recommendedTier = MLXCodeAnalyzerFactory.recommendedTierDescription()
+      
+      // Run analysis
+      let startTime = Date()
+      let analyzedCount = try await delegate.analyzeRagChunks(repoPath: repoPath, limit: limit) { current, total in
+        // Progress callback - could be used for streaming updates
+        print("[RAG] Analyzing chunk \(current)/\(total)")
+      }
+      let durationMs = Int(Date().timeIntervalSince(startTime) * 1000)
+      
+      // Get updated counts
+      let newUnanalyzedCount = try await delegate.getUnanalyzedChunkCount(repoPath: repoPath)
+      let totalAnalyzed = try await delegate.getAnalyzedChunkCount(repoPath: repoPath)
+      
+      return (200, makeResult(id: id, result: [
+        "message": "AI analysis complete",
+        "chunksAnalyzed": analyzedCount,
+        "durationMs": durationMs,
+        "unanalyzedRemaining": newUnanalyzedCount,
+        "totalAnalyzed": totalAnalyzed,
+        "modelRecommendation": recommendedTier
+      ]))
+    } catch {
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
+    }
+  }
+  
+  private func handleAnalyzeStatus(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
+    let repoPath = optionalString("repoPath", from: arguments)
+    
+    do {
+      let analyzedCount = try await delegate.getAnalyzedChunkCount(repoPath: repoPath)
+      let unanalyzedCount = try await delegate.getUnanalyzedChunkCount(repoPath: repoPath)
+      let totalChunks = analyzedCount + unanalyzedCount
+      let percentAnalyzed = totalChunks > 0 ? Double(analyzedCount) / Double(totalChunks) * 100 : 0
+      
+      // Get recommended model info
+      let recommendedTier = MLXCodeAnalyzerFactory.recommendedTierDescription()
+      
+      var result: [String: Any] = [
+        "analyzedChunks": analyzedCount,
+        "unanalyzedChunks": unanalyzedCount,
+        "totalChunks": totalChunks,
+        "percentAnalyzed": String(format: "%.1f", percentAnalyzed),
+        "modelRecommendation": recommendedTier
+      ]
+      
+      if let repoPath {
+        result["repoPath"] = repoPath
+      }
+      
+      return (200, makeResult(id: id, result: result))
+    } catch {
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
+    }
+  }
+  #endif
   
   // MARK: - Helpers
   
