@@ -21,23 +21,22 @@ audience:
 
 ---
 
-## Quick Stats (Jan 26, 2026)
+## Quick Stats (Jan 30, 2026)
 
 | Metric | Count |
 |--------|-------|
-| **Closed** | 74 ✅ |
-| **Open - Phase 1C** | 18 |
+| **Closed** | 75 ✅ |
 | **Open - Phase 2** | 5 |
-| **Open - Phase 3** | 9 |
-| **Open - Distributed Tasks** | 16 |
-| **Open - Backlog** | 17 |
-| **Total Open** | 61 |
+| **Open - Phase 3 (Code Intelligence)** | 10 |
+| **Open - Swarm/Distributed** | 21 |
+| **Open - Backlog** | 23 |
+| **Total Open** | 59 |
 
 ### Recent Changes
-- ✅ **#24 MLX integration** - Complete! Native Swift embeddings working
-- 🔄 **#128** - Updated: HF for reranking (not embeddings, MLX handles those)
-- 🔄 **#133** - Updated: Pre-planner now uses MLX-backed RAG
-- 🆕 **#163** - Qwen3-4bit GPU crash workaround (tracking MLX-swift fix)
+- ✅ **#188** - Closed as duplicate of #189 (Leader Election)
+- ✅ **#167** - RAG metadata extraction complete (imports, protocols, decorators)
+- 🔄 **Phase 3 reorganized** - Now focused on Code Intelligence (#205)
+- 🔄 **RAG issues consolidated** - #176, #174, #175, #198 linked to #205
 
 ---
 
@@ -115,11 +114,67 @@ Can be done in any order, low dependencies.
 
 ---
 
-## Phase 3: Full Isolation & Scale
+## Phase 3: Code Intelligence System (RAG/Graph)
 
-**Goal**: VMs for full isolation. Multi-machine scale. Voice/vision.
+**Goal**: Build a 3-layer Code Intelligence System that enables large refactors and cross-language reasoning.
 
-**Prerequisite**: Phase 2 local AI working.
+**Tracking Issue**: [#205](https://github.com/cloke/peel/issues/205) - Code Intelligence System
+
+**Prerequisite**: Phase 2 MLX integration complete (✅).
+
+### Layer 1: Raw Facts (Classic RAG) ✅ COMPLETE
+- ✅ AST-based chunking (Swift, Ruby, TypeScript/JS)
+- ✅ MLX embeddings
+- ✅ Vector search + text search
+- ✅ Basic metadata extraction (imports, decorators, frameworks)
+- ✅ Module path + feature tag facets
+
+### Layer 2: Code Intelligence Graph (FOCUS NOW)
+
+| Order | # | Title | Est | Deps | Status |
+|-------|---|-------|-----|------|--------|
+| 1 | [#176](https://github.com/cloke/peel/issues/176) | Dependency graph indexing | 6h | None | 🟡 **START HERE** |
+| 2 | [#174](https://github.com/cloke/peel/issues/174) | Structural queries (file size, methods) | 3h | #176 | ⚪ Blocked |
+| 3 | [#175](https://github.com/cloke/peel/issues/175) | Duplicate/similar code detection | 4h | None | 🟡 Ready |
+| 4 | [#179](https://github.com/cloke/peel/issues/179) | tree-sitter-swift evaluation | 4h | None | 🟡 Ready (stretch) |
+
+### Layer 3: Semantic Memory
+
+| Order | # | Title | Est | Deps | Status |
+|-------|---|-------|-----|------|--------|
+| 1 | [#198](https://github.com/cloke/peel/issues/198) | MLX-first code analyzer | 6h | Layer 2 | ⚪ Blocked |
+| 2 | [#128](https://github.com/cloke/peel/issues/128) | HuggingFace reranking | 4h | None | 🟡 Ready |
+| 3 | [#133](https://github.com/cloke/peel/issues/133) | Pre-planner using RAG | 4h | #128 | ⚪ Blocked |
+
+### Infrastructure & Polish
+
+| Order | # | Title | Est | Deps | Status |
+|-------|---|-------|-----|------|--------|
+| 1 | [#163](https://github.com/cloke/peel/issues/163) | Qwen3 GPU crash workaround | 2h | None | 🔴 Bug (low priority) |
+| 2 | [#168](https://github.com/cloke/peel/issues/168) | Nightly shared RAG index sync | 4h | Layer 2 | ⚪ Blocked |
+| 3 | [#206](https://github.com/cloke/peel/issues/206) | Peel sync for RAG artifacts | 4h | #168 | ⚪ Blocked |
+
+**Phase 3 Total**: ~41h (~5 days focused work)
+
+### Critical Path for Phase 3
+
+```
+#176 (Dependency Graph) ──► #174 (Structural Queries) ──► #198 (MLX Analyzer)
+                                                              │
+#175 (Similar Code) ─────────────────────────────────────────┘
+                                                              │
+#128 (HF Reranking) ──► #133 (Pre-planner) ──────────────────┘
+```
+
+**Recommended order**: #176 → #175 → #174 → #128 → #133 → #198
+
+---
+
+## Phase 3B: Isolation & Voice (Stretch)
+
+**Goal**: VMs for full isolation. Voice/vision input.
+
+**Note**: Deprioritized to focus on Code Intelligence. Can run in parallel if time permits.
 
 ### Track A: VM Isolation
 
@@ -144,7 +199,7 @@ Can be done in any order, low dependencies.
 | 2 | [#44](https://github.com/cloke/peel/issues/44) | Multi-agent quorum for destructive actions | 4h | #43 | ⚪ Blocked |
 | 3 | [#37](https://github.com/cloke/peel/issues/37) | Cross-machine distributed actors | 8h | #106 | ⚪ Blocked |
 
-**Phase 3 Total**: ~48h (~6 days focused work)
+**Phase 3B Total**: ~48h (~6 days focused work)
 
 ---
 
