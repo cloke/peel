@@ -3214,6 +3214,43 @@ public final class MCPServerService {
         isMutating: true
       ),
       ToolDefinition(
+        name: "rag.analyze",
+        description: """
+        Analyze indexed chunks using local MLX LLM to generate semantic summaries and tags.
+        This runs the Qwen2.5-Coder model (hardware-adaptive size selection) on un-analyzed chunks.
+        Analysis improves RAG search quality by adding semantic context. macOS only.
+        
+        The model tier is automatically selected based on available RAM:
+        - tiny (8-12GB): Qwen2.5-Coder-0.5B
+        - small (12-24GB): Qwen2.5-Coder-1.5B (default for M3 18GB)
+        - medium (24-48GB): Qwen2.5-Coder-3B
+        - large (48GB+): Qwen2.5-Coder-7B (best for Mac Studio)
+        
+        Results sync via swarm, so Mac Studio can generate high-quality analysis for the team.
+        """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": ["type": "string", "description": "Filter to specific repo (optional)"],
+            "limit": ["type": "integer", "description": "Max chunks to analyze (default 100)", "default": 100]
+          ]
+        ],
+        category: .rag,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "rag.analyze.status",
+        description: "Get AI analysis status - counts of analyzed vs un-analyzed chunks (macOS only)",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": ["type": "string", "description": "Filter to specific repo (optional)"]
+          ]
+        ],
+        category: .rag,
+        isMutating: false
+      ),
+      ToolDefinition(
         name: "rag.search",
         description: """
         Search indexed code content. Returns matching chunks with metadata.
@@ -5362,6 +5399,22 @@ extension MCPServerService: RAGToolsHandlerDelegate {
   func logWarning(_ message: String, metadata: [String: String]) async {
     await telemetryProvider.warning(message, metadata: metadata)
   }
+  
+  // MARK: - AI Analysis (#198)
+  
+  #if os(macOS)
+  func analyzeRagChunks(repoPath: String?, limit: Int, progress: (@Sendable (Int, Int) -> Void)?) async throws -> Int {
+    try await localRagStore.analyzeChunks(repoPath: repoPath, limit: limit, progress: progress)
+  }
+  
+  func getUnanalyzedChunkCount(repoPath: String?) async throws -> Int {
+    try await localRagStore.getUnanalyzedChunkCount(repoPath: repoPath)
+  }
+  
+  func getAnalyzedChunkCount(repoPath: String?) async throws -> Int {
+    try await localRagStore.getAnalyzedChunkCount(repoPath: repoPath)
+  }
+  #endif
 }
 
 // MARK: - RAGArtifactSyncDelegate

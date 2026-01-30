@@ -90,6 +90,10 @@ struct LocalRAGSearchResult: Sendable {
   let modulePath: String?       // e.g., "Shared/Services", "Local Packages/Git"
   let featureTags: [String]     // e.g., ["rag", "indexing"], derived from path/metadata
   
+  // AI analysis results (schema v7+)
+  let aiSummary: String?        // AI-generated summary of this chunk
+  let aiTags: [String]          // AI-generated semantic tags
+  
   /// Number of lines in this chunk
   var lineCount: Int { endLine - startLine + 1 }
 }
@@ -1916,7 +1920,8 @@ actor LocalRAGStore {
 
     let sqlBase = """
     SELECT repos.root_path || '/' || files.path, chunks.start_line, chunks.end_line, chunks.text,
-           chunks.construct_type, chunks.construct_name, files.language, files.module_path, files.feature_tags
+           chunks.construct_type, chunks.construct_name, files.language, files.module_path, files.feature_tags,
+           chunks.ai_summary, chunks.ai_tags
     FROM chunks
     JOIN files ON files.id = chunks.file_id
     JOIN repos ON repos.id = files.repo_id
@@ -2267,6 +2272,176 @@ actor LocalRAGStore {
   func generateEmbeddings(for texts: [String]) async throws -> [[Float]] {
     try await embeddingProvider.embed(texts: texts)
   }
+  
+  // MARK: - AI Analysis (#198)
+  
+  #if os(macOS)
+  /// Analyze un-analyzed chunks using MLX code analyzer.
+  /// Returns count of chunks analyzed.
+  func analyzeChunks(
+    repoPath: String? = nil,
+    limit: Int = 100,
+    progress: (@Sendable (Int, Int) -> Void)? = nil
+  ) async throws -> Int {
+    try openIfNeeded()
+    
+    // Get un-analyzed chunks
+    let sql: String
+    if let repoPath {
+      sql = """
+      SELECT c.id, c.text, c.construct_type, c.construct_name, f.language
+      FROM chunks c
+      JOIN files f ON c.file_id = f.id
+      JOIN repos r ON f.repo_id = r.id
+      WHERE c.ai_summary IS NULL AND r.root_path = ?
+      LIMIT ?
+      """
+    } else {
+      sql = """
+      SELECT c.id, c.text, c.construct_type, c.construct_name, f.language
+      FROM chunks c
+      JOIN files f ON c.file_id = f.id
+      WHERE c.ai_summary IS NULL
+      LIMIT ?
+      """
+    }
+    
+    guard let db else { throw LocalRAGError.sqlite("Database not initialized") }
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let statement else {
+      throw LocalRAGError.sqlite(String(cString: sqlite3_errmsg(db)))
+    }
+    defer { sqlite3_finalize(statement) }
+    
+    var bindIndex: Int32 = 1
+    if let repoPath {
+      bindText(statement, bindIndex, repoPath)
+      bindIndex += 1
+    }
+    sqlite3_bind_int(statement, bindIndex, Int32(limit))
+    
+    // Collect chunks to analyze
+    struct ChunkToAnalyze {
+      let id: String
+      let text: String
+      let constructType: String?
+      let constructName: String?
+      let language: String?
+    }
+    
+    var chunksToAnalyze: [ChunkToAnalyze] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+      let id = String(cString: sqlite3_column_text(statement, 0))
+      let text = String(cString: sqlite3_column_text(statement, 1))
+      let constructType = sqlite3_column_text(statement, 2).map { String(cString: $0) }
+      let constructName = sqlite3_column_text(statement, 3).map { String(cString: $0) }
+      let language = sqlite3_column_text(statement, 4).map { String(cString: $0) }
+      chunksToAnalyze.append(ChunkToAnalyze(
+        id: id, text: text, constructType: constructType, 
+        constructName: constructName, language: language
+      ))
+    }
+    
+    guard !chunksToAnalyze.isEmpty else { return 0 }
+    
+    // Create analyzer (uses hardware-adaptive model selection)
+    let analyzer = await MLXCodeAnalyzerFactory.makeAnalyzer()
+    let now = dateFormatter.string(from: Date())
+    var analyzedCount = 0
+    
+    for (index, chunk) in chunksToAnalyze.enumerated() {
+      progress?(index + 1, chunksToAnalyze.count)
+      
+      do {
+        let result = try await analyzer.analyze(
+          code: chunk.text,
+          language: chunk.language,
+          constructType: chunk.constructType,
+          constructName: chunk.constructName
+        )
+        
+        // Store the analysis result
+        let tagsJson = try? JSONEncoder().encode(result.tags)
+        let tagsString = tagsJson.flatMap { String(data: $0, encoding: .utf8) }
+        
+        try updateChunkAnalysis(
+          chunkId: chunk.id,
+          aiSummary: result.summary,
+          aiTags: tagsString,
+          analyzedAt: now,
+          analyzerModel: result.model
+        )
+        analyzedCount += 1
+      } catch {
+        print("[RAG] Chunk analysis failed for \(chunk.id): \(error)")
+        // Continue with next chunk
+      }
+    }
+    
+    // Unload the model to free memory
+    await analyzer.unload()
+    
+    return analyzedCount
+  }
+  
+  /// Update chunk with AI analysis results
+  private func updateChunkAnalysis(
+    chunkId: String,
+    aiSummary: String,
+    aiTags: String?,
+    analyzedAt: String,
+    analyzerModel: String
+  ) throws {
+    let sql = """
+    UPDATE chunks SET ai_summary = ?, ai_tags = ?, analyzed_at = ?, analyzer_model = ?
+    WHERE id = ?
+    """
+    try execute(sql: sql) { statement in
+      bindText(statement, 1, aiSummary)
+      if let aiTags {
+        bindText(statement, 2, aiTags)
+      } else {
+        sqlite3_bind_null(statement, 2)
+      }
+      bindText(statement, 3, analyzedAt)
+      bindText(statement, 4, analyzerModel)
+      bindText(statement, 5, chunkId)
+    }
+  }
+  
+  /// Get count of un-analyzed chunks
+  func getUnanalyzedChunkCount(repoPath: String? = nil) throws -> Int {
+    try openIfNeeded()
+    
+    if let repoPath {
+      return try queryInt("""
+        SELECT COUNT(*) FROM chunks c
+        JOIN files f ON c.file_id = f.id
+        JOIN repos r ON f.repo_id = r.id
+        WHERE c.ai_summary IS NULL AND r.root_path = ?
+        """, bind: { stmt in bindText(stmt, 1, repoPath) })
+    } else {
+      return try queryInt("SELECT COUNT(*) FROM chunks WHERE ai_summary IS NULL")
+    }
+  }
+  
+  /// Get count of analyzed chunks
+  func getAnalyzedChunkCount(repoPath: String? = nil) throws -> Int {
+    try openIfNeeded()
+    
+    if let repoPath {
+      return try queryInt("""
+        SELECT COUNT(*) FROM chunks c
+        JOIN files f ON c.file_id = f.id
+        JOIN repos r ON f.repo_id = r.id
+        WHERE c.ai_summary IS NOT NULL AND r.root_path = ?
+        """, bind: { stmt in bindText(stmt, 1, repoPath) })
+    } else {
+      return try queryInt("SELECT COUNT(*) FROM chunks WHERE ai_summary IS NOT NULL")
+    }
+  }
+  #endif
 
   // MARK: - Query Hints
 
@@ -2377,7 +2552,9 @@ actor LocalRAGStore {
         files.language,
         files.module_path,
         files.feature_tags,
-        vec_distance_cosine(v.embedding, ?) as distance
+        vec_distance_cosine(v.embedding, ?) as distance,
+        chunks.ai_summary,
+        chunks.ai_tags
       FROM vec_chunks v
       JOIN chunks ON chunks.id = v.chunk_id
       JOIN files ON files.id = chunks.file_id
@@ -2425,6 +2602,8 @@ actor LocalRAGStore {
       let modulePath = sqlite3_column_text(stmt, 7).map { String(cString: $0) }
       let featureTagsJSON = sqlite3_column_text(stmt, 8).map { String(cString: $0) }
       let distance = Float(sqlite3_column_double(stmt, 9))
+      let aiSummary = sqlite3_column_text(stmt, 10).map { String(cString: $0) }
+      let aiTagsJSON = sqlite3_column_text(stmt, 11).map { String(cString: $0) }
       
       // Convert cosine distance to similarity score (1 - distance)
       let score = 1.0 - distance
@@ -2435,6 +2614,14 @@ actor LocalRAGStore {
          let data = json.data(using: .utf8),
          let parsed = try? JSONSerialization.jsonObject(with: data) as? [String] {
         featureTags = parsed
+      }
+      
+      // Parse AI tags from JSON
+      var aiTags: [String] = []
+      if let json = aiTagsJSON,
+         let data = json.data(using: .utf8),
+         let parsed = try? JSONSerialization.jsonObject(with: data) as? [String] {
+        aiTags = parsed
       }
       
       let snippet = String(text.prefix(240))
@@ -2449,7 +2636,9 @@ actor LocalRAGStore {
         isTest: isTestFile(filePath),
         score: score,
         modulePath: modulePath,
-        featureTags: featureTags
+        featureTags: featureTags,
+        aiSummary: aiSummary,
+        aiTags: aiTags
       )
       results.append(result)
     }
@@ -2462,7 +2651,8 @@ actor LocalRAGStore {
     let candidateLimit = max(limit * 50, 200)
     let sqlBase = """
     SELECT repos.root_path || '/' || files.path, chunks.start_line, chunks.end_line, chunks.text, embeddings.embedding,
-           chunks.construct_type, chunks.construct_name, files.language, files.module_path, files.feature_tags
+           chunks.construct_type, chunks.construct_name, files.language, files.module_path, files.feature_tags,
+           chunks.ai_summary, chunks.ai_tags
     FROM embeddings
     JOIN chunks ON chunks.id = embeddings.chunk_id
     JOIN files ON files.id = chunks.file_id
@@ -2501,7 +2691,9 @@ actor LocalRAGStore {
         isTest: isTestFile(row.filePath),
         score: score,
         modulePath: row.modulePath,
-        featureTags: row.featureTags
+        featureTags: row.featureTags,
+        aiSummary: row.aiSummary,
+        aiTags: row.aiTags
       )
       return (result, score)
     }
@@ -2816,7 +3008,36 @@ actor LocalRAGStore {
       try exec("UPDATE rag_meta SET value = '6' WHERE key = 'schema_version'")
     }
     
-    schemaVersion = 6
+    // Migration to v7: Add AI analysis columns for code analyzer (#198)
+    // Enables semantic summaries and tags from local MLX models
+    if currentVersion < 7 {
+      // AI-generated summary of the chunk content
+      if try !columnExists(table: "chunks", column: "ai_summary") {
+        try exec("ALTER TABLE chunks ADD COLUMN ai_summary TEXT")
+      }
+      
+      // AI-generated semantic tags (JSON array)
+      if try !columnExists(table: "chunks", column: "ai_tags") {
+        try exec("ALTER TABLE chunks ADD COLUMN ai_tags TEXT")
+      }
+      
+      // When this chunk was analyzed
+      if try !columnExists(table: "chunks", column: "analyzed_at") {
+        try exec("ALTER TABLE chunks ADD COLUMN analyzed_at TEXT")
+      }
+      
+      // Which model was used for analysis (for cache invalidation when model changes)
+      if try !columnExists(table: "chunks", column: "analyzer_model") {
+        try exec("ALTER TABLE chunks ADD COLUMN analyzer_model TEXT")
+      }
+      
+      // Index for finding unanalyzed chunks
+      try exec("CREATE INDEX IF NOT EXISTS idx_chunks_analyzed ON chunks(analyzed_at)")
+      
+      try exec("UPDATE rag_meta SET value = '7' WHERE key = 'schema_version'")
+    }
+    
+    schemaVersion = 7
     
     // Set up vec_chunks virtual table if extension is loaded
     if extensionLoaded {
@@ -2942,6 +3163,8 @@ actor LocalRAGStore {
     let language: String?
     let modulePath: String?
     let featureTags: [String]
+    let aiSummary: String?
+    let aiTags: [String]
   }
 
   private func queryEmbeddingRows(
@@ -2988,6 +3211,16 @@ actor LocalRAGStore {
         return try? JSONDecoder().decode([String].self, from: data)
       } ?? []
       
+      // AI analysis columns (10, 11) - schema v7+
+      let aiSummary: String? = sqlite3_column_type(statement, 10) != SQLITE_NULL
+        ? String(cString: sqlite3_column_text(statement, 10)) : nil
+      let aiTagsJson: String? = sqlite3_column_type(statement, 11) != SQLITE_NULL
+        ? String(cString: sqlite3_column_text(statement, 11)) : nil
+      let aiTags: [String] = aiTagsJson.flatMap { json in
+        guard let data = json.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode([String].self, from: data)
+      } ?? []
+      
       if let blobPointer, blobSize > 0 {
         let data = Data(bytes: blobPointer, count: Int(blobSize))
         rows.append(
@@ -3001,7 +3234,9 @@ actor LocalRAGStore {
             constructName: constructName,
             language: language,
             modulePath: modulePath,
-            featureTags: featureTags
+            featureTags: featureTags,
+            aiSummary: aiSummary,
+            aiTags: aiTags
           )
         )
       }
@@ -3133,6 +3368,16 @@ actor LocalRAGStore {
         return try? JSONDecoder().decode([String].self, from: data)
       } ?? []
       
+      // AI analysis columns (9, 10) - schema v7+
+      let aiSummary: String? = sqlite3_column_type(statement, 9) != SQLITE_NULL
+        ? String(cString: sqlite3_column_text(statement, 9)) : nil
+      let aiTagsJson: String? = sqlite3_column_type(statement, 10) != SQLITE_NULL
+        ? String(cString: sqlite3_column_text(statement, 10)) : nil
+      let aiTags: [String] = aiTagsJson.flatMap { json in
+        guard let data = json.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode([String].self, from: data)
+      } ?? []
+      
       results.append(
         LocalRAGSearchResult(
           filePath: path,
@@ -3145,7 +3390,9 @@ actor LocalRAGStore {
           isTest: isTestFile(path),
           score: nil,
           modulePath: modulePath,
-          featureTags: featureTags
+          featureTags: featureTags,
+          aiSummary: aiSummary,
+          aiTags: aiTags
         )
       )
     }
@@ -3278,11 +3525,15 @@ actor LocalRAGStore {
     tokenCount: Int,
     constructType: String?,
     constructName: String?,
-    metadata: String?
+    metadata: String?,
+    aiSummary: String? = nil,
+    aiTags: String? = nil,
+    analyzedAt: String? = nil,
+    analyzerModel: String? = nil
   ) throws {
     let sql = """
-    INSERT OR REPLACE INTO chunks (id, file_id, start_line, end_line, text, token_count, construct_type, construct_name, metadata)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT OR REPLACE INTO chunks (id, file_id, start_line, end_line, text, token_count, construct_type, construct_name, metadata, ai_summary, ai_tags, analyzed_at, analyzer_model)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
     try execute(sql: sql) { statement in
       bindText(statement, 1, id)
@@ -3305,6 +3556,27 @@ actor LocalRAGStore {
         bindText(statement, 9, metadata)
       } else {
         sqlite3_bind_null(statement, 9)
+      }
+      // AI analysis columns
+      if let aiSummary {
+        bindText(statement, 10, aiSummary)
+      } else {
+        sqlite3_bind_null(statement, 10)
+      }
+      if let aiTags {
+        bindText(statement, 11, aiTags)
+      } else {
+        sqlite3_bind_null(statement, 11)
+      }
+      if let analyzedAt {
+        bindText(statement, 12, analyzedAt)
+      } else {
+        sqlite3_bind_null(statement, 12)
+      }
+      if let analyzerModel {
+        bindText(statement, 13, analyzerModel)
+      } else {
+        sqlite3_bind_null(statement, 13)
       }
     }
   }

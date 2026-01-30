@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		03BPETOK2F2A000100000001 /* SwiftBPETokenizer in Frameworks */ = {isa = PBXBuildFile; productRef = 03BPETOK2F2A000100000002 /* SwiftBPETokenizer */; };
 		03MLXEMB2F2B000100000001 /* MLXEmbedders in Frameworks */ = {isa = PBXBuildFile; productRef = 03MLXEMB2F2B000100000002 /* MLXEmbedders */; };
+		03MLXLLM2F30000100000001 /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = 03MLXLLM2F30000100000002 /* MLXLLM */; };
+		03MLXLMC2F30000100000001 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 03MLXLMC2F30000100000002 /* MLXLMCommon */; };
 		040AAB7E26CB385800DE1CBF /* Git in Frameworks */ = {isa = PBXBuildFile; productRef = 040AAB7D26CB385800DE1CBF /* Git */; };
 		04510A582A2D200C001DEF5B /* Github in Frameworks */ = {isa = PBXBuildFile; productRef = 04510A572A2D200C001DEF5B /* Github */; };
 		046C6AB02F1BE07D006CDAC7 /* TaskRunner in Frameworks */ = {isa = PBXBuildFile; productRef = 046C6AAF2F1BE07D006CDAC7 /* TaskRunner */; };
@@ -165,6 +167,8 @@
 			files = (
 				04ASTCHK2F2E000100000002 /* ASTChunker in Frameworks */,
 				03MLXEMB2F2B000100000001 /* MLXEmbedders in Frameworks */,
+				03MLXLLM2F30000100000001 /* MLXLLM in Frameworks */,
+				03MLXLMC2F30000100000001 /* MLXLMCommon in Frameworks */,
 				03BPETOK2F2A000100000001 /* SwiftBPETokenizer in Frameworks */,
 				048086662A2D21E500536A3E /* Brew in Frameworks */,
 				04510A582A2D200C001DEF5B /* Github in Frameworks */,
@@ -331,7 +335,10 @@
 				04510A572A2D200C001DEF5B /* Github */,
 				048086652A2D21E500536A3E /* Brew */,
 				046C6AAF2F1BE07D006CDAC7 /* TaskRunner */,
+				03BPETOK2F2A000100000002 /* SwiftBPETokenizer */,
 				03MLXEMB2F2B000100000002 /* MLXEmbedders */,
+				03MLXLLM2F30000100000002 /* MLXLLM */,
+				03MLXLMC2F30000100000002 /* MLXLMCommon */,
 				04ASTCHK2F2E000100000003 /* ASTChunker */,
 			);
 			productName = "Peel (macOS)";
@@ -1116,6 +1123,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 03MLXEMB2F2B000100000003 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
 			productName = MLXEmbedders;
+		};
+		03MLXLLM2F30000100000002 /* MLXLLM */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03MLXEMB2F2B000100000003 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXLLM;
+		};
+		03MLXLMC2F30000100000002 /* MLXLMCommon */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03MLXEMB2F2B000100000003 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXLMCommon;
 		};
 		040AAB7D26CB385800DE1CBF /* Git */ = {
 			isa = XCSwiftPackageProductDependency;
