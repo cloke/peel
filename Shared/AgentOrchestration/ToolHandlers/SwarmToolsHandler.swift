@@ -667,26 +667,37 @@ public final class SwarmToolsHandler: MCPToolHandler {
       ]))
     }
     
+    let force = (arguments["force"] as? Bool) ?? false
+    
     // Use direct command execution - no LLM involved
-    // The worker will detect its repo location from the running app's bundle
-    // The script path: Tools/self-update.sh (relative to repo root)
+    // Run the self-update script on each worker
+    // Workers need to find their own repo path - we send the command, they detect their local path
     
     // Dispatch direct command to each worker
     var dispatched: [[String: Any]] = []
     
     for worker in workers {
       do {
+        // Build the command - use absolute path style since workers auto-detect repo
+        let scriptArgs = force ? [] : ["--skip-build-if-current"]
+        
         // Run self-update script - worker will detect its own repo working dir
-        try await coordinator.sendDirectCommand(
+        // Using sendDirectCommandAndWait with longer timeout since build takes time
+        let result = try await coordinator.sendDirectCommandAndWait(
           "./Tools/self-update.sh",
-          args: [],
-          workingDirectory: nil,  // Peel will auto-detect
-          to: worker.id
+          args: scriptArgs,
+          workingDirectory: nil,  // Worker auto-detects
+          to: worker.id,
+          timeout: .seconds(300)  // 5 min timeout for pull + build
         )
+        
         dispatched.append([
           "workerId": worker.id,
           "workerName": worker.name,
-          "status": "dispatched"
+          "status": result.exitCode == 0 ? "success" : "failed",
+          "exitCode": result.exitCode,
+          "output": String(result.output.suffix(500)),  // Last 500 chars
+          "error": result.error as Any
         ])
       } catch {
         dispatched.append([
@@ -698,10 +709,16 @@ public final class SwarmToolsHandler: MCPToolHandler {
       }
     }
     
+    let succeeded = dispatched.filter { ($0["status"] as? String) == "success" }.count
+    let failed = dispatched.count - succeeded
+    
     return (200, makeResult(id: id, result: [
-      "success": true,
-      "message": "Update commands dispatched. Workers will disconnect during restart.",
-      "workersUpdated": dispatched.filter { ($0["status"] as? String) == "dispatched" }.count,
+      "success": failed == 0,
+      "message": failed == 0 
+        ? "All workers updated successfully. They will restart shortly."
+        : "\(succeeded) workers updated, \(failed) failed. Check 'workers' for details.",
+      "workersUpdated": succeeded,
+      "workersFailed": failed,
       "workers": dispatched
     ]))
   }
