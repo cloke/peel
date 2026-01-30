@@ -3574,7 +3574,7 @@ actor LocalRAGStore {
   
   /// Get what a file depends on (forward dependencies)
   /// - Parameters:
-  ///   - filePath: Relative path of the file within the repo
+  ///   - filePath: Relative path of the file within the repo (or filename for fuzzy match)
   ///   - repoPath: Root path of the repository
   /// - Returns: List of dependencies (what this file imports/requires)
   func getDependencies(for filePath: String, inRepo repoPath: String) throws -> [LocalRAGDependencyResult] {
@@ -3591,13 +3591,18 @@ actor LocalRAGStore {
       JOIN files ON files.id = d.source_file_id
       JOIN repos ON repos.id = d.repo_id
       LEFT JOIN files target_files ON target_files.id = d.target_file_id
-      WHERE files.path = ? AND repos.root_path = ?
+      WHERE repos.root_path = ? AND (
+        files.path = ? OR
+        files.path LIKE ?
+      )
       ORDER BY d.dependency_type, d.target_path
       """
     
     return try queryDependencies(sql: sql) { statement in
-      bindText(statement, 1, filePath)
-      bindText(statement, 2, repoPath)
+      bindText(statement, 1, repoPath)
+      bindText(statement, 2, filePath)
+      // Support filename-only queries (e.g., "LocalRAGStore.swift" matches "Shared/Services/LocalRAGStore.swift")
+      bindText(statement, 3, "%/\(filePath)")
     }
   }
   
