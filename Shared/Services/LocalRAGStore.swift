@@ -4605,7 +4605,8 @@ actor LocalRAGStore {
     var statement: OpaquePointer?
     let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
     guard result == SQLITE_OK, let stmt = statement else {
-      throw LocalRAGError.sqlite("Failed to prepare brute-force similarity query")
+      let errMsg = String(cString: sqlite3_errmsg(db))
+      throw LocalRAGError.sqlite("Failed to prepare brute-force similarity query: \(errMsg) (code \(result))")
     }
     defer { sqlite3_finalize(stmt) }
     
