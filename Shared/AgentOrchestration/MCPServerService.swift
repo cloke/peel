@@ -5410,8 +5410,8 @@ extension MCPServerService: RAGToolsHandlerDelegate {
   // MARK: - AI Analysis (#198)
   
   #if os(macOS)
-  func analyzeRagChunks(repoPath: String?, limit: Int, progress: (@Sendable (Int, Int) -> Void)?) async throws -> Int {
-    try await localRagStore.analyzeChunks(repoPath: repoPath, limit: limit, progress: progress)
+  func analyzeRagChunks(repoPath: String?, limit: Int, modelTier: MLXAnalyzerModelTier = .auto, progress: (@Sendable (Int, Int) -> Void)?) async throws -> Int {
+    try await localRagStore.analyzeChunks(repoPath: repoPath, limit: limit, modelTier: modelTier, progress: progress)
   }
   
   func getUnanalyzedChunkCount(repoPath: String?) async throws -> Int {

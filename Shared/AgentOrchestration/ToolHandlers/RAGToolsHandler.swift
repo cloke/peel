@@ -132,7 +132,7 @@ protocol RAGToolsHandlerDelegate: MCPToolHandlerDelegate {
   
   #if os(macOS)
   /// Analyze un-analyzed chunks using MLX LLM
-  func analyzeRagChunks(repoPath: String?, limit: Int, progress: (@Sendable (Int, Int) -> Void)?) async throws -> Int
+  func analyzeRagChunks(repoPath: String?, limit: Int, modelTier: MLXAnalyzerModelTier, progress: (@Sendable (Int, Int) -> Void)?) async throws -> Int
   
   /// Get count of un-analyzed chunks
   func getUnanalyzedChunkCount(repoPath: String?) async throws -> Int
@@ -1080,6 +1080,21 @@ final class RAGToolsHandler: MCPToolHandler {
   private func handleAnalyze(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
     let repoPath = optionalString("repoPath", from: arguments)
     let limit = arguments["limit"] as? Int ?? 100
+    let tierString = optionalString("modelTier", from: arguments)
+    
+    // Parse model tier from argument or default to auto
+    let modelTier: MLXAnalyzerModelTier
+    if let tierString = tierString {
+      switch tierString.lowercased() {
+      case "tiny": modelTier = .tiny
+      case "small": modelTier = .small
+      case "medium": modelTier = .medium
+      case "large": modelTier = .large
+      default: modelTier = .auto
+      }
+    } else {
+      modelTier = .auto
+    }
     
     do {
       // Check if there are chunks to analyze
@@ -1097,7 +1112,7 @@ final class RAGToolsHandler: MCPToolHandler {
       
       // Run analysis
       let startTime = Date()
-      let analyzedCount = try await delegate.analyzeRagChunks(repoPath: repoPath, limit: limit) { current, total in
+      let analyzedCount = try await delegate.analyzeRagChunks(repoPath: repoPath, limit: limit, modelTier: modelTier) { current, total in
         // Progress callback - could be used for streaming updates
         print("[RAG] Analyzing chunk \(current)/\(total)")
       }
