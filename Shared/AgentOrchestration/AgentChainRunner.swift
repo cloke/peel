@@ -166,9 +166,24 @@ public final class AgentChainRunner {
 
     do {
       try checkCancellation(chain: chain)
+      
+      // Run pre-planner if enabled (Issue #133)
+      var enrichedPrompt = prompt
+      if chain.enablePrePlanner {
+        chain.addStatusMessage("Running pre-planner (RAG context gathering)...", type: .progress)
+        do {
+          let prePlannerOutput = try await runPrePlanner(chain: chain, prompt: prompt)
+          chain.prePlannerOutput = prePlannerOutput
+          enrichedPrompt = buildEnrichedPrompt(original: prompt, prePlannerOutput: prePlannerOutput)
+          chain.addStatusMessage("Pre-planner complete: \(prePlannerOutput.relevantFiles.count) relevant files found", type: .complete)
+        } catch {
+          chain.addStatusMessage("Pre-planner failed, continuing without enrichment: \(error.localizedDescription)", type: .info)
+        }
+      }
+      
       try await runAgentsWithParallelImplementers(
         chain: chain,
-        prompt: prompt,
+        prompt: enrichedPrompt,
         mergeConflicts: &mergeConflicts,
         runOptions: runOptions
       )
@@ -982,6 +997,199 @@ public final class AgentChainRunner {
     if let gate = runGates[chainId] {
       await gate.step()
     }
+  }
+  
+  // MARK: - Pre-Planner (Issue #133)
+  
+  /// Run the pre-planner step to gather RAG context before the main planner
+  private func runPrePlanner(chain: AgentChain, prompt: String) async throws -> PrePlannerOutput {
+    let startTime = Date()
+    
+    // Search RAG for relevant context
+    let repoPath = chain.workingDirectory
+    let ragResults = try await localRagStore.searchVector(query: prompt, repoPath: repoPath, limit: 15)
+    
+    // Extract relevant files
+    let relevantFiles = ragResults.map { result in
+      PrePlannerOutput.RelevantFile(
+        path: result.filePath,
+        startLine: result.startLine,
+        endLine: result.endLine,
+        relevanceScore: result.score,
+        constructType: result.constructType,
+        constructName: result.constructName
+      )
+    }
+    
+    // Infer goals from the prompt
+    let goals = inferGoals(from: prompt)
+    
+    // Infer constraints from RAG context
+    let constraints = inferConstraints(from: ragResults, repoPath: repoPath)
+    
+    // Build context summary
+    let contextSummary = buildContextSummary(files: relevantFiles, ragResults: ragResults)
+    
+    let duration = Date().timeIntervalSince(startTime)
+    
+    return PrePlannerOutput(
+      goals: goals,
+      constraints: constraints,
+      relevantFiles: relevantFiles,
+      contextSummary: contextSummary,
+      timestamp: Date(),
+      durationSeconds: duration
+    )
+  }
+  
+  /// Infer goals from the user's prompt
+  private func inferGoals(from prompt: String) -> [String] {
+    var goals: [String] = []
+    
+    // Look for imperative verbs and action items
+    let actionPatterns = [
+      "add", "create", "implement", "build", "fix", "update", "refactor",
+      "remove", "delete", "optimize", "improve", "integrate", "migrate"
+    ]
+    
+    let sentences = prompt.components(separatedBy: CharacterSet(charactersIn: ".!?\n"))
+    for sentence in sentences {
+      let trimmed = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !trimmed.isEmpty else { continue }
+      
+      let lowercased = trimmed.lowercased()
+      for pattern in actionPatterns {
+        if lowercased.hasPrefix(pattern) || lowercased.contains(" \(pattern) ") {
+          goals.append(trimmed)
+          break
+        }
+      }
+    }
+    
+    // If no goals found, use the first sentence as the primary goal
+    if goals.isEmpty, let firstSentence = sentences.first?.trimmingCharacters(in: .whitespacesAndNewlines), !firstSentence.isEmpty {
+      goals.append(firstSentence)
+    }
+    
+    return goals
+  }
+  
+  /// Infer constraints from RAG context
+  private func inferConstraints(from ragResults: [LocalRAGSearchResult], repoPath: String?) -> [String] {
+    var constraints: [String] = []
+    
+    // Detect language/framework patterns
+    var languages = Set<String>()
+    var frameworks = Set<String>()
+    
+    for result in ragResults {
+      if let lang = result.language {
+        languages.insert(lang)
+      }
+      
+      // Detect common frameworks from content
+      let snippet = result.snippet.lowercased()
+      if snippet.contains("swiftui") || snippet.contains("@state") || snippet.contains("@observable") {
+        frameworks.insert("SwiftUI")
+      }
+      if snippet.contains("uikit") || snippet.contains("uiviewcontroller") {
+        frameworks.insert("UIKit")
+      }
+      if snippet.contains("combine") || snippet.contains("publisher") {
+        frameworks.insert("Combine")
+      }
+      if snippet.contains("async") || snippet.contains("await") || snippet.contains("task {") {
+        frameworks.insert("Swift Concurrency")
+      }
+    }
+    
+    if !languages.isEmpty {
+      constraints.append("Primary languages: \(languages.sorted().joined(separator: ", "))")
+    }
+    if !frameworks.isEmpty {
+      constraints.append("Frameworks in use: \(frameworks.sorted().joined(separator: ", "))")
+    }
+    
+    // Check for test patterns
+    let hasTests = ragResults.contains { $0.isTest }
+    if hasTests {
+      constraints.append("Project has existing tests - maintain test coverage")
+    }
+    
+    // Check for module structure
+    let modulePaths = Set(ragResults.compactMap { $0.modulePath })
+    if modulePaths.count > 3 {
+      constraints.append("Modular architecture with \(modulePaths.count) modules - respect module boundaries")
+    }
+    
+    return constraints
+  }
+  
+  /// Build a context summary for the planner
+  private func buildContextSummary(files: [PrePlannerOutput.RelevantFile], ragResults: [LocalRAGSearchResult]) -> String {
+    guard !files.isEmpty else {
+      return "No relevant files found in the codebase for this task."
+    }
+    
+    var summary = "## Relevant Code Context\n\n"
+    
+    // Group by construct type
+    var byType: [String: [(file: PrePlannerOutput.RelevantFile, snippet: String)]] = [:]
+    for (file, result) in zip(files, ragResults) {
+      let type = file.constructType ?? "other"
+      byType[type, default: []].append((file, result.snippet))
+    }
+    
+    // Build summary by type
+    for (type, items) in byType.sorted(by: { $0.key < $1.key }) {
+      summary += "### \(type.capitalized)s\n"
+      for (file, _) in items.prefix(5) {
+        var entry = "- `\(file.path)`"
+        if let name = file.constructName {
+          entry += " (\(name))"
+        }
+        entry += " [L\(file.startLine)-\(file.endLine)]"
+        summary += entry + "\n"
+      }
+      summary += "\n"
+    }
+    
+    return summary
+  }
+  
+  /// Build enriched prompt with pre-planner context
+  private func buildEnrichedPrompt(original: String, prePlannerOutput: PrePlannerOutput) -> String {
+    var enriched = ""
+    
+    // Add goals
+    if !prePlannerOutput.goals.isEmpty {
+      enriched += "## Inferred Goals\n"
+      for goal in prePlannerOutput.goals {
+        enriched += "- \(goal)\n"
+      }
+      enriched += "\n"
+    }
+    
+    // Add constraints
+    if !prePlannerOutput.constraints.isEmpty {
+      enriched += "## Project Constraints\n"
+      for constraint in prePlannerOutput.constraints {
+        enriched += "- \(constraint)\n"
+      }
+      enriched += "\n"
+    }
+    
+    // Add context summary
+    if !prePlannerOutput.relevantFiles.isEmpty {
+      enriched += prePlannerOutput.contextSummary
+      enriched += "\n"
+    }
+    
+    // Add original prompt
+    enriched += "## User Request\n\n"
+    enriched += original
+    
+    return enriched
   }
 }
 

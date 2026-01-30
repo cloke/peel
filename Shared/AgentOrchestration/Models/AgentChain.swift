@@ -29,6 +29,13 @@ public final class AgentChain: Identifiable {
   /// Shared working directory for all agents in the chain
   public var workingDirectory: String?
   
+  /// Enable pre-planner step - RAG-grounded context gathering before planner runs
+  /// When enabled, searches RAG and generates goals/constraints to inject into planner prompt
+  public var enablePrePlanner: Bool = false
+  
+  /// Pre-planner output (goals, constraints, relevant files) - shown in run detail
+  public var prePlannerOutput: PrePlannerOutput?
+  
   /// Enable review loop - if reviewer requests changes, re-run implementer
   public var enableReviewLoop: Bool = false
 
@@ -408,6 +415,57 @@ public enum ReviewVerdict: String, Codable, Sendable {
     // Conservative default - if uncertain, assume approved
     // (The reviewer said something but we couldn't parse it)
     return .approved
+  }
+}
+
+// MARK: - Pre-Planner Output (Issue #133)
+
+/// Output from the pre-planner step that provides RAG-grounded context for planning
+public struct PrePlannerOutput: Sendable {
+  /// Inferred goals from the prompt
+  public let goals: [String]
+  
+  /// Constraints or guidelines inferred from RAG context
+  public let constraints: [String]
+  
+  /// Relevant files found via RAG search
+  public let relevantFiles: [RelevantFile]
+  
+  /// Summary context to inject into planner prompt
+  public let contextSummary: String
+  
+  /// When the pre-planner ran
+  public let timestamp: Date
+  
+  /// How long the pre-planner took
+  public let durationSeconds: Double
+  
+  /// Relevant file information
+  public struct RelevantFile: Sendable {
+    public let path: String
+    public let startLine: Int
+    public let endLine: Int
+    public let relevanceScore: Float?
+    public let constructType: String?
+    public let constructName: String?
+    
+    public init(path: String, startLine: Int, endLine: Int, relevanceScore: Float?, constructType: String?, constructName: String?) {
+      self.path = path
+      self.startLine = startLine
+      self.endLine = endLine
+      self.relevanceScore = relevanceScore
+      self.constructType = constructType
+      self.constructName = constructName
+    }
+  }
+  
+  public init(goals: [String], constraints: [String], relevantFiles: [RelevantFile], contextSummary: String, timestamp: Date, durationSeconds: Double) {
+    self.goals = goals
+    self.constraints = constraints
+    self.relevantFiles = relevantFiles
+    self.contextSummary = contextSummary
+    self.timestamp = timestamp
+    self.durationSeconds = durationSeconds
   }
 }
 
