@@ -18,6 +18,7 @@ struct AgentsSidebarView: View {
   @AppStorage("vm.isolation.section") private var vmIsolationSection = "overview"
   @AppStorage("vm.isolation.sidebar.expanded") private var vmIsolationSidebarExpanded = true
   @State private var parallelWorktreeStatus: ParallelWorktreeSummary = .empty
+  @State private var worktreeCount: Int = 0
 
   // Track selection as a string: "chain:id" or "agent:id" or "infra:key"
   @State private var selection: String?
@@ -183,6 +184,13 @@ struct AgentsSidebarView: View {
               .foregroundStyle(.cyan)
             Text("Worktrees")
             Spacer()
+            if worktreeCount > 0 {
+              Chip(
+                text: "\(worktreeCount)",
+                foreground: .cyan,
+                background: .cyan.opacity(0.2)
+              )
+            }
           }
           .accessibilityIdentifier("agents.worktrees")
           .tag("infra:worktrees")
@@ -265,6 +273,7 @@ struct AgentsSidebarView: View {
         selection = "infra:vm-isolation:\(vmIsolationSection)"
       }
       refreshParallelWorktreeStatus()
+      Task { await refreshWorktreeCount() }
     }
     .onChange(of: mcpServer.parallelWorktreeRunner?.runs.count ?? 0) { _, _ in
       refreshParallelWorktreeStatus()
@@ -273,6 +282,16 @@ struct AgentsSidebarView: View {
 
   private func refreshParallelWorktreeStatus() {
     parallelWorktreeStatus = ParallelWorktreeSummary(runs: mcpServer.parallelWorktreeRunner?.runs ?? [])
+  }
+
+  private func refreshWorktreeCount() async {
+    let result = await mcpServer.callToolAsync(name: "worktree.stats", arguments: [:])
+    if let content = result.first?.text,
+       let data = content.data(using: .utf8),
+       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+       let count = json["totalCount"] as? Int {
+      worktreeCount = count
+    }
   }
 
   private func handleSelection(_ value: String?) {
