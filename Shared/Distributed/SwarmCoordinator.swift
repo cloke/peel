@@ -96,11 +96,17 @@ public final class SwarmCoordinator {
   /// Heartbeat loop task (worker/hybrid)
   private var heartbeatTask: Task<Void, Never>?
 
+  /// Heartbeat monitor task (brain/hybrid) - detects stale workers
+  private var heartbeatMonitorTask: Task<Void, Never>?
+
   /// Swarm start time for uptime tracking
   private var startedAt: Date?
 
   /// Interval between heartbeats
   private let heartbeatInterval: Duration = .seconds(10)
+
+  /// How long before a worker is considered stale (no heartbeat)
+  private let heartbeatStaleThreshold: TimeInterval = 35  // ~3 missed heartbeats
   
   /// Result from a direct command execution
   public struct DirectCommandResult: Sendable {
@@ -270,6 +276,10 @@ public final class SwarmCoordinator {
     if role == .worker || role == .hybrid {
       startHeartbeatLoop()
     }
+
+    if role == .brain || role == .hybrid {
+      startHeartbeatMonitor()
+    }
   }
   
   /// Stop the swarm coordinator
@@ -277,6 +287,7 @@ public final class SwarmCoordinator {
     isActive = false
 
     stopHeartbeatLoop()
+    stopHeartbeatMonitor()
     
     discoveryService?.stopAdvertising()
     discoveryService?.stopDiscovery()
@@ -311,6 +322,42 @@ public final class SwarmCoordinator {
   private func stopHeartbeatLoop() {
     heartbeatTask?.cancel()
     heartbeatTask = nil
+  }
+
+  /// Start monitoring worker heartbeats for staleness (brain/hybrid mode)
+  private func startHeartbeatMonitor() {
+    stopHeartbeatMonitor()
+    heartbeatMonitorTask = Task { [weak self] in
+      guard let self else { return }
+      while !Task.isCancelled && self.isActive {
+        try? await Task.sleep(for: .seconds(15))  // Check every 15s
+        await self.checkWorkerHeartbeats()
+      }
+    }
+  }
+
+  private func stopHeartbeatMonitor() {
+    heartbeatMonitorTask?.cancel()
+    heartbeatMonitorTask = nil
+  }
+
+  /// Check for workers with stale heartbeats and disconnect them
+  private func checkWorkerHeartbeats() async {
+    let now = Date()
+    var staleWorkers: [String] = []
+
+    for (peerId, status) in workerStatuses {
+      let age = now.timeIntervalSince(status.lastHeartbeat)
+      if age > heartbeatStaleThreshold {
+        logger.warning("Worker \(peerId) heartbeat stale by \(Int(age))s, disconnecting")
+        staleWorkers.append(peerId)
+      }
+    }
+
+    // Disconnect stale workers - this will trigger didDisconnect and allow reconnection
+    for peerId in staleWorkers {
+      await connectionManager?.disconnect(from: peerId)
+    }
   }
 
   private func currentWorkerStatus() -> WorkerStatus {
@@ -1064,11 +1111,22 @@ public final class SwarmCoordinator {
 
 extension SwarmCoordinator: PeerConnectionDelegate {
   public func connectionManager(_ manager: PeerConnectionManager, didConnect peer: ConnectedPeer) {
-    // Remove any existing entry with the same ID (handles reconnect case)
-    connectedWorkers.removeAll { $0.id == peer.id }
+    // Check if this is a reconnection (same deviceId, possibly new capabilities)
+    if let existingIndex = connectedWorkers.firstIndex(where: { $0.id == peer.id }) {
+      let existing = connectedWorkers[existingIndex]
+      let oldHash = existing.capabilities.gitCommitHash ?? "unknown"
+      let newHash = peer.capabilities.gitCommitHash ?? "unknown"
+      if oldHash != newHash {
+        logger.info("Worker \(peer.name) reconnected with updated code: \(oldHash) → \(newHash)")
+      } else {
+        logger.info("Worker \(peer.name) reconnected (same version: \(newHash))")
+      }
+      connectedWorkers.remove(at: existingIndex)
+    }
+
     connectedWorkers.append(peer)
     delegate?.swarmCoordinator(self, didEmit: .workerConnected(peer))
-    logger.info("Peel connected: \(peer.name)")
+    logger.info("Peel connected: \(peer.name) (commit: \(peer.capabilities.gitCommitHash ?? "unknown"))")
 
     if role == .worker || role == .hybrid {
       Task { await sendHeartbeat() }
@@ -1238,8 +1296,22 @@ extension SwarmCoordinator: BonjourDiscoveryDelegate {
     // Auto-connect to discovered peers if we're the brain
     guard role == .brain || role == .hybrid else { return }
     
-    // Skip if already connected
-    if connectedWorkers.contains(where: { $0.id == peer.id }) { return }
+    // Skip if already connected AND has recent heartbeat
+    if connectedWorkers.contains(where: { $0.id == peer.id }) {
+      // Check if the worker has a recent heartbeat (not stale)
+      if let status = workerStatuses[peer.id] {
+        let age = Date().timeIntervalSince(status.lastHeartbeat)
+        if age < heartbeatStaleThreshold {
+          // Connection is healthy, skip
+          return
+        }
+        // Connection seems stale, let it try to reconnect
+        logger.info("Discovered peer \(peer.name) but existing connection is stale (\(Int(age))s since heartbeat), allowing reconnect")
+      } else {
+        // No status yet but in connected list - might be mid-handshake, skip
+        return
+      }
+    }
     
     logger.info("Discovered peer: \(peer.name), resolving...")
     
