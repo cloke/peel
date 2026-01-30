@@ -47,8 +47,7 @@ struct CommitDetailView: View {
 }
 #endif
 
-// Note: Color.gitGreen is defined in Git package (Git/Extensions/Color.swift)
-// The Github package imports Git, so it has access to this extension.
+// Note: Color.gitGreen is defined in PeelUI package (PeelUI/Color+Extensions.swift)
 
 internal extension NSTextCheckingResult {
   func group(_ group: Int, in string: String) -> String? {

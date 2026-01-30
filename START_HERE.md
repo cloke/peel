@@ -52,6 +52,28 @@ cp Tools/ModelTools/output/tokenize_codebert.py "$HOME/Library/Containers/crunch
 
 3. Restart Peel and check Agents → Local RAG. `rag.status` should report `CoreMLEmbeddingProvider`.
 
+### Optional: sqlite-vec Extension (Accelerated Vector Search)
+
+The app bundles a custom SQLite build with extension loading support. To enable sqlite-vec:
+
+1. Download `vec0.dylib` for macOS ARM64 from [sqlite-vec releases](https://github.com/asg017/sqlite-vec/releases)
+
+2. **Sign the dylib** (required for macOS to load it):
+```bash
+security find-identity -v -p codesigning  # List identities
+codesign -f -s "Apple Development: Your Name (XXXXXXXXXX)" vec0.dylib
+```
+
+3. **Install to Application Support** (NOT the project folder!):
+```bash
+mkdir -p "$HOME/Library/Application Support/Peel/Extensions"
+cp vec0.dylib "$HOME/Library/Application Support/Peel/Extensions/"
+```
+
+4. Restart Peel. Check `rag.status` - it should report `extensionLoaded: True`.
+
+> **Warning:** Do NOT put vec0.dylib in the project folder - Xcode will auto-link it and crash the app on launch.
+
 ---
 
 ## Project Structure
