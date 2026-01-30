@@ -8,11 +8,7 @@
 import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
-#if os(macOS)
 import AppKit
-#else
-import UIKit
-#endif
 
 private struct WorkspaceDetectionDebug: Sendable, Identifiable {
   let id = UUID()
@@ -252,7 +248,6 @@ struct LocalRAGDashboardView: View {
     )
   }
 
-#if os(macOS)
   private var downloadedMLXModelNames: [String] {
     let configs = MLXEmbeddingModelConfig.availableModels
     let downloaded = LocalRAGEmbeddingProviderFactory.downloadedMLXModels
@@ -261,7 +256,6 @@ struct LocalRAGDashboardView: View {
     }
     return Array(Set(names)).sorted()
   }
-#endif
 
   var body: some View {
     ScrollView {
@@ -593,7 +587,6 @@ struct LocalRAGDashboardView: View {
                 .pickerStyle(.menu)
                 .accessibilityIdentifier("agents.localRag.provider")
 
-#if os(macOS)
                 if providerSelection.wrappedValue == .mlx {
                   Picker("MLX Model", selection: mlxModelSelection) {
                     Text("Auto-select").tag("")
@@ -616,7 +609,6 @@ struct LocalRAGDashboardView: View {
                       .foregroundStyle(.secondary)
                   }
                 }
-#endif
 
                 if embeddingSettingsChanged {
                   Label("Apply to reload embedding model", systemImage: "exclamationmark.triangle")
@@ -1218,19 +1210,13 @@ struct LocalRAGDashboardView: View {
   }
 
   private func copyToPasteboard(_ text: String) {
-#if os(macOS)
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(text, forType: .string)
-#else
-    UIPasteboard.general.string = text
-#endif
   }
 
-#if os(macOS)
   private func openResult(_ result: LocalRAGSearchResult) {
     NSWorkspace.shared.open(URL(fileURLWithPath: result.filePath))
   }
-#endif
 }
 
 private struct RAGWorkerSyncRow: View {
@@ -1440,13 +1426,11 @@ struct RAGSearchResultRow: View {
             .buttonStyle(.bordered)
             .controlSize(.small)
 
-#if os(macOS)
             Button(action: onOpenFile) {
               Label("Open", systemImage: "arrow.up.forward.app")
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
-#endif
 
             Spacer()
 
