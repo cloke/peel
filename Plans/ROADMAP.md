@@ -25,18 +25,21 @@ audience:
 
 | Metric | Count |
 |--------|-------|
-| **Closed** | 75 ✅ |
+| **Closed** | 76 ✅ |
 | **Open - Phase 2** | 5 |
-| **Open - Phase 3 (Code Intelligence)** | 10 |
+| **Open - Phase 3 (Code Intelligence)** | 9 |
 | **Open - Swarm/Distributed** | 21 |
 | **Open - Backlog** | 23 |
-| **Total Open** | 59 |
+| **Total Open** | 58 |
 
 ### Recent Changes
-- ✅ **#188** - Closed as duplicate of #189 (Leader Election)
-- ✅ **#167** - RAG metadata extraction complete (imports, protocols, decorators)
-- 🔄 **Phase 3 reorganized** - Now focused on Code Intelligence (#205)
-- 🔄 **RAG issues consolidated** - #176, #174, #175, #198 linked to #205
+- ✅ **#176** - Dependency graph indexing COMPLETE
+  - Schema v5 with `dependencies` table
+  - MCP tools: `rag.dependencies`, `rag.dependents`
+  - Dependency Graph UI in RAG dashboard
+- ✅ **#208** - Created for dependency polish (symbol resolution)
+- 🔄 **#174** - Structural queries now UNBLOCKED
+- 🔄 **Phase 3 Layer 2** - Dependency graph foundation complete
 
 ---
 
@@ -133,10 +136,11 @@ Can be done in any order, low dependencies.
 
 | Order | # | Title | Est | Deps | Status |
 |-------|---|-------|-----|------|--------|
-| 1 | [#176](https://github.com/cloke/peel/issues/176) | Dependency graph indexing | 6h | None | 🟡 **START HERE** |
-| 2 | [#174](https://github.com/cloke/peel/issues/174) | Structural queries (file size, methods) | 3h | #176 | ⚪ Blocked |
-| 3 | [#175](https://github.com/cloke/peel/issues/175) | Duplicate/similar code detection | 4h | None | 🟡 Ready |
-| 4 | [#179](https://github.com/cloke/peel/issues/179) | tree-sitter-swift evaluation | 4h | None | 🟡 Ready (stretch) |
+| 1 | [#176](https://github.com/cloke/peel/issues/176) | Dependency graph indexing | 6h | None | ✅ **COMPLETE** |
+| 2 | [#208](https://github.com/cloke/peel/issues/208) | Dependency polish (symbols, stats) | 3h | #176 | 🟡 Ready |
+| 3 | [#174](https://github.com/cloke/peel/issues/174) | Structural queries (file size, methods) | 3h | #176 | 🟡 **UNBLOCKED** |
+| 4 | [#175](https://github.com/cloke/peel/issues/175) | Duplicate/similar code detection | 4h | None | 🟡 Ready |
+| 5 | [#179](https://github.com/cloke/peel/issues/179) | tree-sitter-swift evaluation | 4h | None | 🟡 Ready (stretch) |
 
 ### Layer 3: Semantic Memory
 
@@ -159,14 +163,16 @@ Can be done in any order, low dependencies.
 ### Critical Path for Phase 3
 
 ```
-#176 (Dependency Graph) ──► #174 (Structural Queries) ──► #198 (MLX Analyzer)
-                                                              │
-#175 (Similar Code) ─────────────────────────────────────────┘
-                                                              │
-#128 (HF Reranking) ──► #133 (Pre-planner) ──────────────────┘
+#176 (Dependency Graph) ✅ ──► #174 (Structural Queries) ──► #198 (MLX Analyzer)
+         │                                                        │
+         └──► #208 (Polish)                                       │
+                                                                  │
+#175 (Similar Code) ─────────────────────────────────────────────┘
+                                                                  │
+#128 (HF Reranking) ──► #133 (Pre-planner) ──────────────────────┘
 ```
 
-**Recommended order**: #176 → #175 → #174 → #128 → #133 → #198
+**Recommended next**: #174 (structural queries) or #175 (similar code detection)
 
 ---
 
