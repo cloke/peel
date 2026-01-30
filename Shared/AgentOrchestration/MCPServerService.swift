@@ -4412,6 +4412,22 @@ public final class MCPServerService {
         isMutating: true
       ),
       ToolDefinition(
+        name: "swarm.setup-labels",
+        description: "Ensure all Peel PR labels exist in a repository. Creates peel:created, peel:approved, peel:needs-review, peel:needs-help, peel:conflict, and peel:merged labels with proper colors. Run once per repo before using swarm PR features.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": [
+              "type": "string",
+              "description": "Path to the git repository"
+            ]
+          ],
+          "required": ["repoPath"]
+        ],
+        category: .swarm,
+        isMutating: true
+      ),
+      ToolDefinition(
         name: "swarm.register-repo",
         description: "Register a local repository path with the swarm. This maps the repo's git remote URL to the local path, enabling distributed tasks to work across machines with different folder structures.",
         inputSchema: [
