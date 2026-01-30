@@ -1001,10 +1001,19 @@ public final class SwarmCoordinator {
     if useShell {
       // Use shell to resolve command via PATH
       process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-      let fullCommand = ([resolvedCommand] + args).map { arg in
-        // Escape arguments for shell
-        arg.contains(" ") || arg.contains("\"") ? "'\(arg.replacingOccurrences(of: "'", with: "'\\''"))'" : arg
-      }.joined(separator: " ")
+      // If args is empty, pass command directly to shell (it may contain pipes, etc.)
+      // If args is provided, escape them and append
+      let fullCommand: String
+      if args.isEmpty {
+        fullCommand = resolvedCommand
+      } else {
+        let escapedArgs = args.map { arg in
+          arg.contains(" ") || arg.contains("\"") || arg.contains("'") 
+            ? "'\(arg.replacingOccurrences(of: "'", with: "'\\''"))'" 
+            : arg
+        }.joined(separator: " ")
+        fullCommand = "\(resolvedCommand) \(escapedArgs)"
+      }
       process.arguments = ["-c", fullCommand]
       logger.info("Executing via shell: /bin/zsh -c '\(fullCommand)' in \(effectiveWorkingDir)")
     } else {
