@@ -23,6 +23,11 @@ public struct DiscoveredPeer: Identifiable, Sendable {
   public var isResolved: Bool {
     resolvedAddress != nil && resolvedPort != nil
   }
+  
+  /// Custom display name from TXT record, or falls back to name
+  public var displayName: String {
+    txtRecord["displayName"] ?? name
+  }
 }
 
 // MARK: - Discovery Delegate
@@ -155,6 +160,9 @@ public final class BonjourDiscoveryService: @unchecked Sendable {
     txtDict["platform"] = capabilities.platform.rawValue.data(using: .utf8)
     txtDict["gpuCores"] = String(capabilities.gpuCores).data(using: .utf8)
     txtDict["memoryGB"] = String(capabilities.memoryGB).data(using: .utf8)
+    if let displayName = capabilities.displayName {
+      txtDict["displayName"] = displayName.data(using: .utf8)
+    }
     
     let txtData = NetService.data(fromTXTRecord: txtDict)
     netService.setTXTRecord(txtData)
