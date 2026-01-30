@@ -1406,6 +1406,13 @@ struct RAGSearchResultRow: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
 
+              if let score = result.score {
+                Text(String(format: "%.0f%%", score * 100))
+                  .font(.caption2)
+                  .fontWeight(.medium)
+                  .foregroundStyle(scoreColor(score))
+              }
+
               Text(snippetPreview)
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
@@ -1504,6 +1511,12 @@ struct RAGSearchResultRow: View {
     case "json", "yaml", "yml": return "curlybraces"
     default: return "doc.text"
     }
+  }
+
+  private func scoreColor(_ score: Float) -> Color {
+    if score >= 0.8 { return .green }
+    if score >= 0.6 { return .orange }
+    return .secondary
   }
 }
 
