@@ -3812,37 +3812,72 @@ actor LocalRAGStore {
     
     // Handle relative paths
     if targetPath.hasPrefix("./") || targetPath.hasPrefix("../") {
-      let relativePath = targetPath.replacingOccurrences(of: "./", with: "")
+      var relativePath = targetPath
+      // Normalize ../ paths
+      while relativePath.hasPrefix("../") {
+        relativePath = String(relativePath.dropFirst(3))
+      }
+      relativePath = relativePath.replacingOccurrences(of: "./", with: "")
       let resolved = (sourceDir as NSString).appendingPathComponent(relativePath)
       candidates.append(resolved)
       // Try with common extensions
-      for ext in ["", ".swift", ".ts", ".tsx", ".js", ".jsx", ".rb"] {
+      for ext in ["", ".swift", ".ts", ".tsx", ".js", ".jsx", ".rb", ".py"] {
         candidates.append(resolved + ext)
       }
     } else {
-      // Absolute or module import
+      // Absolute or module import - try exact first
       candidates.append(targetPath)
-      // Try as path from root
-      for ext in ["", ".swift", ".ts", ".tsx", ".js", ".jsx", ".rb", "/index.ts", "/index.js"] {
-        candidates.append(targetPath + ext)
+      
+      // Try common directory structures
+      let commonPrefixes = ["", "src/", "lib/", "app/", "Shared/", "Sources/"]
+      for prefix in commonPrefixes {
+        for ext in ["", ".swift", ".ts", ".tsx", ".js", ".jsx", ".rb", ".py", "/index.ts", "/index.js", "/index.tsx"] {
+          candidates.append(prefix + targetPath + ext)
+        }
+      }
+      
+      // For Ruby - try converting module path to file path (Foo::Bar -> foo/bar.rb)
+      if targetPath.contains("::") {
+        let rubyPath = targetPath.replacingOccurrences(of: "::", with: "/").lowercased()
+        for prefix in ["", "app/models/", "app/services/", "lib/"] {
+          candidates.append(prefix + rubyPath + ".rb")
+        }
       }
     }
     
     return candidates
   }
   
-  /// Find a file by relative path within a repo
+  /// Find a file by relative path within a repo (exact match or suffix match)
   private func findFileByPath(_ path: String, inRepo repoId: String) throws -> String? {
     guard let db else { throw LocalRAGError.sqlite("Database not initialized") }
     
-    let sql = "SELECT id FROM files WHERE path = ? AND repo_id = ?"
+    // Try exact match first
+    let exactSql = "SELECT id FROM files WHERE path = ? AND repo_id = ?"
     var statement: OpaquePointer?
-    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    var result = sqlite3_prepare_v2(db, exactSql, -1, &statement, nil)
+    if result == SQLITE_OK, let stmt = statement {
+      bindText(stmt, 1, path)
+      bindText(stmt, 2, repoId)
+      
+      if sqlite3_step(stmt) == SQLITE_ROW {
+        if let text = sqlite3_column_text(stmt, 0) {
+          sqlite3_finalize(stmt)
+          return String(cString: text)
+        }
+      }
+      sqlite3_finalize(stmt)
+    }
+    
+    // Try suffix match (e.g., "LocalRAGStore" matches "Shared/Services/LocalRAGStore.swift")
+    let suffixSql = "SELECT id FROM files WHERE (path LIKE ? OR path LIKE ?) AND repo_id = ? LIMIT 1"
+    result = sqlite3_prepare_v2(db, suffixSql, -1, &statement, nil)
     guard result == SQLITE_OK, let stmt = statement else { return nil }
     defer { sqlite3_finalize(stmt) }
     
-    bindText(stmt, 1, path)
-    bindText(stmt, 2, repoId)
+    bindText(stmt, 1, "%/\(path)")
+    bindText(stmt, 2, "%/\(path).%")  // Handle extension-less imports
+    bindText(stmt, 3, repoId)
     
     if sqlite3_step(stmt) == SQLITE_ROW {
       if let text = sqlite3_column_text(stmt, 0) {

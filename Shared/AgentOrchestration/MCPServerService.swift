@@ -5152,11 +5152,14 @@ extension MCPServerService: RAGToolsHandlerDelegate {
   
   func getIndexStats(repoPath: String) async throws -> RAGToolIndexStats {
     let stats = try await localRagStore.getIndexStats(repoPath: repoPath)
+    let depStats = try await localRagStore.getDependencyStats(for: repoPath)
     return RAGToolIndexStats(
       fileCount: stats.fileCount,
       chunkCount: stats.chunkCount,
       embeddingCount: stats.embeddingCount,
-      totalLines: stats.totalLines
+      totalLines: stats.totalLines,
+      dependencyCount: depStats.totalDeps,
+      dependenciesByType: depStats.byType
     )
   }
   
