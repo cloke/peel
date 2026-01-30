@@ -552,6 +552,26 @@ struct LocalRAGDashboardView: View {
           }
         }
 
+        // MARK: - Dependency Graph
+        GroupBox {
+          VStack(alignment: .leading, spacing: LayoutSpacing.item) {
+            SectionHeader("Dependency Graph")
+            
+            if let firstRepo = mcpServer.ragRepos.first {
+              DependencyGraphView(
+                mcpServer: mcpServer,
+                repoPath: firstRepo.rootPath
+              )
+            } else {
+              ContentUnavailableView {
+                Label("No Indexed Repository", systemImage: "folder.badge.questionmark")
+              } description: {
+                Text("Index a repository first to explore its dependencies.")
+              }
+            }
+          }
+        }
+
         // MARK: - Database Info (Collapsible)
         DisclosureGroup("Database & Settings") {
           VStack(alignment: .leading, spacing: LayoutSpacing.item) {
