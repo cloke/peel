@@ -665,6 +665,9 @@ struct LocalRAGDashboardView: View {
               // Action buttons
               HStack {
                 Button {
+                  isAnalyzing = true
+                  analyzeError = nil
+                  analyzeProgress = (0, 50)
                   Task { await analyzeChunks(limit: 50) }
                 } label: {
                   Label(isAnalyzing ? "Analyzing..." : "Analyze 50 Chunks", systemImage: "cpu")
@@ -673,6 +676,9 @@ struct LocalRAGDashboardView: View {
                 .disabled(isAnalyzing || unanalyzedChunkCount == 0)
                 
                 Button {
+                  isAnalyzing = true
+                  analyzeError = nil
+                  analyzeProgress = (0, 500)
                   Task { await analyzeChunks(limit: 500) }
                 } label: {
                   Label("Analyze 500", systemImage: "cpu.fill")
@@ -1187,11 +1193,13 @@ struct LocalRAGDashboardView: View {
   }
   
   private func analyzeChunks(limit: Int) async {
-    guard let firstRepo = mcpServer.ragRepos.first else { return }
+    guard let firstRepo = mcpServer.ragRepos.first else { 
+      isAnalyzing = false
+      return 
+    }
     
-    isAnalyzing = true
-    analyzeError = nil
-    analyzeProgress = (0, limit)
+    // Note: isAnalyzing, analyzeError, analyzeProgress are set by the button action
+    // before this async function is called, for immediate UI feedback
     
     defer {
       Task { @MainActor in
