@@ -65,17 +65,26 @@ fi
 
 echo ""
 echo "🔄 Restarting Peel..."
-if pgrep -x Peel >/dev/null 2>&1; then
-  echo "Found running Peel process. Sending pkill..."
+PEEL_PID=$(pgrep -x Peel 2>/dev/null || true)
+if [ -n "$PEEL_PID" ]; then
+  echo "Found running Peel process (PID: $PEEL_PID). Sending SIGTERM..."
+  kill "$PEEL_PID" 2>/dev/null || true
+  sleep 2
+  
+  # If still running, use SIGKILL
+  if ps -p "$PEEL_PID" >/dev/null 2>&1; then
+    echo "Process still running, sending SIGKILL..."
+    kill -9 "$PEEL_PID" 2>/dev/null || true
+    sleep 1
+  fi
 else
   echo "No running Peel process detected."
 fi
-pkill -x Peel 2>/dev/null || true
-sleep 2
+
 if pgrep -x Peel >/dev/null 2>&1; then
-  echo "⚠️  Peel still running after pkill"
+  echo "⚠️  Peel still running after termination attempt"
 else
-  echo "✅ Peel process not running"
+  echo "✅ Peel process terminated"
 fi
 
 # Find and launch the built app
