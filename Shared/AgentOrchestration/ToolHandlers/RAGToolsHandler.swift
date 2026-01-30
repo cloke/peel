@@ -558,12 +558,16 @@ final class RAGToolsHandler: MCPToolHandler {
     
     do {
       let stats = try await delegate.getIndexStats(repoPath: repoPath)
-      let result: [String: Any] = [
+      var result: [String: Any] = [
         "fileCount": stats.fileCount,
         "chunkCount": stats.chunkCount,
         "embeddingCount": stats.embeddingCount,
-        "totalLines": stats.totalLines
+        "totalLines": stats.totalLines,
+        "dependencyCount": stats.dependencyCount
       ]
+      if !stats.dependenciesByType.isEmpty {
+        result["dependenciesByType"] = stats.dependenciesByType
+      }
       return (200, makeResult(id: id, result: result))
     } catch {
       await delegate.logWarning("RAG stats failed", metadata: ["error": error.localizedDescription])
@@ -995,12 +999,16 @@ struct RAGToolIndexStats {
   let chunkCount: Int
   let embeddingCount: Int
   let totalLines: Int
+  let dependencyCount: Int
+  let dependenciesByType: [String: Int]
   
-  init(fileCount: Int, chunkCount: Int, embeddingCount: Int, totalLines: Int) {
+  init(fileCount: Int, chunkCount: Int, embeddingCount: Int, totalLines: Int, dependencyCount: Int = 0, dependenciesByType: [String: Int] = [:]) {
     self.fileCount = fileCount
     self.chunkCount = chunkCount
     self.embeddingCount = embeddingCount
     self.totalLines = totalLines
+    self.dependencyCount = dependencyCount
+    self.dependenciesByType = dependenciesByType
   }
 }
 
