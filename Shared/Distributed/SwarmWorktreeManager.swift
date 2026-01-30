@@ -26,6 +26,23 @@ public final class SwarmWorktreeManager {
     public let branchName: String
     public let repoPath: String
     public let createdAt: Date
+    public var diskSizeBytes: Int64?
+
+    public init(
+      taskId: UUID,
+      worktreePath: String,
+      branchName: String,
+      repoPath: String,
+      createdAt: Date,
+      diskSizeBytes: Int64? = nil
+    ) {
+      self.taskId = taskId
+      self.worktreePath = worktreePath
+      self.branchName = branchName
+      self.repoPath = repoPath
+      self.createdAt = createdAt
+      self.diskSizeBytes = diskSizeBytes
+    }
   }
   
   public init(baseDir: String? = nil) {
@@ -236,6 +253,37 @@ public final class SwarmWorktreeManager {
   /// Get all active worktrees
   public func getActiveWorktrees() -> [WorktreeInfo] {
     Array(activeWorktrees.values)
+  }
+
+  /// Get the base directory path for worktrees
+  public func getWorktreeBaseDir() -> String {
+    worktreeBaseDir
+  }
+
+  /// Calculate disk size for a directory
+  /// - Parameter path: Path to the directory
+  /// - Returns: Total size in bytes, or nil if calculation fails
+  public static func calculateDiskSize(for path: String) -> Int64? {
+    let fileManager = FileManager.default
+    guard let enumerator = fileManager.enumerator(
+      at: URL(fileURLWithPath: path),
+      includingPropertiesForKeys: [.totalFileAllocatedSizeKey, .isDirectoryKey],
+      options: [.skipsHiddenFiles]
+    ) else {
+      return nil
+    }
+
+    var totalSize: Int64 = 0
+    for case let fileURL as URL in enumerator {
+      guard let resourceValues = try? fileURL.resourceValues(forKeys: [.totalFileAllocatedSizeKey, .isDirectoryKey]),
+            let isDirectory = resourceValues.isDirectory,
+            !isDirectory,
+            let fileSize = resourceValues.totalFileAllocatedSize else {
+        continue
+      }
+      totalSize += Int64(fileSize)
+    }
+    return totalSize
   }
   
   /// Get debug info about active worktrees

@@ -1256,6 +1256,11 @@ struct LocalRAGDashboardView: View {
   }
   
   private func refreshAnalysisStatus() async {
+    // Ensure ragRepos is populated first
+    if mcpServer.ragRepos.isEmpty {
+      await mcpServer.refreshRagSummary()
+    }
+
     guard let repo = selectedAnalyzerRepo else {
       analyzedChunkCount = 0
       unanalyzedChunkCount = 0

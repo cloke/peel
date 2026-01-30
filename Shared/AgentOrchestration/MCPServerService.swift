@@ -433,6 +433,7 @@ public final class MCPServerService {
   private var chainToolsHandler: ChainToolsHandler?
   private var swarmToolsHandler: SwarmToolsHandler
   private var repoToolsHandler: RepoToolsHandler
+  private var worktreeToolsHandler: WorktreeToolsHandler
 
   public struct ActiveRunInfo: Identifiable {
     public let id: UUID
@@ -492,6 +493,7 @@ public final class MCPServerService {
     self.ragToolsHandler = RAGToolsHandler()
     self.chainToolsHandler = ChainToolsHandler()
     self.repoToolsHandler = RepoToolsHandler()
+    self.worktreeToolsHandler = WorktreeToolsHandler()
 
     self.agentManager = agentManager
     self.sessionTracker = sessionTracker
@@ -581,6 +583,7 @@ public final class MCPServerService {
     self.chainToolsHandler?.delegate = self
     self.swarmToolsHandler.delegate = self
     self.repoToolsHandler.delegate = self
+    self.worktreeToolsHandler.delegate = self
     SwarmCoordinator.shared.ragSyncDelegate = self
 
     // If running in worker mode, inject the chain executor into the already-running SwarmCoordinator
@@ -1625,6 +1628,9 @@ public final class MCPServerService {
     }
     if repoToolsHandler.supportedTools.contains(resolvedName) {
       return await repoToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
+    }
+    if worktreeToolsHandler.supportedTools.contains(resolvedName) {
+      return await worktreeToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
     }
 
     // Fall through to inline handlers (to be extracted in future)
@@ -4631,6 +4637,58 @@ public final class MCPServerService {
         ],
         category: .swarm,
         isMutating: false
+      ),
+      // MARK: - Worktree Tools
+      ToolDefinition(
+        name: "worktree.list",
+        description: "List all git worktrees across registered repositories and the peel-worktrees directory. Returns path, branch, disk size, and status for each worktree.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": [
+              "type": "string",
+              "description": "Optional: Filter to worktrees for a specific repository path"
+            ],
+            "includeMain": [
+              "type": "boolean",
+              "description": "Include main worktrees (the original repo checkouts). Default: false"
+            ]
+          ],
+          "required": []
+        ],
+        category: .worktrees,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "worktree.remove",
+        description: "Remove a git worktree by path. Use force=true if the worktree has uncommitted changes.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "path": [
+              "type": "string",
+              "description": "The absolute path to the worktree to remove"
+            ],
+            "force": [
+              "type": "boolean",
+              "description": "Force removal even if worktree is dirty. Default: false"
+            ]
+          ],
+          "required": ["path"]
+        ],
+        category: .worktrees,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "worktree.stats",
+        description: "Get aggregate statistics about all worktrees: total count, disk usage, prunable count, grouped by repository.",
+        inputSchema: [
+          "type": "object",
+          "properties": [:],
+          "required": []
+        ],
+        category: .worktrees,
+        isMutating: false
       )
     ]
   }
@@ -5803,5 +5861,155 @@ enum ChainError: LocalizedError {
     case .invalidConfiguration(let msg): return "Invalid configuration: \(msg)"
     case .startFailed(let msg): return "Failed to start chain: \(msg)"
     }
+  }
+}
+
+// MARK: - WorktreeToolsHandlerDelegate
+
+extension MCPServerService: WorktreeToolsHandlerDelegate {
+  func worktreeBaseDir() -> String {
+    SwarmCoordinator.shared.getWorktreeDebugInfo()["baseDir"] as? String
+      ?? "\(FileManager.default.homeDirectoryForCurrentUser.path)/peel-worktrees"
+  }
+
+  func listAllWorktrees() async throws -> [WorktreeToolInfo] {
+    #if os(macOS)
+    var allWorktrees: [WorktreeToolInfo] = []
+    let fileManager = FileManager.default
+
+    // Get worktrees from peel-worktrees base directory
+    let baseDir = worktreeBaseDir()
+    if fileManager.fileExists(atPath: baseDir),
+       let baseDirContents = try? fileManager.contentsOfDirectory(atPath: baseDir) {
+      for item in baseDirContents where item.hasPrefix("task-") {
+        let wtPath = "\(baseDir)/\(item)"
+        // Read .git file to find parent repo
+        let gitFilePath = "\(wtPath)/.git"
+        if fileManager.fileExists(atPath: gitFilePath),
+           let gitContent = try? String(contentsOfFile: gitFilePath, encoding: .utf8),
+           gitContent.hasPrefix("gitdir:") {
+          // Parse parent repo path from gitdir
+          let gitDir = gitContent.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "gitdir: ", with: "")
+          // gitdir points to .git/worktrees/<name>, so go up 3 levels for repo
+          let repoPath = URL(fileURLWithPath: gitDir)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .path
+
+          // Get branch from HEAD
+          let headPath = "\(gitDir)/HEAD"
+          var branch: String?
+          var head = "unknown"
+          if let headContent = try? String(contentsOfFile: headPath, encoding: .utf8) {
+            let trimmed = headContent.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasPrefix("ref: ") {
+              branch = String(trimmed.dropFirst("ref: ".count))
+              head = branch ?? "unknown"
+            } else {
+              head = trimmed
+            }
+          }
+
+          // Get creation date from directory
+          let attrs = try? fileManager.attributesOfItem(atPath: wtPath)
+          let createdAt = attrs?[.creationDate] as? Date
+
+          // Calculate disk size
+          let diskSize = SwarmWorktreeManager.calculateDiskSize(for: wtPath)
+
+          allWorktrees.append(WorktreeToolInfo(
+            path: wtPath,
+            head: head,
+            branch: branch,
+            repoPath: repoPath,
+            isMain: false,
+            isDetached: branch == nil,
+            isLocked: false,
+            lockReason: nil,
+            isPrunable: false,
+            pruneReason: nil,
+            diskSizeBytes: diskSize,
+            createdAt: createdAt
+          ))
+        }
+      }
+    }
+
+    // Also get worktrees from registered repos using Git package
+    let registeredRepos = RepoRegistry.shared.registeredRepos
+    for (_, localPath) in registeredRepos {
+      let repoName = URL(fileURLWithPath: localPath).lastPathComponent
+      let repository = Git.Model.Repository(name: repoName, path: localPath)
+      if let worktrees = try? await Git.Commands.Worktree.list(on: repository) {
+        for wt in worktrees {
+          // Skip if we already have this worktree (from base dir scan)
+          if allWorktrees.contains(where: { $0.path == wt.path }) {
+            continue
+          }
+
+          let diskSize = SwarmWorktreeManager.calculateDiskSize(for: wt.path)
+          let attrs = try? fileManager.attributesOfItem(atPath: wt.path)
+          let createdAt = attrs?[.creationDate] as? Date
+
+          allWorktrees.append(WorktreeToolInfo(
+            path: wt.path,
+            head: wt.head,
+            branch: wt.branch,
+            repoPath: localPath,
+            isMain: wt.isMain,
+            isDetached: wt.isDetached,
+            isLocked: wt.isLocked,
+            lockReason: wt.lockReason,
+            isPrunable: wt.isPrunable,
+            pruneReason: wt.pruneReason,
+            diskSizeBytes: diskSize,
+            createdAt: createdAt
+          ))
+        }
+      }
+    }
+
+    return allWorktrees
+    #else
+    return []
+    #endif
+  }
+
+  func removeWorktree(path: String, force: Bool) async throws {
+    #if os(macOS)
+    let fileManager = FileManager.default
+
+    // Try to find the parent repo
+    let gitFilePath = "\(path)/.git"
+    if fileManager.fileExists(atPath: gitFilePath),
+       let gitContent = try? String(contentsOfFile: gitFilePath, encoding: .utf8),
+       gitContent.hasPrefix("gitdir:") {
+      let gitDir = gitContent.trimmingCharacters(in: .whitespacesAndNewlines)
+        .replacingOccurrences(of: "gitdir: ", with: "")
+      let repoPath = URL(fileURLWithPath: gitDir)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .path
+
+      let repoName = URL(fileURLWithPath: repoPath).lastPathComponent
+      let repository = Git.Model.Repository(name: repoName, path: repoPath)
+      try await Git.Commands.Worktree.remove(path: path, force: force, on: repository)
+      return
+    }
+
+    // Fallback: just remove the directory if we can't find the repo
+    if force {
+      try fileManager.removeItem(atPath: path)
+    } else {
+      throw WorktreeError.worktreeRemovalFailed("Cannot find parent repository for worktree")
+    }
+    #endif
+  }
+
+  func diskSize(for path: String) -> Int64? {
+    SwarmWorktreeManager.calculateDiskSize(for: path)
   }
 }
