@@ -178,6 +178,15 @@ struct AgentsSidebarView: View {
           .accessibilityIdentifier("agents.parallelWorktrees")
           .tag("infra:parallel-worktrees")
 
+          HStack {
+            Image(systemName: "folder.badge.gearshape")
+              .foregroundStyle(.cyan)
+            Text("Worktrees")
+            Spacer()
+          }
+          .accessibilityIdentifier("agents.worktrees")
+          .tag("infra:worktrees")
+
           if parallelWorktreeStatus.totalRuns > 0 {
             HStack(spacing: 8) {
               sidebarToken(icon: "tray.full", color: .secondary, value: parallelWorktreeStatus.totalRuns)
