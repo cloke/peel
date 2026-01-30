@@ -431,20 +431,48 @@ curl -X POST http://127.0.0.1:8765/rpc \
 Swarm uses a **branch queue** to coordinate concurrent work on the same repository:
 
 - Each task reserves a unique branch name (e.g., `swarm/task-abc123`)
+- If a branch name is already in use, a suffix is automatically added
 - Peels create isolated worktrees for their assigned branches
 - Prevents merge conflicts between parallel tasks
-- Auto-cleanup when tasks complete
+- Branch reservations are released when tasks complete
+
+**View branch queue status:**
+```bash
+curl -X POST http://127.0.0.1:8765/rpc \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"swarm.branch-queue","arguments":{}}}'
+```
+
+**Response includes:**
+- `inFlight` - Branches currently being worked on
+- `completed` - Branches ready for PR creation
+- `stats` - Summary counts
 
 #### PR Queue
 
-Completed tasks can automatically create pull requests:
+Completed tasks can automatically create pull requests. The PR queue processes requests sequentially to avoid GitHub API race conditions.
 
-| Status | Description |
-|--------|-------------|
-| `pending` | Waiting to create PR |
-| `created` | PR created successfully |
-| `failed` | PR creation failed |
-| `needsHelp` | Requires human review |
+**Peel PR Labels:**
+
+| Label | Color | Description |
+|-------|-------|-------------|
+| `peel:created` | 🔵 Blue | PR was created by Peel swarm |
+| `peel:approved` | 🟢 Green | Validated and approved by Peel |
+| `peel:needs-review` | 🟡 Yellow | Awaiting human review |
+| `peel:needs-help` | 🔴 Red | Needs human intervention |
+| `peel:conflict` | 🔴 Dark Red | Merge conflicts detected |
+| `peel:merged` | 🟣 Purple | Auto-merged by Peel |
+
+**Setup labels in a repository:**
+```bash
+curl -X POST http://127.0.0.1:8765/rpc \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"swarm.setup-labels","arguments":{"repoPath":"/path/to/repo"}}}'
+```
+
+**View PR queue status:**
+```bash
+curl -X POST http://127.0.0.1:8765/rpc \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"swarm.pr-queue","arguments":{}}}'
+```
 
 **Manual PR Creation:**
 ```bash
@@ -782,7 +810,7 @@ The MCP server exposes these tool categories via JSON-RPC at `http://127.0.0.1:8
 |------|-------------|
 | `swarm.start` | Start the swarm coordinator |
 | `swarm.stop` | Stop the swarm coordinator |
-| `swarm.status` | Get swarm coordinator status |
+| `swarm.status` | Get swarm coordinator status (includes branch/PR queue stats) |
 | `swarm.dispatch` | Dispatch a task to the swarm |
 | `swarm.tasks` | Get completed task results |
 | `swarm.workers` | List connected peels |
@@ -792,9 +820,10 @@ The MCP server exposes these tool categories via JSON-RPC at `http://127.0.0.1:8
 | `swarm.update-workers` | Push code updates to peels |
 | `swarm.register-repo` | Register a repository path with the swarm |
 | `swarm.repos` | List registered repositories |
-| `swarm.branch-queue` | Get branch queue status |
-| `swarm.pr-queue` | Get PR queue status |
+| `swarm.branch-queue` | Get branch queue status (in-flight and completed branches) |
+| `swarm.pr-queue` | Get PR queue status (pending operations and created PRs) |
 | `swarm.create-pr` | Manually create a PR for a completed task |
+| `swarm.setup-labels` | Create Peel PR labels in a repository |
 
 ### Server Management
 
