@@ -141,6 +141,70 @@ struct LocalRAGChunk: Sendable {
   }
 }
 
+// MARK: - Dependency Graph Types (Issue #176)
+
+/// Type of dependency relationship between code units
+enum LocalRAGDependencyType: String, Sendable, CaseIterable, Codable {
+  case `import` = "import"       // Swift: import, TS/JS: import, Ruby: require
+  case require = "require"       // Ruby: require, require_relative
+  case include = "include"       // Ruby: include (mixin)
+  case extend = "extend"         // Ruby: extend (class methods mixin)
+  case inherit = "inherit"       // Class inheritance (< in Ruby, : in Swift)
+  case conform = "conform"       // Protocol/interface conformance
+  case call = "call"             // Function/method call reference (future)
+}
+
+/// Represents a dependency relationship between source and target
+struct LocalRAGDependency: Sendable {
+  let id: String
+  let repoId: String
+  let sourceFileId: String
+  let sourceSymbolId: String?
+  let targetPath: String           // Resolved path or module name
+  let targetSymbolName: String?    // Optional: specific symbol being imported
+  let targetFileId: String?        // Resolved target file (if in same repo)
+  let dependencyType: LocalRAGDependencyType
+  let rawImport: String            // Original import statement text
+  
+  init(
+    id: String = UUID().uuidString,
+    repoId: String,
+    sourceFileId: String,
+    sourceSymbolId: String? = nil,
+    targetPath: String,
+    targetSymbolName: String? = nil,
+    targetFileId: String? = nil,
+    dependencyType: LocalRAGDependencyType,
+    rawImport: String
+  ) {
+    self.id = id
+    self.repoId = repoId
+    self.sourceFileId = sourceFileId
+    self.sourceSymbolId = sourceSymbolId
+    self.targetPath = targetPath
+    self.targetSymbolName = targetSymbolName
+    self.targetFileId = targetFileId
+    self.dependencyType = dependencyType
+    self.rawImport = rawImport
+  }
+}
+
+/// Result from dependency queries
+struct LocalRAGDependencyResult: Sendable {
+  let sourceFile: String           // Relative path of source file
+  let targetPath: String           // Module/path being depended on
+  let targetFile: String?          // Resolved target file (if in repo)
+  let dependencyType: LocalRAGDependencyType
+  let rawImport: String
+}
+
+/// Summary of dependencies for a file
+struct LocalRAGDependencySummary: Sendable {
+  let filePath: String
+  let dependencies: [LocalRAGDependencyResult]    // What this file depends on
+  let dependents: [LocalRAGDependencyResult]      // What depends on this file
+}
+
 struct LocalRAGChunker {
   var maxLines: Int = 100  // Reduced from 200 for better granularity
   var minLines: Int = 20   // Don't create tiny chunks
@@ -1743,6 +1807,9 @@ actor LocalRAGStore {
         featureTags: featureTagsJson
       )
       try deleteChunks(for: fileId)
+      
+      // Delete old dependencies before re-indexing
+      try deleteDependencies(for: fileId)
 
       for (index, chunk) in chunks.enumerated() {
         let chunkId = stableId(for: "\(fileId):\(chunk.startLine):\(chunk.endLine):\(chunk.text)")
@@ -1771,6 +1838,18 @@ actor LocalRAGStore {
         if !embedding.isEmpty {
           try upsertEmbedding(chunkId: chunkId, vector: embedding)
         }
+      }
+      
+      // Extract and store dependencies from chunk metadata (Issue #176)
+      let fileDeps = extractDependencies(
+        from: chunks,
+        repoId: repoId,
+        fileId: fileId,
+        relativePath: relativePath,
+        language: file.language
+      )
+      if !fileDeps.isEmpty {
+        try insertDependencies(fileDeps)
       }
 
       chunkCount += chunks.count
@@ -2644,7 +2723,62 @@ actor LocalRAGStore {
       try exec("UPDATE rag_meta SET value = '4' WHERE key = 'schema_version'")
     }
     
-    schemaVersion = 4
+    // Migration to v5: Add dependencies table for code graph (issue #176)
+    // This enables dependency queries: "what does X depend on?" and "what depends on X?"
+    if currentVersion < 5 {
+      // Create symbols table - normalized symbols across files
+      try exec("""
+        CREATE TABLE IF NOT EXISTS symbols (
+          id TEXT PRIMARY KEY,
+          repo_id TEXT NOT NULL,
+          file_id TEXT,
+          name TEXT NOT NULL,
+          qualified_name TEXT,
+          symbol_type TEXT NOT NULL,
+          start_line INTEGER,
+          end_line INTEGER,
+          FOREIGN KEY(repo_id) REFERENCES repos(id) ON DELETE CASCADE,
+          FOREIGN KEY(file_id) REFERENCES files(id) ON DELETE CASCADE
+        )
+        """)
+      
+      // Create dependencies table - edges between files/symbols
+      // source_file_id: the file that has the import/reference
+      // target_path: the resolved path or module name being imported
+      // dependency_type: 'import', 'require', 'include', 'inherit', 'conform', 'extend', 'call'
+      try exec("""
+        CREATE TABLE IF NOT EXISTS dependencies (
+          id TEXT PRIMARY KEY,
+          repo_id TEXT NOT NULL,
+          source_file_id TEXT NOT NULL,
+          source_symbol_id TEXT,
+          target_path TEXT NOT NULL,
+          target_symbol_name TEXT,
+          target_file_id TEXT,
+          dependency_type TEXT NOT NULL,
+          raw_import TEXT,
+          FOREIGN KEY(repo_id) REFERENCES repos(id) ON DELETE CASCADE,
+          FOREIGN KEY(source_file_id) REFERENCES files(id) ON DELETE CASCADE,
+          FOREIGN KEY(source_symbol_id) REFERENCES symbols(id) ON DELETE SET NULL,
+          FOREIGN KEY(target_file_id) REFERENCES files(id) ON DELETE SET NULL
+        )
+        """)
+      
+      // Index for forward queries (what does X depend on)
+      try exec("CREATE INDEX IF NOT EXISTS idx_deps_source ON dependencies(source_file_id)")
+      
+      // Index for reverse queries (what depends on X)
+      try exec("CREATE INDEX IF NOT EXISTS idx_deps_target ON dependencies(target_file_id)")
+      try exec("CREATE INDEX IF NOT EXISTS idx_deps_target_path ON dependencies(target_path)")
+      
+      // Index for symbol lookups
+      try exec("CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name)")
+      try exec("CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file_id)")
+      
+      try exec("UPDATE rag_meta SET value = '5' WHERE key = 'schema_version'")
+    }
+    
+    schemaVersion = 5
     
     // Set up vec_chunks virtual table if extension is loaded
     if extensionLoaded {
@@ -3263,9 +3397,409 @@ actor LocalRAGStore {
     let digest = SHA256.hash(data: Data(value.utf8))
     return digest.map { String(format: "%02x", $0) }.joined()
   }
+  
+  // MARK: - Dependency Graph Methods (Issue #176)
+  
+  /// Extract dependencies from chunk metadata
+  /// Parses imports, inheritance, and protocol conformance from AST metadata
+  private func extractDependencies(
+    from chunks: [LocalRAGChunk],
+    repoId: String,
+    fileId: String,
+    relativePath: String,
+    language: String
+  ) -> [LocalRAGDependency] {
+    var dependencies: [LocalRAGDependency] = []
+    var seenImports = Set<String>()       // Dedupe imports across chunks
+    var seenProtocols = Set<String>()     // Dedupe protocol conformance
+    var seenInheritance = Set<String>()   // Dedupe inheritance
+    var seenMixins = Set<String>()        // Dedupe Ruby mixins
+    
+    for chunk in chunks {
+      guard let metadataJson = chunk.metadata,
+            let metadataData = metadataJson.data(using: .utf8),
+            let metadata = try? JSONDecoder().decode(ASTChunkMetadata.self, from: metadataData) else {
+        continue
+      }
+      
+      // Extract imports
+      for importPath in metadata.imports {
+        guard !seenImports.contains(importPath) else { continue }
+        seenImports.insert(importPath)
+        
+        let depType = determineImportType(importPath: importPath, language: language)
+        let resolvedTargetFile = resolveTargetFile(targetPath: importPath, inRepo: repoId, fromFile: relativePath)
+        
+        dependencies.append(LocalRAGDependency(
+          repoId: repoId,
+          sourceFileId: fileId,
+          targetPath: importPath,
+          targetFileId: resolvedTargetFile,
+          dependencyType: depType,
+          rawImport: importPath
+        ))
+      }
+      
+      // Extract superclass (inheritance)
+      if let superclass = metadata.superclass {
+        guard !seenInheritance.contains(superclass) else { continue }
+        seenInheritance.insert(superclass)
+        
+        dependencies.append(LocalRAGDependency(
+          repoId: repoId,
+          sourceFileId: fileId,
+          targetPath: superclass,
+          targetSymbolName: superclass,
+          dependencyType: .inherit,
+          rawImport: superclass
+        ))
+      }
+      
+      // Extract protocol conformance
+      for proto in metadata.protocols {
+        guard !seenProtocols.contains(proto) else { continue }
+        seenProtocols.insert(proto)
+        
+        dependencies.append(LocalRAGDependency(
+          repoId: repoId,
+          sourceFileId: fileId,
+          targetPath: proto,
+          targetSymbolName: proto,
+          dependencyType: .conform,
+          rawImport: proto
+        ))
+      }
+      
+      // Extract Ruby mixins (include/extend)
+      for mixin in metadata.mixins {
+        guard !seenMixins.contains(mixin) else { continue }
+        seenMixins.insert(mixin)
+        
+        // Ruby mixins can be "include Foo" or "extend Bar"
+        let depType: LocalRAGDependencyType = mixin.lowercased().hasPrefix("extend") ? .extend : .include
+        let moduleName = mixin.replacingOccurrences(of: "include ", with: "")
+                              .replacingOccurrences(of: "extend ", with: "")
+                              .trimmingCharacters(in: .whitespaces)
+        dependencies.append(LocalRAGDependency(
+          repoId: repoId,
+          sourceFileId: fileId,
+          targetPath: moduleName,
+          targetSymbolName: moduleName,
+          dependencyType: depType,
+          rawImport: mixin
+        ))
+      }
+    }
+    
+    return dependencies
+  }
+  
+  /// Determine the import type based on language and import syntax
+  private func determineImportType(importPath: String, language: String) -> LocalRAGDependencyType {
+    let lowercased = importPath.lowercased()
+    
+    // Ruby
+    if language == "ruby" || language == "Ruby" {
+      if lowercased.hasPrefix("require_relative") || lowercased.hasPrefix("require ") {
+        return .require
+      }
+    }
+    
+    // Default to import for Swift, TypeScript, JavaScript
+    return .import
+  }
+  
+  /// Insert a dependency relationship
+  func insertDependency(_ dep: LocalRAGDependency) throws {
+    let sql = """
+      INSERT OR REPLACE INTO dependencies 
+        (id, repo_id, source_file_id, source_symbol_id, target_path, target_symbol_name, target_file_id, dependency_type, raw_import)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      """
+    try execute(sql: sql) { statement in
+      bindText(statement, 1, dep.id)
+      bindText(statement, 2, dep.repoId)
+      bindText(statement, 3, dep.sourceFileId)
+      if let symbolId = dep.sourceSymbolId {
+        bindText(statement, 4, symbolId)
+      } else {
+        sqlite3_bind_null(statement, 4)
+      }
+      bindText(statement, 5, dep.targetPath)
+      if let targetSymbol = dep.targetSymbolName {
+        bindText(statement, 6, targetSymbol)
+      } else {
+        sqlite3_bind_null(statement, 6)
+      }
+      if let targetFileId = dep.targetFileId {
+        bindText(statement, 7, targetFileId)
+      } else {
+        sqlite3_bind_null(statement, 7)
+      }
+      bindText(statement, 8, dep.dependencyType.rawValue)
+      bindText(statement, 9, dep.rawImport)
+    }
+  }
+  
+  /// Insert multiple dependencies in a transaction
+  func insertDependencies(_ deps: [LocalRAGDependency]) throws {
+    guard !deps.isEmpty else { return }
+    try exec("BEGIN TRANSACTION")
+    do {
+      for dep in deps {
+        try insertDependency(dep)
+      }
+      try exec("COMMIT")
+    } catch {
+      try? exec("ROLLBACK")
+      throw error
+    }
+  }
+  
+  /// Delete all dependencies for a file (called before re-indexing)
+  func deleteDependencies(for fileId: String) throws {
+    let sql = "DELETE FROM dependencies WHERE source_file_id = ?"
+    try execute(sql: sql) { statement in
+      bindText(statement, 1, fileId)
+    }
+  }
+  
+  /// Delete all dependencies for a repo
+  func deleteDependencies(forRepo repoId: String) throws {
+    let sql = "DELETE FROM dependencies WHERE repo_id = ?"
+    try execute(sql: sql) { statement in
+      bindText(statement, 1, repoId)
+    }
+  }
+  
+  /// Get what a file depends on (forward dependencies)
+  /// - Parameters:
+  ///   - filePath: Relative path of the file within the repo
+  ///   - repoPath: Root path of the repository
+  /// - Returns: List of dependencies (what this file imports/requires)
+  func getDependencies(for filePath: String, inRepo repoPath: String) throws -> [LocalRAGDependencyResult] {
+    try openIfNeeded()
+    
+    let sql = """
+      SELECT 
+        files.path as source_file,
+        d.target_path,
+        target_files.path as target_file,
+        d.dependency_type,
+        d.raw_import
+      FROM dependencies d
+      JOIN files ON files.id = d.source_file_id
+      JOIN repos ON repos.id = d.repo_id
+      LEFT JOIN files target_files ON target_files.id = d.target_file_id
+      WHERE files.path = ? AND repos.root_path = ?
+      ORDER BY d.dependency_type, d.target_path
+      """
+    
+    return try queryDependencies(sql: sql) { statement in
+      bindText(statement, 1, filePath)
+      bindText(statement, 2, repoPath)
+    }
+  }
+  
+  /// Get what depends on a file (reverse dependencies)
+  /// - Parameters:
+  ///   - filePath: Relative path of the file within the repo
+  ///   - repoPath: Root path of the repository
+  /// - Returns: List of files that depend on this file
+  func getDependents(for filePath: String, inRepo repoPath: String) throws -> [LocalRAGDependencyResult] {
+    try openIfNeeded()
+    
+    // First, get the file ID for the target file
+    let fileIdSql = """
+      SELECT files.id FROM files
+      JOIN repos ON repos.id = files.repo_id
+      WHERE files.path = ? AND repos.root_path = ?
+      """
+    
+    var targetFileId: String?
+    var statement: OpaquePointer?
+    guard let db else { throw LocalRAGError.sqlite("Database not initialized") }
+    
+    var result = sqlite3_prepare_v2(db, fileIdSql, -1, &statement, nil)
+    guard result == SQLITE_OK, let stmt = statement else {
+      throw LocalRAGError.sqlite("Failed to prepare statement")
+    }
+    defer { sqlite3_finalize(stmt) }
+    
+    bindText(stmt, 1, filePath)
+    bindText(stmt, 2, repoPath)
+    
+    if sqlite3_step(stmt) == SQLITE_ROW {
+      if let text = sqlite3_column_text(stmt, 0) {
+        targetFileId = String(cString: text)
+      }
+    }
+    
+    // Query by both resolved file_id and by target_path (for unresolved imports)
+    // This handles both: imports within the same repo (resolved) and external imports (path match)
+    let sql = """
+      SELECT 
+        source_files.path as source_file,
+        d.target_path,
+        target_files.path as target_file,
+        d.dependency_type,
+        d.raw_import
+      FROM dependencies d
+      JOIN files source_files ON source_files.id = d.source_file_id
+      JOIN repos ON repos.id = d.repo_id
+      LEFT JOIN files target_files ON target_files.id = d.target_file_id
+      WHERE repos.root_path = ? AND (
+        d.target_file_id = ? OR
+        d.target_path = ? OR
+        d.target_path LIKE ?
+      )
+      ORDER BY source_files.path
+      """
+    
+    return try queryDependencies(sql: sql) { statement in
+      bindText(statement, 1, repoPath)
+      bindText(statement, 2, targetFileId ?? "")
+      bindText(statement, 3, filePath)
+      // Also match partial paths (e.g., "./utils" matching "src/utils.ts")
+      bindText(statement, 4, "%/\(filePath)")
+    }
+  }
+  
+  /// Get dependency statistics for a repo
+  func getDependencyStats(for repoPath: String) throws -> (totalDeps: Int, byType: [String: Int]) {
+    try openIfNeeded()
+    guard let db else { throw LocalRAGError.sqlite("Database not initialized") }
+    
+    let sql = """
+      SELECT d.dependency_type, COUNT(*) as count
+      FROM dependencies d
+      JOIN repos ON repos.id = d.repo_id
+      WHERE repos.root_path = ?
+      GROUP BY d.dependency_type
+      """
+    
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let stmt = statement else {
+      throw LocalRAGError.sqlite("Failed to prepare statement")
+    }
+    defer { sqlite3_finalize(stmt) }
+    
+    bindText(stmt, 1, repoPath)
+    
+    var byType: [String: Int] = [:]
+    var total = 0
+    
+    while sqlite3_step(stmt) == SQLITE_ROW {
+      if let typeText = sqlite3_column_text(stmt, 0) {
+        let typeName = String(cString: typeText)
+        let count = Int(sqlite3_column_int(stmt, 1))
+        byType[typeName] = count
+        total += count
+      }
+    }
+    
+    return (total, byType)
+  }
+  
+  /// Helper to query dependencies and map results
+  private func queryDependencies(sql: String, binder: (OpaquePointer) -> Void) throws -> [LocalRAGDependencyResult] {
+    guard let db else { throw LocalRAGError.sqlite("Database not initialized") }
+    
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let stmt = statement else {
+      throw LocalRAGError.sqlite("Failed to prepare statement")
+    }
+    defer { sqlite3_finalize(stmt) }
+    
+    binder(stmt)
+    
+    var results: [LocalRAGDependencyResult] = []
+    while sqlite3_step(stmt) == SQLITE_ROW {
+      let sourceFile = sqlite3_column_text(stmt, 0).map { String(cString: $0) } ?? ""
+      let targetPath = sqlite3_column_text(stmt, 1).map { String(cString: $0) } ?? ""
+      let targetFile = sqlite3_column_text(stmt, 2).map { String(cString: $0) }
+      let depTypeStr = sqlite3_column_text(stmt, 3).map { String(cString: $0) } ?? "import"
+      let rawImport = sqlite3_column_text(stmt, 4).map { String(cString: $0) } ?? ""
+      
+      let depType = LocalRAGDependencyType(rawValue: depTypeStr) ?? .import
+      
+      results.append(LocalRAGDependencyResult(
+        sourceFile: sourceFile,
+        targetPath: targetPath,
+        targetFile: targetFile,
+        dependencyType: depType,
+        rawImport: rawImport
+      ))
+    }
+    
+    return results
+  }
+  
+  /// Resolve target path to a file ID within the repo (for internal dependencies)
+  func resolveTargetFile(targetPath: String, inRepo repoId: String, fromFile sourceFile: String) -> String? {
+    // Try to resolve relative paths
+    let candidates = generateResolutionCandidates(targetPath: targetPath, sourceFile: sourceFile)
+    
+    for candidate in candidates {
+      if let fileId = try? findFileByPath(candidate, inRepo: repoId) {
+        return fileId
+      }
+    }
+    
+    return nil
+  }
+  
+  /// Generate candidate paths for resolving an import
+  private func generateResolutionCandidates(targetPath: String, sourceFile: String) -> [String] {
+    var candidates: [String] = []
+    
+    // Get directory of source file
+    let sourceDir = (sourceFile as NSString).deletingLastPathComponent
+    
+    // Handle relative paths
+    if targetPath.hasPrefix("./") || targetPath.hasPrefix("../") {
+      let relativePath = targetPath.replacingOccurrences(of: "./", with: "")
+      let resolved = (sourceDir as NSString).appendingPathComponent(relativePath)
+      candidates.append(resolved)
+      // Try with common extensions
+      for ext in ["", ".swift", ".ts", ".tsx", ".js", ".jsx", ".rb"] {
+        candidates.append(resolved + ext)
+      }
+    } else {
+      // Absolute or module import
+      candidates.append(targetPath)
+      // Try as path from root
+      for ext in ["", ".swift", ".ts", ".tsx", ".js", ".jsx", ".rb", "/index.ts", "/index.js"] {
+        candidates.append(targetPath + ext)
+      }
+    }
+    
+    return candidates
+  }
+  
+  /// Find a file by relative path within a repo
+  private func findFileByPath(_ path: String, inRepo repoId: String) throws -> String? {
+    guard let db else { throw LocalRAGError.sqlite("Database not initialized") }
+    
+    let sql = "SELECT id FROM files WHERE path = ? AND repo_id = ?"
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let stmt = statement else { return nil }
+    defer { sqlite3_finalize(stmt) }
+    
+    bindText(stmt, 1, path)
+    bindText(stmt, 2, repoId)
+    
+    if sqlite3_step(stmt) == SQLITE_ROW {
+      if let text = sqlite3_column_text(stmt, 0) {
+        return String(cString: text)
+      }
+    }
+    return nil
+  }
 }
-
-// MARK: - Local RAG Artifacts (Sync)
 
 public struct LocalRAGArtifactBundle: Sendable {
   public let manifest: RAGArtifactManifest

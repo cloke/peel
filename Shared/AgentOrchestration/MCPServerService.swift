@@ -3462,6 +3462,34 @@ public final class MCPServerService {
         isMutating: false
       ),
       ToolDefinition(
+        name: "rag.dependencies",
+        description: "Get what a file depends on (imports, requires, inheritance, protocol conformance). Returns the list of modules/files that the specified file imports or depends on.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "filePath": ["type": "string", "description": "Relative path of the file within the repo (e.g., 'Shared/Services/LocalRAGStore.swift')"],
+            "repoPath": ["type": "string", "description": "Absolute path to the repository root"]
+          ],
+          "required": ["filePath", "repoPath"]
+        ],
+        category: .rag,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "rag.dependents",
+        description: "Get what depends on a file (reverse dependencies). Returns the list of files that import or depend on the specified file.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "filePath": ["type": "string", "description": "Relative path of the file within the repo (e.g., 'Shared/Services/LocalRAGStore.swift')"],
+            "repoPath": ["type": "string", "description": "Absolute path to the repository root"]
+          ],
+          "required": ["filePath", "repoPath"]
+        ],
+        category: .rag,
+        isMutating: false
+      ),
+      ToolDefinition(
         name: "templates.list",
         description: "List available chain templates",
         inputSchema: [
@@ -4223,6 +4251,27 @@ public final class MCPServerService {
         ],
         category: .swarm,
         isMutating: false
+      ),
+      ToolDefinition(
+        name: "swarm.rag.sync",
+        description: "Request a Local RAG artifact sync to or from a peel. Direction is 'push' or 'pull'.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "direction": [
+              "type": "string",
+              "enum": ["push", "pull"],
+              "description": "Sync direction: push sends artifacts to the peel, pull fetches from it"
+            ],
+            "workerId": [
+              "type": "string",
+              "description": "Optional worker device ID (defaults to first connected peel)"
+            ]
+          ],
+          "required": ["direction"]
+        ],
+        category: .swarm,
+        isMutating: true
       ),
       ToolDefinition(
         name: "swarm.workers",
@@ -5098,6 +5147,32 @@ extension MCPServerService: RAGToolsHandlerDelegate {
       languages: facets.languages,
       constructTypes: facets.constructTypes
     )
+  }
+  
+  func getDependencies(filePath: String, repoPath: String) async throws -> [RAGToolDependencyResult] {
+    let deps = try await localRagStore.getDependencies(for: filePath, inRepo: repoPath)
+    return deps.map { dep in
+      RAGToolDependencyResult(
+        sourceFile: dep.sourceFile,
+        targetPath: dep.targetPath,
+        targetFile: dep.targetFile,
+        dependencyType: dep.dependencyType.rawValue,
+        rawImport: dep.rawImport
+      )
+    }
+  }
+  
+  func getDependents(filePath: String, repoPath: String) async throws -> [RAGToolDependencyResult] {
+    let deps = try await localRagStore.getDependents(for: filePath, inRepo: repoPath)
+    return deps.map { dep in
+      RAGToolDependencyResult(
+        sourceFile: dep.sourceFile,
+        targetPath: dep.targetPath,
+        targetFile: dep.targetFile,
+        dependencyType: dep.dependencyType.rawValue,
+        rawImport: dep.rawImport
+      )
+    }
   }
   
   func clearRagCache() async throws -> Int {

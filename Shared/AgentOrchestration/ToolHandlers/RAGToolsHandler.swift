@@ -51,6 +51,12 @@ protocol RAGToolsHandlerDelegate: MCPToolHandlerDelegate {
   /// Get facet counts for filtering/grouping
   func getFacets(repoPath: String?) async throws -> RAGToolFacetCounts
   
+  /// Get dependencies for a file (what does it depend on) - Issue #176
+  func getDependencies(filePath: String, repoPath: String) async throws -> [RAGToolDependencyResult]
+  
+  /// Get dependents for a file (what depends on it) - Issue #176
+  func getDependents(filePath: String, repoPath: String) async throws -> [RAGToolDependencyResult]
+  
   /// Clear embedding cache
   func clearRagCache() async throws -> Int
   
@@ -123,7 +129,9 @@ final class RAGToolsHandler: MCPToolHandler {
     "rag.stats",
     "rag.largeFiles",
     "rag.constructTypes",
-    "rag.facets"
+    "rag.facets",
+    "rag.dependencies",   // Issue #176: What does a file depend on
+    "rag.dependents"      // Issue #176: What depends on a file
   ]
   
   init() {}
@@ -136,6 +144,8 @@ final class RAGToolsHandler: MCPToolHandler {
     switch name {
     case "rag.status":
       return await handleStatus(id: id, delegate: ragDelegate)
+    case "rag.init":
+      return await handleInit(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.search":
       return await handleSearch(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.queryHints":
@@ -162,6 +172,10 @@ final class RAGToolsHandler: MCPToolHandler {
       return await handleConstructTypes(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.facets":
       return await handleFacets(id: id, arguments: arguments, delegate: ragDelegate)
+    case "rag.dependencies":
+      return await handleDependencies(id: id, arguments: arguments, delegate: ragDelegate)
+    case "rag.dependents":
+      return await handleDependents(id: id, arguments: arguments, delegate: ragDelegate)
     default:
       // For tools not yet extracted, return method not found
       // The MCPServerService will handle these until full extraction is complete
@@ -190,6 +204,36 @@ final class RAGToolsHandler: MCPToolHandler {
       result["lastInitializedAt"] = formatter.string(from: lastInitializedAt)
     }
     return (200, makeResult(id: id, result: result))
+  }
+
+  // MARK: - rag.init
+
+  private func handleInit(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
+    let extensionPath = optionalString("extensionPath", from: arguments)
+
+    do {
+      let status = try await delegate.initializeRag(extensionPath: extensionPath)
+      await delegate.refreshRagSummary()
+      let formatter = ISO8601DateFormatter()
+      var result: [String: Any] = [
+        "dbPath": status.dbPath,
+        "exists": status.exists,
+        "schemaVersion": status.schemaVersion,
+        "extensionLoaded": status.extensionLoaded,
+        "embeddingProvider": status.providerName,
+        "embeddingModel": status.embeddingModelName,
+        "embeddingDimensions": status.embeddingDimensions,
+        "coreMLModelPresent": status.coreMLModelPresent,
+        "coreMLVocabPresent": status.coreMLVocabPresent
+      ]
+      if let lastInitializedAt = status.lastInitializedAt {
+        result["lastInitializedAt"] = formatter.string(from: lastInitializedAt)
+      }
+      return (200, makeResult(id: id, result: result))
+    } catch {
+      await delegate.logWarning("Local RAG init failed", metadata: ["error": error.localizedDescription])
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
+    }
   }
   
   // MARK: - rag.search
@@ -565,6 +609,58 @@ final class RAGToolsHandler: MCPToolHandler {
     }
   }
   
+  // MARK: - rag.dependencies (Issue #176)
+  
+  private func handleDependencies(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
+    guard let filePath = optionalString("filePath", from: arguments) else {
+      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "filePath is required"))
+    }
+    guard let repoPath = optionalString("repoPath", from: arguments) else {
+      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "repoPath is required"))
+    }
+    
+    do {
+      let deps = try await delegate.getDependencies(filePath: filePath, repoPath: repoPath)
+      
+      let result: [String: Any] = [
+        "filePath": filePath,
+        "repoPath": repoPath,
+        "dependencies": deps.map { $0.toDict() },
+        "count": deps.count
+      ]
+      return (200, makeResult(id: id, result: result))
+    } catch {
+      await delegate.logWarning("RAG dependencies query failed", metadata: ["error": error.localizedDescription, "filePath": filePath])
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
+    }
+  }
+  
+  // MARK: - rag.dependents (Issue #176)
+  
+  private func handleDependents(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
+    guard let filePath = optionalString("filePath", from: arguments) else {
+      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "filePath is required"))
+    }
+    guard let repoPath = optionalString("repoPath", from: arguments) else {
+      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "repoPath is required"))
+    }
+    
+    do {
+      let deps = try await delegate.getDependents(filePath: filePath, repoPath: repoPath)
+      
+      let result: [String: Any] = [
+        "filePath": filePath,
+        "repoPath": repoPath,
+        "dependents": deps.map { $0.toDict() },
+        "count": deps.count
+      ]
+      return (200, makeResult(id: id, result: result))
+    } catch {
+      await delegate.logWarning("RAG dependents query failed", metadata: ["error": error.localizedDescription, "filePath": filePath])
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
+    }
+  }
+  
   // MARK: - Helpers
   
   private func encodeSkill(_ skill: RepoGuidanceSkill, formatter: ISO8601DateFormatter) -> [String: Any] {
@@ -777,5 +873,36 @@ struct RAGToolFacetCounts {
     self.featureTags = featureTags
     self.languages = languages
     self.constructTypes = constructTypes
+  }
+}
+
+/// RAG dependency result for dependency graph queries (Issue #176)
+struct RAGToolDependencyResult {
+  let sourceFile: String           // Relative path of source file
+  let targetPath: String           // Module/path being depended on
+  let targetFile: String?          // Resolved target file (if in repo)
+  let dependencyType: String       // "import", "require", "inherit", "conform", "include", "extend"
+  let rawImport: String            // Original import statement
+  
+  init(sourceFile: String, targetPath: String, targetFile: String?, dependencyType: String, rawImport: String) {
+    self.sourceFile = sourceFile
+    self.targetPath = targetPath
+    self.targetFile = targetFile
+    self.dependencyType = dependencyType
+    self.rawImport = rawImport
+  }
+  
+  /// Convert to dictionary for JSON response
+  func toDict() -> [String: Any] {
+    var dict: [String: Any] = [
+      "sourceFile": sourceFile,
+      "targetPath": targetPath,
+      "dependencyType": dependencyType,
+      "rawImport": rawImport
+    ]
+    if let targetFile {
+      dict["targetFile"] = targetFile
+    }
+    return dict
   }
 }

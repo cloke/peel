@@ -26,6 +26,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
     "swarm.stop",
     "swarm.status",
     "swarm.diagnostics",
+    "swarm.rag.sync",
     "swarm.workers",
     "swarm.dispatch",
     "swarm.connect",
@@ -57,6 +58,8 @@ public final class SwarmToolsHandler: MCPToolHandler {
       return handleStatus(id: id)
     case "swarm.diagnostics":
       return handleDiagnostics(id: id)
+    case "swarm.rag.sync":
+      return await handleRagSync(id: id, arguments: arguments)
     case "swarm.workers":
       return handleWorkers(id: id)
     case "swarm.dispatch":
@@ -138,6 +141,25 @@ public final class SwarmToolsHandler: MCPToolHandler {
           "type": "object",
           "properties": [:],
           "required": []
+        ]
+      ],
+      [
+        "name": "swarm.rag.sync",
+        "description": "Request a Local RAG artifact sync to or from a peel. Direction is 'push' or 'pull'.",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "direction": [
+              "type": "string",
+              "enum": ["push", "pull"],
+              "description": "Sync direction: push sends artifacts to the peel, pull fetches from it"
+            ],
+            "workerId": [
+              "type": "string",
+              "description": "Optional worker device ID (defaults to first connected peel)"
+            ]
+          ],
+          "required": ["direction"]
         ]
       ],
       [
@@ -699,6 +721,37 @@ public final class SwarmToolsHandler: MCPToolHandler {
       ]))
     } catch {
       return internalError(id: id, message: "Failed to connect: \(error.localizedDescription)")
+    }
+  }
+
+  // MARK: - swarm.rag.sync
+
+  private func handleRagSync(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard coordinator.isActive else {
+      return serviceNotActiveError(id: id, service: "Swarm", hint: "Call swarm.start with role 'brain', 'worker', or 'hybrid' first")
+    }
+
+    guard coordinator.role == .brain || coordinator.role == .hybrid else {
+      return internalError(id: id, message: "Only brain or hybrid roles can request RAG sync")
+    }
+
+    guard case .success(let directionRaw) = requireString("direction", from: arguments, id: id),
+          let direction = RAGArtifactSyncDirection(rawValue: directionRaw) else {
+      return missingParamError(id: id, param: "direction")
+    }
+
+    let workerId = optionalString("workerId", from: arguments)
+
+    do {
+      let transferId = try await coordinator.requestRagArtifactSync(direction: direction, workerId: workerId)
+      return (200, makeResult(id: id, result: [
+        "success": true,
+        "transferId": transferId.uuidString,
+        "direction": direction.rawValue,
+        "workerId": workerId as Any
+      ]))
+    } catch {
+      return internalError(id: id, message: error.localizedDescription)
     }
   }
   
