@@ -227,14 +227,18 @@ struct LocalRAGDashboardView: View {
   @State private var selectedWorkerId: String?
   @State private var syncError: String?
   
-  // AI Analysis state (#198)
+  // AI Analysis state (#198, #212)
   @State private var isAnalyzing = false
+  @State private var isPaused = false
   @State private var analyzeProgress: (current: Int, total: Int)?
   @State private var analyzedChunkCount: Int = 0
   @State private var unanalyzedChunkCount: Int = 0
   @State private var analyzeError: String?
   @State private var selectedAnalyzerTier: MLXAnalyzerModelTier = .auto
   @State private var selectedAnalyzerRepoId: String?
+  @State private var analysisStartTime: Date?
+  @State private var analysisChunksPerSecond: Double = 0
+  @State private var analyzeTask: Task<Void, Never>?
 
   private var providerSelection: Binding<EmbeddingProviderType> {
     Binding(
@@ -653,58 +657,111 @@ struct LocalRAGDashboardView: View {
               // Status display
               let totalChunks = analyzedChunkCount + unanalyzedChunkCount
               if totalChunks > 0 {
-                HStack {
-                  VStack(alignment: .leading, spacing: 4) {
-                    Text("Analysis Progress")
-                      .font(.headline)
-                    let pct = totalChunks > 0 ? Double(analyzedChunkCount) / Double(totalChunks) * 100 : 0
-                    Text("\(analyzedChunkCount) / \(totalChunks) chunks (\(String(format: "%.1f", pct))%)")
-                      .font(.caption)
-                      .foregroundStyle(.secondary)
-                  }
-                  Spacer()
-                  if isAnalyzing, let progress = analyzeProgress {
-                    VStack(alignment: .trailing) {
-                      ProgressView(value: Double(progress.current), total: Double(progress.total))
-                        .frame(width: 100)
-                      Text("\(progress.current)/\(progress.total)")
-                        .font(.caption2)
+                VStack(alignment: .leading, spacing: 8) {
+                  HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                      Text("Analysis Progress")
+                        .font(.headline)
+                      let pct = totalChunks > 0 ? Double(analyzedChunkCount) / Double(totalChunks) * 100 : 0
+                      Text("\(analyzedChunkCount) / \(totalChunks) chunks (\(String(format: "%.1f", pct))%)")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if isAnalyzing, let progress = analyzeProgress {
+                      VStack(alignment: .trailing) {
+                        ProgressView(value: Double(progress.current), total: Double(progress.total))
+                          .frame(width: 100)
+                        Text("Batch: \(progress.current)/\(progress.total)")
+                          .font(.caption2)
+                          .foregroundStyle(.secondary)
+                      }
+                    }
+                  }
+                  
+                  ProgressView(value: Double(analyzedChunkCount), total: Double(totalChunks))
+                    .tint(analyzedChunkCount == totalChunks ? .green : .blue)
+                  
+                  // Time estimates (#212)
+                  if isAnalyzing || isPaused {
+                    HStack(spacing: 16) {
+                      if let startTime = analysisStartTime {
+                        let elapsed = Date().timeIntervalSince(startTime)
+                        Text("Started: \(startTime, format: .dateTime.hour().minute())")
+                          .font(.caption2)
+                          .foregroundStyle(.secondary)
+                        Text("Elapsed: \(formatDuration(elapsed))")
+                          .font(.caption2)
+                          .foregroundStyle(.secondary)
+                      }
+                      if analysisChunksPerSecond > 0 && unanalyzedChunkCount > 0 {
+                        let remainingSecs = Double(unanalyzedChunkCount) / analysisChunksPerSecond
+                        Text("Est. remaining: \(formatDuration(remainingSecs))")
+                          .font(.caption2)
+                          .foregroundStyle(.secondary)
+                        Text("(\(String(format: "%.1f", analysisChunksPerSecond)) chunks/sec)")
+                          .font(.caption2)
+                          .foregroundStyle(.tertiary)
+                      }
                     }
                   }
                 }
-                
-                ProgressView(value: Double(analyzedChunkCount), total: Double(totalChunks))
-                  .tint(analyzedChunkCount == totalChunks ? .green : .blue)
               } else {
                 Text("No chunks indexed yet")
                   .font(.caption)
                   .foregroundStyle(.secondary)
               }
               
-              // Action buttons
+              // Action buttons (#212)
               HStack {
-                Button {
-                  isAnalyzing = true
-                  analyzeError = nil
-                  analyzeProgress = (0, 50)
-                  Task { await analyzeChunks(limit: 50) }
-                } label: {
-                  Label(isAnalyzing ? "Analyzing..." : "Analyze 50 Chunks", systemImage: "cpu")
+                if !isAnalyzing && !isPaused {
+                  // Not running - show Analyze All and Quick Sample
+                  Button {
+                    startAnalyzeAll()
+                  } label: {
+                    Label("Analyze All", systemImage: "play.fill")
+                  }
+                  .buttonStyle(.borderedProminent)
+                  .disabled(unanalyzedChunkCount == 0)
+                  
+                  Button {
+                    isAnalyzing = true
+                    analyzeError = nil
+                    analysisStartTime = Date()
+                    analyzeProgress = (0, 50)
+                    analyzeTask = Task { await analyzeChunks(limit: 50) }
+                  } label: {
+                    Label("Quick Sample (50)", systemImage: "hare")
+                  }
+                  .buttonStyle(.bordered)
+                  .disabled(unanalyzedChunkCount == 0)
+                } else if isAnalyzing {
+                  // Running - show Pause
+                  Button {
+                    isPaused = true
+                  } label: {
+                    Label("Pause", systemImage: "pause.fill")
+                  }
+                  .buttonStyle(.bordered)
+                  .tint(.orange)
+                } else if isPaused {
+                  // Paused - show Resume and Stop
+                  Button {
+                    isPaused = false
+                    analyzeTask = Task { await continueAnalyzeAll() }
+                  } label: {
+                    Label("Resume", systemImage: "play.fill")
+                  }
+                  .buttonStyle(.borderedProminent)
+                  
+                  Button {
+                    stopAnalysis()
+                  } label: {
+                    Label("Stop", systemImage: "stop.fill")
+                  }
+                  .buttonStyle(.bordered)
+                  .tint(.red)
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(isAnalyzing || unanalyzedChunkCount == 0)
-                
-                Button {
-                  isAnalyzing = true
-                  analyzeError = nil
-                  analyzeProgress = (0, 500)
-                  Task { await analyzeChunks(limit: 500) }
-                } label: {
-                  Label("Analyze 500", systemImage: "cpu.fill")
-                }
-                .buttonStyle(.bordered)
-                .disabled(isAnalyzing || unanalyzedChunkCount == 0)
                 
                 Spacer()
                 
@@ -1235,6 +1292,9 @@ struct LocalRAGDashboardView: View {
       }
     }
     
+    let startTime = Date()
+    var chunksProcessed = 0
+    
     do {
       let count = try await mcpServer.analyzeRagChunks(
         repoPath: repo.rootPath,
@@ -1243,17 +1303,143 @@ struct LocalRAGDashboardView: View {
       ) { current, total in
         Task { @MainActor in
           analyzeProgress = (current, total)
+          chunksProcessed = current
         }
       }
       
       await MainActor.run {
         analyzedChunkCount += count
         unanalyzedChunkCount = max(0, unanalyzedChunkCount - count)
+        // Update rate estimate
+        let elapsed = Date().timeIntervalSince(startTime)
+        if elapsed > 0 && chunksProcessed > 0 {
+          analysisChunksPerSecond = Double(chunksProcessed) / elapsed
+        }
       }
     } catch {
       await MainActor.run {
         analyzeError = error.localizedDescription
       }
+    }
+  }
+  
+  // MARK: - Analyze All (#212)
+  
+  private func startAnalyzeAll() {
+    isAnalyzing = true
+    isPaused = false
+    analyzeError = nil
+    analysisStartTime = Date()
+    analysisChunksPerSecond = 0
+    analyzeTask = Task { await runAnalyzeAllLoop() }
+  }
+  
+  private func continueAnalyzeAll() async {
+    await MainActor.run {
+      isAnalyzing = true
+    }
+    await runAnalyzeAllLoop()
+  }
+  
+  private func stopAnalysis() {
+    analyzeTask?.cancel()
+    analyzeTask = nil
+    isAnalyzing = false
+    isPaused = false
+    analyzeProgress = nil
+  }
+  
+  private func runAnalyzeAllLoop() async {
+    guard let repo = selectedAnalyzerRepo else {
+      await MainActor.run {
+        isAnalyzing = false
+        isPaused = false
+      }
+      return
+    }
+    
+    let batchSize = 50 // Process in batches for progress updates
+    
+    while !Task.isCancelled {
+      // Check if paused
+      if await MainActor.run(body: { isPaused }) {
+        await MainActor.run { isAnalyzing = false }
+        return
+      }
+      
+      // Check if done
+      let remaining = await MainActor.run { unanalyzedChunkCount }
+      if remaining == 0 {
+        await MainActor.run {
+          isAnalyzing = false
+          isPaused = false
+          analyzeProgress = nil
+        }
+        return
+      }
+      
+      let thisBatch = min(batchSize, remaining)
+      await MainActor.run {
+        analyzeProgress = (0, thisBatch)
+      }
+      
+      let batchStart = Date()
+      
+      do {
+        let count = try await mcpServer.analyzeRagChunks(
+          repoPath: repo.rootPath,
+          limit: thisBatch,
+          modelTier: selectedAnalyzerTier
+        ) { current, total in
+          Task { @MainActor in
+            analyzeProgress = (current, total)
+          }
+        }
+        
+        await MainActor.run {
+          analyzedChunkCount += count
+          unanalyzedChunkCount = max(0, unanalyzedChunkCount - count)
+          
+          // Update rate estimate with exponential moving average
+          let elapsed = Date().timeIntervalSince(batchStart)
+          if elapsed > 0 && count > 0 {
+            let batchRate = Double(count) / elapsed
+            if analysisChunksPerSecond == 0 {
+              analysisChunksPerSecond = batchRate
+            } else {
+              // Smooth with 30% weight to new value
+              analysisChunksPerSecond = analysisChunksPerSecond * 0.7 + batchRate * 0.3
+            }
+          }
+        }
+      } catch {
+        await MainActor.run {
+          analyzeError = error.localizedDescription
+          isAnalyzing = false
+          isPaused = false
+        }
+        return
+      }
+    }
+    
+    // Task was cancelled
+    await MainActor.run {
+      isAnalyzing = false
+      isPaused = false
+    }
+  }
+  
+  private func formatDuration(_ seconds: TimeInterval) -> String {
+    if seconds < 60 {
+      return "\(Int(seconds))s"
+    } else if seconds < 3600 {
+      let mins = Int(seconds / 60)
+      let secs = Int(seconds) % 60
+      return "\(mins)m \(secs)s"
+    } else {
+      let hours = Int(seconds / 3600)
+      let mins = Int(seconds / 60) % 60
+      return "\(hours)h \(mins)m"
     }
   }
 
