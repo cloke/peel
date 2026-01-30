@@ -2748,6 +2748,10 @@ actor LocalRAGStore {
     
     // Try to load sqlite-vec extension immediately after opening
     try loadExtensionIfAvailable(extensionPath: nil)
+    
+    // Ensure schema is up-to-date (runs migrations if needed)
+    // This guarantees that queries can use columns from the latest schema version
+    try ensureSchema()
   }
 
   func closeDatabase() {
