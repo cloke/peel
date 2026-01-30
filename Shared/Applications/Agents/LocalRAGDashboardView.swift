@@ -248,6 +248,20 @@ struct LocalRAGDashboardView: View {
     )
   }
 
+  private var mlxClearCacheAfterBatch: Binding<Bool> {
+    Binding(
+      get: { LocalRAGEmbeddingProviderFactory.mlxClearCacheAfterBatch },
+      set: { LocalRAGEmbeddingProviderFactory.mlxClearCacheAfterBatch = $0 }
+    )
+  }
+
+  private var mlxMemoryLimitGB: Binding<Double> {
+    Binding(
+      get: { LocalRAGEmbeddingProviderFactory.mlxMemoryLimitGB },
+      set: { LocalRAGEmbeddingProviderFactory.mlxMemoryLimitGB = $0 }
+    )
+  }
+
   private var downloadedMLXModelNames: [String] {
     let configs = MLXEmbeddingModelConfig.availableModels
     let downloaded = LocalRAGEmbeddingProviderFactory.downloadedMLXModels
@@ -627,6 +641,41 @@ struct LocalRAGDashboardView: View {
                     Text("Downloaded: none yet (models download on first use)")
                       .font(.caption2)
                       .foregroundStyle(.secondary)
+                  }
+                  
+                  // Memory management settings
+                  Divider()
+                  
+                  Toggle("Clear GPU cache after each batch", isOn: mlxClearCacheAfterBatch)
+                    .toggleStyle(.switch)
+                    .font(.callout)
+                    .accessibilityIdentifier("agents.localRag.mlxClearCache")
+                  
+                  HStack {
+                    Text("Memory limit:")
+                      .font(.callout)
+                    TextField("GB", value: mlxMemoryLimitGB, format: .number.precision(.fractionLength(1)))
+                      .textFieldStyle(.roundedBorder)
+                      .frame(width: 60)
+                      .accessibilityIdentifier("agents.localRag.mlxMemoryLimit")
+                    Text("GB")
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                  }
+                  
+                  let physicalGB = Double(LocalRAGEmbeddingProviderFactory.physicalMemoryBytes()) / 1_073_741_824.0
+                  let currentGB = Double(LocalRAGEmbeddingProviderFactory.currentProcessMemoryBytes()) / 1_073_741_824.0
+                  let isHigh = LocalRAGEmbeddingProviderFactory.isMemoryPressureHigh()
+                  
+                  HStack(spacing: 8) {
+                    Text("Current: \(String(format: "%.1f", currentGB)) GB / \(String(format: "%.0f", physicalGB)) GB RAM")
+                      .font(.caption2)
+                      .foregroundStyle(.secondary)
+                    if isHigh {
+                      Label("Memory pressure high", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                    }
                   }
                 }
 

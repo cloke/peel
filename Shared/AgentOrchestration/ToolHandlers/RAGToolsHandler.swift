@@ -196,6 +196,8 @@ final class RAGToolsHandler: MCPToolHandler {
     switch name {
     case "rag.status":
       return await handleStatus(id: id, delegate: ragDelegate)
+    case "rag.config":
+      return await handleConfig(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.init":
       return await handleInit(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.search":
@@ -274,6 +276,87 @@ final class RAGToolsHandler: MCPToolHandler {
       result["lastInitializedAt"] = formatter.string(from: lastInitializedAt)
     }
     return (200, makeResult(id: id, result: result))
+  }
+
+  // MARK: - rag.config
+
+  private func handleConfig(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
+    let action = optionalString("action", from: arguments, default: "get") ?? "get"
+
+    if action == "get" {
+      // Return current configuration
+      let config = buildConfigResult()
+      return (200, makeResult(id: id, result: config))
+    }
+
+    // action == "set"
+    var changes: [String] = []
+
+    // Provider
+    if let providerStr = optionalString("provider", from: arguments) {
+      if let provider = EmbeddingProviderType(rawValue: providerStr) {
+        LocalRAGEmbeddingProviderFactory.preferredProvider = provider
+        changes.append("provider=\(providerStr)")
+      }
+    }
+
+    // MLX cache limit (MB)
+    if let clearLimit = arguments["clearMlxCacheLimit"] as? Bool, clearLimit {
+      LocalRAGEmbeddingProviderFactory.mlxCacheLimitMB = nil
+      changes.append("mlxCacheLimitMB=default")
+    } else if let limitMB = optionalInt("mlxCacheLimitMB", from: arguments) {
+      LocalRAGEmbeddingProviderFactory.mlxCacheLimitMB = limitMB
+      changes.append("mlxCacheLimitMB=\(limitMB)")
+    }
+
+    // MLX clear cache after batch
+    if let clearAfterBatch = arguments["mlxClearCacheAfterBatch"] as? Bool {
+      LocalRAGEmbeddingProviderFactory.mlxClearCacheAfterBatch = clearAfterBatch
+      changes.append("mlxClearCacheAfterBatch=\(clearAfterBatch)")
+    }
+
+    // MLX memory limit (GB) - new setting for memory pressure management
+    if let memoryLimitGB = arguments["mlxMemoryLimitGB"] as? Double {
+      LocalRAGEmbeddingProviderFactory.mlxMemoryLimitGB = memoryLimitGB
+      changes.append("mlxMemoryLimitGB=\(memoryLimitGB)")
+    } else if let memoryLimitGB = arguments["mlxMemoryLimitGB"] as? Int {
+      LocalRAGEmbeddingProviderFactory.mlxMemoryLimitGB = Double(memoryLimitGB)
+      changes.append("mlxMemoryLimitGB=\(memoryLimitGB)")
+    }
+
+    // Reinitialize if requested
+    let shouldReinit = optionalBool("reinitialize", from: arguments, default: true)
+    if shouldReinit && !changes.isEmpty {
+      do {
+        _ = try await delegate.initializeRag(extensionPath: nil)
+      } catch {
+        await delegate.logWarning("RAG reinit after config change failed", metadata: ["error": error.localizedDescription])
+      }
+    }
+
+    var result = buildConfigResult()
+    result["changes"] = changes
+    return (200, makeResult(id: id, result: result))
+  }
+
+  private func buildConfigResult() -> [String: Any] {
+    let provider = LocalRAGEmbeddingProviderFactory.preferredProvider
+    let physicalGB = Double(LocalRAGEmbeddingProviderFactory.physicalMemoryBytes()) / 1_073_741_824.0
+    let currentGB = Double(LocalRAGEmbeddingProviderFactory.currentProcessMemoryBytes()) / 1_073_741_824.0
+    let memoryLimitGB = LocalRAGEmbeddingProviderFactory.mlxMemoryLimitGB
+
+    var config: [String: Any] = [
+      "provider": provider.rawValue,
+      "mlxClearCacheAfterBatch": LocalRAGEmbeddingProviderFactory.mlxClearCacheAfterBatch,
+      "mlxMemoryLimitGB": memoryLimitGB,
+      "physicalMemoryGB": String(format: "%.1f", physicalGB),
+      "currentProcessMemoryGB": String(format: "%.1f", currentGB),
+      "isMemoryPressureHigh": LocalRAGEmbeddingProviderFactory.isMemoryPressureHigh()
+    ]
+    if let limitMB = LocalRAGEmbeddingProviderFactory.mlxCacheLimitMB {
+      config["mlxCacheLimitMB"] = limitMB
+    }
+    return config
   }
 
   // MARK: - rag.init

@@ -1674,6 +1674,7 @@ actor LocalRAGStore {
     var astFilesChunked = 0
     var lineFilesChunked = 0
     var chunkingFailures = 0
+    var memoryPauseCount = 0
 
     struct MissingEmbedding {
       let textHash: String
@@ -1688,13 +1689,35 @@ actor LocalRAGStore {
     // The quantized model (4bit-DWQ) has memory issues with larger batches
     var embeddingCache: [String: [Float]] = [:]
     let embeddingBatchSize = 4
+    
+    // Memory pressure management - check every N files
+    let memoryCheckInterval = 10
+    let memoryLimitGB = LocalRAGEmbeddingProviderFactory.mlxMemoryLimitGB
+    print("[RAG] Memory limit set to \(String(format: "%.1f", memoryLimitGB)) GB")
 
     for (fileIndex, candidate) in scannedFiles.enumerated() {
       progress?(.analyzing(current: fileIndex + 1, total: scannedFiles.count, fileName: URL(fileURLWithPath: candidate.path).lastPathComponent))
       
-      // Log memory more frequently during debugging
-      if fileIndex % 10 == 0 {
+      // Memory pressure check - aggressively clear caches if approaching limit
+      if fileIndex % memoryCheckInterval == 0 {
         logMemory("analyzing \(fileIndex + 1)/\(scannedFiles.count): \(URL(fileURLWithPath: candidate.path).lastPathComponent)")
+        
+        if LocalRAGEmbeddingProviderFactory.isMemoryPressureHigh() {
+          memoryPauseCount += 1
+          let currentGB = Double(LocalRAGEmbeddingProviderFactory.currentProcessMemoryBytes()) / 1_073_741_824.0
+          print("[RAG] ⚠️ Memory pressure detected: \(String(format: "%.1f", currentGB)) GB > \(String(format: "%.1f", memoryLimitGB)) GB limit")
+          
+          // Aggressive memory cleanup
+          embeddingCache.removeAll()
+          seenTextHashes.removeAll()
+          MLX.Memory.clearCache()
+          
+          // Give the system a moment to reclaim memory
+          try await Task.sleep(for: .milliseconds(500))
+          
+          let newGB = Double(LocalRAGEmbeddingProviderFactory.currentProcessMemoryBytes()) / 1_073_741_824.0
+          print("[RAG] After cleanup: \(String(format: "%.1f", newGB)) GB")
+        }
       }
 
       guard let file = scanner.loadFile(candidate: candidate) else { continue }
@@ -1781,19 +1804,19 @@ actor LocalRAGStore {
 
           progress?(.embedding(current: batchEnd, total: missingEmbeddings.count))
 
+          // Always clear MLX cache after each batch to prevent memory accumulation
+          // This is critical for preventing unbounded memory growth on large repos
           if LocalRAGEmbeddingProviderFactory.mlxClearCacheAfterBatch {
             MLX.Memory.clearCache()
-            let snapshot = MLX.Memory.snapshot()
-            print("[RAG] MLX cache cleared. active=\(snapshot.activeMemory) cache=\(snapshot.cacheMemory)")
           }
         }
 
         let embedDuration = Int(Date().timeIntervalSince(embedStart) * 1000)
         embeddingDurationMs += embedDuration
         progress?(.embedding(current: missingEmbeddings.count, total: missingEmbeddings.count))
-        if fileIndex % 50 == 0 {
-          logMemory("after embedding \(fileIndex + 1)/\(scannedFiles.count)")
-        }
+        
+        // Clear embedding cache after storing to DB - no need to keep in memory
+        embeddingCache.removeAll(keepingCapacity: false)
       }
 
       progress?(.storing(current: filesIndexed + 1, total: scannedFiles.count))
@@ -1872,12 +1895,14 @@ actor LocalRAGStore {
       chunkCount += chunks.count
       bytesScanned += file.byteCount
       filesIndexed += 1
-      embeddingCache.removeAll(keepingCapacity: true)
     }
     logMemory("index complete")
     
-    // Log AST stats
+    // Log AST stats and memory stats
     print("[RAG] AST stats: \(astFilesChunked) AST, \(lineFilesChunked) line-based, \(chunkingFailures) failures")
+    if memoryPauseCount > 0 {
+      print("[RAG] Memory pressure pauses: \(memoryPauseCount)")
+    }
 
     let durationMs = Int(Date().timeIntervalSince(startTime) * 1000)
     let report = LocalRAGIndexReport(
