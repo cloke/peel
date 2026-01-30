@@ -6,10 +6,7 @@
 //
 
 import SwiftUI
-
-#if os(macOS)
 import AppKit
-#endif
 
 struct ChainDetailView: View {
   let chain: AgentChain
@@ -66,7 +63,6 @@ struct ChainDetailView: View {
         }
 
         // Working directory - REQUIRED
-        #if os(macOS)
         GroupBox {
           HStack {
             Image(systemName: "folder.fill")
@@ -101,7 +97,6 @@ struct ChainDetailView: View {
               .padding(.top, 4)
           }
         }
-        #endif
 
         Divider()
 
@@ -225,7 +220,6 @@ struct ChainDetailView: View {
             }
           }
 
-          #if os(macOS)
           // Run button
           HStack {
             Button {
@@ -253,7 +247,6 @@ struct ChainDetailView: View {
                 .foregroundStyle(.secondary)
             }
           }
-          #endif
         }
 
         // Live status panel when running
@@ -323,7 +316,6 @@ struct ChainDetailView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                   Spacer()
-                  #if os(macOS)
                   Button("VS Code") {
                     Task { try? await VSCodeService.shared.openFile(path) }
                   }
@@ -334,11 +326,9 @@ struct ChainDetailView: View {
                   }
                   .buttonStyle(.link)
                   .accessibilityIdentifier("agents.chainDetail.mergeConflicts.\(index).reveal")
-                  #endif
                 }
               }
 
-              #if os(macOS)
               if let path = chain.workingDirectory {
                 Button("Open Repo in Finder") {
                   NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
@@ -346,7 +336,6 @@ struct ChainDetailView: View {
                 .buttonStyle(.bordered)
                 .accessibilityIdentifier("agents.chainDetail.mergeConflicts.openFinder")
               }
-              #endif
             }
           }
         }
@@ -653,7 +642,6 @@ struct ChainDetailView: View {
     return Color.secondary.opacity(0.1)
   }
 
-  #if os(macOS)
   private func selectFolder() {
     let panel = NSOpenPanel()
     panel.canChooseFiles = false
@@ -694,5 +682,4 @@ struct ChainDetailView: View {
       errorMessage = failure
     }
   }
-  #endif
 }

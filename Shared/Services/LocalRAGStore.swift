@@ -10,10 +10,8 @@ import CryptoKit
 import Darwin
 import Foundation
 import SQLite3
-#if os(macOS)
 import MachO
 import MLX
-#endif
 
 struct LocalRAGIndexReport: Sendable {
   let repoId: String
@@ -1285,7 +1283,6 @@ actor LocalRAGStore {
     return FileManager.default.fileExists(atPath: gitURL.path)
   }
 
-#if os(macOS)
   private func logMemory(_ label: String) {
     var info = mach_task_basic_info()
     var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
@@ -1308,9 +1305,6 @@ actor LocalRAGStore {
     let cache = ByteCountFormatter.string(fromByteCount: Int64(snapshot.cacheMemory), countStyle: .memory)
     print("[RAG] MLX Memory \(label): active \(active), cache \(cache)")
   }
-#else
-  private func logMemory(_ label: String) { _ = label }
-#endif
 
 
   func status() -> Status {
@@ -1704,13 +1698,11 @@ actor LocalRAGStore {
 
           progress?(.embedding(current: batchEnd, total: missingEmbeddings.count))
 
-#if os(macOS)
           if LocalRAGEmbeddingProviderFactory.mlxClearCacheAfterBatch {
             MLX.Memory.clearCache()
             let snapshot = MLX.Memory.snapshot()
             print("[RAG] MLX cache cleared. active=\(snapshot.activeMemory) cache=\(snapshot.cacheMemory)")
           }
-#endif
         }
 
         let embedDuration = Int(Date().timeIntervalSince(embedStart) * 1000)

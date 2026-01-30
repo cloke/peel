@@ -8,25 +8,19 @@
 import Git
 import SwiftData
 import SwiftUI
-
-#if os(macOS)
 import AppKit
-#endif
 
 struct MCPRunDetailView: View {
   let run: MCPRunRecord
   @Query private var results: [MCPRunResultRecord]
   @Query(sort: \MCPRunRecord.createdAt, order: .reverse) private var allRuns: [MCPRunRecord]
   @Environment(\.dismiss) private var dismiss
-  #if os(macOS)
   @Environment(MCPServerService.self) private var mcpServer
-  #endif
   @State private var showingCompareSheet = false
   @State private var compareRun: MCPRunRecord?
   @State private var isLoadingWorktreeStatus = false
   @State private var worktreeChangedFiles: [String: Int] = [:]
 
-  #if os(macOS)
   private var activeRunInfo: MCPServerService.ActiveRunInfo? {
     guard let chainId = UUID(uuidString: run.chainId) else { return nil }
     return mcpServer.activeRuns.first { $0.chainId == chainId }
@@ -35,7 +29,6 @@ struct MCPRunDetailView: View {
   private var activeChain: AgentChain? {
     mcpServer.agentManager.chains.first { $0.id.uuidString == run.chainId }
   }
-  #endif
 
   init(run: MCPRunRecord) {
     self.run = run
@@ -101,7 +94,6 @@ struct MCPRunDetailView: View {
     worktreeChangedFiles = status
   }
 
-  #if os(macOS)
   private func exportRun() {
     let panel = NSSavePanel()
     panel.allowedContentTypes = [.plainText]
@@ -112,7 +104,6 @@ struct MCPRunDetailView: View {
       try? content.write(to: url, atomically: true, encoding: .utf8)
     }
   }
-  #endif
 
   private func markdownExport() -> String {
     var lines: [String] = []
@@ -196,7 +187,6 @@ struct MCPRunDetailView: View {
             }
           }
 
-          #if os(macOS)
           if let activeRun = activeRunInfo {
             GroupBox("Active Run") {
               VStack(alignment: .leading, spacing: 8) {
@@ -244,7 +234,6 @@ struct MCPRunDetailView: View {
               }
             }
           }
-          #endif
 
           if !worktreePaths.isEmpty {
             GroupBox("Worktrees") {
@@ -266,7 +255,6 @@ struct MCPRunDetailView: View {
                       )
                     }
                     Spacer()
-                    #if os(macOS)
                     Button("VS Code") {
                       Task { try? await VSCodeService.shared.open(path: path, newWindow: true) }
                     }
@@ -277,7 +265,6 @@ struct MCPRunDetailView: View {
                     }
                     .buttonStyle(.link)
                     .accessibilityIdentifier("agents.mcpRunDetail.worktree.openFinder")
-                    #endif
                   }
                 }
                 if isLoadingWorktreeStatus {
@@ -285,13 +272,11 @@ struct MCPRunDetailView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 }
-                #if os(macOS)
                 Button("Clean Worktrees") {
                   Task { await mcpServer.cleanupWorktrees(paths: worktreePaths) }
                 }
                 .buttonStyle(.bordered)
                 .accessibilityIdentifier("agents.mcpRunDetail.worktree.clean")
-                #endif
               }
             }
           }
@@ -332,7 +317,6 @@ struct MCPRunDetailView: View {
                       .foregroundStyle(.secondary)
                       .lineLimit(1)
                     Spacer()
-                    #if os(macOS)
                     Button("VS Code") {
                       Task { try? await VSCodeService.shared.openFile(path) }
                     }
@@ -343,7 +327,6 @@ struct MCPRunDetailView: View {
                     }
                     .buttonStyle(.link)
                     .accessibilityIdentifier("agents.mcpRunDetail.mergeConflicts.openFinder")
-                    #endif
                   }
                 }
               }
@@ -487,7 +470,6 @@ struct MCPRunDetailView: View {
           }
           .accessibilityIdentifier("agents.mcpRunDetail.done")
         }
-        #if os(macOS)
         ToolbarItem(placement: .primaryAction) {
           Button("Export") {
             exportRun()
@@ -502,7 +484,6 @@ struct MCPRunDetailView: View {
           .disabled(allRuns.filter { $0.id != run.id }.isEmpty)
           .accessibilityIdentifier("agents.mcpRunDetail.compare")
         }
-        #endif
       }
     }
     .sheet(isPresented: $showingCompareSheet) {

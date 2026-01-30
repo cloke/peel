@@ -63,13 +63,8 @@ enum LocalRAGEmbeddingProviderFactory {
     
     switch preference {
     case .mlx:
-      #if os(macOS)
       print("[RAG] Using MLXEmbeddingProvider (native Swift + Apple Silicon)")
       return makePreferredMLX(forCodeSearch: true)
-      #else
-      print("[RAG] MLX not available on iOS, falling back")
-      return makeFallbackProvider()
-      #endif
       
     case .coreml:
       if let provider = CoreMLEmbeddingProvider.makeDefault(modelFolderName: modelFolderName) {
@@ -99,23 +94,9 @@ enum LocalRAGEmbeddingProviderFactory {
   /// Auto-select the best available provider
   /// Priority: MLX > CoreML > System > Hash
   private static func makeAutoProvider() -> LocalRAGEmbeddingProvider {
-    #if os(macOS)
     // On macOS, prefer MLX for best Apple Silicon utilization
     print("[RAG] Auto-selecting MLXEmbeddingProvider (best for Apple Silicon)")
     return makePreferredMLX(forCodeSearch: true)
-    #else
-    // On iOS, try CoreML, then System, then Hash
-    if let coreMLProvider = CoreMLEmbeddingProvider.makeDefault(modelFolderName: modelFolderName) {
-      print("[RAG] Auto-selected CoreMLEmbeddingProvider")
-      return coreMLProvider
-    }
-    if let provider = SystemEmbeddingProvider() {
-      print("[RAG] Auto-selected SystemEmbeddingProvider")
-      return provider
-    }
-    print("[RAG] Auto-selected HashEmbeddingProvider (fallback)")
-    return HashEmbeddingProvider()
-    #endif
   }
   
   /// Fallback provider chain
@@ -182,7 +163,6 @@ enum LocalRAGEmbeddingProviderFactory {
     }
   }
 
-  #if os(macOS)
   private static func makePreferredMLX(forCodeSearch: Bool = true) -> LocalRAGEmbeddingProvider {
     if let selectedId = preferredMLXModelId,
        let config = MLXEmbeddingModelConfig.availableModels.first(where: {
@@ -192,11 +172,6 @@ enum LocalRAGEmbeddingProviderFactory {
     }
     return MLXEmbeddingProvider(forCodeSearch: forCodeSearch)
   }
-  #else
-  private static func makePreferredMLX(forCodeSearch: Bool = true) -> LocalRAGEmbeddingProvider {
-    makeFallbackProvider()
-  }
-  #endif
 }
 
 struct SystemEmbeddingProvider: LocalRAGEmbeddingProvider, @unchecked Sendable {

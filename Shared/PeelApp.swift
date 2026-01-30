@@ -10,9 +10,7 @@ import Foundation
 import SwiftUI
 import SwiftData
 import OAuthSwift
-#if os(macOS)
 import AppKit
-#endif
 
 @main
 struct PeelApp: App {
@@ -82,7 +80,6 @@ struct PeelApp: App {
         .environment(vmIsolationService)
     }
     .modelContainer(sharedModelContainer)
-    #if os(macOS)
     .commands {
       CommandGroup(replacing: .appInfo) {
         Button("About Peel") {
@@ -96,19 +93,15 @@ struct PeelApp: App {
         .keyboardShortcut("?", modifiers: .command)
       }
     }
-    #endif
 
-#if os(macOS)
     Settings {
       SettingsView()
         .environment(mcpServer)
         .environment(vmIsolationService)
     }
     .modelContainer(sharedModelContainer)
-#endif
   }
 
-#if os(macOS)
   private func showAboutPanel() {
     let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
     let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
@@ -149,7 +142,6 @@ struct PeelApp: App {
     // Keep a reference to prevent deallocation
     NSApp.activate(ignoringOtherApps: true)
   }
-#endif
 }
 
 // MARK: - SwiftData Models
