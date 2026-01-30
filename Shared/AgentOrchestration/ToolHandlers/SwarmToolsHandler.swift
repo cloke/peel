@@ -25,6 +25,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
     "swarm.start",
     "swarm.stop",
     "swarm.status",
+    "swarm.diagnostics",
     "swarm.workers",
     "swarm.dispatch",
     "swarm.connect",
@@ -54,6 +55,8 @@ public final class SwarmToolsHandler: MCPToolHandler {
       return await handleStop(id: id)
     case "swarm.status":
       return handleStatus(id: id)
+    case "swarm.diagnostics":
+      return handleDiagnostics(id: id)
     case "swarm.workers":
       return handleWorkers(id: id)
     case "swarm.dispatch":
@@ -122,6 +125,15 @@ public final class SwarmToolsHandler: MCPToolHandler {
       [
         "name": "swarm.status",
         "description": "Get the current swarm status including role, active state, and statistics.",
+        "inputSchema": [
+          "type": "object",
+          "properties": [:],
+          "required": []
+        ]
+      ],
+      [
+        "name": "swarm.diagnostics",
+        "description": "Dev diagnostics snapshot: peers, discovery, and RAG artifact sync status.",
         "inputSchema": [
           "type": "object",
           "properties": [:],
@@ -447,6 +459,101 @@ public final class SwarmToolsHandler: MCPToolHandler {
         "createdPRs": createdPRCount,
         "autoCreatePRs": coordinator.autoCreatePRs
       ]
+    ]))
+  }
+
+  // MARK: - swarm.diagnostics
+
+  private func handleDiagnostics(id: Any?) -> (Int, Data) {
+    let formatter = ISO8601DateFormatter()
+    let peers = coordinator.connectedWorkers.map { peer in
+      let status = coordinator.workerStatuses[peer.id]
+      let rag = status?.ragArtifacts
+      return [
+        "id": peer.id,
+        "name": peer.name,
+        "gitCommitHash": peer.capabilities.gitCommitHash as Any,
+        "status": [
+          "state": status?.state.rawValue ?? "unknown",
+          "currentTaskId": status?.currentTaskId?.uuidString as Any,
+          "lastHeartbeat": status.map { formatter.string(from: $0.lastHeartbeat) } as Any,
+          "uptimeSeconds": status?.uptimeSeconds as Any,
+          "tasksCompleted": status?.tasksCompleted as Any,
+          "tasksFailed": status?.tasksFailed as Any
+        ],
+        "ragArtifacts": [
+          "manifestVersion": rag?.manifestVersion as Any,
+          "totalBytes": rag?.totalBytes as Any,
+          "lastSyncedAt": rag?.lastSyncedAt.map { formatter.string(from: $0) } as Any,
+          "lastSyncDirection": rag?.lastSyncDirection?.rawValue as Any,
+          "repoCount": rag?.repoCount as Any,
+          "lastIndexedAt": rag?.lastIndexedAt.map { formatter.string(from: $0) } as Any,
+          "staleReason": rag?.staleReason as Any
+        ],
+        "capabilities": [
+          "deviceId": peer.capabilities.deviceId,
+          "deviceName": peer.capabilities.deviceName,
+          "platform": peer.capabilities.platform.rawValue,
+          "gpuCores": peer.capabilities.gpuCores,
+          "neuralEngineCores": peer.capabilities.neuralEngineCores,
+          "memoryGB": peer.capabilities.memoryGB,
+          "storageAvailableGB": peer.capabilities.storageAvailableGB,
+          "embeddingModel": peer.capabilities.embeddingModel as Any,
+          "indexedRepos": peer.capabilities.indexedRepos
+        ]
+      ] as [String: Any]
+    }
+
+    let discovered = coordinator.discoveredPeers.map { peer in
+      [
+        "id": peer.id,
+        "name": peer.name,
+        "isResolved": peer.isResolved,
+        "resolvedAddress": peer.resolvedAddress as Any,
+        "resolvedPort": peer.resolvedPort as Any
+      ] as [String: Any]
+    }
+
+    let transfers = coordinator.ragTransfers.prefix(10).map { transfer in
+      [
+        "id": transfer.id.uuidString,
+        "peerId": transfer.peerId,
+        "peerName": transfer.peerName,
+        "direction": transfer.direction.rawValue,
+        "role": transfer.role.rawValue,
+        "status": transfer.status.rawValue,
+        "totalBytes": transfer.totalBytes,
+        "transferredBytes": transfer.transferredBytes,
+        "startedAt": formatter.string(from: transfer.startedAt),
+        "completedAt": transfer.completedAt.map { formatter.string(from: $0) } as Any,
+        "errorMessage": transfer.errorMessage as Any,
+        "manifestVersion": transfer.manifestVersion as Any
+      ] as [String: Any]
+    }
+
+    let localRag = coordinator.localRagArtifactStatus
+    let localRagPayload: [String: Any] = [
+      "manifestVersion": localRag?.manifestVersion as Any,
+      "totalBytes": localRag?.totalBytes as Any,
+      "lastSyncedAt": localRag?.lastSyncedAt.map { formatter.string(from: $0) } as Any,
+      "lastSyncDirection": localRag?.lastSyncDirection?.rawValue as Any,
+      "repoCount": localRag?.repoCount as Any,
+      "lastIndexedAt": localRag?.lastIndexedAt.map { formatter.string(from: $0) } as Any,
+      "staleReason": localRag?.staleReason as Any
+    ]
+
+    return (200, makeResult(id: id, result: [
+      "active": coordinator.isActive,
+      "role": coordinator.role.rawValue,
+      "device": [
+        "deviceName": coordinator.capabilities.deviceName,
+        "deviceId": coordinator.capabilities.deviceId,
+        "gitCommitHash": coordinator.capabilities.gitCommitHash as Any
+      ],
+      "peers": peers,
+      "discovered": discovered,
+      "ragTransfers": transfers,
+      "localRagArtifacts": localRagPayload
     ]))
   }
   

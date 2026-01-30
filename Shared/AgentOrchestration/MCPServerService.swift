@@ -4214,6 +4214,17 @@ public final class MCPServerService {
         isMutating: false
       ),
       ToolDefinition(
+        name: "swarm.diagnostics",
+        description: "Dev diagnostics snapshot: peers, discovery, and RAG artifact sync status.",
+        inputSchema: [
+          "type": "object",
+          "properties": [:],
+          "required": []
+        ],
+        category: .swarm,
+        isMutating: false
+      ),
+      ToolDefinition(
         name: "swarm.workers",
         description: "List all connected workers with their capabilities.",
         inputSchema: [
