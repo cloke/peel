@@ -7,10 +7,11 @@
 
 import ASTChunker
 import CryptoKit
+import CSQLite  // Custom SQLite with extension loading support (not system SQLite3)
 import Darwin
 import Foundation
-import SQLite3
 import MachO
+import MCPCore
 import MLX
 
 struct LocalRAGIndexReport: Sendable {
@@ -2255,6 +2256,117 @@ actor LocalRAGStore {
       return []
     }
 
+    // Use accelerated search if sqlite-vec is loaded
+    if extensionLoaded {
+      return try searchVectorAccelerated(queryVector: queryVector, repoPath: repoPath, limit: limit)
+    }
+    
+    // Fallback to brute-force search
+    return try searchVectorBruteForce(queryVector: queryVector, repoPath: repoPath, limit: limit)
+  }
+  
+  /// Accelerated vector search using sqlite-vec extension
+  private func searchVectorAccelerated(queryVector: [Float], repoPath: String?, limit: Int) throws -> [LocalRAGSearchResult] {
+    guard let db else { throw LocalRAGError.sqlite("Database not open") }
+    
+    // Encode query vector as blob
+    let queryBlob = encodeVector(queryVector)
+    
+    // sqlite-vec uses vec_distance_cosine for cosine distance (1 - similarity)
+    // We want highest similarity, so ORDER BY distance ASC
+    var sql = """
+      SELECT 
+        repos.root_path || '/' || files.path as file_path,
+        chunks.start_line,
+        chunks.end_line,
+        chunks.text,
+        chunks.construct_type,
+        chunks.construct_name,
+        files.language,
+        files.module_path,
+        files.feature_tags,
+        vec_distance_cosine(v.embedding, ?) as distance
+      FROM vec_chunks v
+      JOIN chunks ON chunks.id = v.chunk_id
+      JOIN files ON files.id = chunks.file_id
+      JOIN repos ON repos.id = files.repo_id
+      """
+    
+    if repoPath != nil {
+      sql += " WHERE repos.root_path = ?"
+    }
+    
+    sql += " ORDER BY distance ASC LIMIT ?"
+    
+    var statement: OpaquePointer?
+    let prepareResult = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard prepareResult == SQLITE_OK, let stmt = statement else {
+      let message = String(cString: sqlite3_errmsg(db))
+      throw LocalRAGError.sqlite("Failed to prepare accelerated search: \(message)")
+    }
+    defer { sqlite3_finalize(stmt) }
+    
+    // Bind query vector blob using NSData to avoid closure issues
+    var bindIndex: Int32 = 1
+    let nsData = queryBlob as NSData
+    sqlite3_bind_blob(stmt, bindIndex, nsData.bytes, Int32(nsData.length), sqliteTransient)
+    bindIndex += 1
+    
+    // Bind repo path filter if provided
+    if let repoPath {
+      bindText(stmt, bindIndex, repoPath)
+      bindIndex += 1
+    }
+    
+    // Bind limit
+    sqlite3_bind_int(stmt, bindIndex, Int32(limit))
+    
+    var results: [LocalRAGSearchResult] = []
+    while sqlite3_step(stmt) == SQLITE_ROW {
+      let filePath = String(cString: sqlite3_column_text(stmt, 0))
+      let startLine = Int(sqlite3_column_int(stmt, 1))
+      let endLine = Int(sqlite3_column_int(stmt, 2))
+      let text = String(cString: sqlite3_column_text(stmt, 3))
+      let constructType = sqlite3_column_text(stmt, 4).map { String(cString: $0) }
+      let constructName = sqlite3_column_text(stmt, 5).map { String(cString: $0) }
+      let language = sqlite3_column_text(stmt, 6).map { String(cString: $0) }
+      let modulePath = sqlite3_column_text(stmt, 7).map { String(cString: $0) }
+      let featureTagsJSON = sqlite3_column_text(stmt, 8).map { String(cString: $0) }
+      let distance = Float(sqlite3_column_double(stmt, 9))
+      
+      // Convert cosine distance to similarity score (1 - distance)
+      let score = 1.0 - distance
+      
+      // Parse feature tags from JSON
+      var featureTags: [String] = []
+      if let json = featureTagsJSON,
+         let data = json.data(using: .utf8),
+         let parsed = try? JSONSerialization.jsonObject(with: data) as? [String] {
+        featureTags = parsed
+      }
+      
+      let snippet = String(text.prefix(240))
+      let result = LocalRAGSearchResult(
+        filePath: filePath,
+        startLine: startLine,
+        endLine: endLine,
+        snippet: snippet,
+        constructType: constructType,
+        constructName: constructName,
+        language: language,
+        isTest: isTestFile(filePath),
+        score: score,
+        modulePath: modulePath,
+        featureTags: featureTags
+      )
+      results.append(result)
+    }
+    
+    return results
+  }
+  
+  /// Brute-force vector search (fallback when extension not available)
+  private func searchVectorBruteForce(queryVector: [Float], repoPath: String?, limit: Int) throws -> [LocalRAGSearchResult] {
     let candidateLimit = max(limit * 50, 200)
     let sqlBase = """
     SELECT repos.root_path || '/' || files.path, chunks.start_line, chunks.end_line, chunks.text, embeddings.embedding,
@@ -2324,6 +2436,9 @@ actor LocalRAGStore {
     }
     db = handle
     sqlite3_exec(handle, "PRAGMA foreign_keys = ON;", nil, nil, nil)
+    
+    // Try to load sqlite-vec extension immediately after opening
+    try loadExtensionIfAvailable(extensionPath: nil)
   }
 
   func closeDatabase() {
@@ -2333,13 +2448,155 @@ actor LocalRAGStore {
     }
   }
 
+  /// Attempt to load sqlite-vec extension for accelerated vector search
+  /// Uses CustomSQLite which is compiled with SQLITE_ENABLE_LOAD_EXTENSION
   private func loadExtensionIfAvailable(extensionPath: String?) throws {
     extensionLoaded = false
-    let path = extensionPath?.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard let path, !path.isEmpty else {
+    
+    guard let handle = db else {
       return
     }
-    throw LocalRAGError.sqlite("SQLite extension loading is not enabled in this build (path: \(path))")
+
+    // Try paths in order: explicit path, app bundle, Application Support
+    var pathsToTry: [String] = []
+
+    if let path = extensionPath?.trimmingCharacters(in: .whitespacesAndNewlines), !path.isEmpty {
+      // User provided path - remove .dylib if present since SQLite appends it
+      let cleanPath = path.hasSuffix(".dylib") ? String(path.dropLast(6)) : path
+      pathsToTry.append(cleanPath)
+    }
+
+    // Check app bundle first (auto-signed by Xcode during build)
+    if let bundlePath = Bundle.main.path(forResource: "vec0", ofType: "dylib") {
+      // Remove .dylib since SQLite appends it
+      let cleanPath = bundlePath.hasSuffix(".dylib") ? String(bundlePath.dropLast(6)) : bundlePath
+      pathsToTry.append(cleanPath)
+    }
+
+    // Fall back to Application Support/Peel/Extensions (non-sandboxed path)
+    // Note: SQLite auto-appends .dylib on macOS, so we provide path without extension
+    if let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+      let extensionDir = appSupport.appendingPathComponent("Peel/Extensions")
+      // Provide path without .dylib - SQLite will add it
+      let vecPath = extensionDir.appendingPathComponent("vec0").path
+      pathsToTry.append(vecPath)
+    }
+    
+    print("[RAG] Looking for sqlite-vec in paths: \(pathsToTry)")
+
+    // Try each path
+    for extensionPath in pathsToTry {
+      // Check if the file exists (with .dylib extension)
+      let pathWithExtension = extensionPath.hasSuffix(".dylib") ? extensionPath : "\(extensionPath).dylib"
+      let exists = FileManager.default.fileExists(atPath: pathWithExtension)
+      print("[RAG] Checking \(pathWithExtension): exists=\(exists)")
+      guard exists else {
+        continue
+      }
+
+      // Enable extension loading (CSQLite is compiled with this support)
+      let enableResult = sqlite3_enable_load_extension(handle, 1)
+      guard enableResult == SQLITE_OK else {
+        continue
+      }
+
+      // Load the extension
+      var errorMsg: UnsafeMutablePointer<CChar>?
+      let loadResult = sqlite3_load_extension(handle, extensionPath, "sqlite3_vec_init", &errorMsg)
+
+      if loadResult == SQLITE_OK {
+        extensionLoaded = true
+        print("[RAG] sqlite-vec extension loaded successfully")
+
+        // Disable extension loading after successful load (security)
+        sqlite3_enable_load_extension(handle, 0)
+        return
+      } else {
+        let errorString = errorMsg.map { String(cString: $0) } ?? "unknown error"
+        sqlite3_free(errorMsg)
+        print("[RAG] Failed to load sqlite-vec: \(errorString)")
+      }
+    }
+
+    // Extension not found or failed to load - this is fine, we'll use brute-force search
+  }
+  
+  /// Create or update the vec_chunks virtual table for accelerated vector search
+  private func ensureVecTable() throws {
+    guard extensionLoaded, let handle = db else { return }
+    
+    // Get embedding dimensions from provider
+    let dimensions = embeddingProvider.dimensions
+    
+    // Create the vec_chunks virtual table if it doesn't exist
+    // vec0 uses float[N] syntax for vector columns
+    let createSQL = """
+      CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
+        chunk_id TEXT PRIMARY KEY,
+        embedding float[\(dimensions)]
+      )
+      """
+    
+    var errorMsg: UnsafeMutablePointer<CChar>?
+    let result = sqlite3_exec(handle, createSQL, nil, nil, &errorMsg)
+    
+    if result != SQLITE_OK {
+      let error = errorMsg.map { String(cString: $0) } ?? "unknown error"
+      sqlite3_free(errorMsg)
+      print("[RAG] Failed to create vec_chunks table: \(error)")
+      // Don't throw - we can still use brute-force search
+      extensionLoaded = false
+      return
+    }
+    
+    print("[RAG] vec_chunks virtual table ready (dimensions: \(dimensions))")
+  }
+  
+  /// Sync embeddings to the vec_chunks table for accelerated search
+  private func syncVecTable() throws {
+    guard extensionLoaded else { return }
+    
+    // Count embeddings not yet in vec_chunks
+    let missingCount = try queryInt("""
+      SELECT COUNT(*) FROM embeddings e
+      WHERE NOT EXISTS (SELECT 1 FROM vec_chunks v WHERE v.chunk_id = e.chunk_id)
+      AND e.embedding IS NOT NULL
+      """)
+    
+    guard missingCount > 0 else { return }
+    
+    print("[RAG] Syncing \(missingCount) embeddings to vec_chunks...")
+    
+    // Insert missing embeddings in batches
+    let batchSize = 500
+    var synced = 0
+    
+    while synced < missingCount {
+      let sql = """
+        INSERT OR REPLACE INTO vec_chunks (chunk_id, embedding)
+        SELECT e.chunk_id, e.embedding
+        FROM embeddings e
+        WHERE NOT EXISTS (SELECT 1 FROM vec_chunks v WHERE v.chunk_id = e.chunk_id)
+        AND e.embedding IS NOT NULL
+        LIMIT ?
+        """
+      
+      var stmt: OpaquePointer?
+      guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { break }
+      defer { sqlite3_finalize(stmt) }
+      
+      sqlite3_bind_int(stmt, 1, Int32(batchSize))
+      
+      if sqlite3_step(stmt) == SQLITE_DONE {
+        let changes = Int(sqlite3_changes(db))
+        synced += changes
+        if changes == 0 { break }
+      } else {
+        break
+      }
+    }
+    
+    print("[RAG] Synced \(synced) embeddings to vec_chunks")
   }
 
   private func ensureSchema() throws {
@@ -2388,6 +2645,12 @@ actor LocalRAGStore {
     }
     
     schemaVersion = 4
+    
+    // Set up vec_chunks virtual table if extension is loaded
+    if extensionLoaded {
+      try ensureVecTable()
+      try syncVecTable()
+    }
   }
   
   /// Check if a column exists in a table
@@ -2911,6 +3174,20 @@ actor LocalRAGStore {
       bindText(statement, 1, chunkId)
       _ = data.withUnsafeBytes { bytes in
         sqlite3_bind_blob(statement, 2, bytes.baseAddress, Int32(data.count), sqliteTransient)
+      }
+    }
+
+    // Also sync to vec_chunks for accelerated search if extension is loaded
+    if extensionLoaded {
+      let vecSql = """
+      INSERT OR REPLACE INTO vec_chunks (chunk_id, embedding)
+      VALUES (?, ?)
+      """
+      try execute(sql: vecSql) { statement in
+        bindText(statement, 1, chunkId)
+        _ = data.withUnsafeBytes { bytes in
+          sqlite3_bind_blob(statement, 2, bytes.baseAddress, Int32(data.count), sqliteTransient)
+        }
       }
     }
   }

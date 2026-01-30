@@ -10,9 +10,11 @@
 //  - Agent types, roles, and models
 //  - Chain template definitions
 //  - Data transfer objects for persistence
+//  - CSQLite: Custom SQLite with extension loading support
 //
 
 import Foundation
+@_exported import CSQLite  // Re-export CSQLite so importers get SQLite with extension support
 
 // Re-export all public types
 // (Swift automatically exports public types from the module)

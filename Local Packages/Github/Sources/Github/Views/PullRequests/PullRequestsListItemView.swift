@@ -6,6 +6,7 @@
 //  Modernized to @Observable on 1/5/26
 //
 
+import PeelUI
 import SwiftUI
 
 struct PullRequestsListItemView: View {
