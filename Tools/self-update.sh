@@ -65,26 +65,43 @@ fi
 
 echo ""
 echo "🔄 Restarting Peel..."
-PEEL_PID=$(pgrep -x Peel 2>/dev/null || true)
-if [ -n "$PEEL_PID" ]; then
-  echo "Found running Peel process (PID: $PEEL_PID). Sending SIGTERM..."
-  kill "$PEEL_PID" 2>/dev/null || true
+
+# Kill ALL Peel processes (there might be multiple from previous failed restarts)
+PEEL_PIDS=$(pgrep -x Peel 2>/dev/null || true)
+if [ -n "$PEEL_PIDS" ]; then
+  PEEL_COUNT=$(echo "$PEEL_PIDS" | wc -l | tr -d ' ')
+  echo "Found $PEEL_COUNT running Peel process(es): $PEEL_PIDS"
+  
+  # First try graceful SIGTERM to all
+  echo "Sending SIGTERM to all Peel processes..."
+  echo "$PEEL_PIDS" | xargs kill 2>/dev/null || true
   sleep 2
   
-  # If still running, use SIGKILL
-  if ps -p "$PEEL_PID" >/dev/null 2>&1; then
-    echo "Process still running, sending SIGKILL..."
-    kill -9 "$PEEL_PID" 2>/dev/null || true
+  # Check if any are still running and SIGKILL them
+  REMAINING=$(pgrep -x Peel 2>/dev/null || true)
+  if [ -n "$REMAINING" ]; then
+    echo "Processes still running, sending SIGKILL..."
+    echo "$REMAINING" | xargs kill -9 2>/dev/null || true
     sleep 1
   fi
 else
-  echo "No running Peel process detected."
+  echo "No running Peel processes detected."
+fi
+
+# Final verification - fail loudly if processes remain
+FINAL_CHECK=$(pgrep -x Peel 2>/dev/null || true)
+if [ -n "$FINAL_CHECK" ]; then
+  echo "⚠️  WARNING: Peel processes still running after termination: $FINAL_CHECK"
+  echo "   Attempting forced termination..."
+  echo "$FINAL_CHECK" | xargs kill -9 2>/dev/null || true
+  sleep 1
 fi
 
 if pgrep -x Peel >/dev/null 2>&1; then
-  echo "⚠️  Peel still running after termination attempt"
+  echo "❌ FAILED to terminate all Peel processes"
+  exit 1
 else
-  echo "✅ Peel process terminated"
+  echo "✅ All Peel processes terminated"
 fi
 
 # Find and launch the built app
