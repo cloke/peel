@@ -164,10 +164,11 @@ final class RAGToolsHandler: MCPToolHandler {
     "rag.largeFiles",
     "rag.constructTypes",
     "rag.facets",
-    "rag.dependencies",   // Issue #176: What does a file depend on
-    "rag.dependents",     // Issue #176: What depends on a file
-    "rag.structural",     // Issue #174: Query by file structure (lines, methods, size)
-    "rag.similar"         // Issue #175: Find semantically similar code
+    "rag.dependencies",    // Issue #176: What does a file depend on
+    "rag.dependents",      // Issue #176: What depends on a file
+    "rag.structural",      // Issue #174: Query by file structure (lines, methods, size)
+    "rag.similar",         // Issue #175: Find semantically similar code
+    "rag.reranker.config"  // Issue #128: HF reranker configuration
   ]
   
   init() {}
@@ -216,6 +217,8 @@ final class RAGToolsHandler: MCPToolHandler {
       return await handleStructural(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.similar":
       return await handleSimilar(id: id, arguments: arguments, delegate: ragDelegate)
+    case "rag.reranker.config":
+      return handleRerankerConfig(id: id, arguments: arguments)
     default:
       // For tools not yet extracted, return method not found
       // The MCPServerService will handle these until full extraction is complete
@@ -291,10 +294,13 @@ final class RAGToolsHandler: MCPToolHandler {
     let modulePathFilter = optionalString("modulePath", from: arguments)
     let featureTagFilter = optionalString("featureTag", from: arguments)
     let matchAll = optionalBool("matchAll", from: arguments, default: true)
+    let shouldRerank = optionalBool("rerank", from: arguments, default: false)
     
     do {
       let resolvedMode: MCPServerService.RAGSearchMode = mode.lowercased() == "vector" ? .vector : .text
-      var results = try await delegate.searchRagForTool(query: query, mode: resolvedMode, repoPath: repoPath, limit: limit * 2, matchAll: matchAll)
+      // Fetch more results initially if reranking is enabled
+      let fetchLimit = shouldRerank ? max(limit * 3, 30) : limit * 2
+      var results = try await delegate.searchRagForTool(query: query, mode: resolvedMode, repoPath: repoPath, limit: fetchLimit, matchAll: matchAll)
       
       // Apply filters
       if excludeTests {
@@ -308,6 +314,55 @@ final class RAGToolsHandler: MCPToolHandler {
       }
       if let tagFilter = featureTagFilter?.lowercased(), !tagFilter.isEmpty {
         results = results.filter { $0.featureTags.contains { $0.lowercased() == tagFilter } }
+      }
+      
+      // Apply HuggingFace reranking if enabled and requested
+      var rerankerProvider: String? = nil
+      if shouldRerank, let reranker = HFRerankerFactory.makeIfEnabled() {
+        do {
+          // Convert to RerankerSearchResult
+          let rerankerInput = results.map { r in
+            RerankerSearchResult(
+              filePath: r.filePath,
+              startLine: r.startLine,
+              endLine: r.endLine,
+              snippet: r.snippet,
+              isTest: r.isTest,
+              lineCount: r.lineCount,
+              constructType: r.constructType,
+              constructName: r.constructName,
+              language: r.language,
+              score: r.score.map { Float($0) },
+              modulePath: r.modulePath,
+              featureTags: r.featureTags
+            )
+          }
+          
+          let reranked = try await reranker.rerank(query: query, results: rerankerInput, topK: limit)
+          
+          // Convert back to RAGToolSearchResult
+          results = reranked.map { r in
+            RAGToolSearchResult(
+              filePath: r.filePath,
+              startLine: r.startLine,
+              endLine: r.endLine,
+              snippet: r.snippet,
+              isTest: r.isTest,
+              lineCount: r.lineCount,
+              constructType: r.constructType,
+              constructName: r.constructName,
+              language: r.language,
+              score: r.score.map { Double($0) },
+              modulePath: r.modulePath,
+              featureTags: r.featureTags
+            )
+          }
+          
+          rerankerProvider = reranker.providerName
+        } catch {
+          // Log warning but continue with unranked results
+          await delegate.logWarning("HF reranking failed, using unranked results", metadata: ["error": error.localizedDescription])
+        }
       }
       
       // Trim to requested limit after filtering
@@ -343,7 +398,14 @@ final class RAGToolsHandler: MCPToolHandler {
         }
         return item
       }
-      return (200, makeResult(id: id, result: ["mode": mode, "results": payload]))
+      
+      // Build response with reranker info
+      var response: [String: Any] = ["mode": mode, "results": payload]
+      if let provider = rerankerProvider {
+        response["rerankerProvider"] = provider
+      }
+      
+      return (200, makeResult(id: id, result: response))
     } catch {
       await delegate.logWarning("Local RAG search failed", metadata: ["error": error.localizedDescription])
       return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
@@ -844,6 +906,61 @@ final class RAGToolsHandler: MCPToolHandler {
     } catch {
       await delegate.logWarning("RAG similar search failed", metadata: ["error": error.localizedDescription])
       return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
+    }
+  }
+  
+  // MARK: - rag.reranker.config (Issue #128)
+  
+  private func handleRerankerConfig(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    let action = optionalString("action", from: arguments, default: "get") ?? "get"
+    
+    switch action {
+    case "get":
+      // Return current configuration
+      let result: [String: Any] = [
+        "enabled": HFRerankerFactory.isEnabled,
+        "modelId": HFRerankerFactory.modelId,
+        "hasApiToken": HFRerankerFactory.apiToken != nil,
+        "availableModels": HFRerankerFactory.availableModels.map { model in
+          [
+            "id": model.id,
+            "name": model.name,
+            "description": model.description
+          ]
+        }
+      ]
+      return (200, makeResult(id: id, result: result))
+      
+    case "set":
+      // Update configuration
+      if let enabled = arguments["enabled"] as? Bool {
+        HFRerankerFactory.isEnabled = enabled
+      }
+      if let modelId = optionalString("modelId", from: arguments), !modelId.isEmpty {
+        HFRerankerFactory.modelId = modelId
+      }
+      if let apiToken = optionalString("apiToken", from: arguments) {
+        HFRerankerFactory.apiToken = apiToken.isEmpty ? nil : apiToken
+      }
+      
+      let result: [String: Any] = [
+        "message": "Reranker configuration updated",
+        "enabled": HFRerankerFactory.isEnabled,
+        "modelId": HFRerankerFactory.modelId,
+        "hasApiToken": HFRerankerFactory.apiToken != nil
+      ]
+      return (200, makeResult(id: id, result: result))
+      
+    case "test":
+      // Test the reranker with a sample query
+      return (200, makeResult(id: id, result: [
+        "message": "Use rag.search with rerank=true to test reranking",
+        "enabled": HFRerankerFactory.isEnabled,
+        "modelId": HFRerankerFactory.modelId
+      ]))
+      
+    default:
+      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "Unknown action: \(action). Use 'get', 'set', or 'test'"))
     }
   }
   
