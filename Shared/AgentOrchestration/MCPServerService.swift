@@ -3490,6 +3490,46 @@ public final class MCPServerService {
         isMutating: false
       ),
       ToolDefinition(
+        name: "rag.structural",
+        description: "Query files by structural characteristics: line count, method count, byte size. Use for finding large/complex files or filtering by size. Set statsOnly=true for aggregate statistics.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": ["type": "string", "description": "Absolute path to the repository root"],
+            "minLines": ["type": "integer", "description": "Minimum line count filter"],
+            "maxLines": ["type": "integer", "description": "Maximum line count filter"],
+            "minMethods": ["type": "integer", "description": "Minimum method/function count filter"],
+            "maxMethods": ["type": "integer", "description": "Maximum method/function count filter"],
+            "minBytes": ["type": "integer", "description": "Minimum file size in bytes"],
+            "maxBytes": ["type": "integer", "description": "Maximum file size in bytes"],
+            "language": ["type": "string", "description": "Filter by language (e.g., 'swift', 'ruby', 'typescript')"],
+            "sortBy": ["type": "string", "description": "Sort results by: 'lines', 'methods', 'bytes' (default: 'lines')"],
+            "limit": ["type": "integer", "description": "Maximum results to return (default: 50)"],
+            "statsOnly": ["type": "boolean", "description": "Return only aggregate statistics (no file list)"]
+          ],
+          "required": ["repoPath"]
+        ],
+        category: .rag,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "rag.similar",
+        description: "Find code chunks semantically similar to a given snippet or query. Uses embedding-based similarity search to find related code patterns, implementations, or concepts.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "query": ["type": "string", "description": "Code snippet or text to find similar code for"],
+            "repoPath": ["type": "string", "description": "Absolute path to repository (optional - searches all indexed repos if omitted)"],
+            "threshold": ["type": "number", "description": "Minimum similarity score 0.0-1.0 (default: 0.6)"],
+            "limit": ["type": "integer", "description": "Maximum results to return (default: 10)"],
+            "excludePath": ["type": "string", "description": "File path to exclude from results (useful when finding similar code to an existing file)"]
+          ],
+          "required": ["query"]
+        ],
+        category: .rag,
+        isMutating: false
+      ),
+      ToolDefinition(
         name: "templates.list",
         description: "List available chain templates",
         inputSchema: [
@@ -5171,6 +5211,81 @@ extension MCPServerService: RAGToolsHandlerDelegate {
         targetFile: dep.targetFile,
         dependencyType: dep.dependencyType.rawValue,
         rawImport: dep.rawImport
+      )
+    }
+  }
+  
+  func queryFilesByStructure(
+    repoPath: String,
+    minLines: Int?,
+    maxLines: Int?,
+    minMethods: Int?,
+    maxMethods: Int?,
+    minBytes: Int?,
+    maxBytes: Int?,
+    language: String?,
+    sortBy: String,
+    limit: Int
+  ) async throws -> [RAGToolStructuralResult] {
+    let results = try await localRagStore.queryFilesByStructure(
+      inRepo: repoPath,
+      minLines: minLines,
+      maxLines: maxLines,
+      minMethods: minMethods,
+      maxMethods: maxMethods,
+      minBytes: minBytes,
+      maxBytes: maxBytes,
+      language: language,
+      sortBy: sortBy,
+      limit: limit
+    )
+    return results.map { r in
+      RAGToolStructuralResult(
+        path: r.path,
+        language: r.language,
+        lineCount: r.lineCount,
+        methodCount: r.methodCount,
+        byteSize: r.byteSize,
+        modulePath: r.modulePath
+      )
+    }
+  }
+  
+  func getStructuralStats(repoPath: String) async throws -> (
+    totalFiles: Int,
+    totalLines: Int,
+    totalMethods: Int,
+    avgLinesPerFile: Double,
+    avgMethodsPerFile: Double,
+    largestFile: (path: String, lines: Int)?,
+    mostMethods: (path: String, count: Int)?
+  ) {
+    return try await localRagStore.getStructuralStats(for: repoPath)
+  }
+  
+  func findSimilarCode(
+    query: String,
+    repoPath: String?,
+    threshold: Double,
+    limit: Int,
+    excludePath: String?
+  ) async throws -> [RAGToolSimilarResult] {
+    let results = try await localRagStore.findSimilarCode(
+      query: query,
+      repoPath: repoPath,
+      threshold: threshold,
+      limit: limit,
+      excludePath: excludePath
+    )
+    return results.map { r in
+      RAGToolSimilarResult(
+        path: r.path,
+        startLine: r.startLine,
+        endLine: r.endLine,
+        snippet: r.snippet,
+        similarity: r.similarity,
+        constructType: r.constructType,
+        constructName: r.constructName
       )
     }
   }
