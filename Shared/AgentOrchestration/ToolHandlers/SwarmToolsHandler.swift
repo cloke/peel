@@ -36,6 +36,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
     "swarm.branch-queue",
     "swarm.pr-queue",
     "swarm.create-pr",
+    "swarm.setup-labels",
     "swarm.register-repo",
     "swarm.repos"
   ]
@@ -75,6 +76,8 @@ public final class SwarmToolsHandler: MCPToolHandler {
       return handlePRQueue(id: id, arguments: arguments)
     case "swarm.create-pr":
       return await handleCreatePR(id: id, arguments: arguments)
+    case "swarm.setup-labels":
+      return await handleSetupLabels(id: id, arguments: arguments)
     case "swarm.register-repo":
       return await handleRegisterRepo(id: id, arguments: arguments)
     case "swarm.repos":
@@ -271,6 +274,20 @@ public final class SwarmToolsHandler: MCPToolHandler {
         ]
       ],
       [
+        "name": "swarm.setup-labels",
+        "description": "Ensure all Peel PR labels exist in a repository. Creates peel:created, peel:approved, peel:needs-review, peel:needs-help, peel:conflict, and peel:merged labels with proper colors.",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "repoPath": [
+              "type": "string",
+              "description": "Path to the git repository"
+            ]
+          ],
+          "required": ["repoPath"]
+        ]
+      ],
+      [
         "name": "swarm.register-repo",
         "description": "Register a local repository path with the swarm. This maps the repo's git remote URL to the local path, enabling distributed tasks to work across machines with different folder structures.",
         "inputSchema": [
@@ -377,13 +394,28 @@ public final class SwarmToolsHandler: MCPToolHandler {
   // MARK: - swarm.status
   
   private func handleStatus(id: Any?) -> (Int, Data) {
+    // Get branch/PR queue stats even when inactive (may have residual state)
+    let branchStats = coordinator.branchQueue.getStats()
+    let prPendingCount = coordinator.prQueue.pendingCount
+    let createdPRCount = coordinator.prQueue.getAllPRs().count
+    
     guard coordinator.isActive else {
       return (200, makeResult(id: id, result: [
         "active": false,
         "role": NSNull(),
         "workerCount": 0,
         "tasksCompleted": 0,
-        "tasksFailed": 0
+        "tasksFailed": 0,
+        "branchQueue": [
+          "inFlightCount": branchStats.inFlightCount,
+          "completedCount": branchStats.completedCount,
+          "readyForPRCount": branchStats.readyForPRCount,
+          "needingReviewCount": branchStats.needingReviewCount
+        ],
+        "prQueue": [
+          "pendingOperations": prPendingCount,
+          "createdPRs": createdPRCount
+        ]
       ]))
     }
     
@@ -403,6 +435,17 @@ public final class SwarmToolsHandler: MCPToolHandler {
         "neuralEngineCores": coordinator.capabilities.neuralEngineCores,
         "memoryGB": coordinator.capabilities.memoryGB,
         "gitCommitHash": coordinator.capabilities.gitCommitHash as Any
+      ],
+      "branchQueue": [
+        "inFlightCount": branchStats.inFlightCount,
+        "completedCount": branchStats.completedCount,
+        "readyForPRCount": branchStats.readyForPRCount,
+        "needingReviewCount": branchStats.needingReviewCount
+      ],
+      "prQueue": [
+        "pendingOperations": prPendingCount,
+        "createdPRs": createdPRCount,
+        "autoCreatePRs": coordinator.autoCreatePRs
       ]
     ]))
   }
@@ -915,6 +958,38 @@ public final class SwarmToolsHandler: MCPToolHandler {
       "taskId": taskIdStr,
       "branchName": completed.branchName
     ]))
+  }
+  
+  // MARK: - swarm.setup-labels
+  
+  private func handleSetupLabels(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard case .success(let repoPath) = requireString("repoPath", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "repoPath")
+    }
+    
+    // Check if path exists
+    guard FileManager.default.fileExists(atPath: repoPath) else {
+      return internalError(id: id, message: "Path does not exist: \(repoPath)")
+    }
+    
+    do {
+      try await coordinator.prQueue.ensureLabelsExist(in: repoPath)
+      
+      let labels = PeelPRLabel.allCases.map { [
+        "name": $0.rawValue,
+        "description": $0.description,
+        "color": $0.color
+      ] }
+      
+      return (200, makeResult(id: id, result: [
+        "success": true,
+        "message": "Created \(labels.count) Peel labels in repo",
+        "repoPath": repoPath,
+        "labels": labels
+      ]))
+    } catch {
+      return internalError(id: id, message: "Failed to setup labels: \(error.localizedDescription)")
+    }
   }
   
   // MARK: - swarm.register-repo

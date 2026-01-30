@@ -224,7 +224,10 @@ public final class SwarmCoordinator {
   // MARK: - Initialization
   
   /// Private init for singleton pattern
-  private init() {}
+  private init() {
+    // Set up PR queue delegate
+    prQueue.delegate = self
+  }
   
   /// Configure with a chain executor (for worker mode task execution)
   public func configure(chainExecutor: ChainExecutorProtocol?) {
@@ -1253,5 +1256,127 @@ extension SwarmCoordinator: BonjourDiscoveryDelegate {
   
   public func discoveryService(_ service: BonjourDiscoveryService, didFailWithError error: Error) {
     logger.error("Discovery error: \(error)")
+  }
+}
+
+// MARK: - PRQueueDelegate
+
+extension SwarmCoordinator: PRQueueDelegate {
+  public func prQueue(
+    _ queue: PRQueue,
+    createPRForBranch branch: String,
+    baseBranch: String,
+    title: String,
+    body: String,
+    labels: [String],
+    isDraft: Bool,
+    in repoPath: String
+  ) async throws -> (Int, String) {
+    // Build gh pr create command
+    var args = ["pr", "create", "--head", branch, "--base", baseBranch, "--title", title, "--body", body]
+    for label in labels {
+      args.append("--label")
+      args.append(label)
+    }
+    if isDraft {
+      args.append("--draft")
+    }
+    
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    process.arguments = ["gh"] + args
+    process.currentDirectoryURL = URL(fileURLWithPath: repoPath)
+    
+    let stdout = Pipe()
+    let stderr = Pipe()
+    process.standardOutput = stdout
+    process.standardError = stderr
+    
+    try process.run()
+    process.waitUntilExit()
+    
+    let outputData = stdout.fileHandleForReading.readDataToEndOfFile()
+    let errorData = stderr.fileHandleForReading.readDataToEndOfFile()
+    let output = String(data: outputData, encoding: .utf8) ?? ""
+    let errorOutput = String(data: errorData, encoding: .utf8) ?? ""
+    
+    if process.terminationStatus != 0 {
+      throw PRQueueError.prCreationFailed(errorOutput)
+    }
+    
+    // Parse PR URL from output (format: https://github.com/owner/repo/pull/123)
+    let prURL = output.trimmingCharacters(in: .whitespacesAndNewlines)
+    
+    // Extract PR number from URL
+    if let range = prURL.range(of: #"/pull/(\d+)"#, options: .regularExpression),
+       let numberMatch = prURL[range].split(separator: "/").last,
+       let prNumber = Int(numberMatch) {
+      return (prNumber, prURL)
+    }
+    
+    // Fallback: try to get PR number from gh
+    let listProcess = Process()
+    listProcess.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    listProcess.arguments = ["gh", "pr", "view", branch, "--json", "number", "-q", ".number"]
+    listProcess.currentDirectoryURL = URL(fileURLWithPath: repoPath)
+    
+    let listStdout = Pipe()
+    listProcess.standardOutput = listStdout
+    listProcess.standardError = FileHandle.nullDevice
+    
+    try listProcess.run()
+    listProcess.waitUntilExit()
+    
+    let listOutput = String(data: listStdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    if let prNumber = Int(listOutput.trimmingCharacters(in: .whitespacesAndNewlines)) {
+      return (prNumber, prURL)
+    }
+    
+    throw PRQueueError.prCreationFailed("Could not determine PR number")
+  }
+  
+  public func prQueue(_ queue: PRQueue, addLabel label: String, toPR prNumber: Int, in repoPath: String) async throws {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    process.arguments = ["gh", "pr", "edit", String(prNumber), "--add-label", label]
+    process.currentDirectoryURL = URL(fileURLWithPath: repoPath)
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    
+    try process.run()
+    process.waitUntilExit()
+  }
+  
+  public func prQueue(_ queue: PRQueue, addComment comment: String, toPR prNumber: Int, in repoPath: String) async throws {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    process.arguments = ["gh", "pr", "comment", String(prNumber), "--body", comment]
+    process.currentDirectoryURL = URL(fileURLWithPath: repoPath)
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    
+    try process.run()
+    process.waitUntilExit()
+  }
+  
+  public func prQueue(_ queue: PRQueue, ensureLabelsExistIn repoPath: String) async throws {
+    for label in PeelPRLabel.allCases {
+      let process = Process()
+      process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+      process.arguments = [
+        "gh", "label", "create", label.rawValue,
+        "--description", label.description,
+        "--color", label.color,
+        "--force"
+      ]
+      process.currentDirectoryURL = URL(fileURLWithPath: repoPath)
+      process.standardOutput = FileHandle.nullDevice
+      process.standardError = FileHandle.nullDevice
+      
+      try process.run()
+      process.waitUntilExit()
+      // Continue even if label exists (--force handles this)
+    }
+    logger.info("Ensured all Peel labels exist in \(repoPath)")
   }
 }

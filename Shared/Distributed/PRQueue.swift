@@ -9,26 +9,32 @@ import os.log
 
 /// Labels applied to swarm-created PRs
 public enum PeelPRLabel: String, Sendable, CaseIterable {
-  case created = "peel:created"       // PR was created by Peel
-  case approved = "peel:approved"     // PR passed validation, ready for human review
-  case needsHelp = "peel:needs-help"  // PR needs human intervention
-  case merged = "peel:merged"         // PR was auto-merged (if enabled)
+  case created = "peel:created"           // PR was created by Peel
+  case approved = "peel:approved"         // PR passed validation, ready for human review
+  case needsReview = "peel:needs-review"  // Awaiting human review
+  case needsHelp = "peel:needs-help"      // PR needs human intervention
+  case conflict = "peel:conflict"         // Merge conflicts detected
+  case merged = "peel:merged"             // PR was auto-merged (if enabled)
   
   public var description: String {
     switch self {
     case .created: return "Created by Peel swarm"
     case .approved: return "Validated and approved by Peel"
-    case .needsHelp: return "Needs human review"
+    case .needsReview: return "Awaiting human review"
+    case .needsHelp: return "Needs human intervention"
+    case .conflict: return "Merge conflicts detected"
     case .merged: return "Auto-merged by Peel"
     }
   }
   
   public var color: String {
     switch self {
-    case .created: return "0366d6"    // Blue
-    case .approved: return "28a745"   // Green
-    case .needsHelp: return "d73a49"  // Red
-    case .merged: return "6f42c1"     // Purple
+    case .created: return "0366d6"     // Blue
+    case .approved: return "28a745"    // Green
+    case .needsReview: return "f9c513" // Yellow
+    case .needsHelp: return "d73a49"   // Red
+    case .conflict: return "b60205"    // Dark red
+    case .merged: return "6f42c1"      // Purple
     }
   }
 }
@@ -362,6 +368,33 @@ public protocol PRQueueDelegate: AnyObject {
   
   /// Add a comment to a PR
   func prQueue(_ queue: PRQueue, addComment comment: String, toPR prNumber: Int, in repoPath: String) async throws
+  
+  /// Ensure all Peel labels exist in a repo
+  func prQueue(_ queue: PRQueue, ensureLabelsExistIn repoPath: String) async throws
+}
+
+// MARK: - Extension for Label Setup
+
+extension PRQueue {
+  /// Ensure all Peel PR labels exist in a repo (call once per repo setup)
+  public func ensureLabelsExist(in repoPath: String) async throws {
+    guard let delegate = delegate else {
+      throw PRQueueError.noDelegateConfigured
+    }
+    try await delegate.prQueue(self, ensureLabelsExistIn: repoPath)
+  }
+  
+  /// Get shell commands to create all Peel labels (for manual setup)
+  public static func labelSetupCommands(repoPath: String) -> [String] {
+    PeelPRLabel.allCases.map { label in
+      """
+      gh label create "\(label.rawValue)" \
+        --description "\(label.description)" \
+        --color "\(label.color)" \
+        --force 2>/dev/null || true
+      """
+    }
+  }
 }
 
 // MARK: - Errors
@@ -370,6 +403,7 @@ public enum PRQueueError: LocalizedError {
   case noDelegateConfigured
   case pushFailed(String)
   case prCreationFailed(String)
+  case labelSetupFailed(String)
   
   public var errorDescription: String? {
     switch self {
@@ -379,6 +413,8 @@ public enum PRQueueError: LocalizedError {
       return "Failed to push branch: \(reason)"
     case .prCreationFailed(let reason):
       return "Failed to create PR: \(reason)"
+    case .labelSetupFailed(let reason):
+      return "Failed to set up labels: \(reason)"
     }
   }
 }
