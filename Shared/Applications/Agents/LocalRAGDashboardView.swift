@@ -393,7 +393,7 @@ struct LocalRAGDashboardView: View {
 
               Picker("Peel", selection: selection) {
                 ForEach(workers) { worker in
-                  Text(worker.name).tag(worker.id)
+                  Text(worker.displayName).tag(worker.id)
                 }
               }
               .pickerStyle(.menu)
@@ -1696,7 +1696,7 @@ private struct RAGWorkerSyncRow: View {
 
   var body: some View {
     HStack(alignment: .center, spacing: 8) {
-      Text(peer.name)
+      Text(peer.displayName)
         .font(.caption)
         .foregroundStyle(.primary)
       Spacer()

@@ -114,15 +114,42 @@ fi
 APP_PATH=$(printf '%s\n' "${DERIVED_APPS[@]}" 2>/dev/null | head -1)
 if [ -n "$APP_PATH" ]; then
   echo "Launching: $APP_PATH"
+  
+  # Ensure no processes remain before launch (double-check)
+  sleep 1
+  if pgrep -x Peel >/dev/null 2>&1; then
+    echo "⚠️  Peel process appeared unexpectedly, killing..."
+    pkill -9 -x Peel 2>/dev/null || true
+    sleep 2
+  fi
+  
   echo "Launching via detached open..."
   nohup /bin/zsh -lc "/usr/bin/open -n \"$APP_PATH\" --args --worker" >/dev/null 2>&1 &
   RELAUNCH_PID=$!
   echo "Spawned relaunch process: $RELAUNCH_PID"
-  sleep 4
-  if pgrep -x Peel >/dev/null 2>&1; then
-    echo "✅ Peel restarted in worker mode"
+  
+  # Wait longer for app to fully start and stabilize
+  sleep 5
+  
+  # Verify the new process is running
+  NEW_PID=$(pgrep -x Peel 2>/dev/null || true)
+  if [ -n "$NEW_PID" ]; then
+    echo "✅ Peel restarted in worker mode (PID: $NEW_PID)"
+    
+    # Log the git hash for verification
+    GIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    echo "   Expected version: $GIT_HASH"
   else
     echo "⚠️  Peel did not appear to launch (no process detected)"
+    echo "   Retrying launch..."
+    /usr/bin/open -n "$APP_PATH" --args --worker &
+    sleep 3
+    if pgrep -x Peel >/dev/null 2>&1; then
+      echo "✅ Peel started on retry"
+    else
+      echo "❌ Failed to start Peel"
+      exit 1
+    fi
   fi
 else
   echo "❌ Could not find Peel.app in DerivedData"

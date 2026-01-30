@@ -189,7 +189,8 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
   public var id: String { deviceId }
   
   public let deviceId: String
-  public let deviceName: String
+  public let deviceName: String      // Raw hostname
+  public let displayName: String?    // Custom friendly name (from config)
   public let platform: Platform
   
   // Hardware
@@ -217,6 +218,7 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
   public init(
     deviceId: String,
     deviceName: String,
+    displayName: String? = nil,
     platform: Platform,
     gpuCores: Int,
     neuralEngineCores: Int,
@@ -231,6 +233,7 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
   ) {
     self.deviceId = deviceId
     self.deviceName = deviceName
+    self.displayName = displayName
     self.platform = platform
     self.gpuCores = gpuCores
     self.neuralEngineCores = neuralEngineCores
@@ -270,6 +273,7 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
     return WorkerCapabilities(
       deviceId: deviceId,
       deviceName: processInfo.hostName,
+      displayName: Self.getConfiguredDisplayName(),
       platform: platform,
       gpuCores: Self.getGPUCores(),
       neuralEngineCores: Self.getNeuralEngineCores(),
@@ -355,6 +359,30 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
     } catch {
       return nil
     }
+  }
+
+  /// Get custom display name from config file
+  /// Config file: ~/Library/Application Support/Peel/worker-config.json
+  /// Format: { "displayName": "Supreme Overlord" }
+  private static func getConfiguredDisplayName() -> String? {
+    #if os(macOS)
+    let configPath = FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent("Library/Application Support/Peel/worker-config.json")
+    #else
+    guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+      return nil
+    }
+    let configPath = appSupport.appendingPathComponent("Peel/worker-config.json")
+    #endif
+    
+    guard FileManager.default.fileExists(atPath: configPath.path),
+          let data = try? Data(contentsOf: configPath),
+          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let name = json["displayName"] as? String,
+          !name.isEmpty else {
+      return nil
+    }
+    return name
   }
   
   private static func getDeviceId() -> String {

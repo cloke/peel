@@ -896,7 +896,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
         
         dispatched.append([
           "workerId": worker.id,
-          "workerName": worker.name,
+          "workerName": worker.displayName,
           "status": result.exitCode == 0 ? "success" : "failed",
           "exitCode": result.exitCode,
           "output": String(result.output.suffix(500)),  // Last 500 chars
@@ -905,7 +905,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
       } catch {
         dispatched.append([
           "workerId": worker.id,
-          "workerName": worker.name,
+          "workerName": worker.displayName,
           "status": "failed",
           "error": error.localizedDescription
         ])
@@ -965,7 +965,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
         "output": result.output.trimmingCharacters(in: .whitespacesAndNewlines),
         "error": result.error as Any,
         "workerId": targetWorker.id,
-        "workerName": targetWorker.name,
+        "workerName": targetWorker.displayName,
         "lines": lines
       ]))
     } catch {
@@ -1014,7 +1014,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
         "output": result.output.trimmingCharacters(in: .whitespacesAndNewlines),
         "error": result.error as Any,
         "workerId": targetWorker.id,
-        "workerName": targetWorker.name,
+        "workerName": targetWorker.displayName,
         "command": command,
         "args": args
       ]))

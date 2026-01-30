@@ -386,7 +386,7 @@ struct PeerRow: View {
       
       VStack(alignment: .leading, spacing: 2) {
         HStack(spacing: 4) {
-          Text(peer.name)
+          Text(peer.displayName)
             .font(.body)
           if role == .worker {
             Text("(Crown)")
