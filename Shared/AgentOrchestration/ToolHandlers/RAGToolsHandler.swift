@@ -57,6 +57,40 @@ protocol RAGToolsHandlerDelegate: MCPToolHandlerDelegate {
   /// Get dependents for a file (what depends on it) - Issue #176
   func getDependents(filePath: String, repoPath: String) async throws -> [RAGToolDependencyResult]
   
+  /// Query files by structural characteristics - Issue #174
+  func queryFilesByStructure(
+    repoPath: String,
+    minLines: Int?,
+    maxLines: Int?,
+    minMethods: Int?,
+    maxMethods: Int?,
+    minBytes: Int?,
+    maxBytes: Int?,
+    language: String?,
+    sortBy: String,
+    limit: Int
+  ) async throws -> [RAGToolStructuralResult]
+  
+  /// Get structural statistics for a repo - Issue #174
+  func getStructuralStats(repoPath: String) async throws -> (
+    totalFiles: Int,
+    totalLines: Int,
+    totalMethods: Int,
+    avgLinesPerFile: Double,
+    avgMethodsPerFile: Double,
+    largestFile: (path: String, lines: Int)?,
+    mostMethods: (path: String, count: Int)?
+  )
+  
+  /// Find semantically similar code - Issue #175
+  func findSimilarCode(
+    query: String,
+    repoPath: String?,
+    threshold: Double,
+    limit: Int,
+    excludePath: String?
+  ) async throws -> [RAGToolSimilarResult]
+  
   /// Clear embedding cache
   func clearRagCache() async throws -> Int
   
@@ -131,7 +165,9 @@ final class RAGToolsHandler: MCPToolHandler {
     "rag.constructTypes",
     "rag.facets",
     "rag.dependencies",   // Issue #176: What does a file depend on
-    "rag.dependents"      // Issue #176: What depends on a file
+    "rag.dependents",     // Issue #176: What depends on a file
+    "rag.structural",     // Issue #174: Query by file structure (lines, methods, size)
+    "rag.similar"         // Issue #175: Find semantically similar code
   ]
   
   init() {}
@@ -176,6 +212,10 @@ final class RAGToolsHandler: MCPToolHandler {
       return await handleDependencies(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.dependents":
       return await handleDependents(id: id, arguments: arguments, delegate: ragDelegate)
+    case "rag.structural":
+      return await handleStructural(id: id, arguments: arguments, delegate: ragDelegate)
+    case "rag.similar":
+      return await handleSimilar(id: id, arguments: arguments, delegate: ragDelegate)
     default:
       // For tools not yet extracted, return method not found
       // The MCPServerService will handle these until full extraction is complete
@@ -661,6 +701,148 @@ final class RAGToolsHandler: MCPToolHandler {
     }
   }
   
+  // MARK: - rag.structural (Issue #174)
+  
+  private func handleStructural(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
+    guard let repoPath = optionalString("repoPath", from: arguments) else {
+      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "repoPath is required"))
+    }
+    
+    // Parse optional filter criteria
+    let minLines = optionalInt("minLines", from: arguments)
+    let maxLines = optionalInt("maxLines", from: arguments)
+    let minMethods = optionalInt("minMethods", from: arguments)
+    let maxMethods = optionalInt("maxMethods", from: arguments)
+    let minBytes = optionalInt("minBytes", from: arguments)
+    let maxBytes = optionalInt("maxBytes", from: arguments)
+    let language = optionalString("language", from: arguments)
+    let sortBy = optionalString("sortBy", from: arguments) ?? "lines"
+    let limit = optionalInt("limit", from: arguments) ?? 50
+    
+    // Check if we want stats only
+    let statsOnly = optionalBool("statsOnly", from: arguments, default: false)
+    
+    do {
+      if statsOnly {
+        let stats = try await delegate.getStructuralStats(repoPath: repoPath)
+        
+        var result: [String: Any] = [
+          "repoPath": repoPath,
+          "totalFiles": stats.totalFiles,
+          "totalLines": stats.totalLines,
+          "totalMethods": stats.totalMethods,
+          "avgLinesPerFile": stats.avgLinesPerFile,
+          "avgMethodsPerFile": stats.avgMethodsPerFile
+        ]
+        
+        if let largest = stats.largestFile {
+          result["largestFile"] = ["path": largest.path, "lines": largest.lines]
+        }
+        if let mostMethods = stats.mostMethods {
+          result["mostMethods"] = ["path": mostMethods.path, "count": mostMethods.count]
+        }
+        
+        return (200, makeResult(id: id, result: result))
+      } else {
+        let files = try await delegate.queryFilesByStructure(
+          repoPath: repoPath,
+          minLines: minLines,
+          maxLines: maxLines,
+          minMethods: minMethods,
+          maxMethods: maxMethods,
+          minBytes: minBytes,
+          maxBytes: maxBytes,
+          language: language,
+          sortBy: sortBy,
+          limit: limit
+        )
+        
+        let result: [String: Any] = [
+          "repoPath": repoPath,
+          "files": files.map { file in
+            var dict: [String: Any] = [
+              "path": file.path,
+              "language": file.language,
+              "lineCount": file.lineCount,
+              "methodCount": file.methodCount,
+              "byteSize": file.byteSize
+            ]
+            if let modulePath = file.modulePath {
+              dict["modulePath"] = modulePath
+            }
+            return dict
+          },
+          "count": files.count,
+          "filters": [
+            "minLines": minLines as Any,
+            "maxLines": maxLines as Any,
+            "minMethods": minMethods as Any,
+            "maxMethods": maxMethods as Any,
+            "minBytes": minBytes as Any,
+            "maxBytes": maxBytes as Any,
+            "language": language as Any,
+            "sortBy": sortBy,
+            "limit": limit
+          ]
+        ]
+        return (200, makeResult(id: id, result: result))
+      }
+    } catch {
+      await delegate.logWarning("RAG structural query failed", metadata: ["error": error.localizedDescription, "repoPath": repoPath])
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
+    }
+  }
+  
+  // MARK: - rag.similar (Issue #175)
+  
+  private func handleSimilar(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
+    guard let query = optionalString("query", from: arguments), !query.isEmpty else {
+      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "query is required (code snippet or text to find similar code for)"))
+    }
+    
+    let repoPath = optionalString("repoPath", from: arguments)
+    let threshold = optionalDouble("threshold", from: arguments) ?? 0.6
+    let limit = optionalInt("limit", from: arguments) ?? 10
+    let excludePath = optionalString("excludePath", from: arguments)
+    
+    do {
+      let results = try await delegate.findSimilarCode(
+        query: query,
+        repoPath: repoPath,
+        threshold: threshold,
+        limit: limit,
+        excludePath: excludePath
+      )
+      
+      let response: [String: Any] = [
+        "query": String(query.prefix(100)) + (query.count > 100 ? "..." : ""),
+        "threshold": threshold,
+        "results": results.map { r in
+          var dict: [String: Any] = [
+            "path": r.path,
+            "startLine": r.startLine,
+            "endLine": r.endLine,
+            "similarity": r.similarity,
+            "snippet": r.snippet
+          ]
+          if let ct = r.constructType {
+            dict["constructType"] = ct
+          }
+          if let cn = r.constructName {
+            dict["constructName"] = cn
+          }
+          return dict
+        },
+        "count": results.count
+      ]
+      
+      return (200, makeResult(id: id, result: response))
+    } catch {
+      await delegate.logWarning("RAG similar search failed", metadata: ["error": error.localizedDescription])
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
+    }
+  }
+  
   // MARK: - Helpers
   
   private func encodeSkill(_ skill: RepoGuidanceSkill, formatter: ISO8601DateFormatter) -> [String: Any] {
@@ -681,6 +863,16 @@ final class RAGToolsHandler: MCPToolHandler {
       payload["lastAppliedAt"] = formatter.string(from: lastAppliedAt)
     }
     return payload
+  }
+  
+  private func optionalDouble(_ key: String, from arguments: [String: Any]) -> Double? {
+    if let value = arguments[key] as? Double {
+      return value
+    }
+    if let value = arguments[key] as? Int {
+      return Double(value)
+    }
+    return nil
   }
 }
 
@@ -904,5 +1096,45 @@ struct RAGToolDependencyResult {
       dict["targetFile"] = targetFile
     }
     return dict
+  }
+}
+
+/// RAG structural query result for Issue #174
+struct RAGToolStructuralResult {
+  let path: String
+  let language: String
+  let lineCount: Int
+  let methodCount: Int
+  let byteSize: Int
+  let modulePath: String?
+  
+  init(path: String, language: String, lineCount: Int, methodCount: Int, byteSize: Int, modulePath: String?) {
+    self.path = path
+    self.language = language
+    self.lineCount = lineCount
+    self.methodCount = methodCount
+    self.byteSize = byteSize
+    self.modulePath = modulePath
+  }
+}
+
+/// RAG similar code result for Issue #175
+struct RAGToolSimilarResult {
+  let path: String
+  let startLine: Int
+  let endLine: Int
+  let snippet: String
+  let similarity: Double
+  let constructType: String?
+  let constructName: String?
+  
+  init(path: String, startLine: Int, endLine: Int, snippet: String, similarity: Double, constructType: String?, constructName: String?) {
+    self.path = path
+    self.startLine = startLine
+    self.endLine = endLine
+    self.snippet = snippet
+    self.similarity = similarity
+    self.constructType = constructType
+    self.constructName = constructName
   }
 }

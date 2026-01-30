@@ -1276,6 +1276,7 @@ actor LocalRAGStore {
     case sqlite(String)
     case invalidPath
     case workspaceDetected(rootPath: String, repoPaths: [String])
+    case embeddingFailed(String)
 
     var errorDescription: String? {
       switch self {
@@ -1287,6 +1288,8 @@ actor LocalRAGStore {
         let preview = repoPaths.prefix(6).joined(separator: "\n")
         let suffix = repoPaths.count > 6 ? "\n…" : ""
         return "Workspace detected at \(rootPath). Index sub-repos instead:\n\(preview)\(suffix)"
+      case .embeddingFailed(let message):
+        return "Embedding failed: \(message)"
       }
     }
   }
@@ -1796,6 +1799,13 @@ actor LocalRAGStore {
       let featureTags = extractFeatureTags(from: relativePath, language: file.language, chunks: chunks)
       let featureTagsJson = featureTags.isEmpty ? nil : (try? JSONEncoder().encode(featureTags)).flatMap { String(data: $0, encoding: .utf8) }
       
+      // Calculate structural metrics (Issue #174)
+      let lineCount = chunks.map(\.endLine).max() ?? 0
+      let methodCount = chunks.filter { chunk in
+        guard let ct = chunk.constructType?.lowercased() else { return false }
+        return ct == "function" || ct == "method" || ct == "init" || ct == "deinit"
+      }.count
+      
       try upsertFile(
         id: fileId,
         repoId: repoId,
@@ -1804,7 +1814,10 @@ actor LocalRAGStore {
         language: file.language,
         updatedAt: now,
         modulePath: modulePath,
-        featureTags: featureTagsJson
+        featureTags: featureTagsJson,
+        lineCount: lineCount,
+        methodCount: methodCount,
+        byteSize: file.byteCount
       )
       try deleteChunks(for: fileId)
       
@@ -2778,7 +2791,32 @@ actor LocalRAGStore {
       try exec("UPDATE rag_meta SET value = '5' WHERE key = 'schema_version'")
     }
     
-    schemaVersion = 5
+    // Migration to v6: Add structural metrics for code intelligence queries (#174)
+    // Enables queries like "find files >1000 lines" or "classes with >20 methods"
+    if currentVersion < 6 {
+      // Add line_count to files table
+      if try !columnExists(table: "files", column: "line_count") {
+        try exec("ALTER TABLE files ADD COLUMN line_count INTEGER DEFAULT 0")
+      }
+      
+      // Add method_count to files table (populated from chunks with construct_type = 'function'/'method')
+      if try !columnExists(table: "files", column: "method_count") {
+        try exec("ALTER TABLE files ADD COLUMN method_count INTEGER DEFAULT 0")
+      }
+      
+      // Add byte_size to files table
+      if try !columnExists(table: "files", column: "byte_size") {
+        try exec("ALTER TABLE files ADD COLUMN byte_size INTEGER DEFAULT 0")
+      }
+      
+      // Index for structural queries
+      try exec("CREATE INDEX IF NOT EXISTS idx_files_line_count ON files(line_count)")
+      try exec("CREATE INDEX IF NOT EXISTS idx_files_method_count ON files(method_count)")
+      
+      try exec("UPDATE rag_meta SET value = '6' WHERE key = 'schema_version'")
+    }
+    
+    schemaVersion = 6
     
     // Set up vec_chunks virtual table if extension is loaded
     if extensionLoaded {
@@ -3187,12 +3225,15 @@ actor LocalRAGStore {
     language: String,
     updatedAt: String,
     modulePath: String?,
-    featureTags: String?
+    featureTags: String?,
+    lineCount: Int = 0,
+    methodCount: Int = 0,
+    byteSize: Int = 0
   ) throws {
     // Use INSERT ... ON CONFLICT to avoid cascade delete of chunks
     let sql = """
-    INSERT INTO files (id, repo_id, path, hash, language, updated_at, module_path, feature_tags)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO files (id, repo_id, path, hash, language, updated_at, module_path, feature_tags, line_count, method_count, byte_size)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       repo_id = excluded.repo_id,
       path = excluded.path,
@@ -3200,7 +3241,10 @@ actor LocalRAGStore {
       language = excluded.language,
       updated_at = excluded.updated_at,
       module_path = excluded.module_path,
-      feature_tags = excluded.feature_tags
+      feature_tags = excluded.feature_tags,
+      line_count = excluded.line_count,
+      method_count = excluded.method_count,
+      byte_size = excluded.byte_size
     """
     try execute(sql: sql) { statement in
       bindText(statement, 1, id)
@@ -3219,6 +3263,9 @@ actor LocalRAGStore {
       } else {
         sqlite3_bind_null(statement, 8)
       }
+      sqlite3_bind_int(statement, 9, Int32(lineCount))
+      sqlite3_bind_int(statement, 10, Int32(methodCount))
+      sqlite3_bind_int(statement, 11, Int32(byteSize))
     }
   }
 
@@ -3803,6 +3850,484 @@ actor LocalRAGStore {
       }
     }
     return nil
+  }
+  
+  // MARK: - Structural Queries (Issue #174)
+  
+  /// Result type for structural queries
+  struct LocalRAGStructuralResult: Sendable {
+    let path: String
+    let language: String
+    let lineCount: Int
+    let methodCount: Int
+    let byteSize: Int
+    let modulePath: String?
+  }
+  
+  /// Query files by structural characteristics (line count, method count, file size)
+  /// - Parameters:
+  ///   - repoPath: Root path of the repository
+  ///   - minLines: Minimum line count (optional)
+  ///   - maxLines: Maximum line count (optional)
+  ///   - minMethods: Minimum method count (optional)
+  ///   - maxMethods: Maximum method count (optional)
+  ///   - minBytes: Minimum file size in bytes (optional)
+  ///   - maxBytes: Maximum file size in bytes (optional)
+  ///   - language: Filter by language (optional)
+  ///   - sortBy: Sort field - "lines", "methods", "bytes" (default: "lines")
+  ///   - limit: Maximum results (default: 50)
+  /// - Returns: List of files matching the criteria
+  func queryFilesByStructure(
+    inRepo repoPath: String,
+    minLines: Int? = nil,
+    maxLines: Int? = nil,
+    minMethods: Int? = nil,
+    maxMethods: Int? = nil,
+    minBytes: Int? = nil,
+    maxBytes: Int? = nil,
+    language: String? = nil,
+    sortBy: String = "lines",
+    limit: Int = 50
+  ) throws -> [LocalRAGStructuralResult] {
+    try openIfNeeded()
+    guard let db else { throw LocalRAGError.sqlite("Database not initialized") }
+    
+    // Build WHERE clauses dynamically
+    var conditions = ["repos.root_path = ?"]
+    var params: [Any] = [repoPath]
+    
+    if let minLines {
+      conditions.append("files.line_count >= ?")
+      params.append(minLines)
+    }
+    if let maxLines {
+      conditions.append("files.line_count <= ?")
+      params.append(maxLines)
+    }
+    if let minMethods {
+      conditions.append("files.method_count >= ?")
+      params.append(minMethods)
+    }
+    if let maxMethods {
+      conditions.append("files.method_count <= ?")
+      params.append(maxMethods)
+    }
+    if let minBytes {
+      conditions.append("files.byte_size >= ?")
+      params.append(minBytes)
+    }
+    if let maxBytes {
+      conditions.append("files.byte_size <= ?")
+      params.append(maxBytes)
+    }
+    if let language, !language.isEmpty {
+      conditions.append("files.language = ?")
+      params.append(language)
+    }
+    
+    // Determine sort column
+    let sortColumn: String
+    switch sortBy.lowercased() {
+    case "methods": sortColumn = "files.method_count"
+    case "bytes", "size": sortColumn = "files.byte_size"
+    default: sortColumn = "files.line_count"
+    }
+    
+    let sql = """
+      SELECT files.path, files.language, 
+             COALESCE(files.line_count, 0) as line_count,
+             COALESCE(files.method_count, 0) as method_count,
+             COALESCE(files.byte_size, 0) as byte_size,
+             files.module_path
+      FROM files
+      JOIN repos ON repos.id = files.repo_id
+      WHERE \(conditions.joined(separator: " AND "))
+      ORDER BY \(sortColumn) DESC
+      LIMIT ?
+      """
+    
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let stmt = statement else {
+      throw LocalRAGError.sqlite("Failed to prepare structural query")
+    }
+    defer { sqlite3_finalize(stmt) }
+    
+    // Bind parameters
+    var paramIndex: Int32 = 1
+    for param in params {
+      if let str = param as? String {
+        bindText(stmt, paramIndex, str)
+      } else if let int = param as? Int {
+        sqlite3_bind_int(stmt, paramIndex, Int32(int))
+      }
+      paramIndex += 1
+    }
+    sqlite3_bind_int(stmt, paramIndex, Int32(limit))
+    
+    var results: [LocalRAGStructuralResult] = []
+    while sqlite3_step(stmt) == SQLITE_ROW {
+      let path = sqlite3_column_text(stmt, 0).map { String(cString: $0) } ?? ""
+      let lang = sqlite3_column_text(stmt, 1).map { String(cString: $0) } ?? ""
+      let lines = Int(sqlite3_column_int(stmt, 2))
+      let methods = Int(sqlite3_column_int(stmt, 3))
+      let bytes = Int(sqlite3_column_int(stmt, 4))
+      let modulePath = sqlite3_column_text(stmt, 5).map { String(cString: $0) }
+      
+      results.append(LocalRAGStructuralResult(
+        path: path,
+        language: lang,
+        lineCount: lines,
+        methodCount: methods,
+        byteSize: bytes,
+        modulePath: modulePath
+      ))
+    }
+    
+    return results
+  }
+  
+  /// Get structural statistics for a repository
+  func getStructuralStats(for repoPath: String) throws -> (
+    totalFiles: Int,
+    totalLines: Int,
+    totalMethods: Int,
+    avgLinesPerFile: Double,
+    avgMethodsPerFile: Double,
+    largestFile: (path: String, lines: Int)?,
+    mostMethods: (path: String, count: Int)?
+  ) {
+    try openIfNeeded()
+    guard let db else { throw LocalRAGError.sqlite("Database not initialized") }
+    
+    // Aggregate stats
+    let statsSql = """
+      SELECT 
+        COUNT(*) as file_count,
+        COALESCE(SUM(line_count), 0) as total_lines,
+        COALESCE(SUM(method_count), 0) as total_methods
+      FROM files
+      JOIN repos ON repos.id = files.repo_id
+      WHERE repos.root_path = ?
+      """
+    
+    var statement: OpaquePointer?
+    var result = sqlite3_prepare_v2(db, statsSql, -1, &statement, nil)
+    guard result == SQLITE_OK, let stmt = statement else {
+      throw LocalRAGError.sqlite("Failed to prepare stats query")
+    }
+    
+    bindText(stmt, 1, repoPath)
+    
+    var totalFiles = 0
+    var totalLines = 0
+    var totalMethods = 0
+    
+    if sqlite3_step(stmt) == SQLITE_ROW {
+      totalFiles = Int(sqlite3_column_int(stmt, 0))
+      totalLines = Int(sqlite3_column_int(stmt, 1))
+      totalMethods = Int(sqlite3_column_int(stmt, 2))
+    }
+    sqlite3_finalize(stmt)
+    
+    // Largest file by lines
+    let largestSql = """
+      SELECT files.path, COALESCE(files.line_count, 0) as lines
+      FROM files
+      JOIN repos ON repos.id = files.repo_id
+      WHERE repos.root_path = ?
+      ORDER BY lines DESC
+      LIMIT 1
+      """
+    
+    result = sqlite3_prepare_v2(db, largestSql, -1, &statement, nil)
+    guard result == SQLITE_OK, let stmt2 = statement else {
+      throw LocalRAGError.sqlite("Failed to prepare largest file query")
+    }
+    
+    bindText(stmt2, 1, repoPath)
+    
+    var largestFile: (String, Int)?
+    if sqlite3_step(stmt2) == SQLITE_ROW {
+      let path = sqlite3_column_text(stmt2, 0).map { String(cString: $0) } ?? ""
+      let lines = Int(sqlite3_column_int(stmt2, 1))
+      if lines > 0 {
+        largestFile = (path, lines)
+      }
+    }
+    sqlite3_finalize(stmt2)
+    
+    // Most methods
+    let mostMethodsSql = """
+      SELECT files.path, COALESCE(files.method_count, 0) as methods
+      FROM files
+      JOIN repos ON repos.id = files.repo_id
+      WHERE repos.root_path = ?
+      ORDER BY methods DESC
+      LIMIT 1
+      """
+    
+    result = sqlite3_prepare_v2(db, mostMethodsSql, -1, &statement, nil)
+    guard result == SQLITE_OK, let stmt3 = statement else {
+      throw LocalRAGError.sqlite("Failed to prepare most methods query")
+    }
+    
+    bindText(stmt3, 1, repoPath)
+    
+    var mostMethods: (String, Int)?
+    if sqlite3_step(stmt3) == SQLITE_ROW {
+      let path = sqlite3_column_text(stmt3, 0).map { String(cString: $0) } ?? ""
+      let count = Int(sqlite3_column_int(stmt3, 1))
+      if count > 0 {
+        mostMethods = (path, count)
+      }
+    }
+    sqlite3_finalize(stmt3)
+    
+    let avgLines = totalFiles > 0 ? Double(totalLines) / Double(totalFiles) : 0
+    let avgMethods = totalFiles > 0 ? Double(totalMethods) / Double(totalFiles) : 0
+    
+    return (totalFiles, totalLines, totalMethods, avgLines, avgMethods, largestFile, mostMethods)
+  }
+  
+  // MARK: - Similar Code Detection (Issue #175)
+  
+  /// Result type for similar code queries
+  struct LocalRAGSimilarResult: Sendable {
+    let path: String
+    let startLine: Int
+    let endLine: Int
+    let snippet: String
+    let similarity: Double  // 0.0 to 1.0
+    let constructType: String?
+    let constructName: String?
+  }
+  
+  /// Find code chunks similar to a given code snippet or text query
+  /// Uses embedding-based semantic similarity search
+  /// - Parameters:
+  ///   - query: Code snippet or text to find similar code for
+  ///   - repoPath: Repository to search in (optional - searches all if nil)
+  ///   - threshold: Minimum similarity score (0.0-1.0, default: 0.6)
+  ///   - limit: Maximum results (default: 10)
+  ///   - excludePath: File path to exclude from results (useful when finding code similar to an existing file)
+  /// - Returns: List of similar code chunks ordered by similarity
+  func findSimilarCode(
+    query: String,
+    repoPath: String? = nil,
+    threshold: Double = 0.6,
+    limit: Int = 10,
+    excludePath: String? = nil
+  ) async throws -> [LocalRAGSimilarResult] {
+    try openIfNeeded()
+    guard let db else { throw LocalRAGError.sqlite("Database not initialized") }
+    
+    // Generate embedding for the query using self method
+    let embeddings = try await generateEmbeddings(for: [query])
+    guard let queryEmbedding = embeddings.first, !queryEmbedding.isEmpty else {
+      throw LocalRAGError.embeddingFailed("Failed to generate embedding for query")
+    }
+    
+    // Use vector search (accelerated if extension loaded, otherwise brute-force)
+    if extensionLoaded {
+      return try findSimilarCodeAccelerated(
+        queryVector: queryEmbedding,
+        repoPath: repoPath,
+        threshold: threshold,
+        limit: limit,
+        excludePath: excludePath
+      )
+    } else {
+      return try findSimilarCodeBruteForce(
+        queryVector: queryEmbedding,
+        repoPath: repoPath,
+        threshold: threshold,
+        limit: limit,
+        excludePath: excludePath
+      )
+    }
+  }
+  
+  /// Find similar code using sqlite-vec accelerated search
+  private func findSimilarCodeAccelerated(
+    queryVector: [Float],
+    repoPath: String?,
+    threshold: Double,
+    limit: Int,
+    excludePath: String?
+  ) throws -> [LocalRAGSimilarResult] {
+    guard let db else { throw LocalRAGError.sqlite("Database not initialized") }
+    
+    // Use vec_chunks table for accelerated search
+    // vec0 distance function returns L2 distance, we need to convert to similarity
+    let sql = """
+      SELECT 
+        c.id,
+        f.path,
+        c.start_line,
+        c.end_line,
+        c.snippet,
+        c.construct_type,
+        c.construct_name,
+        vec_distance_cosine(v.embedding, ?) as distance
+      FROM vec_chunks v
+      JOIN chunks c ON c.id = v.chunk_id
+      JOIN files f ON f.id = c.file_id
+      JOIN repos r ON r.id = f.repo_id
+      WHERE (\(repoPath == nil ? "1=1" : "r.root_path = ?"))
+        \(excludePath != nil ? "AND f.path != ?" : "")
+      ORDER BY distance ASC
+      LIMIT ?
+      """
+    
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let stmt = statement else {
+      throw LocalRAGError.sqlite("Failed to prepare similar code query")
+    }
+    defer { sqlite3_finalize(stmt) }
+    
+    // Bind query vector as blob
+    let vectorData = queryVector.withUnsafeBytes { Data($0) }
+    vectorData.withUnsafeBytes { ptr in
+      sqlite3_bind_blob(stmt, 1, ptr.baseAddress, Int32(vectorData.count), nil)
+    }
+    
+    var paramIndex: Int32 = 2
+    if let repoPath {
+      bindText(stmt, paramIndex, repoPath)
+      paramIndex += 1
+    }
+    if let excludePath {
+      bindText(stmt, paramIndex, excludePath)
+      paramIndex += 1
+    }
+    sqlite3_bind_int(stmt, paramIndex, Int32(limit * 2))  // Fetch more to filter by threshold
+    
+    var results: [LocalRAGSimilarResult] = []
+    while sqlite3_step(stmt) == SQLITE_ROW {
+      let path = sqlite3_column_text(stmt, 1).map { String(cString: $0) } ?? ""
+      let startLine = Int(sqlite3_column_int(stmt, 2))
+      let endLine = Int(sqlite3_column_int(stmt, 3))
+      let snippet = sqlite3_column_text(stmt, 4).map { String(cString: $0) } ?? ""
+      let constructType = sqlite3_column_text(stmt, 5).map { String(cString: $0) }
+      let constructName = sqlite3_column_text(stmt, 6).map { String(cString: $0) }
+      let distance = sqlite3_column_double(stmt, 7)
+      
+      // Convert cosine distance to similarity (1 - distance for normalized vectors)
+      let similarity = max(0.0, 1.0 - distance)
+      
+      guard similarity >= threshold else { continue }
+      
+      results.append(LocalRAGSimilarResult(
+        path: path,
+        startLine: startLine,
+        endLine: endLine,
+        snippet: snippet,
+        similarity: similarity,
+        constructType: constructType,
+        constructName: constructName
+      ))
+      
+      if results.count >= limit { break }
+    }
+    
+    return results
+  }
+  
+  /// Find similar code using brute-force cosine similarity
+  private func findSimilarCodeBruteForce(
+    queryVector: [Float],
+    repoPath: String?,
+    threshold: Double,
+    limit: Int,
+    excludePath: String?
+  ) throws -> [LocalRAGSimilarResult] {
+    guard let db else { throw LocalRAGError.sqlite("Database not initialized") }
+    
+    // Query all embeddings with chunk metadata
+    var sql = """
+      SELECT 
+        e.embedding,
+        c.id,
+        f.path,
+        c.start_line,
+        c.end_line,
+        c.snippet,
+        c.construct_type,
+        c.construct_name
+      FROM embeddings e
+      JOIN chunks c ON c.id = e.chunk_id
+      JOIN files f ON f.id = c.file_id
+      JOIN repos r ON r.id = f.repo_id
+      WHERE 1=1
+      """
+    
+    if repoPath != nil {
+      sql += " AND r.root_path = ?"
+    }
+    if excludePath != nil {
+      sql += " AND f.path != ?"
+    }
+    
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let stmt = statement else {
+      throw LocalRAGError.sqlite("Failed to prepare brute-force similarity query")
+    }
+    defer { sqlite3_finalize(stmt) }
+    
+    var paramIndex: Int32 = 1
+    if let repoPath {
+      bindText(stmt, paramIndex, repoPath)
+      paramIndex += 1
+    }
+    if let excludePath {
+      bindText(stmt, paramIndex, excludePath)
+    }
+    
+    var candidates: [(path: String, startLine: Int, endLine: Int, snippet: String, similarity: Double, constructType: String?, constructName: String?)] = []
+    
+    while sqlite3_step(stmt) == SQLITE_ROW {
+      guard let embeddingBlob = sqlite3_column_blob(stmt, 0) else { continue }
+      let embeddingBytes = sqlite3_column_bytes(stmt, 0)
+      
+      // Parse embedding
+      let floatCount = Int(embeddingBytes) / MemoryLayout<Float>.size
+      let embeddingVector = Array(UnsafeBufferPointer(
+        start: embeddingBlob.assumingMemoryBound(to: Float.self),
+        count: floatCount
+      ))
+      
+      // Calculate cosine similarity (use existing method, convert Float -> Double)
+      let similarityFloat = self.cosineSimilarity(queryVector, embeddingVector)
+      let similarity = Double(similarityFloat)
+      guard similarity >= threshold else { continue }
+      
+      let path = sqlite3_column_text(stmt, 2).map { String(cString: $0) } ?? ""
+      let startLine = Int(sqlite3_column_int(stmt, 3))
+      let endLine = Int(sqlite3_column_int(stmt, 4))
+      let snippet = sqlite3_column_text(stmt, 5).map { String(cString: $0) } ?? ""
+      let constructType = sqlite3_column_text(stmt, 6).map { String(cString: $0) }
+      let constructName = sqlite3_column_text(stmt, 7).map { String(cString: $0) }
+      
+      candidates.append((path, startLine, endLine, snippet, similarity, constructType, constructName))
+    }
+    
+    // Sort by similarity descending and take top results
+    candidates.sort { $0.similarity > $1.similarity }
+    
+    return candidates.prefix(limit).map { c in
+      LocalRAGSimilarResult(
+        path: c.path,
+        startLine: c.startLine,
+        endLine: c.endLine,
+        snippet: c.snippet,
+        similarity: c.similarity,
+        constructType: c.constructType,
+        constructName: c.constructName
+      )
+    }
   }
 }
 
