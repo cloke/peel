@@ -393,7 +393,9 @@ struct LocalRAGDashboardView: View {
 
               Picker("Peel", selection: selection) {
                 ForEach(workers) { worker in
-                  Text(worker.displayName).tag(worker.id)
+                  Text(worker.displayName)
+                    .help(worker.name)
+                    .tag(worker.id)
                 }
               }
               .pickerStyle(.menu)
@@ -1699,6 +1701,7 @@ private struct RAGWorkerSyncRow: View {
       Text(peer.displayName)
         .font(.caption)
         .foregroundStyle(.primary)
+        .help(peer.name)
       Spacer()
       if let rag = status?.ragArtifacts {
         if let staleReason = rag.staleReason {
