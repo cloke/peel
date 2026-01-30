@@ -769,6 +769,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
       [
         "id": peer.id,
         "name": peer.name,
+        "displayName": peer.displayName,
         "isResolved": peer.isResolved,
         "resolvedAddress": peer.resolvedAddress as Any,
         "resolvedPort": peer.resolvedPort.map { Int($0) } as Any
