@@ -137,7 +137,7 @@ public final class SwarmCoordinator {
   
   /// Detect the repo path from the running app's bundle location
   /// Works with both direct project builds (/code/repo/build/...) and DerivedData builds
-  private static func detectRepoPath() -> String? {
+  static func detectRepoPath() -> String? {
     let bundlePath = Bundle.main.bundlePath
     let components = bundlePath.components(separatedBy: "/")
     
@@ -150,17 +150,17 @@ public final class SwarmCoordinator {
     }
     
     // Strategy 2: Look for DerivedData and search common code locations
-    if let _ = components.firstIndex(of: "DerivedData"),
+    if let derivedIndex = components.firstIndex(of: "DerivedData"),
        let userIndex = components.firstIndex(of: "Users"),
        userIndex + 1 < components.count {
       let username = components[userIndex + 1]
       let homeDir = "/Users/\(username)"
       // Check common code locations
-      for codeDir in ["code", "Code", "Developer", "Projects", "dev"] {
+      for codeDir in ["code", "Code", "Developer", "Projects", "dev", "src", "repos", "git"] {
         let potentialPath = "\(homeDir)/\(codeDir)"
         if FileManager.default.fileExists(atPath: potentialPath) {
           // Look for Peel/KitchenSink repo
-          for repoName in ["KitchenSink", "kitchen-sink", "Peel", "peel"] {
+          for repoName in ["KitchenSink", "kitchen-sync", "kitchen-sink", "Peel", "peel"] {
             let testPath = "\(potentialPath)/\(repoName)"
             if FileManager.default.fileExists(atPath: "\(testPath)/.git") {
               return testPath
@@ -168,6 +168,13 @@ public final class SwarmCoordinator {
           }
         }
       }
+      
+      // Strategy 3: Use DerivedData path to find package references
+      // The Peel.xcodeproj might reference the source via relative paths
+      // Check if there's a Package.resolved or project.pbxproj we can parse
+      // For now, log the bundle path to help debug
+      Logger(subsystem: "com.peel.swarm", category: "SwarmCoordinator")
+        .warning("detectRepoPath: Could not find repo. Bundle: \(bundlePath)")
     }
     
     return nil
@@ -949,6 +956,11 @@ public final class SwarmCoordinator {
     
     guard role == .worker || role == .hybrid else {
       logger.warning("handleDirectCommand: Not in worker mode, ignoring")
+      // Send error result back
+      try? await connectionManager?.send(
+        .directCommandResult(id: id, exitCode: -1, output: "", error: "Not in worker mode"),
+        to: peerId
+      )
       return
     }
     
@@ -959,8 +971,14 @@ public final class SwarmCoordinator {
     let effectiveWorkingDir: String
     if let dir = workingDirectory, !dir.isEmpty {
       effectiveWorkingDir = dir
+      logger.info("Using provided working directory: \(dir)")
+    } else if let detected = Self.detectRepoPath() {
+      effectiveWorkingDir = detected
+      logger.info("Auto-detected repo path: \(detected)")
     } else {
-      effectiveWorkingDir = Self.detectRepoPath() ?? FileManager.default.currentDirectoryPath
+      let fallback = FileManager.default.currentDirectoryPath
+      logger.warning("Could not detect repo path, using current directory: \(fallback)")
+      effectiveWorkingDir = fallback
     }
     
     // If command is a relative path (like Tools/self-update.sh), make it absolute
