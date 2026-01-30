@@ -274,6 +274,48 @@ curl -X POST http://127.0.0.1:8765/rpc \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rag.constructtypes","arguments":{}}}'
 ```
 
+#### Dependency Graph
+
+The RAG index tracks import relationships, inheritance, and protocol conformance. Use these tools to navigate your codebase:
+
+```bash
+# What does a file depend on? (imports, inheritance, conformance)
+curl -X POST http://127.0.0.1:8765/rpc \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rag.dependencies","arguments":{"filePath":"Shared/Services/LocalRAGStore.swift","repoPath":"/Users/you/code/KitchenSink"}}}'
+
+# What depends on a file? (reverse dependencies)
+curl -X POST http://127.0.0.1:8765/rpc \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rag.dependents","arguments":{"filePath":"Shared/Services/LocalRAGStore.swift","repoPath":"/Users/you/code/KitchenSink"}}}'
+```
+
+**Dependency Types:**
+| Type | Description | Languages |
+|------|-------------|-----------|
+| `import` | Module/package import | Swift, TS/JS, Ruby |
+| `require` | CommonJS require | JavaScript |
+| `include` | Ruby module include | Ruby |
+| `extend` | Ruby module extend | Ruby |
+| `inherit` | Class inheritance | Swift, TS/JS, Ruby |
+| `conform` | Protocol conformance | Swift |
+
+#### Structural Queries
+
+Find files by size, complexity, or method count:
+
+```bash
+# Find files with 50+ methods (refactor candidates)
+curl -X POST http://127.0.0.1:8765/rpc \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rag.structural","arguments":{"repoPath":"/path/to/repo","minMethods":50}}}'
+
+# Find large files (500+ lines)
+curl -X POST http://127.0.0.1:8765/rpc \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rag.structural","arguments":{"repoPath":"/path/to/repo","minLines":500}}}'
+
+# Get aggregate stats only
+curl -X POST http://127.0.0.1:8765/rpc \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rag.structural","arguments":{"repoPath":"/path/to/repo","statsOnly":true}}}'
+```
+
 #### MCP Integration
 
 RAG is automatically used to ground agent prompts with relevant code context.
@@ -378,10 +420,10 @@ Scale AI agent execution across multiple Mac devices on your network. Peel uses 
                             │ Bonjour Discovery
           ┌─────────────────┼─────────────────┐
           ▼                 ▼                 ▼
-  ┌──────────┐      ┌──────────┐      ┌──────────┐
-  │ Peel 1   │      │ Peel 2   │      │ Tree 1   │
-  │ (Mac Mini)│     │ (MacBook)│      │ (Mac Pro)│
-  └──────────┘      └──────────┘      └──────────┘
+    ┌──────────┐      ┌──────────┐      ┌──────────┐
+    │ Peel 1   │      │ Peel 2   │      │ Tree 1   │
+    │ (Mac Mini)│     │ (MacBook)│      │ (Mac Pro)│
+    └──────────┘      └──────────┘      └──────────┘
 ```
 
 #### Starting the Swarm
@@ -431,48 +473,20 @@ curl -X POST http://127.0.0.1:8765/rpc \
 Swarm uses a **branch queue** to coordinate concurrent work on the same repository:
 
 - Each task reserves a unique branch name (e.g., `swarm/task-abc123`)
-- If a branch name is already in use, a suffix is automatically added
 - Peels create isolated worktrees for their assigned branches
 - Prevents merge conflicts between parallel tasks
-- Branch reservations are released when tasks complete
-
-**View branch queue status:**
-```bash
-curl -X POST http://127.0.0.1:8765/rpc \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"swarm.branch-queue","arguments":{}}}'
-```
-
-**Response includes:**
-- `inFlight` - Branches currently being worked on
-- `completed` - Branches ready for PR creation
-- `stats` - Summary counts
+- Auto-cleanup when tasks complete
 
 #### PR Queue
 
-Completed tasks can automatically create pull requests. The PR queue processes requests sequentially to avoid GitHub API race conditions.
+Completed tasks can automatically create pull requests:
 
-**Peel PR Labels:**
-
-| Label | Color | Description |
-|-------|-------|-------------|
-| `peel:created` | 🔵 Blue | PR was created by Peel swarm |
-| `peel:approved` | 🟢 Green | Validated and approved by Peel |
-| `peel:needs-review` | 🟡 Yellow | Awaiting human review |
-| `peel:needs-help` | 🔴 Red | Needs human intervention |
-| `peel:conflict` | 🔴 Dark Red | Merge conflicts detected |
-| `peel:merged` | 🟣 Purple | Auto-merged by Peel |
-
-**Setup labels in a repository:**
-```bash
-curl -X POST http://127.0.0.1:8765/rpc \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"swarm.setup-labels","arguments":{"repoPath":"/path/to/repo"}}}'
-```
-
-**View PR queue status:**
-```bash
-curl -X POST http://127.0.0.1:8765/rpc \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"swarm.pr-queue","arguments":{}}}'
-```
+| Status | Description |
+|--------|-------------|
+| `pending` | Waiting to create PR |
+| `created` | PR created successfully |
+| `failed` | PR creation failed |
+| `needsHelp` | Requires human review |
 
 **Manual PR Creation:**
 ```bash
@@ -780,6 +794,9 @@ The MCP server exposes these tool categories via JSON-RPC at `http://127.0.0.1:8
 | `rag.init` | Initialize the RAG database |
 | `rag.index` | Index a repository |
 | `rag.search` | Search indexed code |
+| `rag.dependencies` | Get what a file depends on (imports, inheritance, conformance) |
+| `rag.dependents` | Get what depends on a file (reverse dependencies) |
+| `rag.structural` | Query files by structural characteristics (line count, methods, size) |
 | `rag.model.describe` | Describe the embedding model |
 | `rag.ui.status` | Fetch Local RAG dashboard snapshot |
 | `rag.skills.list` | List repo guidance skills |
@@ -810,7 +827,7 @@ The MCP server exposes these tool categories via JSON-RPC at `http://127.0.0.1:8
 |------|-------------|
 | `swarm.start` | Start the swarm coordinator |
 | `swarm.stop` | Stop the swarm coordinator |
-| `swarm.status` | Get swarm coordinator status (includes branch/PR queue stats) |
+| `swarm.status` | Get swarm coordinator status |
 | `swarm.dispatch` | Dispatch a task to the swarm |
 | `swarm.tasks` | Get completed task results |
 | `swarm.workers` | List connected peels |
@@ -820,10 +837,9 @@ The MCP server exposes these tool categories via JSON-RPC at `http://127.0.0.1:8
 | `swarm.update-workers` | Push code updates to peels |
 | `swarm.register-repo` | Register a repository path with the swarm |
 | `swarm.repos` | List registered repositories |
-| `swarm.branch-queue` | Get branch queue status (in-flight and completed branches) |
-| `swarm.pr-queue` | Get PR queue status (pending operations and created PRs) |
+| `swarm.branch-queue` | Get branch queue status |
+| `swarm.pr-queue` | Get PR queue status |
 | `swarm.create-pr` | Manually create a PR for a completed task |
-| `swarm.setup-labels` | Create Peel PR labels in a repository |
 
 ### Server Management
 
