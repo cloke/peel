@@ -14,6 +14,7 @@ public struct SwarmStatusView: View {
   @State private var delegateWrapper = SwarmStatusCoordinatorWrapper()
   @State private var errorMessage: String?
   @State private var taskLog: [String] = []
+  @State private var displayName: String = ""
   
   public init() {}
   
@@ -34,6 +35,7 @@ public struct SwarmStatusView: View {
         handleEvent(event)
       }
       coordinator.delegate = delegateWrapper
+      displayName = WorkerCapabilities.configuredDisplayName() ?? ""
     }
     .frame(minWidth: 400, minHeight: 300)
     #if os(macOS)
@@ -270,6 +272,22 @@ public struct SwarmStatusView: View {
         .multilineTextAlignment(.center)
         .foregroundStyle(.secondary)
         .frame(maxWidth: 300)
+      
+      // Display name configuration
+      HStack {
+        Text("Display Name:")
+          .foregroundStyle(.secondary)
+        TextField("e.g. Mac Studio, Supreme Overlord", text: $displayName)
+          .textFieldStyle(.roundedBorder)
+          .frame(maxWidth: 200)
+          .onSubmit {
+            WorkerCapabilities.saveDisplayName(displayName.isEmpty ? nil : displayName)
+          }
+          .onChange(of: displayName) { _, newValue in
+            WorkerCapabilities.saveDisplayName(newValue.isEmpty ? nil : newValue)
+          }
+      }
+      .padding(.horizontal)
       
       if let error = errorMessage {
         Text(error)

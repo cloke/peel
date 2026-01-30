@@ -365,18 +365,7 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
   /// Config file: ~/Library/Application Support/Peel/worker-config.json
   /// Format: { "displayName": "Supreme Overlord" }
   private static func getConfiguredDisplayName() -> String? {
-    #if os(macOS)
-    let configPath = FileManager.default.homeDirectoryForCurrentUser
-      .appendingPathComponent("Library/Application Support/Peel/worker-config.json")
-    #else
-    guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
-      return nil
-    }
-    let configPath = appSupport.appendingPathComponent("Peel/worker-config.json")
-    #endif
-    
-    guard FileManager.default.fileExists(atPath: configPath.path),
-          let data = try? Data(contentsOf: configPath),
+    guard let data = try? Data(contentsOf: configFilePath),
           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
           let name = json["displayName"] as? String,
           !name.isEmpty else {
@@ -385,6 +374,50 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
     return name
   }
   
+  /// Get the config file path
+  private static var configFilePath: URL {
+    #if os(macOS)
+    return FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent("Library/Application Support/Peel/worker-config.json")
+    #else
+    let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+    return appSupport.appendingPathComponent("Peel/worker-config.json")
+    #endif
+  }
+  
+  /// Save the display name to config file. Pass nil or empty string to clear.
+  public static func saveDisplayName(_ name: String?) {
+    let configPath = configFilePath
+    let configDir = configPath.deletingLastPathComponent()
+    
+    // Ensure directory exists
+    try? FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
+    
+    // Read existing config or start fresh
+    var config: [String: Any] = [:]
+    if let data = try? Data(contentsOf: configPath),
+       let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+      config = existing
+    }
+    
+    // Update displayName
+    if let name = name, !name.isEmpty {
+      config["displayName"] = name
+    } else {
+      config.removeValue(forKey: "displayName")
+    }
+    
+    // Write back
+    if let data = try? JSONSerialization.data(withJSONObject: config, options: .prettyPrinted) {
+      try? data.write(to: configPath)
+    }
+  }
+  
+  /// Get the currently configured display name (public accessor)
+  public static func configuredDisplayName() -> String? {
+    getConfiguredDisplayName()
+  }
+
   private static func getDeviceId() -> String {
     #if os(macOS)
     // Use hardware UUID on macOS
