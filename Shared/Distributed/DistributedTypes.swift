@@ -10,6 +10,7 @@ import Foundation
 
 /// A request to execute a chain on a remote worker
 public struct ChainRequest: Codable, Sendable, Identifiable {
+  /// Unique request identifier
   public let id: UUID
   public let templateName: String
   public let prompt: String
@@ -156,7 +157,8 @@ public enum ChainStatus: String, Codable, Sendable {
 
 // MARK: - Chain Output
 
-/// A single output artifact from chain execution
+/// A single output artifact from chain execution.
+/// Use `content` for inline payloads and `filePath` for large outputs.
 public struct ChainOutput: Codable, Sendable {
   public let type: OutputType
   public let name: String
@@ -309,7 +311,7 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
     }
     
     // Strategy 2: Look for DerivedData and walk up to find .git
-    if repoPath == nil, let derivedIndex = components.firstIndex(of: "DerivedData") {
+    if repoPath == nil, components.firstIndex(of: "DerivedData") != nil {
       // DerivedData is typically in ~/Library/Developer/Xcode/DerivedData
       // Try common code locations: ~/code/<reponame>
       if let userIndex = components.firstIndex(of: "Users"), userIndex + 1 < components.count {
@@ -580,7 +582,7 @@ extension DistributedError: LocalizedError {
 
 // MARK: - Protocol Messages
 
-/// Messages sent between brain and worker over the wire
+/// Messages sent between crown and worker over the wire
 public enum PeerMessage: Codable, Sendable {
   case hello(capabilities: WorkerCapabilities)
   case helloAck(capabilities: WorkerCapabilities)

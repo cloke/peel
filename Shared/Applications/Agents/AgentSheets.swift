@@ -33,7 +33,6 @@ struct NewAgentSheet: View {
           .accessibilityIdentifier("agents.newAgent.type")
         }
 
-        #if os(macOS)
         // Role and Model picker for Copilot agents
         if type == .copilot {
           Section("Role") {
@@ -97,7 +96,6 @@ struct NewAgentSheet: View {
             Label("Setup Required", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
           }
         }
-        #endif
       }
       .formStyle(.grouped)
       .navigationTitle("New Agent")
@@ -123,7 +121,6 @@ struct NewAgentSheet: View {
     }.frame(minWidth: 400, minHeight: 400)
   }
 
-  #if os(macOS)
   private func isAvailable(_ type: AgentType) -> Bool {
     switch type {
     case .claude: return cliService.claudeStatus.isAvailable
@@ -131,7 +128,6 @@ struct NewAgentSheet: View {
     case .custom: return true
     }
   }
-  #endif
 }
 
 // MARK: - Assign Task Sheet
@@ -181,7 +177,6 @@ struct AssignTaskSheet: View {
 
 // MARK: - CLI Setup Sheet
 
-#if os(macOS)
 struct CLISetupSheet: View {
   @Bindable var cliService: CLIService
   @Environment(\.dismiss) private var dismiss
@@ -362,7 +357,6 @@ struct CopilotInstallSteps: View {
     }
   }
 }
-#endif
 
 struct StepRow<Actions: View>: View {
   let number: Int

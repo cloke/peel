@@ -61,7 +61,7 @@ struct GHIssueSync: AsyncParsableCommand {
       "--repo", repo,
       "--state", "all",
       "--json", "number,title,state,labels",
-      "--limit", "100"
+      "--limit", "1000"
     ]
     
     let pipe = Pipe()

@@ -123,7 +123,6 @@ extension TranslationReport {
 
 // MARK: - Translation Validator Service
 
-#if os(macOS)
 @MainActor
 @Observable
 final class TranslationValidatorService {
@@ -499,4 +498,3 @@ final class TranslationValidatorService {
     return String(text[start...end])
   }
 }
-#endif

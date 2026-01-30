@@ -24,7 +24,6 @@ struct PIIScrubberReport: Codable {
 
 // MARK: - PII Scrubber Service
 
-#if os(macOS)
 @MainActor
 @Observable
 final class PIIScrubberService {
@@ -218,4 +217,3 @@ final class PIIScrubberService {
     return nil
   }
 }
-#endif
