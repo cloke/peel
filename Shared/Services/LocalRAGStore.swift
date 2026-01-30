@@ -2306,6 +2306,7 @@ actor LocalRAGStore {
   func analyzeChunks(
     repoPath: String? = nil,
     limit: Int = 100,
+    modelTier: MLXAnalyzerModelTier = .auto,
     progress: (@Sendable (Int, Int) -> Void)? = nil
   ) async throws -> Int {
     try openIfNeeded()
@@ -2370,8 +2371,11 @@ actor LocalRAGStore {
     
     guard !chunksToAnalyze.isEmpty else { return 0 }
     
-    // Create analyzer (uses hardware-adaptive model selection)
-    let analyzer = await MLXCodeAnalyzerFactory.makeAnalyzer()
+    // Create analyzer with specified tier (or auto-detect if .auto)
+    let effectiveTier = modelTier == .auto 
+      ? MLXAnalyzerModelTier.recommended(forMemoryGB: Double(LocalRAGEmbeddingProviderFactory.physicalMemoryBytes()) / 1_073_741_824.0)
+      : modelTier
+    let analyzer = await MLXCodeAnalyzerFactory.makeAnalyzer(tier: effectiveTier)
     let now = dateFormatter.string(from: Date())
     var analyzedCount = 0
     

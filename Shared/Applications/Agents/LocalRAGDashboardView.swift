@@ -226,6 +226,14 @@ struct LocalRAGDashboardView: View {
   @State private var swarmCoordinator = SwarmCoordinator.shared
   @State private var selectedWorkerId: String?
   @State private var syncError: String?
+  
+  // AI Analysis state (#198)
+  @State private var isAnalyzing = false
+  @State private var analyzeProgress: (current: Int, total: Int)?
+  @State private var analyzedChunkCount: Int = 0
+  @State private var unanalyzedChunkCount: Int = 0
+  @State private var analyzeError: String?
+  @State private var selectedAnalyzerTier: MLXAnalyzerModelTier = .auto
 
   private var providerSelection: Binding<EmbeddingProviderType> {
     Binding(
@@ -584,6 +592,115 @@ struct LocalRAGDashboardView: View {
               }
             }
           }
+        }
+
+        // MARK: - AI Code Analysis (#198)
+        GroupBox {
+          VStack(alignment: .leading, spacing: LayoutSpacing.item) {
+            SectionHeader("AI Code Analysis")
+            
+            if mcpServer.ragRepos.isEmpty {
+              ContentUnavailableView {
+                Label("No Indexed Repository", systemImage: "cpu")
+              } description: {
+                Text("Index a repository first to analyze code with AI.")
+              }
+            } else {
+              // Model tier picker
+              HStack {
+                Text("Model:")
+                  .font(.callout)
+                Picker("", selection: $selectedAnalyzerTier) {
+                  Text("Auto (based on RAM)").tag(MLXAnalyzerModelTier.auto)
+                  Text("Tiny (0.5B) - Fast").tag(MLXAnalyzerModelTier.tiny)
+                  Text("Small (1.5B) - Balanced").tag(MLXAnalyzerModelTier.small)
+                  Text("Medium (3B) - Quality").tag(MLXAnalyzerModelTier.medium)
+                  Text("Large (7B) - Best").tag(MLXAnalyzerModelTier.large)
+                }
+                .pickerStyle(.menu)
+                .frame(maxWidth: 200)
+              }
+              
+              // RAM recommendation
+              let ramGB = Double(LocalRAGEmbeddingProviderFactory.physicalMemoryBytes()) / 1_073_741_824.0
+              let recommendedTier = MLXAnalyzerModelTier.recommended(forMemoryGB: ramGB)
+              Text("Recommended for \(String(format: "%.0f", ramGB)) GB RAM: \(recommendedTier.modelName)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              
+              Divider()
+              
+              // Status display
+              let totalChunks = analyzedChunkCount + unanalyzedChunkCount
+              if totalChunks > 0 {
+                HStack {
+                  VStack(alignment: .leading, spacing: 4) {
+                    Text("Analysis Progress")
+                      .font(.headline)
+                    let pct = totalChunks > 0 ? Double(analyzedChunkCount) / Double(totalChunks) * 100 : 0
+                    Text("\(analyzedChunkCount) / \(totalChunks) chunks (\(String(format: "%.1f", pct))%)")
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                  }
+                  Spacer()
+                  if isAnalyzing, let progress = analyzeProgress {
+                    VStack(alignment: .trailing) {
+                      ProgressView(value: Double(progress.current), total: Double(progress.total))
+                        .frame(width: 100)
+                      Text("\(progress.current)/\(progress.total)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    }
+                  }
+                }
+                
+                ProgressView(value: Double(analyzedChunkCount), total: Double(totalChunks))
+                  .tint(analyzedChunkCount == totalChunks ? .green : .blue)
+              } else {
+                Text("No chunks indexed yet")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+              
+              // Action buttons
+              HStack {
+                Button {
+                  Task { await analyzeChunks(limit: 50) }
+                } label: {
+                  Label(isAnalyzing ? "Analyzing..." : "Analyze 50 Chunks", systemImage: "cpu")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isAnalyzing || unanalyzedChunkCount == 0)
+                
+                Button {
+                  Task { await analyzeChunks(limit: 500) }
+                } label: {
+                  Label("Analyze 500", systemImage: "cpu.fill")
+                }
+                .buttonStyle(.bordered)
+                .disabled(isAnalyzing || unanalyzedChunkCount == 0)
+                
+                Spacer()
+                
+                Button {
+                  Task { await refreshAnalysisStatus() }
+                } label: {
+                  Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.borderless)
+                .disabled(isAnalyzing)
+              }
+              
+              if let error = analyzeError {
+                Label(error, systemImage: "exclamationmark.triangle")
+                  .font(.caption)
+                  .foregroundStyle(.red)
+              }
+            }
+          }
+        }
+        .task {
+          await refreshAnalysisStatus()
         }
 
         // MARK: - Database Info (Collapsible)
@@ -1043,6 +1160,65 @@ struct LocalRAGDashboardView: View {
       await mcpServer.refreshRagSummary()
     } catch {
       errorMessage = error.localizedDescription
+    }
+  }
+
+  // MARK: - AI Analysis Methods (#198)
+  
+  private func refreshAnalysisStatus() async {
+    guard let firstRepo = mcpServer.ragRepos.first else {
+      analyzedChunkCount = 0
+      unanalyzedChunkCount = 0
+      return
+    }
+    
+    do {
+      let unanalyzed = try await mcpServer.getUnanalyzedChunkCount(repoPath: firstRepo.rootPath)
+      let analyzed = try await mcpServer.getAnalyzedChunkCount(repoPath: firstRepo.rootPath)
+      await MainActor.run {
+        unanalyzedChunkCount = unanalyzed
+        analyzedChunkCount = analyzed
+      }
+    } catch {
+      await MainActor.run {
+        analyzeError = error.localizedDescription
+      }
+    }
+  }
+  
+  private func analyzeChunks(limit: Int) async {
+    guard let firstRepo = mcpServer.ragRepos.first else { return }
+    
+    isAnalyzing = true
+    analyzeError = nil
+    analyzeProgress = (0, limit)
+    
+    defer {
+      Task { @MainActor in
+        isAnalyzing = false
+        analyzeProgress = nil
+      }
+    }
+    
+    do {
+      let count = try await mcpServer.analyzeRagChunks(
+        repoPath: firstRepo.rootPath,
+        limit: limit,
+        modelTier: selectedAnalyzerTier
+      ) { current, total in
+        Task { @MainActor in
+          analyzeProgress = (current, total)
+        }
+      }
+      
+      await MainActor.run {
+        analyzedChunkCount += count
+        unanalyzedChunkCount = max(0, unanalyzedChunkCount - count)
+      }
+    } catch {
+      await MainActor.run {
+        analyzeError = error.localizedDescription
+      }
     }
   }
 

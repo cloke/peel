@@ -19,6 +19,9 @@ import MLXLMCommon
 
 /// Code analyzer model tiers based on machine capability
 enum MLXAnalyzerModelTier: String, CaseIterable, Sendable {
+  /// Auto-select based on available RAM
+  case auto
+  
   /// Tiny models (~0.5B) - good for machines with 8-12GB RAM
   /// Fast inference, basic summaries
   case tiny
@@ -37,10 +40,34 @@ enum MLXAnalyzerModelTier: String, CaseIterable, Sendable {
   
   var description: String {
     switch self {
+    case .auto: return "Auto (based on RAM)"
     case .tiny: return "Tiny (8-12GB RAM)"
     case .small: return "Small (12-24GB RAM)"
     case .medium: return "Medium (24-48GB RAM)"
     case .large: return "Large (48GB+ RAM)"
+    }
+  }
+  
+  var modelName: String {
+    switch self {
+    case .auto: return "Auto"
+    case .tiny: return "Qwen2.5-Coder-0.5B"
+    case .small: return "Qwen2.5-Coder-1.5B"
+    case .medium: return "Qwen2.5-Coder-3B"
+    case .large: return "Qwen2.5-Coder-7B"
+    }
+  }
+  
+  /// Get recommended tier for given RAM
+  static func recommended(forMemoryGB gb: Double) -> MLXAnalyzerModelTier {
+    if gb >= 48 {
+      return .large   // Mac Studio / Mac Pro
+    } else if gb >= 24 {
+      return .medium  // MacBook Pro 32GB
+    } else if gb >= 12 {
+      return .small   // M3 18GB (default team machine)
+    } else {
+      return .tiny    // 8GB machines
     }
   }
 }
@@ -365,6 +392,11 @@ enum MLXCodeAnalyzerFactory {
       return MLXCodeAnalyzer(tier: tier)
     }
     return MLXCodeAnalyzer()
+  }
+  
+  /// Create analyzer with specific tier
+  nonisolated static func makeAnalyzer(tier: MLXAnalyzerModelTier) -> MLXCodeAnalyzer {
+    MLXCodeAnalyzer(tier: tier)
   }
   
   /// Get recommended tier description for the current machine
