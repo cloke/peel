@@ -3217,9 +3217,11 @@ public final class MCPServerService {
         Filters:
         - excludeTests: Skip test/spec files
         - constructType: Filter by type (e.g., "component", "function", "classDecl")
+        - modulePath: Filter by module path (e.g., "Shared/Services")
+        - featureTag: Filter by feature tag (e.g., "rag", "mcp", "agent")
         - matchAll: For text mode - true=AND all words, false=OR any word (default true)
         
-        Results include: filePath, startLine, endLine, snippet, constructType, constructName, language, isTest, lineCount, score (vector only)
+        Results include: filePath, startLine, endLine, snippet, constructType, constructName, language, isTest, lineCount, score (vector only), modulePath, featureTags
         """,
         inputSchema: [
           "type": "object",
@@ -3230,6 +3232,8 @@ public final class MCPServerService {
             "mode": ["type": "string", "enum": ["text", "vector"], "description": "Search mode: text (keyword) or vector (semantic)"],
             "excludeTests": ["type": "boolean", "description": "Exclude test/spec files"],
             "constructType": ["type": "string", "description": "Filter by construct type"],
+            "modulePath": ["type": "string", "description": "Filter by module path (e.g., 'Shared/Services')"],
+            "featureTag": ["type": "string", "description": "Filter by feature tag (e.g., 'rag', 'mcp')"],
             "matchAll": ["type": "boolean", "description": "Text mode: true=AND all words, false=OR any word"]
           ],
           "required": ["query"]
@@ -3436,6 +3440,18 @@ public final class MCPServerService {
       ToolDefinition(
         name: "rag.constructTypes",
         description: "Get distribution of construct types (class, function, component, etc.) in the index.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": ["type": "string", "description": "Optional repo path to filter"]
+          ]
+        ],
+        category: .rag,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "rag.facets",
+        description: "Get facet counts for filtering/grouping search results. Returns counts for module paths, feature tags, languages, and construct types.",
         inputSchema: [
           "type": "object",
           "properties": [
@@ -4886,7 +4902,9 @@ extension MCPServerService: RAGToolsHandlerDelegate {
         constructType: result.constructType,
         constructName: result.constructName,
         language: result.language,
-        score: result.score.map { Double($0) }
+        score: result.score.map { Double($0) },
+        modulePath: result.modulePath,
+        featureTags: result.featureTags
       )
     }
   }
@@ -5043,6 +5061,16 @@ extension MCPServerService: RAGToolsHandlerDelegate {
     return stats.map { stat in
       RAGToolConstructTypeStat(type: stat.type, count: stat.count)
     }
+  }
+  
+  func getFacets(repoPath: String?) async throws -> RAGToolFacetCounts {
+    let facets = try await localRagStore.getFacets(repoPath: repoPath)
+    return RAGToolFacetCounts(
+      modulePaths: facets.modulePaths,
+      featureTags: facets.featureTags,
+      languages: facets.languages,
+      constructTypes: facets.constructTypes
+    )
   }
   
   func clearRagCache() async throws -> Int {

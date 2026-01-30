@@ -85,6 +85,10 @@ struct LocalRAGSearchResult: Sendable {
   let isTest: Bool              // true if in test/spec directory
   let score: Float?             // relevance score for vector search
   
+  // Facets for filtering/grouping (schema v4+)
+  let modulePath: String?       // e.g., "Shared/Services", "Local Packages/Git"
+  let featureTags: [String]     // e.g., ["rag", "indexing"], derived from path/metadata
+  
   /// Number of lines in this chunk
   var lineCount: Int { endLine - startLine + 1 }
 }
@@ -1161,6 +1165,13 @@ struct LocalRAGFileScanner {
   }
 }
 
+/// Lightweight struct for decoding chunk metadata to extract facets
+private struct ChunkMetadataForFacets: Decodable {
+  let frameworks: [String]?
+  let usesEmberConcurrency: Bool?
+  let hasTemplate: Bool?
+}
+
 actor LocalRAGStore {
   struct Status: Sendable {
     let dbPath: String
@@ -1714,13 +1725,21 @@ actor LocalRAGStore {
       }
 
       progress?(.storing(current: filesIndexed + 1, total: scannedFiles.count))
+      
+      // Extract facets for filtering/grouping
+      let modulePath = extractModulePath(from: relativePath)
+      let featureTags = extractFeatureTags(from: relativePath, language: file.language, chunks: chunks)
+      let featureTagsJson = featureTags.isEmpty ? nil : (try? JSONEncoder().encode(featureTags)).flatMap { String(data: $0, encoding: .utf8) }
+      
       try upsertFile(
         id: fileId,
         repoId: repoId,
         path: relativePath,
         hash: fileHash,
         language: file.language,
-        updatedAt: now
+        updatedAt: now,
+        modulePath: modulePath,
+        featureTags: featureTagsJson
       )
       try deleteChunks(for: fileId)
 
@@ -1804,7 +1823,7 @@ actor LocalRAGStore {
 
     let sqlBase = """
     SELECT repos.root_path || '/' || files.path, chunks.start_line, chunks.end_line, chunks.text,
-           chunks.construct_type, chunks.construct_name, files.language
+           chunks.construct_type, chunks.construct_name, files.language, files.module_path, files.feature_tags
     FROM chunks
     JOIN files ON files.id = chunks.file_id
     JOIN repos ON repos.id = files.repo_id
@@ -1887,6 +1906,159 @@ actor LocalRAGStore {
       stats.append((type: type, count: count))
     }
     return stats
+  }
+  
+  /// Facet counts for filtering/grouping search results
+  struct FacetCounts: Sendable {
+    let modulePaths: [(path: String, count: Int)]
+    let featureTags: [(tag: String, count: Int)]
+    let languages: [(language: String, count: Int)]
+    let constructTypes: [(type: String, count: Int)]
+  }
+  
+  /// Get facet counts for a repository or all repositories
+  func getFacets(repoPath: String? = nil) throws -> FacetCounts {
+    try openIfNeeded()
+    
+    // Module paths
+    let modulePathsSql: String
+    if repoPath != nil {
+      modulePathsSql = """
+      SELECT f.module_path, COUNT(*) as cnt
+      FROM files f
+      JOIN repos r ON f.repo_id = r.id
+      WHERE r.root_path = ? AND f.module_path IS NOT NULL
+      GROUP BY f.module_path
+      ORDER BY cnt DESC
+      """
+    } else {
+      modulePathsSql = """
+      SELECT f.module_path, COUNT(*) as cnt
+      FROM files f
+      WHERE f.module_path IS NOT NULL
+      GROUP BY f.module_path
+      ORDER BY cnt DESC
+      """
+    }
+    let modulePaths = try queryFacetCounts(sql: modulePathsSql, repoPath: repoPath)
+    
+    // Feature tags (need to parse JSON and aggregate)
+    let featureTags = try queryFeatureTagCounts(repoPath: repoPath)
+    
+    // Languages
+    let languagesSql: String
+    if repoPath != nil {
+      languagesSql = """
+      SELECT f.language, COUNT(*) as cnt
+      FROM files f
+      JOIN repos r ON f.repo_id = r.id
+      WHERE r.root_path = ? AND f.language IS NOT NULL
+      GROUP BY f.language
+      ORDER BY cnt DESC
+      """
+    } else {
+      languagesSql = """
+      SELECT f.language, COUNT(*) as cnt
+      FROM files f
+      WHERE f.language IS NOT NULL
+      GROUP BY f.language
+      ORDER BY cnt DESC
+      """
+    }
+    let languages = try queryFacetCounts(sql: languagesSql, repoPath: repoPath)
+    
+    // Construct types
+    let constructTypesSql: String
+    if repoPath != nil {
+      constructTypesSql = """
+      SELECT COALESCE(c.construct_type, 'unknown'), COUNT(*) as cnt
+      FROM chunks c
+      JOIN files f ON c.file_id = f.id
+      JOIN repos r ON f.repo_id = r.id
+      WHERE r.root_path = ?
+      GROUP BY c.construct_type
+      ORDER BY cnt DESC
+      """
+    } else {
+      constructTypesSql = """
+      SELECT COALESCE(c.construct_type, 'unknown'), COUNT(*) as cnt
+      FROM chunks c
+      GROUP BY c.construct_type
+      ORDER BY cnt DESC
+      """
+    }
+    let constructTypes = try queryFacetCounts(sql: constructTypesSql, repoPath: repoPath)
+    
+    return FacetCounts(
+      modulePaths: modulePaths.map { ($0.0, $0.1) },
+      featureTags: featureTags,
+      languages: languages.map { ($0.0, $0.1) },
+      constructTypes: constructTypes.map { ($0.0, $0.1) }
+    )
+  }
+  
+  private func queryFacetCounts(sql: String, repoPath: String?) throws -> [(String, Int)] {
+    guard let db else { throw LocalRAGError.sqlite("Database not initialized") }
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let statement else {
+      throw LocalRAGError.sqlite(String(cString: sqlite3_errmsg(db)))
+    }
+    defer { sqlite3_finalize(statement) }
+    
+    if let repoPath {
+      bindText(statement, 1, repoPath)
+    }
+    
+    var counts: [(String, Int)] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+      let value = String(cString: sqlite3_column_text(statement, 0))
+      let count = Int(sqlite3_column_int(statement, 1))
+      counts.append((value, count))
+    }
+    return counts
+  }
+  
+  private func queryFeatureTagCounts(repoPath: String?) throws -> [(tag: String, count: Int)] {
+    guard let db else { throw LocalRAGError.sqlite("Database not initialized") }
+    
+    let sql: String
+    if repoPath != nil {
+      sql = """
+      SELECT f.feature_tags
+      FROM files f
+      JOIN repos r ON f.repo_id = r.id
+      WHERE r.root_path = ? AND f.feature_tags IS NOT NULL
+      """
+    } else {
+      sql = """
+      SELECT feature_tags FROM files WHERE feature_tags IS NOT NULL
+      """
+    }
+    
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let statement else {
+      throw LocalRAGError.sqlite(String(cString: sqlite3_errmsg(db)))
+    }
+    defer { sqlite3_finalize(statement) }
+    
+    if let repoPath {
+      bindText(statement, 1, repoPath)
+    }
+    
+    var tagCounts: [String: Int] = [:]
+    while sqlite3_step(statement) == SQLITE_ROW {
+      let json = String(cString: sqlite3_column_text(statement, 0))
+      if let data = json.data(using: .utf8),
+         let tags = try? JSONDecoder().decode([String].self, from: data) {
+        for tag in tags {
+          tagCounts[tag, default: 0] += 1
+        }
+      }
+    }
+    
+    return tagCounts.map { ($0.key, $0.value) }.sorted { $0.1 > $1.1 }
   }
   
   /// Get largest files/chunks for a repo (useful for finding refactor targets)
@@ -2086,7 +2258,7 @@ actor LocalRAGStore {
     let candidateLimit = max(limit * 50, 200)
     let sqlBase = """
     SELECT repos.root_path || '/' || files.path, chunks.start_line, chunks.end_line, chunks.text, embeddings.embedding,
-           chunks.construct_type, chunks.construct_name, files.language
+           chunks.construct_type, chunks.construct_name, files.language, files.module_path, files.feature_tags
     FROM embeddings
     JOIN chunks ON chunks.id = embeddings.chunk_id
     JOIN files ON files.id = chunks.file_id
@@ -2123,7 +2295,9 @@ actor LocalRAGStore {
         constructName: row.constructName,
         language: row.language,
         isTest: isTestFile(row.filePath),
-        score: score
+        score: score,
+        modulePath: row.modulePath,
+        featureTags: row.featureTags
       )
       return (result, score)
     }
@@ -2187,17 +2361,58 @@ actor LocalRAGStore {
       )
       """)
     
-    // Schema version 3: Added metadata column to chunks table
-    // During development, we just bump the version and users re-index.
-    // TODO: Add proper migration system before v1.0 release if needed.
-
     let now = dateFormatter.string(from: Date())
-    try exec("INSERT OR IGNORE INTO rag_meta (key, value) VALUES ('schema_version', '3')")
+    try exec("INSERT OR IGNORE INTO rag_meta (key, value) VALUES ('schema_version', '1')")
     try exec("INSERT OR IGNORE INTO rag_meta (key, value) VALUES ('created_at', '\(now)')")
     try exec("INSERT OR REPLACE INTO rag_meta (key, value) VALUES ('updated_at', '\(now)')")
 
+    // Check current schema version and migrate if needed
     let versionText = try queryString("SELECT value FROM rag_meta WHERE key = 'schema_version'")
-    schemaVersion = Int(versionText ?? "") ?? 0
+    let currentVersion = Int(versionText ?? "0") ?? 0
+    
+    // Migration to v4: Add module_path and feature_tags columns to files table for faceted search
+    if currentVersion < 4 {
+      // Check if columns exist before adding (in case of partial migration)
+      let hasModulePath = try columnExists(table: "files", column: "module_path")
+      let hasFeatureTags = try columnExists(table: "files", column: "feature_tags")
+      
+      if !hasModulePath {
+        try exec("ALTER TABLE files ADD COLUMN module_path TEXT")
+      }
+      if !hasFeatureTags {
+        try exec("ALTER TABLE files ADD COLUMN feature_tags TEXT")
+      }
+      
+      // Update schema version
+      try exec("UPDATE rag_meta SET value = '4' WHERE key = 'schema_version'")
+    }
+    
+    schemaVersion = 4
+  }
+  
+  /// Check if a column exists in a table
+  private func columnExists(table: String, column: String) throws -> Bool {
+    guard let db else {
+      throw LocalRAGError.sqlite("Database not initialized")
+    }
+    var statement: OpaquePointer?
+    let sql = "PRAGMA table_info(\(table))"
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let statement else {
+      let message = String(cString: sqlite3_errmsg(db))
+      throw LocalRAGError.sqlite(message)
+    }
+    defer { sqlite3_finalize(statement) }
+    
+    while sqlite3_step(statement) == SQLITE_ROW {
+      // Column 1 is the column name
+      if let name = sqlite3_column_text(statement, 1) {
+        if String(cString: name) == column {
+          return true
+        }
+      }
+    }
+    return false
   }
 
   private func exec(_ sql: String) throws {
@@ -2290,6 +2505,8 @@ actor LocalRAGStore {
     let constructType: String?
     let constructName: String?
     let language: String?
+    let modulePath: String?
+    let featureTags: [String]
   }
 
   private func queryEmbeddingRows(
@@ -2326,6 +2543,16 @@ actor LocalRAGStore {
       let language: String? = sqlite3_column_type(statement, 7) != SQLITE_NULL
         ? String(cString: sqlite3_column_text(statement, 7)) : nil
       
+      // Facet columns (8, 9) - schema v4+
+      let modulePath: String? = sqlite3_column_type(statement, 8) != SQLITE_NULL
+        ? String(cString: sqlite3_column_text(statement, 8)) : nil
+      let featureTagsJson: String? = sqlite3_column_type(statement, 9) != SQLITE_NULL
+        ? String(cString: sqlite3_column_text(statement, 9)) : nil
+      let featureTags: [String] = featureTagsJson.flatMap { json in
+        guard let data = json.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode([String].self, from: data)
+      } ?? []
+      
       if let blobPointer, blobSize > 0 {
         let data = Data(bytes: blobPointer, count: Int(blobSize))
         rows.append(
@@ -2337,7 +2564,9 @@ actor LocalRAGStore {
             embeddingData: data,
             constructType: constructType,
             constructName: constructName,
-            language: language
+            language: language,
+            modulePath: modulePath,
+            featureTags: featureTags
           )
         )
       }
@@ -2358,6 +2587,70 @@ actor LocalRAGStore {
            lowercased.contains("-spec.") ||
            lowercased.contains(".test.") ||
            lowercased.contains(".spec.")
+  }
+  
+  // MARK: - Facet Extraction
+  
+  /// Extract module path from file path (e.g., "Shared/Services" from "Shared/Services/LocalRAGStore.swift")
+  private func extractModulePath(from path: String) -> String? {
+    let components = path.split(separator: "/").map(String.init)
+    guard components.count > 1 else { return nil }
+    
+    // Remove the filename, keep directory structure
+    let directory = components.dropLast().joined(separator: "/")
+    
+    // Return up to 2 levels of directory for meaningful grouping
+    let parts = directory.split(separator: "/").prefix(2).map(String.init)
+    return parts.isEmpty ? nil : parts.joined(separator: "/")
+  }
+  
+  /// Extract feature tags from file path, language, and chunk metadata
+  private func extractFeatureTags(from path: String, language: String, chunks: [LocalRAGChunk]) -> [String] {
+    var tags = Set<String>()
+    let lowercasedPath = path.lowercased()
+    
+    // Path-based feature detection
+    if lowercasedPath.contains("rag") { tags.insert("rag") }
+    if lowercasedPath.contains("mcp") { tags.insert("mcp") }
+    if lowercasedPath.contains("agent") { tags.insert("agent") }
+    if lowercasedPath.contains("swarm") { tags.insert("swarm") }
+    if lowercasedPath.contains("git") { tags.insert("git") }
+    if lowercasedPath.contains("github") { tags.insert("github") }
+    if lowercasedPath.contains("brew") { tags.insert("brew") }
+    if lowercasedPath.contains("service") { tags.insert("service") }
+    if lowercasedPath.contains("view") { tags.insert("ui") }
+    if lowercasedPath.contains("model") { tags.insert("model") }
+    if lowercasedPath.contains("handler") { tags.insert("handler") }
+    if lowercasedPath.contains("tool") { tags.insert("tools") }
+    if lowercasedPath.contains("embed") { tags.insert("embedding") }
+    if lowercasedPath.contains("index") { tags.insert("indexing") }
+    if lowercasedPath.contains("search") { tags.insert("search") }
+    if lowercasedPath.contains("chunk") { tags.insert("chunking") }
+    if lowercasedPath.contains("ast") { tags.insert("ast") }
+    if lowercasedPath.contains("vm") { tags.insert("vm") }
+    if lowercasedPath.contains("distributed") { tags.insert("distributed") }
+    if lowercasedPath.contains("worktree") { tags.insert("worktree") }
+    if lowercasedPath.contains("chain") { tags.insert("chain") }
+    if lowercasedPath.contains("template") { tags.insert("template") }
+    if lowercasedPath.contains("config") { tags.insert("config") }
+    
+    // Framework detection from chunks metadata
+    for chunk in chunks {
+      if let metadataJson = chunk.metadata,
+         let data = metadataJson.data(using: .utf8),
+         let metadata = try? JSONDecoder().decode(ChunkMetadataForFacets.self, from: data) {
+        for framework in metadata.frameworks ?? [] {
+          tags.insert(framework.lowercased())
+        }
+        if metadata.usesEmberConcurrency == true { tags.insert("ember-concurrency") }
+        if metadata.hasTemplate == true { tags.insert("glimmer") }
+      }
+    }
+    
+    // Language as tag
+    tags.insert(language.lowercased())
+    
+    return tags.sorted()
   }
   
   /// Query search results with metadata
@@ -2395,6 +2688,16 @@ actor LocalRAGStore {
       let language: String? = sqlite3_column_type(statement, 6) != SQLITE_NULL
         ? String(cString: sqlite3_column_text(statement, 6)) : nil
       
+      // Facet columns (7, 8) - schema v4+
+      let modulePath: String? = sqlite3_column_type(statement, 7) != SQLITE_NULL
+        ? String(cString: sqlite3_column_text(statement, 7)) : nil
+      let featureTagsJson: String? = sqlite3_column_type(statement, 8) != SQLITE_NULL
+        ? String(cString: sqlite3_column_text(statement, 8)) : nil
+      let featureTags: [String] = featureTagsJson.flatMap { json in
+        guard let data = json.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode([String].self, from: data)
+      } ?? []
+      
       results.append(
         LocalRAGSearchResult(
           filePath: path,
@@ -2405,7 +2708,9 @@ actor LocalRAGStore {
           constructName: constructName,
           language: language,
           isTest: isTestFile(path),
-          score: nil
+          score: nil,
+          modulePath: modulePath,
+          featureTags: featureTags
         )
       )
     }
@@ -2483,18 +2788,22 @@ actor LocalRAGStore {
     path: String,
     hash: String,
     language: String,
-    updatedAt: String
+    updatedAt: String,
+    modulePath: String?,
+    featureTags: String?
   ) throws {
     // Use INSERT ... ON CONFLICT to avoid cascade delete of chunks
     let sql = """
-    INSERT INTO files (id, repo_id, path, hash, language, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO files (id, repo_id, path, hash, language, updated_at, module_path, feature_tags)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       repo_id = excluded.repo_id,
       path = excluded.path,
       hash = excluded.hash,
       language = excluded.language,
-      updated_at = excluded.updated_at
+      updated_at = excluded.updated_at,
+      module_path = excluded.module_path,
+      feature_tags = excluded.feature_tags
     """
     try execute(sql: sql) { statement in
       bindText(statement, 1, id)
@@ -2503,6 +2812,16 @@ actor LocalRAGStore {
       bindText(statement, 4, hash)
       bindText(statement, 5, language)
       bindText(statement, 6, updatedAt)
+      if let modulePath {
+        bindText(statement, 7, modulePath)
+      } else {
+        sqlite3_bind_null(statement, 7)
+      }
+      if let featureTags {
+        bindText(statement, 8, featureTags)
+      } else {
+        sqlite3_bind_null(statement, 8)
+      }
     }
   }
 

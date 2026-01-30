@@ -48,6 +48,9 @@ protocol RAGToolsHandlerDelegate: MCPToolHandlerDelegate {
   /// Get construct type statistics
   func getConstructTypeStats(repoPath: String) async throws -> [RAGToolConstructTypeStat]
   
+  /// Get facet counts for filtering/grouping
+  func getFacets(repoPath: String?) async throws -> RAGToolFacetCounts
+  
   /// Clear embedding cache
   func clearRagCache() async throws -> Int
   
@@ -119,7 +122,8 @@ final class RAGToolsHandler: MCPToolHandler {
     "rag.repos.delete",
     "rag.stats",
     "rag.largeFiles",
-    "rag.constructTypes"
+    "rag.constructTypes",
+    "rag.facets"
   ]
   
   init() {}
@@ -156,6 +160,8 @@ final class RAGToolsHandler: MCPToolHandler {
       return await handleLargeFiles(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.constructTypes":
       return await handleConstructTypes(id: id, arguments: arguments, delegate: ragDelegate)
+    case "rag.facets":
+      return await handleFacets(id: id, arguments: arguments, delegate: ragDelegate)
     default:
       // For tools not yet extracted, return method not found
       // The MCPServerService will handle these until full extraction is complete
@@ -198,6 +204,8 @@ final class RAGToolsHandler: MCPToolHandler {
     let mode = optionalString("mode", from: arguments, default: "text") ?? "text"
     let excludeTests = optionalBool("excludeTests", from: arguments, default: false)
     let constructTypeFilter = optionalString("constructType", from: arguments)
+    let modulePathFilter = optionalString("modulePath", from: arguments)
+    let featureTagFilter = optionalString("featureTag", from: arguments)
     let matchAll = optionalBool("matchAll", from: arguments, default: true)
     
     do {
@@ -210,6 +218,12 @@ final class RAGToolsHandler: MCPToolHandler {
       }
       if let typeFilter = constructTypeFilter?.lowercased(), !typeFilter.isEmpty {
         results = results.filter { ($0.constructType?.lowercased() ?? "") == typeFilter }
+      }
+      if let moduleFilter = modulePathFilter, !moduleFilter.isEmpty {
+        results = results.filter { ($0.modulePath ?? "").lowercased().contains(moduleFilter.lowercased()) }
+      }
+      if let tagFilter = featureTagFilter?.lowercased(), !tagFilter.isEmpty {
+        results = results.filter { $0.featureTags.contains { $0.lowercased() == tagFilter } }
       }
       
       // Trim to requested limit after filtering
@@ -235,6 +249,13 @@ final class RAGToolsHandler: MCPToolHandler {
         }
         if let score = result.score {
           item["score"] = score
+        }
+        // Facets (schema v4+)
+        if let modulePath = result.modulePath {
+          item["modulePath"] = modulePath
+        }
+        if !result.featureTags.isEmpty {
+          item["featureTags"] = result.featureTags
         }
         return item
       }
@@ -518,6 +539,32 @@ final class RAGToolsHandler: MCPToolHandler {
     }
   }
   
+  // MARK: - rag.facets
+  
+  private func handleFacets(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
+    let repoPath = optionalString("repoPath", from: arguments)
+    
+    do {
+      let facets = try await delegate.getFacets(repoPath: repoPath)
+      
+      let modulePaths: [[String: Any]] = facets.modulePaths.map { ["path": $0.path, "count": $0.count] }
+      let featureTags: [[String: Any]] = facets.featureTags.map { ["tag": $0.tag, "count": $0.count] }
+      let languages: [[String: Any]] = facets.languages.map { ["language": $0.language, "count": $0.count] }
+      let constructTypes: [[String: Any]] = facets.constructTypes.map { ["type": $0.type, "count": $0.count] }
+      
+      let result: [String: Any] = [
+        "modulePaths": modulePaths,
+        "featureTags": featureTags,
+        "languages": languages,
+        "constructTypes": constructTypes
+      ]
+      return (200, makeResult(id: id, result: result))
+    } catch {
+      await delegate.logWarning("RAG facets query failed", metadata: ["error": error.localizedDescription])
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
+    }
+  }
+  
   // MARK: - Helpers
   
   private func encodeSkill(_ skill: RepoGuidanceSkill, formatter: ISO8601DateFormatter) -> [String: Any] {
@@ -555,8 +602,11 @@ struct RAGToolSearchResult {
   let constructName: String?
   let language: String?
   let score: Double?
+  // Facets (schema v4+)
+  let modulePath: String?
+  let featureTags: [String]
   
-  init(filePath: String, startLine: Int, endLine: Int, snippet: String, isTest: Bool, lineCount: Int, constructType: String? = nil, constructName: String? = nil, language: String? = nil, score: Double? = nil) {
+  init(filePath: String, startLine: Int, endLine: Int, snippet: String, isTest: Bool, lineCount: Int, constructType: String? = nil, constructName: String? = nil, language: String? = nil, score: Double? = nil, modulePath: String? = nil, featureTags: [String] = []) {
     self.filePath = filePath
     self.startLine = startLine
     self.endLine = endLine
@@ -567,6 +617,8 @@ struct RAGToolSearchResult {
     self.constructName = constructName
     self.language = language
     self.score = score
+    self.modulePath = modulePath
+    self.featureTags = featureTags
   }
 }
 
@@ -710,5 +762,20 @@ struct RAGToolStats {
     self.dbSizeBytes = dbSizeBytes
     self.lastIndexedAt = lastIndexedAt
     self.lastIndexedRepoPath = lastIndexedRepoPath
+  }
+}
+
+/// RAG facet counts for filtering/grouping search results
+struct RAGToolFacetCounts {
+  let modulePaths: [(path: String, count: Int)]
+  let featureTags: [(tag: String, count: Int)]
+  let languages: [(language: String, count: Int)]
+  let constructTypes: [(type: String, count: Int)]
+  
+  init(modulePaths: [(path: String, count: Int)], featureTags: [(tag: String, count: Int)], languages: [(language: String, count: Int)], constructTypes: [(type: String, count: Int)]) {
+    self.modulePaths = modulePaths
+    self.featureTags = featureTags
+    self.languages = languages
+    self.constructTypes = constructTypes
   }
 }
