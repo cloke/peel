@@ -388,6 +388,7 @@ struct PeerRow: View {
         HStack(spacing: 4) {
           Text(peer.displayName)
             .font(.body)
+            .help(peer.name)  // Show hostname on hover
           if role == .worker {
             Text("(Crown)")
               .font(.caption)
