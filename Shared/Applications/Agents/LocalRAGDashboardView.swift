@@ -234,6 +234,7 @@ struct LocalRAGDashboardView: View {
   @State private var unanalyzedChunkCount: Int = 0
   @State private var analyzeError: String?
   @State private var selectedAnalyzerTier: MLXAnalyzerModelTier = .auto
+  @State private var selectedAnalyzerRepoId: String?
 
   private var providerSelection: Binding<EmbeddingProviderType> {
     Binding(
@@ -606,7 +607,26 @@ struct LocalRAGDashboardView: View {
                 Text("Index a repository first to analyze code with AI.")
               }
             } else {
-              // Model tier picker
+              // Repository and model pickers
+              HStack {
+                Text("Repository:")
+                  .font(.callout)
+                Picker("", selection: Binding(
+                  get: { selectedAnalyzerRepoId ?? mcpServer.ragRepos.first?.id ?? "" },
+                  set: { newId in
+                    selectedAnalyzerRepoId = newId
+                    Task { await refreshAnalysisStatus() }
+                  }
+                )) {
+                  ForEach(mcpServer.ragRepos, id: \.id) { repo in
+                    Text(repo.rootPath.components(separatedBy: "/").suffix(2).joined(separator: "/"))
+                      .tag(repo.id)
+                  }
+                }
+                .pickerStyle(.menu)
+                .frame(maxWidth: 250)
+              }
+              
               HStack {
                 Text("Model:")
                   .font(.callout)
@@ -1171,16 +1191,23 @@ struct LocalRAGDashboardView: View {
 
   // MARK: - AI Analysis Methods (#198)
   
+  private var selectedAnalyzerRepo: RAGRepoInfo? {
+    if let id = selectedAnalyzerRepoId {
+      return mcpServer.ragRepos.first(where: { $0.id == id })
+    }
+    return mcpServer.ragRepos.first
+  }
+  
   private func refreshAnalysisStatus() async {
-    guard let firstRepo = mcpServer.ragRepos.first else {
+    guard let repo = selectedAnalyzerRepo else {
       analyzedChunkCount = 0
       unanalyzedChunkCount = 0
       return
     }
     
     do {
-      let unanalyzed = try await mcpServer.getUnanalyzedChunkCount(repoPath: firstRepo.rootPath)
-      let analyzed = try await mcpServer.getAnalyzedChunkCount(repoPath: firstRepo.rootPath)
+      let unanalyzed = try await mcpServer.getUnanalyzedChunkCount(repoPath: repo.rootPath)
+      let analyzed = try await mcpServer.getAnalyzedChunkCount(repoPath: repo.rootPath)
       await MainActor.run {
         unanalyzedChunkCount = unanalyzed
         analyzedChunkCount = analyzed
@@ -1193,7 +1220,7 @@ struct LocalRAGDashboardView: View {
   }
   
   private func analyzeChunks(limit: Int) async {
-    guard let firstRepo = mcpServer.ragRepos.first else { 
+    guard let repo = selectedAnalyzerRepo else { 
       isAnalyzing = false
       return 
     }
@@ -1210,7 +1237,7 @@ struct LocalRAGDashboardView: View {
     
     do {
       let count = try await mcpServer.analyzeRagChunks(
-        repoPath: firstRepo.rootPath,
+        repoPath: repo.rootPath,
         limit: limit,
         modelTier: selectedAnalyzerTier
       ) { current, total in
