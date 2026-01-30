@@ -1495,8 +1495,11 @@ public final class MCPServerService {
     }
 
     Task {
-      let (status, responseBody) = await handleRPC(body: request.body)
-      sendHTTPResponse(status: status, body: responseBody, on: connection)
+      let (_, responseBody) = await handleRPC(body: request.body)
+      // JSON-RPC spec: Always return HTTP 200 for valid JSON-RPC responses.
+      // Error information is in the JSON body, not the HTTP status.
+      // Using HTTP 4xx/5xx causes VS Code MCP client to kill the connection.
+      sendHTTPResponse(status: 200, body: responseBody, on: connection)
     }
   }
 
@@ -3464,37 +3467,40 @@ public final class MCPServerService {
       ),
       ToolDefinition(
         name: "rag.stats",
-        description: "Get index statistics: file count, chunk count, embedding count, total lines. Optionally filter by repo.",
+        description: "Get index statistics: file count, chunk count, embedding count, total lines for a specific repository.",
         inputSchema: [
           "type": "object",
           "properties": [
-            "repoPath": ["type": "string", "description": "Optional repo path to filter stats"]
-          ]
+            "repoPath": ["type": "string", "description": "Absolute path to the repository root"]
+          ],
+          "required": ["repoPath"]
         ],
         category: .rag,
         isMutating: false
       ),
       ToolDefinition(
         name: "rag.largeFiles",
-        description: "Find the largest files in the index by line count. Useful for finding refactor candidates.",
+        description: "Find the largest files in a repository by line count. Useful for finding refactor candidates.",
         inputSchema: [
           "type": "object",
           "properties": [
-            "repoPath": ["type": "string", "description": "Optional repo path to filter"],
+            "repoPath": ["type": "string", "description": "Absolute path to the repository root"],
             "limit": ["type": "integer", "description": "Max files to return (default 20)"]
-          ]
+          ],
+          "required": ["repoPath"]
         ],
         category: .rag,
         isMutating: false
       ),
       ToolDefinition(
         name: "rag.constructTypes",
-        description: "Get distribution of construct types (class, function, component, etc.) in the index.",
+        description: "Get distribution of construct types (class, function, component, etc.) in a repository.",
         inputSchema: [
           "type": "object",
           "properties": [
-            "repoPath": ["type": "string", "description": "Optional repo path to filter"]
-          ]
+            "repoPath": ["type": "string", "description": "Absolute path to the repository root"]
+          ],
+          "required": ["repoPath"]
         ],
         category: .rag,
         isMutating: false
