@@ -6,10 +6,7 @@
 //
 
 import SwiftUI
-
-#if os(macOS)
 import AppKit
-#endif
 
 struct AgentDetailView: View {
   let agent: Agent
@@ -50,7 +47,6 @@ struct AgentDetailView: View {
           Spacer()
         }
 
-        #if os(macOS)
         // Model picker
         if agent.type == .copilot {
           HStack {
@@ -154,7 +150,6 @@ struct AgentDetailView: View {
             .accessibilityIdentifier("agents.agentDetail.project.select")
           }
         }
-        #endif
 
         if let chain = activeChain {
           GroupBox("Chain Activity") {
@@ -212,7 +207,6 @@ struct AgentDetailView: View {
               }.frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            #if os(macOS)
             // Run button and status
             VStack(alignment: .leading, spacing: 8) {
               HStack {
@@ -284,7 +278,6 @@ struct AgentDetailView: View {
                 }
               }
             }
-            #endif
           }
         } else {
           VStack(alignment: .leading, spacing: 12) {
@@ -322,7 +315,6 @@ struct AgentDetailView: View {
     }
   }
 
-  #if os(macOS)
   private func selectFolder() {
     let panel = NSOpenPanel()
     panel.canChooseFiles = false
@@ -420,5 +412,4 @@ struct AgentDetailView: View {
       chain.agents.contains(where: { $0.id == agent.id }) && chain.state != .idle
     }
   }
-  #endif
 }

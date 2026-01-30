@@ -51,12 +51,12 @@ These issues build on each other - complete in order.
 
 | Order | # | Title | Est | Deps | Status |
 |-------|---|-------|-----|------|--------|
-| 1 | [#139](https://github.com/cloke/peel/issues/139) | Add diff-only mode to rag-pattern-check | 1h | None | 🟡 Ready |
+| 1 | [#139](https://github.com/cloke/peel/issues/139) | Add diff-only mode to rag-pattern-check | 1h | None | ✅ Complete |
 | 2 | [#127](https://github.com/cloke/peel/issues/127) | Add Local RAG results UX | 2h | None | 🟡 Ready |
 | 3 | [#136](https://github.com/cloke/peel/issues/136) | Dogfood RAG UX: session insights | 2h | #127 | ⚪ Blocked |
 | 4 | [#130](https://github.com/cloke/peel/issues/130) | Document Local RAG model acquisition | 2h | None | 🟡 Ready |
-| 5 | [#132](https://github.com/cloke/peel/issues/132) | RAG loop test workflow | 2h | #127 | ⚪ Blocked |
-| 6 | [#134](https://github.com/cloke/peel/issues/134) | Project audit tooling | 3h | #132 | ⚪ Blocked |
+| 5 | [#132](https://github.com/cloke/peel/issues/132) | RAG loop test workflow | 2h | #127 | ✅ Complete |
+| 6 | [#134](https://github.com/cloke/peel/issues/134) | Project audit tooling | 3h | #132 | ✅ Complete |
 | 7 | [#141](https://github.com/cloke/peel/issues/141) | RAG Indexing Performance Optimization | 3h | None | 🟡 Ready |
 | 8 | [#78](https://github.com/cloke/peel/issues/78) | Parallel runner with RAG grounding | 4h | #127 | ⚪ Blocked |
 | 9 | [#87](https://github.com/cloke/peel/issues/87) | RAG feedback for CI failures | 3h | #78 | ⚪ Blocked |
@@ -71,9 +71,9 @@ Independent work that prepares MCP for extraction.
 |-------|---|-------|-----|------|--------|
 | 1 | [#121](https://github.com/cloke/peel/issues/121) | Split MCPServerService by tool category | 4h | None | 🟡 Ready |
 | 2 | [#80](https://github.com/cloke/peel/issues/80) | Extract MCP tool registry into package | 3h | #121 | ⚪ Blocked |
-| 3 | [#138](https://github.com/cloke/peel/issues/138) | Document MCP tool permissions | 2h | None | 🟡 Ready |
-| 4 | [#85](https://github.com/cloke/peel/issues/85) | CLI: safe polling helper for MCP runs | 2h | None | 🟡 Ready |
-| 5 | [#140](https://github.com/cloke/peel/issues/140) | Add Prompt Rules UI in Settings | 2h | None | 🟡 Ready |
+| 3 | [#138](https://github.com/cloke/peel/issues/138) | Document MCP tool permissions | 2h | None | ✅ Complete |
+| 4 | [#85](https://github.com/cloke/peel/issues/85) | CLI: safe polling helper for MCP runs | 2h | None | ✅ Complete |
+| 5 | [#140](https://github.com/cloke/peel/issues/140) | Add Prompt Rules UI in Settings | 2h | None | 🟠 Partial (UI only) |
 
 **Track B Total**: ~13h
 
@@ -86,9 +86,9 @@ Can be done in any order, low dependencies.
 | 1 | [#83](https://github.com/cloke/peel/issues/83) | Cohesive Workspaces/Worktrees navigation | 3h | None | 🟡 Ready |
 | 2 | [#29](https://github.com/cloke/peel/issues/29) | Add Review with Agent button for PRs | 3h | None | 🟡 Ready |
 | 3 | [#30](https://github.com/cloke/peel/issues/30) | Add merge conflict resolution UI | 4h | None | 🟡 Ready |
-| 4 | [#52](https://github.com/cloke/peel/issues/52) | Fix screenshot capture vibrancy | 2h | None | 🟡 Ready |
-| 5 | [#64](https://github.com/cloke/peel/issues/64) | Add Homebrew activity charts | 2h | None | 🟡 Ready |
-| 6 | [#40](https://github.com/cloke/peel/issues/40) | Agent feedback loop - watch and retry | 4h | None | 🟡 Ready |
+| 4 | [#52](https://github.com/cloke/peel/issues/52) | Fix screenshot capture vibrancy | 2h | None | ✅ Complete |
+| 5 | [#64](https://github.com/cloke/peel/issues/64) | Add Homebrew activity charts | 2h | None | ⏸ Deferred |
+| 6 | [#40](https://github.com/cloke/peel/issues/40) | Agent feedback loop - watch and retry | 4h | None | ⏸ Deferred |
 
 **Track C Total**: ~18h
 

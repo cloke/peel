@@ -7,9 +7,7 @@
 
 import SwiftData
 import SwiftUI
-#if os(macOS)
 import AppKit
-#endif
 
 /// Infrastructure views that can be shown in detail pane
 enum InfrastructureView: String, Hashable {
@@ -104,7 +102,6 @@ struct Agents_RootView: View {
       }
     }
     .toolbar {
-      #if os(macOS)
       ToolbarItem(placement: .automatic) {
         Button {
           showingSessionSummary = true
@@ -120,7 +117,6 @@ struct Agents_RootView: View {
         .help("Session Usage: \(sessionTracker.totalPremiumUsed.premiumMultiplierString()) premium requests")
       }
       ToolSelectionToolbar()
-      #endif
     }
     .sheet(isPresented: $showingNewAgentSheet) {
       NewAgentSheet(agentManager: agentManager, cliService: cliService)
@@ -138,7 +134,6 @@ struct Agents_RootView: View {
   
   @ViewBuilder
   private var detailView: some View {
-    #if os(macOS)
     if let infra = selectedInfrastructure {
       switch infra {
       case .vmIsolation:
@@ -163,15 +158,6 @@ struct Agents_RootView: View {
     } else {
       emptyStateView
     }
-    #else
-    if let chain = agentManager.selectedChain {
-      ChainDetailView(chain: chain, agentManager: agentManager, cliService: cliService, sessionTracker: sessionTracker)
-    } else if let agent = agentManager.selectedAgent {
-      AgentDetailView(agent: agent, agentManager: agentManager)
-    } else {
-      emptyStateView
-    }
-    #endif
   }
   
   private var emptyStateView: some View {
@@ -205,12 +191,8 @@ struct Agents_RootView: View {
   }
   
   private var cliStatusIcon: String {
-    #if os(macOS)
     return (cliService.copilotStatus.isAvailable || cliService.claudeStatus.isAvailable) 
       ? "checkmark.circle.fill" : "exclamationmark.triangle"
-    #else
-    return "xmark.circle"
-    #endif
   }
 }
 

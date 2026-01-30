@@ -77,7 +77,6 @@ struct AgentsSidebarView: View {
           }
         }
 
-        #if os(macOS)
         Section("Connections") {
           Button {
             showingSetupSheet = true
@@ -205,11 +204,9 @@ struct AgentsSidebarView: View {
             vmIsolationRow(title: "Pools", icon: "square.grid.2x2", section: "pools")
           }
         }
-        #endif
       }
       .listStyle(.sidebar)
 
-      #if os(macOS)
       // Quick action buttons at bottom of sidebar
       Divider()
       HStack(spacing: 12) {
@@ -244,7 +241,6 @@ struct AgentsSidebarView: View {
       .padding(.horizontal, 12)
       .padding(.vertical, 8)
       .background(Color(nsColor: .windowBackgroundColor))
-      #endif
     }
     .navigationTitle("Agents")
     .onChange(of: selection) { _, newValue in

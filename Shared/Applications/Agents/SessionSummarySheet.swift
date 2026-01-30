@@ -99,7 +99,6 @@ struct SessionSummarySheet: View {
         .padding(.vertical)
       }
       .navigationTitle("Session Summary")
-      #if os(macOS)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           Button("Done") {
@@ -129,7 +128,6 @@ struct SessionSummarySheet: View {
           .accessibilityIdentifier("agents.sessionSummary.menu")
         }
       }
-      #endif
       .frame(minWidth: 500, minHeight: 400)
       .alert("Exported", isPresented: $showingExportSuccess) {
         Button("OK", role: .cancel) { }
@@ -139,7 +137,6 @@ struct SessionSummarySheet: View {
     }
   }
 
-  #if os(macOS)
   private func exportMarkdown() {
     let markdown = sessionTracker.exportAsMarkdown()
     guard let desktopURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first else {
@@ -157,7 +154,6 @@ struct SessionSummarySheet: View {
       print("Failed to export: \(error)")
     }
   }
-  #endif
 }
 
 private struct StatCard: View {

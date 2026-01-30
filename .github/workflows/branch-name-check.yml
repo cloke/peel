@@ -1,0 +1,20 @@
+name: Branch name convention
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, edited]
+
+jobs:
+  branch-name-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate branch name
+        shell: bash
+        run: |
+          branch="${{ github.head_ref }}"
+          pattern='^[a-zA-Z0-9._-]+/issue-[0-9]+'
+          if [[ ! "$branch" =~ $pattern ]]; then
+            echo "Branch name '$branch' does not match required pattern: <dev>/issue-<number>"
+            exit 1
+          fi
+          echo "Branch name '$branch' OK"

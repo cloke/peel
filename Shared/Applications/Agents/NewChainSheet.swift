@@ -6,10 +6,7 @@
 //
 
 import SwiftUI
-
-#if os(macOS)
 import AppKit
-#endif
 
 struct NewChainSheet: View {
   @Bindable var agentManager: AgentManager
@@ -43,7 +40,6 @@ struct NewChainSheet: View {
 
         // Project folder (required) - show first for importance
         Section {
-          #if os(macOS)
           HStack {
             Image(systemName: "folder_fill")
               .foregroundStyle(workingDirectory == nil ? .orange : .green)
@@ -71,7 +67,6 @@ struct NewChainSheet: View {
               .font(.caption)
               .foregroundStyle(.orange)
           }
-          #endif
         } header: {
           Text("Project")
         }
@@ -282,7 +277,6 @@ struct NewChainSheet: View {
     }
   }
 
-  #if os(macOS)
   private func selectFolder() {
     let panel = NSOpenPanel()
     panel.canChooseFiles = false
@@ -293,7 +287,6 @@ struct NewChainSheet: View {
       workingDirectory = url.path
     }
   }
-  #endif
 
   private func createChain() {
     let chain: AgentChain

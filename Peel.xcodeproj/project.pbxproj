@@ -131,6 +131,7 @@
 				Services/LocalRAGStore.swift,
 				Services/MCPLogService.swift,
 				Services/ParallelWorktreeRunner.swift,
+				Services/MLXEmbeddingProvider.swift,
 				Services/PIIScrubberService.swift,
 				Services/TranslationValidatorService.swift,
 				Services/VSCodeService.swift,

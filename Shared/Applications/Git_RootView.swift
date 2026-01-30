@@ -10,9 +10,7 @@ import SwiftData
 import Git
 
 struct Git_RootView: View {
-#if os(macOS)
   @Environment(MCPServerService.self) private var mcpServer
-#endif
   @Environment(\.modelContext) private var modelContext
   @Query(sort: \SyncedRepository.name) private var syncedRepos: [SyncedRepository]
   
@@ -70,7 +68,6 @@ struct Git_RootView: View {
       .onChange(of: selectedRepoPath) { _, _ in
         syncSelectedRepoFromStorage()
       }
-#if os(macOS)
       .onChange(of: mcpServer.lastUIAction?.id) {
         guard let action = mcpServer.lastUIAction else { return }
         switch action.controlId {
@@ -93,7 +90,6 @@ struct Git_RootView: View {
         }
         mcpServer.lastUIAction = nil
       }
-#endif
   }
 
   private var mainContent: some View {

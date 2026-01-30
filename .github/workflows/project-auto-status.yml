@@ -1,0 +1,101 @@
+name: Project status on assignment
+
+on:
+  issues:
+    types: [assigned, unassigned]
+
+jobs:
+  update-project-status:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update Project status
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PROJECT_PAT }}
+          script: |
+            const projectId = "PVT_kwHNO8jOATOTCg";
+            const statusFieldId = "PVTSSF_lAHNO8jOATOTCs4PAuuN";
+            const statusTodoId = "f75ad846";
+            const statusInProgressId = "47fc9ee4";
+
+            const issueNodeId = context.payload.issue.node_id;
+            const issueNumber = context.payload.issue.number;
+            const isAssigned = context.payload.action === "assigned";
+            const isUnassigned = context.payload.action === "unassigned";
+
+            // Find existing project item (if already added)
+            const itemQuery = `
+              query($id: ID!) {
+                node(id: $id) {
+                  ... on Issue {
+                    projectItems(first: 20) {
+                      nodes { id project { id } }
+                    }
+                  }
+                }
+              }
+            `;
+
+            const itemResult = await github.graphql(itemQuery, { id: issueNodeId });
+            const items = itemResult?.node?.projectItems?.nodes || [];
+            let projectItem = items.find((item) => item.project?.id === projectId);
+
+            if (!projectItem) {
+              const addMutation = `
+                mutation($projectId: ID!, $contentId: ID!) {
+                  addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) {
+                    item { id }
+                  }
+                }
+              `;
+              const addResult = await github.graphql(addMutation, {
+                projectId,
+                contentId: issueNodeId
+              });
+              projectItem = addResult?.addProjectV2ItemById?.item;
+            }
+
+            if (!projectItem?.id) {
+              core.warning(`Issue #${issueNumber} could not be added to the project.`);
+              return;
+            }
+
+            // Decide status
+            let statusOptionId = null;
+            if (isAssigned) {
+              statusOptionId = statusInProgressId;
+            } else if (isUnassigned) {
+              // Only move to Todo if no assignees remain
+              const assigneeCount = context.payload.issue.assignees?.length || 0;
+              if (assigneeCount === 0) {
+                statusOptionId = statusTodoId;
+              }
+            }
+
+            if (!statusOptionId) {
+              return;
+            }
+
+            const updateMutation = `
+              mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+                updateProjectV2ItemFieldValue(
+                  input: {
+                    projectId: $projectId,
+                    itemId: $itemId,
+                    fieldId: $fieldId,
+                    value: { singleSelectOptionId: $optionId }
+                  }
+                ) {
+                  projectV2Item { id }
+                }
+              }
+            `;
+
+            await github.graphql(updateMutation, {
+              projectId,
+              itemId: projectItem.id,
+              fieldId: statusFieldId,
+              optionId: statusOptionId
+            });
+
+            core.info(`Updated project status for issue #${issueNumber}.`);
