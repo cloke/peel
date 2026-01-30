@@ -156,11 +156,60 @@ enum LocalRAGEmbeddingProviderFactory {
 
   static var mlxClearCacheAfterBatch: Bool {
     get {
-      UserDefaults.standard.bool(forKey: mlxClearCacheAfterBatchKey)
+      // Default to true for memory safety - prevents unbounded GPU memory growth
+      if UserDefaults.standard.object(forKey: mlxClearCacheAfterBatchKey) == nil {
+        return true
+      }
+      return UserDefaults.standard.bool(forKey: mlxClearCacheAfterBatchKey)
     }
     set {
       UserDefaults.standard.set(newValue, forKey: mlxClearCacheAfterBatchKey)
     }
+  }
+
+  // MARK: - Memory Pressure Management
+
+  private static let mlxMemoryLimitGBKey = "localrag.mlxMemoryLimitGB"
+
+  /// Maximum process memory in GB before pausing indexing (default: 80% of physical RAM)
+  static var mlxMemoryLimitGB: Double {
+    get {
+      if UserDefaults.standard.object(forKey: mlxMemoryLimitGBKey) != nil {
+        return UserDefaults.standard.double(forKey: mlxMemoryLimitGBKey)
+      }
+      // Default to 80% of physical RAM
+      return Double(physicalMemoryBytes()) / 1_073_741_824.0 * 0.8
+    }
+    set {
+      UserDefaults.standard.set(newValue, forKey: mlxMemoryLimitGBKey)
+    }
+  }
+
+  /// Check if current process memory exceeds the configured limit
+  static func isMemoryPressureHigh() -> Bool {
+    let currentGB = Double(currentProcessMemoryBytes()) / 1_073_741_824.0
+    return currentGB > mlxMemoryLimitGB
+  }
+
+  /// Get current process resident memory in bytes
+  static func currentProcessMemoryBytes() -> UInt64 {
+    var info = mach_task_basic_info()
+    var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
+    let result = withUnsafeMutablePointer(to: &info) { pointer in
+      pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { rebound in
+        task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), rebound, &count)
+      }
+    }
+    guard result == KERN_SUCCESS else { return 0 }
+    return UInt64(info.resident_size)
+  }
+
+  /// Get physical RAM in bytes
+  static func physicalMemoryBytes() -> UInt64 {
+    var size: UInt64 = 0
+    var sizeOfSize = MemoryLayout<UInt64>.size
+    sysctlbyname("hw.memsize", &size, &sizeOfSize, nil, 0)
+    return size
   }
 
   private static func makePreferredMLX(forCodeSearch: Bool = true) -> LocalRAGEmbeddingProvider {

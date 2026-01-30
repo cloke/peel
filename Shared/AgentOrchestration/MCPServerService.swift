@@ -3170,7 +3170,7 @@ public final class MCPServerService {
       ),
       ToolDefinition(
         name: "rag.config",
-        description: "Get or set RAG configuration (embedding provider). Use action='get' to see current config, action='set' with provider='mlx' (MLX native, best for Apple Silicon), 'system' (Apple NLEmbedding), 'coreml' (CoreML), or 'hash' (fallback).",
+        description: "Get or set RAG configuration (embedding provider, memory limits). Use action='get' to see current config, action='set' with provider='mlx' (MLX native, best for Apple Silicon), 'system' (Apple NLEmbedding), 'coreml' (CoreML), or 'hash' (fallback). Set mlxMemoryLimitGB to control max process memory before pausing indexing.",
         inputSchema: [
           "type": "object",
           "properties": [
@@ -3179,6 +3179,7 @@ public final class MCPServerService {
             "reinitialize": ["type": "boolean", "default": true],
             "mlxCacheLimitMB": ["type": "integer"],
             "mlxClearCacheAfterBatch": ["type": "boolean"],
+            "mlxMemoryLimitGB": ["type": "number", "description": "Max process memory (GB) before pausing indexing. Default: 80% of RAM."],
             "clearMlxCacheLimit": ["type": "boolean"]
           ]
         ],
