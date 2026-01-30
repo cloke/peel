@@ -3221,7 +3221,10 @@ public final class MCPServerService {
         - featureTag: Filter by feature tag (e.g., "rag", "mcp", "agent")
         - matchAll: For text mode - true=AND all words, false=OR any word (default true)
         
-        Results include: filePath, startLine, endLine, snippet, constructType, constructName, language, isTest, lineCount, score (vector only), modulePath, featureTags
+        Reranking (Issue #128):
+        - rerank: Enable HuggingFace cross-encoder reranking for better relevance. Must configure with rag.reranker.config first.
+        
+        Results include: filePath, startLine, endLine, snippet, constructType, constructName, language, isTest, lineCount, score (vector only), modulePath, featureTags, rerankerProvider (when reranking)
         """,
         inputSchema: [
           "type": "object",
@@ -3234,7 +3237,8 @@ public final class MCPServerService {
             "constructType": ["type": "string", "description": "Filter by construct type"],
             "modulePath": ["type": "string", "description": "Filter by module path (e.g., 'Shared/Services')"],
             "featureTag": ["type": "string", "description": "Filter by feature tag (e.g., 'rag', 'mcp')"],
-            "matchAll": ["type": "boolean", "description": "Text mode: true=AND all words, false=OR any word"]
+            "matchAll": ["type": "boolean", "description": "Text mode: true=AND all words, false=OR any word"],
+            "rerank": ["type": "boolean", "description": "Apply HF cross-encoder reranking for improved relevance (requires rag.reranker.config setup)"]
           ],
           "required": ["query"]
         ],
@@ -3525,6 +3529,22 @@ public final class MCPServerService {
             "excludePath": ["type": "string", "description": "File path to exclude from results (useful when finding similar code to an existing file)"]
           ],
           "required": ["query"]
+        ],
+        category: .rag,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "rag.reranker.config",
+        description: "Configure HuggingFace reranker for improved search relevance. Cross-encoder reranking can significantly improve search quality by rescoring results with a dedicated relevance model. Requires HF API token for best results.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "action": ["type": "string", "description": "Action to perform: 'get' (view config), 'set' (update config), 'test' (info only). Default: 'get'"],
+            "enabled": ["type": "boolean", "description": "Enable/disable HF reranking (for 'set' action)"],
+            "modelId": ["type": "string", "description": "HuggingFace model ID for reranking (e.g., 'BAAI/bge-reranker-base')"],
+            "apiToken": ["type": "string", "description": "HuggingFace API token (optional but recommended for reliability)"]
+          ],
+          "required": []
         ],
         category: .rag,
         isMutating: false
