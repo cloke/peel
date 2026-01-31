@@ -5,6 +5,7 @@
 //  Created on 1/19/26.
 //
 
+import MCPCore
 import PeelUI
 import SwiftUI
 import AppKit
@@ -20,6 +21,7 @@ struct ChainDetailView: View {
   @State private var errorMessage: String?
   @State private var mergeConflicts: [String] = []
   @State private var showingSaveTemplate = false
+  @State private var showPremiumWarning = false
 
   private var plannerDecision: PlannerDecision? {
     chain.results.first(where: { $0.plannerDecision != nil })?.plannerDecision
@@ -213,6 +215,24 @@ struct ChainDetailView: View {
             }
           }
 
+          // Estimated cost display
+          if !isRunning {
+            HStack(spacing: 8) {
+              Image(systemName: "info.circle")
+                .foregroundStyle(.secondary)
+              Text("Estimated:")
+                .foregroundStyle(.secondary)
+              HStack(spacing: 4) {
+                Image(systemName: "creditcard")
+                  .foregroundStyle(.secondary)
+                Text(estimatedCostDisplay)
+                  .fontWeight(.medium)
+              }
+              estimatedCostTierBadge
+            }
+            .font(.caption)
+          }
+
           // Run button
           HStack {
             Button {
@@ -220,7 +240,13 @@ struct ChainDetailView: View {
               if let dir = chain.workingDirectory {
                 agentManager.lastUsedWorkingDirectory = dir
               }
-              Task { await runChain() }
+
+              // Check if we should show premium warning
+              if agentManager.shouldShowPremiumWarning(for: chain) {
+                showPremiumWarning = true
+              } else {
+                Task { await runChain() }
+              }
             } label: {
               Label(isRunning ? "Running..." : "Run Chain", systemImage: isRunning ? "hourglass" : "play.fill")
             }
@@ -435,6 +461,18 @@ struct ChainDetailView: View {
     .sheet(isPresented: $showingSaveTemplate) {
       SaveTemplateSheet(chain: chain, agentManager: agentManager)
     }
+    .confirmationDialog(
+      "Premium Model Usage",
+      isPresented: $showPremiumWarning,
+      titleVisibility: .visible
+    ) {
+      Button("Run Chain") {
+        Task { await runChain() }
+      }
+      Button("Cancel", role: .cancel) { }
+    } message: {
+      Text("This chain uses \(estimatedCostTier.displayName.lowercased()) models with an estimated cost of \(estimatedCostDisplay). Premium requests count toward your monthly quota.")
+    }
     .onAppear {
       // Load last working directory if chain doesn't have one
       if chain.workingDirectory == nil {
@@ -644,6 +682,58 @@ struct ChainDetailView: View {
     if let path = FolderPicker.selectFolder(message: "Select a project folder for this chain") {
       chain.workingDirectory = path
       agentManager.lastUsedWorkingDirectory = path
+    }
+  }
+
+  private var estimatedCostDisplay: String {
+    let totalCost = chain.agents.reduce(0.0) { $0 + $1.model.premiumCost }
+    return totalCost.premiumCostDisplay
+  }
+
+  private var estimatedCostTier: MCPCopilotModel.CostTier {
+    let tiers = chain.agents.map { $0.model.costTier }
+    if tiers.contains(.premium) {
+      return .premium
+    } else if tiers.contains(.standard) {
+      return .standard
+    } else if tiers.contains(.low) {
+      return .low
+    } else {
+      return .free
+    }
+  }
+
+  @ViewBuilder
+  private var estimatedCostTierBadge: some View {
+    let tier = estimatedCostTier
+    HStack(spacing: 4) {
+      Image(systemName: tier.icon)
+      Text(tier.displayName)
+        .fontWeight(.semibold)
+    }
+    .font(.caption)
+    .padding(.horizontal, 6)
+    .padding(.vertical, 2)
+    .background(tierBackgroundColor(for: tier))
+    .foregroundStyle(tierForegroundColor(for: tier))
+    .cornerRadius(4)
+  }
+
+  private func tierForegroundColor(for tier: MCPCopilotModel.CostTier) -> Color {
+    switch tier {
+    case .free: return .green
+    case .low: return .blue
+    case .standard: return .orange
+    case .premium: return .red
+    }
+  }
+
+  private func tierBackgroundColor(for tier: MCPCopilotModel.CostTier) -> Color {
+    switch tier {
+    case .free: return Color.green.opacity(0.15)
+    case .low: return Color.blue.opacity(0.15)
+    case .standard: return Color.orange.opacity(0.15)
+    case .premium: return Color.red.opacity(0.15)
     }
   }
 

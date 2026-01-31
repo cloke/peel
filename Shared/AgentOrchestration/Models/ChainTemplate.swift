@@ -339,6 +339,20 @@ extension ChainTemplate {
     estimatedTotalCost.premiumCostDisplay
   }
 
+  /// Highest cost tier among all steps
+  public var costTier: MCPCopilotModel.CostTier {
+    let tiers = steps.map { $0.model.costTier }
+    if tiers.contains(.premium) {
+      return .premium
+    } else if tiers.contains(.standard) {
+      return .standard
+    } else if tiers.contains(.low) {
+      return .low
+    } else {
+      return .free
+    }
+  }
+
   #if os(macOS)
   public var validationSummaryLabel: String? {
     if validationConfig.enabledRules.isEmpty {

@@ -5,6 +5,7 @@
 //  Created on 1/21/26.
 //
 
+import MCPCore
 import PeelUI
 import SwiftUI
 
@@ -246,6 +247,7 @@ private struct TemplateCard: View {
         } else {
           Chip(text: "Saved", systemImage: "star.fill", foreground: .orange, background: Color.orange.opacity(0.15))
         }
+        costTierChip(for: template.costTier)
       }
 
       HStack(spacing: 8) {
@@ -312,6 +314,20 @@ private struct TemplateCard: View {
       return .green
     case .reviewer:
       return .purple
+    }
+  }
+
+  @ViewBuilder
+  private func costTierChip(for tier: MCPCopilotModel.CostTier) -> some View {
+    switch tier {
+    case .free:
+      Chip(text: tier.displayName, systemImage: tier.icon, foreground: .green, background: Color.green.opacity(0.15))
+    case .low:
+      Chip(text: tier.displayName, systemImage: tier.icon, foreground: .blue, background: Color.blue.opacity(0.15))
+    case .standard:
+      Chip(text: tier.displayName, systemImage: tier.icon, foreground: .orange, background: Color.orange.opacity(0.15))
+    case .premium:
+      Chip(text: tier.displayName, systemImage: tier.icon, foreground: .red, background: Color.red.opacity(0.15))
     }
   }
 }
