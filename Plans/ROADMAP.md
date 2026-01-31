@@ -25,26 +25,26 @@ audience:
 
 | Metric | Count |
 |--------|-------|
-| **Closed** | 97 ✅ |
+| **Closed** | 103 ✅ |
 | **Open - Phase 2** | 5 |
 | **Open - Phase 3 (Code Intelligence)** | 6 |
-| **Open - Swarm/Distributed** | 10 |
+| **Open - Swarm/Distributed** | 5 |
 | **Open - Backlog** | 14 |
-| **Total Open** | 35 |
+| **Total Open** | 30 |
 
 ### Recent Changes
+- 🔥 **WAN Priority Elevated** - Distributed swarm across networks now higher priority
+  - LAN swarm working well, ready to extend to WAN
+  - Firebase/Firestore design ready ([FIRESTORE_SWARM_DESIGN.md](FIRESTORE_SWARM_DESIGN.md))
+- ✅ **#102** - Model family unification COMPLETE (already implemented!)
+- ✅ **#163** - Qwen GPU crash - closed as duplicate of #219
+- ✅ **#142, #143, #147, #154** - CloudKit issues closed (Firebase design supersedes)
 - ✅ **#174** - Structural queries COMPLETE
-  - Schema v6 with `line_count`, `method_count`, `byte_size`
-  - MCP tool: `rag.structural` (query files by structure)
-- ✅ **#175** - Similar code detection COMPLETE
-  - `findSimilarCode` with vector similarity search
-  - MCP tool: `rag.similar` (find semantically similar code)
+- ✅ **#175** - Similar code detection COMPLETE  
 - ✅ **#176** - Dependency graph indexing COMPLETE
-  - Schema v5 with `dependencies` table
-  - MCP tools: `rag.dependencies`, `rag.dependents`
-  - Dependency Graph UI in RAG dashboard
-- ✅ **#208** - Created for dependency polish (symbol resolution)
+- ✅ **#29** - Closed as duplicate of #71
 - 🎉 **Phase 3 Layer 2** - Code Intelligence Graph COMPLETE
+- 📋 **Codebase cleanup** - Updated stale issues, archived closed items
 
 ---
 
@@ -91,13 +91,13 @@ Can be done in any order, low dependencies.
 | Order | # | Title | Est | Deps | Status |
 |-------|---|-------|-----|------|--------|
 | 1 | [#83](https://github.com/cloke/peel/issues/83) | Cohesive Workspaces/Worktrees navigation | 3h | None | ✅ Complete |
-| 2 | [#29](https://github.com/cloke/peel/issues/29) | Add Review with Agent button for PRs | 3h | None | 🟡 Ready |
+| 2 | [#71](https://github.com/cloke/peel/issues/71) | Add Review with Agent button for PRs | 3h | None | ✅ Complete |
 | 3 | [#30](https://github.com/cloke/peel/issues/30) | Add merge conflict resolution UI | 4h | None | 🟡 Ready |
 | 4 | [#52](https://github.com/cloke/peel/issues/52) | Fix screenshot capture vibrancy | 2h | None | ✅ Complete |
 | 5 | [#64](https://github.com/cloke/peel/issues/64) | Add Homebrew activity charts | 2h | None | ⏸ Deferred |
 | 6 | [#40](https://github.com/cloke/peel/issues/40) | Agent feedback loop - watch and retry | 4h | None | ⏸ Deferred |
 
-**Track C Total**: ~18h (5h done)
+**Track C Total**: ~18h (8h done)
 
 **Phase 1C Grand Total**: ~53h (~7 days focused work)
 
