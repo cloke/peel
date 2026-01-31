@@ -16,45 +16,7 @@ actor ScreenshotService {
     case timedOut
   }
 
-  /// Capture the app's own window without needing Screen Recording permission.
-  /// This works like Chrome DevTools Protocol - the app renders its own content.
-  nonisolated private func captureOwnWindowImpl() -> CGImage? {
-    MainActor.assumeIsolated {
-      guard let window = NSApp.mainWindow ?? NSApp.keyWindow ?? NSApp.windows.first(where: { $0.isVisible }) else {
-        return nil
-      }
-
-      guard let contentView = window.contentView else {
-        return nil
-      }
-
-      // Get the view's bounds in backing store coordinates (handles Retina)
-      let bounds = contentView.bounds
-      guard bounds.width > 0, bounds.height > 0 else {
-        return nil
-      }
-
-      // Create a bitmap representation of the view
-      guard let bitmapRep = contentView.bitmapImageRepForCachingDisplay(in: bounds) else {
-        return nil
-      }
-
-      contentView.cacheDisplay(in: bounds, to: bitmapRep)
-
-      return bitmapRep.cgImage
-    }
-  }
-
   func capture(label: String? = nil, outputDir: String? = nil) async throws -> URL {
-    // First try permission-free NSWindow capture (app captures its own window)
-    let ownWindowImage: CGImage? = await MainActor.run { [self] in
-      captureOwnWindowImpl()
-    }
-    if let image = ownWindowImage {
-      return try saveImage(image, label: label, outputDir: outputDir)
-    }
-
-    // Fall back to ScreenCaptureKit (requires Screen Recording permission)
     guard #available(macOS 12.3, *) else {
       throw ScreenshotError.notSupported
     }
