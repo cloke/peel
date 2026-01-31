@@ -62,13 +62,20 @@ Peel is a macOS/iOS SwiftUI application for managing GitHub, Git repositories, a
 | roadmap-audit | `Tools/PeelSkills/` | Verify roadmap claims against code |
 | file-rewrite | `Tools/PeelSkills/` | Write files reliably (no shell escaping) |
 
-### Local RAG Core ML Embeddings (Dev Setup)
-- Core ML embedding artifacts are **not** committed.
-- Use `Tools/ModelTools/convert_codebert_to_coreml.py` to generate a `.mlpackage` and vocab.
-- Compile with `coremlc` and copy to:
-  `~/Library/Containers/crunchy-bananas.Peel/Data/Library/Application Support/Peel/RAG/Models/`
-- Ensure `tokenize_codebert.py` is copied alongside the model to enable proper BPE tokenization.
-- Output folder `Tools/ModelTools/output/` is ignored.
+### Local RAG Embeddings
+- **MLX is now the default** - no setup required, models auto-download from HuggingFace
+- Default model: `nomic-embed-text-v1.5` (768 dims, good for code)
+- Auto-selects model tier based on available RAM (8GB → MiniLM, 16GB+ → nomic)
+- See `Docs/reference/RAG_EMBEDDING_MODEL_EVALUATION.md` for provider comparison
+
+~~### Local RAG Core ML Embeddings (Deprecated)~~
+The CodeBERT → Core ML conversion pipeline has been replaced by MLX. The old workflow required:
+- Manual Python conversion with `coremltools`
+- Separate tokenizer scripts
+- Manual deployment to Application Support
+- Poor search quality results
+
+**Legacy artifacts (if needed):** `Tools/ModelTools/` - but prefer MLX instead.
 
 ### Skills (Agent Tools)
 
