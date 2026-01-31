@@ -178,6 +178,11 @@ extension Github {
     return try await loadMany(url: url)
   }
   
+  /// Fetch a single issue by owner, repository, and number
+  static func issue(owner: String, repository: String, number: Int) async throws -> Issue {
+    try await load(url: "https://api.github.com/repos/\(owner)/\(repository)/issues/\(number)")
+  }
+  
   static func createIssue(for repository: Repository, title: String, body: String, owner: String) async throws -> Issue {
     guard let organization = repository.owner?.login,
           let url = URL(string: "https://api.github.com/repos/\(organization)/\(repository.name)/issues") else {

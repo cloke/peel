@@ -376,6 +376,60 @@ curl -X POST -H 'Content-Type: application/json' \
 Note: The planner can propose model mix and implementer count when these options are enabled. Cost
 caps will downgrade implementer models to meet the limit when possible.
 
+### Issue Analyzer Template
+
+The "Issue Analyzer" template analyzes GitHub issues and produces structured implementation plans.
+
+**Use case:** Analyze a GitHub issue, search RAG for relevant code, and output a plan for implementers.
+
+**Input:** GitHub issue URL or number (e.g., `https://github.com/owner/repo/issues/123` or `#123 owner/repo`)
+
+**Tools required:** `github.issue.get`, `rag.search` (ensure these are enabled in tool permissions)
+
+**Example:**
+```bash
+curl -X POST -H 'Content-Type: application/json' \
+  -d '{
+    "jsonrpc":"2.0",
+    "id":1,
+    "method":"tools/call",
+    "params":{
+      "name":"chains.run",
+      "arguments":{
+        "templateName":"Issue Analyzer",
+        "prompt":"Analyze GitHub issue cloke/peel#243",
+        "workingDirectory":"/path/to/repo"
+      }
+    }
+  }' \
+  http://127.0.0.1:8765/rpc
+```
+
+**Output format (IssueAnalysisPlan):**
+```json
+{
+  "issueNumber": 243,
+  "issueTitle": "Issue Analysis Template",
+  "issueSummary": "Add template to analyze GitHub issues and produce implementation plans",
+  "affectedFiles": [
+    {
+      "path": "Shared/AgentOrchestration/Models/ChainTemplate.swift",
+      "changeType": "modify",
+      "description": "Add Issue Analyzer template to builtInTemplates"
+    }
+  ],
+  "suggestedApproach": "1. Add template to ChainTemplate.swift...",
+  "estimatedComplexity": "medium",
+  "ragSearchQueries": ["ChainTemplate", "GitHub API", "RAG search"],
+  "delegationReady": true
+}
+```
+
+**Delegation workflow:**
+- Set `delegationReady: true` when the plan is complete and ready for implementers
+- Set `delegationReady: false` when more information is needed or issue is unclear
+- Implementer step is included in template but optional (skip if only analysis is needed)
+
 ### Stop Server
 ```bash
 curl -X POST -H 'Content-Type: application/json' \
