@@ -1,18 +1,31 @@
 ---
 title: Apple-Only Agent Big-Ideas
-status: vision
+status: partially-implemented
 created: 2026-01-16
-updated: 2026-01-18
+updated: 2026-01-30
 tags: [vision, apple-platform, mlx, metal, ane, isolation]
 audience: [developers, stakeholders]
 related_docs:
   - Plans/VM_ISOLATION_PLAN.md
   - Plans/ROADMAP.md
+  - Plans/FIRESTORE_SWARM_DESIGN.md
 ---
 
 # Apple-Only Agent Big-Ideas (Throughput + Isolation)
 
-_Last updated: 2026-01-16_
+_Last updated: 2026-01-30_
+
+## Implementation Status (Jan 2026)
+
+| Category | Status | Notes |
+|----------|--------|-------|
+| **Local RAG** | ✅ Complete | SQLite+vec, MLX embeddings, dependency graph |
+| **PII Scrubbing** | ✅ Complete | CLI tool with NER, patterns, consistent fakes |
+| **Distributed Actors** | ✅ LAN Complete | Swarm working via Bonjour |
+| **WAN Distributed** | 🔥 In Design | Firebase design ready, elevated priority |
+| **MLX Integration** | ✅ Complete | Embeddings, model loading |
+| **VM Isolation** | ⏸ Deferred | Lower priority than WAN |
+| **Voice/Vision** | ⏸ Deferred | Nice-to-have after WAN |
 
 ## Index
 
