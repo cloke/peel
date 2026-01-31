@@ -342,4 +342,33 @@ extension ChainTemplate {
     nil
   }
   #endif
+
+  /// All providers required by this template's steps
+  public var requiredProviders: Set<MCPCopilotModel.ModelProvider> {
+    Set(steps.compactMap { $0.model.requiredProvider })
+  }
+
+  /// Check if all template models are available with current provider config
+  public func isFullyAvailable(copilotAvailable: Bool, claudeAvailable: Bool) -> Bool {
+    steps.allSatisfy { step in
+      let model = step.model
+      switch model.requiredProvider {
+      case .copilot: return copilotAvailable
+      case .claude: return claudeAvailable
+      }
+    }
+  }
+
+  /// List of models that are unavailable with current provider config
+  public func unavailableModels(copilotAvailable: Bool, claudeAvailable: Bool) -> [MCPCopilotModel] {
+    steps.compactMap { step in
+      let model = step.model
+      let available: Bool
+      switch model.requiredProvider {
+      case .copilot: available = copilotAvailable
+      case .claude: available = claudeAvailable
+      }
+      return available ? nil : model
+    }
+  }
 }
