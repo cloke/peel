@@ -4485,7 +4485,7 @@ actor LocalRAGStore {
         f.path,
         c.start_line,
         c.end_line,
-        c.snippet,
+        c.text,
         c.construct_type,
         c.construct_name,
         vec_distance_cosine(v.embedding, ?) as distance
@@ -4572,7 +4572,7 @@ actor LocalRAGStore {
         f.path,
         c.start_line,
         c.end_line,
-        c.snippet,
+        c.text,
         c.construct_type,
         c.construct_name
       FROM embeddings e
