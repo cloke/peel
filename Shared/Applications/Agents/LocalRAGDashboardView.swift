@@ -264,6 +264,7 @@ struct LocalRAGDashboardView: View {
   @State private var analysisStartTime: Date?
   @State private var analysisChunksPerSecond: Double = 0
   @State private var analyzeTask: Task<Void, Never>?
+  @State private var sessionChunksAnalyzed: Int = 0  // Chunks analyzed this session
 
   var body: some View {
     ScrollView {
@@ -739,6 +740,20 @@ struct LocalRAGDashboardView: View {
                           .foregroundStyle(.tertiary)
                       }
                     }
+                  }
+                  
+                  // Cumulative stats across sessions
+                  if mcpServer.ragUsage.analysisRuns > 0 {
+                    Divider()
+                    HStack(spacing: 16) {
+                      Label("\(mcpServer.ragUsage.chunksAnalyzedTotal) total", systemImage: "chart.bar.fill")
+                      Label(formatDuration(mcpServer.ragUsage.totalAnalysisTimeSeconds), systemImage: "clock.fill")
+                      if let lastRun = mcpServer.ragUsage.lastAnalysisAt {
+                        Label("Last: \(lastRun, format: .relative(presentation: .named))", systemImage: "calendar")
+                      }
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
                   }
                 }
               } else {
@@ -1217,6 +1232,7 @@ struct LocalRAGDashboardView: View {
     analyzeError = nil
     analysisStartTime = Date()
     analysisChunksPerSecond = 0
+    sessionChunksAnalyzed = 0
     analyzeTask = Task { await runAnalyzeAllLoop() }
   }
   
@@ -1230,9 +1246,18 @@ struct LocalRAGDashboardView: View {
   private func stopAnalysis() {
     analyzeTask?.cancel()
     analyzeTask = nil
+    
+    // Record the session stats
+    if let startTime = analysisStartTime, sessionChunksAnalyzed > 0 {
+      let duration = Date().timeIntervalSince(startTime)
+      mcpServer.recordAnalysisSession(chunksAnalyzed: sessionChunksAnalyzed, durationSeconds: duration)
+    }
+    
     isAnalyzing = false
     isPaused = false
     analyzeProgress = nil
+    sessionChunksAnalyzed = 0
+    analysisStartTime = nil
   }
   
   private func runAnalyzeAllLoop() async {
@@ -1256,10 +1281,17 @@ struct LocalRAGDashboardView: View {
       // Check if done
       let remaining = await MainActor.run { unanalyzedChunkCount }
       if remaining == 0 {
+        // Record completed session
         await MainActor.run {
+          if let startTime = analysisStartTime, sessionChunksAnalyzed > 0 {
+            let duration = Date().timeIntervalSince(startTime)
+            mcpServer.recordAnalysisSession(chunksAnalyzed: sessionChunksAnalyzed, durationSeconds: duration)
+          }
           isAnalyzing = false
           isPaused = false
           analyzeProgress = nil
+          sessionChunksAnalyzed = 0
+          analysisStartTime = nil
         }
         return
       }
@@ -1285,6 +1317,7 @@ struct LocalRAGDashboardView: View {
         await MainActor.run {
           analyzedChunkCount += count
           unanalyzedChunkCount = max(0, unanalyzedChunkCount - count)
+          sessionChunksAnalyzed += count
           
           // Update rate estimate with exponential moving average
           let elapsed = Date().timeIntervalSince(batchStart)
@@ -1299,10 +1332,17 @@ struct LocalRAGDashboardView: View {
           }
         }
       } catch {
+        // Record partial session on error
         await MainActor.run {
+          if let startTime = analysisStartTime, sessionChunksAnalyzed > 0 {
+            let duration = Date().timeIntervalSince(startTime)
+            mcpServer.recordAnalysisSession(chunksAnalyzed: sessionChunksAnalyzed, durationSeconds: duration)
+          }
           analyzeError = error.localizedDescription
           isAnalyzing = false
           isPaused = false
+          sessionChunksAnalyzed = 0
+          analysisStartTime = nil
         }
         return
       }

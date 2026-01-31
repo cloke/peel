@@ -80,6 +80,12 @@ public final class MCPServerService {
     public var lastIrrelevantAt: Date?
     public var lastSkillChangeAt: Date?
     public var sessionStartedAt: Date?
+    
+    // AI Analysis tracking
+    public var analysisRuns: Int = 0
+    public var chunksAnalyzedTotal: Int = 0
+    public var totalAnalysisTimeSeconds: Double = 0
+    public var lastAnalysisAt: Date?
 
     public init() {
       self.sessionStartedAt = Date()
@@ -1173,6 +1179,34 @@ public final class MCPServerService {
       )
     }
     saveRagUsageStats()
+  }
+  
+  /// Records AI analysis session completion for persistent tracking
+  func recordAnalysisSession(chunksAnalyzed: Int, durationSeconds: Double) {
+    ragUsage.analysisRuns += 1
+    ragUsage.chunksAnalyzedTotal += chunksAnalyzed
+    ragUsage.totalAnalysisTimeSeconds += durationSeconds
+    ragUsage.lastAnalysisAt = Date()
+    appendRagEvent(
+      kind: .index,  // Reuse index kind for analysis
+      title: "AI analysis completed",
+      detail: "\(chunksAnalyzed) chunks in \(formatDuration(durationSeconds))"
+    )
+    saveRagUsageStats()
+  }
+  
+  private func formatDuration(_ seconds: Double) -> String {
+    if seconds < 60 {
+      return "\(Int(seconds))s"
+    } else if seconds < 3600 {
+      let mins = Int(seconds / 60)
+      let secs = Int(seconds.truncatingRemainder(dividingBy: 60))
+      return "\(mins)m \(secs)s"
+    } else {
+      let hours = Int(seconds / 3600)
+      let mins = Int((seconds.truncatingRemainder(dividingBy: 3600)) / 60)
+      return "\(hours)h \(mins)m"
+    }
   }
 
   private func appendRagEvent(kind: RAGSessionEvent.Kind, title: String, detail: String?) {
