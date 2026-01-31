@@ -168,7 +168,7 @@ extension Github {
   ///   - repository: Github.Repository referencing a repository containing issues
   ///   - state: open, closed, or all
   /// - Returns: An array of github issues
-  static func issues(from repository: Repository, state: String = "open") async throws -> [Issue] {
+  public static func issues(from repository: Repository, state: String = "open") async throws -> [Issue] {
     guard let issuesUrl = repository.issues_url else {
       throw GithubError.invalidURL("issues_url not available on repository")
     }
@@ -179,7 +179,7 @@ extension Github {
   }
   
   /// Fetch a single issue by owner, repository, and number
-  static func issue(owner: String, repository: String, number: Int) async throws -> Issue {
+  public static func issue(owner: String, repository: String, number: Int) async throws -> Issue {
     try await load(url: "https://api.github.com/repos/\(owner)/\(repository)/issues/\(number)")
   }
   

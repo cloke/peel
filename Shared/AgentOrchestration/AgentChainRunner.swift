@@ -364,8 +364,8 @@ public final class AgentChainRunner {
           type: .copilot,
           role: .implementer,
           model: implementers.first?.model ?? .claudeSonnet45,
-          workingDirectory: chain.workingDirectory,
-          customInstructions: taskDescription
+          customInstructions: taskDescription,
+          workingDirectory: chain.workingDirectory
         )
         if let fileHints = task?.fileHints {
           agent.assignedTaskFileHints = fileHints
