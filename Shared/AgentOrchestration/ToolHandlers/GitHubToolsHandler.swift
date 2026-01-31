@@ -42,7 +42,7 @@ final class GitHubToolsHandler: MCPToolHandler {
   
   func handle(name: String, id: Any?, arguments: [String: Any]) async -> (Int, Data) {
     guard let githubDelegate else {
-      return notConfiguredError(id: id)
+      return localNotConfiguredError(id: id)
     }
     
     switch name {
@@ -51,7 +51,7 @@ final class GitHubToolsHandler: MCPToolHandler {
     case "github.issues.list":
       return await handleIssuesList(id: id, arguments: arguments, delegate: githubDelegate)
     default:
-      return makeError(id: id, code: -32601, message: "Method not found", data: ["method": name])
+      return (404, makeError(id: id, code: -32601, message: "Method not found", data: ["method": name]))
     }
   }
   
@@ -65,12 +65,12 @@ final class GitHubToolsHandler: MCPToolHandler {
     guard let owner = arguments["owner"] as? String,
           let repo = arguments["repo"] as? String,
           let number = arguments["number"] as? Int else {
-      return makeError(
+      return (400, makeError(
         id: id,
         code: -32602,
         message: "Invalid params",
         data: ["error": "Required: owner (string), repo (string), number (int)"]
-      )
+      ))
     }
     
     do {
@@ -88,14 +88,14 @@ final class GitHubToolsHandler: MCPToolHandler {
         "html_url": issue.html_url
       ]
       
-      return makeResult(id: id, result: result)
+      return (200, makeResult(id: id, result: result))
     } catch {
-      return makeError(
+      return (500, makeError(
         id: id,
         code: -32000,
         message: "Failed to fetch issue",
         data: ["error": error.localizedDescription]
-      )
+      ))
     }
   }
   
@@ -106,12 +106,12 @@ final class GitHubToolsHandler: MCPToolHandler {
   ) async -> (Int, Data) {
     guard let owner = arguments["owner"] as? String,
           let repo = arguments["repo"] as? String else {
-      return makeError(
+      return (400, makeError(
         id: id,
         code: -32602,
         message: "Invalid params",
         data: ["error": "Required: owner (string), repo (string). Optional: state (string)"]
-      )
+      ))
     }
     
     let state = arguments["state"] as? String ?? "open"
@@ -119,7 +119,7 @@ final class GitHubToolsHandler: MCPToolHandler {
     do {
       let issues = try await delegate.listGitHubIssues(owner: owner, repo: repo, state: state)
       
-      let result = issues.map { issue -> [String: Any] in
+      let resultList = issues.map { issue -> [String: Any] in
         [
           "number": issue.number,
           "title": issue.title,
@@ -131,25 +131,25 @@ final class GitHubToolsHandler: MCPToolHandler {
         ]
       }
       
-      return makeResult(id: id, result: result)
+      return (200, makeResult(id: id, result: ["issues": resultList]))
     } catch {
-      return makeError(
+      return (500, makeError(
         id: id,
         code: -32000,
         message: "Failed to list issues",
         data: ["error": error.localizedDescription]
-      )
+      ))
     }
   }
   
   // MARK: - Error Helpers
   
-  private func notConfiguredError(id: Any?) -> (Int, Data) {
-    makeError(
+  private func localNotConfiguredError(id: Any?) -> (Int, Data) {
+    (500, makeError(
       id: id,
       code: -32603,
       message: "Internal error",
       data: ["error": "GitHub tools handler not configured"]
-    )
+    ))
   }
 }
