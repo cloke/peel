@@ -346,6 +346,14 @@ public enum ReviewVerdict: String, Codable, Sendable {
     }
   }
   
+  public var swiftUIColor: Color {
+    switch self {
+    case .approved: return .green
+    case .needsChanges: return .orange
+    case .rejected: return .red
+    }
+  }
+  
   /// Try to parse a verdict from the reviewer's output
   public static func parse(from output: String) -> ReviewVerdict {
     let lowercased = output.lowercased()

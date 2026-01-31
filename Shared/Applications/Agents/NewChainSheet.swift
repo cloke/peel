@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import AppKit
 
 struct NewChainSheet: View {
   @Bindable var agentManager: AgentManager
@@ -278,13 +277,8 @@ struct NewChainSheet: View {
   }
 
   private func selectFolder() {
-    let panel = NSOpenPanel()
-    panel.canChooseFiles = false
-    panel.canChooseDirectories = true
-    panel.allowsMultipleSelection = false
-
-    if panel.runModal() == .OK, let url = panel.url {
-      workingDirectory = url.path
+    if let path = FolderPicker.selectFolder(message: "Select a project folder") {
+      workingDirectory = path
     }
   }
 

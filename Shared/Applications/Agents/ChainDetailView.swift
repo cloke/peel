@@ -372,8 +372,8 @@ struct ChainDetailView: View {
                       text: verdict.displayName,
                       systemImage: verdict.iconName,
                       font: .caption,
-                      foreground: verdictColor(verdict),
-                      background: verdictColor(verdict).opacity(0.15),
+                      foreground: verdict.swiftUIColor,
+                      background: verdict.swiftUIColor.opacity(0.15),
                       horizontalPadding: 8,
                       verticalPadding: 4
                     )
@@ -641,24 +641,9 @@ struct ChainDetailView: View {
   }
 
   private func selectFolder() {
-    let panel = NSOpenPanel()
-    panel.canChooseFiles = false
-    panel.canChooseDirectories = true
-    panel.allowsMultipleSelection = false
-    panel.message = "Select a project folder for this chain"
-    panel.prompt = "Select"
-
-    if panel.runModal() == .OK, let url = panel.url {
-      chain.workingDirectory = url.path
-      agentManager.lastUsedWorkingDirectory = url.path
-    }
-  }
-
-  private func verdictColor(_ verdict: ReviewVerdict) -> Color {
-    switch verdict {
-    case .approved: return .green
-    case .needsChanges: return .orange
-    case .rejected: return .red
+    if let path = FolderPicker.selectFolder(message: "Select a project folder for this chain") {
+      chain.workingDirectory = path
+      agentManager.lastUsedWorkingDirectory = path
     }
   }
 
