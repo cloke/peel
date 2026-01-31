@@ -23,7 +23,7 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>crunchy-peel</string>
+				<string>crunchy-kitchen-sink</string>
 			</array>
 		</dict>
 	</array>
