@@ -5,6 +5,7 @@
 //  Created on 1/19/26.
 //
 
+import MCPCore
 import SwiftUI
 
 struct NewChainSheet: View {
@@ -82,6 +83,10 @@ struct NewChainSheet: View {
               Section("Built-in") {
                 ForEach(ChainTemplate.builtInTemplates) { template in
                   HStack {
+                    if !template.isFullyAvailable(copilotAvailable: cliService.copilotStatus.isAvailable, claudeAvailable: cliService.claudeStatus.isAvailable) {
+                      Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    }
                     Text(template.name)
                     Spacer()
                     Text(template.costDisplay)
@@ -96,6 +101,10 @@ struct NewChainSheet: View {
                 Section("Saved") {
                   ForEach(agentManager.savedTemplates) { template in
                     HStack {
+                      if !template.isFullyAvailable(copilotAvailable: cliService.copilotStatus.isAvailable, claudeAvailable: cliService.claudeStatus.isAvailable) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                          .foregroundStyle(.orange)
+                      }
                       Text(template.name)
                       Spacer()
                       Text(template.costDisplay)
@@ -116,6 +125,17 @@ struct NewChainSheet: View {
                   Text(template.description)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                }
+
+                let unavailableModels = template.unavailableModels(
+                  copilotAvailable: cliService.copilotStatus.isAvailable,
+                  claudeAvailable: cliService.claudeStatus.isAvailable
+                )
+                
+                if !unavailableModels.isEmpty {
+                  Label("Unavailable models: \(unavailableModels.map(\.displayName).joined(separator: ", "))", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
                 }
 
                 ForEach(Array(template.steps.enumerated()), id: \.element.id) { index, step in
@@ -168,19 +188,33 @@ struct NewChainSheet: View {
             }
 
             Picker("Model", selection: $agent1Model) {
-              Section("Free") {
-                ForEach(CopilotModel.allCases.filter { $0.isFree }) { m in
-                  ModelLabelView(model: m).tag(m)
+              let availableModels = MCPCopilotModel.availableModels(
+                copilotAvailable: cliService.copilotStatus.isAvailable,
+                claudeAvailable: cliService.claudeStatus.isAvailable
+              )
+              let freeModels = availableModels.filter { $0.isFree }
+              let claudeModels = availableModels.filter { $0.isClaude }
+              let gptModels = availableModels.filter { $0.isGPT && !$0.isFree }
+              
+              if !freeModels.isEmpty {
+                Section("Free") {
+                  ForEach(freeModels) { m in
+                    ModelLabelView(model: m).tag(m)
+                  }
                 }
               }
-              Section("Claude") {
-                ForEach(CopilotModel.allCases.filter { $0.isClaude }) { m in
-                  ModelLabelView(model: m).tag(m)
+              if !claudeModels.isEmpty {
+                Section("Claude") {
+                  ForEach(claudeModels) { m in
+                    ModelLabelView(model: m).tag(m)
+                  }
                 }
               }
-              Section("GPT") {
-                ForEach(CopilotModel.allCases.filter { $0.isGPT && !$0.isFree }) { m in
-                  ModelLabelView(model: m).tag(m)
+              if !gptModels.isEmpty {
+                Section("GPT") {
+                  ForEach(gptModels) { m in
+                    ModelLabelView(model: m).tag(m)
+                  }
                 }
               }
             }
@@ -209,19 +243,33 @@ struct NewChainSheet: View {
             }
 
             Picker("Model", selection: $agent2Model) {
-              Section("Free") {
-                ForEach(CopilotModel.allCases.filter { $0.isFree }) { m in
-                  ModelLabelView(model: m).tag(m)
+              let availableModels = MCPCopilotModel.availableModels(
+                copilotAvailable: cliService.copilotStatus.isAvailable,
+                claudeAvailable: cliService.claudeStatus.isAvailable
+              )
+              let freeModels = availableModels.filter { $0.isFree }
+              let claudeModels = availableModels.filter { $0.isClaude }
+              let gptModels = availableModels.filter { $0.isGPT && !$0.isFree }
+              
+              if !freeModels.isEmpty {
+                Section("Free") {
+                  ForEach(freeModels) { m in
+                    ModelLabelView(model: m).tag(m)
+                  }
                 }
               }
-              Section("Claude") {
-                ForEach(CopilotModel.allCases.filter { $0.isClaude }) { m in
-                  ModelLabelView(model: m).tag(m)
+              if !claudeModels.isEmpty {
+                Section("Claude") {
+                  ForEach(claudeModels) { m in
+                    ModelLabelView(model: m).tag(m)
+                  }
                 }
               }
-              Section("GPT") {
-                ForEach(CopilotModel.allCases.filter { $0.isGPT && !$0.isFree }) { m in
-                  ModelLabelView(model: m).tag(m)
+              if !gptModels.isEmpty {
+                Section("GPT") {
+                  ForEach(gptModels) { m in
+                    ModelLabelView(model: m).tag(m)
+                  }
                 }
               }
             }

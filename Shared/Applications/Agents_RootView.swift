@@ -145,7 +145,7 @@ struct Agents_RootView: View {
       case .mcpDashboard:
         MCPDashboardView(mcpServer: mcpServer, sessionTracker: sessionTracker)
       case .templateGallery:
-        ChainTemplateGalleryView(agentManager: agentManager)
+        ChainTemplateGalleryView(agentManager: agentManager, cliService: cliService)
       case .translationValidation:
         TranslationValidationView()
       case .localRag:
