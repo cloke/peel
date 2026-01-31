@@ -342,16 +342,94 @@ struct RoleBadge: View {
 
 // MARK: - Placeholder Views
 
+// MARK: - Members List View
+
+@MainActor
 struct MembersListView: View {
   let swarmId: String
   let myRole: SwarmPermissionRole
+  @State private var firebaseService = FirebaseService.shared
+  @State private var isLoading = false
+  @State private var memberToRemove: SwarmMember?
   
   var body: some View {
-    ContentUnavailableView(
-      "Members",
-      systemImage: "person.3",
-      description: Text("Member list coming soon")
-    )
+    List {
+      ForEach(firebaseService.swarmMembers) { member in
+        HStack {
+          Image(systemName: member.role == .owner ? "crown.fill" : "person.fill")
+            .foregroundStyle(member.role == .owner ? .yellow : .secondary)
+          
+          VStack(alignment: .leading, spacing: 2) {
+            Text(member.displayName)
+              .fontWeight(.medium)
+            Text(member.email)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          
+          Spacer()
+          
+          RoleBadge(role: member.role)
+          
+          // Only owner can remove admins/contributors
+          if myRole == .owner && member.role != .owner {
+            Button(role: .destructive) {
+              memberToRemove = member
+            } label: {
+              Image(systemName: "xmark.circle")
+            }
+            .buttonStyle(.borderless)
+            .disabled(isLoading)
+          }
+        }
+        .padding(.vertical, 2)
+      }
+      
+      if firebaseService.swarmMembers.isEmpty {
+        ContentUnavailableView(
+          "No Members Yet",
+          systemImage: "person.3",
+          description: Text("Invite people to join your swarm")
+        )
+      }
+    }
+    .confirmationDialog(
+      "Remove Member",
+      isPresented: .init(get: { memberToRemove != nil }, set: { if !$0 { memberToRemove = nil } }),
+      titleVisibility: .visible
+    ) {
+      if let member = memberToRemove {
+        Button("Remove \(member.displayName)", role: .destructive) {
+          removeMember(member)
+        }
+        Button("Cancel", role: .cancel) {
+          memberToRemove = nil
+        }
+      }
+    } message: {
+      if let member = memberToRemove {
+        Text("This will remove \(member.displayName) from the swarm. They will need a new invite to rejoin.")
+      }
+    }
+    .task {
+      await loadMembers()
+    }
+  }
+  
+  private func loadMembers() async {
+    isLoading = true
+    try? await firebaseService.loadSwarmMembers(swarmId: swarmId)
+    isLoading = false
+  }
+  
+  private func removeMember(_ member: SwarmMember) {
+    isLoading = true
+    Task {
+      try? await firebaseService.revokeMember(swarmId: swarmId, userId: member.id)
+      await loadMembers()
+      memberToRemove = nil
+      isLoading = false
+    }
   }
 }
 
@@ -360,6 +438,7 @@ struct PendingMembersView: View {
   let swarmId: String
   @State private var firebaseService = FirebaseService.shared
   @State private var isLoading = false
+  @State private var memberToReject: SwarmMember?
   
   var body: some View {
     List {
@@ -382,7 +461,7 @@ struct PendingMembersView: View {
           .disabled(isLoading)
           
           Button("Reject", role: .destructive) {
-            reject(member)
+            memberToReject = member
           }
           .buttonStyle(.bordered)
           .disabled(isLoading)
@@ -396,6 +475,24 @@ struct PendingMembersView: View {
           systemImage: "checkmark.circle",
           description: Text("All membership requests have been processed")
         )
+      }
+    }
+    .confirmationDialog(
+      "Reject Member",
+      isPresented: .init(get: { memberToReject != nil }, set: { if !$0 { memberToReject = nil } }),
+      titleVisibility: .visible
+    ) {
+      if let member = memberToReject {
+        Button("Reject \(member.displayName)", role: .destructive) {
+          reject(member)
+        }
+        Button("Cancel", role: .cancel) {
+          memberToReject = nil
+        }
+      }
+    } message: {
+      if let member = memberToReject {
+        Text("This will deny \(member.displayName)'s request to join. They will need a new invite.")
       }
     }
   }
@@ -418,6 +515,7 @@ struct PendingMembersView: View {
     Task {
       try? await firebaseService.revokeMember(swarmId: swarmId, userId: member.id)
       try? await firebaseService.loadPendingMembers(swarmId: swarmId)
+      memberToReject = nil
       isLoading = false
     }
   }
