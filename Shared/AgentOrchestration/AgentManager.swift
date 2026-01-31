@@ -66,7 +66,8 @@ public final class AgentManager {
     role: AgentRole = .implementer,
     model: CopilotModel = .claudeSonnet45,
     workingDirectory: String? = nil,
-    customCLIPath: String? = nil
+    customCLIPath: String? = nil,
+    customInstructions: String? = nil
   ) -> Agent {
     let agent = Agent(
       name: name,
@@ -74,7 +75,8 @@ public final class AgentManager {
       role: role,
       model: model,
       workingDirectory: workingDirectory,
-      customCLIPath: customCLIPath
+      customCLIPath: customCLIPath,
+      customInstructions: customInstructions
     )
     agents.append(agent)
     return agent
