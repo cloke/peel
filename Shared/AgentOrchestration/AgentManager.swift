@@ -209,6 +209,12 @@ public final class AgentManager {
     persistTemplates()
   }
   
+  /// Reset to default templates (removes all saved templates)
+  public func resetTemplatesToDefaults() {
+    savedTemplates.removeAll()
+    persistTemplates()
+  }
+  
   /// Load saved templates from disk
   private func loadSavedTemplates() {
     guard let url = templatesFileURL,
