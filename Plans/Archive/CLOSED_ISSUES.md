@@ -11,17 +11,31 @@
 
 | Metric | Count |
 |--------|-------|
-| Total Closed | 97 |
+| Total Closed | 103 |
 | Phase 1A/1B (Foundation) | ~25 |
 | Phase 1C (Polish) | ~45 |
 | Phase 3 (Code Intelligence) | ~6 |
-| Refactors | ~12 |
+| Refactors | ~13 |
 | Swarm/Distributed | ~18 |
+| CloudKit (superseded) | 4 |
 | VM/Translation/Charts | ~8 |
 
 ---
 
-## January 26-30, 2026 (Latest Session)
+## January 30, 2026 (Evening Session)
+
+| # | Title | Category |
+|---|-------|----------|
+| [#102](https://github.com/cloke/peel/issues/102) | Unify model family and helper flags | refactor |
+| [#163](https://github.com/cloke/peel/issues/163) | [RAG] Qwen3-4bit quantized model GPU crashes | rag (dup of #219) |
+| [#142](https://github.com/cloke/peel/issues/142) | Distributed task execution via CloudKit | cloudkit→firebase |
+| [#143](https://github.com/cloke/peel/issues/143) | Distributed tasks: CloudKit schema design | cloudkit→firebase |
+| [#147](https://github.com/cloke/peel/issues/147) | Distributed tasks: CloudKit sharing UX | cloudkit→firebase |
+| [#154](https://github.com/cloke/peel/issues/154) | Distributed tasks: CloudKit limits + cost analysis | cloudkit→firebase |
+
+---
+
+## January 26-30, 2026 (Earlier Session)
 
 | # | Title | Category |
 |---|-------|----------|
