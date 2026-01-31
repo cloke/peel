@@ -6,8 +6,8 @@ tags:
   - peel
   - agent-orchestration
   - mcp
-updated: 2026-01-25
-last_health_check: 2026-01-25
+updated: 2026-01-30
+last_health_check: 2026-01-30
 audience:
   - ai-agent
   - developer
@@ -25,12 +25,12 @@ audience:
 
 | Metric | Count |
 |--------|-------|
-| **Closed** | 79 ✅ |
+| **Closed** | 97 ✅ |
 | **Open - Phase 2** | 5 |
 | **Open - Phase 3 (Code Intelligence)** | 6 |
-| **Open - Swarm/Distributed** | 21 |
-| **Open - Backlog** | 23 |
-| **Total Open** | 55 |
+| **Open - Swarm/Distributed** | 10 |
+| **Open - Backlog** | 14 |
+| **Total Open** | 35 |
 
 ### Recent Changes
 - ✅ **#174** - Structural queries COMPLETE
@@ -52,37 +52,37 @@ audience:
 
 **Goal**: Make MCP chains reliable for daily use. RAG integration. UX polish.
 
-### Track A: RAG Integration (Critical Path)
+### Track A: RAG Integration ✅ COMPLETE
 
-These issues build on each other - complete in order.
+All RAG integration issues have been completed.
 
 | Order | # | Title | Est | Deps | Status |
 |-------|---|-------|-----|------|--------|
 | 1 | [#139](https://github.com/cloke/peel/issues/139) | Add diff-only mode to rag-pattern-check | 1h | None | ✅ Complete |
-| 2 | [#127](https://github.com/cloke/peel/issues/127) | Add Local RAG results UX | 2h | None | 🟡 Ready |
-| 3 | [#136](https://github.com/cloke/peel/issues/136) | Dogfood RAG UX: session insights | 2h | #127 | ⚪ Blocked |
-| 4 | [#130](https://github.com/cloke/peel/issues/130) | Document Local RAG model acquisition | 2h | None | 🟡 Ready |
+| 2 | [#127](https://github.com/cloke/peel/issues/127) | Add Local RAG results UX | 2h | None | ✅ Complete |
+| 3 | [#136](https://github.com/cloke/peel/issues/136) | Dogfood RAG UX: session insights | 2h | #127 | ✅ Complete |
+| 4 | [#130](https://github.com/cloke/peel/issues/130) | Document Local RAG model acquisition | 2h | None | ✅ Complete |
 | 5 | [#132](https://github.com/cloke/peel/issues/132) | RAG loop test workflow | 2h | #127 | ✅ Complete |
 | 6 | [#134](https://github.com/cloke/peel/issues/134) | Project audit tooling | 3h | #132 | ✅ Complete |
-| 7 | [#141](https://github.com/cloke/peel/issues/141) | RAG Indexing Performance Optimization | 3h | None | 🟡 Ready |
-| 8 | [#78](https://github.com/cloke/peel/issues/78) | Parallel runner with RAG grounding | 4h | #127 | ⚪ Blocked |
-| 9 | [#87](https://github.com/cloke/peel/issues/87) | RAG feedback for CI failures | 3h | #78 | ⚪ Blocked |
+| 7 | [#141](https://github.com/cloke/peel/issues/141) | RAG Indexing Performance Optimization | 3h | None | ✅ Complete |
+| 8 | [#78](https://github.com/cloke/peel/issues/78) | Parallel runner with RAG grounding | 4h | #127 | ✅ Complete |
+| 9 | [#87](https://github.com/cloke/peel/issues/87) | RAG feedback for CI failures | 3h | #78 | ✅ Complete |
 
-**Track A Total**: ~22h
+**Track A Total**: ~22h ✅ DONE
 
 ### Track B: MCP Packaging & Tools
 
-Independent work that prepares MCP for extraction.
+MCP service split complete. Registry extraction remaining.
 
 | Order | # | Title | Est | Deps | Status |
 |-------|---|-------|-----|------|--------|
-| 1 | [#121](https://github.com/cloke/peel/issues/121) | Split MCPServerService by tool category | 4h | None | 🟡 Ready |
-| 2 | [#80](https://github.com/cloke/peel/issues/80) | Extract MCP tool registry into package | 3h | #121 | ⚪ Blocked |
+| 1 | [#121](https://github.com/cloke/peel/issues/121) | Split MCPServerService by tool category | 4h | None | ✅ Complete |
+| 2 | [#80](https://github.com/cloke/peel/issues/80) | Extract MCP tool registry into package | 3h | #121 | 🟡 Ready |
 | 3 | [#138](https://github.com/cloke/peel/issues/138) | Document MCP tool permissions | 2h | None | ✅ Complete |
 | 4 | [#85](https://github.com/cloke/peel/issues/85) | CLI: safe polling helper for MCP runs | 2h | None | ✅ Complete |
 | 5 | [#140](https://github.com/cloke/peel/issues/140) | Add Prompt Rules UI in Settings | 2h | None | 🟠 Partial (UI only) |
 
-**Track B Total**: ~13h
+**Track B Total**: ~13h (11h done)
 
 ### Track C: UX Polish
 
@@ -90,14 +90,14 @@ Can be done in any order, low dependencies.
 
 | Order | # | Title | Est | Deps | Status |
 |-------|---|-------|-----|------|--------|
-| 1 | [#83](https://github.com/cloke/peel/issues/83) | Cohesive Workspaces/Worktrees navigation | 3h | None | 🟡 Ready |
+| 1 | [#83](https://github.com/cloke/peel/issues/83) | Cohesive Workspaces/Worktrees navigation | 3h | None | ✅ Complete |
 | 2 | [#29](https://github.com/cloke/peel/issues/29) | Add Review with Agent button for PRs | 3h | None | 🟡 Ready |
 | 3 | [#30](https://github.com/cloke/peel/issues/30) | Add merge conflict resolution UI | 4h | None | 🟡 Ready |
 | 4 | [#52](https://github.com/cloke/peel/issues/52) | Fix screenshot capture vibrancy | 2h | None | ✅ Complete |
 | 5 | [#64](https://github.com/cloke/peel/issues/64) | Add Homebrew activity charts | 2h | None | ⏸ Deferred |
 | 6 | [#40](https://github.com/cloke/peel/issues/40) | Agent feedback loop - watch and retry | 4h | None | ⏸ Deferred |
 
-**Track C Total**: ~18h
+**Track C Total**: ~18h (5h done)
 
 **Phase 1C Grand Total**: ~53h (~7 days focused work)
 
@@ -275,24 +275,17 @@ These are valid ideas not yet prioritized. Pick from here when phases complete.
 | [#93](https://github.com/cloke/peel/issues/93) | Guardrails for low-signal parallel runs | mcp |
 | [#94](https://github.com/cloke/peel/issues/94) | Reduce plan-only responses in templates | mcp |
 
-### Infrastructure & Refactoring
+### Infrastructure
 | # | Title | Category |
 |---|-------|----------|
-| [#99](https://github.com/cloke/peel/issues/99) | Audit target membership for macOS-only files | infra |
-| [#100](https://github.com/cloke/peel/issues/100) | Refactor CopilotModel metadata mapping | infra |
 | [#102](https://github.com/cloke/peel/issues/102) | Unify model family and helper flags | infra |
-| [#103](https://github.com/cloke/peel/issues/103) | Extract AgentRole system prompts | infra |
-| [#104](https://github.com/cloke/peel/issues/104) | Refactor AgentState UI metadata | infra |
-| [#122](https://github.com/cloke/peel/issues/122) | Split WorktreeListView into separate files | infra |
+| [#111](https://github.com/cloke/peel/issues/111) | Add per-repo scratch area for artifacts | infra |
 
 ### UX & Git
 | # | Title | Category |
 |---|-------|----------|
-| [#96](https://github.com/cloke/peel/issues/96) | VM Viewer: aspect-fit scaling still clips | bug |
-| [#97](https://github.com/cloke/peel/issues/97) | VM Isolation: add segmented tabs | ux |
 | [#105](https://github.com/cloke/peel/issues/105) | Define iOS GitHub review flow | ux |
 | [#110](https://github.com/cloke/peel/issues/110) | Refactor diff viewer for modern UI | git |
-| [#111](https://github.com/cloke/peel/issues/111) | Add per-repo scratch area for artifacts | infra |
 | [#112](https://github.com/cloke/peel/issues/112) | Git diff: stage/revert hunk actions | git |
 
 ### VM (Stretch)

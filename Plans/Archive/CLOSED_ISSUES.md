@@ -1,6 +1,6 @@
 # Peel - Archived Issues (Closed)
 
-> **Archive Date**: January 25, 2026
+> **Archive Date**: January 30, 2026
 > 
 > This file tracks all closed issues for historical reference.
 > Issues are grouped by completion date and category.
@@ -11,15 +11,69 @@
 
 | Metric | Count |
 |--------|-------|
-| Total Closed | 73 |
+| Total Closed | 97 |
 | Phase 1A/1B (Foundation) | ~25 |
-| Phase 1C (Polish) | ~35 |
-| Refactors | ~10 |
+| Phase 1C (Polish) | ~45 |
+| Phase 3 (Code Intelligence) | ~6 |
+| Refactors | ~12 |
+| Swarm/Distributed | ~18 |
 | VM/Translation/Charts | ~8 |
 
 ---
 
-## January 25, 2026 (Latest Session)
+## January 26-30, 2026 (Latest Session)
+
+| # | Title | Category |
+|---|-------|----------|
+| [#78](https://github.com/cloke/peel/issues/78) | Parallel worktree runner with RAG grounding | rag |
+| [#83](https://github.com/cloke/peel/issues/83) | Cohesive Workspaces/Worktrees navigation | ux |
+| [#87](https://github.com/cloke/peel/issues/87) | RAG feedback loop for CI failures | rag |
+| [#96](https://github.com/cloke/peel/issues/96) | VM Viewer: aspect-fit scaling still clips | bug |
+| [#97](https://github.com/cloke/peel/issues/97) | VM Isolation: add segmented tabs | ux |
+| [#99](https://github.com/cloke/peel/issues/99) | Audit target membership for macOS-only files | infra |
+| [#100](https://github.com/cloke/peel/issues/100) | Refactor CopilotModel metadata mapping | infra |
+| [#103](https://github.com/cloke/peel/issues/103) | Extract AgentRole system prompts | infra |
+| [#104](https://github.com/cloke/peel/issues/104) | Refactor AgentState UI metadata | infra |
+| [#121](https://github.com/cloke/peel/issues/121) | Split MCPServerService by tool category | mcp |
+| [#122](https://github.com/cloke/peel/issues/122) | Split WorktreeListView into separate files | infra |
+| [#127](https://github.com/cloke/peel/issues/127) | Add Local RAG results UX | rag |
+| [#130](https://github.com/cloke/peel/issues/130) | Document Local RAG model acquisition | rag |
+| [#136](https://github.com/cloke/peel/issues/136) | Dogfood RAG UX: session insights | rag |
+| [#141](https://github.com/cloke/peel/issues/141) | RAG Indexing Performance Optimization | rag |
+| [#144](https://github.com/cloke/peel/issues/144) | Leasing + heartbeat protocol | swarm |
+| [#145](https://github.com/cloke/peel/issues/145) | Peel daemon prototype (Mac Studio) | swarm |
+| [#146](https://github.com/cloke/peel/issues/146) | Client submit + result sync | swarm |
+| [#149](https://github.com/cloke/peel/issues/149) | LAN direct transport | swarm |
+| [#150](https://github.com/cloke/peel/issues/150) | Task types + payload spec | swarm |
+| [#151](https://github.com/cloke/peel/issues/151) | Failure modes + retries | swarm |
+| [#152](https://github.com/cloke/peel/issues/152) | Observability + metrics | swarm |
+| [#153](https://github.com/cloke/peel/issues/153) | UI flows (macOS/iOS) | swarm |
+| [#155](https://github.com/cloke/peel/issues/155) | Dev tooling + test harness | swarm |
+| [#156](https://github.com/cloke/peel/issues/156) | Peel packaging + background scheduling | swarm |
+| [#157](https://github.com/cloke/peel/issues/157) | Entitlements + sandbox review | swarm |
+| [#174](https://github.com/cloke/peel/issues/174) | RAG: Structural queries | rag |
+| [#175](https://github.com/cloke/peel/issues/175) | RAG: Duplicate/similar code detection | rag |
+| [#176](https://github.com/cloke/peel/issues/176) | RAG: Dependency graph indexing | rag |
+| [#184](https://github.com/cloke/peel/issues/184) | Distributed: LocalNetworkActorSystem | swarm |
+| [#185](https://github.com/cloke/peel/issues/185) | Distributed: Bonjour discovery service | swarm |
+| [#186](https://github.com/cloke/peel/issues/186) | Distributed: Peel daemon mode | swarm |
+| [#187](https://github.com/cloke/peel/issues/187) | Distributed: Shared types | swarm |
+| [#188](https://github.com/cloke/peel/issues/188) | [Swarm] Leader Election & Automatic Failover | swarm |
+| [#200](https://github.com/cloke/peel/issues/200) | [Swarm] Worktree isolation for swarm tasks | swarm |
+| [#201](https://github.com/cloke/peel/issues/201) | [Swarm] Branch queue for conflict prevention | swarm |
+| [#202](https://github.com/cloke/peel/issues/202) | [Swarm] PR queue with Peel status labels | swarm |
+| [#203](https://github.com/cloke/peel/issues/203) | [Swarm] update-workers command fix | swarm |
+| [#204](https://github.com/cloke/peel/issues/204) | [MCP] Swarm tools 500 fix | mcp |
+| [#207](https://github.com/cloke/peel/issues/207) | RAG metadata facets for issue → code audit | rag |
+| [#208](https://github.com/cloke/peel/issues/208) | RAG: Dependency graph polish | rag |
+| [#209](https://github.com/cloke/peel/issues/209) | RAG Learning Loop | rag |
+| [#212](https://github.com/cloke/peel/issues/212) | Improve AI Code Analysis UX | ux |
+| [#213](https://github.com/cloke/peel/issues/213) | Worktree Dashboard: Global view | ux |
+| [#215](https://github.com/cloke/peel/issues/215) | Quick worktree creation from UI | ux |
+
+---
+
+## January 25, 2026
 
 | # | Title | Category |
 |---|-------|----------|

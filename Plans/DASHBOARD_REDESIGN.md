@@ -1,3 +1,17 @@
+---
+title: Dashboard Redesign - Unified Work View
+status: draft
+created: 2026-01-30
+updated: 2026-01-30
+tags:
+  - ux
+  - navigation
+  - design
+audience:
+  - developer
+  - ai-agent
+---
+
 # Dashboard Redesign: Unified Work View
 
 **Status:** Draft  
