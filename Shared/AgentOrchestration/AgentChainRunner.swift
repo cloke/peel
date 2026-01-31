@@ -566,31 +566,57 @@ public final class AgentChainRunner {
 
     let repoURL = URL(fileURLWithPath: workingDirectory)
     let repository = Model.Repository(name: repoURL.lastPathComponent, path: workingDirectory)
+    
+    // Check if we're already in a chain worktree (from ParallelWorktreeRunner)
+    // In this case, don't create additional workspaces - use the worktree directly
+    let isInChainWorktree = workingDirectory.contains("Peel-Worktrees") ||
+                            workingDirectory.contains("chain-")
+    
+    if isInChainWorktree {
+      await telemetryProvider.info("Running in existing chain worktree - skipping workspace creation", metadata: [
+        "chainId": chain.id.uuidString,
+        "workingDirectory": workingDirectory
+      ])
+    }
 
     var ragContexts: [UUID: String] = [:]
     for index in indices {
       try checkCancellation(chain: chain)
       let agent = chain.agents[index]
-      let task = AgentTask(
-        title: "\(chain.name) - \(agent.name)",
-        prompt: prompt,
-        repositoryPath: workingDirectory
-      )
-      let workspace = try await agentManager.workspaceManager.createWorkspace(
-        for: repository,
-        task: task,
-        agentId: agent.id
-      )
-      await telemetryProvider.info("Parallel implementer workspace created", metadata: [
-        "chainId": chain.id.uuidString,
-        "agentId": agent.id.uuidString,
-        "agentName": agent.name,
-        "role": agent.role.displayName,
-        "branch": workspace.branch,
-        "workingDirectory": workspace.path.path
-      ])
-      agent.workspace = workspace
-      agent.workingDirectory = workspace.path.path
+      
+      if isInChainWorktree {
+        // Use chain's worktree directly - don't create additional workspaces
+        agent.workingDirectory = workingDirectory
+        await telemetryProvider.info("Parallel implementer using chain worktree", metadata: [
+          "chainId": chain.id.uuidString,
+          "agentId": agent.id.uuidString,
+          "agentName": agent.name,
+          "role": agent.role.displayName,
+          "workingDirectory": workingDirectory
+        ])
+      } else {
+        // Original behavior: create separate workspaces for each implementer
+        let task = AgentTask(
+          title: "\(chain.name) - \(agent.name)",
+          prompt: prompt,
+          repositoryPath: workingDirectory
+        )
+        let workspace = try await agentManager.workspaceManager.createWorkspace(
+          for: repository,
+          task: task,
+          agentId: agent.id
+        )
+        await telemetryProvider.info("Parallel implementer workspace created", metadata: [
+          "chainId": chain.id.uuidString,
+          "agentId": agent.id.uuidString,
+          "agentName": agent.name,
+          "role": agent.role.displayName,
+          "branch": workspace.branch,
+          "workingDirectory": workspace.path.path
+        ])
+        agent.workspace = workspace
+        agent.workingDirectory = workspace.path.path
+      }
 
       let storedQuery = UserDefaults.standard.string(forKey: RagDefaults.query) ?? ""
       let ragQuery = storedQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -598,7 +624,7 @@ public final class AgentChainRunner {
       : storedQuery
       if let ragContext = await buildRagContext(
         query: ragQuery,
-        repoPath: workspace.path.path,
+        repoPath: agent.workingDirectory ?? workingDirectory,
         fileHints: agent.assignedTaskFileHints
       ) {
         ragContexts[agent.id] = ragContext
@@ -730,6 +756,17 @@ public final class AgentChainRunner {
 
   private func mergeImplementerBranches(chain: AgentChain, indices: [Int]) async throws -> [String] {
     guard let workingDirectory = chain.workingDirectory else {
+      return []
+    }
+    
+    // Check if agents have separate workspaces to merge
+    // If running in a chain worktree (from ParallelWorktreeRunner), agents share the same directory
+    let hasWorkspacesToMerge = indices.contains { chain.agents[$0].workspace != nil }
+    if !hasWorkspacesToMerge {
+      await telemetryProvider.info("No separate workspaces to merge - agents shared the same worktree", metadata: [
+        "chainId": chain.id.uuidString,
+        "workingDirectory": workingDirectory
+      ])
       return []
     }
 
