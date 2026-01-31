@@ -96,23 +96,19 @@ private struct TrendChart: View {
   let color: Color
   
   var body: some View {
-    GroupBox {
-      VStack(alignment: .leading, spacing: 8) {
-        Text(title).font(.headline)
-        if points.isEmpty {
-          Text("No data yet").font(.caption).foregroundStyle(.secondary)
-        } else {
-          Chart(points) { point in
-            LineMark(x: .value("Week", point.weekStart, unit: .weekOfYear), y: .value("Count", point.count))
-              .foregroundStyle(color)
-            PointMark(x: .value("Week", point.weekStart, unit: .weekOfYear), y: .value("Count", point.count))
-              .foregroundStyle(color)
-          }
-          .chartXAxis { AxisMarks(values: .stride(by: .weekOfYear, count: 2)) }
-          .frame(height: 160)
+    SectionCard(title) {
+      if points.isEmpty {
+        Text("No data yet").font(.caption).foregroundStyle(.secondary)
+      } else {
+        Chart(points) { point in
+          LineMark(x: .value("Week", point.weekStart, unit: .weekOfYear), y: .value("Count", point.count))
+            .foregroundStyle(color)
+          PointMark(x: .value("Week", point.weekStart, unit: .weekOfYear), y: .value("Count", point.count))
+            .foregroundStyle(color)
         }
+        .chartXAxis { AxisMarks(values: .stride(by: .weekOfYear, count: 2)) }
+        .frame(height: 160)
       }
-      .padding(.vertical, 4)
     }
   }
 }
