@@ -69,6 +69,9 @@ public final class FirebaseService {
   /// Pending members awaiting approval (for admins)
   public private(set) var pendingMembers: [SwarmMember] = []
   
+  /// All members of the current swarm (for admins/owners)
+  public private(set) var swarmMembers: [SwarmMember] = []
+  
   /// Pending invite URL (stored when user is not signed in, processed after auth)
   public var pendingInviteURL: URL?
   
@@ -514,6 +517,32 @@ public final class FirebaseService {
     
     pendingMembers = members
     logger.info("Loaded \(members.count) pending members")
+  }
+  
+  /// Load all members of a swarm (not just pending)
+  public func loadSwarmMembers(swarmId: String) async throws {
+    let snapshot = try await membersCollection(swarmId: swarmId)
+      .whereField("role", isNotEqualTo: "pending")
+      .getDocuments()
+    
+    let members = snapshot.documents.compactMap { doc -> SwarmMember? in
+      let data = doc.data()
+      guard let roleString = data["role"] as? String,
+            let role = SwarmPermissionRole(rawValue: roleString)
+      else { return nil }
+      
+      return SwarmMember(
+        id: doc.documentID,
+        displayName: data["displayName"] as? String ?? "Unknown",
+        email: data["email"] as? String ?? "",
+        role: role,
+        joinedAt: (data["joinedAt"] as? Timestamp)?.dateValue() ?? Date(),
+        approvedBy: data["approvedBy"] as? String
+      )
+    }.sorted { $0.role.level > $1.role.level } // Sort by role level (owner first)
+    
+    swarmMembers = members
+    logger.info("Loaded \(members.count) swarm members")
   }
   
   // MARK: - Listeners
