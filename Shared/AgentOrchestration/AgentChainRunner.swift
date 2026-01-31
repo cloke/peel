@@ -307,6 +307,8 @@ public final class AgentChainRunner {
     decision: PlannerDecision,
     options: ChainRunOptions
   ) async {
+    chain.plannerDecision = decision
+    
     guard options.allowPlannerImplementerScaling ||
             options.allowPlannerModelSelection ||
             options.maxImplementers != nil ||
@@ -354,14 +356,20 @@ public final class AgentChainRunner {
     } else if desiredCount > implementers.count {
       let startIndex = implementers.count
       for index in startIndex..<desiredCount {
-        let taskTitle = tasks.indices.contains(index) ? tasks[index].title : "Implementer \(index + 1)"
+        let task = tasks.indices.contains(index) ? tasks[index] : nil
+        let taskTitle = task?.title ?? "Implementer \(index + 1)"
+        let taskDescription = task?.description
         let agent = agentManager.createAgent(
           name: taskTitle,
           type: .copilot,
           role: .implementer,
           model: implementers.first?.model ?? .claudeSonnet45,
-          workingDirectory: chain.workingDirectory
+          workingDirectory: chain.workingDirectory,
+          customInstructions: taskDescription
         )
+        if let fileHints = task?.fileHints {
+          agent.assignedTaskFileHints = fileHints
+        }
         implementers.append(agent)
         newImplementerIds.insert(agent.id)
       }
@@ -588,7 +596,11 @@ public final class AgentChainRunner {
       let ragQuery = storedQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       ? prompt
       : storedQuery
-      if let ragContext = await buildRagContext(query: ragQuery, repoPath: workspace.path.path) {
+      if let ragContext = await buildRagContext(
+        query: ragQuery,
+        repoPath: workspace.path.path,
+        fileHints: agent.assignedTaskFileHints
+      ) {
         ragContexts[agent.id] = ragContext
       }
     }
@@ -597,7 +609,8 @@ public final class AgentChainRunner {
     try await withThrowingTaskGroup(of: (Int, AgentChainResult).self) { group in
       for index in indices {
         let agent = chain.agents[index]
-        let agentContext = [context, ragContexts[agent.id]].compactMap { value in
+        let taskContext = buildTaskContext(agent: agent, chain: chain, index: index)
+        let agentContext = [taskContext, context, ragContexts[agent.id]].compactMap { value in
           let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
           return trimmed.isEmpty ? nil : trimmed
         }.joined(separator: "\n\n")
@@ -641,8 +654,37 @@ public final class AgentChainRunner {
 
     return results
   }
+  
+  private func buildTaskContext(agent: Agent, chain: AgentChain, index: Int) -> String? {
+    guard let decision = chain.plannerDecision,
+          index < decision.tasks.count else {
+      return nil
+    }
+    
+    let task = decision.tasks[index]
+    var parts: [String] = []
+    
+    parts.append("## Assigned Task: \(task.title)")
+    
+    if !task.description.isEmpty {
+      parts.append("\n**Description:**\n\(task.description)")
+    }
+    
+    if let fileHints = agent.assignedTaskFileHints, !fileHints.isEmpty {
+      parts.append("\n**Focus on these files:**")
+      for hint in fileHints {
+        parts.append("- \(hint)")
+      }
+    }
+    
+    return parts.joined(separator: "\n")
+  }
 
-  private func buildRagContext(query: String, repoPath: String) async -> String? {
+  private func buildRagContext(
+    query: String,
+    repoPath: String,
+    fileHints: [String]? = nil
+  ) async -> String? {
     let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmedQuery.isEmpty else { return nil }
 
@@ -651,7 +693,7 @@ public final class AgentChainRunner {
     let limit = storedLimit == 0 ? 5 : storedLimit
 
     do {
-      let results: [LocalRAGSearchResult]
+      var results: [LocalRAGSearchResult]
       if mode.lowercased() == "vector" {
         results = try await localRagStore.searchVector(query: trimmedQuery, repoPath: repoPath, limit: limit)
       } else {
@@ -659,6 +701,19 @@ public final class AgentChainRunner {
       }
 
       guard !results.isEmpty else { return nil }
+      
+      if let hints = fileHints, !hints.isEmpty {
+        let prioritized = results.sorted { result1, result2 in
+          let path1 = result1.filePath
+          let path2 = result2.filePath
+          let match1 = hints.contains { hint in path1.contains(hint) }
+          let match2 = hints.contains { hint in path2.contains(hint) }
+          if match1 && !match2 { return true }
+          if !match1 && match2 { return false }
+          return false
+        }
+        results = prioritized
+      }
 
       let snippets = results.map { result in
         "- \(result.filePath) [\(result.startLine)-\(result.endLine)]:\n\(result.snippet)"

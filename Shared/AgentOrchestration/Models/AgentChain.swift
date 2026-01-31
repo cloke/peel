@@ -42,6 +42,9 @@ public final class AgentChain: Identifiable {
   /// Planner can override implementer count/models
   public var plannerOverridesAllowed: Bool = false
   public var plannerOverridesApplied: Bool = false
+  
+  /// Store planner decision for implementer access
+  public var plannerDecision: PlannerDecision?
 
   /// Pause if reviewer requests changes (do not auto re-run)
   public var pauseOnReview: Bool = false
@@ -153,6 +156,7 @@ public final class AgentChain: Identifiable {
     clearLiveStatus()
     plannerOverridesAllowed = false
     plannerOverridesApplied = false
+    plannerDecision = nil
     for agent in agents {
       agent.clearTask()
       agent.updateState(.idle)

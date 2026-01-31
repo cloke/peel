@@ -121,6 +121,9 @@ public final class Agent: Identifiable {
   /// Custom CLI path for custom agent types
   public var customCLIPath: String?
   
+  /// File hints assigned from planner task delegation
+  public var assignedTaskFileHints: [String]?
+  
   public init(
     id: UUID = UUID(),
     name: String,
@@ -133,7 +136,8 @@ public final class Agent: Identifiable {
     workingDirectory: String? = nil,
     currentTask: AgentTask? = nil,
     workspace: AgentWorkspace? = nil,
-    customCLIPath: String? = nil
+    customCLIPath: String? = nil,
+    assignedTaskFileHints: [String]? = nil
   ) {
     self.id = id
     self.name = name
@@ -147,6 +151,7 @@ public final class Agent: Identifiable {
     self.currentTask = currentTask
     self.workspace = workspace
     self.customCLIPath = customCLIPath
+    self.assignedTaskFileHints = assignedTaskFileHints
     self.createdAt = Date()
     self.lastActivityAt = Date()
   }
