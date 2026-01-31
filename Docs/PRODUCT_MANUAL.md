@@ -4,7 +4,7 @@
 
 **Version:** 0.9 (Pre-release)  
 **Platforms:** macOS 26+, iOS 26  
-**Last Updated:** January 28, 2026
+**Last Updated:** January 31, 2026
 
 ---
 
@@ -840,6 +840,23 @@ The MCP server exposes these tool categories via JSON-RPC at `http://127.0.0.1:8
 | `swarm.branch-queue` | Get branch queue status |
 | `swarm.pr-queue` | Get PR queue status |
 | `swarm.create-pr` | Manually create a PR for a completed task |
+
+### Swarm (Firestore/WAN)
+
+| Tool | Description |
+|------|-------------|
+| `swarm.firestore.auth` | Check Firestore authentication status |
+| `swarm.firestore.swarms` | List swarms you belong to |
+| `swarm.firestore.create` | Create a new Firestore swarm |
+| `swarm.firestore.workers` | List workers in a swarm |
+| `swarm.firestore.register-worker` | Register this device as a worker |
+| `swarm.firestore.unregister-worker` | Unregister this device from a swarm |
+| `swarm.firestore.submit-task` | Submit a task to the swarm |
+| `swarm.firestore.tasks` | List pending/running tasks |
+| `swarm.firestore.rag.artifacts` | List RAG artifacts in the swarm |
+| `swarm.firestore.rag.push` | Push local RAG index to swarm |
+| `swarm.firestore.rag.pull` | Pull RAG index from swarm |
+| `swarm.firestore.rag.delete` | Delete a RAG artifact (admin+) |
 
 ### Server Management
 

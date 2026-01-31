@@ -72,6 +72,21 @@ public final class FirebaseService {
   /// All members of the current swarm (for admins/owners)
   public private(set) var swarmMembers: [SwarmMember] = []
   
+  /// Registered workers in the active swarm (real-time)
+  public private(set) var swarmWorkers: [FirestoreWorker] = []
+  
+  /// Pending tasks in the active swarm (real-time, for brain/dispatch)
+  public private(set) var pendingTasks: [FirestoreTask] = []
+  
+  /// RAG artifacts in the active swarm (real-time)
+  public private(set) var ragArtifacts: [FirestoreRAGArtifact] = []
+  
+  /// Current RAG artifact sync state (for progress UI)
+  public private(set) var ragSyncState: FirestoreRAGSyncState?
+  
+  /// Our registered worker ID (if we're acting as a worker)
+  public private(set) var registeredWorkerId: String?
+  
   /// Pending invite URL (stored when user is not signed in, processed after auth)
   public var pendingInviteURL: URL?
   
@@ -85,6 +100,9 @@ public final class FirebaseService {
   
   private var authStateListener: AuthStateDidChangeListenerHandle?
   private var swarmListeners: [ListenerRegistration] = []
+  private var workerListeners: [ListenerRegistration] = []
+  private var taskListener: ListenerRegistration?
+  private var heartbeatTask: Task<Void, Never>?
   private var currentNonce: String?
   
   // MARK: - Firestore References
@@ -108,6 +126,18 @@ public final class FirebaseService {
   
   private func invitesCollection(swarmId: String) -> CollectionReference {
     db.collection("swarms/\(swarmId)/invites")
+  }
+  
+  private func workersCollection(swarmId: String) -> CollectionReference {
+    db.collection("swarms/\(swarmId)/workers")
+  }
+  
+  private func tasksCollection(swarmId: String) -> CollectionReference {
+    db.collection("swarms/\(swarmId)/tasks")
+  }
+  
+  private func ragArtifactsCollection(swarmId: String) -> CollectionReference {
+    db.collection("swarms/\(swarmId)/ragArtifacts")
   }
   
   // MARK: - Initialization
@@ -545,6 +575,629 @@ public final class FirebaseService {
     logger.info("Loaded \(members.count) swarm members")
   }
   
+  // MARK: - Worker Management (#225)
+  
+  /// Register this device as a worker in a swarm
+  public func registerWorker(
+    swarmId: String,
+    capabilities: WorkerCapabilities
+  ) async throws -> String {
+    guard let userId = currentUserId else { throw FirebaseError.notSignedIn }
+    
+    // Verify user has permission (contributor+)
+    let memberDoc = try await membersCollection(swarmId: swarmId).document(userId).getDocument()
+    guard let roleLevel = memberDoc.data()?["roleLevel"] as? Int, roleLevel >= 2 else {
+      throw FirebaseError.permissionDenied
+    }
+    
+    let workerId = capabilities.deviceId
+    let workerRef = workersCollection(swarmId: swarmId).document(workerId)
+    
+    try await workerRef.setData([
+      "ownerId": userId,
+      "displayName": capabilities.displayName ?? capabilities.deviceName,
+      "deviceName": capabilities.deviceName,
+      "capabilities": [
+        "platform": capabilities.platform.rawValue,
+        "gpuCores": capabilities.gpuCores,
+        "neuralEngineCores": capabilities.neuralEngineCores,
+        "memoryGB": capabilities.memoryGB,
+        "storageAvailableGB": capabilities.storageAvailableGB,
+        "embeddingModel": capabilities.embeddingModel as Any,
+        "embeddingDimensions": capabilities.embeddingDimensions as Any,
+        "indexedRepos": capabilities.indexedRepos
+      ],
+      "status": "online",
+      "lastHeartbeat": FieldValue.serverTimestamp(),
+      "version": capabilities.gitCommitHash ?? "unknown",
+      "registeredAt": FieldValue.serverTimestamp()
+    ])
+    
+    registeredWorkerId = workerId
+    logger.info("Registered worker \(workerId) in swarm \(swarmId)")
+    
+    // Start heartbeat loop
+    startHeartbeatLoop(swarmId: swarmId, workerId: workerId)
+    
+    // Start listening for task assignments
+    startTaskListener(swarmId: swarmId, workerId: workerId)
+    
+    return workerId
+  }
+  
+  /// Unregister this device as a worker
+  public func unregisterWorker(swarmId: String) async throws {
+    guard let workerId = registeredWorkerId else { return }
+    
+    stopHeartbeatLoop()
+    stopTaskListener()
+    
+    try await workersCollection(swarmId: swarmId).document(workerId).updateData([
+      "status": "offline",
+      "lastHeartbeat": FieldValue.serverTimestamp()
+    ])
+    
+    registeredWorkerId = nil
+    logger.info("Unregistered worker \(workerId)")
+  }
+  
+  /// Send heartbeat to update worker status
+  private func sendHeartbeat(swarmId: String, workerId: String, status: String = "online") async {
+    do {
+      try await workersCollection(swarmId: swarmId).document(workerId).updateData([
+        "status": status,
+        "lastHeartbeat": FieldValue.serverTimestamp()
+      ])
+    } catch {
+      logger.error("Failed to send heartbeat: \(error)")
+    }
+  }
+  
+  private func startHeartbeatLoop(swarmId: String, workerId: String) {
+    stopHeartbeatLoop()
+    heartbeatTask = Task { [weak self] in
+      while !Task.isCancelled {
+        await self?.sendHeartbeat(swarmId: swarmId, workerId: workerId)
+        try? await Task.sleep(for: .seconds(30))
+      }
+    }
+  }
+  
+  private func stopHeartbeatLoop() {
+    heartbeatTask?.cancel()
+    heartbeatTask = nil
+  }
+  
+  /// Start listening for workers in a swarm (for brain/dashboard)
+  public func startWorkerListener(swarmId: String) {
+    let listener = workersCollection(swarmId: swarmId)
+      .addSnapshotListener { [weak self] snapshot, error in
+        guard let self = self, let snapshot = snapshot else {
+          if let error = error {
+            self?.logger.error("Worker listener error: \(error)")
+          }
+          return
+        }
+        
+        Task { @MainActor in
+          self.swarmWorkers = snapshot.documents.compactMap { doc -> FirestoreWorker? in
+            let data = doc.data()
+            return FirestoreWorker(
+              id: doc.documentID,
+              ownerId: data["ownerId"] as? String ?? "",
+              displayName: data["displayName"] as? String ?? "Unknown",
+              deviceName: data["deviceName"] as? String ?? "",
+              status: FirestoreWorkerStatus(rawValue: data["status"] as? String ?? "offline") ?? .offline,
+              lastHeartbeat: (data["lastHeartbeat"] as? Timestamp)?.dateValue() ?? Date.distantPast,
+              version: data["version"] as? String
+            )
+          }
+        }
+      }
+    workerListeners.append(listener)
+  }
+  
+  private func stopWorkerListeners() {
+    for listener in workerListeners {
+      listener.remove()
+    }
+    workerListeners.removeAll()
+  }
+  
+  // MARK: - Task Management (#225)
+  
+  /// Delegate for task execution (set by SwarmCoordinator or similar)
+  public weak var taskExecutionDelegate: FirestoreTaskExecutionDelegate?
+  
+  /// Submit a task to the swarm
+  public func submitTask(
+    swarmId: String,
+    request: ChainRequest
+  ) async throws -> String {
+    guard let userId = currentUserId else { throw FirebaseError.notSignedIn }
+    
+    // Verify user has permission (contributor+)
+    let memberDoc = try await membersCollection(swarmId: swarmId).document(userId).getDocument()
+    guard let roleLevel = memberDoc.data()?["roleLevel"] as? Int, roleLevel >= 2 else {
+      throw FirebaseError.permissionDenied
+    }
+    
+    let taskRef = tasksCollection(swarmId: swarmId).document(request.id.uuidString)
+    
+    try await taskRef.setData([
+      "templateName": request.templateName,
+      "prompt": request.prompt,
+      "workingDirectory": request.workingDirectory,
+      "repoRemoteURL": request.repoRemoteURL as Any,
+      "priority": request.priority.rawValue,
+      "timeoutSeconds": request.timeoutSeconds,
+      "status": ChainStatus.pending.rawValue,
+      "createdBy": userId,
+      "createdAt": FieldValue.serverTimestamp(),
+      "claimedBy": NSNull(),
+      "claimedAt": NSNull(),
+      "completedAt": NSNull(),
+      "result": NSNull()
+    ])
+    
+    logger.info("Submitted task \(request.id) to swarm \(swarmId)")
+    return request.id.uuidString
+  }
+  
+  /// Claim a task for execution
+  /// Note: Uses simple check-and-update. For high-contention scenarios,
+  /// a transaction-based approach via Cloud Functions would be more robust.
+  public func claimTask(swarmId: String, taskId: String) async throws -> Bool {
+    guard let userId = currentUserId,
+          let workerId = registeredWorkerId else {
+      throw FirebaseError.notSignedIn
+    }
+    
+    let taskRef = tasksCollection(swarmId: swarmId).document(taskId)
+    
+    // First check if task is still pending
+    let taskDoc = try await taskRef.getDocument()
+    guard let data = taskDoc.data(),
+          let status = data["status"] as? String,
+          status == ChainStatus.pending.rawValue else {
+      logger.debug("Task \(taskId) is not pending, cannot claim")
+      return false
+    }
+    
+    // Check if already claimed
+    if let claimedBy = data["claimedBy"] as? String, !claimedBy.isEmpty {
+      logger.debug("Task \(taskId) already claimed by \(claimedBy)")
+      return false
+    }
+    
+    // Try to claim it
+    do {
+      try await taskRef.updateData([
+        "status": ChainStatus.claimed.rawValue,
+        "claimedBy": userId,
+        "claimedByWorker": workerId,
+        "claimedAt": FieldValue.serverTimestamp()
+      ])
+      logger.info("Claimed task \(taskId)")
+      return true
+    } catch {
+      // Could fail if another worker claimed it first
+      logger.warning("Failed to claim task \(taskId): \(error)")
+      return false
+    }
+  }
+  
+  /// Update task status to running
+  public func updateTaskRunning(swarmId: String, taskId: String) async throws {
+    try await tasksCollection(swarmId: swarmId).document(taskId).updateData([
+      "status": ChainStatus.running.rawValue
+    ])
+  }
+  
+  /// Complete a task with result
+  public func completeTask(swarmId: String, taskId: String, result: ChainResult) async throws {
+    let resultData: [String: Any] = [
+      "requestId": result.requestId.uuidString,
+      "status": result.status.rawValue,
+      "duration": result.duration,
+      "workerDeviceId": result.workerDeviceId,
+      "workerDeviceName": result.workerDeviceName,
+      "completedAt": Timestamp(date: result.completedAt),
+      "errorMessage": result.errorMessage as Any,
+      "branchName": result.branchName as Any,
+      "repoPath": result.repoPath as Any,
+      "outputCount": result.outputs.count
+    ]
+    
+    try await tasksCollection(swarmId: swarmId).document(taskId).updateData([
+      "status": result.status.rawValue,
+      "completedAt": FieldValue.serverTimestamp(),
+      "result": resultData
+    ])
+    
+    logger.info("Completed task \(taskId) with status \(result.status.rawValue)")
+  }
+  
+  /// Start listening for tasks assigned to this worker
+  private func startTaskListener(swarmId: String, workerId: String) {
+    stopTaskListener()
+    
+    // Listen for pending tasks that we might claim
+    taskListener = tasksCollection(swarmId: swarmId)
+      .whereField("status", isEqualTo: ChainStatus.pending.rawValue)
+      .addSnapshotListener { [weak self] snapshot, error in
+        guard let self = self, let snapshot = snapshot else {
+          if let error = error {
+            self?.logger.error("Task listener error: \(error)")
+          }
+          return
+        }
+        
+        Task { @MainActor in
+          // Process new pending tasks
+          for change in snapshot.documentChanges where change.type == .added {
+            let doc = change.document
+            let data = doc.data()
+            
+            // Try to claim and execute the task
+            guard let templateName = data["templateName"] as? String,
+                  let prompt = data["prompt"] as? String,
+                  let workingDir = data["workingDirectory"] as? String,
+                  let taskId = UUID(uuidString: doc.documentID) else {
+              continue
+            }
+            
+            let request = ChainRequest(
+              id: taskId,
+              templateName: templateName,
+              prompt: prompt,
+              workingDirectory: workingDir,
+              repoRemoteURL: data["repoRemoteURL"] as? String,
+              priority: ChainPriority(rawValue: data["priority"] as? Int ?? 1) ?? .normal,
+              timeoutSeconds: data["timeoutSeconds"] as? Int ?? 300
+            )
+            
+            // Try to claim the task
+            Task {
+              await self.tryClaimAndExecute(swarmId: swarmId, taskId: doc.documentID, request: request)
+            }
+          }
+        }
+      }
+  }
+  
+  private func stopTaskListener() {
+    taskListener?.remove()
+    taskListener = nil
+  }
+  
+  /// Try to claim and execute a task
+  private func tryClaimAndExecute(swarmId: String, taskId: String, request: ChainRequest) async {
+    do {
+      let claimed = try await claimTask(swarmId: swarmId, taskId: taskId)
+      guard claimed else {
+        logger.debug("Task \(taskId) already claimed by another worker")
+        return
+      }
+      
+      try await updateTaskRunning(swarmId: swarmId, taskId: taskId)
+      
+      // Execute via delegate (bridges to SwarmCoordinator/ChainExecutor)
+      if let delegate = taskExecutionDelegate {
+        let result = await delegate.executeTask(request)
+        try await completeTask(swarmId: swarmId, taskId: taskId, result: result)
+      } else {
+        // No executor configured - fail the task
+        let failResult = ChainResult(
+          requestId: request.id,
+          status: .failed,
+          duration: 0,
+          workerDeviceId: registeredWorkerId ?? "unknown",
+          workerDeviceName: "Unknown",
+          errorMessage: "No task executor configured"
+        )
+        try await completeTask(swarmId: swarmId, taskId: taskId, result: failResult)
+      }
+    } catch {
+      logger.error("Failed to execute task \(taskId): \(error)")
+    }
+  }
+  
+  /// Start listening for all pending tasks (for brain/dispatch view)
+  public func startPendingTaskListener(swarmId: String) {
+    let listener = tasksCollection(swarmId: swarmId)
+      .whereField("status", in: [ChainStatus.pending.rawValue, ChainStatus.claimed.rawValue, ChainStatus.running.rawValue])
+      .addSnapshotListener { [weak self] snapshot, error in
+        guard let self = self, let snapshot = snapshot else { return }
+        
+        Task { @MainActor in
+          self.pendingTasks = snapshot.documents.compactMap { doc -> FirestoreTask? in
+            let data = doc.data()
+            guard let statusStr = data["status"] as? String,
+                  let status = ChainStatus(rawValue: statusStr) else {
+              return nil
+            }
+            
+            return FirestoreTask(
+              id: doc.documentID,
+              templateName: data["templateName"] as? String ?? "",
+              prompt: data["prompt"] as? String ?? "",
+              status: status,
+              createdBy: data["createdBy"] as? String ?? "",
+              createdAt: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
+              claimedBy: data["claimedBy"] as? String,
+              claimedByWorker: data["claimedByWorker"] as? String
+            )
+          }
+        }
+      }
+    swarmListeners.append(listener)
+  }
+  
+  // MARK: - RAG Artifact Sync (#226)
+  
+  /// Firestore has a 1MB document limit, so we chunk large artifacts
+  private static let maxChunkSize = 900_000  // 900KB to leave room for metadata
+  
+  /// Push RAG artifacts to Firestore for sharing with swarm members
+  ///
+  /// Large bundles are split into chunks stored in a subcollection.
+  /// Format:
+  /// - ragArtifacts/{artifactId}: manifest + metadata
+  /// - ragArtifacts/{artifactId}/chunks/{chunkIndex}: binary data
+  public func pushRAGArtifacts(
+    swarmId: String,
+    bundle: LocalRAGArtifactBundle
+  ) async throws -> String {
+    guard let userId = currentUserId else { throw FirebaseError.notSignedIn }
+    
+    // Verify user has permission (contributor+)
+    let memberDoc = try await membersCollection(swarmId: swarmId).document(userId).getDocument()
+    guard let roleLevel = memberDoc.data()?["roleLevel"] as? Int, roleLevel >= 2 else {
+      throw FirebaseError.permissionDenied
+    }
+    
+    let artifactId = bundle.manifest.version
+    let collection = ragArtifactsCollection(swarmId: swarmId)
+    let artifactRef = collection.document(artifactId)
+    
+    // Read the bundle data
+    let bundleData = try Data(contentsOf: bundle.bundleURL)
+    let totalBytes = bundleData.count
+    
+    // Update sync state for UI
+    await MainActor.run {
+      ragSyncState = FirestoreRAGSyncState(
+        direction: .push,
+        artifactId: artifactId,
+        status: .uploading,
+        totalBytes: totalBytes,
+        transferredBytes: 0,
+        startedAt: Date()
+      )
+    }
+    
+    // Store manifest document
+    let manifestData = try JSONEncoder().encode(bundle.manifest)
+    let manifestJSON = try JSONSerialization.jsonObject(with: manifestData) as? [String: Any] ?? [:]
+    
+    try await artifactRef.setData([
+      "version": bundle.manifest.version,
+      "formatVersion": bundle.manifest.formatVersion,
+      "schemaVersion": bundle.manifest.schemaVersion,
+      "totalBytes": totalBytes,
+      "chunkCount": (totalBytes + Self.maxChunkSize - 1) / Self.maxChunkSize,
+      "embeddingCacheCount": bundle.manifest.embeddingCacheCount,
+      "repoCount": bundle.manifest.repos.count,
+      "createdAt": Timestamp(date: bundle.manifest.createdAt),
+      "uploadedBy": userId,
+      "uploadedAt": FieldValue.serverTimestamp(),
+      "manifest": manifestJSON
+    ])
+    
+    // Upload chunks
+    let chunkCount = (totalBytes + Self.maxChunkSize - 1) / Self.maxChunkSize
+    var transferred = 0
+    
+    for i in 0..<chunkCount {
+      let start = i * Self.maxChunkSize
+      let end = min(start + Self.maxChunkSize, totalBytes)
+      let chunk = bundleData[start..<end]
+      
+      try await artifactRef.collection("chunks").document(String(format: "%05d", i)).setData([
+        "index": i,
+        "data": chunk.base64EncodedString(),
+        "size": chunk.count
+      ])
+      
+      transferred = end
+      await MainActor.run {
+        ragSyncState?.transferredBytes = transferred
+      }
+    }
+    
+    // Mark upload complete
+    await MainActor.run {
+      ragSyncState?.status = .complete
+      ragSyncState?.completedAt = Date()
+    }
+    
+    logger.info("Pushed RAG artifact \(artifactId) to swarm \(swarmId) (\(chunkCount) chunks, \(totalBytes) bytes)")
+    return artifactId
+  }
+  
+  /// Pull RAG artifacts from Firestore
+  ///
+  /// Downloads the manifest and all chunks, reassembles into a local bundle.
+  public func pullRAGArtifacts(
+    swarmId: String,
+    artifactId: String,
+    destination: URL
+  ) async throws -> RAGArtifactManifest {
+    guard let userId = currentUserId else { throw FirebaseError.notSignedIn }
+    
+    // Verify user has permission (reader+)
+    let memberDoc = try await membersCollection(swarmId: swarmId).document(userId).getDocument()
+    guard let roleLevel = memberDoc.data()?["roleLevel"] as? Int, roleLevel >= 1 else {
+      throw FirebaseError.permissionDenied
+    }
+    
+    let collection = ragArtifactsCollection(swarmId: swarmId)
+    let artifactRef = collection.document(artifactId)
+    
+    // Get the artifact document
+    let doc = try await artifactRef.getDocument()
+    guard doc.exists, let data = doc.data() else {
+      throw RAGArtifactError.artifactNotFound(artifactId)
+    }
+    
+    let totalBytes = data["totalBytes"] as? Int ?? 0
+    let chunkCount = data["chunkCount"] as? Int ?? 0
+    
+    // Update sync state for UI
+    await MainActor.run {
+      ragSyncState = FirestoreRAGSyncState(
+        direction: .pull,
+        artifactId: artifactId,
+        status: .downloading,
+        totalBytes: totalBytes,
+        transferredBytes: 0,
+        startedAt: Date()
+      )
+    }
+    
+    // Parse manifest
+    guard let manifestDict = data["manifest"] as? [String: Any] else {
+      throw RAGArtifactError.invalidManifest
+    }
+    let manifestData = try JSONSerialization.data(withJSONObject: manifestDict)
+    let manifest = try JSONDecoder().decode(RAGArtifactManifest.self, from: manifestData)
+    
+    // Download all chunks
+    var assembledData = Data()
+    assembledData.reserveCapacity(totalBytes)
+    
+    let chunksSnapshot = try await artifactRef.collection("chunks")
+      .order(by: "index")
+      .getDocuments()
+    
+    for chunkDoc in chunksSnapshot.documents {
+      guard let base64 = chunkDoc.data()["data"] as? String,
+            let chunkData = Data(base64Encoded: base64) else {
+        throw RAGArtifactError.invalidChunk(chunkDoc.documentID)
+      }
+      
+      assembledData.append(chunkData)
+      
+      await MainActor.run {
+        ragSyncState?.transferredBytes = assembledData.count
+      }
+    }
+    
+    // Verify size
+    guard assembledData.count == totalBytes else {
+      throw RAGArtifactError.sizeMismatch(expected: totalBytes, actual: assembledData.count)
+    }
+    
+    // Write to destination
+    try assembledData.write(to: destination)
+    
+    // Mark download complete
+    await MainActor.run {
+      ragSyncState?.status = .complete
+      ragSyncState?.completedAt = Date()
+    }
+    
+    logger.info("Pulled RAG artifact \(artifactId) from swarm \(swarmId) (\(chunkCount) chunks, \(totalBytes) bytes)")
+    return manifest
+  }
+  
+  /// List available RAG artifacts in a swarm
+  public func listRAGArtifacts(swarmId: String) async throws -> [FirestoreRAGArtifact] {
+    guard let userId = currentUserId else { throw FirebaseError.notSignedIn }
+    
+    // Verify user has permission (reader+)
+    let memberDoc = try await membersCollection(swarmId: swarmId).document(userId).getDocument()
+    guard let roleLevel = memberDoc.data()?["roleLevel"] as? Int, roleLevel >= 1 else {
+      throw FirebaseError.permissionDenied
+    }
+    
+    let snapshot = try await ragArtifactsCollection(swarmId: swarmId)
+      .order(by: "uploadedAt", descending: true)
+      .limit(to: 20)
+      .getDocuments()
+    
+    return snapshot.documents.compactMap { doc -> FirestoreRAGArtifact? in
+      let data = doc.data()
+      return FirestoreRAGArtifact(
+        id: doc.documentID,
+        version: data["version"] as? String ?? "",
+        totalBytes: data["totalBytes"] as? Int ?? 0,
+        chunkCount: data["chunkCount"] as? Int ?? 0,
+        embeddingCacheCount: data["embeddingCacheCount"] as? Int ?? 0,
+        repoCount: data["repoCount"] as? Int ?? 0,
+        uploadedBy: data["uploadedBy"] as? String ?? "",
+        uploadedAt: (data["uploadedAt"] as? Timestamp)?.dateValue() ?? Date()
+      )
+    }
+  }
+  
+  /// Delete a RAG artifact from Firestore
+  public func deleteRAGArtifact(swarmId: String, artifactId: String) async throws {
+    guard let userId = currentUserId else { throw FirebaseError.notSignedIn }
+    
+    // Verify user has admin permission
+    let memberDoc = try await membersCollection(swarmId: swarmId).document(userId).getDocument()
+    guard let roleLevel = memberDoc.data()?["roleLevel"] as? Int, roleLevel >= 3 else {
+      throw FirebaseError.permissionDenied
+    }
+    
+    let artifactRef = ragArtifactsCollection(swarmId: swarmId).document(artifactId)
+    
+    // Delete all chunks first
+    let chunks = try await artifactRef.collection("chunks").getDocuments()
+    for chunk in chunks.documents {
+      try await chunk.reference.delete()
+    }
+    
+    // Delete the artifact document
+    try await artifactRef.delete()
+    
+    logger.info("Deleted RAG artifact \(artifactId) from swarm \(swarmId)")
+  }
+  
+  /// Start listening for RAG artifacts in a swarm
+  public func startRAGArtifactListener(swarmId: String) {
+    let listener = ragArtifactsCollection(swarmId: swarmId)
+      .order(by: "uploadedAt", descending: true)
+      .limit(to: 20)
+      .addSnapshotListener { [weak self] snapshot, error in
+        guard let self = self, let snapshot = snapshot else {
+          if let error = error {
+            self?.logger.error("RAG artifact listener error: \(error)")
+          }
+          return
+        }
+        
+        Task { @MainActor in
+          self.ragArtifacts = snapshot.documents.compactMap { doc -> FirestoreRAGArtifact? in
+            let data = doc.data()
+            return FirestoreRAGArtifact(
+              id: doc.documentID,
+              version: data["version"] as? String ?? "",
+              totalBytes: data["totalBytes"] as? Int ?? 0,
+              chunkCount: data["chunkCount"] as? Int ?? 0,
+              embeddingCacheCount: data["embeddingCacheCount"] as? Int ?? 0,
+              repoCount: data["repoCount"] as? Int ?? 0,
+              uploadedBy: data["uploadedBy"] as? String ?? "",
+              uploadedAt: (data["uploadedAt"] as? Timestamp)?.dateValue() ?? Date()
+            )
+          }
+        }
+      }
+    swarmListeners.append(listener)
+  }
+  
   // MARK: - Listeners
   
   private func removeSwarmListeners() {
@@ -552,6 +1205,9 @@ public final class FirebaseService {
       listener.remove()
     }
     swarmListeners.removeAll()
+    stopWorkerListeners()
+    stopTaskListener()
+    stopHeartbeatLoop()
   }
   
   // MARK: - Helper Functions
@@ -736,6 +1392,113 @@ public enum FirebaseError: LocalizedError {
     case .invalidCredential: return "Invalid Apple Sign-In credential"
     case .permissionDenied: return "Permission denied"
     case .networkError(let error): return "Network error: \(error.localizedDescription)"
+    }
+  }
+}
+
+// MARK: - Firestore Worker Types (#225)
+
+/// Status of a worker registered in Firestore
+public enum FirestoreWorkerStatus: String, Sendable, Codable {
+  case online
+  case offline
+  case busy
+}
+
+/// A worker registered in Firestore swarm
+public struct FirestoreWorker: Sendable, Identifiable, Hashable {
+  public let id: String  // workerId (device ID)
+  public let ownerId: String  // userId who owns this worker
+  public let displayName: String
+  public let deviceName: String
+  public let status: FirestoreWorkerStatus
+  public let lastHeartbeat: Date
+  public let version: String?
+  
+  /// Whether the worker is considered stale (no heartbeat in 90 seconds)
+  public var isStale: Bool {
+    Date().timeIntervalSince(lastHeartbeat) > 90
+  }
+}
+
+/// A task stored in Firestore for distributed execution
+public struct FirestoreTask: Sendable, Identifiable, Hashable {
+  public let id: String  // taskId (UUID string)
+  public let templateName: String
+  public let prompt: String
+  public let status: ChainStatus
+  public let createdBy: String
+  public let createdAt: Date
+  public let claimedBy: String?
+  public let claimedByWorker: String?
+}
+
+/// Delegate protocol for task execution
+/// Implement this to bridge Firestore tasks to your chain executor
+@MainActor
+public protocol FirestoreTaskExecutionDelegate: AnyObject {
+  func executeTask(_ request: ChainRequest) async -> ChainResult
+}
+
+// MARK: - Firestore RAG Artifact Types (#226)
+
+/// A RAG artifact stored in Firestore
+public struct FirestoreRAGArtifact: Sendable, Identifiable, Hashable {
+  public let id: String  // artifactId (usually version string)
+  public let version: String
+  public let totalBytes: Int
+  public let chunkCount: Int
+  public let embeddingCacheCount: Int
+  public let repoCount: Int
+  public let uploadedBy: String
+  public let uploadedAt: Date
+  
+  /// Human-readable size
+  public var formattedSize: String {
+    ByteCountFormatter.string(fromByteCount: Int64(totalBytes), countStyle: .file)
+  }
+}
+
+/// Sync state for RAG artifact transfer
+public struct FirestoreRAGSyncState: Sendable {
+  public let direction: RAGArtifactSyncDirection
+  public let artifactId: String
+  public var status: FirestoreRAGSyncStatus
+  public let totalBytes: Int
+  public var transferredBytes: Int
+  public let startedAt: Date
+  public var completedAt: Date?
+  public var errorMessage: String?
+  
+  /// Progress as a value from 0.0 to 1.0
+  public var progress: Double {
+    guard totalBytes > 0 else { return status == .complete ? 1.0 : 0 }
+    return min(1, Double(transferredBytes) / Double(totalBytes))
+  }
+}
+
+/// Status of a RAG sync operation
+public enum FirestoreRAGSyncStatus: String, Sendable {
+  case uploading
+  case downloading
+  case complete
+  case failed
+}
+
+/// Errors specific to RAG artifact operations
+public enum RAGArtifactError: LocalizedError {
+  case artifactNotFound(String)
+  case invalidManifest
+  case invalidChunk(String)
+  case sizeMismatch(expected: Int, actual: Int)
+  
+  public var errorDescription: String? {
+    switch self {
+    case .artifactNotFound(let id): return "RAG artifact not found: \(id)"
+    case .invalidManifest: return "Invalid artifact manifest"
+    case .invalidChunk(let id): return "Invalid or corrupted chunk: \(id)"
+    case .sizeMismatch(let expected, let actual):
+      return "Size mismatch: expected \(expected) bytes, got \(actual)"
     }
   }
 }

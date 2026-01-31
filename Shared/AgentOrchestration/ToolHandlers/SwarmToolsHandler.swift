@@ -45,7 +45,18 @@ public final class SwarmToolsHandler: MCPToolHandler {
     "swarm.firestore.auth",
     "swarm.firestore.swarms",
     "swarm.firestore.create",
-    "swarm.firestore.debug"
+    "swarm.firestore.debug",
+    // Firestore worker/task management (#225)
+    "swarm.firestore.workers",
+    "swarm.firestore.register-worker",
+    "swarm.firestore.unregister-worker",
+    "swarm.firestore.submit-task",
+    "swarm.firestore.tasks",
+    // Firestore RAG artifact sync (#226)
+    "swarm.firestore.rag.artifacts",
+    "swarm.firestore.rag.push",
+    "swarm.firestore.rag.pull",
+    "swarm.firestore.rag.delete"
   ]
   
   public init(chainRunner: AgentChainRunner? = nil, agentManager: AgentManager? = nil) {
@@ -102,6 +113,26 @@ public final class SwarmToolsHandler: MCPToolHandler {
       return await handleFirestoreCreate(id: id, arguments: arguments)
     case "swarm.firestore.debug":
       return await handleFirestoreDebug(id: id)
+    // Firestore worker/task management (#225)
+    case "swarm.firestore.workers":
+      return handleFirestoreWorkers(id: id, arguments: arguments)
+    case "swarm.firestore.register-worker":
+      return await handleFirestoreRegisterWorker(id: id, arguments: arguments)
+    case "swarm.firestore.unregister-worker":
+      return await handleFirestoreUnregisterWorker(id: id, arguments: arguments)
+    case "swarm.firestore.submit-task":
+      return await handleFirestoreSubmitTask(id: id, arguments: arguments)
+    case "swarm.firestore.tasks":
+      return handleFirestoreTasks(id: id, arguments: arguments)
+    // Firestore RAG artifact sync (#226)
+    case "swarm.firestore.rag.artifacts":
+      return await handleFirestoreRAGArtifacts(id: id, arguments: arguments)
+    case "swarm.firestore.rag.push":
+      return await handleFirestoreRAGPush(id: id, arguments: arguments)
+    case "swarm.firestore.rag.pull":
+      return await handleFirestoreRAGPull(id: id, arguments: arguments)
+    case "swarm.firestore.rag.delete":
+      return await handleFirestoreRAGDelete(id: id, arguments: arguments)
     default:
       return (404, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.methodNotFound, message: "Unknown tool"))
     }
@@ -402,6 +433,170 @@ public final class SwarmToolsHandler: MCPToolHandler {
           "type": "object",
           "properties": [:],
           "required": []
+        ]
+      ],
+      // Firestore worker/task management (#225)
+      [
+        "name": "swarm.firestore.workers",
+        "description": "List workers registered in a Firestore swarm. Shows status, last heartbeat, and capabilities.",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "swarmId": [
+              "type": "string",
+              "description": "The swarm ID to list workers from"
+            ]
+          ],
+          "required": ["swarmId"]
+        ]
+      ],
+      [
+        "name": "swarm.firestore.register-worker",
+        "description": "Register this device as a worker in a Firestore swarm. Requires contributor+ permission.",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "swarmId": [
+              "type": "string",
+              "description": "The swarm ID to register as a worker"
+            ]
+          ],
+          "required": ["swarmId"]
+        ]
+      ],
+      [
+        "name": "swarm.firestore.unregister-worker",
+        "description": "Unregister this device as a worker from a Firestore swarm.",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "swarmId": [
+              "type": "string",
+              "description": "The swarm ID to unregister from"
+            ]
+          ],
+          "required": ["swarmId"]
+        ]
+      ],
+      [
+        "name": "swarm.firestore.submit-task",
+        "description": "Submit a task to a Firestore swarm for remote execution. Requires contributor+ permission.",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "swarmId": [
+              "type": "string",
+              "description": "The swarm ID to submit the task to"
+            ],
+            "templateName": [
+              "type": "string",
+              "description": "Name of the chain template to execute"
+            ],
+            "prompt": [
+              "type": "string",
+              "description": "The prompt/task description"
+            ],
+            "workingDirectory": [
+              "type": "string",
+              "description": "Working directory for the task"
+            ],
+            "repoRemoteURL": [
+              "type": "string",
+              "description": "Git remote URL for the repo (optional)"
+            ],
+            "priority": [
+              "type": "integer",
+              "description": "Priority (0=low, 1=normal, 2=high, 3=critical)"
+            ]
+          ],
+          "required": ["swarmId", "templateName", "prompt", "workingDirectory"]
+        ]
+      ],
+      [
+        "name": "swarm.firestore.tasks",
+        "description": "List pending/running tasks in a Firestore swarm.",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "swarmId": [
+              "type": "string",
+              "description": "The swarm ID to list tasks from"
+            ]
+          ],
+          "required": ["swarmId"]
+        ]
+      ],
+      // RAG Artifact Sync (#226)
+      [
+        "name": "swarm.firestore.rag.artifacts",
+        "description": "List RAG artifacts available in a Firestore swarm. Shows version, size, and upload info.",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "swarmId": [
+              "type": "string",
+              "description": "The swarm ID to list artifacts from"
+            ]
+          ],
+          "required": ["swarmId"]
+        ]
+      ],
+      [
+        "name": "swarm.firestore.rag.push",
+        "description": "Push local RAG artifacts to Firestore swarm for sharing with other members. Requires contributor+ role.",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "swarmId": [
+              "type": "string",
+              "description": "The swarm ID to push artifacts to"
+            ],
+            "repoPath": [
+              "type": "string",
+              "description": "Path to the repository whose RAG index to push"
+            ]
+          ],
+          "required": ["swarmId", "repoPath"]
+        ]
+      ],
+      [
+        "name": "swarm.firestore.rag.pull",
+        "description": "Pull RAG artifacts from Firestore swarm to local storage. Requires reader+ role.",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "swarmId": [
+              "type": "string",
+              "description": "The swarm ID to pull artifacts from"
+            ],
+            "artifactId": [
+              "type": "string",
+              "description": "The artifact ID (version) to pull"
+            ],
+            "repoPath": [
+              "type": "string",
+              "description": "Path to the repository to import the RAG index into"
+            ]
+          ],
+          "required": ["swarmId", "artifactId", "repoPath"]
+        ]
+      ],
+      [
+        "name": "swarm.firestore.rag.delete",
+        "description": "Delete a RAG artifact from Firestore swarm. Requires admin+ role.",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "swarmId": [
+              "type": "string",
+              "description": "The swarm ID"
+            ],
+            "artifactId": [
+              "type": "string",
+              "description": "The artifact ID (version) to delete"
+            ]
+          ],
+          "required": ["swarmId", "artifactId"]
         ]
       ]
     ]
@@ -1323,5 +1518,303 @@ public final class SwarmToolsHandler: MCPToolHandler {
     let service = FirebaseService.shared
     let debugInfo = service.debugQuerySwarms()
     return (200, makeResult(id: id, result: debugInfo))
+  }
+  
+  // MARK: - Firestore Worker/Task Management (#225)
+  
+  private func handleFirestoreWorkers(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    guard let swarmId = arguments["swarmId"] as? String, !swarmId.isEmpty else {
+      return missingParamError(id: id, param: "swarmId")
+    }
+    
+    let service = FirebaseService.shared
+    
+    // Start listening if not already
+    service.startWorkerListener(swarmId: swarmId)
+    
+    let workers = service.swarmWorkers.map { worker -> [String: Any] in
+      [
+        "id": worker.id,
+        "ownerId": worker.ownerId,
+        "displayName": worker.displayName,
+        "deviceName": worker.deviceName,
+        "status": worker.status.rawValue,
+        "lastHeartbeat": worker.lastHeartbeat.ISO8601Format(),
+        "isStale": worker.isStale,
+        "version": worker.version as Any
+      ]
+    }
+    
+    return (200, makeResult(id: id, result: [
+      "swarmId": swarmId,
+      "count": workers.count,
+      "workers": workers
+    ]))
+  }
+  
+  private func handleFirestoreRegisterWorker(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let swarmId = arguments["swarmId"] as? String, !swarmId.isEmpty else {
+      return missingParamError(id: id, param: "swarmId")
+    }
+    
+    let service = FirebaseService.shared
+    
+    guard service.isSignedIn else {
+      return internalError(id: id, message: "Not signed in to Firebase")
+    }
+    
+    do {
+      let capabilities = WorkerCapabilities.current()
+      let workerId = try await service.registerWorker(swarmId: swarmId, capabilities: capabilities)
+      
+      return (200, makeResult(id: id, result: [
+        "success": true,
+        "swarmId": swarmId,
+        "workerId": workerId,
+        "displayName": capabilities.displayName ?? capabilities.deviceName,
+        "message": "Worker registered. Heartbeat every 30s. Listening for tasks."
+      ]))
+    } catch {
+      return internalError(id: id, message: "Failed to register worker: \(error.localizedDescription)")
+    }
+  }
+  
+  private func handleFirestoreUnregisterWorker(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let swarmId = arguments["swarmId"] as? String, !swarmId.isEmpty else {
+      return missingParamError(id: id, param: "swarmId")
+    }
+    
+    let service = FirebaseService.shared
+    
+    do {
+      try await service.unregisterWorker(swarmId: swarmId)
+      
+      return (200, makeResult(id: id, result: [
+        "success": true,
+        "swarmId": swarmId,
+        "message": "Worker unregistered and marked offline."
+      ]))
+    } catch {
+      return internalError(id: id, message: "Failed to unregister worker: \(error.localizedDescription)")
+    }
+  }
+  
+  private func handleFirestoreSubmitTask(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let swarmId = arguments["swarmId"] as? String, !swarmId.isEmpty else {
+      return missingParamError(id: id, param: "swarmId")
+    }
+    guard let templateName = arguments["templateName"] as? String, !templateName.isEmpty else {
+      return missingParamError(id: id, param: "templateName")
+    }
+    guard let prompt = arguments["prompt"] as? String, !prompt.isEmpty else {
+      return missingParamError(id: id, param: "prompt")
+    }
+    guard let workingDirectory = arguments["workingDirectory"] as? String, !workingDirectory.isEmpty else {
+      return missingParamError(id: id, param: "workingDirectory")
+    }
+    
+    let service = FirebaseService.shared
+    
+    guard service.isSignedIn else {
+      return internalError(id: id, message: "Not signed in to Firebase")
+    }
+    
+    let priority = ChainPriority(rawValue: arguments["priority"] as? Int ?? 1) ?? .normal
+    let repoRemoteURL = arguments["repoRemoteURL"] as? String
+    
+    let request = ChainRequest(
+      templateName: templateName,
+      prompt: prompt,
+      workingDirectory: workingDirectory,
+      repoRemoteURL: repoRemoteURL,
+      priority: priority
+    )
+    
+    do {
+      let taskId = try await service.submitTask(swarmId: swarmId, request: request)
+      
+      return (200, makeResult(id: id, result: [
+        "success": true,
+        "swarmId": swarmId,
+        "taskId": taskId,
+        "templateName": templateName,
+        "status": "pending",
+        "message": "Task submitted. Workers will claim and execute."
+      ]))
+    } catch {
+      return internalError(id: id, message: "Failed to submit task: \(error.localizedDescription)")
+    }
+  }
+  
+  private func handleFirestoreTasks(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    guard let swarmId = arguments["swarmId"] as? String, !swarmId.isEmpty else {
+      return missingParamError(id: id, param: "swarmId")
+    }
+    
+    let service = FirebaseService.shared
+    
+    // Start listening if not already
+    service.startPendingTaskListener(swarmId: swarmId)
+    
+    let tasks = service.pendingTasks.map { task -> [String: Any] in
+      [
+        "id": task.id,
+        "templateName": task.templateName,
+        "prompt": String(task.prompt.prefix(100)) + (task.prompt.count > 100 ? "..." : ""),
+        "status": task.status.rawValue,
+        "createdBy": task.createdBy,
+        "createdAt": task.createdAt.ISO8601Format(),
+        "claimedBy": task.claimedBy as Any,
+        "claimedByWorker": task.claimedByWorker as Any
+      ]
+    }
+    
+    return (200, makeResult(id: id, result: [
+      "swarmId": swarmId,
+      "count": tasks.count,
+      "tasks": tasks
+    ]))
+  }
+  
+  // MARK: - Firestore RAG Artifact Handlers (#226)
+  
+  private func handleFirestoreRAGArtifacts(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let swarmId = arguments["swarmId"] as? String, !swarmId.isEmpty else {
+      return missingParamError(id: id, param: "swarmId")
+    }
+    
+    let service = FirebaseService.shared
+    
+    do {
+      let artifacts = try await service.listRAGArtifacts(swarmId: swarmId)
+      
+      let artifactData = artifacts.map { artifact -> [String: Any] in
+        [
+          "id": artifact.id,
+          "version": artifact.version,
+          "totalBytes": artifact.totalBytes,
+          "formattedSize": artifact.formattedSize,
+          "chunkCount": artifact.chunkCount,
+          "embeddingCacheCount": artifact.embeddingCacheCount,
+          "repoCount": artifact.repoCount,
+          "uploadedBy": artifact.uploadedBy,
+          "uploadedAt": artifact.uploadedAt.ISO8601Format()
+        ]
+      }
+      
+      return (200, makeResult(id: id, result: [
+        "swarmId": swarmId,
+        "count": artifacts.count,
+        "artifacts": artifactData
+      ]))
+    } catch {
+      return internalError(id: id, message: "Failed to list RAG artifacts: \(error.localizedDescription)")
+    }
+  }
+  
+  private func handleFirestoreRAGPush(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let swarmId = arguments["swarmId"] as? String, !swarmId.isEmpty else {
+      return missingParamError(id: id, param: "swarmId")
+    }
+    guard let repoPath = arguments["repoPath"] as? String, !repoPath.isEmpty else {
+      return missingParamError(id: id, param: "repoPath")
+    }
+    
+    let service = FirebaseService.shared
+    let ragStore = LocalRAGStore.shared
+    
+    do {
+      // Create a bundle from the local RAG store
+      guard let bundle = try await ragStore.createArtifactBundle(for: repoPath) else {
+        return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "No RAG index found for repo: \(repoPath)"))
+      }
+      
+      // Push to Firestore
+      let artifactId = try await service.pushRAGArtifacts(swarmId: swarmId, bundle: bundle)
+      
+      return (200, makeResult(id: id, result: [
+        "success": true,
+        "swarmId": swarmId,
+        "artifactId": artifactId,
+        "version": bundle.manifest.version,
+        "totalBytes": bundle.bundleSizeBytes,
+        "formattedSize": ByteCountFormatter.string(fromByteCount: Int64(bundle.bundleSizeBytes), countStyle: .file),
+        "repoCount": bundle.manifest.repos.count,
+        "embeddingCacheCount": bundle.manifest.embeddingCacheCount
+      ]))
+    } catch {
+      return internalError(id: id, message: "Failed to push RAG artifacts: \(error.localizedDescription)")
+    }
+  }
+  
+  private func handleFirestoreRAGPull(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let swarmId = arguments["swarmId"] as? String, !swarmId.isEmpty else {
+      return missingParamError(id: id, param: "swarmId")
+    }
+    guard let artifactId = arguments["artifactId"] as? String, !artifactId.isEmpty else {
+      return missingParamError(id: id, param: "artifactId")
+    }
+    guard let repoPath = arguments["repoPath"] as? String, !repoPath.isEmpty else {
+      return missingParamError(id: id, param: "repoPath")
+    }
+    
+    let service = FirebaseService.shared
+    let ragStore = LocalRAGStore.shared
+    
+    do {
+      // Create a temp destination for the bundle
+      let tempDir = FileManager.default.temporaryDirectory
+      let bundleURL = tempDir.appendingPathComponent("rag-artifact-\(artifactId).zip")
+      
+      // Pull from Firestore
+      let manifest = try await service.pullRAGArtifacts(
+        swarmId: swarmId,
+        artifactId: artifactId,
+        destination: bundleURL
+      )
+      
+      // Import into local RAG store
+      let bundle = LocalRAGArtifactBundle(manifest: manifest, bundleURL: bundleURL, bundleSizeBytes: try FileManager.default.attributesOfItem(atPath: bundleURL.path)[.size] as? Int ?? 0)
+      try await ragStore.importArtifactBundle(bundle, for: repoPath)
+      
+      // Clean up temp file
+      try? FileManager.default.removeItem(at: bundleURL)
+      
+      return (200, makeResult(id: id, result: [
+        "success": true,
+        "swarmId": swarmId,
+        "artifactId": artifactId,
+        "version": manifest.version,
+        "repoPath": repoPath,
+        "repoCount": manifest.repos.count,
+        "embeddingCacheCount": manifest.embeddingCacheCount
+      ]))
+    } catch {
+      return internalError(id: id, message: "Failed to pull RAG artifacts: \(error.localizedDescription)")
+    }
+  }
+  
+  private func handleFirestoreRAGDelete(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let swarmId = arguments["swarmId"] as? String, !swarmId.isEmpty else {
+      return missingParamError(id: id, param: "swarmId")
+    }
+    guard let artifactId = arguments["artifactId"] as? String, !artifactId.isEmpty else {
+      return missingParamError(id: id, param: "artifactId")
+    }
+    
+    let service = FirebaseService.shared
+    
+    do {
+      try await service.deleteRAGArtifact(swarmId: swarmId, artifactId: artifactId)
+      
+      return (200, makeResult(id: id, result: [
+        "success": true,
+        "swarmId": swarmId,
+        "artifactId": artifactId,
+        "deleted": true
+      ]))
+    } catch {
+      return internalError(id: id, message: "Failed to delete RAG artifact: \(error.localizedDescription)")
+    }
   }
 }
