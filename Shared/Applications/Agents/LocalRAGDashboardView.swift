@@ -234,7 +234,6 @@ struct LocalRAGDashboardView: View {
   @State private var skillActive: Bool = true
   @State private var skillsError: String?
   @State private var isRepoPickerPresented = false
-  @State private var embeddingSettingsChanged = false
   @State private var showWorkspaceSheet = false
   @State private var workspaceRootPath: String = ""
   @State private var workspaceRepos: [String] = []
@@ -265,49 +264,6 @@ struct LocalRAGDashboardView: View {
   @State private var analysisStartTime: Date?
   @State private var analysisChunksPerSecond: Double = 0
   @State private var analyzeTask: Task<Void, Never>?
-
-  private var providerSelection: Binding<EmbeddingProviderType> {
-    Binding(
-      get: { LocalRAGEmbeddingProviderFactory.preferredProvider },
-      set: { newValue in
-        LocalRAGEmbeddingProviderFactory.preferredProvider = newValue
-        embeddingSettingsChanged = true
-      }
-    )
-  }
-
-  private var mlxModelSelection: Binding<String> {
-    Binding(
-      get: { LocalRAGEmbeddingProviderFactory.preferredMLXModelId ?? "" },
-      set: { newValue in
-        LocalRAGEmbeddingProviderFactory.preferredMLXModelId = newValue.isEmpty ? nil : newValue
-        embeddingSettingsChanged = true
-      }
-    )
-  }
-
-  private var mlxClearCacheAfterBatch: Binding<Bool> {
-    Binding(
-      get: { LocalRAGEmbeddingProviderFactory.mlxClearCacheAfterBatch },
-      set: { LocalRAGEmbeddingProviderFactory.mlxClearCacheAfterBatch = $0 }
-    )
-  }
-
-  private var mlxMemoryLimitGB: Binding<Double> {
-    Binding(
-      get: { LocalRAGEmbeddingProviderFactory.mlxMemoryLimitGB },
-      set: { LocalRAGEmbeddingProviderFactory.mlxMemoryLimitGB = $0 }
-    )
-  }
-
-  private var downloadedMLXModelNames: [String] {
-    let configs = MLXEmbeddingModelConfig.availableModels
-    let downloaded = LocalRAGEmbeddingProviderFactory.downloadedMLXModels
-    let names = downloaded.map { id in
-      configs.first(where: { $0.huggingFaceId == id || $0.name == id })?.name ?? id
-    }
-    return Array(Set(names)).sorted()
-  }
 
   var body: some View {
     ScrollView {
@@ -873,141 +829,6 @@ struct LocalRAGDashboardView: View {
           if newValue { isAIAnalysisExpanded = true }
         }
 
-        // MARK: - Database Info (Collapsible)
-        DisclosureGroup("Database & Settings") {
-          VStack(alignment: .leading, spacing: LayoutSpacing.item) {
-            if let status = mcpServer.ragStatus {
-              LabeledContent("Database", value: displayPath(for: status.dbPath))
-                .font(.caption)
-              LabeledContent("Schema Version", value: "v\(status.schemaVersion)")
-                .font(.caption)
-              LabeledContent("Embedding Provider", value: status.providerName)
-                .font(.caption)
-              
-              if let stats = mcpServer.ragStats {
-                Divider()
-                LabeledContent("Total Files", value: "\(stats.fileCount)")
-                  .font(.caption)
-                LabeledContent("Total Chunks", value: "\(stats.chunkCount)")
-                  .font(.caption)
-                LabeledContent("Cached Embeddings", value: "\(stats.cacheEmbeddingCount)")
-                  .font(.caption)
-                LabeledContent("Database Size", value: formatBytes(stats.dbSizeBytes))
-                  .font(.caption)
-              }
-              
-              Divider()
-              VStack(alignment: .leading, spacing: 8) {
-                Picker("Embedding Provider", selection: providerSelection) {
-                  Text("Auto").tag(EmbeddingProviderType.auto)
-                  Text("MLX").tag(EmbeddingProviderType.mlx)
-                  Text("System").tag(EmbeddingProviderType.system)
-                  Text("Hash (fallback)").tag(EmbeddingProviderType.hash)
-                }
-                .pickerStyle(.menu)
-                .accessibilityIdentifier("agents.localRag.provider")
-
-                if providerSelection.wrappedValue == .mlx {
-                  Picker("MLX Model", selection: mlxModelSelection) {
-                    Text("Auto-select").tag("")
-                    ForEach(MLXEmbeddingModelConfig.availableModels, id: \.huggingFaceId) { model in
-                      let suffix = model.isCodeOptimized ? " (code)" : ""
-                      Text("\(model.name) · \(model.tier.description)\(suffix)")
-                        .tag(model.huggingFaceId)
-                    }
-                  }
-                  .pickerStyle(.menu)
-                  .accessibilityIdentifier("agents.localRag.mlxModel")
-
-                  if !downloadedMLXModelNames.isEmpty {
-                    Text("Downloaded: \(downloadedMLXModelNames.joined(separator: ", "))")
-                      .font(.caption2)
-                      .foregroundStyle(.secondary)
-                  } else {
-                    Text("Downloaded: none yet (models download on first use)")
-                      .font(.caption2)
-                      .foregroundStyle(.secondary)
-                  }
-                  
-                  // Memory management settings
-                  Divider()
-                  
-                  Toggle("Clear GPU cache after each batch", isOn: mlxClearCacheAfterBatch)
-                    .toggleStyle(.switch)
-                    .font(.callout)
-                    .accessibilityIdentifier("agents.localRag.mlxClearCache")
-                  
-                  HStack {
-                    Text("Memory limit:")
-                      .font(.callout)
-                    TextField("GB", value: mlxMemoryLimitGB, format: .number.precision(.fractionLength(1)))
-                      .textFieldStyle(.roundedBorder)
-                      .frame(width: 60)
-                      .accessibilityIdentifier("agents.localRag.mlxMemoryLimit")
-                    Text("GB")
-                      .font(.caption)
-                      .foregroundStyle(.secondary)
-                  }
-                  
-                  let physicalGB = Double(LocalRAGEmbeddingProviderFactory.physicalMemoryBytes()) / 1_073_741_824.0
-                  let currentGB = Double(LocalRAGEmbeddingProviderFactory.currentProcessMemoryBytes()) / 1_073_741_824.0
-                  let isHigh = LocalRAGEmbeddingProviderFactory.isMemoryPressureHigh()
-                  
-                  HStack(spacing: 8) {
-                    Text("Current: \(String(format: "%.1f", currentGB)) GB / \(String(format: "%.0f", physicalGB)) GB RAM")
-                      .font(.caption2)
-                      .foregroundStyle(.secondary)
-                    if isHigh {
-                      Label("Memory pressure high", systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption2)
-                        .foregroundStyle(.orange)
-                    }
-                  }
-                }
-
-                if embeddingSettingsChanged {
-                  Label("Apply to reload embedding model", systemImage: "exclamationmark.triangle")
-                    .font(.caption2)
-                    .foregroundStyle(.orange)
-                }
-              }
-              
-              Button("Initialize Database") {
-                Task { await initializeDatabase() }
-              }
-              .buttonStyle(.bordered)
-              .disabled(isInitializing)
-              .accessibilityIdentifier("agents.localRag.init")
-
-              Button("Apply Embedding Settings") {
-                Task { await applyEmbeddingSettings() }
-              }
-              .buttonStyle(.bordered)
-              .disabled(!embeddingSettingsChanged || isInitializing || isIndexing)
-              .accessibilityIdentifier("agents.localRag.applyEmbedding")
-            } else {
-              Text("Database not initialized")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-              
-              Button("Initialize Database") {
-                Task { await initializeDatabase() }
-              }
-              .buttonStyle(.borderedProminent)
-              .disabled(isInitializing)
-              .accessibilityIdentifier("agents.localRag.init")
-            }
-            
-            if let error = mcpServer.lastRagError {
-              Text(error)
-                .font(.caption)
-                .foregroundStyle(.red)
-            }
-          }
-          .padding(.vertical, 8)
-        }
-        .padding(.horizontal, LayoutSpacing.item)
-
         DisclosureGroup(isExpanded: $isRepoSkillsExpanded) {
           VStack(alignment: .leading, spacing: LayoutSpacing.item) {
             TextField("Filter repo path", text: $skillsRepoFilter)
@@ -1506,14 +1327,6 @@ struct LocalRAGDashboardView: View {
       let mins = Int(seconds / 60) % 60
       return "\(hours)h \(mins)m"
     }
-  }
-
-  private func applyEmbeddingSettings() async {
-    errorMessage = nil
-    isInitializing = true
-    defer { isInitializing = false }
-    await mcpServer.applyRagEmbeddingSettings()
-    embeddingSettingsChanged = false
   }
 
   private func indexRepository() async {
