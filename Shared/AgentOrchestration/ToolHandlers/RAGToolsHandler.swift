@@ -128,6 +128,9 @@ protocol RAGToolsHandlerDelegate: MCPToolHandlerDelegate {
   /// Delete a lesson
   func deleteLesson(id: String) async throws -> Bool
   
+  /// Record that a lesson was applied (Phase 4: confidence feedback)
+  func recordLessonApplied(id: String, success: Bool) async throws
+  
   // MARK: - Configuration
   
   /// Get/set the preferred embedding provider
@@ -193,6 +196,7 @@ final class RAGToolsHandler: MCPToolHandler {
     "rag.lessons.query",   // Issue #210: Learning loop - query relevant lessons
     "rag.lessons.update",  // Issue #210: Learning loop - update lesson
     "rag.lessons.delete",  // Issue #210: Learning loop - delete lesson
+    "rag.lessons.applied", // Issue #210: Learning loop - record lesson was applied (increases confidence)
     "rag.repos.list",
     "rag.repos.delete",
     "rag.stats",
@@ -250,6 +254,8 @@ final class RAGToolsHandler: MCPToolHandler {
       return await handleLessonsUpdate(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.lessons.delete":
       return await handleLessonsDelete(id: id, arguments: arguments, delegate: ragDelegate)
+    case "rag.lessons.applied":
+      return await handleLessonsApplied(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.stats":
       return await handleStats(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.largeFiles":
@@ -875,6 +881,24 @@ final class RAGToolsHandler: MCPToolHandler {
         return notFoundError(id: id, what: "Lesson")
       }
       return (200, makeResult(id: id, result: ["deleted": lessonId]))
+    } catch {
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
+    }
+  }
+  
+  // MARK: - rag.lessons.applied (#210 Phase 4)
+  
+  private func handleLessonsApplied(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
+    guard case .success(let lessonId) = requireString("lessonId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "lessonId")
+    }
+    
+    // Optional: whether the lesson actually helped (for future negative feedback)
+    let success = optionalBool("success", from: arguments, default: true)
+    
+    do {
+      try await delegate.recordLessonApplied(id: lessonId, success: success)
+      return (200, makeResult(id: id, result: ["applied": lessonId, "success": success]))
     } catch {
       return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
     }
