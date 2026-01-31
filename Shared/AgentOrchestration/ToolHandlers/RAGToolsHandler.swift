@@ -835,7 +835,14 @@ final class RAGToolsHandler: MCPToolHandler {
     
     let fixDescription = optionalString("fixDescription", from: arguments)
     let fixCode = optionalString("fixCode", from: arguments)
-    let confidence = arguments["confidence"] as? Float
+    // JSON numbers come in as Double, so accept both Float and Double
+    let confidence: Float? = if let f = arguments["confidence"] as? Float {
+      f
+    } else if let d = arguments["confidence"] as? Double {
+      Float(d)
+    } else {
+      nil
+    }
     let isActive = arguments["isActive"] as? Bool
     
     do {
