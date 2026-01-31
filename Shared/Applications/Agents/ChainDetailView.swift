@@ -64,12 +64,10 @@ struct ChainDetailView: View {
         }
 
         // Working directory - REQUIRED
-        GroupBox {
+        SectionCard("Project Folder") {
           HStack {
             Image(systemName: "folder.fill")
               .foregroundStyle(chain.workingDirectory == nil ? .orange : .green)
-            Text("Project Folder")
-              .font(.subheadline)
             Spacer()
             if let dir = chain.workingDirectory {
               Text(URL(fileURLWithPath: dir).lastPathComponent)
@@ -95,7 +93,6 @@ struct ChainDetailView: View {
             Label("Select a project folder to run the chain", systemImage: "exclamationmark.triangle.fill")
               .font(.caption)
               .foregroundStyle(.orange)
-              .padding(.top, 4)
           }
         }
 
@@ -144,18 +141,15 @@ struct ChainDetailView: View {
         Divider()
 
         if chain.runSource == .mcp {
-          GroupBox {
-            HStack(spacing: 12) {
+          SectionCard {
+            Text("This chain is controlled by MCP. Prompt entry and manual run are hidden.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          } header: {
+            HStack(spacing: 8) {
               Image(systemName: "bolt.horizontal.circle.fill")
                 .foregroundStyle(.purple)
-              VStack(alignment: .leading, spacing: 2) {
-                Text("MCP Managed")
-                  .font(.headline)
-                Text("This chain is controlled by MCP. Prompt entry and manual run are hidden.")
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
-              }
-              Spacer()
+              Text("MCP Managed")
             }
           }
         } else {
@@ -177,46 +171,44 @@ struct ChainDetailView: View {
 
           // Review loop settings (only show if there's a reviewer in the chain)
           if chain.agents.contains(where: { $0.role == .reviewer }) {
-            GroupBox {
-              VStack(alignment: .leading, spacing: 8) {
+            SectionCard("Review Loop") {
+              Toggle(isOn: Binding(
+                get: { chain.enableReviewLoop },
+                set: { chain.enableReviewLoop = $0 }
+              )) {
+                Label("Enable Review Loop", systemImage: "arrow.triangle.2.circlepath")
+              }
+              .accessibilityIdentifier("agents.chainDetail.reviewLoop.enabled")
+
+              if chain.enableReviewLoop {
                 Toggle(isOn: Binding(
-                  get: { chain.enableReviewLoop },
-                  set: { chain.enableReviewLoop = $0 }
+                  get: { chain.pauseOnReview },
+                  set: { chain.pauseOnReview = $0 }
                 )) {
-                  Label("Enable Review Loop", systemImage: "arrow.triangle.2.circlepath")
+                  Label("Pause on Review Request", systemImage: "pause.circle")
                 }
-                .accessibilityIdentifier("agents.chainDetail.reviewLoop.enabled")
+                .accessibilityIdentifier("agents.chainDetail.reviewLoop.pauseOnReview")
 
-                if chain.enableReviewLoop {
-                  Toggle(isOn: Binding(
-                    get: { chain.pauseOnReview },
-                    set: { chain.pauseOnReview = $0 }
-                  )) {
-                    Label("Pause on Review Request", systemImage: "pause.circle")
-                  }
-                  .accessibilityIdentifier("agents.chainDetail.reviewLoop.pauseOnReview")
-
-                  HStack {
-                    Text("Max iterations:")
-                      .font(.caption)
-                      .foregroundStyle(.secondary)
-                    Picker("", selection: Binding(
-                      get: { chain.maxReviewIterations },
-                      set: { chain.maxReviewIterations = $0 }
-                    )) {
-                      ForEach([1, 2, 3, 5], id: \.self) { num in
-                        Text("\(num)").tag(num)
-                      }
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 150)
-                    .accessibilityIdentifier("agents.chainDetail.reviewLoop.maxIterations")
-                  }
-
-                  Text("If reviewer requests changes, re-run implementer with feedback")
+                HStack {
+                  Text("Max iterations:")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                  Picker("", selection: Binding(
+                    get: { chain.maxReviewIterations },
+                    set: { chain.maxReviewIterations = $0 }
+                  )) {
+                    ForEach([1, 2, 3, 5], id: \.self) { num in
+                      Text("\(num)").tag(num)
+                    }
+                  }
+                  .pickerStyle(.segmented)
+                  .frame(width: 150)
+                  .accessibilityIdentifier("agents.chainDetail.reviewLoop.maxIterations")
                 }
+
+                Text("If reviewer requests changes, re-run implementer with feedback")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
               }
             }
           }
@@ -257,29 +249,16 @@ struct ChainDetailView: View {
 
         // Completion banner (show when just completed)
         if case .complete = chain.state, !chain.results.isEmpty {
-          GroupBox {
-            HStack(spacing: 12) {
-              Image(systemName: "checkmark.circle.fill")
-                .font(.title2)
-                .foregroundStyle(.green)
-              VStack(alignment: .leading, spacing: 2) {
-                Text("Chain Completed")
-                  .font(.headline)
-                  .foregroundStyle(.green)
-                HStack {
-                  Text("\(chain.results.count) agents")
-                  Text("•")
-                  Text(chain.results.reduce(0.0) { $0 + $1.premiumCost }.premiumCostDisplay)
-                  if let duration = totalDuration {
-                    Text("•")
-                    Text(duration)
-                  }
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
+          SectionCard {
+            HStack {
+              Text("\(chain.results.count) agents")
+              Text("•")
+              Text(chain.results.reduce(0.0) { $0 + $1.premiumCost }.premiumCostDisplay)
+              if let duration = totalDuration {
+                Text("•")
+                Text(duration)
               }
               Spacer()
-
               Button {
                 // Clear results to run again
                 prompt = ""
@@ -289,54 +268,72 @@ struct ChainDetailView: View {
               .buttonStyle(.bordered)
               .accessibilityIdentifier("agents.chainDetail.newTask")
             }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          } header: {
+            HStack(spacing: 8) {
+              Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+              Text("Chain Completed")
+              Spacer()
+              StatusPill(text: "Success", style: .success)
+            }
           }
-          .background(Color.green.opacity(0.1))
         }
 
         // Error
         if let error = errorMessage {
-          GroupBox {
-            Label(error, systemImage: "exclamationmark.triangle.fill")
-              .foregroundStyle(.red)
+          SectionCard {
+            Text(error)
+              .font(.caption)
+          } header: {
+            HStack {
+              Label("Error", systemImage: "exclamationmark.triangle.fill")
+                .foregroundStyle(.red)
+              Spacer()
+              StatusPill(text: "Failed", style: .error)
+            }
           }
         }
 
         if !mergeConflicts.isEmpty {
-          GroupBox {
-            VStack(alignment: .leading, spacing: 8) {
-              Label("Merge Conflicts", systemImage: "exclamationmark.triangle")
-                .font(.headline)
-                .foregroundStyle(.orange)
-              Text("Resolve these files, then re-run the reviewer.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-              ForEach(Array(mergeConflicts.enumerated()), id: \.offset) { index, path in
-                HStack(spacing: 8) {
-                  Text(path)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                  Spacer()
-                  Button("VS Code") {
-                    Task { try? await VSCodeService.shared.openFile(path) }
-                  }
-                  .buttonStyle(.link)
-                  .accessibilityIdentifier("agents.chainDetail.mergeConflicts.\(index).openVSCode")
-                  Button("Reveal") {
-                    NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: "")
-                  }
-                  .buttonStyle(.link)
-                  .accessibilityIdentifier("agents.chainDetail.mergeConflicts.\(index).reveal")
+          SectionCard {
+            Text("Resolve these files, then re-run the reviewer.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            ForEach(Array(mergeConflicts.enumerated()), id: \.offset) { index, path in
+              HStack(spacing: 8) {
+                Text(path)
+                  .font(.caption.monospaced())
+                  .foregroundStyle(.secondary)
+                  .lineLimit(1)
+                Spacer()
+                Button("VS Code") {
+                  Task { try? await VSCodeService.shared.openFile(path) }
                 }
+                .buttonStyle(.link)
+                .accessibilityIdentifier("agents.chainDetail.mergeConflicts.\(index).openVSCode")
+                Button("Reveal") {
+                  NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: "")
+                }
+                .buttonStyle(.link)
+                .accessibilityIdentifier("agents.chainDetail.mergeConflicts.\(index).reveal")
               }
+            }
 
-              if let path = chain.workingDirectory {
-                Button("Open Repo in Finder") {
-                  NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
-                }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("agents.chainDetail.mergeConflicts.openFinder")
+            if let path = chain.workingDirectory {
+              Button("Open Repo in Finder") {
+                NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
               }
+              .buttonStyle(.bordered)
+              .accessibilityIdentifier("agents.chainDetail.mergeConflicts.openFinder")
+            }
+          } header: {
+            HStack {
+              Label("Merge Conflicts", systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.orange)
+              Spacer()
+              StatusPill(text: "\(mergeConflicts.count) files", style: .warning)
             }
           }
         }
@@ -390,15 +387,15 @@ struct ChainDetailView: View {
                   }
                 }
 
-                GroupBox {
-                  ScrollView {
-                    Text(result.output)
-                      .font(.system(.body, design: .monospaced))
-                      .frame(maxWidth: .infinity, alignment: .leading)
-                      .textSelection(.enabled)
-                  }
-                  .frame(maxHeight: 200)
+                ScrollView {
+                  Text(result.output)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
                 }
+                .frame(maxHeight: 200)
+                .padding(12)
+                .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 8))
               }
             }
           }

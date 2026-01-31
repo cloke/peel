@@ -8,6 +8,7 @@
 //
 
 import Charts
+import PeelUI
 import SwiftUI
 
 public struct PersonalHeaderView: View {
@@ -170,89 +171,77 @@ private struct PRInsightsChartsView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      GroupBox {
-        VStack(alignment: .leading, spacing: 8) {
-          Text("PR Throughput (Last 12 Weeks)")
-            .font(.headline)
-          if throughputPoints.allSatisfy({ $0.count == 0 }) {
-            Text("No PR throughput data yet")
-              .font(.caption)
-              .foregroundStyle(.secondary)
-          } else {
-            Chart(throughputPoints) { point in
-              BarMark(
-                x: .value("Week", point.weekStart, unit: .weekOfYear),
-                y: .value("Count", point.count)
-              )
-              .foregroundStyle(by: .value("Series", point.series))
-            }
-            .chartXAxis {
-              AxisMarks(values: .stride(by: .weekOfYear, count: 2))
-            }
-            .frame(height: 160)
+      SectionCard("PR Throughput (Last 12 Weeks)") {
+        if throughputPoints.allSatisfy({ $0.count == 0 }) {
+          Text("No PR throughput data yet")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        } else {
+          Chart(throughputPoints) { point in
+            BarMark(
+              x: .value("Week", point.weekStart, unit: .weekOfYear),
+              y: .value("Count", point.count)
+            )
+            .foregroundStyle(by: .value("Series", point.series))
           }
+          .chartXAxis {
+            AxisMarks(values: .stride(by: .weekOfYear, count: 2))
+          }
+          .frame(height: 160)
         }
-        .padding(.vertical, 4)
       }
 
-      GroupBox {
-        VStack(alignment: .leading, spacing: 8) {
-          Text("Median Time to Merge (Days)")
-            .font(.headline)
-          if cycleTimePoints.isEmpty {
-            Text("No merged PRs in the last 12 weeks")
-              .font(.caption)
-              .foregroundStyle(.secondary)
-          } else {
-            Chart(cycleTimePoints) { point in
-              LineMark(
-                x: .value("Week", point.weekStart, unit: .weekOfYear),
-                y: .value("Median Days", point.medianDays)
-              )
-              .foregroundStyle(.orange)
-              PointMark(
-                x: .value("Week", point.weekStart, unit: .weekOfYear),
-                y: .value("Median Days", point.medianDays)
-              )
-              .foregroundStyle(.orange)
-            }
-            .chartXAxis {
-              AxisMarks(values: .stride(by: .weekOfYear, count: 2))
-            }
-            .frame(height: 160)
+      SectionCard("Median Time to Merge (Days)") {
+        if cycleTimePoints.isEmpty {
+          Text("No merged PRs in the last 12 weeks")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        } else {
+          Chart(cycleTimePoints) { point in
+            LineMark(
+              x: .value("Week", point.weekStart, unit: .weekOfYear),
+              y: .value("Median Days", point.medianDays)
+            )
+            .foregroundStyle(.orange)
+            PointMark(
+              x: .value("Week", point.weekStart, unit: .weekOfYear),
+              y: .value("Median Days", point.medianDays)
+            )
+            .foregroundStyle(.orange)
           }
+          .chartXAxis {
+            AxisMarks(values: .stride(by: .weekOfYear, count: 2))
+          }
+          .frame(height: 160)
         }
-        .padding(.vertical, 4)
       }
 
-      GroupBox {
-        VStack(alignment: .leading, spacing: 8) {
-          Text("PR Review Load (Last 12 Weeks)")
-            .font(.headline)
-          if isLoadingReviews {
-            ProgressView()
-              .scaleEffect(0.9)
-          } else if reviewLoadPoints.isEmpty {
-            Text("No review load data yet")
-              .font(.caption)
-              .foregroundStyle(.secondary)
-          } else {
-            Chart(reviewLoadPoints) { point in
-              BarMark(
-                x: .value("Week", point.weekStart, unit: .weekOfYear),
-                y: .value("Count", point.count)
-              )
-              .foregroundStyle(by: .value("Series", point.series))
-            }
-            .chartXAxis {
-              AxisMarks(values: .stride(by: .weekOfYear, count: 2))
-            }
-            .frame(height: 160)
+      SectionCard("PR Review Load (Last 12 Weeks)") {
+        if isLoadingReviews {
+          ProgressView()
+            .scaleEffect(0.9)
+        } else if reviewLoadPoints.isEmpty {
+          Text("No review load data yet")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        } else {
+          Chart(reviewLoadPoints) { point in
+            BarMark(
+              x: .value("Week", point.weekStart, unit: .weekOfYear),
+              y: .value("Count", point.count)
+            )
+            .foregroundStyle(by: .value("Series", point.series))
           }
+          .chartXAxis {
+            AxisMarks(values: .stride(by: .weekOfYear, count: 2))
+          }
+          .frame(height: 160)
 
           if !topReviewerPoints.isEmpty {
             Text("Top Reviewers")
-              .font(.headline)
+              .font(.subheadline)
+              .fontWeight(.medium)
+              .padding(.top, 8)
             Chart(topReviewerPoints) { point in
               BarMark(
                 x: .value("Reviewer", point.reviewer),
@@ -263,7 +252,6 @@ private struct PRInsightsChartsView: View {
             .frame(height: 160)
           }
         }
-        .padding(.vertical, 4)
       }
     }
     .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))

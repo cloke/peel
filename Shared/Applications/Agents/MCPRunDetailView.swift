@@ -6,6 +6,7 @@
 //
 
 import Git
+import PeelUI
 import SwiftData
 import SwiftUI
 import AppKit
@@ -152,182 +153,179 @@ struct MCPRunDetailView: View {
     NavigationStack {
       ScrollView {
         VStack(alignment: .leading, spacing: 16) {
-          GroupBox {
-            VStack(alignment: .leading, spacing: 6) {
-              Text(run.templateName)
-                .font(.headline)
-              Text(run.createdAt, style: .date)
-                .font(.caption)
+          SectionCard(run.templateName) {
+            Text(run.createdAt, style: .date)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            if let workingDirectory = run.workingDirectory, !workingDirectory.isEmpty {
+              Text(workingDirectory)
+                .font(.caption2)
                 .foregroundStyle(.secondary)
-              if let workingDirectory = run.workingDirectory, !workingDirectory.isEmpty {
-                Text(workingDirectory)
-                  .font(.caption2)
-                  .foregroundStyle(.secondary)
-              }
-              if let error = run.errorMessage, !error.isEmpty {
-                Text(error)
-                  .font(.caption)
-                  .foregroundStyle(.red)
-              }
-              if let noWorkReason = run.noWorkReason, !noWorkReason.isEmpty {
-                HStack(alignment: .top, spacing: 8) {
-                  Image(systemName: "checkmark.seal")
-                    .foregroundStyle(.green)
-                  VStack(alignment: .leading, spacing: 4) {
-                    Text("Planner Decision")
-                      .font(.caption)
-                      .fontWeight(.semibold)
-                    Text(noWorkReason)
-                      .font(.caption2)
-                  }
+            }
+            if let error = run.errorMessage, !error.isEmpty {
+              Text(error)
+                .font(.caption)
+                .foregroundStyle(.red)
+            }
+            if let noWorkReason = run.noWorkReason, !noWorkReason.isEmpty {
+              HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "checkmark.seal")
+                  .foregroundStyle(.green)
+                VStack(alignment: .leading, spacing: 4) {
+                  Text("Planner Decision")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                  Text(noWorkReason)
+                    .font(.caption2)
                 }
-                .padding(8)
-                .background(Color.green.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
               }
+              .padding(8)
+              .background(Color.green.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
             }
           }
 
           if let activeRun = activeRunInfo {
-            GroupBox("Active Run") {
-              VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                  Text(activeChain?.state.displayName ?? "Running")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                  Spacer()
-                  Text(activeRun.startedAt, style: .time)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+            SectionCard("Active Run") {
+              HStack {
+                Text(activeChain?.state.displayName ?? "Running")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+                Spacer()
+                Text(activeRun.startedAt, style: .time)
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              }
+              if let chain = activeChain, chain.pauseOnReview, case .reviewing = chain.state {
+                Text("Paused for review gate")
+                  .font(.caption2)
+                  .foregroundStyle(.orange)
+                  .accessibilityIdentifier("agents.mcpRunDetail.activeRun.reviewGatePaused")
+              }
+              HStack(spacing: 8) {
+                Button("Pause") {
+                  Task { await mcpServer.pauseRun(activeRun.id) }
                 }
-                if let chain = activeChain, chain.pauseOnReview, case .reviewing = chain.state {
-                  Text("Paused for review gate")
-                    .font(.caption2)
-                    .foregroundStyle(.orange)
-                    .accessibilityIdentifier("agents.mcpRunDetail.activeRun.reviewGatePaused")
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("agents.mcpRunDetail.activeRun.\(run.id.uuidString).pause")
+
+                Button("Resume") {
+                  Task { await mcpServer.resumeRun(activeRun.id) }
                 }
-                HStack(spacing: 8) {
-                  Button("Pause") {
-                    Task { await mcpServer.pauseRun(activeRun.id) }
-                  }
-                  .buttonStyle(.bordered)
-                  .accessibilityIdentifier("agents.mcpRunDetail.activeRun.\(run.id.uuidString).pause")
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("agents.mcpRunDetail.activeRun.\(run.id.uuidString).resume")
 
-                  Button("Resume") {
-                    Task { await mcpServer.resumeRun(activeRun.id) }
-                  }
-                  .buttonStyle(.bordered)
-                  .accessibilityIdentifier("agents.mcpRunDetail.activeRun.\(run.id.uuidString).resume")
-
-                  Button("Step") {
-                    Task { await mcpServer.stepRun(activeRun.id) }
-                  }
-                  .buttonStyle(.bordered)
-                  .accessibilityIdentifier("agents.mcpRunDetail.activeRun.\(run.id.uuidString).step")
-
-                  Button("Stop") {
-                    Task { await mcpServer.stopRun(activeRun.id) }
-                  }
-                  .buttonStyle(.bordered)
-                  .tint(.red)
-                  .accessibilityIdentifier("agents.mcpRunDetail.activeRun.\(run.id.uuidString).stop")
+                Button("Step") {
+                  Task { await mcpServer.stepRun(activeRun.id) }
                 }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("agents.mcpRunDetail.activeRun.\(run.id.uuidString).step")
+
+                Button("Stop") {
+                  Task { await mcpServer.stopRun(activeRun.id) }
+                }
+                .buttonStyle(.bordered)
+                .tint(.red)
+                .accessibilityIdentifier("agents.mcpRunDetail.activeRun.\(run.id.uuidString).stop")
               }
             }
           }
 
           if !worktreePaths.isEmpty {
-            GroupBox("Worktrees") {
-              VStack(alignment: .leading, spacing: 8) {
-                ForEach(worktreePaths, id: \.self) { path in
-                  HStack {
-                    Text(path)
-                      .font(.caption2)
-                      .foregroundStyle(.secondary)
-                      .lineLimit(1)
-                    if let changed = worktreeChangedFiles[path], changed > 0 {
-                      Chip(
-                        text: "\(changed) changed",
-                        font: .caption2,
-                        foreground: .orange,
-                        background: Color.orange.opacity(0.15),
-                        horizontalPadding: 6,
-                        verticalPadding: 2
-                      )
-                    }
-                    Spacer()
-                    Button("VS Code") {
-                      Task { try? await VSCodeService.shared.open(path: path, newWindow: true) }
-                    }
-                    .buttonStyle(.link)
-                    .accessibilityIdentifier("agents.mcpRunDetail.worktree.openVSCode")
-                    Button("Open") {
-                      NSWorkspace.shared.open(URL(fileURLWithPath: path))
-                    }
-                    .buttonStyle(.link)
-                    .accessibilityIdentifier("agents.mcpRunDetail.worktree.openFinder")
-                  }
-                }
-                if isLoadingWorktreeStatus {
-                  Text("Checking worktree status...")
+            SectionCard("Worktrees") {
+              ForEach(worktreePaths, id: \.self) { path in
+                HStack {
+                  Text(path)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                  if let changed = worktreeChangedFiles[path], changed > 0 {
+                    Chip(
+                      text: "\(changed) changed",
+                      font: .caption2,
+                      foreground: .orange,
+                      background: Color.orange.opacity(0.15),
+                      horizontalPadding: 6,
+                      verticalPadding: 2
+                    )
+                  }
+                  Spacer()
+                  Button("VS Code") {
+                    Task { try? await VSCodeService.shared.open(path: path, newWindow: true) }
+                  }
+                  .buttonStyle(.link)
+                  .accessibilityIdentifier("agents.mcpRunDetail.worktree.openVSCode")
+                  Button("Open") {
+                    NSWorkspace.shared.open(URL(fileURLWithPath: path))
+                  }
+                  .buttonStyle(.link)
+                  .accessibilityIdentifier("agents.mcpRunDetail.worktree.openFinder")
                 }
-                Button("Clean Worktrees") {
-                  Task { await mcpServer.cleanupWorktrees(paths: worktreePaths) }
-                }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("agents.mcpRunDetail.worktree.clean")
               }
+              if isLoadingWorktreeStatus {
+                Text("Checking worktree status...")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              }
+              Button("Clean Worktrees") {
+                Task { await mcpServer.cleanupWorktrees(paths: worktreePaths) }
+              }
+              .buttonStyle(.bordered)
+              .accessibilityIdentifier("agents.mcpRunDetail.worktree.clean")
             }
           }
 
-          GroupBox("Merge Readiness") {
-            VStack(alignment: .leading, spacing: 6) {
-              HStack {
-                Text("Status")
-                  .font(.caption)
-                Spacer()
-                Text(mergeReadinessLabel)
-                  .font(.caption)
-                  .foregroundStyle(run.mergeConflictsCount > 0 ? .red : .green)
-                  .accessibilityIdentifier("agents.mcpRunDetail.mergeReadiness.status")
-              }
-              if run.mergeConflictsCount > 0 {
-                Text("Conflicts detected: \(run.mergeConflictsCount)")
-                  .font(.caption2)
-                  .foregroundStyle(.secondary)
-                  .accessibilityIdentifier("agents.mcpRunDetail.mergeReadiness.conflicts")
-              }
-              if !implementerBranches.isEmpty {
-                Text("Implementer branches: \(implementerBranches.joined(separator: ", "))")
-                  .font(.caption2)
-                  .foregroundStyle(.secondary)
-                  .accessibilityIdentifier("agents.mcpRunDetail.mergeReadiness.branches")
-              }
+          SectionCard {
+            HStack {
+              Text("Status")
+                .font(.caption)
+              Spacer()
+              Text(mergeReadinessLabel)
+                .font(.caption)
+                .foregroundStyle(run.mergeConflictsCount > 0 ? .red : .green)
+                .accessibilityIdentifier("agents.mcpRunDetail.mergeReadiness.status")
+            }
+            if run.mergeConflictsCount > 0 {
+              Text("Conflicts detected: \(run.mergeConflictsCount)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("agents.mcpRunDetail.mergeReadiness.conflicts")
+            }
+            if !implementerBranches.isEmpty {
+              Text("Implementer branches: \(implementerBranches.joined(separator: ", "))")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("agents.mcpRunDetail.mergeReadiness.branches")
+            }
+          } header: {
+            HStack {
+              Text("Merge Readiness")
+              Spacer()
+              StatusPill(
+                text: run.mergeConflictsCount > 0 ? "Conflicts" : "Ready",
+                style: run.mergeConflictsCount > 0 ? .error : .success
+              )
             }
           }
 
           if !mergeConflictPaths.isEmpty {
-            GroupBox("Merge Conflicts") {
-              VStack(alignment: .leading, spacing: 8) {
-                ForEach(mergeConflictPaths, id: \.self) { path in
-                  HStack {
-                    Text(path)
-                      .font(.caption.monospaced())
-                      .foregroundStyle(.secondary)
-                      .lineLimit(1)
-                    Spacer()
-                    Button("VS Code") {
-                      Task { try? await VSCodeService.shared.openFile(path) }
-                    }
-                    .buttonStyle(.link)
-                    .accessibilityIdentifier("agents.mcpRunDetail.mergeConflicts.openVSCode")
-                    Button("Open") {
-                      NSWorkspace.shared.open(URL(fileURLWithPath: path))
-                    }
-                    .buttonStyle(.link)
-                    .accessibilityIdentifier("agents.mcpRunDetail.mergeConflicts.openFinder")
+            SectionCard("Merge Conflicts") {
+              ForEach(mergeConflictPaths, id: \.self) { path in
+                HStack {
+                  Text(path)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                  Spacer()
+                  Button("VS Code") {
+                    Task { try? await VSCodeService.shared.openFile(path) }
                   }
+                  .buttonStyle(.link)
+                  .accessibilityIdentifier("agents.mcpRunDetail.mergeConflicts.openVSCode")
+                  Button("Open") {
+                    NSWorkspace.shared.open(URL(fileURLWithPath: path))
+                  }
+                  .buttonStyle(.link)
+                  .accessibilityIdentifier("agents.mcpRunDetail.mergeConflicts.openFinder")
                 }
               }
             }
@@ -336,7 +334,7 @@ struct MCPRunDetailView: View {
           // Screenshots
           let screenshotPaths = run.screenshotPaths.split(separator: "\n").map { String($0) }.filter { !$0.isEmpty }
           if !screenshotPaths.isEmpty {
-            GroupBox("Screenshots") {
+            SectionCard("Screenshots") {
               ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                   ForEach(screenshotPaths, id: \.self) { path in
@@ -356,21 +354,21 @@ struct MCPRunDetailView: View {
             }
           }
 
-          GroupBox("User Prompt") {
+          SectionCard("User Prompt") {
             Text(run.prompt)
               .font(.caption)
               .textSelection(.enabled)
           }
 
           if let plannerPrompt {
-            GroupBox("Planner Prompt") {
+            SectionCard("Planner Prompt") {
               Text(plannerPrompt)
                 .font(.system(.caption, design: .monospaced))
                 .textSelection(.enabled)
             }
           }
 
-          GroupBox("Timeline") {
+          SectionCard("Timeline") {
             if results.isEmpty {
               Text("No timeline entries yet.")
                 .font(.caption)
@@ -411,11 +409,10 @@ struct MCPRunDetailView: View {
                   }
                 }
               }
-              .padding(.vertical, 4)
             }
           }
 
-          GroupBox("Agent Outputs") {
+          SectionCard("Agent Outputs") {
             if results.isEmpty {
               Text("No outputs recorded for this run.")
                 .font(.caption)

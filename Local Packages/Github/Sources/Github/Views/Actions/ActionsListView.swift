@@ -141,24 +141,20 @@ private struct ReliabilityChart: View {
   let points: [ActionReliabilityPoint]
   
   var body: some View {
-    GroupBox {
-      VStack(alignment: .leading, spacing: 8) {
-        Text("Actions Reliability (Last 12 Weeks)").font(.headline)
-        if points.isEmpty {
-          Text("No reliability data yet").font(.caption).foregroundStyle(.secondary)
-        } else {
-          Chart(points) { point in
-            LineMark(x: .value("Week", point.weekStart, unit: .weekOfYear), y: .value("Success %", point.successRate))
-              .foregroundStyle(.green)
-            PointMark(x: .value("Week", point.weekStart, unit: .weekOfYear), y: .value("Success %", point.successRate))
-              .foregroundStyle(.green)
-          }
-          .chartXAxis { AxisMarks(values: .stride(by: .weekOfYear, count: 2)) }
-          .chartYScale(domain: 0...100)
-          .frame(height: 160)
+    SectionCard("Actions Reliability (Last 12 Weeks)") {
+      if points.isEmpty {
+        Text("No reliability data yet").font(.caption).foregroundStyle(.secondary)
+      } else {
+        Chart(points) { point in
+          LineMark(x: .value("Week", point.weekStart, unit: .weekOfYear), y: .value("Success %", point.successRate))
+            .foregroundStyle(.green)
+          PointMark(x: .value("Week", point.weekStart, unit: .weekOfYear), y: .value("Success %", point.successRate))
+            .foregroundStyle(.green)
         }
+        .chartXAxis { AxisMarks(values: .stride(by: .weekOfYear, count: 2)) }
+        .chartYScale(domain: 0...100)
+        .frame(height: 160)
       }
-      .padding(.vertical, 4)
     }
   }
 }
@@ -167,20 +163,16 @@ private struct FailuresChart: View {
   let points: [ActionFailurePoint]
   
   var body: some View {
-    GroupBox {
-      VStack(alignment: .leading, spacing: 8) {
-        Text("Failures by Workflow").font(.headline)
-        if points.isEmpty {
-          Text("No failures recorded").font(.caption).foregroundStyle(.secondary)
-        } else {
-          Chart(points) { point in
-            BarMark(x: .value("Workflow", point.workflow), y: .value("Failures", point.count))
-              .foregroundStyle(.red)
-          }
-          .frame(height: 160)
+    SectionCard("Failures by Workflow") {
+      if points.isEmpty {
+        Text("No failures recorded").font(.caption).foregroundStyle(.secondary)
+      } else {
+        Chart(points) { point in
+          BarMark(x: .value("Workflow", point.workflow), y: .value("Failures", point.count))
+            .foregroundStyle(.red)
         }
+        .frame(height: 160)
       }
-      .padding(.vertical, 4)
     }
   }
 }

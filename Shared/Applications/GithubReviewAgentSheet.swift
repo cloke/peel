@@ -104,104 +104,94 @@ struct GithubReviewAgentSheet: View {
     } else {
       ScrollView {
         VStack(alignment: .leading, spacing: 16) {
-          GroupBox {
-            VStack(alignment: .leading, spacing: 8) {
-              Text("Local Repository")
-                .font(.headline)
+          SectionCard("Local Repository") {
+            TextField("Path to local repository", text: $selectedRepoPath)
+              .textFieldStyle(.roundedBorder)
+              .accessibilityIdentifier("github.reviewAgent.repoPath")
 
-              TextField("Path to local repository", text: $selectedRepoPath)
-                .textFieldStyle(.roundedBorder)
-                .accessibilityIdentifier("github.reviewAgent.repoPath")
-
-              HStack(spacing: 8) {
-                Button("Browse…") {
-                  if let path = service.browseForRepository() {
-                    selectedRepoPath = path
-                    service.lastSelectedRepoPath = path
-                  }
+            HStack(spacing: 8) {
+              Button("Browse…") {
+                if let path = service.browseForRepository() {
+                  selectedRepoPath = path
+                  service.lastSelectedRepoPath = path
                 }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("github.reviewAgent.repoBrowse")
-
-                Toggle("Open in VS Code", isOn: $openInVSCode)
-                  .accessibilityIdentifier("github.reviewAgent.openInVSCode")
               }
+              .buttonStyle(.bordered)
+              .accessibilityIdentifier("github.reviewAgent.repoBrowse")
 
-              if !service.recentRepositories.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                  Text("Recent Repositories")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+              Toggle("Open in VS Code", isOn: $openInVSCode)
+                .accessibilityIdentifier("github.reviewAgent.openInVSCode")
+            }
 
-                  ForEach(service.recentRepositories.prefix(6)) { repo in
-                    Button {
-                      selectedRepoPath = repo.path
-                    } label: {
-                      HStack {
-                        Image(systemName: "folder")
+            if !service.recentRepositories.isEmpty {
+              VStack(alignment: .leading, spacing: 6) {
+                Text("Recent Repositories")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+
+                ForEach(service.recentRepositories.prefix(6)) { repo in
+                  Button {
+                    selectedRepoPath = repo.path
+                  } label: {
+                    HStack {
+                      Image(systemName: "folder")
+                        .foregroundStyle(.secondary)
+                      VStack(alignment: .leading, spacing: 2) {
+                        Text(repo.name)
+                          .font(.callout)
+                        Text(repo.path)
+                          .font(.caption)
                           .foregroundStyle(.secondary)
-                        VStack(alignment: .leading, spacing: 2) {
-                          Text(repo.name)
-                            .font(.callout)
-                          Text(repo.path)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                        }
-                        Spacer()
-                        if let repository, service.repositoryMatches(local: repo, githubRepo: repository) {
-                          Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                        }
+                          .lineLimit(1)
+                      }
+                      Spacer()
+                      if let repository, service.repositoryMatches(local: repo, githubRepo: repository) {
+                        Image(systemName: "checkmark.circle.fill")
+                          .foregroundStyle(.green)
                       }
                     }
-                    .buttonStyle(.plain)
                   }
+                  .buttonStyle(.plain)
                 }
               }
             }
           }
 
-          GroupBox {
-            VStack(alignment: .leading, spacing: 8) {
-              Text("Agent Template")
-                .font(.headline)
-
-              Picker("Template", selection: selectedTemplateBinding) {
-                ForEach(mcpServer.agentManager.allTemplates, id: \.id) { template in
-                  Text(template.name).tag(template.id)
-                }
+          SectionCard("Agent Template") {
+            Picker("Template", selection: selectedTemplateBinding) {
+              ForEach(mcpServer.agentManager.allTemplates, id: \.id) { template in
+                Text(template.name).tag(template.id)
               }
-              .pickerStyle(.menu)
-              .accessibilityIdentifier("github.reviewAgent.template")
             }
+            .pickerStyle(.menu)
+            .accessibilityIdentifier("github.reviewAgent.template")
           }
 
-          GroupBox {
-            VStack(alignment: .leading, spacing: 8) {
-              Text("Prompt")
-                .font(.headline)
-              TextEditor(text: $prompt)
-                .frame(minHeight: 120)
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.2)))
-                .accessibilityIdentifier("github.reviewAgent.prompt")
-            }
+          SectionCard("Prompt") {
+            TextEditor(text: $prompt)
+              .frame(minHeight: 120)
+              .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.2)))
+              .accessibilityIdentifier("github.reviewAgent.prompt")
           }
 
           if let summary = lastSummary {
-            GroupBox {
-              VStack(alignment: .leading, spacing: 6) {
-                Text(summary.errorMessage == nil ? "Review Complete" : "Review Failed")
-                  .font(.headline)
-                  .foregroundStyle(summary.errorMessage == nil ? .green : .red)
-                Text("Agents: \(summary.results.count) · Conflicts: \(summary.mergeConflicts.count)")
+            SectionCard {
+              Text("Agents: \(summary.results.count) · Conflicts: \(summary.mergeConflicts.count)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              if let error = summary.errorMessage {
+                Text(error)
                   .font(.caption)
-                  .foregroundStyle(.secondary)
-                if let error = summary.errorMessage {
-                  Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                }
+                  .foregroundStyle(.red)
+              }
+            } header: {
+              HStack {
+                Text(summary.errorMessage == nil ? "Review Complete" : "Review Failed")
+                Spacer()
+                StatusPill(
+                  text: summary.errorMessage == nil ? "Success" : "Failed",
+                  style: summary.errorMessage == nil ? .success : .error
+                )
               }
             }
           }
