@@ -95,6 +95,38 @@ public enum MCPCopilotModel: String, Codable, CaseIterable, Identifiable, Sendab
     }
   }
 
+  public enum ModelProvider: String, CaseIterable, Identifiable, Sendable {
+    case copilot
+    case claude
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+      switch self {
+      case .copilot: return "GitHub Copilot"
+      case .claude: return "Claude CLI"
+      }
+    }
+  }
+
+  /// Which CLI provider is required for this model
+  public var requiredProvider: ModelProvider {
+    switch modelFamily {
+    case .claude: return .claude
+    case .gpt, .gemini: return .copilot
+    }
+  }
+
+  /// Filter models by provider availability
+  public static func availableModels(copilotAvailable: Bool, claudeAvailable: Bool) -> [MCPCopilotModel] {
+    allCases.filter { model in
+      switch model.requiredProvider {
+      case .copilot: return copilotAvailable
+      case .claude: return claudeAvailable
+      }
+    }
+  }
+
   private struct Metadata {
     let displayName: String
     let shortName: String

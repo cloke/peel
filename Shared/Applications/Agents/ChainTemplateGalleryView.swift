@@ -10,8 +10,11 @@ import SwiftUI
 
 struct ChainTemplateGalleryView: View {
   @Bindable var agentManager: AgentManager
+  @Bindable var cliService: CLIService
   @State private var templateToDelete: ChainTemplate?
   @State private var showResetConfirmation = false
+  @State private var showingUnavailableAlert = false
+  @State private var unavailableTemplate: ChainTemplate?
 
   private var coreTemplates: [ChainTemplate] {
     agentManager.allTemplates.filter { $0.isBuiltIn && $0.category == .core }
@@ -29,6 +32,7 @@ struct ChainTemplateGalleryView: View {
     ScrollView {
       VStack(alignment: .leading, spacing: 20) {
         header
+        providerStatusHeader
 
         if agentManager.allTemplates.isEmpty {
           ContentUnavailableView {
@@ -79,6 +83,13 @@ struct ChainTemplateGalleryView: View {
     ) {
       agentManager.resetTemplatesToDefaults()
     }
+    .alert("Provider Unavailable", isPresented: $showingUnavailableAlert) {
+      Button("OK", role: .cancel) { }
+    } message: {
+      if let template = unavailableTemplate {
+        unavailableMessage(for: template)
+      }
+    }
   }
 
   private var header: some View {
@@ -103,6 +114,57 @@ struct ChainTemplateGalleryView: View {
     }
   }
 
+  private var providerStatusHeader: some View {
+    HStack(spacing: 16) {
+      providerStatus(
+        name: "GitHub Copilot",
+        available: cliService.copilotStatus.isAvailable,
+        icon: "terminal"
+      )
+      providerStatus(
+        name: "Claude CLI",
+        available: cliService.claudeStatus.isAvailable,
+        icon: "sparkles"
+      )
+    }
+    .padding(12)
+    .background(Color(nsColor: .controlBackgroundColor))
+    .clipShape(RoundedRectangle(cornerRadius: 8))
+  }
+
+  private func providerStatus(name: String, available: Bool, icon: String) -> some View {
+    HStack(spacing: 6) {
+      Image(systemName: icon)
+        .foregroundStyle(available ? .green : .orange)
+      Text(name)
+        .font(.caption)
+      Image(systemName: available ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+        .foregroundStyle(available ? .green : .orange)
+        .imageScale(.small)
+    }
+  }
+
+  private func unavailableMessage(for template: ChainTemplate) -> Text {
+    let unavailableModels = template.unavailableModels(
+      copilotAvailable: cliService.copilotStatus.isAvailable,
+      claudeAvailable: cliService.claudeStatus.isAvailable
+    )
+    
+    let providers = Set(unavailableModels.map(\.requiredProvider))
+    var message = "This template requires:\n\n"
+    
+    for provider in providers {
+      switch provider {
+      case .copilot:
+        message += "• GitHub Copilot: Run 'gh copilot' in terminal\n"
+      case .claude:
+        message += "• Claude CLI: Run 'claude auth login' in terminal\n"
+      }
+    }
+    
+    return Text(message)
+  }
+
   private func templateSection(title: String, templates: [ChainTemplate]) -> some View {
     VStack(alignment: .leading, spacing: 12) {
       Text(title)
@@ -112,6 +174,7 @@ struct ChainTemplateGalleryView: View {
         ForEach(templates) { template in
           TemplateCard(
             template: template,
+            cliService: cliService,
             onCreate: { createChain(from: template) },
             onDelete: template.isBuiltIn ? nil : { templateToDelete = template }
           )
@@ -121,6 +184,17 @@ struct ChainTemplateGalleryView: View {
   }
 
   private func createChain(from template: ChainTemplate) {
+    let isAvailable = template.isFullyAvailable(
+      copilotAvailable: cliService.copilotStatus.isAvailable,
+      claudeAvailable: cliService.claudeStatus.isAvailable
+    )
+    
+    if !isAvailable {
+      unavailableTemplate = template
+      showingUnavailableAlert = true
+      return
+    }
+    
     let chain = agentManager.createChainFromTemplate(template, workingDirectory: agentManager.lastUsedWorkingDirectory)
     agentManager.selectedAgent = nil
     agentManager.selectedChain = chain
@@ -129,6 +203,7 @@ struct ChainTemplateGalleryView: View {
 
 private struct TemplateCard: View {
   let template: ChainTemplate
+  let cliService: CLIService
   let onCreate: () -> Void
   let onDelete: (() -> Void)?
   
@@ -141,6 +216,13 @@ private struct TemplateCard: View {
     } else {
       return ("Premium", .orange)
     }
+  }
+
+  private var isAvailable: Bool {
+    template.isFullyAvailable(
+      copilotAvailable: cliService.copilotStatus.isAvailable,
+      claudeAvailable: cliService.claudeStatus.isAvailable
+    )
   }
 
   var body: some View {
@@ -157,7 +239,9 @@ private struct TemplateCard: View {
           }
         }
         Spacer()
-        if template.isBuiltIn {
+        if !isAvailable {
+          Chip(text: "Unavailable", systemImage: "exclamationmark.triangle.fill", foreground: .orange, background: Color.orange.opacity(0.15))
+        } else if template.isBuiltIn {
           Chip(text: "Built-in", systemImage: "lock.fill", foreground: .blue, background: Color.blue.opacity(0.15))
         } else {
           Chip(text: "Saved", systemImage: "star.fill", foreground: .orange, background: Color.orange.opacity(0.15))
