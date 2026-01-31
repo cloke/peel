@@ -118,6 +118,9 @@ public final class MCPServerService {
       case skillAdded
       case skillUpdated
       case skillDeleted
+      case lessonAdded
+      case lessonUpdated
+      case lessonDeleted
     }
 
     public let id: UUID
@@ -950,6 +953,86 @@ public final class MCPServerService {
         detail: nil
       )
       saveRagUsageStats()
+    }
+    return deleted
+  }
+  
+  // MARK: - Learning Loop (#210)
+  
+  func listLessons(repoPath: String, includeInactive: Bool, limit: Int?) async throws -> [LocalRAGLesson] {
+    try await localRagStore.listLessons(repoPath: repoPath, includeInactive: includeInactive, limit: limit)
+  }
+  
+  func addLesson(
+    repoPath: String,
+    filePattern: String?,
+    errorSignature: String?,
+    fixDescription: String,
+    fixCode: String?,
+    source: String
+  ) async throws -> LocalRAGLesson {
+    let lesson = try await localRagStore.addLesson(
+      repoPath: repoPath,
+      filePattern: filePattern,
+      errorSignature: errorSignature,
+      fixDescription: fixDescription,
+      fixCode: fixCode,
+      source: source
+    )
+    appendRagEvent(
+      kind: .lessonAdded,
+      title: "Lesson added",
+      detail: fixDescription
+    )
+    return lesson
+  }
+  
+  func queryLessons(
+    repoPath: String,
+    filePattern: String?,
+    errorSignature: String?,
+    limit: Int
+  ) async throws -> [LocalRAGLesson] {
+    try await localRagStore.queryLessons(
+      repoPath: repoPath,
+      filePattern: filePattern,
+      errorSignature: errorSignature,
+      limit: limit
+    )
+  }
+  
+  func updateLesson(
+    id: String,
+    fixDescription: String?,
+    fixCode: String?,
+    confidence: Float?,
+    isActive: Bool?
+  ) async throws -> LocalRAGLesson? {
+    if let updated = try await localRagStore.updateLesson(
+      id: id,
+      fixDescription: fixDescription,
+      fixCode: fixCode,
+      confidence: confidence,
+      isActive: isActive
+    ) {
+      appendRagEvent(
+        kind: .lessonUpdated,
+        title: "Lesson updated",
+        detail: updated.fixDescription
+      )
+      return updated
+    }
+    return nil
+  }
+  
+  func deleteLesson(id: String) async throws -> Bool {
+    let deleted = try await localRagStore.deleteLesson(id: id)
+    if deleted {
+      appendRagEvent(
+        kind: .lessonDeleted,
+        title: "Lesson deleted",
+        detail: id
+      )
     }
     return deleted
   }
@@ -3513,6 +3596,86 @@ public final class MCPServerService {
             "skillId": ["type": "string"]
           ],
           "required": ["skillId"]
+        ],
+        category: .rag,
+        isMutating: true
+      ),
+      // MARK: Learning Loop (#210) - Lesson Tools
+      ToolDefinition(
+        name: "rag.lessons.list",
+        description: "List lessons learned from agent fixes. Lessons capture recurring error patterns and their fixes to help prevent future mistakes.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": ["type": "string", "description": "Absolute path to the repository"],
+            "includeInactive": ["type": "boolean", "description": "Include deactivated lessons (default: false)"],
+            "limit": ["type": "integer", "description": "Max lessons to return"]
+          ],
+          "required": ["repoPath"]
+        ],
+        category: .rag,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "rag.lessons.add",
+        description: "Record a lesson learned from fixing an error. Used to capture patterns of mistakes and their fixes for future reference.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": ["type": "string", "description": "Absolute path to the repository"],
+            "filePattern": ["type": "string", "description": "Glob pattern for files this applies to (e.g., '*.gts', 'app/models/*.rb')"],
+            "errorSignature": ["type": "string", "description": "Normalized error pattern for matching (e.g., 'undefined method X')"],
+            "fixDescription": ["type": "string", "description": "Human-readable description of the fix"],
+            "fixCode": ["type": "string", "description": "Actual code snippet that fixed the issue"],
+            "source": ["type": "string", "description": "Source: 'manual', 'auto', or 'imported' (default: 'manual')"]
+          ],
+          "required": ["repoPath", "fixDescription"]
+        ],
+        category: .rag,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "rag.lessons.query",
+        description: "Query lessons relevant to a specific file or error. Returns lessons that match the file pattern and/or error signature, sorted by confidence.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": ["type": "string", "description": "Absolute path to the repository"],
+            "filePattern": ["type": "string", "description": "File path to match against lesson patterns"],
+            "errorSignature": ["type": "string", "description": "Error text to match against lesson signatures"],
+            "limit": ["type": "integer", "description": "Max lessons to return (default: 20)"]
+          ],
+          "required": ["repoPath"]
+        ],
+        category: .rag,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "rag.lessons.update",
+        description: "Update a lesson's description, code, confidence, or active status.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "lessonId": ["type": "string", "description": "The lesson ID to update"],
+            "fixDescription": ["type": "string", "description": "Updated fix description"],
+            "fixCode": ["type": "string", "description": "Updated fix code"],
+            "confidence": ["type": "number", "description": "New confidence score (0.0-1.0)"],
+            "isActive": ["type": "boolean", "description": "Whether the lesson is active"]
+          ],
+          "required": ["lessonId"]
+        ],
+        category: .rag,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "rag.lessons.delete",
+        description: "Delete a lesson permanently.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "lessonId": ["type": "string", "description": "The lesson ID to delete"]
+          ],
+          "required": ["lessonId"]
         ],
         category: .rag,
         isMutating: true
