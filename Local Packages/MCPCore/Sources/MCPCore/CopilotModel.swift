@@ -109,21 +109,28 @@ public enum MCPCopilotModel: String, Codable, CaseIterable, Identifiable, Sendab
     }
   }
 
-  /// Which CLI provider is required for this model
+  /// Which CLI providers can run this model
+  /// - Copilot: Has access to ALL models (Claude, GPT, Gemini)
+  /// - Claude CLI: Only has access to Claude models
   public var requiredProvider: ModelProvider {
+    // GPT and Gemini can ONLY run via Copilot
+    // Claude can run via EITHER Copilot OR Claude CLI
     switch modelFamily {
-    case .claude: return .claude
     case .gpt, .gemini: return .copilot
+    case .claude: return .claude  // Note: Copilot also supports Claude, handled in availableModels
     }
   }
 
   /// Filter models by provider availability
+  /// - Copilot available: ALL models work (Copilot has Claude, GPT, Gemini)
+  /// - Claude CLI available: Only Claude models work
   public static func availableModels(copilotAvailable: Bool, claudeAvailable: Bool) -> [MCPCopilotModel] {
     allCases.filter { model in
-      switch model.requiredProvider {
-      case .copilot: return copilotAvailable
-      case .claude: return claudeAvailable
-      }
+      // Copilot has access to all models including Claude
+      if copilotAvailable { return true }
+      // Claude CLI only has access to Claude models
+      if claudeAvailable && model.modelFamily == .claude { return true }
+      return false
     }
   }
 

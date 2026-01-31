@@ -376,18 +376,22 @@ extension ChainTemplate {
   #endif
 
   /// All providers required by this template's steps
+  /// Note: This returns .copilot for GPT/Gemini only, since Copilot can run ALL models
   public var requiredProviders: Set<MCPCopilotModel.ModelProvider> {
     Set(steps.compactMap { $0.model.requiredProvider })
   }
 
   /// Check if all template models are available with current provider config
+  /// - Copilot: Can run ALL models (Claude, GPT, Gemini)
+  /// - Claude CLI: Can only run Claude models
   public func isFullyAvailable(copilotAvailable: Bool, claudeAvailable: Bool) -> Bool {
     steps.allSatisfy { step in
       let model = step.model
-      switch model.requiredProvider {
-      case .copilot: return copilotAvailable
-      case .claude: return claudeAvailable
-      }
+      // Copilot can run any model
+      if copilotAvailable { return true }
+      // Claude CLI can only run Claude models
+      if claudeAvailable && model.modelFamily == .claude { return true }
+      return false
     }
   }
 
@@ -395,12 +399,10 @@ extension ChainTemplate {
   public func unavailableModels(copilotAvailable: Bool, claudeAvailable: Bool) -> [MCPCopilotModel] {
     steps.compactMap { step in
       let model = step.model
-      let available: Bool
-      switch model.requiredProvider {
-      case .copilot: available = copilotAvailable
-      case .claude: available = claudeAvailable
-      }
-      return available ? nil : model
-    }
+      // Copilot can run any model
+      if copilotAvailable { return nil }
+      // Claude CLI can only run Claude models
+      if claudeAvailable && model.modelFamily == .claude { return nil }
+      return model    }
   }
 }
