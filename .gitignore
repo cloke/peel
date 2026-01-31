@@ -77,3 +77,4 @@ Sessions/
 Tools/ModelTools/output/
 tmp/
 *.dylib
+*.p8

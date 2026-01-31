@@ -1,0 +1,479 @@
+//
+//  SwarmManagementView.swift
+//  Peel
+//
+//  Main view for managing Firestore-coordinated swarms
+//
+
+import SwiftUI
+
+/// Main swarm management view - shows swarms, members, invites
+@MainActor
+struct SwarmManagementView: View {
+  @State private var firebaseService = FirebaseService.shared
+  @State private var selectedSwarm: SwarmMembership?
+  @State private var showingCreateSwarm = false
+  @State private var showingCreateInvite = false
+  @State private var newSwarmName = ""
+  @State private var isLoading = false
+  @State private var errorMessage: String?
+  
+  var body: some View {
+    Group {
+      if firebaseService.isSignedIn {
+        signedInContent
+      } else {
+        SwarmAuthView()
+      }
+    }
+  }
+  
+  @ViewBuilder
+  private var signedInContent: some View {
+    HSplitView {
+      // Sidebar
+      VStack(spacing: 0) {
+        sidebarContent
+      }
+      .frame(minWidth: 200, idealWidth: 240, maxWidth: 300)
+      
+      // Detail
+      if let swarm = selectedSwarm {
+        SwarmDetailView(swarm: swarm)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+      } else {
+        ContentUnavailableView(
+          "Select a Swarm",
+          systemImage: "person.3",
+          description: Text("Choose a swarm from the sidebar or create a new one")
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      }
+    }
+    .sheet(isPresented: $showingCreateSwarm) {
+      createSwarmSheet
+    }
+    .alert("Error", isPresented: .constant(errorMessage != nil)) {
+      Button("OK") { errorMessage = nil }
+    } message: {
+      if let error = errorMessage {
+        Text(error)
+      }
+    }
+  }
+  
+  @ViewBuilder
+  private var sidebarContent: some View {
+    VStack(spacing: 0) {
+      // Toolbar header
+      HStack {
+        Text("Swarms")
+          .font(.headline)
+        Spacer()
+        Button {
+          showingCreateSwarm = true
+        } label: {
+          Image(systemName: "plus")
+        }
+        .buttonStyle(.borderless)
+        .help("Create new swarm")
+        
+        Menu {
+          Button("Sign Out", role: .destructive) {
+            try? firebaseService.signOut()
+          }
+        } label: {
+          Image(systemName: "person.circle")
+        }
+        .buttonStyle(.borderless)
+      }
+      .padding(.horizontal, 12)
+      .padding(.vertical, 8)
+      
+      Divider()
+      
+      // Swarm list
+      List(selection: $selectedSwarm) {
+        Section("My Swarms") {
+          ForEach(firebaseService.memberSwarms) { swarm in
+            SwarmRowView(swarm: swarm)
+              .tag(swarm)
+          }
+          
+          if firebaseService.memberSwarms.isEmpty {
+            Text("No swarms yet")
+              .foregroundStyle(.secondary)
+              .italic()
+          }
+        }
+      }
+      .listStyle(.sidebar)
+    }
+  }
+  
+  @ViewBuilder
+  private var createSwarmSheet: some View {
+    NavigationStack {
+      Form {
+        Section("Swarm Details") {
+          TextField("Swarm Name", text: $newSwarmName)
+            .textFieldStyle(.roundedBorder)
+        }
+        
+        Section {
+          Text("You'll be the owner of this swarm and can invite others to join.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+      .formStyle(.grouped)
+      .navigationTitle("Create Swarm")
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Cancel") {
+            showingCreateSwarm = false
+            newSwarmName = ""
+          }
+        }
+        ToolbarItem(placement: .confirmationAction) {
+          Button("Create") {
+            createSwarm()
+          }
+          .disabled(newSwarmName.trimmingCharacters(in: .whitespaces).isEmpty || isLoading)
+        }
+      }
+    }
+    .frame(minWidth: 400, minHeight: 200)
+  }
+  
+  private func createSwarm() {
+    isLoading = true
+    Task {
+      do {
+        _ = try await firebaseService.createSwarm(name: newSwarmName)
+        showingCreateSwarm = false
+        newSwarmName = ""
+      } catch {
+        errorMessage = error.localizedDescription
+      }
+      isLoading = false
+    }
+  }
+}
+
+// MARK: - Swarm Row
+
+struct SwarmRowView: View {
+  let swarm: SwarmMembership
+  
+  var body: some View {
+    HStack {
+      Image(systemName: swarm.role == .owner ? "crown.fill" : "person.3.fill")
+        .foregroundStyle(swarm.role == .owner ? .yellow : .secondary)
+      
+      VStack(alignment: .leading, spacing: 2) {
+        Text(swarm.swarmName)
+          .fontWeight(.medium)
+        
+        Text(swarm.role.rawValue.capitalized)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+    }
+    .padding(.vertical, 2)
+  }
+}
+
+// MARK: - Swarm Detail View
+
+@MainActor
+struct SwarmDetailView: View {
+  let swarm: SwarmMembership
+  @State private var firebaseService = FirebaseService.shared
+  @State private var selectedTab = 0
+  @State private var showingInviteSheet = false
+  @State private var inviteURL: URL?
+  @State private var isLoading = false
+  @State private var errorMessage: String?
+  
+  var body: some View {
+    VStack(spacing: 0) {
+      // Header
+      HStack {
+        VStack(alignment: .leading, spacing: 4) {
+          Text(swarm.swarmName)
+            .font(.title2)
+            .fontWeight(.semibold)
+          
+          HStack(spacing: 8) {
+            RoleBadge(role: swarm.role)
+            Text("Joined \(swarm.joinedAt.formatted(date: .abbreviated, time: .omitted))")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
+        
+        Spacer()
+        
+        if swarm.role.canApproveMembers {
+          Button {
+            createInvite()
+          } label: {
+            Label("Invite", systemImage: "person.badge.plus")
+          }
+          .disabled(isLoading)
+        }
+      }
+      .padding()
+      
+      Divider()
+      
+      // Tabs
+      Picker("View", selection: $selectedTab) {
+        Text("Members").tag(0)
+        if swarm.role.canApproveMembers {
+          Text("Pending (\(firebaseService.pendingMembers.count))").tag(1)
+        }
+        Text("Invites").tag(2)
+      }
+      .pickerStyle(.segmented)
+      .padding()
+      
+      // Content
+      Group {
+        switch selectedTab {
+        case 0:
+          MembersListView(swarmId: swarm.id, myRole: swarm.role)
+        case 1:
+          PendingMembersView(swarmId: swarm.id)
+        case 2:
+          InvitesListView(swarmId: swarm.id)
+        default:
+          EmptyView()
+        }
+      }
+    }
+    .sheet(isPresented: $showingInviteSheet) {
+      InviteShareSheet(url: inviteURL)
+    }
+    .alert("Error", isPresented: .constant(errorMessage != nil)) {
+      Button("OK") { errorMessage = nil }
+    } message: {
+      if let error = errorMessage {
+        Text(error)
+      }
+    }
+    .task {
+      if swarm.role.canApproveMembers {
+        try? await firebaseService.loadPendingMembers(swarmId: swarm.id)
+      }
+    }
+  }
+  
+  private func createInvite() {
+    isLoading = true
+    Task {
+      do {
+        let invite = try await firebaseService.createInvite(swarmId: swarm.id)
+        inviteURL = invite.url
+        showingInviteSheet = true
+      } catch {
+        errorMessage = error.localizedDescription
+      }
+      isLoading = false
+    }
+  }
+}
+
+// MARK: - Role Badge
+
+struct RoleBadge: View {
+  let role: SwarmPermissionRole
+  
+  var body: some View {
+    Text(role.rawValue.capitalized)
+      .font(.caption2)
+      .fontWeight(.medium)
+      .padding(.horizontal, 8)
+      .padding(.vertical, 2)
+      .background(backgroundColor)
+      .foregroundStyle(foregroundColor)
+      .clipShape(Capsule())
+  }
+  
+  private var backgroundColor: Color {
+    switch role {
+    case .owner: return .yellow.opacity(0.2)
+    case .admin: return .purple.opacity(0.2)
+    case .contributor: return .blue.opacity(0.2)
+    case .reader: return .gray.opacity(0.2)
+    case .pending: return .orange.opacity(0.2)
+    }
+  }
+  
+  private var foregroundColor: Color {
+    switch role {
+    case .owner: return .yellow
+    case .admin: return .purple
+    case .contributor: return .blue
+    case .reader: return .secondary
+    case .pending: return .orange
+    }
+  }
+}
+
+// MARK: - Placeholder Views
+
+struct MembersListView: View {
+  let swarmId: String
+  let myRole: SwarmPermissionRole
+  
+  var body: some View {
+    ContentUnavailableView(
+      "Members",
+      systemImage: "person.3",
+      description: Text("Member list coming soon")
+    )
+  }
+}
+
+@MainActor
+struct PendingMembersView: View {
+  let swarmId: String
+  @State private var firebaseService = FirebaseService.shared
+  @State private var isLoading = false
+  
+  var body: some View {
+    List {
+      ForEach(firebaseService.pendingMembers) { member in
+        HStack {
+          VStack(alignment: .leading, spacing: 2) {
+            Text(member.displayName)
+              .fontWeight(.medium)
+            Text(member.email)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          
+          Spacer()
+          
+          Button("Approve") {
+            approve(member)
+          }
+          .buttonStyle(.borderedProminent)
+          .disabled(isLoading)
+          
+          Button("Reject", role: .destructive) {
+            reject(member)
+          }
+          .buttonStyle(.bordered)
+          .disabled(isLoading)
+        }
+        .padding(.vertical, 4)
+      }
+      
+      if firebaseService.pendingMembers.isEmpty {
+        ContentUnavailableView(
+          "No Pending Members",
+          systemImage: "checkmark.circle",
+          description: Text("All membership requests have been processed")
+        )
+      }
+    }
+  }
+  
+  private func approve(_ member: SwarmMember) {
+    isLoading = true
+    Task {
+      try? await firebaseService.approveMember(
+        swarmId: swarmId,
+        userId: member.id,
+        role: .contributor
+      )
+      try? await firebaseService.loadPendingMembers(swarmId: swarmId)
+      isLoading = false
+    }
+  }
+  
+  private func reject(_ member: SwarmMember) {
+    isLoading = true
+    Task {
+      try? await firebaseService.revokeMember(swarmId: swarmId, userId: member.id)
+      try? await firebaseService.loadPendingMembers(swarmId: swarmId)
+      isLoading = false
+    }
+  }
+}
+
+struct InvitesListView: View {
+  let swarmId: String
+  
+  var body: some View {
+    ContentUnavailableView(
+      "Invites",
+      systemImage: "envelope",
+      description: Text("Invite history coming soon")
+    )
+  }
+}
+
+// MARK: - Invite Share Sheet
+
+struct InviteShareSheet: View {
+  let url: URL?
+  @Environment(\.dismiss) private var dismiss
+  @State private var copied = false
+  
+  var body: some View {
+    NavigationStack {
+      VStack(spacing: 24) {
+        Image(systemName: "qrcode")
+          .font(.system(size: 120))
+          .foregroundStyle(.secondary)
+        
+        if let url = url {
+          Text(url.absoluteString)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .textSelection(.enabled)
+            .padding()
+            .background(.quaternary)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+          
+          Button {
+            #if os(macOS)
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(url.absoluteString, forType: .string)
+            #endif
+            copied = true
+          } label: {
+            Label(copied ? "Copied!" : "Copy Link", systemImage: copied ? "checkmark" : "doc.on.doc")
+          }
+          .buttonStyle(.borderedProminent)
+        }
+        
+        Text("Share this link with someone to invite them to your swarm.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .multilineTextAlignment(.center)
+        
+        Text("They'll join as a pending member until you approve them.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .multilineTextAlignment(.center)
+      }
+      .padding()
+      .navigationTitle("Invite Link")
+      .toolbar {
+        ToolbarItem(placement: .confirmationAction) {
+          Button("Done") { dismiss() }
+        }
+      }
+    }
+    .frame(minWidth: 400, minHeight: 400)
+  }
+}
+
+#Preview {
+  SwarmManagementView()
+}
