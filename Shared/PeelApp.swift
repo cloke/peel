@@ -27,6 +27,11 @@ struct PeelApp: App {
     _vmIsolationService = State(initialValue: vmService)
     _mcpServer = State(initialValue: MCPServerService(vmIsolationService: vmService))
     
+    // Seed default skills on first launch (Issue #90)
+    let container = Self.sharedModelContainer
+    let context = ModelContext(container)
+    DefaultSkillsService.seedDefaultSkills(context: context)
+    
     // Check for worker mode (--worker flag)
     if WorkerMode.shared.shouldRunInWorkerMode {
       _workerModeActive = State(initialValue: true)
@@ -42,7 +47,7 @@ struct PeelApp: App {
   
   /// SwiftData model container
   /// To enable iCloud later, change cloudKitDatabase to .automatic
-  var sharedModelContainer: ModelContainer = {
+  static var sharedModelContainer: ModelContainer = {
     let schema = Schema([
       // Synced to iCloud (when enabled)
       SyncedRepository.self,
@@ -114,7 +119,7 @@ struct PeelApp: App {
         .environment(mcpServer)
         .environment(vmIsolationService)
     }
-    .modelContainer(sharedModelContainer)
+    .modelContainer(Self.sharedModelContainer)
     .commands {
       CommandGroup(replacing: .appInfo) {
         Button("About Peel") {
@@ -134,7 +139,7 @@ struct PeelApp: App {
         .environment(mcpServer)
         .environment(vmIsolationService)
     }
-    .modelContainer(sharedModelContainer)
+    .modelContainer(Self.sharedModelContainer)
   }
 
   private func showAboutPanel() {
