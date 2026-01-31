@@ -7,7 +7,6 @@
 
 import PeelUI
 import SwiftUI
-import AppKit
 
 struct AgentDetailView: View {
   let agent: Agent
@@ -321,15 +320,8 @@ struct AgentDetailView: View {
   }
 
   private func selectFolder() {
-    let panel = NSOpenPanel()
-    panel.canChooseFiles = false
-    panel.canChooseDirectories = true
-    panel.allowsMultipleSelection = false
-    panel.message = "Select a project folder for this agent"
-    panel.prompt = "Select"
-
-    if panel.runModal() == .OK, let url = panel.url {
-      agent.workingDirectory = url.path
+    if let path = FolderPicker.selectFolder(message: "Select a project folder for this agent") {
+      agent.workingDirectory = path
     }
   }
 

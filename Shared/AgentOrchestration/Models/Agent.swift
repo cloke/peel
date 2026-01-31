@@ -209,35 +209,5 @@ extension Agent: Hashable {
   }
 }
 
-// MARK: - Premium Cost Formatting
-
-private enum PremiumCostFormatting {
-  static let formatter: NumberFormatter = {
-    let formatter = NumberFormatter()
-    formatter.numberStyle = .decimal
-    formatter.minimumFractionDigits = 2
-    formatter.maximumFractionDigits = 2
-    formatter.roundingMode = .halfUp
-    return formatter
-  }()
-}
-
-extension Double {
-  var normalizedPremiumCost: Double {
-    abs(self) < 0.005 ? 0 : self
-  }
-
-  func premiumMultiplierString() -> String {
-    let value = normalizedPremiumCost
-    let numberString = PremiumCostFormatting.formatter.string(from: NSNumber(value: value)) ?? "\(value)"
-    return "\(numberString)×"
-  }
-
-  var premiumCostDisplay: String {
-    let value = normalizedPremiumCost
-    if value == 0 {
-      return "Free"
-    }
-    return "\(premiumMultiplierString()) Premium"
-  }
-}
+// NOTE: Premium cost formatting (premiumCostDisplay, premiumMultiplierString) 
+// is defined in MCPCore/CopilotModel.swift as a public Double extension
