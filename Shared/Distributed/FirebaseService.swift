@@ -531,6 +531,19 @@ public final class FirebaseService {
     
     logger.info("Handling deep link: \(url)")
     
+    // Ensure Firebase is configured before accessing Firestore
+    guard isConfigured else {
+      logger.error("Firebase not configured, cannot handle deep link")
+      return
+    }
+    
+    // Must be signed in to accept invites
+    guard isSignedIn else {
+      logger.warning("User not signed in, cannot accept invite. URL: \(url)")
+      // TODO: Store URL and prompt sign-in, then accept after auth
+      return
+    }
+    
     // Parse: peel://swarm/join?s={swarmId}&i={inviteId}&t={token}
     guard url.host == "swarm",
           url.pathComponents.contains("join"),
