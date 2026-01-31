@@ -100,6 +100,14 @@ struct PeelApp: App {
           else if url.scheme == "peel" && url.host == "swarm" {
             Task {
               await FirebaseService.shared.handleDeepLink(url)
+              // Open Settings window to Swarm tab
+              #if os(macOS)
+              if #available(macOS 14.0, *) {
+                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+              } else {
+                NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
+              }
+              #endif
             }
           }
         }

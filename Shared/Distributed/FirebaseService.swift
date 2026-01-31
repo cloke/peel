@@ -69,6 +69,15 @@ public final class FirebaseService {
   /// Pending members awaiting approval (for admins)
   public private(set) var pendingMembers: [SwarmMember] = []
   
+  /// Pending invite URL (stored when user is not signed in, processed after auth)
+  public var pendingInviteURL: URL?
+  
+  /// Last deep link error message (for UI feedback)
+  public private(set) var lastDeepLinkError: String?
+  
+  /// Flag to indicate deep link was received and needs UI attention
+  public var deepLinkReceived = false
+  
   // MARK: - Private State
   
   private var authStateListener: AuthStateDidChangeListenerHandle?
@@ -141,6 +150,8 @@ public final class FirebaseService {
       logger.info("User signed in: \(user.uid)")
       Task {
         await loadUserSwarms()
+        // Process any pending invite that was received before sign-in
+        await processPendingInvite()
       }
     } else {
       currentUserId = nil
@@ -549,20 +560,18 @@ public final class FirebaseService {
     
     logger.info("Handling deep link: \(url)")
     
+    // Reset state
+    lastDeepLinkError = nil
+    deepLinkReceived = true
+    
     // Ensure Firebase is configured before accessing Firestore
     guard isConfigured else {
+      lastDeepLinkError = "Firebase not configured"
       logger.error("Firebase not configured, cannot handle deep link")
       return
     }
     
-    // Must be signed in to accept invites
-    guard isSignedIn else {
-      logger.warning("User not signed in, cannot accept invite. URL: \(url)")
-      // TODO: Store URL and prompt sign-in, then accept after auth
-      return
-    }
-    
-    // Parse: peel://swarm/join?s={swarmId}&i={inviteId}&t={token}
+    // Parse URL first to validate format
     guard url.host == "swarm",
           url.pathComponents.contains("join"),
           let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
@@ -570,14 +579,43 @@ public final class FirebaseService {
           let _ = components.queryItems?.first(where: { $0.name == "i" })?.value,
           let _ = components.queryItems?.first(where: { $0.name == "t" })?.value
     else {
+      lastDeepLinkError = "Invalid invite link format"
       logger.error("Invalid invite URL format")
+      return
+    }
+    
+    // Must be signed in to accept invites - store URL for later
+    guard isSignedIn else {
+      pendingInviteURL = url
+      lastDeepLinkError = "Sign in to accept this invite"
+      logger.warning("User not signed in, storing invite URL for after auth")
       return
     }
     
     do {
       try await acceptInvite(url: url)
+      pendingInviteURL = nil
+      logger.info("Successfully accepted invite")
     } catch {
+      lastDeepLinkError = "Failed to accept invite: \(error.localizedDescription)"
       logger.error("Failed to accept invite: \(error)")
+    }
+  }
+  
+  /// Process any pending invite after sign-in
+  public func processPendingInvite() async {
+    guard let url = pendingInviteURL, isSignedIn else { return }
+    
+    logger.info("Processing pending invite after sign-in")
+    pendingInviteURL = nil
+    
+    do {
+      try await acceptInvite(url: url)
+      lastDeepLinkError = nil
+      logger.info("Successfully accepted pending invite")
+    } catch {
+      lastDeepLinkError = "Failed to accept invite: \(error.localizedDescription)"
+      logger.error("Failed to accept pending invite: \(error)")
     }
   }
 }
