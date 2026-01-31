@@ -443,6 +443,9 @@ public struct PrePlannerOutput: Sendable {
   /// Relevant files found via RAG search
   public let relevantFiles: [RelevantFile]
   
+  /// Lessons learned from past fixes (#210)
+  public let lessons: [Lesson]
+  
   /// Summary context to inject into planner prompt
   public let contextSummary: String
   
@@ -471,10 +474,30 @@ public struct PrePlannerOutput: Sendable {
     }
   }
   
-  public init(goals: [String], constraints: [String], relevantFiles: [RelevantFile], contextSummary: String, timestamp: Date, durationSeconds: Double) {
+  /// Lesson learned from past fixes (#210)
+  public struct Lesson: Sendable {
+    public let id: String
+    public let filePattern: String?
+    public let errorSignature: String?
+    public let fixDescription: String
+    public let fixCode: String?
+    public let confidence: Float
+    
+    public init(id: String, filePattern: String?, errorSignature: String?, fixDescription: String, fixCode: String?, confidence: Float) {
+      self.id = id
+      self.filePattern = filePattern
+      self.errorSignature = errorSignature
+      self.fixDescription = fixDescription
+      self.fixCode = fixCode
+      self.confidence = confidence
+    }
+  }
+  
+  public init(goals: [String], constraints: [String], relevantFiles: [RelevantFile], lessons: [Lesson], contextSummary: String, timestamp: Date, durationSeconds: Double) {
     self.goals = goals
     self.constraints = constraints
     self.relevantFiles = relevantFiles
+    self.lessons = lessons
     self.contextSummary = contextSummary
     self.timestamp = timestamp
     self.durationSeconds = durationSeconds
