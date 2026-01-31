@@ -1113,6 +1113,14 @@ public final class AgentChainRunner {
       )
     }
     
+    // Query lessons relevant to the files we'll be working with (#210)
+    let lessons: [PrePlannerOutput.Lesson]
+    if let repoPath {
+      lessons = await queryRelevantLessons(repoPath: repoPath, relevantFiles: relevantFiles, prompt: prompt)
+    } else {
+      lessons = []
+    }
+    
     // Infer goals from the prompt
     let goals = inferGoals(from: prompt)
     
@@ -1128,6 +1136,7 @@ public final class AgentChainRunner {
       goals: goals,
       constraints: constraints,
       relevantFiles: relevantFiles,
+      lessons: lessons,
       contextSummary: contextSummary,
       timestamp: Date(),
       durationSeconds: duration
@@ -1277,11 +1286,88 @@ public final class AgentChainRunner {
       enriched += "\n"
     }
     
+    // Add lessons learned (#210)
+    if !prePlannerOutput.lessons.isEmpty {
+      enriched += "## Lessons Learned (from past fixes)\n\n"
+      enriched += "These patterns have been identified from previous work on this codebase:\n\n"
+      for lesson in prePlannerOutput.lessons {
+        enriched += "### \(lesson.fixDescription)\n"
+        if let pattern = lesson.filePattern {
+          enriched += "- Applies to: `\(pattern)`\n"
+        }
+        if let sig = lesson.errorSignature {
+          enriched += "- Error pattern: \(sig)\n"
+        }
+        if let code = lesson.fixCode {
+          enriched += "- Fix: `\(code)`\n"
+        }
+        enriched += "- Confidence: \(Int(lesson.confidence * 100))%\n\n"
+      }
+    }
+    
     // Add original prompt
     enriched += "## User Request\n\n"
     enriched += original
     
     return enriched
+  }
+  
+  // MARK: - Lesson Query (#210)
+  
+  /// Query lessons relevant to the files we'll be working with
+  private func queryRelevantLessons(repoPath: String, relevantFiles: [PrePlannerOutput.RelevantFile], prompt: String) async -> [PrePlannerOutput.Lesson] {
+    guard !repoPath.isEmpty else { return [] }
+    
+    var allLessons: [LocalRAGLesson] = []
+    
+    // Query lessons for each relevant file path
+    for file in relevantFiles.prefix(5) {
+      do {
+        let lessons = try await localRagStore.queryLessons(
+          repoPath: repoPath,
+          filePattern: file.path,
+          errorSignature: nil,
+          limit: 5
+        )
+        allLessons.append(contentsOf: lessons)
+      } catch {
+        // Silently ignore query failures
+      }
+    }
+    
+    // Also query with the prompt text for error signature matches
+    do {
+      let promptLessons = try await localRagStore.queryLessons(
+        repoPath: repoPath,
+        filePattern: nil,
+        errorSignature: prompt,
+        limit: 5
+      )
+      allLessons.append(contentsOf: promptLessons)
+    } catch {
+      // Silently ignore
+    }
+    
+    // Dedupe by ID, sort by confidence, take top 10
+    var seen = Set<String>()
+    let uniqueLessons = allLessons.filter { lesson in
+      guard !seen.contains(lesson.id) else { return false }
+      seen.insert(lesson.id)
+      return true
+    }
+    .sorted { $0.confidence > $1.confidence }
+    .prefix(10)
+    
+    return uniqueLessons.map { lesson in
+      PrePlannerOutput.Lesson(
+        id: lesson.id,
+        filePattern: lesson.filePattern,
+        errorSignature: lesson.errorSignature,
+        fixDescription: lesson.fixDescription,
+        fixCode: lesson.fixCode,
+        confidence: lesson.confidence
+      )
+    }
   }
 }
 
