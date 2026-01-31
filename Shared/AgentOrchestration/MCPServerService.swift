@@ -160,6 +160,25 @@ public final class MCPServerService {
     }
   }
 
+  /// Repository info for RAG dashboard display
+  public struct RAGRepoInfo: Identifiable {
+    public let id: String
+    public let name: String
+    public let rootPath: String
+    public let lastIndexedAt: Date?
+    public let fileCount: Int
+    public let chunkCount: Int
+
+    public init(id: String, name: String, rootPath: String, lastIndexedAt: Date?, fileCount: Int, chunkCount: Int) {
+      self.id = id
+      self.name = name
+      self.rootPath = rootPath
+      self.lastIndexedAt = lastIndexedAt
+      self.fileCount = fileCount
+      self.chunkCount = chunkCount
+    }
+  }
+
 
   public var isEnabled: Bool {
     didSet {
@@ -4673,6 +4692,56 @@ public final class MCPServerService {
       ToolDefinition(
         name: "swarm.repos",
         description: "List all registered repositories and their remote URL mappings.",
+        inputSchema: [
+          "type": "object",
+          "properties": [:],
+          "required": []
+        ],
+        category: .swarm,
+        isMutating: false
+      ),
+      // MARK: - Firestore Swarm Tools
+      ToolDefinition(
+        name: "swarm.firestore.auth",
+        description: "Check Firebase authentication status for Firestore swarm coordination.",
+        inputSchema: [
+          "type": "object",
+          "properties": [:],
+          "required": []
+        ],
+        category: .swarm,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "swarm.firestore.swarms",
+        description: "List all Firestore swarms the current user belongs to (for debugging).",
+        inputSchema: [
+          "type": "object",
+          "properties": [:],
+          "required": []
+        ],
+        category: .swarm,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "swarm.firestore.create",
+        description: "Create a new Firestore swarm.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "name": [
+              "type": "string",
+              "description": "Name for the new swarm"
+            ]
+          ],
+          "required": ["name"]
+        ],
+        category: .swarm,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "swarm.firestore.debug",
+        description: "Debug query: show raw Firestore swarm data and query parameters.",
         inputSchema: [
           "type": "object",
           "properties": [:],
