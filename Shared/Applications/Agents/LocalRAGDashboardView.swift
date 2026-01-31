@@ -245,7 +245,6 @@ struct LocalRAGDashboardView: View {
       get: { LocalRAGEmbeddingProviderFactory.preferredProvider },
       set: { newValue in
         LocalRAGEmbeddingProviderFactory.preferredProvider = newValue
-        mcpServer.localRagUseCoreML = (newValue == .coreml)
         embeddingSettingsChanged = true
       }
     )
@@ -816,7 +815,6 @@ struct LocalRAGDashboardView: View {
                 Picker("Embedding Provider", selection: providerSelection) {
                   Text("Auto").tag(EmbeddingProviderType.auto)
                   Text("MLX").tag(EmbeddingProviderType.mlx)
-                  Text("Core ML").tag(EmbeddingProviderType.coreml)
                   Text("System").tag(EmbeddingProviderType.system)
                   Text("Hash (fallback)").tag(EmbeddingProviderType.hash)
                 }
@@ -885,12 +883,6 @@ struct LocalRAGDashboardView: View {
                   Label("Apply to reload embedding model", systemImage: "exclamationmark.triangle")
                     .font(.caption2)
                     .foregroundStyle(.orange)
-                }
-
-                if providerSelection.wrappedValue == .coreml {
-                  Text(coreMLAssetsSummary(status))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
                 }
               }
               
@@ -1644,32 +1636,6 @@ struct LocalRAGDashboardView: View {
 
   private func formatBytes(_ bytes: Int) -> String {
     ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
-  }
-
-  private func coreMLAssetsSummary(_ status: LocalRAGStore.Status) -> String {
-    let present = [
-      status.coreMLModelPresent ? "model" : nil,
-      status.coreMLVocabPresent ? "vocab" : nil
-    ].compactMap { $0 }
-    let missing = [
-      status.coreMLModelPresent ? nil : "model",
-      status.coreMLVocabPresent ? nil : "vocab"
-    ].compactMap { $0 }
-
-    if present.isEmpty && missing.isEmpty {
-      return "Core ML assets: unknown"
-    }
-    if missing.isEmpty {
-      return "Core ML assets: \(present.joined(separator: ", "))"
-    }
-    if present.isEmpty {
-      return "Core ML assets: missing \(missing.joined(separator: ", "))"
-    }
-    return "Core ML assets: \(present.joined(separator: ", ")) · missing \(missing.joined(separator: ", "))"
-  }
-
-  private func coreMLWarnings(_ status: LocalRAGStore.Status) -> [String] {
-    status.assetWarnings()
   }
 
   private func displayPath(for path: String) -> String {

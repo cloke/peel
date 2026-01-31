@@ -74,9 +74,6 @@ public protocol MCPToolHandlerDelegate: AnyObject {
   /// Local RAG query string
   var localRagQuery: String { get set }
 
-  /// Local RAG use CoreML toggle
-  var localRagUseCoreML: Bool { get set }
-
   /// Local RAG search mode
   var localRagSearchMode: MCPServerService.RAGSearchMode { get set }
 

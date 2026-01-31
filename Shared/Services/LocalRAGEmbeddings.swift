@@ -5,7 +5,6 @@
 //  Created on 1/19/26.
 //
 
-import CoreML
 import CryptoKit
 import Foundation
 @preconcurrency import NaturalLanguage
@@ -20,7 +19,6 @@ protocol LocalRAGEmbeddingProvider: Sendable {
 /// Provider preference for embedding generation
 enum EmbeddingProviderType: String, CaseIterable {
   case mlx       // MLX native Swift (preferred - uses all Apple Silicon chips)
-  case coreml    // CoreML with pre-converted model
   case system    // Apple NLEmbedding (built-in, no model download)
   case hash      // Hash-based fallback (no semantic understanding)
   case auto      // Auto-select best available
@@ -28,7 +26,6 @@ enum EmbeddingProviderType: String, CaseIterable {
 
 enum LocalRAGEmbeddingProviderFactory {
   private static let providerKey = "localrag.provider"
-  private static let useCoreMLKey = "localrag.useCoreML"  // legacy
   private static let useSystemKey = "localrag.useSystem"  // legacy
   private static let mlxModelIdKey = "localrag.mlxModelId"
   private static let mlxDownloadedModelsKey = "localrag.mlxDownloadedModels"
@@ -44,9 +41,6 @@ enum LocalRAGEmbeddingProviderFactory {
         return type
       }
       // Check legacy keys
-      if UserDefaults.standard.bool(forKey: useCoreMLKey) {
-        return .coreml
-      }
       if UserDefaults.standard.bool(forKey: useSystemKey) {
         return .system
       }
@@ -66,14 +60,6 @@ enum LocalRAGEmbeddingProviderFactory {
       print("[RAG] Using MLXEmbeddingProvider (native Swift + Apple Silicon)")
       return makePreferredMLX(forCodeSearch: true)
       
-    case .coreml:
-      if let provider = CoreMLEmbeddingProvider.makeDefault(modelFolderName: modelFolderName) {
-        print("[RAG] Using CoreMLEmbeddingProvider")
-        return provider
-      }
-      print("[RAG] CoreML model not found, falling back")
-      return makeFallbackProvider()
-      
     case .system:
       if let provider = SystemEmbeddingProvider() {
         print("[RAG] Using SystemEmbeddingProvider (Apple NLEmbedding)")
@@ -92,7 +78,7 @@ enum LocalRAGEmbeddingProviderFactory {
   }
   
   /// Auto-select the best available provider
-  /// Priority: MLX > CoreML > System > Hash
+  /// Priority: MLX > System > Hash
   private static func makeAutoProvider() -> LocalRAGEmbeddingProvider {
     // On macOS, prefer MLX for best Apple Silicon utilization
     print("[RAG] Auto-selecting MLXEmbeddingProvider (best for Apple Silicon)")
@@ -341,205 +327,6 @@ struct SimpleVocabTokenizer: LocalRAGTokenizer {
 }
 
 // MARK: - Package Tokenizer Adapter
-
-/// Adapts SwiftBPETokenizer package's BPETokenizer to LocalRAGBatchTokenizer protocol
-struct PackageBPETokenizerAdapter: LocalRAGBatchTokenizer {
-  private let tokenizer: BPETokenizer
-  
-  init?(vocabURL: URL, mergesURL: URL) {
-    guard let tokenizer = try? BPETokenizer(vocabURL: vocabURL, mergesURL: mergesURL) else {
-      return nil
-    }
-    self.tokenizer = tokenizer
-  }
-  
-  func encode(_ text: String, maxLength: Int) -> ([Int32], [Int32]) {
-    let output = tokenizer.encode(text, maxLength: maxLength)
-    return (output.inputIds, output.attentionMask)
-  }
-  
-  func encodeBatch(_ texts: [String], maxLength: Int) -> [([Int32], [Int32])] {
-    tokenizer.encodeBatch(texts, maxLength: maxLength).map { ($0.inputIds, $0.attentionMask) }
-  }
-}
-
-struct CoreMLEmbeddingProvider: LocalRAGEmbeddingProvider, @unchecked Sendable {
-  let model: MLModel
-  let tokenizer: LocalRAGTokenizer
-  let batchTokenizer: LocalRAGBatchTokenizer?
-  let maxLength: Int
-  let outputName: String
-  let dimensions: Int
-  let modelName: String = "CodeBERT-base-256"
-
-  static func makeDefault(modelFolderName: String) -> CoreMLEmbeddingProvider? {
-    let modelDirectories = candidateModelDirectories(modelFolderName: modelFolderName)
-    for directory in modelDirectories {
-      let modelURL = directory.appendingPathComponent("codebert-base-256.mlmodelc")
-      let vocabURL = directory.appendingPathComponent("codebert-base.vocab.json")
-      let mergesURL = directory.appendingPathComponent("codebert-base.merges.txt")
-      if FileManager.default.fileExists(atPath: modelURL.path) {
-        return CoreMLEmbeddingProvider(
-          modelURL: modelURL,
-          vocabURL: vocabURL,
-          mergesURL: mergesURL,
-          maxLength: 256
-        )
-      }
-    }
-    return nil
-  }
-
-  private static func candidateModelDirectories(modelFolderName: String) -> [URL] {
-    var directories: [URL] = []
-    if let baseURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
-      directories.append(baseURL)
-    }
-    if let bundleId = Bundle.main.bundleIdentifier {
-      let containerBase = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Containers")
-        .appendingPathComponent(bundleId)
-        .appendingPathComponent("Data/Library/Application Support")
-      directories.append(containerBase)
-    }
-
-    var seen = Set<String>()
-    return directories
-      .map { $0.appendingPathComponent(modelFolderName, isDirectory: true) }
-      .filter { url in
-        let path = url.standardizedFileURL.path
-        guard !seen.contains(path) else { return false }
-        seen.insert(path)
-        return true
-      }
-  }
-
-  init?(modelURL: URL, vocabURL: URL, mergesURL: URL, maxLength: Int) {
-    guard FileManager.default.fileExists(atPath: modelURL.path) else { return nil }
-    
-    // Priority order for tokenizers:
-    // 1. Native Swift BPE (fastest - no subprocess at all!)
-    // 2. Simple vocab fallback (inaccurate but works)
-    
-    let tokenizer: LocalRAGTokenizer
-    let batchTokenizer: LocalRAGBatchTokenizer?
-    
-    if let swiftBPE = PackageBPETokenizerAdapter(vocabURL: vocabURL, mergesURL: mergesURL) {
-      // Best option: pure Swift via swift-bpe-tokenizer package
-      tokenizer = swiftBPE
-      batchTokenizer = swiftBPE
-      #if DEBUG
-      print("[RAG] Using native Swift BPE tokenizer (swift-bpe-tokenizer package)")
-      #endif
-    } else if let fallback = SimpleVocabTokenizer(vocabURL: vocabURL) {
-      tokenizer = fallback
-      batchTokenizer = nil
-      #if DEBUG
-      print("[RAG] Using simple vocab tokenizer (fallback)")
-      #endif
-    } else {
-      return nil
-    }
-    
-    guard let model = try? MLModel(contentsOf: modelURL) else { return nil }
-    guard let outputName = model.modelDescription.outputDescriptionsByName.keys.first else { return nil }
-
-    self.model = model
-    self.tokenizer = tokenizer
-    self.batchTokenizer = batchTokenizer
-    self.maxLength = maxLength
-    self.outputName = outputName
-    if let output = model.modelDescription.outputDescriptionsByName[outputName],
-       let multiArray = output.multiArrayConstraint,
-       let lastDim = multiArray.shape.last?.intValue {
-      self.dimensions = lastDim
-    } else {
-      self.dimensions = 0
-    }
-  }
-
-  func embed(texts: [String]) async throws -> [[Float]] {
-    guard !texts.isEmpty else { return [] }
-    guard dimensions > 0 else { throw LocalRAGEmbeddingError.unsupportedModel }
-
-    // Use batch tokenization if available
-    let tokenizedTexts: [([Int32], [Int32])]
-    if let batchTokenizer {
-      tokenizedTexts = batchTokenizer.encodeBatch(texts, maxLength: maxLength)
-    } else {
-      tokenizedTexts = texts.map { tokenizer.encode($0, maxLength: maxLength) }
-    }
-    
-    // Generate embeddings for each tokenized text
-    return try tokenizedTexts.map { (ids, mask) in
-      guard let inputIds = try? MLMultiArray(shape: [1, NSNumber(value: maxLength)], dataType: .int32),
-            let attentionMask = try? MLMultiArray(shape: [1, NSNumber(value: maxLength)], dataType: .int32) else {
-        throw LocalRAGEmbeddingError.invalidInput
-      }
-
-      for index in 0..<maxLength {
-        inputIds[index] = NSNumber(value: ids[index])
-        attentionMask[index] = NSNumber(value: mask[index])
-      }
-
-      let provider = try MLDictionaryFeatureProvider(dictionary: [
-        "input_ids": inputIds,
-        "attention_mask": attentionMask
-      ])
-      let prediction = try model.prediction(from: provider)
-      guard let output = prediction.featureValue(for: outputName)?.multiArrayValue else {
-        throw LocalRAGEmbeddingError.predictionFailed
-      }
-      return multiArrayToFloatArray(output)
-    }
-  }
-
-  private func multiArrayToFloatArray(_ array: MLMultiArray) -> [Float] {
-    let count = array.count
-    var result = [Float]()
-    result.reserveCapacity(count)
-    for index in 0..<count {
-      result.append(Float(truncating: array[index]))
-    }
-    return result
-  }
-}
-
-struct LocalRAGModelDescriptor {
-  static func describe(modelURL: URL) throws -> [String: Any] {
-    let model = try MLModel(contentsOf: modelURL)
-    let description = model.modelDescription
-    let inputDescriptions = description.inputDescriptionsByName.mapValues { value in
-      featureDescription(value)
-    }
-    let outputDescriptions = description.outputDescriptionsByName.mapValues { value in
-      featureDescription(value)
-    }
-
-    return [
-      "name": description.metadata[.author] as Any,
-      "inputs": inputDescriptions,
-      "outputs": outputDescriptions
-    ]
-  }
-
-  private static func featureDescription(_ description: MLFeatureDescription) -> [String: Any] {
-    var info: [String: Any] = [
-      "type": "\(description.type)",
-      "isOptional": description.isOptional
-    ]
-    if let multiArray = description.multiArrayConstraint {
-      info["multiArrayShape"] = multiArray.shape
-      info["multiArrayDataType"] = "\(multiArray.dataType)"
-    }
-    if let imageConstraint = description.imageConstraint {
-      info["imageWidth"] = imageConstraint.pixelsWide
-      info["imageHeight"] = imageConstraint.pixelsHigh
-      info["imagePixelFormat"] = "\(imageConstraint.pixelFormatType)"
-    }
-    return info
-  }
-}
 
 struct HashEmbeddingProvider: LocalRAGEmbeddingProvider {
   let dimensions: Int = 128

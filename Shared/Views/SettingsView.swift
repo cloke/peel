@@ -128,17 +128,6 @@ struct SettingsView: View {
 
           if mcpServer.localRagEnabled {
             VStack(alignment: .leading, spacing: 8) {
-              Toggle(
-                "Use Core ML embeddings",
-                isOn: Binding(
-                  get: { mcpServer.localRagUseCoreML },
-                  set: { mcpServer.localRagUseCoreML = $0 }
-                )
-              )
-              Text("Requires local Core ML model setup. Falls back to text search if unavailable.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
               Picker("Default search mode", selection: Binding(
                 get: { mcpServer.localRagSearchMode },
                 set: { mcpServer.localRagSearchMode = $0 }

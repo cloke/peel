@@ -129,32 +129,29 @@ struct WorktreesView: View {
     isLoading = true
     errorMessage = nil
     
-    // Call worktree.list MCP tool
     do {
-      let listResult = await mcpServer.callToolAsync(
-        name: "worktree.list",
-        arguments: [:]
-      )
+      // Get all worktrees directly from the delegate method
+      let allWorktrees = try await mcpServer.listAllWorktrees()
       
-      if let content = listResult.first?.text,
-         let data = content.data(using: .utf8),
-         let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-         let worktreesJson = json["worktrees"] as? [[String: Any]] {
-        
-        worktrees = worktreesJson.compactMap { WorktreeItem(from: $0) }
+      worktrees = allWorktrees.map { wt in
+        WorktreeItem(
+          id: wt.path,
+          path: wt.path,
+          branch: wt.branch ?? wt.head,
+          repoPath: wt.repoPath,
+          diskSizeBytes: wt.diskSizeBytes ?? 0,
+          isStale: wt.isPrunable
+        )
       }
       
-      // Call worktree.stats MCP tool
-      let statsResult = await mcpServer.callToolAsync(
-        name: "worktree.stats",
-        arguments: [:]
+      // Calculate stats
+      let totalBytes = allWorktrees.reduce(0) { $0 + ($1.diskSizeBytes ?? 0) }
+      let staleCount = allWorktrees.filter { $0.isPrunable }.count
+      stats = WorktreeStats(
+        totalCount: allWorktrees.count,
+        totalDiskBytes: totalBytes,
+        staleCount: staleCount
       )
-      
-      if let content = statsResult.first?.text,
-         let data = content.data(using: .utf8),
-         let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-        stats = WorktreeStats(from: json)
-      }
       
     } catch {
       errorMessage = error.localizedDescription
@@ -164,11 +161,12 @@ struct WorktreesView: View {
   }
   
   private func deleteWorktree(_ worktree: WorktreeItem) async {
-    _ = await mcpServer.callToolAsync(
-      name: "worktree.remove",
-      arguments: ["path": worktree.path]
-    )
-    await loadWorktrees()
+    do {
+      try await mcpServer.removeWorktree(path: worktree.path, force: false)
+      await loadWorktrees()
+    } catch {
+      errorMessage = error.localizedDescription
+    }
   }
   
   private func openInVSCode(_ worktree: WorktreeItem) {
@@ -200,25 +198,14 @@ struct WorktreeItem: Identifiable, Hashable {
   let isStale: Bool
   let createdAt: Date?
   
-  init?(from json: [String: Any]) {
-    guard let path = json["path"] as? String,
-          let branch = json["branch"] as? String else {
-      return nil
-    }
-    
-    self.id = path
+  init(id: String, path: String, branch: String, repoPath: String, diskSizeBytes: Int64, isStale: Bool, createdAt: Date? = nil) {
+    self.id = id
     self.path = path
     self.branch = branch
-    self.repoPath = json["repoPath"] as? String ?? ""
-    self.diskSizeBytes = json["diskSizeBytes"] as? Int64 ?? 0
-    self.isStale = json["isStale"] as? Bool ?? false
-    
-    if let createdStr = json["createdAt"] as? String {
-      let formatter = ISO8601DateFormatter()
-      self.createdAt = formatter.date(from: createdStr)
-    } else {
-      self.createdAt = nil
-    }
+    self.repoPath = repoPath
+    self.diskSizeBytes = diskSizeBytes
+    self.isStale = isStale
+    self.createdAt = createdAt
   }
   
   var displayName: String {
@@ -240,10 +227,10 @@ struct WorktreeStats {
   let totalDiskBytes: Int64
   let staleCount: Int
   
-  init(from json: [String: Any]) {
-    self.totalCount = json["totalCount"] as? Int ?? 0
-    self.totalDiskBytes = json["totalDiskBytes"] as? Int64 ?? 0
-    self.staleCount = json["staleCount"] as? Int ?? 0
+  init(totalCount: Int, totalDiskBytes: Int64, staleCount: Int) {
+    self.totalCount = totalCount
+    self.totalDiskBytes = totalDiskBytes
+    self.staleCount = staleCount
   }
 }
 
@@ -436,7 +423,7 @@ struct NewWorktreeSheet: View {
   
   private func loadRepos() {
     let repos = RepoRegistry.shared.registeredRepos
-    availableRepos = repos.map { (name: $0.key, path: $0.value) }.sorted { $0.name < $1.name }
+    availableRepos = repos.map { (name: $0.remoteURL, path: $0.localPath) }.sorted { $0.name < $1.name }
     if let first = availableRepos.first {
       selectedRepoPath = first.path
     }
@@ -446,39 +433,26 @@ struct NewWorktreeSheet: View {
     isCreating = true
     errorMessage = nil
     
-    let result = await mcpServer.callToolAsync(
-      name: "worktree.create",
-      arguments: [
-        "repoPath": selectedRepoPath,
-        "branchName": branchName,
-        "baseBranch": baseBranch
-      ]
-    )
-    
-    if let content = result.first?.text,
-       let data = content.data(using: .utf8),
-       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+    do {
+      let worktreePath = try await mcpServer.createWorktree(
+        repoPath: selectedRepoPath,
+        branchName: branchName,
+        baseBranch: baseBranch
+      )
       
-      if let success = json["success"] as? Bool, success,
-         let worktreePath = json["worktreePath"] as? String {
-        
-        if openInVSCode {
-          #if os(macOS)
-          let process = Process()
-          process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-          process.arguments = ["-a", "Visual Studio Code", worktreePath]
-          try? process.run()
-          #endif
-        }
-        
-        onCreated()
-        dismiss()
-      } else if let error = json["error"] as? [String: Any],
-                let message = error["message"] as? String {
-        errorMessage = message
+      if openInVSCode {
+        #if os(macOS)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = ["-a", "Visual Studio Code", worktreePath]
+        try? process.run()
+        #endif
       }
-    } else {
-      errorMessage = "Unknown error creating worktree"
+      
+      onCreated()
+      dismiss()
+    } catch {
+      errorMessage = error.localizedDescription
     }
     
     isCreating = false
