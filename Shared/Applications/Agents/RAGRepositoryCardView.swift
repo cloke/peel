@@ -121,6 +121,7 @@ struct RAGRepositoryCardView: View {
   @State private var isHovering: Bool = false
   @State private var showSkillsSheet: Bool = false
   @State private var errorMessage: String?
+  @State private var showForceReindexConfirm: Bool = false
   
   // Computed status
   private var status: RAGRepoStatus {
@@ -347,13 +348,30 @@ struct RAGRepositoryCardView: View {
         Spacer()
         
         Button {
-          Task { await reindexRepository() }
+          if NSEvent.modifierFlags.contains(.command) {
+            showForceReindexConfirm = true
+          } else {
+            Task { await reindexRepository(force: false) }
+          }
         } label: {
           Label("Re-index", systemImage: "arrow.clockwise")
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
         .disabled(mcpServer.ragIndexingPath != nil)
+        .help("Re-index changed files. ⌘-click to force full reindex.")
+        .confirmationDialog(
+          "Force Full Reindex?",
+          isPresented: $showForceReindexConfirm,
+          titleVisibility: .visible
+        ) {
+          Button("Force Reindex All Files", role: .destructive) {
+            Task { await reindexRepository(force: true) }
+          }
+          Button("Cancel", role: .cancel) {}
+        } message: {
+          Text("This will re-index all \(repo.fileCount) files, even unchanged ones. This may take several minutes.")
+        }
       }
       
       // Index progress
@@ -784,10 +802,10 @@ struct RAGRepositoryCardView: View {
     }
   }
   
-  private func reindexRepository() async {
+  private func reindexRepository(force: Bool) async {
     errorMessage = nil
     do {
-      try await mcpServer.indexRagRepo(path: repo.rootPath)
+      try await mcpServer.indexRagRepo(path: repo.rootPath, forceReindex: force)
     } catch {
       errorMessage = error.localizedDescription
     }
