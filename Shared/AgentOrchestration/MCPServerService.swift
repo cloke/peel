@@ -121,6 +121,7 @@ public final class MCPServerService {
       case lessonAdded
       case lessonUpdated
       case lessonDeleted
+      case lessonApplied
     }
 
     public let id: UUID
@@ -1035,6 +1036,29 @@ public final class MCPServerService {
       )
     }
     return deleted
+  }
+  
+  func recordLessonApplied(id: String, success: Bool) async throws {
+    if success {
+      // Increase confidence and occurrence count
+      try await localRagStore.recordLessonUsed(id: id)
+      appendRagEvent(
+        kind: .lessonApplied,
+        title: "Lesson applied",
+        detail: "Confidence increased for lesson \(id.prefix(8))..."
+      )
+    } else {
+      // Decrease confidence for unsuccessful application
+      if let lesson = try await localRagStore.getLesson(id: id) {
+        let newConfidence = max(0.1, lesson.confidence - 0.1)
+        _ = try await localRagStore.updateLesson(id: id, confidence: newConfidence)
+        appendRagEvent(
+          kind: .lessonApplied,
+          title: "Lesson not helpful",
+          detail: "Confidence decreased for lesson \(id.prefix(8))..."
+        )
+      }
+    }
   }
 
   func clearMCPRunHistory() {
@@ -3676,6 +3700,20 @@ public final class MCPServerService {
             "lessonId": ["type": "string", "description": "The lesson ID to delete"]
           ],
           "required": ["lessonId"]
+        ],
+        category: .rag,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "rag.lessons.applied",
+        description: "Record that a lesson was applied to provide feedback. Updates confidence based on success/failure.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "lessonId": ["type": "string", "description": "The lesson ID that was applied"],
+            "success": ["type": "boolean", "description": "Whether applying the lesson was successful"]
+          ],
+          "required": ["lessonId", "success"]
         ],
         category: .rag,
         isMutating: true

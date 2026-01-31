@@ -2818,7 +2818,7 @@ actor LocalRAGStore {
   }
   
   /// Get a specific lesson by ID
-  private func getLesson(id: String) throws -> LocalRAGLesson? {
+  func getLesson(id: String) throws -> LocalRAGLesson? {
     guard let db else { throw LocalRAGError.sqlite("Database not initialized") }
     
     let sql = """
