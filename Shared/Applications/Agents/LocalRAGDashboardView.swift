@@ -279,11 +279,13 @@ struct LocalRAGDashboardView: View {
         }
         
         // MARK: - Section Picker
-        Picker("Section", selection: $selectedSection) {
+        Picker(selection: $selectedSection) {
           ForEach(RAGDashboardSection.allCases) { section in
             Label(section.rawValue, systemImage: section.icon)
               .tag(section)
           }
+        } label: {
+          EmptyView()
         }
         .pickerStyle(.segmented)
         .padding(.horizontal, LayoutSpacing.item)

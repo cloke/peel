@@ -5,6 +5,7 @@
 //  Created by Cory Loken on 12/27/20.
 //
 
+import PeelUI
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -399,80 +400,17 @@ private struct SettingsPage<Content: View>: View {
 
   var body: some View {
     ScrollView {
-      VStack(alignment: .leading, spacing: 16) {
-        content
-      }
-      .frame(maxWidth: 720, alignment: .leading)
-      .padding(24)
-    }
-  }
-}
-
-private struct SettingsSection<Content: View>: View {
-  let title: String
-  let content: Content
-
-  init(_ title: String, @ViewBuilder content: () -> Content) {
-    self.title = title
-    self.content = content()
-  }
-
-  var body: some View {
-    GroupBox {
-      VStack(alignment: .leading, spacing: 12) {
+      VStack(alignment: .leading, spacing: 20) {
         content
       }
       .frame(maxWidth: .infinity, alignment: .leading)
-    } label: {
-      Text(title)
-        .font(.headline)
     }
+    .contentMargins(20, for: .scrollContent)
   }
 }
 
-private struct StatusPill: View {
-  enum Style {
-    case success
-    case warning
-    case neutral
-  }
-
-  let text: String
-  let style: Style
-
-  var body: some View {
-    Text(text)
-      .font(.caption)
-      .fontWeight(.semibold)
-      .padding(.horizontal, 8)
-      .padding(.vertical, 4)
-      .background(backgroundColor)
-      .foregroundStyle(foregroundColor)
-      .clipShape(Capsule())
-  }
-
-  private var backgroundColor: Color {
-    switch style {
-    case .success:
-      return Color.green.opacity(0.2)
-    case .warning:
-      return Color.orange.opacity(0.2)
-    case .neutral:
-      return Color.secondary.opacity(0.15)
-    }
-  }
-
-  private var foregroundColor: Color {
-    switch style {
-    case .success:
-      return .green
-    case .warning:
-      return .orange
-    case .neutral:
-      return .secondary
-    }
-  }
-}
+// SettingsSection is now a typealias for SectionCard from PeelUI
+private typealias SettingsSection = SectionCard
 
 #if os(macOS)
 private struct MCPToolSettingsSection: View {
@@ -891,89 +829,35 @@ struct RAGSettingsSection: View {
   }
   
   var body: some View {
-    SettingsSection("Database") {
-      if let status = mcpServer.ragStatus {
-        Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 8) {
-          GridRow {
-            Text("Location")
-              .foregroundStyle(.secondary)
-            Text(displayPath(for: status.dbPath))
-          }
-          GridRow {
-            Text("Schema Version")
-              .foregroundStyle(.secondary)
-            Text("v\(status.schemaVersion)")
-          }
-          GridRow {
-            Text("Provider")
-              .foregroundStyle(.secondary)
-            Text(status.providerName)
-          }
-        }
-        
-        if let stats = mcpServer.ragStats {
-          Divider()
-          Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 8) {
-            GridRow {
-              Text("Total Files")
-                .foregroundStyle(.secondary)
-              Text("\(stats.fileCount)")
-            }
-            GridRow {
-              Text("Total Chunks")
-                .foregroundStyle(.secondary)
-              Text("\(stats.chunkCount)")
-            }
-            GridRow {
-              Text("Cached Embeddings")
-                .foregroundStyle(.secondary)
-              Text("\(stats.cacheEmbeddingCount)")
-            }
-            GridRow {
-              Text("Database Size")
-                .foregroundStyle(.secondary)
-              Text(formatBytes(Int64(stats.dbSizeBytes)))
-            }
-          }
-        }
-      } else {
-        Text("Database not initialized")
-          .foregroundStyle(.secondary)
-      }
-      
-      HStack {
-        Button("Initialize Database") {
-          Task { await initializeDatabase() }
-        }
-        .buttonStyle(.bordered)
-        .disabled(isInitializing)
-      }
-    }
-    
-    SettingsSection("Embedding Provider") {
-      Picker("Provider", selection: providerSelection) {
-        Text("Auto").tag(EmbeddingProviderType.auto)
-        Text("MLX").tag(EmbeddingProviderType.mlx)
-        Text("System").tag(EmbeddingProviderType.system)
-        Text("Hash (fallback)").tag(EmbeddingProviderType.hash)
-      }
-      .pickerStyle(.menu)
-      
-      if providerSelection.wrappedValue == .mlx {
-        mlxSettingsView
-      }
-      
-      if embeddingSettingsChanged {
+    VStack(alignment: .leading, spacing: 20) {
+      // Database Section
+      VStack(alignment: .leading, spacing: 0) {
         HStack {
-          Label("Settings changed", systemImage: "exclamationmark.triangle")
-            .font(.caption)
-            .foregroundStyle(.orange)
+          Text("Database")
+            .font(.headline)
           Spacer()
-          Button("Apply") {
-            Task { await applyEmbeddingSettings() }
+          if mcpServer.ragStatus != nil {
+            StatusPill(text: "Ready", style: .success)
+          } else {
+            StatusPill(text: "Not Initialized", style: .warning)
           }
-          .buttonStyle(.borderedProminent)
         }
+        .padding(.bottom, 12)
+        
+        databaseContent
+          .padding(16)
+          .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 10))
+      }
+      
+      // Embedding Provider Section
+      VStack(alignment: .leading, spacing: 0) {
+        Text("Embedding Provider")
+          .font(.headline)
+          .padding(.bottom, 12)
+        
+        embeddingContent
+          .padding(16)
+          .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 10))
       }
     }
     .task {
@@ -982,53 +866,183 @@ struct RAGSettingsSection: View {
   }
   
   @ViewBuilder
-  private var mlxSettingsView: some View {
-    Picker("Model", selection: mlxModelSelection) {
-      Text("Auto-select").tag("")
-      ForEach(MLXEmbeddingModelConfig.availableModels, id: \.huggingFaceId) { model in
-        let suffix = model.isCodeOptimized ? " (code)" : ""
-        Text("\(model.name) · \(model.tier.description)\(suffix)")
-          .tag(model.huggingFaceId)
+  private var databaseContent: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      if let status = mcpServer.ragStatus {
+        // Location row
+        HStack(spacing: 8) {
+          Image(systemName: "folder")
+            .foregroundStyle(.secondary)
+            .frame(width: 16)
+          Text(displayPath(for: status.dbPath))
+            .font(.system(.caption, design: .monospaced))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+        }
+        
+        // Stats grid
+        if let stats = mcpServer.ragStats {
+          HStack(spacing: 12) {
+            StatCard(
+              value: "\(stats.fileCount.formatted())",
+              label: "Files",
+              icon: "doc.text"
+            )
+            StatCard(
+              value: "\(stats.chunkCount.formatted())",
+              label: "Chunks",
+              icon: "square.grid.3x3"
+            )
+            StatCard(
+              value: formatBytes(Int64(stats.dbSizeBytes)),
+              label: "Size",
+              icon: "internaldrive"
+            )
+          }
+        }
+        
+        // Schema info
+        HStack(spacing: 16) {
+          Label("Schema v\(status.schemaVersion)", systemImage: "number")
+          Label(status.providerName, systemImage: "cpu")
+        }
+        .font(.caption)
+        .foregroundStyle(.tertiary)
+      } else {
+        Text("Database not initialized")
+          .foregroundStyle(.secondary)
+      }
+      
+      Button {
+        Task { await initializeDatabase() }
+      } label: {
+        Label(mcpServer.ragStatus != nil ? "Reinitialize" : "Initialize Database", 
+              systemImage: "arrow.triangle.2.circlepath")
+      }
+      .buttonStyle(.bordered)
+      .controlSize(.small)
+      .disabled(isInitializing)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+  
+  @ViewBuilder
+  private var embeddingContent: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      // Provider picker
+      HStack {
+        Text("Provider")
+        Spacer()
+        Picker("", selection: providerSelection) {
+          Text("Auto").tag(EmbeddingProviderType.auto)
+          Text("MLX").tag(EmbeddingProviderType.mlx)
+          Text("System").tag(EmbeddingProviderType.system)
+          Text("Hash (fallback)").tag(EmbeddingProviderType.hash)
+        }
+        .pickerStyle(.menu)
+        .labelsHidden()
+        .frame(width: 140)
+      }
+      
+      if providerSelection.wrappedValue == .mlx {
+        Divider()
+        mlxSettingsView
+      }
+      
+      if embeddingSettingsChanged {
+        HStack(spacing: 12) {
+          Image(systemName: "exclamationmark.triangle.fill")
+            .foregroundStyle(.orange)
+          Text("Settings changed")
+            .font(.caption)
+          Spacer()
+          Button("Apply Changes") {
+            Task { await applyEmbeddingSettings() }
+          }
+          .buttonStyle(.borderedProminent)
+          .controlSize(.small)
+        }
+        .padding(12)
+        .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
       }
     }
-    .pickerStyle(.menu)
-    
-    if !downloadedMLXModelNames.isEmpty {
-      Text("Downloaded: \(downloadedMLXModelNames.joined(separator: ", "))")
-        .font(.caption)
-        .foregroundStyle(.secondary)
-    } else {
-      Text("Models download on first use")
-        .font(.caption)
-        .foregroundStyle(.secondary)
-    }
-    
-    Divider()
-    
-    Toggle("Clear GPU cache after each batch", isOn: mlxClearCacheAfterBatch)
-      .toggleStyle(.switch)
-    
-    HStack {
-      Text("Memory limit:")
-      TextField("GB", value: mlxMemoryLimitGB, format: .number.precision(.fractionLength(1)))
-        .textFieldStyle(.roundedBorder)
-        .frame(width: 60)
-      Text("GB")
-        .foregroundStyle(.secondary)
-    }
-    
-    let physicalGB = Double(LocalRAGEmbeddingProviderFactory.physicalMemoryBytes()) / 1_073_741_824.0
-    let currentGB = Double(LocalRAGEmbeddingProviderFactory.currentProcessMemoryBytes()) / 1_073_741_824.0
-    let isHigh = LocalRAGEmbeddingProviderFactory.isMemoryPressureHigh()
-    
-    HStack(spacing: 8) {
-      Text("Current: \(String(format: "%.1f", currentGB)) GB / \(String(format: "%.0f", physicalGB)) GB RAM")
-        .font(.caption)
-        .foregroundStyle(.secondary)
-      if isHigh {
-        Label("Memory pressure high", systemImage: "exclamationmark.triangle.fill")
-          .font(.caption)
-          .foregroundStyle(.orange)
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+  
+  @ViewBuilder
+  private var mlxSettingsView: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      // Model picker
+      HStack {
+        Text("Model")
+          .foregroundStyle(.secondary)
+        Spacer()
+        Picker("", selection: mlxModelSelection) {
+          Text("Auto-select").tag("")
+          ForEach(MLXEmbeddingModelConfig.availableModels, id: \.huggingFaceId) { model in
+            let suffix = model.isCodeOptimized ? " (code)" : ""
+            Text("\(model.name) · \(model.tier.description)\(suffix)")
+              .tag(model.huggingFaceId)
+          }
+        }
+        .pickerStyle(.menu)
+        .labelsHidden()
+        .frame(maxWidth: 280)
+      }
+      
+      // Downloaded models
+      if !downloadedMLXModelNames.isEmpty {
+        HStack(spacing: 6) {
+          Image(systemName: "checkmark.circle.fill")
+            .foregroundStyle(.green)
+            .font(.caption)
+          Text("Downloaded: \(downloadedMLXModelNames.joined(separator: ", "))")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+      
+      Divider()
+      
+      // Memory settings
+      VStack(alignment: .leading, spacing: 8) {
+        Text("Memory Management")
+          .font(.subheadline)
+          .fontWeight(.medium)
+        
+        Toggle("Clear GPU cache after each batch", isOn: mlxClearCacheAfterBatch)
+          .toggleStyle(.switch)
+          .controlSize(.small)
+        
+        HStack {
+          Text("Memory limit")
+            .foregroundStyle(.secondary)
+          Spacer()
+          TextField("", value: mlxMemoryLimitGB, format: .number.precision(.fractionLength(1)))
+            .textFieldStyle(.roundedBorder)
+            .frame(width: 60)
+            .multilineTextAlignment(.trailing)
+          Text("GB")
+            .foregroundStyle(.secondary)
+        }
+        
+        // Memory status
+        let physicalGB = Double(LocalRAGEmbeddingProviderFactory.physicalMemoryBytes()) / 1_073_741_824.0
+        let currentGB = Double(LocalRAGEmbeddingProviderFactory.currentProcessMemoryBytes()) / 1_073_741_824.0
+        let isHigh = LocalRAGEmbeddingProviderFactory.isMemoryPressureHigh()
+        
+        HStack(spacing: 8) {
+          MemoryBar(current: currentGB, total: physicalGB)
+          Text("\(String(format: "%.1f", currentGB)) / \(String(format: "%.0f", physicalGB)) GB")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          if isHigh {
+            Image(systemName: "exclamationmark.triangle.fill")
+              .foregroundStyle(.orange)
+              .font(.caption)
+          }
+        }
       }
     }
   }
@@ -1058,6 +1072,8 @@ struct RAGSettingsSection: View {
     await mcpServer.applyRagEmbeddingSettings()
   }
 }
+
+// StatCard and MemoryBar are now provided by PeelUI
 #endif
 
 #Preview {
