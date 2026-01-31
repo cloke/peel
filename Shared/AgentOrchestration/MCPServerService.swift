@@ -455,6 +455,7 @@ public final class MCPServerService {
   private var swarmToolsHandler: SwarmToolsHandler
   private var repoToolsHandler: RepoToolsHandler
   private var worktreeToolsHandler: WorktreeToolsHandler
+  private var githubToolsHandler: GitHubToolsHandler?
 
   public struct ActiveRunInfo: Identifiable {
     public let id: UUID
@@ -515,6 +516,7 @@ public final class MCPServerService {
     self.chainToolsHandler = ChainToolsHandler()
     self.repoToolsHandler = RepoToolsHandler()
     self.worktreeToolsHandler = WorktreeToolsHandler()
+    self.githubToolsHandler = GitHubToolsHandler()
 
     self.agentManager = agentManager
     self.sessionTracker = sessionTracker
@@ -604,6 +606,7 @@ public final class MCPServerService {
     self.swarmToolsHandler.delegate = self
     self.repoToolsHandler.delegate = self
     self.worktreeToolsHandler.delegate = self
+    self.githubToolsHandler?.delegate = self
     SwarmCoordinator.shared.ragSyncDelegate = self
 
     // If running in worker mode, inject the chain executor into the already-running SwarmCoordinator
@@ -1693,6 +1696,9 @@ public final class MCPServerService {
     }
     if worktreeToolsHandler.supportedTools.contains(resolvedName) {
       return await worktreeToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
+    }
+    if githubToolsHandler?.supportedTools.contains(resolvedName) == true {
+      return await githubToolsHandler!.handle(name: resolvedName, id: id, arguments: arguments)
     }
 
     // Fall through to inline handlers (to be extracted in future)
@@ -3667,6 +3673,42 @@ public final class MCPServerService {
           "required": []
         ],
         category: .rag,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "github.issue.get",
+        description: """
+        Fetch a single GitHub issue by owner, repository, and issue number.
+        Returns issue title, body, state, labels, comments count, and timestamps.
+        """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "owner": ["type": "string", "description": "Repository owner (username or organization)"],
+            "repo": ["type": "string", "description": "Repository name"],
+            "number": ["type": "integer", "description": "Issue number"]
+          ],
+          "required": ["owner", "repo", "number"]
+        ],
+        category: .github,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "github.issues.list",
+        description: """
+        List issues for a repository.
+        Returns an array of issue summaries with title, state, labels, and metadata.
+        """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "owner": ["type": "string", "description": "Repository owner (username or organization)"],
+            "repo": ["type": "string", "description": "Repository name"],
+            "state": ["type": "string", "enum": ["open", "closed", "all"], "description": "Issue state filter (default: open)"]
+          ],
+          "required": ["owner", "repo"]
+        ],
+        category: .github,
         isMutating: false
       ),
       ToolDefinition(
@@ -6208,5 +6250,41 @@ extension MCPServerService: WorktreeToolsHandlerDelegate {
 
   func diskSize(for path: String) -> Int64? {
     SwarmWorktreeManager.calculateDiskSize(for: path)
+  }
+}
+
+// MARK: - GitHub Tools Handler Delegate
+
+extension MCPServerService: GitHubToolsHandlerDelegate {
+  func fetchGitHubIssue(owner: String, repo: String, number: Int) async throws -> Github.Issue {
+    try await Github.issue(owner: owner, repository: repo, number: number)
+  }
+  
+  func listGitHubIssues(owner: String, repo: String, state: String) async throws -> [Github.Issue] {
+    // We need a repository object to use the existing issues() method
+    // For now, create a minimal repository object with the issues URL
+    let issuesUrl = "https://api.github.com/repos/\(owner)/\(repo)/issues{/number}"
+    let repository = Github.Repository(
+      id: 0,
+      name: repo,
+      full_name: "\(owner)/\(repo)",
+      owner: Github.Owner(login: owner, id: 0, avatar_url: ""),
+      html_url: "https://github.com/\(owner)/\(repo)",
+      description: nil,
+      fork: false,
+      url: "https://api.github.com/repos/\(owner)/\(repo)",
+      created_at: "",
+      updated_at: "",
+      pushed_at: "",
+      size: 0,
+      stargazers_count: 0,
+      watchers_count: 0,
+      language: nil,
+      forks_count: 0,
+      open_issues_count: 0,
+      default_branch: "main",
+      issues_url: issuesUrl
+    )
+    return try await Github.issues(from: repository, state: state)
   }
 }

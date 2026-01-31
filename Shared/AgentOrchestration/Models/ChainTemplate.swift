@@ -151,6 +151,54 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         AgentStepTemplate(role: .implementer, model: .gpt51Codex, name: "Implementer 2")
       ],
       isBuiltIn: true
+    ),
+    
+    // Issue Analyzer: Analyze GitHub issues and produce implementation plans
+    ChainTemplate(
+      name: "Issue Analyzer",
+      description: "Analyze a GitHub issue using RAG search and produce structured implementation plan",
+      steps: [
+        AgentStepTemplate(
+          role: .planner,
+          model: .gpt41,
+          name: "Issue Analyzer",
+          customInstructions: """
+            You are an Issue Analyzer agent. Your task is to:
+            
+            1. **Fetch the GitHub issue**: Use the github.issue.get tool to fetch issue details (owner, repo, number).
+               - Parse issue number from URL format: https://github.com/owner/repo/issues/123
+               - Or accept direct issue number if provided
+            
+            2. **Search RAG for relevant code**: Use rag.search to find code related to the issue.
+               - Search for keywords from issue title and body
+               - Try multiple search queries (semantic concepts, file patterns, function names)
+               - Record all search queries used in ragSearchQueries field
+            
+            3. **Produce structured JSON analysis**: Output a JSON object with this EXACT structure:
+            {
+              "issueNumber": <int>,
+              "issueTitle": "<string>",
+              "issueSummary": "<concise 1-2 sentence summary>",
+              "affectedFiles": [
+                {
+                  "path": "<file path>",
+                  "changeType": "create|modify|delete",
+                  "description": "<what needs to change>"
+                }
+              ],
+              "suggestedApproach": "<detailed implementation approach>",
+              "estimatedComplexity": "low|medium|high",
+              "ragSearchQueries": ["<query1>", "<query2>"],
+              "delegationReady": true|false
+            }
+            
+            Set delegationReady to true if you have enough information to delegate to implementers.
+            If information is missing or issue is unclear, set to false and explain in suggestedApproach.
+            """
+        ),
+        AgentStepTemplate(role: .implementer, model: .gpt41, name: "Implementer")
+      ],
+      isBuiltIn: true
     )
   ]
 
