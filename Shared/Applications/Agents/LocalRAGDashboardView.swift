@@ -227,6 +227,12 @@ struct LocalRAGDashboardView: View {
   @State private var selectedWorkerId: String?
   @State private var syncError: String?
   
+  // Section collapse state
+  @State private var isArtifactSyncExpanded = false
+  @State private var isDependencyGraphExpanded = false
+  @State private var isAIAnalysisExpanded = false
+  @State private var isRepoSkillsExpanded = false
+  
   // AI Analysis state (#198, #212)
   @State private var isAnalyzing = false
   @State private var isPaused = false
@@ -371,10 +377,8 @@ struct LocalRAGDashboardView: View {
         }
 
         // MARK: - Artifact Sync
-        GroupBox {
+        DisclosureGroup(isExpanded: $isArtifactSyncExpanded) {
           VStack(alignment: .leading, spacing: LayoutSpacing.item) {
-            SectionHeader("Artifact Sync")
-
             if !swarmCoordinator.isActive {
               Text("Start Swarm in Crown or hybrid mode to sync artifacts with peels.")
                 .font(.caption)
@@ -462,7 +466,19 @@ struct LocalRAGDashboardView: View {
                 .foregroundStyle(.red)
             }
           }
+          .padding(.vertical, 8)
+        } label: {
+          HStack {
+            SectionHeader("Artifact Sync")
+            Spacer()
+            if swarmCoordinator.isActive && !swarmCoordinator.connectedWorkers.isEmpty {
+              Text("\(swarmCoordinator.connectedWorkers.count) peers")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+          }
         }
+        .padding(.horizontal, LayoutSpacing.item)
 
         // MARK: - Search
         GroupBox {
@@ -548,43 +564,12 @@ struct LocalRAGDashboardView: View {
               }
             }
 
-            if let lastAt = mcpServer.lastRagSearchAt {
-              Divider()
-              VStack(alignment: .leading, spacing: 4) {
-                Text("Last search")
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
-                Text(lastAt, style: .time)
-                  .font(.caption2)
-                  .foregroundStyle(.secondary)
-                if let query = mcpServer.lastRagSearchQuery {
-                  Text("Query: \(query)")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                }
-                if let mode = mcpServer.lastRagSearchMode {
-                  Text("Mode: \(mode.rawValue) · Limit: \(mcpServer.lastRagSearchLimit ?? 0)")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                }
-                if let repoPath = mcpServer.lastRagSearchRepoPath {
-                  Text("Repo: \(repoPath)")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                }
-                Text("Results: \(mcpServer.lastRagSearchResults.count)")
-                  .font(.caption2)
-                  .foregroundStyle(.secondary)
-              }
-            }
           }
         }
 
         // MARK: - Dependency Graph
-        GroupBox {
+        DisclosureGroup(isExpanded: $isDependencyGraphExpanded) {
           VStack(alignment: .leading, spacing: LayoutSpacing.item) {
-            SectionHeader("Dependency Graph")
-            
             if let firstRepo = mcpServer.ragRepos.first {
               DependencyGraphView(
                 mcpServer: mcpServer,
@@ -598,13 +583,15 @@ struct LocalRAGDashboardView: View {
               }
             }
           }
+          .padding(.vertical, 8)
+        } label: {
+          SectionHeader("Dependency Graph")
         }
+        .padding(.horizontal, LayoutSpacing.item)
 
         // MARK: - AI Code Analysis (#198)
-        GroupBox {
+        DisclosureGroup(isExpanded: $isAIAnalysisExpanded) {
           VStack(alignment: .leading, spacing: LayoutSpacing.item) {
-            SectionHeader("AI Code Analysis")
-            
             if mcpServer.ragRepos.isEmpty {
               ContentUnavailableView {
                 Label("No Indexed Repository", systemImage: "cpu")
@@ -782,9 +769,17 @@ struct LocalRAGDashboardView: View {
               }
             }
           }
+          .padding(.vertical, 8)
+        } label: {
+          SectionHeader("AI Code Analysis")
         }
+        .padding(.horizontal, LayoutSpacing.item)
         .task {
           await refreshAnalysisStatus()
+        }
+        .onChange(of: isAnalyzing) { _, newValue in
+          // Auto-expand when analysis starts
+          if newValue { isAIAnalysisExpanded = true }
         }
 
         // MARK: - Database Info (Collapsible)
@@ -922,10 +917,8 @@ struct LocalRAGDashboardView: View {
         }
         .padding(.horizontal, LayoutSpacing.item)
 
-        GroupBox {
+        DisclosureGroup(isExpanded: $isRepoSkillsExpanded) {
           VStack(alignment: .leading, spacing: LayoutSpacing.item) {
-            SectionHeader("Repo Skills")
-
             TextField("Filter repo path", text: $skillsRepoFilter)
               .textFieldStyle(.roundedBorder)
               .accessibilityIdentifier("agents.localRag.skills.filterPath")
@@ -1051,7 +1044,17 @@ struct LocalRAGDashboardView: View {
               )
               .accessibilityIdentifier("agents.localRag.skills.body")
           }
+          .padding(.vertical, 8)
+        } label: {
+          HStack {
+            SectionHeader("Repo Skills")
+            Spacer()
+            Text("\(filteredSkills.count) skills")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
         }
+        .padding(.horizontal, LayoutSpacing.item)
       }
       .padding(.horizontal, LayoutSpacing.page)
       .padding(.vertical, LayoutSpacing.section)
