@@ -128,6 +128,7 @@ public final class WorkspaceDashboardService {
   public func configure(modelContext: ModelContext) {
     if dataService == nil {
       dataService = DataService(modelContext: modelContext)
+      dataService?.deduplicateTrackedWorktrees()
       reloadTrackedWorktrees()
     }
   }
@@ -595,7 +596,10 @@ public final class WorkspaceDashboardService {
       return
     }
     let tracked = dataService.getTrackedWorktrees()
-    trackedWorktreesByPath = Dictionary(uniqueKeysWithValues: tracked.map { ($0.localPath, $0) })
+    // Use reduce to handle potential duplicate paths (keep last entry)
+    trackedWorktreesByPath = tracked.reduce(into: [:]) { dict, worktree in
+      dict[worktree.localPath] = worktree
+    }
   }
 
   private func inferTrackingData(
