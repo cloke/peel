@@ -839,6 +839,7 @@ public final class MCPServerService {
   /// Index a repository (called from UI)
   func indexRagRepo(
     path: String,
+    forceReindex: Bool = false,
     allowWorkspace: Bool = false,
     excludeSubrepos: Bool = true
   ) async throws {
@@ -848,6 +849,7 @@ public final class MCPServerService {
     do {
       let report = try await localRagStore.indexRepository(
         path: path,
+        forceReindex: forceReindex,
         allowWorkspace: allowWorkspace,
         excludeSubrepos: excludeSubrepos
       ) { [weak self] progress in
