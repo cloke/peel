@@ -61,6 +61,20 @@ public struct MCPChainTemplate: Identifiable, Codable, Hashable, Sendable {
   public var costDisplay: String {
     estimatedTotalCost.premiumCostDisplay
   }
+
+  /// Highest cost tier among all steps
+  public var costTier: MCPCopilotModel.CostTier {
+    let tiers = steps.map { $0.model.costTier }
+    if tiers.contains(.premium) {
+      return .premium
+    } else if tiers.contains(.standard) {
+      return .standard
+    } else if tiers.contains(.low) {
+      return .low
+    } else {
+      return .free
+    }
+  }
 }
 
 // MARK: - Agent Step Template
