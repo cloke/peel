@@ -16,6 +16,7 @@ struct WorktreesView: View {
   @State private var isLoading = false
   @State private var errorMessage: String?
   @State private var selectedWorktree: WorktreeItem?
+  @State private var showingNewWorktreeSheet = false
   
   var body: some View {
     VStack(spacing: 0) {
@@ -46,11 +47,23 @@ struct WorktreesView: View {
     .toolbar {
       ToolbarItem(placement: .primaryAction) {
         Button {
+          showingNewWorktreeSheet = true
+        } label: {
+          Image(systemName: "plus")
+        }
+      }
+      ToolbarItem(placement: .primaryAction) {
+        Button {
           Task { await loadWorktrees() }
         } label: {
           Image(systemName: "arrow.clockwise")
         }
         .disabled(isLoading)
+      }
+    }
+    .sheet(isPresented: $showingNewWorktreeSheet) {
+      NewWorktreeSheet(mcpServer: mcpServer) {
+        Task { await loadWorktrees() }
       }
     }
     #endif
@@ -337,6 +350,138 @@ private struct StatItem: View {
   }
 }
 
-#Preview {
-  WorktreesView()
+// MARK: - New Worktree Sheet
+
+struct NewWorktreeSheet: View {
+  let mcpServer: MCPServerService
+  let onCreated: () -> Void
+  
+  @Environment(\.dismiss) private var dismiss
+  
+  @State private var selectedRepoPath: String = ""
+  @State private var branchName: String = ""
+  @State private var baseBranch: String = "origin/main"
+  @State private var openInVSCode: Bool = true
+  @State private var isCreating: Bool = false
+  @State private var errorMessage: String?
+  @State private var availableRepos: [(name: String, path: String)] = []
+  
+  var body: some View {
+    VStack(spacing: 0) {
+      // Header
+      HStack {
+        Text("Create Worktree")
+          .font(.headline)
+        Spacer()
+        Button("Cancel") {
+          dismiss()
+        }
+        .keyboardShortcut(.cancelAction)
+      }
+      .padding()
+      
+      Divider()
+      
+      // Form
+      Form {
+        Section {
+          Picker("Repository", selection: $selectedRepoPath) {
+            Text("Select a repository...").tag("")
+            ForEach(availableRepos, id: \.path) { repo in
+              Text(repo.name).tag(repo.path)
+            }
+          }
+          
+          TextField("Branch Name", text: $branchName, prompt: Text("feature/my-branch"))
+          
+          Picker("Base Branch", selection: $baseBranch) {
+            Text("origin/main").tag("origin/main")
+            Text("origin/staging").tag("origin/staging")
+            Text("HEAD").tag("HEAD")
+          }
+        }
+        
+        Section {
+          Toggle("Open in VS Code after creation", isOn: $openInVSCode)
+        }
+        
+        if let error = errorMessage {
+          Section {
+            Text(error)
+              .foregroundStyle(.red)
+              .font(.caption)
+          }
+        }
+      }
+      .formStyle(.grouped)
+      
+      Divider()
+      
+      // Footer
+      HStack {
+        Spacer()
+        Button("Create Worktree") {
+          Task { await createWorktree() }
+        }
+        .keyboardShortcut(.defaultAction)
+        .disabled(selectedRepoPath.isEmpty || branchName.isEmpty || isCreating)
+      }
+      .padding()
+    }
+    .frame(width: 400, height: 340)
+    .task {
+      loadRepos()
+    }
+  }
+  
+  private func loadRepos() {
+    let repos = RepoRegistry.shared.registeredRepos
+    availableRepos = repos.map { (name: $0.key, path: $0.value) }.sorted { $0.name < $1.name }
+    if let first = availableRepos.first {
+      selectedRepoPath = first.path
+    }
+  }
+  
+  private func createWorktree() async {
+    isCreating = true
+    errorMessage = nil
+    
+    let result = await mcpServer.callToolAsync(
+      name: "worktree.create",
+      arguments: [
+        "repoPath": selectedRepoPath,
+        "branchName": branchName,
+        "baseBranch": baseBranch
+      ]
+    )
+    
+    if let content = result.first?.text,
+       let data = content.data(using: .utf8),
+       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+      
+      if let success = json["success"] as? Bool, success,
+         let worktreePath = json["worktreePath"] as? String {
+        
+        if openInVSCode {
+          #if os(macOS)
+          let process = Process()
+          process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+          process.arguments = ["-a", "Visual Studio Code", worktreePath]
+          try? process.run()
+          #endif
+        }
+        
+        onCreated()
+        dismiss()
+      } else if let error = json["error"] as? [String: Any],
+                let message = error["message"] as? String {
+        errorMessage = message
+      }
+    } else {
+      errorMessage = "Unknown error creating worktree"
+    }
+    
+    isCreating = false
+  }
 }
+

@@ -4689,6 +4689,30 @@ public final class MCPServerService {
         ],
         category: .worktrees,
         isMutating: false
+      ),
+      ToolDefinition(
+        name: "worktree.create",
+        description: "Create a new git worktree for ad-hoc work, PR review, or experiments. The worktree will be created in ~/peel-worktrees/ with the specified branch.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": [
+              "type": "string",
+              "description": "Path to the git repository"
+            ],
+            "branchName": [
+              "type": "string",
+              "description": "Name for the new branch (will be sanitized)"
+            ],
+            "baseBranch": [
+              "type": "string",
+              "description": "Base branch to create from (default: origin/main)"
+            ]
+          ],
+          "required": ["repoPath", "branchName"]
+        ],
+        category: .worktrees,
+        isMutating: true
       )
     ]
   }
@@ -6007,6 +6031,71 @@ extension MCPServerService: WorktreeToolsHandlerDelegate {
       throw WorktreeError.worktreeRemovalFailed("Cannot find parent repository for worktree")
     }
     #endif
+  }
+
+  func createWorktree(repoPath: String, branchName: String, baseBranch: String) async throws -> String {
+    #if os(macOS)
+    let baseDir = worktreeBaseDir()
+    let sanitizedName = branchName.replacingOccurrences(of: "/", with: "-")
+    let worktreePath = "\(baseDir)/\(sanitizedName)"
+
+    // Ensure base directory exists
+    let fileManager = FileManager.default
+    if !fileManager.fileExists(atPath: baseDir) {
+      try fileManager.createDirectory(atPath: baseDir, withIntermediateDirectories: true)
+    }
+
+    // Remove existing worktree at this path if it exists
+    if fileManager.fileExists(atPath: worktreePath) {
+      try await removeWorktree(path: worktreePath, force: true)
+    }
+
+    let repoName = URL(fileURLWithPath: repoPath).lastPathComponent
+    let repository = Git.Model.Repository(name: repoName, path: repoPath)
+
+    // Fetch latest
+    _ = try? await Git.Commands.Fetch.execute(remote: "origin", on: repository)
+
+    // Check if branch already exists
+    let branchExists = await checkBranchExists(branchName, in: repoPath)
+
+    if branchExists {
+      // Checkout existing branch in worktree
+      try await Git.Commands.Worktree.add(
+        path: worktreePath,
+        branch: branchName,
+        on: repository
+      )
+    } else {
+      // Create new branch from base
+      try await Git.Commands.Worktree.addWithNewBranch(
+        path: worktreePath,
+        newBranch: branchName,
+        startPoint: baseBranch,
+        on: repository
+      )
+    }
+
+    return worktreePath
+    #else
+    throw WorktreeError.worktreeCreationFailed("Worktree creation is only available on macOS")
+    #endif
+  }
+
+  private func checkBranchExists(_ branchName: String, in repoPath: String) async -> Bool {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+    process.arguments = ["rev-parse", "--verify", branchName]
+    process.currentDirectoryURL = URL(fileURLWithPath: repoPath)
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    do {
+      try process.run()
+      process.waitUntilExit()
+      return process.terminationStatus == 0
+    } catch {
+      return false
+    }
   }
 
   func diskSize(for path: String) -> Int64? {
