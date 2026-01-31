@@ -2510,6 +2510,25 @@ actor LocalRAGStore {
       return try queryInt("SELECT COUNT(*) FROM chunks WHERE ai_summary IS NOT NULL")
     }
   }
+  
+  /// Clear AI analysis for all chunks in a repo (or all repos if nil)
+  /// This resets ai_summary, ai_tags, analyzed_at so they can be re-analyzed
+  func clearAnalysis(repoPath: String? = nil) throws {
+    try openIfNeeded()
+    
+    if let repoPath {
+      try execute(sql: """
+        UPDATE chunks SET ai_summary = NULL, ai_tags = NULL, analyzed_at = NULL, analyzer_model = NULL
+        WHERE file_id IN (
+          SELECT f.id FROM files f
+          JOIN repos r ON f.repo_id = r.id
+          WHERE r.root_path = ?
+        )
+        """) { stmt in self.bindText(stmt, 1, repoPath) }
+    } else {
+      try exec("UPDATE chunks SET ai_summary = NULL, ai_tags = NULL, analyzed_at = NULL, analyzer_model = NULL")
+    }
+  }
   #endif
 
   // MARK: - Query Hints

@@ -365,12 +365,19 @@ struct RAGRepositoryCardView: View {
           isPresented: $showForceReindexConfirm,
           titleVisibility: .visible
         ) {
-          Button("Force Reindex All Files", role: .destructive) {
+          Button("Reindex + Clear Analysis") {
+            Task {
+              await reindexRepository(force: true)
+              try? await mcpServer.clearRagAnalysis(repoPath: repo.rootPath)
+              await refreshAnalysisStatus()
+            }
+          }
+          Button("Reindex Only") {
             Task { await reindexRepository(force: true) }
           }
           Button("Cancel", role: .cancel) {}
         } message: {
-          Text("This will re-index all \(repo.fileCount) files, even unchanged ones. This may take several minutes.")
+          Text("This will re-index all \(repo.fileCount) files. Choose whether to also clear AI analysis.")
         }
       }
       

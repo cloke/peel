@@ -5892,6 +5892,10 @@ extension MCPServerService: RAGToolsHandlerDelegate {
   func getAnalyzedChunkCount(repoPath: String?) async throws -> Int {
     try await localRagStore.getAnalyzedChunkCount(repoPath: repoPath)
   }
+  
+  func clearRagAnalysis(repoPath: String?) async throws {
+    try await localRagStore.clearAnalysis(repoPath: repoPath)
+  }
   #endif
 }
 
