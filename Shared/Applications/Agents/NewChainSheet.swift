@@ -157,6 +157,37 @@ struct NewChainSheet: View {
               .padding(.vertical, 4)
             }
           }
+
+          // Cost guidance section
+          if let template = selectedTemplate {
+            VStack(alignment: .leading, spacing: 8) {
+              HStack {
+                Image(systemName: "info.circle")
+                  .foregroundStyle(.blue)
+                Text("Cost Estimate")
+                  .font(.headline)
+              }
+
+              HStack(spacing: 12) {
+                HStack(spacing: 4) {
+                  Image(systemName: "creditcard")
+                    .foregroundStyle(.secondary)
+                  Text(template.costDisplay)
+                    .fontWeight(.medium)
+                }
+
+                costTierBadge(for: template.costTier)
+              }
+
+              Text(template.costTier.guidanceText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding()
+            .background(Color(.systemGray).opacity(0.1))
+            .cornerRadius(8)
+          }
         }
 
         Section("Chain") {
@@ -327,6 +358,39 @@ struct NewChainSheet: View {
   private func selectFolder() {
     if let path = FolderPicker.selectFolder(message: "Select a project folder") {
       workingDirectory = path
+    }
+  }
+
+  @ViewBuilder
+  private func costTierBadge(for tier: MCPCopilotModel.CostTier) -> some View {
+    HStack(spacing: 4) {
+      Image(systemName: tier.icon)
+      Text(tier.displayName)
+        .fontWeight(.semibold)
+    }
+    .font(.caption)
+    .padding(.horizontal, 8)
+    .padding(.vertical, 4)
+    .background(tierBackgroundColor(for: tier))
+    .foregroundStyle(tierForegroundColor(for: tier))
+    .cornerRadius(6)
+  }
+
+  private func tierForegroundColor(for tier: MCPCopilotModel.CostTier) -> Color {
+    switch tier {
+    case .free: return .green
+    case .low: return .blue
+    case .standard: return .orange
+    case .premium: return .red
+    }
+  }
+
+  private func tierBackgroundColor(for tier: MCPCopilotModel.CostTier) -> Color {
+    switch tier {
+    case .free: return Color.green.opacity(0.15)
+    case .low: return Color.blue.opacity(0.15)
+    case .standard: return Color.orange.opacity(0.15)
+    case .premium: return Color.red.opacity(0.15)
     }
   }
 

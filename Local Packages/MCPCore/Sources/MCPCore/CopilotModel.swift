@@ -127,6 +127,44 @@ public enum MCPCopilotModel: String, Codable, CaseIterable, Identifiable, Sendab
     }
   }
 
+  public enum CostTier: String, Codable, Sendable {
+    case free
+    case low
+    case standard
+    case premium
+
+    public var displayName: String {
+      switch self {
+      case .free: return "Free"
+      case .low: return "Low Cost"
+      case .standard: return "Standard"
+      case .premium: return "Premium"
+      }
+    }
+
+    public var icon: String {
+      switch self {
+      case .free: return "checkmark.circle.fill"
+      case .low: return "chart.bar.fill"
+      case .standard: return "chart.bar.doc.horizontal.fill"
+      case .premium: return "star.fill"
+      }
+    }
+
+    public var guidanceText: String {
+      switch self {
+      case .free:
+        return "Free models are best for simple tasks like formatting, renames, or well-defined mechanical changes."
+      case .low:
+        return "Low-cost models (Haiku, GPT-4.1-mini) are good for tests, documentation, and straightforward implementation with clear specs."
+      case .standard:
+        return "Standard models (Sonnet, GPT-4.1, Codex) balance quality and cost for most implementation and refactoring tasks."
+      case .premium:
+        return "Premium models (Opus, o1) excel at complex reasoning, architecture decisions, and multi-step planning. Use sparingly."
+      }
+    }
+  }
+
   private struct Metadata {
     let displayName: String
     let shortName: String
@@ -166,6 +204,19 @@ public enum MCPCopilotModel: String, Codable, CaseIterable, Identifiable, Sendab
     }
     return MCPCopilotModel.allCases.first { model in
       model.displayName.lowercased() == normalized || model.shortName.lowercased() == normalized
+    }
+  }
+
+  public var costTier: CostTier {
+    let cost = premiumCost
+    if cost == 0 {
+      return .free
+    } else if cost < 1.0 {
+      return .low
+    } else if cost == 1.0 {
+      return .standard
+    } else {
+      return .premium
     }
   }
 }

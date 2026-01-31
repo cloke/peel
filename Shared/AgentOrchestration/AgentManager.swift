@@ -50,6 +50,16 @@ public final class AgentManager {
       }
     }
   }
+
+  /// Whether to warn before running premium chains (persisted)
+  public var warnBeforePremiumChains: Bool {
+    get {
+      UserDefaults.standard.object(forKey: "warnBeforePremiumChains") as? Bool ?? true
+    }
+    set {
+      UserDefaults.standard.set(newValue, forKey: "warnBeforePremiumChains")
+    }
+  }
   
   public init() {
     // Load last used working directory
@@ -257,6 +267,14 @@ public final class AgentManager {
   /// Get idle agents
   public var idleAgents: [Agent] {
     agents.filter { $0.state == .idle }
+  }
+
+  /// Check if we should show premium warning for a chain
+  public func shouldShowPremiumWarning(for chain: AgentChain) -> Bool {
+    guard warnBeforePremiumChains else { return false }
+
+    let tiers = chain.agents.map { $0.model.costTier }
+    return tiers.contains(.premium) || tiers.contains(.standard)
   }
   
 }
