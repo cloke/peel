@@ -1875,6 +1875,9 @@ actor LocalRAGStore {
         methodCount: methodCount,
         byteSize: file.byteCount
       )
+      // Cache AI analysis for existing chunks before deleting (Issue #245)
+      // This preserves summaries/tags for unchanged text when file is re-indexed
+      try cacheAIAnalysis(for: fileId)
       try deleteChunks(for: fileId)
       
       // Delete old dependencies and symbol refs before re-indexing
@@ -1883,6 +1886,9 @@ actor LocalRAGStore {
 
       for (index, chunk) in chunks.enumerated() {
         let chunkId = stableId(for: "\(fileId):\(chunk.startLine):\(chunk.endLine):\(chunk.text)")
+        let textHash = chunkHashes[index]
+        // Look up cached AI analysis for this text content (Issue #245)
+        let cachedAnalysis = try fetchCachedAIAnalysis(textHash: textHash)
         try upsertChunk(
           id: chunkId,
           fileId: fileId,
@@ -1892,10 +1898,13 @@ actor LocalRAGStore {
           tokenCount: chunk.tokenCount,
           constructType: chunk.constructType,
           constructName: chunk.constructName,
-          metadata: chunk.metadata
+          metadata: chunk.metadata,
+          aiSummary: cachedAnalysis?.summary,
+          aiTags: cachedAnalysis?.tags,
+          analyzedAt: cachedAnalysis != nil ? dateFormatter.string(from: Date()) : nil,
+          analyzerModel: cachedAnalysis?.model
         )
 
-        let textHash = chunkHashes[index]
         let embedding: [Float]
         if let cached = embeddingCache[textHash] {
           embedding = cached
@@ -2436,6 +2445,7 @@ actor LocalRAGStore {
         
         try updateChunkAnalysis(
           chunkId: chunk.id,
+          chunkText: chunk.text,
           aiSummary: result.summary,
           aiTags: tagsString,
           analyzedAt: now,
@@ -2454,9 +2464,10 @@ actor LocalRAGStore {
     return analyzedCount
   }
   
-  /// Update chunk with AI analysis results
+  /// Update chunk with AI analysis results and cache for future reindexes (#245)
   private func updateChunkAnalysis(
     chunkId: String,
+    chunkText: String,
     aiSummary: String,
     aiTags: String?,
     analyzedAt: String,
@@ -2477,6 +2488,16 @@ actor LocalRAGStore {
       bindText(statement, 4, analyzerModel)
       bindText(statement, 5, chunkId)
     }
+    
+    // Also cache the analysis for future reindexes
+    let textHash = stableId(for: chunkText)
+    try upsertAIAnalysisCache(
+      textHash: textHash,
+      summary: aiSummary,
+      tags: aiTags ?? "[]",
+      model: analyzerModel,
+      cachedAt: analyzedAt
+    )
   }
   
   /// Get count of un-analyzed chunks
@@ -3507,7 +3528,24 @@ actor LocalRAGStore {
       try exec("UPDATE rag_meta SET value = '9' WHERE key = 'schema_version'")
     }
     
-    schemaVersion = 9
+    // Migration to v10: Add ai_summary_cache table for preserving analysis across reindex (#245)
+    // When files change, chunks are deleted and recreated. This cache preserves AI analysis
+    // for unchanged text content (keyed by text hash, similar to embedding_cache).
+    if currentVersion < 10 {
+      try exec("""
+        CREATE TABLE IF NOT EXISTS ai_summary_cache (
+          text_hash TEXT PRIMARY KEY,
+          ai_summary TEXT,
+          ai_tags TEXT,
+          analyzer_model TEXT,
+          cached_at TEXT
+        )
+        """)
+      
+      try exec("UPDATE rag_meta SET value = '10' WHERE key = 'schema_version'")
+    }
+    
+    schemaVersion = 10
     
     // Set up vec_chunks virtual table if extension is loaded
     if extensionLoaded {
@@ -4148,6 +4186,113 @@ actor LocalRAGStore {
         sqlite3_bind_blob(statement, 2, bytes.baseAddress, Int32(data.count), sqliteTransient)
       }
       bindText(statement, 3, now)
+    }
+  }
+
+  // MARK: - AI Summary Cache (Issue #245)
+  
+  /// Cached AI analysis result for a text chunk
+  struct CachedAIAnalysis {
+    let summary: String
+    let tags: String
+    let model: String
+  }
+  
+  /// Cache AI analysis for all chunks belonging to a file before they are deleted
+  /// This preserves summaries/tags so unchanged code doesn't need re-analysis on reindex
+  private func cacheAIAnalysis(for fileId: String) throws {
+    guard let db else {
+      throw LocalRAGError.sqlite("Database not initialized")
+    }
+    // Get all analyzed chunks for this file with their text for hashing
+    let sql = """
+      SELECT text, ai_summary, ai_tags, analyzer_model 
+      FROM chunks 
+      WHERE file_id = ? AND ai_summary IS NOT NULL
+      """
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let statement else {
+      let message = String(cString: sqlite3_errmsg(db))
+      throw LocalRAGError.sqlite(message)
+    }
+    defer { sqlite3_finalize(statement) }
+    
+    bindText(statement, 1, fileId)
+    
+    var toCache: [(textHash: String, summary: String, tags: String, model: String)] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+      guard let textPointer = sqlite3_column_text(statement, 0) else { continue }
+      let text = String(cString: textPointer)
+      guard let summaryPointer = sqlite3_column_text(statement, 1) else { continue }
+      let summary = String(cString: summaryPointer)
+      let tags = sqlite3_column_text(statement, 2).map { String(cString: $0) } ?? "[]"
+      let model = sqlite3_column_text(statement, 3).map { String(cString: $0) } ?? "unknown"
+      
+      let textHash = stableId(for: text)
+      toCache.append((textHash, summary, tags, model))
+    }
+    
+    // Insert into cache
+    let now = dateFormatter.string(from: Date())
+    for item in toCache {
+      try upsertAIAnalysisCache(
+        textHash: item.textHash,
+        summary: item.summary,
+        tags: item.tags,
+        model: item.model,
+        cachedAt: now
+      )
+    }
+    
+    if !toCache.isEmpty {
+      print("[RAG] Cached \(toCache.count) AI summaries for file reindex")
+    }
+  }
+  
+  /// Fetch cached AI analysis for a text chunk by its hash
+  private func fetchCachedAIAnalysis(textHash: String) throws -> CachedAIAnalysis? {
+    guard let db else {
+      throw LocalRAGError.sqlite("Database not initialized")
+    }
+    let sql = "SELECT ai_summary, ai_tags, analyzer_model FROM ai_summary_cache WHERE text_hash = ? LIMIT 1"
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let statement else {
+      let message = String(cString: sqlite3_errmsg(db))
+      throw LocalRAGError.sqlite(message)
+    }
+    defer { sqlite3_finalize(statement) }
+    
+    bindText(statement, 1, textHash)
+    
+    guard sqlite3_step(statement) == SQLITE_ROW else { return nil }
+    guard let summaryPointer = sqlite3_column_text(statement, 0) else { return nil }
+    let summary = String(cString: summaryPointer)
+    let tags = sqlite3_column_text(statement, 1).map { String(cString: $0) } ?? "[]"
+    let model = sqlite3_column_text(statement, 2).map { String(cString: $0) } ?? "unknown"
+    
+    return CachedAIAnalysis(summary: summary, tags: tags, model: model)
+  }
+  
+  /// Store AI analysis in cache
+  private func upsertAIAnalysisCache(
+    textHash: String,
+    summary: String,
+    tags: String,
+    model: String,
+    cachedAt: String
+  ) throws {
+    let sql = """
+      INSERT OR REPLACE INTO ai_summary_cache (text_hash, ai_summary, ai_tags, analyzer_model, cached_at)
+      VALUES (?, ?, ?, ?, ?)
+      """
+    try execute(sql: sql) { statement in
+      bindText(statement, 1, textHash)
+      bindText(statement, 2, summary)
+      bindText(statement, 3, tags)
+      bindText(statement, 4, model)
+      bindText(statement, 5, cachedAt)
     }
   }
 
