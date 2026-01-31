@@ -37,7 +37,16 @@ struct PeelApp_iOS: App {
       ContentView()
         .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
         .onOpenURL { url in
-          OAuthSwift.handle(url: url)
+          // Handle OAuth callbacks (GitHub auth)
+          if url.scheme == "peel" && url.host == "oauth-callback" {
+            OAuthSwift.handle(url: url)
+          }
+          // Handle swarm invite deep links (peel://swarm/join?s=&i=&t=)
+          else if url.scheme == "peel" && url.host == "swarm" {
+            Task {
+              await FirebaseService.shared.handleDeepLink(url)
+            }
+          }
         }
     }
     .modelContainer(sharedModelContainer)
