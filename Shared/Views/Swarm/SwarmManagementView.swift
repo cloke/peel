@@ -17,6 +17,7 @@ struct SwarmManagementView: View {
   @State private var newSwarmName = ""
   @State private var isLoading = false
   @State private var errorMessage: String?
+  @State private var showingDeepLinkAlert = false
   
   var body: some View {
     Group {
@@ -24,6 +25,23 @@ struct SwarmManagementView: View {
         signedInContent
       } else {
         SwarmAuthView()
+      }
+    }
+    .onChange(of: firebaseService.deepLinkReceived) { _, received in
+      if received {
+        showingDeepLinkAlert = true
+        firebaseService.deepLinkReceived = false
+      }
+    }
+    .alert("Swarm Invite", isPresented: $showingDeepLinkAlert) {
+      Button("OK") { }
+    } message: {
+      if let error = firebaseService.lastDeepLinkError {
+        Text(error)
+      } else if firebaseService.pendingInviteURL != nil {
+        Text("Sign in to accept this invite")
+      } else {
+        Text("Invite processed")
       }
     }
   }
