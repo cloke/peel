@@ -22,6 +22,8 @@ struct SettingsView: View {
   @State private var isWorkspacePickerPresented = false
   @State private var isWritingVSCodeConfig = false
   @State private var showMCPTools = false
+  @State private var urlSchemeStatus: String?
+  @State private var isRegisteringURLScheme = false
   
   var body: some View {
     TabView {
@@ -227,6 +229,38 @@ struct SettingsView: View {
           }
         }
 
+        SettingsSection("Developer Tools") {
+          VStack(alignment: .leading, spacing: 12) {
+            Text("Tools for development and debugging.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 8) {
+              HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                  Text("Register URL Scheme")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                  Text("Forces macOS to recognize the peel:// URL scheme for OAuth callbacks during development.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button(isRegisteringURLScheme ? "Registering…" : "Register") {
+                  Task { await registerURLScheme() }
+                }
+                .disabled(isRegisteringURLScheme)
+              }
+
+              if let status = urlSchemeStatus {
+                Text(status)
+                  .font(.caption)
+                  .foregroundStyle(status.contains("✓") ? .green : (status.contains("Error") ? .red : .secondary))
+              }
+            }
+          }
+        }
+
         SettingsSection("Prompt Rules") {
           PromptRulesSettingsSection(mcpServer: mcpServer)
         }
@@ -308,6 +342,46 @@ struct SettingsView: View {
       vscodeConfigError = error.localizedDescription
     }
   }
+
+  #if os(macOS)
+  private func registerURLScheme() async {
+    urlSchemeStatus = nil
+    isRegisteringURLScheme = true
+    defer { isRegisteringURLScheme = false }
+
+    // Find the running app's bundle path
+    guard let bundlePath = Bundle.main.bundlePath as String? else {
+      urlSchemeStatus = "Error: Could not determine app bundle path"
+      return
+    }
+
+    // Run lsregister to force URL scheme recognition
+    let lsregisterPath = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: lsregisterPath)
+    process.arguments = ["-f", bundlePath]
+
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = pipe
+
+    do {
+      try process.run()
+      process.waitUntilExit()
+
+      if process.terminationStatus == 0 {
+        urlSchemeStatus = "✓ URL scheme registered for: \(bundlePath)"
+      } else {
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(data: data, encoding: .utf8) ?? "Unknown error"
+        urlSchemeStatus = "Error (exit \(process.terminationStatus)): \(output)"
+      }
+    } catch {
+      urlSchemeStatus = "Error: \(error.localizedDescription)"
+    }
+  }
+  #endif
 }
 
 private struct SettingsPage<Content: View>: View {
