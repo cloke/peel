@@ -1552,6 +1552,15 @@ public final class MCPServerService {
         statusCode = 200
         return (200, Data())
 
+      // Handle common MCP notifications (no response expected)
+      case "notifications/cancelled", "cancelled",
+           "notifications/progress", "progress",
+           "notifications/message", "message",
+           "$/cancelRequest", "$/progress":
+        // Notifications don't require a response
+        statusCode = 200
+        return (200, Data())
+
       case "tools/list":
         statusCode = 200
         return (200, JSONRPCResponseBuilder.makeResult(id: id, result: ["tools": toolList()]))
@@ -1562,7 +1571,12 @@ public final class MCPServerService {
         return result
 
       default:
-        await telemetryProvider.warning("RPC method not found", metadata: ["method": method])
+        await telemetryProvider.warning("RPC method not found", metadata: ["method": method, "hasId": String(describing: id != nil)])
+        // For notifications (id=null), just acknowledge - don't error
+        if id == nil {
+          statusCode = 200
+          return (200, Data())
+        }
         statusCode = 400
         return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32601, message: "Method not found"))
       }
