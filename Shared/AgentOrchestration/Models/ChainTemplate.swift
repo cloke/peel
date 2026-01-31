@@ -8,6 +8,19 @@
 import Foundation
 import MCPCore
 
+/// Template category for organizing templates in the gallery
+public enum TemplateCategory: String, Codable, CaseIterable, Sendable {
+  case core
+  case specialized
+  
+  public var displayName: String {
+    switch self {
+    case .core: return "Core Templates"
+    case .specialized: return "Specialized Templates"
+    }
+  }
+}
+
 /// A reusable template for creating agent chains
 public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
   public let id: UUID
@@ -16,6 +29,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
   public var steps: [AgentStepTemplate]
   public let createdAt: Date
   public var isBuiltIn: Bool
+  public var category: TemplateCategory
   
   #if os(macOS)
   public var validationConfig: ValidationConfiguration
@@ -28,6 +42,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     case steps
     case createdAt
     case isBuiltIn
+    case category
     #if os(macOS)
     case validationConfig
     #endif
@@ -40,6 +55,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     description: String = "",
     steps: [AgentStepTemplate] = [],
     isBuiltIn: Bool = false,
+    category: TemplateCategory = .core,
     validationConfig: ValidationConfiguration? = nil
   ) {
     self.id = id
@@ -48,6 +64,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     self.steps = steps
     self.createdAt = Date()
     self.isBuiltIn = isBuiltIn
+    self.category = category
     self.validationConfig = validationConfig ?? .default
   }
   #else
@@ -56,7 +73,8 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     name: String,
     description: String = "",
     steps: [AgentStepTemplate] = [],
-    isBuiltIn: Bool = false
+    isBuiltIn: Bool = false,
+    category: TemplateCategory = .core
   ) {
     self.id = id
     self.name = name
@@ -64,6 +82,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     self.steps = steps
     self.createdAt = Date()
     self.isBuiltIn = isBuiltIn
+    self.category = category
   }
   #endif
 
@@ -75,6 +94,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     self.steps = try container.decodeIfPresent([AgentStepTemplate].self, forKey: .steps) ?? []
     self.createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
     self.isBuiltIn = try container.decodeIfPresent(Bool.self, forKey: .isBuiltIn) ?? false
+    self.category = try container.decodeIfPresent(TemplateCategory.self, forKey: .category) ?? .core
     #if os(macOS)
     self.validationConfig = try container.decodeIfPresent(ValidationConfiguration.self, forKey: .validationConfig) ?? .default
     #endif
@@ -88,6 +108,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     try container.encode(steps, forKey: .steps)
     try container.encode(createdAt, forKey: .createdAt)
     try container.encode(isBuiltIn, forKey: .isBuiltIn)
+    try container.encode(category, forKey: .category)
     #if os(macOS)
     try container.encode(validationConfig, forKey: .validationConfig)
     #endif
@@ -95,185 +116,182 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
   
   /// Built-in templates
   public static var builtInTemplates: [ChainTemplate] {
-    var templates: [ChainTemplate] = [
-    // Code Review: Planner analyzes, Implementer fixes, Reviewer checks
-    ChainTemplate(
-      name: "Code Review",
-      description: "Analyze code, implement fixes, then review changes",
-      steps: [
-        AgentStepTemplate(role: .planner, model: .claudeOpus45, name: "Analyzer"),
-        AgentStepTemplate(role: .implementer, model: .claudeSonnet45, name: "Fixer"),
-        AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
-      ],
-      isBuiltIn: true
-    ),
-    
-    // Quick Fix: Just plan and implement
-    ChainTemplate(
-      name: "Quick Fix",
-      description: "Fast analysis and implementation (no review)",
-      steps: [
-        AgentStepTemplate(role: .planner, model: .claudeSonnet45, name: "Planner"),
-        AgentStepTemplate(role: .implementer, model: .claudeSonnet45, name: "Implementer")
-      ],
-      isBuiltIn: true
-    ),
-    
-    // Free Review: Use free models for cost-effective review
-    ChainTemplate(
-      name: "Free Review",
-      description: "Cost-effective review using free/low-cost models",
-      steps: [
-        AgentStepTemplate(role: .planner, model: .gpt41, name: "Analyzer"),
-        AgentStepTemplate(role: .implementer, model: .gpt41, name: "Implementer"),
-        AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
-      ],
-      isBuiltIn: true
-    ),
-    
-    // Deep Analysis: Thorough planning with Opus
-    ChainTemplate(
-      name: "Deep Analysis",
-      description: "Thorough analysis with premium reasoning model",
-      steps: [
-        AgentStepTemplate(role: .planner, model: .claudeOpus45, name: "Deep Planner")
-      ],
-      isBuiltIn: true
-    ),
-    
-    // Multi-Implementer: One planner, multiple implementers
-    ChainTemplate(
-      name: "Multi-Implementer",
-      description: "One planner with two implementers for parallel tasks",
-      steps: [
-        AgentStepTemplate(role: .planner, model: .claudeSonnet45, name: "Planner"),
-        AgentStepTemplate(role: .implementer, model: .claudeSonnet45, name: "Implementer 1"),
-        AgentStepTemplate(role: .implementer, model: .gpt51Codex, name: "Implementer 2")
-      ],
-      isBuiltIn: true
-    ),
-    
-    // Issue Analyzer: Analyze GitHub issues and produce implementation plans
-    ChainTemplate(
-      name: "Issue Analyzer",
-      description: "Analyze a GitHub issue using RAG search and produce structured implementation plan",
-      steps: [
-        AgentStepTemplate(
-          role: .planner,
-          model: .gpt41,
-          name: "Issue Analyzer",
-          customInstructions: """
-            You are an Issue Analyzer agent. Your task is to:
-            
-            1. **Fetch the GitHub issue**: Use the github.issue.get tool to fetch issue details (owner, repo, number).
-               - Parse issue number from URL format: https://github.com/owner/repo/issues/123
-               - Or accept direct issue number if provided
-            
-            2. **Search RAG for relevant code**: Use rag.search to find code related to the issue.
-               - Search for keywords from issue title and body
-               - Try multiple search queries (semantic concepts, file patterns, function names)
-               - Record all search queries used in ragSearchQueries field
-            
-            3. **Produce structured JSON analysis**: Output a JSON object with this EXACT structure:
-            {
-              "issueNumber": <int>,
-              "issueTitle": "<string>",
-              "issueSummary": "<concise 1-2 sentence summary>",
-              "affectedFiles": [
-                {
-                  "path": "<file path>",
-                  "changeType": "create|modify|delete",
-                  "description": "<what needs to change>"
-                }
-              ],
-              "suggestedApproach": "<detailed implementation approach>",
-              "estimatedComplexity": "low|medium|high",
-              "ragSearchQueries": ["<query1>", "<query2>"],
-              "delegationReady": true|false
-            }
-            
-            Set delegationReady to true if you have enough information to delegate to implementers.
-            If information is missing or issue is unclear, set to false and explain in suggestedApproach.
-            """
-        ),
-        AgentStepTemplate(role: .implementer, model: .gpt41, name: "Implementer")
-      ],
-      isBuiltIn: true
-    )
-  ]
-
-  #if os(macOS)
-    templates.append(
+    let templates: [ChainTemplate] = [
+      // CORE TEMPLATES
+      
+      // 1. Quick Task: Single implementer, free model, fast turnaround
       ChainTemplate(
-        name: "MCP Harness",
-        description: "Planner with parallel implementers and a reviewer (MCP validation)",
+        name: "Quick Task",
+        description: "Fast single-file changes using free models (Cost: Free)",
+        steps: [
+          AgentStepTemplate(role: .implementer, model: .gpt41, name: "Implementer")
+        ],
+        isBuiltIn: true,
+        category: .core
+      ),
+      
+      // 2. Analyze and Plan: Planner only, outputs task list
+      ChainTemplate(
+        name: "Analyze and Plan",
+        description: "Create implementation plan without executing (Cost: Standard)",
+        steps: [
+          AgentStepTemplate(role: .planner, model: .claudeSonnet45, name: "Planner")
+        ],
+        isBuiltIn: true,
+        category: .core
+      ),
+      
+      // 3. Full Implementation: Planner + Implementer + Reviewer
+      ChainTemplate(
+        name: "Full Implementation",
+        description: "Complete workflow with planning, implementation, and review (Cost: Standard)",
         steps: [
           AgentStepTemplate(role: .planner, model: .claudeSonnet45, name: "Planner"),
-          AgentStepTemplate(role: .implementer, model: .claudeSonnet45, name: "Implementer A"),
-          AgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer B"),
+          AgentStepTemplate(role: .implementer, model: .claudeSonnet45, name: "Implementer"),
           AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
         ],
         isBuiltIn: true,
-        validationConfig: .default
-      )
-    )
-    templates.append(
+        category: .core
+      ),
+      
+      // 4. Parallel Implementation: Planner + 2-3 Implementers for multi-file work
       ChainTemplate(
-        name: "MCP Harness (Free)",
-        description: "Planner with parallel implementers and a reviewer using free/low-cost models",
-        steps: [
-          AgentStepTemplate(role: .planner, model: .gpt5Mini, name: "Planner"),
-          AgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer A"),
-          AgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer B"),
-          AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
-        ],
-        isBuiltIn: true,
-        validationConfig: .default
-      )
-    )
-  #else
-    templates.append(
-      ChainTemplate(
-        name: "MCP Harness",
-        description: "Planner with parallel implementers and a reviewer (MCP validation)",
+        name: "Parallel Implementation",
+        description: "Planner with multiple parallel implementers for complex multi-file tasks (Cost: Standard)",
         steps: [
           AgentStepTemplate(role: .planner, model: .claudeSonnet45, name: "Planner"),
           AgentStepTemplate(role: .implementer, model: .claudeSonnet45, name: "Implementer A"),
-          AgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer B"),
-          AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
+          AgentStepTemplate(role: .implementer, model: .gpt51Codex, name: "Implementer B")
         ],
-        isBuiltIn: true
-      )
-    )
-    templates.append(
+        isBuiltIn: true,
+        category: .core
+      ),
+      
+      // SPECIALIZED TEMPLATES
+      
+      // 5. RAG Index Repository: For indexing/chunking workflows
       ChainTemplate(
-        name: "MCP Harness (Free)",
-        description: "Planner with parallel implementers and a reviewer using free/low-cost models",
+        name: "RAG Index Repository",
+        description: "Index repository for RAG-based code search (Cost: Free)",
         steps: [
-          AgentStepTemplate(role: .planner, model: .gpt5Mini, name: "Planner"),
-          AgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer A"),
-          AgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer B"),
-          AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
+          AgentStepTemplate(
+            role: .planner,
+            model: .gpt41,
+            name: "RAG Indexer",
+            customInstructions: """
+              You are a RAG indexing specialist. Your task is to:
+              
+              1. **Check RAG status**: Use rag.status to verify the RAG system is available
+              2. **Index the repository**: Use rag.index tool with the provided repository path
+                 - Set forceReindex: true if re-indexing is needed
+                 - Monitor progress and report chunk counts
+              3. **Verify indexing**: Use rag.repos.list to confirm the repository appears in the index
+              4. **Test search**: Run a sample rag.search query to verify embeddings are working
+              
+              Report any errors encountered and suggest fixes if indexing fails.
+              """
+          )
         ],
-        isBuiltIn: true
-      )
-    )
-  #endif
-
-    templates.append(
+        isBuiltIn: true,
+        category: .specialized
+      ),
+      
+      // 6. Issue Analysis: Keep existing Issue Analyzer template
       ChainTemplate(
-        name: "MCP Roadmap (3x Cost)",
-        description: "Planner + 3 implementers + reviewer using free/low-cost models",
+        name: "Issue Analysis",
+        description: "Analyze GitHub issue and produce structured implementation plan (Cost: Free)",
         steps: [
-          AgentStepTemplate(role: .planner, model: .gpt41, name: "Planner"),
-          AgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer A"),
-          AgentStepTemplate(role: .implementer, model: .gpt41, name: "Implementer B"),
-          AgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer C"),
-          AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
+          AgentStepTemplate(
+            role: .planner,
+            model: .gpt41,
+            name: "Issue Analyzer",
+            customInstructions: """
+              You are an Issue Analyzer agent. Your task is to:
+              
+              1. **Fetch the GitHub issue**: Use the github.issue.get tool to fetch issue details (owner, repo, number).
+                 - Parse issue number from URL format: https://github.com/owner/repo/issues/123
+                 - Or accept direct issue number if provided
+              
+              2. **Search RAG for relevant code**: Use rag.search to find code related to the issue.
+                 - Search for keywords from issue title and body
+                 - Try multiple search queries (semantic concepts, file patterns, function names)
+                 - Record all search queries used in ragSearchQueries field
+              
+              3. **Produce structured JSON analysis**: Output a JSON object with this EXACT structure:
+              {
+                "issueNumber": <int>,
+                "issueTitle": "<string>",
+                "issueSummary": "<concise 1-2 sentence summary>",
+                "affectedFiles": [
+                  {
+                    "path": "<file path>",
+                    "changeType": "create|modify|delete",
+                    "description": "<what needs to change>"
+                  }
+                ],
+                "suggestedApproach": "<detailed implementation approach>",
+                "estimatedComplexity": "low|medium|high",
+                "ragSearchQueries": ["<query1>", "<query2>"],
+                "delegationReady": true|false
+              }
+              
+              Set delegationReady to true if you have enough information to delegate to implementers.
+              If information is missing or issue is unclear, set to false and explain in suggestedApproach.
+              """
+          )
         ],
-        isBuiltIn: true
+        isBuiltIn: true,
+        category: .specialized
+      ),
+      
+      // 7. PR Review: Review PR diff, suggest fixes, check for issues
+      ChainTemplate(
+        name: "PR Review",
+        description: "Review pull request and provide feedback (Cost: Free)",
+        steps: [
+          AgentStepTemplate(
+            role: .planner,
+            model: .gpt41,
+            name: "PR Reviewer",
+            customInstructions: """
+              You are a PR Review specialist. Your task is to:
+              
+              1. **Fetch PR details**: Use github.pr.get to fetch pull request information
+                 - Extract owner, repo, and PR number from provided URL or direct input
+              2. **Get PR diff**: Use github.pr.diff to retrieve the code changes
+              3. **Analyze changes**: Review the diff for:
+                 - Code quality issues
+                 - Potential bugs or edge cases
+                 - Security vulnerabilities
+                 - Performance concerns
+                 - Style consistency
+              4. **Provide feedback**: Output a structured review with:
+                 - Summary of changes
+                 - List of issues found (if any)
+                 - Suggested improvements
+                 - Approval recommendation (approve/request changes)
+              
+              Be constructive and focus on actionable feedback.
+              """
+          )
+        ],
+        isBuiltIn: true,
+        category: .specialized
+      ),
+      
+      // 8. Refactor: Deep analysis + careful implementation + thorough review
+      ChainTemplate(
+        name: "Refactor",
+        description: "Deep refactoring with premium models for complex restructuring (Cost: Premium)",
+        steps: [
+          AgentStepTemplate(role: .planner, model: .claudeOpus45, name: "Architect"),
+          AgentStepTemplate(role: .implementer, model: .claudeSonnet45, name: "Implementer"),
+          AgentStepTemplate(role: .reviewer, model: .claudeSonnet45, name: "Reviewer")
+        ],
+        isBuiltIn: true,
+        category: .specialized
       )
-    )
+    ]
 
     return templates
   }

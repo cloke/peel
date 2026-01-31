@@ -11,9 +11,14 @@ import SwiftUI
 struct ChainTemplateGalleryView: View {
   @Bindable var agentManager: AgentManager
   @State private var templateToDelete: ChainTemplate?
+  @State private var showResetConfirmation = false
 
-  private var builtInTemplates: [ChainTemplate] {
-    agentManager.allTemplates.filter { $0.isBuiltIn }
+  private var coreTemplates: [ChainTemplate] {
+    agentManager.allTemplates.filter { $0.isBuiltIn && $0.category == .core }
+  }
+
+  private var specializedTemplates: [ChainTemplate] {
+    agentManager.allTemplates.filter { $0.isBuiltIn && $0.category == .specialized }
   }
 
   private var savedTemplates: [ChainTemplate] {
@@ -32,8 +37,12 @@ struct ChainTemplateGalleryView: View {
             Text("Create a chain and save it as a template to get started.")
           }
         } else {
-          if !builtInTemplates.isEmpty {
-            templateSection(title: "Built-in Templates", templates: builtInTemplates)
+          if !coreTemplates.isEmpty {
+            templateSection(title: "Core Templates", templates: coreTemplates)
+          }
+
+          if !specializedTemplates.isEmpty {
+            templateSection(title: "Specialized Templates", templates: specializedTemplates)
           }
 
           if !savedTemplates.isEmpty {
@@ -61,16 +70,36 @@ struct ChainTemplateGalleryView: View {
       }
       templateToDelete = nil
     }
+    .confirmDialog(
+      "Reset Templates",
+      isPresented: $showResetConfirmation,
+      confirmLabel: "Reset",
+      confirmRole: .destructive,
+      message: "This will delete all saved templates. Built-in templates will remain."
+    ) {
+      agentManager.resetTemplatesToDefaults()
+    }
   }
 
   private var header: some View {
-    VStack(alignment: .leading, spacing: 6) {
-      Text("Chain Templates")
-        .font(.title2)
-        .fontWeight(.semibold)
-      Text("Create new chains quickly with a template. Built-in templates are read-only.")
-        .font(.caption)
-        .foregroundStyle(.secondary)
+    HStack {
+      VStack(alignment: .leading, spacing: 6) {
+        Text("Chain Templates")
+          .font(.title2)
+          .fontWeight(.semibold)
+        Text("Create new chains quickly with a template. Built-in templates are read-only.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+      
+      Spacer()
+      
+      if !savedTemplates.isEmpty {
+        Button("Reset to Defaults") {
+          showResetConfirmation = true
+        }
+        .buttonStyle(.bordered)
+      }
     }
   }
 
@@ -102,6 +131,17 @@ private struct TemplateCard: View {
   let template: ChainTemplate
   let onCreate: () -> Void
   let onDelete: (() -> Void)?
+  
+  private var costTier: (label: String, color: Color) {
+    let cost = template.estimatedTotalCost
+    if cost == 0 {
+      return ("Free", .green)
+    } else if cost <= 2.0 {
+      return ("Standard", .blue)
+    } else {
+      return ("Premium", .orange)
+    }
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
@@ -127,6 +167,7 @@ private struct TemplateCard: View {
       HStack(spacing: 8) {
         Chip(text: "\(template.steps.count) steps", systemImage: "list.number", foreground: .secondary)
         Chip(text: template.costDisplay, systemImage: "creditcard", foreground: .secondary)
+        Chip(text: costTier.label, systemImage: "dollarsign.circle.fill", foreground: costTier.color, background: costTier.color.opacity(0.15))
         if let validationLabel = template.validationSummaryLabel {
           Chip(text: validationLabel, systemImage: "checkmark.seal", foreground: .secondary)
         }
