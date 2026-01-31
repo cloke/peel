@@ -1,0 +1,1125 @@
+//
+//  RAGRepositoryCardView.swift
+//  Peel
+//
+//  Repo-centric card showing all RAG operations for a single repository.
+//  Part of the RAG UX redesign - everything about a repo in one place.
+//
+
+import PeelUI
+import SwiftData
+import SwiftUI
+
+// MARK: - Repository Status
+
+/// Visual status states for a repository
+enum RAGRepoStatus: Equatable {
+  case notIndexed
+  case indexing
+  case indexedOnly
+  case analyzing(progress: Double)
+  case partiallyAnalyzed(progress: Double)
+  case fullyAnalyzed
+  case stale
+  
+  var badge: String {
+    switch self {
+    case .notIndexed: return "○"
+    case .indexing: return "◐"
+    case .indexedOnly: return "◑"
+    case .analyzing: return "◐"
+    case .partiallyAnalyzed: return "◕"
+    case .fullyAnalyzed: return "●"
+    case .stale: return "⚠"
+    }
+  }
+  
+  var color: Color {
+    switch self {
+    case .notIndexed: return .gray
+    case .indexing: return .blue
+    case .indexedOnly: return .yellow
+    case .analyzing: return .purple
+    case .partiallyAnalyzed: return .orange
+    case .fullyAnalyzed: return .green
+    case .stale: return .orange
+    }
+  }
+  
+  var label: String {
+    switch self {
+    case .notIndexed: return "Not indexed"
+    case .indexing: return "Indexing..."
+    case .indexedOnly: return "Indexed"
+    case .analyzing(let progress): return "Analyzing \(Int(progress * 100))%"
+    case .partiallyAnalyzed(let progress): return "\(Int(progress * 100))% analyzed"
+    case .fullyAnalyzed: return "Complete"
+    case .stale: return "Stale"
+    }
+  }
+}
+
+// MARK: - Analysis State (per repo)
+
+/// Observable state for a single repo's analysis
+@Observable
+@MainActor
+class RAGRepoAnalysisState {
+  let repoId: String
+  let repoPath: String
+  
+  var analyzedCount: Int = 0
+  var unanalyzedCount: Int = 0
+  var isAnalyzing: Bool = false
+  var isPaused: Bool = false
+  var analyzeError: String?
+  var analysisStartTime: Date?
+  var chunksPerSecond: Double = 0
+  var sessionChunksAnalyzed: Int = 0
+  var analyzeTask: Task<Void, Never>?
+  var batchProgress: (current: Int, total: Int)?
+  
+  var totalChunks: Int { analyzedCount + unanalyzedCount }
+  var progress: Double { totalChunks > 0 ? Double(analyzedCount) / Double(totalChunks) : 0 }
+  var isComplete: Bool { totalChunks > 0 && unanalyzedCount == 0 }
+  
+  init(repoId: String, repoPath: String) {
+    self.repoId = repoId
+    self.repoPath = repoPath
+  }
+}
+
+// MARK: - Repository Card View
+
+struct RAGRepositoryCardView: View {
+  let repo: RAGRepoInfo
+  @Bindable var mcpServer: MCPServerService
+  @Binding var isExpanded: Bool
+  
+  // Analysis state for this repo
+  @State private var analysisState: RAGRepoAnalysisState
+  @State private var selectedModelTier: MLXAnalyzerModelTier = .auto
+  
+  // Search state for this repo
+  @State private var searchQuery: String = ""
+  @State private var searchMode: MCPServerService.RAGSearchMode = .vector
+  @State private var searchResults: [LocalRAGSearchResult] = []
+  @State private var isSearching: Bool = false
+  @State private var searchLimit: Int = 10
+  
+  // Skills for this repo
+  @Query private var allSkills: [RepoGuidanceSkill]
+  private var repoSkills: [RepoGuidanceSkill] {
+    allSkills.filter { $0.repoPath == repo.rootPath && $0.isActive }
+  }
+  
+  // UI state
+  @State private var isHovering: Bool = false
+  @State private var showSkillsSheet: Bool = false
+  @State private var errorMessage: String?
+  
+  // Computed status
+  private var status: RAGRepoStatus {
+    if mcpServer.ragIndexingPath == repo.rootPath {
+      return .indexing
+    }
+    if analysisState.isAnalyzing {
+      return .analyzing(progress: analysisState.progress)
+    }
+    if analysisState.totalChunks == 0 {
+      return .indexedOnly
+    }
+    if analysisState.isComplete {
+      return .fullyAnalyzed
+    }
+    return .partiallyAnalyzed(progress: analysisState.progress)
+  }
+  
+  init(repo: RAGRepoInfo, mcpServer: MCPServerService, isExpanded: Binding<Bool>) {
+    self.repo = repo
+    self.mcpServer = mcpServer
+    self._isExpanded = isExpanded
+    self._analysisState = State(initialValue: RAGRepoAnalysisState(repoId: repo.id, repoPath: repo.rootPath))
+  }
+  
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      // MARK: - Card Header (Always Visible)
+      cardHeader
+      
+      // MARK: - Expanded Content
+      if isExpanded {
+        Divider()
+          .padding(.horizontal, 12)
+        
+        expandedContent
+          .padding(12)
+      }
+    }
+    .background(cardBackground)
+    .clipShape(RoundedRectangle(cornerRadius: 12))
+    .shadow(color: .black.opacity(isHovering ? 0.15 : 0.08), radius: isHovering ? 8 : 4, y: 2)
+    .onHover { hovering in
+      withAnimation(.easeInOut(duration: 0.15)) {
+        isHovering = hovering
+      }
+    }
+    .task {
+      await refreshAnalysisStatus()
+    }
+    .sheet(isPresented: $showSkillsSheet) {
+      RAGRepoSkillsSheet(repo: repo, mcpServer: mcpServer)
+    }
+  }
+  
+  // MARK: - Card Header
+  
+  @ViewBuilder
+  private var cardHeader: some View {
+    HStack(alignment: .center, spacing: 12) {
+      // Status badge
+      statusBadge
+      
+      // Repo info
+      VStack(alignment: .leading, spacing: 2) {
+        HStack {
+          Text(repo.name)
+            .font(.headline)
+            .lineLimit(1)
+          
+          Spacer()
+          
+          // Last indexed time
+          if let lastIndexed = repo.lastIndexedAt {
+            Text(lastIndexed, format: .relative(presentation: .named))
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+        }
+        
+        // Quick stats row
+        HStack(spacing: 12) {
+          Label("\(repo.fileCount)", systemImage: "doc")
+          Label("\(repo.chunkCount)", systemImage: "text.alignleft")
+          
+          if analysisState.totalChunks > 0 {
+            let pct = Int(analysisState.progress * 100)
+            Label("\(pct)%", systemImage: "cpu")
+              .foregroundStyle(status.color)
+          }
+          
+          if !repoSkills.isEmpty {
+            Label("\(repoSkills.count)", systemImage: "lightbulb")
+          }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+      }
+      
+      // Expand/collapse chevron
+      Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
+    .padding(12)
+    .contentShape(Rectangle())
+    .onTapGesture {
+      withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+        isExpanded.toggle()
+      }
+    }
+  }
+  
+  // MARK: - Status Badge
+  
+  @ViewBuilder
+  private var statusBadge: some View {
+    ZStack {
+      Circle()
+        .fill(status.color.opacity(0.2))
+        .frame(width: 40, height: 40)
+      
+      if case .indexing = status {
+        ProgressView()
+          .scaleEffect(0.6)
+      } else if case .analyzing = status {
+        ProgressView()
+          .scaleEffect(0.6)
+          .tint(.purple)
+      } else {
+        Image(systemName: statusIcon)
+          .font(.system(size: 18))
+          .foregroundStyle(status.color)
+      }
+    }
+  }
+  
+  private var statusIcon: String {
+    switch status {
+    case .notIndexed: return "folder.badge.questionmark"
+    case .indexing: return "arrow.clockwise"
+    case .indexedOnly: return "folder"
+    case .analyzing: return "cpu"
+    case .partiallyAnalyzed: return "chart.pie"
+    case .fullyAnalyzed: return "checkmark.circle.fill"
+    case .stale: return "exclamationmark.triangle"
+    }
+  }
+  
+  // MARK: - Expanded Content
+  
+  @ViewBuilder
+  private var expandedContent: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      // Path display
+      Text(repo.rootPath)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .textSelection(.enabled)
+      
+      // MARK: Index Section
+      indexSection
+      
+      // MARK: Analysis Section
+      analysisSection
+      
+      // MARK: Search Section
+      searchSection
+      
+      // MARK: Skills Section
+      skillsSection
+      
+      // MARK: Actions Footer
+      actionsFooter
+    }
+  }
+  
+  // MARK: - Index Section
+  
+  @ViewBuilder
+  private var indexSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack {
+        Label("Index", systemImage: "folder.fill")
+          .font(.subheadline.weight(.semibold))
+        
+        Spacer()
+        
+        if mcpServer.ragIndexingPath == repo.rootPath {
+          Text("Indexing...")
+            .font(.caption)
+            .foregroundStyle(.blue)
+        } else {
+          Text("✓ Indexed")
+            .font(.caption)
+            .foregroundStyle(.green)
+        }
+      }
+      
+      HStack(spacing: 16) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text("\(repo.fileCount)")
+            .font(.title3.weight(.medium))
+          Text("files")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+        
+        VStack(alignment: .leading, spacing: 2) {
+          Text("\(repo.chunkCount)")
+            .font(.title3.weight(.medium))
+          Text("chunks")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+        
+        Spacer()
+        
+        Button {
+          Task { await reindexRepository() }
+        } label: {
+          Label("Re-index", systemImage: "arrow.clockwise")
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .disabled(mcpServer.ragIndexingPath != nil)
+      }
+      
+      // Index progress
+      if let progress = mcpServer.ragIndexProgress, 
+         mcpServer.ragIndexingPath == repo.rootPath,
+         !progress.isComplete {
+        VStack(alignment: .leading, spacing: 4) {
+          ProgressView(value: progress.progress)
+            .progressViewStyle(.linear)
+          Text(progress.description)
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+      }
+    }
+    .padding(12)
+    .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 8))
+  }
+  
+  // MARK: - Analysis Section
+  
+  @ViewBuilder
+  private var analysisSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack {
+        Label("AI Analysis", systemImage: "cpu")
+          .font(.subheadline.weight(.semibold))
+        
+        Spacer()
+        
+        if analysisState.isComplete {
+          Text("✓ Complete")
+            .font(.caption)
+            .foregroundStyle(.green)
+        } else if analysisState.totalChunks > 0 {
+          Text("\(Int(analysisState.progress * 100))%")
+            .font(.caption.weight(.medium))
+            .foregroundStyle(status.color)
+        }
+      }
+      
+      // Progress bar
+      if analysisState.totalChunks > 0 {
+        VStack(alignment: .leading, spacing: 4) {
+          ProgressView(value: analysisState.progress)
+            .tint(analysisState.isComplete ? .green : .purple)
+          
+          HStack {
+            Text("\(analysisState.analyzedCount) / \(analysisState.totalChunks) chunks")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+            
+            Spacer()
+            
+            if analysisState.isAnalyzing, analysisState.chunksPerSecond > 0 {
+              Text("\(String(format: "%.1f", analysisState.chunksPerSecond)) chunks/sec")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+          }
+        }
+      }
+      
+      // Model picker and actions
+      HStack(spacing: 8) {
+        Picker("", selection: $selectedModelTier) {
+          Text("Auto").tag(MLXAnalyzerModelTier.auto)
+          Text("Tiny (0.5B)").tag(MLXAnalyzerModelTier.tiny)
+          Text("Small (1.5B)").tag(MLXAnalyzerModelTier.small)
+          Text("Medium (3B)").tag(MLXAnalyzerModelTier.medium)
+          Text("Large (7B)").tag(MLXAnalyzerModelTier.large)
+        }
+        .pickerStyle(.menu)
+        .frame(maxWidth: 140)
+        .controlSize(.small)
+        
+        Spacer()
+        
+        if analysisState.isAnalyzing {
+          Button {
+            analysisState.isPaused = true
+          } label: {
+            Label("Pause", systemImage: "pause.fill")
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
+          .tint(.orange)
+        } else if analysisState.isPaused {
+          Button {
+            analysisState.isPaused = false
+            analysisState.analyzeTask = Task { await continueAnalyzeAll() }
+          } label: {
+            Label("Resume", systemImage: "play.fill")
+          }
+          .buttonStyle(.borderedProminent)
+          .controlSize(.small)
+          
+          Button {
+            stopAnalysis()
+          } label: {
+            Image(systemName: "stop.fill")
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
+          .tint(.red)
+        } else {
+          Button {
+            Task { await analyzeQuickSample() }
+          } label: {
+            Label("Quick 50", systemImage: "hare")
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
+          .disabled(analysisState.unanalyzedCount == 0)
+          
+          Button {
+            startAnalyzeAll()
+          } label: {
+            Label("Analyze All", systemImage: "play.fill")
+          }
+          .buttonStyle(.borderedProminent)
+          .controlSize(.small)
+          .disabled(analysisState.unanalyzedCount == 0)
+        }
+      }
+      
+      // Time estimate
+      if analysisState.isAnalyzing || analysisState.isPaused {
+        if let startTime = analysisState.analysisStartTime {
+          HStack(spacing: 12) {
+            Text("Started: \(startTime, format: .dateTime.hour().minute())")
+            
+            if analysisState.chunksPerSecond > 0 && analysisState.unanalyzedCount > 0 {
+              let remaining = Double(analysisState.unanalyzedCount) / analysisState.chunksPerSecond
+              Text("Est: \(formatDuration(remaining)) remaining")
+            }
+          }
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+        }
+      }
+      
+      // Error display
+      if let error = analysisState.analyzeError {
+        Label(error, systemImage: "exclamationmark.triangle")
+          .font(.caption)
+          .foregroundStyle(.red)
+      }
+    }
+    .padding(12)
+    .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 8))
+  }
+  
+  // MARK: - Search Section
+  
+  @ViewBuilder
+  private var searchSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Label("Search This Repo", systemImage: "magnifyingglass")
+        .font(.subheadline.weight(.semibold))
+      
+      HStack(spacing: 8) {
+        TextField("Search query...", text: $searchQuery)
+          .textFieldStyle(.roundedBorder)
+          .onSubmit {
+            Task { await runSearch() }
+          }
+        
+        Picker("", selection: $searchMode) {
+          Text("Vector").tag(MCPServerService.RAGSearchMode.vector)
+          Text("Text").tag(MCPServerService.RAGSearchMode.text)
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 120)
+        
+        Button {
+          Task { await runSearch() }
+        } label: {
+          if isSearching {
+            ProgressView()
+              .scaleEffect(0.7)
+          } else {
+            Image(systemName: "arrow.right.circle.fill")
+          }
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(searchQuery.trimmingCharacters(in: .whitespaces).isEmpty || isSearching)
+      }
+      
+      // Search results
+      if !searchResults.isEmpty {
+        VStack(alignment: .leading, spacing: 4) {
+          ForEach(searchResults.prefix(5), id: \.filePath) { result in
+            searchResultRow(result)
+          }
+          
+          if searchResults.count > 5 {
+            Text("+ \(searchResults.count - 5) more results")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+        }
+        .padding(.top, 4)
+      }
+    }
+    .padding(12)
+    .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 8))
+  }
+  
+  @ViewBuilder
+  private func searchResultRow(_ result: LocalRAGSearchResult) -> some View {
+    HStack(spacing: 8) {
+      Image(systemName: languageIcon(for: result.filePath))
+        .font(.caption)
+        .foregroundStyle(.secondary)
+      
+      VStack(alignment: .leading, spacing: 1) {
+        Text(URL(fileURLWithPath: result.filePath).lastPathComponent)
+          .font(.caption)
+          .lineLimit(1)
+        
+        Text("L\(result.startLine)–\(result.endLine)")
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+      }
+      
+      Spacer()
+      
+      if let score = result.score {
+        Text("\(Int(score * 100))%")
+          .font(.caption2)
+          .foregroundStyle(score >= 0.8 ? .green : score >= 0.6 ? .orange : .secondary)
+      }
+      
+      Button {
+        NSWorkspace.shared.open(URL(fileURLWithPath: result.filePath))
+      } label: {
+        Image(systemName: "arrow.up.forward")
+      }
+      .buttonStyle(.borderless)
+      .controlSize(.small)
+    }
+    .padding(.vertical, 2)
+  }
+  
+  // MARK: - Skills Section
+  
+  @ViewBuilder
+  private var skillsSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack {
+        Label("Guidance Skills", systemImage: "lightbulb")
+          .font(.subheadline.weight(.semibold))
+        
+        Spacer()
+        
+        Button {
+          showSkillsSheet = true
+        } label: {
+          Label("Manage", systemImage: "gear")
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+      }
+      
+      if repoSkills.isEmpty {
+        Text("No skills configured for this repository")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      } else {
+        VStack(alignment: .leading, spacing: 4) {
+          ForEach(repoSkills.prefix(3)) { skill in
+            HStack(spacing: 6) {
+              Circle()
+                .fill(.green)
+                .frame(width: 6, height: 6)
+              
+              Text(skill.title.isEmpty ? "Untitled" : skill.title)
+                .font(.caption)
+                .lineLimit(1)
+              
+              Spacer()
+              
+              Text("Priority \(skill.priority)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+          }
+          
+          if repoSkills.count > 3 {
+            Text("+ \(repoSkills.count - 3) more")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+        }
+      }
+    }
+    .padding(12)
+    .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 8))
+  }
+  
+  // MARK: - Actions Footer
+  
+  @ViewBuilder
+  private var actionsFooter: some View {
+    HStack {
+      Button(role: .destructive) {
+        Task {
+          do {
+            _ = try await mcpServer.deleteRagRepo(repoId: repo.id)
+          } catch {
+            errorMessage = error.localizedDescription
+          }
+        }
+      } label: {
+        Label("Remove from Index", systemImage: "trash")
+      }
+      .buttonStyle(.bordered)
+      .controlSize(.small)
+      
+      Spacer()
+      
+      if let errorMessage {
+        Text(errorMessage)
+          .font(.caption)
+          .foregroundStyle(.red)
+      }
+    }
+  }
+  
+  // MARK: - Card Background
+  
+  @ViewBuilder
+  private var cardBackground: some View {
+    RoundedRectangle(cornerRadius: 12)
+      .fill(.background)
+      .overlay(
+        RoundedRectangle(cornerRadius: 12)
+          .stroke(status.color.opacity(isExpanded ? 0.3 : 0.15), lineWidth: isExpanded ? 2 : 1)
+      )
+  }
+  
+  // MARK: - Helper Methods
+  
+  private func refreshAnalysisStatus() async {
+    do {
+      let unanalyzed = try await mcpServer.getUnanalyzedChunkCount(repoPath: repo.rootPath)
+      let analyzed = try await mcpServer.getAnalyzedChunkCount(repoPath: repo.rootPath)
+      await MainActor.run {
+        analysisState.unanalyzedCount = unanalyzed
+        analysisState.analyzedCount = analyzed
+      }
+    } catch {
+      await MainActor.run {
+        analysisState.analyzeError = error.localizedDescription
+      }
+    }
+  }
+  
+  private func reindexRepository() async {
+    errorMessage = nil
+    do {
+      try await mcpServer.indexRagRepo(path: repo.rootPath)
+    } catch {
+      errorMessage = error.localizedDescription
+    }
+  }
+  
+  private func analyzeQuickSample() async {
+    analysisState.isAnalyzing = true
+    analysisState.analyzeError = nil
+    analysisState.analysisStartTime = Date()
+    
+    defer {
+      Task { @MainActor in
+        analysisState.isAnalyzing = false
+        analysisState.batchProgress = nil
+      }
+    }
+    
+    do {
+      let count = try await mcpServer.analyzeRagChunks(
+        repoPath: repo.rootPath,
+        limit: 50,
+        modelTier: selectedModelTier
+      ) { current, total in
+        Task { @MainActor in
+          analysisState.batchProgress = (current, total)
+        }
+      }
+      
+      await MainActor.run {
+        analysisState.analyzedCount += count
+        analysisState.unanalyzedCount = max(0, analysisState.unanalyzedCount - count)
+      }
+    } catch {
+      await MainActor.run {
+        analysisState.analyzeError = error.localizedDescription
+      }
+    }
+  }
+  
+  private func startAnalyzeAll() {
+    analysisState.isAnalyzing = true
+    analysisState.isPaused = false
+    analysisState.analyzeError = nil
+    analysisState.analysisStartTime = Date()
+    analysisState.chunksPerSecond = 0
+    analysisState.sessionChunksAnalyzed = 0
+    analysisState.analyzeTask = Task { await runAnalyzeAllLoop() }
+  }
+  
+  private func continueAnalyzeAll() async {
+    await MainActor.run {
+      analysisState.isAnalyzing = true
+    }
+    await runAnalyzeAllLoop()
+  }
+  
+  private func stopAnalysis() {
+    analysisState.analyzeTask?.cancel()
+    analysisState.analyzeTask = nil
+    
+    if let startTime = analysisState.analysisStartTime, analysisState.sessionChunksAnalyzed > 0 {
+      let duration = Date().timeIntervalSince(startTime)
+      mcpServer.recordAnalysisSession(chunksAnalyzed: analysisState.sessionChunksAnalyzed, durationSeconds: duration)
+    }
+    
+    analysisState.isAnalyzing = false
+    analysisState.isPaused = false
+    analysisState.batchProgress = nil
+    analysisState.sessionChunksAnalyzed = 0
+    analysisState.analysisStartTime = nil
+  }
+  
+  private func runAnalyzeAllLoop() async {
+    let batchSize = 50
+    
+    while !Task.isCancelled {
+      if await MainActor.run(body: { analysisState.isPaused }) {
+        await MainActor.run { analysisState.isAnalyzing = false }
+        return
+      }
+      
+      let remaining = await MainActor.run { analysisState.unanalyzedCount }
+      if remaining == 0 {
+        await MainActor.run {
+          if let startTime = analysisState.analysisStartTime, analysisState.sessionChunksAnalyzed > 0 {
+            let duration = Date().timeIntervalSince(startTime)
+            mcpServer.recordAnalysisSession(chunksAnalyzed: analysisState.sessionChunksAnalyzed, durationSeconds: duration)
+          }
+          analysisState.isAnalyzing = false
+          analysisState.isPaused = false
+          analysisState.batchProgress = nil
+          analysisState.sessionChunksAnalyzed = 0
+          analysisState.analysisStartTime = nil
+        }
+        return
+      }
+      
+      let thisBatch = min(batchSize, remaining)
+      let batchStart = Date()
+      
+      do {
+        let count = try await mcpServer.analyzeRagChunks(
+          repoPath: repo.rootPath,
+          limit: thisBatch,
+          modelTier: selectedModelTier
+        ) { current, total in
+          Task { @MainActor in
+            analysisState.batchProgress = (current, total)
+          }
+        }
+        
+        await MainActor.run {
+          analysisState.analyzedCount += count
+          analysisState.unanalyzedCount = max(0, analysisState.unanalyzedCount - count)
+          analysisState.sessionChunksAnalyzed += count
+          
+          let elapsed = Date().timeIntervalSince(batchStart)
+          if elapsed > 0 && count > 0 {
+            let batchRate = Double(count) / elapsed
+            if analysisState.chunksPerSecond == 0 {
+              analysisState.chunksPerSecond = batchRate
+            } else {
+              analysisState.chunksPerSecond = analysisState.chunksPerSecond * 0.7 + batchRate * 0.3
+            }
+          }
+        }
+      } catch {
+        await MainActor.run {
+          if let startTime = analysisState.analysisStartTime, analysisState.sessionChunksAnalyzed > 0 {
+            let duration = Date().timeIntervalSince(startTime)
+            mcpServer.recordAnalysisSession(chunksAnalyzed: analysisState.sessionChunksAnalyzed, durationSeconds: duration)
+          }
+          analysisState.analyzeError = error.localizedDescription
+          analysisState.isAnalyzing = false
+          analysisState.isPaused = false
+          analysisState.sessionChunksAnalyzed = 0
+          analysisState.analysisStartTime = nil
+        }
+        return
+      }
+    }
+    
+    await MainActor.run {
+      analysisState.isAnalyzing = false
+      analysisState.isPaused = false
+    }
+  }
+  
+  private func runSearch() async {
+    let trimmed = searchQuery.trimmingCharacters(in: .whitespaces)
+    guard !trimmed.isEmpty else { return }
+    
+    isSearching = true
+    defer { isSearching = false }
+    
+    do {
+      let results = try await mcpServer.searchRag(
+        query: trimmed,
+        mode: searchMode,
+        repoPath: repo.rootPath,
+        limit: searchLimit
+      )
+      self.searchResults = results
+    } catch {
+      errorMessage = error.localizedDescription
+    }
+  }
+  
+  private func formatDuration(_ seconds: TimeInterval) -> String {
+    if seconds < 60 {
+      return "\(Int(seconds))s"
+    } else if seconds < 3600 {
+      let mins = Int(seconds / 60)
+      let secs = Int(seconds) % 60
+      return "\(mins)m \(secs)s"
+    } else {
+      let hours = Int(seconds / 3600)
+      let mins = Int(seconds / 60) % 60
+      return "\(hours)h \(mins)m"
+    }
+  }
+  
+  private func languageIcon(for path: String) -> String {
+    let ext = URL(fileURLWithPath: path).pathExtension.lowercased()
+    switch ext {
+    case "swift": return "swift"
+    case "py": return "chevron.left.forwardslash.chevron.right"
+    case "js", "ts", "jsx", "tsx": return "j.square"
+    case "rs": return "r.square"
+    case "rb": return "r.square.fill"
+    case "md": return "doc.richtext"
+    case "json", "yaml", "yml": return "curlybraces"
+    default: return "doc.text"
+    }
+  }
+}
+
+// MARK: - Skills Sheet
+
+struct RAGRepoSkillsSheet: View {
+  let repo: RAGRepoInfo
+  @Bindable var mcpServer: MCPServerService
+  @Environment(\.dismiss) private var dismiss
+  
+  @Query private var allSkills: [RepoGuidanceSkill]
+  private var repoSkills: [RepoGuidanceSkill] {
+    allSkills.filter { $0.repoPath == repo.rootPath }
+  }
+  
+  @State private var selectedSkillId: UUID?
+  @State private var skillTitle: String = ""
+  @State private var skillBody: String = ""
+  @State private var skillTags: String = ""
+  @State private var skillPriority: Int = 0
+  @State private var skillActive: Bool = true
+  @State private var skillSource: String = "manual"
+  @State private var errorMessage: String?
+  
+  var body: some View {
+    NavigationStack {
+      HSplitView {
+        // Skill list
+        VStack(alignment: .leading) {
+          List(selection: $selectedSkillId) {
+            ForEach(repoSkills) { skill in
+              VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                  Text(skill.title.isEmpty ? "Untitled" : skill.title)
+                    .font(.callout)
+                  
+                  Spacer()
+                  
+                  if !skill.isActive {
+                    Text("Inactive")
+                      .font(.caption2)
+                      .foregroundStyle(.secondary)
+                  }
+                }
+                
+                Text("Priority \(skill.priority) · Used \(skill.appliedCount)×")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+              .tag(skill.id)
+            }
+          }
+          .listStyle(.sidebar)
+          
+          HStack {
+            Button {
+              createNewSkill()
+            } label: {
+              Label("New Skill", systemImage: "plus")
+            }
+            .buttonStyle(.bordered)
+            
+            Spacer()
+          }
+          .padding(8)
+        }
+        .frame(minWidth: 200, maxWidth: 300)
+        
+        // Editor
+        VStack(alignment: .leading, spacing: 12) {
+          TextField("Title", text: $skillTitle)
+            .textFieldStyle(.roundedBorder)
+          
+          HStack {
+            TextField("Tags (comma-separated)", text: $skillTags)
+              .textFieldStyle(.roundedBorder)
+            
+            Stepper("Priority: \(skillPriority)", value: $skillPriority, in: -5...10)
+              .frame(width: 150)
+          }
+          
+          Toggle("Active", isOn: $skillActive)
+          
+          Text("Guidance Content")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          
+          TextEditor(text: $skillBody)
+            .font(.system(.body, design: .monospaced))
+            .frame(minHeight: 200)
+            .overlay(
+              RoundedRectangle(cornerRadius: 6)
+                .stroke(Color.secondary.opacity(0.3))
+            )
+          
+          if let errorMessage {
+            Text(errorMessage)
+              .font(.caption)
+              .foregroundStyle(.red)
+          }
+          
+          HStack {
+            if selectedSkillId != nil {
+              Button(role: .destructive) {
+                deleteSkill()
+              } label: {
+                Label("Delete", systemImage: "trash")
+              }
+              .buttonStyle(.bordered)
+            }
+            
+            Spacer()
+            
+            Button("Save") {
+              saveSkill()
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(skillBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+          }
+        }
+        .padding()
+        .frame(minWidth: 400)
+      }
+      .navigationTitle("Skills for \(repo.name)")
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Done") { dismiss() }
+        }
+      }
+    }
+    .frame(minWidth: 700, minHeight: 500)
+    .onChange(of: selectedSkillId) { _, newId in
+      if let newId, let skill = repoSkills.first(where: { $0.id == newId }) {
+        loadSkill(skill)
+      }
+    }
+  }
+  
+  private func loadSkill(_ skill: RepoGuidanceSkill) {
+    skillTitle = skill.title
+    skillBody = skill.body
+    skillTags = skill.tags
+    skillPriority = skill.priority
+    skillActive = skill.isActive
+    skillSource = skill.source
+    errorMessage = nil
+  }
+  
+  private func createNewSkill() {
+    selectedSkillId = nil
+    skillTitle = ""
+    skillBody = ""
+    skillTags = ""
+    skillPriority = 0
+    skillActive = true
+    skillSource = "manual"
+    errorMessage = nil
+  }
+  
+  private func saveSkill() {
+    let trimmedBody = skillBody.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedBody.isEmpty else {
+      errorMessage = "Skill body is required"
+      return
+    }
+    
+    errorMessage = nil
+    
+    if let currentId = selectedSkillId,
+       let updated = mcpServer.updateRepoGuidanceSkill(
+         id: currentId,
+         repoPath: repo.rootPath,
+         title: skillTitle,
+         body: trimmedBody,
+         source: skillSource,
+         tags: skillTags,
+         priority: skillPriority,
+         isActive: skillActive
+       ) {
+      selectedSkillId = updated.id
+    } else if let created = mcpServer.addRepoGuidanceSkill(
+      repoPath: repo.rootPath,
+      title: skillTitle,
+      body: trimmedBody,
+      source: skillSource,
+      tags: skillTags,
+      priority: skillPriority,
+      isActive: skillActive
+    ) {
+      selectedSkillId = created.id
+    } else {
+      errorMessage = "Failed to save skill"
+    }
+  }
+  
+  private func deleteSkill() {
+    guard let selectedSkillId else { return }
+    if mcpServer.deleteRepoGuidanceSkill(id: selectedSkillId) {
+      createNewSkill()
+    } else {
+      errorMessage = "Failed to delete skill"
+    }
+  }
+}
+
+// MARK: - Preview
+
+#Preview {
+  RAGRepositoryCardView(
+    repo: RAGRepoInfo(
+      id: "1",
+      name: "KitchenSink",
+      rootPath: "/Users/dev/code/KitchenSink",
+      lastIndexedAt: Date().addingTimeInterval(-3600),
+      fileCount: 340,
+      chunkCount: 3029
+    ),
+    mcpServer: MCPServerService(),
+    isExpanded: .constant(true)
+  )
+  .padding()
+  .frame(width: 500)
+}
