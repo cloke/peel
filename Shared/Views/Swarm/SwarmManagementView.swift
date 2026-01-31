@@ -71,6 +71,12 @@ struct SwarmManagementView: View {
     .sheet(isPresented: $showingCreateSwarm) {
       createSwarmSheet
     }
+    .onChange(of: firebaseService.lastJoinedSwarmId) { _, swarmId in
+      handleLastJoinedSwarmChange(swarmId)
+    }
+    .onChange(of: firebaseService.memberSwarms) { _, swarms in
+      handleMemberSwarmsChange(swarms)
+    }
     .alert("Error", isPresented: .constant(errorMessage != nil)) {
       Button("OK") { errorMessage = nil }
     } message: {
@@ -78,6 +84,28 @@ struct SwarmManagementView: View {
         Text(error)
       }
     }
+  }
+  
+  // MARK: - Handlers (#236)
+  
+  /// Auto-select newly joined swarm after accepting invite
+  private func handleLastJoinedSwarmChange(_ swarmId: String?) {
+    guard let swarmId = swarmId,
+          let swarm = firebaseService.memberSwarms.first(where: { $0.id == swarmId }) else {
+      return
+    }
+    selectedSwarm = swarm
+    FirebaseService.shared.lastJoinedSwarmId = nil
+  }
+  
+  /// Auto-select newly joined swarm after swarms reload
+  private func handleMemberSwarmsChange(_ swarms: [SwarmMembership]) {
+    guard let swarmId = firebaseService.lastJoinedSwarmId,
+          let swarm = swarms.first(where: { $0.id == swarmId }) else {
+      return
+    }
+    selectedSwarm = swarm
+    FirebaseService.shared.lastJoinedSwarmId = nil
   }
   
   @ViewBuilder

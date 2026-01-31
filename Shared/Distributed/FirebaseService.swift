@@ -96,6 +96,9 @@ public final class FirebaseService {
   /// Flag to indicate deep link was received and needs UI attention
   public var deepLinkReceived = false
   
+  /// ID of the swarm that was most recently joined (for UI auto-selection after invite)
+  public var lastJoinedSwarmId: String?
+  
   // MARK: - Private State
   
   private var authStateListener: AuthStateDidChangeListenerHandle?
@@ -455,6 +458,9 @@ public final class FirebaseService {
     
     try await batch.commit()
     logger.info("Successfully joined swarm \(swarmId) as pending member")
+    
+    // Store the joined swarm ID for UI auto-selection (#236)
+    lastJoinedSwarmId = swarmId
     
     // Reload swarms
     await loadUserSwarms()
