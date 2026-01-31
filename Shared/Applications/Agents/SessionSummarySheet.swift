@@ -5,6 +5,7 @@
 //  Created on 1/19/26.
 //
 
+import PeelUI
 import SwiftUI
 
 struct SessionSummarySheet: View {
@@ -18,19 +19,19 @@ struct SessionSummarySheet: View {
         VStack(alignment: .leading, spacing: 20) {
           // Session stats
           HStack(spacing: 24) {
-            StatCard(
+            SessionStatCard(
               title: "Premium Requests",
               value: sessionTracker.totalPremiumUsed.premiumMultiplierString(),
               icon: "star.fill",
               color: .orange
             )
-            StatCard(
+            SessionStatCard(
               title: "Session Duration",
               value: sessionTracker.sessionDuration,
               icon: "clock.fill",
               color: .blue
             )
-            StatCard(
+            SessionStatCard(
               title: "Chain Runs",
               value: "\(sessionTracker.chainRunHistory.count)",
               icon: "link",
@@ -55,40 +56,37 @@ struct SessionSummarySheet: View {
                 .padding(.horizontal)
 
               ForEach(sessionTracker.chainRunHistory) { record in
-                GroupBox {
-                  VStack(alignment: .leading, spacing: 8) {
+                SectionCard {
+                  Text(record.timestamp, style: .time)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                  // Agent summaries
+                  ForEach(record.results) { result in
                     HStack {
-                      Text(record.chainName)
-                        .font(.headline)
-                      Spacer()
-                      Text(record.totalPremium.premiumCostDisplay)
+                      Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
                         .font(.caption)
+                      Text(result.agentName)
+                        .font(.caption)
+                      Text("(\(result.model))")
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
-                    }
-
-                    Text(record.timestamp, style: .time)
-                      .font(.caption)
-                      .foregroundStyle(.secondary)
-
-                    // Agent summaries
-                    ForEach(record.results) { result in
-                      HStack {
-                        Image(systemName: "checkmark.circle.fill")
-                          .foregroundStyle(.green)
-                          .font(.caption)
-                        Text(result.agentName)
-                          .font(.caption)
-                        Text("(\(result.model))")
+                      Spacer()
+                      if let duration = result.duration {
+                        Text(duration)
                           .font(.caption2)
                           .foregroundStyle(.secondary)
-                        Spacer()
-                        if let duration = result.duration {
-                          Text(duration)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                        }
                       }
                     }
+                  }
+                } header: {
+                  HStack {
+                    Text(record.chainName)
+                    Spacer()
+                    Text(record.totalPremium.premiumCostDisplay)
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
                   }
                 }
                 .padding(.horizontal)
@@ -156,27 +154,26 @@ struct SessionSummarySheet: View {
   }
 }
 
-private struct StatCard: View {
+private struct SessionStatCard: View {
   let title: String
   let value: String
   let icon: String
   let color: Color
 
   var body: some View {
-    GroupBox {
-      VStack(spacing: 8) {
-        Image(systemName: icon)
-          .font(.title2)
-          .foregroundStyle(color)
-        Text(value)
-          .font(.title)
-          .fontWeight(.bold)
-        Text(title)
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      }
-      .frame(maxWidth: .infinity)
-      .padding(.vertical, 8)
+    VStack(spacing: 8) {
+      Image(systemName: icon)
+        .font(.title2)
+        .foregroundStyle(color)
+      Text(value)
+        .font(.title)
+        .fontWeight(.bold)
+      Text(title)
+        .font(.caption)
+        .foregroundStyle(.secondary)
     }
+    .frame(maxWidth: .infinity)
+    .padding(.vertical, 12)
+    .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 10))
   }
 }

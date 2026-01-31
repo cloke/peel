@@ -5,6 +5,7 @@
 //  UI for viewing CI failure patterns and managing guidance.
 //
 
+import PeelUI
 import SwiftUI
 import SwiftData
 
@@ -239,72 +240,67 @@ private struct PatternGuidanceSheet: View {
     NavigationStack {
       VStack(alignment: .leading, spacing: 16) {
         // Pattern header
-        GroupBox {
-          VStack(alignment: .leading, spacing: 8) {
-            HStack {
-              Text("Pattern")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-              Spacer()
-            }
-
-            Text(pattern.pattern)
-              .font(.body.monospaced())
-              .textSelection(.enabled)
+        VStack(alignment: .leading, spacing: 8) {
+          HStack {
+            Text("Pattern")
+              .font(.headline)
+            Spacer()
           }
+
+          Text(pattern.pattern)
+            .font(.body.monospaced())
+            .textSelection(.enabled)
         }
+        .padding(16)
+        .background(.fill.tertiary)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
 
         // Stats
-        GroupBox {
-          HStack {
-            VStack(alignment: .leading) {
-              Text("Type")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-              Text(pattern.failureType.rawValue.capitalized)
-            }
-
-            Spacer()
-
-            VStack(alignment: .center) {
-              Text("Occurrences")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-              Text("\(pattern.occurrenceCount)")
-                .font(.title2.bold())
-                .foregroundStyle(.orange)
-            }
-
-            Spacer()
-
-            VStack(alignment: .trailing) {
-              Text("Last Seen")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-              Text(pattern.lastSeen, style: .relative)
-            }
-          }
-        }
-
-        // Guidance
-        GroupBox {
-          VStack(alignment: .leading, spacing: 8) {
-            Text("Generated Guidance")
+        HStack {
+          VStack(alignment: .leading) {
+            Text("Type")
               .font(.caption)
               .foregroundStyle(.secondary)
+            Text(pattern.failureType.rawValue.capitalized)
+          }
 
-            if let guidance = pattern.guidance {
-              ScrollView {
-                Text(guidance)
-                  .font(.caption.monospaced())
-                  .textSelection(.enabled)
-              }
-              .frame(maxHeight: 200)
-            } else {
-              Text("No guidance generated yet. Generate guidance to get recommendations for avoiding this failure.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+          Spacer()
+
+          VStack(alignment: .center) {
+            Text("Occurrences")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Text("\(pattern.occurrenceCount)")
+              .font(.title2.bold())
+              .foregroundStyle(.orange)
+          }
+
+          Spacer()
+
+          VStack(alignment: .trailing) {
+            Text("Last Seen")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Text(pattern.lastSeen, style: .relative)
+          }
+        }
+        .padding(16)
+        .background(.fill.tertiary)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+
+        // Guidance
+        SectionCard("Generated Guidance") {
+          if let guidance = pattern.guidance {
+            ScrollView {
+              Text(guidance)
+                .font(.caption.monospaced())
+                .textSelection(.enabled)
             }
+            .frame(maxHeight: 200)
+          } else {
+            Text("No guidance generated yet. Generate guidance to get recommendations for avoiding this failure.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
           }
         }
 
