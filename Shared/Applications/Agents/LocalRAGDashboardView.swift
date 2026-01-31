@@ -189,6 +189,23 @@ private struct WorkspaceIndexSheet: View {
   }
 }
 
+// MARK: - RAG Dashboard Section
+private enum RAGDashboardSection: String, CaseIterable, Identifiable {
+  case repos = "Repos"
+  case search = "Search"
+  case tools = "Tools"
+  
+  var id: String { rawValue }
+  
+  var icon: String {
+    switch self {
+    case .repos: return "folder"
+    case .search: return "magnifyingglass"
+    case .tools: return "wrench.and.screwdriver"
+    }
+  }
+}
+
 struct LocalRAGDashboardView: View {
   @Bindable var mcpServer: MCPServerService
   private var repoPath: Binding<String> { $mcpServer.localRagRepoPath }
@@ -226,6 +243,9 @@ struct LocalRAGDashboardView: View {
   @State private var swarmCoordinator = SwarmCoordinator.shared
   @State private var selectedWorkerId: String?
   @State private var syncError: String?
+  
+  // Section navigation
+  @State private var selectedSection: RAGDashboardSection = .repos
   
   // Section collapse state
   @State private var isArtifactSyncExpanded = false
@@ -301,6 +321,69 @@ struct LocalRAGDashboardView: View {
           )
         }
         
+        // MARK: - Section Picker
+        Picker("Section", selection: $selectedSection) {
+          ForEach(RAGDashboardSection.allCases) { section in
+            Label(section.rawValue, systemImage: section.icon)
+              .tag(section)
+          }
+        }
+        .pickerStyle(.segmented)
+        .padding(.horizontal, LayoutSpacing.item)
+        
+        // MARK: - Section Content
+        switch selectedSection {
+        case .repos:
+          reposSection
+        case .search:
+          searchSection
+        case .tools:
+          toolsSection
+        }
+      }
+      .padding(.horizontal, LayoutSpacing.page)
+      .padding(.vertical, LayoutSpacing.section)
+    }
+    .navigationTitle("Local RAG")
+    .task {
+      if repoPath.wrappedValue.isEmpty {
+        repoPath.wrappedValue = mcpServer.agentManager.lastUsedWorkingDirectory ?? ""
+      }
+      if skillsRepoFilter.isEmpty {
+        skillsRepoFilter = repoPath.wrappedValue
+      }
+      if skillRepoPath.isEmpty {
+        skillRepoPath = repoPath.wrappedValue
+      }
+      await mcpServer.refreshRagSummary()
+      await mcpServer.refreshRagQueryHints()
+    }
+    .fileImporter(
+      isPresented: $isRepoPickerPresented,
+      allowedContentTypes: [.folder],
+      allowsMultipleSelection: false
+    ) { result in
+      switch result {
+      case .success(let urls):
+        if let selected = urls.first {
+          repoPath.wrappedValue = selected.path
+        }
+      case .failure(let error):
+        errorMessage = error.localizedDescription
+      }
+    }
+    .onChange(of: mcpServer.lastUIAction?.id) {
+      guard let action = mcpServer.lastUIAction else { return }
+      handleUIAction(action)
+    }
+    .sheet(isPresented: $showWorkspaceSheet) {
+      workspaceSheet
+    }
+  }
+  
+  // MARK: - Repos Section
+  @ViewBuilder
+  private var reposSection: some View {
         // MARK: - Indexed Repositories
         GroupBox {
           VStack(alignment: .leading, spacing: LayoutSpacing.item) {
@@ -479,7 +562,11 @@ struct LocalRAGDashboardView: View {
           }
         }
         .padding(.horizontal, LayoutSpacing.item)
-
+  }
+  
+  // MARK: - Search Section
+  @ViewBuilder
+  private var searchSection: some View {
         // MARK: - Search
         GroupBox {
           VStack(alignment: .leading, spacing: LayoutSpacing.item) {
@@ -588,7 +675,11 @@ struct LocalRAGDashboardView: View {
           SectionHeader("Dependency Graph")
         }
         .padding(.horizontal, LayoutSpacing.item)
-
+  }
+  
+  // MARK: - Tools Section
+  @ViewBuilder
+  private var toolsSection: some View {
         // MARK: - AI Code Analysis (#198)
         DisclosureGroup(isExpanded: $isAIAnalysisExpanded) {
           VStack(alignment: .leading, spacing: LayoutSpacing.item) {
@@ -1055,97 +1146,69 @@ struct LocalRAGDashboardView: View {
           }
         }
         .padding(.horizontal, LayoutSpacing.item)
+  }
+  
+  // MARK: - Workspace Sheet
+  @ViewBuilder
+  private var workspaceSheet: some View {
+    WorkspaceIndexSheet(
+      rootPath: workspaceRootPath,
+      repos: workspaceRepos,
+      debugInfo: workspaceDebugInfo,
+      selectedRepos: $selectedWorkspaceRepos,
+      onCancel: { showWorkspaceSheet = false },
+      onRescan: {
+        let detection = detectWorkspaceRepos(rootPath: workspaceRootPath)
+        workspaceDebugInfo = detection.debug
+        workspaceRepos = detection.repos
+        selectedWorkspaceRepos = Set(detection.repos)
+      },
+      onIndexWorkspace: { excludeSubrepos in
+        showWorkspaceSheet = false
+        Task { await indexWorkspaceRoot(excludeSubrepos: excludeSubrepos) }
+      },
+      onIndexSelected: {
+        showWorkspaceSheet = false
+        Task { await indexWorkspaceRepos() }
       }
-      .padding(.horizontal, LayoutSpacing.page)
-      .padding(.vertical, LayoutSpacing.section)
+    )
+    .frame(minWidth: 520, minHeight: 420)
+  }
+  
+  // MARK: - UI Action Handler
+  private func handleUIAction(_ action: UIAction) {
+    switch action.controlId {
+    case "agents.localRag.refresh":
+      Task { await mcpServer.refreshRagSummary() }
+      mcpServer.recordUIActionHandled(action.controlId)
+    case "agents.localRag.init":
+      Task { await initializeDatabase() }
+      mcpServer.recordUIActionHandled(action.controlId)
+    case "agents.localRag.index":
+      Task { await indexRepository() }
+      mcpServer.recordUIActionHandled(action.controlId)
+    case "agents.localRag.search":
+      Task { await runSearch() }
+      mcpServer.recordUIActionHandled(action.controlId)
+    case "agents.localRag.skills.new":
+      resetSkillEditor()
+      mcpServer.recordUIActionHandled(action.controlId)
+    case "agents.localRag.skills.save":
+      saveSkill()
+      mcpServer.recordUIActionHandled(action.controlId)
+    case "agents.localRag.skills.delete":
+      deleteSelectedSkill()
+      mcpServer.recordUIActionHandled(action.controlId)
+    case "agents.localRag.sync.pull":
+      Task { await syncRagArtifacts(direction: .pull) }
+      mcpServer.recordUIActionHandled(action.controlId)
+    case "agents.localRag.sync.push":
+      Task { await syncRagArtifacts(direction: .push) }
+      mcpServer.recordUIActionHandled(action.controlId)
+    default:
+      break
     }
-    .navigationTitle("Local RAG")
-    .task {
-      if repoPath.wrappedValue.isEmpty {
-        repoPath.wrappedValue = mcpServer.agentManager.lastUsedWorkingDirectory ?? ""
-      }
-      if skillsRepoFilter.isEmpty {
-        skillsRepoFilter = repoPath.wrappedValue
-      }
-      if skillRepoPath.isEmpty {
-        skillRepoPath = repoPath.wrappedValue
-      }
-      await mcpServer.refreshRagSummary()
-      await mcpServer.refreshRagQueryHints()
-    }
-    .fileImporter(
-      isPresented: $isRepoPickerPresented,
-      allowedContentTypes: [.folder],
-      allowsMultipleSelection: false
-    ) { result in
-      switch result {
-      case .success(let urls):
-        if let selected = urls.first {
-          repoPath.wrappedValue = selected.path
-        }
-      case .failure(let error):
-        errorMessage = error.localizedDescription
-      }
-    }
-    .onChange(of: mcpServer.lastUIAction?.id) {
-      guard let action = mcpServer.lastUIAction else { return }
-      switch action.controlId {
-      case "agents.localRag.refresh":
-        Task { await mcpServer.refreshRagSummary() }
-        mcpServer.recordUIActionHandled(action.controlId)
-      case "agents.localRag.init":
-        Task { await initializeDatabase() }
-        mcpServer.recordUIActionHandled(action.controlId)
-      case "agents.localRag.index":
-        Task { await indexRepository() }
-        mcpServer.recordUIActionHandled(action.controlId)
-      case "agents.localRag.search":
-        Task { await runSearch() }
-        mcpServer.recordUIActionHandled(action.controlId)
-      case "agents.localRag.skills.new":
-        resetSkillEditor()
-        mcpServer.recordUIActionHandled(action.controlId)
-      case "agents.localRag.skills.save":
-        saveSkill()
-        mcpServer.recordUIActionHandled(action.controlId)
-      case "agents.localRag.skills.delete":
-        deleteSelectedSkill()
-        mcpServer.recordUIActionHandled(action.controlId)
-      case "agents.localRag.sync.pull":
-        Task { await syncRagArtifacts(direction: .pull) }
-        mcpServer.recordUIActionHandled(action.controlId)
-      case "agents.localRag.sync.push":
-        Task { await syncRagArtifacts(direction: .push) }
-        mcpServer.recordUIActionHandled(action.controlId)
-      default:
-        break
-      }
-      mcpServer.lastUIAction = nil
-    }
-    .sheet(isPresented: $showWorkspaceSheet) {
-      WorkspaceIndexSheet(
-        rootPath: workspaceRootPath,
-        repos: workspaceRepos,
-        debugInfo: workspaceDebugInfo,
-        selectedRepos: $selectedWorkspaceRepos,
-        onCancel: { showWorkspaceSheet = false },
-        onRescan: {
-          let detection = detectWorkspaceRepos(rootPath: workspaceRootPath)
-          workspaceDebugInfo = detection.debug
-          workspaceRepos = detection.repos
-          selectedWorkspaceRepos = Set(detection.repos)
-        },
-        onIndexWorkspace: { excludeSubrepos in
-          showWorkspaceSheet = false
-          Task { await indexWorkspaceRoot(excludeSubrepos: excludeSubrepos) }
-        },
-        onIndexSelected: {
-          showWorkspaceSheet = false
-          Task { await indexWorkspaceRepos() }
-        }
-      )
-      .frame(minWidth: 520, minHeight: 420)
-    }
+    mcpServer.lastUIAction = nil
   }
 
   private var filteredSkills: [RepoGuidanceSkill] {
