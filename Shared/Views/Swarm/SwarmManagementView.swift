@@ -551,13 +551,127 @@ struct PendingMembersView: View {
 
 struct InvitesListView: View {
   let swarmId: String
+  @State private var firebaseService = FirebaseService.shared
+  @State private var invites: [InviteDetails] = []
+  @State private var isLoading = true
+  @State private var errorMessage: String?
   
   var body: some View {
-    ContentUnavailableView(
-      "Invites",
-      systemImage: "envelope",
-      description: Text("Invite history coming soon")
-    )
+    Group {
+      if isLoading {
+        ProgressView("Loading invites...")
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+      } else if invites.isEmpty {
+        ContentUnavailableView(
+          "No Invites",
+          systemImage: "envelope",
+          description: Text("Create an invite to share with others")
+        )
+      } else {
+        List(invites) { invite in
+          InviteRow(invite: invite, onRevoke: { revokeInvite(invite) })
+        }
+      }
+    }
+    .task {
+      await loadInvites()
+    }
+    .alert("Error", isPresented: .constant(errorMessage != nil)) {
+      Button("OK") { errorMessage = nil }
+    } message: {
+      if let error = errorMessage {
+        Text(error)
+      }
+    }
+  }
+  
+  private func loadInvites() async {
+    isLoading = true
+    do {
+      invites = try await firebaseService.loadInvites(swarmId: swarmId)
+    } catch {
+      errorMessage = error.localizedDescription
+    }
+    isLoading = false
+  }
+  
+  private func revokeInvite(_ invite: InviteDetails) {
+    Task {
+      do {
+        try await firebaseService.revokeInvite(swarmId: swarmId, inviteId: invite.id)
+        await loadInvites()
+      } catch {
+        errorMessage = error.localizedDescription
+      }
+    }
+  }
+}
+
+// MARK: - Invite Row
+
+struct InviteRow: View {
+  let invite: InviteDetails
+  let onRevoke: () -> Void
+  @State private var showingRevokeConfirmation = false
+  
+  var body: some View {
+    HStack {
+      VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 6) {
+          statusBadge
+          Text("Invite")
+            .font(.headline)
+        }
+        
+        HStack(spacing: 12) {
+          Label("\(invite.usedCount)/\(invite.maxUses) uses", systemImage: "person.fill")
+          Label(invite.expiresAt.formatted(date: .abbreviated, time: .shortened), systemImage: "clock")
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        
+        Text("Created \(invite.createdAt.formatted(date: .abbreviated, time: .omitted))")
+          .font(.caption2)
+          .foregroundStyle(.tertiary)
+      }
+      
+      Spacer()
+      
+      if invite.isValid {
+        Button(role: .destructive) {
+          showingRevokeConfirmation = true
+        } label: {
+          Label("Revoke", systemImage: "xmark.circle")
+        }
+        .buttonStyle(.borderless)
+      }
+    }
+    .padding(.vertical, 4)
+    .confirmationDialog("Revoke Invite?", isPresented: $showingRevokeConfirmation) {
+      Button("Revoke", role: .destructive) { onRevoke() }
+      Button("Cancel", role: .cancel) { }
+    } message: {
+      Text("This invite will no longer work for new users.")
+    }
+  }
+  
+  @ViewBuilder
+  private var statusBadge: some View {
+    let (text, color): (String, Color) = {
+      if invite.isRevoked { return ("Revoked", .red) }
+      if invite.isExpired { return ("Expired", .orange) }
+      if invite.isFullyUsed { return ("Used", .secondary) }
+      return ("Active", .green)
+    }()
+    
+    Text(text)
+      .font(.caption2)
+      .fontWeight(.medium)
+      .padding(.horizontal, 6)
+      .padding(.vertical, 2)
+      .background(color.opacity(0.15))
+      .foregroundStyle(color)
+      .clipShape(Capsule())
   }
 }
 

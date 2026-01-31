@@ -403,6 +403,65 @@ public final class FirebaseService {
     )
   }
   
+  /// Load all invites for a swarm (admin+ only) (#229)
+  public func loadInvites(swarmId: String) async throws -> [InviteDetails] {
+    guard let userId = currentUserId else { throw FirebaseError.notSignedIn }
+    
+    // Verify user has permission (admin+)
+    let memberDoc = try await membersCollection(swarmId: swarmId).document(userId).getDocument()
+    guard let roleLevel = memberDoc.data()?["roleLevel"] as? Int, roleLevel >= 3 else {
+      throw FirebaseError.permissionDenied
+    }
+    
+    let snapshot = try await invitesCollection(swarmId: swarmId)
+      .order(by: "created", descending: true)
+      .limit(to: 50)
+      .getDocuments()
+    
+    return snapshot.documents.compactMap { doc -> InviteDetails? in
+      let data = doc.data()
+      guard let token = data["token"] as? String,
+            let expires = data["expires"] as? Timestamp,
+            let maxUses = data["maxUses"] as? Int,
+            let usedBy = data["usedBy"] as? [String],
+            let revoked = data["revoked"] as? Bool
+      else { return nil }
+      
+      let created = (data["created"] as? Timestamp)?.dateValue() ?? Date()
+      let createdBy = data["createdBy"] as? String ?? "unknown"
+      
+      return InviteDetails(
+        id: doc.documentID,
+        swarmId: swarmId,
+        token: token,
+        createdAt: created,
+        expiresAt: expires.dateValue(),
+        maxUses: maxUses,
+        usedCount: usedBy.count,
+        usedBy: usedBy,
+        createdBy: createdBy,
+        isRevoked: revoked
+      )
+    }
+  }
+  
+  /// Revoke an invite
+  public func revokeInvite(swarmId: String, inviteId: String) async throws {
+    guard let userId = currentUserId else { throw FirebaseError.notSignedIn }
+    
+    // Verify user has permission (admin+)
+    let memberDoc = try await membersCollection(swarmId: swarmId).document(userId).getDocument()
+    guard let roleLevel = memberDoc.data()?["roleLevel"] as? Int, roleLevel >= 3 else {
+      throw FirebaseError.permissionDenied
+    }
+    
+    try await invitesCollection(swarmId: swarmId).document(inviteId).updateData([
+      "revoked": true
+    ])
+    
+    logger.info("Revoked invite \(inviteId)")
+  }
+  
   /// Accept a swarm invite
   public func acceptInvite(url: URL) async throws {
     guard let userId = currentUserId else { throw FirebaseError.notSignedIn }
@@ -1377,6 +1436,24 @@ public struct SwarmInvite: Sendable {
   public let expiresAt: Date
   public let maxUses: Int
   public let usedCount: Int
+}
+
+/// Detailed invite info for listing (#229)
+public struct InviteDetails: Sendable, Identifiable {
+  public let id: String
+  public let swarmId: String
+  public let token: String
+  public let createdAt: Date
+  public let expiresAt: Date
+  public let maxUses: Int
+  public let usedCount: Int
+  public let usedBy: [String]
+  public let createdBy: String
+  public let isRevoked: Bool
+  
+  public var isExpired: Bool { expiresAt < Date() }
+  public var isFullyUsed: Bool { usedCount >= maxUses }
+  public var isValid: Bool { !isRevoked && !isExpired && !isFullyUsed }
 }
 
 /// Firebase service errors
