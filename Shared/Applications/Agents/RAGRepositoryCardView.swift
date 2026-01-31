@@ -92,7 +92,7 @@ class RAGRepoAnalysisState {
 // MARK: - Repository Card View
 
 struct RAGRepositoryCardView: View {
-  let repo: RAGRepoInfo
+  let repo: MCPServerService.RAGRepoInfo
   @Bindable var mcpServer: MCPServerService
   @Binding var isExpanded: Bool
   
@@ -135,7 +135,7 @@ struct RAGRepositoryCardView: View {
     return .partiallyAnalyzed(progress: analysisState.progress)
   }
   
-  init(repo: RAGRepoInfo, mcpServer: MCPServerService, isExpanded: Binding<Bool>) {
+  init(repo: MCPServerService.RAGRepoInfo, mcpServer: MCPServerService, isExpanded: Binding<Bool>) {
     self.repo = repo
     self.mcpServer = mcpServer
     self._isExpanded = isExpanded
@@ -906,7 +906,7 @@ struct RAGRepositoryCardView: View {
 // MARK: - Skills Sheet
 
 struct RAGRepoSkillsSheet: View {
-  let repo: RAGRepoInfo
+  let repo: MCPServerService.RAGRepoInfo
   @Bindable var mcpServer: MCPServerService
   @Environment(\.dismiss) private var dismiss
   
@@ -1109,7 +1109,7 @@ struct RAGRepoSkillsSheet: View {
 
 #Preview {
   RAGRepositoryCardView(
-    repo: RAGRepoInfo(
+    repo: MCPServerService.RAGRepoInfo(
       id: "1",
       name: "KitchenSink",
       rootPath: "/Users/dev/code/KitchenSink",
