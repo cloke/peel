@@ -27,7 +27,7 @@
 			<string>com.crunchy-bananas.peel.oauth</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>crunchy-peel</string>
+				<string>crunchy-kitchen-sink</string>
 			</array>
 		</dict>
 	</array>
@@ -37,7 +37,7 @@
 	<string>public.app-category.developer-tools</string>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
-		<string>crunchy-peel</string>
+		<string>crunchy-kitchen-sink</string>
 	</array>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
