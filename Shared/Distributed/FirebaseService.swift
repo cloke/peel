@@ -77,7 +77,14 @@ public final class FirebaseService {
   
   // MARK: - Firestore References
   
-  private var db: Firestore { Firestore.firestore() }
+  /// Lazily initialized Firestore instance - only access after isConfigured is true
+  private var _db: Firestore?
+  private var db: Firestore {
+    if _db == nil {
+      _db = Firestore.firestore()
+    }
+    return _db!
+  }
   
   private func swarmsCollection() -> CollectionReference {
     db.collection("swarms")
@@ -106,6 +113,13 @@ public final class FirebaseService {
     
     FirebaseApp.configure()
     logger.info("Firebase configured successfully")
+    
+    // Configure Firestore settings before first use
+    let settings = FirestoreSettings()
+    settings.cacheSettings = PersistentCacheSettings()
+    Firestore.firestore().settings = settings
+    _db = Firestore.firestore()
+    
     isConfigured = true
     
     setupAuthStateListener()
@@ -191,6 +205,10 @@ public final class FirebaseService {
   
   /// Load swarms the user belongs to
   private func loadUserSwarms() async {
+    guard isConfigured else {
+      logger.warning("Firebase not configured, skipping swarm load")
+      return
+    }
     guard let userId = currentUserId else { return }
     
     do {
