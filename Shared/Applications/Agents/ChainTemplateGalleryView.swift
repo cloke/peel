@@ -16,17 +16,38 @@ struct ChainTemplateGalleryView: View {
   @State private var showResetConfirmation = false
   @State private var showingUnavailableAlert = false
   @State private var unavailableTemplate: ChainTemplate?
+  @State private var hideUnavailableTemplates = true
+
+  private func isTemplateAvailable(_ template: ChainTemplate) -> Bool {
+    template.isFullyAvailable(
+      copilotAvailable: cliService.copilotStatus.isAvailable,
+      claudeAvailable: cliService.claudeStatus.isAvailable
+    )
+  }
 
   private var coreTemplates: [ChainTemplate] {
-    agentManager.allTemplates.filter { $0.isBuiltIn && $0.category == .core }
+    agentManager.allTemplates.filter { template in
+      template.isBuiltIn && template.category == .core &&
+        (!hideUnavailableTemplates || isTemplateAvailable(template))
+    }
   }
 
   private var specializedTemplates: [ChainTemplate] {
-    agentManager.allTemplates.filter { $0.isBuiltIn && $0.category == .specialized }
+    agentManager.allTemplates.filter { template in
+      template.isBuiltIn && template.category == .specialized &&
+        (!hideUnavailableTemplates || isTemplateAvailable(template))
+    }
   }
 
   private var savedTemplates: [ChainTemplate] {
-    agentManager.allTemplates.filter { !$0.isBuiltIn }
+    agentManager.allTemplates.filter { template in
+      !template.isBuiltIn &&
+        (!hideUnavailableTemplates || isTemplateAvailable(template))
+    }
+  }
+
+  private var hiddenCount: Int {
+    agentManager.allTemplates.filter { !isTemplateAvailable($0) }.count
   }
 
   var body: some View {
@@ -117,6 +138,22 @@ struct ChainTemplateGalleryView: View {
 
   private var providerStatusHeader: some View {
     HStack(spacing: 16) {
+      Toggle(isOn: $hideUnavailableTemplates) {
+        HStack(spacing: 6) {
+          Image(systemName: "line.3.horizontal.decrease.circle")
+          Text("Hide unavailable")
+            .font(.caption)
+          if hideUnavailableTemplates && hiddenCount > 0 {
+            Text("(\(hiddenCount) hidden)")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
+      }
+      .toggleStyle(.checkbox)
+
+      Spacer()
+
       providerStatus(
         name: "GitHub Copilot",
         available: cliService.copilotStatus.isAvailable,

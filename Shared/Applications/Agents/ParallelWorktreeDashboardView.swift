@@ -45,8 +45,9 @@ struct ParallelWorktreeDashboardView: View {
       
       // Right: Detail
       detailContent(runner: runner)
-        .frame(minWidth: 400)
+        .frame(minWidth: 400, maxWidth: .infinity)
     }
+    .frame(minWidth: 700, idealWidth: 900)
     .navigationTitle("Parallel Worktrees")
     .sheet(isPresented: $showingNewRunSheet) {
       NewParallelRunSheet(runner: runner) { run in
