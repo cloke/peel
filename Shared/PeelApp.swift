@@ -796,4 +796,27 @@ final class DataService {
     let descriptor = FetchDescriptor<TrackedWorktree>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
     return (try? modelContext.fetch(descriptor)) ?? []
   }
+
+  /// Remove duplicate TrackedWorktree entries (keep newest by createdAt for each localPath)
+  func deduplicateTrackedWorktrees() {
+    let all = getTrackedWorktrees() // Already sorted by createdAt descending (newest first)
+    var seenPaths = Set<String>()
+    var toDelete: [TrackedWorktree] = []
+    
+    for worktree in all {
+      if seenPaths.contains(worktree.localPath) {
+        toDelete.append(worktree)
+      } else {
+        seenPaths.insert(worktree.localPath)
+      }
+    }
+    
+    if !toDelete.isEmpty {
+      print("🧹 Removing \(toDelete.count) duplicate TrackedWorktree entries")
+      for worktree in toDelete {
+        modelContext.delete(worktree)
+      }
+      try? modelContext.save()
+    }
+  }
 }
