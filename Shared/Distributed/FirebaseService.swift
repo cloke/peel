@@ -124,8 +124,9 @@ public final class FirebaseService {
     logger.info("Firebase configured successfully")
     
     // Configure Firestore settings before first use
+    // Use memory-only cache to avoid persistence crashes
     let settings = FirestoreSettings()
-    settings.cacheSettings = PersistentCacheSettings()
+    settings.cacheSettings = MemoryCacheSettings()
     Firestore.firestore().settings = settings
     _db = Firestore.firestore()
     
