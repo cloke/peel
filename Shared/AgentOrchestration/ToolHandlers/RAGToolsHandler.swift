@@ -57,6 +57,9 @@ protocol RAGToolsHandlerDelegate: MCPToolHandlerDelegate {
   /// Get dependents for a file (what depends on it) - Issue #176
   func getDependents(filePath: String, repoPath: String) async throws -> [RAGToolDependencyResult]
   
+  /// Find orphaned files with no dependents - Issue #248
+  func findOrphans(repoPath: String, excludeTests: Bool, excludeEntryPoints: Bool, limit: Int) async throws -> [RAGToolOrphanResult]
+  
   /// Query files by structural characteristics - Issue #174
   func queryFilesByStructure(
     repoPath: String,
@@ -205,6 +208,7 @@ final class RAGToolsHandler: MCPToolHandler {
     "rag.facets",
     "rag.dependencies",    // Issue #176: What does a file depend on
     "rag.dependents",      // Issue #176: What depends on a file
+    "rag.orphans",         // Issue #248: Find potentially unused/orphaned files
     "rag.structural",      // Issue #174: Query by file structure (lines, methods, size)
     "rag.similar",         // Issue #175: Find semantically similar code
     "rag.reranker.config", // Issue #128: HF reranker configuration
@@ -268,6 +272,8 @@ final class RAGToolsHandler: MCPToolHandler {
       return await handleDependencies(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.dependents":
       return await handleDependents(id: id, arguments: arguments, delegate: ragDelegate)
+    case "rag.orphans":
+      return await handleOrphans(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.structural":
       return await handleStructural(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.similar":
@@ -1087,6 +1093,40 @@ final class RAGToolsHandler: MCPToolHandler {
     }
   }
   
+  // MARK: - rag.orphans (Issue #248)
+  
+  private func handleOrphans(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
+    guard let repoPath = optionalString("repoPath", from: arguments) else {
+      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "repoPath is required"))
+    }
+    
+    let excludeTests = optionalBool("excludeTests", from: arguments, default: true)
+    let excludeEntryPoints = optionalBool("excludeEntryPoints", from: arguments, default: true)
+    let limit = optionalInt("limit", from: arguments) ?? 50
+    
+    do {
+      let orphans = try await delegate.findOrphans(
+        repoPath: repoPath,
+        excludeTests: excludeTests,
+        excludeEntryPoints: excludeEntryPoints,
+        limit: limit
+      )
+      
+      let result: [String: Any] = [
+        "repoPath": repoPath,
+        "orphans": orphans.map { $0.toDict() },
+        "count": orphans.count,
+        "excludeTests": excludeTests,
+        "excludeEntryPoints": excludeEntryPoints,
+        "note": "Files with no imports/requires pointing to them AND no type references from other files. May still be used via dynamic loading, reflection, or as entry points."
+      ]
+      return (200, makeResult(id: id, result: result))
+    } catch {
+      await delegate.logWarning("RAG orphans query failed", metadata: ["error": error.localizedDescription, "repoPath": repoPath])
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
+    }
+  }
+  
   // MARK: - rag.structural (Issue #174)
   
   private func handleStructural(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
@@ -1629,6 +1669,28 @@ struct RAGToolDependencyResult {
       dict["targetFile"] = targetFile
     }
     return dict
+  }
+}
+
+/// RAG orphan result for finding unused files (Issue #248)
+struct RAGToolOrphanResult {
+  let filePath: String
+  let language: String
+  let lineCount: Int
+  let symbolsDefinedCount: Int
+  let symbolsDefined: [String]
+  let reason: String
+  
+  /// Convert to dictionary for JSON response
+  func toDict() -> [String: Any] {
+    return [
+      "filePath": filePath,
+      "language": language,
+      "lineCount": lineCount,
+      "symbolsDefinedCount": symbolsDefinedCount,
+      "symbolsDefined": symbolsDefined,
+      "reason": reason
+    ]
   }
 }
 

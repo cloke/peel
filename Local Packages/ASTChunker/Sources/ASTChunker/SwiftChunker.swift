@@ -226,13 +226,17 @@ public struct SwiftChunker: LanguageChunker, Sendable {
     // Detect frameworks based on decorators and imports
     frameworks = detectFrameworksFromMetadata(decorators: decorators, protocols: protocols, imports: fileImports)
     
+    // Extract type references (for orphan detection)
+    let typeReferences = extractTypeReferences(from: decl)
+    
     return ASTChunkMetadata(
       decorators: decorators,
       protocols: protocols,
       imports: [], // Only included in the imports chunk
       superclass: superclass,
       propertyWrappers: propertyWrappers,
-      frameworks: frameworks
+      frameworks: frameworks,
+      typeReferences: typeReferences
     )
   }
   
@@ -605,6 +609,166 @@ public struct SwiftChunker: LanguageChunker, Sendable {
       constructName: nil,
       metadata: ASTChunkMetadata()
     )
+  }
+  
+  // MARK: - Type Reference Extraction
+  
+  /// Extract type names referenced in a declaration (for orphan detection)
+  /// This finds types used in:
+  /// - Variable/property type annotations: `let x: SomeType`
+  /// - Function parameters: `func foo(x: SomeType)`
+  /// - Function return types: `func foo() -> SomeType`
+  /// - Initializer calls: `SomeType()`
+  /// - Static member access: `SomeType.property`
+  func extractTypeReferences(from decl: any DeclSyntaxProtocol) -> [String] {
+    let collector = TypeReferenceCollector(viewMode: .sourceAccurate)
+    collector.walk(decl)
+    return Array(collector.typeReferences).sorted()
+  }
+  
+  /// Extract type references from a source file (for file-level tracking)
+  func extractTypeReferences(from source: String) -> [String] {
+    let sourceFile = Parser.parse(source: source)
+    let collector = TypeReferenceCollector(viewMode: .sourceAccurate)
+    collector.walk(sourceFile)
+    return Array(collector.typeReferences).sorted()
+  }
+}
+
+// MARK: - Type Reference Collector
+
+/// SwiftSyntax visitor that collects type names referenced in code
+private final class TypeReferenceCollector: SyntaxVisitor {
+  var typeReferences: Set<String> = []
+  
+  // Skip built-in types
+  private static let builtinTypes: Set<String> = [
+    "String", "Int", "Double", "Float", "Bool", "Void",
+    "Int8", "Int16", "Int32", "Int64",
+    "UInt", "UInt8", "UInt16", "UInt32", "UInt64",
+    "Character", "Data", "Date", "URL", "UUID",
+    "Array", "Dictionary", "Set", "Optional",
+    "Result", "Error", "Any", "AnyObject", "Self",
+    "Never", "some"
+  ]
+  
+  // MARK: - Type Annotations
+  
+  /// Visit type annotations (e.g., `let x: SomeType`)
+  override func visit(_ node: TypeAnnotationSyntax) -> SyntaxVisitorContinueKind {
+    extractTypeName(from: node.type)
+    return .visitChildren
+  }
+  
+  /// Visit function return types
+  override func visit(_ node: ReturnClauseSyntax) -> SyntaxVisitorContinueKind {
+    extractTypeName(from: node.type)
+    return .visitChildren
+  }
+  
+  /// Visit generic arguments (e.g., `Array<SomeType>`)
+  override func visit(_ node: GenericArgumentClauseSyntax) -> SyntaxVisitorContinueKind {
+    for argument in node.arguments {
+      extractTypeName(from: argument.argument)
+    }
+    return .visitChildren
+  }
+  
+  // MARK: - Function Calls (Initializers)
+  
+  /// Visit function calls - captures `SomeType()` initializer calls
+  override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
+    // Check if callee is a simple identifier (type initializer)
+    if let declRef = node.calledExpression.as(DeclReferenceExprSyntax.self) {
+      let name = declRef.baseName.text
+      if isUserType(name) {
+        typeReferences.insert(name)
+      }
+    }
+    // Check for member access like Module.Type()
+    else if let memberAccess = node.calledExpression.as(MemberAccessExprSyntax.self) {
+      // The last component is the type being instantiated
+      let name = memberAccess.declName.baseName.text
+      if isUserType(name) {
+        typeReferences.insert(name)
+      }
+    }
+    return .visitChildren
+  }
+  
+  // MARK: - Static Member Access
+  
+  /// Visit member access expressions - captures `SomeType.staticMember`
+  override func visit(_ node: MemberAccessExprSyntax) -> SyntaxVisitorContinueKind {
+    // Check if base is a type reference (static access)
+    if let base = node.base?.as(DeclReferenceExprSyntax.self) {
+      let name = base.baseName.text
+      // Only capture if it looks like a type (starts with uppercase)
+      if isUserType(name) && name.first?.isUppercase == true {
+        typeReferences.insert(name)
+      }
+    }
+    return .visitChildren
+  }
+  
+  // MARK: - Inheritance
+  
+  /// Visit inheritance clauses (already captured in protocols, but add here too)
+  override func visit(_ node: InheritanceClauseSyntax) -> SyntaxVisitorContinueKind {
+    for inherited in node.inheritedTypes {
+      extractTypeName(from: inherited.type)
+    }
+    return .visitChildren
+  }
+  
+  // MARK: - Type Extraction Helpers
+  
+  private func extractTypeName(from type: TypeSyntax) {
+    // Handle different type syntax forms
+    if let identifierType = type.as(IdentifierTypeSyntax.self) {
+      let name = identifierType.name.text
+      if isUserType(name) {
+        typeReferences.insert(name)
+      }
+    }
+    else if let optionalType = type.as(OptionalTypeSyntax.self) {
+      extractTypeName(from: optionalType.wrappedType)
+    }
+    else if let arrayType = type.as(ArrayTypeSyntax.self) {
+      extractTypeName(from: arrayType.element)
+    }
+    else if let dictType = type.as(DictionaryTypeSyntax.self) {
+      extractTypeName(from: dictType.key)
+      extractTypeName(from: dictType.value)
+    }
+    else if let tupleType = type.as(TupleTypeSyntax.self) {
+      for element in tupleType.elements {
+        extractTypeName(from: element.type)
+      }
+    }
+    else if let functionType = type.as(FunctionTypeSyntax.self) {
+      for param in functionType.parameters {
+        extractTypeName(from: param.type)
+      }
+      extractTypeName(from: functionType.returnClause.type)
+    }
+    else if let memberType = type.as(MemberTypeSyntax.self) {
+      // Nested type like Module.Type - extract the innermost name
+      let name = memberType.name.text
+      if isUserType(name) {
+        typeReferences.insert(name)
+      }
+    }
+    else if let implicitUnwrapped = type.as(ImplicitlyUnwrappedOptionalTypeSyntax.self) {
+      extractTypeName(from: implicitUnwrapped.wrappedType)
+    }
+    else if let someOrAny = type.as(SomeOrAnyTypeSyntax.self) {
+      extractTypeName(from: someOrAny.constraint)
+    }
+  }
+  
+  private func isUserType(_ name: String) -> Bool {
+    !Self.builtinTypes.contains(name)
   }
 }
 
