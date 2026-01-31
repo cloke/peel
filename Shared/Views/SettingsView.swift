@@ -31,233 +31,87 @@ struct SettingsView: View {
       #if os(macOS)
       SettingsPage {
         SettingsSection("MCP Server") {
-          Toggle(
-            "Enable MCP Server",
-            isOn: Binding(
-              get: { mcpServer.isEnabled },
-              set: { mcpServer.isEnabled = $0 }
-            )
-          )
-
-          VStack(alignment: .leading, spacing: 4) {
+          HStack(spacing: 16) {
             Toggle(
-              "Auto-clean agent worktrees",
+              "Enable MCP Server",
               isOn: Binding(
-                get: { mcpServer.autoCleanupWorkspaces },
-                set: { mcpServer.autoCleanupWorkspaces = $0 }
+                get: { mcpServer.isEnabled },
+                set: { mcpServer.isEnabled = $0 }
               )
             )
-            Text("Remove agent worktrees after MCP runs complete.")
-              .font(.caption)
-              .foregroundStyle(.secondary)
+            
+            Spacer()
+            
+            // Compact status
+            HStack(spacing: 8) {
+              Circle()
+                .fill(mcpServer.isRunning ? Color.green : Color.gray)
+                .frame(width: 8, height: 8)
+              Text(mcpServer.isRunning ? "Running" : "Stopped")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
           }
 
-          LabeledContent("Port") {
-            TextField(
-              "Port",
-              text: Binding(
-                get: { String(mcpServer.port) },
-                set: { newValue in
-                  if let value = Int(newValue) {
-                    mcpServer.port = value
+          HStack {
+            LabeledContent("Port") {
+              TextField(
+                "Port",
+                text: Binding(
+                  get: { String(mcpServer.port) },
+                  set: { newValue in
+                    if let value = Int(newValue) {
+                      mcpServer.port = value
+                    }
                   }
-                }
+                )
               )
-            )
-            .frame(width: 80)
-          }
-        }
-
-        SettingsSection("MCP Status") {
-          let portInUse = mcpServer.lastError?.localizedCaseInsensitiveContains("address already in use") == true
-          let statusText = mcpServer.isRunning ? "Running" : (portInUse ? "Port in use" : "Stopped")
-          let statusStyle: StatusPill.Style = mcpServer.isRunning ? .success : (portInUse ? .warning : .neutral)
-          Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 8) {
-            GridRow {
-              Text("Server")
-                .foregroundStyle(.secondary)
-              StatusPill(text: statusText, style: statusStyle)
+              .frame(width: 80)
             }
-            GridRow {
-              Text("Active requests")
-                .foregroundStyle(.secondary)
-              Text("\(mcpServer.activeRequests)")
-            }
-            GridRow {
-              Text("Tools")
-                .foregroundStyle(.secondary)
-              Text("\(mcpServer.foregroundToolCount) foreground · \(mcpServer.backgroundToolCount) background")
-                .foregroundStyle(.secondary)
-            }
-            GridRow {
-              Text("App focus")
-                .foregroundStyle(.secondary)
-              Text("Active: \(mcpServer.isAppActive ? "Yes" : "No") · Frontmost: \(mcpServer.isAppFrontmost ? "Yes" : "No")")
-                .foregroundStyle(.secondary)
-            }
-            if let method = mcpServer.lastRequestMethod,
-               let timestamp = mcpServer.lastRequestAt {
-              GridRow {
-                Text("Last request")
-                  .foregroundStyle(.secondary)
-                Text("\(method) at \(timestamp.formatted(date: .omitted, time: .shortened))")
-                  .foregroundStyle(.secondary)
-              }
+            
+            Spacer()
+            
+            if mcpServer.isRunning {
+              Text("localhost:\(mcpServer.port)")
+                .font(.caption.monospaced())
+                .foregroundStyle(.tertiary)
             }
           }
 
-          if portInUse {
-            Text("Port \(mcpServer.port) is already in use. If MCP tools are working, another Peel instance is running and this can be ignored.")
-              .font(.caption)
-              .foregroundStyle(.orange)
-          } else if let error = mcpServer.lastError {
-            Text(error)
-              .font(.caption)
-              .foregroundStyle(.red)
-          }
-        }
-
-        SettingsSection("Local RAG") {
           Toggle(
-            "Enable Local RAG",
+            "Auto-clean agent worktrees",
             isOn: Binding(
-              get: { mcpServer.localRagEnabled },
-              set: { mcpServer.localRagEnabled = $0 }
+              get: { mcpServer.autoCleanupWorkspaces },
+              set: { mcpServer.autoCleanupWorkspaces = $0 }
             )
           )
-          Text("Use local codebase indexing to provide context to agents.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-
-          if mcpServer.localRagEnabled {
-            VStack(alignment: .leading, spacing: 8) {
-              Picker("Default search mode", selection: Binding(
-                get: { mcpServer.localRagSearchMode },
-                set: { mcpServer.localRagSearchMode = $0 }
-              )) {
-                Text("Text").tag(MCPServerService.RAGSearchMode.text)
-                Text("Vector").tag(MCPServerService.RAGSearchMode.vector)
-              }
-              .pickerStyle(.segmented)
-
-              Stepper(
-                "Search limit: \(mcpServer.localRagSearchLimit)",
-                value: Binding(
-                  get: { mcpServer.localRagSearchLimit },
-                  set: { mcpServer.localRagSearchLimit = $0 }
-                ),
-                in: 1...20
-              )
-
-              if let status = mcpServer.ragStatus {
-                HStack(spacing: 16) {
-                  Text("DB: \(status.exists ? "Ready" : "Not initialized")")
-                    .font(.caption)
-                    .foregroundStyle(status.exists ? .green : .secondary)
-                  Text("Embeddings: \(status.providerName)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-              }
-
-              if let stats = mcpServer.ragStats {
-                Text("Indexed: \(stats.fileCount) files, \(stats.chunkCount) chunks")
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
-              }
-            }
+          
+          if let error = mcpServer.lastError {
+            let portInUse = error.localizedCaseInsensitiveContains("address already in use")
+            Text(portInUse ? "Port in use (another Peel instance may be running)" : error)
+              .font(.caption)
+              .foregroundStyle(portInUse ? .orange : .red)
           }
         }
 
         SettingsSection("MCP Tools") {
           VStack(alignment: .leading, spacing: 8) {
-            Text("Advanced permissions for individual MCP tools and categories.")
-              .font(.caption)
-              .foregroundStyle(.secondary)
+            HStack {
+              Text("\(mcpServer.enabledToolCount) tools enabled")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              Spacer()
+              Text("\(mcpServer.foregroundToolCount) UI · \(mcpServer.backgroundToolCount) background")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+            }
 
             DisclosureGroup(isExpanded: $showMCPTools) {
               MCPToolSettingsSection(mcpServer: mcpServer)
                 .padding(.top, 8)
             } label: {
-              Text(showMCPTools ? "Hide tool permissions" : "Show tool permissions")
+              Text(showMCPTools ? "Hide tool permissions" : "Configure tool permissions")
                 .font(.subheadline)
-                .fontWeight(.medium)
-            }
-          }
-        }
-
-        SettingsSection("IDE Integration") {
-          VStack(alignment: .leading, spacing: 12) {
-            Text("Install Peel as an MCP server in VS Code (writes mcp.json).")
-              .font(.caption)
-              .foregroundStyle(.secondary)
-
-            VStack(alignment: .leading, spacing: 8) {
-              HStack(spacing: 12) {
-                TextField("Server Name", text: $vscodeServerName)
-                  .textFieldStyle(.roundedBorder)
-                TextField("Server URL", text: $vscodeServerURL)
-                  .textFieldStyle(.roundedBorder)
-              }
-
-              Toggle("Write to workspace settings (recommended only for shared repos)", isOn: $vscodeWriteToWorkspace)
-
-              if vscodeWriteToWorkspace {
-                HStack(spacing: 12) {
-                  TextField("Workspace folder", text: $vscodeWorkspacePath)
-                    .textFieldStyle(.roundedBorder)
-                  Button("Choose…") { isWorkspacePickerPresented = true }
-                }
-                .font(.caption)
-              }
-            }
-
-            if let status = vscodeConfigStatus {
-              Text(status)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-            if let error = vscodeConfigError {
-              Text(error)
-                .font(.caption)
-                .foregroundStyle(.red)
-            }
-
-            Button(isWritingVSCodeConfig ? "Installing…" : "Install VS Code MCP Config") {
-              Task { await installVSCodeMCPConfig() }
-            }
-            .disabled(isWritingVSCodeConfig)
-          }
-        }
-
-        SettingsSection("Developer Tools") {
-          VStack(alignment: .leading, spacing: 12) {
-            Text("Tools for development and debugging.")
-              .font(.caption)
-              .foregroundStyle(.secondary)
-
-            VStack(alignment: .leading, spacing: 8) {
-              HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                  Text("Register URL Scheme")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                  Text("Forces macOS to recognize the peel:// URL scheme for OAuth callbacks during development.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button(isRegisteringURLScheme ? "Registering…" : "Register") {
-                  Task { await registerURLScheme() }
-                }
-                .disabled(isRegisteringURLScheme)
-              }
-
-              if let status = urlSchemeStatus {
-                Text(status)
-                  .font(.caption)
-                  .foregroundStyle(status.contains("✓") ? .green : (status.contains("Error") ? .red : .secondary))
-              }
             }
           }
         }
@@ -265,14 +119,82 @@ struct SettingsView: View {
         SettingsSection("Prompt Rules") {
           PromptRulesSettingsSection(mcpServer: mcpServer)
         }
+
+        SettingsSection("IDE Integration") {
+          VStack(alignment: .leading, spacing: 12) {
+            Text("Install Peel as an MCP server in VS Code.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+
+            HStack(spacing: 12) {
+              TextField("Server Name", text: $vscodeServerName)
+                .textFieldStyle(.roundedBorder)
+              TextField("Server URL", text: $vscodeServerURL)
+                .textFieldStyle(.roundedBorder)
+            }
+
+            Toggle("Write to workspace settings", isOn: $vscodeWriteToWorkspace)
+              .font(.caption)
+
+            if vscodeWriteToWorkspace {
+              HStack(spacing: 12) {
+                TextField("Workspace folder", text: $vscodeWorkspacePath)
+                  .textFieldStyle(.roundedBorder)
+                Button("Choose…") { isWorkspacePickerPresented = true }
+              }
+            }
+
+            HStack {
+              Button(isWritingVSCodeConfig ? "Installing…" : "Install VS Code Config") {
+                Task { await installVSCodeMCPConfig() }
+              }
+              .disabled(isWritingVSCodeConfig)
+              
+              if let status = vscodeConfigStatus {
+                Text(status)
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+              if let error = vscodeConfigError {
+                Text(error)
+                  .font(.caption)
+                  .foregroundStyle(.red)
+              }
+            }
+          }
+        }
+
+        SettingsSection("Developer") {
+          HStack {
+            VStack(alignment: .leading, spacing: 2) {
+              Text("URL Scheme Registration")
+                .font(.subheadline)
+              Text("Register peel:// for OAuth callbacks")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button(isRegisteringURLScheme ? "Registering…" : "Register") {
+              Task { await registerURLScheme() }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(isRegisteringURLScheme)
+          }
+
+          if let status = urlSchemeStatus {
+            Text(status)
+              .font(.caption)
+              .foregroundStyle(status.contains("✓") ? .green : (status.contains("Error") ? .red : .secondary))
+          }
+        }
       }
-      .tabItem { Label("Local MCP", systemImage: "bolt.horizontal.circle") }
+      .tabItem { Label("MCP", systemImage: "bolt.horizontal.circle") }
       
-      // MARK: - Local RAG Settings Tab
-      SettingsPage {
-        RAGSettingsSection(mcpServer: mcpServer)
-      }
-      .tabItem { Label("Local RAG", systemImage: "brain") }
+      // MARK: - Swarm Settings Tab
+      SwarmManagementView()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .tabItem { Label("Swarm", systemImage: "person.3.fill") }
       #endif
 
       SettingsPage {
@@ -779,301 +701,6 @@ private struct PromptRulesSettingsSection: View {
   }
 }
 
-// MARK: - RAG Settings Section
-struct RAGSettingsSection: View {
-  var mcpServer: MCPServerService
-  @State private var embeddingSettingsChanged = false
-  @State private var isInitializing = false
-  
-  private var providerSelection: Binding<EmbeddingProviderType> {
-    Binding(
-      get: { LocalRAGEmbeddingProviderFactory.preferredProvider },
-      set: { newValue in
-        LocalRAGEmbeddingProviderFactory.preferredProvider = newValue
-        embeddingSettingsChanged = true
-      }
-    )
-  }
-  
-  private var mlxModelSelection: Binding<String> {
-    Binding(
-      get: { LocalRAGEmbeddingProviderFactory.preferredMLXModelId ?? "" },
-      set: { newValue in
-        LocalRAGEmbeddingProviderFactory.preferredMLXModelId = newValue.isEmpty ? nil : newValue
-        embeddingSettingsChanged = true
-      }
-    )
-  }
-  
-  private var mlxClearCacheAfterBatch: Binding<Bool> {
-    Binding(
-      get: { LocalRAGEmbeddingProviderFactory.mlxClearCacheAfterBatch },
-      set: { LocalRAGEmbeddingProviderFactory.mlxClearCacheAfterBatch = $0 }
-    )
-  }
-  
-  private var mlxMemoryLimitGB: Binding<Double> {
-    Binding(
-      get: { LocalRAGEmbeddingProviderFactory.mlxMemoryLimitGB },
-      set: { LocalRAGEmbeddingProviderFactory.mlxMemoryLimitGB = $0 }
-    )
-  }
-  
-  private var downloadedMLXModelNames: [String] {
-    let configs = MLXEmbeddingModelConfig.availableModels
-    let downloaded = LocalRAGEmbeddingProviderFactory.downloadedMLXModels
-    let names = downloaded.map { id in
-      configs.first(where: { $0.huggingFaceId == id || $0.name == id })?.name ?? id
-    }
-    return Array(Set(names)).sorted()
-  }
-  
-  var body: some View {
-    VStack(alignment: .leading, spacing: 20) {
-      // Database Section
-      VStack(alignment: .leading, spacing: 0) {
-        HStack {
-          Text("Database")
-            .font(.headline)
-          Spacer()
-          if mcpServer.ragStatus != nil {
-            StatusPill(text: "Ready", style: .success)
-          } else {
-            StatusPill(text: "Not Initialized", style: .warning)
-          }
-        }
-        .padding(.bottom, 12)
-        
-        databaseContent
-          .padding(16)
-          .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 10))
-      }
-      
-      // Embedding Provider Section
-      VStack(alignment: .leading, spacing: 0) {
-        Text("Embedding Provider")
-          .font(.headline)
-          .padding(.bottom, 12)
-        
-        embeddingContent
-          .padding(16)
-          .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 10))
-      }
-    }
-    .task {
-      await mcpServer.refreshRagSummary()
-    }
-  }
-  
-  @ViewBuilder
-  private var databaseContent: some View {
-    VStack(alignment: .leading, spacing: 14) {
-      if let status = mcpServer.ragStatus {
-        // Location row
-        HStack(spacing: 8) {
-          Image(systemName: "folder")
-            .foregroundStyle(.secondary)
-            .frame(width: 16)
-          Text(displayPath(for: status.dbPath))
-            .font(.system(.caption, design: .monospaced))
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .truncationMode(.middle)
-        }
-        
-        // Stats grid
-        if let stats = mcpServer.ragStats {
-          HStack(spacing: 12) {
-            StatCard(
-              value: "\(stats.fileCount.formatted())",
-              label: "Files",
-              icon: "doc.text"
-            )
-            StatCard(
-              value: "\(stats.chunkCount.formatted())",
-              label: "Chunks",
-              icon: "square.grid.3x3"
-            )
-            StatCard(
-              value: formatBytes(Int64(stats.dbSizeBytes)),
-              label: "Size",
-              icon: "internaldrive"
-            )
-          }
-        }
-        
-        // Schema info
-        HStack(spacing: 16) {
-          Label("Schema v\(status.schemaVersion)", systemImage: "number")
-          Label(status.providerName, systemImage: "cpu")
-        }
-        .font(.caption)
-        .foregroundStyle(.tertiary)
-      } else {
-        Text("Database not initialized")
-          .foregroundStyle(.secondary)
-      }
-      
-      Button {
-        Task { await initializeDatabase() }
-      } label: {
-        Label(mcpServer.ragStatus != nil ? "Reinitialize" : "Initialize Database", 
-              systemImage: "arrow.triangle.2.circlepath")
-      }
-      .buttonStyle(.bordered)
-      .controlSize(.small)
-      .disabled(isInitializing)
-    }
-    .frame(maxWidth: .infinity, alignment: .leading)
-  }
-  
-  @ViewBuilder
-  private var embeddingContent: some View {
-    VStack(alignment: .leading, spacing: 14) {
-      // Provider picker
-      HStack {
-        Text("Provider")
-        Spacer()
-        Picker("", selection: providerSelection) {
-          Text("Auto").tag(EmbeddingProviderType.auto)
-          Text("MLX").tag(EmbeddingProviderType.mlx)
-          Text("System").tag(EmbeddingProviderType.system)
-          Text("Hash (fallback)").tag(EmbeddingProviderType.hash)
-        }
-        .pickerStyle(.menu)
-        .labelsHidden()
-        .frame(width: 140)
-      }
-      
-      if providerSelection.wrappedValue == .mlx {
-        Divider()
-        mlxSettingsView
-      }
-      
-      if embeddingSettingsChanged {
-        HStack(spacing: 12) {
-          Image(systemName: "exclamationmark.triangle.fill")
-            .foregroundStyle(.orange)
-          Text("Settings changed")
-            .font(.caption)
-          Spacer()
-          Button("Apply Changes") {
-            Task { await applyEmbeddingSettings() }
-          }
-          .buttonStyle(.borderedProminent)
-          .controlSize(.small)
-        }
-        .padding(12)
-        .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
-      }
-    }
-    .frame(maxWidth: .infinity, alignment: .leading)
-  }
-  
-  @ViewBuilder
-  private var mlxSettingsView: some View {
-    VStack(alignment: .leading, spacing: 14) {
-      // Model picker
-      HStack {
-        Text("Model")
-          .foregroundStyle(.secondary)
-        Spacer()
-        Picker("", selection: mlxModelSelection) {
-          Text("Auto-select").tag("")
-          ForEach(MLXEmbeddingModelConfig.availableModels, id: \.huggingFaceId) { model in
-            let suffix = model.isCodeOptimized ? " (code)" : ""
-            Text("\(model.name) · \(model.tier.description)\(suffix)")
-              .tag(model.huggingFaceId)
-          }
-        }
-        .pickerStyle(.menu)
-        .labelsHidden()
-        .frame(maxWidth: 280)
-      }
-      
-      // Downloaded models
-      if !downloadedMLXModelNames.isEmpty {
-        HStack(spacing: 6) {
-          Image(systemName: "checkmark.circle.fill")
-            .foregroundStyle(.green)
-            .font(.caption)
-          Text("Downloaded: \(downloadedMLXModelNames.joined(separator: ", "))")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-      }
-      
-      Divider()
-      
-      // Memory settings
-      VStack(alignment: .leading, spacing: 8) {
-        Text("Memory Management")
-          .font(.subheadline)
-          .fontWeight(.medium)
-        
-        Toggle("Clear GPU cache after each batch", isOn: mlxClearCacheAfterBatch)
-          .toggleStyle(.switch)
-          .controlSize(.small)
-        
-        HStack {
-          Text("Memory limit")
-            .foregroundStyle(.secondary)
-          Spacer()
-          TextField("", value: mlxMemoryLimitGB, format: .number.precision(.fractionLength(1)))
-            .textFieldStyle(.roundedBorder)
-            .frame(width: 60)
-            .multilineTextAlignment(.trailing)
-          Text("GB")
-            .foregroundStyle(.secondary)
-        }
-        
-        // Memory status
-        let physicalGB = Double(LocalRAGEmbeddingProviderFactory.physicalMemoryBytes()) / 1_073_741_824.0
-        let currentGB = Double(LocalRAGEmbeddingProviderFactory.currentProcessMemoryBytes()) / 1_073_741_824.0
-        let isHigh = LocalRAGEmbeddingProviderFactory.isMemoryPressureHigh()
-        
-        HStack(spacing: 8) {
-          MemoryBar(current: currentGB, total: physicalGB)
-          Text("\(String(format: "%.1f", currentGB)) / \(String(format: "%.0f", physicalGB)) GB")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-          if isHigh {
-            Image(systemName: "exclamationmark.triangle.fill")
-              .foregroundStyle(.orange)
-              .font(.caption)
-          }
-        }
-      }
-    }
-  }
-  
-  private func displayPath(for path: String) -> String {
-    let home = FileManager.default.homeDirectoryForCurrentUser.path
-    if path.hasPrefix(home) {
-      return "~" + path.dropFirst(home.count)
-    }
-    return path
-  }
-  
-  private func formatBytes(_ bytes: Int64) -> String {
-    let formatter = ByteCountFormatter()
-    formatter.countStyle = .file
-    return formatter.string(fromByteCount: bytes)
-  }
-  
-  private func initializeDatabase() async {
-    isInitializing = true
-    defer { isInitializing = false }
-    _ = try? await mcpServer.initializeRag()
-  }
-  
-  private func applyEmbeddingSettings() async {
-    embeddingSettingsChanged = false
-    await mcpServer.applyRagEmbeddingSettings()
-  }
-}
-
-// StatCard and MemoryBar are now provided by PeelUI
 #endif
 
 #Preview {
