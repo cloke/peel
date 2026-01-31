@@ -20,6 +20,9 @@ struct PeelApp: App {
   @State private var workerModeActive = false
 
   init() {
+    // Configure Firebase first (before other services)
+    FirebaseService.shared.configure()
+    
     let vmService = VMIsolationService()
     _vmIsolationService = State(initialValue: vmService)
     _mcpServer = State(initialValue: MCPServerService(vmIsolationService: vmService))

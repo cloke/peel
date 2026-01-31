@@ -1,0 +1,131 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isSwarmOwner(swarmId) {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/swarms/$(swarmId)).data.ownerId == request.auth.uid;
+    }
+    
+    function getMyRole(swarmId) {
+      return get(/databases/$(database)/documents/swarms/$(swarmId)/members/$(request.auth.uid)).data;
+    }
+    
+    function isSwarmMember(swarmId) {
+      return isAuthenticated() &&
+             exists(/databases/$(database)/documents/swarms/$(swarmId)/members/$(request.auth.uid)) &&
+             getMyRole(swarmId).status == "active";
+    }
+    
+    function hasMinRole(swarmId, minLevel) {
+      return isSwarmMember(swarmId) && getMyRole(swarmId).roleLevel >= minLevel;
+    }
+    
+    function isAdmin(swarmId) {
+      return hasMinRole(swarmId, 3);  // admin or owner
+    }
+    
+    function isContributor(swarmId) {
+      return hasMinRole(swarmId, 2);  // contributor+
+    }
+    
+    function isReader(swarmId) {
+      return hasMinRole(swarmId, 1);  // reader+
+    }
+    
+    // Swarm documents
+    match /swarms/{swarmId} {
+      // Allow read if owner OR member
+      allow read: if isAuthenticated() && (
+                    resource.data.ownerId == request.auth.uid ||
+                    isSwarmMember(swarmId)
+                  );
+      allow create: if isAuthenticated();  // Anyone can create a swarm
+      allow update, delete: if isSwarmOwner(swarmId);
+      
+      // Members subcollection
+      match /members/{userId} {
+        allow read: if isSwarmMember(swarmId) || 
+                      (isAuthenticated() && userId == request.auth.uid);
+        // Owner can create any membership, or user can self-join as pending
+        // For batch creates (swarm + owner membership), check getAfter to see pending swarm data
+        allow create: if isAuthenticated() && (
+                        // Existing swarm owner can add members
+                        isSwarmOwner(swarmId) ||
+                        // During batch: user creating swarm and their own owner membership
+                        (userId == request.auth.uid &&
+                         request.resource.data.role == "owner" &&
+                         request.resource.data.roleLevel == 4 &&
+                         getAfter(/databases/$(database)/documents/swarms/$(swarmId)).data.ownerId == request.auth.uid) ||
+                        // Self-join creates pending membership
+                        (userId == request.auth.uid &&
+                         request.resource.data.role == "pending" &&
+                         request.resource.data.roleLevel == 0)
+                      );
+        // Admins can approve (change role/roleLevel), users can update non-role fields
+        allow update: if isAdmin(swarmId) || 
+                        (userId == request.auth.uid && 
+                         !request.resource.data.diff(resource.data).affectedKeys()
+                           .hasAny(['role', 'roleLevel', 'status', 'approvedBy', 'approvedAt']));
+        allow delete: if isSwarmOwner(swarmId);
+      }
+      
+      // Workers subcollection
+      match /workers/{workerId} {
+        allow read: if isReader(swarmId);
+        // Contributors+ can register workers
+        allow create, update: if isContributor(swarmId) && 
+                                 request.resource.data.ownerId == request.auth.uid;
+        allow delete: if isSwarmOwner(swarmId) || 
+                        resource.data.ownerId == request.auth.uid;
+      }
+      
+      // Invites subcollection
+      match /invites/{inviteId} {
+        allow read: if isAdmin(swarmId);
+        allow create: if isAdmin(swarmId);
+        allow update: if isAdmin(swarmId) ||
+                        (isAuthenticated() && 
+                         resource.data.revoked == false &&
+                         resource.data.expires > request.time);
+        allow delete: if isSwarmOwner(swarmId);
+      }
+      
+      // Tasks subcollection
+      match /tasks/{taskId} {
+        // Readers can view, contributors+ can create/update
+        allow read: if isReader(swarmId);
+        allow create: if isContributor(swarmId) && 
+                        request.resource.data.createdBy == request.auth.uid;
+        allow update: if isContributor(swarmId) &&
+                        (resource.data.createdBy == request.auth.uid ||
+                         resource.data.claimedBy == request.auth.uid);
+        allow delete: if isAdmin(swarmId);
+      }
+      
+      // RAG artifacts subcollection
+      match /ragArtifacts/{artifactId} {
+        allow read: if isReader(swarmId);  // Readers can pull
+        allow create, update: if isContributor(swarmId);  // Contributors+ can push
+        allow delete: if isAdmin(swarmId);
+      }
+      
+      // Audit log subcollection
+      match /auditLog/{eventId} {
+        allow read: if isAdmin(swarmId);
+        allow create: if isSwarmMember(swarmId);
+        allow update, delete: if false;  // Immutable
+      }
+    }
+    
+    // User notifications (for approval alerts)
+    match /users/{userId}/notifications/{notificationId} {
+      allow read, write: if request.auth.uid == userId;
+    }
+  }
+}

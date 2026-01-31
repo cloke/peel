@@ -40,7 +40,12 @@ public final class SwarmToolsHandler: MCPToolHandler {
     "swarm.create-pr",
     "swarm.setup-labels",
     "swarm.register-repo",
-    "swarm.repos"
+    "swarm.repos",
+    // Firestore swarm tools
+    "swarm.firestore.auth",
+    "swarm.firestore.swarms",
+    "swarm.firestore.create",
+    "swarm.firestore.debug"
   ]
   
   public init(chainRunner: AgentChainRunner? = nil, agentManager: AgentManager? = nil) {
@@ -88,6 +93,15 @@ public final class SwarmToolsHandler: MCPToolHandler {
       return await handleRegisterRepo(id: id, arguments: arguments)
     case "swarm.repos":
       return handleRepos(id: id)
+    // Firestore swarm tools
+    case "swarm.firestore.auth":
+      return handleFirestoreAuth(id: id)
+    case "swarm.firestore.swarms":
+      return await handleFirestoreSwarms(id: id)
+    case "swarm.firestore.create":
+      return await handleFirestoreCreate(id: id, arguments: arguments)
+    case "swarm.firestore.debug":
+      return await handleFirestoreDebug(id: id)
     default:
       return (404, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.methodNotFound, message: "Unknown tool"))
     }
@@ -342,6 +356,48 @@ public final class SwarmToolsHandler: MCPToolHandler {
       [
         "name": "swarm.repos",
         "description": "List all registered repositories and their remote URL mappings.",
+        "inputSchema": [
+          "type": "object",
+          "properties": [:],
+          "required": []
+        ]
+      ],
+      // Firestore swarm tools
+      [
+        "name": "swarm.firestore.auth",
+        "description": "Check Firebase authentication status for Firestore swarm coordination.",
+        "inputSchema": [
+          "type": "object",
+          "properties": [:],
+          "required": []
+        ]
+      ],
+      [
+        "name": "swarm.firestore.swarms",
+        "description": "List all Firestore swarms the current user belongs to (for debugging).",
+        "inputSchema": [
+          "type": "object",
+          "properties": [:],
+          "required": []
+        ]
+      ],
+      [
+        "name": "swarm.firestore.create",
+        "description": "Create a new Firestore swarm.",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "name": [
+              "type": "string",
+              "description": "Name for the new swarm"
+            ]
+          ],
+          "required": ["name"]
+        ]
+      ],
+      [
+        "name": "swarm.firestore.debug",
+        "description": "Debug query: show raw Firestore swarm data and query parameters.",
         "inputSchema": [
           "type": "object",
           "properties": [:],
@@ -1199,5 +1255,73 @@ public final class SwarmToolsHandler: MCPToolHandler {
         "localPath": $0.localPath
       ] }
     ]))
+  }
+  
+  // MARK: - Firestore Swarm Tools
+  
+  private func handleFirestoreAuth(id: Any?) -> (Int, Data) {
+    let service = FirebaseService.shared
+    
+    return (200, makeResult(id: id, result: [
+      "isConfigured": service.isConfigured,
+      "isSignedIn": service.isSignedIn,
+      "userId": service.currentUserId as Any,
+      "email": service.currentUserEmail as Any,
+      "displayName": service.currentUserDisplayName as Any,
+      "memberSwarmCount": service.memberSwarms.count
+    ]))
+  }
+  
+  private func handleFirestoreSwarms(id: Any?) async -> (Int, Data) {
+    let service = FirebaseService.shared
+    
+    guard service.isSignedIn else {
+      return internalError(id: id, message: "Not signed in to Firebase. Use Sign In with Apple in Settings > Swarm.")
+    }
+    
+    // Return current memberSwarms from the service
+    let swarms = service.memberSwarms.map { swarm -> [String: Any] in
+      [
+        "id": swarm.id,
+        "name": swarm.swarmName,
+        "role": swarm.role.rawValue,
+        "joinedAt": swarm.joinedAt.ISO8601Format()
+      ]
+    }
+    
+    return (200, makeResult(id: id, result: [
+      "count": swarms.count,
+      "swarms": swarms,
+      "note": "If count is 0, swarms may exist in Firestore but failed to load. Check Firebase Console."
+    ]))
+  }
+  
+  private func handleFirestoreCreate(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let name = arguments["name"] as? String, !name.isEmpty else {
+      return missingParamError(id: id, param: "name")
+    }
+    
+    let service = FirebaseService.shared
+    
+    guard service.isSignedIn else {
+      return internalError(id: id, message: "Not signed in to Firebase")
+    }
+    
+    do {
+      let swarmId = try await service.createSwarm(name: name)
+      return (200, makeResult(id: id, result: [
+        "success": true,
+        "swarmId": swarmId,
+        "name": name
+      ]))
+    } catch {
+      return internalError(id: id, message: "Failed to create swarm: \(error.localizedDescription)")
+    }
+  }
+  
+  private func handleFirestoreDebug(id: Any?) -> (Int, Data) {
+    let service = FirebaseService.shared
+    let debugInfo = service.debugQuerySwarms()
+    return (200, makeResult(id: id, result: debugInfo))
   }
 }

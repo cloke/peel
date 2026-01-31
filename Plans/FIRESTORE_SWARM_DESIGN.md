@@ -102,7 +102,42 @@ peel://swarm/join?s={swarmId}&i={inviteId}&t={token}
 - ✅ Owner notified on join
 - ✅ Revocable before use
 
-### 3. Member Management
+### 3. Member Management & Permission Tiers
+
+**Two-Step Join Process:**
+1. **Invite Accept** → User joins as `pending` (very limited access)
+2. **Admin Approval** → User promoted to desired role tier
+
+This prevents unauthorized access even if an invite link leaks.
+
+**Permission Tiers:**
+
+| Role | Level | Capabilities |
+|------|-------|--------------|
+| `owner` | 4 | Full control: manage swarm, members, settings, tasks |
+| `admin` | 3 | Approve members, manage tasks, full RAG access |
+| `contributor` | 2 | Submit tasks, run chains, read/write RAG |
+| `reader` | 1 | Query RAG, view task status, pull artifacts |
+| `pending` | 0 | View swarm info only, awaiting approval |
+
+**Permission Matrix:**
+
+| Action | owner | admin | contributor | reader | pending |
+|--------|-------|-------|-------------|--------|---------|
+| Create/delete swarm | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Invite members | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Approve pending members | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Promote/demote members | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Revoke members | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Submit tasks | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Claim/execute tasks | ✅ | ✅ | ✅ | ❌ | ❌ |
+| View task status | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Query RAG (search) | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Write to RAG (index) | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Pull RAG artifacts | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Push RAG artifacts | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Register workers | ✅ | ✅ | ✅ | ❌ | ❌ |
+| View swarm info | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ```typescript
 /swarms/{swarmId}/members/{userId}: {
@@ -110,11 +145,59 @@ peel://swarm/join?s={swarmId}&i={inviteId}&t={token}
   email: "john@example.com",  // From Apple Sign-In
   joinedAt: Timestamp,
   invitedBy: "user_abc123",
-  role: "member",  // "owner" | "member"
+  role: "pending",  // "owner" | "admin" | "contributor" | "reader" | "pending"
+  roleLevel: 0,     // Numeric for easy comparison in security rules
   status: "active",  // "active" | "suspended" | "revoked"
+  approvedBy: null,  // Set when admin approves
+  approvedAt: null,
   lastSeen: Timestamp,
   workers: ["worker_xyz"]  // Their registered workers
 }
+```
+
+**Approval Flow:**
+```
+Invitee                     Firebase                      Admin
+   │                           │                            │
+   │─── Accept invite ────────▶│                            │
+   │◀── Added as "pending" ────│                            │
+   │                           │─── Notify admins ─────────▶│
+   │                           │                            │
+   │                           │◀── Approve (set role) ─────│
+   │◀── Promotion notified ────│                            │
+   │                           │                            │
+   │─── Now can participate ───│                            │
+```
+
+**Pending Member Notifications:**
+```typescript
+// Cloud Function: Notify admins when new pending member joins
+export const onPendingMember = functions.firestore
+  .document('swarms/{swarmId}/members/{userId}')
+  .onCreate(async (snap, context) => {
+    const member = snap.data();
+    if (member.role !== 'pending') return;
+    
+    const swarmId = context.params.swarmId;
+    const admins = await admin.firestore()
+      .collection(`swarms/${swarmId}/members`)
+      .where('roleLevel', '>=', 3)  // admin or owner
+      .get();
+    
+    // Send push notification or in-app notification
+    for (const adminDoc of admins.docs) {
+      await admin.firestore()
+        .collection(`users/${adminDoc.id}/notifications`)
+        .add({
+          type: 'pending_member',
+          swarmId,
+          memberName: member.displayName,
+          memberEmail: member.email,
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+    }
+  });
+```
 ```
 
 ### 4. Access Revocation
@@ -218,10 +301,30 @@ service cloud.firestore {
              get(/databases/$(database)/documents/swarms/$(swarmId)).data.ownerId == request.auth.uid;
     }
     
+    function getMyRole(swarmId) {
+      return get(/databases/$(database)/documents/swarms/$(swarmId)/members/$(request.auth.uid)).data;
+    }
+    
     function isSwarmMember(swarmId) {
       return isAuthenticated() &&
              exists(/databases/$(database)/documents/swarms/$(swarmId)/members/$(request.auth.uid)) &&
-             get(/databases/$(database)/documents/swarms/$(swarmId)/members/$(request.auth.uid)).data.status == "active";
+             getMyRole(swarmId).status == "active";
+    }
+    
+    function hasMinRole(swarmId, minLevel) {
+      return isSwarmMember(swarmId) && getMyRole(swarmId).roleLevel >= minLevel;
+    }
+    
+    function isAdmin(swarmId) {
+      return hasMinRole(swarmId, 3);  // admin or owner
+    }
+    
+    function isContributor(swarmId) {
+      return hasMinRole(swarmId, 2);  // contributor+
+    }
+    
+    function isReader(swarmId) {
+      return hasMinRole(swarmId, 1);  // reader+
     }
     
     function hasSwarmClaim(swarmId) {
@@ -237,18 +340,25 @@ service cloud.firestore {
       // Members subcollection
       match /members/{userId} {
         allow read: if isSwarmMember(swarmId);
+        // Self-join creates pending membership
         allow create: if isSwarmOwner(swarmId) || 
-                        (isAuthenticated() && userId == request.auth.uid);  // Self-join via invite
-        allow update: if isSwarmOwner(swarmId) || 
+                        (isAuthenticated() && userId == request.auth.uid &&
+                         request.resource.data.role == "pending" &&
+                         request.resource.data.roleLevel == 0);
+        // Admins can approve (change role/roleLevel), users can update non-role fields
+        allow update: if isAdmin(swarmId) || 
                         (userId == request.auth.uid && 
-                         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'status']));
+                         !request.resource.data.diff(resource.data).affectedKeys()
+                           .hasAny(['role', 'roleLevel', 'status', 'approvedBy', 'approvedAt']));
+        // Only owner can promote to admin, admins can promote up to contributor
         allow delete: if isSwarmOwner(swarmId);
       }
       
       // Workers subcollection
       match /workers/{workerId} {
-        allow read: if isSwarmMember(swarmId);
-        allow create, update: if isSwarmMember(swarmId) && 
+        allow read: if isReader(swarmId);
+        // Contributors+ can register workers
+        allow create, update: if isContributor(swarmId) && 
                                  request.resource.data.ownerId == request.auth.uid;
         allow delete: if isSwarmOwner(swarmId) || 
                         resource.data.ownerId == request.auth.uid;
@@ -256,9 +366,9 @@ service cloud.firestore {
       
       // Invites subcollection
       match /invites/{inviteId} {
-        allow read: if isSwarmOwner(swarmId);
-        allow create: if isSwarmOwner(swarmId);
-        allow update: if isSwarmOwner(swarmId) ||
+        allow read: if isAdmin(swarmId);
+        allow create: if isAdmin(swarmId);
+        allow update: if isAdmin(swarmId) ||
                         (isAuthenticated() && 
                          resource.data.revoked == false &&
                          resource.data.expires > request.time);
@@ -267,14 +377,27 @@ service cloud.firestore {
       
       // Tasks subcollection
       match /tasks/{taskId} {
-        allow read: if isSwarmMember(swarmId);
-        allow create: if isSwarmMember(swarmId) && 
+        // Readers can view, contributors+ can create/update
+        allow read: if isReader(swarmId);
+        allow create: if isContributor(swarmId) && 
                         request.resource.data.createdBy == request.auth.uid;
-        allow update: if isSwarmMember(swarmId) &&
+        allow update: if isContributor(swarmId) &&
                         (resource.data.createdBy == request.auth.uid ||
                          resource.data.claimedBy == request.auth.uid);
-        allow delete: if isSwarmOwner(swarmId);
+        allow delete: if isAdmin(swarmId);
       }
+      
+      // RAG artifacts subcollection
+      match /ragArtifacts/{artifactId} {
+        allow read: if isReader(swarmId);  // Readers can pull
+        allow create, update: if isContributor(swarmId);  // Contributors+ can push
+        allow delete: if isAdmin(swarmId);
+      }
+    }
+    
+    // User notifications (for approval alerts)
+    match /users/{userId}/notifications/{notificationId} {
+      allow read, write: if request.auth.uid == userId;
     }
   }
 }
@@ -550,32 +673,53 @@ export const revokeSwarmAccess = functions.https.onCall(async (data, context) =>
 
 ## Implementation Phases
 
-### Phase 1: Core Auth & Invites
-- [ ] Firebase project setup
-- [ ] Apple Sign-In integration
-- [ ] Swarm creation
-- [ ] Invite creation & QR codes
-- [ ] Invite acceptance flow
-- [ ] Basic security rules
+### Phase 1: Firebase Project Setup & Auth
+- [ ] Create Firebase project (`peel-swarm`)
+- [ ] Enable Authentication with Apple Sign-In
+- [ ] Create Firestore database (production mode)
+- [ ] Add Firebase SDK to Xcode project
+- [ ] Configure URL scheme for `peel://` deep links
+- [ ] Implement `FirebaseService` singleton
 
-### Phase 2: Worker Management
+### Phase 2: Core Auth & Invites
+- [ ] Apple Sign-In integration in SwiftUI
+- [ ] Swarm creation flow
+- [ ] Invite creation & QR code generation
+- [ ] Invite acceptance via deep link
+- [ ] Deploy security rules (v1)
+
+### Phase 3: Tiered Permissions & Admin Approval
+- [ ] Pending member state (role: "pending", roleLevel: 0)
+- [ ] Admin approval UI (list pending, approve/reject)
+- [ ] Role promotion/demotion (owner → admin, admin → contributor, etc.)
+- [ ] Permission checks in Swift (wrapper around Firestore)
+- [ ] Cloud Functions for approval notifications
+
+### Phase 4: Worker Management
 - [ ] Worker registration in Firestore
-- [ ] Real-time presence updates
+- [ ] Real-time presence updates (heartbeat)
 - [ ] Task dispatch via Firestore
 - [ ] Task claiming & execution
+- [ ] Permission-gated task submission
 
-### Phase 3: Security Hardening
+### Phase 5: RAG Artifact Sync
+- [ ] RAG artifact collection in Firestore
+- [ ] Pull artifacts (reader+)
+- [ ] Push artifacts (contributor+)
+- [ ] Conflict resolution strategy
+
+### Phase 6: Security Hardening
 - [ ] Firebase App Check
 - [ ] Task signing with Ed25519
 - [ ] Audit logging
 - [ ] Rate limiting
-- [ ] Revocation testing
+- [ ] Revocation testing (fast invalidation)
 
-### Phase 4: Polish
-- [ ] Swarm management UI
-- [ ] Member management UI
-- [ ] Invite history
-- [ ] Activity feed
+### Phase 7: Polish & UI
+- [ ] Swarm management dashboard
+- [ ] Member management (list, approve, promote, revoke)
+- [ ] Invite history & analytics
+- [ ] Activity feed with role-based filtering
 
 ## Cost Estimate
 
@@ -610,6 +754,125 @@ At scale, Blaze (pay-as-you-go):
 4. **Linux workers:** How do Linux workers authenticate?
    - Could use service accounts + custom tokens
    - Or require human to sign in and generate long-lived token
+
+---
+
+## Firebase Project Setup (Step-by-Step)
+
+### Prerequisites
+- Apple Developer account (for Sign-In with Apple)
+- Firebase account (Google account)
+
+### 1. Create Firebase Project
+
+1. Go to [Firebase Console](https://console.firebase.google.com/)
+2. Click "Create a project"
+3. Name: `peel-swarm` (or similar)
+4. Disable Google Analytics (not needed for MVP)
+5. Click "Create project"
+
+### 2. Enable Authentication
+
+1. In Firebase Console → Authentication → Sign-in method
+2. Enable "Apple" provider
+3. Download the "Sign In with Apple" config:
+   - Service ID: `com.crunchy-bananas.peel.auth` (must match bundle ID pattern)
+   - Team ID: Your Apple Developer Team ID
+   - Key ID: Create a new key in Apple Developer portal
+   - Private Key: Download `.p8` file from Apple
+
+**Apple Developer Portal Setup:**
+1. Go to Certificates, Identifiers & Profiles
+2. Identifiers → App IDs → Select Peel app
+3. Enable "Sign In with Apple" capability
+4. Keys → Create new key → Enable "Sign In with Apple"
+5. Download the `.p8` key file (save it securely!)
+
+### 3. Create Firestore Database
+
+1. Firebase Console → Firestore Database → Create database
+2. Choose "Production mode" (we'll deploy proper rules)
+3. Select region: `us-central1` (or nearest)
+4. Wait for provisioning
+
+### 4. Deploy Security Rules
+
+Save the security rules from this document to `firestore.rules`, then:
+
+```bash
+# Install Firebase CLI
+npm install -g firebase-tools
+
+# Login
+firebase login
+
+# Initialize project (in KitchenSink directory)
+firebase init firestore
+
+# Deploy rules
+firebase deploy --only firestore:rules
+```
+
+### 5. Add Firebase SDK to Xcode
+
+1. In Xcode: File → Add Package Dependencies
+2. Enter: `https://github.com/firebase/firebase-ios-sdk`
+3. Select version: 11.0.0+ (latest)
+4. Add these products:
+   - FirebaseAuth
+   - FirebaseFirestore
+   - FirebaseFunctions
+   - FirebaseAppCheck
+
+5. Download `GoogleService-Info.plist` from Firebase Console
+6. Add to Xcode project (both macOS and iOS targets)
+
+### 6. Configure URL Scheme
+
+In `Info.plist` (both targets):
+```xml
+<key>CFBundleURLTypes</key>
+<array>
+  <dict>
+    <key>CFBundleURLName</key>
+    <string>com.crunchy-bananas.peel</string>
+    <key>CFBundleURLSchemes</key>
+    <array>
+      <string>peel</string>
+    </array>
+  </dict>
+</array>
+```
+
+### 7. Initialize Firebase in App
+
+```swift
+// PeelApp.swift
+import Firebase
+
+@main
+struct PeelApp: App {
+  init() {
+    FirebaseApp.configure()
+  }
+  // ...
+}
+```
+
+### 8. Deploy Cloud Functions
+
+```bash
+# In project root
+firebase init functions
+
+# Choose TypeScript
+# Install dependencies
+cd functions && npm install
+
+# Copy function code from this document
+# Deploy
+firebase deploy --only functions
+```
 
 ---
 

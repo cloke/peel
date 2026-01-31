@@ -131,11 +131,21 @@ struct LocalRAGDashboardView: View {
         }
         
         // Overall analysis progress
-        let totalAnalyzed = mcpServer.ragUsage.chunksAnalyzedTotal
-        if totalAnalyzed > 0 {
-          StatPill(value: totalAnalyzed, label: "analyzed", icon: "checkmark.circle", color: .orange)
+        if mcpServer.ragUsage.chunksAnalyzedTotal > 0 {
+          StatPill(value: mcpServer.ragUsage.chunksAnalyzedTotal, label: "analyzed", icon: "checkmark.circle", color: .orange)
         }
       }
+      
+      // Settings button - always visible
+      Button {
+        showSettings = true
+      } label: {
+        Image(systemName: "gearshape")
+          .font(.title2)
+          .foregroundStyle(.secondary)
+      }
+      .buttonStyle(.plain)
+      .help("RAG Settings")
     }
     .padding(.horizontal, 4)
   }
@@ -293,14 +303,6 @@ struct LocalRAGDashboardView: View {
         Task { await mcpServer.refreshRagSummary() }
       } label: {
         Label("Refresh", systemImage: "arrow.clockwise")
-      }
-    }
-    
-    ToolbarItem(placement: .secondaryAction) {
-      Button {
-        showSettings = true
-      } label: {
-        Label("Settings", systemImage: "gear")
       }
     }
   }

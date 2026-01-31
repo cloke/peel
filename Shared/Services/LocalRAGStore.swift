@@ -2354,7 +2354,7 @@ actor LocalRAGStore {
     let effectiveTier = modelTier == .auto 
       ? MLXAnalyzerModelTier.recommended(forMemoryGB: Double(LocalRAGEmbeddingProviderFactory.physicalMemoryBytes()) / 1_073_741_824.0)
       : modelTier
-    let analyzer = await MLXCodeAnalyzerFactory.makeAnalyzer(tier: effectiveTier)
+    let analyzer = MLXCodeAnalyzerFactory.makeAnalyzer(tier: effectiveTier)
     let now = dateFormatter.string(from: Date())
     var analyzedCount = 0
     
