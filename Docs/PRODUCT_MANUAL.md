@@ -796,9 +796,16 @@ The MCP server exposes these tool categories via JSON-RPC at `http://127.0.0.1:8
 | `rag.search` | Search indexed code |
 | `rag.dependencies` | Get what a file depends on (imports, inheritance, conformance) |
 | `rag.dependents` | Get what depends on a file (reverse dependencies) |
+| `rag.orphans` | Find potentially unused/orphaned files (no imports or type references) |
 | `rag.structural` | Query files by structural characteristics (line count, methods, size) |
 | `rag.model.describe` | Describe the embedding model |
+| `rag.analyze` | Analyze chunks with local MLX LLM for semantic summaries |
+| `rag.analyze.status` | Get AI analysis status (analyzed vs un-analyzed chunks) |
 | `rag.ui.status` | Fetch Local RAG dashboard snapshot |
+| `rag.lessons.list` | List learned error→fix lessons |
+| `rag.lessons.add` | Add a new error→fix lesson |
+| `rag.lessons.search` | Search lessons by error signature |
+| `rag.lessons.applied` | Mark lesson as applied (confidence feedback) |
 | `rag.skills.list` | List repo guidance skills |
 | `rag.skills.add` | Add a repo guidance skill |
 | `rag.skills.update` | Update a repo guidance skill |
