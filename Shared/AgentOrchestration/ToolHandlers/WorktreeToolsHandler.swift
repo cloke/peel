@@ -26,6 +26,9 @@ protocol WorktreeToolsHandlerDelegate: MCPToolHandlerDelegate {
   /// Remove a worktree by path
   func removeWorktree(path: String, force: Bool) async throws
 
+  /// Create a new worktree
+  func createWorktree(repoPath: String, branchName: String, baseBranch: String) async throws -> String
+
   /// Get disk size for a directory
   func diskSize(for path: String) -> Int64?
 }
@@ -113,7 +116,8 @@ public final class WorktreeToolsHandler: MCPToolHandler {
   public let supportedTools: Set<String> = [
     "worktree.list",
     "worktree.remove",
-    "worktree.stats"
+    "worktree.stats",
+    "worktree.create"
   ]
 
   public init() {}
@@ -126,6 +130,8 @@ public final class WorktreeToolsHandler: MCPToolHandler {
       return await handleRemove(id: id, arguments: arguments)
     case "worktree.stats":
       return await handleStats(id: id, arguments: arguments)
+    case "worktree.create":
+      return await handleCreate(id: id, arguments: arguments)
     default:
       return (404, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.methodNotFound, message: "Unknown tool"))
     }
@@ -247,6 +253,70 @@ public final class WorktreeToolsHandler: MCPToolHandler {
     #else
     return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "worktree.stats is only available on macOS"))
     #endif
+  }
+
+  // MARK: - worktree.create
+
+  /// Create a new worktree for ad-hoc work, PR review, or experiments
+  private func handleCreate(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    #if os(macOS)
+    guard let worktreeDelegate else {
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Worktree delegate not configured"))
+    }
+
+    guard let repoPath = arguments["repoPath"] as? String else {
+      return missingParamError(id: id, param: "repoPath")
+    }
+
+    guard let branchName = arguments["branchName"] as? String else {
+      return missingParamError(id: id, param: "branchName")
+    }
+
+    let baseBranch = arguments["baseBranch"] as? String ?? "origin/main"
+
+    // Sanitize branch name
+    let sanitizedBranch = sanitizeBranchName(branchName)
+    if sanitizedBranch.isEmpty {
+      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "Invalid branch name after sanitization"))
+    }
+
+    do {
+      let worktreePath = try await worktreeDelegate.createWorktree(
+        repoPath: repoPath,
+        branchName: sanitizedBranch,
+        baseBranch: baseBranch
+      )
+
+      return (200, makeResult(id: id, result: [
+        "success": true,
+        "worktreePath": worktreePath,
+        "branchName": sanitizedBranch,
+        "baseBranch": baseBranch,
+        "repoPath": repoPath
+      ]))
+    } catch {
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Failed to create worktree: \(error.localizedDescription)"))
+    }
+    #else
+    return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "worktree.create is only available on macOS"))
+    #endif
+  }
+
+  /// Sanitize a branch name for git
+  private func sanitizeBranchName(_ name: String) -> String {
+    var sanitized = name.lowercased()
+    // Replace spaces and underscores with dashes
+    sanitized = sanitized.replacingOccurrences(of: " ", with: "-")
+    sanitized = sanitized.replacingOccurrences(of: "_", with: "-")
+    // Remove characters not allowed in branch names
+    sanitized = sanitized.filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "/" }
+    // Remove leading/trailing dashes
+    sanitized = sanitized.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+    // Collapse multiple dashes
+    while sanitized.contains("--") {
+      sanitized = sanitized.replacingOccurrences(of: "--", with: "-")
+    }
+    return sanitized
   }
 
   // MARK: - Helpers
