@@ -65,6 +65,14 @@ extension SectionCard where Header == Text {
   }
 }
 
+// Convenience initializer for headerless card
+extension SectionCard where Header == EmptyView {
+  public init(@ViewBuilder content: () -> Content) {
+    self.header = EmptyView()
+    self.content = content()
+  }
+}
+
 // MARK: - Stat Card
 
 /// A compact card for displaying a single statistic with icon and label

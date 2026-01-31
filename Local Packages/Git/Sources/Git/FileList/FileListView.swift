@@ -5,6 +5,7 @@
 //  Created by Cory Loken on 12/28/20.
 //
 
+import PeelUI
 import SwiftUI
 import OSLog
 
@@ -21,47 +22,41 @@ struct FileListView: View {
   var body: some View {
     HSplitView {
       VStack(spacing: 12) {
-        GroupBox {
-          VStack(alignment: .leading, spacing: 12) {
-            Text("Message")
-              .font(.caption)
-              .foregroundStyle(.secondary)
-            TextEditor(text: $commitMessage)
-              .font(.body)
-              .textEditorStyle(.plain)
-              .frame(minHeight: 160)
-              .focused($commitIsFocused)
-              .overlay(alignment: .topLeading) {
-                if commitMessage.isEmpty {
-                  Text("Enter commit message")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 6)
-                    .padding(.leading, 4)
-                }
+        SectionCard("Message") {
+          TextEditor(text: $commitMessage)
+            .font(.body)
+            .textEditorStyle(.plain)
+            .frame(minHeight: 160)
+            .focused($commitIsFocused)
+            .overlay(alignment: .topLeading) {
+              if commitMessage.isEmpty {
+                Text("Enter commit message")
+                  .font(.body)
+                  .foregroundStyle(.secondary)
+                  .padding(.top, 6)
+                  .padding(.leading, 4)
               }
-            HStack {
-              Button("Commit") {
-                Task {
-                  _ = try await Commands.commit(repository: repository, message: commitMessage)
-                  commitMessage = ""
-                  await repository.refreshStatus()
-                }
-              }
-              .buttonStyle(.borderedProminent)
-              .disabled(commitMessage.isEmpty)
-              Spacer()
-              Button {
-                Task {
-                  try await Commands.Stash.push(repository: repository)
-                }
-              } label: {
-                Label("Stash", systemImage: "square.stack.3d.up")
-              }
-              .buttonStyle(.bordered)
             }
+          HStack {
+            Button("Commit") {
+              Task {
+                _ = try await Commands.commit(repository: repository, message: commitMessage)
+                commitMessage = ""
+                await repository.refreshStatus()
+              }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(commitMessage.isEmpty)
+            Spacer()
+            Button {
+              Task {
+                try await Commands.Stash.push(repository: repository)
+              }
+            } label: {
+              Label("Stash", systemImage: "square.stack.3d.up")
+            }
+            .buttonStyle(.bordered)
           }
-          .padding(.vertical, 4)
         }
         
         List(selection: $selectedFilePath) {

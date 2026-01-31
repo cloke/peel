@@ -186,57 +186,53 @@ struct CLISetupSheet: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 20) {
           // GitHub Copilot Section
-          GroupBox {
-            VStack(alignment: .leading, spacing: 12) {
-              HStack {
-                Image(systemName: copilotIcon)
-                  .foregroundStyle(copilotColor)
-                  .font(.title)
-                VStack(alignment: .leading) {
-                  Text("GitHub Copilot CLI").font(.headline)
-                  Text(copilotStatusText).font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
-              }
+          SectionCard {
+            Divider()
 
-              Divider()
-
-              if !cliService.copilotStatus.isAvailable {
-                CopilotInstallSteps(cliService: cliService)
-              } else {
-                Label("Ready to use!", systemImage: "checkmark.circle.fill")
-                  .foregroundStyle(.green)
+            if !cliService.copilotStatus.isAvailable {
+              CopilotInstallSteps(cliService: cliService)
+            } else {
+              Label("Ready to use!", systemImage: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+            }
+          } header: {
+            HStack {
+              Image(systemName: copilotIcon)
+                .foregroundStyle(copilotColor)
+                .font(.title)
+              VStack(alignment: .leading) {
+                Text("GitHub Copilot CLI")
+                Text(copilotStatusText).font(.caption).foregroundStyle(.secondary)
               }
-            }.padding(.vertical, 4)
+              Spacer()
+            }
           }
 
           // Claude Section
-          GroupBox {
-            VStack(alignment: .leading, spacing: 12) {
-              HStack {
-                Image(systemName: cliService.claudeStatus.isAvailable ? "checkmark.circle.fill" : "xmark.circle")
-                  .foregroundStyle(cliService.claudeStatus.isAvailable ? .green : .secondary)
-                  .font(.title)
-                VStack(alignment: .leading) {
-                  Text("Claude CLI").font(.headline)
-                  Text(cliService.claudeStatus.isAvailable ? "Ready" : "Not installed")
-                    .font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
+          SectionCard {
+            if !cliService.claudeStatus.isAvailable {
+              Divider()
+              Text(CLIService.claudeInstallInstructions)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+            }
+          } header: {
+            HStack {
+              Image(systemName: cliService.claudeStatus.isAvailable ? "checkmark.circle.fill" : "xmark.circle")
+                .foregroundStyle(cliService.claudeStatus.isAvailable ? .green : .secondary)
+                .font(.title)
+              VStack(alignment: .leading) {
+                Text("Claude CLI")
+                Text(cliService.claudeStatus.isAvailable ? "Ready" : "Not installed")
+                  .font(.caption).foregroundStyle(.secondary)
               }
-
-              if !cliService.claudeStatus.isAvailable {
-                Divider()
-                Text(CLIService.claudeInstallInstructions)
-                  .font(.system(.caption, design: .monospaced))
-                  .foregroundStyle(.secondary)
-              }
-            }.padding(.vertical, 4)
+              Spacer()
+            }
           }
 
           // Output log
           if !cliService.installOutput.isEmpty {
-            GroupBox("Installation Log") {
+            SectionCard("Installation Log") {
               ScrollView {
                 Text(cliService.installOutput.joined(separator: "\n"))
                   .font(.system(.caption, design: .monospaced))

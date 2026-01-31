@@ -184,669 +184,634 @@ struct MCPDashboardView: View {
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 16) {
-        GroupBox {
+        SectionCard {
+          if mcpServer.activeRequests > 0 {
+            Chip(
+              text: "\(mcpServer.activeRequests) active",
+              font: .caption,
+              foreground: .blue,
+              background: Color.blue.opacity(0.15),
+              horizontalPadding: 8,
+              verticalPadding: 4
+            )
+          }
+        } header: {
           HStack(spacing: 12) {
             Image(systemName: mcpServer.isRunning ? "bolt.horizontal.circle.fill" : "bolt.horizontal.circle")
               .font(.title2)
               .foregroundStyle(mcpServer.isRunning ? .green : .secondary)
             VStack(alignment: .leading, spacing: 2) {
               Text("MCP Server")
-                .font(.headline)
               Text(mcpServer.isRunning ? "Running on localhost:\(mcpServer.port)" : "Stopped")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
             Spacer()
-            if mcpServer.activeRequests > 0 {
-              Chip(
-                text: "\(mcpServer.activeRequests) active",
-                font: .caption,
-                foreground: .blue,
-                background: Color.blue.opacity(0.15),
-                horizontalPadding: 8,
-                verticalPadding: 4
-              )
-            }
+            StatusPill(
+              text: mcpServer.isRunning ? "Running" : "Stopped",
+              style: mcpServer.isRunning ? .success : .neutral
+            )
           }
         }
 
-        GroupBox {
-          VStack(alignment: .leading, spacing: 8) {
-            Text("Recent MCP Activity")
-              .font(.headline)
-            if let method = mcpServer.lastRequestMethod,
-               let timestamp = mcpServer.lastRequestAt {
-              Text("Last request: \(method)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-              Text(timestamp, style: .time)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            } else {
-              Text("No MCP requests yet")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-            if let error = mcpServer.lastError {
-              Text(error)
-                .font(.caption)
-                .foregroundStyle(.red)
-            }
-            Text("Tools enabled: \(mcpServer.enabledToolCount)/\(mcpServer.totalToolCount)")
+        SectionCard("Recent MCP Activity") {
+          if let method = mcpServer.lastRequestMethod,
+             let timestamp = mcpServer.lastRequestAt {
+            Text("Last request: \(method)")
               .font(.caption)
               .foregroundStyle(.secondary)
-            Text("Foreground tools: \(mcpServer.foregroundToolCount) · Background tools: \(mcpServer.backgroundToolCount)")
+            Text(timestamp, style: .time)
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          } else {
+            Text("No MCP requests yet")
               .font(.caption)
               .foregroundStyle(.secondary)
-            Text("App active: \(mcpServer.isAppActive ? "Yes" : "No") · Frontmost: \(mcpServer.isAppFrontmost ? "Yes" : "No")")
+          }
+          if let error = mcpServer.lastError {
+            Text(error)
+              .font(.caption)
+              .foregroundStyle(.red)
+          }
+          Text("Tools enabled: \(mcpServer.enabledToolCount)/\(mcpServer.totalToolCount)")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          Text("Foreground tools: \(mcpServer.foregroundToolCount) · Background tools: \(mcpServer.backgroundToolCount)")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          Text("App active: \(mcpServer.isAppActive ? "Yes" : "No") · Frontmost: \(mcpServer.isAppFrontmost ? "Yes" : "No")")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          if let blocked = mcpServer.lastBlockedTool,
+             let blockedAt = mcpServer.lastBlockedToolAt {
+            Text("Last blocked tool: \(blocked)")
               .font(.caption)
               .foregroundStyle(.secondary)
-            if let blocked = mcpServer.lastBlockedTool,
-               let blockedAt = mcpServer.lastBlockedToolAt {
-              Text("Last blocked tool: \(blocked)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-              Text(blockedAt, style: .time)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            }
-            if let handled = mcpServer.lastUIActionHandled,
-               let handledAt = mcpServer.lastUIActionHandledAt {
-              Text("Last UI action: \(handled)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-              Text(handledAt, style: .time)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            }
-            if let pending = mcpServer.lastUIAction?.controlId {
-              Text("Pending UI action: \(pending)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-            if let requiresForeground = mcpServer.lastToolRequiresForeground,
-               let requiresForegroundAt = mcpServer.lastToolRequiresForegroundAt {
-              Text("Last tool requires UI: \(requiresForeground ? "Yes" : "No")")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-              Text(requiresForegroundAt, style: .time)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            }
+            Text(blockedAt, style: .time)
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+          if let handled = mcpServer.lastUIActionHandled,
+             let handledAt = mcpServer.lastUIActionHandledAt {
+            Text("Last UI action: \(handled)")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Text(handledAt, style: .time)
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+          if let pending = mcpServer.lastUIAction?.controlId {
+            Text("Pending UI action: \(pending)")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          if let requiresForeground = mcpServer.lastToolRequiresForeground,
+             let requiresForegroundAt = mcpServer.lastToolRequiresForegroundAt {
+            Text("Last tool requires UI: \(requiresForeground ? "Yes" : "No")")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Text(requiresForegroundAt, style: .time)
+              .font(.caption2)
+              .foregroundStyle(.secondary)
           }
         }
 
-        GroupBox {
-          VStack(alignment: .leading, spacing: 8) {
-            Text("MCP UI Actions")
-              .font(.headline)
-            if mcpServer.recentUIActions.isEmpty {
-              Text("No UI actions yet")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            } else {
-              ForEach(mcpServer.recentUIActions.prefix(8)) { action in
-                HStack {
-                  Text(action.controlId)
-                    .font(.caption)
-                  Spacer()
-                  Text(action.status)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                  Text(action.timestamp, style: .time)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                }
-              }
-            }
-          }
-        }
-
-        GroupBox {
-          VStack(alignment: .leading, spacing: 8) {
-            HStack {
-              Text("Local RAG")
-                .font(.headline)
-              Spacer()
-              Button("Refresh") {
-                Task { await refreshRagSummary() }
-              }
-              .buttonStyle(.bordered)
-              .accessibilityIdentifier("agents.mcpDashboard.rag.refresh")
-            }
-            if isLoadingRag {
-              ProgressView()
-                .scaleEffect(0.8)
-            } else if let status = mcpServer.ragStatus {
-              Text("DB: \(status.dbPath)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-              Text("Schema: v\(status.schemaVersion) · Embeddings: \(status.providerName)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-              Text("Extension loaded: \(status.extensionLoaded ? "Yes" : "No")")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-              if let lastInit = status.lastInitializedAt {
-                Text("Last init: \(lastInit, style: .time)")
-                  .font(.caption2)
-                  .foregroundStyle(.secondary)
-              }
-              if let stats = mcpServer.ragStats {
-                Text("Repos: \(stats.repoCount) · Files: \(stats.fileCount) · Chunks: \(stats.chunkCount)")
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
-                Text("Embeddings: \(stats.embeddingCount) · Cache: \(stats.cacheEmbeddingCount)")
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
-                Text("DB size: \(formatBytes(stats.dbSizeBytes))")
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
-                if let lastIndexedAt = stats.lastIndexedAt {
-                  let repoLabel = stats.lastIndexedRepoPath ?? "(unknown repo)"
-                  Text("Last index: \(repoLabel)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                  Text(lastIndexedAt, style: .time)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                }
-              }
-              let usage = mcpServer.ragUsage
-              if usage.searches > 0 || usage.indexRuns > 0 || usage.skillsAdded + usage.skillsUpdated + usage.skillsDeleted > 0 {
-                Divider()
-                let avgResults = usage.searches > 0
-                  ? Double(usage.totalResults) / Double(max(usage.searches, 1))
-                  : 0
-                Text("Session searches: \(usage.searches) · Avg results: \(avgResults, specifier: "%.1f") · Empty: \(usage.emptySearches)")
-                  .font(.caption2)
-                  .foregroundStyle(.secondary)
-                Text("Interactions: \(usage.copyCount) copies · \(usage.openCount) opens · Helpful: \(usage.helpfulCount) · Not useful: \(usage.irrelevantCount)")
-                  .font(.caption2)
-                  .foregroundStyle(.secondary)
-                if let report = mcpServer.lastRagIndexReport {
-                  let skipInfo = report.filesSkipped > 0 ? " (\(report.filesSkipped) skipped)" : ""
-                  Text("Last session index: \(report.filesIndexed) files\(skipInfo) · \(report.chunksIndexed) chunks")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                }
-                if usage.skillsAdded + usage.skillsUpdated + usage.skillsDeleted > 0 {
-                  Text("Skills: +\(usage.skillsAdded) · ~\(usage.skillsUpdated) · -\(usage.skillsDeleted)")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                }
-              }
-              if let error = mcpServer.lastRagError {
-                Text(error)
-                  .font(.caption)
-                  .foregroundStyle(.red)
-              }
-              if let lastRefresh = mcpServer.lastRagRefreshAt {
-                Text("Updated \(lastRefresh, style: .time)")
-                  .font(.caption2)
-                  .foregroundStyle(.secondary)
-              }
-            } else {
-              Text("No RAG data yet")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-          }
-        }
-
-        GroupBox {
-          VStack(alignment: .leading, spacing: 8) {
-            HStack {
-              Text("MCP Latency (Last 14 Days)")
-                .font(.headline)
-              Spacer()
-              Button("Refresh") {
-                Task { await loadLatencySamples() }
-              }
-              .buttonStyle(.bordered)
-              .accessibilityIdentifier("agents.mcpDashboard.latency.refresh")
-            }
-            if isLoadingLatency {
-              ProgressView()
-                .scaleEffect(0.8)
-            } else if latencySamples.isEmpty {
-              Text("No latency samples yet")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            } else {
-              Chart(latencySeriesPoints) { point in
-                LineMark(
-                  x: .value("Day", point.day, unit: .day),
-                  y: .value("Latency (ms)", point.value)
-                )
-                .foregroundStyle(by: .value("Metric", point.metric))
-              }
-              .chartXAxis {
-                AxisMarks(values: .stride(by: .day, count: 2))
-              }
-              .frame(height: 160)
-            }
-            if let lastLatencyRefresh {
-              Text("Updated \(lastLatencyRefresh, style: .time)")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            }
-          }
-        }
-
-        GroupBox {
-          VStack(alignment: .leading, spacing: 8) {
-            HStack {
-              Text("Agent Usage")
-                .font(.headline)
-              Spacer()
-              Picker("Granularity", selection: $usageGranularity) {
-                ForEach(UsageGranularity.allCases, id: \.self) { option in
-                  Text(option.label).tag(option)
-                }
-              }
-              .pickerStyle(.segmented)
-              .frame(width: 180)
-              .accessibilityIdentifier("agents.mcpDashboard.usage.granularity")
-            }
-
-            let stats = usageStats(granularity: usageGranularity)
-            if stats.isEmpty {
-              Text("No MCP run data yet")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            } else {
-              Chart(stats) { stat in
-                BarMark(
-                  x: .value("Period", stat.bucketStart, unit: usageGranularity == .day ? .day : .weekOfYear),
-                  y: .value("Runs", stat.runCount)
-                )
-                .foregroundStyle(Color.accentColor.opacity(0.6))
-              }
-              .frame(height: 140)
-
-              Chart(stats) { stat in
-                LineMark(
-                  x: .value("Period", stat.bucketStart, unit: usageGranularity == .day ? .day : .weekOfYear),
-                  y: .value("Avg Cost", stat.averagePremiumCost)
-                )
-                .foregroundStyle(.blue)
-                PointMark(
-                  x: .value("Period", stat.bucketStart, unit: usageGranularity == .day ? .day : .weekOfYear),
-                  y: .value("Avg Cost", stat.averagePremiumCost)
-                )
-                .foregroundStyle(.blue)
-              }
-              .frame(height: 140)
-
-              if let last = stats.last {
-                Text("Latest avg cost: \(last.averagePremiumCost.premiumCostDisplay)")
-                  .font(.caption2)
-                  .foregroundStyle(.secondary)
-              }
-            }
-          }
-        }
-
-        GroupBox {
-          VStack(alignment: .leading, spacing: LayoutSpacing.section) {
-            SectionHeader("Run Overrides")
-            VStack(alignment: .leading, spacing: LayoutSpacing.item) {
-              SectionHeader("Review Controls", style: .secondary)
-              Toggle("Override review loop", isOn: $overrideReviewLoopEnabled)
-                .accessibilityIdentifier("agents.mcpDashboard.overrides.reviewLoopOverride")
-              if overrideReviewLoopEnabled {
-                Toggle("Enable review loop", isOn: $overrideReviewLoopValue)
-                  .padding(.leading, LayoutSpacing.indent)
-                  .accessibilityIdentifier("agents.mcpDashboard.overrides.reviewLoopEnable")
-              }
-              Toggle("Override review pause", isOn: $overridePauseOnReviewEnabled)
-                .accessibilityIdentifier("agents.mcpDashboard.overrides.reviewPauseOverride")
-              if overridePauseOnReviewEnabled {
-                Toggle("Pause on review request", isOn: $overridePauseOnReviewValue)
-                  .padding(.leading, LayoutSpacing.indent)
-                  .accessibilityIdentifier("agents.mcpDashboard.overrides.reviewPauseEnable")
-              }
-            }
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: LayoutSpacing.item) {
-              SectionHeader("Planner Controls", style: .secondary)
-              Toggle("Allow planner model selection", isOn: $overrideAllowModelSelection)
-                .accessibilityIdentifier("agents.mcpDashboard.overrides.allowModelSelection")
-              Toggle("Allow implementer model override", isOn: $overrideAllowImplementerModelOverride)
-                .accessibilityIdentifier("agents.mcpDashboard.overrides.allowImplementerModelOverride")
-              Toggle("Allow planner implementer scaling", isOn: $overrideAllowScaling)
-                .accessibilityIdentifier("agents.mcpDashboard.overrides.allowScaling")
-            }
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: LayoutSpacing.item) {
-              SectionHeader("Limits", style: .secondary)
-              Toggle("Limit implementers", isOn: $overrideMaxImplementersEnabled)
-                .accessibilityIdentifier("agents.mcpDashboard.overrides.limitImplementers")
-              if overrideMaxImplementersEnabled {
-                Stepper(value: $overrideMaxImplementers, in: 1...6) {
-                  Text("Max: \(overrideMaxImplementers)")
-                    .font(.caption)
-                }
-                .padding(.leading, LayoutSpacing.indent)
-                .accessibilityIdentifier("agents.mcpDashboard.overrides.maxImplementers")
-              }
-
-              Toggle("Cost cap", isOn: $overrideMaxPremiumEnabled)
-                .accessibilityIdentifier("agents.mcpDashboard.overrides.costCap")
-              if overrideMaxPremiumEnabled {
-                HStack(spacing: LayoutSpacing.item) {
-                  Text("Max premium")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                  TextField("1.0", text: $overrideMaxPremiumCost)
-                    .frame(width: 90)
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityIdentifier("agents.mcpDashboard.overrides.maxPremium")
-                }
-                .padding(.leading, LayoutSpacing.indent)
-              }
-            }
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: LayoutSpacing.item) {
-              SectionHeader("Scheduling", style: .secondary)
+        SectionCard("MCP UI Actions") {
+          if mcpServer.recentUIActions.isEmpty {
+            Text("No UI actions yet")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          } else {
+            ForEach(mcpServer.recentUIActions.prefix(8)) { action in
               HStack {
-                Text("Priority")
-                Stepper(value: $overridePriority, in: -5...5) {
-                  Text("\(overridePriority)")
-                    .font(.caption)
-                }
-                .accessibilityIdentifier("agents.mcpDashboard.overrides.priority")
-              }
-
-              Toggle("Timeout", isOn: $overrideTimeoutEnabled)
-                .accessibilityIdentifier("agents.mcpDashboard.overrides.timeoutEnabled")
-              if overrideTimeoutEnabled {
-                HStack(spacing: LayoutSpacing.item) {
-                  Text("Seconds")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                  TextField("600", text: $overrideTimeoutSeconds)
-                    .frame(width: 90)
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityIdentifier("agents.mcpDashboard.overrides.timeoutSeconds")
-                }
-                .padding(.leading, LayoutSpacing.indent)
-              }
-            }
-          }
-          .padding(.vertical, LayoutSpacing.section)
-        }
-
-        GroupBox {
-          VStack(alignment: .leading, spacing: 8) {
-            Text("Active MCP Runs")
-              .font(.headline)
-            if mcpServer.activeRuns.isEmpty {
-              Text("No active MCP runs")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            } else {
-              ForEach(mcpServer.activeRuns) { run in
-                let chain = chainForRun(run)
-                VStack(alignment: .leading, spacing: 6) {
-                  HStack {
-                    Text(chain?.name ?? run.templateName)
-                      .font(.subheadline)
-                      .fontWeight(.medium)
-                    Spacer()
-                    if let state = chain?.state.displayName {
-                      Text(state)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    }
-                  }
-                  if let lastMessage = chain?.liveStatusMessages.last {
-                    Text(lastMessage.message)
-                      .font(.caption)
-                      .foregroundStyle(.secondary)
-                      .lineLimit(2)
-                  }
-                  HStack(spacing: 8) {
-                    Button("Pause") {
-                      Task { await mcpServer.pauseRun(run.id) }
-                    }
-                    .buttonStyle(.bordered)
-                    .accessibilityIdentifier("agents.mcpDashboard.activeRun.\(run.id.uuidString).pause")
-
-                    Button("Resume") {
-                      Task { await mcpServer.resumeRun(run.id) }
-                    }
-                    .buttonStyle(.bordered)
-                    .accessibilityIdentifier("agents.mcpDashboard.activeRun.\(run.id.uuidString).resume")
-
-                    Button("Step") {
-                      Task { await mcpServer.stepRun(run.id) }
-                    }
-                    .buttonStyle(.bordered)
-                    .accessibilityIdentifier("agents.mcpDashboard.activeRun.\(run.id.uuidString).step")
-
-                    Button("Stop") {
-                      Task { await mcpServer.stopRun(run.id) }
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.red)
-                    .accessibilityIdentifier("agents.mcpDashboard.activeRun.\(run.id.uuidString).stop")
-                  }
-                }
-                .padding(.vertical, 4)
-              }
-            }
-          }
-        }
-
-        GroupBox {
-          VStack(alignment: .leading, spacing: 8) {
-            Text("Queue")
-              .font(.headline)
-            HStack(spacing: 12) {
-              Stepper(value: $mcpServer.maxConcurrentChains, in: 1...8) {
-                Text("Max concurrent: \(mcpServer.maxConcurrentChains)")
+                Text(action.controlId)
                   .font(.caption)
-              }
-              .accessibilityIdentifier("agents.mcpDashboard.queue.maxConcurrent")
-              Stepper(value: $mcpServer.maxQueuedChains, in: 0...20) {
-                Text("Max queued: \(mcpServer.maxQueuedChains)")
-                  .font(.caption)
-              }
-              .accessibilityIdentifier("agents.mcpDashboard.queue.maxQueued")
-            }
-            if mcpServer.queuedRuns.isEmpty {
-              Text("Queue empty")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            } else {
-              ForEach(mcpServer.queuedRuns) { queued in
-                HStack {
-                  Text("#\(queued.position)")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                  Text(String(queued.id.uuidString.prefix(8)))
-                    .font(.caption)
-                  Text("Priority \(queued.priority)")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                  Spacer()
-                  Button("Cancel") {
-                    Task { _ = await mcpServer.cancelQueuedRun(queued.id) }
-                  }
-                  .buttonStyle(.link)
-                  .accessibilityIdentifier("agents.mcpDashboard.queue.\(queued.id.uuidString).cancel")
-                }
+                Spacer()
+                Text(action.status)
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+                Text(action.timestamp, style: .time)
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
               }
             }
           }
         }
 
-        GroupBox {
-          VStack(alignment: .leading, spacing: 8) {
-            Text("MCP Run History")
-              .font(.headline)
-            if mcpRuns.isEmpty {
-              Text("No MCP runs yet")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            } else {
-              ForEach(mcpRuns.prefix(8)) { run in
-                VStack(alignment: .leading, spacing: 4) {
-                  HStack(spacing: 8) {
-                    Image(systemName: run.success ? "checkmark.circle.fill" : "xmark.octagon.fill")
-                      .foregroundStyle(run.success ? .green : .red)
-                    Text(run.templateName)
-                      .font(.subheadline)
-                    if run.mergeConflictsCount > 0 {
-                      Chip(
-                        text: "\(run.mergeConflictsCount) conflicts",
-                        font: .caption2,
-                        foreground: .orange,
-                        background: Color.orange.opacity(0.15),
-                        horizontalPadding: 6,
-                        verticalPadding: 2
-                      )
-                      .accessibilityIdentifier("agents.mcpDashboard.runHistory.\(run.id.uuidString).conflicts")
-                    }
-                    Spacer()
-                    Text(run.createdAt, style: .time)
-                      .font(.caption2)
-                      .foregroundStyle(.secondary)
-                  }
-                  if let workingDirectory = run.workingDirectory, !workingDirectory.isEmpty {
-                    Text(workingDirectory)
-                      .font(.caption2)
-                      .foregroundStyle(.secondary)
-                      .lineLimit(1)
-                  }
-                  if let error = run.errorMessage, !error.isEmpty {
-                    Text(error)
-                      .font(.caption)
-                      .foregroundStyle(.red)
-                      .lineLimit(2)
-                  }
-                  HStack {
-                    if !run.chainId.isEmpty {
-                      Button("View details") {
-                        selectedRun = run
-                      }
-                      .buttonStyle(.link)
-                      .accessibilityIdentifier("agents.mcpDashboard.runHistory.\(run.id.uuidString).view")
-                      Button("Rerun") {
-                        Task { await mcpServer.rerun(run, overrides: buildOverrides()) }
-                      }
-                      .buttonStyle(.link)
-                      .accessibilityIdentifier("agents.mcpDashboard.runHistory.\(run.id.uuidString).rerun")
-                    } else {
-                      Text("Details unavailable (legacy run)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                  }
-                }
-                .padding(.vertical, 4)
-              }
-            }
-          }
-        }
-
-        GroupBox {
-          VStack(alignment: .leading, spacing: 8) {
-            Text("Cleanup")
-              .font(.headline)
-            Text("Remove agent worktrees and their branches from MCP runs")
+        SectionCard {
+          if isLoadingRag {
+            ProgressView()
+              .scaleEffect(0.8)
+          } else if let status = mcpServer.ragStatus {
+            Text("DB: \(status.dbPath)")
               .font(.caption)
               .foregroundStyle(.secondary)
-            Button {
-              showingCleanupConfirmation = true
-            } label: {
-              Label("Clean Agent Worktrees", systemImage: "trash")
+            Text("Schema: v\(status.schemaVersion) · Embeddings: \(status.providerName)")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Text("Extension loaded: \(status.extensionLoaded ? "Yes" : "No")")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            if let lastInit = status.lastInitializedAt {
+              Text("Last init: \(lastInit, style: .time)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
             }
-            .buttonStyle(.bordered)
-            .disabled(mcpServer.isCleaningAgentWorkspaces)
-            .accessibilityIdentifier("agents.mcpDashboard.cleanup.start")
-            .confirmDialog(
-              "Remove agent worktrees and branches?",
-              isPresented: $showingCleanupConfirmation,
-              confirmLabel: "Confirm",
-              confirmRole: .destructive,
-              confirmIdentifier: "agents.mcpDashboard.cleanup.confirm",
-              cancelIdentifier: "agents.mcpDashboard.cleanup.cancel",
-              message: "This will delete worktrees and branches created by the MCP run. This cannot be undone."
-            ) {
-              Task {
-                await mcpServer.cleanupAgentWorkspaces()
+            if let stats = mcpServer.ragStats {
+              Text("Repos: \(stats.repoCount) · Files: \(stats.fileCount) · Chunks: \(stats.chunkCount)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              Text("Embeddings: \(stats.embeddingCount) · Cache: \(stats.cacheEmbeddingCount)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              Text("DB size: \(formatBytes(stats.dbSizeBytes))")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              if let lastIndexedAt = stats.lastIndexedAt {
+                let repoLabel = stats.lastIndexedRepoPath ?? "(unknown repo)"
+                Text("Last index: \(repoLabel)")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+                Text(lastIndexedAt, style: .time)
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
               }
             }
-
-            if mcpServer.isCleaningAgentWorkspaces {
-              Text("Cleaning worktrees...")
-                .font(.caption)
+            let usage = mcpServer.ragUsage
+            if usage.searches > 0 || usage.indexRuns > 0 || usage.skillsAdded + usage.skillsUpdated + usage.skillsDeleted > 0 {
+              Divider()
+              let avgResults = usage.searches > 0
+                ? Double(usage.totalResults) / Double(max(usage.searches, 1))
+                : 0
+              Text("Session searches: \(usage.searches) · Avg results: \(avgResults, specifier: "%.1f") · Empty: \(usage.emptySearches)")
+                .font(.caption2)
                 .foregroundStyle(.secondary)
-            } else if let summary = mcpServer.lastCleanupSummary {
-              Text(summary)
-                .font(.caption)
+              Text("Interactions: \(usage.copyCount) copies · \(usage.openCount) opens · Helpful: \(usage.helpfulCount) · Not useful: \(usage.irrelevantCount)")
+                .font(.caption2)
                 .foregroundStyle(.secondary)
+              if let report = mcpServer.lastRagIndexReport {
+                let skipInfo = report.filesSkipped > 0 ? " (\(report.filesSkipped) skipped)" : ""
+                Text("Last session index: \(report.filesIndexed) files\(skipInfo) · \(report.chunksIndexed) chunks")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              }
+              if usage.skillsAdded + usage.skillsUpdated + usage.skillsDeleted > 0 {
+                Text("Skills: +\(usage.skillsAdded) · ~\(usage.skillsUpdated) · -\(usage.skillsDeleted)")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              }
             }
-            if let error = mcpServer.lastCleanupError {
+            if let error = mcpServer.lastRagError {
               Text(error)
                 .font(.caption)
                 .foregroundStyle(.red)
             }
-            if let lastCleanupAt = mcpServer.lastCleanupAt {
-              Text("Last cleanup: \(lastCleanupAt.formatted(date: .abbreviated, time: .shortened))")
+            if let lastRefresh = mcpServer.lastRagRefreshAt {
+              Text("Updated \(lastRefresh, style: .time)")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             }
-
-            Divider()
-            Text("Clear MCP run history")
+          } else {
+            Text("No RAG data yet")
               .font(.caption)
               .foregroundStyle(.secondary)
-            Button {
-              showingClearHistoryConfirmation = true
-            } label: {
-              Label("Clear Run History", systemImage: "trash.slash")
+          }
+        } header: {
+          HStack {
+            Text("Local RAG")
+            Spacer()
+            Button("Refresh") {
+              Task { await refreshRagSummary() }
             }
             .buttonStyle(.bordered)
-            .accessibilityIdentifier("agents.mcpDashboard.cleanup.clearRuns")
-            .confirmDialog(
-              "Clear MCP run history?",
-              isPresented: $showingClearHistoryConfirmation,
-              confirmLabel: "Clear",
-              confirmRole: .destructive,
-              confirmIdentifier: "agents.mcpDashboard.cleanup.clearRuns.confirm",
-              cancelIdentifier: "agents.mcpDashboard.cleanup.clearRuns.cancel",
-              message: "This deletes all stored MCP run records and results. This cannot be undone."
-            ) {
-              mcpServer.clearMCPRunHistory()
+            .accessibilityIdentifier("agents.mcpDashboard.rag.refresh")
+          }
+        }
+
+        SectionCard {
+          if isLoadingLatency {
+            ProgressView()
+              .scaleEffect(0.8)
+          } else if latencySamples.isEmpty {
+            Text("No latency samples yet")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          } else {
+            Chart(latencySeriesPoints) { point in
+              LineMark(
+                x: .value("Day", point.day, unit: .day),
+                y: .value("Latency (ms)", point.value)
+              )
+              .foregroundStyle(by: .value("Metric", point.metric))
+            }
+            .chartXAxis {
+              AxisMarks(values: .stride(by: .day, count: 2))
+            }
+            .frame(height: 160)
+          }
+          if let lastLatencyRefresh {
+            Text("Updated \(lastLatencyRefresh, style: .time)")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+        } header: {
+          HStack {
+            Text("MCP Latency (Last 14 Days)")
+            Spacer()
+            Button("Refresh") {
+              Task { await loadLatencySamples() }
+            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier("agents.mcpDashboard.latency.refresh")
+          }
+        }
+
+        SectionCard {
+          let stats = usageStats(granularity: usageGranularity)
+          if stats.isEmpty {
+            Text("No MCP run data yet")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          } else {
+            Chart(stats) { stat in
+              BarMark(
+                x: .value("Period", stat.bucketStart, unit: usageGranularity == .day ? .day : .weekOfYear),
+                y: .value("Runs", stat.runCount)
+              )
+              .foregroundStyle(Color.accentColor.opacity(0.6))
+            }
+            .frame(height: 140)
+
+            Chart(stats) { stat in
+              LineMark(
+                x: .value("Period", stat.bucketStart, unit: usageGranularity == .day ? .day : .weekOfYear),
+                y: .value("Avg Cost", stat.averagePremiumCost)
+              )
+              .foregroundStyle(.blue)
+              PointMark(
+                x: .value("Period", stat.bucketStart, unit: usageGranularity == .day ? .day : .weekOfYear),
+                y: .value("Avg Cost", stat.averagePremiumCost)
+              )
+              .foregroundStyle(.blue)
+            }
+            .frame(height: 140)
+
+            if let last = stats.last {
+              Text("Latest avg cost: \(last.averagePremiumCost.premiumCostDisplay)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+          }
+        } header: {
+          HStack {
+            Text("Agent Usage")
+            Spacer()
+            Picker("Granularity", selection: $usageGranularity) {
+              ForEach(UsageGranularity.allCases, id: \.self) { option in
+                Text(option.label).tag(option)
+              }
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 180)
+            .accessibilityIdentifier("agents.mcpDashboard.usage.granularity")
+          }
+        }
+
+        SectionCard("Run Overrides") {
+          VStack(alignment: .leading, spacing: LayoutSpacing.item) {
+            SectionHeader("Review Controls", style: .secondary)
+            Toggle("Override review loop", isOn: $overrideReviewLoopEnabled)
+              .accessibilityIdentifier("agents.mcpDashboard.overrides.reviewLoopOverride")
+            if overrideReviewLoopEnabled {
+              Toggle("Enable review loop", isOn: $overrideReviewLoopValue)
+                .padding(.leading, LayoutSpacing.indent)
+                .accessibilityIdentifier("agents.mcpDashboard.overrides.reviewLoopEnable")
+            }
+            Toggle("Override review pause", isOn: $overridePauseOnReviewEnabled)
+              .accessibilityIdentifier("agents.mcpDashboard.overrides.reviewPauseOverride")
+            if overridePauseOnReviewEnabled {
+              Toggle("Pause on review request", isOn: $overridePauseOnReviewValue)
+                .padding(.leading, LayoutSpacing.indent)
+                .accessibilityIdentifier("agents.mcpDashboard.overrides.reviewPauseEnable")
+            }
+          }
+
+          Divider()
+
+          VStack(alignment: .leading, spacing: LayoutSpacing.item) {
+            SectionHeader("Planner Controls", style: .secondary)
+            Toggle("Allow planner model selection", isOn: $overrideAllowModelSelection)
+              .accessibilityIdentifier("agents.mcpDashboard.overrides.allowModelSelection")
+            Toggle("Allow implementer model override", isOn: $overrideAllowImplementerModelOverride)
+              .accessibilityIdentifier("agents.mcpDashboard.overrides.allowImplementerModelOverride")
+            Toggle("Allow planner implementer scaling", isOn: $overrideAllowScaling)
+              .accessibilityIdentifier("agents.mcpDashboard.overrides.allowScaling")
+          }
+
+          Divider()
+
+          VStack(alignment: .leading, spacing: LayoutSpacing.item) {
+            SectionHeader("Limits", style: .secondary)
+            Toggle("Limit implementers", isOn: $overrideMaxImplementersEnabled)
+              .accessibilityIdentifier("agents.mcpDashboard.overrides.limitImplementers")
+            if overrideMaxImplementersEnabled {
+              Stepper(value: $overrideMaxImplementers, in: 1...6) {
+                Text("Max: \(overrideMaxImplementers)")
+                  .font(.caption)
+              }
+              .padding(.leading, LayoutSpacing.indent)
+              .accessibilityIdentifier("agents.mcpDashboard.overrides.maxImplementers")
+            }
+
+            Toggle("Cost cap", isOn: $overrideMaxPremiumEnabled)
+              .accessibilityIdentifier("agents.mcpDashboard.overrides.costCap")
+            if overrideMaxPremiumEnabled {
+              HStack(spacing: LayoutSpacing.item) {
+                Text("Max premium")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+                TextField("1.0", text: $overrideMaxPremiumCost)
+                  .frame(width: 90)
+                  .textFieldStyle(.roundedBorder)
+                  .accessibilityIdentifier("agents.mcpDashboard.overrides.maxPremium")
+              }
+              .padding(.leading, LayoutSpacing.indent)
+            }
+          }
+
+          Divider()
+
+          VStack(alignment: .leading, spacing: LayoutSpacing.item) {
+            SectionHeader("Scheduling", style: .secondary)
+            HStack {
+              Text("Priority")
+              Stepper(value: $overridePriority, in: -5...5) {
+                Text("\(overridePriority)")
+                  .font(.caption)
+              }
+              .accessibilityIdentifier("agents.mcpDashboard.overrides.priority")
+            }
+
+            Toggle("Timeout", isOn: $overrideTimeoutEnabled)
+              .accessibilityIdentifier("agents.mcpDashboard.overrides.timeoutEnabled")
+            if overrideTimeoutEnabled {
+              HStack(spacing: LayoutSpacing.item) {
+                Text("Seconds")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+                TextField("600", text: $overrideTimeoutSeconds)
+                  .frame(width: 90)
+                  .textFieldStyle(.roundedBorder)
+                  .accessibilityIdentifier("agents.mcpDashboard.overrides.timeoutSeconds")
+              }
+              .padding(.leading, LayoutSpacing.indent)
             }
           }
         }
 
-        GroupBox {
-          VStack(alignment: .leading, spacing: 8) {
-            Text("Session Activity")
-              .font(.headline)
-            Text("Chain runs this session: \(sessionTracker.chainRunHistory.count)")
+        SectionCard("Active MCP Runs") {
+          if mcpServer.activeRuns.isEmpty {
+            Text("No active MCP runs")
               .font(.caption)
               .foregroundStyle(.secondary)
-            if let latest = sessionTracker.chainRunHistory.last {
-              Text("Last run: \(latest.chainName)")
-                .font(.caption)
-              Text(latest.timestamp, style: .time)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+          } else {
+            ForEach(mcpServer.activeRuns) { run in
+              let chain = chainForRun(run)
+              VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                  Text(chain?.name ?? run.templateName)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                  Spacer()
+                  if let state = chain?.state.displayName {
+                    Text(state)
+                      .font(.caption2)
+                      .foregroundStyle(.secondary)
+                  }
+                }
+                if let lastMessage = chain?.liveStatusMessages.last {
+                  Text(lastMessage.message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                }
+                HStack(spacing: 8) {
+                  Button("Pause") {
+                    Task { await mcpServer.pauseRun(run.id) }
+                  }
+                  .buttonStyle(.bordered)
+                  .accessibilityIdentifier("agents.mcpDashboard.activeRun.\(run.id.uuidString).pause")
+
+                  Button("Resume") {
+                    Task { await mcpServer.resumeRun(run.id) }
+                  }
+                  .buttonStyle(.bordered)
+                  .accessibilityIdentifier("agents.mcpDashboard.activeRun.\(run.id.uuidString).resume")
+
+                  Button("Step") {
+                    Task { await mcpServer.stepRun(run.id) }
+                  }
+                  .buttonStyle(.bordered)
+                  .accessibilityIdentifier("agents.mcpDashboard.activeRun.\(run.id.uuidString).step")
+
+                  Button("Stop") {
+                    Task { await mcpServer.stopRun(run.id) }
+                  }
+                  .buttonStyle(.bordered)
+                  .tint(.red)
+                  .accessibilityIdentifier("agents.mcpDashboard.activeRun.\(run.id.uuidString).stop")
+                }
+              }
+              .padding(.vertical, 4)
             }
+          }
+        }
+
+        SectionCard("Queue") {
+          HStack(spacing: 12) {
+            Stepper(value: $mcpServer.maxConcurrentChains, in: 1...8) {
+              Text("Max concurrent: \(mcpServer.maxConcurrentChains)")
+                .font(.caption)
+            }
+            .accessibilityIdentifier("agents.mcpDashboard.queue.maxConcurrent")
+            Stepper(value: $mcpServer.maxQueuedChains, in: 0...20) {
+              Text("Max queued: \(mcpServer.maxQueuedChains)")
+                .font(.caption)
+            }
+            .accessibilityIdentifier("agents.mcpDashboard.queue.maxQueued")
+          }
+          if mcpServer.queuedRuns.isEmpty {
+            Text("Queue empty")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          } else {
+            ForEach(mcpServer.queuedRuns) { queued in
+              HStack {
+                Text("#\(queued.position)")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+                Text(String(queued.id.uuidString.prefix(8)))
+                  .font(.caption)
+                Text("Priority \(queued.priority)")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+                Spacer()
+                Button("Cancel") {
+                  Task { _ = await mcpServer.cancelQueuedRun(queued.id) }
+                }
+                .buttonStyle(.link)
+                .accessibilityIdentifier("agents.mcpDashboard.queue.\(queued.id.uuidString).cancel")
+              }
+            }
+          }
+        }
+
+        SectionCard("MCP Run History") {
+          if mcpRuns.isEmpty {
+            Text("No MCP runs yet")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          } else {
+            ForEach(mcpRuns.prefix(8)) { run in
+              VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                  Image(systemName: run.success ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                    .foregroundStyle(run.success ? .green : .red)
+                  Text(run.templateName)
+                    .font(.subheadline)
+                  if run.mergeConflictsCount > 0 {
+                    Chip(
+                      text: "\(run.mergeConflictsCount) conflicts",
+                      font: .caption2,
+                      foreground: .orange,
+                      background: Color.orange.opacity(0.15),
+                      horizontalPadding: 6,
+                      verticalPadding: 2
+                    )
+                    .accessibilityIdentifier("agents.mcpDashboard.runHistory.\(run.id.uuidString).conflicts")
+                  }
+                  Spacer()
+                  Text(run.createdAt, style: .time)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                }
+                if let workingDirectory = run.workingDirectory, !workingDirectory.isEmpty {
+                  Text(workingDirectory)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                }
+                if let error = run.errorMessage, !error.isEmpty {
+                  Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+                }
+                HStack {
+                  if !run.chainId.isEmpty {
+                    Button("View details") {
+                      selectedRun = run
+                    }
+                    .buttonStyle(.link)
+                    .accessibilityIdentifier("agents.mcpDashboard.runHistory.\(run.id.uuidString).view")
+                    Button("Rerun") {
+                      Task { await mcpServer.rerun(run, overrides: buildOverrides()) }
+                    }
+                    .buttonStyle(.link)
+                    .accessibilityIdentifier("agents.mcpDashboard.runHistory.\(run.id.uuidString).rerun")
+                  } else {
+                    Text("Details unavailable (legacy run)")
+                      .font(.caption2)
+                      .foregroundStyle(.secondary)
+                  }
+                  Spacer()
+                }
+              }
+              .padding(.vertical, 4)
+            }
+          }
+        }
+
+        SectionCard("Cleanup") {
+          Text("Remove agent worktrees and their branches from MCP runs")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          Button {
+            showingCleanupConfirmation = true
+          } label: {
+            Label("Clean Agent Worktrees", systemImage: "trash")
+          }
+          .buttonStyle(.bordered)
+          .disabled(mcpServer.isCleaningAgentWorkspaces)
+          .accessibilityIdentifier("agents.mcpDashboard.cleanup.start")
+          .confirmDialog(
+            "Remove agent worktrees and branches?",
+            isPresented: $showingCleanupConfirmation,
+            confirmLabel: "Confirm",
+            confirmRole: .destructive,
+            confirmIdentifier: "agents.mcpDashboard.cleanup.confirm",
+            cancelIdentifier: "agents.mcpDashboard.cleanup.cancel",
+            message: "This will delete worktrees and branches created by the MCP run. This cannot be undone."
+          ) {
+            Task {
+              await mcpServer.cleanupAgentWorkspaces()
+            }
+          }
+
+          if mcpServer.isCleaningAgentWorkspaces {
+            Text("Cleaning worktrees...")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          } else if let summary = mcpServer.lastCleanupSummary {
+            Text(summary)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          if let error = mcpServer.lastCleanupError {
+            Text(error)
+              .font(.caption)
+              .foregroundStyle(.red)
+          }
+          if let lastCleanupAt = mcpServer.lastCleanupAt {
+            Text("Last cleanup: \(lastCleanupAt.formatted(date: .abbreviated, time: .shortened))")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+
+          Divider()
+          Text("Clear MCP run history")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          Button {
+            showingClearHistoryConfirmation = true
+          } label: {
+            Label("Clear Run History", systemImage: "trash.slash")
+          }
+          .buttonStyle(.bordered)
+          .accessibilityIdentifier("agents.mcpDashboard.cleanup.clearRuns")
+          .confirmDialog(
+            "Clear MCP run history?",
+            isPresented: $showingClearHistoryConfirmation,
+            confirmLabel: "Clear",
+            confirmRole: .destructive,
+            confirmIdentifier: "agents.mcpDashboard.cleanup.clearRuns.confirm",
+            cancelIdentifier: "agents.mcpDashboard.cleanup.clearRuns.cancel",
+            message: "This deletes all stored MCP run records and results. This cannot be undone."
+          ) {
+            mcpServer.clearMCPRunHistory()
+          }
+        }
+
+        SectionCard("Session Activity") {
+          Text("Chain runs this session: \(sessionTracker.chainRunHistory.count)")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          if let latest = sessionTracker.chainRunHistory.last {
+            Text("Last run: \(latest.chainName)")
+              .font(.caption)
+            Text(latest.timestamp, style: .time)
+              .font(.caption2)
+              .foregroundStyle(.secondary)
           }
         }
       }

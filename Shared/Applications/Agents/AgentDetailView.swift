@@ -153,38 +153,38 @@ struct AgentDetailView: View {
         }
 
         if let chain = activeChain {
-          GroupBox("Chain Activity") {
-            VStack(alignment: .leading, spacing: 8) {
-              HStack {
-                Text(chain.name)
-                  .font(.subheadline)
-                  .fontWeight(.medium)
-                Spacer()
-                Text(chain.state.displayName)
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
-              }
-              if let result = chain.results.last(where: { $0.agentId == agent.id }) {
-                Text(result.output)
-                  .font(.caption)
-                  .textSelection(.enabled)
-              } else if !chain.liveStatusMessages.isEmpty {
-                ForEach(chain.liveStatusMessages) { message in
-                  HStack(alignment: .top, spacing: 6) {
-                    Image(systemName: message.type.icon)
-                      .foregroundStyle(message.type.color)
-                      .font(.caption)
-                    Text(message.message)
-                      .font(.caption)
-                      .foregroundStyle(.secondary)
-                  }
-                }
-              } else {
-                Text("No chain output yet.")
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
-              }
+          SectionCard {
+            HStack {
+              Text(chain.name)
+                .font(.subheadline)
+                .fontWeight(.medium)
+              Spacer()
+              Text(chain.state.displayName)
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
+            if let result = chain.results.last(where: { $0.agentId == agent.id }) {
+              Text(result.output)
+                .font(.caption)
+                .textSelection(.enabled)
+            } else if !chain.liveStatusMessages.isEmpty {
+              ForEach(chain.liveStatusMessages) { message in
+                HStack(alignment: .top, spacing: 6) {
+                  Image(systemName: message.type.icon)
+                    .foregroundStyle(message.type.color)
+                    .font(.caption)
+                  Text(message.message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+              }
+            } else {
+              Text("No chain output yet.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+          } header: {
+            Text("Chain Activity")
           }
         }
 
@@ -193,19 +193,16 @@ struct AgentDetailView: View {
         if let task = agent.currentTask {
           VStack(alignment: .leading, spacing: 12) {
             Label("Current Task", systemImage: "checklist").font(.headline)
-            GroupBox {
-              VStack(alignment: .leading, spacing: 8) {
-                Text(task.title).font(.subheadline).fontWeight(.medium)
-                if !task.description.isEmpty {
-                  Text(task.description).font(.caption).foregroundStyle(.secondary)
-                }
-                if !task.prompt.isEmpty {
-                  Text(task.prompt)
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 4)
-                }
-              }.frame(maxWidth: .infinity, alignment: .leading)
+            SectionCard {
+              Text(task.title).font(.subheadline).fontWeight(.medium)
+              if !task.description.isEmpty {
+                Text(task.description).font(.caption).foregroundStyle(.secondary)
+              }
+              if !task.prompt.isEmpty {
+                Text(task.prompt)
+                  .font(.system(.caption, design: .monospaced))
+                  .foregroundStyle(.secondary)
+              }
             }
 
             // Run button and status
@@ -246,9 +243,16 @@ struct AgentDetailView: View {
 
             // Error message
             if let error = errorMessage {
-              GroupBox {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                  .foregroundStyle(.red)
+              SectionCard {
+                Text(error)
+                  .font(.caption)
+              } header: {
+                HStack {
+                  Label("Error", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                  Spacer()
+                  StatusPill(text: "Failed", style: .error)
+                }
               }
             }
 
@@ -268,15 +272,15 @@ struct AgentDetailView: View {
                       .clipShape(RoundedRectangle(cornerRadius: 4))
                   }
                 }
-                GroupBox {
-                  ScrollView {
-                    Text(output)
-                      .font(.system(.body, design: .monospaced))
-                      .frame(maxWidth: .infinity, alignment: .leading)
-                      .textSelection(.enabled)
-                  }
-                  .frame(maxHeight: 300)
+                ScrollView {
+                  Text(output)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
                 }
+                .frame(maxHeight: 300)
+                .padding(12)
+                .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 10))
               }
             }
           }
