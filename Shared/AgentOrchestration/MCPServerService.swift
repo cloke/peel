@@ -3822,6 +3822,22 @@ public final class MCPServerService {
         isMutating: false
       ),
       ToolDefinition(
+        name: "rag.orphans",
+        description: "Find potentially orphaned/unused files in a repository. An orphan is a file that has no imports/requires pointing to it AND no type references from other files. Useful for finding dead code. Note: May still show entry points, dynamically loaded files, or reflection-based usage.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": ["type": "string", "description": "Absolute path to the repository root"],
+            "excludeTests": ["type": "boolean", "description": "Exclude test files from results (default: true)"],
+            "excludeEntryPoints": ["type": "boolean", "description": "Exclude common entry point files like App.swift, main.swift, index.ts (default: true)"],
+            "limit": ["type": "integer", "description": "Maximum results to return (default: 50)"]
+          ],
+          "required": ["repoPath"]
+        ],
+        category: .rag,
+        isMutating: false
+      ),
+      ToolDefinition(
         name: "rag.structural",
         description: "Query files by structural characteristics: line count, method count, byte size. Use for finding large/complex files or filtering by size. Set statsOnly=true for aggregate statistics.",
         inputSchema: [
@@ -5722,6 +5738,25 @@ extension MCPServerService: RAGToolsHandlerDelegate {
         targetFile: dep.targetFile,
         dependencyType: dep.dependencyType.rawValue,
         rawImport: dep.rawImport
+      )
+    }
+  }
+  
+  func findOrphans(repoPath: String, excludeTests: Bool, excludeEntryPoints: Bool, limit: Int) async throws -> [RAGToolOrphanResult] {
+    let orphans = try await localRagStore.findOrphans(
+      repoPath: repoPath,
+      excludeTests: excludeTests,
+      excludeEntryPoints: excludeEntryPoints,
+      limit: limit
+    )
+    return orphans.map { o in
+      RAGToolOrphanResult(
+        filePath: o.filePath,
+        language: o.language,
+        lineCount: o.lineCount,
+        symbolsDefinedCount: o.symbolsDefinedCount,
+        symbolsDefined: o.symbolsDefined,
+        reason: o.reason
       )
     }
   }

@@ -53,6 +53,12 @@ public struct ASTChunkMetadata: Sendable, Equatable, Codable {
   /// Frameworks detected (SwiftUI, Rails, Ember, etc.)
   public var frameworks: [String]
   
+  // MARK: - Type Reference Tracking (for orphan detection)
+  
+  /// Type names referenced in this chunk (variable types, instantiations, static accesses)
+  /// Used to track same-module dependencies that don't require imports
+  public var typeReferences: [String]
+  
   public init(
     decorators: [String] = [],
     protocols: [String] = [],
@@ -65,7 +71,8 @@ public struct ASTChunkMetadata: Sendable, Equatable, Codable {
     usesEmberConcurrency: Bool = false,
     hasTemplate: Bool = false,
     tioUiImports: [String] = [],
-    frameworks: [String] = []
+    frameworks: [String] = [],
+    typeReferences: [String] = []
   ) {
     self.decorators = decorators
     self.protocols = protocols
@@ -79,6 +86,7 @@ public struct ASTChunkMetadata: Sendable, Equatable, Codable {
     self.hasTemplate = hasTemplate
     self.tioUiImports = tioUiImports
     self.frameworks = frameworks
+    self.typeReferences = typeReferences
   }
   
   /// Returns true if this metadata has any non-empty fields
@@ -94,7 +102,8 @@ public struct ASTChunkMetadata: Sendable, Equatable, Codable {
     usesEmberConcurrency ||
     hasTemplate ||
     !tioUiImports.isEmpty ||
-    !frameworks.isEmpty
+    !frameworks.isEmpty ||
+    !typeReferences.isEmpty
   }
   
   /// JSON representation for database storage

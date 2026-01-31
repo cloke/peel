@@ -1877,8 +1877,9 @@ actor LocalRAGStore {
       )
       try deleteChunks(for: fileId)
       
-      // Delete old dependencies before re-indexing
+      // Delete old dependencies and symbol refs before re-indexing
       try deleteDependencies(for: fileId)
+      try deleteSymbolRefs(for: fileId)
 
       for (index, chunk) in chunks.enumerated() {
         let chunkId = stableId(for: "\(fileId):\(chunk.startLine):\(chunk.endLine):\(chunk.text)")
@@ -1919,6 +1920,16 @@ actor LocalRAGStore {
       )
       if !fileDeps.isEmpty {
         try insertDependencies(fileDeps)
+      }
+      
+      // Extract and store symbol references for orphan detection (Issue #250)
+      let symbolRefs = extractSymbolRefs(
+        from: chunks,
+        repoId: repoId,
+        fileId: fileId
+      )
+      if !symbolRefs.isEmpty {
+        try insertSymbolRefs(symbolRefs)
       }
 
       chunkCount += chunks.count
@@ -3449,7 +3460,35 @@ actor LocalRAGStore {
       try exec("UPDATE rag_meta SET value = '8' WHERE key = 'schema_version'")
     }
     
-    schemaVersion = 8
+    // Migration to v9: Add symbol_refs table for same-module type reference tracking (#250)
+    // The dependencies table tracks imports, but Swift same-module types don't require imports.
+    // This table tracks type annotations, instantiations, and static accesses to find true orphans.
+    if currentVersion < 9 {
+      try exec("""
+        CREATE TABLE IF NOT EXISTS symbol_refs (
+          id TEXT PRIMARY KEY,
+          repo_id TEXT NOT NULL,
+          source_file_id TEXT NOT NULL,
+          referenced_name TEXT NOT NULL,
+          ref_kind TEXT DEFAULT 'type',
+          FOREIGN KEY(repo_id) REFERENCES repos(id) ON DELETE CASCADE,
+          FOREIGN KEY(source_file_id) REFERENCES files(id) ON DELETE CASCADE
+        )
+        """)
+      
+      // Index for querying who references a symbol name (for orphan detection)
+      try exec("CREATE INDEX IF NOT EXISTS idx_symbol_refs_name ON symbol_refs(referenced_name)")
+      
+      // Index for querying what a file references
+      try exec("CREATE INDEX IF NOT EXISTS idx_symbol_refs_source ON symbol_refs(source_file_id)")
+      
+      // Index for repo-scoped queries
+      try exec("CREATE INDEX IF NOT EXISTS idx_symbol_refs_repo ON symbol_refs(repo_id)")
+      
+      try exec("UPDATE rag_meta SET value = '9' WHERE key = 'schema_version'")
+    }
+    
+    schemaVersion = 9
     
     // Set up vec_chunks virtual table if extension is loaded
     if extensionLoaded {
@@ -4303,6 +4342,130 @@ actor LocalRAGStore {
     }
   }
   
+  // MARK: - Symbol References (Issue #250 - Orphan Detection)
+  
+  /// A type reference found in source code (for tracking same-module dependencies)
+  struct LocalRAGSymbolRef: Sendable {
+    let id: String
+    let repoId: String
+    let sourceFileId: String
+    let referencedName: String
+    let refKind: String  // "type", "static", "init"
+  }
+  
+  /// Extract type references from chunk metadata
+  /// These are types used without import (same-module references)
+  private func extractSymbolRefs(
+    from chunks: [LocalRAGChunk],
+    repoId: String,
+    fileId: String
+  ) -> [LocalRAGSymbolRef] {
+    var refs: [LocalRAGSymbolRef] = []
+    var seenNames = Set<String>()  // Dedupe within file
+    
+    for chunk in chunks {
+      guard let metadataJson = chunk.metadata,
+            let metadataData = metadataJson.data(using: .utf8),
+            let metadata = try? JSONDecoder().decode(ASTChunkMetadata.self, from: metadataData) else {
+        continue
+      }
+      
+      // Extract type references from the new typeReferences field
+      for typeName in metadata.typeReferences {
+        guard !seenNames.contains(typeName) else { continue }
+        seenNames.insert(typeName)
+        
+        let id = stableId(for: "\(fileId):\(typeName)")
+        refs.append(LocalRAGSymbolRef(
+          id: id,
+          repoId: repoId,
+          sourceFileId: fileId,
+          referencedName: typeName,
+          refKind: "type"
+        ))
+      }
+      
+      // Also treat protocols as references (they're type dependencies)
+      for proto in metadata.protocols {
+        guard !seenNames.contains(proto) else { continue }
+        seenNames.insert(proto)
+        
+        let id = stableId(for: "\(fileId):\(proto)")
+        refs.append(LocalRAGSymbolRef(
+          id: id,
+          repoId: repoId,
+          sourceFileId: fileId,
+          referencedName: proto,
+          refKind: "conform"
+        ))
+      }
+      
+      // Include superclass as a reference
+      if let superclass = metadata.superclass {
+        guard !seenNames.contains(superclass) else { continue }
+        seenNames.insert(superclass)
+        
+        let id = stableId(for: "\(fileId):\(superclass)")
+        refs.append(LocalRAGSymbolRef(
+          id: id,
+          repoId: repoId,
+          sourceFileId: fileId,
+          referencedName: superclass,
+          refKind: "inherit"
+        ))
+      }
+    }
+    
+    return refs
+  }
+  
+  /// Insert a single symbol reference
+  private func insertSymbolRef(_ ref: LocalRAGSymbolRef) throws {
+    let sql = """
+      INSERT OR REPLACE INTO symbol_refs
+        (id, repo_id, source_file_id, referenced_name, ref_kind)
+      VALUES (?, ?, ?, ?, ?)
+      """
+    try execute(sql: sql) { statement in
+      bindText(statement, 1, ref.id)
+      bindText(statement, 2, ref.repoId)
+      bindText(statement, 3, ref.sourceFileId)
+      bindText(statement, 4, ref.referencedName)
+      bindText(statement, 5, ref.refKind)
+    }
+  }
+  
+  /// Insert multiple symbol references in a transaction
+  func insertSymbolRefs(_ refs: [LocalRAGSymbolRef]) throws {
+    guard !refs.isEmpty else { return }
+    try exec("BEGIN TRANSACTION")
+    do {
+      for ref in refs {
+        try insertSymbolRef(ref)
+      }
+      try exec("COMMIT")
+    } catch {
+      try? exec("ROLLBACK")
+      throw error
+    }
+  }
+  
+  /// Delete all symbol references for a file (called before re-indexing)
+  func deleteSymbolRefs(for fileId: String) throws {
+    let sql = "DELETE FROM symbol_refs WHERE source_file_id = ?"
+    try execute(sql: sql) { statement in
+      bindText(statement, 1, fileId)
+    }
+  }
+  
+  /// Delete all symbol references for a repo
+  func deleteSymbolRefs(forRepo repoId: String) throws {
+    let sql = "DELETE FROM symbol_refs WHERE repo_id = ?"
+    try execute(sql: sql) { statement in
+      bindText(statement, 1, repoId)
+    }
+  }
+  
   /// Get what a file depends on (forward dependencies)
   /// - Parameters:
   ///   - filePath: Relative path of the file within the repo (or filename for fuzzy match)
@@ -4569,6 +4732,148 @@ actor LocalRAGStore {
       }
     }
     return nil
+  }
+  
+  // MARK: - Orphan Detection (Issue #248, #250)
+  
+  /// Result type for orphan detection queries
+  struct LocalRAGOrphanResult: Sendable {
+    let filePath: String
+    let language: String
+    let lineCount: Int
+    let symbolsDefinedCount: Int
+    let symbolsDefined: [String]  // Top symbols defined in this file
+    let reason: String           // Why it was flagged as orphan
+  }
+  
+  /// Find potentially orphaned files (files with no dependents)
+  /// An orphan is a file that:
+  /// 1. Is not imported/required by any other file (no dependencies pointing to it)
+  /// 2. Has no symbol_refs from other files pointing to its defined types
+  /// 3. Is not a test file (optional exclusion)
+  /// 4. Is not an entry point (App.swift, main.swift, etc.)
+  ///
+  /// - Parameters:
+  ///   - repoPath: Root path of the repository
+  ///   - excludeTests: Whether to exclude test files from results
+  ///   - excludeEntryPoints: Whether to exclude entry point files
+  ///   - limit: Maximum number of results to return
+  /// - Returns: List of potential orphan files
+  func findOrphans(
+    repoPath: String,
+    excludeTests: Bool = true,
+    excludeEntryPoints: Bool = true,
+    limit: Int = 50
+  ) throws -> [LocalRAGOrphanResult] {
+    try openIfNeeded()
+    guard let db else { throw LocalRAGError.sqlite("Database not initialized") }
+    
+    // Get the repo ID
+    let repoIdSql = "SELECT id FROM repos WHERE root_path = ?"
+    var repoId: String?
+    var statement: OpaquePointer?
+    
+    var result = sqlite3_prepare_v2(db, repoIdSql, -1, &statement, nil)
+    guard result == SQLITE_OK, let stmt = statement else {
+      throw LocalRAGError.sqlite("Failed to prepare repo query")
+    }
+    bindText(stmt, 1, repoPath)
+    if sqlite3_step(stmt) == SQLITE_ROW {
+      if let text = sqlite3_column_text(stmt, 0) {
+        repoId = String(cString: text)
+      }
+    }
+    sqlite3_finalize(stmt)
+    
+    guard let repoId else {
+      return []
+    }
+    
+    // Build exclusion patterns
+    var excludePatterns: [String] = []
+    if excludeTests {
+      excludePatterns.append(contentsOf: [
+        "%Test.swift", "%Tests.swift", "%Spec.swift",
+        "%_test.swift", "%_tests.swift", "%_spec.swift",
+        "%Test.ts", "%Spec.ts", "%_test.ts", "%_spec.ts",
+        "Tests/%", "Test/%", "test/%", "__tests__/%", "spec/%",
+        "%_test.rb", "%_spec.rb"
+      ])
+    }
+    if excludeEntryPoints {
+      excludePatterns.append(contentsOf: [
+        "%App.swift", "main.swift", "%Main.swift",
+        "PeelApp.swift", "ContentView.swift",
+        "index.ts", "index.js", "main.ts", "main.js",
+        "application.rb", "routes.rb"
+      ])
+    }
+    
+    // Query for files with no incoming dependencies and no symbol_refs
+    // A file is an orphan if:
+    // 1. No row in `dependencies` has target_file_id = this file's ID
+    // 2. No row in `symbol_refs` references any symbol defined in this file
+    //
+    // We use subqueries to check both conditions
+    var sql = """
+      SELECT 
+        f.path,
+        f.language,
+        f.line_count,
+        (SELECT COUNT(*) FROM symbols WHERE file_id = f.id) as symbols_defined,
+        (SELECT GROUP_CONCAT(name, ', ') FROM (SELECT name FROM symbols WHERE file_id = f.id LIMIT 5)) as symbol_names
+      FROM files f
+      WHERE f.repo_id = ?
+        -- No incoming dependencies (import/require)
+        AND NOT EXISTS (
+          SELECT 1 FROM dependencies d WHERE d.target_file_id = f.id
+        )
+        -- No symbol_refs pointing to symbols in this file
+        AND NOT EXISTS (
+          SELECT 1 FROM symbol_refs sr
+          JOIN symbols s ON s.name = sr.referenced_name AND s.repo_id = f.repo_id
+          WHERE s.file_id = f.id AND sr.source_file_id != f.id
+        )
+      """
+    
+    // Add exclusion patterns
+    for pattern in excludePatterns {
+      sql += "\n        AND f.path NOT LIKE '\(pattern)'"
+    }
+    
+    sql += "\n      ORDER BY f.line_count DESC LIMIT \(limit)"
+    
+    result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let stmt2 = statement else {
+      let errMsg = String(cString: sqlite3_errmsg(db))
+      throw LocalRAGError.sqlite("Failed to prepare orphan query: \(errMsg)")
+    }
+    defer { sqlite3_finalize(stmt2) }
+    
+    bindText(stmt2, 1, repoId)
+    
+    var orphans: [LocalRAGOrphanResult] = []
+    
+    while sqlite3_step(stmt2) == SQLITE_ROW {
+      let path = sqlite3_column_text(stmt2, 0).map { String(cString: $0) } ?? ""
+      let language = sqlite3_column_text(stmt2, 1).map { String(cString: $0) } ?? ""
+      let lineCount = Int(sqlite3_column_int(stmt2, 2))
+      let symbolCount = Int(sqlite3_column_int(stmt2, 3))
+      let symbolNames = sqlite3_column_text(stmt2, 4).map { String(cString: $0) } ?? ""
+      
+      let symbols = symbolNames.components(separatedBy: ", ").filter { !$0.isEmpty }
+      
+      orphans.append(LocalRAGOrphanResult(
+        filePath: path,
+        language: language,
+        lineCount: lineCount,
+        symbolsDefinedCount: symbolCount,
+        symbolsDefined: symbols,
+        reason: "No imports or type references from other files"
+      ))
+    }
+    
+    return orphans
   }
   
   // MARK: - Structural Queries (Issue #174)
