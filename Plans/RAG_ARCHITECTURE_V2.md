@@ -1,8 +1,29 @@
+---
+title: RAG Architecture V2 - Long-term Design
+status: partially-implemented
+created: 2026-01-25
+updated: 2026-01-30
+tags:
+  - rag
+  - architecture
+  - performance
+audience:
+  - developer
+  - ai-agent
+notes: Many proposals implemented. MLX embeddings replaced CoreML. Python tokenizer eliminated.
+---
+
 # RAG Architecture V2 - Long-term Design
 
 **Created:** January 25, 2026  
-**Status:** Proposal  
+**Status:** Partially Implemented  
 **Related:** LOCAL_RAG_PLAN.md, Issue #74
+
+> **Note (Jan 30):** Many of the issues described below have been resolved:
+> - ✅ Python tokenizer eliminated - now using native Swift
+> - ✅ MLX embeddings with batching
+> - ✅ Progress reporting added
+> - ⚪ Per-repo SQLite still pending (single DB works well for now)
 
 ---
 

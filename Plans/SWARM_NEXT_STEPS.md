@@ -1,3 +1,17 @@
+---
+title: Swarm Distributed Computing - Next Steps
+status: active
+created: 2026-01-28
+updated: 2026-01-30
+tags:
+  - swarm
+  - distributed
+  - mcp
+audience:
+  - developer
+  - ai-agent
+---
+
 # Swarm Distributed Computing - Next Steps
 
 **Date:** 2026-01-28  

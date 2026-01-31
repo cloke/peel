@@ -1,6 +1,21 @@
+---
+title: Distributed Peel Design
+status: superseded
+created: 2026-01-27
+updated: 2026-01-30
+tags:
+  - distributed
+  - swarm
+  - cloudkit
+audience:
+  - developer
+  - ai-agent
+notes: Superseded by Bonjour/LAN swarm implementation. CloudKit approach deferred.
+---
+
 # Distributed Peel Design
 
-**Status:** Design Draft  
+**Status:** Design Draft (Superseded by Swarm)  
 **Created:** January 27, 2026  
 **Goal:** Enable Peel instances to form a swarm where a **Crown** (Mac Studio) coordinates work across multiple devices.
 

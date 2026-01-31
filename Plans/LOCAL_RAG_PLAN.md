@@ -1,8 +1,8 @@
 ---
 title: Local RAG for Codebase Context
-status: partial
+status: v1-complete
 created: 2026-01-19
-updated: 2026-01-27
+updated: 2026-01-30
 audience: [developers]
 related_issues:
   - https://github.com/cloke/peel/issues/74
@@ -16,18 +16,22 @@ related_docs:
 ## Summary
 Create an always-on, local vector index for repository context that powers fast semantic search for agents without uploading code. This introduces an embedded vector DB and a lightweight indexing pipeline with tiered memory (hot/warm/cold), deduplication, and an embedding cache.
 
-## Current Status (Jan 27, 2026)
+## Current Status (Jan 30, 2026)
 
-### Completed
-- Local SQLite-backed `LocalRAGStore` with schema for repos/files/chunks/embeddings
-- Repo scanning + chunking pipeline (line-based and AST where stable)
-- System embeddings via `NLEmbedding`
-- MCP tools (`rag.init`, `rag.index`, `rag.search`, `rag.status`) and basic UI
+### ✅ V1 Complete
+- Local SQLite-backed `LocalRAGStore` with schema v6
+- Repo scanning + AST-based chunking (Swift, Ruby, TypeScript/JS)
+- MLX embeddings (default) with Core ML and System fallbacks
+- MCP tools (`rag.init`, `rag.index`, `rag.search`, `rag.status`, `rag.dependencies`, `rag.structural`, `rag.similar`)
+- Dependency graph indexing and visualization
+- Structural queries (file size, method count)
+- Similar code detection
+- Performance optimizations (batching, caching)
 
-### Remaining Work
-- Core ML embeddings provider (Issue #74)
-- Faster vector search (sqlite-vec) + hybrid reranking (see `RAG_ARCHITECTURE_V2.md`)
-- Performance benchmarking on large repos
+### Phase 3 Layer 2 Complete
+- Code Intelligence Graph fully operational
+- Metadata extraction (imports, protocols, decorators, frameworks)
+- Module path and feature tag facets
 
 ## Goals
 - Local-only semantic search for repos in Peel workspaces.

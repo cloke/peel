@@ -65,7 +65,22 @@ struct PeelApp: App {
     do {
       return try ModelContainer(for: schema, configurations: [modelConfiguration])
     } catch {
-      fatalError("Could not create ModelContainer: \(error)")
+      // Log error and attempt recovery with in-memory fallback
+      print("⚠️ Failed to create persistent ModelContainer: \(error)")
+      print("⚠️ Falling back to in-memory storage. Data will not persist.")
+      
+      let fallbackConfig = ModelConfiguration(
+        schema: schema,
+        isStoredInMemoryOnly: true,
+        cloudKitDatabase: .none
+      )
+      
+      do {
+        return try ModelContainer(for: schema, configurations: [fallbackConfig])
+      } catch {
+        // If even in-memory fails, we have a schema problem - this is a programming error
+        fatalError("Could not create ModelContainer even with in-memory fallback: \(error)")
+      }
     }
   }()
   
