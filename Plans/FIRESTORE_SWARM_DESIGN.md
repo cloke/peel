@@ -677,36 +677,40 @@ export const revokeSwarmAccess = functions.https.onCall(async (data, context) =>
 - [ ] Create Firebase project (`peel-swarm`)
 - [ ] Enable Authentication with Apple Sign-In
 - [ ] Create Firestore database (production mode)
-- [ ] Add Firebase SDK to Xcode project
-- [ ] Configure URL scheme for `peel://` deep links
-- [ ] Implement `FirebaseService` singleton
+- [x] Add Firebase SDK to Xcode project
+- [x] Configure URL scheme for `peel://` deep links
+- [x] Implement `FirebaseService` singleton
 
 ### Phase 2: Core Auth & Invites
-- [ ] Apple Sign-In integration in SwiftUI
-- [ ] Swarm creation flow
-- [ ] Invite creation & QR code generation
-- [ ] Invite acceptance via deep link
-- [ ] Deploy security rules (v1)
+- [x] Apple Sign-In integration in SwiftUI
+- [x] Swarm creation flow
+- [x] Invite creation & QR code generation
+- [x] Invite acceptance via deep link
+- [x] Deploy security rules (v1)
 
 ### Phase 3: Tiered Permissions & Admin Approval
-- [ ] Pending member state (role: "pending", roleLevel: 0)
-- [ ] Admin approval UI (list pending, approve/reject)
-- [ ] Role promotion/demotion (owner → admin, admin → contributor, etc.)
-- [ ] Permission checks in Swift (wrapper around Firestore)
+- [x] Pending member state (role: "pending", roleLevel: 0)
+- [x] Admin approval UI (list pending, approve/reject)
+- [x] Role promotion/demotion (owner → admin, admin → contributor, etc.)
+- [x] Permission checks in Swift (wrapper around Firestore)
 - [ ] Cloud Functions for approval notifications
 
 ### Phase 4: Worker Management
-- [ ] Worker registration in Firestore
-- [ ] Real-time presence updates (heartbeat)
-- [ ] Task dispatch via Firestore
-- [ ] Task claiming & execution
-- [ ] Permission-gated task submission
+- [x] Worker registration in Firestore
+- [x] Real-time presence updates (heartbeat)
+- [x] Task dispatch via Firestore
+- [x] Task claiming & execution
+- [x] Permission-gated task submission
+- [x] MCP tools: swarm.firestore.workers, register-worker, submit-task, tasks
 
 ### Phase 5: RAG Artifact Sync
-- [ ] RAG artifact collection in Firestore
-- [ ] Pull artifacts (reader+)
-- [ ] Push artifacts (contributor+)
-- [ ] Conflict resolution strategy
+- [x] RAG artifact collection in Firestore
+- [x] Pull artifacts (reader+) - `swarm.firestore.rag.pull`
+- [x] Push artifacts (contributor+) - `swarm.firestore.rag.push`
+- [x] Chunked upload for large artifacts (Firestore 1MB limit)
+- [x] List artifacts - `swarm.firestore.rag.artifacts`
+- [x] Delete artifacts (admin+) - `swarm.firestore.rag.delete`
+- [ ] Conflict resolution strategy (deferred - currently last-write-wins)
 
 ### Phase 6: Security Hardening
 - [ ] Firebase App Check

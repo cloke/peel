@@ -1345,6 +1345,10 @@ actor LocalRAGStore {
   private var healthTracker = ChunkingHealthTracker()
 
   private let dateFormatter = ISO8601DateFormatter()
+  
+  /// Shared instance for Firestore sync and other cross-module access
+  /// Note: Most code should use the MCPServerService's localRagStore instance via delegate
+  static let shared = LocalRAGStore()
 
   init(embeddingProvider: LocalRAGEmbeddingProvider? = nil) {
     self.embeddingProvider = embeddingProvider ?? LocalRAGEmbeddingProviderFactory.makeDefault()
@@ -5044,6 +5048,36 @@ actor LocalRAGStore {
         constructName: c.constructName
       )
     }
+  }
+  
+  // MARK: - Artifact Bundle Methods (Firestore Sync #226)
+  
+  /// Create an artifact bundle for a specific repository
+  /// Used by Firestore sync to push RAG data to remote swarm
+  public func createArtifactBundle(for repoPath: String) async throws -> LocalRAGArtifactBundle? {
+    let repos = try listRepos()
+    guard let repo = repos.first(where: { $0.rootPath == repoPath }) else {
+      return nil
+    }
+    
+    let currentStatus = status()
+    let currentStats = try? stats()
+    
+    return try await LocalRAGArtifacts.createBundle(
+      status: currentStatus,
+      stats: currentStats,
+      repos: [repo]
+    )
+  }
+  
+  /// Import an artifact bundle for a specific repository
+  /// Used by Firestore sync to pull RAG data from remote swarm
+  public func importArtifactBundle(_ bundle: LocalRAGArtifactBundle, for repoPath: String) async throws {
+    // Apply the bundle to the local RAG store
+    try LocalRAGArtifacts.applyBundle(bundleURL: bundle.bundleURL, manifest: bundle.manifest)
+    
+    // Re-initialize the database to pick up the imported data
+    _ = try initialize()
   }
 }
 
