@@ -1,0 +1,58 @@
+[
+  {
+    "title": "Swift: Use @MainActor for UI ViewModels",
+    "body": "When creating ViewModels that update UI state in SwiftUI views, annotate the class with @MainActor to ensure all state mutations happen on the main thread.\n\nExample:\n```swift\n@MainActor\n@Observable\nclass MyViewModel {\n  var items = [Item]()\n  \n  func loadData() async {\n    items = await fetchItems()\n  }\n}\n```",
+    "tags": "swift,swiftui,concurrency,viewmodel",
+    "priority": 10,
+    "languages": ["swift"]
+  },
+  {
+    "title": "Swift: Prefer @Observable over ObservableObject",
+    "body": "For Swift 6 and later, prefer the new @Observable macro over ObservableObject with @Published properties. It's more performant and works better with SwiftUI.\n\nOld pattern (avoid):\n```swift\nclass ViewModel: ObservableObject {\n  @Published var data = [Item]()\n}\n```\n\nNew pattern (preferred):\n```swift\n@Observable\nclass ViewModel {\n  var data = [Item]()\n}\n```",
+    "tags": "swift,swiftui,observable,modernization",
+    "priority": 10,
+    "languages": ["swift"]
+  },
+  {
+    "title": "Swift: Use structured concurrency",
+    "body": "Prefer async/await and Task groups over completion handlers or Combine for concurrent operations.\n\nParallel loading:\n```swift\nasync let repos = loadRepositories()\nasync let user = loadUser()\nlet (repositories, currentUser) = await (repos, user)\n```\n\nTaskGroup for dynamic concurrency:\n```swift\nawait withTaskGroup(of: Item.self) { group in\n  for id in ids {\n    group.addTask { await fetchItem(id) }\n  }\n}\n```",
+    "tags": "swift,concurrency,async,await",
+    "priority": 8,
+    "languages": ["swift"]
+  },
+  {
+    "title": "Ruby: Use frozen_string_literal",
+    "body": "Add `# frozen_string_literal: true` at the top of Ruby files to improve performance and catch string mutation bugs.\n\nThis should be the first line:\n```ruby\n# frozen_string_literal: true\n\nclass MyClass\n  # ...\nend\n```",
+    "tags": "ruby,performance,best-practice",
+    "priority": 5,
+    "languages": ["ruby"]
+  },
+  {
+    "title": "TypeScript: Prefer const assertions for literals",
+    "body": "Use `as const` for literal objects and arrays that shouldn't be mutated. This gives better type inference and prevents accidental mutations.\n\n```typescript\n// Instead of:\nconst STATUS = { ACTIVE: 'active', INACTIVE: 'inactive' };\n// type is { ACTIVE: string, INACTIVE: string }\n\n// Use:\nconst STATUS = { ACTIVE: 'active', INACTIVE: 'inactive' } as const;\n// type is { readonly ACTIVE: 'active', readonly INACTIVE: 'inactive' }\n```",
+    "tags": "typescript,types,const,readonly",
+    "priority": 5,
+    "languages": ["typescript", "tsx"]
+  },
+  {
+    "title": "Git: Write descriptive commit messages",
+    "body": "Follow conventional commit format for clear history:\n\n```\n<type>(<scope>): <subject>\n\n<body>\n\n<footer>\n```\n\nTypes: feat, fix, docs, style, refactor, test, chore\n\nExample:\n```\nfeat(auth): add OAuth2 login support\n\n- Implement Google OAuth provider\n- Add token refresh logic\n- Store tokens in keychain\n\nCloses #123\n```",
+    "tags": "git,commits,conventions",
+    "priority": 3,
+    "languages": []
+  },
+  {
+    "title": "Tests: Name tests descriptively",
+    "body": "Test names should describe the behavior being tested, not just the method name.\n\n❌ Bad:\n```\nfunc testLogin()\nfunc testHandleError()\n```\n\n✅ Good:\n```\nfunc test_login_withValidCredentials_returnsUser()\nfunc test_login_withInvalidPassword_throwsAuthError()\nfunc test_handleError_whenNetworkUnavailable_showsRetryButton()\n```",
+    "tags": "testing,naming,best-practice",
+    "priority": 5,
+    "languages": []
+  },
+  {
+    "title": "Error Handling: Use typed errors",
+    "body": "Define specific error types instead of using generic Error or strings. This enables better error handling and user feedback.\n\nSwift:\n```swift\nenum NetworkError: LocalizedError {\n  case connectionFailed\n  case timeout\n  case invalidResponse(Int)\n  \n  var errorDescription: String? {\n    switch self {\n    case .connectionFailed: return \"Unable to connect\"\n    case .timeout: return \"Request timed out\"\n    case .invalidResponse(let code): return \"Server error (\\(code))\"\n    }\n  }\n}\n```",
+    "tags": "errors,swift,typescript,best-practice",
+    "priority": 7,
+    "languages": ["swift", "typescript"]
+  }
+]

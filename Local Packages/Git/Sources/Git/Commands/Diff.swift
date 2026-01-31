@@ -87,6 +87,13 @@ extension Commands {
         }
         currentChunk = nil
         currentFile = Diff.File(label: string)
+        // Parse a/... and b/... paths from the diff header
+        // Format: "diff --git a/path/to/file b/path/to/file"
+        let parts = string.components(separatedBy: " ")
+        if parts.count >= 4 {
+          currentFile?.oldPath = String(parts[2].dropFirst(2)) // Remove "a/"
+          currentFile?.newPath = String(parts[3].dropFirst(2)) // Remove "b/"
+        }
         oldLineNumber = 0
         newLineNumber = 0
         numberingLines = false

@@ -214,6 +214,7 @@ final class RAGToolsHandler: MCPToolHandler {
     "rag.reranker.config", // Issue #128: HF reranker configuration
     "rag.analyze",         // Issue #198: Analyze chunks with MLX LLM (macOS only)
     "rag.analyze.status",  // Issue #198: Get AI analysis status (macOS only)
+    "rag.scratch",         // Issue #111: Per-repo scratch directory for artifacts
   ]
   
   init() {}
@@ -292,6 +293,8 @@ final class RAGToolsHandler: MCPToolHandler {
       #else
       return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "rag.analyze.status is only available on macOS"))
       #endif
+    case "rag.scratch":
+      return handleScratch(id: id, arguments: arguments)
     default:
       // For tools not yet extracted, return method not found
       // The MCPServerService will handle these until full extraction is complete
@@ -1415,6 +1418,98 @@ final class RAGToolsHandler: MCPToolHandler {
     }
   }
   #endif
+  
+  // MARK: - rag.scratch (Issue #111)
+  
+  /// Get or manage per-repo scratch directory for artifacts
+  private func handleScratch(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    let action = optionalString("action", from: arguments, default: "get") ?? "get"
+    
+    switch action {
+    case "get":
+      // Get scratch directory for a specific repo
+      guard let repoPath = optionalString("repoPath", from: arguments) else {
+        return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "repoPath is required for action 'get'"))
+      }
+      
+      do {
+        let scratchDir = try ScratchAreaService.scratchDirectory(for: repoPath)
+        return (200, makeResult(id: id, result: [
+          "action": "get",
+          "repoPath": repoPath,
+          "scratchPath": scratchDir.path,
+          "note": "Use this path for storing artifacts (screenshots, diffs, temp outputs)"
+        ]))
+      } catch {
+        return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
+      }
+      
+    case "list":
+      // List all scratch directories with sizes
+      do {
+        let directories = try ScratchAreaService.listScratchDirectories()
+        let totalSize = directories.reduce(0) { $0 + $1.sizeBytes }
+        
+        let items = directories.map { dir -> [String: Any] in
+          [
+            "repoHash": dir.repoHash,
+            "path": dir.path.path,
+            "sizeBytes": dir.sizeBytes,
+            "sizeHuman": formatBytes(dir.sizeBytes)
+          ]
+        }
+        
+        return (200, makeResult(id: id, result: [
+          "action": "list",
+          "directories": items,
+          "totalCount": directories.count,
+          "totalSizeBytes": totalSize,
+          "totalSizeHuman": formatBytes(totalSize)
+        ]))
+      } catch {
+        return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
+      }
+      
+    case "delete":
+      // Delete scratch directory for a specific repo
+      guard let repoPath = optionalString("repoPath", from: arguments) else {
+        return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "repoPath is required for action 'delete'"))
+      }
+      
+      do {
+        try ScratchAreaService.deleteScratchDirectory(for: repoPath)
+        return (200, makeResult(id: id, result: [
+          "action": "delete",
+          "repoPath": repoPath,
+          "status": "deleted"
+        ]))
+      } catch {
+        return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
+      }
+      
+    case "deleteAll":
+      // Delete all scratch directories
+      do {
+        try ScratchAreaService.deleteAllScratchDirectories()
+        return (200, makeResult(id: id, result: [
+          "action": "deleteAll",
+          "status": "deleted"
+        ]))
+      } catch {
+        return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
+      }
+      
+    default:
+      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "Invalid action: \(action). Valid actions: get, list, delete, deleteAll"))
+    }
+  }
+  
+  private func formatBytes(_ bytes: Int64) -> String {
+    let formatter = ByteCountFormatter()
+    formatter.allowedUnits = [.useKB, .useMB, .useGB]
+    formatter.countStyle = .file
+    return formatter.string(fromByteCount: bytes)
+  }
   
   // MARK: - Helpers
   

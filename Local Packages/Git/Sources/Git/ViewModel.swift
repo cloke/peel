@@ -45,6 +45,10 @@ public struct Diff: Identifiable {
   public struct File: Identifiable {
     public var id = UUID()
     public var label = ""
+    /// The old file path (a/...) - for generating patches
+    public var oldPath = ""
+    /// The new file path (b/...) - for generating patches  
+    public var newPath = ""
     public var chunks = [Chunk]()
     
     public struct Chunk: Identifiable {
@@ -52,6 +56,18 @@ public struct Diff: Identifiable {
       public var chunk = ""
       public var parsedObjectName = ""
       public var lines = [Line]()
+      
+      /// Generate a patch string for this single hunk
+      /// Requires the parent file's oldPath and newPath
+      public func toPatch(oldPath: String, newPath: String) -> String {
+        var patch = "--- a/\(oldPath)\n"
+        patch += "+++ b/\(newPath)\n"
+        patch += "@@ \(chunk) @@\(parsedObjectName)\n"
+        for line in lines {
+          patch += line.line + "\n"
+        }
+        return patch
+      }
       
       /// Identifiable container for single git line diff
       public struct Line: Identifiable {

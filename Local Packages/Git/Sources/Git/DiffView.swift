@@ -28,15 +28,46 @@ private struct LineNumberView: View {
 
 private struct ChunkHeaderView: View {
   let text: String
+  let objectName: String
+  let onStageHunk: (() -> Void)?
+  let onRevertHunk: (() -> Void)?
 
   var body: some View {
-    Text(text)
-      .font(.caption.monospaced())
-      .foregroundStyle(.secondary)
-      .padding(.vertical, 6)
-      .padding(.horizontal, 8)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .background(Color.secondary.opacity(0.08))
+    HStack(spacing: 4) {
+      Text(text)
+        .font(.caption.monospaced())
+        .foregroundStyle(.secondary)
+      if !objectName.isEmpty {
+        Text(objectName)
+          .font(.caption.monospaced())
+          .foregroundStyle(.secondary.opacity(0.7))
+      }
+      Spacer(minLength: 0)
+      if let onStageHunk {
+        Button {
+          onStageHunk()
+        } label: {
+          Image(systemName: "plus.square")
+            .font(.caption)
+        }
+        .buttonStyle(.plain)
+        .help("Stage this hunk")
+      }
+      if let onRevertHunk {
+        Button {
+          onRevertHunk()
+        } label: {
+          Image(systemName: "arrow.uturn.backward")
+            .font(.caption)
+        }
+        .buttonStyle(.plain)
+        .help("Revert this hunk")
+      }
+    }
+    .padding(.vertical, 6)
+    .padding(.horizontal, 8)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Color.secondary.opacity(0.08))
   }
 }
 
@@ -73,11 +104,22 @@ private struct DiffLineRow: View {
 
 public struct DiffView: View {
   public var diff: Diff
+  /// Callback for staging a hunk - receives the patch text
+  public var onStageHunk: ((String) async -> Void)?
+  /// Callback for reverting a hunk - receives the patch text
+  public var onRevertHunk: ((String) async -> Void)?
+  
   private let logger = Logger(subsystem: "Peel", category: "Git.DiffRender")
   @State private var expandedFiles: Set<UUID> = []
   
-  public init(diff: Diff) {
+  public init(
+    diff: Diff,
+    onStageHunk: ((String) async -> Void)? = nil,
+    onRevertHunk: ((String) async -> Void)? = nil
+  ) {
     self.diff = diff
+    self.onStageHunk = onStageHunk
+    self.onRevertHunk = onRevertHunk
   }
   
   public var body: some View {
@@ -116,7 +158,18 @@ public struct DiffView: View {
 
             if isExpanded.wrappedValue {
               ForEach(file.chunks) { chunk in
-                ChunkHeaderView(text: chunk.chunk)
+                ChunkHeaderView(
+                  text: chunk.chunk,
+                  objectName: chunk.parsedObjectName,
+                  onStageHunk: onStageHunk != nil ? {
+                    let patch = chunk.toPatch(oldPath: file.oldPath, newPath: file.newPath)
+                    Task { await onStageHunk?(patch) }
+                  } : nil,
+                  onRevertHunk: onRevertHunk != nil ? {
+                    let patch = chunk.toPatch(oldPath: file.oldPath, newPath: file.newPath)
+                    Task { await onRevertHunk?(patch) }
+                  } : nil
+                )
                 ForEach(chunk.lines) { line in
                   DiffLineRow(line: line, showLineNumbers: line.lineNumber != 0)
                     .background(lineColor(line.status))

@@ -112,7 +112,25 @@ struct FileListView: View {
       }
       .frame(minWidth: 200, idealWidth: 280, maxWidth: 360)
       
-      DiffView(diff: diff)
+      DiffView(
+        diff: diff,
+        onStageHunk: { patch in
+          try? await Commands.applyToIndex(patch: patch, in: repository)
+          await repository.refreshStatus()
+          // Reload diff to reflect staged change
+          if !selectedFilePath.isEmpty {
+            await loadDiff(for: selectedFilePath, source: "stage-hunk")
+          }
+        },
+        onRevertHunk: { patch in
+          try? await Commands.revertPatch(patch: patch, in: repository)
+          await repository.refreshStatus()
+          // Reload diff to reflect reverted change
+          if !selectedFilePath.isEmpty {
+            await loadDiff(for: selectedFilePath, source: "revert-hunk")
+          }
+        }
+      )
         .frame(minWidth: 0, idealWidth: 0)
         .layoutPriority(1)
     }
