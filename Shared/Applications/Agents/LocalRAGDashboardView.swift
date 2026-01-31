@@ -5,6 +5,7 @@
 //  Created on 1/19/26.
 //
 
+import PeelUI
 import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
@@ -344,20 +345,7 @@ struct LocalRAGDashboardView: View {
   @ViewBuilder
   private var reposSection: some View {
         // MARK: - Indexed Repositories
-        GroupBox {
-          VStack(alignment: .leading, spacing: LayoutSpacing.item) {
-            HStack {
-              SectionHeader("Indexed Repositories")
-              Spacer()
-              Button {
-                Task { await mcpServer.refreshRagSummary() }
-              } label: {
-                Image(systemName: "arrow.clockwise")
-              }
-              .buttonStyle(.borderless)
-              .accessibilityIdentifier("agents.localRag.refresh")
-            }
-            
+        SectionCard {
             // Repo list
             RAGReposListView(
               repos: mcpServer.ragRepos,
@@ -415,6 +403,17 @@ struct LocalRAGDashboardView: View {
                 .font(.caption)
                 .foregroundStyle(.red)
             }
+        } header: {
+          HStack {
+            Text("Indexed Repositories")
+            Spacer()
+            Button {
+              Task { await mcpServer.refreshRagSummary() }
+            } label: {
+              Image(systemName: "arrow.clockwise")
+            }
+            .buttonStyle(.borderless)
+            .accessibilityIdentifier("agents.localRag.refresh")
           }
         }
 
@@ -527,10 +526,7 @@ struct LocalRAGDashboardView: View {
   @ViewBuilder
   private var searchSection: some View {
         // MARK: - Search
-        GroupBox {
-          VStack(alignment: .leading, spacing: LayoutSpacing.item) {
-            SectionHeader("Search")
-
+        SectionCard("Search") {
             HStack(spacing: LayoutSpacing.item) {
               TextField("Query", text: query)
                 .textFieldStyle(.roundedBorder)
@@ -609,8 +605,6 @@ struct LocalRAGDashboardView: View {
                 }
               }
             }
-
-          }
         }
 
         // MARK: - Dependency Graph
