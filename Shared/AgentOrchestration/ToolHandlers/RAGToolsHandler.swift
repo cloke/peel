@@ -268,8 +268,6 @@ final class RAGToolsHandler: MCPToolHandler {
       "embeddingProvider": status.providerName,
       "embeddingModel": status.embeddingModelName,
       "embeddingDimensions": status.embeddingDimensions,
-      "coreMLModelPresent": status.coreMLModelPresent,
-      "coreMLVocabPresent": status.coreMLVocabPresent,
       "debugForceSystem": UserDefaults.standard.bool(forKey: "localrag.useSystem")
     ]
     if let lastInitializedAt = status.lastInitializedAt {
@@ -375,9 +373,7 @@ final class RAGToolsHandler: MCPToolHandler {
         "extensionLoaded": status.extensionLoaded,
         "embeddingProvider": status.providerName,
         "embeddingModel": status.embeddingModelName,
-        "embeddingDimensions": status.embeddingDimensions,
-        "coreMLModelPresent": status.coreMLModelPresent,
-        "coreMLVocabPresent": status.coreMLVocabPresent
+        "embeddingDimensions": status.embeddingDimensions
       ]
       if let lastInitializedAt = status.lastInitializedAt {
         result["lastInitializedAt"] = formatter.string(from: lastInitializedAt)
@@ -1242,11 +1238,9 @@ struct RAGToolStatus {
   let providerName: String
   let embeddingModelName: String
   let embeddingDimensions: Int
-  let coreMLModelPresent: Bool
-  let coreMLVocabPresent: Bool
   let lastInitializedAt: Date?
   
-  init(dbPath: String, exists: Bool, schemaVersion: Int, extensionLoaded: Bool, providerName: String, embeddingModelName: String, embeddingDimensions: Int, coreMLModelPresent: Bool, coreMLVocabPresent: Bool, lastInitializedAt: Date?) {
+  init(dbPath: String, exists: Bool, schemaVersion: Int, extensionLoaded: Bool, providerName: String, embeddingModelName: String, embeddingDimensions: Int, lastInitializedAt: Date?) {
     self.dbPath = dbPath
     self.exists = exists
     self.schemaVersion = schemaVersion
@@ -1254,8 +1248,6 @@ struct RAGToolStatus {
     self.providerName = providerName
     self.embeddingModelName = embeddingModelName
     self.embeddingDimensions = embeddingDimensions
-    self.coreMLModelPresent = coreMLModelPresent
-    self.coreMLVocabPresent = coreMLVocabPresent
     self.lastInitializedAt = lastInitializedAt
   }
 }

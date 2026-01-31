@@ -148,13 +148,6 @@ public final class UIToolsHandler: MCPToolHandler {
       delegate.recordUIActionRequested(controlId)
       delegate.recordUIActionHandled(controlId)
       return (200, makeResult(id: id, result: ["controlId": controlId, "value": next]))
-    case "agents.localRag.useCoreML":
-      let current = UserDefaults.standard.bool(forKey: "localrag.useCoreML")
-      let next = value ?? !current
-      delegate.localRagUseCoreML = next
-      delegate.recordUIActionRequested(controlId)
-      delegate.recordUIActionHandled(controlId)
-      return (200, makeResult(id: id, result: ["controlId": controlId, "value": next]))
     default:
       return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.toggleNotSupported, message: "toggle not supported"))
     }

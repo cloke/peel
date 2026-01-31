@@ -36,7 +36,6 @@ public final class MCPServerService {
     static let localRagQuery = "localrag.query"
     static let localRagSearchMode = "localrag.searchMode"
     static let localRagSearchLimit = "localrag.searchLimit"
-    static let localRagUseCoreML = "localrag.useCoreML"
     static let ragUsageStats = "localrag.usageStats"
     static let ragSessionEvents = "localrag.sessionEvents"
   }
@@ -262,9 +261,6 @@ public final class MCPServerService {
   }
   public var localRagSearchLimit: Int = 5 {
     didSet { UserDefaults.standard.set(localRagSearchLimit, forKey: StorageKey.localRagSearchLimit) }
-  }
-  public var localRagUseCoreML: Bool = false {
-    didSet { UserDefaults.standard.set(localRagUseCoreML, forKey: StorageKey.localRagUseCoreML) }
   }
 
   // MARK: - Prompt Rules & Guardrails
@@ -535,7 +531,6 @@ public final class MCPServerService {
     self.localRagSearchMode = RAGSearchMode(rawValue: storedMode) ?? .text
     let storedLimit = UserDefaults.standard.integer(forKey: StorageKey.localRagSearchLimit)
     self.localRagSearchLimit = storedLimit == 0 ? 5 : storedLimit
-    self.localRagUseCoreML = UserDefaults.standard.bool(forKey: StorageKey.localRagUseCoreML)
     // Initialize prompt rules from UserDefaults
     if let data = UserDefaults.standard.data(forKey: "mcp.server.promptRules"),
        let rules = try? JSONDecoder().decode(PromptRules.self, from: data) {
@@ -5191,8 +5186,6 @@ extension MCPServerService: RAGToolsHandlerDelegate {
       providerName: status.providerName,
       embeddingModelName: status.embeddingModelName,
       embeddingDimensions: status.embeddingDimensions,
-      coreMLModelPresent: status.coreMLModelPresent,
-      coreMLVocabPresent: status.coreMLVocabPresent,
       lastInitializedAt: status.lastInitializedAt
     )
   }
@@ -5207,8 +5200,6 @@ extension MCPServerService: RAGToolsHandlerDelegate {
       providerName: status.providerName,
       embeddingModelName: status.embeddingModelName,
       embeddingDimensions: status.embeddingDimensions,
-      coreMLModelPresent: status.coreMLModelPresent,
-      coreMLVocabPresent: status.coreMLVocabPresent,
       lastInitializedAt: status.lastInitializedAt
     )
   }
@@ -6054,7 +6045,7 @@ extension MCPServerService: WorktreeToolsHandlerDelegate {
     let repository = Git.Model.Repository(name: repoName, path: repoPath)
 
     // Fetch latest
-    _ = try? await Git.Commands.Fetch.execute(remote: "origin", on: repository)
+    _ = try? await Git.Commands.fetch(remote: "origin", on: repository)
 
     // Check if branch already exists
     let branchExists = await checkBranchExists(branchName, in: repoPath)

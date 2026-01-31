@@ -1251,18 +1251,6 @@ actor LocalRAGStore {
     let providerName: String
     let embeddingModelName: String
     let embeddingDimensions: Int
-    let coreMLModelPresent: Bool
-    let coreMLVocabPresent: Bool
-    
-    /// Returns user-facing warning messages for missing Core ML assets.
-    /// Extracted from duplicated UI logic in LocalRAGDashboardView.swift lines ~653-658.
-    func assetWarnings() -> [String] {
-      var warnings: [String] = []
-      if !coreMLModelPresent || !coreMLVocabPresent {
-        warnings.append("model/vocab missing — falling back to system embeddings")
-      }
-      return warnings
-    }
   }
 
   struct Stats: Sendable {
@@ -1391,13 +1379,6 @@ actor LocalRAGStore {
 
 
   func status() -> Status {
-    let modelsURLs = candidateModelDirectories(primary: dbURL.deletingLastPathComponent())
-    let modelPresent = modelsURLs.contains { url in
-      FileManager.default.fileExists(atPath: url.appendingPathComponent("codebert-base-256.mlmodelc").path)
-    }
-    let vocabPresent = modelsURLs.contains { url in
-      FileManager.default.fileExists(atPath: url.appendingPathComponent("codebert-base.vocab.json").path)
-    }
     return Status(
       dbPath: dbURL.path,
       exists: FileManager.default.fileExists(atPath: dbURL.path),
@@ -1406,9 +1387,7 @@ actor LocalRAGStore {
       lastInitializedAt: lastInitializedAt,
       providerName: String(describing: type(of: embeddingProvider)),
       embeddingModelName: embeddingProvider.modelName,
-      embeddingDimensions: embeddingProvider.dimensions,
-      coreMLModelPresent: modelPresent,
-      coreMLVocabPresent: vocabPresent
+      embeddingDimensions: embeddingProvider.dimensions
     )
   }
   

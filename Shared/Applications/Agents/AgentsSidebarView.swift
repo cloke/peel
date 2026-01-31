@@ -285,12 +285,11 @@ struct AgentsSidebarView: View {
   }
 
   private func refreshWorktreeCount() async {
-    let result = await mcpServer.callToolAsync(name: "worktree.stats", arguments: [:])
-    if let content = result.first?.text,
-       let data = content.data(using: .utf8),
-       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-       let count = json["totalCount"] as? Int {
-      worktreeCount = count
+    do {
+      let allWorktrees = try await mcpServer.listAllWorktrees()
+      worktreeCount = allWorktrees.count
+    } catch {
+      worktreeCount = 0
     }
   }
 
