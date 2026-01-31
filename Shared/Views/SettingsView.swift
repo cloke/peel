@@ -266,6 +266,12 @@ struct SettingsView: View {
         }
       }
       .tabItem { Label("Local MCP", systemImage: "bolt.horizontal.circle") }
+      
+      // MARK: - Local RAG Settings Tab
+      SettingsPage {
+        RAGSettingsSection(mcpServer: mcpServer)
+      }
+      .tabItem { Label("Local RAG", systemImage: "brain") }
       #endif
 
       SettingsPage {
@@ -832,6 +838,224 @@ private struct PromptRulesSettingsSection: View {
   private func resetToDefaults() {
     mcpServer.promptRules = .default
     loadCurrentRules()
+  }
+}
+
+// MARK: - RAG Settings Section
+struct RAGSettingsSection: View {
+  var mcpServer: MCPServerService
+  @State private var embeddingSettingsChanged = false
+  @State private var isInitializing = false
+  
+  private var providerSelection: Binding<EmbeddingProviderType> {
+    Binding(
+      get: { LocalRAGEmbeddingProviderFactory.preferredProvider },
+      set: { newValue in
+        LocalRAGEmbeddingProviderFactory.preferredProvider = newValue
+        embeddingSettingsChanged = true
+      }
+    )
+  }
+  
+  private var mlxModelSelection: Binding<String> {
+    Binding(
+      get: { LocalRAGEmbeddingProviderFactory.preferredMLXModelId ?? "" },
+      set: { newValue in
+        LocalRAGEmbeddingProviderFactory.preferredMLXModelId = newValue.isEmpty ? nil : newValue
+        embeddingSettingsChanged = true
+      }
+    )
+  }
+  
+  private var mlxClearCacheAfterBatch: Binding<Bool> {
+    Binding(
+      get: { LocalRAGEmbeddingProviderFactory.mlxClearCacheAfterBatch },
+      set: { LocalRAGEmbeddingProviderFactory.mlxClearCacheAfterBatch = $0 }
+    )
+  }
+  
+  private var mlxMemoryLimitGB: Binding<Double> {
+    Binding(
+      get: { LocalRAGEmbeddingProviderFactory.mlxMemoryLimitGB },
+      set: { LocalRAGEmbeddingProviderFactory.mlxMemoryLimitGB = $0 }
+    )
+  }
+  
+  private var downloadedMLXModelNames: [String] {
+    let configs = MLXEmbeddingModelConfig.availableModels
+    let downloaded = LocalRAGEmbeddingProviderFactory.downloadedMLXModels
+    let names = downloaded.map { id in
+      configs.first(where: { $0.huggingFaceId == id || $0.name == id })?.name ?? id
+    }
+    return Array(Set(names)).sorted()
+  }
+  
+  var body: some View {
+    SettingsSection("Database") {
+      if let status = mcpServer.ragStatus {
+        Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 8) {
+          GridRow {
+            Text("Location")
+              .foregroundStyle(.secondary)
+            Text(displayPath(for: status.dbPath))
+          }
+          GridRow {
+            Text("Schema Version")
+              .foregroundStyle(.secondary)
+            Text("v\(status.schemaVersion)")
+          }
+          GridRow {
+            Text("Provider")
+              .foregroundStyle(.secondary)
+            Text(status.providerName)
+          }
+        }
+        
+        if let stats = mcpServer.ragStats {
+          Divider()
+          Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 8) {
+            GridRow {
+              Text("Total Files")
+                .foregroundStyle(.secondary)
+              Text("\(stats.fileCount)")
+            }
+            GridRow {
+              Text("Total Chunks")
+                .foregroundStyle(.secondary)
+              Text("\(stats.chunkCount)")
+            }
+            GridRow {
+              Text("Cached Embeddings")
+                .foregroundStyle(.secondary)
+              Text("\(stats.cacheEmbeddingCount)")
+            }
+            GridRow {
+              Text("Database Size")
+                .foregroundStyle(.secondary)
+              Text(formatBytes(Int64(stats.dbSizeBytes)))
+            }
+          }
+        }
+      } else {
+        Text("Database not initialized")
+          .foregroundStyle(.secondary)
+      }
+      
+      HStack {
+        Button("Initialize Database") {
+          Task { await initializeDatabase() }
+        }
+        .buttonStyle(.bordered)
+        .disabled(isInitializing)
+      }
+    }
+    
+    SettingsSection("Embedding Provider") {
+      Picker("Provider", selection: providerSelection) {
+        Text("Auto").tag(EmbeddingProviderType.auto)
+        Text("MLX").tag(EmbeddingProviderType.mlx)
+        Text("System").tag(EmbeddingProviderType.system)
+        Text("Hash (fallback)").tag(EmbeddingProviderType.hash)
+      }
+      .pickerStyle(.menu)
+      
+      if providerSelection.wrappedValue == .mlx {
+        mlxSettingsView
+      }
+      
+      if embeddingSettingsChanged {
+        HStack {
+          Label("Settings changed", systemImage: "exclamationmark.triangle")
+            .font(.caption)
+            .foregroundStyle(.orange)
+          Spacer()
+          Button("Apply") {
+            Task { await applyEmbeddingSettings() }
+          }
+          .buttonStyle(.borderedProminent)
+        }
+      }
+    }
+    .task {
+      await mcpServer.refreshRagSummary()
+    }
+  }
+  
+  @ViewBuilder
+  private var mlxSettingsView: some View {
+    Picker("Model", selection: mlxModelSelection) {
+      Text("Auto-select").tag("")
+      ForEach(MLXEmbeddingModelConfig.availableModels, id: \.huggingFaceId) { model in
+        let suffix = model.isCodeOptimized ? " (code)" : ""
+        Text("\(model.name) · \(model.tier.description)\(suffix)")
+          .tag(model.huggingFaceId)
+      }
+    }
+    .pickerStyle(.menu)
+    
+    if !downloadedMLXModelNames.isEmpty {
+      Text("Downloaded: \(downloadedMLXModelNames.joined(separator: ", "))")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    } else {
+      Text("Models download on first use")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
+    
+    Divider()
+    
+    Toggle("Clear GPU cache after each batch", isOn: mlxClearCacheAfterBatch)
+      .toggleStyle(.switch)
+    
+    HStack {
+      Text("Memory limit:")
+      TextField("GB", value: mlxMemoryLimitGB, format: .number.precision(.fractionLength(1)))
+        .textFieldStyle(.roundedBorder)
+        .frame(width: 60)
+      Text("GB")
+        .foregroundStyle(.secondary)
+    }
+    
+    let physicalGB = Double(LocalRAGEmbeddingProviderFactory.physicalMemoryBytes()) / 1_073_741_824.0
+    let currentGB = Double(LocalRAGEmbeddingProviderFactory.currentProcessMemoryBytes()) / 1_073_741_824.0
+    let isHigh = LocalRAGEmbeddingProviderFactory.isMemoryPressureHigh()
+    
+    HStack(spacing: 8) {
+      Text("Current: \(String(format: "%.1f", currentGB)) GB / \(String(format: "%.0f", physicalGB)) GB RAM")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+      if isHigh {
+        Label("Memory pressure high", systemImage: "exclamationmark.triangle.fill")
+          .font(.caption)
+          .foregroundStyle(.orange)
+      }
+    }
+  }
+  
+  private func displayPath(for path: String) -> String {
+    let home = FileManager.default.homeDirectoryForCurrentUser.path
+    if path.hasPrefix(home) {
+      return "~" + path.dropFirst(home.count)
+    }
+    return path
+  }
+  
+  private func formatBytes(_ bytes: Int64) -> String {
+    let formatter = ByteCountFormatter()
+    formatter.countStyle = .file
+    return formatter.string(fromByteCount: bytes)
+  }
+  
+  private func initializeDatabase() async {
+    isInitializing = true
+    defer { isInitializing = false }
+    _ = try? await mcpServer.initializeRag()
+  }
+  
+  private func applyEmbeddingSettings() async {
+    embeddingSettingsChanged = false
+    await mcpServer.applyRagEmbeddingSettings()
   }
 }
 #endif
