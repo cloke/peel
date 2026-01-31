@@ -5,27 +5,15 @@
 //  Created on 1/19/26.
 //
 
+import PeelUI
 import SwiftUI
 
 struct LiveStatusPanel: View {
   let chain: AgentChain
 
   var body: some View {
-    GroupBox {
+    SectionCard {
       VStack(alignment: .leading, spacing: 12) {
-        // Header with elapsed time
-        HStack {
-          Label("Live Status", systemImage: "bolt.fill")
-            .font(.headline)
-            .foregroundStyle(.blue)
-
-          Spacer()
-
-          if let startTime = chain.runStartTime {
-            ElapsedTimeView(startTime: startTime)
-          }
-        }
-
         // Progress indicator
         HStack(spacing: 2) {
           ForEach(Array(chain.agents.enumerated()), id: \.element.id) { index, agent in
@@ -96,7 +84,17 @@ struct LiveStatusPanel: View {
           }
         }
       }
-      .padding(.vertical, 4)
+    } header: {
+      HStack {
+        Label("Live Status", systemImage: "bolt.fill")
+          .foregroundStyle(.blue)
+
+        Spacer()
+
+        if let startTime = chain.runStartTime {
+          ElapsedTimeView(startTime: startTime)
+        }
+      }
     }
     .background(Color.blue.opacity(0.05))
   }

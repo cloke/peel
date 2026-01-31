@@ -5,6 +5,7 @@
 //  Created on 1/19/26.
 //
 
+import PeelUI
 import SwiftUI
 import AppKit
 
