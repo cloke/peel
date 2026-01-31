@@ -111,6 +111,23 @@ protocol RAGToolsHandlerDelegate: MCPToolHandlerDelegate {
   /// Delete a guidance skill
   func deleteRepoGuidanceSkill(id: UUID) -> Bool
   
+  // MARK: - Learning Loop (#210)
+  
+  /// List lessons for a repo
+  func listLessons(repoPath: String, includeInactive: Bool, limit: Int?) async throws -> [LocalRAGLesson]
+  
+  /// Add a lesson
+  func addLesson(repoPath: String, filePattern: String?, errorSignature: String?, fixDescription: String, fixCode: String?, source: String) async throws -> LocalRAGLesson
+  
+  /// Query relevant lessons for a file/error
+  func queryLessons(repoPath: String, filePattern: String?, errorSignature: String?, limit: Int) async throws -> [LocalRAGLesson]
+  
+  /// Update a lesson
+  func updateLesson(id: String, fixDescription: String?, fixCode: String?, confidence: Float?, isActive: Bool?) async throws -> LocalRAGLesson?
+  
+  /// Delete a lesson
+  func deleteLesson(id: String) async throws -> Bool
+  
   // MARK: - Configuration
   
   /// Get/set the preferred embedding provider
@@ -171,6 +188,11 @@ final class RAGToolsHandler: MCPToolHandler {
     "rag.skills.add",
     "rag.skills.update",
     "rag.skills.delete",
+    "rag.lessons.list",    // Issue #210: Learning loop - list lessons
+    "rag.lessons.add",     // Issue #210: Learning loop - add lesson
+    "rag.lessons.query",   // Issue #210: Learning loop - query relevant lessons
+    "rag.lessons.update",  // Issue #210: Learning loop - update lesson
+    "rag.lessons.delete",  // Issue #210: Learning loop - delete lesson
     "rag.repos.list",
     "rag.repos.delete",
     "rag.stats",
@@ -218,6 +240,16 @@ final class RAGToolsHandler: MCPToolHandler {
       return handleSkillsUpdate(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.skills.delete":
       return handleSkillsDelete(id: id, arguments: arguments, delegate: ragDelegate)
+    case "rag.lessons.list":
+      return await handleLessonsList(id: id, arguments: arguments, delegate: ragDelegate)
+    case "rag.lessons.add":
+      return await handleLessonsAdd(id: id, arguments: arguments, delegate: ragDelegate)
+    case "rag.lessons.query":
+      return await handleLessonsQuery(id: id, arguments: arguments, delegate: ragDelegate)
+    case "rag.lessons.update":
+      return await handleLessonsUpdate(id: id, arguments: arguments, delegate: ragDelegate)
+    case "rag.lessons.delete":
+      return await handleLessonsDelete(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.stats":
       return await handleStats(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.largeFiles":
@@ -715,6 +747,157 @@ final class RAGToolsHandler: MCPToolHandler {
       return notFoundError(id: id, what: "Skill")
     }
     return (200, makeResult(id: id, result: ["deleted": skillId.uuidString]))
+  }
+  
+  // MARK: - rag.lessons.list (#210)
+  
+  private func handleLessonsList(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
+    guard case .success(let repoPath) = requireString("repoPath", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "repoPath")
+    }
+    
+    let includeInactive = optionalBool("includeInactive", from: arguments, default: false)
+    let limit = optionalInt("limit", from: arguments)
+    
+    do {
+      let lessons = try await delegate.listLessons(repoPath: repoPath, includeInactive: includeInactive, limit: limit)
+      let formatter = ISO8601DateFormatter()
+      let payload = lessons.map { encodeLesson($0, formatter: formatter) }
+      return (200, makeResult(id: id, result: ["lessons": payload]))
+    } catch {
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
+    }
+  }
+  
+  // MARK: - rag.lessons.add (#210)
+  
+  private func handleLessonsAdd(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
+    guard case .success(let repoPath) = requireString("repoPath", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "repoPath")
+    }
+    guard case .success(let fixDescription) = requireString("fixDescription", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "fixDescription")
+    }
+    
+    let filePattern = optionalString("filePattern", from: arguments)
+    let errorSignature = optionalString("errorSignature", from: arguments)
+    let fixCode = optionalString("fixCode", from: arguments)
+    let source = optionalString("source", from: arguments, default: "manual") ?? "manual"
+    
+    do {
+      let lesson = try await delegate.addLesson(
+        repoPath: repoPath,
+        filePattern: filePattern,
+        errorSignature: errorSignature,
+        fixDescription: fixDescription,
+        fixCode: fixCode,
+        source: source
+      )
+      let formatter = ISO8601DateFormatter()
+      return (200, makeResult(id: id, result: ["lesson": encodeLesson(lesson, formatter: formatter)]))
+    } catch {
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
+    }
+  }
+  
+  // MARK: - rag.lessons.query (#210)
+  
+  private func handleLessonsQuery(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
+    guard case .success(let repoPath) = requireString("repoPath", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "repoPath")
+    }
+    
+    let filePattern = optionalString("filePattern", from: arguments)
+    let errorSignature = optionalString("errorSignature", from: arguments)
+    let limit = optionalInt("limit", from: arguments, default: 20) ?? 20
+    
+    do {
+      let lessons = try await delegate.queryLessons(
+        repoPath: repoPath,
+        filePattern: filePattern,
+        errorSignature: errorSignature,
+        limit: limit
+      )
+      let formatter = ISO8601DateFormatter()
+      let payload = lessons.map { encodeLesson($0, formatter: formatter) }
+      return (200, makeResult(id: id, result: ["lessons": payload, "query": ["filePattern": filePattern as Any, "errorSignature": errorSignature as Any]]))
+    } catch {
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
+    }
+  }
+  
+  // MARK: - rag.lessons.update (#210)
+  
+  private func handleLessonsUpdate(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
+    guard case .success(let lessonId) = requireString("lessonId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "lessonId")
+    }
+    
+    let fixDescription = optionalString("fixDescription", from: arguments)
+    let fixCode = optionalString("fixCode", from: arguments)
+    let confidence = arguments["confidence"] as? Float
+    let isActive = arguments["isActive"] as? Bool
+    
+    do {
+      guard let lesson = try await delegate.updateLesson(
+        id: lessonId,
+        fixDescription: fixDescription,
+        fixCode: fixCode,
+        confidence: confidence,
+        isActive: isActive
+      ) else {
+        return notFoundError(id: id, what: "Lesson")
+      }
+      let formatter = ISO8601DateFormatter()
+      return (200, makeResult(id: id, result: ["lesson": encodeLesson(lesson, formatter: formatter)]))
+    } catch {
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
+    }
+  }
+  
+  // MARK: - rag.lessons.delete (#210)
+  
+  private func handleLessonsDelete(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
+    guard case .success(let lessonId) = requireString("lessonId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "lessonId")
+    }
+    
+    do {
+      let deleted = try await delegate.deleteLesson(id: lessonId)
+      if !deleted {
+        return notFoundError(id: id, what: "Lesson")
+      }
+      return (200, makeResult(id: id, result: ["deleted": lessonId]))
+    } catch {
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
+    }
+  }
+  
+  /// Encode a lesson to a dictionary for JSON response
+  private func encodeLesson(_ lesson: LocalRAGLesson, formatter: ISO8601DateFormatter) -> [String: Any] {
+    var result: [String: Any] = [
+      "id": lesson.id,
+      "repoId": lesson.repoId,
+      "fixDescription": lesson.fixDescription,
+      "confidence": lesson.confidence,
+      "occurrences": lesson.occurrences,
+      "source": lesson.source,
+      "isActive": lesson.isActive,
+      "createdAt": formatter.string(from: lesson.createdAt)
+    ]
+    if let filePattern = lesson.filePattern {
+      result["filePattern"] = filePattern
+    }
+    if let errorSignature = lesson.errorSignature {
+      result["errorSignature"] = errorSignature
+    }
+    if let fixCode = lesson.fixCode {
+      result["fixCode"] = fixCode
+    }
+    if let lastUsedAt = lesson.lastUsedAt {
+      result["lastUsedAt"] = formatter.string(from: lastUsedAt)
+    }
+    return result
   }
   
   // MARK: - rag.stats

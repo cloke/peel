@@ -107,6 +107,52 @@ struct LocalRAGQueryHint: Sendable {
   let lastUsedAt: Date
 }
 
+// MARK: - Learning Loop Types (#210)
+
+/// A learned pattern from agent mistakes/fixes that improves future runs
+struct LocalRAGLesson: Sendable, Identifiable {
+  let id: String
+  let repoId: String
+  let filePattern: String?        // e.g., "*.gts", "app/models/*.rb"
+  let errorSignature: String?     // Normalized error pattern for matching
+  let fixDescription: String      // Human-readable description of the fix
+  let fixCode: String?            // Actual code snippet that fixed the issue
+  let confidence: Float           // 0.0-1.0, increases with successful applications
+  let occurrences: Int            // How many times this pattern was seen
+  let lastUsedAt: Date?           // When this lesson was last applied
+  let createdAt: Date
+  let source: String              // "auto" (detected), "manual" (user added), "imported"
+  let isActive: Bool              // Can be disabled without deletion
+  
+  init(
+    id: String = UUID().uuidString,
+    repoId: String,
+    filePattern: String? = nil,
+    errorSignature: String? = nil,
+    fixDescription: String,
+    fixCode: String? = nil,
+    confidence: Float = 0.5,
+    occurrences: Int = 1,
+    lastUsedAt: Date? = nil,
+    createdAt: Date = Date(),
+    source: String = "manual",
+    isActive: Bool = true
+  ) {
+    self.id = id
+    self.repoId = repoId
+    self.filePattern = filePattern
+    self.errorSignature = errorSignature
+    self.fixDescription = fixDescription
+    self.fixCode = fixCode
+    self.confidence = confidence
+    self.occurrences = occurrences
+    self.lastUsedAt = lastUsedAt
+    self.createdAt = createdAt
+    self.source = source
+    self.isActive = isActive
+  }
+}
+
 struct LocalRAGFileCandidate: Sendable {
   let path: String
   let byteCount: Int
@@ -2521,6 +2567,322 @@ actor LocalRAGStore {
     return hints
   }
 
+  // MARK: - Lessons (Learning Loop #210)
+  
+  /// Add a new lesson learned from agent mistakes
+  func addLesson(
+    repoPath: String,
+    filePattern: String? = nil,
+    errorSignature: String? = nil,
+    fixDescription: String,
+    fixCode: String? = nil,
+    source: String = "manual"
+  ) throws -> LocalRAGLesson {
+    try openIfNeeded()
+    try ensureSchema()
+    
+    // Generate repo ID from path (same stable hash used during indexing)
+    let repoId = stableId(for: repoPath)
+    
+    let id = UUID().uuidString
+    let now = dateFormatter.string(from: Date())
+    
+    let sql = """
+    INSERT INTO lessons (id, repo_id, file_pattern, error_signature, fix_description, fix_code, confidence, occurrences, created_at, source, is_active)
+    VALUES (?, ?, ?, ?, ?, ?, 0.5, 1, ?, ?, 1)
+    """
+    
+    try execute(sql: sql) { statement in
+      bindText(statement, 1, id)
+      bindText(statement, 2, repoId)
+      bindTextOrNull(statement, 3, filePattern)
+      bindTextOrNull(statement, 4, errorSignature)
+      bindText(statement, 5, fixDescription)
+      bindTextOrNull(statement, 6, fixCode)
+      bindText(statement, 7, now)
+      bindText(statement, 8, source)
+    }
+    
+    return LocalRAGLesson(
+      id: id,
+      repoId: repoId,
+      filePattern: filePattern,
+      errorSignature: errorSignature,
+      fixDescription: fixDescription,
+      fixCode: fixCode,
+      confidence: 0.5,
+      occurrences: 1,
+      lastUsedAt: nil,
+      createdAt: Date(),
+      source: source,
+      isActive: true
+    )
+  }
+  
+  /// Query lessons relevant to a file pattern or error
+  func queryLessons(
+    repoPath: String,
+    filePattern: String? = nil,
+    errorSignature: String? = nil,
+    includeInactive: Bool = false,
+    limit: Int = 20
+  ) throws -> [LocalRAGLesson] {
+    try openIfNeeded()
+    try ensureSchema()
+    
+    // Generate repo ID from path (same stable hash used during indexing)
+    let repoId = stableId(for: repoPath)
+    
+    var conditions = ["repo_id = ?"]
+    var params: [Any] = [repoId]
+    
+    if !includeInactive {
+      conditions.append("is_active = 1")
+    }
+    
+    // Match file pattern using GLOB (supports wildcards)
+    if let pattern = filePattern, !pattern.isEmpty {
+      // Lessons with matching file_pattern OR null (applies to all files)
+      conditions.append("(file_pattern IS NULL OR ? GLOB file_pattern)")
+      params.append(pattern)
+    }
+    
+    // Match error signature using LIKE (substring match)
+    if let sig = errorSignature, !sig.isEmpty {
+      conditions.append("(error_signature IS NULL OR error_signature LIKE ?)")
+      params.append("%\(sig)%")
+    }
+    
+    let sql = """
+    SELECT id, repo_id, file_pattern, error_signature, fix_description, fix_code, 
+           confidence, occurrences, last_used_at, created_at, source, is_active
+    FROM lessons
+    WHERE \(conditions.joined(separator: " AND "))
+    ORDER BY confidence DESC, occurrences DESC
+    LIMIT ?
+    """
+    
+    guard let db else { throw LocalRAGError.sqlite("Database not initialized") }
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let statement else {
+      throw LocalRAGError.sqlite(String(cString: sqlite3_errmsg(db)))
+    }
+    defer { sqlite3_finalize(statement) }
+    
+    var paramIndex: Int32 = 1
+    for param in params {
+      if let str = param as? String {
+        bindText(statement, paramIndex, str)
+      }
+      paramIndex += 1
+    }
+    sqlite3_bind_int(statement, paramIndex, Int32(limit))
+    
+    var lessons: [LocalRAGLesson] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+      let lesson = parseLesson(from: statement)
+      lessons.append(lesson)
+    }
+    return lessons
+  }
+  
+  /// List all lessons for a repo
+  func listLessons(repoPath: String, includeInactive: Bool = false, limit: Int? = nil) throws -> [LocalRAGLesson] {
+    try openIfNeeded()
+    try ensureSchema()
+    
+    // Generate repo ID from path (same stable hash used during indexing)
+    let repoId = stableId(for: repoPath)
+    
+    var sql = """
+    SELECT id, repo_id, file_pattern, error_signature, fix_description, fix_code,
+           confidence, occurrences, last_used_at, created_at, source, is_active
+    FROM lessons
+    WHERE repo_id = ?
+    """
+    
+    if !includeInactive {
+      sql += " AND is_active = 1"
+    }
+    sql += " ORDER BY confidence DESC, occurrences DESC"
+    
+    if let limit {
+      sql += " LIMIT \(limit)"
+    }
+    
+    guard let db else { throw LocalRAGError.sqlite("Database not initialized") }
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let statement else {
+      throw LocalRAGError.sqlite(String(cString: sqlite3_errmsg(db)))
+    }
+    defer { sqlite3_finalize(statement) }
+    
+    bindText(statement, 1, repoId)
+    
+    var lessons: [LocalRAGLesson] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+      lessons.append(parseLesson(from: statement))
+    }
+    return lessons
+  }
+  
+  /// Update a lesson (e.g., after successful application)
+  func updateLesson(
+    id: String,
+    fixDescription: String? = nil,
+    fixCode: String? = nil,
+    confidence: Float? = nil,
+    isActive: Bool? = nil
+  ) throws -> LocalRAGLesson? {
+    try openIfNeeded()
+    try ensureSchema()
+    
+    var updates: [String] = []
+    var params: [Any] = []
+    
+    if let desc = fixDescription {
+      updates.append("fix_description = ?")
+      params.append(desc)
+    }
+    if let code = fixCode {
+      updates.append("fix_code = ?")
+      params.append(code)
+    }
+    if let conf = confidence {
+      updates.append("confidence = ?")
+      params.append(conf)
+    }
+    if let active = isActive {
+      updates.append("is_active = ?")
+      params.append(active ? 1 : 0)
+    }
+    
+    guard !updates.isEmpty else {
+      return try getLesson(id: id)
+    }
+    
+    params.append(id)
+    let sql = "UPDATE lessons SET \(updates.joined(separator: ", ")) WHERE id = ?"
+    
+    try execute(sql: sql) { statement in
+      var index: Int32 = 1
+      for param in params {
+        if let str = param as? String {
+          bindText(statement, index, str)
+        } else if let flt = param as? Float {
+          sqlite3_bind_double(statement, index, Double(flt))
+        } else if let intVal = param as? Int {
+          sqlite3_bind_int(statement, index, Int32(intVal))
+        }
+        index += 1
+      }
+    }
+    
+    return try getLesson(id: id)
+  }
+  
+  /// Record that a lesson was applied (increases confidence and occurrence count)
+  func recordLessonUsed(id: String) throws {
+    try openIfNeeded()
+    try ensureSchema()
+    
+    let now = dateFormatter.string(from: Date())
+    let sql = """
+    UPDATE lessons 
+    SET occurrences = occurrences + 1,
+        confidence = MIN(1.0, confidence + 0.1),
+        last_used_at = ?
+    WHERE id = ?
+    """
+    
+    try execute(sql: sql) { statement in
+      bindText(statement, 1, now)
+      bindText(statement, 2, id)
+    }
+  }
+  
+  /// Delete a lesson
+  func deleteLesson(id: String) throws -> Bool {
+    try openIfNeeded()
+    try ensureSchema()
+    
+    let sql = "DELETE FROM lessons WHERE id = ?"
+    try execute(sql: sql) { statement in
+      bindText(statement, 1, id)
+    }
+    
+    guard let db else { return false }
+    return sqlite3_changes(db) > 0
+  }
+  
+  /// Get a specific lesson by ID
+  private func getLesson(id: String) throws -> LocalRAGLesson? {
+    guard let db else { throw LocalRAGError.sqlite("Database not initialized") }
+    
+    let sql = """
+    SELECT id, repo_id, file_pattern, error_signature, fix_description, fix_code,
+           confidence, occurrences, last_used_at, created_at, source, is_active
+    FROM lessons WHERE id = ?
+    """
+    
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let statement else {
+      throw LocalRAGError.sqlite(String(cString: sqlite3_errmsg(db)))
+    }
+    defer { sqlite3_finalize(statement) }
+    
+    bindText(statement, 1, id)
+    
+    guard sqlite3_step(statement) == SQLITE_ROW else {
+      return nil
+    }
+    return parseLesson(from: statement)
+  }
+  
+  /// Parse a lesson from a SQLite statement
+  private func parseLesson(from statement: OpaquePointer) -> LocalRAGLesson {
+    let id = String(cString: sqlite3_column_text(statement, 0))
+    let repoId = String(cString: sqlite3_column_text(statement, 1))
+    let filePattern = sqlite3_column_text(statement, 2).map { String(cString: $0) }
+    let errorSignature = sqlite3_column_text(statement, 3).map { String(cString: $0) }
+    let fixDescription = String(cString: sqlite3_column_text(statement, 4))
+    let fixCode = sqlite3_column_text(statement, 5).map { String(cString: $0) }
+    let confidence = Float(sqlite3_column_double(statement, 6))
+    let occurrences = Int(sqlite3_column_int(statement, 7))
+    let lastUsedAt = sqlite3_column_text(statement, 8).flatMap { dateFormatter.date(from: String(cString: $0)) }
+    let createdAt = dateFormatter.date(from: String(cString: sqlite3_column_text(statement, 9))) ?? Date()
+    let source = String(cString: sqlite3_column_text(statement, 10))
+    let isActive = sqlite3_column_int(statement, 11) != 0
+    
+    return LocalRAGLesson(
+      id: id,
+      repoId: repoId,
+      filePattern: filePattern,
+      errorSignature: errorSignature,
+      fixDescription: fixDescription,
+      fixCode: fixCode,
+      confidence: confidence,
+      occurrences: occurrences,
+      lastUsedAt: lastUsedAt,
+      createdAt: createdAt,
+      source: source,
+      isActive: isActive
+    )
+  }
+  
+  /// Helper to bind text or NULL
+  private func bindTextOrNull(_ statement: OpaquePointer, _ index: Int32, _ value: String?) {
+    if let value {
+      let cString = (value as NSString).utf8String
+      sqlite3_bind_text(statement, index, cString, -1, sqliteTransient)
+    } else {
+      sqlite3_bind_null(statement, index)
+    }
+  }
+
   func searchVector(query: String, repoPath: String? = nil, limit: Int = 10) async throws -> [LocalRAGSearchResult] {
     let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmedQuery.isEmpty else { return [] }
@@ -3049,7 +3411,41 @@ actor LocalRAGStore {
       try exec("UPDATE rag_meta SET value = '7' WHERE key = 'schema_version'")
     }
     
-    schemaVersion = 7
+    // Migration to v8: Add lessons table for learning loop (#210)
+    // Captures patterns: when agents make mistakes and fix them, the fix is recorded
+    // so future runs can proactively avoid the same mistake
+    if currentVersion < 8 {
+      try exec("""
+        CREATE TABLE IF NOT EXISTS lessons (
+          id TEXT PRIMARY KEY,
+          repo_id TEXT NOT NULL,
+          file_pattern TEXT,
+          error_signature TEXT,
+          fix_description TEXT NOT NULL,
+          fix_code TEXT,
+          confidence REAL DEFAULT 0.5,
+          occurrences INTEGER DEFAULT 1,
+          last_used_at TEXT,
+          created_at TEXT NOT NULL,
+          source TEXT DEFAULT 'auto',
+          is_active INTEGER DEFAULT 1,
+          FOREIGN KEY(repo_id) REFERENCES repos(id) ON DELETE CASCADE
+        )
+        """)
+      
+      // Index for querying lessons by file pattern
+      try exec("CREATE INDEX IF NOT EXISTS idx_lessons_file_pattern ON lessons(file_pattern)")
+      
+      // Index for querying lessons by error signature
+      try exec("CREATE INDEX IF NOT EXISTS idx_lessons_error_sig ON lessons(error_signature)")
+      
+      // Index for active lessons with high confidence
+      try exec("CREATE INDEX IF NOT EXISTS idx_lessons_active ON lessons(is_active, confidence DESC)")
+      
+      try exec("UPDATE rag_meta SET value = '8' WHERE key = 'schema_version'")
+    }
+    
+    schemaVersion = 8
     
     // Set up vec_chunks virtual table if extension is loaded
     if extensionLoaded {
