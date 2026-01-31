@@ -113,6 +113,10 @@ struct RAGRepositoryCardView: View {
     allSkills.filter { $0.repoPath == repo.rootPath && $0.isActive }
   }
   
+  // Lessons for this repo
+  @State private var repoLessons: [LocalRAGLesson] = []
+  @State private var showLessonsSheet: Bool = false
+  
   // UI state
   @State private var isHovering: Bool = false
   @State private var showSkillsSheet: Bool = false
@@ -166,9 +170,13 @@ struct RAGRepositoryCardView: View {
     }
     .task {
       await refreshAnalysisStatus()
+      await loadLessons()
     }
     .sheet(isPresented: $showSkillsSheet) {
       RAGRepoSkillsSheet(repo: repo, mcpServer: mcpServer)
+    }
+    .sheet(isPresented: $showLessonsSheet) {
+      RAGLessonsView(repo: repo, mcpServer: mcpServer)
     }
   }
   
@@ -288,6 +296,9 @@ struct RAGRepositoryCardView: View {
       
       // MARK: Skills Section
       skillsSection
+      
+      // MARK: Lessons Section
+      lessonsSection
       
       // MARK: Actions Footer
       actionsFooter
@@ -642,6 +653,77 @@ struct RAGRepositoryCardView: View {
     }
     .padding(12)
     .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 8))
+  }
+  
+  // MARK: - Lessons Section
+  
+  @ViewBuilder
+  private var lessonsSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack {
+        Label("Learned Lessons", systemImage: "brain")
+          .font(.subheadline.weight(.semibold))
+        
+        Spacer()
+        
+        Button {
+          showLessonsSheet = true
+        } label: {
+          Label("Manage", systemImage: "gear")
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+      }
+      
+      if repoLessons.isEmpty {
+        Text("No lessons learned yet")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      } else {
+        VStack(alignment: .leading, spacing: 4) {
+          ForEach(repoLessons.prefix(3)) { lesson in
+            HStack(spacing: 6) {
+              // Confidence indicator
+              Circle()
+                .fill(lesson.confidence >= 0.7 ? .green : lesson.confidence >= 0.4 ? .orange : .red)
+                .frame(width: 6, height: 6)
+              
+              Text(lesson.fixDescription)
+                .font(.caption)
+                .lineLimit(1)
+              
+              Spacer()
+              
+              Text("\(Int(lesson.confidence * 100))%")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+          }
+          
+          if repoLessons.count > 3 {
+            Text("+ \(repoLessons.count - 3) more")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+        }
+      }
+    }
+    .padding(12)
+    .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 8))
+  }
+  
+  // MARK: - Load Lessons
+  
+  private func loadLessons() async {
+    do {
+      repoLessons = try await mcpServer.listLessons(
+        repoPath: repo.rootPath,
+        includeInactive: false,
+        limit: nil
+      )
+    } catch {
+      // Silently fail - lessons are optional
+    }
   }
   
   // MARK: - Actions Footer
