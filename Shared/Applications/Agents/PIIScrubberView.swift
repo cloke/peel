@@ -28,174 +28,162 @@ struct PIIScrubberView: View {
   private var service: PIIScrubberService { mcpServer.piiScrubberService }
 
   var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: LayoutSpacing.page) {
-        GroupBox {
-          VStack(alignment: .leading, spacing: LayoutSpacing.section) {
-            SectionHeader("PII Scrubber")
+    ToolPageLayout {
+      ToolSection("PII Scrubber") {
+        LabeledContent("Input path") {
+          TextField("/path/to/dump.sql", text: $inputPath)
+            .textFieldStyle(.roundedBorder)
+            .frame(minWidth: 320)
+            .accessibilityIdentifier("agents.piiScrubber.inputPath")
+        }
 
-            LabeledContent("Input path") {
-              TextField("/path/to/dump.sql", text: $inputPath)
-                .textFieldStyle(.roundedBorder)
-                .frame(minWidth: 320)
-                .accessibilityIdentifier("agents.piiScrubber.inputPath")
-            }
+        LabeledContent("Output path") {
+          TextField("/path/to/scrubbed.sql", text: $outputPath)
+            .textFieldStyle(.roundedBorder)
+            .frame(minWidth: 320)
+            .accessibilityIdentifier("agents.piiScrubber.outputPath")
+        }
 
-            LabeledContent("Output path") {
-              TextField("/path/to/scrubbed.sql", text: $outputPath)
-                .textFieldStyle(.roundedBorder)
-                .frame(minWidth: 320)
-                .accessibilityIdentifier("agents.piiScrubber.outputPath")
-            }
+        LabeledContent("Report path (optional)") {
+          TextField("/path/to/report.json", text: $reportPath)
+            .textFieldStyle(.roundedBorder)
+            .frame(minWidth: 320)
+            .accessibilityIdentifier("agents.piiScrubber.reportPath")
+        }
 
-            LabeledContent("Report path (optional)") {
-              TextField("/path/to/report.json", text: $reportPath)
-                .textFieldStyle(.roundedBorder)
-                .frame(minWidth: 320)
-                .accessibilityIdentifier("agents.piiScrubber.reportPath")
-            }
+        LabeledContent("Report format") {
+          Picker("Report format", selection: $reportFormat) {
+            Text("json").tag("json")
+            Text("text").tag("text")
+          }
+          .pickerStyle(.segmented)
+          .frame(width: 160)
+          .accessibilityIdentifier("agents.piiScrubber.reportFormat")
+        }
 
-            LabeledContent("Report format") {
-              Picker("Report format", selection: $reportFormat) {
-                Text("json").tag("json")
-                Text("text").tag("text")
-              }
-              .pickerStyle(.segmented)
-              .frame(width: 160)
-              .accessibilityIdentifier("agents.piiScrubber.reportFormat")
-            }
+        LabeledContent("Config path (optional)") {
+          TextField("/path/to/pii-scrubber.yml", text: $configPath)
+            .textFieldStyle(.roundedBorder)
+            .frame(minWidth: 320)
+            .accessibilityIdentifier("agents.piiScrubber.configPath")
+        }
 
-            LabeledContent("Config path (optional)") {
-              TextField("/path/to/pii-scrubber.yml", text: $configPath)
-                .textFieldStyle(.roundedBorder)
-                .frame(minWidth: 320)
-                .accessibilityIdentifier("agents.piiScrubber.configPath")
-            }
+        Text("Formats: email, phone, ssn, credit_card, name, address, organization, generic. Actions: preserve, redact, fake, drop.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
 
-            Text("Formats: email, phone, ssn, credit_card, name, address, organization, generic. Actions: preserve, redact, fake, drop.")
-              .font(.caption)
-              .foregroundStyle(.secondary)
+        LabeledContent("Seed") {
+          TextField("peel", text: $seed)
+            .textFieldStyle(.roundedBorder)
+            .frame(width: 160)
+            .accessibilityIdentifier("agents.piiScrubber.seed")
+        }
 
-            LabeledContent("Seed") {
-              TextField("peel", text: $seed)
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 160)
-                .accessibilityIdentifier("agents.piiScrubber.seed")
-            }
+        LabeledContent("Max samples") {
+          Stepper(value: $maxSamples, in: 0...50) {
+            Text("\(maxSamples)")
+          }
+          .frame(width: 160)
+          .accessibilityIdentifier("agents.piiScrubber.maxSamples")
+        }
 
-            LabeledContent("Max samples") {
-              Stepper(value: $maxSamples, in: 0...50) {
-                Text("\(maxSamples)")
-              }
-              .frame(width: 160)
-              .accessibilityIdentifier("agents.piiScrubber.maxSamples")
-            }
+        Toggle("Enable NER", isOn: $enableNER)
+          .accessibilityIdentifier("agents.piiScrubber.enableNER")
 
-            Toggle("Enable NER", isOn: $enableNER)
-              .accessibilityIdentifier("agents.piiScrubber.enableNER")
+        LabeledContent("pii-scrubber path (optional)") {
+          HStack(spacing: 8) {
+            TextField("Auto-detect from project", text: $toolPath)
+              .textFieldStyle(.roundedBorder)
+              .frame(minWidth: 320)
+              .accessibilityIdentifier("agents.piiScrubber.toolPath")
 
-            LabeledContent("pii-scrubber path (optional)") {
-              HStack(spacing: LayoutSpacing.item) {
-                TextField("Auto-detect from project", text: $toolPath)
-                  .textFieldStyle(.roundedBorder)
-                  .frame(minWidth: 320)
-                  .accessibilityIdentifier("agents.piiScrubber.toolPath")
-
-                Button("Detect") {
-                  if let detected = service.suggestedToolPath() {
-                    toolPath = detected
-                    lastDetectedToolPath = detected
-                  }
-                }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("agents.piiScrubber.detect")
+            Button("Detect") {
+              if let detected = service.suggestedToolPath() {
+                toolPath = detected
+                lastDetectedToolPath = detected
               }
             }
-
-            HStack(spacing: LayoutSpacing.item) {
-              Button(isRunning ? "Running..." : "Run Scrubber") {
-                Task { await runScrubber() }
-              }
-              .buttonStyle(.borderedProminent)
-              .disabled(isRunning)
-              .accessibilityIdentifier("agents.piiScrubber.run")
-
-              if let lastDetectedToolPath {
-                Text("Detected: \(lastDetectedToolPath)")
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
-              }
-            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier("agents.piiScrubber.detect")
           }
         }
 
-        if let lastError {
-          Text(lastError)
-            .font(.caption)
-            .foregroundStyle(.red)
+        HStack(spacing: 8) {
+          Button(isRunning ? "Running..." : "Run Scrubber") {
+            Task { await runScrubber() }
+          }
+          .buttonStyle(.borderedProminent)
+          .disabled(isRunning)
+          .accessibilityIdentifier("agents.piiScrubber.run")
+
+          if let lastDetectedToolPath {
+            Text("Detected: \(lastDetectedToolPath)")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
         }
+      }
 
-        if let report {
-          GroupBox {
-            VStack(alignment: .leading, spacing: LayoutSpacing.item) {
-              SectionHeader("Audit Report")
+      if let lastError {
+        Text(lastError)
+          .font(.caption)
+          .foregroundStyle(.red)
+      }
 
-              HStack(spacing: LayoutSpacing.item) {
-                if let lastReportPath {
-                  Button("Open Report") {
-                    openReport(at: lastReportPath)
-                  }
-                  .buttonStyle(.bordered)
-                  .accessibilityIdentifier("agents.piiScrubber.openReport")
-
-                  Button("Save Report As…") {
-                    exportReport(from: lastReportPath)
-                  }
-                  .buttonStyle(.bordered)
-                  .accessibilityIdentifier("agents.piiScrubber.saveReport")
-                }
+      if let report {
+        ToolSection("Audit Report") {
+          HStack(spacing: 8) {
+            if let lastReportPath {
+              Button("Open Report") {
+                openReport(at: lastReportPath)
               }
+              .buttonStyle(.bordered)
+              .accessibilityIdentifier("agents.piiScrubber.openReport")
 
-              if let completedAt = report.completedAt {
-                Text("Completed: \(completedAt.formatted())")
-                  .font(.caption)
+              Button("Save Report As…") {
+                exportReport(from: lastReportPath)
+              }
+              .buttonStyle(.bordered)
+              .accessibilityIdentifier("agents.piiScrubber.saveReport")
+            }
+          }
+
+          if let completedAt = report.completedAt {
+            Text("Completed: \(completedAt.formatted())")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+
+          let sortedCounts = report.counts.sorted { $0.key < $1.key }
+          if !sortedCounts.isEmpty {
+            ForEach(sortedCounts, id: \.key) { entry in
+              HStack {
+                Text(entry.key)
+                Spacer()
+                Text("\(entry.value)")
                   .foregroundStyle(.secondary)
               }
+              .font(.caption)
+            }
+          }
 
-              let sortedCounts = report.counts.sorted { $0.key < $1.key }
-              if !sortedCounts.isEmpty {
-                ForEach(sortedCounts, id: \.key) { entry in
-                  HStack {
-                    Text(entry.key)
-                    Spacer()
-                    Text("\(entry.value)")
-                      .foregroundStyle(.secondary)
-                  }
+          ForEach(report.samples.keys.sorted(), id: \.self) { key in
+            if let samples = report.samples[key] {
+              VStack(alignment: .leading, spacing: 4) {
+                Text(key)
                   .font(.caption)
+                  .foregroundStyle(.secondary)
+                ForEach(samples.indices, id: \.self) { idx in
+                  let sample = samples[idx]
+                  Text("\(sample.original) → \(sample.replacement)")
+                    .font(.caption)
                 }
               }
-
-              ForEach(report.samples.keys.sorted(), id: \.self) { key in
-                if let samples = report.samples[key] {
-                  VStack(alignment: .leading, spacing: 4) {
-                    Text(key)
-                      .font(.caption)
-                      .foregroundStyle(.secondary)
-                    ForEach(samples.indices, id: \.self) { idx in
-                      let sample = samples[idx]
-                      Text("\(sample.original) → \(sample.replacement)")
-                        .font(.caption)
-                    }
-                  }
-                  .padding(.top, 4)
-                }
-              }
+              .padding(.top, 4)
             }
           }
         }
       }
-      .padding(.horizontal, LayoutSpacing.page)
-      .padding(.vertical, LayoutSpacing.section)
     }
   }
 
