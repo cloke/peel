@@ -30,6 +30,8 @@
 		04ASTCHK2F2E000100000002 /* ASTChunker in Frameworks */ = {isa = PBXBuildFile; productRef = 04ASTCHK2F2E000100000003 /* ASTChunker */; };
 		04ASTCLI2F3B000100000001 /* ast-chunker-cli in CopyFiles */ = {isa = PBXBuildFile; fileRef = 04ASTCLI2F3B000100000002 /* ast-chunker-cli */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		04D09EFD26A85E8100072702 /* OAuthSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 04D09EFC26A85E8100072702 /* OAuthSwift */; };
+		04MCPCORE2F3C000100000003 /* MCPCore in Frameworks */ = {isa = PBXBuildFile; productRef = 04MCPCORE2F3C000100000002 /* MCPCore */; };
+		04MCPSKIT2F3C000100000003 /* MCPServerKit in Frameworks */ = {isa = PBXBuildFile; productRef = 04MCPSKIT2F3C000100000002 /* MCPServerKit */; };
 		0A11B6D12F1234567890ABCD /* PeelApp_iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A11B6D02F1234567890ABCD /* PeelApp_iOS.swift */; };
 		0B1E3C9C2FABCDEF00112233 /* DataServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B1E3C9B2FABCDEF00112233 /* DataServiceTests.swift */; };
 		DD3900B27EF856FDCE71847E /* ValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1EDC3CED1C274FD0649E03C /* ValidationTests.swift */; };
@@ -185,6 +187,8 @@
 				046C6AB02F1BE07D006CDAC7 /* TaskRunner in Frameworks */,
 				04A236482F2E34510055F436 /* FirebaseAppCheck in Frameworks */,
 				04D09EFD26A85E8100072702 /* OAuthSwift in Frameworks */,
+				04MCPCORE2F3C000100000003 /* MCPCore in Frameworks */,
+				04MCPSKIT2F3C000100000003 /* MCPServerKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -438,7 +442,8 @@
 				03BPETOK2F2A000100000003 /* XCRemoteSwiftPackageReference "swift-bpe-tokenizer" */,
 				03MLXEMB2F2B000100000003 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
 				04LOCPKG0001000000000001 /* XCLocalSwiftPackageReference "Local Packages/ASTChunker" */,
-				04LOCPKG0002000000000001 /* XCLocalSwiftPackageReference "Local Packages/MCPCore" */,
+				04MCPCORE2F3C000100000001 /* XCRemoteSwiftPackageReference "MCPCore" */,
+				04MCPSKIT2F3C000100000001 /* XCRemoteSwiftPackageReference "MCPServerKit" */,
 				04LOCPKG0003000000000001 /* XCLocalSwiftPackageReference "Local Packages/PeelUI" */,
 				04LOCPKG0004000000000001 /* XCLocalSwiftPackageReference "Local Packages/Git" */,
 				04LOCPKG0005000000000001 /* XCLocalSwiftPackageReference "Local Packages/Github" */,
@@ -1079,10 +1084,6 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = "Local Packages/ASTChunker";
 		};
-		04LOCPKG0002000000000001 /* XCLocalSwiftPackageReference "Local Packages/MCPCore" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = "Local Packages/MCPCore";
-		};
 		04LOCPKG0003000000000001 /* XCLocalSwiftPackageReference "Local Packages/PeelUI" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = "Local Packages/PeelUI";
@@ -1140,6 +1141,22 @@
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 2.2.0;
+			};
+		};
+		04MCPCORE2F3C000100000001 /* XCRemoteSwiftPackageReference "MCPCore" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/crunchybananas/MCPCore.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.0;
+			};
+		};
+		04MCPSKIT2F3C000100000001 /* XCRemoteSwiftPackageReference "MCPServerKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/crunchybananas/MCPServerKit.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.0;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
@@ -1224,6 +1241,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 04DD2F49269E6AED000994E1 /* XCRemoteSwiftPackageReference "OAuthSwift" */;
 			productName = OAuthSwift;
+		};
+		04MCPCORE2F3C000100000002 /* MCPCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 04MCPCORE2F3C000100000001 /* XCRemoteSwiftPackageReference "MCPCore" */;
+			productName = MCPCore;
+		};
+		04MCPSKIT2F3C000100000002 /* MCPServerKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 04MCPSKIT2F3C000100000001 /* XCRemoteSwiftPackageReference "MCPServerKit" */;
+			productName = MCPServerKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
