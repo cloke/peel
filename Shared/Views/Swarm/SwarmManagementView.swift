@@ -18,6 +18,7 @@ struct SwarmManagementView: View {
   @State private var isLoading = false
   @State private var errorMessage: String?
   @State private var showingDeepLinkAlert = false
+  @State private var showingInvitePreview = false
   
   var body: some View {
     Group {
@@ -29,8 +30,18 @@ struct SwarmManagementView: View {
     }
     .onChange(of: firebaseService.deepLinkReceived) { _, received in
       if received {
-        showingDeepLinkAlert = true
         firebaseService.deepLinkReceived = false
+        // Show preview sheet if we have one, otherwise show error alert
+        if firebaseService.pendingInvitePreview != nil {
+          showingInvitePreview = true
+        } else if firebaseService.lastDeepLinkError != nil || firebaseService.pendingInviteURL != nil {
+          showingDeepLinkAlert = true
+        }
+      }
+    }
+    .sheet(isPresented: $showingInvitePreview) {
+      if let preview = firebaseService.pendingInvitePreview {
+        InvitePreviewSheet(preview: preview, firebaseService: firebaseService)
       }
     }
     .alert("Swarm Invite", isPresented: $showingDeepLinkAlert) {
@@ -244,6 +255,11 @@ struct SwarmDetailView: View {
   
   var body: some View {
     VStack(spacing: 0) {
+      // Awaiting approval banner for pending members (#237)
+      if swarm.role == .pending {
+        awaitingApprovalBanner
+      }
+      
       // Header
       HStack {
         VStack(alignment: .leading, spacing: 4) {
@@ -274,29 +290,11 @@ struct SwarmDetailView: View {
       
       Divider()
       
-      // Tabs
-      Picker("View", selection: $selectedTab) {
-        Text("Members").tag(0)
-        if swarm.role.canApproveMembers {
-          Text("Pending (\(firebaseService.pendingMembers.count))").tag(1)
-        }
-        Text("Invites").tag(2)
-      }
-      .pickerStyle(.segmented)
-      .padding()
-      
-      // Content
-      Group {
-        switch selectedTab {
-        case 0:
-          MembersListView(swarmId: swarm.id, myRole: swarm.role)
-        case 1:
-          PendingMembersView(swarmId: swarm.id)
-        case 2:
-          InvitesListView(swarmId: swarm.id)
-        default:
-          EmptyView()
-        }
+      // Content for pending members is limited
+      if swarm.role == .pending {
+        pendingMemberContent
+      } else {
+        approvedMemberContent
       }
     }
     .sheet(isPresented: $showingInviteSheet) {
@@ -312,6 +310,85 @@ struct SwarmDetailView: View {
     .task {
       if swarm.role.canApproveMembers {
         try? await firebaseService.loadPendingMembers(swarmId: swarm.id)
+      }
+    }
+  }
+  
+  // MARK: - Awaiting Approval Banner (#237)
+  
+  @ViewBuilder
+  private var awaitingApprovalBanner: some View {
+    HStack(spacing: 12) {
+      Image(systemName: "clock.badge.questionmark")
+        .font(.title2)
+        .foregroundStyle(.orange)
+      
+      VStack(alignment: .leading, spacing: 2) {
+        Text("Awaiting Approval")
+          .font(.headline)
+        Text("A swarm admin will review your membership request.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+      
+      Spacer()
+    }
+    .padding()
+    .background(.orange.opacity(0.1))
+  }
+  
+  // MARK: - Pending Member Content (#237)
+  
+  @ViewBuilder
+  private var pendingMemberContent: some View {
+    VStack(spacing: 24) {
+      Spacer()
+      
+      Image(systemName: "person.crop.circle.badge.clock")
+        .font(.system(size: 64))
+        .foregroundStyle(.secondary)
+      
+      Text("Your membership is pending")
+        .font(.title3)
+        .fontWeight(.medium)
+      
+      Text("Once an admin approves your request, you'll be able to:\n• View swarm members and workers\n• Submit tasks and chains\n• Access shared RAG indexes")
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: 400)
+      
+      Spacer()
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+  
+  // MARK: - Approved Member Content
+  
+  @ViewBuilder
+  private var approvedMemberContent: some View {
+    // Tabs
+    Picker("View", selection: $selectedTab) {
+      Text("Members").tag(0)
+      if swarm.role.canApproveMembers {
+        Text("Pending (\(firebaseService.pendingMembers.count))").tag(1)
+      }
+      Text("Invites").tag(2)
+    }
+    .pickerStyle(.segmented)
+    .padding()
+    
+    // Content
+    Group {
+      switch selectedTab {
+      case 0:
+        MembersListView(swarmId: swarm.id, myRole: swarm.role)
+      case 1:
+        PendingMembersView(swarmId: swarm.id)
+      case 2:
+        InvitesListView(swarmId: swarm.id)
+      default:
+        EmptyView()
       }
     }
   }
