@@ -70,6 +70,7 @@ struct ToolSection<Content: View>: View {
           .font(.headline)
         content()
       }
+      .padding(4)
     }
   }
 }

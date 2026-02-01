@@ -56,6 +56,7 @@ struct PIIScrubberView: View {
             Text("json").tag("json")
             Text("text").tag("text")
           }
+          .labelsHidden()
           .pickerStyle(.segmented)
           .frame(width: 160)
           .accessibilityIdentifier("agents.piiScrubber.reportFormat")

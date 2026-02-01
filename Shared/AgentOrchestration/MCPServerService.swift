@@ -32,6 +32,8 @@ public final class MCPServerService {
     static let autoCleanupWorkspaces = "mcp.server.autoCleanupWorkspaces"
     static let sleepPreventionEnabled = "mcp.server.sleepPreventionEnabled"
     static let lanModeEnabled = "mcp.server.lanModeEnabled"
+    static let allowAllTools = "mcp.server.allowAllTools"
+    static let allowForegroundTools = "mcp.server.allowForegroundTools"
     static let localRagEnabled = "localrag.enabled"
     static let localRagRepoPath = "localrag.repoPath"
     static let localRagQuery = "localrag.query"
@@ -216,7 +218,7 @@ public final class MCPServerService {
 
   public var isEnabled: Bool {
     didSet {
-      UserDefaults.standard.set(isEnabled, forKey: StorageKey.enabled)
+      config.set(isEnabled, forKey: StorageKey.enabled)
       if isEnabled {
         start()
       } else {
@@ -227,7 +229,7 @@ public final class MCPServerService {
 
   public var port: Int {
     didSet {
-      UserDefaults.standard.set(port, forKey: StorageKey.port)
+      config.set(port, forKey: StorageKey.port)
       if isRunning {
         stop()
         start()
@@ -240,7 +242,7 @@ public final class MCPServerService {
       if maxConcurrentChains < 1 {
         maxConcurrentChains = 1
       }
-      UserDefaults.standard.set(maxConcurrentChains, forKey: StorageKey.maxConcurrentChains)
+      config.set(maxConcurrentChains, forKey: StorageKey.maxConcurrentChains)
     }
   }
 
@@ -249,19 +251,19 @@ public final class MCPServerService {
       if maxQueuedChains < 0 {
         maxQueuedChains = 0
       }
-      UserDefaults.standard.set(maxQueuedChains, forKey: StorageKey.maxQueuedChains)
+      config.set(maxQueuedChains, forKey: StorageKey.maxQueuedChains)
     }
   }
 
   public var autoCleanupWorkspaces: Bool {
     didSet {
-      UserDefaults.standard.set(autoCleanupWorkspaces, forKey: StorageKey.autoCleanupWorkspaces)
+      config.set(autoCleanupWorkspaces, forKey: StorageKey.autoCleanupWorkspaces)
     }
   }
   
   public var sleepPreventionEnabled: Bool {
     didSet {
-      UserDefaults.standard.set(sleepPreventionEnabled, forKey: StorageKey.sleepPreventionEnabled)
+      config.set(sleepPreventionEnabled, forKey: StorageKey.sleepPreventionEnabled)
       updateSleepPrevention()
     }
   }
@@ -270,7 +272,7 @@ public final class MCPServerService {
   /// WARNING: Only enable on trusted networks. No authentication is performed.
   public var lanModeEnabled: Bool {
     didSet {
-      UserDefaults.standard.set(lanModeEnabled, forKey: StorageKey.lanModeEnabled)
+      config.set(lanModeEnabled, forKey: StorageKey.lanModeEnabled)
       // Restart server if running to apply change
       if isRunning {
         stop()
@@ -307,19 +309,19 @@ public final class MCPServerService {
     set { uiAutomationProvider.lastUIAction = newValue }
   }
   public var localRagEnabled: Bool = true {
-    didSet { UserDefaults.standard.set(localRagEnabled, forKey: StorageKey.localRagEnabled) }
+    didSet { config.set(localRagEnabled, forKey: StorageKey.localRagEnabled) }
   }
   public var localRagRepoPath: String = "" {
-    didSet { UserDefaults.standard.set(localRagRepoPath, forKey: StorageKey.localRagRepoPath) }
+    didSet { config.set(localRagRepoPath, forKey: StorageKey.localRagRepoPath) }
   }
   public var localRagQuery: String = "" {
-    didSet { UserDefaults.standard.set(localRagQuery, forKey: StorageKey.localRagQuery) }
+    didSet { config.set(localRagQuery, forKey: StorageKey.localRagQuery) }
   }
   public var localRagSearchMode: RAGSearchMode = .text {
-    didSet { UserDefaults.standard.set(localRagSearchMode.rawValue, forKey: StorageKey.localRagSearchMode) }
+    didSet { config.set(localRagSearchMode.rawValue, forKey: StorageKey.localRagSearchMode) }
   }
   public var localRagSearchLimit: Int = 5 {
-    didSet { UserDefaults.standard.set(localRagSearchLimit, forKey: StorageKey.localRagSearchLimit) }
+    didSet { config.set(localRagSearchLimit, forKey: StorageKey.localRagSearchLimit) }
   }
 
   // MARK: - Prompt Rules & Guardrails
@@ -412,7 +414,7 @@ public final class MCPServerService {
   }
 
   private func loadPromptRules() -> PromptRules {
-    guard let data = UserDefaults.standard.data(forKey: "mcp.server.promptRules"),
+    guard let data = config.data(forKey: "mcp.server.promptRules"),
           let rules = try? JSONDecoder().decode(PromptRules.self, from: data) else {
       return .default
     }
@@ -421,19 +423,19 @@ public final class MCPServerService {
 
   private func savePromptRules() {
     guard let data = try? JSONEncoder().encode(promptRules) else { return }
-    UserDefaults.standard.set(data, forKey: "mcp.server.promptRules")
+    config.set(data, forKey: "mcp.server.promptRules")
   }
 
   private func saveRagUsageStats() {
     guard let data = try? JSONEncoder().encode(ragUsage) else { return }
-    UserDefaults.standard.set(data, forKey: StorageKey.ragUsageStats)
+    config.set(data, forKey: StorageKey.ragUsageStats)
   }
 
   private func saveRagSessionEvents() {
     // Keep only last 50 events to avoid unbounded growth
     let eventsToSave = Array(ragSessionEvents.suffix(50))
     guard let data = try? JSONEncoder().encode(eventsToSave) else { return }
-    UserDefaults.standard.set(data, forKey: StorageKey.ragSessionEvents)
+    config.set(data, forKey: StorageKey.ragSessionEvents)
   }
 
   /// Clears persisted RAG session data (for starting fresh)
@@ -540,6 +542,7 @@ public final class MCPServerService {
   private var connectionStates: [UUID: ConnectionState] = [:]
   private var sleepPreventionAssertionId: IOPMAssertionID?
   private let permissionsStore: MCPToolPermissionsProviding
+  private let config: MCPServerConfigProviding
   public private(set) var permissionsVersion: Int = 0
 
   private struct ConnectionState {
@@ -553,6 +556,7 @@ public final class MCPServerService {
     telemetryProvider: MCPTelemetryProviding? = nil,
     uiAutomationProvider: MCPUIAutomationProviding = MCPUIAutomationStore(),
     permissionsStore: MCPToolPermissionsProviding = MCPToolPermissionsStore(),
+    config: MCPServerConfigProviding = MCPUserDefaultsConfig(),
     vmIsolationService: VMIsolationService = VMIsolationService()
   ) {
     // Initialize tool handlers first (before self is fully initialized)
@@ -573,6 +577,7 @@ public final class MCPServerService {
     self.cliService = resolvedCLIService
     self.uiAutomationProvider = uiAutomationProvider
     self.permissionsStore = permissionsStore
+    self.config = config
     self.vmIsolationService = vmIsolationService
     self.chainRunner = AgentChainRunner(
       agentManager: agentManager,
@@ -586,39 +591,39 @@ public final class MCPServerService {
       agentManager: agentManager
     )
     
-    self.isEnabled = UserDefaults.standard.bool(forKey: StorageKey.enabled)
-    self.port = UserDefaults.standard.integer(forKey: StorageKey.port)
-    self.maxConcurrentChains = UserDefaults.standard.integer(forKey: StorageKey.maxConcurrentChains)
-    self.maxQueuedChains = UserDefaults.standard.integer(forKey: StorageKey.maxQueuedChains)
-    self.autoCleanupWorkspaces = UserDefaults.standard.bool(forKey: StorageKey.autoCleanupWorkspaces)
-    self.sleepPreventionEnabled = UserDefaults.standard.bool(forKey: StorageKey.sleepPreventionEnabled)
-    self.lanModeEnabled = UserDefaults.standard.bool(forKey: StorageKey.lanModeEnabled)
+    self.isEnabled = config.bool(forKey: StorageKey.enabled, default: false)
+    self.port = config.integer(forKey: StorageKey.port, default: 0)
+    self.maxConcurrentChains = config.integer(forKey: StorageKey.maxConcurrentChains, default: 0)
+    self.maxQueuedChains = config.integer(forKey: StorageKey.maxQueuedChains, default: 0)
+    self.autoCleanupWorkspaces = config.bool(forKey: StorageKey.autoCleanupWorkspaces, default: false)
+    self.sleepPreventionEnabled = config.bool(forKey: StorageKey.sleepPreventionEnabled, default: false)
+    self.lanModeEnabled = config.bool(forKey: StorageKey.lanModeEnabled, default: false)
     // Default RAG enabled to true if not explicitly set
-    if UserDefaults.standard.object(forKey: StorageKey.localRagEnabled) == nil {
+    if !config.objectExists(forKey: StorageKey.localRagEnabled) {
       self.localRagEnabled = true
     } else {
-      self.localRagEnabled = UserDefaults.standard.bool(forKey: StorageKey.localRagEnabled)
+      self.localRagEnabled = config.bool(forKey: StorageKey.localRagEnabled, default: true)
     }
-    self.localRagRepoPath = UserDefaults.standard.string(forKey: StorageKey.localRagRepoPath) ?? ""
-    self.localRagQuery = UserDefaults.standard.string(forKey: StorageKey.localRagQuery) ?? ""
-    let storedMode = UserDefaults.standard.string(forKey: StorageKey.localRagSearchMode) ?? RAGSearchMode.text.rawValue
+    self.localRagRepoPath = config.string(forKey: StorageKey.localRagRepoPath, default: "")
+    self.localRagQuery = config.string(forKey: StorageKey.localRagQuery, default: "")
+    let storedMode = config.string(forKey: StorageKey.localRagSearchMode, default: RAGSearchMode.text.rawValue)
     self.localRagSearchMode = RAGSearchMode(rawValue: storedMode) ?? .text
-    let storedLimit = UserDefaults.standard.integer(forKey: StorageKey.localRagSearchLimit)
+    let storedLimit = config.integer(forKey: StorageKey.localRagSearchLimit, default: 0)
     self.localRagSearchLimit = storedLimit == 0 ? 5 : storedLimit
     // Initialize prompt rules from UserDefaults
-    if let data = UserDefaults.standard.data(forKey: "mcp.server.promptRules"),
+    if let data = config.data(forKey: "mcp.server.promptRules"),
        let rules = try? JSONDecoder().decode(PromptRules.self, from: data) {
       self.promptRules = rules
     } else {
       self.promptRules = .default
     }
     // Load persisted RAG usage stats
-    if let data = UserDefaults.standard.data(forKey: StorageKey.ragUsageStats),
+    if let data = config.data(forKey: StorageKey.ragUsageStats),
        let stats = try? JSONDecoder().decode(RAGUsageStats.self, from: data) {
       self.ragUsage = stats
     }
     // Load persisted RAG session events (limit to last 50)
-    if let data = UserDefaults.standard.data(forKey: StorageKey.ragSessionEvents),
+    if let data = config.data(forKey: StorageKey.ragSessionEvents),
        let events = try? JSONDecoder().decode([RAGSessionEvent].self, from: data) {
       self.ragSessionEvents = Array(events.suffix(50))
     }
@@ -685,13 +690,13 @@ public final class MCPServerService {
 
   public var toolCategories: [ToolCategory] {
     ToolCategory.allCases.filter { category in
-      toolDefinitions.contains { $0.category == category }
+      activeToolDefinitions.contains { $0.category == category }
     }
   }
 
   public var toolGroups: [ToolGroup] {
     ToolGroup.allCases.filter { group in
-      toolDefinitions.contains { !groups(for: $0).filter { $0 == group }.isEmpty }
+      activeToolDefinitions.contains { !groups(for: $0).filter { $0 == group }.isEmpty }
     }
   }
 
@@ -700,7 +705,7 @@ public final class MCPServerService {
   }
 
   public func tools(in category: ToolCategory) -> [ToolDefinition] {
-    toolDefinitions
+    activeToolDefinitions
       .filter { $0.category == category }
       .sorted { $0.name < $1.name }
   }
@@ -710,7 +715,7 @@ public final class MCPServerService {
   }
 
   public func tools(in group: ToolGroup) -> [ToolDefinition] {
-    toolDefinitions
+    activeToolDefinitions
       .filter { groups(for: $0).contains(group) }
       .sorted { $0.name < $1.name }
   }
@@ -728,19 +733,19 @@ public final class MCPServerService {
   }
 
   public var foregroundToolCount: Int {
-    toolDefinitions.filter { $0.requiresForeground }.count
+    activeToolDefinitions.filter { $0.requiresForeground }.count
   }
 
   public var backgroundToolCount: Int {
-    toolDefinitions.filter { !$0.requiresForeground }.count
+    activeToolDefinitions.filter { !$0.requiresForeground }.count
   }
 
   public var totalToolCount: Int {
-    toolDefinitions.count
+    activeToolDefinitions.count
   }
 
   public var enabledToolCount: Int {
-    toolDefinitions.filter { isToolEnabled($0.name) }.count
+    activeToolDefinitions.filter { isToolEnabled($0.name) }.count
   }
 
   public func isCategoryEnabled(_ category: ToolCategory) -> Bool {
@@ -762,15 +767,18 @@ public final class MCPServerService {
   }
 
   public func setAllToolsEnabled(_ enabled: Bool) {
-    updateToolsEnabled(toolDefinitions, enabled: enabled)
+    updateToolsEnabled(activeToolDefinitions, enabled: enabled)
   }
 
   public func isToolEnabled(_ name: String) -> Bool {
-    guard toolDefinition(named: name) != nil else { return false }
-    if name.hasPrefix("ui.") {
+    guard let tool = toolDefinition(named: name) else { return false }
+    if tool.requiresForeground && !allowForegroundTools {
+      return false
+    }
+    if name.hasPrefix("ui."), allowForegroundTools {
       return true
     }
-    if UserDefaults.standard.bool(forKey: "mcp.server.allowAllTools") {
+    if config.bool(forKey: StorageKey.allowAllTools, default: false) {
       return true
     }
     return permissionsStore.isToolEnabled(name)
@@ -1807,6 +1815,13 @@ public final class MCPServerService {
       return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32601, message: "Unknown tool"))
     }
 
+    if tool.requiresForeground && !allowForegroundTools {
+      await telemetryProvider.warning("Foreground tool disabled", metadata: ["name": resolvedName])
+      lastBlockedTool = resolvedName
+      lastBlockedToolAt = Date()
+      return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32010, message: "Tool disabled in headless mode"))
+    }
+
     lastToolRequiresForeground = tool.requiresForeground
     lastToolRequiresForegroundAt = Date()
 
@@ -2030,15 +2045,15 @@ public final class MCPServerService {
     let controlValuesByView = Dictionary(uniqueKeysWithValues: availableViewIds().map { viewId in
       (viewId, controlValues(for: viewId))
     })
-    let toolForegroundByName = Dictionary(uniqueKeysWithValues: toolDefinitions.map { tool in
+    let toolForegroundByName = Dictionary(uniqueKeysWithValues: activeToolDefinitions.map { tool in
       (tool.name, tool.requiresForeground)
     })
-    let toolGroupsByName = Dictionary(uniqueKeysWithValues: toolDefinitions.map { tool in
+    let toolGroupsByName = Dictionary(uniqueKeysWithValues: activeToolDefinitions.map { tool in
       (tool.name, groups(for: tool).map { $0.rawValue })
     })
     let state: [String: Any] = [
       "views": availableViewIds(),
-      "tools": toolDefinitions.map { $0.name },
+      "tools": activeToolDefinitions.map { $0.name },
       "controls": controls,
       "controlsByView": controlsByView,
       "controlValuesByView": controlValuesByView,
@@ -3229,11 +3244,22 @@ public final class MCPServerService {
     permissionsVersion &+= 1
   }
 
-  private func toolDefinition(named name: String) -> ToolDefinition? {
-    toolDefinitions.first { $0.name == name }
+  private var allowForegroundTools: Bool {
+    config.bool(forKey: StorageKey.allowForegroundTools, default: true)
   }
 
-  private var toolDefinitions: [ToolDefinition] {
+  private func toolDefinition(named name: String) -> ToolDefinition? {
+    allToolDefinitions.first { $0.name == name }
+  }
+
+  private var activeToolDefinitions: [ToolDefinition] {
+    guard allowForegroundTools else {
+      return allToolDefinitions.filter { !$0.requiresForeground }
+    }
+    return allToolDefinitions
+  }
+
+  private var allToolDefinitions: [ToolDefinition] {
     [
       ToolDefinition(
         name: "ui.tap",
@@ -5134,7 +5160,7 @@ public final class MCPServerService {
   }
 
   private func toolList() -> [[String: Any]] {
-    toolDefinitions.map { tool in
+    activeToolDefinitions.map { tool in
       [
         "name": sanitizedToolName(tool.name),
         "originalName": tool.name,
@@ -5160,7 +5186,7 @@ public final class MCPServerService {
     if toolDefinition(named: name) != nil {
       return name
     }
-    let match = toolDefinitions.first { sanitizedToolName($0.name) == name }
+    let match = allToolDefinitions.first { sanitizedToolName($0.name) == name }
     if let match {
       return match.name
     }
