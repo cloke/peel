@@ -12,10 +12,18 @@ MCPCore provides the foundational types for building MCP-based automation:
 
 ## Installation
 
-Add MCPCore as a local package dependency:
+Add MCPCore as a Swift Package dependency:
 
 ```swift
-.package(path: "Local Packages/MCPCore")
+dependencies: [
+  .package(url: "https://github.com/crunchybananas/MCPCore.git", from: "1.0.0")
+]
+```
+
+Then add `MCPCore` to your target's dependencies:
+
+```swift
+.target(name: "YourApp", dependencies: ["MCPCore"])
 ```
 
 ## Architecture Boundaries

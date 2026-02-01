@@ -9,7 +9,8 @@ let package = Package(
     .library(name: "MCPServerKit", targets: ["MCPServerKit"])
   ],
   dependencies: [
-    .package(path: "../MCPCore")
+    // For local development, use: .package(path: "../MCPCore")
+    .package(url: "https://github.com/crunchybananas/MCPCore.git", from: "1.0.0")
   ],
   targets: [
     .target(
