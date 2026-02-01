@@ -12,11 +12,21 @@ A reusable Swift package for embedding MCP (Model Context Protocol) servers in m
 
 ## Installation
 
-Add MCPServerKit as a local package dependency:
+Add MCPServerKit as a Swift Package dependency:
 
 ```swift
-.package(path: "Local Packages/MCPServerKit")
+dependencies: [
+  .package(url: "https://github.com/crunchybananas/MCPServerKit.git", from: "1.0.0")
+]
 ```
+
+Then add `MCPServerKit` to your target's dependencies:
+
+```swift
+.target(name: "YourApp", dependencies: ["MCPServerKit"])
+```
+
+MCPServerKit automatically brings in MCPCore as a transitive dependency.
 
 ## Quick Start
 
