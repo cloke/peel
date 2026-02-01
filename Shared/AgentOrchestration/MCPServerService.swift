@@ -184,6 +184,35 @@ public final class MCPServerService {
     }
   }
 
+  // MARK: - RAG Analysis State (per repo)
+  
+  /// Observable state for a single repo's analysis - stored in MCPServerService to persist across view navigation
+  @Observable
+  @MainActor
+  public final class RAGRepoAnalysisState {
+    public let repoId: String
+    public let repoPath: String
+    
+    public var analyzedCount: Int = 0
+    public var unanalyzedCount: Int = 0
+    public var isAnalyzing: Bool = false
+    public var isPaused: Bool = false
+    public var analyzeError: String?
+    public var analysisStartTime: Date?
+    public var chunksPerSecond: Double = 0
+    public var sessionChunksAnalyzed: Int = 0
+    public var analyzeTask: Task<Void, Never>?
+    public var batchProgress: (current: Int, total: Int)?
+    
+    public var totalChunks: Int { analyzedCount + unanalyzedCount }
+    public var progress: Double { totalChunks > 0 ? Double(analyzedCount) / Double(totalChunks) : 0 }
+    public var isComplete: Bool { totalChunks > 0 && unanalyzedCount == 0 }
+    
+    public init(repoId: String, repoPath: String) {
+      self.repoId = repoId
+      self.repoPath = repoPath
+    }
+  }
 
   public var isEnabled: Bool {
     didSet {
@@ -436,6 +465,19 @@ public final class MCPServerService {
   private(set) var lastRagSearchLimit: Int?
   private(set) var lastRagSearchAt: Date?
   private(set) var lastRagSearchResults: [LocalRAGSearchResult] = []
+  
+  /// Per-repo analysis state (keyed by repo ID) - persists across view navigation
+  public var repoAnalysisStates: [String: RAGRepoAnalysisState] = [:]
+  
+  /// Get or create analysis state for a repo
+  public func analysisState(for repoId: String, repoPath: String) -> RAGRepoAnalysisState {
+    if let existing = repoAnalysisStates[repoId] {
+      return existing
+    }
+    let state = RAGRepoAnalysisState(repoId: repoId, repoPath: repoPath)
+    repoAnalysisStates[repoId] = state
+    return state
+  }
 
   public let agentManager: AgentManager
   public let cliService: CLIService
