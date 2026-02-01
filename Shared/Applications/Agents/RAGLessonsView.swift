@@ -129,9 +129,10 @@ struct RAGLessonsView: View {
   @ViewBuilder
   private func lessonRow(_ lesson: LocalRAGLesson) -> some View {
     VStack(alignment: .leading, spacing: 4) {
-      HStack {
+      HStack(alignment: .top) {
         // Confidence indicator
         confidenceIndicator(lesson.confidence)
+          .padding(.top, 4)
         
         Text(lesson.fixDescription)
           .font(.callout)
