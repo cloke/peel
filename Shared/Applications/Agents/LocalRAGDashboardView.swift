@@ -14,6 +14,9 @@ import AppKit
 
 struct LocalRAGDashboardView: View {
   @Bindable var mcpServer: MCPServerService
+  @Environment(\.modelContext) private var modelContext
+  @Query(sort: \SyncedRepository.name) private var syncedRepos: [SyncedRepository]
+  @Query private var localPaths: [LocalRepositoryPath]
   
   // Add repo state
   @State private var isAddRepoPresented: Bool = false
@@ -348,10 +351,10 @@ struct LocalRAGDashboardView: View {
           .buttonStyle(.bordered)
         }
         
-        // Detected git repos in common locations
+        // Repos from Git view not yet indexed
         if !detectedRepos.isEmpty {
           VStack(alignment: .leading, spacing: 8) {
-            Text("Detected Git Repositories")
+            Text("Repositories in App (not yet indexed)")
               .font(.caption)
               .foregroundStyle(.secondary)
             
@@ -455,30 +458,24 @@ struct LocalRAGDashboardView: View {
   // MARK: - Helper Properties
   
   private var detectedRepos: [String] {
-    // Look for common code directories
-    let home = FileManager.default.homeDirectoryForCurrentUser
-    let codeDirs = ["code", "Code", "Projects", "Developer", "dev", "repos"]
+    // Get repos from the app's Git view (SyncedRepository + LocalRepositoryPath)
+    // Only show repos that haven't been indexed yet
     var found: [String] = []
     
-    for dir in codeDirs {
-      let path = home.appendingPathComponent(dir)
-      if FileManager.default.fileExists(atPath: path.path) {
-        // Look for git repos one level deep
-        if let contents = try? FileManager.default.contentsOfDirectory(at: path, includingPropertiesForKeys: nil) {
-          for item in contents {
-            let gitPath = item.appendingPathComponent(".git")
-            if FileManager.default.fileExists(atPath: gitPath.path) {
-              // Check if already indexed
-              if !mcpServer.ragRepos.contains(where: { $0.rootPath == item.path }) {
-                found.append(item.path)
-              }
-            }
+    for repo in syncedRepos {
+      if let localPath = localPaths.first(where: { $0.repositoryId == repo.id }) {
+        let path = localPath.localPath
+        // Check if already indexed in RAG
+        if !mcpServer.ragRepos.contains(where: { $0.rootPath == path }) {
+          // Verify the path still exists
+          if FileManager.default.fileExists(atPath: path) {
+            found.append(path)
           }
         }
       }
     }
     
-    return Array(found.prefix(10))
+    return found
   }
   
   // MARK: - Helper Methods
