@@ -25,7 +25,9 @@ clear separation between reusable framework code and app‑specific integrations
 
 ## Current State
 - **MCPCore** is a portable package with types, templates, and DTOs.
-- MCP server and tool implementations live in app code, with settings tied to `UserDefaults`.
+- **MCPServerKit** package created with server networking, tool registry, and handler helpers.
+- MCP server implementation in app uses config abstraction (`MCPServerConfigProviding`).
+- Tool gating implemented via `allowForegroundTools` flag.
 - UI automation/screenshot tools depend on AppKit/ScreenCaptureKit.
 
 ## Target Architecture
@@ -51,10 +53,10 @@ clear separation between reusable framework code and app‑specific integrations
    - Provide a minimal embedding guide for host apps and CLI usage.
 
 ## Milestones
-- M1: MCPServerKit package compiles in isolation with basic tools.
-- M2: App builds using MCPServerKit with no functional regression.
-- M3: MCPCLI can start server and list tools in headless mode.
-- M4: Documentation for embedding + CLI usage published.
+- ✅ M1: MCPServerKit package compiles in isolation with basic tools.
+- 🔄 M2: App builds using MCPServerKit with no functional regression.
+- ⬜ M3: MCPCLI can start server and list tools in headless mode.
+- ⬜ M4: Documentation for embedding + CLI usage published.
 
 ## Risks
 - Hidden AppKit dependencies in tool handlers.
