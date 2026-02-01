@@ -23,15 +23,7 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>crunchy-kitchen-sink</string>
-			</array>
-		</dict>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Viewer</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>peel</string>
+				<string>crunchy-peel</string>
 			</array>
 		</dict>
 	</array>
