@@ -99,6 +99,9 @@ public final class FirebaseService {
   /// ID of the swarm that was most recently joined (for UI auto-selection after invite)
   public var lastJoinedSwarmId: String?
   
+  /// Pending invite preview (shown before accepting)
+  public var pendingInvitePreview: InvitePreview?
+  
   // MARK: - Private State
   
   private var authStateListener: AuthStateDidChangeListenerHandle?
@@ -460,6 +463,84 @@ public final class FirebaseService {
     ])
     
     logger.info("Revoked invite \(inviteId)")
+  }
+  
+  /// Fetch invite preview details without accepting (#237)
+  public func fetchInvitePreview(url: URL) async throws -> InvitePreview {
+    guard isConfigured else { throw FirebaseError.notConfigured }
+    
+    // Parse URL
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+          let swarmId = components.queryItems?.first(where: { $0.name == "s" })?.value,
+          let inviteId = components.queryItems?.first(where: { $0.name == "i" })?.value,
+          let token = components.queryItems?.first(where: { $0.name == "t" })?.value
+    else {
+      throw FirebaseError.invalidInvite
+    }
+    
+    // Get swarm info
+    let swarmDoc = try await swarmsCollection().document(swarmId).getDocument()
+    guard let swarmData = swarmDoc.data(),
+          let swarmName = swarmData["name"] as? String
+    else {
+      throw FirebaseError.swarmNotFound
+    }
+    
+    // Get invite info
+    let inviteDoc = try await invitesCollection(swarmId: swarmId).document(inviteId).getDocument()
+    guard let inviteData = inviteDoc.data(),
+          let storedToken = inviteData["token"] as? String,
+          storedToken == token
+    else {
+      throw FirebaseError.invalidInvite
+    }
+    
+    // Check if revoked
+    if let revoked = inviteData["revoked"] as? Bool, revoked {
+      throw FirebaseError.inviteRevoked
+    }
+    
+    // Check expiration
+    guard let expires = inviteData["expires"] as? Timestamp else {
+      throw FirebaseError.invalidInvite
+    }
+    let expiresAt = expires.dateValue()
+    if expiresAt < Date() {
+      throw FirebaseError.inviteExpired
+    }
+    
+    // Check uses
+    let maxUses = inviteData["maxUses"] as? Int ?? 1
+    let usedBy = inviteData["usedBy"] as? [String] ?? []
+    if usedBy.count >= maxUses {
+      throw FirebaseError.inviteFullyUsed
+    }
+    
+    // Get inviter info
+    let createdBy = inviteData["createdBy"] as? String
+    var inviterName: String?
+    if let inviterId = createdBy {
+      let inviterDoc = try? await membersCollection(swarmId: swarmId).document(inviterId).getDocument()
+      inviterName = inviterDoc?.data()?["displayName"] as? String
+    }
+    
+    // Check if already a member
+    var isAlreadyMember = false
+    if let userId = currentUserId {
+      let memberDoc = try? await membersCollection(swarmId: swarmId).document(userId).getDocument()
+      isAlreadyMember = memberDoc?.exists == true
+    }
+    
+    return InvitePreview(
+      url: url,
+      swarmId: swarmId,
+      swarmName: swarmName,
+      inviteId: inviteId,
+      inviterName: inviterName,
+      expiresAt: expiresAt,
+      remainingUses: maxUses - usedBy.count,
+      isAlreadyMember: isAlreadyMember
+    )
   }
   
   /// Accept a swarm invite
@@ -1313,6 +1394,7 @@ public final class FirebaseService {
     
     // Reset state
     lastDeepLinkError = nil
+    pendingInvitePreview = nil
     deepLinkReceived = true
     
     // Ensure Firebase is configured before accessing Firestore
@@ -1335,7 +1417,7 @@ public final class FirebaseService {
       return
     }
     
-    // Must be signed in to accept invites - store URL for later
+    // Must be signed in to preview invites - store URL for later
     guard isSignedIn else {
       pendingInviteURL = url
       lastDeepLinkError = "Sign in to accept this invite"
@@ -1343,30 +1425,58 @@ public final class FirebaseService {
       return
     }
     
+    // Fetch preview instead of immediately accepting (#237)
     do {
-      try await acceptInvite(url: url)
-      pendingInviteURL = nil
-      logger.info("Successfully accepted invite")
+      let preview = try await fetchInvitePreview(url: url)
+      pendingInvitePreview = preview
+      pendingInviteURL = url
+      logger.info("Showing invite preview for swarm: \(preview.swarmName)")
     } catch {
-      lastDeepLinkError = "Failed to accept invite: \(error.localizedDescription)"
+      lastDeepLinkError = error.localizedDescription
+      logger.error("Failed to fetch invite preview: \(error)")
+    }
+  }
+  
+  /// Accept the pending invite preview
+  public func acceptPendingInvite() async {
+    guard let preview = pendingInvitePreview else { return }
+    
+    do {
+      try await acceptInvite(url: preview.url)
+      pendingInvitePreview = nil
+      pendingInviteURL = nil
+      lastDeepLinkError = nil
+      logger.info("Successfully accepted invite to: \(preview.swarmName)")
+    } catch {
+      lastDeepLinkError = error.localizedDescription
       logger.error("Failed to accept invite: \(error)")
     }
   }
   
-  /// Process any pending invite after sign-in
+  /// Dismiss the pending invite preview without accepting
+  public func dismissInvitePreview() {
+    pendingInvitePreview = nil
+    pendingInviteURL = nil
+    lastDeepLinkError = nil
+  }
+  
+  /// Process any pending invite after sign-in (fetches preview for user to confirm)
   public func processPendingInvite() async {
     guard let url = pendingInviteURL, isSignedIn else { return }
     
     logger.info("Processing pending invite after sign-in")
-    pendingInviteURL = nil
     
+    // Fetch preview instead of auto-accepting (#237)
     do {
-      try await acceptInvite(url: url)
-      lastDeepLinkError = nil
-      logger.info("Successfully accepted pending invite")
+      let preview = try await fetchInvitePreview(url: url)
+      pendingInvitePreview = preview
+      deepLinkReceived = true
+      logger.info("Showing invite preview after sign-in for swarm: \(preview.swarmName)")
     } catch {
-      lastDeepLinkError = "Failed to accept invite: \(error.localizedDescription)"
-      logger.error("Failed to accept pending invite: \(error)")
+      lastDeepLinkError = error.localizedDescription
+      pendingInviteURL = nil
+      deepLinkReceived = true
+      logger.error("Failed to fetch invite preview after sign-in: \(error)")
     }
   }
 }
@@ -1462,6 +1572,10 @@ public enum FirebaseError: LocalizedError {
   case notSignedIn
   case notImplemented
   case invalidInvite
+  case inviteExpired
+  case inviteRevoked
+  case inviteFullyUsed
+  case swarmNotFound
   case invalidCredential
   case permissionDenied
   case networkError(Error)
@@ -1471,12 +1585,28 @@ public enum FirebaseError: LocalizedError {
     case .notConfigured: return "Firebase not configured"
     case .notSignedIn: return "Not signed in"
     case .notImplemented: return "Feature not yet implemented"
-    case .invalidInvite: return "Invalid or expired invite"
+    case .invalidInvite: return "Invalid invite link"
+    case .inviteExpired: return "This invite has expired"
+    case .inviteRevoked: return "This invite has been revoked"
+    case .inviteFullyUsed: return "This invite has reached its usage limit"
+    case .swarmNotFound: return "Swarm not found"
     case .invalidCredential: return "Invalid Apple Sign-In credential"
     case .permissionDenied: return "Permission denied"
     case .networkError(let error): return "Network error: \(error.localizedDescription)"
     }
   }
+}
+
+/// Preview info for an invite before accepting (#237)
+public struct InvitePreview: Sendable {
+  public let url: URL
+  public let swarmId: String
+  public let swarmName: String
+  public let inviteId: String
+  public let inviterName: String?
+  public let expiresAt: Date
+  public let remainingUses: Int
+  public let isAlreadyMember: Bool
 }
 
 // MARK: - Firestore Worker Types (#225)

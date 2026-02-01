@@ -184,9 +184,10 @@ struct RAGLessonsView: View {
   @ViewBuilder
   private var editorView: some View {
     if selectedLessonId != nil || isCreatingNew {
-      VStack(alignment: .leading, spacing: 12) {
-        // File Pattern
-        VStack(alignment: .leading, spacing: 4) {
+      ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+          // File Pattern
+          VStack(alignment: .leading, spacing: 4) {
           Text("File Pattern")
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -282,8 +283,9 @@ struct RAGLessonsView: View {
           .buttonStyle(.borderedProminent)
           .disabled(lessonFixDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
+        }
+        .padding()
       }
-      .padding()
       .frame(minWidth: 400)
     } else {
       VStack(spacing: 12) {
