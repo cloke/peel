@@ -59,36 +59,6 @@ enum RAGRepoStatus: Equatable {
   }
 }
 
-// MARK: - Analysis State (per repo)
-
-/// Observable state for a single repo's analysis
-@Observable
-@MainActor
-class RAGRepoAnalysisState {
-  let repoId: String
-  let repoPath: String
-  
-  var analyzedCount: Int = 0
-  var unanalyzedCount: Int = 0
-  var isAnalyzing: Bool = false
-  var isPaused: Bool = false
-  var analyzeError: String?
-  var analysisStartTime: Date?
-  var chunksPerSecond: Double = 0
-  var sessionChunksAnalyzed: Int = 0
-  var analyzeTask: Task<Void, Never>?
-  var batchProgress: (current: Int, total: Int)?
-  
-  var totalChunks: Int { analyzedCount + unanalyzedCount }
-  var progress: Double { totalChunks > 0 ? Double(analyzedCount) / Double(totalChunks) : 0 }
-  var isComplete: Bool { totalChunks > 0 && unanalyzedCount == 0 }
-  
-  init(repoId: String, repoPath: String) {
-    self.repoId = repoId
-    self.repoPath = repoPath
-  }
-}
-
 // MARK: - Repository Card View
 
 struct RAGRepositoryCardView: View {
@@ -96,8 +66,10 @@ struct RAGRepositoryCardView: View {
   @Bindable var mcpServer: MCPServerService
   @Binding var isExpanded: Bool
   
-  // Analysis state for this repo
-  @State private var analysisState: RAGRepoAnalysisState
+  // Analysis state for this repo - from centralized store
+  private var analysisState: MCPServerService.RAGRepoAnalysisState {
+    mcpServer.analysisState(for: repo.id, repoPath: repo.rootPath)
+  }
   @State private var selectedModelTier: MLXAnalyzerModelTier = .auto
   
   // Search state for this repo
@@ -138,13 +110,6 @@ struct RAGRepositoryCardView: View {
       return .fullyAnalyzed
     }
     return .partiallyAnalyzed(progress: analysisState.progress)
-  }
-  
-  init(repo: MCPServerService.RAGRepoInfo, mcpServer: MCPServerService, isExpanded: Binding<Bool>) {
-    self.repo = repo
-    self.mcpServer = mcpServer
-    self._isExpanded = isExpanded
-    self._analysisState = State(initialValue: RAGRepoAnalysisState(repoId: repo.id, repoPath: repo.rootPath))
   }
   
   var body: some View {
