@@ -644,6 +644,36 @@ public final class SwarmToolsHandler: MCPToolHandler {
     do {
       try coordinator.start(role: role, port: port)
       
+      // Auto-register as Firestore worker for all member swarms (WAN discovery)
+      // TODO: Add LAN/WAN option - for now, always start WAN
+      var firestoreRegistrations: [[String: Any]] = []
+      let firebaseService = FirebaseService.shared
+      
+      if firebaseService.isSignedIn {
+        let capabilities = WorkerCapabilities.current()
+        for swarm in firebaseService.memberSwarms where swarm.role.canRegisterWorkers {
+          // contributor+ can register as worker
+          do {
+            let workerId = try await firebaseService.registerWorker(
+              swarmId: swarm.id,
+              capabilities: capabilities
+            )
+            firestoreRegistrations.append([
+              "swarmId": swarm.id,
+              "swarmName": swarm.swarmName,
+              "workerId": workerId,
+              "status": "registered"
+            ])
+          } catch {
+            firestoreRegistrations.append([
+              "swarmId": swarm.id,
+              "swarmName": swarm.swarmName,
+              "error": error.localizedDescription
+            ])
+          }
+        }
+      }
+      
       return (200, makeResult(id: id, result: [
         "success": true,
         "role": role.rawValue,
@@ -651,7 +681,8 @@ public final class SwarmToolsHandler: MCPToolHandler {
         "deviceName": coordinator.capabilities.deviceName,
         "deviceId": coordinator.capabilities.deviceId,
         "hasChainExecutor": chainRunner != nil,
-        "registeredRepos": RepoRegistry.shared.registeredRepos.count
+        "registeredRepos": RepoRegistry.shared.registeredRepos.count,
+        "firestoreWorkers": firestoreRegistrations
       ]))
     } catch {
       return internalError(id: id, message: "Failed to start swarm: \(error.localizedDescription)")
