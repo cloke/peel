@@ -455,6 +455,7 @@ public final class MCPServerService {
   private(set) var ragRepos: [RAGRepoInfo] = []
   private(set) var ragIndexingPath: String?
   private(set) var ragIndexProgress: LocalRAGIndexProgress?
+  private(set) var ragIndexingTask: Task<LocalRAGIndexReport, Error>?
   private(set) var lastRagIndexReport: LocalRAGIndexReport?
   private(set) var lastRagIndexAt: Date?
   private(set) var lastRagRefreshAt: Date?
@@ -896,7 +897,7 @@ public final class MCPServerService {
     ragIndexingPath = path
     ragIndexProgress = nil
     
-    do {
+    let task = Task {
       let report = try await localRagStore.indexRepository(
         path: path,
         forceReindex: forceReindex,
@@ -907,17 +908,37 @@ public final class MCPServerService {
           self?.ragIndexProgress = progress
         }
       }
-      
+      return report
+    }
+    ragIndexingTask = task
+    
+    do {
+      let report = try await task.value
+      ragIndexingTask = nil
       ragIndexingPath = nil
       ragIndexProgress = .complete(report: report)
       lastRagIndexReport = report
       lastRagIndexAt = Date()
       await refreshRagSummary()
+    } catch is CancellationError {
+      ragIndexingTask = nil
+      ragIndexingPath = nil
+      ragIndexProgress = nil
+      // Indexing was cancelled - not an error
     } catch {
+      ragIndexingTask = nil
       ragIndexingPath = nil
       ragIndexProgress = nil
       throw error
     }
+  }
+  
+  /// Cancel any in-progress indexing
+  func cancelRagIndexing() {
+    ragIndexingTask?.cancel()
+    ragIndexingTask = nil
+    ragIndexingPath = nil
+    ragIndexProgress = nil
   }
 
   func listRepoGuidanceSkills(
