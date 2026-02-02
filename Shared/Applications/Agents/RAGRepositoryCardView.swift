@@ -350,12 +350,24 @@ struct RAGRepositoryCardView: View {
       if let progress = mcpServer.ragIndexProgress, 
          mcpServer.ragIndexingPath == repo.rootPath,
          !progress.isComplete {
-        VStack(alignment: .leading, spacing: 4) {
-          ProgressView(value: progress.progress)
-            .progressViewStyle(.linear)
-          Text(progress.description)
-            .font(.caption2)
-            .foregroundStyle(.secondary)
+        HStack(spacing: 8) {
+          VStack(alignment: .leading, spacing: 4) {
+            ProgressView(value: progress.progress)
+              .progressViewStyle(.linear)
+            Text(progress.description)
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+          
+          Button {
+            mcpServer.cancelRagIndexing()
+          } label: {
+            Image(systemName: "stop.fill")
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
+          .tint(.red)
+          .help("Cancel indexing")
         }
       }
     }
