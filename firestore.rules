@@ -50,8 +50,13 @@ service cloud.firestore {
       
       // Members subcollection
       match /members/{userId} {
+        // Allow read if:
+        // 1. Active swarm member
+        // 2. Reading own membership
+        // 3. Authenticated (for invite preview - shows inviter name)
         allow read: if isSwarmMember(swarmId) || 
-                      (isAuthenticated() && userId == request.auth.uid);
+                      (isAuthenticated() && userId == request.auth.uid) ||
+                      isAuthenticated();  // Allow reading member display names for invite preview
         // Owner can create any membership, or user can self-join as pending
         // For batch creates (swarm + owner membership), check getAfter to see pending swarm data
         allow create: if isAuthenticated() && (
