@@ -299,7 +299,7 @@ struct HistoricalRunRow: View {
           .foregroundStyle(.green)
       }
       
-      Text(snapshot.updatedAt.formatted(.relative(presentation: .named)))
+      RelativeTimeText(snapshot.updatedAt)
         .font(.caption2)
         .foregroundStyle(.tertiary)
     }

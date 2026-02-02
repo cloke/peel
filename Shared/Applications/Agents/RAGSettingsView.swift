@@ -227,7 +227,7 @@ struct RAGSettingsView: View {
               
               if let lastSync = status.lastSyncedAt {
                 LabeledContent("Last Sync") {
-                  Text(lastSync, format: .relative(presentation: .named))
+                  RelativeTimeText(lastSync)
                     .foregroundStyle(.secondary)
                 }
               }
