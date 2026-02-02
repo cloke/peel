@@ -17,6 +17,7 @@ struct PeelApp: App {
   @Environment(\.openURL) var openURL
   @State private var vmIsolationService = VMIsolationService()
   @State private var mcpServer: MCPServerService
+  @State private var dataService: DataService
   @State private var workerModeActive = false
 
   init() {
@@ -26,6 +27,11 @@ struct PeelApp: App {
     let vmService = VMIsolationService()
     _vmIsolationService = State(initialValue: vmService)
     _mcpServer = State(initialValue: MCPServerService(vmIsolationService: vmService))
+    
+    // Create DataService with model context
+    let container = Self.sharedModelContainer
+    let context = ModelContext(container)
+    _dataService = State(initialValue: DataService(modelContext: context))
     
     // Seed default skills on first launch (Issue #90)
     let container = Self.sharedModelContainer
@@ -119,6 +125,7 @@ struct PeelApp: App {
         }
         .environment(mcpServer)
         .environment(vmIsolationService)
+        .environment(dataService)
     }
     .modelContainer(Self.sharedModelContainer)
     .commands {
@@ -139,6 +146,7 @@ struct PeelApp: App {
       SettingsView()
         .environment(mcpServer)
         .environment(vmIsolationService)
+        .environment(dataService)
     }
     .modelContainer(Self.sharedModelContainer)
   }
