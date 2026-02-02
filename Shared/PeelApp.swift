@@ -98,7 +98,8 @@ struct PeelApp: App {
         .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
         .onOpenURL { url in
           // Handle OAuth callbacks (GitHub auth)
-          if url.scheme == "peel" && url.host == "oauth-callback" {
+          // Supports both legacy (crunchy-kitchen-sink) and new (peel) schemes
+          if (url.scheme == "peel" || url.scheme == "crunchy-kitchen-sink") && url.host == "oauth-callback" {
             OAuthSwift.handle(url: url)
           }
           // Handle swarm invite deep links (peel://swarm/join?s=&i=&t=)
