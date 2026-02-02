@@ -70,6 +70,9 @@ struct LocalRAGDashboardView: View {
     }
     .navigationTitle("Local RAG")
     .toolbar {
+      ToolbarItem(placement: .automatic) {
+        HelpButton(topic: .ragSearch)
+      }
       toolbarContent
     }
     .task {

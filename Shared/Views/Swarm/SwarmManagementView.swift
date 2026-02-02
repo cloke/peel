@@ -151,7 +151,7 @@ struct SwarmManagementView: View {
       
       // Swarm list
       List(selection: $selectedSwarm) {
-        Section("My Swarms") {
+        Section {
           ForEach(firebaseService.memberSwarms) { swarm in
             SwarmRowView(swarm: swarm)
               .tag(swarm)
@@ -161,6 +161,11 @@ struct SwarmManagementView: View {
             Text("No swarms yet")
               .foregroundStyle(.secondary)
               .italic()
+          }
+        } header: {
+          HStack(spacing: 4) {
+            Text("My Swarms")
+            HelpButton(topic: .swarmSetup)
           }
         }
       }
@@ -802,6 +807,9 @@ struct InviteShareSheet: View {
       .toolbar {
         ToolbarItem(placement: .confirmationAction) {
           Button("Done") { dismiss() }
+        }
+        ToolbarItem(placement: .automatic) {
+          HelpButton(topic: .swarmInvites)
         }
       }
     }

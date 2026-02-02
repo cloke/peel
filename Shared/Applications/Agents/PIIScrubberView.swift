@@ -29,7 +29,7 @@ struct PIIScrubberView: View {
 
   var body: some View {
     ToolPageLayout {
-      ToolSection("PII Scrubber") {
+      ToolSection("PII Scrubber", helpTopic: .piiScrubber) {
         LabeledContent("Input path") {
           TextField("/path/to/dump.sql", text: $inputPath)
             .textFieldStyle(.roundedBorder)
