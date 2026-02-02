@@ -531,6 +531,64 @@ final class DataService {
     return json
   }
 
+  /// Lightweight structure for displaying historical execution data
+  struct HistoricalExecution: Identifiable, Sendable {
+    let id: UUID
+    let taskTitle: String
+    let taskDescription: String
+    let status: String
+    let filesChanged: Int
+    let insertions: Int
+    let deletions: Int
+    let mergeConflictCount: Int
+    let guidanceCount: Int
+    let chainId: UUID?
+    let worktreePath: String?
+    let branchName: String?
+    let lastStatusChangeAt: Date
+    let startedAt: Date?
+    let completedAt: Date?
+    let mergeConflicts: [String]
+  }
+
+  func decodeParallelExecutions(json: String) -> [HistoricalExecution] {
+    guard !json.isEmpty,
+          let data = json.data(using: .utf8),
+          let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+      return []
+    }
+
+    let formatter = ISO8601DateFormatter()
+
+    return array.compactMap { dict in
+      guard let idString = dict["id"] as? String,
+            let id = UUID(uuidString: idString),
+            let taskTitle = dict["taskTitle"] as? String,
+            let status = dict["status"] as? String else {
+        return nil
+      }
+
+      return HistoricalExecution(
+        id: id,
+        taskTitle: taskTitle,
+        taskDescription: dict["taskDescription"] as? String ?? "",
+        status: status,
+        filesChanged: dict["filesChanged"] as? Int ?? 0,
+        insertions: dict["insertions"] as? Int ?? 0,
+        deletions: dict["deletions"] as? Int ?? 0,
+        mergeConflictCount: dict["mergeConflictCount"] as? Int ?? 0,
+        guidanceCount: dict["guidanceCount"] as? Int ?? 0,
+        chainId: (dict["chainId"] as? String).flatMap { UUID(uuidString: $0) },
+        worktreePath: dict["worktreePath"] as? String,
+        branchName: dict["branchName"] as? String,
+        lastStatusChangeAt: (dict["lastStatusChangeAt"] as? String).flatMap { formatter.date(from: $0) } ?? Date(),
+        startedAt: (dict["startedAt"] as? String).flatMap { formatter.date(from: $0) },
+        completedAt: (dict["completedAt"] as? String).flatMap { formatter.date(from: $0) },
+        mergeConflicts: dict["mergeConflicts"] as? [String] ?? []
+      )
+    }
+  }
+
   // MARK: - Repo Guidance Skills
 
   @discardableResult

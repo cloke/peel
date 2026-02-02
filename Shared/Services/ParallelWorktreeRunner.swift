@@ -304,6 +304,9 @@ final class ParallelWorktreeRunner {
   }
   /// All parallel runs managed by this runner
   private(set) var runs: [ParallelWorktreeRun] = []
+
+  /// Historical runs loaded from persistence (read-only snapshots)
+  private(set) var historicalRuns: [ParallelRunSnapshot] = []
   
   /// Currently active run (if any)
   var activeRun: ParallelWorktreeRun? {
@@ -350,6 +353,17 @@ final class ParallelWorktreeRunner {
 
   func setDataService(_ service: DataService) {
     dataService = service
+    // Load historical runs when data service is set
+    loadHistoricalRuns()
+  }
+
+  /// Load historical runs from persistence
+  func loadHistoricalRuns() {
+    guard let dataService else { return }
+    // Load recent snapshots, excluding any that match current in-memory runs
+    let activeRunIds = Set(runs.map { $0.id.uuidString })
+    historicalRuns = dataService.getRecentParallelRunSnapshots(limit: 50)
+      .filter { !activeRunIds.contains($0.runId) }
   }
   
   // MARK: - Run Management
