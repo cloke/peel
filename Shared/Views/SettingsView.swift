@@ -116,6 +116,10 @@ struct SettingsView: View {
           }
         }
 
+        SettingsSection("Worktree Cleanup") {
+          WorktreeCleanupSettingsSection()
+        }
+
         SettingsSection("Prompt Rules") {
           PromptRulesSettingsSection(mcpServer: mcpServer)
         }
@@ -559,6 +563,87 @@ private struct MCPToolSettingsSection: View {
       .buttonStyle(.plain)
       .help(preset.description)
     }
+  }
+}
+
+// MARK: - Worktree Cleanup Settings
+
+private struct WorktreeCleanupSettingsSection: View {
+  @Environment(DataService.self) private var dataService
+  @State private var autoCleanup: Bool = true
+  @State private var retentionDays: Int = 7
+  @State private var maxDiskGB: Double = 10.0
+  @State private var isLoaded = false
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("Automatically clean up old worktrees created by parallel runs and swarm tasks.")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+
+      Toggle("Auto-cleanup enabled", isOn: $autoCleanup)
+        .onChange(of: autoCleanup) { _, newValue in
+          saveSettings()
+        }
+
+      if autoCleanup {
+        HStack {
+          Text("Retention period:")
+          Picker("", selection: $retentionDays) {
+            Text("1 day").tag(1)
+            Text("3 days").tag(3)
+            Text("7 days").tag(7)
+            Text("14 days").tag(14)
+            Text("30 days").tag(30)
+          }
+          .labelsHidden()
+          .pickerStyle(.menu)
+          .onChange(of: retentionDays) { _, _ in
+            saveSettings()
+          }
+        }
+
+        HStack {
+          Text("Max disk usage:")
+          Picker("", selection: $maxDiskGB) {
+            Text("5 GB").tag(5.0)
+            Text("10 GB").tag(10.0)
+            Text("20 GB").tag(20.0)
+            Text("50 GB").tag(50.0)
+            Text("Unlimited").tag(0.0)
+          }
+          .labelsHidden()
+          .pickerStyle(.menu)
+          .onChange(of: maxDiskGB) { _, _ in
+            saveSettings()
+          }
+        }
+
+        Text("Worktrees older than \(retentionDays) day\(retentionDays == 1 ? "" : "s") will be automatically removed (unless they have uncommitted changes).")
+          .font(.caption2)
+          .foregroundStyle(.tertiary)
+      }
+    }
+    .onAppear {
+      loadSettings()
+    }
+  }
+
+  private func loadSettings() {
+    guard !isLoaded else { return }
+    let settings = dataService.getDeviceSettings()
+    autoCleanup = settings.worktreeAutoCleanup
+    retentionDays = settings.worktreeRetentionDays
+    maxDiskGB = settings.worktreeMaxDiskGB
+    isLoaded = true
+  }
+
+  private func saveSettings() {
+    guard isLoaded else { return }
+    let settings = dataService.getDeviceSettings()
+    settings.worktreeAutoCleanup = autoCleanup
+    settings.worktreeRetentionDays = retentionDays
+    settings.worktreeMaxDiskGB = maxDiskGB
   }
 }
 

@@ -104,9 +104,16 @@ public final class WorkspaceDashboardService {
   /// Worktree root directory
   public let worktreeRoot: String
 
+  /// Last cleanup timestamp
+  public private(set) var lastCleanupAt: Date?
+
+  /// Count of worktrees cleaned up in last run
+  public private(set) var lastCleanupCount: Int = 0
+
   private var dataService: DataService?
   private var worktreeRepoNames: [String: String] = [:]
   private var worktreeWorkspaceNames: [String: String] = [:]
+  private var cleanupTask: Task<Void, Never>?
   
   // MARK: - Storage Keys
   
@@ -130,7 +137,52 @@ public final class WorkspaceDashboardService {
       dataService = DataService(modelContext: modelContext)
       dataService?.deduplicateTrackedWorktrees()
       reloadTrackedWorktrees()
+      
+      // Start periodic cleanup
+      startPeriodicCleanup()
     }
+  }
+
+  /// Start periodic worktree cleanup (runs every hour)
+  private func startPeriodicCleanup() {
+    cleanupTask?.cancel()
+    cleanupTask = Task { [weak self] in
+      // Initial delay - wait 5 minutes after app start
+      try? await Task.sleep(for: .seconds(300))
+
+      while !Task.isCancelled {
+        guard let self else { return }
+
+        // Get settings from DeviceSettings
+        let settings = self.dataService?.getDeviceSettings()
+        let autoCleanup = settings?.worktreeAutoCleanup ?? true
+        let retentionDays = settings?.worktreeRetentionDays ?? 7
+        let maxDiskGB = settings?.worktreeMaxDiskGB ?? 10.0
+
+        if autoCleanup {
+          let cleaned = await self.cleanupOldWorktrees(
+            retentionDays: retentionDays,
+            maxDiskGB: maxDiskGB
+          )
+          await MainActor.run {
+            self.lastCleanupAt = Date()
+            self.lastCleanupCount = cleaned.count
+          }
+          if !cleaned.isEmpty {
+            print("Auto-cleanup: Removed \(cleaned.count) worktrees")
+          }
+        }
+
+        // Sleep for 1 hour between cleanup runs
+        try? await Task.sleep(for: .seconds(3600))
+      }
+    }
+  }
+
+  /// Stop periodic cleanup
+  public func stopPeriodicCleanup() {
+    cleanupTask?.cancel()
+    cleanupTask = nil
   }
   
   // MARK: - Workspace Management
@@ -439,6 +491,92 @@ public final class WorkspaceDashboardService {
     // Reload
     await loadReposAndWorktrees()
     dataService?.removeTrackedWorktree(localPath: worktree.path)
+  }
+
+  // MARK: - Auto-Cleanup
+
+  /// Clean up worktrees older than retention period
+  /// - Parameters:
+  ///   - retentionDays: Number of days to keep worktrees
+  ///   - maxDiskGB: Maximum disk space for worktrees (0 = unlimited)
+  ///   - dryRun: If true, only reports what would be cleaned up
+  /// - Returns: Array of cleaned up worktree paths (or would-be cleaned up in dry run)
+  public func cleanupOldWorktrees(
+    retentionDays: Int = 7,
+    maxDiskGB: Double = 0,
+    dryRun: Bool = false
+  ) async -> [String] {
+    var cleanedPaths: [String] = []
+    let cutoffDate = Calendar.current.date(byAdding: .day, value: -retentionDays, to: Date()) ?? Date()
+
+    // Get tracked worktrees that are past retention and auto-created (not manual)
+    let trackedWorktrees = dataService?.getTrackedWorktrees() ?? []
+    let eligibleForCleanup = trackedWorktrees.filter { tracked in
+      // Only cleanup auto-created worktrees (from swarm, parallel runs, etc.)
+      guard tracked.source != "manual" else { return false }
+      // Check age
+      return tracked.createdAt < cutoffDate
+    }
+
+    for tracked in eligibleForCleanup {
+      // Find the actual worktree
+      guard let worktree = worktrees.first(where: { $0.path == tracked.localPath }) else {
+        // Worktree no longer exists on disk, just clean up the tracking record
+        if !dryRun {
+          dataService?.removeTrackedWorktree(localPath: tracked.localPath)
+        }
+        cleanedPaths.append(tracked.localPath + " (record only)")
+        continue
+      }
+
+      // Skip if has uncommitted changes
+      let hasChanges = await hasUncommittedChanges(worktree)
+      if hasChanges {
+        continue
+      }
+
+      if dryRun {
+        cleanedPaths.append(worktree.path)
+      } else {
+        do {
+          try await removeWorktree(worktree)
+          cleanedPaths.append(worktree.path)
+        } catch {
+          print("Failed to cleanup worktree \(worktree.path): \(error)")
+        }
+      }
+    }
+
+    // TODO: Implement disk space limit cleanup (maxDiskGB)
+    // Would need to calculate total worktree disk usage and remove oldest until under limit
+
+    return cleanedPaths
+  }
+
+  /// Get worktrees eligible for cleanup with details
+  public func getCleanupCandidates(retentionDays: Int = 7) async -> [(path: String, age: Int, source: String, hasChanges: Bool)] {
+    let cutoffDate = Calendar.current.date(byAdding: .day, value: -retentionDays, to: Date()) ?? Date()
+    var candidates: [(path: String, age: Int, source: String, hasChanges: Bool)] = []
+
+    let trackedWorktrees = dataService?.getTrackedWorktrees() ?? []
+
+    for tracked in trackedWorktrees {
+      guard tracked.source != "manual" else { continue }
+      guard tracked.createdAt < cutoffDate else { continue }
+
+      let ageInDays = Calendar.current.dateComponents([.day], from: tracked.createdAt, to: Date()).day ?? 0
+
+      // Check if still exists on disk
+      if let worktree = worktrees.first(where: { $0.path == tracked.localPath }) {
+        let hasChanges = await hasUncommittedChanges(worktree)
+        candidates.append((path: tracked.localPath, age: ageInDays, source: tracked.source, hasChanges: hasChanges))
+      } else {
+        // Worktree doesn't exist on disk but tracking record does
+        candidates.append((path: tracked.localPath + " (orphaned)", age: ageInDays, source: tracked.source, hasChanges: false))
+      }
+    }
+
+    return candidates.sorted { $0.age > $1.age }
   }
   
   /// Check if worktree has uncommitted changes

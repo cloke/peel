@@ -164,6 +164,11 @@ final class DeviceSettings {
   var sidebarWidth: Double?
   var lastUsedAt: Date = Date()
   
+  // Worktree auto-cleanup settings
+  var worktreeRetentionDays: Int = 7
+  var worktreeMaxDiskGB: Double = 10.0
+  var worktreeAutoCleanup: Bool = true
+  
   @MainActor
   init() {
     self.id = UUID()
