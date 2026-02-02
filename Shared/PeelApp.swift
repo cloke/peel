@@ -28,15 +28,11 @@ struct PeelApp: App {
     _vmIsolationService = State(initialValue: vmService)
     _mcpServer = State(initialValue: MCPServerService(vmIsolationService: vmService))
     
-    // Create DataService with model context
+    // Create DataService with model context and seed default skills
     let container = Self.sharedModelContainer
     let context = ModelContext(container)
     _dataService = State(initialValue: DataService(modelContext: context))
-    
-    // Seed default skills on first launch (Issue #90)
-    let container = Self.sharedModelContainer
-    let context = ModelContext(container)
-    DefaultSkillsService.seedDefaultSkills(context: context)
+    DefaultSkillsService.seedDefaultSkills(context: context)  // Issue #90
     
     // Check for worker mode (--worker flag)
     if WorkerMode.shared.shouldRunInWorkerMode {
@@ -112,14 +108,8 @@ struct PeelApp: App {
           else if url.scheme == "peel" && url.host == "swarm" {
             Task {
               await FirebaseService.shared.handleDeepLink(url)
-              // Open Settings window to Swarm tab
-              #if os(macOS)
-              if #available(macOS 14.0, *) {
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-              } else {
-                NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
-              }
-              #endif
+              // InvitePreviewSheet is shown automatically via ContentView's
+              // onChange listener for pendingInvitePreview
             }
           }
         }
