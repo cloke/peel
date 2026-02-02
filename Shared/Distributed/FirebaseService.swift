@@ -11,6 +11,7 @@ import os.log
 import FirebaseCore
 import FirebaseAuth
 import FirebaseFirestore
+import FirebaseAppCheck
 import AuthenticationServices
 import CryptoKit
 
@@ -158,6 +159,17 @@ public final class FirebaseService {
       logger.warning("Firebase already configured")
       return
     }
+    
+    // Configure App Check BEFORE FirebaseApp.configure()
+    // Use debug provider in development, DeviceCheck/AppAttest in production
+    #if DEBUG
+    let providerFactory = AppCheckDebugProviderFactory()
+    logger.info("Using App Check debug provider")
+    #else
+    let providerFactory = DeviceCheckProviderFactory()
+    logger.info("Using App Check DeviceCheck provider")
+    #endif
+    AppCheck.setAppCheckProviderFactory(providerFactory)
     
     FirebaseApp.configure()
     logger.info("Firebase configured successfully")
