@@ -87,7 +87,12 @@ service cloud.firestore {
       
       // Invites subcollection
       match /invites/{inviteId} {
-        allow read: if isAdmin(swarmId);
+        // Allow admins to read all invites, OR authenticated users to read valid invites
+        // (needed for invite link preview before joining)
+        allow read: if isAdmin(swarmId) ||
+                      (isAuthenticated() &&
+                       resource.data.revoked == false &&
+                       resource.data.expires > request.time);
         allow create: if isAdmin(swarmId);
         allow update: if isAdmin(swarmId) ||
                         (isAuthenticated() && 
