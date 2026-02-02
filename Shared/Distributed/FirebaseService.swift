@@ -1601,7 +1601,7 @@ public enum FirebaseError: LocalizedError {
 }
 
 /// Preview info for an invite before accepting (#237)
-public struct InvitePreview: Sendable {
+public struct InvitePreview: Sendable, Equatable {
   public let url: URL
   public let swarmId: String
   public let swarmName: String
