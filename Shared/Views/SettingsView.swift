@@ -30,7 +30,7 @@ struct SettingsView: View {
     TabView {
       #if os(macOS)
       SettingsPage {
-        SettingsSection("MCP Server") {
+        SettingsSection {
           HStack(spacing: 16) {
             Toggle(
               "Enable MCP Server",
@@ -92,6 +92,11 @@ struct SettingsView: View {
               .font(.caption)
               .foregroundStyle(portInUse ? .orange : .red)
           }
+        } header: {
+          HStack(spacing: 4) {
+            Text("MCP Server")
+            HelpButton(topic: .mcpServer)
+          }
         }
 
         SettingsSection("MCP Tools") {
@@ -116,12 +121,22 @@ struct SettingsView: View {
           }
         }
 
-        SettingsSection("Worktree Cleanup") {
+        SettingsSection {
           WorktreeCleanupSettingsSection()
+        } header: {
+          HStack(spacing: 4) {
+            Text("Worktree Cleanup")
+            HelpButton(topic: .parallelWorktrees)
+          }
         }
 
-        SettingsSection("Prompt Rules") {
+        SettingsSection {
           PromptRulesSettingsSection(mcpServer: mcpServer)
+        } header: {
+          HStack(spacing: 4) {
+            Text("Prompt Rules")
+            HelpButton(topic: .promptRules)
+          }
         }
 
         SettingsSection("IDE Integration") {

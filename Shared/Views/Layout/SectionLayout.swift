@@ -56,18 +56,25 @@ struct ToolPageLayout<Content: View>: View {
 /// Wraps content in a GroupBox with headline title and consistent spacing.
 struct ToolSection<Content: View>: View {
   let title: String
+  let helpTopic: HelpTopic?
   @ViewBuilder let content: () -> Content
 
-  init(_ title: String, @ViewBuilder content: @escaping () -> Content) {
+  init(_ title: String, helpTopic: HelpTopic? = nil, @ViewBuilder content: @escaping () -> Content) {
     self.title = title
+    self.helpTopic = helpTopic
     self.content = content
   }
 
   var body: some View {
     GroupBox {
       VStack(alignment: .leading, spacing: 12) {
-        Text(title)
-          .font(.headline)
+        HStack(spacing: 4) {
+          Text(title)
+            .font(.headline)
+          if let helpTopic {
+            HelpButton(topic: helpTopic)
+          }
+        }
         content()
       }
       .padding(4)

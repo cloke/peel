@@ -60,6 +60,7 @@ struct ParallelWorktreeDashboardView: View {
     HStack {
       Text("Runs")
         .font(.headline)
+      HelpButton(topic: .parallelWorktrees)
       Spacer()
       Button("Workspaces") {
         currentTool = .workspaces

@@ -117,7 +117,10 @@ struct RAGSettingsView: View {
             .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
           }
         } header: {
-          Label("Embedding Provider", systemImage: "cpu")
+          HStack(spacing: 4) {
+            Label("Embedding Provider", systemImage: "cpu")
+            HelpButton(topic: .ragIndexing)
+          }
         } footer: {
           Text("MLX uses GPU acceleration for fast local embeddings. System uses Apple's NaturalLanguage framework.")
         }
