@@ -5101,6 +5101,188 @@ public final class MCPServerService {
         category: .swarm,
         isMutating: false
       ),
+      // Firestore worker/task management (#225)
+      ToolDefinition(
+        name: "swarm.firestore.workers",
+        description: "List workers registered in a Firestore swarm. Shows status, last heartbeat, and capabilities.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "swarmId": [
+              "type": "string",
+              "description": "The swarm ID to list workers from"
+            ]
+          ],
+          "required": ["swarmId"]
+        ],
+        category: .swarm,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "swarm.firestore.register-worker",
+        description: "Register this device as a worker in a Firestore swarm. Requires contributor+ permission.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "swarmId": [
+              "type": "string",
+              "description": "The swarm ID to register as a worker"
+            ]
+          ],
+          "required": ["swarmId"]
+        ],
+        category: .swarm,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "swarm.firestore.unregister-worker",
+        description: "Unregister this device as a worker from a Firestore swarm.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "swarmId": [
+              "type": "string",
+              "description": "The swarm ID to unregister from"
+            ]
+          ],
+          "required": ["swarmId"]
+        ],
+        category: .swarm,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "swarm.firestore.submit-task",
+        description: "Submit a task to a Firestore swarm for remote execution. Requires contributor+ permission.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "swarmId": [
+              "type": "string",
+              "description": "The swarm ID to submit the task to"
+            ],
+            "templateName": [
+              "type": "string",
+              "description": "Name of the chain template to execute"
+            ],
+            "prompt": [
+              "type": "string",
+              "description": "The prompt/task description"
+            ],
+            "workingDirectory": [
+              "type": "string",
+              "description": "Working directory for the task"
+            ],
+            "repoRemoteURL": [
+              "type": "string",
+              "description": "Git remote URL for the repo (optional)"
+            ],
+            "priority": [
+              "type": "integer",
+              "description": "Priority (0=low, 1=normal, 2=high, 3=critical)"
+            ]
+          ],
+          "required": ["swarmId", "templateName", "prompt", "workingDirectory"]
+        ],
+        category: .swarm,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "swarm.firestore.tasks",
+        description: "List pending/running tasks in a Firestore swarm.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "swarmId": [
+              "type": "string",
+              "description": "The swarm ID to list tasks from"
+            ]
+          ],
+          "required": ["swarmId"]
+        ],
+        category: .swarm,
+        isMutating: false
+      ),
+      // RAG Artifact Sync (#226)
+      ToolDefinition(
+        name: "swarm.firestore.rag.artifacts",
+        description: "List RAG artifacts available in a Firestore swarm. Shows version, size, and upload info.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "swarmId": [
+              "type": "string",
+              "description": "The swarm ID to list artifacts from"
+            ]
+          ],
+          "required": ["swarmId"]
+        ],
+        category: .swarm,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "swarm.firestore.rag.push",
+        description: "Push local RAG artifacts to Firestore swarm for sharing with other members. Requires contributor+ role.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "swarmId": [
+              "type": "string",
+              "description": "The swarm ID to push artifacts to"
+            ],
+            "repoPath": [
+              "type": "string",
+              "description": "Path to the repository whose RAG index to push"
+            ]
+          ],
+          "required": ["swarmId", "repoPath"]
+        ],
+        category: .swarm,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "swarm.firestore.rag.pull",
+        description: "Pull RAG artifacts from Firestore swarm to local storage. Requires reader+ role.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "swarmId": [
+              "type": "string",
+              "description": "The swarm ID to pull artifacts from"
+            ],
+            "artifactId": [
+              "type": "string",
+              "description": "The artifact ID (version) to pull"
+            ],
+            "repoPath": [
+              "type": "string",
+              "description": "Path to the repository to import the RAG index into"
+            ]
+          ],
+          "required": ["swarmId", "artifactId", "repoPath"]
+        ],
+        category: .swarm,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "swarm.firestore.rag.delete",
+        description: "Delete a RAG artifact from Firestore swarm. Requires admin+ role.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "swarmId": [
+              "type": "string",
+              "description": "The swarm ID"
+            ],
+            "artifactId": [
+              "type": "string",
+              "description": "The artifact ID (version) to delete"
+            ]
+          ],
+          "required": ["swarmId", "artifactId"]
+        ],
+        category: .swarm,
+        isMutating: true
+      ),
       // MARK: - Worktree Tools
       ToolDefinition(
         name: "worktree.list",
@@ -6342,33 +6524,9 @@ extension MCPServerService: ChainToolsHandlerDelegate {
   }
 }
 
-// MARK: - Chain Errors
-
-enum ChainError: LocalizedError {
-  case queueFull
-  case templateNotFound
-  case cancelled
-  case notFound
-  case invalidChainId
-  case missingFeedback
-  case invalidAction(String)
-  case invalidConfiguration(String)
-  case startFailed(String)
-  
-  var errorDescription: String? {
-    switch self {
-    case .queueFull: return "Chain queue is full"
-    case .templateNotFound: return "Template not found"
-    case .cancelled: return "Chain run was cancelled"
-    case .notFound: return "Chain not found"
-    case .invalidChainId: return "Invalid chain ID"
-    case .missingFeedback: return "Feedback required for this action"
-    case .invalidAction(let action): return "Invalid action: \(action)"
-    case .invalidConfiguration(let msg): return "Invalid configuration: \(msg)"
-    case .startFailed(let msg): return "Failed to start chain: \(msg)"
-    }
-  }
-}
+// Note: ChainAPIError is defined in ChainErrors.swift
+// Using typealias for backward compatibility within this file
+private typealias ChainError = ChainAPIError
 
 // MARK: - WorktreeToolsHandlerDelegate
 
