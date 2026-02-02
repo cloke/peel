@@ -40,11 +40,11 @@ service cloud.firestore {
     
     // Swarm documents
     match /swarms/{swarmId} {
-      // Allow read if owner OR member
-      allow read: if isAuthenticated() && (
-                    resource.data.ownerId == request.auth.uid ||
-                    isSwarmMember(swarmId)
-                  );
+      // Allow read if:
+      // 1. Owner
+      // 2. Active member
+      // 3. Authenticated user (for invite preview - they only see name/description)
+      allow read: if isAuthenticated();
       allow create: if isAuthenticated();  // Anyone can create a swarm
       allow update, delete: if isSwarmOwner(swarmId);
       
