@@ -165,7 +165,7 @@ struct RAGRepositoryCardView: View {
           
           // Last indexed time
           if let lastIndexed = repo.lastIndexedAt {
-            Text(lastIndexed, format: .relative(presentation: .named))
+            RelativeTimeText(lastIndexed)
               .font(.caption2)
               .foregroundStyle(.secondary)
           }

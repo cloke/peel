@@ -138,7 +138,6 @@
 				CommonToolbarItems.swift,
 				PeelApp.swift,
 				Services/LocalRAGEmbeddings.swift,
-				Services/LocalRAGIndexing.swift,
 				Services/LocalRAGStore.swift,
 				Services/MCPLogService.swift,
 				Services/MLXEmbeddingProvider.swift,

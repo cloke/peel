@@ -59,7 +59,7 @@ struct InvitePreviewSheet: View {
           Label("Expires", systemImage: "clock")
             .foregroundStyle(.secondary)
           Spacer()
-          Text(preview.expiresAt, format: .relative(presentation: .named))
+          RelativeTimeText(preview.expiresAt)
             .foregroundStyle(preview.expiresAt.timeIntervalSinceNow < 3600 ? .orange : .secondary)
         }
         

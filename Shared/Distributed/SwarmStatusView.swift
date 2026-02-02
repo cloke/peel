@@ -424,9 +424,12 @@ struct PeerRow: View {
               .font(.caption2)
               .foregroundStyle(.orange)
           } else if let lastSyncedAt = rag.lastSyncedAt {
-            Text("RAG synced \(lastSyncedAt, format: .relative(presentation: .named))")
-              .font(.caption2)
-              .foregroundStyle(.secondary)
+            HStack(spacing: 4) {
+              Text("RAG synced")
+              RelativeTimeText(lastSyncedAt)
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
           } else {
             Text("RAG artifacts: \(rag.manifestVersion)")
               .font(.caption2)
