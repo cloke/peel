@@ -393,16 +393,25 @@ struct LocalRAGDashboardView: View {
         
         // Indexing progress
         if isIndexing {
-          if let progress = mcpServer.ragIndexProgress {
-            VStack(spacing: 4) {
-              ProgressView(value: progress.progress)
-              Text(progress.description)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+          VStack(spacing: 8) {
+            if let progress = mcpServer.ragIndexProgress {
+              VStack(spacing: 4) {
+                ProgressView(value: progress.progress)
+                Text(progress.description)
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+            } else {
+              ProgressView("Starting indexing...")
             }
-          } else {
-            ProgressView("Indexing...")
+            
+            // Hint that user can close
+            Label("Indexing continues in background. You can close this dialog.", systemImage: "info.circle")
+              .font(.caption)
+              .foregroundStyle(.secondary)
           }
+          .padding()
+          .background(Color.accentColor.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
         }
         
         Spacer()
@@ -411,16 +420,28 @@ struct LocalRAGDashboardView: View {
       .navigationTitle("Add Repository")
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
-          Button("Cancel") {
+          Button(isIndexing ? "Close" : "Cancel") {
             isAddRepoPresented = false
+            if !isIndexing {
+              newRepoPath = ""
+            }
           }
         }
         
         ToolbarItem(placement: .confirmationAction) {
-          Button("Add & Index") {
-            Task { await indexNewRepository() }
+          if isIndexing {
+            // Show "Done" when indexing - lets user acknowledge and close
+            Button("Done") {
+              isAddRepoPresented = false
+              newRepoPath = ""
+            }
+            .buttonStyle(.borderedProminent)
+          } else {
+            Button("Add & Index") {
+              Task { await indexNewRepository() }
+            }
+            .disabled(newRepoPath.trimmingCharacters(in: .whitespaces).isEmpty)
           }
-          .disabled(newRepoPath.trimmingCharacters(in: .whitespaces).isEmpty || isIndexing)
         }
       }
     }
