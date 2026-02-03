@@ -658,6 +658,8 @@ public final class SwarmToolsHandler: MCPToolHandler {
               swarmId: swarm.id,
               capabilities: capabilities
             )
+            // Also start listening for other workers in this swarm
+            firebaseService.startWorkerListener(swarmId: swarm.id)
             firestoreRegistrations.append([
               "swarmId": swarm.id,
               "swarmName": swarm.swarmName,
