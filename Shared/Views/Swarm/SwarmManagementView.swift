@@ -169,6 +169,16 @@ struct SwarmManagementView: View {
             HelpButton(topic: .swarmSetup)
           }
         }
+        
+        // Local Worker Section
+        Section {
+          LocalWorkerStatusView()
+        } header: {
+          HStack(spacing: 4) {
+            Text("This Device")
+            HelpButton(topic: .swarmWorkers)
+          }
+        }
       }
       .listStyle(.sidebar)
     }
@@ -244,6 +254,250 @@ struct SwarmRowView: View {
       }
     }
     .padding(.vertical, 2)
+  }
+}
+
+// MARK: - Local Worker Status View
+
+@MainActor
+struct LocalWorkerStatusView: View {
+  @State private var coordinator = SwarmCoordinator.shared
+  @State private var firebaseService = FirebaseService.shared
+  @State private var isStartingSwarm = false
+  @State private var wanEnabled = false
+  @State private var showingWANSettings = false
+  
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      // Worker Status
+      HStack {
+        Circle()
+          .fill(coordinator.isActive ? .green : .gray)
+          .frame(width: 8, height: 8)
+        
+        Text(coordinator.isActive ? coordinator.role.rawValue.capitalized : "Offline")
+          .font(.caption)
+          .fontWeight(.medium)
+      }
+      
+      if coordinator.isActive {
+        // Show connection info
+        VStack(alignment: .leading, spacing: 4) {
+          if coordinator.isWANEnabled {
+            HStack(spacing: 4) {
+              Image(systemName: "globe")
+                .font(.caption2)
+                .foregroundStyle(.blue)
+              Text("WAN")
+                .font(.caption2)
+                .foregroundStyle(.blue)
+              
+              if let addr = coordinator.wanAddress {
+                Text(addr)
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              }
+            }
+          }
+          
+          Text("\(coordinator.connectedWorkers.count) connected")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+      } else {
+        // Start button
+        Button {
+          startSwarm()
+        } label: {
+          HStack {
+            Image(systemName: "play.fill")
+            Text("Start Worker")
+          }
+          .font(.caption)
+        }
+        .buttonStyle(.bordered)
+        .disabled(isStartingSwarm || firebaseService.memberSwarms.isEmpty)
+        
+        // WAN toggle (only when not running)
+        Toggle(isOn: $wanEnabled) {
+          HStack(spacing: 4) {
+            Image(systemName: "globe")
+            Text("WAN Mode")
+          }
+          .font(.caption)
+        }
+        .toggleStyle(.switch)
+        .controlSize(.small)
+        .help("Enable internet connectivity (requires port forwarding)")
+      }
+      
+      // Settings button
+      Button {
+        showingWANSettings = true
+      } label: {
+        Label("Settings", systemImage: "gear")
+          .font(.caption)
+      }
+      .buttonStyle(.borderless)
+    }
+    .padding(.vertical, 4)
+    .sheet(isPresented: $showingWANSettings) {
+      WANSettingsSheet(
+        wanEnabled: $wanEnabled,
+        coordinator: coordinator
+      )
+    }
+  }
+  
+  private func startSwarm() {
+    isStartingSwarm = true
+    Task {
+      do {
+        try coordinator.start(role: .hybrid, port: 8766)
+        
+        if wanEnabled {
+          await coordinator.configureWAN(enabled: true)
+        }
+        
+        // Register with all member swarms
+        let capabilities = WorkerCapabilities.current(
+          wanAddress: coordinator.wanAddress,
+          wanPort: coordinator.wanPort
+        )
+        
+        for swarm in firebaseService.memberSwarms where swarm.role.canRegisterWorkers {
+          _ = try? await firebaseService.registerWorker(swarmId: swarm.id, capabilities: capabilities)
+          firebaseService.startWorkerListener(swarmId: swarm.id)
+        }
+        
+        // Auto-connect to WAN peers
+        if wanEnabled {
+          try? await Task.sleep(for: .seconds(1))
+          await coordinator.autoConnectToWANPeers()
+        }
+      } catch {
+        print("Failed to start swarm: \(error)")
+      }
+      isStartingSwarm = false
+    }
+  }
+}
+
+// MARK: - WAN Settings Sheet
+
+struct WANSettingsSheet: View {
+  @Binding var wanEnabled: Bool
+  let coordinator: SwarmCoordinator
+  @Environment(\.dismiss) private var dismiss
+  @State private var customWANAddress = ""
+  @State private var detectedIP: String?
+  @State private var isDetecting = false
+  
+  var body: some View {
+    NavigationStack {
+      Form {
+        Section {
+          Toggle("Enable WAN Mode", isOn: $wanEnabled)
+          
+          if wanEnabled {
+            LabeledContent("Detected Public IP") {
+              HStack {
+                if isDetecting {
+                  ProgressView()
+                    .scaleEffect(0.7)
+                } else if let ip = detectedIP {
+                  Text(ip)
+                    .foregroundStyle(.secondary)
+                } else {
+                  Text("Not detected")
+                    .foregroundStyle(.orange)
+                }
+                
+                Button {
+                  detectPublicIP()
+                } label: {
+                  Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.borderless)
+              }
+            }
+            
+            TextField("Custom WAN Address (optional)", text: $customWANAddress)
+              .textFieldStyle(.roundedBorder)
+              .help("Override detected IP with a custom address")
+            
+            LabeledContent("Port") {
+              Text("8766")
+                .foregroundStyle(.secondary)
+            }
+          }
+        } header: {
+          Text("WAN Configuration")
+        } footer: {
+          Text("WAN mode allows peers on different networks to connect. Requires port 8766 to be forwarded on your router.")
+            .font(.caption)
+        }
+        
+        if coordinator.isActive {
+          Section("Current Status") {
+            LabeledContent("Role") {
+              Text(coordinator.role.rawValue.capitalized)
+            }
+            
+            LabeledContent("WAN Enabled") {
+              Image(systemName: coordinator.isWANEnabled ? "checkmark.circle.fill" : "xmark.circle")
+                .foregroundStyle(coordinator.isWANEnabled ? .green : .secondary)
+            }
+            
+            if let addr = coordinator.wanAddress {
+              LabeledContent("WAN Address") {
+                Text("\(addr):\(coordinator.wanPort ?? 8766)")
+                  .foregroundStyle(.blue)
+              }
+            }
+            
+            LabeledContent("Connected Peers") {
+              Text("\(coordinator.connectedWorkers.count)")
+            }
+          }
+        }
+        
+        Section {
+          VStack(alignment: .leading, spacing: 8) {
+            Label("Port Forwarding Required", systemImage: "exclamationmark.triangle")
+              .font(.caption)
+              .foregroundStyle(.orange)
+            
+            Text("To use WAN mode:\n1. Open port 8766 on your router\n2. Forward it to this Mac's local IP\n3. Enable WAN mode and start the worker")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+        }
+      }
+      .formStyle(.grouped)
+      .navigationTitle("WAN Settings")
+      .toolbar {
+        ToolbarItem(placement: .confirmationAction) {
+          Button("Done") {
+            dismiss()
+          }
+        }
+      }
+    }
+    .frame(minWidth: 450, minHeight: 400)
+    .task {
+      if wanEnabled {
+        detectPublicIP()
+      }
+    }
+  }
+  
+  private func detectPublicIP() {
+    isDetecting = true
+    Task {
+      detectedIP = await NetworkUtils.fetchPublicIP()
+      isDetecting = false
+    }
   }
 }
 
@@ -771,21 +1025,54 @@ struct WorkersListView: View {
   let swarmId: String
   let myRole: SwarmPermissionRole
   @State private var firebaseService = FirebaseService.shared
+  @State private var coordinator = SwarmCoordinator.shared
   @State private var isLoading = false
   @State private var showingMessageSheet = false
   @State private var selectedWorker: FirestoreWorker?
   @State private var messageText = ""
   @State private var messageSent = false
+  @State private var connectionStatus: String?
+  
+  private var wanWorkerCount: Int {
+    firebaseService.swarmWorkers.filter { $0.hasWANEndpoint && !$0.isStale }.count
+  }
   
   var body: some View {
     VStack(spacing: 0) {
+      // WAN Status Banner (when active)
+      if coordinator.isWANEnabled {
+        wanStatusBanner
+      }
+      
       // Quick action bar
       HStack {
-        Text("\(firebaseService.swarmWorkers.filter { !$0.isStale }.count) online")
-          .font(.caption)
-          .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 2) {
+          Text("\(firebaseService.swarmWorkers.filter { !$0.isStale }.count) online")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          
+          if wanWorkerCount > 0 {
+            Text("\(wanWorkerCount) WAN-enabled")
+              .font(.caption2)
+              .foregroundStyle(.blue)
+          }
+        }
         
         Spacer()
+        
+        // Auto-connect to all WAN peers
+        if wanWorkerCount > 0 && coordinator.isActive && (coordinator.role == .brain || coordinator.role == .hybrid) {
+          Button {
+            Task {
+              await coordinator.autoConnectToWANPeers()
+              connectionStatus = "Connection attempts initiated"
+            }
+          } label: {
+            Label("Connect All WAN", systemImage: "globe")
+          }
+          .buttonStyle(.bordered)
+          .help("Connect to all WAN-enabled peers")
+        }
         
         if myRole.canSubmitTasks {
           Button {
@@ -817,7 +1104,10 @@ struct WorkersListView: View {
             onMessage: {
               selectedWorker = worker
               showingMessageSheet = true
-            }
+            },
+            onConnect: worker.hasWANEndpoint ? {
+              connectToWorker(worker)
+            } : nil
           )
         }
       }
@@ -837,6 +1127,63 @@ struct WorkersListView: View {
       Button("OK") { }
     } message: {
       Text("Your message has been queued for delivery.")
+    }
+    .alert("Connection Status", isPresented: .constant(connectionStatus != nil)) {
+      Button("OK") { connectionStatus = nil }
+    } message: {
+      if let status = connectionStatus {
+        Text(status)
+      }
+    }
+  }
+  
+  // MARK: - WAN Status Banner
+  
+  @ViewBuilder
+  private var wanStatusBanner: some View {
+    HStack(spacing: 12) {
+      Image(systemName: "globe")
+        .font(.title3)
+        .foregroundStyle(.blue)
+      
+      VStack(alignment: .leading, spacing: 2) {
+        Text("WAN Mode Active")
+          .font(.caption)
+          .fontWeight(.medium)
+        
+        if let addr = coordinator.wanAddress, let port = coordinator.wanPort {
+          Text("\(addr):\(port)")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        } else {
+          Text("Public IP not detected")
+            .font(.caption2)
+            .foregroundStyle(.orange)
+        }
+      }
+      
+      Spacer()
+      
+      // Port forwarding reminder
+      Text("Port \(coordinator.wanPort ?? 8766) must be forwarded")
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+    }
+    .padding(.horizontal)
+    .padding(.vertical, 8)
+    .background(.blue.opacity(0.1))
+  }
+  
+  private func connectToWorker(_ worker: FirestoreWorker) {
+    guard let address = worker.wanAddress, let port = worker.wanPort else { return }
+    
+    Task {
+      do {
+        try await coordinator.connectToWorker(address: address, port: port)
+        connectionStatus = "Connected to \(worker.displayName)"
+      } catch {
+        connectionStatus = "Failed: \(error.localizedDescription)"
+      }
     }
   }
   
@@ -861,6 +1208,14 @@ struct WorkerRow: View {
   let worker: FirestoreWorker
   let canMessage: Bool
   let onMessage: () -> Void
+  let onConnect: (() -> Void)?
+  
+  init(worker: FirestoreWorker, canMessage: Bool, onMessage: @escaping () -> Void, onConnect: (() -> Void)? = nil) {
+    self.worker = worker
+    self.canMessage = canMessage
+    self.onMessage = onMessage
+    self.onConnect = onConnect
+  }
   
   var body: some View {
     HStack {
@@ -870,8 +1225,21 @@ struct WorkerRow: View {
         .frame(width: 8, height: 8)
       
       VStack(alignment: .leading, spacing: 2) {
-        Text(worker.displayName)
-          .fontWeight(.medium)
+        HStack(spacing: 6) {
+          Text(worker.displayName)
+            .fontWeight(.medium)
+          
+          // WAN badge
+          if worker.hasWANEndpoint {
+            Label("WAN", systemImage: "globe")
+              .font(.caption2)
+              .foregroundStyle(.blue)
+              .padding(.horizontal, 4)
+              .padding(.vertical, 1)
+              .background(.blue.opacity(0.1))
+              .clipShape(Capsule())
+          }
+        }
         
         HStack(spacing: 8) {
           Text(worker.deviceName)
@@ -882,6 +1250,13 @@ struct WorkerRow: View {
             Text("v\(version)")
               .font(.caption2)
               .foregroundStyle(.tertiary)
+          }
+          
+          // Show WAN address if available
+          if let wanAddr = worker.wanAddress, let wanPort = worker.wanPort {
+            Text("\(wanAddr):\(wanPort)")
+              .font(.caption2)
+              .foregroundStyle(.blue)
           }
         }
         
@@ -901,6 +1276,17 @@ struct WorkerRow: View {
         .background(worker.isStale ? Color.orange.opacity(0.15) : Color.green.opacity(0.15))
         .foregroundStyle(worker.isStale ? .orange : .green)
         .clipShape(Capsule())
+      
+      // Connect button for WAN peers
+      if let onConnect = onConnect, worker.hasWANEndpoint {
+        Button {
+          onConnect()
+        } label: {
+          Image(systemName: "link")
+        }
+        .buttonStyle(.borderless)
+        .help("Connect to this WAN peer")
+      }
       
       if canMessage {
         Button {
