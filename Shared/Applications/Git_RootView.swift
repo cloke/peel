@@ -191,6 +191,7 @@ struct Git_RootView: View {
   
   private func loadFromSwiftData() {
     var loadedRepos: [Model.Repository] = []
+    var seenPaths = Set<String>()  // Dedupe by path
     
     for syncedRepo in syncedRepos {
       let repoId = syncedRepo.id
@@ -200,6 +201,9 @@ struct Git_RootView: View {
       
       if let localPath = try? modelContext.fetch(descriptor).first {
         let repoPath = resolvedPath(for: localPath) ?? localPath.localPath
+        // Skip duplicates (same path already added)
+        guard !seenPaths.contains(repoPath) else { continue }
+        seenPaths.insert(repoPath)
         let repo = Model.Repository(name: syncedRepo.name, path: repoPath)
         loadedRepos.append(repo)
       }

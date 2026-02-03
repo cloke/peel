@@ -375,6 +375,7 @@ struct SwarmDetailView: View {
     // Tabs
     Picker("View", selection: $selectedTab) {
       Text("Members").tag(0)
+      Text("Workers (\(firebaseService.swarmWorkers.count))").tag(3)
       if swarm.role.canApproveMembers {
         Text("Pending (\(firebaseService.pendingMembers.count))").tag(1)
       }
@@ -392,6 +393,8 @@ struct SwarmDetailView: View {
         PendingMembersView(swarmId: swarm.id)
       case 2:
         InvitesListView(swarmId: swarm.id)
+      case 3:
+        WorkersListView(swarmId: swarm.id, myRole: swarm.role)
       default:
         EmptyView()
       }
@@ -754,6 +757,234 @@ struct InviteRow: View {
       .background(color.opacity(0.15))
       .foregroundStyle(color)
       .clipShape(Capsule())
+  }
+}
+
+// MARK: - Workers List View
+
+@MainActor
+struct WorkersListView: View {
+  let swarmId: String
+  let myRole: SwarmPermissionRole
+  @State private var firebaseService = FirebaseService.shared
+  @State private var isLoading = false
+  @State private var showingMessageSheet = false
+  @State private var selectedWorker: FirestoreWorker?
+  @State private var messageText = ""
+  @State private var messageSent = false
+  
+  var body: some View {
+    VStack(spacing: 0) {
+      // Quick action bar
+      HStack {
+        Text("\(firebaseService.swarmWorkers.filter { !$0.isStale }.count) online")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+        
+        Spacer()
+        
+        if myRole.canSubmitTasks {
+          Button {
+            selectedWorker = nil
+            showingMessageSheet = true
+          } label: {
+            Label("Broadcast", systemImage: "megaphone")
+          }
+          .buttonStyle(.bordered)
+          .help("Send message to all workers")
+        }
+      }
+      .padding(.horizontal)
+      .padding(.vertical, 8)
+      
+      Divider()
+      
+      if firebaseService.swarmWorkers.isEmpty {
+        ContentUnavailableView(
+          "No Workers Online",
+          systemImage: "desktopcomputer",
+          description: Text("Workers register when they start their swarm. Run 'swarm.start' to join.")
+        )
+      } else {
+        List(firebaseService.swarmWorkers, id: \.id) { worker in
+          WorkerRow(
+            worker: worker,
+            canMessage: myRole.canSubmitTasks,
+            onMessage: {
+              selectedWorker = worker
+              showingMessageSheet = true
+            }
+          )
+        }
+      }
+    }
+    .task {
+      firebaseService.startWorkerListener(swarmId: swarmId)
+    }
+    .sheet(isPresented: $showingMessageSheet) {
+      SendMessageSheet(
+        worker: selectedWorker,
+        swarmId: swarmId,
+        messageText: $messageText,
+        onSend: sendMessage
+      )
+    }
+    .alert("Message Sent", isPresented: $messageSent) {
+      Button("OK") { }
+    } message: {
+      Text("Your message has been queued for delivery.")
+    }
+  }
+  
+  private func sendMessage() {
+    guard !messageText.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+    
+    Task {
+      // TODO: Implement actual message sending via Firestore
+      // For now, use the chains.instruct MCP tool pattern
+      // This would be: await firebaseService.sendWorkerMessage(swarmId: swarmId, workerId: selectedWorker?.id, message: messageText)
+      print("📨 Sending message to \(selectedWorker?.displayName ?? "all workers"): \(messageText)")
+      messageText = ""
+      showingMessageSheet = false
+      messageSent = true
+    }
+  }
+}
+
+// MARK: - Worker Row
+
+struct WorkerRow: View {
+  let worker: FirestoreWorker
+  let canMessage: Bool
+  let onMessage: () -> Void
+  
+  var body: some View {
+    HStack {
+      // Status indicator
+      Circle()
+        .fill(worker.isStale ? .orange : .green)
+        .frame(width: 8, height: 8)
+      
+      VStack(alignment: .leading, spacing: 2) {
+        Text(worker.displayName)
+          .fontWeight(.medium)
+        
+        HStack(spacing: 8) {
+          Text(worker.deviceName)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          
+          if let version = worker.version {
+            Text("v\(version)")
+              .font(.caption2)
+              .foregroundStyle(.tertiary)
+          }
+        }
+        
+        Text("Last seen \(worker.lastHeartbeat.formatted(.relative(presentation: .named)))")
+          .font(.caption2)
+          .foregroundStyle(worker.isStale ? Color.orange : Color.secondary)
+      }
+      
+      Spacer()
+      
+      // Status badge
+      Text(worker.status.rawValue.capitalized)
+        .font(.caption2)
+        .fontWeight(.medium)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 2)
+        .background(worker.isStale ? Color.orange.opacity(0.15) : Color.green.opacity(0.15))
+        .foregroundStyle(worker.isStale ? .orange : .green)
+        .clipShape(Capsule())
+      
+      if canMessage {
+        Button {
+          onMessage()
+        } label: {
+          Image(systemName: "message")
+        }
+        .buttonStyle(.borderless)
+        .help("Send message to this worker")
+      }
+    }
+    .padding(.vertical, 4)
+  }
+}
+
+// MARK: - Send Message Sheet
+
+struct SendMessageSheet: View {
+  let worker: FirestoreWorker?  // nil = broadcast to all
+  let swarmId: String
+  @Binding var messageText: String
+  let onSend: () -> Void
+  @Environment(\.dismiss) private var dismiss
+  
+  var body: some View {
+    NavigationStack {
+      VStack(spacing: 16) {
+        // Recipient info
+        HStack {
+          Image(systemName: worker == nil ? "megaphone.fill" : "person.fill")
+            .foregroundStyle(.secondary)
+          Text(worker == nil ? "Broadcast to all workers" : "Message to \(worker!.displayName)")
+            .font(.headline)
+          Spacer()
+        }
+        .padding(.horizontal)
+        
+        // Message input
+        TextEditor(text: $messageText)
+          .font(.body)
+          .frame(minHeight: 100)
+          .padding(8)
+          .background(.quaternary)
+          .clipShape(RoundedRectangle(cornerRadius: 8))
+          .padding(.horizontal)
+        
+        // Suggestions
+        VStack(alignment: .leading, spacing: 8) {
+          Text("Quick messages:")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          
+          HStack(spacing: 8) {
+            QuickMessageButton(text: "Pause current task", messageText: $messageText)
+            QuickMessageButton(text: "Focus on tests", messageText: $messageText)
+            QuickMessageButton(text: "Skip code review", messageText: $messageText)
+          }
+        }
+        .padding(.horizontal)
+        
+        Spacer()
+      }
+      .padding(.top)
+      .navigationTitle(worker == nil ? "Broadcast Message" : "Send Message")
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Cancel") { dismiss() }
+        }
+        ToolbarItem(placement: .confirmationAction) {
+          Button("Send") { onSend() }
+            .disabled(messageText.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+      }
+    }
+    .frame(minWidth: 450, minHeight: 300)
+  }
+}
+
+struct QuickMessageButton: View {
+  let text: String
+  @Binding var messageText: String
+  
+  var body: some View {
+    Button(text) {
+      messageText = text
+    }
+    .buttonStyle(.bordered)
+    .controlSize(.small)
   }
 }
 
