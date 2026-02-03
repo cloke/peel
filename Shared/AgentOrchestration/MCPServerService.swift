@@ -5101,6 +5101,26 @@ public final class MCPServerService {
         category: .swarm,
         isMutating: false
       ),
+      ToolDefinition(
+        name: "swarm.firestore.activity",
+        description: "Get recent activity log entries for swarm debugging. Shows worker events, task status changes, messages, and errors.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "limit": [
+              "type": "integer",
+              "description": "Maximum number of entries to return (default: 50)"
+            ],
+            "filter": [
+              "type": "string",
+              "description": "Filter by event type: worker_online, worker_offline, task_submitted, task_claimed, task_completed, error, etc."
+            ]
+          ],
+          "required": []
+        ],
+        category: .swarm,
+        isMutating: false
+      ),
       // Firestore worker/task management (#225)
       ToolDefinition(
         name: "swarm.firestore.workers",
