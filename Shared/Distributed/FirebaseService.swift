@@ -953,7 +953,8 @@ public final class FirebaseService {
     let workerId = capabilities.deviceId
     let workerRef = workersCollection(swarmId: swarmId).document(workerId)
     
-    try await workerRef.setData([
+    // Build worker data with optional WAN endpoint
+    var workerData: [String: Any] = [
       "ownerId": userId,
       "displayName": capabilities.displayName ?? capabilities.deviceName,
       "deviceName": capabilities.deviceName,
@@ -971,7 +972,15 @@ public final class FirebaseService {
       "lastHeartbeat": FieldValue.serverTimestamp(),
       "version": capabilities.gitCommitHash ?? "unknown",
       "registeredAt": FieldValue.serverTimestamp()
-    ])
+    ]
+    
+    // Add WAN endpoint if provided
+    if let wanAddress = capabilities.wanAddress {
+      workerData["wanAddress"] = wanAddress
+      workerData["wanPort"] = Int(capabilities.wanPort ?? 8766)
+    }
+    
+    try await workerRef.setData(workerData)
     
     registeredWorkerId = workerId
     logger.info("Registered worker \(workerId) in swarm \(swarmId)")
@@ -1068,7 +1077,9 @@ public final class FirebaseService {
               deviceName: data["deviceName"] as? String ?? "",
               status: FirestoreWorkerStatus(rawValue: data["status"] as? String ?? "offline") ?? .offline,
               lastHeartbeat: (data["lastHeartbeat"] as? Timestamp)?.dateValue() ?? Date.distantPast,
-              version: data["version"] as? String
+              version: data["version"] as? String,
+              wanAddress: data["wanAddress"] as? String,
+              wanPort: (data["wanPort"] as? Int).map { UInt16($0) }
             )
           }
           
@@ -1990,9 +2001,18 @@ public struct FirestoreWorker: Sendable, Identifiable, Hashable {
   public let lastHeartbeat: Date
   public let version: String?
   
+  /// WAN connection info for direct peer-to-peer connections
+  public let wanAddress: String?
+  public let wanPort: UInt16?
+  
   /// Whether the worker is considered stale (no heartbeat in 90 seconds)
   public var isStale: Bool {
     Date().timeIntervalSince(lastHeartbeat) > 90
+  }
+  
+  /// Whether this worker has valid WAN connection info
+  public var hasWANEndpoint: Bool {
+    wanAddress != nil && wanPort != nil
   }
 }
 
