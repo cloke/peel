@@ -139,8 +139,12 @@ service cloud.firestore {
     }
     
     // Collection group query for members (allows users to find their own memberships across all swarms)
-    match /{path=**}/members/{userId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
+    match /{path=**}/members/{memberId} {
+      // Allow read if:
+      // 1. The document ID (memberId) is the authenticated user, OR
+      // 2. The userId field matches the authenticated user (for collection group queries)
+      allow read: if request.auth != null && 
+                    (memberId == request.auth.uid || resource.data.userId == request.auth.uid);
     }
   }
 }

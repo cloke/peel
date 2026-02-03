@@ -406,10 +406,7 @@ struct RecentPRDestination: View {
   var body: some View {
     Group {
       switch state {
-      case .idle:
-        Color.clear
-          .task { await loadPullRequestDetails() }
-      case .loading:
+      case .idle, .loading:
         ProgressView("Loading PR...")
       case .error(let message):
         ErrorView(title: "Failed to load PR", message: message) {
@@ -418,6 +415,9 @@ struct RecentPRDestination: View {
       case .loaded(let details):
         loadedContent(details)
       }
+    }
+    .task(id: recentPR.id) {
+      await loadPullRequestDetails()
     }
     #if os(macOS)
     .sheet(isPresented: $showingReviewLocally) {
@@ -504,6 +504,9 @@ struct RecentPRDestination: View {
       state = .loaded(details)
     } catch is CancellationError {
       // Task was cancelled (view dismissed or recreated) - don't show error
+      return
+    } catch let urlError as URLError where urlError.code == .cancelled {
+      // URLSession cancelled due to task cancellation - don't show error
       return
     } catch {
       state = .error(error.localizedDescription)

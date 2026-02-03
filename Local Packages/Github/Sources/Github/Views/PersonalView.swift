@@ -30,6 +30,7 @@ public struct PersonalHeaderView: View {
 
 public struct PersonalView: View {
   @Environment(Github.ViewModel.self) private var viewModel
+  @AppStorage("github-show-archived") private var showArchivedRepos = false
   @State private var allPullRequests = [Github.PullRequest]()
   @State private var filteredPullRequests = [Github.PullRequest]()
   @State private var showingMyRequests = false
@@ -116,7 +117,8 @@ public struct PersonalView: View {
       do {
         let repositories = try await Github.loadRepositories(organization: organization.login ?? "")
         
-        for repository in repositories {
+        let filteredRepos = showArchivedRepos ? repositories : repositories.filter { $0.archived != true }
+        for repository in filteredRepos {
           loadingProgress = "Checking \(repository.name)..."
           do {
             let requests = try await Github.pullRequests(from: repository, state: "all")
