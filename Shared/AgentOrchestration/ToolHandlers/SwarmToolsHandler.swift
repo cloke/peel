@@ -48,6 +48,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
     "swarm.firestore.debug",
     "swarm.firestore.activity",
     "swarm.firestore.migrate",
+    "swarm.firestore.backup",
     // Firestore worker/task management (#225)
     "swarm.firestore.workers",
     "swarm.firestore.register-worker",
@@ -119,6 +120,8 @@ public final class SwarmToolsHandler: MCPToolHandler {
       return handleFirestoreActivity(id: id, arguments: arguments)
     case "swarm.firestore.migrate":
       return await handleFirestoreMigrate(id: id)
+    case "swarm.firestore.backup":
+      return await handleFirestoreBackup(id: id, arguments: arguments)
     // Firestore worker/task management (#225)
     case "swarm.firestore.workers":
       return handleFirestoreWorkers(id: id, arguments: arguments)
@@ -465,6 +468,20 @@ public final class SwarmToolsHandler: MCPToolHandler {
         "inputSchema": [
           "type": "object",
           "properties": [:],
+          "required": []
+        ]
+      ],
+      [
+        "name": "swarm.firestore.backup",
+        "description": "Export all swarm data to a JSON backup file. Includes swarms, members, and invites. Backups are saved to ~/peel-backups/ by default.",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "outputPath": [
+              "type": "string",
+              "description": "Optional custom path for backup file. Defaults to ~/peel-backups/firestore-backup-<timestamp>.json"
+            ]
+          ],
           "required": []
         ]
       ],
@@ -1593,6 +1610,58 @@ public final class SwarmToolsHandler: MCPToolHandler {
       return (200, makeResult(id: id, result: result))
     } catch {
       return internalError(id: id, message: "Migration failed: \(error.localizedDescription)")
+    }
+  }
+
+  private func handleFirestoreBackup(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    let service = FirebaseService.shared
+
+    // Determine output path
+    let outputPath: String
+    if let customPath = arguments["outputPath"] as? String, !customPath.isEmpty {
+      outputPath = (customPath as NSString).expandingTildeInPath
+    } else {
+      let dateFormatter = DateFormatter()
+      dateFormatter.dateFormat = "yyyy-MM-dd_HHmmss"
+      let timestamp = dateFormatter.string(from: Date())
+      let backupDir = ("~/peel-backups" as NSString).expandingTildeInPath
+      outputPath = "\(backupDir)/firestore-backup-\(timestamp).json"
+    }
+
+    do {
+      // Create backup directory if needed
+      let dirPath = (outputPath as NSString).deletingLastPathComponent
+      try FileManager.default.createDirectory(atPath: dirPath, withIntermediateDirectories: true)
+
+      // Get backup data from Firebase service
+      let backupData = try await service.exportSwarmData()
+
+      // Write to file
+      let jsonData = try JSONSerialization.data(withJSONObject: backupData, options: [.prettyPrinted, .sortedKeys])
+      try jsonData.write(to: URL(fileURLWithPath: outputPath))
+
+      // Build summary
+      let swarms = (backupData["swarms"] as? [[String: Any]]) ?? []
+      var totalMembers = 0
+      var totalInvites = 0
+      for swarm in swarms {
+        totalMembers += (swarm["members"] as? [[String: Any]])?.count ?? 0
+        totalInvites += (swarm["invites"] as? [[String: Any]])?.count ?? 0
+      }
+
+      let result: [String: Any] = [
+        "success": true,
+        "path": outputPath,
+        "summary": [
+          "swarms": swarms.count,
+          "totalMembers": totalMembers,
+          "totalInvites": totalInvites,
+          "backupTimestamp": ISO8601DateFormatter().string(from: Date())
+        ]
+      ]
+      return (200, makeResult(id: id, result: result))
+    } catch {
+      return internalError(id: id, message: "Backup failed: \(error.localizedDescription)")
     }
   }
   

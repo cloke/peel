@@ -444,6 +444,83 @@ public final class FirebaseService {
       "details": results
     ]
   }
+
+  /// Export all swarm data for backup
+  public func exportSwarmData() async throws -> [String: Any] {
+    guard isConfigured else { throw FirebaseError.notConfigured }
+    guard isSignedIn else { throw FirebaseError.notSignedIn }
+
+    var swarmsData: [[String: Any]] = []
+
+    // Get all swarms the user owns
+    let ownedSwarms = try await swarmsCollection()
+      .whereField("ownerId", isEqualTo: currentUserId ?? "")
+      .getDocuments()
+
+    for swarmDoc in ownedSwarms.documents {
+      let swarmId = swarmDoc.documentID
+      var swarmData = swarmDoc.data()
+      swarmData["id"] = swarmId
+
+      // Get members
+      let membersSnapshot = try await membersCollection(swarmId: swarmId).getDocuments()
+      let members = membersSnapshot.documents.map { doc -> [String: Any] in
+        var data = doc.data()
+        data["id"] = doc.documentID
+        return data
+      }
+      swarmData["members"] = members
+
+      // Get invites
+      let invitesSnapshot = try await invitesCollection(swarmId: swarmId).getDocuments()
+      let invites = invitesSnapshot.documents.map { doc -> [String: Any] in
+        var data = doc.data()
+        data["id"] = doc.documentID
+        return data
+      }
+      swarmData["invites"] = invites
+
+      swarmsData.append(swarmData)
+    }
+
+    // Also get swarms where user is a member (but not owner)
+    let memberSwarms = try await swarmsCollection().getDocuments()
+    for swarmDoc in memberSwarms.documents {
+      let swarmId = swarmDoc.documentID
+      let ownerId = swarmDoc.data()["ownerId"] as? String ?? ""
+
+      // Skip if we already added this as owner
+      if ownerId == currentUserId { continue }
+
+      // Check if user is a member
+      let membersSnapshot = try await membersCollection(swarmId: swarmId)
+        .whereField("userId", isEqualTo: currentUserId ?? "")
+        .getDocuments()
+
+      if !membersSnapshot.documents.isEmpty {
+        var swarmData = swarmDoc.data()
+        swarmData["id"] = swarmId
+        swarmData["_memberOnly"] = true  // Mark that we're just a member
+
+        // Get all members for context
+        let allMembersSnapshot = try await membersCollection(swarmId: swarmId).getDocuments()
+        let members = allMembersSnapshot.documents.map { doc -> [String: Any] in
+          var data = doc.data()
+          data["id"] = doc.documentID
+          return data
+        }
+        swarmData["members"] = members
+
+        swarmsData.append(swarmData)
+      }
+    }
+
+    return [
+      "exportedAt": ISO8601DateFormatter().string(from: Date()),
+      "exportedBy": currentUserId ?? "unknown",
+      "swarms": swarmsData
+    ]
+  }
   
   /// Create a new swarm
   public func createSwarm(name: String) async throws -> String {
