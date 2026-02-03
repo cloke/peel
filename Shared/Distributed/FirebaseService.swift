@@ -40,6 +40,28 @@ public final class FirebaseService {
   
   private let logger = Logger(subsystem: "com.peel.firebase", category: "FirebaseService")
   
+  // MARK: - Activity Log (Debug)
+  
+  /// Activity log for debugging WAN events
+  public private(set) var activityLog: [SwarmActivityEvent] = []
+  
+  /// Maximum activity log entries to keep
+  private let maxActivityLogEntries = 100
+  
+  /// Log a swarm activity event
+  public func logActivity(_ type: SwarmActivityType, message: String, details: [String: Any]? = nil) {
+    let event = SwarmActivityEvent(type: type, message: message, details: details)
+    activityLog.insert(event, at: 0)
+    if activityLog.count > maxActivityLogEntries {
+      activityLog.removeLast()
+    }
+  }
+  
+  /// Clear the activity log
+  public func clearActivityLog() {
+    activityLog.removeAll()
+  }
+  
   // MARK: - State
   
   /// Whether Firebase has been configured
@@ -763,6 +785,13 @@ public final class FirebaseService {
     registeredWorkerId = workerId
     logger.info("Registered worker \(workerId) in swarm \(swarmId)")
     
+    // Log registration
+    logActivity(.workerRegistered, message: "Registered as worker", details: [
+      "workerId": workerId,
+      "swarmId": swarmId,
+      "device": capabilities.deviceName
+    ])
+    
     // Start heartbeat loop
     startHeartbeatLoop(swarmId: swarmId, workerId: workerId)
     
@@ -782,6 +811,11 @@ public final class FirebaseService {
     try await workersCollection(swarmId: swarmId).document(workerId).updateData([
       "status": "offline",
       "lastHeartbeat": FieldValue.serverTimestamp()
+    ])
+    
+    logActivity(.workerOffline, message: "Unregistered from swarm", details: [
+      "workerId": workerId,
+      "swarmId": swarmId
     ])
     
     registeredWorkerId = nil
@@ -817,17 +851,24 @@ public final class FirebaseService {
   
   /// Start listening for workers in a swarm (for brain/dashboard)
   public func startWorkerListener(swarmId: String) {
+    logActivity(.listenerStarted, message: "Workers listener started", details: ["swarmId": swarmId])
+    
     let listener = workersCollection(swarmId: swarmId)
       .addSnapshotListener { [weak self] snapshot, error in
         guard let self = self, let snapshot = snapshot else {
           if let error = error {
             self?.logger.error("Worker listener error: \(error)")
+            Task { @MainActor in
+              self?.logActivity(.error, message: "Worker listener error", details: ["error": error.localizedDescription])
+            }
           }
           return
         }
         
         Task { @MainActor in
-          self.swarmWorkers = snapshot.documents.compactMap { doc -> FirestoreWorker? in
+          let previousWorkers = Set(self.swarmWorkers.map { $0.id })
+          
+          let newWorkers = snapshot.documents.compactMap { doc -> FirestoreWorker? in
             let data = doc.data()
             return FirestoreWorker(
               id: doc.documentID,
@@ -839,6 +880,25 @@ public final class FirebaseService {
               version: data["version"] as? String
             )
           }
+          
+          // Log worker changes
+          for worker in newWorkers {
+            if !previousWorkers.contains(worker.id) {
+              self.logActivity(.workerOnline, message: "\(worker.displayName) joined", details: [
+                "workerId": worker.id,
+                "device": worker.deviceName
+              ])
+            }
+          }
+          
+          let newWorkerIds = Set(newWorkers.map { $0.id })
+          for worker in self.swarmWorkers where !newWorkerIds.contains(worker.id) {
+            self.logActivity(.workerOffline, message: "\(worker.displayName) left", details: [
+              "workerId": worker.id
+            ])
+          }
+          
+          self.swarmWorkers = newWorkers
         }
       }
     workerListeners.append(listener)
@@ -888,6 +948,11 @@ public final class FirebaseService {
     ])
     
     logger.info("Submitted task \(request.id) to swarm \(swarmId)")
+    logActivity(.taskSubmitted, message: "Task submitted: \(request.templateName)", details: [
+      "taskId": request.id.uuidString,
+      "template": request.templateName,
+      "prompt": String(request.prompt.prefix(50)) + (request.prompt.count > 50 ? "..." : "")
+    ])
     return request.id.uuidString
   }
   
@@ -926,6 +991,10 @@ public final class FirebaseService {
         "claimedAt": FieldValue.serverTimestamp()
       ])
       logger.info("Claimed task \(taskId)")
+      logActivity(.taskClaimed, message: "Claimed task", details: [
+        "taskId": taskId,
+        "workerId": workerId
+      ])
       return true
     } catch {
       // Could fail if another worker claimed it first
@@ -963,6 +1032,20 @@ public final class FirebaseService {
     ])
     
     logger.info("Completed task \(taskId) with status \(result.status.rawValue)")
+    
+    // Log success or failure
+    if result.status == .completed {
+      logActivity(.taskCompleted, message: "Task completed", details: [
+        "taskId": taskId,
+        "duration": "\(result.duration)s",
+        "branch": result.branchName ?? "none"
+      ])
+    } else {
+      logActivity(.taskFailed, message: "Task failed: \(result.errorMessage ?? "Unknown error")", details: [
+        "taskId": taskId,
+        "status": result.status.rawValue
+      ])
+    }
   }
   
   /// Start listening for tasks assigned to this worker
@@ -1611,6 +1694,80 @@ public struct InvitePreview: Sendable, Equatable {
 }
 
 // MARK: - Firestore Worker Types (#225)
+
+/// Type of swarm activity event for debugging
+public enum SwarmActivityType: String, Sendable {
+  // Worker events
+  case workerRegistered = "worker_registered"
+  case workerOnline = "worker_online"
+  case workerOffline = "worker_offline"
+  case workerHeartbeat = "heartbeat"
+  
+  // Task events
+  case taskSubmitted = "task_submitted"
+  case taskClaimed = "task_claimed"
+  case taskCompleted = "task_completed"
+  case taskFailed = "task_failed"
+  
+  // Message events
+  case messageSent = "message_sent"
+  case messageReceived = "message_received"
+  
+  // Connection events
+  case swarmJoined = "swarm_joined"
+  case swarmLeft = "swarm_left"
+  case listenerStarted = "listener_started"
+  case listenerStopped = "listener_stopped"
+  
+  // Errors
+  case error = "error"
+  
+  /// Emoji for display
+  public var emoji: String {
+    switch self {
+    case .workerRegistered: return "📝"
+    case .workerOnline: return "🟢"
+    case .workerOffline: return "🔴"
+    case .workerHeartbeat: return "💓"
+    case .taskSubmitted: return "📤"
+    case .taskClaimed: return "🔒"
+    case .taskCompleted: return "✅"
+    case .taskFailed: return "❌"
+    case .messageSent: return "📨"
+    case .messageReceived: return "📬"
+    case .swarmJoined: return "🐝"
+    case .swarmLeft: return "👋"
+    case .listenerStarted: return "👂"
+    case .listenerStopped: return "🔇"
+    case .error: return "⚠️"
+    }
+  }
+}
+
+/// A single swarm activity event for the debug log
+public struct SwarmActivityEvent: Identifiable, Sendable {
+  public let id = UUID()
+  public let timestamp: Date
+  public let type: SwarmActivityType
+  public let message: String
+  public let details: [String: String]?
+  
+  public init(type: SwarmActivityType, message: String, details: [String: Any]? = nil) {
+    self.timestamp = Date()
+    self.type = type
+    self.message = message
+    // Convert details to string representation
+    if let details {
+      var stringDetails: [String: String] = [:]
+      for (key, value) in details {
+        stringDetails[key] = String(describing: value)
+      }
+      self.details = stringDetails
+    } else {
+      self.details = nil
+    }
+  }
+}
 
 /// Status of a worker registered in Firestore
 public enum FirestoreWorkerStatus: String, Sendable, Codable {
