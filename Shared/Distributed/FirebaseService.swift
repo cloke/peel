@@ -127,6 +127,9 @@ public final class FirebaseService {
   // MARK: - Private State
   
   private var authStateListener: AuthStateDidChangeListenerHandle?
+  private var membershipListener: ListenerRegistration?
+  private var membersListener: ListenerRegistration?
+  private var invitesListener: ListenerRegistration?
   private var swarmListeners: [ListenerRegistration] = []
   private var workerListeners: [ListenerRegistration] = []
   private var taskListener: ListenerRegistration?
@@ -215,6 +218,7 @@ public final class FirebaseService {
       logger.info("User signed in: \(user.uid)")
       Task {
         await loadUserSwarms()
+        startMembershipListener(userId: user.uid)
         // Process any pending invite that was received before sign-in
         await processPendingInvite()
       }
@@ -224,6 +228,7 @@ public final class FirebaseService {
       currentUserDisplayName = nil
       memberSwarms = []
       activeSwarm = nil
+      stopMembershipListener()
       removeSwarmListeners()
       logger.info("User signed out")
     }
@@ -1118,6 +1123,201 @@ public final class FirebaseService {
     workerListeners.removeAll()
   }
   
+  // MARK: - Membership Listener (Real-time swarm list updates)
+  
+  /// Start listening for changes to the user's swarm memberships
+  private func startMembershipListener(userId: String) {
+    stopMembershipListener()
+    
+    logger.info("Starting membership listener for user: \(userId)")
+    
+    // Listen to all membership documents for this user via collection group
+    membershipListener = db.collectionGroup("members")
+      .whereField("userId", isEqualTo: userId)
+      .addSnapshotListener { [weak self] snapshot, error in
+        guard let self = self else { return }
+        
+        if let error = error {
+          self.logger.error("Membership listener error: \(error)")
+          return
+        }
+        
+        guard let snapshot = snapshot else { return }
+        
+        self.logger.info("Membership snapshot received: \(snapshot.documents.count) memberships")
+        
+        Task { @MainActor in
+          await self.processMembershipSnapshot(snapshot, userId: userId)
+        }
+      }
+  }
+  
+  /// Process membership snapshot and update memberSwarms
+  private func processMembershipSnapshot(_ snapshot: QuerySnapshot, userId: String) async {
+    var swarms: [SwarmMembership] = []
+    var seenSwarmIds = Set<String>()
+    
+    for memberDoc in snapshot.documents {
+      // Extract swarm ID from path: swarms/{swarmId}/members/{userId}
+      let pathComponents = memberDoc.reference.path.split(separator: "/")
+      guard pathComponents.count >= 2,
+            let swarmIdIndex = pathComponents.firstIndex(of: "swarms"),
+            swarmIdIndex + 1 < pathComponents.count else {
+        continue
+      }
+      let swarmId = String(pathComponents[swarmIdIndex + 1])
+      
+      guard !seenSwarmIds.contains(swarmId) else { continue }
+      seenSwarmIds.insert(swarmId)
+      
+      let memberData = memberDoc.data()
+      let roleString = memberData["role"] as? String ?? "reader"
+      let role = SwarmPermissionRole(rawValue: roleString) ?? .reader
+      let joinedAt = (memberData["joinedAt"] as? Timestamp)?.dateValue() ?? Date()
+      
+      // Fetch swarm name (cached in most cases)
+      let swarmDoc = try? await swarmsCollection().document(swarmId).getDocument()
+      let swarmName = swarmDoc?.data()?["name"] as? String ?? "Unknown Swarm"
+      
+      swarms.append(SwarmMembership(
+        id: swarmId,
+        swarmName: swarmName,
+        role: role,
+        joinedAt: joinedAt
+      ))
+    }
+    
+    // Also check for owned swarms (in case owner isn't in members collection)
+    do {
+      let ownedSwarms = try await swarmsCollection()
+        .whereField("ownerId", isEqualTo: userId)
+        .getDocuments()
+      
+      for swarmDoc in ownedSwarms.documents {
+        let swarmId = swarmDoc.documentID
+        guard !seenSwarmIds.contains(swarmId) else { continue }
+        seenSwarmIds.insert(swarmId)
+        
+        let swarmData = swarmDoc.data()
+        let swarmName = swarmData["name"] as? String ?? "Unknown"
+        
+        swarms.append(SwarmMembership(
+          id: swarmId,
+          swarmName: swarmName,
+          role: .owner,
+          joinedAt: Date()
+        ))
+      }
+    } catch {
+      logger.warning("Failed to fetch owned swarms: \(error)")
+    }
+    
+    // Only update if changed
+    if swarms != memberSwarms {
+      logger.info("Membership changed: \(self.memberSwarms.count) -> \(swarms.count) swarms")
+      memberSwarms = swarms
+    }
+  }
+  
+  private func stopMembershipListener() {
+    membershipListener?.remove()
+    membershipListener = nil
+  }
+  
+  // MARK: - Swarm Detail Listeners (Members and Invites)
+  
+  /// Start listening for members of a specific swarm (for swarm detail view)
+  public func startMembersListener(swarmId: String) {
+    stopMembersListener()
+    
+    logger.info("Starting members listener for swarm: \(swarmId)")
+    
+    membersListener = membersCollection(swarmId: swarmId)
+      .addSnapshotListener { [weak self] snapshot, error in
+        guard let self = self else { return }
+        
+        if let error = error {
+          self.logger.error("Members listener error: \(error)")
+          return
+        }
+        
+        guard let snapshot = snapshot else { return }
+        
+        Task { @MainActor in
+          let allMembers = snapshot.documents.compactMap { doc -> SwarmMember? in
+            let data = doc.data()
+            return SwarmMember(
+              id: doc.documentID,
+              displayName: data["displayName"] as? String ?? "Unknown",
+              email: data["email"] as? String ?? "",
+              role: SwarmPermissionRole(rawValue: data["role"] as? String ?? "pending") ?? .pending,
+              joinedAt: (data["joinedAt"] as? Timestamp)?.dateValue() ?? Date(),
+              approvedBy: data["approvedBy"] as? String
+            )
+          }
+          
+          // Split into approved and pending
+          self.swarmMembers = allMembers.filter { $0.role != .pending }
+          self.pendingMembers = allMembers.filter { $0.role == .pending }
+          
+          self.logger.info("Members updated: \(self.swarmMembers.count) approved, \(self.pendingMembers.count) pending")
+        }
+      }
+  }
+  
+  public func stopMembersListener() {
+    membersListener?.remove()
+    membersListener = nil
+  }
+  
+  /// Start listening for invites of a specific swarm
+  public func startInvitesListener(swarmId: String, onUpdate: @escaping ([InviteDetails]) -> Void) {
+    stopInvitesListener()
+    
+    logger.info("Starting invites listener for swarm: \(swarmId)")
+    
+    invitesListener = invitesCollection(swarmId: swarmId)
+      .addSnapshotListener { [weak self] snapshot, error in
+        guard let self = self else { return }
+        
+        if let error = error {
+          self.logger.error("Invites listener error: \(error)")
+          return
+        }
+        
+        guard let snapshot = snapshot else { return }
+        
+        let invites = snapshot.documents.compactMap { doc -> InviteDetails? in
+          let data = doc.data()
+          guard let expiresAt = (data["expiresAt"] as? Timestamp)?.dateValue(),
+                let createdAt = (data["createdAt"] as? Timestamp)?.dateValue() else {
+            return nil
+          }
+          
+          return InviteDetails(
+            id: doc.documentID,
+            swarmId: swarmId,
+            token: data["token"] as? String ?? "",
+            createdAt: createdAt,
+            expiresAt: expiresAt,
+            maxUses: data["maxUses"] as? Int ?? 1,
+            usedCount: data["usedCount"] as? Int ?? 0,
+            usedBy: data["usedBy"] as? [String] ?? [],
+            createdBy: data["createdBy"] as? String ?? "",
+            isRevoked: data["isRevoked"] as? Bool ?? false
+          )
+        }
+        
+        self.logger.info("Invites updated: \(invites.count) invites")
+        onUpdate(invites)
+      }
+  }
+  
+  public func stopInvitesListener() {
+    invitesListener?.remove()
+    invitesListener = nil
+  }
+  
   // MARK: - Task Management (#225)
   
   /// Delegate for task execution (set by SwarmCoordinator or similar)
@@ -1650,6 +1850,8 @@ public final class FirebaseService {
       listener.remove()
     }
     swarmListeners.removeAll()
+    stopMembersListener()
+    stopInvitesListener()
     stopWorkerListeners()
     stopTaskListener()
     stopHeartbeatLoop()

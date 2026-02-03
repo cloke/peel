@@ -651,22 +651,21 @@ struct MembersListView: View {
         Text("This will remove \(member.displayName) from the swarm. They will need a new invite to rejoin.")
       }
     }
-    .task {
-      await loadMembers()
+    .onAppear {
+      // Start real-time listener
+      firebaseService.startMembersListener(swarmId: swarmId)
     }
-  }
-  
-  private func loadMembers() async {
-    isLoading = true
-    try? await firebaseService.loadSwarmMembers(swarmId: swarmId)
-    isLoading = false
+    .onDisappear {
+      // Stop listener when view disappears
+      firebaseService.stopMembersListener()
+    }
   }
   
   private func removeMember(_ member: SwarmMember) {
     isLoading = true
     Task {
       try? await firebaseService.revokeMember(swarmId: swarmId, userId: member.id)
-      await loadMembers()
+      // No need to reload - listener will update automatically
       memberToRemove = nil
       isLoading = false
     }
@@ -735,6 +734,7 @@ struct PendingMembersView: View {
         Text("This will deny \(member.displayName)'s request to join. They will need a new invite.")
       }
     }
+    // Note: Members listener in MembersListView also updates pendingMembers
   }
   
   private func approve(_ member: SwarmMember) {
@@ -745,7 +745,7 @@ struct PendingMembersView: View {
         userId: member.id,
         role: .contributor
       )
-      try? await firebaseService.loadPendingMembers(swarmId: swarmId)
+      // Listener updates automatically
       isLoading = false
     }
   }
@@ -754,7 +754,7 @@ struct PendingMembersView: View {
     isLoading = true
     Task {
       try? await firebaseService.revokeMember(swarmId: swarmId, userId: member.id)
-      try? await firebaseService.loadPendingMembers(swarmId: swarmId)
+      // Listener updates automatically
       memberToReject = nil
       isLoading = false
     }
@@ -765,15 +765,12 @@ struct InvitesListView: View {
   let swarmId: String
   @State private var firebaseService = FirebaseService.shared
   @State private var invites: [InviteDetails] = []
-  @State private var isLoading = true
+  @State private var isLoading = false
   @State private var errorMessage: String?
   
   var body: some View {
     Group {
-      if isLoading {
-        ProgressView("Loading invites...")
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
-      } else if invites.isEmpty {
+      if invites.isEmpty && !isLoading {
         ContentUnavailableView(
           "No Invites",
           systemImage: "envelope",
@@ -785,8 +782,14 @@ struct InvitesListView: View {
         }
       }
     }
-    .task {
-      await loadInvites()
+    .onAppear {
+      // Start real-time listener
+      firebaseService.startInvitesListener(swarmId: swarmId) { updatedInvites in
+        invites = updatedInvites
+      }
+    }
+    .onDisappear {
+      firebaseService.stopInvitesListener()
     }
     .alert("Error", isPresented: .constant(errorMessage != nil)) {
       Button("OK") { errorMessage = nil }
@@ -797,21 +800,11 @@ struct InvitesListView: View {
     }
   }
   
-  private func loadInvites() async {
-    isLoading = true
-    do {
-      invites = try await firebaseService.loadInvites(swarmId: swarmId)
-    } catch {
-      errorMessage = error.localizedDescription
-    }
-    isLoading = false
-  }
-  
   private func revokeInvite(_ invite: InviteDetails) {
     Task {
       do {
         try await firebaseService.revokeInvite(swarmId: swarmId, inviteId: invite.id)
-        await loadInvites()
+        // Listener updates automatically
       } catch {
         errorMessage = error.localizedDescription
       }
