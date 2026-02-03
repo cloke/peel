@@ -917,6 +917,11 @@ public final class FirebaseService {
   }
   
   private func stopWorkerListeners() {
+    if !workerListeners.isEmpty {
+      logActivity(.listenerStopped, message: "Worker listeners stopped", details: [
+        "count": String(workerListeners.count)
+      ])
+    }
     for listener in workerListeners {
       listener.remove()
     }
@@ -1064,6 +1069,11 @@ public final class FirebaseService {
   private func startTaskListener(swarmId: String, workerId: String) {
     stopTaskListener()
     
+    logActivity(.listenerStarted, message: "Task listener started", details: [
+      "swarmId": swarmId,
+      "workerId": workerId
+    ])
+    
     // Listen for pending tasks that we might claim
     taskListener = tasksCollection(swarmId: swarmId)
       .whereField("status", isEqualTo: ChainStatus.pending.rawValue)
@@ -1109,6 +1119,9 @@ public final class FirebaseService {
   }
   
   private func stopTaskListener() {
+    if taskListener != nil {
+      logActivity(.listenerStopped, message: "Task listener stopped")
+    }
     taskListener?.remove()
     taskListener = nil
   }
