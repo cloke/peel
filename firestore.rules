@@ -137,5 +137,10 @@ service cloud.firestore {
     match /users/{userId}/notifications/{notificationId} {
       allow read, write: if request.auth.uid == userId;
     }
+    
+    // Collection group query for members (allows users to find their own memberships across all swarms)
+    match /{path=**}/members/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+    }
   }
 }

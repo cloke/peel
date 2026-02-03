@@ -502,6 +502,9 @@ struct RecentPRDestination: View {
         descriptionText: (pr.body ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
       )
       state = .loaded(details)
+    } catch is CancellationError {
+      // Task was cancelled (view dismissed or recreated) - don't show error
+      return
     } catch {
       state = .error(error.localizedDescription)
     }

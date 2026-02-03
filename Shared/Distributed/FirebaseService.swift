@@ -288,12 +288,13 @@ public final class FirebaseService {
     guard let userId = currentUserId else { return }
     
     do {
-      // First, get swarms where user is owner (we can always read those)
+      var swarms: [SwarmMembership] = []
+      var seenSwarmIds = Set<String>()
+      
+      // 1. Get swarms where user is owner
       let ownedSwarms = try await swarmsCollection()
         .whereField("ownerId", isEqualTo: userId)
         .getDocuments()
-      
-      var swarms: [SwarmMembership] = []
       
       for swarmDoc in ownedSwarms.documents {
         let swarmId = swarmDoc.documentID
@@ -312,16 +313,48 @@ public final class FirebaseService {
           role: .owner,
           joinedAt: joinedAt
         ))
+        seenSwarmIds.insert(swarmId)
       }
       
-      // TODO: Also query for swarms where user is a member but not owner
-      // This requires either:
-      // 1. A collection group query with userId stored in member doc
-      // 2. A separate user-swarms mapping collection
-      // For now, owners can see their owned swarms
+      // 2. Get swarms where user is a member (via collection group query)
+      // This requires "members" collection group to be indexed in Firestore
+      let memberDocs = try await db.collectionGroup("members")
+        .whereField("userId", isEqualTo: userId)
+        .getDocuments()
+      
+      for memberDoc in memberDocs.documents {
+        // Extract swarm ID from path: swarms/{swarmId}/members/{userId}
+        let pathComponents = memberDoc.reference.path.split(separator: "/")
+        guard pathComponents.count >= 2,
+              let swarmIdIndex = pathComponents.firstIndex(of: "swarms"),
+              swarmIdIndex + 1 < pathComponents.count else {
+          continue
+        }
+        let swarmId = String(pathComponents[swarmIdIndex + 1])
+        
+        // Skip if we already have this swarm (from owner query)
+        guard !seenSwarmIds.contains(swarmId) else { continue }
+        seenSwarmIds.insert(swarmId)
+        
+        let memberData = memberDoc.data()
+        let roleString = memberData["role"] as? String ?? "reader"
+        let role: SwarmPermissionRole = SwarmPermissionRole(rawValue: roleString) ?? .reader
+        let joinedAt = (memberData["joinedAt"] as? Timestamp)?.dateValue() ?? Date()
+        
+        // Fetch swarm name
+        let swarmDoc = try? await swarmsCollection().document(swarmId).getDocument()
+        let swarmName = swarmDoc?.data()?["name"] as? String ?? "Unknown Swarm"
+        
+        swarms.append(SwarmMembership(
+          id: swarmId,
+          swarmName: swarmName,
+          role: role,
+          joinedAt: joinedAt
+        ))
+      }
       
       memberSwarms = swarms
-      logger.info("Loaded \(swarms.count) swarm memberships")
+      logger.info("Loaded \(swarms.count) swarm memberships (\(ownedSwarms.documents.count) owned, \(memberDocs.documents.count) member)")
     } catch {
       logger.error("Failed to load swarms: \(error)")
     }
@@ -341,6 +374,61 @@ public final class FirebaseService {
         "name": $0.swarmName,
         "role": $0.role.rawValue
       ] }
+    ]
+  }
+  
+  /// Migration: Add userId field to all member documents that don't have it
+  /// This is needed for collection group queries to find user memberships
+  public func migrateMemberUserIds() async throws -> [String: Any] {
+    guard isConfigured else { throw FirebaseError.notConfigured }
+    guard isSignedIn else { throw FirebaseError.notSignedIn }
+    
+    var results: [[String: Any]] = []
+    
+    // Get all swarms
+    let swarmsSnapshot = try await swarmsCollection().getDocuments()
+    
+    for swarmDoc in swarmsSnapshot.documents {
+      let swarmId = swarmDoc.documentID
+      let swarmName = swarmDoc.data()["name"] as? String ?? "Unknown"
+      
+      // Get members of this swarm
+      let membersSnapshot = try await membersCollection(swarmId: swarmId).getDocuments()
+      
+      for memberDoc in membersSnapshot.documents {
+        let memberId = memberDoc.documentID
+        let data = memberDoc.data()
+        let displayName = data["displayName"] as? String ?? data["email"] as? String ?? memberId
+        let hasUserId = data["userId"] != nil
+        
+        var memberResult: [String: Any] = [
+          "swarmId": swarmId,
+          "swarmName": swarmName,
+          "memberId": memberId,
+          "displayName": displayName,
+          "hadUserId": hasUserId
+        ]
+        
+        if !hasUserId {
+          // Add userId field
+          try await membersCollection(swarmId: swarmId).document(memberId).updateData([
+            "userId": memberId
+          ])
+          memberResult["updated"] = true
+          logger.info("Added userId to member \(displayName) in swarm \(swarmName)")
+        } else {
+          memberResult["updated"] = false
+        }
+        
+        results.append(memberResult)
+      }
+    }
+    
+    return [
+      "swarmsProcessed": swarmsSnapshot.documents.count,
+      "membersProcessed": results.count,
+      "membersUpdated": results.filter { $0["updated"] as? Bool == true }.count,
+      "details": results
     ]
   }
   
@@ -607,8 +695,9 @@ public final class FirebaseService {
     
     let batch = db.batch()
     
-    // Add user as pending member
+    // Add user as pending member (include userId for collection group queries)
     batch.setData([
+      "userId": userId,
       "displayName": currentUserDisplayName ?? "New Member",
       "email": currentUserEmail ?? "",
       "joinedAt": FieldValue.serverTimestamp(),
