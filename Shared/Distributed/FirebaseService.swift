@@ -343,7 +343,7 @@ public final class FirebaseService {
       ]
     ], forDocument: swarmRef)
     
-    // Create owner membership (include oderId for collection group queries)
+    // Create owner membership (include ownerId for collection group queries)
     batch.setData([
       "userId": userId,
       "displayName": currentUserDisplayName ?? "Owner",
@@ -351,8 +351,7 @@ public final class FirebaseService {
       "joinedAt": FieldValue.serverTimestamp(),
       "role": "owner",
       "roleLevel": 4,
-      "status": "active",
-      "workers": []
+      "status": "active"
     ], forDocument: membersCollection(swarmId: swarmId).document(userId))
     
     try await batch.commit()
@@ -590,8 +589,7 @@ public final class FirebaseService {
       "roleLevel": 0,
       "status": "active",
       "approvedBy": NSNull(),
-      "approvedAt": NSNull(),
-      "workers": []
+      "approvedAt": NSNull()
     ], forDocument: membersCollection(swarmId: swarmId).document(userId))
     
     // Update invite usage
