@@ -153,7 +153,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
     [
       [
         "name": "swarm.start",
-        "description": "Start the distributed swarm coordinator. Role can be 'brain' (Crown: dispatches work), 'worker' (Peel: executes work), or 'hybrid' (Crown + Peel).",
+        "description": "Start the distributed swarm coordinator. Role can be 'brain' (Crown: dispatches work), 'worker' (Peel: executes work), or 'hybrid' (Crown + Peel). Enable 'wan' for internet connectivity.",
         "inputSchema": [
           "type": "object",
           "properties": [
@@ -165,6 +165,14 @@ public final class SwarmToolsHandler: MCPToolHandler {
             "port": [
               "type": "integer",
               "description": "Port to listen on (default: 8766)"
+            ],
+            "wan": [
+              "type": "boolean",
+              "description": "Enable WAN mode to advertise public IP for internet connectivity. Requires port forwarding on router."
+            ],
+            "wanAddress": [
+              "type": "string",
+              "description": "Explicit WAN address to advertise (if not set, auto-detects public IP)"
             ]
           ],
           "required": ["role"]
@@ -667,6 +675,8 @@ public final class SwarmToolsHandler: MCPToolHandler {
     }
     
     let port = UInt16(arguments["port"] as? Int ?? 8766)
+    let enableWAN = arguments["wan"] as? Bool ?? false
+    let explicitWANAddress = arguments["wanAddress"] as? String
     
     // Auto-register repos from arguments (if provided)
     if let repos = arguments["repos"] as? [String] {
@@ -695,12 +705,29 @@ public final class SwarmToolsHandler: MCPToolHandler {
       try coordinator.start(role: role, port: port)
       
       // Auto-register as Firestore worker for all member swarms (WAN discovery)
-      // TODO: Add LAN/WAN option - for now, always start WAN
       var firestoreRegistrations: [[String: Any]] = []
       let firebaseService = FirebaseService.shared
       
+      // Determine WAN address if WAN mode enabled
+      var wanAddress: String? = nil
+      var wanPort: UInt16? = nil
+      
+      if enableWAN {
+        if let explicit = explicitWANAddress {
+          wanAddress = explicit
+          wanPort = port
+        } else {
+          // Auto-detect public IP
+          wanAddress = await NetworkUtils.fetchPublicIP()
+          wanPort = wanAddress != nil ? port : nil
+        }
+      }
+      
       if firebaseService.isSignedIn {
-        let capabilities = WorkerCapabilities.current()
+        let capabilities = WorkerCapabilities.current(
+          wanAddress: wanAddress,
+          wanPort: wanPort
+        )
         for swarm in firebaseService.memberSwarms where swarm.role.canRegisterWorkers {
           // contributor+ can register as worker
           do {
@@ -714,7 +741,9 @@ public final class SwarmToolsHandler: MCPToolHandler {
               "swarmId": swarm.id,
               "swarmName": swarm.swarmName,
               "workerId": workerId,
-              "status": "registered"
+              "status": "registered",
+              "wanAddress": wanAddress as Any,
+              "wanPort": wanPort.map { Int($0) } as Any
             ])
           } catch {
             firestoreRegistrations.append([
@@ -734,7 +763,10 @@ public final class SwarmToolsHandler: MCPToolHandler {
         "deviceId": coordinator.capabilities.deviceId,
         "hasChainExecutor": chainRunner != nil,
         "registeredRepos": RepoRegistry.shared.registeredRepos.count,
-        "firestoreWorkers": firestoreRegistrations
+        "firestoreWorkers": firestoreRegistrations,
+        "wanEnabled": enableWAN,
+        "wanAddress": wanAddress as Any,
+        "wanPort": wanPort.map { Int($0) } as Any
       ]))
     } catch {
       return internalError(id: id, message: "Failed to start swarm: \(error.localizedDescription)")
@@ -1721,7 +1753,10 @@ public final class SwarmToolsHandler: MCPToolHandler {
         "status": worker.status.rawValue,
         "lastHeartbeat": worker.lastHeartbeat.ISO8601Format(),
         "isStale": worker.isStale,
-        "version": worker.version as Any
+        "version": worker.version as Any,
+        "wanAddress": worker.wanAddress as Any,
+        "wanPort": worker.wanPort.map { Int($0) } as Any,
+        "hasWANEndpoint": worker.hasWANEndpoint
       ]
     }
     
