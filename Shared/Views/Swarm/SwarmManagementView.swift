@@ -5,6 +5,7 @@
 //  Main view for managing Firestore-coordinated swarms
 //
 
+import CoreImage
 import SwiftUI
 
 /// Main swarm management view - shows swarms, members, invites
@@ -1116,46 +1117,118 @@ struct ActivityEventRow: View {
 
 struct InviteShareSheet: View {
   let url: URL?
+  let expiresAt: Date?
+  let maxUses: Int?
+  let usedCount: Int?
+  
   @Environment(\.dismiss) private var dismiss
   @State private var copied = false
   
+  init(url: URL?, expiresAt: Date? = nil, maxUses: Int? = nil, usedCount: Int? = nil) {
+    self.url = url
+    self.expiresAt = expiresAt
+    self.maxUses = maxUses
+    self.usedCount = usedCount
+  }
+  
   var body: some View {
     NavigationStack {
-      VStack(spacing: 24) {
-        Image(systemName: "qrcode")
-          .font(.system(size: 120))
-          .foregroundStyle(.secondary)
+      VStack(spacing: 20) {
+        // QR Code
+        if let url = url {
+          QRCodeView(url: url)
+            .frame(width: 200, height: 200)
+            .padding()
+            .background(.white)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
+        } else {
+          Image(systemName: "qrcode")
+            .font(.system(size: 120))
+            .foregroundStyle(.secondary)
+        }
         
+        // URL display
         if let url = url {
           Text(url.absoluteString)
-            .font(.caption)
+            .font(.caption.monospaced())
             .foregroundStyle(.secondary)
             .textSelection(.enabled)
-            .padding()
+            .padding(8)
             .background(.quaternary)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-          
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+        }
+        
+        // Expiration and usage info
+        if expiresAt != nil || maxUses != nil {
+          HStack(spacing: 16) {
+            if let expires = expiresAt {
+              Label {
+                Text(expires, style: .relative)
+              } icon: {
+                Image(systemName: "clock")
+              }
+              .font(.caption)
+              .foregroundStyle(expires < Date() ? .red : .secondary)
+            }
+            
+            if let max = maxUses {
+              Label {
+                Text("\(usedCount ?? 0)/\(max) uses")
+              } icon: {
+                Image(systemName: "person.2")
+              }
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            }
+          }
+        }
+        
+        // Action buttons
+        HStack(spacing: 12) {
           Button {
             #if os(macOS)
             NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(url.absoluteString, forType: .string)
+            NSPasteboard.general.setString(url?.absoluteString ?? "", forType: .string)
+            #else
+            UIPasteboard.general.string = url?.absoluteString
             #endif
             copied = true
+            
+            // Reset after 2 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+              copied = false
+            }
           } label: {
             Label(copied ? "Copied!" : "Copy Link", systemImage: copied ? "checkmark" : "doc.on.doc")
+              .frame(maxWidth: .infinity)
           }
           .buttonStyle(.borderedProminent)
+          .disabled(url == nil)
+          
+          #if os(macOS)
+          if let url = url {
+            ShareLink(item: url) {
+              Label("Share", systemImage: "square.and.arrow.up")
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+          }
+          #endif
         }
+        .padding(.horizontal)
         
-        Text("Share this link with someone to invite them to your swarm.")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .multilineTextAlignment(.center)
-        
-        Text("They'll join as a pending member until you approve them.")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .multilineTextAlignment(.center)
+        // Instructions
+        VStack(spacing: 4) {
+          Text("Share this link to invite someone to your swarm.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          
+          Text("They'll join as a pending member until you approve them.")
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+        }
+        .multilineTextAlignment(.center)
       }
       .padding()
       .navigationTitle("Invite Link")
@@ -1168,8 +1241,83 @@ struct InviteShareSheet: View {
         }
       }
     }
-    .frame(minWidth: 400, minHeight: 400)
+    .frame(minWidth: 400, minHeight: 480)
   }
+}
+
+// MARK: - QR Code View
+
+struct QRCodeView: View {
+  let url: URL
+  
+  var body: some View {
+    if let image = generateQRCode(from: url.absoluteString) {
+      #if os(macOS)
+      Image(nsImage: image)
+        .interpolation(.none)
+        .resizable()
+        .scaledToFit()
+      #else
+      Image(uiImage: image)
+        .interpolation(.none)
+        .resizable()
+        .scaledToFit()
+      #endif
+    } else {
+      Image(systemName: "qrcode")
+        .font(.system(size: 100))
+        .foregroundStyle(.secondary)
+    }
+  }
+  
+  #if os(macOS)
+  private func generateQRCode(from string: String) -> NSImage? {
+    guard let data = string.data(using: .utf8),
+          let filter = CIFilter(name: "CIQRCodeGenerator") else {
+      return nil
+    }
+    
+    filter.setValue(data, forKey: "inputMessage")
+    filter.setValue("H", forKey: "inputCorrectionLevel") // High error correction
+    
+    guard let ciImage = filter.outputImage else { return nil }
+    
+    // Scale up for crisp rendering
+    let scale = 10.0
+    let transform = CGAffineTransform(scaleX: scale, y: scale)
+    let scaledImage = ciImage.transformed(by: transform)
+    
+    let rep = NSCIImageRep(ciImage: scaledImage)
+    let nsImage = NSImage(size: rep.size)
+    nsImage.addRepresentation(rep)
+    
+    return nsImage
+  }
+  #else
+  private func generateQRCode(from string: String) -> UIImage? {
+    guard let data = string.data(using: .utf8),
+          let filter = CIFilter(name: "CIQRCodeGenerator") else {
+      return nil
+    }
+    
+    filter.setValue(data, forKey: "inputMessage")
+    filter.setValue("H", forKey: "inputCorrectionLevel") // High error correction
+    
+    guard let ciImage = filter.outputImage else { return nil }
+    
+    // Scale up for crisp rendering
+    let scale = 10.0
+    let transform = CGAffineTransform(scaleX: scale, y: scale)
+    let scaledImage = ciImage.transformed(by: transform)
+    
+    let context = CIContext()
+    guard let cgImage = context.createCGImage(scaledImage, from: scaledImage.extent) else {
+      return nil
+    }
+    
+    return UIImage(cgImage: cgImage)
+  }
+  #endif
 }
 
 #Preview {
