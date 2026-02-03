@@ -47,6 +47,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
     "swarm.firestore.create",
     "swarm.firestore.debug",
     "swarm.firestore.activity",
+    "swarm.firestore.migrate",
     // Firestore worker/task management (#225)
     "swarm.firestore.workers",
     "swarm.firestore.register-worker",
@@ -116,6 +117,8 @@ public final class SwarmToolsHandler: MCPToolHandler {
       return await handleFirestoreDebug(id: id)
     case "swarm.firestore.activity":
       return handleFirestoreActivity(id: id, arguments: arguments)
+    case "swarm.firestore.migrate":
+      return await handleFirestoreMigrate(id: id)
     // Firestore worker/task management (#225)
     case "swarm.firestore.workers":
       return handleFirestoreWorkers(id: id, arguments: arguments)
@@ -453,6 +456,15 @@ public final class SwarmToolsHandler: MCPToolHandler {
               "description": "Filter by event type: worker_online, worker_offline, task_submitted, task_claimed, task_completed, error, etc."
             ]
           ],
+          "required": []
+        ]
+      ],
+      [
+        "name": "swarm.firestore.migrate",
+        "description": "Run migration to add userId field to all member documents. Required for collection group queries to find user memberships across swarms.",
+        "inputSchema": [
+          "type": "object",
+          "properties": [:],
           "required": []
         ]
       ],
@@ -1572,6 +1584,16 @@ public final class SwarmToolsHandler: MCPToolHandler {
     let service = FirebaseService.shared
     let debugInfo = service.debugQuerySwarms()
     return (200, makeResult(id: id, result: debugInfo))
+  }
+  
+  private func handleFirestoreMigrate(id: Any?) async -> (Int, Data) {
+    let service = FirebaseService.shared
+    do {
+      let result = try await service.migrateMemberUserIds()
+      return (200, makeResult(id: id, result: result))
+    } catch {
+      return internalError(id: id, message: "Migration failed: \(error.localizedDescription)")
+    }
   }
   
   private func handleFirestoreActivity(id: Any?, arguments: [String: Any]) -> (Int, Data) {

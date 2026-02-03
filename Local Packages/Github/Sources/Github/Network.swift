@@ -8,10 +8,21 @@
 import OAuthSwift
 import SwiftUI
 
-enum GithubError: Error {
+enum GithubError: Error, LocalizedError {
   case couldNotDecode
   case invalidURL(String)
   case badResponse(Int)
+  
+  var errorDescription: String? {
+    switch self {
+    case .couldNotDecode:
+      return "Failed to decode GitHub response"
+    case .invalidURL(let url):
+      return "Invalid URL: \(url)"
+    case .badResponse(let code):
+      return "GitHub API error (HTTP \(code))"
+    }
+  }
 }
 
 extension Github {
@@ -228,15 +239,23 @@ extension Github {
     
     let (data, response) = try await URLSession.shared.data(for: request)
     guard let http = response as? HTTPURLResponse else {
+      print("[GitHub] Request to \(url) failed: no HTTP response")
       throw GithubError.badResponse(-1)
     }
     guard (200...299).contains(http.statusCode) else {
+      if let errorBody = String(data: data, encoding: .utf8) {
+        print("[GitHub] Request to \(url) failed with status \(http.statusCode): \(errorBody)")
+      }
       throw GithubError.badResponse(http.statusCode)
     }
     
     do {
       return try JSONDecoder().decode(T.self, from: data)
     } catch {
+      print("[GitHub] Failed to decode response from \(url): \(error)")
+      if let responseString = String(data: data, encoding: .utf8) {
+        print("[GitHub] Response body: \(responseString.prefix(500))")
+      }
       throw GithubError.couldNotDecode
     }
   }
