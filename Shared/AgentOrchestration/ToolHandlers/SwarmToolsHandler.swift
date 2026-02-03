@@ -704,24 +704,18 @@ public final class SwarmToolsHandler: MCPToolHandler {
     do {
       try coordinator.start(role: role, port: port)
       
+      // Configure WAN mode on coordinator
+      if enableWAN {
+        await coordinator.configureWAN(enabled: true, address: explicitWANAddress, port: port)
+      }
+      
       // Auto-register as Firestore worker for all member swarms (WAN discovery)
       var firestoreRegistrations: [[String: Any]] = []
       let firebaseService = FirebaseService.shared
       
-      // Determine WAN address if WAN mode enabled
-      var wanAddress: String? = nil
-      var wanPort: UInt16? = nil
-      
-      if enableWAN {
-        if let explicit = explicitWANAddress {
-          wanAddress = explicit
-          wanPort = port
-        } else {
-          // Auto-detect public IP
-          wanAddress = await NetworkUtils.fetchPublicIP()
-          wanPort = wanAddress != nil ? port : nil
-        }
-      }
+      // Get WAN address from coordinator (may have auto-detected)
+      let wanAddress = coordinator.wanAddress
+      let wanPort = coordinator.wanPort
       
       if firebaseService.isSignedIn {
         let capabilities = WorkerCapabilities.current(
@@ -752,6 +746,13 @@ public final class SwarmToolsHandler: MCPToolHandler {
               "error": error.localizedDescription
             ])
           }
+        }
+        
+        // Auto-connect to WAN peers after registration (gives time for listeners to populate)
+        if enableWAN && (role == .brain || role == .hybrid) {
+          // Small delay to let worker listener populate
+          try? await Task.sleep(for: .seconds(1))
+          await coordinator.autoConnectToWANPeers()
         }
       }
       
