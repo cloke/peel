@@ -285,7 +285,12 @@ public final class FirebaseService {
       logger.warning("Firebase not configured, skipping swarm load")
       return
     }
-    guard let userId = currentUserId else { return }
+    guard let userId = currentUserId else {
+      logger.warning("No current user ID, skipping swarm load")
+      return
+    }
+    
+    logger.info("Loading swarms for user: \(userId)")
     
     do {
       var swarms: [SwarmMembership] = []
@@ -295,6 +300,8 @@ public final class FirebaseService {
       let ownedSwarms = try await swarmsCollection()
         .whereField("ownerId", isEqualTo: userId)
         .getDocuments()
+      
+      logger.info("Found \(ownedSwarms.documents.count) owned swarms")
       
       for swarmDoc in ownedSwarms.documents {
         let swarmId = swarmDoc.documentID
@@ -318,17 +325,20 @@ public final class FirebaseService {
       
       // 2. Get swarms where user is a member (via collection group query)
       // This requires "members" collection group to be indexed in Firestore
-      let memberDocs = try await db.collectionGroup("members")
-        .whereField("userId", isEqualTo: userId)
-        .getDocuments()
-      
-      for memberDoc in memberDocs.documents {
-        // Extract swarm ID from path: swarms/{swarmId}/members/{userId}
-        let pathComponents = memberDoc.reference.path.split(separator: "/")
-        guard pathComponents.count >= 2,
-              let swarmIdIndex = pathComponents.firstIndex(of: "swarms"),
-              swarmIdIndex + 1 < pathComponents.count else {
-          continue
+      do {
+        let memberDocs = try await db.collectionGroup("members")
+          .whereField("userId", isEqualTo: userId)
+          .getDocuments()
+        
+        logger.info("Found \(memberDocs.documents.count) memberships via collection group")
+        
+        for memberDoc in memberDocs.documents {
+          // Extract swarm ID from path: swarms/{swarmId}/members/{userId}
+          let pathComponents = memberDoc.reference.path.split(separator: "/")
+          guard pathComponents.count >= 2,
+                let swarmIdIndex = pathComponents.firstIndex(of: "swarms"),
+                swarmIdIndex + 1 < pathComponents.count else {
+            continue
         }
         let swarmId = String(pathComponents[swarmIdIndex + 1])
         
@@ -351,10 +361,13 @@ public final class FirebaseService {
           role: role,
           joinedAt: joinedAt
         ))
+        }
+      } catch {
+        logger.warning("Collection group query failed (index may be building): \(error)")
       }
       
       memberSwarms = swarms
-      logger.info("Loaded \(swarms.count) swarm memberships (\(ownedSwarms.documents.count) owned, \(memberDocs.documents.count) member)")
+      logger.info("Loaded \(swarms.count) swarm memberships")
     } catch {
       logger.error("Failed to load swarms: \(error)")
     }

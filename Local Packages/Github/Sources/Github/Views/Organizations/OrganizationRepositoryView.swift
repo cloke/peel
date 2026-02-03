@@ -19,6 +19,11 @@ public struct OrganizationRepositoryView: View {
     self.organization = organization
   }
   
+  private var filteredRepositories: [Github.Repository] {
+    guard case .loaded(let repos) = state else { return [] }
+    return showArchivedRepos ? repos : repos.filter { $0.archived != true }
+  }
+  
   public var body: some View {
     DisclosureGroup(isExpanded: $isExpanded) {
       switch state {
@@ -30,8 +35,8 @@ public struct OrganizationRepositoryView: View {
         Label(message, systemImage: "exclamationmark.triangle")
           .foregroundStyle(.secondary)
           .font(.caption)
-      case .loaded(let repositories):
-        ForEach(repositories) { repository in
+      case .loaded:
+        ForEach(filteredRepositories) { repository in
           NavigationLink(destination: RepositoryContainerView(organization: organization, repository: repository)) {
             Text(repository.name)
           }
@@ -53,8 +58,7 @@ public struct OrganizationRepositoryView: View {
     state = .loading
     do {
       let repos = try await Github.loadRepositories(organization: organization.login ?? "")
-      let filtered = showArchivedRepos ? repos : repos.filter { $0.archived != true }
-      state = .loaded(filtered)
+      state = .loaded(repos)
     } catch {
       state = .error(error.localizedDescription)
     }
