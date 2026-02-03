@@ -46,6 +46,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
     "swarm.firestore.swarms",
     "swarm.firestore.create",
     "swarm.firestore.debug",
+    "swarm.firestore.activity",
     // Firestore worker/task management (#225)
     "swarm.firestore.workers",
     "swarm.firestore.register-worker",
@@ -113,6 +114,8 @@ public final class SwarmToolsHandler: MCPToolHandler {
       return await handleFirestoreCreate(id: id, arguments: arguments)
     case "swarm.firestore.debug":
       return await handleFirestoreDebug(id: id)
+    case "swarm.firestore.activity":
+      return handleFirestoreActivity(id: id, arguments: arguments)
     // Firestore worker/task management (#225)
     case "swarm.firestore.workers":
       return handleFirestoreWorkers(id: id, arguments: arguments)
@@ -432,6 +435,24 @@ public final class SwarmToolsHandler: MCPToolHandler {
         "inputSchema": [
           "type": "object",
           "properties": [:],
+          "required": []
+        ]
+      ],
+      [
+        "name": "swarm.firestore.activity",
+        "description": "Get recent activity log entries for swarm debugging. Shows worker events, task status changes, messages, and errors.",
+        "inputSchema": [
+          "type": "object",
+          "properties": [
+            "limit": [
+              "type": "integer",
+              "description": "Maximum number of entries to return (default: 50)"
+            ],
+            "filter": [
+              "type": "string",
+              "description": "Filter by event type: worker_online, worker_offline, task_submitted, task_claimed, task_completed, error, etc."
+            ]
+          ],
           "required": []
         ]
       ],
@@ -1551,6 +1572,41 @@ public final class SwarmToolsHandler: MCPToolHandler {
     let service = FirebaseService.shared
     let debugInfo = service.debugQuerySwarms()
     return (200, makeResult(id: id, result: debugInfo))
+  }
+  
+  private func handleFirestoreActivity(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    let service = FirebaseService.shared
+    let limit = arguments["limit"] as? Int ?? 50
+    let filterType = arguments["filter"] as? String
+    
+    var events = service.activityLog
+    
+    // Apply filter if specified
+    if let filter = filterType, !filter.isEmpty {
+      events = events.filter { $0.type.rawValue == filter }
+    }
+    
+    // Apply limit
+    events = Array(events.prefix(limit))
+    
+    let formatted = events.map { event -> [String: Any] in
+      var entry: [String: Any] = [
+        "timestamp": event.timestamp.ISO8601Format(),
+        "type": event.type.rawValue,
+        "emoji": event.type.emoji,
+        "message": event.message
+      ]
+      if let details = event.details {
+        entry["details"] = details
+      }
+      return entry
+    }
+    
+    return (200, makeResult(id: id, result: [
+      "count": formatted.count,
+      "totalInLog": service.activityLog.count,
+      "events": formatted
+    ]))
   }
   
   // MARK: - Firestore Worker/Task Management (#225)

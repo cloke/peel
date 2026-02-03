@@ -379,6 +379,12 @@ public final class FirebaseService {
     try await batch.commit()
     logger.info("Created swarm: \(swarmId)")
     
+    // Log activity
+    logActivity(.swarmJoined, message: "Created swarm: \(name)", details: [
+      "swarmId": swarmId,
+      "role": "owner"
+    ])
+    
     // Reload swarms
     await loadUserSwarms()
     
@@ -621,6 +627,12 @@ public final class FirebaseService {
     
     try await batch.commit()
     logger.info("Successfully joined swarm \(swarmId) as pending member")
+    
+    // Log activity
+    logActivity(.swarmJoined, message: "Joined swarm as pending member", details: [
+      "swarmId": swarmId,
+      "role": "pending"
+    ])
     
     // Store the joined swarm ID for UI auto-selection (#236)
     lastJoinedSwarmId = swarmId
