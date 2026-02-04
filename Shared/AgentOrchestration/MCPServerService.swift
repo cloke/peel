@@ -3756,6 +3756,34 @@ public final class MCPServerService {
         category: .rag,
         isMutating: true
       ),
+      // MARK: Ember Skills (#263) - Bundled Ember best practices
+      ToolDefinition(
+        name: "rag.skills.ember.detect",
+        description: "Detect if a repository is an Ember project and check if Ember best-practice skills are loaded. Returns isEmberProject, alreadySeeded, emberSkillCount, and bundledVersion.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": ["type": "string", "description": "Absolute path to the repository"]
+          ],
+          "required": ["repoPath"]
+        ],
+        category: .rag,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "rag.skills.ember.update",
+        description: "Manage bundled Ember best-practice skills. Actions: 'check' (check for updates), 'seed' (add skills), 'update' (force update), 'remove' (delete Ember skills).",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": ["type": "string", "description": "Absolute path to the repository"],
+            "action": ["type": "string", "enum": ["check", "seed", "update", "remove"], "description": "Action to perform: check, seed, update, or remove"]
+          ],
+          "required": ["repoPath", "action"]
+        ],
+        category: .rag,
+        isMutating: true
+      ),
       // MARK: Learning Loop (#210) - Lesson Tools
       ToolDefinition(
         name: "rag.lessons.list",
