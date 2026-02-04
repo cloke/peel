@@ -506,6 +506,7 @@ public final class MCPServerService {
   private var repoToolsHandler: RepoToolsHandler
   private var worktreeToolsHandler: WorktreeToolsHandler
   private var githubToolsHandler: GitHubToolsHandler?
+  private var terminalToolsHandler: TerminalToolsHandler
 
   public struct ActiveRunInfo: Identifiable {
     public let id: UUID
@@ -569,6 +570,7 @@ public final class MCPServerService {
     self.repoToolsHandler = RepoToolsHandler()
     self.worktreeToolsHandler = WorktreeToolsHandler()
     self.githubToolsHandler = GitHubToolsHandler()
+    self.terminalToolsHandler = TerminalToolsHandler()
 
     self.agentManager = agentManager
     self.sessionTracker = sessionTracker
@@ -660,6 +662,7 @@ public final class MCPServerService {
     self.repoToolsHandler.delegate = self
     self.worktreeToolsHandler.delegate = self
     self.githubToolsHandler?.delegate = self
+    self.terminalToolsHandler.delegate = self
     SwarmCoordinator.shared.ragSyncDelegate = self
 
     // If running in worker mode, inject the chain executor into the already-running SwarmCoordinator
@@ -1906,6 +1909,9 @@ public final class MCPServerService {
     }
     if githubToolsHandler?.supportedTools.contains(resolvedName) == true {
       return await githubToolsHandler!.handle(name: resolvedName, id: id, arguments: arguments)
+    }
+    if terminalToolsHandler.supportedTools.contains(resolvedName) {
+      return await terminalToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
     }
 
     // Fall through to inline handlers (to be extracted in future)
@@ -5402,6 +5408,63 @@ public final class MCPServerService {
         ],
         category: .worktrees,
         isMutating: true
+      ),
+      // MARK: - AI Terminal Tools
+      ToolDefinition(
+        name: "terminal.run",
+        description: """
+          Run a shell command with automatic bash→zsh adaptation and safety analysis.
+          Automatically converts common bash patterns to zsh (echo -e, backticks, heredocs, read -p).
+          Analyzes commands for safety and blocks critical operations (rm -rf /, curl|sh, etc.).
+          Returns structured output with stdout, stderr, exit code, and adaptation/safety info.
+          """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "command": ["type": "string", "description": "The command to execute"],
+            "workingDirectory": ["type": "string", "description": "Working directory (optional)"],
+            "timeout": ["type": "integer", "description": "Timeout in seconds (default: 30)"],
+            "skipAdaptation": ["type": "boolean", "description": "Skip bash→zsh adaptation (default: false)"],
+            "skipSafetyCheck": ["type": "boolean", "description": "Skip safety analysis (default: false)"]
+          ],
+          "required": ["command"]
+        ],
+        category: .terminal,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "terminal.analyze",
+        description: """
+          Analyze a command for safety without executing it.
+          Returns risk level (safe/low/medium/high/critical), detected risks, and suggestions.
+          Use this to pre-flight check commands before running them.
+          """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "command": ["type": "string", "description": "The command to analyze"]
+          ],
+          "required": ["command"]
+        ],
+        category: .terminal,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "terminal.adapt",
+        description: """
+          Preview bash→zsh shell adaptation without executing.
+          Shows what transformations would be applied: echo -e removal, backtick→$() conversion,
+          read -p adaptation, heredoc escaping, declare→typeset, etc.
+          """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "command": ["type": "string", "description": "The command to adapt"]
+          ],
+          "required": ["command"]
+        ],
+        category: .terminal,
+        isMutating: false
       )
     ]
   }
