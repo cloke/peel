@@ -633,6 +633,20 @@ final class ParallelWorktreeRunner {
 
   private func buildRepoGuidance(repoPath: String) async -> String? {
     var sections: [String] = []
+    
+    // Auto-seed Ember skills if this is an Ember project (Issue #263)
+    if let dataService {
+      let seededCount = await MainActor.run {
+        DefaultSkillsService.autoSeedEmberSkillsIfNeeded(context: dataService.modelContext, repoPath: repoPath)
+      }
+      if seededCount > 0 {
+        await mcpLog.info("Auto-seeded Ember skills", metadata: [
+          "repoPath": repoPath,
+          "skillsAdded": "\(seededCount)"
+        ])
+      }
+    }
+    
     if let dataService {
       let repoRemoteURL = await RepoRegistry.shared.registerRepo(at: repoPath)
       let skillsBlock = await MainActor.run {

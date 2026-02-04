@@ -20,6 +20,7 @@ struct PeelApp: App {
   @State private var mcpServer: MCPServerService
   @State private var dataService: DataService
   @State private var workerModeActive = false
+  @State private var skillUpdateAvailable = false
 
   init() {
     // Configure Firebase first (before other services)
@@ -34,6 +35,8 @@ struct PeelApp: App {
     let context = ModelContext(container)
     _dataService = State(initialValue: DataService(modelContext: context))
     DefaultSkillsService.seedDefaultSkills(context: context)  // Issue #90
+    
+    // Note: Ember skills update check is performed in ContentView.task (Issue #263)
     
     // Check for worker mode (--worker flag)
     if WorkerMode.shared.shouldRunInWorkerMode {
@@ -114,6 +117,14 @@ struct PeelApp: App {
             }
           }
         }
+        .task {
+          // Check for Ember skills updates on launch (Issue #263)
+          let result = await SkillUpdateService.shared.checkForEmberSkillsUpdate()
+          if result.hasUpdate {
+            skillUpdateAvailable = true
+            print("[PeelApp] Ember skills update available")
+          }
+        }
         .environment(mcpServer)
         .environment(vmIsolationService)
         .environment(dataService)
@@ -192,11 +203,14 @@ struct PeelApp: App {
 @MainActor
 @Observable
 final class DataService {
-  private let modelContext: ModelContext
+  private let _modelContext: ModelContext
   private let logger = Logger(subsystem: "com.peel.rag", category: "skills")
   
+  /// Provides access to the model context for direct SwiftData operations
+  var modelContext: ModelContext { _modelContext }
+  
   init(modelContext: ModelContext) {
-    self.modelContext = modelContext
+    self._modelContext = modelContext
   }
   
   // MARK: - Device Settings

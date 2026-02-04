@@ -1159,6 +1159,17 @@ public final class MCPServerService {
   private func buildRepoGuidance(repoPath: String) async -> String? {
     var sections: [String] = []
     if let dataService {
+      // Auto-seed Ember skills if this is an Ember project (Issue #263)
+      let seededCount = await MainActor.run {
+        DefaultSkillsService.autoSeedEmberSkillsIfNeeded(context: dataService.modelContext, repoPath: repoPath)
+      }
+      if seededCount > 0 {
+        await telemetryProvider.info("Auto-seeded Ember skills", metadata: [
+          "repoPath": repoPath,
+          "skillsAdded": "\(seededCount)"
+        ])
+      }
+
       let repoRemoteURL = await RepoRegistry.shared.registerRepo(at: repoPath)
       if let (skillsBlock, skills) = dataService.repoGuidanceSkillsBlock(
         repoPath: repoPath,
@@ -5902,6 +5913,10 @@ extension MCPServerService: RepoToolsHandlerDelegate {
 // MARK: - RAGToolsHandlerDelegate
 
 extension MCPServerService: RAGToolsHandlerDelegate {
+  
+  var modelContext: ModelContext? {
+    dataService?.modelContext
+  }
   
   // MARK: - LocalRAGStore Access
   
