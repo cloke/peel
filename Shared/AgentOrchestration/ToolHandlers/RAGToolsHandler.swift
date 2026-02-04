@@ -7,6 +7,7 @@
 
 import Foundation
 import MCPCore
+import SwiftData
 
 // MARK: - RAG Tools Handler Delegate Extension
 
@@ -102,6 +103,9 @@ protocol RAGToolsHandlerDelegate: MCPToolHandlerDelegate {
   
   // MARK: - DataService Access (Skills)
   
+  /// Get model context for direct SwiftData operations
+  var modelContext: ModelContext? { get }
+  
   /// List guidance skills
     func listRepoGuidanceSkills(repoPath: String?, repoRemoteURL: String?, includeInactive: Bool, limit: Int?) -> [RepoGuidanceSkill]
   
@@ -194,6 +198,8 @@ final class RAGToolsHandler: MCPToolHandler {
     "rag.skills.add",
     "rag.skills.update",
     "rag.skills.delete",
+    "rag.skills.ember.detect",  // Issue #263: Detect Ember project and seed skills
+    "rag.skills.ember.update",  // Issue #263: Check for and apply Ember skills updates
     "rag.lessons.list",    // Issue #210: Learning loop - list lessons
     "rag.lessons.add",     // Issue #210: Learning loop - add lesson
     "rag.lessons.query",   // Issue #210: Learning loop - query relevant lessons
@@ -249,6 +255,10 @@ final class RAGToolsHandler: MCPToolHandler {
       return handleSkillsUpdate(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.skills.delete":
       return handleSkillsDelete(id: id, arguments: arguments, delegate: ragDelegate)
+    case "rag.skills.ember.detect":
+      return handleSkillsEmberDetect(id: id, arguments: arguments, delegate: ragDelegate)
+    case "rag.skills.ember.update":
+      return await handleSkillsEmberUpdate(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.lessons.list":
       return await handleLessonsList(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.lessons.add":
@@ -768,6 +778,116 @@ final class RAGToolsHandler: MCPToolHandler {
       return notFoundError(id: id, what: "Skill")
     }
     return (200, makeResult(id: id, result: ["deleted": skillId.uuidString]))
+  }
+  
+  // MARK: - rag.skills.ember.detect (#263)
+  
+  private func handleSkillsEmberDetect(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) -> (Int, Data) {
+    guard case .success(let repoPath) = requireString("repoPath", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "repoPath")
+    }
+    
+    let isEmber = DefaultSkillsService.detectEmberProject(repoPath: repoPath)
+    let alreadySeeded = DefaultSkillsService.hasLoadedEmberSkills(repoPath: repoPath)
+    let skillCount = delegate.listRepoGuidanceSkills(repoPath: repoPath, includeInactive: false, limit: nil)
+      .filter { $0.source == "NullVoxPopuli/agent-skills" }
+      .count
+    
+    var result: [String: Any] = [
+      "isEmberProject": isEmber,
+      "alreadySeeded": alreadySeeded,
+      "emberSkillCount": skillCount
+    ]
+    
+    // If Ember and not seeded, offer to seed
+    if isEmber && !alreadySeeded {
+      result["action"] = "Use rag.skills.ember.update with action='seed' to add Ember best practices"
+    }
+    
+    // Check for bundle info
+    if let bundle = DefaultSkillsService.loadEmberSkillsBundle() {
+      result["bundledVersion"] = bundle.meta.version
+      result["bundledSkillCount"] = bundle.skills.count
+      result["source"] = bundle.meta.source
+    }
+    
+    return (200, makeResult(id: id, result: result))
+  }
+  
+  // MARK: - rag.skills.ember.update (#263)
+  
+  private func handleSkillsEmberUpdate(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
+    guard case .success(let repoPath) = requireString("repoPath", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "repoPath")
+    }
+    
+    let action = optionalString("action", from: arguments) ?? "check"
+    
+    switch action {
+    case "check":
+      // Check for updates from GitHub
+      let result = await SkillUpdateService.shared.checkForEmberSkillsUpdate(force: true)
+      var response: [String: Any] = [
+        "hasUpdate": result.hasUpdate,
+        "currentVersion": result.currentVersion ?? "unknown"
+      ]
+      if let sha = result.latestCommitSHA {
+        response["latestCommitSHA"] = String(sha.prefix(8))
+      }
+      if let lastUpdated = result.lastUpdated {
+        response["lastChecked"] = ISO8601DateFormatter().string(from: lastUpdated)
+      }
+      if let error = result.error {
+        response["error"] = error.localizedDescription
+      }
+      return (200, makeResult(id: id, result: response))
+      
+    case "seed":
+      // Seed Ember skills for this repo
+      guard let context = delegate.modelContext else {
+        return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Model context not available"))
+      }
+      
+      let isEmber = DefaultSkillsService.detectEmberProject(repoPath: repoPath)
+      if !isEmber {
+        return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "Not an Ember project: \(repoPath)"))
+      }
+      
+      let count = DefaultSkillsService.seedEmberSkills(context: context, repoPath: repoPath, force: true)
+      return (200, makeResult(id: id, result: [
+        "seeded": count,
+        "repoPath": repoPath,
+        "source": "NullVoxPopuli/agent-skills"
+      ]))
+      
+    case "update":
+      // Remove old and seed new
+      guard let context = delegate.modelContext else {
+        return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Model context not available"))
+      }
+      
+      let count = DefaultSkillsService.updateEmberSkills(context: context, repoPath: repoPath)
+      return (200, makeResult(id: id, result: [
+        "updated": count,
+        "repoPath": repoPath,
+        "source": "NullVoxPopuli/agent-skills"
+      ]))
+      
+    case "remove":
+      // Remove Ember skills for this repo
+      guard let context = delegate.modelContext else {
+        return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Model context not available"))
+      }
+      
+      DefaultSkillsService.removeEmberSkills(context: context, repoPath: repoPath)
+      return (200, makeResult(id: id, result: [
+        "removed": true,
+        "repoPath": repoPath
+      ]))
+      
+    default:
+      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "Invalid action: \(action). Use 'check', 'seed', 'update', or 'remove'"))
+    }
   }
   
   // MARK: - rag.lessons.list (#210)

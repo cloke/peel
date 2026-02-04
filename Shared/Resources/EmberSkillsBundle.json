@@ -1,0 +1,252 @@
+{
+  "meta": {
+    "source": "NullVoxPopuli/agent-skills",
+    "skill": "ember-best-practices",
+    "version": "1.0.0",
+    "lastUpdated": "2026-02-04",
+    "hash": "",
+    "url": "https://github.com/NullVoxPopuli/agent-skills/tree/main/skills/ember-best-practices"
+  },
+  "skills": [
+    {
+      "title": "Route Loading: Use Parallel Model Loading",
+      "body": "Load multiple data sources in parallel using async/await instead of sequential loading.\n\n❌ Sequential (slow):\n```javascript\nmodel() {\n  const users = await this.store.findAll('user');\n  const posts = await this.store.findAll('post');\n  return { users, posts };\n}\n```\n\n✅ Parallel (fast):\n```javascript\nasync model() {\n  const [users, posts] = await Promise.all([\n    this.store.findAll('user'),\n    this.store.findAll('post')\n  ]);\n  return { users, posts };\n}\n```\n\nThis can provide 2-10× improvement in route load times.",
+      "tags": "route,performance,data-loading",
+      "priority": 10,
+      "category": "route",
+      "impact": "CRITICAL"
+    },
+    {
+      "title": "Route Loading: Implement Smart Route Model Caching",
+      "body": "Cache model data in services to avoid redundant API calls on route transitions.\n\n```javascript\n// app/services/data-cache.js\nimport Service from '@ember/service';\nimport { tracked } from '@glimmer/tracking';\n\nexport class DataCache extends Service {\n  @tracked _users = null;\n  @tracked _usersLoadedAt = null;\n  \n  async getUsers(maxAge = 60000) {\n    if (this._users && Date.now() - this._usersLoadedAt < maxAge) {\n      return this._users;\n    }\n    this._users = await fetch('/api/users').then(r => r.json());\n    this._usersLoadedAt = Date.now();\n    return this._users;\n  }\n}\n```",
+      "tags": "route,caching,performance",
+      "priority": 9,
+      "category": "route",
+      "impact": "CRITICAL"
+    },
+    {
+      "title": "Build: Use Embroider Build Pipeline",
+      "body": "Use Embroider instead of classic Ember CLI build for better tree-shaking, code-splitting, and faster builds.\n\n```javascript\n// ember-cli-build.js\nconst EmberApp = require('ember-cli/lib/broccoli/ember-app');\nconst { Webpack } = require('@embroider/webpack');\n\nmodule.exports = function(defaults) {\n  const app = new EmberApp(defaults, {});\n  \n  return require('@embroider/compat').compatBuild(app, Webpack, {\n    staticAddonTestSupportTrees: true,\n    staticAddonTrees: true,\n    staticHelpers: true,\n    staticModifiers: true,\n    staticComponents: true,\n    splitAtRoutes: ['admin', 'reports']\n  });\n};\n```\n\nEmbroider enables modern bundling with Webpack/Vite, route-based code splitting, and significant bundle size reductions.",
+      "tags": "bundle,embroider,build,performance",
+      "priority": 10,
+      "category": "bundle",
+      "impact": "CRITICAL"
+    },
+    {
+      "title": "Build: Enable Tree Shaking",
+      "body": "Use named exports and configure Embroider for optimal tree shaking.\n\n❌ Default exports (bad for tree shaking):\n```javascript\nexport default class MyComponent extends Component {}\n```\n\n✅ Named exports (good for tree shaking):\n```javascript\nexport class MyComponent extends Component {}\n```\n\nException: Route templates are the ONLY place where default exports are used in modern Ember.\n\nNamed exports enable bundlers to remove unused code, reducing bundle size by 10-30%.",
+      "tags": "bundle,tree-shaking,exports",
+      "priority": 9,
+      "category": "bundle",
+      "impact": "CRITICAL"
+    },
+    {
+      "title": "Component: Use Glimmer Components",
+      "body": "Always use Glimmer components instead of classic Ember components for better performance and simpler APIs.\n\n❌ Classic component:\n```javascript\nimport Component from '@ember/component';\n\nexport default Component.extend({\n  tagName: 'div',\n  classNames: ['my-component']\n});\n```\n\n✅ Glimmer component:\n```javascript\nimport Component from '@glimmer/component';\n\nexport class MyComponent extends Component {\n  // No tagName, no classNames - use template\n}\n```\n\nGlimmer components have no implicit wrapper element, are faster to render, and have a cleaner lifecycle.",
+      "tags": "component,glimmer,modernization",
+      "priority": 10,
+      "category": "component",
+      "impact": "HIGH"
+    },
+    {
+      "title": "Component: Use @cached for Expensive Computations",
+      "body": "Use @cached decorator for getters that perform expensive computations to avoid recalculating on every access.\n\n❌ Recalculates every access:\n```javascript\nget sortedItems() {\n  return this.args.items.slice().sort((a, b) => a.name.localeCompare(b.name));\n}\n```\n\n✅ Cached computation:\n```javascript\nimport { cached } from '@glimmer/tracking';\n\n@cached\nget sortedItems() {\n  return this.args.items.slice().sort((a, b) => a.name.localeCompare(b.name));\n}\n```\n\n@cached memoizes the result until tracked dependencies change.",
+      "tags": "component,cached,performance",
+      "priority": 9,
+      "category": "component",
+      "impact": "HIGH"
+    },
+    {
+      "title": "Component: Minimal @tracked Usage",
+      "body": "Only use @tracked for properties that actually affect rendering. Over-tracking causes unnecessary re-renders.\n\n❌ Over-tracking:\n```javascript\n@tracked internalCounter = 0; // Not used in template\n@tracked lastApiCall = null;  // Not rendered\n```\n\n✅ Track only rendered state:\n```javascript\n@tracked items = [];          // Rendered in template\n@tracked isLoading = false;   // Affects UI\n\n// Non-tracked internal state\ninternalCounter = 0;\nlastApiCall = null;\n```",
+      "tags": "component,tracked,reactivity,performance",
+      "priority": 8,
+      "category": "component",
+      "impact": "HIGH"
+    },
+    {
+      "title": "Component: Use tracked-built-ins for Collections",
+      "body": "Use tracked-built-ins package for reactive arrays, maps, and sets instead of replacing entire collections.\n\n```javascript\nimport { TrackedArray, TrackedMap } from 'tracked-built-ins';\n\nexport class TodoList extends Component {\n  todos = new TrackedArray([]);\n  tags = new TrackedMap();\n  \n  addTodo(todo) {\n    this.todos.push(todo); // Reactivity built-in!\n  }\n  \n  addTag(key, value) {\n    this.tags.set(key, value); // Also reactive!\n  }\n}\n```\n\nThis avoids the pattern of `this.items = [...this.items, newItem]` which creates new array instances.",
+      "tags": "component,tracked,collections,performance",
+      "priority": 8,
+      "category": "component",
+      "impact": "HIGH"
+    },
+    {
+      "title": "Component: Avoid Constructors",
+      "body": "Glimmer components should not use constructors. Use class field initializers instead.\n\n❌ Using constructor:\n```javascript\nexport class MyComponent extends Component {\n  constructor() {\n    super(...arguments);\n    this.items = [];\n  }\n}\n```\n\n✅ Class field initializers:\n```javascript\nexport class MyComponent extends Component {\n  items = [];\n}\n```\n\nConstructors in Glimmer components can cause issues with component lifecycle and args availability.",
+      "tags": "component,constructor,best-practice",
+      "priority": 7,
+      "category": "component",
+      "impact": "HIGH"
+    },
+    {
+      "title": "Component: Use Composition Patterns",
+      "body": "Prefer component composition with yield blocks over complex prop drilling.\n\n```gjs\n// Card component with named blocks\n<template>\n  <div class=\"card\">\n    <header>{{yield to=\"header\"}}</header>\n    <main>{{yield}}</main>\n    <footer>{{yield to=\"footer\"}}</footer>\n  </div>\n</template>\n\n// Usage:\n<Card>\n  <:header>My Title</:header>\n  <p>Card content goes here</p>\n  <:footer><Button>Save</Button></:footer>\n</Card>\n```\n\nComposition is more flexible and maintainable than passing many props.",
+      "tags": "component,composition,yield,blocks",
+      "priority": 8,
+      "category": "component",
+      "impact": "HIGH"
+    },
+    {
+      "title": "Component: File Naming Conventions",
+      "body": "Follow consistent file naming conventions for components:\n\n- Filenames: kebab-case (`user-profile.gts`)\n- Class names: PascalCase without 'Component' suffix (`UserProfile`)\n- Use named exports (not default exports)\n\n✅ Correct:\n```javascript\n// app/components/user-profile.gts\nimport Component from '@glimmer/component';\n\nexport class UserProfile extends Component {\n  <template>\n    <div>{{@user.name}}</div>\n  </template>\n}\n```\n\n❌ Incorrect:\n```javascript\n// UserProfileComponent.js (wrong naming)\nexport default class UserProfileComponent extends Component {}\n```",
+      "tags": "component,naming,conventions",
+      "priority": 6,
+      "category": "component",
+      "impact": "HIGH"
+    },
+    {
+      "title": "Component: Use {{on}} Modifier for Events",
+      "body": "Use the {{on}} modifier for event handling instead of action helpers or inline handlers.\n\n❌ Old patterns:\n```handlebars\n<button {{action 'handleClick'}}>Click</button>\n<button onclick={{action 'handleClick'}}>Click</button>\n```\n\n✅ Modern pattern:\n```gjs\nimport { on } from '@ember/modifier';\n\n<template>\n  <button {{on 'click' this.handleClick}}>Click</button>\n</template>\n```\n\nThe {{on}} modifier provides better performance and clearer semantics.",
+      "tags": "component,events,modifier",
+      "priority": 7,
+      "category": "component",
+      "impact": "HIGH"
+    },
+    {
+      "title": "Accessibility: Use Automated Testing",
+      "body": "Use ember-a11y-testing for automated accessibility checks in your test suite.\n\n```javascript\nimport { setupRenderingTest } from 'ember-qunit';\nimport { a11yAudit } from 'ember-a11y-testing/test-support';\n\nmodule('Integration | Component | user-card', function(hooks) {\n  setupRenderingTest(hooks);\n\n  test('it passes a11y audit', async function(assert) {\n    await render(hbs`<UserCard @user={{this.user}} />`);\n    await a11yAudit();\n    assert.ok(true, 'no a11y violations');\n  });\n});\n```\n\nThis catches WCAG violations automatically during testing.",
+      "tags": "a11y,testing,accessibility",
+      "priority": 9,
+      "category": "a11y",
+      "impact": "HIGH"
+    },
+    {
+      "title": "Accessibility: Associate Labels with Inputs",
+      "body": "Always associate labels with form inputs and announce errors to screen readers.\n\n```gjs\n<template>\n  <div>\n    <label for=\"email-input\">Email</label>\n    <input\n      id=\"email-input\"\n      type=\"email\"\n      value={{@email}}\n      aria-describedby={{if @error \"email-error\"}}\n      aria-invalid={{if @error \"true\"}}\n    />\n    {{#if @error}}\n      <span id=\"email-error\" role=\"alert\">{{@error}}</span>\n    {{/if}}\n  </div>\n</template>\n```\n\nUse role=\"alert\" to announce errors to screen readers when they appear.",
+      "tags": "a11y,forms,labels,aria",
+      "priority": 9,
+      "category": "a11y",
+      "impact": "HIGH"
+    },
+    {
+      "title": "Accessibility: Announce Route Transitions",
+      "body": "Announce route transitions to screen readers so users know navigation occurred.\n\nUse ember-a11y or implement a route announcement service:\n\n```javascript\n// app/services/route-announcer.js\nimport Service from '@ember/service';\nimport { inject as service } from '@ember/service';\n\nexport class RouteAnnouncer extends Service {\n  @service router;\n  \n  constructor() {\n    super(...arguments);\n    this.router.on('routeDidChange', this.announceRoute.bind(this));\n  }\n  \n  announceRoute(transition) {\n    const title = document.title;\n    this.announce(`Navigated to ${title}`);\n  }\n  \n  announce(message) {\n    const el = document.getElementById('route-announcer');\n    if (el) el.textContent = message;\n  }\n}\n```\n\nAdd a visually-hidden live region in your application template.",
+      "tags": "a11y,navigation,screen-reader",
+      "priority": 8,
+      "category": "a11y",
+      "impact": "HIGH"
+    },
+    {
+      "title": "Accessibility: Keyboard Navigation Support",
+      "body": "Ensure all interactive elements are keyboard accessible.\n\n```gjs\nimport { on } from '@ember/modifier';\n\n<template>\n  <div\n    role=\"button\"\n    tabindex=\"0\"\n    {{on 'click' this.handleAction}}\n    {{on 'keydown' this.handleKeydown}}\n  >\n    {{@label}}\n  </div>\n</template>\n\nexport class ClickableDiv extends Component {\n  handleKeydown = (event) => {\n    if (event.key === 'Enter' || event.key === ' ') {\n      event.preventDefault();\n      this.handleAction();\n    }\n  };\n  \n  handleAction = () => {\n    this.args.onClick?.();\n  };\n}\n```\n\nBetter yet, use semantic HTML: `<button>` instead of `<div role=\"button\">`.",
+      "tags": "a11y,keyboard,navigation",
+      "priority": 8,
+      "category": "a11y",
+      "impact": "HIGH"
+    },
+    {
+      "title": "Services: Cache API Responses",
+      "body": "Cache expensive API responses in services to reduce redundant network calls.\n\n```javascript\nimport Service from '@ember/service';\nimport { tracked } from '@glimmer/tracking';\n\nexport class ApiCache extends Service {\n  @tracked cache = new Map();\n  \n  async fetch(url, options = {}) {\n    const cacheKey = `${url}:${JSON.stringify(options)}`;\n    const maxAge = options.maxAge ?? 300000; // 5 minutes default\n    \n    const cached = this.cache.get(cacheKey);\n    if (cached && Date.now() - cached.timestamp < maxAge) {\n      return cached.data;\n    }\n    \n    const response = await fetch(url, options);\n    const data = await response.json();\n    \n    this.cache.set(cacheKey, { data, timestamp: Date.now() });\n    return data;\n  }\n  \n  invalidate(urlPattern) {\n    for (const key of this.cache.keys()) {\n      if (key.includes(urlPattern)) {\n        this.cache.delete(key);\n      }\n    }\n  }\n}\n```",
+      "tags": "service,caching,api,performance",
+      "priority": 8,
+      "category": "service",
+      "impact": "MEDIUM-HIGH"
+    },
+    {
+      "title": "Services: Use for Shared State",
+      "body": "Use services for state that needs to be shared across components or routes.\n\n```javascript\nimport Service from '@ember/service';\nimport { tracked } from '@glimmer/tracking';\n\nexport class SessionService extends Service {\n  @tracked currentUser = null;\n  @tracked isAuthenticated = false;\n  \n  async login(credentials) {\n    const response = await fetch('/api/login', {\n      method: 'POST',\n      body: JSON.stringify(credentials)\n    });\n    this.currentUser = await response.json();\n    this.isAuthenticated = true;\n  }\n  \n  logout() {\n    this.currentUser = null;\n    this.isAuthenticated = false;\n  }\n}\n```\n\nInject with `@service session` in components that need access.",
+      "tags": "service,state,dependency-injection",
+      "priority": 8,
+      "category": "service",
+      "impact": "MEDIUM-HIGH"
+    },
+    {
+      "title": "Template: Avoid Heavy Computation in Templates",
+      "body": "Move complex logic out of templates into component getters or helpers.\n\n❌ Heavy template computation:\n```handlebars\n{{#each (filter this.items (fn this.matchesSearch this.searchTerm)) as |item|}}\n  <Item @data={{item}} />\n{{/each}}\n```\n\n✅ Use cached getter:\n```javascript\nimport { cached } from '@glimmer/tracking';\n\n@cached\nget filteredItems() {\n  return this.items.filter(item => \n    item.name.toLowerCase().includes(this.searchTerm.toLowerCase())\n  );\n}\n```\n\n```handlebars\n{{#each this.filteredItems as |item|}}\n  <Item @data={{item}} />\n{{/each}}\n```",
+      "tags": "template,performance,computation",
+      "priority": 7,
+      "category": "template",
+      "impact": "MEDIUM"
+    },
+    {
+      "title": "Template: Use Built-in Helpers",
+      "body": "Leverage Ember's built-in helpers instead of creating custom ones.\n\nBuilt-in helpers:\n- `{{if}}`, `{{unless}}` - Conditionals\n- `{{eq}}`, `{{not-eq}}`, `{{and}}`, `{{or}}`, `{{not}}` - Comparisons\n- `{{array}}`, `{{hash}}` - Data structures\n- `{{fn}}` - Partial application\n- `{{concat}}` - String concatenation\n- `{{get}}` - Dynamic property access\n\n```handlebars\n{{! Use built-in eq instead of custom isEqual helper }}\n{{#if (eq @status \"active\")}}\n  <ActiveBadge />\n{{/if}}\n\n{{! Use and/or for boolean logic }}\n{{#if (and @isLoggedIn @hasPermission)}}\n  <AdminPanel />\n{{/if}}\n```",
+      "tags": "template,helpers,built-in",
+      "priority": 6,
+      "category": "template",
+      "impact": "MEDIUM"
+    },
+    {
+      "title": "Template: Import Helpers Directly in Templates",
+      "body": "In GJS/GTS files, import and use helpers directly in the template scope.\n\n```gjs\nimport { eq, and, or } from '@ember/helper';\nimport { on } from '@ember/modifier';\nimport { hash } from '@ember/helper';\n\n<template>\n  {{#if (and @isVisible (eq @mode \"edit\"))}}\n    <EditForm @data={{hash name=@name email=@email}} />\n  {{/if}}\n  \n  <button {{on 'click' @onSave}}>Save</button>\n</template>\n```\n\nThis makes dependencies explicit and enables better tree-shaking.",
+      "tags": "template,helpers,gjs,imports",
+      "priority": 6,
+      "category": "template",
+      "impact": "MEDIUM"
+    },
+    {
+      "title": "Template: Use Strict Mode and Template-Only Components",
+      "body": "Prefer template-only components for simple presentational components.\n\n```gts\nimport type { TOC } from '@ember/component/template-only';\n\ninterface UserCardSignature {\n  Args: {\n    user: { name: string; email: string };\n  };\n}\n\nconst UserCard: TOC<UserCardSignature> = <template>\n  <div class=\"user-card\">\n    <h3>{{@user.name}}</h3>\n    <p>{{@user.email}}</p>\n  </div>\n</template>;\n\nexport { UserCard };\n```\n\nTemplate-only components are lighter, more performant, and easier to understand.",
+      "tags": "template,template-only,strict-mode",
+      "priority": 7,
+      "category": "template",
+      "impact": "MEDIUM"
+    },
+    {
+      "title": "Advanced: Use ember-resources for Lifecycle",
+      "body": "Use ember-resources for managing async data with proper lifecycle handling.\n\n```javascript\nimport { use } from 'ember-resources';\nimport { RemoteData } from 'ember-resources/remote-data';\n\nexport class UserProfile extends Component {\n  userData = use(this, RemoteData(() => `/api/users/${this.args.userId}`));\n  \n  <template>\n    {{#if this.userData.isLoading}}\n      <Spinner />\n    {{else if this.userData.isError}}\n      <Error @message={{this.userData.error.message}} />\n    {{else}}\n      <Profile @user={{this.userData.value}} />\n    {{/if}}\n  </template>\n}\n```\n\nResources automatically clean up when the component is destroyed.",
+      "tags": "advanced,resources,async,lifecycle",
+      "priority": 7,
+      "category": "advanced",
+      "impact": "MEDIUM-HIGH"
+    },
+    {
+      "title": "Advanced: Use ember-concurrency for Async Tasks",
+      "body": "Use ember-concurrency for complex async operations with cancellation and state management.\n\n```javascript\nimport { task, timeout } from 'ember-concurrency';\n\nexport class SearchComponent extends Component {\n  @task({ restartable: true })\n  *search(query) {\n    yield timeout(300); // Debounce\n    \n    const response = yield fetch(`/api/search?q=${query}`);\n    return yield response.json();\n  }\n  \n  <template>\n    <input {{on 'input' (fn this.search.perform event.target.value)}} />\n    \n    {{#if this.search.isRunning}}\n      <Spinner />\n    {{else if this.search.lastSuccessful}}\n      <Results @items={{this.search.lastSuccessful.value}} />\n    {{/if}}\n  </template>\n}\n```\n\nTasks handle cancellation, loading states, and error handling automatically.",
+      "tags": "advanced,concurrency,async,tasks",
+      "priority": 7,
+      "category": "advanced",
+      "impact": "MEDIUM-HIGH"
+    },
+    {
+      "title": "Testing: Use Appropriate Render Patterns",
+      "body": "Use the right render pattern for your test scenario.\n\n```javascript\nimport { module, test } from 'qunit';\nimport { setupRenderingTest } from 'ember-qunit';\nimport { render, click, fillIn } from '@ember/test-helpers';\nimport { hbs } from 'ember-cli-htmlbars';\n\nmodule('Integration | Component | login-form', function(hooks) {\n  setupRenderingTest(hooks);\n\n  test('submits form with credentials', async function(assert) {\n    let submittedData = null;\n    this.set('onSubmit', (data) => submittedData = data);\n    \n    await render(hbs`\n      <LoginForm @onSubmit={{this.onSubmit}} />\n    `);\n    \n    await fillIn('[data-test-email]', 'user@example.com');\n    await fillIn('[data-test-password]', 'secret');\n    await click('[data-test-submit]');\n    \n    assert.deepEqual(submittedData, {\n      email: 'user@example.com',\n      password: 'secret'\n    });\n  });\n});\n```",
+      "tags": "testing,render,integration",
+      "priority": 6,
+      "category": "testing",
+      "impact": "MEDIUM"
+    },
+    {
+      "title": "VSCode: Recommended Extensions",
+      "body": "Set up recommended VSCode extensions for optimal Ember development.\n\nCreate `.vscode/extensions.json`:\n```json\n{\n  \"recommendations\": [\n    \"emberjs.vscode-ember\",\n    \"vunguyentuan.vscode-glint\",\n    \"esbenp.prettier-vscode\",\n    \"dbaeumer.vscode-eslint\"\n  ]\n}\n```\n\n- `emberjs.vscode-ember` - Ember.js language support, syntax highlighting for .hbs/.gjs/.gts\n- `vunguyentuan.vscode-glint` - TypeScript support for Ember templates\n- `esbenp.prettier-vscode` - Code formatting\n- `dbaeumer.vscode-eslint` - ESLint integration",
+      "tags": "tooling,vscode,extensions",
+      "priority": 5,
+      "category": "tooling",
+      "impact": "MEDIUM"
+    },
+    {
+      "title": "Advanced: Compose Helpers for Reusable Logic",
+      "body": "Create composed helpers for complex template logic.\n\n```javascript\n// app/helpers/format-currency.js\nimport { helper } from '@ember/component/helper';\n\nexport function formatCurrency([amount, currency = 'USD']) {\n  return new Intl.NumberFormat('en-US', {\n    style: 'currency',\n    currency\n  }).format(amount);\n}\n\nexport default helper(formatCurrency);\n```\n\nUsage in template:\n```handlebars\n<span>{{format-currency @price \"EUR\"}}</span>\n```\n\nFor more complex cases, use class-based helpers with tracking.",
+      "tags": "advanced,helpers,composition",
+      "priority": 6,
+      "category": "advanced",
+      "impact": "MEDIUM-HIGH"
+    },
+    {
+      "title": "Component: Reactive Chains with Dependent Getters",
+      "body": "Build reactive chains by having getters depend on other tracked properties or getters.\n\n```javascript\nimport Component from '@glimmer/component';\nimport { tracked } from '@glimmer/tracking';\nimport { cached } from '@glimmer/tracking';\n\nexport class DataTable extends Component {\n  @tracked sortField = 'name';\n  @tracked sortDirection = 'asc';\n  @tracked filterText = '';\n  \n  @cached\n  get filteredItems() {\n    return this.args.items.filter(item =>\n      item.name.toLowerCase().includes(this.filterText.toLowerCase())\n    );\n  }\n  \n  @cached\n  get sortedItems() {\n    return [...this.filteredItems].sort((a, b) => {\n      const cmp = a[this.sortField].localeCompare(b[this.sortField]);\n      return this.sortDirection === 'asc' ? cmp : -cmp;\n    });\n  }\n}\n```\n\nEach getter only recalculates when its dependencies change.",
+      "tags": "component,reactivity,getters,derived-state",
+      "priority": 8,
+      "category": "component",
+      "impact": "HIGH"
+    },
+    {
+      "title": "Component: Implement Controlled Form Patterns",
+      "body": "Use controlled components for form inputs with explicit state management.\n\n```gjs\nimport Component from '@glimmer/component';\nimport { tracked } from '@glimmer/tracking';\nimport { on } from '@ember/modifier';\n\nexport class ContactForm extends Component {\n  @tracked name = '';\n  @tracked email = '';\n  \n  updateName = (event) => {\n    this.name = event.target.value;\n  };\n  \n  updateEmail = (event) => {\n    this.email = event.target.value;\n  };\n  \n  submit = (event) => {\n    event.preventDefault();\n    this.args.onSubmit?.({ name: this.name, email: this.email });\n  };\n  \n  <template>\n    <form {{on 'submit' this.submit}}>\n      <input value={{this.name}} {{on 'input' this.updateName}} />\n      <input value={{this.email}} {{on 'input' this.updateEmail}} />\n      <button type=\"submit\">Submit</button>\n    </form>\n  </template>\n}\n```",
+      "tags": "component,forms,controlled,state",
+      "priority": 7,
+      "category": "component",
+      "impact": "HIGH"
+    },
+    {
+      "title": "Service: Robust Data Requesting Patterns",
+      "body": "Implement robust data fetching with retry logic and error handling.\n\n```javascript\nimport Service from '@ember/service';\n\nexport class ApiService extends Service {\n  async request(url, options = {}) {\n    const maxRetries = options.retries ?? 3;\n    const retryDelay = options.retryDelay ?? 1000;\n    \n    for (let attempt = 1; attempt <= maxRetries; attempt++) {\n      try {\n        const response = await fetch(url, {\n          ...options,\n          headers: {\n            'Content-Type': 'application/json',\n            ...options.headers\n          }\n        });\n        \n        if (!response.ok) {\n          throw new Error(`HTTP ${response.status}`);\n        }\n        \n        return await response.json();\n      } catch (error) {\n        if (attempt === maxRetries) throw error;\n        await new Promise(r => setTimeout(r, retryDelay * attempt));\n      }\n    }\n  }\n}\n```",
+      "tags": "service,api,retry,error-handling",
+      "priority": 7,
+      "category": "service",
+      "impact": "MEDIUM-HIGH"
+    }
+  ]
+}
