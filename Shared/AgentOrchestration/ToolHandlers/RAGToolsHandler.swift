@@ -103,13 +103,13 @@ protocol RAGToolsHandlerDelegate: MCPToolHandlerDelegate {
   // MARK: - DataService Access (Skills)
   
   /// List guidance skills
-  func listRepoGuidanceSkills(repoPath: String?, includeInactive: Bool, limit: Int?) -> [RepoGuidanceSkill]
+    func listRepoGuidanceSkills(repoPath: String?, repoRemoteURL: String?, includeInactive: Bool, limit: Int?) -> [RepoGuidanceSkill]
   
   /// Add a guidance skill
-  func addRepoGuidanceSkill(repoPath: String, title: String, body: String, source: String, tags: String, priority: Int, isActive: Bool) -> RepoGuidanceSkill?
+    func addRepoGuidanceSkill(repoPath: String, repoRemoteURL: String?, repoName: String?, title: String, body: String, source: String, tags: String, priority: Int, isActive: Bool) -> RepoGuidanceSkill?
   
   /// Update a guidance skill
-  func updateRepoGuidanceSkill(id: UUID, repoPath: String?, title: String?, body: String?, source: String?, tags: String?, priority: Int?, isActive: Bool?) -> RepoGuidanceSkill?
+    func updateRepoGuidanceSkill(id: UUID, repoPath: String?, repoRemoteURL: String?, repoName: String?, title: String?, body: String?, source: String?, tags: String?, priority: Int?, isActive: Bool?) -> RepoGuidanceSkill?
   
   /// Delete a guidance skill
   func deleteRepoGuidanceSkill(id: UUID) -> Bool
@@ -678,12 +678,14 @@ final class RAGToolsHandler: MCPToolHandler {
   
   private func handleSkillsList(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) -> (Int, Data) {
     let repoPath = optionalString("repoPath", from: arguments)
+    let repoRemoteURL = optionalString("repoRemoteURL", from: arguments)
     let includeInactive = optionalBool("includeInactive", from: arguments, default: false)
     let limit = optionalInt("limit", from: arguments)
     let formatter = ISO8601DateFormatter()
     
     let skills = delegate.listRepoGuidanceSkills(
       repoPath: repoPath?.isEmpty == false ? repoPath : nil,
+      repoRemoteURL: repoRemoteURL?.isEmpty == false ? repoRemoteURL : nil,
       includeInactive: includeInactive,
       limit: limit
     )
@@ -694,9 +696,7 @@ final class RAGToolsHandler: MCPToolHandler {
   // MARK: - rag.skills.add
   
   private func handleSkillsAdd(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) -> (Int, Data) {
-    guard case .success(let repoPath) = requireString("repoPath", from: arguments, id: id) else {
-      return missingParamError(id: id, param: "repoPath")
-    }
+    let repoPath = optionalString("repoPath", from: arguments) ?? "*"
     guard case .success(let title) = requireString("title", from: arguments, id: id) else {
       return missingParamError(id: id, param: "title")
     }
@@ -704,13 +704,17 @@ final class RAGToolsHandler: MCPToolHandler {
       return missingParamError(id: id, param: "body")
     }
     
+    let repoRemoteURL = optionalString("repoRemoteURL", from: arguments)
+    let repoName = optionalString("repoName", from: arguments)
     let source = optionalString("source", from: arguments, default: "manual") ?? "manual"
     let tags = optionalString("tags", from: arguments, default: "") ?? ""
     let priority = optionalInt("priority", from: arguments, default: 0) ?? 0
     let isActive = optionalBool("isActive", from: arguments, default: true)
     
     let skill = delegate.addRepoGuidanceSkill(
-      repoPath: repoPath,
+      repoPath: repoPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "*" : repoPath,
+      repoRemoteURL: repoRemoteURL,
+      repoName: repoName,
       title: title,
       body: body,
       source: source,
@@ -735,6 +739,8 @@ final class RAGToolsHandler: MCPToolHandler {
     let skill = delegate.updateRepoGuidanceSkill(
       id: skillId,
       repoPath: optionalString("repoPath", from: arguments),
+      repoRemoteURL: optionalString("repoRemoteURL", from: arguments),
+      repoName: optionalString("repoName", from: arguments),
       title: optionalString("title", from: arguments),
       body: optionalString("body", from: arguments),
       source: optionalString("source", from: arguments),
@@ -1517,6 +1523,8 @@ final class RAGToolsHandler: MCPToolHandler {
     var payload: [String: Any] = [
       "id": skill.id.uuidString,
       "repoPath": skill.repoPath,
+      "repoRemoteURL": skill.repoRemoteURL,
+      "repoName": skill.repoName,
       "title": skill.title,
       "body": skill.body,
       "source": skill.source,

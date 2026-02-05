@@ -17,6 +17,7 @@ struct LocalRAGDashboardView: View {
   @Environment(\.modelContext) private var modelContext
   @Query(sort: \SyncedRepository.name) private var syncedRepos: [SyncedRepository]
   @Query private var localPaths: [LocalRepositoryPath]
+  @Query private var allSkills: [RepoGuidanceSkill]
   
   // Add repo state
   @State private var isAddRepoPresented: Bool = false
@@ -26,6 +27,10 @@ struct LocalRAGDashboardView: View {
   
   // Settings state
   @State private var showSettings: Bool = false
+
+  // Skills resolver state
+  @State private var showSkillResolver: Bool = false
+  @State private var ignoredSkillIdentities: Set<String> = []
   
   // Workspace detection state
   @State private var showWorkspaceSheet: Bool = false
@@ -84,10 +89,19 @@ struct LocalRAGDashboardView: View {
     .sheet(isPresented: $showSettings) {
       RAGSettingsView(mcpServer: mcpServer)
     }
+    .sheet(isPresented: $showSkillResolver) {
+      RAGSkillsResolverSheet(
+        mcpServer: mcpServer,
+        skills: unresolvedSkills,
+        repoCandidates: localRepoCandidates,
+        ignoredIdentityKeys: $ignoredSkillIdentities
+      )
+    }
     .sheet(isPresented: $showWorkspaceSheet) {
       workspaceSheet
     }
     .onAppear {
+      loadIgnoredSkillIdentities()
       // Keyboard shortcuts
       NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
         if event.modifierFlags.contains(.command) {
@@ -103,6 +117,75 @@ struct LocalRAGDashboardView: View {
         return event
       }
     }
+    .onChange(of: ignoredSkillIdentities) { _, newValue in
+      UserDefaults.standard.set(Array(newValue), forKey: "rag.skills.ignoredIdentityKeys")
+    }
+  }
+
+  private var unresolvedSkills: [RepoGuidanceSkill] {
+    allSkills.filter { skill in
+      guard skill.isActive else { return false }
+      if skill.repoPath == "*" {
+        return false
+      }
+      let identity = skillIdentityKey(skill)
+      if ignoredSkillIdentities.contains(identity) {
+        return false
+      }
+      if skillAutoResolves(skill) {
+        return false
+      }
+      if skill.repoPath.isEmpty {
+        return true
+      }
+      if !FileManager.default.fileExists(atPath: skill.repoPath) {
+        return true
+      }
+      return false
+    }
+  }
+
+  private var localRepoCandidates: [LocalRepoCandidate] {
+    var paths: Set<String> = []
+    for repo in mcpServer.ragRepos {
+      paths.insert(repo.rootPath)
+    }
+    for path in localPaths {
+      paths.insert(path.localPath)
+    }
+    return paths.sorted().map { path in
+      LocalRepoCandidate(path: path)
+    }
+  }
+
+  private func skillIdentityKey(_ skill: RepoGuidanceSkill) -> String {
+    if !skill.repoRemoteURL.isEmpty {
+      return "remote:\(RepoRegistry.shared.normalizeRemoteURL(skill.repoRemoteURL))"
+    }
+    if !skill.repoName.isEmpty {
+      return "name:\(skill.repoName)"
+    }
+    return "path:\(skill.repoPath)"
+  }
+
+  private func loadIgnoredSkillIdentities() {
+    let stored = UserDefaults.standard.stringArray(forKey: "rag.skills.ignoredIdentityKeys") ?? []
+    ignoredSkillIdentities = Set(stored)
+  }
+
+  private func skillAutoResolves(_ skill: RepoGuidanceSkill) -> Bool {
+    if !skill.repoPath.isEmpty, skill.repoPath != "*" {
+      return false
+    }
+    let skillTags = RepoTechDetector.parseTags(skill.tags)
+    guard !skillTags.isEmpty else { return false }
+    for candidate in localRepoCandidates {
+      let repoTags = RepoTechDetector.detectTags(repoPath: candidate.path)
+      if !repoTags.isEmpty, !skillTags.isDisjoint(with: repoTags) {
+        return true
+      }
+    }
+    return false
   }
   
   // MARK: - Header View
@@ -142,6 +225,16 @@ struct LocalRAGDashboardView: View {
         }
       }
       
+      if unresolvedSkills.count > 0 {
+        Button {
+          showSkillResolver = true
+        } label: {
+          Label("Resolve Skills", systemImage: "exclamationmark.triangle")
+        }
+        .buttonStyle(.bordered)
+        .help("Resolve repo guidance skills for this machine")
+      }
+
       // Settings button - always visible
       Button {
         showSettings = true
@@ -691,6 +784,215 @@ struct LocalRAGDashboardView: View {
     }
     selectedRepoIds.removeAll()
     isBatchMode = false
+  }
+}
+
+// MARK: - Skills Resolver
+
+private struct LocalRepoCandidate: Identifiable, Hashable {
+  let id = UUID()
+  let path: String
+  var name: String {
+    URL(fileURLWithPath: path).lastPathComponent
+  }
+}
+
+private struct RAGSkillsResolverSheet: View {
+  @Bindable var mcpServer: MCPServerService
+  let skills: [RepoGuidanceSkill]
+  let repoCandidates: [LocalRepoCandidate]
+  @Binding var ignoredIdentityKeys: Set<String>
+  @Environment(\.dismiss) private var dismiss
+  @State private var selectedPaths: [UUID: String] = [:]
+  @State private var errorMessage: String?
+
+  var body: some View {
+    NavigationStack {
+      VStack(spacing: 0) {
+        if skills.isEmpty {
+          ContentUnavailableView(
+            "No Unresolved Skills",
+            systemImage: "checkmark.circle",
+            description: Text("All repo guidance skills are resolved for this machine.")
+          )
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+          List {
+            ForEach(skills) { skill in
+              Section {
+                VStack(alignment: .leading, spacing: 8) {
+                  Text(skill.title.isEmpty ? "Skill" : skill.title)
+                    .font(.headline)
+
+                  if !skill.repoRemoteURL.isEmpty {
+                    Text(skill.repoRemoteURL)
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                      .textSelection(.enabled)
+                  } else if !skill.repoName.isEmpty {
+                    Text("Repo: \(skill.repoName)")
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                  } else {
+                    Text("Repo: \(skill.repoPath)")
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                  }
+
+                  Picker("Map to", selection: binding(for: skill)) {
+                    Text("Select a local repo...").tag("")
+                    ForEach(repoCandidates) { candidate in
+                      Text(candidate.name).tag(candidate.path)
+                    }
+                  }
+                  .labelsHidden()
+
+                  HStack(spacing: 8) {
+                    Button("Choose Folder...") {
+                      chooseFolder(for: skill)
+                    }
+                    .buttonStyle(.bordered)
+
+                    if !skill.repoRemoteURL.isEmpty {
+                      Button("Clone...") {
+                        cloneRepo(for: skill)
+                      }
+                      .buttonStyle(.bordered)
+                    }
+
+                    Button("Map") {
+                      applyMapping(for: skill)
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Button("Ignore") {
+                      ignoreSkill(skill)
+                    }
+                    .buttonStyle(.bordered)
+                  }
+                }
+                .padding(.vertical, 6)
+              } header: {
+                Text("Skill \(skill.id.uuidString.prefix(8))")
+              }
+            }
+          }
+        }
+      }
+      .navigationTitle("Resolve Skills")
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Done") { dismiss() }
+        }
+      }
+      .frame(minWidth: 700, minHeight: 500)
+      .overlay(alignment: .bottom) {
+        if let errorMessage {
+          Text(errorMessage)
+            .foregroundStyle(.red)
+            .font(.caption)
+            .padding(8)
+        }
+      }
+      .onAppear {
+        prefillSelections()
+      }
+    }
+  }
+
+  private func binding(for skill: RepoGuidanceSkill) -> Binding<String> {
+    Binding(
+      get: { selectedPaths[skill.id] ?? "" },
+      set: { selectedPaths[skill.id] = $0 }
+    )
+  }
+
+  private func prefillSelections() {
+    for skill in skills {
+      if selectedPaths[skill.id] != nil { continue }
+      if !skill.repoName.isEmpty,
+         let match = repoCandidates.first(where: { $0.name == skill.repoName }) {
+        selectedPaths[skill.id] = match.path
+      }
+    }
+  }
+
+  private func chooseFolder(for skill: RepoGuidanceSkill) {
+    let panel = NSOpenPanel()
+    panel.canChooseDirectories = true
+    panel.canChooseFiles = false
+    panel.allowsMultipleSelection = false
+    panel.prompt = "Select"
+    if panel.runModal() == .OK, let url = panel.url {
+      selectedPaths[skill.id] = url.path
+    }
+  }
+
+  private func cloneRepo(for skill: RepoGuidanceSkill) {
+    guard !skill.repoRemoteURL.isEmpty else { return }
+    let panel = NSOpenPanel()
+    panel.canChooseDirectories = true
+    panel.canChooseFiles = false
+    panel.allowsMultipleSelection = false
+    panel.prompt = "Clone"
+    if panel.runModal() != .OK || panel.url == nil {
+      return
+    }
+    guard let parent = panel.url else { return }
+    let repoName = skill.repoName.isEmpty
+      ? URL(string: skill.repoRemoteURL)?.lastPathComponent.replacingOccurrences(of: ".git", with: "") ?? "repo"
+      : skill.repoName
+    let targetPath = parent.appendingPathComponent(repoName).path
+
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+    process.arguments = ["clone", skill.repoRemoteURL, targetPath]
+    do {
+      try process.run()
+      process.waitUntilExit()
+      if process.terminationStatus == 0 {
+        selectedPaths[skill.id] = targetPath
+        applyMapping(for: skill)
+      } else {
+        errorMessage = "Clone failed for \(repoName)"
+      }
+    } catch {
+      errorMessage = "Clone failed: \(error.localizedDescription)"
+    }
+  }
+
+  private func applyMapping(for skill: RepoGuidanceSkill) {
+    errorMessage = nil
+    guard let path = selectedPaths[skill.id], !path.isEmpty else {
+      errorMessage = "Select a local repository path"
+      return
+    }
+
+    Task {
+      let repoRemoteURL = await RepoRegistry.shared.registerRepo(at: path)
+      let repoName = URL(fileURLWithPath: path).lastPathComponent
+      _ = mcpServer.updateRepoGuidanceSkill(
+        id: skill.id,
+        repoPath: path,
+        repoRemoteURL: repoRemoteURL,
+        repoName: repoName
+      )
+    }
+  }
+
+  private func ignoreSkill(_ skill: RepoGuidanceSkill) {
+    let identity = skillIdentityKey(skill)
+    ignoredIdentityKeys.insert(identity)
+  }
+
+  private func skillIdentityKey(_ skill: RepoGuidanceSkill) -> String {
+    if !skill.repoRemoteURL.isEmpty {
+      return "remote:\(RepoRegistry.shared.normalizeRemoteURL(skill.repoRemoteURL))"
+    }
+    if !skill.repoName.isEmpty {
+      return "name:\(skill.repoName)"
+    }
+    return "path:\(skill.repoPath)"
   }
 }
 

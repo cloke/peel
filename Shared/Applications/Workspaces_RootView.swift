@@ -11,6 +11,7 @@
 import AppKit
 import Foundation
 import Git
+import OSLog
 import PeelUI
 import SwiftUI
 
@@ -27,6 +28,7 @@ struct WorkspacesDashboardView: View {
   @Environment(MCPServerService.self) private var mcpServer
   @Environment(\.modelContext) private var modelContext
   @State private var service = WorkspaceDashboardService()
+  private let logger = Logger(subsystem: "com.peel.ui", category: "WorkspacesDashboardView")
   @State private var showingAddWorkspace = false
   @State private var showingCreateWorktree = false
   @State private var selectedRepo: WorkspaceRepo?
@@ -45,20 +47,25 @@ struct WorkspacesDashboardView: View {
     }
     .navigationSplitViewStyle(.balanced)
     .task {
+      logger.debug("task start")
       service.configure(modelContext: modelContext)
       await service.loadReposAndWorktrees()
       syncSelectionFromStoredValues()
       persistAvailableWorkspaceState()
+      logger.debug("task complete workspaces=\(service.workspaces.count) repos=\(service.repos.count) worktrees=\(service.worktrees.count)")
     }
     .onChange(of: service.workspaces) { _, _ in
+      logger.debug("workspaces changed count=\(service.workspaces.count)")
       syncSelectionFromStoredValues()
       persistAvailableWorkspaceState()
     }
     .onChange(of: service.repos) { _, _ in
+      logger.debug("repos changed count=\(service.repos.count)")
       syncSelectionFromStoredValues()
       persistAvailableWorkspaceState()
     }
     .onChange(of: service.worktrees) { _, _ in
+      logger.debug("worktrees changed count=\(service.worktrees.count)")
       persistAvailableWorkspaceState()
     }
     .onChange(of: service.selectedWorkspace?.name) { _, newValue in
@@ -470,6 +477,7 @@ struct WorkspacesDashboardView: View {
     let worktreePaths = Array(Set(service.worktrees.map { $0.path })).sorted()
     let nameMap = worktreeNameMap()
     let worktreeNames = Array(nameMap.keys).sorted()
+    logger.debug("persistAvailableWorkspaceState workspaces=\(workspaceNames.count) repos=\(repoNames.count) worktrees=\(worktreePaths.count)")
     UserDefaults.standard.set(workspaceNames, forKey: "workspaces.availableNames")
     UserDefaults.standard.set(repoNames, forKey: "workspaces.availableRepoNames")
     UserDefaults.standard.set(worktreePaths, forKey: "workspaces.availableWorktreePaths")

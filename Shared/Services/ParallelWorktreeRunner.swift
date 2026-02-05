@@ -634,8 +634,9 @@ final class ParallelWorktreeRunner {
   private func buildRepoGuidance(repoPath: String) async -> String? {
     var sections: [String] = []
     if let dataService {
+      let repoRemoteURL = await RepoRegistry.shared.registerRepo(at: repoPath)
       let skillsBlock = await MainActor.run {
-        dataService.repoGuidanceSkillsBlockAndMarkApplied(repoPath: repoPath)
+        dataService.repoGuidanceSkillsBlockAndMarkApplied(repoPath: repoPath, repoRemoteURL: repoRemoteURL)
       }
       if let block = skillsBlock {
         sections.append(block)

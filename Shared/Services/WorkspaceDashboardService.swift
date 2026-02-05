@@ -11,6 +11,7 @@
 import Foundation
 import Git
 import AppKit
+import OSLog
 import SwiftData
 
 public enum WorkspaceValidationError: LocalizedError {
@@ -114,6 +115,7 @@ public final class WorkspaceDashboardService {
   private var worktreeRepoNames: [String: String] = [:]
   private var worktreeWorkspaceNames: [String: String] = [:]
   private var cleanupTask: Task<Void, Never>?
+  private let logger = Logger(subsystem: "com.peel.workspaces", category: "WorkspaceDashboardService")
   
   // MARK: - Storage Keys
   
@@ -123,6 +125,7 @@ public final class WorkspaceDashboardService {
   
   public init() {
     self.worktreeRoot = NSHomeDirectory() + "/code/worktrees"
+    logger.debug("init worktreeRoot=\(self.worktreeRoot, privacy: .public)")
     loadWorkspaces()
     
     // Ensure worktree root exists
@@ -134,6 +137,7 @@ public final class WorkspaceDashboardService {
 
   public func configure(modelContext: ModelContext) {
     if dataService == nil {
+      logger.debug("configure modelContext")
       dataService = DataService(modelContext: modelContext)
       dataService?.deduplicateTrackedWorktrees()
       reloadTrackedWorktrees()
@@ -243,16 +247,21 @@ public final class WorkspaceDashboardService {
   
   /// Load repositories and worktrees for selected workspace
   public func loadReposAndWorktrees() async {
-    guard let workspace = selectedWorkspace else { return }
+    guard let workspace = selectedWorkspace else {
+      logger.debug("loadReposAndWorktrees skipped (no selectedWorkspace)")
+      return
+    }
     
     isLoading = true
     errorMessage = nil
     worktreeRepoNames = [:]
     worktreeWorkspaceNames = [:]
+    logger.debug("loadReposAndWorktrees start workspace=\(workspace.name, privacy: .public)")
 
     let normalizedPath = normalizePath(workspace.path)
     if isTooBroadWorkspacePath(normalizedPath) {
       errorMessage = WorkspaceValidationError.pathTooBroad(normalizedPath).localizedDescription
+      logger.error("loadReposAndWorktrees invalid path: \(normalizedPath, privacy: .public)")
       isLoading = false
       return
     }
@@ -263,6 +272,7 @@ public final class WorkspaceDashboardService {
       case .multiRepo:
         let normalizedWorkspace = Workspace(id: workspace.id, name: workspace.name, path: normalizedPath, type: workspace.type, addedAt: workspace.addedAt)
         repos = try await loadSubmodules(in: normalizedWorkspace)
+        logger.debug("loadReposAndWorktrees submodules repos=\(self.repos.count)")
       case .singleRepo:
         repos = [WorkspaceRepo(
           name: workspace.name,
@@ -270,9 +280,11 @@ public final class WorkspaceDashboardService {
           relativePath: ".",
           isSubmodule: false
         )]
+        logger.debug("loadReposAndWorktrees single repo")
       case .folder:
         let normalizedWorkspace = Workspace(id: workspace.id, name: workspace.name, path: normalizedPath, type: workspace.type, addedAt: workspace.addedAt)
         repos = try await findGitRepos(in: normalizedWorkspace)
+        logger.debug("loadReposAndWorktrees folder repos=\(self.repos.count)")
       }
       
       // Load worktrees for all repos
@@ -283,9 +295,11 @@ public final class WorkspaceDashboardService {
       }
       worktrees = allWorktrees
       syncTrackedWorktrees()
+      logger.debug("loadReposAndWorktrees done worktrees=\(self.worktrees.count)")
       
     } catch {
       errorMessage = error.localizedDescription
+      logger.error("loadReposAndWorktrees failed: \(error.localizedDescription)")
     }
     
     isLoading = false
@@ -774,6 +788,9 @@ public final class WorkspaceDashboardService {
        let decoded = try? JSONDecoder().decode([Workspace].self, from: data) {
       workspaces = decoded
       selectedWorkspace = workspaces.first
+      logger.debug("loadWorkspaces loaded count=\(self.workspaces.count)")
+    } else {
+      logger.debug("loadWorkspaces none")
     }
   }
   
