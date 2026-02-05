@@ -13,6 +13,10 @@ struct SettingsView: View {
   #if os(macOS)
   @Environment(MCPServerService.self) private var mcpServer
   #endif
+  @AppStorage("feature.showBrew") private var showBrew = false
+  @AppStorage("feature.showPIIScrubber") private var showPIIScrubber = false
+  @AppStorage("feature.showTranslationValidation") private var showTranslationValidation = false
+  @AppStorage("feature.showVMIsolation") private var showVMIsolation = false
 
   @State private var vscodeServerName = "Peel"
   @State private var vscodeServerURL = "http://127.0.0.1:8765/rpc"
@@ -139,6 +143,7 @@ struct SettingsView: View {
           }
         }
 
+
         SettingsSection("IDE Integration") {
           VStack(alignment: .leading, spacing: 12) {
             Text("Install Peel as an MCP server in VS Code.")
@@ -215,6 +220,32 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
       .tabItem { Label("Swarm", systemImage: "person.3.fill") }
       #endif
+
+      SettingsPage {
+        SettingsSection("Feature Visibility") {
+          VStack(alignment: .leading, spacing: 8) {
+            HStack {
+              Button("Enable all") {
+                showBrew = true
+                showPIIScrubber = true
+                showTranslationValidation = true
+                showVMIsolation = true
+              }
+              .buttonStyle(.bordered)
+              .controlSize(.small)
+              Spacer()
+            }
+            Toggle("Show Brew tool", isOn: $showBrew)
+            Toggle("Show PII Scrubber", isOn: $showPIIScrubber)
+            Toggle("Show Translation Validation", isOn: $showTranslationValidation)
+            Toggle("Show VM Isolation", isOn: $showVMIsolation)
+            Text("Hidden tools can be enabled here during the beta.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
+      }
+      .tabItem { Label("Beta", systemImage: "flask") }
 
       SettingsPage {
         SettingsSection("About") {
