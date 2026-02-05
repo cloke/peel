@@ -6,9 +6,12 @@
 //  Part of the RAG UX redesign - everything about a repo in one place.
 //
 
+import OSLog
 import PeelUI
 import SwiftData
 import SwiftUI
+
+private let repoSkillsLogger = Logger(subsystem: "com.peel.rag", category: "skills")
 
 // MARK: - Repository Status
 
@@ -81,8 +84,12 @@ struct RAGRepositoryCardView: View {
   
   // Skills for this repo
   @Query private var allSkills: [RepoGuidanceSkill]
+  @State private var repoRemoteURL: String?
+  @State private var repoTechTags: Set<String> = []
   private var repoSkills: [RepoGuidanceSkill] {
-    allSkills.filter { $0.repoPath == repo.rootPath && $0.isActive }
+    allSkills.filter { skill in
+      skill.isActive && repoSkillMatches(skill)
+    }
   }
   
   // Lessons for this repo
@@ -137,6 +144,9 @@ struct RAGRepositoryCardView: View {
     .task {
       await refreshAnalysisStatus()
       await loadLessons()
+      repoRemoteURL = await RepoRegistry.shared.registerRepo(at: repo.rootPath)
+        ?? RepoRegistry.shared.getCachedRemoteURL(for: repo.rootPath)
+      repoTechTags = RepoTechDetector.detectTags(repoPath: repo.rootPath)
     }
     .sheet(isPresented: $showSkillsSheet) {
       RAGRepoSkillsSheet(repo: repo, mcpServer: mcpServer)
@@ -987,6 +997,62 @@ struct RAGRepositoryCardView: View {
   }
 }
 
+private extension RAGRepositoryCardView {
+  func repoSkillMatches(_ skill: RepoGuidanceSkill) -> Bool {
+    if skill.repoPath == "*" {
+      let skillTags = RepoTechDetector.parseTags(skill.tags)
+      if !repoTechTags.isEmpty {
+        if !skillTags.isEmpty,
+           !skillTags.isDisjoint(with: repoTechTags) {
+          repoSkillsLogger.notice("Skill matched by wildcard tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
+          return true
+        }
+        repoSkillsLogger.notice("Skill rejected by wildcard tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
+        return false
+      }
+      repoSkillsLogger.notice("Skill matched by wildcard path. skill=\(skill.title, privacy: .public)")
+      return true
+    }
+    if skill.repoPath == repo.rootPath {
+      repoSkillsLogger.notice("Skill matched by repo path. skill=\(skill.title, privacy: .public) repo=\(repo.rootPath, privacy: .public)")
+      return true
+    }
+    if let repoRemoteURL,
+       !repoRemoteURL.isEmpty,
+       !skill.repoRemoteURL.isEmpty,
+       RepoRegistry.shared.normalizeRemoteURL(skill.repoRemoteURL) == RepoRegistry.shared.normalizeRemoteURL(repoRemoteURL) {
+      repoSkillsLogger.notice("Skill matched by repo remote. skill=\(skill.title, privacy: .public)")
+      return true
+    }
+    if !skill.repoName.isEmpty {
+      let repoName = URL(fileURLWithPath: repo.rootPath).lastPathComponent
+      if repoName == skill.repoName {
+        repoSkillsLogger.notice("Skill matched by repo name. skill=\(skill.title, privacy: .public) repoName=\(repoName, privacy: .public)")
+        return true
+      }
+    }
+
+    let skillTags = RepoTechDetector.parseTags(skill.tags)
+    if skill.repoPath.isEmpty || skill.repoPath == "*" {
+      if !repoTechTags.isEmpty {
+        if !skillTags.isEmpty,
+           !skillTags.isDisjoint(with: repoTechTags) {
+          repoSkillsLogger.notice("Skill matched by tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
+          return true
+        }
+        repoSkillsLogger.notice("Skill rejected by tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
+        return false
+      }
+      if !skillTags.isEmpty,
+         !skillTags.isDisjoint(with: repoTechTags) {
+        repoSkillsLogger.notice("Skill matched by tags (no repo tags). skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public)")
+        return true
+      }
+    }
+    return false
+  }
+}
+
 // MARK: - Skills Sheet
 
 struct RAGRepoSkillsSheet: View {
@@ -995,8 +1061,10 @@ struct RAGRepoSkillsSheet: View {
   @Environment(\.dismiss) private var dismiss
   
   @Query private var allSkills: [RepoGuidanceSkill]
+  @State private var repoRemoteURL: String?
+  @State private var repoTechTags: Set<String> = []
   private var repoSkills: [RepoGuidanceSkill] {
-    allSkills.filter { $0.repoPath == repo.rootPath }
+    allSkills.filter { repoSkillMatches($0) }
   }
   
   @State private var selectedSkillId: UUID?
@@ -1007,6 +1075,59 @@ struct RAGRepoSkillsSheet: View {
   @State private var skillActive: Bool = true
   @State private var skillSource: String = "manual"
   @State private var errorMessage: String?
+
+  private func repoSkillMatches(_ skill: RepoGuidanceSkill) -> Bool {
+    if skill.repoPath == "*" {
+      let skillTags = RepoTechDetector.parseTags(skill.tags)
+      if !repoTechTags.isEmpty {
+        if !skillTags.isEmpty,
+           !skillTags.isDisjoint(with: repoTechTags) {
+          repoSkillsLogger.notice("Sheet skill matched by wildcard tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
+          return true
+        }
+        repoSkillsLogger.notice("Sheet skill rejected by wildcard tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
+        return false
+      }
+      repoSkillsLogger.notice("Sheet skill matched by wildcard path. skill=\(skill.title, privacy: .public)")
+      return true
+    }
+    if skill.repoPath == repo.rootPath {
+      repoSkillsLogger.notice("Sheet skill matched by repo path. skill=\(skill.title, privacy: .public) repo=\(repo.rootPath, privacy: .public)")
+      return true
+    }
+    if let repoRemoteURL,
+       !repoRemoteURL.isEmpty,
+       !skill.repoRemoteURL.isEmpty,
+       RepoRegistry.shared.normalizeRemoteURL(skill.repoRemoteURL) == RepoRegistry.shared.normalizeRemoteURL(repoRemoteURL) {
+      repoSkillsLogger.notice("Sheet skill matched by repo remote. skill=\(skill.title, privacy: .public)")
+      return true
+    }
+    if !skill.repoName.isEmpty {
+      let repoName = URL(fileURLWithPath: repo.rootPath).lastPathComponent
+      if repoName == skill.repoName {
+        repoSkillsLogger.notice("Sheet skill matched by repo name. skill=\(skill.title, privacy: .public) repoName=\(repoName, privacy: .public)")
+        return true
+      }
+    }
+    let skillTags = RepoTechDetector.parseTags(skill.tags)
+    if skill.repoPath.isEmpty || skill.repoPath == "*" {
+      if !repoTechTags.isEmpty {
+        if !skillTags.isEmpty,
+           !skillTags.isDisjoint(with: repoTechTags) {
+          repoSkillsLogger.notice("Sheet skill matched by tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
+          return true
+        }
+        repoSkillsLogger.notice("Sheet skill rejected by tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
+        return false
+      }
+      if !skillTags.isEmpty,
+         !skillTags.isDisjoint(with: repoTechTags) {
+        repoSkillsLogger.notice("Sheet skill matched by tags (no repo tags). skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public)")
+        return true
+      }
+    }
+    return false
+  }
   
   var body: some View {
     NavigationStack {
@@ -1120,6 +1241,11 @@ struct RAGRepoSkillsSheet: View {
         loadSkill(skill)
       }
     }
+    .task {
+      repoRemoteURL = await RepoRegistry.shared.registerRepo(at: repo.rootPath)
+        ?? RepoRegistry.shared.getCachedRemoteURL(for: repo.rootPath)
+      repoTechTags = RepoTechDetector.detectTags(repoPath: repo.rootPath)
+    }
   }
   
   private func loadSkill(_ skill: RepoGuidanceSkill) {
@@ -1156,6 +1282,8 @@ struct RAGRepoSkillsSheet: View {
        let updated = mcpServer.updateRepoGuidanceSkill(
          id: currentId,
          repoPath: repo.rootPath,
+         repoRemoteURL: repoRemoteURL,
+         repoName: repo.name,
          title: skillTitle,
          body: trimmedBody,
          source: skillSource,
@@ -1166,6 +1294,8 @@ struct RAGRepoSkillsSheet: View {
       selectedSkillId = updated.id
     } else if let created = mcpServer.addRepoGuidanceSkill(
       repoPath: repo.rootPath,
+      repoRemoteURL: repoRemoteURL,
+      repoName: repo.name,
       title: skillTitle,
       body: trimmedBody,
       source: skillSource,

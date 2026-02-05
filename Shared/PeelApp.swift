@@ -11,6 +11,7 @@ import SwiftUI
 import SwiftData
 import OAuthSwift
 import AppKit
+import OSLog
 
 @main
 struct PeelApp: App {
@@ -192,6 +193,7 @@ struct PeelApp: App {
 @Observable
 final class DataService {
   private let modelContext: ModelContext
+  private let logger = Logger(subsystem: "com.peel.rag", category: "skills")
   
   init(modelContext: ModelContext) {
     self.modelContext = modelContext
@@ -593,6 +595,8 @@ final class DataService {
   @discardableResult
   func addRepoGuidanceSkill(
     repoPath: String,
+    repoRemoteURL: String? = nil,
+    repoName: String? = nil,
     title: String,
     body: String,
     source: String = "manual",
@@ -605,8 +609,17 @@ final class DataService {
     let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
     let trimmedSource = source.trimmingCharacters(in: .whitespacesAndNewlines)
     let trimmedTags = tags.trimmingCharacters(in: .whitespacesAndNewlines)
+    let resolvedRemote = normalizedRepoRemoteURL(repoRemoteURL)
+      ?? RepoRegistry.shared.getCachedRemoteURL(for: trimmedRepo)
+    let resolvedName = repoName?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let derivedName = resolvedName?.isEmpty == false
+      ? resolvedName
+      : deriveRepoName(repoPath: trimmedRepo, repoRemoteURL: resolvedRemote)
+
     let skill = RepoGuidanceSkill(
       repoPath: trimmedRepo,
+      repoRemoteURL: resolvedRemote ?? "",
+      repoName: derivedName ?? "",
       title: trimmedTitle.isEmpty ? "Skill" : trimmedTitle,
       body: trimmedBody,
       source: trimmedSource.isEmpty ? "manual" : trimmedSource,
@@ -626,6 +639,8 @@ final class DataService {
   func updateRepoGuidanceSkill(
     id: UUID,
     repoPath: String? = nil,
+    repoRemoteURL: String? = nil,
+    repoName: String? = nil,
     title: String? = nil,
     body: String? = nil,
     source: String? = nil,
@@ -639,6 +654,26 @@ final class DataService {
       let trimmed = repoPath.trimmingCharacters(in: .whitespacesAndNewlines)
       if !trimmed.isEmpty {
         skill.repoPath = trimmed
+        let derivedName = deriveRepoName(repoPath: trimmed, repoRemoteURL: skill.repoRemoteURL)
+        if let derivedName {
+          skill.repoName = derivedName
+        }
+      }
+    }
+    if let repoRemoteURL {
+      let normalized = normalizedRepoRemoteURL(repoRemoteURL)
+      if let normalized {
+        skill.repoRemoteURL = normalized
+        let derivedName = deriveRepoName(repoPath: skill.repoPath, repoRemoteURL: normalized)
+        if let derivedName {
+          skill.repoName = derivedName
+        }
+      }
+    }
+    if let repoName {
+      let trimmed = repoName.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !trimmed.isEmpty {
+        skill.repoName = trimmed
       }
     }
     if let title {
@@ -684,22 +719,14 @@ final class DataService {
 
   func listRepoGuidanceSkills(
     repoPath: String? = nil,
+    repoRemoteURL: String? = nil,
     includeInactive: Bool = false,
     limit: Int? = nil
   ) -> [RepoGuidanceSkill] {
     let trimmedRepo = repoPath?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let predicate: Predicate<RepoGuidanceSkill>?
-    if let trimmedRepo, !trimmedRepo.isEmpty {
-      if includeInactive {
-        predicate = #Predicate { $0.repoPath == trimmedRepo }
-      } else {
-        predicate = #Predicate { $0.repoPath == trimmedRepo && $0.isActive }
-      }
-    } else if includeInactive {
-      predicate = nil
-    } else {
-      predicate = #Predicate { $0.isActive }
-    }
+    let trimmedRemote = repoRemoteURL?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let predicate: Predicate<RepoGuidanceSkill>? = includeInactive ? nil : #Predicate { $0.isActive }
+    let repoTechTags = repoTechTags(for: trimmedRepo)
 
     let sort = [
       SortDescriptor(\RepoGuidanceSkill.priority, order: .reverse),
@@ -712,16 +739,27 @@ final class DataService {
     } else {
       descriptor = FetchDescriptor(sortBy: sort)
     }
-    if let limit {
-      var limited = descriptor
-      limited.fetchLimit = limit
-      return (try? modelContext.fetch(limited)) ?? []
+    let fetched = (try? modelContext.fetch(descriptor)) ?? []
+    backfillRepoGuidanceIdentities(fetched)
+    let filtered = fetched.filter { skill in
+      repoGuidanceSkillMatches(
+        skill,
+        repoPath: trimmedRepo,
+        repoRemoteURL: trimmedRemote,
+        repoTechTags: repoTechTags
+      )
     }
-    return (try? modelContext.fetch(descriptor)) ?? []
+    if let trimmedRepo, !trimmedRepo.isEmpty {
+      logger.notice("Repo skills filtered. repo=\(trimmedRepo, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public) count=\(filtered.count, privacy: .public)")
+    }
+    if let limit {
+      return Array(filtered.prefix(limit))
+    }
+    return filtered
   }
 
-  func repoGuidanceSkillsBlock(repoPath: String, limit: Int = 6) -> (String, [RepoGuidanceSkill])? {
-    let skills = listRepoGuidanceSkills(repoPath: repoPath, includeInactive: false, limit: limit)
+  func repoGuidanceSkillsBlock(repoPath: String, repoRemoteURL: String? = nil, limit: Int = 6) -> (String, [RepoGuidanceSkill])? {
+    let skills = listRepoGuidanceSkills(repoPath: repoPath, repoRemoteURL: repoRemoteURL, includeInactive: false, limit: limit)
     guard !skills.isEmpty else { return nil }
     let body = skills.enumerated().map { index, skill in
       let title = skill.title.isEmpty ? "Skill \(index + 1)" : skill.title
@@ -737,8 +775,8 @@ final class DataService {
     return ("## Repo Skills\n\n\(body)", skills)
   }
 
-  func repoGuidanceSkillsBlockAndMarkApplied(repoPath: String, limit: Int = 6) -> String? {
-    let skills = listRepoGuidanceSkills(repoPath: repoPath, includeInactive: false, limit: limit)
+  func repoGuidanceSkillsBlockAndMarkApplied(repoPath: String, repoRemoteURL: String? = nil, limit: Int = 6) -> String? {
+    let skills = listRepoGuidanceSkills(repoPath: repoPath, repoRemoteURL: repoRemoteURL, includeInactive: false, limit: limit)
     guard !skills.isEmpty else { return nil }
     let body = skills.enumerated().map { index, skill in
       let title = skill.title.isEmpty ? "Skill \(index + 1)" : skill.title
@@ -764,6 +802,116 @@ final class DataService {
       skill.updatedAt = now
     }
     try? modelContext.save()
+  }
+
+  private func normalizedRepoRemoteURL(_ value: String?) -> String? {
+    guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !trimmed.isEmpty else {
+      return nil
+    }
+    return RepoRegistry.shared.normalizeRemoteURL(trimmed)
+  }
+
+  private func deriveRepoName(repoPath: String, repoRemoteURL: String?) -> String? {
+    if !repoPath.isEmpty, repoPath != "*" {
+      return URL(fileURLWithPath: repoPath).lastPathComponent
+    }
+    guard let repoRemoteURL, !repoRemoteURL.isEmpty else { return nil }
+    let components = repoRemoteURL.split(separator: "/")
+    return components.last.map(String.init)
+  }
+
+  private func repoGuidanceSkillMatches(
+    _ skill: RepoGuidanceSkill,
+    repoPath: String?,
+    repoRemoteURL: String?,
+    repoTechTags: Set<String>
+  ) -> Bool {
+    if repoPath == nil && repoRemoteURL == nil {
+      return true
+    }
+
+    if skill.repoPath == "*" {
+      let skillTags = RepoTechDetector.parseTags(skill.tags)
+      if !repoTechTags.isEmpty {
+        if !skillTags.isEmpty,
+           !skillTags.isDisjoint(with: repoTechTags) {
+          logger.notice("Skill matched by wildcard tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
+          return true
+        }
+        logger.notice("Skill rejected by wildcard tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
+        return false
+      }
+      logger.notice("Skill matched by wildcard path. skill=\(skill.title, privacy: .public)")
+      return true
+    }
+
+    if let repoPath, !repoPath.isEmpty, skill.repoPath == repoPath {
+      logger.notice("Skill matched by repo path. skill=\(skill.title, privacy: .public) repo=\(repoPath, privacy: .public)")
+      return true
+    }
+
+    if let repoRemoteURL,
+       !repoRemoteURL.isEmpty,
+       !skill.repoRemoteURL.isEmpty,
+       RepoRegistry.shared.normalizeRemoteURL(skill.repoRemoteURL) == RepoRegistry.shared.normalizeRemoteURL(repoRemoteURL) {
+      logger.notice("Skill matched by repo remote. skill=\(skill.title, privacy: .public)")
+      return true
+    }
+
+    if let repoPath, !repoPath.isEmpty, !skill.repoName.isEmpty {
+      let repoName = URL(fileURLWithPath: repoPath).lastPathComponent
+      if repoName == skill.repoName {
+        logger.notice("Skill matched by repo name. skill=\(skill.title, privacy: .public) repoName=\(repoName, privacy: .public)")
+        return true
+      }
+    }
+
+    if let repoPath, !repoPath.isEmpty, (skill.repoPath.isEmpty || skill.repoPath == "*") {
+      let skillTags = RepoTechDetector.parseTags(skill.tags)
+      if !repoTechTags.isEmpty {
+        if !skillTags.isEmpty,
+           !skillTags.isDisjoint(with: repoTechTags) {
+          logger.notice("Skill matched by tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
+          return true
+        }
+        logger.notice("Skill rejected by tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
+        return false
+      }
+      if !skillTags.isEmpty,
+         !skillTags.isDisjoint(with: repoTechTags) {
+        logger.notice("Skill matched by tags (no repo tags). skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public)")
+        return true
+      }
+    }
+
+    return false
+  }
+
+  private func repoTechTags(for repoPath: String?) -> Set<String> {
+    guard let repoPath, !repoPath.isEmpty else { return [] }
+    return RepoTechDetector.detectTags(repoPath: repoPath)
+  }
+
+  private func backfillRepoGuidanceIdentities(_ skills: [RepoGuidanceSkill]) {
+    var updated = false
+    for skill in skills {
+      if skill.repoName.isEmpty {
+        if let derived = deriveRepoName(repoPath: skill.repoPath, repoRemoteURL: skill.repoRemoteURL) {
+          skill.repoName = derived
+          updated = true
+        }
+      }
+      if skill.repoRemoteURL.isEmpty, !skill.repoPath.isEmpty, skill.repoPath != "*" {
+        if let cachedRemote = RepoRegistry.shared.getCachedRemoteURL(for: skill.repoPath) {
+          skill.repoRemoteURL = cachedRemote
+          updated = true
+        }
+      }
+    }
+    if updated {
+      try? modelContext.save()
+    }
   }
 
   // MARK: - MCP Run Results

@@ -943,15 +943,23 @@ public final class MCPServerService {
 
   func listRepoGuidanceSkills(
     repoPath: String? = nil,
+    repoRemoteURL: String? = nil,
     includeInactive: Bool = false,
     limit: Int? = nil
   ) -> [RepoGuidanceSkill] {
-    dataService?.listRepoGuidanceSkills(repoPath: repoPath, includeInactive: includeInactive, limit: limit) ?? []
+    dataService?.listRepoGuidanceSkills(
+      repoPath: repoPath,
+      repoRemoteURL: repoRemoteURL,
+      includeInactive: includeInactive,
+      limit: limit
+    ) ?? []
   }
 
   @discardableResult
   func addRepoGuidanceSkill(
     repoPath: String,
+    repoRemoteURL: String? = nil,
+    repoName: String? = nil,
     title: String,
     body: String,
     source: String = "manual",
@@ -961,6 +969,8 @@ public final class MCPServerService {
   ) -> RepoGuidanceSkill? {
     let created = dataService?.addRepoGuidanceSkill(
       repoPath: repoPath,
+      repoRemoteURL: repoRemoteURL,
+      repoName: repoName,
       title: title,
       body: body,
       source: source,
@@ -985,6 +995,8 @@ public final class MCPServerService {
   func updateRepoGuidanceSkill(
     id: UUID,
     repoPath: String? = nil,
+    repoRemoteURL: String? = nil,
+    repoName: String? = nil,
     title: String? = nil,
     body: String? = nil,
     source: String? = nil,
@@ -995,6 +1007,8 @@ public final class MCPServerService {
     let updated = dataService?.updateRepoGuidanceSkill(
       id: id,
       repoPath: repoPath,
+      repoRemoteURL: repoRemoteURL,
+      repoName: repoName,
       title: title,
       body: body,
       source: source,
@@ -1141,10 +1155,15 @@ public final class MCPServerService {
 
   private func buildRepoGuidance(repoPath: String) async -> String? {
     var sections: [String] = []
-    if let dataService,
-       let (skillsBlock, skills) = dataService.repoGuidanceSkillsBlock(repoPath: repoPath) {
-      sections.append(skillsBlock)
-      dataService.markRepoGuidanceSkillsApplied(skills)
+    if let dataService {
+      let repoRemoteURL = await RepoRegistry.shared.registerRepo(at: repoPath)
+      if let (skillsBlock, skills) = dataService.repoGuidanceSkillsBlock(
+        repoPath: repoPath,
+        repoRemoteURL: repoRemoteURL
+      ) {
+        sections.append(skillsBlock)
+        dataService.markRepoGuidanceSkillsApplied(skills)
+      }
     }
 
     let queries = [
@@ -3656,6 +3675,7 @@ public final class MCPServerService {
           "type": "object",
           "properties": [
             "repoPath": ["type": "string"],
+            "repoRemoteURL": ["type": "string"],
             "includeInactive": ["type": "boolean"],
             "limit": ["type": "integer"]
           ]
@@ -3670,6 +3690,8 @@ public final class MCPServerService {
           "type": "object",
           "properties": [
             "repoPath": ["type": "string"],
+            "repoRemoteURL": ["type": "string"],
+            "repoName": ["type": "string"],
             "title": ["type": "string"],
             "body": ["type": "string"],
             "source": ["type": "string"],
@@ -3677,7 +3699,7 @@ public final class MCPServerService {
             "priority": ["type": "integer"],
             "isActive": ["type": "boolean"]
           ],
-          "required": ["repoPath", "title", "body"]
+          "required": ["title", "body"]
         ],
         category: .rag,
         isMutating: true
@@ -3690,6 +3712,8 @@ public final class MCPServerService {
           "properties": [
             "skillId": ["type": "string"],
             "repoPath": ["type": "string"],
+            "repoRemoteURL": ["type": "string"],
+            "repoName": ["type": "string"],
             "title": ["type": "string"],
             "body": ["type": "string"],
             "source": ["type": "string"],
@@ -6560,11 +6584,15 @@ extension MCPServerService: WorktreeToolsHandlerDelegate {
     #if os(macOS)
     var allWorktrees: [WorktreeToolInfo] = []
     let fileManager = FileManager.default
+    let start = Date()
+    logger.debug("listAllWorktrees start")
 
     // Get worktrees from peel-worktrees base directory
     let baseDir = worktreeBaseDir()
+    logger.debug("listAllWorktrees baseDir=\(baseDir, privacy: .public)")
     if fileManager.fileExists(atPath: baseDir),
        let baseDirContents = try? fileManager.contentsOfDirectory(atPath: baseDir) {
+      logger.debug("listAllWorktrees baseDir items=\(baseDirContents.count)")
       for item in baseDirContents where item.hasPrefix("task-") {
         let wtPath = "\(baseDir)/\(item)"
         // Read .git file to find parent repo
@@ -6617,16 +6645,31 @@ extension MCPServerService: WorktreeToolsHandlerDelegate {
             diskSizeBytes: diskSize,
             createdAt: createdAt
           ))
+        } else {
+          logger.debug("listAllWorktrees missing gitdir for \(wtPath, privacy: .public)")
         }
       }
+    } else {
+      logger.debug("listAllWorktrees baseDir missing or unreadable")
     }
 
     // Also get worktrees from registered repos using Git package
+    if RepoRegistry.shared.registeredRepos.isEmpty {
+      let bootstrapService = WorkspaceDashboardService()
+      await bootstrapService.loadReposAndWorktrees()
+      logger.debug("listAllWorktrees bootstrap repos=\(bootstrapService.repos.count)")
+      for repo in bootstrapService.repos {
+        _ = await RepoRegistry.shared.registerRepo(at: repo.path)
+      }
+    }
+
     let registeredRepos = RepoRegistry.shared.registeredRepos
+    logger.debug("listAllWorktrees registeredRepos=\(registeredRepos.count)")
     for (_, localPath) in registeredRepos {
       let repoName = URL(fileURLWithPath: localPath).lastPathComponent
       let repository = Git.Model.Repository(name: repoName, path: localPath)
       if let worktrees = try? await Git.Commands.Worktree.list(on: repository) {
+        logger.debug("listAllWorktrees repo=\(repoName, privacy: .public) worktrees=\(worktrees.count)")
         for wt in worktrees {
           // Skip if we already have this worktree (from base dir scan)
           if allWorktrees.contains(where: { $0.path == wt.path }) {
@@ -6652,8 +6695,13 @@ extension MCPServerService: WorktreeToolsHandlerDelegate {
             createdAt: createdAt
           ))
         }
+      } else {
+        logger.debug("listAllWorktrees failed for repo=\(repoName, privacy: .public) path=\(localPath, privacy: .public)")
       }
     }
+
+    let elapsed = Date().timeIntervalSince(start)
+    logger.debug("listAllWorktrees done count=\(allWorktrees.count) elapsed=\(elapsed, format: .fixed(precision: 2))s")
 
     return allWorktrees
     #else
@@ -6664,29 +6712,69 @@ extension MCPServerService: WorktreeToolsHandlerDelegate {
   func removeWorktree(path: String, force: Bool) async throws {
     #if os(macOS)
     let fileManager = FileManager.default
+    let resolvedPath = (path as NSString).expandingTildeInPath
+    let gitFilePath = "\(resolvedPath)/.git"
 
-    // Try to find the parent repo
-    let gitFilePath = "\(path)/.git"
-    if fileManager.fileExists(atPath: gitFilePath),
-       let gitContent = try? String(contentsOfFile: gitFilePath, encoding: .utf8),
-       gitContent.hasPrefix("gitdir:") {
+    func parentRepoPath(from gitFilePath: String) -> String? {
+      guard fileManager.fileExists(atPath: gitFilePath),
+            let gitContent = try? String(contentsOfFile: gitFilePath, encoding: .utf8),
+            gitContent.hasPrefix("gitdir:") else {
+        return nil
+      }
+
       let gitDir = gitContent.trimmingCharacters(in: .whitespacesAndNewlines)
         .replacingOccurrences(of: "gitdir: ", with: "")
-      let repoPath = URL(fileURLWithPath: gitDir)
+
+      return URL(fileURLWithPath: gitDir)
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .deletingLastPathComponent()
         .path
+    }
 
+    if let repoPath = parentRepoPath(from: gitFilePath) {
       let repoName = URL(fileURLWithPath: repoPath).lastPathComponent
       let repository = Git.Model.Repository(name: repoName, path: repoPath)
-      try await Git.Commands.Worktree.remove(path: path, force: force, on: repository)
-      return
+
+      if !fileManager.fileExists(atPath: resolvedPath) {
+        try? await Git.Commands.Worktree.prune(on: repository)
+        return
+      }
+
+      let knownWorktrees = try? await Git.Commands.Worktree.list(on: repository)
+      let isKnown = knownWorktrees?.contains(where: { $0.path == resolvedPath }) ?? false
+      if isKnown {
+        do {
+          try await Git.Commands.Worktree.remove(path: resolvedPath, force: force, on: repository)
+          try? await Git.Commands.Worktree.prune(on: repository)
+          return
+        } catch {
+          if force {
+            if fileManager.fileExists(atPath: resolvedPath) {
+              try fileManager.removeItem(atPath: resolvedPath)
+            }
+            try? await Git.Commands.Worktree.prune(on: repository)
+            return
+          }
+
+          throw WorktreeError.worktreeRemovalFailed(error.localizedDescription)
+        }
+      }
+
+      if force {
+        try fileManager.removeItem(atPath: resolvedPath)
+        try? await Git.Commands.Worktree.prune(on: repository)
+        return
+      }
+
+      throw WorktreeError.worktreeRemovalFailed("Path is not a registered worktree: \(resolvedPath)")
     }
 
     // Fallback: just remove the directory if we can't find the repo
     if force {
-      try fileManager.removeItem(atPath: path)
+      if fileManager.fileExists(atPath: resolvedPath) {
+        try fileManager.removeItem(atPath: resolvedPath)
+      }
     } else {
       throw WorktreeError.worktreeRemovalFailed("Cannot find parent repository for worktree")
     }

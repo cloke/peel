@@ -368,6 +368,8 @@ final class ParallelRunSnapshot {
 final class RepoGuidanceSkill {
   var id: UUID = UUID()
   var repoPath: String = ""
+  var repoRemoteURL: String = ""
+  var repoName: String = ""
   var title: String = ""
   var body: String = ""
   var source: String = "manual"
@@ -381,6 +383,8 @@ final class RepoGuidanceSkill {
 
   init(
     repoPath: String,
+    repoRemoteURL: String = "",
+    repoName: String = "",
     title: String,
     body: String,
     source: String = "manual",
@@ -394,6 +398,8 @@ final class RepoGuidanceSkill {
   ) {
     self.id = UUID()
     self.repoPath = repoPath
+    self.repoRemoteURL = repoRemoteURL
+    self.repoName = repoName
     self.title = title
     self.body = body
     self.source = source
