@@ -25,6 +25,9 @@ enum InfrastructureView: String, Hashable {
 struct Agents_RootView: View {
   @Environment(MCPServerService.self) private var mcpServer
   @Environment(\.modelContext) private var modelContext
+  @AppStorage("feature.showPIIScrubber") private var showPIIScrubber = false
+  @AppStorage("feature.showTranslationValidation") private var showTranslationValidation = false
+  @AppStorage("feature.showVMIsolation") private var showVMIsolation = false
   @State private var columnVisibility = NavigationSplitViewVisibility.all
   @State private var showingNewAgentSheet = false
   @State private var showingNewChainSheet = false
@@ -73,10 +76,18 @@ struct Agents_RootView: View {
         showingSessionSummary = true
         mcpServer.recordUIActionHandled(action.controlId)
       case "agents.vmIsolation":
-        selectedInfrastructure = .vmIsolation
+        if showVMIsolation {
+          selectedInfrastructure = .vmIsolation
+        } else {
+          selectedInfrastructure = nil
+        }
         mcpServer.recordUIActionHandled(action.controlId)
       case "agents.translationValidation":
-        selectedInfrastructure = .translationValidation
+        if showTranslationValidation {
+          selectedInfrastructure = .translationValidation
+        } else {
+          selectedInfrastructure = nil
+        }
         mcpServer.recordUIActionHandled(action.controlId)
       case "agents.templateGallery":
         selectedInfrastructure = .templateGallery
@@ -85,7 +96,11 @@ struct Agents_RootView: View {
         selectedInfrastructure = .localRag
         mcpServer.recordUIActionHandled(action.controlId)
       case "agents.piiScrubber":
-        selectedInfrastructure = .piiScrubber
+        if showPIIScrubber {
+          selectedInfrastructure = .piiScrubber
+        } else {
+          selectedInfrastructure = nil
+        }
         mcpServer.recordUIActionHandled(action.controlId)
       case "agents.parallelWorktrees":
         selectedInfrastructure = .parallelWorktrees
@@ -141,17 +156,29 @@ struct Agents_RootView: View {
     if let infra = selectedInfrastructure {
       switch infra {
       case .vmIsolation:
-        VMIsolationDashboardView()
+        if showVMIsolation {
+          VMIsolationDashboardView()
+        } else {
+          emptyStateView
+        }
       case .mcpDashboard:
         MCPDashboardView(mcpServer: mcpServer, sessionTracker: sessionTracker)
       case .templateGallery:
         ChainTemplateGalleryView(agentManager: agentManager, cliService: cliService)
       case .translationValidation:
-        TranslationValidationView()
+        if showTranslationValidation {
+          TranslationValidationView()
+        } else {
+          emptyStateView
+        }
       case .localRag:
         LocalRAGDashboardView(mcpServer: mcpServer)
       case .piiScrubber:
-        PIIScrubberView()
+        if showPIIScrubber {
+          PIIScrubberView()
+        } else {
+          emptyStateView
+        }
       case .parallelWorktrees:
         ParallelWorktreeDashboardView(mcpServer: mcpServer)
       case .worktrees:

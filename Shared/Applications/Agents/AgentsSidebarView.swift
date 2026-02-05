@@ -15,6 +15,9 @@ struct AgentsSidebarView: View {
   @Binding var showingNewChainSheet: Bool
   @Binding var showingNewAgentSheet: Bool
   @Binding var selectedInfrastructure: InfrastructureView?
+  @AppStorage("feature.showPIIScrubber") private var showPIIScrubber = false
+  @AppStorage("feature.showTranslationValidation") private var showTranslationValidation = false
+  @AppStorage("feature.showVMIsolation") private var showVMIsolation = false
   @AppStorage("vm.isolation.section") private var vmIsolationSection = "overview"
   @AppStorage("vm.isolation.sidebar.expanded") private var vmIsolationSidebarExpanded = true
   @State private var parallelWorktreeStatus: ParallelWorktreeSummary = .empty
@@ -145,23 +148,27 @@ struct AgentsSidebarView: View {
           .accessibilityIdentifier("agents.localRag")
           .tag("infra:local-rag")
 
-          HStack {
-            Image(systemName: "shield.lefthalf.filled")
-              .foregroundStyle(.orange)
-            Text("PII Scrubber")
-            Spacer()
+          if showPIIScrubber {
+            HStack {
+              Image(systemName: "shield.lefthalf.filled")
+                .foregroundStyle(.orange)
+              Text("PII Scrubber")
+              Spacer()
+            }
+            .accessibilityIdentifier("agents.piiScrubber")
+            .tag("infra:pii-scrubber")
           }
-          .accessibilityIdentifier("agents.piiScrubber")
-          .tag("infra:pii-scrubber")
 
-          HStack {
-            Image(systemName: "character.book.closed")
-              .foregroundStyle(.indigo)
-            Text("Translation Validation")
-            Spacer()
+          if showTranslationValidation {
+            HStack {
+              Image(systemName: "character.book.closed")
+                .foregroundStyle(.indigo)
+              Text("Translation Validation")
+              Spacer()
+            }
+            .accessibilityIdentifier("agents.translationValidation")
+            .tag("infra:translation-validation")
           }
-          .accessibilityIdentifier("agents.translationValidation")
-          .tag("infra:translation-validation")
 
           HStack {
             Image(systemName: "arrow.triangle.branch")
@@ -213,12 +220,14 @@ struct AgentsSidebarView: View {
           }
         }
 
-        Section {
-          DisclosureGroup("VM Isolation", isExpanded: $vmIsolationSidebarExpanded) {
-            vmIsolationRow(title: "Overview", icon: "shield.checkered", section: "overview")
-            vmIsolationRow(title: "Linux", icon: "server.rack", section: "linux")
-            vmIsolationRow(title: "macOS", icon: "desktopcomputer", section: "macos")
-            vmIsolationRow(title: "Pools", icon: "square.grid.2x2", section: "pools")
+        if showVMIsolation {
+          Section {
+            DisclosureGroup("VM Isolation", isExpanded: $vmIsolationSidebarExpanded) {
+              vmIsolationRow(title: "Overview", icon: "shield.checkered", section: "overview")
+              vmIsolationRow(title: "Linux", icon: "server.rack", section: "linux")
+              vmIsolationRow(title: "macOS", icon: "desktopcomputer", section: "macos")
+              vmIsolationRow(title: "Pools", icon: "square.grid.2x2", section: "pools")
+            }
           }
         }
       }

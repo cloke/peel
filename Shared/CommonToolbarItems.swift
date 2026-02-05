@@ -10,6 +10,7 @@ import SwiftUI
 
 struct ToolSelectionToolbar: ToolbarContent {
   @AppStorage(wrappedValue: .brew, "current-tool") private var currentTool: CurrentTool
+  @AppStorage("feature.showBrew") private var showBrew = false
 
   var body: some ToolbarContent {
     ToolbarItem(placement: .principal) {
@@ -20,9 +21,11 @@ struct ToolSelectionToolbar: ToolbarContent {
         Label("Workspaces", systemImage: "arrow.triangle.branch")
           .labelStyle(.titleAndIcon)
           .tag(CurrentTool.workspaces)
-        Label("Brew", systemImage: "mug")
-          .labelStyle(.titleAndIcon)
-          .tag(CurrentTool.brew)
+        if showBrew {
+          Label("Brew", systemImage: "mug")
+            .labelStyle(.titleAndIcon)
+            .tag(CurrentTool.brew)
+        }
         Label("Git", systemImage: "folder")
           .labelStyle(.titleAndIcon)
           .tag(CurrentTool.git)
