@@ -12,6 +12,8 @@
 #   --allow-while-chains-running  Allow build/launch even if MCP chains are running
 #   --emulator [HOST]     Start Firebase emulators and configure app to use them
 #                         HOST defaults to localhost; use a LAN IP for multi-machine
+#   --swarm [ROLE]        Auto-start swarm after launch (default role: hybrid)
+#                         ROLE: brain, worker, hybrid
 #   --help                Show this help message
 #
 
@@ -28,6 +30,8 @@ SKIP_BUILD=false
 ALLOW_DURING_CHAINS=false
 EMULATOR_MODE=false
 EMULATOR_HOST=""
+SWARM_MODE=false
+SWARM_ROLE="hybrid"
 PEELCLI_PATH="${PROJECT_DIR}/Tools/PeelCLI/.build/debug/peel-mcp"
 
 # Parse arguments
@@ -54,6 +58,15 @@ while [[ $# -gt 0 ]]; do
       # Check if next arg is a host (not another flag)
       if [[ -n "${2:-}" && "${2:-}" != --* ]]; then
         EMULATOR_HOST="$2"
+        shift
+      fi
+      shift
+      ;;
+    --swarm)
+      SWARM_MODE=true
+      # Check if next arg is a role (not another flag)
+      if [[ -n "${2:-}" && "${2:-}" != --* ]]; then
+        SWARM_ROLE="$2"
         shift
       fi
       shift
@@ -265,6 +278,24 @@ if [[ "$WAIT_FOR_SERVER" == "true" ]]; then
     
     if [[ "$RESPONSE" == *"tools"* ]]; then
       echo "✅ MCP server ready!"
+      
+      # Auto-start swarm if requested
+      if [[ "$SWARM_MODE" == "true" ]]; then
+        echo "🐝 Starting swarm as ${SWARM_ROLE} with WAN..."
+        sleep 2  # Brief pause for app to fully initialize
+        
+        SWARM_RESPONSE=$(curl -s -X POST \
+          -H "Content-Type: application/json" \
+          -d "{\"jsonrpc\":\"2.0\",\"id\":99,\"method\":\"tools/call\",\"params\":{\"name\":\"swarm.start\",\"arguments\":{\"role\":\"${SWARM_ROLE}\",\"wan\":true}}}" \
+          "http://127.0.0.1:${MCP_PORT}/rpc" 2>/dev/null || echo "")
+        
+        if echo "$SWARM_RESPONSE" | grep -q '"success":true'; then
+          echo "✅ Swarm started as ${SWARM_ROLE} with WAN enabled"
+        else
+          echo "⚠️  Swarm start may have failed: ${SWARM_RESPONSE}"
+        fi
+      fi
+      
       echo ""
       echo "Available commands:"
       echo "  curl -X POST -H 'Content-Type: application/json' \\"
@@ -279,6 +310,32 @@ if [[ "$WAIT_FOR_SERVER" == "true" ]]; then
   echo "⚠️  Timeout waiting for MCP server (${MAX_ATTEMPTS}s)"
   echo "   App launched, but server may not be responding"
   exit 1
+fi
+
+# Auto-start swarm even without --wait-for-server (best-effort)
+if [[ "$SWARM_MODE" == "true" && "$WAIT_FOR_SERVER" == "false" ]]; then
+  echo "⏳ Waiting briefly for MCP server to start swarm..."
+  sleep 5
+  for i in $(seq 1 15); do
+    RESPONSE=$(curl -s -X POST \
+      -H "Content-Type: application/json" \
+      -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
+      "http://127.0.0.1:${MCP_PORT}/rpc" 2>/dev/null || echo "")
+    if [[ "$RESPONSE" == *"tools"* ]]; then
+      echo "🐝 Starting swarm as ${SWARM_ROLE} with WAN..."
+      SWARM_RESPONSE=$(curl -s -X POST \
+        -H "Content-Type: application/json" \
+        -d "{\"jsonrpc\":\"2.0\",\"id\":99,\"method\":\"tools/call\",\"params\":{\"name\":\"swarm.start\",\"arguments\":{\"role\":\"${SWARM_ROLE}\",\"wan\":true}}}" \
+        "http://127.0.0.1:${MCP_PORT}/rpc" 2>/dev/null || echo "")
+      if echo "$SWARM_RESPONSE" | grep -q '"success":true'; then
+        echo "✅ Swarm started as ${SWARM_ROLE} with WAN enabled"
+      else
+        echo "⚠️  Swarm start may have failed"
+      fi
+      break
+    fi
+    sleep 2
+  done
 fi
 
 echo ""
