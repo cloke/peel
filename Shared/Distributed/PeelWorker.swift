@@ -203,19 +203,22 @@ public final class DefaultChainExecutor: ChainExecutorProtocol, Sendable {
   }
   
   public func execute(request: ChainRequest) async throws -> [ChainOutput] {
+    // Resolve working directory via RepoRegistry (maps remote URLs to local paths)
+    let resolvedDir = await RepoRegistry.shared.resolveWorkingDirectory(for: request)
+    
     // Validate working directory exists
-    guard FileManager.default.fileExists(atPath: request.workingDirectory) else {
+    guard FileManager.default.fileExists(atPath: resolvedDir) else {
       throw DistributedError.taskExecutionFailed(
         taskId: request.id,
-        reason: "Working directory not found: \(request.workingDirectory)"
+        reason: "Working directory not found: \(resolvedDir) (original: \(request.workingDirectory), remoteURL: \(request.repoRemoteURL ?? "none")). Register this repo with swarm.register-repo."
       )
     }
     
     // Load or find the template
     let template = try loadTemplate(name: request.templateName)
     
-    // Create the chain from template using AgentManager
-    let chain = agentManager.createChainFromTemplate(template, workingDirectory: request.workingDirectory)
+    // Create the chain from template using AgentManager (use resolved path)
+    let chain = agentManager.createChainFromTemplate(template, workingDirectory: resolvedDir)
     
     // Run the chain
     let summary = await chainRunner.runChain(

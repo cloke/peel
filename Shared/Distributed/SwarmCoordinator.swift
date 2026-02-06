@@ -1473,6 +1473,18 @@ extension SwarmCoordinator: FirestoreTaskExecutionDelegate {
   public func executeTask(_ request: ChainRequest) async -> ChainResult {
     let startTime = Date()
     
+    // Resolve working directory for this machine via RepoRegistry
+    let resolvedDir = await RepoRegistry.shared.resolveWorkingDirectory(for: request)
+    let resolvedRequest = ChainRequest(
+      id: request.id,
+      templateName: request.templateName,
+      prompt: request.prompt,
+      workingDirectory: resolvedDir,
+      repoRemoteURL: request.repoRemoteURL,
+      priority: request.priority,
+      timeoutSeconds: request.timeoutSeconds
+    )
+    
     guard let executor = chainExecutor else {
       return ChainResult(
         requestId: request.id,
@@ -1485,7 +1497,7 @@ extension SwarmCoordinator: FirestoreTaskExecutionDelegate {
     }
     
     do {
-      let outputs = try await executor.execute(request: request)
+      let outputs = try await executor.execute(request: resolvedRequest)
       let duration = Date().timeIntervalSince(startTime)
       return ChainResult(
         requestId: request.id,
