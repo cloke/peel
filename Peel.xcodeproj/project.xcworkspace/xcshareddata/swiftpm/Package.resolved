@@ -164,15 +164,6 @@
         }
       },
       {
-        "package": "MCPServerKit",
-        "repositoryURL": "https://github.com/crunchybananas/MCPServerKit.git",
-        "state": {
-          "branch": null,
-          "revision": "4e82e3ec028803d225de46955c00713624805464",
-          "version": "1.0.0"
-        }
-      },
-      {
         "package": "mlx-swift",
         "repositoryURL": "https://github.com/ml-explore/mlx-swift",
         "state": {

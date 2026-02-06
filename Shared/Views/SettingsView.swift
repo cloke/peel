@@ -15,6 +15,7 @@ struct SettingsView: View {
   #endif
   @AppStorage("feature.showBrew") private var showBrew = false
   @AppStorage("feature.showPIIScrubber") private var showPIIScrubber = false
+  @AppStorage("feature.showDoclingImport") private var showDoclingImport = false
   @AppStorage("feature.showTranslationValidation") private var showTranslationValidation = false
   @AppStorage("feature.showVMIsolation") private var showVMIsolation = false
 
@@ -228,6 +229,7 @@ struct SettingsView: View {
               Button("Enable all") {
                 showBrew = true
                 showPIIScrubber = true
+                showDoclingImport = true
                 showTranslationValidation = true
                 showVMIsolation = true
               }
@@ -237,6 +239,7 @@ struct SettingsView: View {
             }
             Toggle("Show Brew tool", isOn: $showBrew)
             Toggle("Show PII Scrubber", isOn: $showPIIScrubber)
+            Toggle("Show Docling Import", isOn: $showDoclingImport)
             Toggle("Show Translation Validation", isOn: $showTranslationValidation)
             Toggle("Show VM Isolation", isOn: $showVMIsolation)
             Text("Hidden tools can be enabled here during the beta.")

@@ -1044,8 +1044,21 @@ public final class AgentChainRunner {
     return (displayLine, .progress)
   }
 
-  // Note: ChainExecutionError is defined in ChainErrors.swift
-  typealias ChainError = ChainExecutionError
+  enum ChainError: LocalizedError, SimpleMessageError {
+    case reviewRejected(reason: String)
+    case cancelled
+
+    var errorDescription: String? { defaultErrorDescription }
+
+    var messageValue: String? {
+      switch self {
+      case .reviewRejected(let reason):
+        return "Review rejected: \(reason.prefix(200))..."
+      case .cancelled:
+        return "Chain cancelled"
+      }
+    }
+  }
 
   private func checkCancellation(chain: AgentChain) throws {
     guard Task.isCancelled else { return }

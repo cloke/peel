@@ -182,52 +182,6 @@ public struct ChainOutput: Codable, Sendable {
   }
 }
 
-// MARK: - Network Utilities
-
-/// Utilities for network address detection
-public enum NetworkUtils {
-  /// Fetch public IP address from external services
-  /// Returns nil if detection fails
-  public static func fetchPublicIP() async -> String? {
-    // Try multiple services for reliability
-    let services = [
-      "https://api.ipify.org",
-      "https://ifconfig.me/ip",
-      "https://icanhazip.com"
-    ]
-    
-    for service in services {
-      guard let url = URL(string: service) else { continue }
-      do {
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 5
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200,
-              let ip = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-              isValidIPv4(ip) else {
-          continue
-        }
-        return ip
-      } catch {
-        continue
-      }
-    }
-    return nil
-  }
-  
-  /// Check if string is a valid IPv4 address
-  private static func isValidIPv4(_ ip: String) -> Bool {
-    let parts = ip.split(separator: ".")
-    guard parts.count == 4 else { return false }
-    return parts.allSatisfy { part in
-      guard let num = Int(part) else { return false }
-      return num >= 0 && num <= 255
-    }
-  }
-}
-
 // MARK: - Peel Capabilities
 
 /// Hardware and software capabilities of a worker node
@@ -251,13 +205,9 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
   public let indexedRepos: [String]
   public let gitCommitHash: String?  // Short git commit hash for version sync
   
-  // Network - LAN (local network discovery)
+  // Network
   public let lanAddress: String?
   public let lanPort: UInt16?
-  
-  // Network - WAN (internet-routable address for cross-network peers)
-  public let wanAddress: String?
-  public let wanPort: UInt16?
   
   public enum Platform: String, Codable, Sendable {
     case macOS
@@ -279,9 +229,7 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
     indexedRepos: [String] = [],
     gitCommitHash: String? = nil,
     lanAddress: String? = nil,
-    lanPort: UInt16? = nil,
-    wanAddress: String? = nil,
-    wanPort: UInt16? = nil
+    lanPort: UInt16? = nil
   ) {
     self.deviceId = deviceId
     self.deviceName = deviceName
@@ -297,8 +245,6 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
     self.gitCommitHash = gitCommitHash
     self.lanAddress = lanAddress
     self.lanPort = lanPort
-    self.wanAddress = wanAddress
-    self.wanPort = wanPort
   }
   
   /// Create capabilities from current device
@@ -307,9 +253,7 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
     embeddingModel: String? = nil,
     embeddingDimensions: Int? = nil,
     lanAddress: String? = nil,
-    lanPort: UInt16? = nil,
-    wanAddress: String? = nil,
-    wanPort: UInt16? = nil
+    lanPort: UInt16? = nil
   ) -> WorkerCapabilities {
     let processInfo = ProcessInfo.processInfo
     
@@ -340,9 +284,7 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
       indexedRepos: indexedRepos,
       gitCommitHash: Self.getGitCommitHash(),
       lanAddress: lanAddress,
-      lanPort: lanPort,
-      wanAddress: wanAddress,
-      wanPort: wanPort
+      lanPort: lanPort
     )
   }
   

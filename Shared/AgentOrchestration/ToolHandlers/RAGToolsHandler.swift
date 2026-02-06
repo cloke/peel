@@ -789,7 +789,7 @@ final class RAGToolsHandler: MCPToolHandler {
     
     let isEmber = DefaultSkillsService.detectEmberProject(repoPath: repoPath)
     let alreadySeeded = DefaultSkillsService.hasLoadedEmberSkills(repoPath: repoPath)
-    let skillCount = delegate.listRepoGuidanceSkills(repoPath: repoPath, includeInactive: false, limit: nil)
+    let skillCount = delegate.listRepoGuidanceSkills(repoPath: repoPath, repoRemoteURL: nil, includeInactive: false, limit: nil)
       .filter { $0.source == "NullVoxPopuli/agent-skills" }
       .count
     
