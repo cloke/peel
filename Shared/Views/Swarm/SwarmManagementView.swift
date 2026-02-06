@@ -364,6 +364,8 @@ struct LocalWorkerStatusView: View {
       // Unregister from all swarms
       for swarm in firebaseService.memberSwarms {
         try? await firebaseService.unregisterWorker(swarmId: swarm.id)
+        // Stop listening for workers in this swarm
+        firebaseService.stopWorkerListener(swarmId: swarm.id)
       }
       coordinator.stop()
     }
@@ -437,6 +439,8 @@ struct SwarmDetailView: View {
       }
     }
     .task {
+      // Start worker listener for this swarm so the Workers tab count is accurate immediately
+      firebaseService.startWorkerListener(swarmId: swarm.id)
       if swarm.role.canApproveMembers {
         try? await firebaseService.loadPendingMembers(swarmId: swarm.id)
       }
@@ -990,8 +994,15 @@ struct WorkersListView: View {
     guard !messageText.trimmingCharacters(in: .whitespaces).isEmpty else { return }
     
     Task {
-      // TODO: Implement actual message sending via Firestore
-      print("📨 Sending message to \(selectedWorker?.displayName ?? "all workers"): \(messageText)")
+      do {
+        try await firebaseService.sendMessage(
+          swarmId: swarmId,
+          text: messageText,
+          targetWorkerId: selectedWorker?.id
+        )
+      } catch {
+        print("Failed to send message: \(error)")
+      }
       messageText = ""
       showingMessageSheet = false
       messageSent = true

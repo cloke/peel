@@ -105,10 +105,13 @@ public final class FirebaseService {
   
   /// Current RAG artifact sync state (for progress UI)
   public private(set) var ragSyncState: FirestoreRAGSyncState?
-  
+
+  /// Recent messages in the swarm (real-time)
+  public private(set) var swarmMessages: [SwarmMessage] = []
+
   /// Our registered worker ID (if we're acting as a worker)
   public private(set) var registeredWorkerId: String?
-  
+
   /// Pending invite URL (stored when user is not signed in, processed after auth)
   public var pendingInviteURL: URL?
   
@@ -131,7 +134,8 @@ public final class FirebaseService {
   private var membersListener: ListenerRegistration?
   private var invitesListener: ListenerRegistration?
   private var swarmListeners: [ListenerRegistration] = []
-  private var workerListeners: [ListenerRegistration] = []
+  private var workerListeners: [String: ListenerRegistration] = [:]  // keyed by swarmId
+  private var messageListeners: [String: ListenerRegistration] = [:]  // keyed by swarmId
   private var taskListener: ListenerRegistration?
   private var heartbeatTask: Task<Void, Never>?
   private var currentNonce: String?
@@ -169,6 +173,10 @@ public final class FirebaseService {
   
   private func ragArtifactsCollection(swarmId: String) -> CollectionReference {
     db.collection("swarms/\(swarmId)/ragArtifacts")
+  }
+
+  private func messagesCollection(swarmId: String) -> CollectionReference {
+    db.collection("swarms/\(swarmId)/messages")
   }
   
   // MARK: - Initialization
@@ -1108,6 +1116,12 @@ public final class FirebaseService {
   
   /// Start listening for workers in a swarm (for brain/dashboard)
   public func startWorkerListener(swarmId: String) {
+    // Deduplicate — skip if already listening for this swarm
+    if workerListeners[swarmId] != nil {
+      logger.debug("Worker listener already active for swarm \(swarmId)")
+      return
+    }
+
     logActivity(.listenerStarted, message: "Workers listener started", details: ["swarmId": swarmId])
     
     let listener = workersCollection(swarmId: swarmId)
@@ -1160,7 +1174,15 @@ public final class FirebaseService {
           self.swarmWorkers = newWorkers
         }
       }
-    workerListeners.append(listener)
+    workerListeners[swarmId] = listener
+  }
+  
+  /// Stop worker listener for a specific swarm
+  public func stopWorkerListener(swarmId: String) {
+    if let listener = workerListeners.removeValue(forKey: swarmId) {
+      listener.remove()
+      logActivity(.listenerStopped, message: "Worker listener stopped for swarm", details: ["swarmId": swarmId])
+    }
   }
   
   private func stopWorkerListeners() {
@@ -1169,12 +1191,115 @@ public final class FirebaseService {
         "count": String(workerListeners.count)
       ])
     }
-    for listener in workerListeners {
+    for (_, listener) in workerListeners {
       listener.remove()
     }
     workerListeners.removeAll()
+    swarmWorkers.removeAll()
   }
   
+  // MARK: - Messages
+
+  /// Send a message to a specific worker or broadcast to all workers in a swarm
+  public func sendMessage(swarmId: String, text: String, targetWorkerId: String? = nil) async throws {
+    guard let userId = currentUserId else { throw FirebaseError.notSignedIn }
+    let displayName = currentUserDisplayName ?? "Unknown"
+    let deviceId = WorkerCapabilities.current().deviceId
+
+    var data: [String: Any] = [
+      "senderId": userId,
+      "senderDeviceId": deviceId,
+      "senderName": displayName,
+      "text": text,
+      "createdAt": FieldValue.serverTimestamp(),
+      "isBroadcast": targetWorkerId == nil
+    ]
+    if let targetWorkerId {
+      data["targetWorkerId"] = targetWorkerId
+    }
+
+    try await messagesCollection(swarmId: swarmId).addDocument(data: data)
+
+    logActivity(.messageSent, message: targetWorkerId == nil ? "Broadcast: \(text)" : "Message to \(targetWorkerId!.prefix(8)): \(text)", details: [
+      "swarmId": swarmId,
+      "isBroadcast": String(targetWorkerId == nil)
+    ])
+  }
+
+  /// Start listening for messages in a swarm
+  public func startMessageListener(swarmId: String) {
+    if messageListeners[swarmId] != nil {
+      logger.debug("Message listener already active for swarm \(swarmId)")
+      return
+    }
+
+    let deviceId = WorkerCapabilities.current().deviceId
+
+    // Only listen for recent messages (last 5 minutes) to avoid loading history
+    let cutoff = Date().addingTimeInterval(-300)
+
+    let listener = messagesCollection(swarmId: swarmId)
+      .whereField("createdAt", isGreaterThan: Timestamp(date: cutoff))
+      .order(by: "createdAt", descending: false)
+      .addSnapshotListener { [weak self] snapshot, error in
+        guard let self = self, let snapshot = snapshot else { return }
+
+        Task { @MainActor in
+          for change in snapshot.documentChanges where change.type == .added {
+            let data = change.document.data()
+            let senderDeviceId = data["senderDeviceId"] as? String ?? ""
+
+            // Skip messages from self
+            guard senderDeviceId != deviceId else { continue }
+
+            // Skip targeted messages not for us
+            if let target = data["targetWorkerId"] as? String, target != deviceId {
+              continue
+            }
+
+            let message = SwarmMessage(
+              id: change.document.documentID,
+              senderId: data["senderId"] as? String ?? "",
+              senderDeviceId: senderDeviceId,
+              senderName: data["senderName"] as? String ?? "Unknown",
+              text: data["text"] as? String ?? "",
+              createdAt: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
+              isBroadcast: data["isBroadcast"] as? Bool ?? true,
+              targetWorkerId: data["targetWorkerId"] as? String
+            )
+
+            self.swarmMessages.append(message)
+            // Keep only last 50 messages
+            if self.swarmMessages.count > 50 {
+              self.swarmMessages.removeFirst(self.swarmMessages.count - 50)
+            }
+
+            self.logActivity(.messageReceived, message: "\(message.isBroadcast ? "📢" : "💬") \(message.senderName): \(message.text)", details: [
+              "senderId": message.senderId,
+              "isBroadcast": String(message.isBroadcast)
+            ])
+          }
+        }
+      }
+    messageListeners[swarmId] = listener
+    logActivity(.listenerStarted, message: "Message listener started", details: ["swarmId": swarmId])
+  }
+
+  /// Stop message listener for a specific swarm
+  public func stopMessageListener(swarmId: String) {
+    if let listener = messageListeners.removeValue(forKey: swarmId) {
+      listener.remove()
+    }
+  }
+
+  private func stopMessageListeners() {
+    for (_, listener) in messageListeners {
+      listener.remove()
+    }
+    messageListeners.removeAll()
+    swarmMessages.removeAll()
+  }
+
   // MARK: - Membership Listener (Real-time swarm list updates)
   
   /// Start listening for changes to the user's swarm memberships
@@ -1905,6 +2030,7 @@ public final class FirebaseService {
     stopMembersListener()
     stopInvitesListener()
     stopWorkerListeners()
+    stopMessageListeners()
     stopTaskListener()
     stopHeartbeatLoop()
   }
@@ -2243,6 +2369,18 @@ public enum FirestoreWorkerStatus: String, Sendable, Codable {
   case online
   case offline
   case busy
+}
+
+/// A message in a Firestore swarm
+public struct SwarmMessage: Sendable, Identifiable, Equatable {
+  public let id: String
+  public let senderId: String
+  public let senderDeviceId: String
+  public let senderName: String
+  public let text: String
+  public let createdAt: Date
+  public let isBroadcast: Bool
+  public let targetWorkerId: String?
 }
 
 /// A worker registered in Firestore swarm
