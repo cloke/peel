@@ -5,6 +5,7 @@
 // Coordinates the distributed swarm - manages workers and task dispatch.
 
 import Foundation
+import Network
 import os.log
 
 // MARK: - Swarm Mode
@@ -98,6 +99,10 @@ public final class SwarmCoordinator {
 
   /// Heartbeat monitor task (brain/hybrid) - detects stale workers
   private var heartbeatMonitorTask: Task<Void, Never>?
+
+  /// Network path monitor for sleep/wake reconnection
+  private var pathMonitor: NWPathMonitor?
+  private var lastPathStatus: NWPath.Status = .satisfied
 
   /// Swarm start time for uptime tracking
   private var startedAt: Date?
@@ -285,22 +290,16 @@ public final class SwarmCoordinator {
     if role == .brain || role == .hybrid {
       startHeartbeatMonitor()
     }
+
+    // Monitor network for sleep/wake reconnection
+    startNetworkMonitor()
   }
-  
+
   /// Stop the swarm coordinator
   public func stop() {
     isActive = false
 
-    stopHeartbeatLoop()
-    stopHeartbeatMonitor()
-    
-    discoveryService?.stopAdvertising()
-    discoveryService?.stopDiscovery()
-    discoveryService = nil
-    
-    connectionManager?.stop()
-    connectionManager = nil
-    
+    stopNetworkMonitor()
     connectedWorkers.removeAll()
     currentTask = nil
     workerStatuses.removeAll()
@@ -309,6 +308,89 @@ public final class SwarmCoordinator {
     startedAt = nil
     
     logger.info("SwarmCoordinator stopped")
+  }
+
+  // MARK: - Network Monitor (Sleep/Wake Reconnection)
+
+  private func startNetworkMonitor() {
+    stopNetworkMonitor()
+    let monitor = NWPathMonitor()
+    monitor.pathUpdateHandler = { [weak self] path in
+      Task { @MainActor [weak self] in
+        self?.handleNetworkPathUpdate(path)
+      }
+    }
+    monitor.start(queue: DispatchQueue(label: "com.peel.network-monitor"))
+    pathMonitor = monitor
+    lastPathStatus = .satisfied
+  }
+
+  private func stopNetworkMonitor() {
+    pathMonitor?.cancel()
+    pathMonitor = nil
+  }
+
+  private func handleNetworkPathUpdate(_ path: NWPath) {
+    let previousStatus = lastPathStatus
+    lastPathStatus = path.status
+
+    guard isActive else { return }
+
+    if previousStatus != .satisfied && path.status == .satisfied {
+      logger.info("Network restored — reconnecting swarm")
+      reconnect()
+    } else if previousStatus == .satisfied && path.status != .satisfied {
+      logger.info("Network lost — swarm connections will drop")
+    }
+  }
+
+  /// Reconnect all swarm services after a network disruption (e.g. sleep/wake)
+  private func reconnect() {
+    guard isActive else { return }
+    let port = connectionManager?.port ?? 8766
+
+    // 1. Restart Bonjour discovery + advertising
+    discoveryService?.stopAdvertising()
+    discoveryService?.stopDiscovery()
+    try? discoveryService?.startAdvertising(capabilities: capabilities, port: port)
+    discoveryService?.startDiscovery()
+    logger.info("Bonjour restarted after network restore")
+
+    // 2. Restart TCP listener (connections are gone after sleep)
+    connectionManager?.stop()
+    connectionManager = PeerConnectionManager(capabilities: capabilities, port: port)
+    connectionManager?.delegate = self
+    try? connectionManager?.start()
+    connectedWorkers.removeAll()
+    workerStatuses.removeAll()
+    logger.info("TCP listener restarted after network restore")
+
+    // 3. Restart heartbeats
+    if role == .worker || role == .hybrid {
+      startHeartbeatLoop()
+    }
+    if role == .brain || role == .hybrid {
+      startHeartbeatMonitor()
+    }
+
+    // 4. Re-register Firestore workers and restart listeners
+    let firebaseService = FirebaseService.shared
+    if firebaseService.isSignedIn {
+      Task {
+        let workerCaps = WorkerCapabilities.current()
+        for swarm in firebaseService.memberSwarms where swarm.role.canRegisterWorkers {
+          _ = try? await firebaseService.registerWorker(swarmId: swarm.id, capabilities: workerCaps)
+          // Stop then restart to force fresh listeners
+          firebaseService.stopWorkerListener(swarmId: swarm.id)
+          firebaseService.startWorkerListener(swarmId: swarm.id)
+          firebaseService.stopMessageListener(swarmId: swarm.id)
+          firebaseService.startMessageListener(swarmId: swarm.id)
+        }
+        logger.info("Firestore workers re-registered and listeners restarted")
+      }
+    }
+
+    delegate?.swarmCoordinator(self, didEmit: .workerDisconnected("network-reconnect"))
   }
 
   // MARK: - Heartbeats
