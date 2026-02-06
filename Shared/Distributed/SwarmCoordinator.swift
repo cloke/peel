@@ -238,6 +238,11 @@ public final class SwarmCoordinator {
   /// Configure with a chain executor (for worker mode task execution)
   public func configure(chainExecutor: ChainExecutorProtocol?) {
     self.chainExecutor = chainExecutor
+    // Also wire ourselves as the Firestore task execution delegate
+    // so Firestore-submitted tasks route through our executor
+    if chainExecutor != nil {
+      FirebaseService.shared.taskExecutionDelegate = self
+    }
   }
   
   /// Get debug info about active worktrees
@@ -1459,5 +1464,47 @@ extension SwarmCoordinator: PRQueueDelegate {
       // Continue even if label exists (--force handles this)
     }
     logger.info("Ensured all Peel labels exist in \(repoPath)")
+  }
+}
+
+// MARK: - FirestoreTaskExecutionDelegate
+
+extension SwarmCoordinator: FirestoreTaskExecutionDelegate {
+  public func executeTask(_ request: ChainRequest) async -> ChainResult {
+    let startTime = Date()
+    
+    guard let executor = chainExecutor else {
+      return ChainResult(
+        requestId: request.id,
+        status: .failed,
+        duration: 0,
+        workerDeviceId: WorkerCapabilities.current().deviceId,
+        workerDeviceName: WorkerCapabilities.current().deviceName,
+        errorMessage: "No chain executor configured in SwarmCoordinator"
+      )
+    }
+    
+    do {
+      let outputs = try await executor.execute(request: request)
+      let duration = Date().timeIntervalSince(startTime)
+      return ChainResult(
+        requestId: request.id,
+        status: .completed,
+        outputs: outputs,
+        duration: duration,
+        workerDeviceId: WorkerCapabilities.current().deviceId,
+        workerDeviceName: WorkerCapabilities.current().deviceName
+      )
+    } catch {
+      let duration = Date().timeIntervalSince(startTime)
+      return ChainResult(
+        requestId: request.id,
+        status: .failed,
+        duration: duration,
+        workerDeviceId: WorkerCapabilities.current().deviceId,
+        workerDeviceName: WorkerCapabilities.current().deviceName,
+        errorMessage: error.localizedDescription
+      )
+    }
   }
 }
