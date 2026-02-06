@@ -1298,8 +1298,9 @@ extension SwarmCoordinator: PeerConnectionDelegate {
 
 extension SwarmCoordinator: BonjourDiscoveryDelegate {
   public func discoveryService(_ service: BonjourDiscoveryService, didDiscover peer: DiscoveredPeer) {
-    // Auto-connect to discovered peers if we're the brain
-    guard role == .brain || role == .hybrid else { return }
+    // Auto-connect to discovered peers regardless of role.
+    // Workers need to connect to brains, and brains to workers.
+    // Both sides run a TCP listener, so either can initiate.
     
     // Skip if already connected AND has recent heartbeat
     if connectedWorkers.contains(where: { $0.id == peer.id }) {
