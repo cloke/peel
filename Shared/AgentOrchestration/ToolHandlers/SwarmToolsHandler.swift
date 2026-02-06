@@ -702,6 +702,12 @@ public final class SwarmToolsHandler: MCPToolHandler {
       }
     }
     
+    // Auto-register the app's working directory (common case)
+    if let appWorkingDir = FileManager.default.currentDirectoryPath as String?,
+       FileManager.default.fileExists(atPath: appWorkingDir + "/.git") {
+      await RepoRegistry.shared.registerRepo(at: appWorkingDir)
+    }
+    
     // Stop existing coordinator if running
     if coordinator.isActive {
       coordinator.stop()
@@ -1854,7 +1860,12 @@ public final class SwarmToolsHandler: MCPToolHandler {
     }
     
     let priority = ChainPriority(rawValue: arguments["priority"] as? Int ?? 1) ?? .normal
-    let repoRemoteURL = arguments["repoRemoteURL"] as? String
+    
+    // Auto-discover remote URL from workingDirectory if not explicitly provided
+    var repoRemoteURL = arguments["repoRemoteURL"] as? String
+    if repoRemoteURL == nil {
+      repoRemoteURL = await RepoRegistry.shared.registerRepo(at: workingDirectory)
+    }
     
     let request = ChainRequest(
       templateName: templateName,
