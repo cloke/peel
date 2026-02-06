@@ -808,6 +808,19 @@ public final class SwarmToolsHandler: MCPToolHandler {
       ]))
     }
     
+    // Unregister from all Firestore swarms (stops task listener + heartbeat)
+    let firebaseService = FirebaseService.shared
+    if firebaseService.isSignedIn {
+      for swarm in firebaseService.memberSwarms {
+        do {
+          try await firebaseService.unregisterWorker(swarmId: swarm.id)
+        } catch {
+          // Best effort - log but don't fail the stop
+          print("[SwarmToolsHandler] Failed to unregister from swarm \(swarm.id): \(error)")
+        }
+      }
+    }
+    
     coordinator.stop()
     
     return (200, makeResult(id: id, result: [
@@ -1864,7 +1877,12 @@ public final class SwarmToolsHandler: MCPToolHandler {
     // Auto-discover remote URL from workingDirectory if not explicitly provided
     var repoRemoteURL = arguments["repoRemoteURL"] as? String
     if repoRemoteURL == nil {
-      repoRemoteURL = await RepoRegistry.shared.registerRepo(at: workingDirectory)
+      // First try cache (fast, no subprocess)
+      repoRemoteURL = await RepoRegistry.shared.getCachedRemoteURL(for: workingDirectory)
+      // If not cached, discover via git
+      if repoRemoteURL == nil {
+        repoRemoteURL = await RepoRegistry.shared.registerRepo(at: workingDirectory)
+      }
     }
     
     let request = ChainRequest(
