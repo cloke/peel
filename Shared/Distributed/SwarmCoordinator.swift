@@ -60,15 +60,6 @@ public final class SwarmCoordinator {
   /// Whether the swarm is active
   public private(set) var isActive = false
   
-  /// Whether WAN mode is enabled (advertises public IP for internet connectivity)
-  public private(set) var isWANEnabled = false
-  
-  /// Our detected public IP (when WAN mode is on)
-  public private(set) var wanAddress: String?
-  
-  /// Our WAN port (when WAN mode is on)
-  public private(set) var wanPort: UInt16?
-  
   /// Connected workers (for brain mode)
   public private(set) var connectedWorkers: [ConnectedPeer] = []
   
@@ -252,72 +243,6 @@ public final class SwarmCoordinator {
   /// Get debug info about active worktrees
   public func getWorktreeDebugInfo() -> [String: Any] {
     worktreeManager.getDebugInfo()
-  }
-  
-  // MARK: - WAN Mode
-  
-  /// Configure WAN mode for internet connectivity
-  /// - Parameters:
-  ///   - enabled: Whether to enable WAN mode
-  ///   - address: Explicit WAN address (if nil, auto-detects)
-  ///   - port: WAN port (defaults to swarm port)
-  public func configureWAN(enabled: Bool, address: String? = nil, port: UInt16? = nil) async {
-    isWANEnabled = enabled
-    
-    if enabled {
-      if let explicit = address {
-        wanAddress = explicit
-      } else {
-        // Auto-detect public IP
-        wanAddress = await NetworkUtils.fetchPublicIP()
-      }
-      wanPort = port ?? 8766
-      
-      if wanAddress != nil {
-        logger.info("WAN mode enabled: \(self.wanAddress ?? "unknown"):\(self.wanPort ?? 8766)")
-      } else {
-        logger.warning("WAN mode enabled but could not detect public IP")
-      }
-    } else {
-      wanAddress = nil
-      wanPort = nil
-      logger.info("WAN mode disabled")
-    }
-  }
-  
-  /// Auto-connect to WAN peers from Firestore
-  /// Call this after registering as a worker to connect to other WAN-enabled peers
-  public func autoConnectToWANPeers() async {
-    guard isActive, role == .brain || role == .hybrid else { return }
-    
-    let service = FirebaseService.shared
-    let myDeviceId = capabilities.deviceId
-    
-    // Get workers with WAN endpoints
-    let wanPeers = service.swarmWorkers.filter { worker in
-      worker.hasWANEndpoint &&
-      worker.id != myDeviceId &&
-      !worker.isStale &&
-      worker.status == .online
-    }
-    
-    for peer in wanPeers {
-      guard let address = peer.wanAddress, let port = peer.wanPort else { continue }
-      
-      // Skip if already connected
-      if connectedWorkers.contains(where: { $0.id == peer.id }) {
-        continue
-      }
-      
-      logger.info("Auto-connecting to WAN peer \(peer.displayName) at \(address):\(port)")
-      
-      do {
-        try await connectToWorker(address: address, port: port)
-        logger.info("Connected to WAN peer \(peer.displayName)")
-      } catch {
-        logger.warning("Failed to connect to WAN peer \(peer.displayName): \(error.localizedDescription)")
-      }
-    }
   }
   
   // MARK: - Lifecycle

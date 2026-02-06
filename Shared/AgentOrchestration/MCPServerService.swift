@@ -491,6 +491,7 @@ public final class MCPServerService {
   private let screenshotService = ScreenshotService()
   let translationValidatorService = TranslationValidatorService()
   let piiScrubberService = PIIScrubberService()
+  let doclingService = DoclingService()
   private let vmIsolationService: VMIsolationService
   private var localRagStore = LocalRAGStore()
   private(set) var parallelWorktreeRunner: ParallelWorktreeRunner?
@@ -847,6 +848,10 @@ public final class MCPServerService {
       lastRagRefreshAt = Date()
     }
     await refreshRagArtifactStatus()
+  }
+
+  func indexPolicyRepository(path: String) async throws -> LocalRAGIndexReport {
+    try await localRagStore.indexRepository(path: path)
   }
 
   private func refreshRagArtifactStatus() async {
@@ -2011,6 +2016,12 @@ public final class MCPServerService {
     case "translations.validate":
       return await handleTranslationsValidate(id: id, arguments: arguments)
 
+    case "docling.convert":
+      return await handleDoclingConvert(id: id, arguments: arguments)
+
+    case "docling.setup":
+      return await handleDoclingSetup(id: id, arguments: arguments)
+
     case "pii.scrub":
       return await handlePIIScrub(id: id, arguments: arguments)
 
@@ -2205,6 +2216,72 @@ public final class MCPServerService {
       return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: payload))
     } catch {
       await telemetryProvider.warning("PII scrubber failed", metadata: ["error": error.localizedDescription])
+      return (500, JSONRPCResponseBuilder.makeError(id: id, code: -32001, message: error.localizedDescription))
+    }
+  }
+
+  private func handleDoclingConvert(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    let inputPath = (arguments["inputPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let outputPath = (arguments["outputPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let pythonPath = (arguments["pythonPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let scriptPath = (arguments["scriptPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let profile = (arguments["profile"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let includeText = arguments["includeText"] as? Bool ?? false
+    let maxChars = arguments["maxChars"] as? Int ?? 20000
+
+    guard let inputPath, !inputPath.isEmpty else {
+      return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Missing inputPath"))
+    }
+    guard let outputPath, !outputPath.isEmpty else {
+      return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Missing outputPath"))
+    }
+
+    let options = DoclingService.Options(
+      inputPath: inputPath,
+      outputPath: outputPath,
+      pythonPath: pythonPath,
+      scriptPath: scriptPath,
+      profile: profile
+    )
+
+    do {
+      let result = try await doclingService.runConvert(options: options)
+      var payload: [String: Any] = [
+        "inputPath": result.inputPath,
+        "outputPath": result.outputPath,
+        "bytesWritten": result.bytesWritten,
+        "pythonPath": result.pythonPath,
+        "scriptPath": result.scriptPath
+      ]
+      if let profile, !profile.isEmpty {
+        payload["profile"] = profile
+      }
+      if includeText {
+        let maxLength = max(1, maxChars)
+        if let data = try? Data(contentsOf: URL(fileURLWithPath: result.outputPath)),
+           let text = String(data: data, encoding: .utf8) {
+          payload["text"] = String(text.prefix(maxLength))
+          payload["textTruncated"] = text.count > maxLength
+        }
+      }
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: payload))
+    } catch {
+      await telemetryProvider.warning("Docling conversion failed", metadata: ["error": error.localizedDescription])
+      return (500, JSONRPCResponseBuilder.makeError(id: id, code: -32001, message: error.localizedDescription))
+    }
+  }
+
+  private func handleDoclingSetup(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    let pythonPath = (arguments["pythonPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+    do {
+      let result = try await doclingService.ensureDoclingInstalled(pythonPath: pythonPath)
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
+        "pythonPath": result.pythonPath,
+        "log": result.log
+      ]))
+    } catch {
+      await telemetryProvider.warning("Docling setup failed", metadata: ["error": error.localizedDescription])
       return (500, JSONRPCResponseBuilder.makeError(id: id, code: -32001, message: error.localizedDescription))
     }
   }
@@ -4606,6 +4683,37 @@ public final class MCPServerService {
         category: .diagnostics,
         isMutating: true
       ),
+      ToolDefinition(
+        name: "docling.convert",
+        description: "Convert a document (PDF, etc.) to Markdown using Docling",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "inputPath": ["type": "string"],
+            "outputPath": ["type": "string"],
+            "pythonPath": ["type": "string", "description": "Optional path to python3"],
+            "scriptPath": ["type": "string", "description": "Optional path to Tools/docling-convert.py"],
+            "profile": ["type": "string", "description": "Conversion profile: high or standard"],
+            "includeText": ["type": "boolean", "description": "Include markdown text in response"],
+            "maxChars": ["type": "integer", "description": "Max chars to include if includeText is true"]
+          ],
+          "required": ["inputPath", "outputPath"]
+        ],
+        category: .diagnostics,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "docling.setup",
+        description: "Install Docling into Peel's Application Support venv",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "pythonPath": ["type": "string", "description": "Optional path to python3 for venv creation"]
+          ]
+        ],
+        category: .diagnostics,
+        isMutating: true
+      ),
       // Parallel Worktree Tools
       ToolDefinition(
         name: "parallel.create",
@@ -5368,6 +5476,86 @@ public final class MCPServerService {
             ]
           ],
           "required": ["swarmId", "artifactId"]
+        ],
+        category: .swarm,
+        isMutating: true
+      ),
+      // MARK: - Firebase Emulator Tools
+      ToolDefinition(
+        name: "firebase.emulator.install",
+        description: "Install Firebase emulator dependencies via Homebrew/npm. Installs firebase-tools and Java (Temurin JDK) if missing. Safe to call multiple times — skips already-installed components.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "components": [
+              "type": "array",
+              "items": ["type": "string", "enum": ["firebase-tools", "java"]],
+              "description": "Which components to install. Default: both firebase-tools and java."
+            ]
+          ],
+          "required": []
+        ],
+        category: .swarm,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "firebase.emulator.status",
+        description: "Check Firebase emulator status: whether emulators are configured, running, and reachable. Shows connection details for both Firestore and Auth emulators.",
+        inputSchema: [
+          "type": "object",
+          "properties": [:],
+          "required": []
+        ],
+        category: .swarm,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "firebase.emulator.start",
+        description: "Start the Firebase Emulator Suite locally (Firestore + Auth). Use lan=true to bind to all interfaces so other machines can connect. Use seed=true to import previously exported test data.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "lan": [
+              "type": "boolean",
+              "description": "Bind to 0.0.0.0 for LAN access (default: false = localhost only)"
+            ],
+            "seed": [
+              "type": "boolean",
+              "description": "Import seed data from tmp/firebase-seed/ (default: false)"
+            ]
+          ],
+          "required": []
+        ],
+        category: .swarm,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "firebase.emulator.stop",
+        description: "Stop the Firebase Emulator Suite. Data is auto-exported to tmp/firebase-seed/ on exit.",
+        inputSchema: [
+          "type": "object",
+          "properties": [:],
+          "required": []
+        ],
+        category: .swarm,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "firebase.emulator.configure",
+        description: "Configure the app to use Firebase emulators instead of production. Sets UserDefaults so the app connects to emulators on next launch. Both LAN machines should point to the same emulator host.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "host": [
+              "type": "string",
+              "description": "Emulator host IP or hostname (default: localhost). Use a LAN IP for multi-machine testing."
+            ],
+            "enable": [
+              "type": "boolean",
+              "description": "Enable (true) or disable (false) emulator mode. Default: true"
+            ]
+          ],
+          "required": []
         ],
         category: .swarm,
         isMutating: true

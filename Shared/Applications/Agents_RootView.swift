@@ -17,6 +17,7 @@ enum InfrastructureView: String, Hashable {
   case translationValidation = "translation-validation"
   case localRag = "local-rag"
   case piiScrubber = "pii-scrubber"
+  case doclingImport = "docling-import"
   case parallelWorktrees = "parallel-worktrees"
   case worktrees = "worktrees"
 }
@@ -25,15 +26,15 @@ enum InfrastructureView: String, Hashable {
 struct Agents_RootView: View {
   @Environment(MCPServerService.self) private var mcpServer
   @Environment(\.modelContext) private var modelContext
-  @AppStorage("feature.showPIIScrubber") private var showPIIScrubber = false
-  @AppStorage("feature.showTranslationValidation") private var showTranslationValidation = false
-  @AppStorage("feature.showVMIsolation") private var showVMIsolation = false
   @State private var columnVisibility = NavigationSplitViewVisibility.all
   @State private var showingNewAgentSheet = false
   @State private var showingNewChainSheet = false
   @State private var showingSetupSheet = false
   @State private var showingSessionSummary = false
   @State private var selectedInfrastructure: InfrastructureView?
+  @AppStorage("feature.showPIIScrubber") private var showPIIScrubber = false
+  @AppStorage("feature.showDoclingImport") private var showDoclingImport = false
+  @AppStorage("feature.showTranslationValidation") private var showTranslationValidation = false
 
   private var agentManager: AgentManager { mcpServer.agentManager }
   private var cliService: CLIService { mcpServer.cliService }
@@ -76,18 +77,13 @@ struct Agents_RootView: View {
         showingSessionSummary = true
         mcpServer.recordUIActionHandled(action.controlId)
       case "agents.vmIsolation":
-        if showVMIsolation {
-          selectedInfrastructure = .vmIsolation
-        } else {
-          selectedInfrastructure = nil
-        }
+        selectedInfrastructure = .vmIsolation
         mcpServer.recordUIActionHandled(action.controlId)
       case "agents.translationValidation":
-        if showTranslationValidation {
-          selectedInfrastructure = .translationValidation
-        } else {
-          selectedInfrastructure = nil
-        }
+        selectedInfrastructure = .translationValidation
+        mcpServer.recordUIActionHandled(action.controlId)
+      case "agents.doclingImport":
+        selectedInfrastructure = .doclingImport
         mcpServer.recordUIActionHandled(action.controlId)
       case "agents.templateGallery":
         selectedInfrastructure = .templateGallery
@@ -96,11 +92,7 @@ struct Agents_RootView: View {
         selectedInfrastructure = .localRag
         mcpServer.recordUIActionHandled(action.controlId)
       case "agents.piiScrubber":
-        if showPIIScrubber {
-          selectedInfrastructure = .piiScrubber
-        } else {
-          selectedInfrastructure = nil
-        }
+        selectedInfrastructure = .piiScrubber
         mcpServer.recordUIActionHandled(action.controlId)
       case "agents.parallelWorktrees":
         selectedInfrastructure = .parallelWorktrees
@@ -156,11 +148,7 @@ struct Agents_RootView: View {
     if let infra = selectedInfrastructure {
       switch infra {
       case .vmIsolation:
-        if showVMIsolation {
-          VMIsolationDashboardView()
-        } else {
-          emptyStateView
-        }
+        VMIsolationDashboardView()
       case .mcpDashboard:
         MCPDashboardView(mcpServer: mcpServer, sessionTracker: sessionTracker)
       case .templateGallery:
@@ -176,6 +164,12 @@ struct Agents_RootView: View {
       case .piiScrubber:
         if showPIIScrubber {
           PIIScrubberView()
+        } else {
+          emptyStateView
+        }
+      case .doclingImport:
+        if showDoclingImport {
+          DoclingImportView(mcpServer: mcpServer)
         } else {
           emptyStateView
         }

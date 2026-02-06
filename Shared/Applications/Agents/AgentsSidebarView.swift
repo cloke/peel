@@ -16,8 +16,8 @@ struct AgentsSidebarView: View {
   @Binding var showingNewAgentSheet: Bool
   @Binding var selectedInfrastructure: InfrastructureView?
   @AppStorage("feature.showPIIScrubber") private var showPIIScrubber = false
+  @AppStorage("feature.showDoclingImport") private var showDoclingImport = false
   @AppStorage("feature.showTranslationValidation") private var showTranslationValidation = false
-  @AppStorage("feature.showVMIsolation") private var showVMIsolation = false
   @AppStorage("vm.isolation.section") private var vmIsolationSection = "overview"
   @AppStorage("vm.isolation.sidebar.expanded") private var vmIsolationSidebarExpanded = true
   @State private var parallelWorktreeStatus: ParallelWorktreeSummary = .empty
@@ -148,6 +148,17 @@ struct AgentsSidebarView: View {
           .accessibilityIdentifier("agents.localRag")
           .tag("infra:local-rag")
 
+          if showDoclingImport {
+            HStack {
+              Image(systemName: "doc.text.magnifyingglass")
+                .foregroundStyle(.purple)
+              Text("Docling Import")
+              Spacer()
+            }
+            .accessibilityIdentifier("agents.doclingImport")
+            .tag("infra:docling-import")
+          }
+
           if showPIIScrubber {
             HStack {
               Image(systemName: "shield.lefthalf.filled")
@@ -220,14 +231,12 @@ struct AgentsSidebarView: View {
           }
         }
 
-        if showVMIsolation {
-          Section {
-            DisclosureGroup("VM Isolation", isExpanded: $vmIsolationSidebarExpanded) {
-              vmIsolationRow(title: "Overview", icon: "shield.checkered", section: "overview")
-              vmIsolationRow(title: "Linux", icon: "server.rack", section: "linux")
-              vmIsolationRow(title: "macOS", icon: "desktopcomputer", section: "macos")
-              vmIsolationRow(title: "Pools", icon: "square.grid.2x2", section: "pools")
-            }
+        Section {
+          DisclosureGroup("VM Isolation", isExpanded: $vmIsolationSidebarExpanded) {
+            vmIsolationRow(title: "Overview", icon: "shield.checkered", section: "overview")
+            vmIsolationRow(title: "Linux", icon: "server.rack", section: "linux")
+            vmIsolationRow(title: "macOS", icon: "desktopcomputer", section: "macos")
+            vmIsolationRow(title: "Pools", icon: "square.grid.2x2", section: "pools")
           }
         }
       }
@@ -353,6 +362,7 @@ struct AgentsSidebarView: View {
     case "vm-isolation", "vm-isolation:overview", "vm-isolation:linux", "vm-isolation:macos", "vm-isolation:pools":
       return "agents.vmIsolation"
     case "pii-scrubber": return "agents.piiScrubber"
+    case "docling-import": return "agents.doclingImport"
     default: return nil
     }
   }

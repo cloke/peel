@@ -6,12 +6,10 @@
 //  Simple view showing all git worktrees across repos.
 //
 
-import OSLog
 import SwiftUI
 
 struct WorktreesView: View {
   @Environment(MCPServerService.self) private var mcpServer
-  private let logger = Logger(subsystem: "com.peel.ui", category: "WorktreesView")
   
   @State private var worktrees: [WorktreeItem] = []
   @State private var stats: WorktreeStats?
@@ -39,25 +37,8 @@ struct WorktreesView: View {
       }
     }
     .navigationTitle("Worktrees")
-    .alert("Worktree Error", isPresented: Binding(
-      get: { errorMessage != nil },
-      set: { newValue in
-        if !newValue {
-          errorMessage = nil
-        }
-      }
-    )) {
-      Button("OK", role: .cancel) {
-        errorMessage = nil
-      }
-    } message: {
-      Text(errorMessage ?? "Unknown error")
-    }
     .task {
       await loadWorktrees()
-    }
-    .onAppear {
-      Task { await loadWorktrees() }
     }
     .refreshable {
       await loadWorktrees()
@@ -145,16 +126,12 @@ struct WorktreesView: View {
   // MARK: - Actions
   
   private func loadWorktrees() async {
-    logger.debug("loadWorktrees start (isLoading=\(self.isLoading), currentCount=\(self.worktrees.count))")
     isLoading = true
     errorMessage = nil
     
     do {
       // Get all worktrees directly from the delegate method
-      let start = Date()
       let allWorktrees = try await mcpServer.listAllWorktrees()
-      let elapsed = Date().timeIntervalSince(start)
-      logger.debug("listAllWorktrees returned \(allWorktrees.count) items in \(elapsed, format: .fixed(precision: 2))s")
       
       worktrees = allWorktrees.map { wt in
         WorktreeItem(
@@ -175,20 +152,17 @@ struct WorktreesView: View {
         totalDiskBytes: totalBytes,
         staleCount: staleCount
       )
-      logger.debug("stats total=\(self.stats?.totalCount ?? 0) stale=\(self.stats?.staleCount ?? 0)")
       
     } catch {
       errorMessage = error.localizedDescription
-      logger.error("loadWorktrees failed: \(error.localizedDescription)")
     }
     
     isLoading = false
-    logger.debug("loadWorktrees finished")
   }
   
   private func deleteWorktree(_ worktree: WorktreeItem) async {
     do {
-      try await mcpServer.removeWorktree(path: worktree.path, force: true)
+      try await mcpServer.removeWorktree(path: worktree.path, force: false)
       await loadWorktrees()
     } catch {
       errorMessage = error.localizedDescription

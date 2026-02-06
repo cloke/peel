@@ -33,8 +33,12 @@ struct PeelApp: App {
     // Create DataService with model context and seed default skills
     let container = Self.sharedModelContainer
     let context = ModelContext(container)
-    _dataService = State(initialValue: DataService(modelContext: context))
+    let dataService = DataService(modelContext: context)
+    _dataService = State(initialValue: dataService)
     DefaultSkillsService.seedDefaultSkills(context: context)  // Issue #90
+    Task { @MainActor in
+      dataService.normalizeCommunitySkills()
+    }
     
     // Note: Ember skills update check is performed in ContentView.task (Issue #263)
     
@@ -606,6 +610,41 @@ final class DataService {
 
   // MARK: - Repo Guidance Skills
 
+  private func isCommunitySkillSource(_ source: String) -> Bool {
+    let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    return trimmed.contains("agent-skills")
+  }
+
+  private func normalizeCommunityTags(_ tags: String) -> String {
+    let trimmed = tags.trimmingCharacters(in: .whitespacesAndNewlines)
+    let parsed = RepoTechDetector.parseTags(trimmed)
+    guard !parsed.contains("ember") else { return trimmed }
+    if trimmed.isEmpty {
+      return "ember"
+    }
+    return "\(trimmed),ember"
+  }
+
+  func normalizeCommunitySkills() {
+    let descriptor = FetchDescriptor<RepoGuidanceSkill>()
+    let skills = (try? modelContext.fetch(descriptor)) ?? []
+    var updated = false
+    for skill in skills where isCommunitySkillSource(skill.source) {
+      let normalizedTags = normalizeCommunityTags(skill.tags)
+      if skill.tags != normalizedTags {
+        skill.tags = normalizedTags
+        updated = true
+      }
+      if skill.repoPath != "*" {
+        skill.repoPath = "*"
+        updated = true
+      }
+    }
+    if updated {
+      try? modelContext.save()
+    }
+  }
+
   @discardableResult
   func addRepoGuidanceSkill(
     repoPath: String,
@@ -623,21 +662,24 @@ final class DataService {
     let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
     let trimmedSource = source.trimmingCharacters(in: .whitespacesAndNewlines)
     let trimmedTags = tags.trimmingCharacters(in: .whitespacesAndNewlines)
-    let resolvedRemote = normalizedRepoRemoteURL(repoRemoteURL)
-      ?? RepoRegistry.shared.getCachedRemoteURL(for: trimmedRepo)
-    let resolvedName = repoName?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let isCommunity = isCommunitySkillSource(trimmedSource)
+    let normalizedTags = isCommunity ? normalizeCommunityTags(trimmedTags) : trimmedTags
+    let normalizedRepo = isCommunity ? "*" : trimmedRepo
+    let resolvedRemote = isCommunity ? nil : (normalizedRepoRemoteURL(repoRemoteURL)
+      ?? RepoRegistry.shared.getCachedRemoteURL(for: normalizedRepo))
+    let resolvedName = isCommunity ? nil : repoName?.trimmingCharacters(in: .whitespacesAndNewlines)
     let derivedName = resolvedName?.isEmpty == false
       ? resolvedName
-      : deriveRepoName(repoPath: trimmedRepo, repoRemoteURL: resolvedRemote)
+      : deriveRepoName(repoPath: normalizedRepo, repoRemoteURL: resolvedRemote)
 
     let skill = RepoGuidanceSkill(
-      repoPath: trimmedRepo,
+      repoPath: normalizedRepo,
       repoRemoteURL: resolvedRemote ?? "",
       repoName: derivedName ?? "",
       title: trimmedTitle.isEmpty ? "Skill" : trimmedTitle,
       body: trimmedBody,
       source: trimmedSource.isEmpty ? "manual" : trimmedSource,
-      tags: trimmedTags,
+      tags: normalizedTags,
       priority: priority,
       isActive: isActive,
       appliedCount: 0,

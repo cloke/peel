@@ -79,11 +79,6 @@ struct ChainTemplateGalleryView: View {
       .padding(20)
     }
     .navigationTitle("Template Gallery")
-    .toolbar {
-      ToolbarItem(placement: .automatic) {
-        HelpButton(topic: .chainTemplates)
-      }
-    }
     .confirmDialog(
       "Delete Template",
       isPresented: Binding(

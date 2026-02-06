@@ -175,17 +175,49 @@ public final class FirebaseService {
   
   private init() {}
   
+  // MARK: - Emulator Support
+  
+  /// Whether we're using Firebase emulators (local development)
+  public private(set) var isUsingEmulators = false
+  
+  /// The emulator host (LAN IP or localhost)
+  public private(set) var emulatorHost: String?
+  
+  /// Check if emulator mode is requested via environment or user defaults
+  private var shouldUseEmulators: Bool {
+    // Environment variable takes priority (set in Xcode scheme or launch script)
+    if let envValue = ProcessInfo.processInfo.environment["FIREBASE_EMULATOR_HOST"] {
+      return !envValue.isEmpty
+    }
+    // User defaults (settable from Settings UI)
+    return UserDefaults.standard.bool(forKey: "firebase_use_emulators")
+  }
+  
+  /// Resolve the emulator host address
+  private var resolvedEmulatorHost: String {
+    // Environment variable takes priority
+    if let envHost = ProcessInfo.processInfo.environment["FIREBASE_EMULATOR_HOST"], !envHost.isEmpty {
+      return envHost
+    }
+    // User defaults (e.g., "192.168.1.50" for LAN testing)
+    if let host = UserDefaults.standard.string(forKey: "firebase_emulator_host"), !host.isEmpty {
+      return host
+    }
+    return "localhost"
+  }
+  
   // MARK: - Configuration
   
   /// Configure Firebase. Call this in PeelApp.init()
+  ///
+  /// Set environment variable `FIREBASE_EMULATOR_HOST` to a LAN IP (e.g. "192.168.1.50")
+  /// or "localhost" to use Firebase Emulator Suite instead of production.
+  /// Both machines on the LAN can point at the same emulator host.
   public func configure() {
     guard !isConfigured else {
       logger.warning("Firebase already configured")
       return
     }
-    
-    // Note: App Check removed - not required for swarm invite system
-    // Can be re-enabled if needed for production API protection
     
     FirebaseApp.configure()
     logger.info("Firebase configured successfully")
@@ -194,6 +226,26 @@ public final class FirebaseService {
     // Use memory-only cache to avoid persistence crashes
     let settings = FirestoreSettings()
     settings.cacheSettings = MemoryCacheSettings()
+    
+    // Connect to emulators if requested
+    if shouldUseEmulators {
+      let host = resolvedEmulatorHost
+      emulatorHost = host
+      isUsingEmulators = true
+      
+      // Firestore emulator (default port 8080)
+      settings.host = "\(host):8080"
+      settings.isSSLEnabled = false
+      settings.cacheSettings = MemoryCacheSettings()
+      logger.info("🔧 Firestore emulator: \(host):8080")
+      
+      // Auth emulator (default port 9099)
+      Auth.auth().useEmulator(withHost: host, port: 9099)
+      logger.info("🔧 Auth emulator: \(host):9099")
+      
+      logger.warning("⚠️ Firebase running against LOCAL EMULATORS — not production")
+    }
+    
     Firestore.firestore().settings = settings
     _db = Firestore.firestore()
     
@@ -958,7 +1010,7 @@ public final class FirebaseService {
     let workerId = capabilities.deviceId
     let workerRef = workersCollection(swarmId: swarmId).document(workerId)
     
-    // Build worker data with optional WAN endpoint
+    // Build worker data with optional LAN endpoint
     var workerData: [String: Any] = [
       "ownerId": userId,
       "displayName": capabilities.displayName ?? capabilities.deviceName,
@@ -979,10 +1031,10 @@ public final class FirebaseService {
       "registeredAt": FieldValue.serverTimestamp()
     ]
     
-    // Add WAN endpoint if provided
-    if let wanAddress = capabilities.wanAddress {
-      workerData["wanAddress"] = wanAddress
-      workerData["wanPort"] = Int(capabilities.wanPort ?? 8766)
+    // Add LAN endpoint if provided
+    if let lanAddress = capabilities.lanAddress {
+      workerData["lanAddress"] = lanAddress
+      workerData["lanPort"] = Int(capabilities.lanPort ?? 8766)
     }
     
     try await workerRef.setData(workerData)

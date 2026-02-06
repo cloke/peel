@@ -50,8 +50,21 @@ public struct SwarmStatusView: View {
   private var headerSection: some View {
     HStack {
       VStack(alignment: .leading, spacing: 4) {
-        Text("Distributed Swarm")
-          .font(.headline)
+        HStack(spacing: 6) {
+          Text("Distributed Swarm")
+            .font(.headline)
+          
+          if FirebaseService.shared.isUsingEmulators {
+            Text("EMULATOR")
+              .font(.caption2.bold())
+              .padding(.horizontal, 6)
+              .padding(.vertical, 2)
+              .background(.orange.opacity(0.2))
+              .foregroundStyle(.orange)
+              .clipShape(RoundedRectangle(cornerRadius: 4))
+              .help("Connected to local Firebase emulator at \(FirebaseService.shared.emulatorHost ?? "localhost")")
+          }
+        }
         
         HStack(spacing: 4) {
           Circle()
@@ -424,12 +437,9 @@ struct PeerRow: View {
               .font(.caption2)
               .foregroundStyle(.orange)
           } else if let lastSyncedAt = rag.lastSyncedAt {
-            HStack(spacing: 4) {
-              Text("RAG synced")
-              RelativeTimeText(lastSyncedAt)
-            }
-            .font(.caption2)
-            .foregroundStyle(.secondary)
+            Text("RAG synced \(lastSyncedAt, format: .relative(presentation: .named))")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
           } else {
             Text("RAG artifacts: \(rag.manifestVersion)")
               .font(.caption2)

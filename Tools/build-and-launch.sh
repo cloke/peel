@@ -10,6 +10,8 @@
 #   --wait-for-server     Wait until MCP server is responding before exiting
 #   --skip-build          Skip build, just launch existing app
 #   --allow-while-chains-running  Allow build/launch even if MCP chains are running
+#   --emulator [HOST]     Start Firebase emulators and configure app to use them
+#                         HOST defaults to localhost; use a LAN IP for multi-machine
 #   --help                Show this help message
 #
 
@@ -24,6 +26,8 @@ MCP_PORT=8765
 WAIT_FOR_SERVER=false
 SKIP_BUILD=false
 ALLOW_DURING_CHAINS=false
+EMULATOR_MODE=false
+EMULATOR_HOST=""
 PEELCLI_PATH="${PROJECT_DIR}/Tools/PeelCLI/.build/debug/peel-mcp"
 
 # Parse arguments
@@ -43,6 +47,15 @@ while [[ $# -gt 0 ]]; do
       ;;
     --allow-while-chains-running)
       ALLOW_DURING_CHAINS=true
+      shift
+      ;;
+    --emulator)
+      EMULATOR_MODE=true
+      # Check if next arg is a host (not another flag)
+      if [[ -n "${2:-}" && "${2:-}" != --* ]]; then
+        EMULATOR_HOST="$2"
+        shift
+      fi
       shift
       ;;
     --help|-h)
@@ -177,6 +190,58 @@ echo "📦 App: ${APP_PATH}"
 echo "⚙️  Configuring MCP server (port ${MCP_PORT}, enabled)..."
 defaults write crunchy-bananas.Peel "mcp.server.enabled" -bool true
 defaults write crunchy-bananas.Peel "mcp.server.port" -int "$MCP_PORT"
+
+# Firebase emulator mode
+if [[ "$EMULATOR_MODE" == "true" ]]; then
+  # Resolve host
+  if [[ -z "$EMULATOR_HOST" ]]; then
+    EMULATOR_HOST="localhost"
+  fi
+  
+  echo "🔥 Firebase emulator mode: host=${EMULATOR_HOST}"
+  
+  # Install firebase-tools if needed
+  if ! command -v firebase &>/dev/null; then
+    echo "📦 Installing firebase-tools..."
+    "${PROJECT_DIR}/Tools/firebase-emulator.sh" --install
+  fi
+  
+  # Configure app to use emulators
+  defaults write crunchy-bananas.Peel firebase_use_emulators -bool true
+  defaults write crunchy-bananas.Peel firebase_emulator_host -string "$EMULATOR_HOST"
+  
+  # Start emulators if they're not already running
+  if ! curl -s "http://${EMULATOR_HOST}:4000" &>/dev/null; then
+    echo "🚀 Starting Firebase emulators..."
+    LAN_FLAG=""
+    if [[ "$EMULATOR_HOST" != "localhost" && "$EMULATOR_HOST" != "127.0.0.1" ]]; then
+      LAN_FLAG="--lan"
+    fi
+    # Start in background
+    "${PROJECT_DIR}/Tools/firebase-emulator.sh" $LAN_FLAG &
+    EMULATOR_PID=$!
+    echo "   Emulator PID: ${EMULATOR_PID}"
+    
+    # Wait for emulator to be ready
+    echo "⏳ Waiting for emulators..."
+    for i in $(seq 1 20); do
+      if curl -s "http://${EMULATOR_HOST}:8080" &>/dev/null 2>&1 || \
+         curl -s "http://localhost:8080" &>/dev/null 2>&1; then
+        echo "✅ Firebase emulators ready!"
+        break
+      fi
+      sleep 1
+    done
+  else
+    echo "✅ Firebase emulators already running at ${EMULATOR_HOST}"
+  fi
+  
+  echo "   Firestore emulator UI: http://${EMULATOR_HOST}:4000"
+else
+  # Clear emulator settings if not in emulator mode
+  defaults delete crunchy-bananas.Peel firebase_use_emulators 2>/dev/null || true
+  defaults delete crunchy-bananas.Peel firebase_emulator_host 2>/dev/null || true
+fi
 
 # Launch the app
 echo "🚀 Launching Peel..."
