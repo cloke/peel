@@ -818,6 +818,8 @@ public final class SwarmToolsHandler: MCPToolHandler {
           // Best effort - log but don't fail the stop
           print("[SwarmToolsHandler] Failed to unregister from swarm \(swarm.id): \(error)")
         }
+        // Also stop the worker listener for this swarm
+        firebaseService.stopWorkerListener(swarmId: swarm.id)
       }
     }
     

@@ -11,10 +11,13 @@ import os.log
 public struct SwarmStatusView: View {
   @Environment(MCPServerService.self) private var mcpServer
   @State private var coordinator = SwarmCoordinator.shared
+  @State private var firebaseService = FirebaseService.shared
   @State private var delegateWrapper = SwarmStatusCoordinatorWrapper()
   @State private var errorMessage: String?
   @State private var taskLog: [String] = []
   @State private var displayName: String = ""
+  @State private var messageText: String = ""
+  @State private var isSendingMessage = false
   
   public init() {}
   
@@ -36,6 +39,10 @@ public struct SwarmStatusView: View {
       }
       coordinator.delegate = delegateWrapper
       displayName = WorkerCapabilities.configuredDisplayName() ?? ""
+      // Start Firestore worker listeners so we see WAN workers
+      if coordinator.isActive {
+        startFirestoreWorkerListeners()
+      }
     }
     .frame(minWidth: 400, minHeight: 300)
     #if os(macOS)
@@ -104,7 +111,7 @@ public struct SwarmStatusView: View {
   }
   
   // MARK: - Active Content
-  
+
   @ViewBuilder
   private var activeContent: some View {
     HSplitView {
@@ -112,9 +119,15 @@ public struct SwarmStatusView: View {
       workersSection
         .frame(minWidth: 200)
       
-      // Task log
-      taskLogSection
-        .frame(minWidth: 200)
+      // Task log + messages
+      VStack(spacing: 0) {
+        taskLogSection
+        
+        Divider()
+        
+        messageInputBar
+      }
+      .frame(minWidth: 200)
     }
   }
   
@@ -160,18 +173,49 @@ public struct SwarmStatusView: View {
         .foregroundStyle(.secondary)
         .padding(.horizontal)
       
-      if coordinator.connectedWorkers.isEmpty {
+      if coordinator.connectedWorkers.isEmpty && remoteFirestoreWorkers.isEmpty {
         Text(emptyStateDescription)
           .font(.caption)
           .foregroundStyle(.secondary)
           .padding(.horizontal)
         Spacer()
       } else {
-        List(coordinator.connectedWorkers, id: \.id) { worker in
-          PeerRow(peer: worker, role: coordinator.role, status: coordinator.workerStatuses[worker.id])
+        List {
+          // LAN Peers
+          if !coordinator.connectedWorkers.isEmpty {
+            Section {
+              ForEach(coordinator.connectedWorkers, id: \.id) { worker in
+                PeerRow(peer: worker, role: coordinator.role, status: coordinator.workerStatuses[worker.id])
+              }
+            } header: {
+              Label("LAN", systemImage: "wifi")
+                .font(.caption.bold())
+            }
+          }
+
+          // Firestore/WAN Workers (excluding self and LAN-connected peers)
+          if !remoteFirestoreWorkers.isEmpty {
+            Section {
+              ForEach(remoteFirestoreWorkers) { worker in
+                FirestoreWorkerRow(worker: worker)
+              }
+            } header: {
+              Label("Swarm (\(remoteFirestoreWorkers.count))", systemImage: "globe")
+                .font(.caption.bold())
+            }
+          }
         }
         .listStyle(.plain)
       }
+    }
+  }
+
+  /// Firestore workers excluding self and any already shown as LAN peers
+  private var remoteFirestoreWorkers: [FirestoreWorker] {
+    let localDeviceId = coordinator.capabilities.deviceId
+    let lanPeerIds = Set(coordinator.connectedWorkers.map { $0.id })
+    return firebaseService.swarmWorkers.filter { worker in
+      worker.id != localDeviceId && !lanPeerIds.contains(worker.id) && !worker.isStale
     }
   }
   
@@ -349,9 +393,65 @@ public struct SwarmStatusView: View {
     
     do {
       try coordinator.start(role: role)
+      startFirestoreWorkerListeners()
       log("Swarm started as \(roleDisplayName)")
     } catch {
       errorMessage = error.localizedDescription
+    }
+  }
+
+  private func startFirestoreWorkerListeners() {
+    for swarm in firebaseService.memberSwarms where swarm.role.canRegisterWorkers {
+      firebaseService.startWorkerListener(swarmId: swarm.id)
+      firebaseService.startMessageListener(swarmId: swarm.id)
+    }
+  }
+
+  // MARK: - Message Input
+
+  private var messageInputBar: some View {
+    HStack(spacing: 8) {
+      Image(systemName: "megaphone")
+        .foregroundStyle(.secondary)
+        .font(.caption)
+
+      TextField("Broadcast to swarm...", text: $messageText)
+        .textFieldStyle(.plain)
+        .font(.caption)
+        .onSubmit { sendBroadcast() }
+
+      Button {
+        sendBroadcast()
+      } label: {
+        Image(systemName: "paperplane.fill")
+          .font(.caption)
+      }
+      .buttonStyle(.borderless)
+      .disabled(messageText.trimmingCharacters(in: .whitespaces).isEmpty || isSendingMessage)
+    }
+    .padding(.horizontal, 12)
+    .padding(.vertical, 8)
+    .onChange(of: firebaseService.swarmMessages) { _, messages in
+      // Show new incoming messages in the task log
+      if let latest = messages.last {
+        let prefix = latest.isBroadcast ? "\u{1F4E2}" : "\u{1F4AC}"
+        log("\(prefix) \(latest.senderName): \(latest.text)")
+      }
+    }
+  }
+
+  private func sendBroadcast() {
+    let text = messageText.trimmingCharacters(in: .whitespaces)
+    guard !text.isEmpty else { return }
+    isSendingMessage = true
+    messageText = ""
+
+    Task {
+      for swarm in firebaseService.memberSwarms where swarm.role.canRegisterWorkers {
+        try? await firebaseService.sendMessage(swarmId: swarm.id, text: text)
+      }
+      log("\u{1F4E8} You: \(text)")
+      isSendingMessage = false
     }
   }
   
@@ -504,6 +604,42 @@ final class SwarmStatusCoordinatorWrapper: SwarmCoordinatorDelegate {
   
   func swarmCoordinator(_ coordinator: SwarmCoordinator, shouldExecute request: ChainRequest) -> Bool {
     return true
+  }
+}
+
+// MARK: - Firestore Worker Row
+
+struct FirestoreWorkerRow: View {
+  let worker: FirestoreWorker
+
+  var body: some View {
+    HStack(spacing: 12) {
+      Image(systemName: "globe")
+        .foregroundStyle(.blue)
+
+      VStack(alignment: .leading, spacing: 2) {
+        Text(worker.displayName)
+          .font(.body)
+          .help(worker.deviceName)
+
+        if let version = worker.version {
+          Text("v\(version) • \(worker.lastHeartbeat, format: .relative(presentation: .named))")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        } else {
+          Text(worker.lastHeartbeat, format: .relative(presentation: .named))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+
+      Spacer()
+
+      Circle()
+        .fill(worker.status == .online ? Color.green : Color.orange)
+        .frame(width: 6, height: 6)
+    }
+    .padding(.vertical, 4)
   }
 }
 
