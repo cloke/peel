@@ -294,6 +294,21 @@ struct LocalRAGDashboardView: View {
           Toggle("Select", isOn: $isBatchMode)
             .toggleStyle(.button)
             .controlSize(.small)
+          
+          // Show All/None buttons when in batch mode
+          if isBatchMode {
+            Button("All") {
+              selectedRepoIds = Set(mcpServer.ragRepos.map(\.id))
+            }
+            .buttonStyle(.borderless)
+            .controlSize(.small)
+            
+            Button("None") {
+              selectedRepoIds.removeAll()
+            }
+            .buttonStyle(.borderless)
+            .controlSize(.small)
+          }
         }
         
         Button {
