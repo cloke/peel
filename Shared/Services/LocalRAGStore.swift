@@ -1613,6 +1613,22 @@ actor LocalRAGStore {
       deletedFiles = Int(sqlite3_column_int(countStmt, 0))
     }
 
+    // Delete from vec_chunks first (virtual table - CASCADE doesn't apply)
+    if extensionLoaded {
+      let deleteVecSql = """
+        DELETE FROM vec_chunks WHERE chunk_id IN (
+          SELECT c.id FROM chunks c
+          JOIN files f ON c.file_id = f.id
+          WHERE f.repo_id = ?
+        )
+        """
+      var vecStmt: OpaquePointer?
+      sqlite3_prepare_v2(db, deleteVecSql, -1, &vecStmt, nil)
+      defer { sqlite3_finalize(vecStmt) }
+      sqlite3_bind_text(vecStmt, 1, targetId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+      sqlite3_step(vecStmt)
+    }
+
     // Delete orphaned embeddings (chunks that belong to files of this repo)
     let deleteEmbeddingsSql = """
       DELETE FROM embeddings WHERE chunk_id IN (
@@ -3284,9 +3300,25 @@ actor LocalRAGStore {
     let batchSize = 500
     var synced = 0
     
+    // Also clean orphaned vec_chunks rows (chunks deleted but vec_chunks not cleaned up)
+    let cleanupSql = """
+      DELETE FROM vec_chunks WHERE chunk_id NOT IN (SELECT chunk_id FROM embeddings)
+      """
+    var cleanStmt: OpaquePointer?
+    if sqlite3_prepare_v2(db, cleanupSql, -1, &cleanStmt, nil) == SQLITE_OK {
+      sqlite3_step(cleanStmt)
+      let cleaned = Int(sqlite3_changes(db))
+      if cleaned > 0 {
+        print("[RAG] Cleaned \(cleaned) orphaned vec_chunks rows")
+      }
+    }
+    sqlite3_finalize(cleanStmt)
+
     while synced < missingCount {
+      // vec0 virtual tables do NOT support INSERT OR REPLACE — use plain INSERT
+      // The WHERE NOT EXISTS clause ensures we only insert truly missing rows
       let sql = """
-        INSERT OR REPLACE INTO vec_chunks (chunk_id, embedding)
+        INSERT INTO vec_chunks (chunk_id, embedding)
         SELECT e.chunk_id, e.embedding
         FROM embeddings e
         WHERE NOT EXISTS (SELECT 1 FROM vec_chunks v WHERE v.chunk_id = e.chunk_id)
@@ -4090,6 +4122,13 @@ actor LocalRAGStore {
   }
 
   private func deleteChunks(for fileId: String) throws {
+    // Delete from vec_chunks first (virtual table - CASCADE doesn't apply)
+    if extensionLoaded {
+      let vecSql = "DELETE FROM vec_chunks WHERE chunk_id IN (SELECT id FROM chunks WHERE file_id = ?)"
+      try execute(sql: vecSql) { statement in
+        bindText(statement, 1, fileId)
+      }
+    }
     let sql = "DELETE FROM chunks WHERE file_id = ?"
     try execute(sql: sql) { statement in
       bindText(statement, 1, fileId)
@@ -4139,9 +4178,14 @@ actor LocalRAGStore {
     }
 
     // Also sync to vec_chunks for accelerated search if extension is loaded
+    // vec0 virtual tables do NOT support INSERT OR REPLACE — must DELETE first
     if extensionLoaded {
+      let deleteSql = "DELETE FROM vec_chunks WHERE chunk_id = ?"
+      try execute(sql: deleteSql) { statement in
+        bindText(statement, 1, chunkId)
+      }
       let vecSql = """
-      INSERT OR REPLACE INTO vec_chunks (chunk_id, embedding)
+      INSERT INTO vec_chunks (chunk_id, embedding)
       VALUES (?, ?)
       """
       try execute(sql: vecSql) { statement in
