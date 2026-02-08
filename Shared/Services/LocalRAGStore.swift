@@ -1988,7 +1988,7 @@ actor LocalRAGStore {
     return report
   }
 
-  func search(query: String, repoPath: String? = nil, limit: Int = 10, matchAll: Bool = true) async throws -> [LocalRAGSearchResult] {
+  func search(query: String, repoPath: String? = nil, limit: Int = 10, matchAll: Bool = true, modulePath: String? = nil) async throws -> [LocalRAGSearchResult] {
     let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmedQuery.isEmpty else { return [] }
     try openIfNeeded()
@@ -2008,7 +2008,7 @@ actor LocalRAGStore {
     
     let joinOperator = matchAll ? " AND " : " OR "
 
-    let sqlBase = """
+    var sqlBase = """
     SELECT repos.root_path || '/' || files.path, chunks.start_line, chunks.end_line, chunks.text,
            chunks.construct_type, chunks.construct_name, files.language, files.module_path, files.feature_tags,
            chunks.ai_summary, chunks.ai_tags
@@ -2017,6 +2017,11 @@ actor LocalRAGStore {
     JOIN repos ON repos.id = files.repo_id
     WHERE (\(whereClauses.joined(separator: joinOperator)))
     """
+
+    // Push modulePath filter into SQL for accurate results (not post-query)
+    if modulePath != nil {
+      sqlBase += " AND LOWER(files.module_path) LIKE ?"
+    }
 
     let sql: String
     if repoPath != nil {
@@ -2032,6 +2037,10 @@ actor LocalRAGStore {
         bindText(statement, bindIndex, pattern)      // text LIKE
         bindText(statement, bindIndex + 1, pattern)  // construct_name LIKE
         bindIndex += 2
+      }
+      if let modulePath {
+        bindText(statement, bindIndex, "%\(modulePath.lowercased())%")
+        bindIndex += 1
       }
       if let repoPath {
         bindText(statement, bindIndex, repoPath)
@@ -2954,7 +2963,7 @@ actor LocalRAGStore {
     }
   }
 
-  func searchVector(query: String, repoPath: String? = nil, limit: Int = 10) async throws -> [LocalRAGSearchResult] {
+  func searchVector(query: String, repoPath: String? = nil, limit: Int = 10, modulePath: String? = nil) async throws -> [LocalRAGSearchResult] {
     let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmedQuery.isEmpty else { return [] }
     try openIfNeeded()
@@ -2966,15 +2975,15 @@ actor LocalRAGStore {
 
     // Use accelerated search if sqlite-vec is loaded
     if extensionLoaded {
-      return try searchVectorAccelerated(queryVector: queryVector, repoPath: repoPath, limit: limit)
+      return try searchVectorAccelerated(queryVector: queryVector, repoPath: repoPath, limit: limit, modulePath: modulePath)
     }
     
     // Fallback to brute-force search
-    return try searchVectorBruteForce(queryVector: queryVector, repoPath: repoPath, limit: limit)
+    return try searchVectorBruteForce(queryVector: queryVector, repoPath: repoPath, limit: limit, modulePath: modulePath)
   }
   
   /// Accelerated vector search using sqlite-vec extension
-  private func searchVectorAccelerated(queryVector: [Float], repoPath: String?, limit: Int) throws -> [LocalRAGSearchResult] {
+  private func searchVectorAccelerated(queryVector: [Float], repoPath: String?, limit: Int, modulePath: String? = nil) throws -> [LocalRAGSearchResult] {
     guard let db else { throw LocalRAGError.sqlite("Database not open") }
     
     // Encode query vector as blob
@@ -3002,8 +3011,15 @@ actor LocalRAGStore {
       JOIN repos ON repos.id = files.repo_id
       """
     
+    var whereClauses: [String] = []
     if repoPath != nil {
-      sql += " WHERE repos.root_path = ?"
+      whereClauses.append("repos.root_path = ?")
+    }
+    if modulePath != nil {
+      whereClauses.append("LOWER(files.module_path) LIKE ?")
+    }
+    if !whereClauses.isEmpty {
+      sql += " WHERE " + whereClauses.joined(separator: " AND ")
     }
     
     sql += " ORDER BY distance ASC LIMIT ?"
@@ -3025,6 +3041,12 @@ actor LocalRAGStore {
     // Bind repo path filter if provided
     if let repoPath {
       bindText(stmt, bindIndex, repoPath)
+      bindIndex += 1
+    }
+    
+    // Bind module path filter if provided
+    if let modulePath {
+      bindText(stmt, bindIndex, "%\(modulePath.lowercased())%")
       bindIndex += 1
     }
     
@@ -3088,9 +3110,9 @@ actor LocalRAGStore {
   }
   
   /// Brute-force vector search (fallback when extension not available)
-  private func searchVectorBruteForce(queryVector: [Float], repoPath: String?, limit: Int) throws -> [LocalRAGSearchResult] {
+  private func searchVectorBruteForce(queryVector: [Float], repoPath: String?, limit: Int, modulePath: String? = nil) throws -> [LocalRAGSearchResult] {
     let candidateLimit = max(limit * 50, 200)
-    let sqlBase = """
+    var sqlBase = """
     SELECT repos.root_path || '/' || files.path, chunks.start_line, chunks.end_line, chunks.text, embeddings.embedding,
            chunks.construct_type, chunks.construct_name, files.language, files.module_path, files.feature_tags,
            chunks.ai_summary, chunks.ai_tags
@@ -3101,17 +3123,22 @@ actor LocalRAGStore {
     WHERE embeddings.embedding IS NOT NULL
     """
 
-    let sql: String
     if repoPath != nil {
-      sql = sqlBase + " AND repos.root_path = ? LIMIT ?"
-    } else {
-      sql = sqlBase + " LIMIT ?"
+      sqlBase += " AND repos.root_path = ?"
     }
+    if modulePath != nil {
+      sqlBase += " AND LOWER(files.module_path) LIKE ?"
+    }
+    let sql = sqlBase + " LIMIT ?"
 
     let rows = try queryEmbeddingRows(sql: sql) { statement in
       var bindIndex: Int32 = 1
       if let repoPath {
         bindText(statement, bindIndex, repoPath)
+        bindIndex += 1
+      }
+      if let modulePath {
+        bindText(statement, bindIndex, "%\(modulePath.lowercased())%")
         bindIndex += 1
       }
       sqlite3_bind_int(statement, bindIndex, Int32(candidateLimit))
