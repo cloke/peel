@@ -1338,14 +1338,15 @@ public final class MCPServerService {
     repoPath: String?,
     limit: Int,
     matchAll: Bool,
-    recordHints: Bool
+    recordHints: Bool,
+    modulePath: String? = nil
   ) async throws -> [LocalRAGSearchResult] {
     let results: [LocalRAGSearchResult]
     switch mode {
     case .vector:
-      results = try await localRagStore.searchVector(query: query, repoPath: repoPath, limit: limit)
+      results = try await localRagStore.searchVector(query: query, repoPath: repoPath, limit: limit, modulePath: modulePath)
     case .text:
-      results = try await localRagStore.search(query: query, repoPath: repoPath, limit: limit, matchAll: matchAll)
+      results = try await localRagStore.search(query: query, repoPath: repoPath, limit: limit, matchAll: matchAll, modulePath: modulePath)
     }
     if recordHints, !results.isEmpty {
       do {
@@ -6136,7 +6137,7 @@ extension MCPServerService: RAGToolsHandlerDelegate {
   
   // MARK: - LocalRAGStore Access
   
-  func searchRagForTool(query: String, mode: RAGSearchMode, repoPath: String?, limit: Int, matchAll: Bool) async throws -> [RAGToolSearchResult] {
+  func searchRagForTool(query: String, mode: RAGSearchMode, repoPath: String?, limit: Int, matchAll: Bool, modulePath: String? = nil) async throws -> [RAGToolSearchResult] {
     let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
     let results = try await runRagSearch(
       query: trimmedQuery,
@@ -6144,7 +6145,8 @@ extension MCPServerService: RAGToolsHandlerDelegate {
       repoPath: repoPath,
       limit: limit,
       matchAll: matchAll,
-      recordHints: true
+      recordHints: true,
+      modulePath: modulePath
     )
     return results.map { result in
       RAGToolSearchResult(

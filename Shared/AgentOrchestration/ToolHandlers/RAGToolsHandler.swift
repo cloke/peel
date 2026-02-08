@@ -17,7 +17,7 @@ protocol RAGToolsHandlerDelegate: MCPToolHandlerDelegate {
   // MARK: - LocalRAGStore Access
   
   /// Search the RAG index
-  func searchRagForTool(query: String, mode: MCPServerService.RAGSearchMode, repoPath: String?, limit: Int, matchAll: Bool) async throws -> [RAGToolSearchResult]
+  func searchRagForTool(query: String, mode: MCPServerService.RAGSearchMode, repoPath: String?, limit: Int, matchAll: Bool, modulePath: String?) async throws -> [RAGToolSearchResult]
   
   /// Get RAG database status
   func ragStatus() async -> RAGToolStatus
@@ -463,17 +463,14 @@ final class RAGToolsHandler: MCPToolHandler {
       let resolvedMode: MCPServerService.RAGSearchMode = mode.lowercased() == "vector" ? .vector : .text
       // Fetch more results initially if reranking is enabled
       let fetchLimit = shouldRerank ? max(limit * 3, 30) : limit * 2
-      var results = try await delegate.searchRagForTool(query: query, mode: resolvedMode, repoPath: repoPath, limit: fetchLimit, matchAll: matchAll)
+      var results = try await delegate.searchRagForTool(query: query, mode: resolvedMode, repoPath: repoPath, limit: fetchLimit, matchAll: matchAll, modulePath: modulePathFilter)
       
-      // Apply filters
+      // Apply post-query filters (modulePath is now pushed into SQL)
       if excludeTests {
         results = results.filter { !$0.isTest }
       }
       if let typeFilter = constructTypeFilter?.lowercased(), !typeFilter.isEmpty {
         results = results.filter { ($0.constructType?.lowercased() ?? "") == typeFilter }
-      }
-      if let moduleFilter = modulePathFilter, !moduleFilter.isEmpty {
-        results = results.filter { ($0.modulePath ?? "").lowercased().contains(moduleFilter.lowercased()) }
       }
       if let tagFilter = featureTagFilter?.lowercased(), !tagFilter.isEmpty {
         results = results.filter { $0.featureTags.contains { $0.lowercased() == tagFilter } }
