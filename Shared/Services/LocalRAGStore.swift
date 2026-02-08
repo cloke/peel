@@ -552,18 +552,36 @@ struct HybridChunker {
       }
     }
     
-    // Development: check build directory
-    let devPaths = [
-      "~/code/KitchenSink/Local Packages/ASTChunker/.build/release/ast-chunker-cli",
-      "~/code/KitchenSink/Local Packages/ASTChunker/.build/debug/ast-chunker-cli",
-    ]
-    for path in devPaths {
-      let expanded = (path as NSString).expandingTildeInPath
-      if FileManager.default.fileExists(atPath: expanded) {
-        return expanded
+    // Development: resolve relative to this source file's location.
+    // #filePath gives the compile-time path of this .swift file,
+    // so we walk up to the repo root regardless of folder name.
+    let repoRoot = findRepoRootFromSourceFile()
+    if let root = repoRoot {
+      for config in ["release", "debug"] {
+        let cliPath = "\(root)/Local Packages/ASTChunker/.build/\(config)/ast-chunker-cli"
+        if FileManager.default.fileExists(atPath: cliPath) {
+          return cliPath
+        }
       }
     }
     
+    return nil
+  }
+  
+  /// Find the repo root from #filePath (compile-time source location)
+  /// This file lives at: <repo>/Shared/Services/LocalRAGStore.swift
+  /// So we walk up 3 directory levels to get the repo root.
+  private static func findRepoRootFromSourceFile() -> String? {
+    var url = URL(fileURLWithPath: #filePath)
+    // Walk up: LocalRAGStore.swift -> Services/ -> Shared/ -> <repo root>
+    for _ in 0..<3 {
+      url = url.deletingLastPathComponent()
+    }
+    let root = url.path
+    // Verify it looks like the repo root
+    if FileManager.default.fileExists(atPath: (root as NSString).appendingPathComponent("Local Packages")) {
+      return root
+    }
     return nil
   }
   

@@ -2439,7 +2439,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
     let candidates = [
       FileManager.default.currentDirectoryPath,
       ProcessInfo.processInfo.environment["PROJECT_DIR"] ?? "",
-      (NSHomeDirectory() as NSString).appendingPathComponent("code/KitchenSink")
+      Self.findRepoRootFromBuildLocation() ?? ""
     ]
     for candidate in candidates {
       if FileManager.default.fileExists(atPath: candidate + "/Tools/firebase-emulator.sh") {
@@ -2455,5 +2455,20 @@ public final class SwarmToolsHandler: MCPToolHandler {
       }
     }
     return FileManager.default.currentDirectoryPath
+  }
+  
+  /// Find the repo root from #filePath (compile-time source location)
+  /// This file lives at: <repo>/Shared/AgentOrchestration/ToolHandlers/SwarmToolsHandler.swift
+  private static func findRepoRootFromBuildLocation() -> String? {
+    var url = URL(fileURLWithPath: #filePath)
+    // Walk up: SwarmToolsHandler.swift -> ToolHandlers/ -> AgentOrchestration/ -> Shared/ -> <repo root>
+    for _ in 0..<4 {
+      url = url.deletingLastPathComponent()
+    }
+    let root = url.path
+    if FileManager.default.fileExists(atPath: (root as NSString).appendingPathComponent("Tools")) {
+      return root
+    }
+    return nil
   }
 }

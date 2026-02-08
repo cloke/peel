@@ -325,8 +325,8 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
         for codeDir in ["code", "Code", "Developer", "Projects", "dev"] {
           let potentialPath = "\(homeDir)/\(codeDir)"
           if FileManager.default.fileExists(atPath: potentialPath) {
-            // Look for Peel/KitchenSink repo
-            for repoName in ["KitchenSink", "kitchen-sink", "Peel", "peel"] {
+            // Look for Peel repo (any historical name)
+            for repoName in ["peel", "Peel", "KitchenSink", "kitchen-sink"] {
               let testPath = "\(potentialPath)/\(repoName)"
               if FileManager.default.fileExists(atPath: "\(testPath)/.git") {
                 repoPath = testPath

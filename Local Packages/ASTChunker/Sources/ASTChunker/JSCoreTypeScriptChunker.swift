@@ -100,18 +100,34 @@ public final class JSCoreTypeScriptChunker: @unchecked Sendable {
       }
     }
     
-    // Development: check Tools directory
-    let devPaths = [
-      "~/code/KitchenSink/Tools/ast-chunker-js/dist/ast-chunker.bundle.js",
-    ]
-    
-    for path in devPaths {
-      let expanded = (path as NSString).expandingTildeInPath
-      if FileManager.default.fileExists(atPath: expanded) {
-        return URL(fileURLWithPath: expanded)
+    // Development: resolve relative to this source file's location
+    // #filePath gives the compile-time path of this .swift file,
+    // so we walk up to the repo root regardless of folder name.
+    let repoRoot = Self.findRepoRoot()
+    if let root = repoRoot {
+      let bundlePath = (root as NSString).appendingPathComponent("Tools/ast-chunker-js/dist/ast-chunker.bundle.js")
+      if FileManager.default.fileExists(atPath: bundlePath) {
+        return URL(fileURLWithPath: bundlePath)
       }
     }
     
+    return nil
+  }
+  
+  /// Find the repo root from #filePath (compile-time source location)
+  /// This file lives at: <repo>/Local Packages/ASTChunker/Sources/ASTChunker/JSCoreTypeScriptChunker.swift
+  /// So we walk up 5 directory levels to get the repo root.
+  private static func findRepoRoot() -> String? {
+    var url = URL(fileURLWithPath: #filePath)
+    // Walk up: ASTChunker/ -> Sources/ -> ASTChunker/ -> Local Packages/ -> <repo root>
+    for _ in 0..<5 {
+      url = url.deletingLastPathComponent()
+    }
+    let root = url.path
+    // Verify it looks like the repo root (has Tools/ directory)
+    if FileManager.default.fileExists(atPath: (root as NSString).appendingPathComponent("Tools")) {
+      return root
+    }
     return nil
   }
   
