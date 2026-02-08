@@ -170,8 +170,8 @@ public final class SwarmCoordinator {
       for codeDir in ["code", "Code", "Developer", "Projects", "dev", "src", "repos", "git"] {
         let potentialPath = "\(homeDir)/\(codeDir)"
         if FileManager.default.fileExists(atPath: potentialPath) {
-          // Look for Peel/KitchenSink repo
-          for repoName in ["KitchenSink", "kitchen-sync", "kitchen-sink", "Peel", "peel"] {
+          // Look for Peel repo (any historical name)
+          for repoName in ["peel", "Peel", "KitchenSink", "kitchen-sync", "kitchen-sink"] {
             let testPath = "\(potentialPath)/\(repoName)"
             if FileManager.default.fileExists(atPath: "\(testPath)/.git") {
               return testPath

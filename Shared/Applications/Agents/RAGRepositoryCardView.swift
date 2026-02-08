@@ -1325,8 +1325,8 @@ struct RAGRepoSkillsSheet: View {
   RAGRepositoryCardView(
     repo: MCPServerService.RAGRepoInfo(
       id: "1",
-      name: "KitchenSink",
-      rootPath: "/Users/dev/code/KitchenSink",
+      name: "Peel",
+      rootPath: "/Users/dev/code/peel",
       lastIndexedAt: Date().addingTimeInterval(-3600),
       fileCount: 340,
       chunkCount: 3029
