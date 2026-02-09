@@ -1554,6 +1554,7 @@ actor LocalRAGStore {
     let lastIndexedAt: Date?
     let fileCount: Int
     let chunkCount: Int
+    let repoIdentifier: String?
   }
 
   func listRepos() throws -> [RepoInfo] {
@@ -1563,7 +1564,8 @@ actor LocalRAGStore {
     let sql = """
       SELECT r.id, r.name, r.root_path, r.last_indexed_at,
              (SELECT COUNT(*) FROM files WHERE repo_id = r.id) as file_count,
-             (SELECT COUNT(*) FROM chunks c JOIN files f ON c.file_id = f.id WHERE f.repo_id = r.id) as chunk_count
+             (SELECT COUNT(*) FROM chunks c JOIN files f ON c.file_id = f.id WHERE f.repo_id = r.id) as chunk_count,
+             r.repo_identifier
       FROM repos r
       ORDER BY r.name
       """
@@ -1589,6 +1591,7 @@ actor LocalRAGStore {
       let lastIndexedAt = lastIndexedAtStr.flatMap { dateFormatter.date(from: $0) }
       let fileCount = Int(sqlite3_column_int(statement, 4))
       let chunkCount = Int(sqlite3_column_int(statement, 5))
+      let repoIdentifier = sqlite3_column_text(statement, 6).map { String(cString: $0) }
 
       repos.append(RepoInfo(
         id: id,
@@ -1596,7 +1599,8 @@ actor LocalRAGStore {
         rootPath: rootPath,
         lastIndexedAt: lastIndexedAt,
         fileCount: fileCount,
-        chunkCount: chunkCount
+        chunkCount: chunkCount,
+        repoIdentifier: repoIdentifier
       ))
     }
     return repos
@@ -1725,7 +1729,10 @@ actor LocalRAGStore {
     let repoName = repoURL.lastPathComponent
     let now = dateFormatter.string(from: Date())
 
-    try upsertRepo(id: repoId, name: repoName, rootPath: path, lastIndexedAt: now)
+    // Discover the normalized git remote URL for portable cross-machine identification (#278)
+    let repoIdentifier = Self.discoverNormalizedRemoteURL(for: path)
+
+    try upsertRepo(id: repoId, name: repoName, rootPath: path, lastIndexedAt: now, repoIdentifier: repoIdentifier)
 
     var chunkCount = 0
     var bytesScanned = 0
@@ -3622,7 +3629,24 @@ actor LocalRAGStore {
       try exec("UPDATE rag_meta SET value = '10' WHERE key = 'schema_version'")
     }
     
-    schemaVersion = 10
+    // Migration to v11: Add repo_identifier for portable cross-machine sync (#278)
+    // Stores the normalized git remote URL (e.g., "github.com/org/repo") so SQLite DBs can
+    // be synced between machines and root_path remapped via RepoRegistry.
+    if currentVersion < 11 {
+      if try !columnExists(table: "repos", column: "repo_identifier") {
+        try exec("ALTER TABLE repos ADD COLUMN repo_identifier TEXT")
+      }
+      
+      // Index for looking up repos by portable identifier during sync remap
+      try exec("CREATE INDEX IF NOT EXISTS idx_repos_identifier ON repos(repo_identifier)")
+      
+      // Backfill existing repos: discover remote URL from their root_path
+      try backfillRepoIdentifiersSync()
+      
+      try exec("UPDATE rag_meta SET value = '11' WHERE key = 'schema_version'")
+    }
+    
+    schemaVersion = 11
     
     // Set up vec_chunks virtual table if extension is loaded
     if extensionLoaded {
@@ -3985,22 +4009,28 @@ actor LocalRAGStore {
     return results
   }
 
-  private func upsertRepo(id: String, name: String, rootPath: String, lastIndexedAt: String) throws {
+  private func upsertRepo(id: String, name: String, rootPath: String, lastIndexedAt: String, repoIdentifier: String? = nil) throws {
     // Use INSERT ... ON CONFLICT ... DO UPDATE to avoid triggering CASCADE DELETE
     // INSERT OR REPLACE would delete the repo row and cascade delete all files!
     let sql = """
-    INSERT INTO repos (id, name, root_path, last_indexed_at)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO repos (id, name, root_path, last_indexed_at, repo_identifier)
+    VALUES (?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       root_path = excluded.root_path,
-      last_indexed_at = excluded.last_indexed_at
+      last_indexed_at = excluded.last_indexed_at,
+      repo_identifier = COALESCE(excluded.repo_identifier, repos.repo_identifier)
     """
     try execute(sql: sql) { statement in
       bindText(statement, 1, id)
       bindText(statement, 2, name)
       bindText(statement, 3, rootPath)
       bindText(statement, 4, lastIndexedAt)
+      if let repoIdentifier {
+        bindText(statement, 5, repoIdentifier)
+      } else {
+        sqlite3_bind_null(statement, 5)
+      }
     }
   }
 
@@ -4419,6 +4449,189 @@ actor LocalRAGStore {
   private func stableId(for value: String) -> String {
     let digest = SHA256.hash(data: Data(value.utf8))
     return digest.map { String(format: "%02x", $0) }.joined()
+  }
+  
+  // MARK: - Portable Repo Identifier (#278)
+  
+  /// Normalize a git remote URL to a canonical form for cross-machine comparison.
+  /// Handles SSH, HTTPS, and git:// formats.
+  /// Example: "git@github.com:org/repo.git" → "github.com/org/repo"
+  static func normalizeGitRemoteURL(_ url: String) -> String {
+    var normalized = url.trimmingCharacters(in: .whitespacesAndNewlines)
+    
+    // Remove trailing .git
+    if normalized.hasSuffix(".git") {
+      normalized = String(normalized.dropLast(4))
+    }
+    
+    // Convert SSH format: git@github.com:user/repo -> github.com/user/repo
+    if normalized.hasPrefix("git@") {
+      normalized = normalized
+        .replacingOccurrences(of: "git@", with: "")
+        .replacingOccurrences(of: ":", with: "/")
+    }
+    
+    // Remove protocol prefixes
+    for prefix in ["https://", "http://", "git://", "ssh://"] {
+      if normalized.hasPrefix(prefix) {
+        normalized = String(normalized.dropFirst(prefix.count))
+        break
+      }
+    }
+    
+    // Remove www. prefix
+    if normalized.hasPrefix("www.") {
+      normalized = String(normalized.dropFirst(4))
+    }
+    
+    // Remove authentication info (user@host/...)
+    if let atIndex = normalized.firstIndex(of: "@"),
+       let slashIndex = normalized.firstIndex(of: "/"),
+       atIndex < slashIndex {
+      normalized = String(normalized[normalized.index(after: atIndex)...])
+    }
+    
+    return normalized.lowercased()
+  }
+  
+  /// Synchronously discover the git remote URL for a repo path.
+  /// Used during schema migrations where async isn't available.
+  static func discoverNormalizedRemoteURL(for path: String) -> String? {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+    process.arguments = ["remote", "get-url", "origin"]
+    process.currentDirectoryURL = URL(fileURLWithPath: path)
+    
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = FileHandle.nullDevice
+    
+    do {
+      try process.run()
+      process.waitUntilExit()
+      
+      guard process.terminationStatus == 0 else { return nil }
+      
+      let data = pipe.fileHandleForReading.readDataToEndOfFile()
+      guard let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !output.isEmpty else { return nil }
+      
+      return normalizeGitRemoteURL(output)
+    } catch {
+      return nil
+    }
+  }
+  
+  /// Backfill repo_identifier for existing repos during v11 migration (synchronous).
+  /// Runs git remote get-url for each repo that doesn't have a repo_identifier yet.
+  private func backfillRepoIdentifiersSync() throws {
+    guard let db else { return }
+    
+    let sql = "SELECT id, root_path FROM repos WHERE repo_identifier IS NULL"
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let statement else { return }
+    defer { sqlite3_finalize(statement) }
+    
+    var updates: [(id: String, identifier: String)] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+      let repoId = String(cString: sqlite3_column_text(statement, 0))
+      let rootPath = String(cString: sqlite3_column_text(statement, 1))
+      
+      if let identifier = Self.discoverNormalizedRemoteURL(for: rootPath) {
+        updates.append((id: repoId, identifier: identifier))
+      }
+    }
+    
+    // Apply updates in separate statements (the SELECT statement is finalized by defer)
+    for update in updates {
+      try execute(sql: "UPDATE repos SET repo_identifier = ? WHERE id = ?") { stmt in
+        bindText(stmt, 1, update.identifier)
+        bindText(stmt, 2, update.id)
+      }
+    }
+  }
+  
+  /// Remap repo root_paths after receiving a synced SQLite database from another machine.
+  /// For each repo with a repo_identifier, looks up the local path via RepoRegistry
+  /// and updates root_path so all queries work on this machine.
+  /// - Returns: Number of repos successfully remapped
+  @discardableResult
+  func remapRepoPaths() async throws -> Int {
+    try openIfNeeded()
+    
+    guard let db else {
+      throw LocalRAGError.sqlite("Database not initialized")
+    }
+    
+    // Find all repos with a repo_identifier
+    let sql = "SELECT id, root_path, repo_identifier FROM repos WHERE repo_identifier IS NOT NULL"
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let statement else {
+      let message = String(cString: sqlite3_errmsg(db))
+      throw LocalRAGError.sqlite(message)
+    }
+    defer { sqlite3_finalize(statement) }
+    
+    var remaps: [(id: String, newPath: String)] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+      let repoId = String(cString: sqlite3_column_text(statement, 0))
+      let currentPath = String(cString: sqlite3_column_text(statement, 1))
+      let identifier = String(cString: sqlite3_column_text(statement, 2))
+      
+      // Skip if current path already exists on this machine
+      if FileManager.default.fileExists(atPath: currentPath) { continue }
+      
+      // Try to resolve via RepoRegistry (which maps remote URLs to local paths)
+      if let localPath = await RepoRegistry.shared.getLocalPath(for: identifier) {
+        if FileManager.default.fileExists(atPath: localPath) {
+          remaps.append((id: repoId, newPath: localPath))
+          continue
+        }
+      }
+      
+      // Try to register by discovering from common paths (~/code, ~/projects, etc.)
+      // This handles cases where RepoRegistry hasn't been populated yet
+      if let localPath = await RepoRegistry.shared.getLocalPath(for: identifier),
+         FileManager.default.fileExists(atPath: localPath) {
+        remaps.append((id: repoId, newPath: localPath))
+      }
+    }
+    
+    // Apply remaps
+    for remap in remaps {
+      // Update root_path AND re-hash the repo ID since stableId is based on path
+      let newId = stableId(for: remap.newPath)
+      try execute(sql: "UPDATE repos SET root_path = ?, id = ? WHERE id = ?") { stmt in
+        bindText(stmt, 1, remap.newPath)
+        bindText(stmt, 2, newId)
+        bindText(stmt, 3, remap.id)
+      }
+      // Also update all foreign keys pointing to the old repo ID
+      try execute(sql: "UPDATE files SET repo_id = ? WHERE repo_id = ?") { stmt in
+        bindText(stmt, 1, newId)
+        bindText(stmt, 2, remap.id)
+      }
+      try execute(sql: "UPDATE symbols SET repo_id = ? WHERE repo_id = ?") { stmt in
+        bindText(stmt, 1, newId)
+        bindText(stmt, 2, remap.id)
+      }
+      try execute(sql: "UPDATE dependencies SET repo_id = ? WHERE repo_id = ?") { stmt in
+        bindText(stmt, 1, newId)
+        bindText(stmt, 2, remap.id)
+      }
+      try execute(sql: "UPDATE lessons SET repo_id = ? WHERE repo_id = ?") { stmt in
+        bindText(stmt, 1, newId)
+        bindText(stmt, 2, remap.id)
+      }
+      try execute(sql: "UPDATE symbol_refs SET repo_id = ? WHERE repo_id = ?") { stmt in
+        bindText(stmt, 1, newId)
+        bindText(stmt, 2, remap.id)
+      }
+    }
+    
+    return remaps.count
   }
   
   // MARK: - Dependency Graph Methods (Issue #176)
