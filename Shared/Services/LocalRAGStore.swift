@@ -4805,7 +4805,13 @@ actor LocalRAGStore {
     try exec("BEGIN TRANSACTION")
     do {
       for dep in deps {
-        try insertDependency(dep)
+        do {
+          try insertDependency(dep)
+        } catch {
+          print("[RAG] FK error inserting dependency: source_file=\(dep.sourceFileId) target_file=\(dep.targetFileId ?? "nil") target_path=\(dep.targetPath) error=\(error)")
+          // Skip this dependency rather than failing the entire index
+          continue
+        }
       }
       try exec("COMMIT")
     } catch {
@@ -4929,7 +4935,12 @@ actor LocalRAGStore {
     try exec("BEGIN TRANSACTION")
     do {
       for ref in refs {
-        try insertSymbolRef(ref)
+        do {
+          try insertSymbolRef(ref)
+        } catch {
+          print("[RAG] FK error inserting symbol ref: source_file=\(ref.sourceFileId) name=\(ref.referencedName) error=\(error)")
+          continue
+        }
       }
       try exec("COMMIT")
     } catch {
