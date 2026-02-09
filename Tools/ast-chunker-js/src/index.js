@@ -113,18 +113,76 @@ function extractFileMetadata(ast, isGlimmer) {
 
 /**
  * Preprocess GTS/GJS files to handle <template> tags
- * Replaces <template>...</template> with a placeholder that Babel can parse
+ * Uses depth-tracking instead of lazy regex to handle nested HTML <template> elements
  */
 function preprocessGlimmer(source) {
   const templateRanges = [];
   
-  // Find all <template> blocks and their positions
-  const templateRegex = /<template\b[^>]*>([\s\S]*?)<\/template>/g;
-  let match;
-  while ((match = templateRegex.exec(source)) !== null) {
-    const startLine = source.substring(0, match.index).split('\n').length;
-    const endLine = source.substring(0, match.index + match[0].length).split('\n').length;
-    templateRanges.push({ startLine, endLine, text: match[0], index: match.index, length: match[0].length });
+  // Find top-level <template> blocks using depth tracking.
+  // The content-tag spec uses <template> at module/class scope.
+  // Inner HTML <template> elements may appear in the content.
+  let searchFrom = 0;
+  const openTag = /<template\b[^>]*>/g;
+  const closeTag = /<\/template>/g;
+  
+  while (searchFrom < source.length) {
+    // Find next opening <template>
+    openTag.lastIndex = searchFrom;
+    const openMatch = openTag.exec(source);
+    if (!openMatch) break;
+    
+    const blockStart = openMatch.index;
+    const contentStart = blockStart + openMatch[0].length;
+    let depth = 1;
+    let pos = contentStart;
+    
+    // Track depth to find the matching closing tag
+    while (depth > 0 && pos < source.length) {
+      // Find next opening or closing tag from current position
+      openTag.lastIndex = pos;
+      closeTag.lastIndex = pos;
+      
+      const nextOpen = openTag.exec(source);
+      const nextClose = closeTag.exec(source);
+      
+      if (!nextClose) {
+        // No closing tag found — malformed, bail out
+        break;
+      }
+      
+      if (nextOpen && nextOpen.index < nextClose.index) {
+        // Opening tag comes first — increase depth
+        depth++;
+        pos = nextOpen.index + nextOpen[0].length;
+      } else {
+        // Closing tag comes first — decrease depth
+        depth--;
+        if (depth === 0) {
+          // Found the matching close for our top-level <template>
+          const blockEnd = nextClose.index + nextClose[0].length;
+          const fullText = source.substring(blockStart, blockEnd);
+          const startLine = source.substring(0, blockStart).split('\n').length;
+          const endLine = source.substring(0, blockEnd).split('\n').length;
+          
+          templateRanges.push({
+            startLine,
+            endLine,
+            text: fullText,
+            index: blockStart,
+            length: fullText.length
+          });
+          
+          searchFrom = blockEnd;
+        } else {
+          pos = nextClose.index + nextClose[0].length;
+        }
+      }
+    }
+    
+    // If we didn't find a match, move past this opening tag
+    if (depth > 0) {
+      searchFrom = contentStart;
+    }
   }
   
   // Replace <template> blocks with a placeholder that Babel can parse
