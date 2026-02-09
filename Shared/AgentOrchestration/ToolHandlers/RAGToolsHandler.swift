@@ -652,6 +652,9 @@ final class RAGToolsHandler: MCPToolHandler {
         if let lastIndexedAt = repo.lastIndexedAt {
           dict["lastIndexedAt"] = formatter.string(from: lastIndexedAt)
         }
+        if let repoIdentifier = repo.repoIdentifier {
+          dict["repoIdentifier"] = repoIdentifier
+        }
         return dict
       }
       return (200, makeResult(id: id, result: ["repos": repoList]))
@@ -1767,14 +1770,16 @@ struct RAGToolRepoInfo {
   let fileCount: Int
   let chunkCount: Int
   let lastIndexedAt: Date?
+  let repoIdentifier: String?
   
-  init(id: String, name: String, rootPath: String, fileCount: Int, chunkCount: Int, lastIndexedAt: Date?) {
+  init(id: String, name: String, rootPath: String, fileCount: Int, chunkCount: Int, lastIndexedAt: Date?, repoIdentifier: String? = nil) {
     self.id = id
     self.name = name
     self.rootPath = rootPath
     self.fileCount = fileCount
     self.chunkCount = chunkCount
     self.lastIndexedAt = lastIndexedAt
+    self.repoIdentifier = repoIdentifier
   }
 }
 

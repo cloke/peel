@@ -175,14 +175,16 @@ public final class MCPServerService {
     public let lastIndexedAt: Date?
     public let fileCount: Int
     public let chunkCount: Int
+    public let repoIdentifier: String?
 
-    public init(id: String, name: String, rootPath: String, lastIndexedAt: Date?, fileCount: Int, chunkCount: Int) {
+    public init(id: String, name: String, rootPath: String, lastIndexedAt: Date?, fileCount: Int, chunkCount: Int, repoIdentifier: String? = nil) {
       self.id = id
       self.name = name
       self.rootPath = rootPath
       self.lastIndexedAt = lastIndexedAt
       self.fileCount = fileCount
       self.chunkCount = chunkCount
+      self.repoIdentifier = repoIdentifier
     }
   }
 
@@ -835,7 +837,8 @@ public final class MCPServerService {
           rootPath: repo.rootPath,
           lastIndexedAt: repo.lastIndexedAt,
           fileCount: repo.fileCount,
-          chunkCount: repo.chunkCount
+          chunkCount: repo.chunkCount,
+          repoIdentifier: repo.repoIdentifier
         )
       }
       lastRagError = nil
@@ -6278,7 +6281,8 @@ extension MCPServerService: RAGToolsHandlerDelegate {
         rootPath: repo.rootPath,
         fileCount: repo.fileCount,
         chunkCount: repo.chunkCount,
-        lastIndexedAt: repo.lastIndexedAt
+        lastIndexedAt: repo.lastIndexedAt,
+        repoIdentifier: repo.repoIdentifier
       )
     }
   }
