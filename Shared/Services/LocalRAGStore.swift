@@ -515,6 +515,18 @@ struct HybridChunker {
   /// Max file size for JSCore parsing (very large files may be slow)
   private let jsMaxBytes = 500_000  // 500KB
   
+  /// A signature capturing available chunking capabilities.
+  /// Including this in file hashes ensures files are re-chunked when
+  /// chunker availability changes (e.g., JSCore becomes available).
+  /// Bump the base version when chunking logic changes materially.
+  var chunkingSignature: String {
+    var sig = "chunk-v3"  // Base version — bump when chunking logic changes
+    if astChunkerCLIPath != nil { sig += "+swift" }
+    if rubyChunker != nil { sig += "+ruby" }
+    if jsChunker.isAvailable { sig += "+jscore" }
+    return sig
+  }
+  
   /// Languages that have AST chunker support
   private var astSupportedLanguages: Set<String> {
     var languages: Set<String> = []
@@ -612,6 +624,7 @@ struct HybridChunker {
     print("[HybridChunker] Swift CLI available: \(astChunkerCLIPath != nil) at \(astChunkerCLIPath ?? "N/A")")
     print("[HybridChunker] JSCore TS/JS chunker available: \(jsChunker.isAvailable)")
     print("[HybridChunker] AST supported languages: \(astSupportedLanguages)")
+    print("[HybridChunker] Chunking signature: \(chunkingSignature)")
   }
   
   /// Chunk with full error tracking and health-aware fallback
@@ -910,6 +923,13 @@ struct HybridChunker {
         failureType: .parseError,
         failureMessage: "JSCore returned empty"
       )
+    }
+    
+    // Detect if JSCore fell back to line-based chunking internally
+    // (all chunks have .file type instead of real AST types like classDecl, function, etc.)
+    let allFileType = astChunks.allSatisfy { $0.constructType == .file }
+    if allFileType && astChunks.count > 1 {
+      print("[HybridChunker] JSCore fell back to line chunking for \(fileName) (\(astChunks.count) file chunks)")
     }
     
     // Convert ASTChunk to LocalRAGChunk
@@ -1798,7 +1818,9 @@ actor LocalRAGStore {
         : file.path
 
       let fileId = stableId(for: "\(repoId):\(relativePath)")
-      let fileHash = stableId(for: file.text)
+      // Include chunking signature so files are re-processed when
+      // chunker capabilities change (e.g., JSCore becomes available)
+      let fileHash = stableId(for: "\(chunker.chunkingSignature):\(file.text)")
 
       // Incremental indexing: skip unchanged files (unless forceReindex is true)
       if !forceReindex {
