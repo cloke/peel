@@ -4943,6 +4943,37 @@ actor LocalRAGStore {
           candidates.append(prefix + rubyPath + ".rb")
         }
       }
+      
+      // Ember addon resolution: "addon-name/path/to/module" → "addons/addon-name/src/path/to/module"
+      // Also handles app imports: "app-name/path/to/module" → "app-name/app/path/to/module"
+      if targetPath.contains("/") {
+        let parts = targetPath.split(separator: "/", maxSplits: 1)
+        if parts.count == 2 {
+          let packageName = String(parts[0])
+          let modulePath = String(parts[1])
+          
+          // Ember v2 addon convention: addons/<name>/src/<path>
+          let addonPrefixes = [
+            "addons/\(packageName)/src/",
+            "addons/\(packageName)/",
+          ]
+          for addonPrefix in addonPrefixes {
+            for ext in ["", ".gts", ".gjs", ".ts", ".js", ".tsx", ".jsx", "/index.gts", "/index.ts", "/index.js"] {
+              candidates.append(addonPrefix + modulePath + ext)
+            }
+          }
+          
+          // Ember app convention: <app-name>/app/<path>
+          let appPrefixes = [
+            "\(packageName)/app/",
+          ]
+          for appPrefix in appPrefixes {
+            for ext in ["", ".gts", ".gjs", ".ts", ".js", ".tsx", ".jsx", "/index.gts", "/index.ts", "/index.js"] {
+              candidates.append(appPrefix + modulePath + ext)
+            }
+          }
+        }
+      }
     }
     
     return candidates

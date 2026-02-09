@@ -299,17 +299,23 @@ public final class JSCoreTypeScriptChunker: @unchecked Sendable {
     return "\"\(escaped)\""
   }
   
-  /// Fallback to line-based chunking
+  /// Fallback to line-based chunking with basic import extraction
   private func fallbackChunk(source: String) -> [ASTChunk] {
     let lines = source.components(separatedBy: "\n")
     let maxLines = 100
     var chunks: [ASTChunk] = []
     var currentStart = 1
     
+    // Extract imports via regex so dependencies aren't lost on fallback
+    let fallbackMetadata = extractFallbackMetadata(from: source)
+    
     while currentStart <= lines.count {
       let currentEnd = min(currentStart + maxLines - 1, lines.count)
       let chunkLines = lines[(currentStart - 1)..<currentEnd]
       let text = chunkLines.joined(separator: "\n")
+      
+      // Attach import metadata to the first chunk only
+      let metadata = currentStart == 1 ? fallbackMetadata : ASTChunkMetadata()
       
       chunks.append(ASTChunk(
         constructType: .file,
@@ -317,12 +323,61 @@ public final class JSCoreTypeScriptChunker: @unchecked Sendable {
         startLine: currentStart,
         endLine: currentEnd,
         text: text,
-        language: Self.language
+        language: Self.language,
+        metadata: metadata
       ))
       
       currentStart = currentEnd + 1
     }
     
     return chunks
+  }
+  
+  /// Extract basic metadata from source using regex (used when AST parsing fails)
+  private func extractFallbackMetadata(from source: String) -> ASTChunkMetadata {
+    var imports: [String] = []
+    var frameworks: [String] = []
+    var hasTemplate = false
+    var usesEmberConcurrency = false
+    var tioUiImports: [String] = []
+    
+    // Match ES import statements: import ... from 'module-path'
+    let importRegex = try? NSRegularExpression(
+      pattern: #"import\s+(?:(?:\{[^}]*\}|[^;{]*)\s+from\s+)?['"]([^'"]+)['"]"#,
+      options: []
+    )
+    let nsSource = source as NSString
+    let matches = importRegex?.matches(in: source, range: NSRange(location: 0, length: nsSource.length)) ?? []
+    
+    for match in matches {
+      if match.numberOfRanges > 1 {
+        let importPath = nsSource.substring(with: match.range(at: 1))
+        imports.append(importPath)
+        
+        if importPath == "ember-concurrency" {
+          usesEmberConcurrency = true
+        }
+        if importPath.hasPrefix("@glimmer/") || importPath.hasPrefix("@ember/") {
+          if !frameworks.contains("Ember") { frameworks.append("Ember") }
+        }
+        if importPath.hasPrefix("tio-ui/") {
+          tioUiImports.append(importPath)
+        }
+      }
+    }
+    
+    // Detect <template> tag
+    if source.contains("<template>") || source.contains("<template ") {
+      hasTemplate = true
+      if !frameworks.contains("Ember") { frameworks.append("Ember") }
+    }
+    
+    return ASTChunkMetadata(
+      imports: imports,
+      usesEmberConcurrency: usesEmberConcurrency,
+      hasTemplate: hasTemplate,
+      tioUiImports: tioUiImports,
+      frameworks: frameworks
+    )
   }
 }
