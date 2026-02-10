@@ -148,6 +148,15 @@ struct AgentsSidebarView: View {
           .accessibilityIdentifier("agents.localRag")
           .tag("infra:local-rag")
 
+          HStack {
+            Image(systemName: "point.3.connected.trianglepath.dotted")
+              .foregroundStyle(.purple)
+            Text("Dependency Graph")
+            Spacer()
+          }
+          .accessibilityIdentifier("agents.dependencyGraph")
+          .tag("infra:dependency-graph")
+
           if showDoclingImport {
             HStack {
               Image(systemName: "doc.text.magnifyingglass")
@@ -358,6 +367,7 @@ struct AgentsSidebarView: View {
     case "mcp-dashboard": return "agents.mcpDashboard"
     case "template-gallery": return "agents.templateGallery"
     case "local-rag": return "agents.localRag"
+    case "dependency-graph": return "agents.dependencyGraph"
     case "translation-validation": return "agents.translationValidation"
     case "vm-isolation", "vm-isolation:overview", "vm-isolation:linux", "vm-isolation:macos", "vm-isolation:pools":
       return "agents.vmIsolation"
