@@ -1,219 +1,9 @@
-import ArgumentParser
 import CryptoKit
 import Foundation
 import NaturalLanguage
-import Yams
 
-@main
-struct PIIScrubber: ParsableCommand {
-  static let configuration = CommandConfiguration(
-    commandName: "pii-scrubber",
-    abstract: "Stream and scrub PII from text or SQL dumps",
-    discussion: """
-      Scrubs PII from text streams (e.g. pg_dump) with deterministic replacements.
-      Patterns: emails, phone numbers, SSNs, credit cards.
-
-      Example:
-        cat dump.sql | .build/debug/pii-scrubber --report scrub-report.json > scrubbed.sql
-      """
-  )
-
-  @Option(name: .long, help: "Input file path (defaults to stdin)")
-  var input: String?
-
-  @Option(name: .long, help: "Output file path (defaults to stdout)")
-  var output: String?
-
-  @Option(name: .long, help: "Write audit report to file")
-  var report: String?
-
-  @Option(name: .long, help: "Config file path (yaml/json)")
-  var config: String?
-
-  @Option(name: .long, help: "Audit report format: json or text")
-  var reportFormat: String = "json"
-
-  @Option(name: .long, help: "Deterministic seed for replacements")
-  var seed: String = "peel"
-
-  @Option(name: .long, help: "Max samples per PII type in report")
-  var maxSamples: Int = 5
-
-  @Flag(name: .long, help: "Enable NER layer (not implemented, regex only)")
-  var enableNER: Bool = false
-
-  mutating func run() throws {
-    let reader = try LineReader(path: input)
-    let writer = try OutputWriter(path: output)
-    var reportData = AuditReport(startedAt: Date())
-    let configData = try ScrubConfig.load(from: config)
-    let configErrors = configData.validationErrors()
-    if !configErrors.isEmpty {
-      let message = (["Invalid config:"] + configErrors.map { "- \($0)" }).joined(separator: "\n")
-      throw ValidationError(message)
-    }
-    let scrubber = Scrubber(seed: seed, maxSamples: maxSamples, config: configData, enableNER: enableNER)
-
-    for line in reader {
-      let scrubbed = scrubber.scrubLine(line, report: &reportData)
-      writer.write(scrubbed)
-    }
-
-    try writer.close()
-    reportData.completedAt = Date()
-    try emitReport(reportData)
-  }
-
-  private func emitReport(_ reportData: AuditReport) throws {
-    guard let report else {
-      let summary = reportData.summaryText()
-      FileHandle.standardError.write(summary.data(using: .utf8)!)
-      return
-    }
-
-    let url = URL(fileURLWithPath: report)
-    let fm = FileManager.default
-    try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-
-    if reportFormat.lowercased() == "text" {
-      try reportData.summaryText().write(to: url, atomically: true, encoding: .utf8)
-    } else {
-      let encoder = JSONEncoder()
-      encoder.dateEncodingStrategy = .iso8601
-      encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-      let data = try encoder.encode(reportData)
-      try data.write(to: url)
-    }
-  }
-}
-
-private struct AuditReport: Encodable {
-  var startedAt: Date
-  var completedAt: Date?
-  var counts: [String: Int] = [:]
-  var samples: [String: [Sample]] = [:]
-
-  struct Sample: Encodable {
-    let original: String
-    let replacement: String
-  }
-
-  mutating func record(type: String, original: String, replacement: String, maxSamples: Int) {
-    counts[type, default: 0] += 1
-    var current = samples[type, default: []]
-    if current.count < maxSamples {
-      current.append(Sample(original: original, replacement: replacement))
-      samples[type] = current
-    }
-  }
-
-  func summaryText() -> String {
-    let formatter = ISO8601DateFormatter()
-    var output = "PII Scrubber Report\n"
-    output += "Started: \(formatter.string(from: startedAt))\n"
-    if let completedAt {
-      output += "Completed: \(formatter.string(from: completedAt))\n"
-    }
-    output += "\nCounts:\n"
-    for key in counts.keys.sorted() {
-      output += "- \(key): \(counts[key] ?? 0)\n"
-    }
-    output += "\nSamples:\n"
-    for key in samples.keys.sorted() {
-      output += "\n\(key):\n"
-      for sample in samples[key] ?? [] {
-        output += "  - \(sample.original) -> \(sample.replacement)\n"
-      }
-    }
-    return output
-  }
-}
-
-private struct ScrubConfig: Codable {
-  var version: Int = 1
-  var defaults: Defaults?
-  var rules: [Rule] = []
-
-  struct Defaults: Codable {
-    var action: Action?
-    var format: Format?
-  }
-
-  struct Rule: Codable {
-    var table: String?
-    var column: String?
-    var action: Action?
-    var format: Format?
-  }
-
-  enum Action: String, Codable {
-    case preserve
-    case redact
-    case fake
-    case drop
-  }
-
-  enum Format: String, Codable {
-    case email
-    case phone
-    case ssn
-    case creditCard = "credit_card"
-    case name
-    case address
-    case organization
-    case generic
-  }
-
-  static func load(from path: String?) throws -> ScrubConfig {
-    guard let path, !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-      return ScrubConfig()
-    }
-
-    let url = URL(fileURLWithPath: path)
-    let data = try Data(contentsOf: url)
-    let rawText = String(decoding: data, as: UTF8.self)
-    let ext = url.pathExtension.lowercased()
-
-    if ext == "yaml" || ext == "yml" {
-      return try decodeYAML(rawText)
-    }
-    if ext == "json" {
-      return try decodeJSON(data)
-    }
-
-    if let jsonConfig = try? decodeJSON(data) {
-      return jsonConfig
-    }
-    return try decodeYAML(rawText)
-  }
-
-  private static func decodeJSON(_ data: Data) throws -> ScrubConfig {
-    let decoder = JSONDecoder()
-    return try decoder.decode(ScrubConfig.self, from: data)
-  }
-
-  private static func decodeYAML(_ text: String) throws -> ScrubConfig {
-    return try YAMLDecoder().decode(ScrubConfig.self, from: text)
-  }
-
-  func validationErrors() -> [String] {
-    var errors: [String] = []
-    if version != 1 {
-      errors.append("Unsupported config version: \(version)")
-    }
-    for (index, rule) in rules.enumerated() {
-      if rule.table == nil && rule.column == nil {
-        errors.append("Rule \(index + 1): specify table and/or column")
-      }
-      if rule.action == .drop && rule.format != nil {
-        errors.append("Rule \(index + 1): drop action cannot include format")
-      }
-    }
-    return errors
-  }
-}
-
-private final class Scrubber {
+/// Core PII scrubbing engine with regex-based detection and deterministic replacements.
+public final class Scrubber: @unchecked Sendable {
   private let seed: String
   private let maxSamples: Int
   private let config: ScrubConfig
@@ -250,14 +40,15 @@ private final class Scrubber {
     options: []
   )
 
-  init(seed: String, maxSamples: Int, config: ScrubConfig, enableNER: Bool) {
+  public init(seed: String, maxSamples: Int, config: ScrubConfig, enableNER: Bool = false) {
     self.seed = seed
     self.maxSamples = maxSamples
     self.config = config
     self.enableNER = enableNER
   }
 
-  func scrubLine(_ line: String, report: inout AuditReport) -> String {
+  /// Scrub a single line of text, detecting and replacing PII patterns.
+  public func scrubLine(_ line: String, report: inout AuditReport) -> String {
     if let context = copyContext {
       if line.trimmingCharacters(in: .whitespacesAndNewlines) == "\\." {
         copyContext = nil
@@ -273,22 +64,24 @@ private final class Scrubber {
 
     var result = line
     result = replaceMatches(in: result, regex: emailRegex, type: "email", report: &report) { match in
-      return deterministicReplacement(for: match, cache: &emailCache, type: "email")
+      return self.deterministicReplacement(for: match, cache: &self.emailCache, type: "email")
     }
     result = replaceMatches(in: result, regex: phoneRegex, type: "phone", report: &report) { match in
-      return deterministicReplacement(for: match, cache: &phoneCache, type: "phone")
+      return self.deterministicReplacement(for: match, cache: &self.phoneCache, type: "phone")
     }
     result = replaceMatches(in: result, regex: ssnRegex, type: "ssn", report: &report) { match in
-      return deterministicReplacement(for: match, cache: &ssnCache, type: "ssn")
+      return self.deterministicReplacement(for: match, cache: &self.ssnCache, type: "ssn")
     }
     result = replaceMatches(in: result, regex: cardRegex, type: "credit_card", report: &report) { match in
-      return deterministicReplacement(for: match, cache: &cardCache, type: "credit_card")
+      return self.deterministicReplacement(for: match, cache: &self.cardCache, type: "credit_card")
     }
     if enableNER {
       result = replaceNamedEntities(in: result, report: &report)
     }
     return result
   }
+
+  // MARK: - COPY Context Parsing
 
   private func parseCopyStart(_ line: String) -> CopyContext? {
     let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -348,6 +141,8 @@ private final class Scrubber {
     return updated.joined(separator: "\t") + "\n"
   }
 
+  // MARK: - Field Scrubbing
+
   private func scrubField(
     _ value: String,
     table: String,
@@ -375,16 +170,16 @@ private final class Scrubber {
 
     var scrubbed = value
     scrubbed = replaceMatches(in: scrubbed, regex: emailRegex, type: "email", report: &report) { match in
-      return deterministicReplacement(for: match, cache: &emailCache, type: "email")
+      return self.deterministicReplacement(for: match, cache: &self.emailCache, type: "email")
     }
     scrubbed = replaceMatches(in: scrubbed, regex: phoneRegex, type: "phone", report: &report) { match in
-      return deterministicReplacement(for: match, cache: &phoneCache, type: "phone")
+      return self.deterministicReplacement(for: match, cache: &self.phoneCache, type: "phone")
     }
     scrubbed = replaceMatches(in: scrubbed, regex: ssnRegex, type: "ssn", report: &report) { match in
-      return deterministicReplacement(for: match, cache: &ssnCache, type: "ssn")
+      return self.deterministicReplacement(for: match, cache: &self.ssnCache, type: "ssn")
     }
     scrubbed = replaceMatches(in: scrubbed, regex: cardRegex, type: "credit_card", report: &report) { match in
-      return deterministicReplacement(for: match, cache: &cardCache, type: "credit_card")
+      return self.deterministicReplacement(for: match, cache: &self.cardCache, type: "credit_card")
     }
     if enableNER {
       scrubbed = replaceNamedEntities(in: scrubbed, report: &report)
@@ -392,9 +187,10 @@ private final class Scrubber {
     return scrubbed
   }
 
+  // MARK: - Rule Resolution
+
   private func resolveRule(table: String, column: String?) -> ScrubConfig.Rule? {
-    let rules = config.rules
-    let sorted = rules.sorted { lhs, rhs in
+    let sorted = config.rules.sorted { lhs, rhs in
       ruleSpecificity(lhs) > ruleSpecificity(rhs)
     }
     for rule in sorted {
@@ -436,6 +232,8 @@ private final class Scrubber {
         return regex.firstMatch(in: value, options: [], range: range) != nil
       } ?? false
   }
+
+  // MARK: - Deterministic Replacements
 
   private func deterministicReplacement(
     for original: String,
@@ -505,6 +303,8 @@ private final class Scrubber {
     return replacementValue
   }
 
+  // MARK: - Regex Matching
+
   private func replaceMatches(
     in input: String,
     regex: NSRegularExpression,
@@ -526,6 +326,8 @@ private final class Scrubber {
     }
     return output
   }
+
+  // MARK: - NER
 
   private func replaceNamedEntities(in input: String, report: inout AuditReport) -> String {
     let tagger = NLTagger(tagSchemes: [.nameType])
@@ -573,11 +375,14 @@ private final class Scrubber {
     return output
   }
 
+  // MARK: - Formatting Helpers
+
   private func normalizeIdentifier(_ value: String) -> String {
     let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
     let unquoted = trimmed.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
     return unquoted
   }
+
   private func replaceDigitsPreservingFormat(_ value: String) -> String {
     let digits = hashedDigits(for: value, count: value.filter { $0.isNumber }.count)
     var index = digits.startIndex
@@ -640,6 +445,8 @@ private final class Scrubber {
     return output
   }
 
+  // MARK: - Hashing
+
   private func hashedDigits(for value: String, count: Int) -> String {
     let bytes = hashBytes(for: value)
     var digits: [Character] = []
@@ -673,90 +480,5 @@ private final class Scrubber {
     let scalar = String(hex).unicodeScalars.first?.value ?? 48
     let value = Int(scalar) % 10
     return Character(UnicodeScalar(48 + value)!)
-  }
-}
-
-private final class LineReader: Sequence, IteratorProtocol {
-  private let handle: FileHandle
-  private var buffer = Data()
-  private var isEOF = false
-  private let chunkSize = 64 * 1024
-
-  init(path: String?) throws {
-    if let path {
-      handle = try FileHandle(forReadingFrom: URL(fileURLWithPath: path))
-    } else {
-      handle = FileHandle.standardInput
-    }
-  }
-
-  func next() -> String? {
-    while true {
-      if let range = buffer.firstRange(of: Data([0x0A])) {
-        let lineData = buffer.subdata(in: buffer.startIndex..<range.lowerBound)
-        buffer.removeSubrange(buffer.startIndex..<range.upperBound)
-        return decodeLine(lineData, appendNewline: true)
-      }
-
-      if isEOF {
-        guard !buffer.isEmpty else { return nil }
-        let lineData = buffer
-        buffer.removeAll()
-        return decodeLine(lineData, appendNewline: false)
-      }
-
-      do {
-        let chunk = try handle.read(upToCount: chunkSize) ?? Data()
-        if chunk.isEmpty {
-          isEOF = true
-        } else {
-          buffer.append(chunk)
-        }
-      } catch {
-        isEOF = true
-      }
-    }
-  }
-
-  private func decodeLine(_ data: Data, appendNewline: Bool) -> String? {
-    if var line = String(data: data, encoding: .utf8) {
-      if appendNewline { line.append("\n") }
-      return line
-    }
-    if var line = String(data: data, encoding: .isoLatin1) {
-      if appendNewline { line.append("\n") }
-      return line
-    }
-    return nil
-  }
-}
-
-private final class OutputWriter {
-  private let handle: FileHandle
-  private let shouldClose: Bool
-
-  init(path: String?) throws {
-    if let path {
-      let url = URL(fileURLWithPath: path)
-      let fm = FileManager.default
-      fm.createFile(atPath: path, contents: nil)
-      handle = try FileHandle(forWritingTo: url)
-      shouldClose = true
-    } else {
-      handle = FileHandle.standardOutput
-      shouldClose = false
-    }
-  }
-
-  func write(_ string: String) {
-    if let data = string.data(using: .utf8) {
-      handle.write(data)
-    }
-  }
-
-  func close() throws {
-    if shouldClose {
-      try handle.close()
-    }
   }
 }

@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Dependency Graph</title>
+<style>
+  :root {
+    --bg: #1a1a2e;
+    --bg-panel: #16213e;
+    --text: #e0e0e0;
+    --text-muted: #8899aa;
+    --border: #2a2a4a;
+    --accent: #6c63ff;
+    --accent-hover: #7f78ff;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f5f6fa;
+      --bg-panel: #ffffff;
+      --text: #1a1a2e;
+      --text-muted: #667788;
+      --border: #dde0e8;
+      --accent: #6c63ff;
+      --accent-hover: #5a52e0;
+    }
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  #toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    z-index: 10;
+  }
+  #toolbar h1 {
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  #toolbar .stats {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .btn-group {
+    display: flex;
+    gap: 2px;
+    background: var(--bg);
+    border-radius: 6px;
+    padding: 2px;
+  }
+  .btn-group button {
+    font-size: 11px;
+    padding: 4px 10px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-group button.active {
+    background: var(--accent);
+    color: white;
+  }
+  .btn-group button:hover:not(.active) {
+    color: var(--text);
+  }
+  #search {
+    font-size: 12px;
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    width: 200px;
+    outline: none;
+  }
+  #search:focus { border-color: var(--accent); }
+  #search::placeholder { color: var(--text-muted); }
+  .spacer { flex: 1; }
+
+  #graph-container {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+  svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  /* Tooltip */
+  #tooltip {
+    position: fixed;
+    pointer-events: none;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    line-height: 1.5;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    z-index: 100;
+    max-width: 320px;
+    display: none;
+  }
+  #tooltip .tt-title {
+    font-weight: 600;
+    font-size: 13px;
+    margin-bottom: 4px;
+  }
+  #tooltip .tt-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  #tooltip .tt-label { color: var(--text-muted); }
+  #tooltip .tt-val { font-weight: 500; }
+
+  /* Info panel */
+  #info-panel {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 280px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    font-size: 12px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    display: none;
+    z-index: 20;
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
+  }
+  #info-panel h3 {
+    font-size: 14px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  #info-panel .close-btn {
+    margin-left: auto;
+    cursor: pointer;
+    font-size: 16px;
+    color: var(--text-muted);
+    border: none;
+    background: none;
+    line-height: 1;
+  }
+  #info-panel .close-btn:hover { color: var(--text); }
+  .dep-list {
+    list-style: none;
+    margin-top: 6px;
+  }
+  .dep-list li {
+    padding: 3px 0;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    cursor: pointer;
+  }
+  .dep-list li:hover { color: var(--accent); }
+  .dep-list li:last-child { border: none; }
+  .dep-list .dep-name { 
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+  .dep-list .dep-count { 
+    color: var(--text-muted);
+    font-size: 11px;
+    flex-shrink: 0;
+    margin-left: 8px;
+  }
+  .lang-bar {
+    display: flex;
+    height: 6px;
+    border-radius: 3px;
+    overflow: hidden;
+    margin: 8px 0;
+    gap: 1px;
+  }
+  .lang-bar div { height: 100%; }
+  .section-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin-top: 10px;
+    margin-bottom: 4px;
+    font-weight: 600;
+  }
+
+  /* Legend */
+  #legend {
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 11px;
+    z-index: 20;
+    display: flex;
+    gap: 14px;
+    align-items: center;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+  .legend-line {
+    width: 20px;
+    height: 2px;
+    border-radius: 1px;
+  }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <h1>📊 Dependency Graph</h1>
+  <span class="stats" id="stats-text"></span>
+  <div class="spacer"></div>
+  <div class="btn-group" id="level-picker">
+    <button class="active" data-level="module">Modules</button>
+    <button data-level="submodule">Submodules</button>
+    <button data-level="file">Files</button>
+  </div>
+  <select id="module-filter" style="display:none;font-size:11px;padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);outline:none;">
+    <option value="">All modules</option>
+  </select>
+  <input type="text" id="search" placeholder="Filter nodes…">
+</div>
+
+<div id="graph-container">
+  <svg id="graph"></svg>
+</div>
+
+<div id="tooltip"></div>
+<div id="info-panel"></div>
+<div id="legend">
+  <span style="color:var(--text-muted)">Edge weight:</span>
+  <div class="legend-item">
+    <div class="legend-line" style="background:#6c63ff; opacity:0.3"></div>
+    <span>Few</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-line" style="background:#6c63ff; height:4px"></div>
+    <span>Many</span>
+  </div>
+</div>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+// ─── Color Palette ─────────────────────────────────────────────────────────
+const MODULE_COLORS = {
+  'tio-employee':       '#10b981', // emerald
+  'tio-admin':          '#3b82f6', // blue
+  'tio-agent':          '#f59e0b', // amber 
+  'addons/tio-common':  '#8b5cf6', // violet
+  'addons/tio-reimagined': '#ec4899', // pink
+  'addons/tio-ui':      '#06b6d4', // cyan
+  'test-app':           '#64748b', // slate
+  'storybook':          '#f97316', // orange
+  'declarations':       '#6b7280', // gray
+};
+
+const LANG_COLORS = {
+  'TypeScript':           '#3178c6',
+  'Glimmer TypeScript':   '#e04e39',
+  'JavaScript':           '#f7df1e',
+  'YAML':                 '#cb171e',
+  'JSON':                 '#5b5b5b',
+  'CSS':                  '#264de4',
+  'HTML':                 '#e34c26',
+  'Markdown':             '#083fa1',
+  'Ruby':                 '#cc342d',
+  'Text':                 '#888',
+};
+
+// ─── Globals ───────────────────────────────────────────────────────────────
+let graphData = null;
+let currentLevel = 'module';
+let simulation = null;
+let selectedNode = null;
+
+// ─── Init ──────────────────────────────────────────────────────────────────
+function init(data) {
+  graphData = data;
+  const stats = data.stats;
+  const resolvedPct = stats.totalDependencies > 0
+    ? Math.round((stats.resolvedDependencies + stats.inferredDependencies) / stats.totalDependencies * 100) : 0;
+  document.getElementById('stats-text').textContent =
+    `${stats.totalFiles} files · ${stats.totalDependencies} deps (${stats.resolvedDependencies} resolved, ${stats.inferredDependencies} inferred) · ${stats.totalModules} modules`;
+
+  // Populate module filter
+  const filter = document.getElementById('module-filter');
+  filter.innerHTML = '<option value="">All modules</option>';
+  if (data.moduleGraph) {
+    data.moduleGraph.nodes.slice().sort((a, b) => b.fileCount - a.fileCount).forEach(n => {
+      const opt = document.createElement('option');
+      opt.value = n.id;
+      opt.textContent = `${n.label} (${n.fileCount})`;
+      filter.appendChild(opt);
+    });
+  }
+
+  renderGraph();
+  setupControls();
+}
+
+function setupControls() {
+  document.querySelectorAll('#level-picker button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#level-picker button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentLevel = btn.dataset.level;
+      selectedNode = null;
+      document.getElementById('info-panel').style.display = 'none';
+      // Show module filter for file level
+      document.getElementById('module-filter').style.display = currentLevel === 'file' ? 'inline-block' : 'none';
+      renderGraph();
+    });
+  });
+
+  document.getElementById('module-filter').addEventListener('change', () => {
+    if (currentLevel === 'file') renderGraph();
+  });
+
+  document.getElementById('search').addEventListener('input', (e) => {
+    const q = e.target.value.toLowerCase();
+    d3.selectAll('.node-group').each(function(d) {
+      const match = !q || d.id.toLowerCase().includes(q) || (d.label || '').toLowerCase().includes(q);
+      d3.select(this).style('opacity', match ? 1 : 0.15);
+    });
+    d3.selectAll('.link').style('opacity', q ? 0.05 : null);
+  });
+}
+
+// ─── Render ────────────────────────────────────────────────────────────────
+function renderGraph() {
+  const svg = d3.select('#graph');
+  svg.selectAll('*').remove();
+
+  const container = document.getElementById('graph-container');
+  const width = container.clientWidth;
+  const height = container.clientHeight;
+
+  let graphLevel;
+  if (currentLevel === 'module') {
+    graphLevel = graphData.moduleGraph;
+  } else if (currentLevel === 'submodule') {
+    graphLevel = graphData.submoduleGraph;
+  } else {
+    graphLevel = graphData.fileGraph || { nodes: [], links: [] };
+  }
+
+  // Filter by module for file level
+  const moduleFilter = document.getElementById('module-filter').value;
+  let nodes = graphLevel.nodes.filter(n => n.fileCount > 0);
+
+  if (currentLevel === 'module') {
+    nodes = nodes.filter(n => n.fileCount >= 2);
+  } else if (currentLevel === 'file' && moduleFilter) {
+    // Show files in the selected module + files they connect to
+    const moduleFiles = new Set(nodes.filter(n => n.module === moduleFilter).map(n => n.id));
+    const connectedFiles = new Set(moduleFiles);
+    graphLevel.links.forEach(l => {
+      if (moduleFiles.has(l.source)) connectedFiles.add(l.target);
+      if (moduleFiles.has(l.target)) connectedFiles.add(l.source);
+    });
+    nodes = nodes.filter(n => connectedFiles.has(n.id));
+  }
+
+  const nodeIds = new Set(nodes.map(n => n.id));
+  let links = graphLevel.links
+    .filter(l => nodeIds.has(l.source) && nodeIds.has(l.target))
+    .filter(l => l.weight > 0);
+
+  // Deep clone for D3 mutation
+  nodes = nodes.map(n => ({ ...n }));
+  links = links.map(l => ({ ...l }));
+
+  if (nodes.length === 0) {
+    svg.append('text')
+      .attr('x', width / 2).attr('y', height / 2)
+      .attr('text-anchor', 'middle')
+      .attr('fill', 'var(--text-muted)')
+      .attr('font-size', 14)
+      .text(currentLevel === 'file' ? 'No file-level connections found. Try selecting a module filter.' : 'No nodes to display.');
+    return;
+  }
+
+  const maxWeight = d3.max(links, d => d.weight) || 1;
+  const maxFiles = d3.max(nodes, d => d.fileCount) || 1;
+
+  // Scales
+  let radiusRange, chargeStrength, linkDist;
+  if (currentLevel === 'module') {
+    radiusRange = [18, 60]; chargeStrength = -800; linkDist = 180;
+  } else if (currentLevel === 'submodule') {
+    radiusRange = [6, 30]; chargeStrength = -200; linkDist = 120;
+  } else {
+    radiusRange = [4, 8]; chargeStrength = -30; linkDist = 40;
+  }
+  const radiusScale = d3.scaleSqrt().domain([1, maxFiles]).range(radiusRange);
+  const linkWidthScale = d3.scaleLinear().domain([1, maxWeight]).range([1, currentLevel === 'file' ? 3 : 8]);
+  const linkOpacityScale = d3.scaleLinear().domain([1, maxWeight]).range([0.15, 0.7]);
+
+  // Force simulation
+  simulation = d3.forceSimulation(nodes)
+    .force('link', d3.forceLink(links).id(d => d.id).distance(d => {
+      return linkDist - Math.min(d.weight / maxWeight * (linkDist * 0.5), linkDist * 0.5);
+    }))
+    .force('charge', d3.forceManyBody().strength(chargeStrength))
+    .force('center', d3.forceCenter(width / 2, height / 2))
+    .force('collision', d3.forceCollide().radius(d => radiusScale(d.fileCount) + (currentLevel === 'file' ? 2 : 8)))
+    .force('x', d3.forceX(width / 2).strength(0.05))
+    .force('y', d3.forceY(height / 2).strength(0.05));
+
+  // Zoom
+  const g = svg.append('g');
+  const zoom = d3.zoom()
+    .scaleExtent([0.1, 5])
+    .on('zoom', (event) => g.attr('transform', event.transform));
+  svg.call(zoom);
+
+  // Arrow markers
+  const defs = svg.append('defs');
+  defs.append('marker')
+    .attr('id', 'arrow')
+    .attr('viewBox', '0 -5 10 10')
+    .attr('refX', 20)
+    .attr('refY', 0)
+    .attr('markerWidth', 6)
+    .attr('markerHeight', 6)
+    .attr('orient', 'auto')
+    .append('path')
+    .attr('d', 'M0,-4L10,0L0,4')
+    .attr('fill', '#6c63ff')
+    .attr('opacity', 0.6);
+
+  // Links
+  const link = g.append('g')
+    .selectAll('line')
+    .data(links)
+    .join('line')
+    .attr('class', 'link')
+    .attr('stroke', '#6c63ff')
+    .attr('stroke-width', d => linkWidthScale(d.weight))
+    .attr('stroke-opacity', d => linkOpacityScale(d.weight))
+    .attr('marker-end', 'url(#arrow)');
+
+  // Node groups
+  const node = g.append('g')
+    .selectAll('g')
+    .data(nodes)
+    .join('g')
+    .attr('class', 'node-group')
+    .style('cursor', 'pointer')
+    .call(d3.drag()
+      .on('start', dragstarted)
+      .on('drag', dragged)
+      .on('end', dragended));
+
+  // Node circles
+  node.append('circle')
+    .attr('r', d => radiusScale(d.fileCount))
+    .attr('fill', d => getNodeColor(d))
+    .attr('stroke', d => d3.color(getNodeColor(d)).brighter(0.5))
+    .attr('stroke-width', 2)
+    .attr('opacity', 0.85);
+
+  // File count inside node
+  if (currentLevel === 'module') {
+    node.append('text')
+      .text(d => d.fileCount)
+      .attr('text-anchor', 'middle')
+      .attr('dy', '0.35em')
+      .attr('font-size', d => Math.max(10, radiusScale(d.fileCount) * 0.4))
+      .attr('font-weight', '600')
+      .attr('fill', 'white')
+      .attr('pointer-events', 'none');
+  }
+
+  // Labels
+  node.append('text')
+    .text(d => {
+      const label = d.label || d.id;
+      const maxLen = currentLevel === 'file' ? 30 : 20;
+      return label.length > maxLen ? label.slice(0, maxLen - 2) + '…' : label;
+    })
+    .attr('text-anchor', 'middle')
+    .attr('dy', d => radiusScale(d.fileCount) + (currentLevel === 'file' ? 10 : 14))
+    .attr('font-size', currentLevel === 'module' ? 12 : currentLevel === 'submodule' ? 10 : 8)
+    .attr('font-weight', '500')
+    .attr('fill', 'var(--text)')
+    .attr('pointer-events', 'none');
+
+  // Edge weight labels (module level only)
+  if (currentLevel === 'module') {
+    const linkLabel = g.append('g')
+      .selectAll('text')
+      .data(links.filter(l => l.weight > 5))
+      .join('text')
+      .attr('class', 'link-label')
+      .text(d => d.weight)
+      .attr('font-size', 9)
+      .attr('fill', 'var(--text-muted)')
+      .attr('text-anchor', 'middle')
+      .attr('pointer-events', 'none');
+
+    simulation.on('tick', () => {
+      link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+          .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+      node.attr('transform', d => `translate(${d.x},${d.y})`);
+      linkLabel
+        .attr('x', d => (d.source.x + d.target.x) / 2)
+        .attr('y', d => (d.source.y + d.target.y) / 2 - 6);
+    });
+  } else {
+    simulation.on('tick', () => {
+      link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+          .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+      node.attr('transform', d => `translate(${d.x},${d.y})`);
+    });
+  }
+
+  // For file level, start simulation hotter then cool faster
+  if (currentLevel === 'file' && nodes.length > 100) {
+    simulation.alpha(1).alphaDecay(0.03);
+  }
+
+  // Interactions
+  node.on('mouseover', showTooltip)
+      .on('mousemove', moveTooltip)
+      .on('mouseout', hideTooltip)
+      .on('click', (event, d) => showInfoPanel(d, links, nodes));
+
+  // Initial zoom to fit
+  simulation.on('end', () => {
+    const bounds = g.node().getBBox();
+    const dx = bounds.width, dy = bounds.height;
+    const x = bounds.x + dx / 2, y = bounds.y + dy / 2;
+    const scale = Math.min(0.85 * width / dx, 0.85 * height / dy, 2);
+    const translate = [width / 2 - scale * x, height / 2 - scale * y];
+    svg.transition().duration(750).call(
+      zoom.transform,
+      d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale)
+    );
+  });
+}
+
+// ─── Node Color ────────────────────────────────────────────────────────────
+function getNodeColor(d) {
+  const id = d.id;
+  // Direct match
+  if (MODULE_COLORS[id]) return MODULE_COLORS[id];
+  // Module parent match (for submodules)
+  if (d.module && MODULE_COLORS[d.module]) return MODULE_COLORS[d.module];
+  // Prefix match
+  for (const [key, color] of Object.entries(MODULE_COLORS)) {
+    if (id.startsWith(key)) return color;
+  }
+  return '#64748b';
+}
+
+// ─── Tooltip ───────────────────────────────────────────────────────────────
+function showTooltip(event, d) {
+  const tt = document.getElementById('tooltip');
+  let html = `<div class="tt-title">${d.label || d.id}</div>`;
+  if (currentLevel === 'file' && d.id !== d.label) {
+    html += `<div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;word-break:break-all">${d.id}</div>`;
+  }
+  if (currentLevel !== 'file') {
+    html += `<div class="tt-row"><span class="tt-label">Files</span><span class="tt-val">${d.fileCount}</span></div>`;
+  }
+  if (d.topLanguage) {
+    html += `<div class="tt-row"><span class="tt-label">${currentLevel === 'file' ? 'Language' : 'Primary'}</span><span class="tt-val">${d.topLanguage}</span></div>`;
+  }
+  if (d.module) {
+    html += `<div class="tt-row"><span class="tt-label">Module</span><span class="tt-val">${d.module}</span></div>`;
+  }
+  if (d.languages) {
+    const total = Object.values(d.languages).reduce((a, b) => a + b, 0);
+    html += '<div style="margin-top:6px">';
+    html += '<div class="lang-bar">';
+    for (const [lang, count] of Object.entries(d.languages).sort((a, b) => b[1] - a[1])) {
+      const pct = (count / total * 100).toFixed(1);
+      const color = LANG_COLORS[lang] || '#888';
+      html += `<div style="width:${pct}%;background:${color}" title="${lang}: ${count}"></div>`;
+    }
+    html += '</div></div>';
+  }
+  tt.innerHTML = html;
+  tt.style.display = 'block';
+}
+
+function moveTooltip(event) {
+  const tt = document.getElementById('tooltip');
+  tt.style.left = (event.clientX + 14) + 'px';
+  tt.style.top = (event.clientY - 10) + 'px';
+}
+
+function hideTooltip() {
+  document.getElementById('tooltip').style.display = 'none';
+}
+
+// ─── Info Panel ────────────────────────────────────────────────────────────
+function showInfoPanel(d, links, nodes) {
+  const panel = document.getElementById('info-panel');
+  selectedNode = d;
+
+  // Find connections
+  const outgoing = links.filter(l =>
+    (typeof l.source === 'object' ? l.source.id : l.source) === d.id
+  );
+  const incoming = links.filter(l =>
+    (typeof l.target === 'object' ? l.target.id : l.target) === d.id
+  );
+
+  let html = `<h3>
+    <span style="color:${getNodeColor(d)}">●</span> ${d.label || d.id}
+    <button class="close-btn" onclick="document.getElementById('info-panel').style.display='none'">✕</button>
+  </h3>`;
+
+  if (currentLevel === 'file' && d.id !== d.label) {
+    html += `<div style="font-size:10px;color:var(--text-muted);margin-bottom:6px;word-break:break-all">${d.id}</div>`;
+  }
+
+  if (currentLevel !== 'file') {
+    html += `<div class="tt-row"><span class="tt-label">Files</span><span class="tt-val">${d.fileCount}</span></div>`;
+  }
+  if (d.topLanguage) {
+    html += `<div class="tt-row"><span class="tt-label">Language</span><span class="tt-val">${d.topLanguage}</span></div>`;
+  }
+  if (d.module) {
+    html += `<div class="tt-row"><span class="tt-label">Module</span><span class="tt-val">${d.module}</span></div>`;
+  }
+
+  if (d.languages) {
+    html += '<div class="lang-bar">';
+    const total = Object.values(d.languages).reduce((a, b) => a + b, 0);
+    for (const [lang, count] of Object.entries(d.languages).sort((a, b) => b[1] - a[1])) {
+      const pct = (count / total * 100).toFixed(1);
+      const color = LANG_COLORS[lang] || '#888';
+      html += `<div style="width:${pct}%;background:${color}" title="${lang}: ${count} (${pct}%)"></div>`;
+    }
+    html += '</div>';
+    html += '<div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">';
+    for (const [lang, count] of Object.entries(d.languages).sort((a, b) => b[1] - a[1]).slice(0, 5)) {
+      html += `<span style="color:${LANG_COLORS[lang] || '#888'}">●</span> ${lang}: ${count} &nbsp;`;
+    }
+    html += '</div>';
+  }
+
+  if (outgoing.length > 0) {
+    html += `<div class="section-label">Depends on (${outgoing.length})</div>`;
+    html += '<ul class="dep-list">';
+    outgoing.sort((a, b) => b.weight - a.weight).forEach(l => {
+      const target = typeof l.target === 'object' ? l.target : nodes.find(n => n.id === l.target);
+      const label = target ? (target.label || target.id) : l.target;
+      html += `<li><span class="dep-name">→ ${label}</span><span class="dep-count">${l.weight}</span></li>`;
+    });
+    html += '</ul>';
+  }
+
+  if (incoming.length > 0) {
+    html += `<div class="section-label">Used by (${incoming.length})</div>`;
+    html += '<ul class="dep-list">';
+    incoming.sort((a, b) => b.weight - a.weight).forEach(l => {
+      const source = typeof l.source === 'object' ? l.source : nodes.find(n => n.id === l.source);
+      const label = source ? (source.label || source.id) : l.source;
+      html += `<li><span class="dep-name">← ${label}</span><span class="dep-count">${l.weight}</span></li>`;
+    });
+    html += '</ul>';
+  }
+
+  if (outgoing.length === 0 && incoming.length === 0) {
+    html += '<div style="color:var(--text-muted);margin-top:8px">No cross-module dependencies</div>';
+  }
+
+  panel.innerHTML = html;
+  panel.style.display = 'block';
+
+  // Highlight connected nodes/edges
+  const connectedIds = new Set([d.id]);
+  outgoing.forEach(l => connectedIds.add(typeof l.target === 'object' ? l.target.id : l.target));
+  incoming.forEach(l => connectedIds.add(typeof l.source === 'object' ? l.source.id : l.source));
+
+  d3.selectAll('.node-group').style('opacity', n => connectedIds.has(n.id) ? 1 : 0.15);
+  d3.selectAll('.link').style('opacity', l => {
+    const sid = typeof l.source === 'object' ? l.source.id : l.source;
+    const tid = typeof l.target === 'object' ? l.target.id : l.target;
+    return (sid === d.id || tid === d.id) ? 0.8 : 0.03;
+  });
+}
+
+// ─── Drag ──────────────────────────────────────────────────────────────────
+function dragstarted(event, d) {
+  if (!event.active) simulation.alphaTarget(0.3).restart();
+  d.fx = d.x; d.fy = d.y;
+}
+function dragged(event, d) {
+  d.fx = event.x; d.fy = event.y;
+}
+function dragended(event, d) {
+  if (!event.active) simulation.alphaTarget(0);
+  d.fx = null; d.fy = null;
+}
+
+// ─── Data Loading ──────────────────────────────────────────────────────────
+// Data can be injected by Swift via `window.graphData = {...}` before this script runs,
+// or loaded from a JSON file.
+if (window.graphData) {
+  init(window.graphData);
+} else {
+  // Try loading from embedded data element
+  const dataEl = document.getElementById('graph-json');
+  if (dataEl) {
+    init(JSON.parse(dataEl.textContent));
+  } else {
+    // Fallback: fetch from file
+    fetch('graph-data.json')
+      .then(r => r.json())
+      .then(init)
+      .catch(e => {
+        document.getElementById('stats-text').textContent = 'Error loading graph data: ' + e.message;
+      });
+  }
+}
+
+// Listen for data updates from Swift
+window.updateGraphData = function(jsonString) {
+  const data = typeof jsonString === 'string' ? JSON.parse(jsonString) : jsonString;
+  graphData = data;
+  init(data);
+};
+
+// Reset highlight on background click
+d3.select('#graph').on('click', function(event) {
+  if (event.target.tagName === 'svg') {
+    d3.selectAll('.node-group').style('opacity', 1);
+    d3.selectAll('.link').style('opacity', null);
+    document.getElementById('info-panel').style.display = 'none';
+    selectedNode = null;
+  }
+});
+</script>
+</body>
+</html>

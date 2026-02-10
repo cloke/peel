@@ -17,8 +17,6 @@ struct PIIScrubberView: View {
   @State private var seed = "peel"
   @State private var maxSamples = 5
   @State private var enableNER = false
-  @State private var toolPath = ""
-  @State private var lastDetectedToolPath: String?
 
   @State private var report: PIIScrubberReport?
   @State private var lastReportPath: String?
@@ -91,24 +89,6 @@ struct PIIScrubberView: View {
         Toggle("Enable NER", isOn: $enableNER)
           .accessibilityIdentifier("agents.piiScrubber.enableNER")
 
-        LabeledContent("pii-scrubber path (optional)") {
-          HStack(spacing: 8) {
-            TextField("Auto-detect from project", text: $toolPath)
-              .textFieldStyle(.roundedBorder)
-              .frame(minWidth: 320)
-              .accessibilityIdentifier("agents.piiScrubber.toolPath")
-
-            Button("Detect") {
-              if let detected = service.suggestedToolPath() {
-                toolPath = detected
-                lastDetectedToolPath = detected
-              }
-            }
-            .buttonStyle(.bordered)
-            .accessibilityIdentifier("agents.piiScrubber.detect")
-          }
-        }
-
         HStack(spacing: 8) {
           Button(isRunning ? "Running..." : "Run Scrubber") {
             Task { await runScrubber() }
@@ -116,12 +96,6 @@ struct PIIScrubberView: View {
           .buttonStyle(.borderedProminent)
           .disabled(isRunning)
           .accessibilityIdentifier("agents.piiScrubber.run")
-
-          if let lastDetectedToolPath {
-            Text("Detected: \(lastDetectedToolPath)")
-              .font(.caption)
-              .foregroundStyle(.secondary)
-          }
         }
       }
 
@@ -204,8 +178,7 @@ struct PIIScrubberView: View {
       configPath: configPath.isEmpty ? nil : configPath,
       seed: seed.isEmpty ? nil : seed,
       maxSamples: maxSamples,
-      enableNER: enableNER,
-      toolPath: toolPath.isEmpty ? nil : toolPath
+      enableNER: enableNER
     )
 
     do {

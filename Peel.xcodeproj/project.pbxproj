@@ -28,6 +28,7 @@
 		04A7BD8A258E77D8000E55A8 /* Tests_macOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */; };
 		04A7BD8F258E77D8000E55A8 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD64258E77D7000E55A8 /* ContentView.swift */; };
 		04ASTCHK2F2E000100000002 /* ASTChunker in Frameworks */ = {isa = PBXBuildFile; productRef = 04ASTCHK2F2E000100000003 /* ASTChunker */; };
+		04PIISCR2F2E000100000002 /* PIIScrubber in Frameworks */ = {isa = PBXBuildFile; productRef = 04PIISCR2F2E000100000003 /* PIIScrubber */; };
 		04ASTCLI2F3B000100000001 /* ast-chunker-cli in CopyFiles */ = {isa = PBXBuildFile; fileRef = 04ASTCLI2F3B000100000002 /* ast-chunker-cli */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		04D09EFD26A85E8100072702 /* OAuthSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 04D09EFC26A85E8100072702 /* OAuthSwift */; };
 		0A11B6D12F1234567890ABCD /* PeelApp_iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A11B6D02F1234567890ABCD /* PeelApp_iOS.swift */; };
@@ -84,6 +85,7 @@
 		04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests_macOS.swift; sourceTree = "<group>"; };
 		04A7BD8B258E77D8000E55A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		04ASTCHK2F2E000100000001 /* ASTChunker */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = ASTChunker; path = "Local Packages/ASTChunker"; sourceTree = "<group>"; };
+		04PIISCR2F2E000100000001 /* PIIScrubber */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = PIIScrubber; path = "Local Packages/PIIScrubber"; sourceTree = "<group>"; };
 		04ASTCLI2F3B000100000002 /* ast-chunker-cli */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = "ast-chunker-cli"; path = "Tools/Binaries/ast-chunker-cli"; sourceTree = "<group>"; };
 		04F4F9772596AAD7005B30B4 /* Peel.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Peel.entitlements; sourceTree = "<group>"; };
 		04F582A6269FD388003A8403 /* Github */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Github; path = "Local Packages/Github"; sourceTree = "<group>"; };
@@ -172,6 +174,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				04ASTCHK2F2E000100000002 /* ASTChunker in Frameworks */,
+				04PIISCR2F2E000100000002 /* PIIScrubber in Frameworks */,
 				03MLXEMB2F2B000100000001 /* MLXEmbedders in Frameworks */,
 				03MLXLLM2F30000100000001 /* MLXLLM in Frameworks */,
 				03MLXLMC2F30000100000001 /* MLXLMCommon in Frameworks */,
@@ -213,6 +216,7 @@
 				04F582A6269FD388003A8403 /* Github */,
 				04MCPCOR2F2E000100000001 /* MCPCore */,
 				04PEELUI2F2E000100000001 /* PeelUI */,
+				04PIISCR2F2E000100000001 /* PIIScrubber */,
 			);
 			name = Packages;
 			sourceTree = "<group>";
@@ -351,6 +355,7 @@
 				03MLXLLM2F30000100000002 /* MLXLLM */,
 				03MLXLMC2F30000100000002 /* MLXLMCommon */,
 				04ASTCHK2F2E000100000003 /* ASTChunker */,
+				04PIISCR2F2E000100000003 /* PIIScrubber */,
 				04A236472F2E34510055F436 /* FirebaseAppCheck */,
 				04A236492F2E34510055F436 /* FirebaseAuth */,
 				04A2364B2F2E34510055F436 /* FirebaseFirestore */,
@@ -442,6 +447,7 @@
 				04LOCPKG0004000000000001 /* XCLocalSwiftPackageReference "Local Packages/Git" */,
 				04LOCPKG0005000000000001 /* XCLocalSwiftPackageReference "Local Packages/Github" */,
 				04LOCPKG0006000000000001 /* XCLocalSwiftPackageReference "Local Packages/Brew" */,
+				04LOCPKG0007000000000001 /* XCLocalSwiftPackageReference "Local Packages/PIIScrubber" */,
 				04A236462F2E34510055F436 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 			);
 			productRefGroup = 04A7BD6B258E77D8000E55A8 /* Products */;
@@ -1098,6 +1104,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = "Local Packages/Brew";
 		};
+		04LOCPKG0007000000000001 /* XCLocalSwiftPackageReference "Local Packages/PIIScrubber" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "Local Packages/PIIScrubber";
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -1218,6 +1228,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 04LOCPKG0001000000000001 /* XCLocalSwiftPackageReference "Local Packages/ASTChunker" */;
 			productName = ASTChunker;
+		};
+		04PIISCR2F2E000100000003 /* PIIScrubber */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 04LOCPKG0007000000000001 /* XCLocalSwiftPackageReference "Local Packages/PIIScrubber" */;
+			productName = PIIScrubber;
 		};
 		04D09EFC26A85E8100072702 /* OAuthSwift */ = {
 			isa = XCSwiftPackageProductDependency;

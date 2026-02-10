@@ -3,24 +3,16 @@
 //  Peel
 //
 //  Extracted from AgentManager.swift on 1/20/26.
+//  Refactored to use PIIScrubber library directly.
 //
 
 import Foundation
-import TaskRunner
+import PIIScrubber
 
-// MARK: - PII Scrubber Report Models
+// MARK: - Type Aliases for backward compatibility
 
-struct PIIScrubberReport: Codable {
-  struct Sample: Codable {
-    let original: String
-    let replacement: String
-  }
-
-  var startedAt: Date
-  var completedAt: Date?
-  var counts: [String: Int]
-  var samples: [String: [Sample]]
-}
+/// App-level alias so existing code referencing `PIIScrubberReport` still compiles.
+typealias PIIScrubberReport = AuditReport
 
 // MARK: - PII Scrubber Service
 
@@ -75,10 +67,9 @@ final class PIIScrubberService {
     let inputPath: String
     let outputPath: String
     let reportPath: String?
-    let report: PIIScrubberReport?
+    let report: AuditReport?
   }
 
-  private let executor = ProcessExecutor()
   var isRunning: Bool = false
   var lastError: String?
   var lastResult: ScrubResult?
@@ -90,43 +81,44 @@ final class PIIScrubberService {
     guard !trimmedInput.isEmpty else { throw ValidationError("Input path is required.") }
     guard !trimmedOutput.isEmpty else { throw ValidationError("Output path is required.") }
 
-    guard let toolPath = resolveToolPath(customPath: options.toolPath) else {
-      throw ValidationError("pii-scrubber not found. Build PeelSkills or set a tool path.")
-    }
+    let expandedInput = expandPath(trimmedInput)
+    let expandedOutput = expandPath(trimmedOutput)
+    let expandedConfig: String? = {
+      guard let configPath = options.configPath, !configPath.isEmpty else { return nil }
+      return expandPath(configPath)
+    }()
 
-    var arguments: [String] = ["--input", expandPath(trimmedInput), "--output", expandPath(trimmedOutput)]
+    let runnerOptions = ScrubRunner.Options(
+      inputPath: expandedInput,
+      outputPath: expandedOutput,
+      configPath: expandedConfig,
+      seed: options.seed ?? "peel",
+      maxSamples: options.maxSamples ?? 5,
+      enableNER: options.enableNER
+    )
+
+    // Run on a background thread to avoid blocking the main actor
+    let result = try await Task.detached {
+      let runner = ScrubRunner()
+      return try runner.run(options: runnerOptions)
+    }.value
+
+    // Write report file if requested
     if let reportPath = options.reportPath, !reportPath.isEmpty {
-      arguments.append(contentsOf: ["--report", expandPath(reportPath)])
-    }
-    if let reportFormat = options.reportFormat, !reportFormat.isEmpty {
-      arguments.append(contentsOf: ["--report-format", reportFormat])
-    }
-    if let configPath = options.configPath, !configPath.isEmpty {
-      arguments.append(contentsOf: ["--config", expandPath(configPath)])
-    }
-    if let seed = options.seed, !seed.isEmpty {
-      arguments.append(contentsOf: ["--seed", seed])
-    }
-    if let maxSamples = options.maxSamples {
-      arguments.append(contentsOf: ["--max-samples", String(maxSamples)])
-    }
-    if options.enableNER {
-      arguments.append("--enable-ner")
-    }
+      let expanded = expandPath(reportPath)
+      let url = URL(fileURLWithPath: expanded)
+      let fm = FileManager.default
+      try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
 
-    let result = try await executor.execute(toolPath, arguments: arguments, throwOnNonZeroExit: false)
-    if result.exitCode != 0 {
-      let message = result.stderrString.isEmpty ? result.stdoutString : result.stderrString
-      throw ValidationError(message.trimmingCharacters(in: .whitespacesAndNewlines))
-    }
-
-    var report: PIIScrubberReport?
-    if let reportPath = options.reportPath, !reportPath.isEmpty {
-      let path = expandPath(reportPath)
-      if let data = try? Data(contentsOf: URL(fileURLWithPath: path)) {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        report = try? decoder.decode(PIIScrubberReport.self, from: data)
+      let reportFormat = (options.reportFormat ?? "json").lowercased()
+      if reportFormat == "text" {
+        try result.report.summaryText().write(to: url, atomically: true, encoding: .utf8)
+      } else {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(result.report)
+        try data.write(to: url)
       }
     }
 
@@ -134,58 +126,11 @@ final class PIIScrubberService {
       inputPath: trimmedInput,
       outputPath: trimmedOutput,
       reportPath: options.reportPath,
-      report: report
+      report: result.report
     )
     lastResult = scrubResult
     lastError = nil
     return scrubResult
-  }
-
-  func suggestedToolPath() -> String? {
-    findToolPath()
-  }
-
-  private func resolveToolPath(customPath: String?) -> String? {
-    if let customPath, !customPath.isEmpty {
-      let expanded = expandPath(customPath)
-      if FileManager.default.isExecutableFile(atPath: expanded) {
-        return expanded
-      }
-    }
-    return findToolPath()
-  }
-
-  private func findToolPath() -> String? {
-    let fm = FileManager.default
-    let home = fm.homeDirectoryForCurrentUser.path
-    let roots = [
-      fm.currentDirectoryPath,
-      home,
-      URL(fileURLWithPath: home).appendingPathComponent("code").path,
-      URL(fileURLWithPath: home).appendingPathComponent("projects").path,
-      Bundle.main.bundleURL.deletingLastPathComponent().path
-    ]
-
-    var detected: [String] = []
-    for root in roots {
-      if let ancestor = findAncestor(containing: "Tools/PeelSkills", from: root) {
-        detected.append(ancestor)
-      }
-    }
-
-    for root in Array(Set(detected)) {
-      let debugPath = URL(fileURLWithPath: root)
-        .appendingPathComponent("Tools/PeelSkills/.build/debug/pii-scrubber")
-        .path
-      if fm.isExecutableFile(atPath: debugPath) { return debugPath }
-
-      let releasePath = URL(fileURLWithPath: root)
-        .appendingPathComponent("Tools/PeelSkills/.build/release/pii-scrubber")
-        .path
-      if fm.isExecutableFile(atPath: releasePath) { return releasePath }
-    }
-
-    return nil
   }
 
   private func expandPath(_ path: String) -> String {
@@ -200,20 +145,5 @@ final class PIIScrubberService {
     return URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
       .appendingPathComponent(trimmed)
       .path
-  }
-
-  private func findAncestor(containing relativePath: String, from start: String) -> String? {
-    var url = URL(fileURLWithPath: start)
-    let fm = FileManager.default
-    while true {
-      let candidate = url.appendingPathComponent(relativePath).path
-      if fm.fileExists(atPath: candidate) {
-        return url.path
-      }
-      let parent = url.deletingLastPathComponent()
-      if parent.path == url.path { break }
-      url = parent
-    }
-    return nil
   }
 }
