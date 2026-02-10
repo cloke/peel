@@ -132,6 +132,12 @@ struct DependencyGraphD3View: View {
   @State private var errorMessage: String?
   @State private var selectedRepo: String = ""
   @State private var availableRepos: [(name: String, path: String)] = []
+  @State private var selectedTab: GraphTab = .modules
+
+  enum GraphTab: String, CaseIterable {
+    case modules = "Module Graph"
+    case files = "File Connections"
+  }
 
   var body: some View {
     VStack(spacing: 0) {
@@ -142,6 +148,14 @@ struct DependencyGraphD3View: View {
           .foregroundStyle(.purple)
         Text("Dependency Graph")
           .font(.headline)
+
+        Picker("View", selection: $selectedTab) {
+          ForEach(GraphTab.allCases, id: \.self) { tab in
+            Text(tab.rawValue).tag(tab)
+          }
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 240)
 
         Spacer()
 
@@ -154,7 +168,7 @@ struct DependencyGraphD3View: View {
           }
           .frame(width: 200)
           .onChange(of: selectedRepo) { _, newValue in
-            if !newValue.isEmpty {
+            if !newValue.isEmpty && selectedTab == .modules {
               Task { await buildGraph(repoPath: newValue) }
             }
           }
@@ -182,36 +196,70 @@ struct DependencyGraphD3View: View {
       Divider()
 
       // Content
-      if let graphData {
-        #if os(macOS)
-        D3GraphWebView(graphData: graphData)
-        #else
-        Text("Graph visualization requires macOS")
-        #endif
-      } else if let errorMessage {
-        ContentUnavailableView {
-          Label("Error", systemImage: "exclamationmark.triangle")
-        } description: {
-          Text(errorMessage)
-        }
-      } else if isLoading {
-        VStack(spacing: 12) {
-          ProgressView()
-          Text("Building dependency graph…")
-            .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-      } else {
-        ContentUnavailableView {
-          Label("Dependency Graph", systemImage: "point.3.connected.trianglepath.dotted")
-        } description: {
-          Text("Select a repository to visualize its module dependencies.")
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      switch selectedTab {
+      case .modules:
+        moduleGraphContent
+      case .files:
+        fileConnectionsContent
       }
     }
     .task {
       await loadRepos()
+    }
+  }
+
+  // MARK: - Module Graph (D3)
+
+  @ViewBuilder
+  private var moduleGraphContent: some View {
+    if let graphData {
+      #if os(macOS)
+      D3GraphWebView(graphData: graphData)
+      #else
+      Text("Graph visualization requires macOS")
+      #endif
+    } else if let errorMessage {
+      ContentUnavailableView {
+        Label("Error", systemImage: "exclamationmark.triangle")
+      } description: {
+        Text(errorMessage)
+      }
+    } else if isLoading {
+      VStack(spacing: 12) {
+        ProgressView()
+        Text("Building dependency graph…")
+          .foregroundStyle(.secondary)
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+    } else {
+      ContentUnavailableView {
+        Label("Module Graph", systemImage: "point.3.connected.trianglepath.dotted")
+      } description: {
+        Text("Select a repository to visualize its module dependencies.")
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+  }
+
+  // MARK: - File Connections
+
+  @ViewBuilder
+  private var fileConnectionsContent: some View {
+    if !selectedRepo.isEmpty {
+      ScrollView {
+        DependencyGraphView(
+          mcpServer: mcpServer,
+          repoPath: selectedRepo
+        )
+        .padding(16)
+      }
+    } else {
+      ContentUnavailableView {
+        Label("File Connections", systemImage: "doc.text.magnifyingglass")
+      } description: {
+        Text("Select a repository to explore file-level dependencies.")
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
   }
 
