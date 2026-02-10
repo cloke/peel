@@ -255,6 +255,13 @@ struct LocalRAGDependencySummary: Sendable {
   let dependents: [LocalRAGDependencyResult]      // What depends on this file
 }
 
+/// Lightweight file summary for dependency graph aggregation
+struct LocalRAGFileSummary: Sendable {
+  let path: String
+  let language: String?
+  let modulePath: String?
+}
+
 struct LocalRAGChunker {
   var maxLines: Int = 100  // Reduced from 200 for better granularity
   var minLines: Int = 20   // Don't create tiny chunks
@@ -4996,6 +5003,63 @@ actor LocalRAGStore {
       bindText(statement, 2, filePath)
       // Support filename-only queries (e.g., "LocalRAGStore.swift" matches "Shared/Services/LocalRAGStore.swift")
       bindText(statement, 3, "%/\(filePath)")
+    }
+  }
+
+  /// Get a lightweight list of files for graph aggregation
+  func getFileSummaries(for repoPath: String) throws -> [LocalRAGFileSummary] {
+    try openIfNeeded()
+
+    let sql = """
+      SELECT f.path, f.language, f.module_path
+      FROM files f
+      JOIN repos r ON r.id = f.repo_id
+      WHERE r.root_path = ?
+      ORDER BY f.path
+      """
+
+    guard let db else { throw LocalRAGError.sqlite("Database not initialized") }
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let stmt = statement else {
+      throw LocalRAGError.sqlite("Failed to prepare statement")
+    }
+    defer { sqlite3_finalize(stmt) }
+
+    bindText(stmt, 1, repoPath)
+
+    var results: [LocalRAGFileSummary] = []
+    while sqlite3_step(stmt) == SQLITE_ROW {
+      let path = sqlite3_column_text(stmt, 0).map { String(cString: $0) } ?? ""
+      let language = sqlite3_column_text(stmt, 1).map { String(cString: $0) }
+      let modulePath = sqlite3_column_text(stmt, 2).map { String(cString: $0) }
+      results.append(LocalRAGFileSummary(path: path, language: language, modulePath: modulePath))
+    }
+
+    return results
+  }
+
+  /// Get all dependency edges for a repo (used for graph aggregation)
+  func getDependencyEdges(for repoPath: String) throws -> [LocalRAGDependencyResult] {
+    try openIfNeeded()
+
+    let sql = """
+      SELECT 
+        source_files.path as source_file,
+        d.target_path,
+        target_files.path as target_file,
+        d.dependency_type,
+        d.raw_import
+      FROM dependencies d
+      JOIN files source_files ON source_files.id = d.source_file_id
+      JOIN repos ON repos.id = d.repo_id
+      LEFT JOIN files target_files ON target_files.id = d.target_file_id
+      WHERE repos.root_path = ?
+      ORDER BY source_files.path
+      """
+
+    return try queryDependencies(sql: sql) { statement in
+      bindText(statement, 1, repoPath)
     }
   }
   
