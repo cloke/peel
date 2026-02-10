@@ -16,6 +16,7 @@ enum InfrastructureView: String, Hashable {
   case templateGallery = "template-gallery"
   case translationValidation = "translation-validation"
   case localRag = "local-rag"
+  case dependencyGraph = "dependency-graph"
   case piiScrubber = "pii-scrubber"
   case doclingImport = "docling-import"
   case parallelWorktrees = "parallel-worktrees"
@@ -91,6 +92,9 @@ struct Agents_RootView: View {
       case "agents.localRag":
         selectedInfrastructure = .localRag
         mcpServer.recordUIActionHandled(action.controlId)
+      case "agents.dependencyGraph":
+        selectedInfrastructure = .dependencyGraph
+        mcpServer.recordUIActionHandled(action.controlId)
       case "agents.piiScrubber":
         selectedInfrastructure = .piiScrubber
         mcpServer.recordUIActionHandled(action.controlId)
@@ -161,6 +165,8 @@ struct Agents_RootView: View {
         }
       case .localRag:
         LocalRAGDashboardView(mcpServer: mcpServer)
+      case .dependencyGraph:
+        DependencyGraphD3View(mcpServer: mcpServer)
       case .piiScrubber:
         if showPIIScrubber {
           PIIScrubberView()
