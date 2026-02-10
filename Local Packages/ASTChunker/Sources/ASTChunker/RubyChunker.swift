@@ -18,12 +18,39 @@ public struct RubyChunker: LanguageChunker, Sendable {
   /// Path to tree-sitter CLI
   private let treeSitterCLIPath: String
   
+  /// Whether the chunker is available (library and CLI exist)
+  public let isAvailable: Bool
+
+  /// Environment variable for Ruby grammar library path
+  public static let envLibPath = "AST_CHUNKER_RUBY_LIB"
+
+  /// Environment variable for tree-sitter CLI path
+  public static let envCLIPath = "AST_CHUNKER_TREE_SITTER_CLI"
+
+  /// Common search paths for tree-sitter CLI
+  private static let treeSitterCLISearchPaths = [
+    "/opt/homebrew/bin/tree-sitter",
+    "/usr/local/bin/tree-sitter",
+    "/usr/bin/tree-sitter",
+  ]
+
   public init(
-    treeSitterLibPath: String = "~/code/tree-sitter-grammars/tree-sitter-ruby/ruby.dylib",
-    treeSitterCLIPath: String = "/opt/homebrew/bin/tree-sitter"
+    treeSitterLibPath: String? = nil,
+    treeSitterCLIPath: String? = nil
   ) {
-    self.treeSitterLibPath = (treeSitterLibPath as NSString).expandingTildeInPath
-    self.treeSitterCLIPath = treeSitterCLIPath
+    let resolvedLibPath = treeSitterLibPath
+      ?? ProcessInfo.processInfo.environment[Self.envLibPath]
+
+    let resolvedCLIPath = treeSitterCLIPath
+      ?? ProcessInfo.processInfo.environment[Self.envCLIPath]
+      ?? GlimmerChunker.findTreeSitterCLI(searchPaths: Self.treeSitterCLISearchPaths)
+
+    self.treeSitterLibPath = resolvedLibPath.map { ($0 as NSString).expandingTildeInPath } ?? ""
+    self.treeSitterCLIPath = resolvedCLIPath ?? ""
+    self.isAvailable = !self.treeSitterLibPath.isEmpty &&
+                       !self.treeSitterCLIPath.isEmpty &&
+                       FileManager.default.fileExists(atPath: self.treeSitterLibPath) &&
+                       FileManager.default.fileExists(atPath: self.treeSitterCLIPath)
   }
   
   public func chunk(source: String, maxChunkLines: Int = 200) -> [ASTChunk] {

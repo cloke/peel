@@ -504,7 +504,6 @@ struct ChunkingResult: Sendable {
 struct HybridChunker {
   private let lineChunker = LocalRAGChunker()
   private let rubyChunker: RubyChunker?
-  private let glimmerChunker: GlimmerChunker?
   private let jsChunker: JSCoreTypeScriptChunker
   
   /// Path to ast-chunker-cli (resolved lazily)
@@ -576,6 +575,12 @@ struct HybridChunker {
     // so we walk up to the repo root regardless of folder name.
     let repoRoot = findRepoRootFromSourceFile()
     if let root = repoRoot {
+      // Check Tools/Binaries first (Xcode build phase copies here)
+      let toolsBinPath = "\(root)/Tools/Binaries/ast-chunker-cli"
+      if FileManager.default.fileExists(atPath: toolsBinPath) {
+        return toolsBinPath
+      }
+      
       for config in ["release", "debug"] {
         let cliPath = "\(root)/Local Packages/ASTChunker/.build/\(config)/ast-chunker-cli"
         if FileManager.default.fileExists(atPath: cliPath) {
@@ -605,31 +610,20 @@ struct HybridChunker {
   }
   
   init() {
-    let cliPath = "/opt/homebrew/bin/tree-sitter"
-    
-    // Initialize Ruby chunker if tree-sitter is available
-    let rubyLibPath = ("~/code/tree-sitter-grammars/tree-sitter-ruby/ruby.dylib" as NSString).expandingTildeInPath
-    if FileManager.default.fileExists(atPath: cliPath) &&
-       FileManager.default.fileExists(atPath: rubyLibPath) {
-      self.rubyChunker = RubyChunker(treeSitterLibPath: rubyLibPath, treeSitterCLIPath: cliPath)
-    } else {
-      self.rubyChunker = nil
-    }
-    
-    // Initialize Glimmer chunker if tree-sitter grammar is available
-    let glimmerChunker = GlimmerChunker()
-    self.glimmerChunker = glimmerChunker.isAvailable ? glimmerChunker : nil
+    // Initialize Ruby chunker — uses env var / search-path resolution
+    let ruby = RubyChunker()
+    self.rubyChunker = ruby.isAvailable ? ruby : nil
     
     // Find ast-chunker-cli for Swift subprocess chunking
     self.astChunkerCLIPath = Self.findASTChunkerCLI()
     
-    // Initialize JSCore chunker for TypeScript/JavaScript (issue #173)
+    // Initialize JSCore chunker for TypeScript/JavaScript/GTS/GJS (issue #173)
+    // JSCore supersedes the old GlimmerChunker for .gts/.gjs files
     self.jsChunker = JSCoreTypeScriptChunker.shared
     
     print("[HybridChunker] Ruby chunker available: \(rubyChunker != nil)")
-    print("[HybridChunker] Glimmer chunker available: \(glimmerChunker.isAvailable)")
     print("[HybridChunker] Swift CLI available: \(astChunkerCLIPath != nil) at \(astChunkerCLIPath ?? "N/A")")
-    print("[HybridChunker] JSCore TS/JS chunker available: \(jsChunker.isAvailable)")
+    print("[HybridChunker] JSCore TS/JS/GTS/GJS chunker available: \(jsChunker.isAvailable)")
     print("[HybridChunker] AST supported languages: \(astSupportedLanguages)")
     print("[HybridChunker] Chunking signature: \(chunkingSignature)")
   }
