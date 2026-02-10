@@ -853,6 +853,187 @@ public final class MCPServerService {
     await refreshRagArtifactStatus()
   }
 
+  // MARK: - Dependency Graph
+
+  func listRagReposForGraph() async throws -> [(name: String, path: String)] {
+    let repos = try await localRagStore.listRepos()
+    return repos.map { (name: $0.name, path: $0.rootPath) }
+  }
+
+  func buildFullDependencyGraph(repoPath: String) async throws -> FullGraphData {
+    let fileSummaries = try await localRagStore.getFileSummaries(for: repoPath)
+    let edges = try await localRagStore.getDependencyEdges(for: repoPath)
+
+    var moduleStats: [String: GraphNodeStats] = [:]
+    var submoduleStats: [String: GraphNodeStats] = [:]
+    var fileIndex: [String: LocalRAGFileSummary] = [:]
+
+    for file in fileSummaries {
+      let normalized = normalizedPath(file.path)
+      fileIndex[normalized] = file
+
+      let moduleId = moduleKey(for: normalized, modulePath: file.modulePath)
+      let submoduleInfo = submoduleKey(for: normalized, modulePath: file.modulePath)
+
+      var moduleBucket = moduleStats[moduleId, default: GraphNodeStats()]
+      moduleBucket.fileCount += 1
+      addLanguage(file.language, to: &moduleBucket.languages)
+      moduleStats[moduleId] = moduleBucket
+
+      var submoduleBucket = submoduleStats[submoduleInfo.key, default: GraphNodeStats()]
+      submoduleBucket.fileCount += 1
+      addLanguage(file.language, to: &submoduleBucket.languages)
+      submoduleBucket.module = submoduleInfo.module
+      submoduleStats[submoduleInfo.key] = submoduleBucket
+    }
+
+    var resolvedDependencies = 0
+    var inferredDependencies = 0
+    var moduleLinks: [LinkKey: LinkBucket] = [:]
+    var submoduleLinks: [LinkKey: LinkBucket] = [:]
+
+    for edge in edges {
+      let sourcePath = normalizedPath(edge.sourceFile)
+      let sourceFile = fileIndex[sourcePath]
+      let sourceModule = moduleKey(for: sourcePath, modulePath: sourceFile?.modulePath)
+      let sourceSubmodule = submoduleKey(for: sourcePath, modulePath: sourceFile?.modulePath).key
+
+      let targetPath = edge.targetFile.map { normalizedPath($0) } ?? normalizedPath(edge.targetPath)
+      let targetFile = edge.targetFile.flatMap { fileIndex[normalizedPath($0)] }
+      let targetModule = moduleKey(for: targetPath, modulePath: targetFile?.modulePath)
+      let targetSubmodule = submoduleKey(for: targetPath, modulePath: targetFile?.modulePath).key
+
+      if edge.targetFile == nil {
+        inferredDependencies += 1
+      } else {
+        resolvedDependencies += 1
+      }
+
+      if !sourceModule.isEmpty, !targetModule.isEmpty, sourceModule != targetModule {
+        let key = LinkKey(source: sourceModule, target: targetModule)
+        moduleLinks[key, default: LinkBucket()].add(type: edge.dependencyType.rawValue)
+      }
+
+      if !sourceSubmodule.isEmpty, !targetSubmodule.isEmpty, sourceSubmodule != targetSubmodule {
+        let key = LinkKey(source: sourceSubmodule, target: targetSubmodule)
+        submoduleLinks[key, default: LinkBucket()].add(type: edge.dependencyType.rawValue)
+      }
+
+      if moduleStats[targetModule] == nil {
+        moduleStats[targetModule] = GraphNodeStats()
+      }
+      if submoduleStats[targetSubmodule] == nil {
+        var bucket = GraphNodeStats()
+        bucket.module = submoduleKey(for: targetPath, modulePath: targetFile?.modulePath).module
+        submoduleStats[targetSubmodule] = bucket
+      }
+    }
+
+    let moduleNodes = moduleStats.map { entry in
+      GraphNode(
+        id: entry.key,
+        label: entry.key,
+        fileCount: entry.value.fileCount,
+        topLanguage: topLanguage(from: entry.value.languages),
+        languages: entry.value.languages.isEmpty ? nil : entry.value.languages,
+        module: entry.key
+      )
+    }
+    .sorted { $0.id < $1.id }
+
+    let submoduleNodes = submoduleStats.map { entry in
+      GraphNode(
+        id: entry.key,
+        label: entry.key,
+        fileCount: entry.value.fileCount,
+        topLanguage: topLanguage(from: entry.value.languages),
+        languages: entry.value.languages.isEmpty ? nil : entry.value.languages,
+        module: entry.value.module
+      )
+    }
+    .sorted { $0.id < $1.id }
+
+    let moduleLinksOutput = moduleLinks.map { entry in
+      GraphLink(source: entry.key.source, target: entry.key.target, weight: entry.value.weight, types: entry.value.types)
+    }
+    .sorted { $0.source < $1.source }
+
+    let submoduleLinksOutput = submoduleLinks.map { entry in
+      GraphLink(source: entry.key.source, target: entry.key.target, weight: entry.value.weight, types: entry.value.types)
+    }
+    .sorted { $0.source < $1.source }
+
+    let stats = GraphStats(
+      totalFiles: fileSummaries.count,
+      totalDependencies: edges.count,
+      resolvedDependencies: resolvedDependencies,
+      inferredDependencies: inferredDependencies,
+      totalModules: moduleNodes.count
+    )
+
+    return FullGraphData(
+      repo: repoPath,
+      stats: stats,
+      moduleGraph: GraphLevel(nodes: moduleNodes, links: moduleLinksOutput),
+      submoduleGraph: GraphLevel(nodes: submoduleNodes, links: submoduleLinksOutput),
+      fileGraph: nil
+    )
+  }
+
+  private struct GraphNodeStats {
+    var fileCount: Int = 0
+    var languages: [String: Int] = [:]
+    var module: String? = nil
+  }
+
+  private struct LinkBucket {
+    var weight: Int = 0
+    var types: [String: Int] = [:]
+
+    mutating func add(type: String) {
+      weight += 1
+      types[type, default: 0] += 1
+    }
+  }
+
+  private struct LinkKey: Hashable {
+    let source: String
+    let target: String
+  }
+
+  private func normalizedPath(_ path: String) -> String {
+    var trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.hasPrefix("./") {
+      trimmed = String(trimmed.dropFirst(2))
+    }
+    return trimmed
+  }
+
+  private func moduleKey(for path: String, modulePath: String?) -> String {
+    let basePath = normalizedPath(modulePath?.isEmpty == false ? modulePath! : path)
+    let components = basePath.split(separator: "/")
+    return components.first.map(String.init) ?? basePath
+  }
+
+  private func submoduleKey(for path: String, modulePath: String?) -> (key: String, module: String) {
+    let basePath = normalizedPath(modulePath?.isEmpty == false ? modulePath! : path)
+    let components = basePath.split(separator: "/")
+    let module = components.first.map(String.init) ?? basePath
+    if components.count >= 2 {
+      return ("\(components[0])/\(components[1])", module)
+    }
+    return (module, module)
+  }
+
+  private func addLanguage(_ language: String?, to counts: inout [String: Int]) {
+    guard let language, !language.isEmpty else { return }
+    counts[language, default: 0] += 1
+  }
+
+  private func topLanguage(from counts: [String: Int]) -> String? {
+    counts.max { $0.value < $1.value }?.key
+  }
+
   func indexPolicyRepository(path: String) async throws -> LocalRAGIndexReport {
     try await localRagStore.indexRepository(path: path)
   }
