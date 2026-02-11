@@ -106,13 +106,17 @@ When the user asks to **start a chain**, **use the MCP CLI** instead of manually
 
 **If local changes exist and this is an MCP chain invocation:** commit and push first (unless user says not to). When the user manually runs build-and-launch, do **not** auto-stash or commit — just build and launch.
 
-### MCP CLI Temp Files (IMPORTANT)
-When invoking MCP tools via `Tools/PeelCLI`, write argument JSON files to the repo-local tmp directory instead of `/tmp`.
+### Temp Files — Always Use Project `tmp/` (IMPORTANT)
+**Never write temp files to `/tmp` or system temp directories.** Always use the repo-local `tmp/` directory instead.
 
-Preferred path:
-- `tmp/peel-mcp-args.json` (create `tmp/` if needed)
+- MCP CLI args: `tmp/peel-mcp-args.json`
+- Test scripts: `tmp/test-*.sh`, `tmp/test-*.swift`
+- Debug output: `tmp/debug-*.json`, `tmp/debug-*.log`
+- Any scratch files: `tmp/<descriptive-name>`
 
-Reason: avoids system temp permission prompts and keeps artifacts scoped to the project.
+Create `tmp/` if it doesn't exist. This directory is gitignored.
+
+Reason: `/tmp` triggers macOS permission prompts and scatters files outside the project. Repo-local `tmp/` keeps everything scoped and accessible.
 
 ### Execution Guardrails (IMPORTANT)
 - If a skill or better docs would have prevented confusion, **pause and ask** for clarification or propose adding a skill/doc before continuing.
