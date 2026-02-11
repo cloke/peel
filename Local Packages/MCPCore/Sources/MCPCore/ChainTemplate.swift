@@ -113,88 +113,118 @@ public struct MCPAgentStepTemplate: Identifiable, Codable, Hashable, Sendable {
 // MARK: - Built-in Templates
 
 extension MCPChainTemplate {
-  /// Built-in templates (without validation config - that's added by the app)
+  /// Built-in templates use dynamic model selection via `MCPCopilotModel.recommended(for:)`
+  /// so they automatically pick the best model as availability changes.
   public static var builtInTemplates: [MCPChainTemplate] {
     [
-      // Code Review: Planner analyzes, Implementer fixes, Reviewer checks
+      // --- Review Templates (read-only, no code changes) ---
+
+      // Quick PR Review: Single free reviewer for small/trivial PRs
+      MCPChainTemplate(
+        name: "Quick PR Review",
+        description: "Single reviewer reads the code and provides feedback. Free, fast, good for small PRs under ~200 lines.",
+        steps: [
+          MCPAgentStepTemplate(role: .reviewer, model: .bestFree, name: "Reviewer")
+        ],
+        isBuiltIn: true
+      ),
+
+      // Deep PR Review: Premium analysis + standard reviewer for complex PRs
+      MCPChainTemplate(
+        name: "Deep PR Review",
+        description: "Premium analyzer examines architecture and edge cases, then a reviewer summarizes findings. Best for large or complex PRs.",
+        steps: [
+          MCPAgentStepTemplate(role: .planner, model: .bestPremium, name: "Deep Analyzer"),
+          MCPAgentStepTemplate(role: .reviewer, model: .bestStandard, name: "Reviewer")
+        ],
+        isBuiltIn: true
+      ),
+
+      // --- Implementation Templates (plan + code changes) ---
+
+      // Code Review: Full pipeline — plan, fix, review
       MCPChainTemplate(
         name: "Code Review",
-        description: "Analyze code, implement fixes, then review changes",
+        description: "Premium planner identifies issues, implementer fixes them, free reviewer verifies. Full pipeline for fixing code.",
         steps: [
-          MCPAgentStepTemplate(role: .planner, model: .claudeOpus45, name: "Analyzer"),
-          MCPAgentStepTemplate(role: .implementer, model: .claudeSonnet45, name: "Fixer"),
-          MCPAgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
+          MCPAgentStepTemplate(role: .planner, model: .bestPremium, name: "Analyzer"),
+          MCPAgentStepTemplate(role: .implementer, model: .bestStandard, name: "Fixer"),
+          MCPAgentStepTemplate(role: .reviewer, model: .bestFree, name: "Reviewer")
         ],
         isBuiltIn: true
       ),
 
-      // Quick Fix: Just plan and implement
+      // Quick Fix: Plan and implement without review
       MCPChainTemplate(
         name: "Quick Fix",
-        description: "Fast analysis and implementation (no review)",
+        description: "Planner analyzes the task, implementer executes it. No review step — fast turnaround for well-understood changes.",
         steps: [
-          MCPAgentStepTemplate(role: .planner, model: .claudeSonnet45, name: "Planner"),
-          MCPAgentStepTemplate(role: .implementer, model: .claudeSonnet45, name: "Implementer")
+          MCPAgentStepTemplate(role: .planner, model: .bestStandard, name: "Planner"),
+          MCPAgentStepTemplate(role: .implementer, model: .bestStandard, name: "Implementer")
         ],
         isBuiltIn: true
       ),
 
-      // Free Review: Use free models for cost-effective review
+      // Free Review: Full pipeline with free models
       MCPChainTemplate(
         name: "Free Review",
-        description: "Cost-effective review using free/low-cost models",
+        description: "Same as Code Review but all free models. Good for routine fixes, formatting, and well-defined tasks.",
         steps: [
-          MCPAgentStepTemplate(role: .planner, model: .gpt41, name: "Analyzer"),
-          MCPAgentStepTemplate(role: .implementer, model: .gpt41, name: "Implementer"),
-          MCPAgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
+          MCPAgentStepTemplate(role: .planner, model: .bestFree, name: "Analyzer"),
+          MCPAgentStepTemplate(role: .implementer, model: .bestFree, name: "Implementer"),
+          MCPAgentStepTemplate(role: .reviewer, model: .bestFree, name: "Reviewer")
         ],
         isBuiltIn: true
       ),
 
-      // Deep Analysis: Thorough planning with Opus
+      // --- Analysis Templates (read-only, no code changes) ---
+
+      // Deep Analysis: Thorough planning/analysis only
       MCPChainTemplate(
         name: "Deep Analysis",
-        description: "Thorough analysis with premium reasoning model",
+        description: "Premium model does thorough analysis and produces a detailed plan. Read-only — no code changes made.",
         steps: [
-          MCPAgentStepTemplate(role: .planner, model: .claudeOpus45, name: "Deep Planner")
+          MCPAgentStepTemplate(role: .planner, model: .bestPremium, name: "Deep Planner")
         ],
         isBuiltIn: true
       ),
 
-      // Multi-Implementer: One planner, multiple implementers
+      // --- Parallel Templates (multiple implementers) ---
+
+      // Multi-Implementer: One planner, two parallel implementers
       MCPChainTemplate(
         name: "Multi-Implementer",
-        description: "One planner with two implementers for parallel tasks",
+        description: "Planner splits work into tasks, two implementers execute in parallel. Fast for multi-file changes.",
         steps: [
-          MCPAgentStepTemplate(role: .planner, model: .claudeSonnet45, name: "Planner"),
-          MCPAgentStepTemplate(role: .implementer, model: .claudeSonnet45, name: "Implementer 1"),
-          MCPAgentStepTemplate(role: .implementer, model: .gpt51Codex, name: "Implementer 2")
+          MCPAgentStepTemplate(role: .planner, model: .bestStandard, name: "Planner"),
+          MCPAgentStepTemplate(role: .implementer, model: .bestStandard, name: "Implementer 1"),
+          MCPAgentStepTemplate(role: .implementer, model: .bestStandard, name: "Implementer 2")
         ],
         isBuiltIn: true
       ),
 
-      // Parallel Validation: Planner + parallel implementers + reviewer
+      // Parallel Validation: Parallel implementers + reviewer
       MCPChainTemplate(
         name: "Parallel Validation",
-        description: "Planner with parallel implementers and a reviewer",
+        description: "Planner splits work, two implementers run in parallel, reviewer checks the merged result.",
         steps: [
-          MCPAgentStepTemplate(role: .planner, model: .claudeSonnet45, name: "Planner"),
-          MCPAgentStepTemplate(role: .implementer, model: .claudeSonnet45, name: "Implementer A"),
-          MCPAgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer B"),
-          MCPAgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
+          MCPAgentStepTemplate(role: .planner, model: .bestStandard, name: "Planner"),
+          MCPAgentStepTemplate(role: .implementer, model: .bestStandard, name: "Implementer A"),
+          MCPAgentStepTemplate(role: .implementer, model: .bestFree, name: "Implementer B"),
+          MCPAgentStepTemplate(role: .reviewer, model: .bestFree, name: "Reviewer")
         ],
         isBuiltIn: true
       ),
 
-      // Parallel Validation (Free): Same but with free/low-cost models
+      // Parallel Validation (Free): Same but all free models
       MCPChainTemplate(
         name: "Parallel Validation (Free)",
-        description: "Planner with parallel implementers and a reviewer using free/low-cost models",
+        description: "Same as Parallel Validation but all free models. Good for routine multi-file tasks.",
         steps: [
-          MCPAgentStepTemplate(role: .planner, model: .gpt5Mini, name: "Planner"),
-          MCPAgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer A"),
-          MCPAgentStepTemplate(role: .implementer, model: .gpt5Mini, name: "Implementer B"),
-          MCPAgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
+          MCPAgentStepTemplate(role: .planner, model: .bestFree, name: "Planner"),
+          MCPAgentStepTemplate(role: .implementer, model: .bestFree, name: "Implementer A"),
+          MCPAgentStepTemplate(role: .implementer, model: .bestFree, name: "Implementer B"),
+          MCPAgentStepTemplate(role: .reviewer, model: .bestFree, name: "Reviewer")
         ],
         isBuiltIn: true
       )

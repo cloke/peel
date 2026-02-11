@@ -187,6 +187,26 @@ public final class AgentManager {
     return chain
   }
   
+  // MARK: - Background Chain Execution
+
+  /// Run a chain in the background. The chain is already tracked in `chains`
+  /// and will appear in the sidebar. The caller can dismiss its UI immediately.
+  public func runChainInBackground(
+    _ chain: AgentChain,
+    prompt: String,
+    cliService: CLIService,
+    sessionTracker: SessionTracker
+  ) {
+    Task { @MainActor in
+      let runner = AgentChainRunner(
+        agentManager: self,
+        cliService: cliService,
+        telemetryProvider: MCPTelemetryAdapter(sessionTracker: sessionTracker)
+      )
+      _ = await runner.runChain(chain, prompt: prompt)
+    }
+  }
+
   // MARK: - Template Management
   
   /// Save a chain as a new template
