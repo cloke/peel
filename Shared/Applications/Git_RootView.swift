@@ -54,6 +54,7 @@ struct Git_RootView: View {
         }
         persistAvailableRepos()
         syncSelectedRepoFromStorage()
+        await backfillRepoRegistrations()
       }
       .onChange(of: viewModel.repositories.map { $0.path }) { _, _ in
         persistAvailableRepos()
@@ -152,6 +153,14 @@ struct Git_RootView: View {
     modelContext.insert(localPath)
     
     try? modelContext.save()
+
+    // Discover remote URL and update SyncedRepository + RepoRegistry
+    Task {
+      if let remoteURL = await RepoRegistry.shared.registerRepo(at: path) {
+        syncedRepo.remoteURL = remoteURL
+        try? modelContext.save()
+      }
+    }
     
     // Add to ViewModel
     let repo = Model.Repository(name: name, path: path)
@@ -302,6 +311,29 @@ struct Git_RootView: View {
     } else {
       activeSecurityScopedURL = nil
     }
+  }
+
+  /// Register all known repos with RepoRegistry and backfill missing remote URLs in SwiftData.
+  private func backfillRepoRegistrations() async {
+    let descriptor = FetchDescriptor<LocalRepositoryPath>(
+      predicate: #Predicate { $0.isValid == true }
+    )
+    guard let localPaths = try? modelContext.fetch(descriptor) else { return }
+
+    for localPath in localPaths {
+      let path = localPath.localPath
+      guard FileManager.default.fileExists(atPath: path) else { continue }
+
+      if let remoteURL = await RepoRegistry.shared.registerRepo(at: path) {
+        // Backfill SyncedRepository.remoteURL if missing
+        let repoId = localPath.repositoryId
+        if let syncedRepo = syncedRepos.first(where: { $0.id == repoId }),
+           syncedRepo.remoteURL == nil || syncedRepo.remoteURL?.isEmpty == true {
+          syncedRepo.remoteURL = remoteURL
+        }
+      }
+    }
+    try? modelContext.save()
   }
 }
 

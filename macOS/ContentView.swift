@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Git
+import Github
 
 enum CurrentTool: String, Identifiable, CaseIterable {
   case agents = "agents", workspaces = "workspaces", brew = "brew", git = "git", github = "github", swarm = "swarm"
@@ -56,6 +57,23 @@ struct ContentView: View {
         InvitePreviewSheet(preview: preview, firebaseService: firebaseService)
       }
     }
+    .task {
+      // Populate RepoRegistry from all known local paths on launch
+      // so URL-based lookups work everywhere (Review with Agent, etc.)
+      await populateRepoRegistry()
+    }
+  }
+
+  /// Register all known repo paths with RepoRegistry so any feature can
+  /// resolve "GitHub repo → local path" via a single lookup.
+  private func populateRepoRegistry() async {
+    let registry = RepoRegistry.shared
+    // 1. Git tab repos (persisted in AppStorage, always available)
+    let gitPaths = Git.ViewModel.shared.repositories.map(\.path)
+    await registry.registerAllPaths(gitPaths)
+    // 2. ReviewLocally recent repos
+    let recentPaths = ReviewLocallyService.shared.recentRepositories.map(\.path)
+    await registry.registerAllPaths(recentPaths)
   }
 }
 

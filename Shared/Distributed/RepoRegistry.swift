@@ -157,6 +157,28 @@ public final class RepoRegistry: Sendable {
     return normalized.lowercased()
   }
   
+  // MARK: - Bulk Registration
+
+  /// Register multiple local paths, discovering remote URLs via git.
+  /// Useful for populating the registry from Git ViewModel, ReviewLocally recents, etc.
+  public func registerAllPaths(_ paths: [String]) async {
+    for path in paths where !path.isEmpty {
+      // Skip already-registered paths
+      guard pathToURL[path] == nil else { continue }
+      await registerRepo(at: path)
+    }
+  }
+
+  /// Register multiple explicit remote-URL-to-path mappings.
+  /// Useful for RAG repos which already know their remote URL (repoIdentifier).
+  public func registerAllExplicit(_ mappings: [(remoteURL: String, localPath: String)]) {
+    for mapping in mappings where !mapping.remoteURL.isEmpty && !mapping.localPath.isEmpty {
+      let normalizedURL = normalizeRemoteURL(mapping.remoteURL)
+      guard urlToPath[normalizedURL] == nil else { continue }
+      registerRepo(remoteURL: mapping.remoteURL, localPath: mapping.localPath)
+    }
+  }
+
   // MARK: - Convenience
   
   /// Resolve a ChainRequest's working directory for this machine.
