@@ -113,17 +113,7 @@ extension MCPServerService: RAGToolsHandlerDelegate {
           case .storing:
             break // RAGToolIndexProgress doesn't have storing case
           case .complete(let localReport):
-            handler(.complete(report: RAGToolIndexReport(
-              repoId: localReport.repoId,
-              repoPath: localReport.repoPath,
-              filesIndexed: localReport.filesIndexed,
-              filesSkipped: localReport.filesSkipped,
-              chunksIndexed: localReport.chunksIndexed,
-              bytesScanned: localReport.bytesScanned,
-              durationMs: localReport.durationMs,
-              embeddingCount: localReport.embeddingCount,
-              embeddingDurationMs: localReport.embeddingDurationMs
-            )))
+            handler(.complete(report: Self.convertReport(localReport)))
           }
         }
       }
@@ -134,7 +124,18 @@ extension MCPServerService: RAGToolsHandlerDelegate {
       lastRagIndexReport = report
       lastRagIndexAt = Date()
       
-      return RAGToolIndexReport(
+      return Self.convertReport(report)
+    } catch {
+      // Clean up UI state on error
+      ragIndexingPath = nil
+      ragIndexProgress = nil
+      throw error
+    }
+  }
+
+  /// Convert LocalRAGIndexReport to RAGToolIndexReport (including sub-reports for workspace indexing)
+  nonisolated private static func convertReport(_ report: LocalRAGIndexReport) -> RAGToolIndexReport {
+    RAGToolIndexReport(
       repoId: report.repoId,
       repoPath: report.repoPath,
       filesIndexed: report.filesIndexed,
@@ -143,14 +144,9 @@ extension MCPServerService: RAGToolsHandlerDelegate {
       bytesScanned: report.bytesScanned,
       durationMs: report.durationMs,
       embeddingCount: report.embeddingCount,
-      embeddingDurationMs: report.embeddingDurationMs
+      embeddingDurationMs: report.embeddingDurationMs,
+      subReports: report.subReports.map { convertReport($0) }
     )
-    } catch {
-      // Clean up UI state on error
-      ragIndexingPath = nil
-      ragIndexProgress = nil
-      throw error
-    }
   }
   
   func listRagRepos() async throws -> [RAGToolRepoInfo] {
@@ -163,7 +159,8 @@ extension MCPServerService: RAGToolsHandlerDelegate {
         fileCount: repo.fileCount,
         chunkCount: repo.chunkCount,
         lastIndexedAt: repo.lastIndexedAt,
-        repoIdentifier: repo.repoIdentifier
+        repoIdentifier: repo.repoIdentifier,
+        parentRepoId: repo.parentRepoId
       )
     }
   }

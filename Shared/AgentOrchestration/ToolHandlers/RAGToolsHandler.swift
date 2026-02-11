@@ -706,7 +706,7 @@ final class RAGToolsHandler: MCPToolHandler {
       
       await delegate.refreshRagSummary()
       
-      let result: [String: Any] = [
+      var result: [String: Any] = [
         "repoId": report.repoId,
         "repoPath": report.repoPath,
         "filesIndexed": report.filesIndexed,
@@ -717,6 +717,19 @@ final class RAGToolsHandler: MCPToolHandler {
         "embeddingCount": report.embeddingCount,
         "embeddingDurationMs": report.embeddingDurationMs
       ]
+      // Include sub-package reports for workspace indexing (#262)
+      if !report.subReports.isEmpty {
+        result["subPackagesIndexed"] = report.subReports.count
+        result["subReports"] = report.subReports.map { sub -> [String: Any] in
+          [
+            "repoId": sub.repoId,
+            "repoPath": sub.repoPath,
+            "filesIndexed": sub.filesIndexed,
+            "filesSkipped": sub.filesSkipped,
+            "chunksIndexed": sub.chunksIndexed
+          ]
+        }
+      }
       return (200, makeResult(id: id, result: result))
     } catch {
       await delegate.logWarning("Local RAG index failed", metadata: ["error": error.localizedDescription])
@@ -743,6 +756,13 @@ final class RAGToolsHandler: MCPToolHandler {
         }
         if let repoIdentifier = repo.repoIdentifier {
           dict["repoIdentifier"] = repoIdentifier
+        }
+        if let parentRepoId = repo.parentRepoId {
+          dict["parentRepoId"] = parentRepoId
+          // Find the parent repo name for readability
+          if let parent = repos.first(where: { $0.id == parentRepoId }) {
+            dict["parentName"] = parent.name
+          }
         }
         return dict
       }
@@ -2086,8 +2106,9 @@ struct RAGToolIndexReport {
   let durationMs: Int
   let embeddingCount: Int
   let embeddingDurationMs: Int
+  let subReports: [RAGToolIndexReport]
   
-  init(repoId: String, repoPath: String, filesIndexed: Int, filesSkipped: Int, chunksIndexed: Int, bytesScanned: Int, durationMs: Int, embeddingCount: Int, embeddingDurationMs: Int) {
+  init(repoId: String, repoPath: String, filesIndexed: Int, filesSkipped: Int, chunksIndexed: Int, bytesScanned: Int, durationMs: Int, embeddingCount: Int, embeddingDurationMs: Int, subReports: [RAGToolIndexReport] = []) {
     self.repoId = repoId
     self.repoPath = repoPath
     self.filesIndexed = filesIndexed
@@ -2097,6 +2118,7 @@ struct RAGToolIndexReport {
     self.durationMs = durationMs
     self.embeddingCount = embeddingCount
     self.embeddingDurationMs = embeddingDurationMs
+    self.subReports = subReports
   }
 }
 
@@ -2117,8 +2139,9 @@ struct RAGToolRepoInfo {
   let chunkCount: Int
   let lastIndexedAt: Date?
   let repoIdentifier: String?
+  let parentRepoId: String?
   
-  init(id: String, name: String, rootPath: String, fileCount: Int, chunkCount: Int, lastIndexedAt: Date?, repoIdentifier: String? = nil) {
+  init(id: String, name: String, rootPath: String, fileCount: Int, chunkCount: Int, lastIndexedAt: Date?, repoIdentifier: String? = nil, parentRepoId: String? = nil) {
     self.id = id
     self.name = name
     self.rootPath = rootPath
@@ -2126,6 +2149,7 @@ struct RAGToolRepoInfo {
     self.chunkCount = chunkCount
     self.lastIndexedAt = lastIndexedAt
     self.repoIdentifier = repoIdentifier
+    self.parentRepoId = parentRepoId
   }
 }
 

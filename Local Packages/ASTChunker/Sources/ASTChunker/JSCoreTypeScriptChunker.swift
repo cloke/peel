@@ -184,7 +184,7 @@ public final class JSCoreTypeScriptChunker: @unchecked Sendable {
       
       // Convert to ASTChunk with metadata
       return jsChunks.map { js in
-        let metadata = convertJSMetadata(js.metadata, language: language)
+        let metadata = convertJSMetadata(js.metadata, language: language, chunkText: js.text)
         return ASTChunk(
           constructType: mapConstructType(js.constructType),
           constructName: js.constructName,
@@ -265,9 +265,9 @@ public final class JSCoreTypeScriptChunker: @unchecked Sendable {
   }
   
   /// Convert JS metadata to ASTChunkMetadata
-  private func convertJSMetadata(_ jsMetadata: JSChunkMetadata?, language: String) -> ASTChunkMetadata {
+  private func convertJSMetadata(_ jsMetadata: JSChunkMetadata?, language: String, chunkText: String) -> ASTChunkMetadata {
     guard let js = jsMetadata else {
-      return ASTChunkMetadata()
+      return ASTChunkMetadata(typeReferences: extractTypeReferences(from: chunkText))
     }
     
     return ASTChunkMetadata(
@@ -278,8 +278,72 @@ public final class JSCoreTypeScriptChunker: @unchecked Sendable {
       usesEmberConcurrency: js.usesEmberConcurrency ?? false,
       hasTemplate: js.hasTemplate ?? false,
       tioUiImports: js.tioUiImports ?? [],
-      frameworks: js.frameworks ?? []
+      frameworks: js.frameworks ?? [],
+      typeReferences: extractTypeReferences(from: chunkText)
     )
+  }
+  
+  // MARK: - Type Reference Extraction
+  
+  /// Extract type names referenced in TypeScript/JavaScript source text (for orphan detection).
+  /// Uses regex patterns to find type annotations, instantiations, extends/implements, and imports.
+  private func extractTypeReferences(from text: String) -> [String] {
+    var refs = Set<String>()
+    let nsText = text as NSString
+    let fullRange = NSRange(location: 0, length: nsText.length)
+    
+    let builtins: Set<String> = [
+      "string", "number", "boolean", "void", "any", "unknown", "never", "null",
+      "undefined", "object", "symbol", "bigint",
+      "String", "Number", "Boolean", "Object", "Symbol", "BigInt",
+      "Array", "Map", "Set", "WeakMap", "WeakSet", "Promise", "Date",
+      "Error", "RegExp", "Function", "Record", "Partial", "Required",
+      "Readonly", "Pick", "Omit", "Exclude", "Extract", "NonNullable",
+      "ReturnType", "InstanceType", "Parameters", "ConstructorParameters",
+      "Awaited", "Uppercase", "Lowercase", "Capitalize", "Uncapitalize"
+    ]
+    
+    let patterns: [(String, Int)] = [
+      (#":\s+([A-Z]\w+)"#, 1),
+      (#"\bas\s+([A-Z]\w+)"#, 1),
+      (#"\bnew\s+([A-Z]\w+)"#, 1),
+      (#"\b(?:extends|implements)\s+([A-Z]\w+)"#, 1),
+      (#"<([A-Z]\w+)[,>]"#, 1),
+      (#"import\s+\{([^}]+)\}\s+from"#, 1),
+      (#"\btypeof\s+([A-Z]\w+)"#, 1),
+      (#"\b([A-Z]\w+)\.\w+"#, 1),
+      // Glimmer/JSX component invocations: <SomeComponent
+      (#"<([A-Z]\w+)[\s/>]"#, 1),
+    ]
+    
+    for (pattern, group) in patterns {
+      guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+      let matches = regex.matches(in: text, range: fullRange)
+      
+      for match in matches {
+        guard match.numberOfRanges > group else { continue }
+        let range = match.range(at: group)
+        guard range.location != NSNotFound else { continue }
+        let captured = nsText.substring(with: range)
+        
+        if pattern.contains("import") {
+          let names = captured.components(separatedBy: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .map { $0.components(separatedBy: " as ").first ?? $0 }
+            .filter { !$0.isEmpty && $0.first?.isUppercase == true }
+          for name in names {
+            let cleaned = name.trimmingCharacters(in: .whitespaces)
+            if !builtins.contains(cleaned) {
+              refs.insert(cleaned)
+            }
+          }
+        } else if !builtins.contains(captured) {
+          refs.insert(captured)
+        }
+      }
+    }
+    
+    return refs.sorted()
   }
   
   /// Escape source code for JavaScript string literal
@@ -314,8 +378,9 @@ public final class JSCoreTypeScriptChunker: @unchecked Sendable {
       let chunkLines = lines[(currentStart - 1)..<currentEnd]
       let text = chunkLines.joined(separator: "\n")
       
-      // Attach import metadata to the first chunk only
-      let metadata = currentStart == 1 ? fallbackMetadata : ASTChunkMetadata()
+      // Attach import metadata to the first chunk, type refs to all chunks
+      var metadata = currentStart == 1 ? fallbackMetadata : ASTChunkMetadata()
+      metadata.typeReferences = extractTypeReferences(from: text)
       
       chunks.append(ASTChunk(
         constructType: .file,
@@ -377,7 +442,8 @@ public final class JSCoreTypeScriptChunker: @unchecked Sendable {
       usesEmberConcurrency: usesEmberConcurrency,
       hasTemplate: hasTemplate,
       tioUiImports: tioUiImports,
-      frameworks: frameworks
+      frameworks: frameworks,
+      typeReferences: extractTypeReferences(from: source)
     )
   }
 }
