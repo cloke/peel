@@ -18,6 +18,7 @@ public struct SwarmStatusView: View {
   @State private var displayName: String = ""
   @State private var messageText: String = ""
   @State private var isSendingMessage = false
+  @State private var lastSeenMessageCount: Int = 0
   
   public init() {}
   
@@ -442,11 +443,15 @@ public struct SwarmStatusView: View {
     .padding(.horizontal, 12)
     .padding(.vertical, 8)
     .onChange(of: firebaseService.swarmMessages) { _, messages in
-      // Show new incoming messages in the task log
-      if let latest = messages.last {
-        let prefix = latest.isBroadcast ? "\u{1F4E2}" : "\u{1F4AC}"
-        log("\(prefix) \(latest.senderName): \(latest.text)")
+      // Show ALL new incoming messages in the task log (not just the last one)
+      let newCount = messages.count
+      if newCount > lastSeenMessageCount {
+        for message in messages.suffix(newCount - lastSeenMessageCount) {
+          let prefix = message.isBroadcast ? "\u{1F4E2}" : "\u{1F4AC}"
+          log("\(prefix) \(message.senderName): \(message.text)")
+        }
       }
+      lastSeenMessageCount = newCount
     }
   }
 

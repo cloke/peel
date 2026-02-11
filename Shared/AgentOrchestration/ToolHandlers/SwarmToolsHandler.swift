@@ -987,7 +987,8 @@ public final class SwarmToolsHandler: MCPToolHandler {
       "peers": peers,
       "discovered": discovered,
       "ragTransfers": transfers,
-      "localRagArtifacts": localRagPayload
+      "localRagArtifacts": localRagPayload,
+      "messageListeners": FirebaseService.shared.messageListenerDiagnostics()
     ]))
   }
   
