@@ -211,6 +211,10 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
   public let wanAddress: String?
   public let wanPort: UInt16?
   
+  /// STUN-discovered endpoint (NAT-mapped external address:port for hole punching)
+  public let stunAddress: String?
+  public let stunPort: UInt16?
+  
   public enum Platform: String, Codable, Sendable {
     case macOS
     case iOS
@@ -233,7 +237,9 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
     lanAddress: String? = nil,
     lanPort: UInt16? = nil,
     wanAddress: String? = nil,
-    wanPort: UInt16? = nil
+    wanPort: UInt16? = nil,
+    stunAddress: String? = nil,
+    stunPort: UInt16? = nil
   ) {
     self.deviceId = deviceId
     self.deviceName = deviceName
@@ -251,6 +257,8 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
     self.lanPort = lanPort
     self.wanAddress = wanAddress
     self.wanPort = wanPort
+    self.stunAddress = stunAddress
+    self.stunPort = stunPort
   }
   
   /// Create capabilities from current device
@@ -261,7 +269,9 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
     lanAddress: String? = nil,
     lanPort: UInt16? = nil,
     wanAddress: String? = nil,
-    wanPort: UInt16? = nil
+    wanPort: UInt16? = nil,
+    stunAddress: String? = nil,
+    stunPort: UInt16? = nil
   ) -> WorkerCapabilities {
     let processInfo = ProcessInfo.processInfo
     
@@ -294,7 +304,9 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
       lanAddress: lanAddress,
       lanPort: lanPort,
       wanAddress: wanAddress,
-      wanPort: wanPort
+      wanPort: wanPort,
+      stunAddress: stunAddress,
+      stunPort: stunPort
     )
   }
   

@@ -1051,6 +1051,12 @@ public final class FirebaseService {
       workerData["wanPort"] = Int(capabilities.wanPort ?? 8766)
     }
     
+    // Add STUN-discovered endpoint (NAT-mapped address:port for UDP hole punching)
+    if let stunAddress = capabilities.stunAddress {
+      workerData["stunAddress"] = stunAddress
+      workerData["stunPort"] = Int(capabilities.stunPort ?? 8766)
+    }
+    
     try await workerRef.setData(workerData)
     
     registeredWorkerId = workerId
@@ -1070,6 +1076,21 @@ public final class FirebaseService {
     startTaskListener(swarmId: swarmId, workerId: workerId)
     
     return workerId
+  }
+  
+  /// Update a worker's STUN-discovered endpoint in Firestore.
+  /// Called after STUN discovery completes (may be asynchronous from registration).
+  public func updateWorkerSTUNEndpoint(
+    swarmId: String,
+    workerId: String,
+    stunAddress: String,
+    stunPort: UInt16
+  ) async throws {
+    try await workersCollection(swarmId: swarmId).document(workerId).updateData([
+      "stunAddress": stunAddress,
+      "stunPort": Int(stunPort)
+    ])
+    logger.info("Updated STUN endpoint for worker \(workerId): \(stunAddress):\(stunPort)")
   }
   
   /// Unregister this device as a worker
@@ -1156,7 +1177,9 @@ public final class FirebaseService {
               lastHeartbeat: (data["lastHeartbeat"] as? Timestamp)?.dateValue() ?? Date.distantPast,
               version: data["version"] as? String,
               wanAddress: data["wanAddress"] as? String,
-              wanPort: (data["wanPort"] as? Int).map { UInt16($0) }
+              wanPort: (data["wanPort"] as? Int).map { UInt16($0) },
+              stunAddress: data["stunAddress"] as? String,
+              stunPort: (data["stunPort"] as? Int).map { UInt16($0) }
             )
           }
           
@@ -2414,6 +2437,10 @@ public struct FirestoreWorker: Sendable, Identifiable, Hashable {
   public let wanAddress: String?
   public let wanPort: UInt16?
   
+  /// STUN-discovered endpoint (NAT-mapped address:port for UDP hole punching)
+  public let stunAddress: String?
+  public let stunPort: UInt16?
+  
   /// Whether the worker is considered stale (no heartbeat in 90 seconds)
   public var isStale: Bool {
     Date().timeIntervalSince(lastHeartbeat) > 90
@@ -2422,6 +2449,11 @@ public struct FirestoreWorker: Sendable, Identifiable, Hashable {
   /// Whether this worker has valid WAN connection info
   public var hasWANEndpoint: Bool {
     wanAddress != nil && wanPort != nil
+  }
+  
+  /// Whether this worker has a STUN-discovered endpoint for hole punching
+  public var hasSTUNEndpoint: Bool {
+    stunAddress != nil && stunPort != nil
   }
 }
 
