@@ -5272,31 +5272,43 @@ actor LocalRAGStore {
     for remap in remaps {
       // Update root_path AND re-hash the repo ID since stableId is based on path
       let newId = stableId(for: remap.newPath)
-      try execute(sql: "UPDATE repos SET root_path = ?, id = ? WHERE id = ?") { stmt in
-        bindText(stmt, 1, remap.newPath)
-        bindText(stmt, 2, newId)
-        bindText(stmt, 3, remap.id)
-      }
-      // Also update all foreign keys pointing to the old repo ID
-      try execute(sql: "UPDATE files SET repo_id = ? WHERE repo_id = ?") { stmt in
-        bindText(stmt, 1, newId)
-        bindText(stmt, 2, remap.id)
-      }
-      try execute(sql: "UPDATE symbols SET repo_id = ? WHERE repo_id = ?") { stmt in
-        bindText(stmt, 1, newId)
-        bindText(stmt, 2, remap.id)
-      }
-      try execute(sql: "UPDATE dependencies SET repo_id = ? WHERE repo_id = ?") { stmt in
-        bindText(stmt, 1, newId)
-        bindText(stmt, 2, remap.id)
-      }
-      try execute(sql: "UPDATE lessons SET repo_id = ? WHERE repo_id = ?") { stmt in
-        bindText(stmt, 1, newId)
-        bindText(stmt, 2, remap.id)
-      }
-      try execute(sql: "UPDATE symbol_refs SET repo_id = ? WHERE repo_id = ?") { stmt in
-        bindText(stmt, 1, newId)
-        bindText(stmt, 2, remap.id)
+      remapLog("  Applying remap: oldId=\(remap.id) -> newId=\(newId), newPath=\(remap.newPath)")
+      do {
+        try execute(sql: "UPDATE repos SET root_path = ?, id = ? WHERE id = ?") { stmt in
+          bindText(stmt, 1, remap.newPath)
+          bindText(stmt, 2, newId)
+          bindText(stmt, 3, remap.id)
+        }
+        let reposChanged = sqlite3_changes(db)
+        remapLog("  repos UPDATE affected \(reposChanged) row(s)")
+        
+        // Also update all foreign keys pointing to the old repo ID
+        try execute(sql: "UPDATE files SET repo_id = ? WHERE repo_id = ?") { stmt in
+          bindText(stmt, 1, newId)
+          bindText(stmt, 2, remap.id)
+        }
+        let filesChanged = sqlite3_changes(db)
+        
+        try execute(sql: "UPDATE symbols SET repo_id = ? WHERE repo_id = ?") { stmt in
+          bindText(stmt, 1, newId)
+          bindText(stmt, 2, remap.id)
+        }
+        try execute(sql: "UPDATE dependencies SET repo_id = ? WHERE repo_id = ?") { stmt in
+          bindText(stmt, 1, newId)
+          bindText(stmt, 2, remap.id)
+        }
+        try execute(sql: "UPDATE lessons SET repo_id = ? WHERE repo_id = ?") { stmt in
+          bindText(stmt, 1, newId)
+          bindText(stmt, 2, remap.id)
+        }
+        try execute(sql: "UPDATE symbol_refs SET repo_id = ? WHERE repo_id = ?") { stmt in
+          bindText(stmt, 1, newId)
+          bindText(stmt, 2, remap.id)
+        }
+        remapLog("  Remap complete for \(remap.newPath) (\(filesChanged) files updated)")
+      } catch {
+        remapLog("  ERROR during remap UPDATE: \(error.localizedDescription)")
+        throw error
       }
     }
     
