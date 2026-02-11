@@ -349,8 +349,9 @@ struct LocalWorkerStatusView: View {
         
         for swarm in firebaseService.memberSwarms where swarm.role.canRegisterWorkers {
           _ = try? await firebaseService.registerWorker(swarmId: swarm.id, capabilities: capabilities)
-          // Start listening for tasks from this swarm
+          // Start listening for workers, tasks, and messages from this swarm
           firebaseService.startWorkerListener(swarmId: swarm.id)
+          firebaseService.startMessageListener(swarmId: swarm.id)
         }
       } catch {
         print("Failed to start swarm: \(error)")
@@ -364,8 +365,9 @@ struct LocalWorkerStatusView: View {
       // Unregister from all swarms
       for swarm in firebaseService.memberSwarms {
         try? await firebaseService.unregisterWorker(swarmId: swarm.id)
-        // Stop listening for workers in this swarm
+        // Stop listening for workers and messages in this swarm
         firebaseService.stopWorkerListener(swarmId: swarm.id)
+        firebaseService.stopMessageListener(swarmId: swarm.id)
       }
       coordinator.stop()
     }

@@ -401,9 +401,14 @@ public struct SwarmStatusView: View {
   }
 
   private func startFirestoreWorkerListeners() {
-    for swarm in firebaseService.memberSwarms where swarm.role.canRegisterWorkers {
-      firebaseService.startWorkerListener(swarmId: swarm.id)
-      firebaseService.startMessageListener(swarmId: swarm.id)
+    guard firebaseService.isSignedIn else { return }
+    Task {
+      let capabilities = WorkerCapabilities.current()
+      for swarm in firebaseService.memberSwarms where swarm.role.canRegisterWorkers {
+        _ = try? await firebaseService.registerWorker(swarmId: swarm.id, capabilities: capabilities)
+        firebaseService.startWorkerListener(swarmId: swarm.id)
+        firebaseService.startMessageListener(swarmId: swarm.id)
+      }
     }
   }
 
@@ -456,6 +461,16 @@ public struct SwarmStatusView: View {
   }
   
   private func stopSwarm() {
+    // Unregister from Firestore and stop listeners
+    if firebaseService.isSignedIn {
+      Task {
+        for swarm in firebaseService.memberSwarms {
+          try? await firebaseService.unregisterWorker(swarmId: swarm.id)
+          firebaseService.stopWorkerListener(swarmId: swarm.id)
+          firebaseService.stopMessageListener(swarmId: swarm.id)
+        }
+      }
+    }
     coordinator.stop()
     log("Swarm stopped")
   }
