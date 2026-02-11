@@ -208,6 +208,8 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
   // Network
   public let lanAddress: String?
   public let lanPort: UInt16?
+  public let wanAddress: String?
+  public let wanPort: UInt16?
   
   public enum Platform: String, Codable, Sendable {
     case macOS
@@ -229,7 +231,9 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
     indexedRepos: [String] = [],
     gitCommitHash: String? = nil,
     lanAddress: String? = nil,
-    lanPort: UInt16? = nil
+    lanPort: UInt16? = nil,
+    wanAddress: String? = nil,
+    wanPort: UInt16? = nil
   ) {
     self.deviceId = deviceId
     self.deviceName = deviceName
@@ -245,6 +249,8 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
     self.gitCommitHash = gitCommitHash
     self.lanAddress = lanAddress
     self.lanPort = lanPort
+    self.wanAddress = wanAddress
+    self.wanPort = wanPort
   }
   
   /// Create capabilities from current device
@@ -253,7 +259,9 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
     embeddingModel: String? = nil,
     embeddingDimensions: Int? = nil,
     lanAddress: String? = nil,
-    lanPort: UInt16? = nil
+    lanPort: UInt16? = nil,
+    wanAddress: String? = nil,
+    wanPort: UInt16? = nil
   ) -> WorkerCapabilities {
     let processInfo = ProcessInfo.processInfo
     
@@ -284,7 +292,9 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
       indexedRepos: indexedRepos,
       gitCommitHash: Self.getGitCommitHash(),
       lanAddress: lanAddress,
-      lanPort: lanPort
+      lanPort: lanPort,
+      wanAddress: wanAddress,
+      wanPort: wanPort
     )
   }
   

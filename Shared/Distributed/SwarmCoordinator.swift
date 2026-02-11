@@ -104,6 +104,12 @@ public final class SwarmCoordinator {
   private var pathMonitor: NWPathMonitor?
   private var lastPathStatus: NWPath.Status = .satisfied
 
+  /// WAN auto-connect task
+  private var wanAutoConnectTask: Task<Void, Never>?
+
+  /// Device IDs we've already attempted WAN connection to (avoid retrying failures)
+  private var wanConnectAttempted: Set<String> = []
+
   /// Swarm start time for uptime tracking
   private var startedAt: Date?
 
@@ -293,6 +299,9 @@ public final class SwarmCoordinator {
 
     // Monitor network for sleep/wake reconnection
     startNetworkMonitor()
+    
+    // Start auto-connecting to WAN peers discovered via Firestore
+    startWANAutoConnect()
   }
 
   /// Stop the swarm coordinator
@@ -300,6 +309,7 @@ public final class SwarmCoordinator {
     isActive = false
 
     stopNetworkMonitor()
+    stopWANAutoConnect()
     connectedWorkers.removeAll()
     currentTask = nil
     workerStatuses.removeAll()
@@ -387,6 +397,9 @@ public final class SwarmCoordinator {
           firebaseService.startMessageListener(swarmId: swarm.id)
         }
         logger.info("Firestore workers re-registered and listeners restarted")
+        
+        // 5. Restart WAN auto-connect (clears previous attempts so we retry)
+        startWANAutoConnect()
       }
     }
 
@@ -473,13 +486,83 @@ public final class SwarmCoordinator {
   
   // MARK: - Crown Methods
   
-  /// Connect to a worker at the given address (brain mode)
+  /// Connect to a worker at the given address
   public func connectToWorker(address: String, port: UInt16 = 8766) async throws {
-    guard role == .brain || role == .hybrid else {
+    guard isActive else {
       throw DistributedError.actorSystemNotReady
     }
     
     try await connectionManager?.connect(to: address, port: port)
+  }
+
+  // MARK: - WAN Auto-Connect
+
+  /// Check Firestore workers for WAN endpoints and auto-connect to any
+  /// that aren't already connected via LAN. Called when swarmWorkers changes.
+  public func autoConnectWANPeers() {
+    guard isActive else { return }
+
+    let myDeviceId = capabilities.deviceId
+    let alreadyConnected = Set(connectedWorkers.map(\.id))
+    let firebaseService = FirebaseService.shared
+
+    for worker in firebaseService.swarmWorkers {
+      // Skip self, already-connected, and already-attempted
+      guard worker.id != myDeviceId,
+            !alreadyConnected.contains(worker.id),
+            !wanConnectAttempted.contains(worker.id),
+            worker.hasWANEndpoint,
+            let address = worker.wanAddress,
+            let port = worker.wanPort,
+            worker.status == .online,
+            !worker.isStale else {
+        continue
+      }
+
+      // Skip if they have a LAN address matching a connected peer
+      // (they're on the same network, Bonjour will handle it)
+      if let lanAddr = connectedWorkers.first(where: { $0.id == worker.id }) {
+        logger.debug("Skipping WAN connect for \(worker.displayName) — already connected via LAN")
+        _ = lanAddr // suppress unused warning
+        continue
+      }
+
+      wanConnectAttempted.insert(worker.id)
+
+      logger.info("WAN auto-connect: attempting \(worker.displayName) at \(address):\(port)")
+      Task {
+        do {
+          try await connectionManager?.connect(to: address, port: port)
+          logger.info("WAN auto-connect: connected to \(worker.displayName)")
+        } catch {
+          logger.warning("WAN auto-connect: failed to reach \(worker.displayName) at \(address):\(port) — \(error.localizedDescription)")
+        }
+      }
+    }
+  }
+
+  /// Start watching for WAN-connectable workers
+  func startWANAutoConnect() {
+    stopWANAutoConnect()
+    wanAutoConnectTask = Task { [weak self] in
+      // Initial attempt after a short delay (let listeners populate)
+      try? await Task.sleep(for: .seconds(3))
+      guard !Task.isCancelled else { return }
+      self?.autoConnectWANPeers()
+
+      // Then periodically re-check (new workers may appear)
+      while !Task.isCancelled {
+        try? await Task.sleep(for: .seconds(30))
+        guard !Task.isCancelled else { return }
+        self?.autoConnectWANPeers()
+      }
+    }
+  }
+
+  private func stopWANAutoConnect() {
+    wanAutoConnectTask?.cancel()
+    wanAutoConnectTask = nil
+    wanConnectAttempted.removeAll()
   }
   
   /// Dispatch a chain to the best available worker (brain mode)

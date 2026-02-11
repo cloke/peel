@@ -344,8 +344,13 @@ struct LocalWorkerStatusView: View {
         // Start coordinator for local LAN discovery
         try coordinator.start(role: .hybrid, port: 8766)
         
-        // Register with all member swarms via Firestore (no direct connections needed!)
-        let capabilities = WorkerCapabilities.current()
+        // Register with all member swarms via Firestore
+        // Resolve WAN address so peers can connect across networks
+        let wanAddress = await WANAddressResolver.resolve()
+        let capabilities = WorkerCapabilities.current(
+          wanAddress: wanAddress,
+          wanPort: 8766
+        )
         
         for swarm in firebaseService.memberSwarms where swarm.role.canRegisterWorkers {
           _ = try? await firebaseService.registerWorker(swarmId: swarm.id, capabilities: capabilities)

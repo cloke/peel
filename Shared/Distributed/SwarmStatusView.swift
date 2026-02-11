@@ -403,7 +403,12 @@ public struct SwarmStatusView: View {
   private func startFirestoreWorkerListeners() {
     guard firebaseService.isSignedIn else { return }
     Task {
-      let capabilities = WorkerCapabilities.current()
+      // Resolve WAN address so peers can connect to us across networks
+      let wanAddress = await WANAddressResolver.resolve()
+      let capabilities = WorkerCapabilities.current(
+        wanAddress: wanAddress,
+        wanPort: 8766
+      )
       for swarm in firebaseService.memberSwarms where swarm.role.canRegisterWorkers {
         _ = try? await firebaseService.registerWorker(swarmId: swarm.id, capabilities: capabilities)
         firebaseService.startWorkerListener(swarmId: swarm.id)
