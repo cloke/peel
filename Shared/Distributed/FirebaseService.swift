@@ -1119,16 +1119,20 @@ public final class FirebaseService {
   
   /// Update a worker's STUN-discovered endpoint in Firestore.
   /// Called after STUN discovery completes (may be asynchronous from registration).
+  /// Uses setData(merge:) so it works even if the worker doc hasn't been created
+  /// yet (race between STUN discovery and registerWorker).
   public func updateWorkerSTUNEndpoint(
     swarmId: String,
     workerId: String,
     stunAddress: String,
     stunPort: UInt16
   ) async throws {
-    try await workersCollection(swarmId: swarmId).document(workerId).updateData([
+    guard let userId = currentUserId else { throw FirebaseError.notSignedIn }
+    try await workersCollection(swarmId: swarmId).document(workerId).setData([
+      "ownerId": userId,
       "stunAddress": stunAddress,
       "stunPort": Int(stunPort)
-    ])
+    ], merge: true)
     logger.info("Updated STUN endpoint for worker \(workerId): \(stunAddress):\(stunPort)")
   }
   
