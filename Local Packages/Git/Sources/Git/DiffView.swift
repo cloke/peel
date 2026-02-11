@@ -285,40 +285,37 @@ public struct DiffView: View {
   }
 
   public var body: some View {
-    GeometryReader { geo in
-      ScrollView([.horizontal, .vertical]) {
-        LazyVStack(alignment: .leading, spacing: 0) {
-          // Summary bar
-          if !diff.files.isEmpty {
-            diffSummaryBar
-          }
+    ScrollView([.horizontal, .vertical]) {
+      VStack(alignment: .leading, spacing: 0) {
+        // Summary bar
+        if !diff.files.isEmpty {
+          diffSummaryBar
+        }
 
-          ForEach(diff.files) { file in
-            VStack(alignment: .leading, spacing: 0) {
-              DiffFileHeaderView(
-                file: file,
-                isExpanded: expandedFiles.contains(file.id)
-              ) {
-                if expandedFiles.contains(file.id) {
-                  expandedFiles.remove(file.id)
-                } else {
-                  expandedFiles.insert(file.id)
-                }
-              }
-
+        ForEach(diff.files) { file in
+          VStack(alignment: .leading, spacing: 0) {
+            DiffFileHeaderView(
+              file: file,
+              isExpanded: expandedFiles.contains(file.id)
+            ) {
               if expandedFiles.contains(file.id) {
-                DiffFileContentView(
-                  file: file,
-                  onStageHunk: onStageHunk,
-                  onRevertHunk: onRevertHunk
-                )
+                expandedFiles.remove(file.id)
+              } else {
+                expandedFiles.insert(file.id)
               }
+            }
+
+            if expandedFiles.contains(file.id) {
+              DiffFileContentView(
+                file: file,
+                onStageHunk: onStageHunk,
+                onRevertHunk: onRevertHunk
+              )
             }
           }
         }
-        .frame(minWidth: geo.size.width, minHeight: geo.size.height, alignment: .topLeading)
-        .textSelection(.enabled)
       }
+      .textSelection(.enabled)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .onAppear {
