@@ -5268,21 +5268,24 @@ actor LocalRAGStore {
     
     remapLog("Remapping \(remaps.count) repo(s)")
     
+    // Defer FK checks so we can update parent + child tables in any order
+    sqlite3_exec(db, "PRAGMA defer_foreign_keys = ON", nil, nil, nil)
+    sqlite3_exec(db, "BEGIN TRANSACTION", nil, nil, nil)
+    
     // Apply remaps
     for remap in remaps {
-      // Update root_path AND re-hash the repo ID since stableId is based on path
       let newId = stableId(for: remap.newPath)
       remapLog("  Applying remap: oldId=\(remap.id) -> newId=\(newId), newPath=\(remap.newPath)")
       do {
+        // Update the parent repos table (path + ID)
         try execute(sql: "UPDATE repos SET root_path = ?, id = ? WHERE id = ?") { stmt in
           bindText(stmt, 1, remap.newPath)
           bindText(stmt, 2, newId)
           bindText(stmt, 3, remap.id)
         }
         let reposChanged = sqlite3_changes(db)
-        remapLog("  repos UPDATE affected \(reposChanged) row(s)")
         
-        // Also update all foreign keys pointing to the old repo ID
+        // Update all child foreign keys to match the new repo ID
         try execute(sql: "UPDATE files SET repo_id = ? WHERE repo_id = ?") { stmt in
           bindText(stmt, 1, newId)
           bindText(stmt, 2, remap.id)
@@ -5305,12 +5308,17 @@ actor LocalRAGStore {
           bindText(stmt, 1, newId)
           bindText(stmt, 2, remap.id)
         }
-        remapLog("  Remap complete for \(remap.newPath) (\(filesChanged) files updated)")
+        remapLog("  Remap complete for \(remap.newPath) (repos: \(reposChanged), files: \(filesChanged))")
       } catch {
         remapLog("  ERROR during remap UPDATE: \(error.localizedDescription)")
+        sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
+        sqlite3_exec(db, "PRAGMA defer_foreign_keys = OFF", nil, nil, nil)
         throw error
       }
     }
+    
+    sqlite3_exec(db, "COMMIT", nil, nil, nil)
+    sqlite3_exec(db, "PRAGMA defer_foreign_keys = OFF", nil, nil, nil)
     
     return remaps.count
   }
