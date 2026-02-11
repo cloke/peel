@@ -138,7 +138,7 @@ private struct DiffLineRow: View {
 
       Text(line.line)
         .font(.system(size: 12, design: .monospaced))
-        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
         .padding(.vertical, 1)
 
       Spacer(minLength: 0)
@@ -193,8 +193,7 @@ private struct DiffFileHeaderView: View {
 
         Text(file.label)
           .font(.system(size: 13, weight: .medium))
-          .lineLimit(1)
-          .truncationMode(.middle)
+          .fixedSize(horizontal: true, vertical: false)
 
         Spacer(minLength: 4)
 
@@ -317,7 +316,7 @@ public struct DiffView: View {
             }
           }
         }
-        .frame(minWidth: geo.size.width, alignment: .leading)
+        .frame(minWidth: geo.size.width, minHeight: geo.size.height, alignment: .topLeading)
         .textSelection(.enabled)
       }
     }
