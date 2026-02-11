@@ -27,6 +27,7 @@ struct PRReviewAgentTarget: Identifiable {
 struct GithubReviewAgentSheet: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(MCPServerService.self) private var mcpServer
+  @Environment(\.localRepoResolver) private var localRepoResolver
 
   let target: PRReviewAgentTarget
 
@@ -294,6 +295,13 @@ Task:
 
   private func autoSelectRepository() {
     guard selectedRepoPath.isEmpty, let repository else { return }
+    // First, try to resolve from Peel's known repos (SwiftData)
+    if let resolvedPath = localRepoResolver?.localPath(for: repository) {
+      selectedRepoPath = resolvedPath
+      service.lastSelectedRepoPath = resolvedPath
+      return
+    }
+    // Fall back to matching from recents
     if let match = service.recentRepositories.first(where: { service.repositoryMatches(local: $0, githubRepo: repository) }) {
       selectedRepoPath = match.path
     }

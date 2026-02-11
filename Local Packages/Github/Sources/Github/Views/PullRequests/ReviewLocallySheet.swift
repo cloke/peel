@@ -12,6 +12,7 @@ import Git
 /// Sheet for setting up local PR review with worktrees
 public struct ReviewLocallySheet: View {
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.localRepoResolver) private var localRepoResolver
   
   let pullRequest: Github.PullRequest
   let repository: Github.Repository
@@ -363,7 +364,13 @@ public struct ReviewLocallySheet: View {
   // MARK: - Helpers
   
   private func autoSelectRepository() {
-    // Find a matching repository in recents
+    // First, try to resolve from Peel's known repos (SwiftData)
+    if let resolvedPath = localRepoResolver?.localPath(for: repository) {
+      selectedRepoPath = resolvedPath
+      service.lastSelectedRepoPath = resolvedPath
+      return
+    }
+    // Fall back to matching from recents
     if let match = service.recentRepositories.first(where: {
       service.repositoryMatches(local: $0, githubRepo: repository)
     }) {

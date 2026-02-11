@@ -27,6 +27,7 @@ public struct ProfileNameView: View {
       }
       .frame(minWidth: 0, maxWidth: 30, maxHeight: 30, alignment: .center)
       Text(me.name ?? "")
+      Spacer()
     }
   }
 }

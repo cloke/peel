@@ -224,6 +224,7 @@ struct Github_RootView: View {
     .environment(viewModel)
     .favoritesProvider(dataProvider)
     .recentPRsProvider(dataProvider)
+    .localRepoResolver(dataProvider)
     #if os(macOS)
     .reviewWithAgentProvider(reviewAgentCoordinator)
     .sheet(item: $reviewAgentTarget) { target in
@@ -608,11 +609,57 @@ final class PRReviewAgentCoordinator: PRReviewAgentProvider {
 /// Provides GitHub favorites and recent PRs backed by SwiftData
 @MainActor
 @Observable
-final class GitHubDataProvider: GitHubFavoritesProvider, RecentPRsProvider {
+final class GitHubDataProvider: GitHubFavoritesProvider, RecentPRsProvider, LocalRepoResolver {
   private let modelContext: ModelContext
   
   init(modelContext: ModelContext) {
     self.modelContext = modelContext
+  }
+  
+  // MARK: - LocalRepoResolver
+  
+  func localPath(for githubRepo: Github.Repository) -> String? {
+    guard let fullName = githubRepo.full_name else { return nil }
+    let possibleURLs = [
+      "git@github.com:\(fullName).git",
+      "https://github.com/\(fullName).git",
+      "https://github.com/\(fullName)",
+      "git@github.com:\(fullName)"
+    ].map { $0.lowercased() }
+    
+    // Fetch all synced repos and check their remote URLs
+    let descriptor = FetchDescriptor<SyncedRepository>()
+    guard let syncedRepos = try? modelContext.fetch(descriptor) else { return nil }
+    
+    for syncedRepo in syncedRepos {
+      guard let remoteURL = syncedRepo.remoteURL?.lowercased() else { continue }
+      if possibleURLs.contains(where: { remoteURL.contains($0) }) || remoteURL.contains(fullName.lowercased()) {
+        // Found a match in SyncedRepository, now get its local path
+        let repoId = syncedRepo.id
+        let pathDescriptor = FetchDescriptor<LocalRepositoryPath>(
+          predicate: #Predicate { $0.repositoryId == repoId && $0.isValid == true }
+        )
+        if let localPath = try? modelContext.fetch(pathDescriptor).first {
+          return localPath.localPath
+        }
+      }
+    }
+    
+    // Also check by name as a fallback (e.g. "tio-api" matches repo named "tio-api")
+    let repoName = githubRepo.name.lowercased()
+    for syncedRepo in syncedRepos {
+      if syncedRepo.name.lowercased() == repoName {
+        let repoId = syncedRepo.id
+        let pathDescriptor = FetchDescriptor<LocalRepositoryPath>(
+          predicate: #Predicate { $0.repositoryId == repoId && $0.isValid == true }
+        )
+        if let localPath = try? modelContext.fetch(pathDescriptor).first {
+          return localPath.localPath
+        }
+      }
+    }
+    
+    return nil
   }
   
   // MARK: - GitHubFavoritesProvider

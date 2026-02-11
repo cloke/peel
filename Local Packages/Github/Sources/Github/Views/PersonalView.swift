@@ -30,12 +30,19 @@ public struct PersonalHeaderView: View {
 
 public struct PersonalView: View {
   @Environment(Github.ViewModel.self) private var viewModel
+  @Environment(\.favoritesProvider) private var favoritesProvider
   @AppStorage("github-show-archived") private var showArchivedRepos = false
   @State private var allPullRequests = [Github.PullRequest]()
   @State private var filteredPullRequests = [Github.PullRequest]()
   @State private var showingMyRequests = false
+  @State private var scanScope: ScanScope = .favorites
   @State private var isLoading = true
   @State private var loadingProgress = ""
+  
+  enum ScanScope: String, CaseIterable {
+    case favorites = "Favorites"
+    case all = "All Repos"
+  }
   
   let organizations: [Github.User]
   
@@ -46,9 +53,24 @@ public struct PersonalView: View {
   public var body: some View {
     NavigationStack {
       VStack {
-        PersonalHeaderView(
-          showingMyRequests: $showingMyRequests
-        )
+        HStack {
+          Picker("Scope", selection: $scanScope) {
+            ForEach(ScanScope.allCases, id: \.self) { scope in
+              Text(scope.rawValue).tag(scope)
+            }
+          }
+          .pickerStyle(.segmented)
+          .frame(maxWidth: 200)
+          
+          Spacer()
+          
+          Picker("Filter", selection: $showingMyRequests) {
+            Text("All").tag(false)
+            Text("My Requests").tag(true)
+          }
+          .pickerStyle(.segmented)
+          .frame(maxWidth: 200)
+        }
         .padding(.horizontal)
         
         if isLoading {
@@ -105,11 +127,19 @@ public struct PersonalView: View {
         applyFilters()
       }
     }
+    .onChange(of: scanScope) { _, _ in
+      Task { await loadPullRequests() }
+    }
   }
   
   private func loadPullRequests() async {
     isLoading = true
     var newPRs = [Github.PullRequest]()
+    
+    let favoriteRepoNames: Set<String> = {
+      guard let provider = favoritesProvider else { return [] }
+      return Set(provider.getFavorites().map { $0.fullName.lowercased() })
+    }()
     
     for organization in organizations {
       loadingProgress = "Loading \(organization.login ?? "organization")..."
@@ -118,10 +148,20 @@ public struct PersonalView: View {
         let repositories = try await Github.loadRepositories(organization: organization.login ?? "")
         
         let filteredRepos = showArchivedRepos ? repositories : repositories.filter { $0.archived != true }
-        for repository in filteredRepos {
+        let scopedRepos: [Github.Repository]
+        if scanScope == .favorites {
+          scopedRepos = filteredRepos.filter { repo in
+            let fullName = (repo.full_name ?? repo.name).lowercased()
+            return favoriteRepoNames.contains(fullName)
+          }
+        } else {
+          scopedRepos = filteredRepos
+        }
+        
+        for repository in scopedRepos {
           loadingProgress = "Checking \(repository.name)..."
           do {
-            let requests = try await Github.pullRequests(from: repository, state: "all")
+            let requests = try await Github.pullRequests(from: repository)
             newPRs.append(contentsOf: requests)
           } catch {
             // Continue loading other repositories even if one fails
