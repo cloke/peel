@@ -31,6 +31,14 @@ extension MCPServerService: RAGArtifactSyncDelegate {
     logger.info("RAG sync: applying bundle \(manifest.version) from \(peerId)")
     await localRagStore.closeDatabase()
     try LocalRAGArtifacts.applyBundle(bundleURL: url, manifest: manifest)
+    
+    // Re-open and remap paths for this machine
+    _ = try await localRagStore.initialize()
+    let remapped = try await localRagStore.remapRepoPaths()
+    if remapped > 0 {
+      logger.info("RAG sync: remapped \(remapped) repo path(s) for local machine")
+    }
+    
     await refreshRagSummary()
     await updateRagArtifactStatus(from: manifest, lastSyncedAt: Date(), direction: direction)
     logger.info("RAG sync: applied bundle \(manifest.version)")

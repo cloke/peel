@@ -5222,17 +5222,16 @@ actor LocalRAGStore {
       if FileManager.default.fileExists(atPath: currentPath) { continue }
       
       // Try to resolve via RepoRegistry (which maps remote URLs to local paths)
-      if let localPath = await RepoRegistry.shared.getLocalPath(for: identifier) {
-        if FileManager.default.fileExists(atPath: localPath) {
-          remaps.append((id: repoId, newPath: localPath))
-          continue
-        }
-      }
-      
-      // Try to register by discovering from common paths (~/code, ~/projects, etc.)
-      // This handles cases where RepoRegistry hasn't been populated yet
       if let localPath = await RepoRegistry.shared.getLocalPath(for: identifier),
          FileManager.default.fileExists(atPath: localPath) {
+        remaps.append((id: repoId, newPath: localPath))
+        continue
+      }
+      
+      // RepoRegistry didn't have it — try discovering from common paths.
+      // Scan well-known directories for a repo matching this identifier.
+      if let localPath = await discoverRepoPath(for: identifier) {
+        await RepoRegistry.shared.registerRepo(at: localPath)
         remaps.append((id: repoId, newPath: localPath))
       }
     }
@@ -5270,6 +5269,69 @@ actor LocalRAGStore {
     }
     
     return remaps.count
+  }
+  
+  /// Scan well-known directories for a git repo matching the given normalized remote URL.
+  /// This handles the case where RepoRegistry hasn't been populated yet — e.g., after
+  /// pulling a RAG database from another machine.
+  private func discoverRepoPath(for repoIdentifier: String) async -> String? {
+    let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+    let candidateDirs = [
+      "\(homeDir)/code",
+      "\(homeDir)/Code",
+      "\(homeDir)/projects",
+      "\(homeDir)/Projects",
+      "\(homeDir)/src",
+      "\(homeDir)/repos",
+      "\(homeDir)/Developer",
+      "\(homeDir)/dev",
+      "\(homeDir)/workspace",
+      "\(homeDir)/github",
+      "\(homeDir)/GitHub",
+    ]
+    
+    let fm = FileManager.default
+    // Pre-normalize the identifier on the MainActor
+    let normalizedIdentifier = await RepoRegistry.shared.normalizeRemoteURL(repoIdentifier)
+    
+    for dir in candidateDirs {
+      guard fm.fileExists(atPath: dir) else { continue }
+      guard let entries = try? fm.contentsOfDirectory(atPath: dir) else { continue }
+      for entry in entries {
+        let candidatePath = "\(dir)/\(entry)"
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: candidatePath, isDirectory: &isDir), isDir.boolValue else { continue }
+        // Check if it's a git repo
+        guard fm.fileExists(atPath: "\(candidatePath)/.git") else { continue }
+        // Get its remote URL
+        guard let remoteURL = gitRemoteURL(for: candidatePath) else { continue }
+        let normalized = await RepoRegistry.shared.normalizeRemoteURL(remoteURL)
+        if normalized == normalizedIdentifier {
+          return candidatePath
+        }
+      }
+    }
+    return nil
+  }
+  
+  /// Quick git remote URL lookup without going through RepoRegistry
+  private func gitRemoteURL(for repoPath: String) -> String? {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+    process.arguments = ["remote", "get-url", "origin"]
+    process.currentDirectoryURL = URL(fileURLWithPath: repoPath)
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = FileHandle.nullDevice
+    do {
+      try process.run()
+      process.waitUntilExit()
+      guard process.terminationStatus == 0 else { return nil }
+      let data = pipe.fileHandleForReading.readDataToEndOfFile()
+      return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    } catch {
+      return nil
+    }
   }
   
   // MARK: - Dependency Graph Methods (Issue #176)
@@ -6586,6 +6648,14 @@ actor LocalRAGStore {
     
     // Re-initialize the database to pick up the imported data
     _ = try initialize()
+    
+    // Remap repo paths for this machine (the pulled DB may have paths from another machine)
+    // First, register the target repo so RepoRegistry knows about it
+    await RepoRegistry.shared.registerRepo(at: repoPath)
+    let remapped = try await remapRepoPaths()
+    if remapped > 0 {
+      print("[RAG] Remapped \(remapped) repo path(s) after artifact import")
+    }
   }
 }
 
