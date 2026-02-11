@@ -50,6 +50,20 @@ public struct Diff: Identifiable {
     /// The new file path (b/...) - for generating patches  
     public var newPath = ""
     public var chunks = [Chunk]()
+
+    /// Number of added lines across all chunks
+    public var additions: Int {
+      chunks.reduce(0) { total, chunk in
+        total + chunk.lines.filter { $0.status == "+" }.count
+      }
+    }
+
+    /// Number of deleted lines across all chunks
+    public var deletions: Int {
+      chunks.reduce(0) { total, chunk in
+        total + chunk.lines.filter { $0.status == "-" }.count
+      }
+    }
     
     public struct Chunk: Identifiable {
       public var id = UUID()
