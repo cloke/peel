@@ -6810,6 +6810,16 @@ enum LocalRAGArtifacts {
     try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
     try unzipItem(at: bundleURL, to: tempDir)
 
+    // ditto --keepParent nests extracted files under a parent directory.
+    // Detect this by looking for a single subdirectory containing our expected files.
+    let extractedRoot = resolveExtractedRoot(tempDir: tempDir, manifest: manifest)
+    print("[RAG applyBundle] bundleURL: \(bundleURL.path)")
+    print("[RAG applyBundle] tempDir: \(tempDir.path)")
+    print("[RAG applyBundle] extractedRoot: \(extractedRoot.path)")
+    if let contents = try? FileManager.default.contentsOfDirectory(atPath: extractedRoot.path) {
+      print("[RAG applyBundle] extractedRoot contents: \(contents)")
+    }
+
     let manifestPaths = Set(manifest.files.map { $0.relativePath })
     let existingArtifacts = artifactFiles().map { $0.path.replacingOccurrences(of: baseURL.path + "/", with: "") }
     for relativePath in existingArtifacts where !manifestPaths.contains(relativePath) {
@@ -6819,8 +6829,10 @@ enum LocalRAGArtifacts {
       }
     }
 
+    var copiedCount = 0
+    var skippedCount = 0
     for file in manifest.files {
-      let source = tempDir.appendingPathComponent(file.relativePath)
+      let source = extractedRoot.appendingPathComponent(file.relativePath)
       let destination = baseURL.appendingPathComponent(file.relativePath)
       try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
       if FileManager.default.fileExists(atPath: destination.path) {
@@ -6828,10 +6840,51 @@ enum LocalRAGArtifacts {
       }
       if FileManager.default.fileExists(atPath: source.path) {
         try FileManager.default.copyItem(at: source, to: destination)
+        copiedCount += 1
+      } else {
+        print("[RAG applyBundle] WARNING: source file missing: \(source.path)")
+        skippedCount += 1
+      }
+    }
+    print("[RAG applyBundle] copied \(copiedCount) files, skipped \(skippedCount)")
+
+    try? FileManager.default.removeItem(at: tempDir)
+  }
+
+  /// After ditto extraction, find the actual root containing the bundle files.
+  /// ditto --keepParent nests files under the original staging directory name,
+  /// so we need to descend into it.
+  private static func resolveExtractedRoot(tempDir: URL, manifest: RAGArtifactManifest) -> URL {
+    // Check if files exist directly in tempDir (no nesting)
+    if let firstFile = manifest.files.first {
+      let directPath = tempDir.appendingPathComponent(firstFile.relativePath)
+      if FileManager.default.fileExists(atPath: directPath.path) {
+        return tempDir
       }
     }
 
-    try? FileManager.default.removeItem(at: tempDir)
+    // Look for a single subdirectory that contains our files
+    if let entries = try? FileManager.default.contentsOfDirectory(atPath: tempDir.path) {
+      // Filter to directories only
+      let subdirs = entries.filter { entry in
+        var isDir: ObjCBool = false
+        let path = tempDir.appendingPathComponent(entry).path
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDir) && isDir.boolValue
+      }
+      if subdirs.count == 1 {
+        let candidate = tempDir.appendingPathComponent(subdirs[0])
+        // Verify it contains at least one expected file
+        if let firstFile = manifest.files.first {
+          let nestedPath = candidate.appendingPathComponent(firstFile.relativePath)
+          if FileManager.default.fileExists(atPath: nestedPath.path) {
+            return candidate
+          }
+        }
+      }
+    }
+
+    // Fallback to tempDir (original behavior)
+    return tempDir
   }
 
   static func repoSnapshot(for repo: LocalRAGStore.RepoInfo) async -> RAGArtifactRepoSnapshot {
