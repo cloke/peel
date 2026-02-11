@@ -728,21 +728,25 @@ public final class SwarmToolsHandler: MCPToolHandler {
       try coordinator.start(role: role, port: port)
       
       if enableWAN {
-        print("Warning: WAN mode requested but not supported by SwarmCoordinator. Ignoring wan settings.")
+        print("Note: WAN mode enabled — resolving public IP for peer-to-peer connections")
       }
       
       // Auto-register as Firestore worker for all member swarms (WAN discovery)
       var firestoreRegistrations: [[String: Any]] = []
       let firebaseService = FirebaseService.shared
       
-      // Use LAN address from current capabilities (WAN not supported here)
       let lanAddress = coordinator.capabilities.lanAddress
       let lanPort = coordinator.capabilities.lanPort
+      
+      // Resolve WAN address for P2P connections across networks
+      let wanAddress = await WANAddressResolver.resolve()
       
       if firebaseService.isSignedIn {
         let capabilities = WorkerCapabilities.current(
           lanAddress: lanAddress,
-          lanPort: lanPort
+          lanPort: lanPort,
+          wanAddress: wanAddress,
+          wanPort: UInt16(port)
         )
         for swarm in firebaseService.memberSwarms where swarm.role.canRegisterWorkers {
           // contributor+ can register as worker
@@ -759,8 +763,8 @@ public final class SwarmToolsHandler: MCPToolHandler {
               "swarmName": swarm.swarmName,
               "workerId": workerId,
               "status": "registered",
-              "wanAddress": NSNull(),
-              "wanPort": NSNull(),
+              "wanAddress": wanAddress as Any,
+              "wanPort": Int(port),
               "lanAddress": lanAddress as Any,
               "lanPort": lanPort.map { Int($0) } as Any
             ])
@@ -773,9 +777,9 @@ public final class SwarmToolsHandler: MCPToolHandler {
           }
         }
         
-        // Auto-connect to WAN peers after registration (gives time for listeners to populate)
+        // Auto-connect to WAN peers after registration
         if enableWAN {
-          print("Warning: WAN peer auto-connect requested but unsupported by SwarmCoordinator.")
+          await coordinator.startWANAutoConnect()
         }
       }
       
@@ -789,8 +793,8 @@ public final class SwarmToolsHandler: MCPToolHandler {
         "registeredRepos": RepoRegistry.shared.registeredRepos.count,
         "firestoreWorkers": firestoreRegistrations,
         "wanEnabled": enableWAN,
-        "wanAddress": NSNull(),
-        "wanPort": NSNull(),
+        "wanAddress": wanAddress as Any,
+        "wanPort": Int(port),
         "lanAddress": lanAddress as Any,
         "lanPort": lanPort.map { Int($0) } as Any
       ]))

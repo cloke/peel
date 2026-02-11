@@ -1045,6 +1045,12 @@ public final class FirebaseService {
       workerData["lanPort"] = Int(capabilities.lanPort ?? 8766)
     }
     
+    // Add WAN endpoint if provided (enables P2P connections across networks)
+    if let wanAddress = capabilities.wanAddress {
+      workerData["wanAddress"] = wanAddress
+      workerData["wanPort"] = Int(capabilities.wanPort ?? 8766)
+    }
+    
     try await workerRef.setData(workerData)
     
     registeredWorkerId = workerId
