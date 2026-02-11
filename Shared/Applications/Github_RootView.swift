@@ -388,95 +388,33 @@ struct FavoriteRepositoryDestination: View {
   }
 }
 
-/// Data loaded for a PR detail view
-private struct PRDetails {
-  let pullRequest: Github.PullRequest
-  let repository: Github.Repository
-  let owner: Github.User?
-  let descriptionText: String
-}
-
-/// Loads and displays a recent PR
+/// Loads and displays a recent PR using the shared PullRequestDetailView
 struct RecentPRDestination: View {
-  @Environment(\.reviewWithAgentProvider) private var reviewWithAgentProvider
   let recentPR: RecentPRInfo
-  
-  @State private var state: ViewState<PRDetails> = .idle
-  @State private var showingReviewLocally = false
-  
+
+  private enum LoadState {
+    case loading
+    case loaded(pr: Github.PullRequest, repo: Github.Repository, owner: Github.User?)
+    case error(String)
+  }
+
+  @State private var state: LoadState = .loading
+
   var body: some View {
     Group {
       switch state {
-      case .idle, .loading:
+      case .loading:
         ProgressView("Loading PR...")
       case .error(let message):
         ErrorView(title: "Failed to load PR", message: message) {
           Task { await loadPullRequestDetails() }
         }
-      case .loaded(let details):
-        loadedContent(details)
+      case .loaded(let pr, let repo, let owner):
+        PullRequestDetailView(organization: owner, repository: repo, pullRequest: pr)
       }
     }
     .task(id: recentPR.id) {
       await loadPullRequestDetails()
-    }
-    #if os(macOS)
-    .sheet(isPresented: $showingReviewLocally) {
-      if case .loaded(let details) = state {
-        ReviewLocallySheet(pullRequest: details.pullRequest, repository: details.repository)
-      }
-    }
-    #endif
-  }
-  
-  @ViewBuilder
-  private func loadedContent(_ details: PRDetails) -> some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 16) {
-        headerView(pullRequest: details.pullRequest, repository: details.repository)
-
-        Divider()
-
-        if !details.descriptionText.isEmpty {
-          VStack(alignment: .leading, spacing: 8) {
-            Text("Description")
-              .font(.headline)
-            Text(.init(details.descriptionText))
-              .font(.body)
-              .foregroundStyle(.primary)
-          }
-        }
-
-        metadataGrid(pullRequest: details.pullRequest, repository: details.repository)
-
-        HStack(spacing: 12) {
-          if let urlString = details.pullRequest.html_url ?? recentPR.htmlURL,
-             let url = URL(string: urlString) {
-            Link(destination: url) {
-              Label("Open in Browser", systemImage: "safari")
-            }
-            .buttonStyle(.borderedProminent)
-          }
-          Button {
-            showingReviewLocally = true
-          } label: {
-            Label("Review Locally", systemImage: "arrow.down.to.line.circle")
-          }
-          .buttonStyle(.bordered)
-          #if !os(macOS)
-          .hidden()
-          #endif
-
-          Button {
-            reviewWithAgentProvider?.reviewWithAgent(pr: details.pullRequest, repo: details.repository)
-          } label: {
-            Label("Review with Agent", systemImage: "sparkles")
-          }
-          .buttonStyle(.borderedProminent)
-          .disabled(reviewWithAgentProvider == nil)
-        }
-      }
-      .padding()
     }
   }
 
@@ -496,102 +434,14 @@ struct RecentPRDestination: View {
       async let repoTask = Github.repository(owner: ownerLogin, name: repoName)
       async let prTask = Github.pullRequest(owner: ownerLogin, repository: repoName, number: recentPR.prNumber)
       let (repo, pr) = try await (repoTask, prTask)
-      let details = PRDetails(
-        pullRequest: pr,
-        repository: repo,
-        owner: pr.base.user ?? repo.owner,
-        descriptionText: (pr.body ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-      )
-      state = .loaded(details)
+      state = .loaded(pr: pr, repo: repo, owner: pr.base.user ?? repo.owner)
     } catch is CancellationError {
-      // Task was cancelled (view dismissed or recreated) - don't show error
       return
     } catch let urlError as URLError where urlError.code == .cancelled {
-      // URLSession cancelled due to task cancellation - don't show error
       return
     } catch {
       state = .error(error.localizedDescription)
     }
-  }
-
-  @ViewBuilder
-  private func headerView(pullRequest: Github.PullRequest, repository: Github.Repository) -> some View {
-    VStack(alignment: .leading, spacing: 6) {
-      Text(pullRequest.title ?? recentPR.title)
-        .font(.title2)
-      Text("#\(pullRequest.number) · \(recentPR.repoFullName)")
-        .font(.caption)
-        .foregroundStyle(.secondary)
-      HStack(spacing: 12) {
-        if let state = pullRequest.state {
-          Label(state.capitalized, systemImage: state == "open" ? "circle.fill" : "checkmark.circle.fill")
-            .foregroundStyle(state == "open" ? .green : .purple)
-        }
-        Label(pullRequest.head.ref, systemImage: "arrow.triangle.branch")
-        if pullRequest.draft == true {
-          Label("Draft", systemImage: "square.and.pencil")
-            .foregroundStyle(.secondary)
-        }
-      }
-      .font(.caption)
-      .foregroundStyle(.secondary)
-    }
-  }
-
-  @ViewBuilder
-  private func metadataGrid(pullRequest: Github.PullRequest, repository: Github.Repository) -> some View {
-    let created = formattedDate(pullRequest.created_at)
-    let updated = formattedDate(pullRequest.updated_at)
-    let author = pullRequest.user?.publicName ?? "Unknown"
-    let reviewers = (pullRequest.requested_reviewers ?? []).map { $0.publicName }.filter { !$0.isEmpty }
-    let labels = (pullRequest.labels ?? []).map { $0.name }.filter { !$0.isEmpty }
-
-    VStack(alignment: .leading, spacing: 8) {
-      HStack(spacing: 16) {
-        metadataItem("Author", author)
-        metadataItem("Updated", updated)
-        metadataItem("Created", created)
-      }
-      HStack(spacing: 16) {
-        metadataItem("Commits", pullRequest.commits.map(String.init) ?? "–")
-        metadataItem("Files", pullRequest.changed_files.map(String.init) ?? "–")
-        metadataItem("+/-", diffSummary(for: pullRequest))
-      }
-      if !reviewers.isEmpty {
-        metadataItem("Reviewers", reviewers.joined(separator: ", "))
-      }
-      if !labels.isEmpty {
-        metadataItem("Labels", labels.joined(separator: ", "))
-      }
-    }
-  }
-
-  private func metadataItem(_ title: String, _ value: String) -> some View {
-    VStack(alignment: .leading, spacing: 2) {
-      Text(title)
-        .font(.caption2)
-        .foregroundStyle(.secondary)
-      Text(value)
-        .font(.callout)
-    }
-  }
-
-  private func formattedDate(_ value: String?) -> String {
-    guard let value, !value.isEmpty else { return "–" }
-    let formatter = ISO8601DateFormatter()
-    if let date = formatter.date(from: value) {
-      return date.formatted(date: .abbreviated, time: .shortened)
-    }
-    return value
-  }
-
-  private func diffSummary(for pullRequest: Github.PullRequest) -> String {
-    let additions = pullRequest.additions ?? 0
-    let deletions = pullRequest.deletions ?? 0
-    if additions == 0 && deletions == 0 {
-      return "–"
-    }
-    return "+\(additions) / -\(deletions)"
   }
 }
 

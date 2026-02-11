@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Github
+import Git
 import PeelUI
 
 struct PRReviewAgentTarget: Identifiable {
@@ -27,7 +28,6 @@ struct PRReviewAgentTarget: Identifiable {
 struct GithubReviewAgentSheet: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(MCPServerService.self) private var mcpServer
-  @Environment(\.localRepoResolver) private var localRepoResolver
 
   let target: PRReviewAgentTarget
 
@@ -54,11 +54,13 @@ struct GithubReviewAgentSheet: View {
       footerView
     }
     .frame(width: 520, height: 520)
-    .onAppear {
+    .task {
       if selectedRepoPath.isEmpty, let lastPath = service.lastSelectedRepoPath {
         selectedRepoPath = lastPath
       }
-      Task { await loadPRIfNeeded() }
+      // Register RAG-indexed repos with RepoRegistry (they have direct remote URLs)
+      await registerRAGRepos()
+      await loadPRIfNeeded()
       autoSelectRepository()
     }
   }
@@ -266,19 +268,20 @@ struct GithubReviewAgentSheet: View {
   }
 
   /// Auto-select the best review template based on PR size.
-  /// Small PRs (<200 lines) → Quick PR Review (free single-agent).
-  /// Larger PRs → Deep PR Review (premium analysis).
-  /// Falls back to Code Review if the specific templates aren't found.
+  /// Small PRs (<200 lines) → PR Review (free single-agent).
+  /// Larger PRs → Refactor template (planner + implementer + reviewer).
+  /// Falls back to first available template.
   private func recommendedTemplate(for pr: Github.PullRequest?) -> ChainTemplate? {
     let templates = mcpServer.agentManager.allTemplates
     let totalLines = (pr?.additions ?? 0) + (pr?.deletions ?? 0)
 
     if totalLines < 200 {
-      return templates.first { $0.name == "Quick PR Review" }
-        ?? templates.first { $0.name == "Free Review" }
+      return templates.first { $0.name == "PR Review" }
+        ?? templates.first { $0.name == "Quick Task" }
     } else {
-      return templates.first { $0.name == "Deep PR Review" }
-        ?? templates.first { $0.name == "Code Review" }
+      return templates.first { $0.name == "Refactor" }
+        ?? templates.first { $0.name == "Full Implementation" }
+        ?? templates.first { $0.name == "PR Review" }
     }
   }
 
@@ -337,17 +340,90 @@ Task:
 
   private func autoSelectRepository() {
     guard selectedRepoPath.isEmpty, let repository else { return }
-    // First, try to resolve from Peel's known repos (SwiftData)
-    if let resolvedPath = localRepoResolver?.localPath(for: repository) {
-      selectedRepoPath = resolvedPath
-      service.lastSelectedRepoPath = resolvedPath
+
+    // 1. RepoRegistry — single source of truth for "remote URL → local path"
+    //    Populated from Git repos, RAG repos, ReviewLocally recents on launch + sheet open.
+    if let cloneURL = repository.clone_url,
+       let localPath = RepoRegistry.shared.getLocalPath(for: cloneURL) {
+      selectedRepoPath = localPath
+      service.lastSelectedRepoPath = localPath
       return
     }
-    // Fall back to matching from recents
+    // Also try full_name-based URLs (covers SSH and HTTPS variants)
+    if let fullName = repository.full_name {
+      let possibleURLs = [
+        "git@github.com:\(fullName).git",
+        "https://github.com/\(fullName).git",
+      ]
+      for url in possibleURLs {
+        if let localPath = RepoRegistry.shared.getLocalPath(for: url) {
+          selectedRepoPath = localPath
+          service.lastSelectedRepoPath = localPath
+          return
+        }
+      }
+    }
+
+    #if os(macOS)
+    // 2. Name-based scan of sibling directories (handles repos not yet registered)
+    if let found = findRepoInSiblingDirectories(named: repository.name) {
+      selectedRepoPath = found
+      service.lastSelectedRepoPath = found
+      return
+    }
+    #endif
+
+    // 3. Fall back to matching from ReviewLocally recents
     if let match = service.recentRepositories.first(where: { service.repositoryMatches(local: $0, githubRepo: repository) }) {
       selectedRepoPath = match.path
     }
   }
+
+  /// Register RAG-indexed repos with RepoRegistry.
+  /// RAG repos already know their remote URL (repoIdentifier) + local path (rootPath),
+  /// so this is a fast, no-git-process registration.
+  private func registerRAGRepos() async {
+    let ragMappings = mcpServer.ragRepos.compactMap { repo -> (remoteURL: String, localPath: String)? in
+      guard let identifier = repo.repoIdentifier, !identifier.isEmpty else { return nil }
+      return (remoteURL: identifier, localPath: repo.rootPath)
+    }
+    RepoRegistry.shared.registerAllExplicit(ragMappings)
+  }
+
+  #if os(macOS)
+  /// Look for the repo in sibling directories of known repos.
+  /// E.g. if we know ~/code/kitchen-sink, check ~/code/<repoName>.
+  private func findRepoInSiblingDirectories(named repoName: String) -> String? {
+    let fm = FileManager.default
+    // Gather unique parent directories from all known repo sources
+    var parentDirs = Set<String>()
+    for repo in Git.ViewModel.shared.repositories where !repo.path.isEmpty {
+      let parent = (repo.path as NSString).deletingLastPathComponent
+      parentDirs.insert(parent)
+    }
+    for repo in service.recentRepositories {
+      let parent = (repo.path as NSString).deletingLastPathComponent
+      parentDirs.insert(parent)
+    }
+    // Also check ~/code, ~/Developer, ~/src, ~/projects, ~/repos
+    let home = NSHomeDirectory()
+    for dir in ["code", "Developer", "src", "projects", "repos"] {
+      let path = (home as NSString).appendingPathComponent(dir)
+      if fm.fileExists(atPath: path) {
+        parentDirs.insert(path)
+      }
+    }
+
+    for parentDir in parentDirs {
+      let candidate = (parentDir as NSString).appendingPathComponent(repoName)
+      let gitDir = (candidate as NSString).appendingPathComponent(".git")
+      if fm.fileExists(atPath: gitDir) {
+        return candidate
+      }
+    }
+    return nil
+  }
+  #endif
 
   /// Sets up the worktree and creates the chain, returning the chain and prompt to run.
   /// Shared by both inline and background execution paths.
