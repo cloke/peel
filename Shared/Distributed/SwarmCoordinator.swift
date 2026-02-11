@@ -205,6 +205,9 @@ public final class SwarmCoordinator {
   /// Discovery service
   private var discoveryService: BonjourDiscoveryService?
   
+  /// NAT traversal manager for UDP hole punching across networks
+  private var natTraversalManager: NATTraversalManager?
+  
   /// Delegate
   public weak var delegate: SwarmCoordinatorDelegate?
 
@@ -300,6 +303,10 @@ public final class SwarmCoordinator {
     // Monitor network for sleep/wake reconnection
     startNetworkMonitor()
     
+    // Start NAT traversal (STUN discovery + UDP hole punching)
+    natTraversalManager = NATTraversalManager(localPort: port, deviceId: capabilities.deviceId)
+    natTraversalManager?.delegate = self
+    
     // Start auto-connecting to WAN peers discovered via Firestore
     startWANAutoConnect()
   }
@@ -310,6 +317,8 @@ public final class SwarmCoordinator {
 
     stopNetworkMonitor()
     stopWANAutoConnect()
+    natTraversalManager?.stop()
+    natTraversalManager = nil
     connectedWorkers.removeAll()
     currentTask = nil
     workerStatuses.removeAll()
@@ -387,7 +396,13 @@ public final class SwarmCoordinator {
     let firebaseService = FirebaseService.shared
     if firebaseService.isSignedIn {
       Task {
-        let workerCaps = WorkerCapabilities.current()
+        // Re-discover STUN endpoint (network may have changed)
+        let stunResult = await natTraversalManager?.refreshEndpoint()
+        
+        let workerCaps = WorkerCapabilities.current(
+          stunAddress: stunResult?.address,
+          stunPort: stunResult?.port
+        )
         for swarm in firebaseService.memberSwarms where swarm.role.canRegisterWorkers {
           _ = try? await firebaseService.registerWorker(swarmId: swarm.id, capabilities: workerCaps)
           // Stop then restart to force fresh listeners
@@ -497,8 +512,8 @@ public final class SwarmCoordinator {
 
   // MARK: - WAN Auto-Connect
 
-  /// Check Firestore workers for WAN endpoints and auto-connect to any
-  /// that aren't already connected via LAN. Called when swarmWorkers changes.
+  /// Check Firestore workers for WAN/STUN endpoints and auto-connect.
+  /// Priority: STUN hole punch (no router config) → direct TCP → Firestore relay
   public func autoConnectWANPeers() {
     guard isActive else { return }
 
@@ -507,36 +522,65 @@ public final class SwarmCoordinator {
     let firebaseService = FirebaseService.shared
 
     for worker in firebaseService.swarmWorkers {
-      // Skip self, already-connected, and already-attempted
+      // Skip self, already-connected, already-attempted, stale
       guard worker.id != myDeviceId,
             !alreadyConnected.contains(worker.id),
             !wanConnectAttempted.contains(worker.id),
-            worker.hasWANEndpoint,
-            let address = worker.wanAddress,
-            let port = worker.wanPort,
             worker.status == .online,
             !worker.isStale else {
         continue
       }
 
-      // Skip if they have a LAN address matching a connected peer
-      // (they're on the same network, Bonjour will handle it)
-      if let lanAddr = connectedWorkers.first(where: { $0.id == worker.id }) {
-        logger.debug("Skipping WAN connect for \(worker.displayName) — already connected via LAN")
-        _ = lanAddr // suppress unused warning
-        continue
-      }
+      // Must have at least a WAN or STUN endpoint
+      guard worker.hasWANEndpoint || worker.hasSTUNEndpoint else { continue }
 
       wanConnectAttempted.insert(worker.id)
 
-      logger.info("WAN auto-connect: attempting \(worker.displayName) at \(address):\(port)")
       Task {
-        do {
-          try await connectionManager?.connect(to: address, port: port)
-          logger.info("WAN auto-connect: connected to \(worker.displayName)")
-        } catch {
-          logger.warning("WAN auto-connect: failed to reach \(worker.displayName) at \(address):\(port) — \(error.localizedDescription)")
+        // Strategy 1: STUN hole punch (works through most NATs, no router config)
+        if worker.hasSTUNEndpoint,
+           let stunAddr = worker.stunAddress,
+           let stunPort = worker.stunPort,
+           let natManager = natTraversalManager {
+
+          let peerEndpoint = PeerEndpoint(
+            deviceId: worker.id,
+            address: stunAddr,
+            port: stunPort,
+            stunServer: "peer-reported"
+          )
+
+          logger.info("WAN auto-connect: attempting STUN hole punch to \(worker.displayName) at \(stunAddr):\(stunPort)")
+          let punched = await natManager.punchThrough(to: peerEndpoint)
+
+          if punched {
+            // Hole punch succeeded — now try TCP through the opened NAT binding
+            do {
+              try await connectionManager?.connect(to: stunAddr, port: stunPort)
+              logger.info("WAN auto-connect: TCP connected to \(worker.displayName) via hole punch")
+              return
+            } catch {
+              logger.warning("WAN auto-connect: TCP after hole punch failed to \(worker.displayName): \(error.localizedDescription)")
+            }
+          }
         }
+
+        // Strategy 2: Direct TCP to WAN address (requires port forwarding)
+        if worker.hasWANEndpoint,
+           let address = worker.wanAddress,
+           let port = worker.wanPort {
+          logger.info("WAN auto-connect: attempting direct TCP to \(worker.displayName) at \(address):\(port)")
+          do {
+            try await connectionManager?.connect(to: address, port: port)
+            logger.info("WAN auto-connect: TCP connected to \(worker.displayName) via direct WAN")
+            return
+          } catch {
+            logger.warning("WAN auto-connect: direct TCP failed to \(worker.displayName) at \(address):\(port) — \(error.localizedDescription)")
+          }
+        }
+
+        // Strategy 3: Firestore relay (always works, delegate handles this)
+        logger.info("WAN auto-connect: all P2P methods failed for \(worker.displayName), Firestore relay available for artifact sync")
       }
     }
   }
@@ -545,16 +589,46 @@ public final class SwarmCoordinator {
   func startWANAutoConnect() {
     stopWANAutoConnect()
     wanAutoConnectTask = Task { [weak self] in
+      guard let self else { return }
+
+      // Discover our STUN endpoint for hole punching
+      if let stunResult = await self.natTraversalManager?.start() {
+        logger.info("STUN endpoint discovered: \(stunResult)")
+        // Update Firestore registrations with our STUN endpoint
+        await self.updateFirestoreWithSTUNEndpoint(stunResult)
+      }
+
       // Initial attempt after a short delay (let listeners populate)
       try? await Task.sleep(for: .seconds(3))
       guard !Task.isCancelled else { return }
-      self?.autoConnectWANPeers()
+      self.autoConnectWANPeers()
 
       // Then periodically re-check (new workers may appear)
       while !Task.isCancelled {
         try? await Task.sleep(for: .seconds(30))
         guard !Task.isCancelled else { return }
-        self?.autoConnectWANPeers()
+        self.autoConnectWANPeers()
+      }
+    }
+  }
+
+  /// Update all Firestore worker registrations with our STUN-discovered endpoint
+  private func updateFirestoreWithSTUNEndpoint(_ stunResult: STUNResult) async {
+    let firebaseService = FirebaseService.shared
+    guard firebaseService.isSignedIn else { return }
+
+    let workerId = capabilities.deviceId
+    for swarm in firebaseService.memberSwarms where swarm.role.canRegisterWorkers {
+      do {
+        try await firebaseService.updateWorkerSTUNEndpoint(
+          swarmId: swarm.id,
+          workerId: workerId,
+          stunAddress: stunResult.address,
+          stunPort: stunResult.port
+        )
+        logger.info("Updated STUN endpoint in swarm \(swarm.swarmName): \(stunResult.address):\(stunResult.port)")
+      } catch {
+        logger.warning("Failed to update STUN endpoint in swarm \(swarm.swarmName): \(error.localizedDescription)")
       }
     }
   }
@@ -1712,5 +1786,31 @@ extension SwarmCoordinator: FirestoreTaskExecutionDelegate {
         errorMessage: error.localizedDescription
       )
     }
+  }
+}
+
+// MARK: - NATTraversalDelegate
+
+extension SwarmCoordinator: NATTraversalDelegate {
+  public func natTraversal(_ manager: NATTraversalManager, didChangeState state: NATTraversalState) {
+    logger.info("NAT traversal state: \(state)")
+  }
+
+  public func natTraversal(_ manager: NATTraversalManager, shouldConnectTCP address: String, port: UInt16) {
+    // This is called after a successful hole punch — try TCP through the opened NAT binding
+    Task {
+      do {
+        try await connectionManager?.connect(to: address, port: port)
+        logger.info("NAT traversal: TCP connected to \(address):\(port) via hole punch")
+      } catch {
+        logger.warning("NAT traversal: TCP connect failed after hole punch to \(address):\(port): \(error.localizedDescription)")
+      }
+    }
+  }
+
+  public func natTraversalShouldFallbackToRelay(_ manager: NATTraversalManager, peerId: String) {
+    logger.info("NAT traversal: falling back to Firestore relay for peer \(peerId)")
+    // Firestore relay is always available via pushRAGArtifacts/pullRAGArtifacts
+    // No action needed here — the user can trigger relay sync from the UI
   }
 }
