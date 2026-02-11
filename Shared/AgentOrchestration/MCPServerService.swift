@@ -283,15 +283,15 @@ public final class MCPServerService {
     }
   }
 
-  public private(set) var isRunning: Bool = false
+  public var isRunning: Bool = false
   public var lastError: String?
-  public private(set) var activeRequests: Int = 0
-  public private(set) var lastRequestMethod: String?
-  public private(set) var lastRequestAt: Date?
-  public private(set) var lastBlockedTool: String?
-  public private(set) var lastBlockedToolAt: Date?
-  public private(set) var lastToolRequiresForeground: Bool?
-  public private(set) var lastToolRequiresForegroundAt: Date?
+  public var activeRequests: Int = 0
+  public var lastRequestMethod: String?
+  public var lastRequestAt: Date?
+  public var lastBlockedTool: String?
+  public var lastBlockedToolAt: Date?
+  public var lastToolRequiresForeground: Bool?
+  public var lastToolRequiresForegroundAt: Date?
   public var lastUIActionHandled: String? { uiAutomationProvider.lastUIActionHandled }
   public var lastUIActionHandledAt: Date? { uiAutomationProvider.lastUIActionHandledAt }
   public var recentUIActions: [UIActionRecord] { uiAutomationProvider.recentUIActions }
@@ -302,10 +302,10 @@ public final class MCPServerService {
   public var isAppFrontmost: Bool {
     NSApp.keyWindow?.isKeyWindow ?? false
   }
-  public private(set) var isCleaningAgentWorkspaces: Bool = false
-  public private(set) var lastCleanupAt: Date?
-  public private(set) var lastCleanupSummary: String?
-  public private(set) var lastCleanupError: String?
+  public var isCleaningAgentWorkspaces: Bool = false
+  public var lastCleanupAt: Date?
+  public var lastCleanupSummary: String?
+  public var lastCleanupError: String?
   public var lastUIAction: UIAction? {
     get { uiAutomationProvider.lastUIAction }
     set { uiAutomationProvider.lastUIAction = newValue }
@@ -428,12 +428,12 @@ public final class MCPServerService {
     config.set(data, forKey: "mcp.server.promptRules")
   }
 
-  private func saveRagUsageStats() {
+  func saveRagUsageStats() {
     guard let data = try? JSONEncoder().encode(ragUsage) else { return }
     config.set(data, forKey: StorageKey.ragUsageStats)
   }
 
-  private func saveRagSessionEvents() {
+  func saveRagSessionEvents() {
     // Keep only last 50 events to avoid unbounded growth
     let eventsToSave = Array(ragSessionEvents.suffix(50))
     guard let data = try? JSONEncoder().encode(eventsToSave) else { return }
@@ -449,27 +449,27 @@ public final class MCPServerService {
     saveRagSessionEvents()
   }
 
-  private(set) var ragStatus: LocalRAGStore.Status?
-  private(set) var ragStats: LocalRAGStore.Stats?
-  private(set) var ragUsage = RAGUsageStats()
-  private(set) var ragSessionEvents: [RAGSessionEvent] = []
-  private(set) var ragQueryHints: [RAGQueryHint] = []
-  private(set) var ragRepos: [RAGRepoInfo] = []
+  var ragStatus: LocalRAGStore.Status?
+  var ragStats: LocalRAGStore.Stats?
+  var ragUsage = RAGUsageStats()
+  var ragSessionEvents: [RAGSessionEvent] = []
+  var ragQueryHints: [RAGQueryHint] = []
+  var ragRepos: [RAGRepoInfo] = []
   var ragIndexingPath: String?
   var ragIndexProgress: LocalRAGIndexProgress?
-  private(set) var ragIndexingTask: Task<LocalRAGIndexReport, Error>?
+  var ragIndexingTask: Task<LocalRAGIndexReport, Error>?
   var lastRagIndexReport: LocalRAGIndexReport?
   var lastRagIndexAt: Date?
-  private(set) var lastRagRefreshAt: Date?
-  private(set) var lastRagError: String?
-  private(set) var ragArtifactStatus: RAGArtifactStatus?
+  var lastRagRefreshAt: Date?
+  var lastRagError: String?
+  var ragArtifactStatus: RAGArtifactStatus?
   var ragArtifactSyncError: String?
-  private(set) var lastRagSearchQuery: String?
-  private(set) var lastRagSearchMode: RAGSearchMode?
-  private(set) var lastRagSearchRepoPath: String?
-  private(set) var lastRagSearchLimit: Int?
-  private(set) var lastRagSearchAt: Date?
-  private(set) var lastRagSearchResults: [LocalRAGSearchResult] = []
+  var lastRagSearchQuery: String?
+  var lastRagSearchMode: RAGSearchMode?
+  var lastRagSearchRepoPath: String?
+  var lastRagSearchLimit: Int?
+  var lastRagSearchAt: Date?
+  var lastRagSearchResults: [LocalRAGSearchResult] = []
   
   /// Per-repo analysis state (keyed by repo ID) - persists across view navigation
   public var repoAnalysisStates: [String: RAGRepoAnalysisState] = [:]
@@ -490,27 +490,27 @@ public final class MCPServerService {
   let chainRunner: AgentChainRunner
   let uiAutomationProvider: MCPUIAutomationProviding
   var dataService: DataService?
-  private let screenshotService = ScreenshotService()
+  let screenshotService = ScreenshotService()
   let translationValidatorService = TranslationValidatorService()
   let piiScrubberService = PIIScrubberService()
   let doclingService = DoclingService()
-  private let vmIsolationService: VMIsolationService
+  let vmIsolationService: VMIsolationService
   var localRagStore = LocalRAGStore()
-  private(set) var parallelWorktreeRunner: ParallelWorktreeRunner?
+  var parallelWorktreeRunner: ParallelWorktreeRunner?
 
   // MARK: - Tool Handlers (extracted from this file for maintainability)
 
-  private var uiToolsHandler: UIToolsHandler
-  private var vmToolsHandler: VMToolsHandler
-  private var parallelToolsHandler: ParallelToolsHandler
-  private var ragToolsHandler: RAGToolsHandler?
-  private var codeEditToolsHandler: CodeEditToolsHandler?
-  private var chainToolsHandler: ChainToolsHandler?
-  private var swarmToolsHandler: SwarmToolsHandler
-  private var repoToolsHandler: RepoToolsHandler
-  private var worktreeToolsHandler: WorktreeToolsHandler
-  private var githubToolsHandler: GitHubToolsHandler?
-  private var terminalToolsHandler: TerminalToolsHandler
+  var uiToolsHandler: UIToolsHandler
+  var vmToolsHandler: VMToolsHandler
+  var parallelToolsHandler: ParallelToolsHandler
+  var ragToolsHandler: RAGToolsHandler?
+  var codeEditToolsHandler: CodeEditToolsHandler?
+  var chainToolsHandler: ChainToolsHandler?
+  var swarmToolsHandler: SwarmToolsHandler
+  var repoToolsHandler: RepoToolsHandler
+  var worktreeToolsHandler: WorktreeToolsHandler
+  var githubToolsHandler: GitHubToolsHandler?
+  var terminalToolsHandler: TerminalToolsHandler
 
   public struct ActiveRunInfo: Identifiable {
     public let id: UUID
@@ -542,16 +542,16 @@ public final class MCPServerService {
   var chainQueue: [ChainQueueEntry] = []
   var completedRunsById: [UUID: (completedAt: Date, payload: [String: Any])] = [:]
 
-  private let listenerQueue = DispatchQueue(label: "MCPServer.Listener")
-  private var listener: NWListener?
-  private var connections: [UUID: NWConnection] = [:]
-  private var connectionStates: [UUID: ConnectionState] = [:]
-  private var sleepPreventionAssertionId: IOPMAssertionID?
-  private let permissionsStore: MCPToolPermissionsProviding
+  let listenerQueue = DispatchQueue(label: "MCPServer.Listener")
+  var listener: NWListener?
+  var connections: [UUID: NWConnection] = [:]
+  var connectionStates: [UUID: ConnectionState] = [:]
+  var sleepPreventionAssertionId: IOPMAssertionID?
+  let permissionsStore: MCPToolPermissionsProviding
   let config: MCPServerConfigProviding
-  public private(set) var permissionsVersion: Int = 0
+  public var permissionsVersion: Int = 0
 
-  private struct ConnectionState {
+  struct ConnectionState {
     var buffer = Data()
   }
 
@@ -858,1638 +858,6 @@ public final class MCPServerService {
     await refreshRagArtifactStatus()
   }
 
-  // MARK: - Dependency Graph
-
-  func listRagReposForGraph() async throws -> [(name: String, path: String)] {
-    let repos = try await localRagStore.listRepos()
-    return repos.map { (name: $0.name, path: $0.rootPath) }
-  }
-
-  func buildFullDependencyGraph(repoPath: String) async throws -> FullGraphData {
-    let fileSummaries = try await localRagStore.getFileSummaries(for: repoPath)
-    let edges = try await localRagStore.getDependencyEdges(for: repoPath)
-
-    var moduleStats: [String: GraphNodeStats] = [:]
-    var submoduleStats: [String: GraphNodeStats] = [:]
-    var fileIndex: [String: LocalRAGFileSummary] = [:]
-
-    for file in fileSummaries {
-      let normalized = normalizedPath(file.path)
-      fileIndex[normalized] = file
-
-      let moduleId = moduleKey(for: normalized, modulePath: file.modulePath)
-      let submoduleInfo = submoduleKey(for: normalized, modulePath: file.modulePath)
-
-      var moduleBucket = moduleStats[moduleId, default: GraphNodeStats()]
-      moduleBucket.fileCount += 1
-      addLanguage(file.language, to: &moduleBucket.languages)
-      moduleStats[moduleId] = moduleBucket
-
-      var submoduleBucket = submoduleStats[submoduleInfo.key, default: GraphNodeStats()]
-      submoduleBucket.fileCount += 1
-      addLanguage(file.language, to: &submoduleBucket.languages)
-      submoduleBucket.module = submoduleInfo.module
-      submoduleStats[submoduleInfo.key] = submoduleBucket
-    }
-
-    var resolvedDependencies = 0
-    var inferredDependencies = 0
-    var moduleLinks: [LinkKey: LinkBucket] = [:]
-    var submoduleLinks: [LinkKey: LinkBucket] = [:]
-
-    for edge in edges {
-      let sourcePath = normalizedPath(edge.sourceFile)
-      let sourceFile = fileIndex[sourcePath]
-      let sourceModule = moduleKey(for: sourcePath, modulePath: sourceFile?.modulePath)
-      let sourceSubmodule = submoduleKey(for: sourcePath, modulePath: sourceFile?.modulePath).key
-
-      let targetPath = edge.targetFile.map { normalizedPath($0) } ?? normalizedPath(edge.targetPath)
-      let targetFile = edge.targetFile.flatMap { fileIndex[normalizedPath($0)] }
-      let targetModule = moduleKey(for: targetPath, modulePath: targetFile?.modulePath)
-      let targetSubmodule = submoduleKey(for: targetPath, modulePath: targetFile?.modulePath).key
-
-      if edge.targetFile == nil {
-        inferredDependencies += 1
-      } else {
-        resolvedDependencies += 1
-      }
-
-      if !sourceModule.isEmpty, !targetModule.isEmpty, sourceModule != targetModule {
-        let key = LinkKey(source: sourceModule, target: targetModule)
-        moduleLinks[key, default: LinkBucket()].add(type: edge.dependencyType.rawValue)
-      }
-
-      if !sourceSubmodule.isEmpty, !targetSubmodule.isEmpty, sourceSubmodule != targetSubmodule {
-        let key = LinkKey(source: sourceSubmodule, target: targetSubmodule)
-        submoduleLinks[key, default: LinkBucket()].add(type: edge.dependencyType.rawValue)
-      }
-
-      if moduleStats[targetModule] == nil {
-        moduleStats[targetModule] = GraphNodeStats()
-      }
-      if submoduleStats[targetSubmodule] == nil {
-        var bucket = GraphNodeStats()
-        bucket.module = submoduleKey(for: targetPath, modulePath: targetFile?.modulePath).module
-        submoduleStats[targetSubmodule] = bucket
-      }
-    }
-
-    let moduleNodes = moduleStats.map { entry in
-      GraphNode(
-        id: entry.key,
-        label: entry.key,
-        fileCount: entry.value.fileCount,
-        topLanguage: topLanguage(from: entry.value.languages),
-        languages: entry.value.languages.isEmpty ? nil : entry.value.languages,
-        module: entry.key
-      )
-    }
-    .sorted { $0.id < $1.id }
-
-    let submoduleNodes = submoduleStats.map { entry in
-      GraphNode(
-        id: entry.key,
-        label: entry.key,
-        fileCount: entry.value.fileCount,
-        topLanguage: topLanguage(from: entry.value.languages),
-        languages: entry.value.languages.isEmpty ? nil : entry.value.languages,
-        module: entry.value.module
-      )
-    }
-    .sorted { $0.id < $1.id }
-
-    let moduleLinksOutput = moduleLinks.map { entry in
-      GraphLink(source: entry.key.source, target: entry.key.target, weight: entry.value.weight, types: entry.value.types)
-    }
-    .sorted { $0.source < $1.source }
-
-    let submoduleLinksOutput = submoduleLinks.map { entry in
-      GraphLink(source: entry.key.source, target: entry.key.target, weight: entry.value.weight, types: entry.value.types)
-    }
-    .sorted { $0.source < $1.source }
-
-    let stats = GraphStats(
-      totalFiles: fileSummaries.count,
-      totalDependencies: edges.count,
-      resolvedDependencies: resolvedDependencies,
-      inferredDependencies: inferredDependencies,
-      totalModules: moduleNodes.count
-    )
-
-    return FullGraphData(
-      repo: repoPath,
-      stats: stats,
-      moduleGraph: GraphLevel(nodes: moduleNodes, links: moduleLinksOutput),
-      submoduleGraph: GraphLevel(nodes: submoduleNodes, links: submoduleLinksOutput),
-      fileGraph: nil
-    )
-  }
-
-  private struct GraphNodeStats {
-    var fileCount: Int = 0
-    var languages: [String: Int] = [:]
-    var module: String? = nil
-  }
-
-  private struct LinkBucket {
-    var weight: Int = 0
-    var types: [String: Int] = [:]
-
-    mutating func add(type: String) {
-      weight += 1
-      types[type, default: 0] += 1
-    }
-  }
-
-  private struct LinkKey: Hashable {
-    let source: String
-    let target: String
-  }
-
-  private func normalizedPath(_ path: String) -> String {
-    var trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
-    if trimmed.hasPrefix("./") {
-      trimmed = String(trimmed.dropFirst(2))
-    }
-    return trimmed
-  }
-
-  private func moduleKey(for path: String, modulePath: String?) -> String {
-    let basePath = normalizedPath(modulePath?.isEmpty == false ? modulePath! : path)
-    let components = basePath.split(separator: "/")
-    return components.first.map(String.init) ?? basePath
-  }
-
-  private func submoduleKey(for path: String, modulePath: String?) -> (key: String, module: String) {
-    let basePath = normalizedPath(modulePath?.isEmpty == false ? modulePath! : path)
-    let components = basePath.split(separator: "/")
-    let module = components.first.map(String.init) ?? basePath
-    if components.count >= 2 {
-      return ("\(components[0])/\(components[1])", module)
-    }
-    return (module, module)
-  }
-
-  private func addLanguage(_ language: String?, to counts: inout [String: Int]) {
-    guard let language, !language.isEmpty else { return }
-    counts[language, default: 0] += 1
-  }
-
-  private func topLanguage(from counts: [String: Int]) -> String? {
-    counts.max { $0.value < $1.value }?.key
-  }
-
-  func indexPolicyRepository(path: String) async throws -> LocalRAGIndexReport {
-    try await localRagStore.indexRepository(path: path)
-  }
-
-  private func refreshRagArtifactStatus() async {
-    guard let status = ragStatus else {
-      ragArtifactStatus = nil
-      SwarmCoordinator.shared.updateLocalRagArtifactStatus(nil)
-      return
-    }
-
-    let stats = try? await localRagStore.stats()
-    let repos = (try? await localRagStore.listRepos()) ?? []
-    let manifest = await LocalRAGArtifacts.buildManifest(status: status, stats: stats, repos: repos)
-    let lastSyncedAt = ragArtifactStatus?.lastSyncedAt
-    let lastSyncDirection = ragArtifactStatus?.lastSyncDirection
-    await updateRagArtifactStatus(from: manifest, lastSyncedAt: lastSyncedAt, direction: lastSyncDirection)
-  }
-
-  func updateRagArtifactStatus(
-    from manifest: RAGArtifactManifest,
-    lastSyncedAt: Date?,
-    direction: RAGArtifactSyncDirection?
-  ) async {
-    let staleInfo = await LocalRAGArtifacts.stalenessInfo(for: manifest)
-    let status = RAGArtifactStatus(
-      manifestVersion: manifest.version,
-      totalBytes: manifest.totalBytes,
-      lastSyncedAt: lastSyncedAt,
-      lastSyncDirection: direction,
-      repoCount: manifest.repos.count,
-      lastIndexedAt: manifest.lastIndexedAt,
-      staleReason: staleInfo.1
-    )
-    ragArtifactStatus = status
-    SwarmCoordinator.shared.updateLocalRagArtifactStatus(status)
-  }
-
-  /// Delete a repository from the RAG index
-  public func deleteRagRepo(repoId: String) async throws -> Int {
-    let deleted = try await localRagStore.deleteRepo(repoId: repoId)
-    await refreshRagSummary()
-    return deleted
-  }
-  
-  /// Index a repository (called from UI)
-  func indexRagRepo(
-    path: String,
-    forceReindex: Bool = false,
-    allowWorkspace: Bool = false,
-    excludeSubrepos: Bool = true
-  ) async throws {
-    ragIndexingPath = path
-    ragIndexProgress = nil
-    
-    let task = Task {
-      let report = try await localRagStore.indexRepository(
-        path: path,
-        forceReindex: forceReindex,
-        allowWorkspace: allowWorkspace,
-        excludeSubrepos: excludeSubrepos
-      ) { [weak self] progress in
-        Task { @MainActor in
-          self?.ragIndexProgress = progress
-        }
-      }
-      return report
-    }
-    ragIndexingTask = task
-    
-    do {
-      let report = try await task.value
-      ragIndexingTask = nil
-      ragIndexingPath = nil
-      ragIndexProgress = .complete(report: report)
-      lastRagIndexReport = report
-      lastRagIndexAt = Date()
-      await refreshRagSummary()
-    } catch is CancellationError {
-      ragIndexingTask = nil
-      ragIndexingPath = nil
-      ragIndexProgress = nil
-      // Indexing was cancelled - not an error
-    } catch {
-      ragIndexingTask = nil
-      ragIndexingPath = nil
-      ragIndexProgress = nil
-      throw error
-    }
-  }
-  
-  /// Cancel any in-progress indexing
-  func cancelRagIndexing() {
-    ragIndexingTask?.cancel()
-    ragIndexingTask = nil
-    ragIndexingPath = nil
-    ragIndexProgress = nil
-  }
-
-  func listRepoGuidanceSkills(
-    repoPath: String? = nil,
-    repoRemoteURL: String? = nil,
-    includeInactive: Bool = false,
-    limit: Int? = nil
-  ) -> [RepoGuidanceSkill] {
-    dataService?.listRepoGuidanceSkills(
-      repoPath: repoPath,
-      repoRemoteURL: repoRemoteURL,
-      includeInactive: includeInactive,
-      limit: limit
-    ) ?? []
-  }
-
-  @discardableResult
-  func addRepoGuidanceSkill(
-    repoPath: String,
-    repoRemoteURL: String? = nil,
-    repoName: String? = nil,
-    title: String,
-    body: String,
-    source: String = "manual",
-    tags: String = "",
-    priority: Int = 0,
-    isActive: Bool = true
-  ) -> RepoGuidanceSkill? {
-    let created = dataService?.addRepoGuidanceSkill(
-      repoPath: repoPath,
-      repoRemoteURL: repoRemoteURL,
-      repoName: repoName,
-      title: title,
-      body: body,
-      source: source,
-      tags: tags,
-      priority: priority,
-      isActive: isActive
-    )
-    if created != nil {
-      ragUsage.skillsAdded += 1
-      ragUsage.lastSkillChangeAt = Date()
-      appendRagEvent(
-        kind: .skillAdded,
-        title: "Skill added",
-        detail: title.isEmpty ? repoPath : title
-      )
-      saveRagUsageStats()
-    }
-    return created
-  }
-
-  @discardableResult
-  func updateRepoGuidanceSkill(
-    id: UUID,
-    repoPath: String? = nil,
-    repoRemoteURL: String? = nil,
-    repoName: String? = nil,
-    title: String? = nil,
-    body: String? = nil,
-    source: String? = nil,
-    tags: String? = nil,
-    priority: Int? = nil,
-    isActive: Bool? = nil
-  ) -> RepoGuidanceSkill? {
-    let updated = dataService?.updateRepoGuidanceSkill(
-      id: id,
-      repoPath: repoPath,
-      repoRemoteURL: repoRemoteURL,
-      repoName: repoName,
-      title: title,
-      body: body,
-      source: source,
-      tags: tags,
-      priority: priority,
-      isActive: isActive
-    )
-    if let updated {
-      ragUsage.skillsUpdated += 1
-      ragUsage.lastSkillChangeAt = Date()
-      appendRagEvent(
-        kind: .skillUpdated,
-        title: "Skill updated",
-        detail: updated.title.isEmpty ? updated.repoPath : updated.title
-      )
-      saveRagUsageStats()
-    }
-    return updated
-  }
-
-  @discardableResult
-  public func deleteRepoGuidanceSkill(id: UUID) -> Bool {
-    let deleted = dataService?.deleteRepoGuidanceSkill(id: id) ?? false
-    if deleted {
-      ragUsage.skillsDeleted += 1
-      ragUsage.lastSkillChangeAt = Date()
-      appendRagEvent(
-        kind: .skillDeleted,
-        title: "Skill deleted",
-        detail: nil
-      )
-      saveRagUsageStats()
-    }
-    return deleted
-  }
-  
-  // MARK: - Learning Loop (#210)
-  
-  func listLessons(repoPath: String, includeInactive: Bool, limit: Int?) async throws -> [LocalRAGLesson] {
-    try await localRagStore.listLessons(repoPath: repoPath, includeInactive: includeInactive, limit: limit)
-  }
-  
-  func addLesson(
-    repoPath: String,
-    filePattern: String?,
-    errorSignature: String?,
-    fixDescription: String,
-    fixCode: String?,
-    source: String
-  ) async throws -> LocalRAGLesson {
-    let lesson = try await localRagStore.addLesson(
-      repoPath: repoPath,
-      filePattern: filePattern,
-      errorSignature: errorSignature,
-      fixDescription: fixDescription,
-      fixCode: fixCode,
-      source: source
-    )
-    appendRagEvent(
-      kind: .lessonAdded,
-      title: "Lesson added",
-      detail: fixDescription
-    )
-    return lesson
-  }
-  
-  func queryLessons(
-    repoPath: String,
-    filePattern: String?,
-    errorSignature: String?,
-    limit: Int
-  ) async throws -> [LocalRAGLesson] {
-    try await localRagStore.queryLessons(
-      repoPath: repoPath,
-      filePattern: filePattern,
-      errorSignature: errorSignature,
-      limit: limit
-    )
-  }
-  
-  func updateLesson(
-    id: String,
-    fixDescription: String?,
-    fixCode: String?,
-    confidence: Float?,
-    isActive: Bool?
-  ) async throws -> LocalRAGLesson? {
-    if let updated = try await localRagStore.updateLesson(
-      id: id,
-      fixDescription: fixDescription,
-      fixCode: fixCode,
-      confidence: confidence,
-      isActive: isActive
-    ) {
-      appendRagEvent(
-        kind: .lessonUpdated,
-        title: "Lesson updated",
-        detail: updated.fixDescription
-      )
-      return updated
-    }
-    return nil
-  }
-  
-  func deleteLesson(id: String) async throws -> Bool {
-    let deleted = try await localRagStore.deleteLesson(id: id)
-    if deleted {
-      appendRagEvent(
-        kind: .lessonDeleted,
-        title: "Lesson deleted",
-        detail: id
-      )
-    }
-    return deleted
-  }
-  
-  func recordLessonApplied(id: String, success: Bool) async throws {
-    if success {
-      // Increase confidence and occurrence count
-      try await localRagStore.recordLessonUsed(id: id)
-      appendRagEvent(
-        kind: .lessonApplied,
-        title: "Lesson applied",
-        detail: "Confidence increased for lesson \(id.prefix(8))..."
-      )
-    } else {
-      // Decrease confidence for unsuccessful application
-      if let lesson = try await localRagStore.getLesson(id: id) {
-        let newConfidence = max(0.1, lesson.confidence - 0.1)
-        _ = try await localRagStore.updateLesson(id: id, confidence: newConfidence)
-        appendRagEvent(
-          kind: .lessonApplied,
-          title: "Lesson not helpful",
-          detail: "Confidence decreased for lesson \(id.prefix(8))..."
-        )
-      }
-    }
-  }
-
-  func clearMCPRunHistory() {
-    dataService?.clearMCPRunHistory()
-    sessionTracker.resetSession()
-  }
-
-  private func buildRepoGuidance(repoPath: String) async -> String? {
-    var sections: [String] = []
-    if let dataService {
-      // Auto-seed Ember skills if this is an Ember project (Issue #263)
-      let seededCount = await MainActor.run {
-        DefaultSkillsService.autoSeedEmberSkillsIfNeeded(context: dataService.modelContext, repoPath: repoPath)
-      }
-      if seededCount > 0 {
-        await telemetryProvider.info("Auto-seeded Ember skills", metadata: [
-          "repoPath": repoPath,
-          "skillsAdded": "\(seededCount)"
-        ])
-      }
-
-      let repoRemoteURL = await RepoRegistry.shared.registerRepo(at: repoPath)
-      if let (skillsBlock, skills) = dataService.repoGuidanceSkillsBlock(
-        repoPath: repoPath,
-        repoRemoteURL: repoRemoteURL
-      ) {
-        sections.append(skillsBlock)
-        dataService.markRepoGuidanceSkillsApplied(skills)
-      }
-    }
-
-    let queries = [
-      ".rubocop.yml",
-      "rubocop",
-      ".eslintrc",
-      "eslint",
-      "ruff",
-      "flake8",
-      "pyproject.toml lint",
-      "swiftlint",
-      "prettier",
-      "style guide",
-      "lint"
-    ]
-    var snippets: [LocalRAGSearchResult] = []
-    for query in queries {
-      do {
-        let results = try await localRagStore.search(query: query, repoPath: repoPath, limit: 2)
-        snippets.append(contentsOf: results)
-      } catch {
-        await telemetryProvider.warning("Repo guidance search failed", metadata: [
-          "query": query,
-          "error": error.localizedDescription
-        ])
-      }
-    }
-
-    let unique = Dictionary(grouping: snippets, by: { $0.filePath })
-      .compactMap { $0.value.first }
-      .prefix(4)
-    if !unique.isEmpty {
-      let guidance = unique.map { result in
-        let header = "- Follow repo lint/style rules in \(result.filePath)"
-        let snippet = result.snippet
-          .split(separator: "\n")
-          .prefix(8)
-          .joined(separator: "\n")
-        return "\(header)\n\n\(snippet)"
-      }.joined(separator: "\n\n")
-      sections.append("## Repo Guidance\n\n\(guidance)")
-    }
-
-    guard !sections.isEmpty else { return nil }
-    return sections.joined(separator: "\n\n")
-  }
-
-  func initializeRag(extensionPath: String? = nil) async throws {
-    let status = try await localRagStore.initialize(extensionPath: extensionPath)
-    ragStatus = status
-    ragStats = try await localRagStore.stats()
-    lastRagError = nil
-    lastRagRefreshAt = Date()
-  }
-
-  func applyRagEmbeddingSettings() async {
-    localRagStore = LocalRAGStore()
-    parallelWorktreeRunner?.setRAGStore(localRagStore)
-    ragIndexingPath = nil
-    ragIndexProgress = nil
-    ragStatus = await localRagStore.status()
-    ragStats = try? await localRagStore.stats()
-    lastRagError = nil
-    lastRagRefreshAt = Date()
-    await refreshRagSummary()
-  }
-
-  func indexRag(repoPath: String) async throws -> LocalRAGIndexReport {
-    let report = try await localRagStore.indexRepository(
-      path: repoPath,
-      allowWorkspace: false,
-      excludeSubrepos: true,
-      progress: nil
-    )
-    ragStatus = await localRagStore.status()
-    ragStats = try await localRagStore.stats()
-    ragUsage.indexRuns += 1
-    ragUsage.lastIndexAt = Date()
-    lastRagIndexReport = report
-    lastRagIndexAt = Date()
-    let skipInfo = report.filesSkipped > 0 ? " (\(report.filesSkipped) unchanged)" : ""
-    appendRagEvent(
-      kind: .index,
-      title: "Indexed \(report.filesIndexed) files\(skipInfo) · \(report.chunksIndexed) chunks",
-      detail: report.repoPath
-    )
-    lastRagError = nil
-    lastRagRefreshAt = Date()
-    saveRagUsageStats()
-    return report
-  }
-
-  func searchRag(
-    query: String,
-    mode: RAGSearchMode,
-    repoPath: String? = nil,
-    limit: Int = 10,
-    matchAll: Bool = true
-  ) async throws -> [LocalRAGSearchResult] {
-    let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    let results = try await runRagSearch(
-      query: trimmedQuery,
-      mode: mode,
-      repoPath: repoPath,
-      limit: limit,
-      matchAll: matchAll,
-      recordHints: true
-    )
-    ragUsage.searches += 1
-    ragUsage.totalResults += results.count
-    if results.isEmpty {
-      ragUsage.emptySearches += 1
-    }
-    switch mode {
-    case .text:
-      ragUsage.textSearches += 1
-    case .vector:
-      ragUsage.vectorSearches += 1
-    }
-    ragUsage.lastSearchAt = Date()
-    if !results.isEmpty {
-      await refreshRagQueryHints(query: trimmedQuery, repoPath: repoPath, mode: mode, resultCount: results.count)
-    }
-    appendRagEvent(
-      kind: .search,
-      title: "Search · \(results.count) results",
-      detail: trimmedQuery
-    )
-    lastRagSearchQuery = trimmedQuery
-    lastRagSearchMode = mode
-    lastRagSearchRepoPath = repoPath
-    lastRagSearchLimit = limit
-    lastRagSearchAt = Date()
-    lastRagSearchResults = results
-    lastRagError = nil
-    saveRagUsageStats()
-    return results
-  }
-
-  func ragQueryHints(limit: Int? = 10) -> [RAGQueryHint] {
-    let hints = ragQueryHints.sorted { $0.lastUsedAt > $1.lastUsedAt }
-    guard let limit, limit > 0 else { return hints }
-    return Array(hints.prefix(limit))
-  }
-
-  func refreshRagQueryHints() async {
-    await refreshRagQueryHints(query: nil, repoPath: nil, mode: nil, resultCount: nil)
-  }
-
-  func runRagSearch(
-    query: String,
-    mode: RAGSearchMode,
-    repoPath: String?,
-    limit: Int,
-    matchAll: Bool,
-    recordHints: Bool,
-    modulePath: String? = nil
-  ) async throws -> [LocalRAGSearchResult] {
-    let results: [LocalRAGSearchResult]
-    switch mode {
-    case .vector:
-      results = try await localRagStore.searchVector(query: query, repoPath: repoPath, limit: limit, modulePath: modulePath)
-    case .text:
-      results = try await localRagStore.search(query: query, repoPath: repoPath, limit: limit, matchAll: matchAll, modulePath: modulePath)
-    }
-    if recordHints, !results.isEmpty {
-      do {
-        try await localRagStore.recordQueryHint(
-          query: query,
-          repoPath: repoPath,
-          mode: mode.rawValue,
-          resultCount: results.count
-        )
-      } catch {
-        await telemetryProvider.warning("RAG query hint insert failed", metadata: ["error": error.localizedDescription])
-      }
-    }
-    return results
-  }
-
-  private func refreshRagQueryHints(query: String?, repoPath: String?, mode: RAGSearchMode?, resultCount: Int?) async {
-    do {
-      if let query, let mode, let resultCount {
-        try await localRagStore.recordQueryHint(query: query, repoPath: repoPath, mode: mode.rawValue, resultCount: resultCount)
-      }
-      let hints = try await localRagStore.fetchQueryHints(limit: 25)
-      ragQueryHints = hints.map {
-        RAGQueryHint(
-          query: $0.query,
-          repoPath: $0.repoPath,
-          mode: RAGSearchMode(rawValue: $0.mode) ?? .text,
-          resultCount: $0.resultCount,
-          useCount: $0.useCount,
-          lastUsedAt: $0.lastUsedAt
-        )
-      }
-    } catch {
-      await telemetryProvider.warning("RAG query hints refresh failed", metadata: ["error": error.localizedDescription])
-    }
-  }
-
-  func recordRagUserAction(_ action: RAGUserAction, result: LocalRAGSearchResult? = nil) {
-    let now = Date()
-    switch action {
-    case .copyPath, .copySnippet:
-      ragUsage.copyCount += 1
-      ragUsage.lastCopyAt = now
-      appendRagEvent(
-        kind: .copy,
-        title: "Snippet copied",
-        detail: result?.filePath
-      )
-    case .openFile:
-      ragUsage.openCount += 1
-      ragUsage.lastOpenAt = now
-      appendRagEvent(
-        kind: .open,
-        title: "Opened file",
-        detail: result?.filePath
-      )
-    case .markHelpful:
-      ragUsage.helpfulCount += 1
-      ragUsage.lastHelpfulAt = now
-      appendRagEvent(
-        kind: .helpful,
-        title: "Marked helpful",
-        detail: result?.filePath
-      )
-    case .markIrrelevant:
-      ragUsage.irrelevantCount += 1
-      ragUsage.lastIrrelevantAt = now
-      appendRagEvent(
-        kind: .irrelevant,
-        title: "Marked not useful",
-        detail: result?.filePath
-      )
-    }
-    saveRagUsageStats()
-  }
-  
-  /// Records AI analysis session completion for persistent tracking
-  func recordAnalysisSession(chunksAnalyzed: Int, durationSeconds: Double) {
-    ragUsage.analysisRuns += 1
-    ragUsage.chunksAnalyzedTotal += chunksAnalyzed
-    ragUsage.totalAnalysisTimeSeconds += durationSeconds
-    ragUsage.lastAnalysisAt = Date()
-    appendRagEvent(
-      kind: .index,  // Reuse index kind for analysis
-      title: "AI analysis completed",
-      detail: "\(chunksAnalyzed) chunks in \(formatDuration(durationSeconds))"
-    )
-    saveRagUsageStats()
-  }
-  
-  private func formatDuration(_ seconds: Double) -> String {
-    if seconds < 60 {
-      return "\(Int(seconds))s"
-    } else if seconds < 3600 {
-      let mins = Int(seconds / 60)
-      let secs = Int(seconds.truncatingRemainder(dividingBy: 60))
-      return "\(mins)m \(secs)s"
-    } else {
-      let hours = Int(seconds / 3600)
-      let mins = Int((seconds.truncatingRemainder(dividingBy: 3600)) / 60)
-      return "\(hours)h \(mins)m"
-    }
-  }
-
-  private func appendRagEvent(kind: RAGSessionEvent.Kind, title: String, detail: String?) {
-    let event = RAGSessionEvent(timestamp: Date(), title: title, detail: detail, kind: kind)
-    ragSessionEvents.insert(event, at: 0)
-    if ragSessionEvents.count > 50 {
-      ragSessionEvents.removeLast(ragSessionEvents.count - 50)
-    }
-    saveRagSessionEvents()
-  }
-
-  private func buildRagContext(query: String, repoPath: String) async -> String? {
-    let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmedQuery.isEmpty else { return nil }
-
-    do {
-      let results = try await searchRag(
-        query: trimmedQuery,
-        mode: localRagSearchMode,
-        repoPath: repoPath,
-        limit: localRagSearchLimit
-      )
-      guard !results.isEmpty else { return nil }
-
-      let snippets = results.map { result in
-        "- \(result.filePath) [\(result.startLine)-\(result.endLine)]:\n\(result.snippet)"
-      }
-      return ([
-        "Local RAG context for: \"\(trimmedQuery)\"",
-        snippets.joined(separator: "\n\n")
-      ]).joined(separator: "\n")
-    } catch {
-      await telemetryProvider.warning("Local RAG context build failed", metadata: ["error": error.localizedDescription])
-      return nil
-    }
-  }
-
-  public struct RunOverrides {
-    public var enableReviewLoop: Bool? = nil
-    public var pauseOnReview: Bool? = nil
-    public var enablePrePlanner: Bool? = nil  // Issue #133
-    public var allowPlannerModelSelection: Bool = false
-    public var allowImplementerModelOverride: Bool = false
-    public var allowPlannerImplementerScaling: Bool = false
-    public var maxImplementers: Int? = nil
-    public var maxPremiumCost: Double? = nil
-    public var priority: Int = 0
-    public var timeoutSeconds: Double? = nil
-    public var requireRagUsage: Bool? = nil
-
-    public init() {}
-  }
-
-  public func pauseRun(_ runId: UUID) async {
-    if let chain = activeRunChains[runId] {
-      await chainRunner.pause(chainId: chain.id)
-    }
-  }
-
-  public func resumeRun(_ runId: UUID) async {
-    if let chain = activeRunChains[runId] {
-      await chainRunner.resume(chainId: chain.id)
-    }
-  }
-
-  public func stepRun(_ runId: UUID) async {
-    if let chain = activeRunChains[runId] {
-      await chainRunner.step(chainId: chain.id)
-    }
-  }
-
-  public func stopRun(_ runId: UUID) async {
-    if let task = activeChainTasks[runId] {
-      task.cancel()
-    }
-  }
-
-  public func cancelQueuedRun(_ runId: UUID) async -> Bool {
-    return cancelQueuedRunInternal(runId: runId)
-  }
-
-  func rerun(_ record: MCPRunRecord, overrides: RunOverrides = RunOverrides()) async {
-    var arguments: [String: Any] = [
-      "templateName": record.templateName,
-      "prompt": record.prompt,
-      "workingDirectory": record.workingDirectory ?? ""
-    ]
-    if let enableReviewLoop = overrides.enableReviewLoop {
-      arguments["enableReviewLoop"] = enableReviewLoop
-    }
-    if let pauseOnReview = overrides.pauseOnReview {
-      arguments["pauseOnReview"] = pauseOnReview
-    }
-    if let enablePrePlanner = overrides.enablePrePlanner {
-      arguments["enablePrePlanner"] = enablePrePlanner
-    }
-    arguments["allowPlannerModelSelection"] = overrides.allowPlannerModelSelection
-    arguments["allowImplementerModelOverride"] = overrides.allowImplementerModelOverride
-    arguments["allowPlannerImplementerScaling"] = overrides.allowPlannerImplementerScaling
-    if let maxImplementers = overrides.maxImplementers {
-      arguments["maxImplementers"] = maxImplementers
-    }
-    if let maxPremiumCost = overrides.maxPremiumCost {
-      arguments["maxPremiumCost"] = maxPremiumCost
-    }
-    if overrides.priority != 0 {
-      arguments["priority"] = overrides.priority
-    }
-    if let timeoutSeconds = overrides.timeoutSeconds {
-      arguments["timeoutSeconds"] = timeoutSeconds
-    }
-    if let requireRagUsage = overrides.requireRagUsage {
-      arguments["requireRagUsage"] = requireRagUsage
-    }
-    _ = await handleChainRun(id: nil, arguments: arguments)
-  }
-
-  public func cleanupWorktrees(paths: [String]) async {
-    guard !paths.isEmpty else { return }
-    for path in paths {
-      guard let workspace = agentManager.workspaceManager.workspaces.first(where: { $0.path.path == path }) else {
-        continue
-      }
-      let repository = Model.Repository(
-        name: workspace.parentRepositoryPath.lastPathComponent,
-        path: workspace.parentRepositoryPath.path
-      )
-      let branch = workspace.branch
-      try? await agentManager.workspaceManager.cleanupWorkspace(workspace, force: true)
-      if !branch.isEmpty {
-        _ = try? await Commands.simple(arguments: ["branch", "-D", branch], in: repository)
-      }
-    }
-  }
-
-  public func start() {
-    guard !isRunning else { return }
-    lastError = nil
-
-    guard port >= 1024 && port <= 65535 else {
-      lastError = "Port must be between 1024 and 65535"
-      return
-    }
-
-    do {
-      let portValue = NWEndpoint.Port(rawValue: UInt16(port))
-      guard let portValue else {
-        lastError = "Invalid port"
-        return
-      }
-
-      let parameters = NWParameters.tcp
-      parameters.allowLocalEndpointReuse = true
-      let listener = try NWListener(using: parameters, on: portValue)
-
-      listener.stateUpdateHandler = { [weak self] state in
-        guard let self else { return }
-        Task { @MainActor in
-          switch state {
-          case .ready:
-            self.isRunning = true
-            self.lastError = nil
-          case .failed(let error):
-            self.lastError = error.localizedDescription
-            self.isRunning = false
-          default:
-            break
-          }
-        }
-      }
-
-      listener.newConnectionHandler = { [weak self] connection in
-        Task { @MainActor in
-          self?.handleConnection(connection)
-        }
-      }
-
-      listener.start(queue: listenerQueue)
-      self.listener = listener
-    } catch {
-      lastError = error.localizedDescription
-      isRunning = false
-    }
-  }
-
-  public func stop() {
-    listener?.cancel()
-    listener = nil
-    for connection in connections.values {
-      connection.cancel()
-    }
-    connections = [:]
-    connectionStates = [:]
-    isRunning = false
-  }
-
-  private func handleConnection(_ connection: NWConnection) {
-    // In LAN mode, accept all connections; otherwise only localhost
-    guard lanModeEnabled || isLocalConnection(connection) else {
-      connection.cancel()
-      return
-    }
-
-    let id = UUID()
-    connections[id] = connection
-    connectionStates[id] = ConnectionState()
-
-    connection.stateUpdateHandler = { [weak self] state in
-      guard case .failed = state else { return }
-      Task { @MainActor in
-        self?.closeConnection(id)
-      }
-    }
-
-    connection.start(queue: listenerQueue)
-    receive(on: connection, id: id)
-  }
-
-  private func receive(on connection: NWConnection, id: UUID) {
-    connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] data, _, isComplete, error in
-      Task { @MainActor in
-        guard let self else { return }
-        if let data, !data.isEmpty {
-          self.connectionStates[id]?.buffer.append(data)
-          self.processBuffer(for: id, connection: connection)
-        }
-
-        if isComplete || error != nil {
-          self.closeConnection(id)
-        } else {
-          self.receive(on: connection, id: id)
-        }
-      }
-    }
-  }
-
-  private func processBuffer(for id: UUID, connection: NWConnection) {
-    guard var state = connectionStates[id] else { return }
-    if let request = parseRequest(from: &state.buffer) {
-      connectionStates[id] = state
-      handleRequest(request, on: connection)
-    } else {
-      connectionStates[id] = state
-    }
-  }
-
-  private func closeConnection(_ id: UUID) {
-    connections[id]?.cancel()
-    connections[id] = nil
-    connectionStates[id] = nil
-  }
-
-  private func isLocalConnection(_ connection: NWConnection) -> Bool {
-    switch connection.endpoint {
-    case .hostPort(let host, _):
-      switch host {
-      case .ipv4(let address):
-        return address == IPv4Address("127.0.0.1")
-      case .ipv6(let address):
-        return address == IPv6Address("::1")
-      case .name(let name, _):
-        return name == "localhost"
-      default:
-        return false
-      }
-    default:
-      return false
-    }
-  }
-
-  private struct HTTPRequest {
-    let method: String
-    let path: String
-    let headers: [String: String]
-    let body: Data
-  }
-
-  private func parseRequest(from buffer: inout Data) -> HTTPRequest? {
-    let delimiter = Data("\r\n\r\n".utf8)
-    guard let headerRange = buffer.range(of: delimiter) else { return nil }
-
-    let headerData = buffer.subdata(in: buffer.startIndex..<headerRange.lowerBound)
-    guard let headerText = String(data: headerData, encoding: .utf8) else { return nil }
-
-    let lines = headerText.split(separator: "\r\n")
-    guard let requestLine = lines.first else { return nil }
-
-    let requestParts = requestLine.split(separator: " ")
-    guard requestParts.count >= 2 else { return nil }
-
-    let method = String(requestParts[0])
-    let path = String(requestParts[1])
-
-    var headers: [String: String] = [:]
-    for line in lines.dropFirst() {
-      if let separatorIndex = line.firstIndex(of: ":") {
-        let key = line[..<separatorIndex].trimmingCharacters(in: .whitespaces)
-        let value = line[line.index(after: separatorIndex)...].trimmingCharacters(in: .whitespaces)
-        headers[key.lowercased()] = value
-      }
-    }
-
-    let contentLength = Int(headers["content-length"] ?? "0") ?? 0
-    let bodyStart = headerRange.upperBound
-    let totalLength = bodyStart + contentLength
-    guard buffer.count >= totalLength else { return nil }
-
-    let body = buffer.subdata(in: bodyStart..<totalLength)
-    buffer.removeSubrange(0..<totalLength)
-
-    return HTTPRequest(method: method, path: path, headers: headers, body: body)
-  }
-
-  private func handleRequest(_ request: HTTPRequest, on connection: NWConnection) {
-    guard request.method.uppercased() == "POST", request.path == "/rpc" else {
-      sendHTTPResponse(status: 404, body: Data("{\"error\":\"Not Found\"}".utf8), on: connection)
-      return
-    }
-
-    Task {
-      let (_, responseBody) = await handleRPC(body: request.body)
-      // JSON-RPC spec: Always return HTTP 200 for valid JSON-RPC responses.
-      // Error information is in the JSON body, not the HTTP status.
-      // Using HTTP 4xx/5xx causes VS Code MCP client to kill the connection.
-      sendHTTPResponse(status: 200, body: responseBody, on: connection)
-    }
-  }
-
-  private func handleRPC(body: Data) async -> (Int, Data) {
-    let startTime = Date()
-    var methodForLog = "unknown"
-    var statusCode = 500
-    defer {
-      let durationMs = Int(Date().timeIntervalSince(startTime) * 1000)
-      Task { await telemetryProvider.info("RPC complete", metadata: [
-        "method": methodForLog,
-        "durationMs": "\(durationMs)",
-        "status": "\(statusCode)"
-      ]) }
-    }
-    activeRequests += 1
-    defer { activeRequests -= 1 }
-    do {
-      let json = try JSONSerialization.jsonObject(with: body, options: [])
-      guard let dict = json as? [String: Any] else {
-        await telemetryProvider.warning("Invalid RPC request: non-object JSON", metadata: [:])
-        methodForLog = "invalid"
-        statusCode = 400
-        return (400, JSONRPCResponseBuilder.makeError(id: nil, code: -32600, message: "Invalid Request"))
-      }
-
-      let method = dict["method"] as? String ?? ""
-      let id = dict["id"]
-      let params = dict["params"] as? [String: Any]
-      lastRequestAt = Date()
-      if method == "tools/call",
-         let params,
-         let toolName = params["name"] as? String {
-        lastRequestMethod = "tools/call: \(toolName)"
-        methodForLog = "tools/call: \(toolName)"
-      } else {
-        lastRequestMethod = method
-        methodForLog = method
-      }
-
-      switch method {
-      case "initialize", "mcp/initialize":
-        let result: [String: Any] = [
-          "protocolVersion": "2024-11-05",
-          "serverInfo": ["name": "Peel MCP Server", "version": "0.1"],
-          "capabilities": ["tools": [:]]
-        ]
-        statusCode = 200
-        return (200, JSONRPCResponseBuilder.makeResult(id: id, result: result))
-
-      case "initialized", "notifications/initialized":
-        statusCode = 200
-        return (200, Data())
-
-      // Handle common MCP notifications (no response expected)
-      case "notifications/cancelled", "cancelled",
-           "notifications/progress", "progress",
-           "notifications/message", "message",
-           "$/cancelRequest", "$/progress":
-        // Notifications don't require a response
-        statusCode = 200
-        return (200, Data())
-
-      case "tools/list":
-        statusCode = 200
-        return (200, JSONRPCResponseBuilder.makeResult(id: id, result: ["tools": toolList()]))
-
-      case "tools/call":
-        let result = await handleToolCall(id: id, params: params)
-        statusCode = result.0
-        return result
-
-      default:
-        await telemetryProvider.warning("RPC method not found", metadata: ["method": method, "hasId": String(describing: id != nil)])
-        // For notifications (id=null), just acknowledge - don't error
-        if id == nil {
-          statusCode = 200
-          return (200, Data())
-        }
-        statusCode = 400
-        return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32601, message: "Method not found"))
-      }
-    } catch {
-      await telemetryProvider.error(error, context: "RPC handling failed", metadata: [:])
-      statusCode = 500
-      return (500, JSONRPCResponseBuilder.makeError(id: nil, code: -32603, message: error.localizedDescription))
-    }
-  }
-
-  private func handleToolCall(id: Any?, params: [String: Any]?) async -> (Int, Data) {
-    guard let params, let name = params["name"] as? String else {
-      await telemetryProvider.warning("Invalid tool call params", metadata: [:])
-      return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Invalid params"))
-    }
-
-    guard let resolvedName = resolveToolName(name),
-          let tool = toolDefinition(named: resolvedName) else {
-      await telemetryProvider.warning("Unknown tool", metadata: ["name": name])
-      return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32601, message: "Unknown tool"))
-    }
-
-    if tool.requiresForeground && !allowForegroundTools {
-      await telemetryProvider.warning("Foreground tool disabled", metadata: ["name": resolvedName])
-      lastBlockedTool = resolvedName
-      lastBlockedToolAt = Date()
-      return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32010, message: "Tool disabled in headless mode"))
-    }
-
-    lastToolRequiresForeground = tool.requiresForeground
-    lastToolRequiresForegroundAt = Date()
-
-    if tool.requiresForeground && !NSApp.isActive {
-      await telemetryProvider.warning("Foreground tool called while app inactive", metadata: ["name": tool.name])
-      recordUIActionForegroundNeeded(tool.name)
-    }
-
-    if !isToolEnabled(resolvedName) {
-      await telemetryProvider.warning("Tool disabled", metadata: ["name": resolvedName, "category": tool.category.rawValue])
-      lastBlockedTool = resolvedName
-      lastBlockedToolAt = Date()
-      return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32010, message: "Tool disabled"))
-    }
-
-    let arguments = params["arguments"] as? [String: Any] ?? [:]
-
-    // Delegate to extracted tool handlers first
-    if uiToolsHandler.supportedTools.contains(resolvedName) {
-      return await uiToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
-    }
-    if vmToolsHandler.supportedTools.contains(resolvedName) {
-      return await vmToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
-    }
-    if parallelToolsHandler.supportedTools.contains(resolvedName) {
-      return await parallelToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
-    }
-    if ragToolsHandler?.supportedTools.contains(resolvedName) == true {
-      return await ragToolsHandler!.handle(name: resolvedName, id: id, arguments: arguments)
-    }
-    if codeEditToolsHandler?.supportedTools.contains(resolvedName) == true {
-      return await codeEditToolsHandler!.handle(name: resolvedName, id: id, arguments: arguments)
-    }
-    if chainToolsHandler?.supportedTools.contains(resolvedName) == true {
-      return await chainToolsHandler!.handle(name: resolvedName, id: id, arguments: arguments)
-    }
-    if swarmToolsHandler.supportedTools.contains(resolvedName) {
-      return await swarmToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
-    }
-    if repoToolsHandler.supportedTools.contains(resolvedName) {
-      return await repoToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
-    }
-    if worktreeToolsHandler.supportedTools.contains(resolvedName) {
-      return await worktreeToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
-    }
-    if githubToolsHandler?.supportedTools.contains(resolvedName) == true {
-      return await githubToolsHandler!.handle(name: resolvedName, id: id, arguments: arguments)
-    }
-    if terminalToolsHandler.supportedTools.contains(resolvedName) {
-      return await terminalToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
-    }
-
-    // Fall through to inline handlers (to be extracted in future)
-    switch resolvedName {
-    // UI tools are now handled by UIToolsHandler above
-
-    case "state.get":
-      return handleStateGet(id: id)
-
-    case "state.readonly":
-      return handleStateGet(id: id)
-
-    case "state.list":
-      return handleStateList(id: id)
-
-    // RAG tools are now handled by RAGToolsHandler above
-    // Chain tools are now handled by ChainToolsHandler above
-
-    case "workspaces.agent.list":
-      return handleAgentWorkspacesList(id: id, arguments: arguments)
-
-    case "workspaces.agent.cleanup.status":
-      return handleAgentWorkspacesCleanupStatus(id: id)
-
-    case "logs.mcp.path":
-      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["path": await telemetryProvider.logPath()]))
-
-    case "logs.mcp.tail":
-      let lines = arguments["lines"] as? Int ?? 200
-      let text = await telemetryProvider.tail(lines: lines)
-      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["text": text]))
-
-    // VM tools are now handled by VMToolsHandler above
-
-    case "server.restart":
-      return await handleServerRestart(id: id)
-
-    case "server.port.set":
-      return await handleServerPortSet(id: id, arguments: arguments)
-
-    case "server.status":
-      return handleServerStatus(id: id)
-
-    case "server.sleep.prevent":
-      return handleServerSleepPreventionSet(id: id, arguments: arguments)
-
-    case "server.sleep.prevent.status":
-      return handleServerSleepPreventionStatus(id: id)
-
-    case "server.lan":
-      return handleServerLanModeSet(id: id, arguments: arguments)
-
-    case "server.stop":
-      stop()
-      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["status": "stopped"]))
-
-    case "app.quit":
-      scheduleAppQuit()
-      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["status": "quitting"]))
-
-    case "app.activate":
-      activateApp()
-      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["status": "activated"]))
-
-    case "screenshot.capture":
-      let label = arguments["label"] as? String
-      let requestedOutputDir = arguments["outputDir"] as? String
-      let outputDir: String?
-    #if DEBUG
-      if let requestedOutputDir, !requestedOutputDir.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        outputDir = requestedOutputDir
-      } else {
-        outputDir = (NSTemporaryDirectory() as NSString).appendingPathComponent("KitchenSync/Screenshots")
-      }
-    #else
-      outputDir = requestedOutputDir
-    #endif
-      do {
-        let url = try await screenshotService.capture(label: label, outputDir: outputDir)
-        return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["path": url.path]))
-      } catch {
-        await telemetryProvider.warning("Screenshot tool failed", metadata: ["error": error.localizedDescription])
-        return (500, JSONRPCResponseBuilder.makeError(id: id, code: -32001, message: error.localizedDescription))
-      }
-
-    case "translations.validate":
-      return await handleTranslationsValidate(id: id, arguments: arguments)
-
-    case "docling.convert":
-      return await handleDoclingConvert(id: id, arguments: arguments)
-
-    case "docling.setup":
-      return await handleDoclingSetup(id: id, arguments: arguments)
-
-    case "pii.scrub":
-      return await handlePIIScrub(id: id, arguments: arguments)
-
-    // Parallel tools are now handled by ParallelToolsHandler
-
-    default:
-      await telemetryProvider.warning("Unknown tool", metadata: ["name": name])
-      return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32601, message: "Unknown tool"))
-    }
-  }
-
-  // UI tool handlers moved to UIToolsHandler.swift (#158)
-
-  private func handleStateGet(id: Any?) -> (Int, Data) {
-    let showArchived = UserDefaults.standard.bool(forKey: "github-show-archived")
-    let brewSource = UserDefaults.standard.string(forKey: "brew.source")
-    let brewSearch = UserDefaults.standard.string(forKey: "brew.searchText")
-    let workspaceName = UserDefaults.standard.string(forKey: "workspaces.selectedWorkspaceName")
-    let repoName = UserDefaults.standard.string(forKey: "workspaces.selectedRepoName")
-    let worktreePath = UserDefaults.standard.string(forKey: "workspaces.selectedWorktreePath")
-    let worktreeName = UserDefaults.standard.string(forKey: "workspaces.selectedWorktreeName")
-    let workspaceNames = UserDefaults.standard.stringArray(forKey: "workspaces.availableNames")
-    let repoNames = UserDefaults.standard.stringArray(forKey: "workspaces.availableRepoNames")
-    let worktreePaths = UserDefaults.standard.stringArray(forKey: "workspaces.availableWorktreePaths")
-    let worktreeNames = UserDefaults.standard.stringArray(forKey: "workspaces.availableWorktreeNames")
-    let favoriteKeys = UserDefaults.standard.stringArray(forKey: "github.availableFavoriteKeys")
-    let recentPRKeys = UserDefaults.standard.stringArray(forKey: "github.availableRecentPRKeys")
-    let selectedFavoriteKey = UserDefaults.standard.string(forKey: "github.selectedFavoriteKey")
-    let selectedRecentPRKey = UserDefaults.standard.string(forKey: "github.selectedRecentPRKey")
-    let gitRepoPaths = UserDefaults.standard.stringArray(forKey: "git.availableRepoPaths")
-    let gitRepoNames = UserDefaults.standard.stringArray(forKey: "git.availableRepoNames")
-    let gitSelectedRepo = UserDefaults.standard.string(forKey: "git.selectedRepoPath")
-    let formatter = ISO8601DateFormatter()
-    let uniqueGitRepoPaths = dedupeStrings(gitRepoPaths)
-    let uniqueGitRepoNames = dedupeStrings(gitRepoNames)
-    let uniqueWorkspaceNames = dedupeStrings(workspaceNames)
-    let uniqueRepoNames = dedupeStrings(repoNames)
-    let uniqueWorktreePaths = dedupeStrings(worktreePaths)
-    let uniqueWorktreeNames = dedupeStrings(worktreeNames)
-    let uniqueFavoriteKeys = dedupeStrings(favoriteKeys)
-    let uniqueRecentPRKeys = dedupeStrings(recentPRKeys)
-    let recentActions = recentUIActions.prefix(10).map { action in
-      [
-        "controlId": action.controlId,
-        "status": action.status,
-        "timestamp": formatter.string(from: action.timestamp)
-      ]
-    }
-    let state: [String: Any] = [
-      "currentTool": currentToolId() as Any,
-      "mcpRunning": isRunning,
-      "activeRequests": activeRequests,
-      "appActive": isAppActive,
-      "appFrontmost": isAppFrontmost,
-      "lastRequestAt": lastRequestAt?.formatted() as Any,
-      "githubShowArchived": showArchived,
-      "brewSource": brewSource as Any,
-      "brewSearchText": brewSearch as Any,
-      "workspacesSelectedWorkspace": workspaceName as Any,
-      "workspacesSelectedRepo": repoName as Any,
-      "workspacesSelectedWorktree": worktreePath as Any,
-      "workspacesSelectedWorktreeName": worktreeName as Any,
-      "workspacesAvailable": uniqueWorkspaceNames as Any,
-      "workspacesAvailableRepos": uniqueRepoNames as Any,
-      "workspacesAvailableWorktrees": uniqueWorktreePaths as Any,
-      "workspacesAvailableWorktreeNames": uniqueWorktreeNames as Any,
-      "githubAvailableFavorites": uniqueFavoriteKeys as Any,
-      "githubAvailableRecentPRs": uniqueRecentPRKeys as Any,
-      "githubSelectedFavorite": selectedFavoriteKey as Any,
-      "githubSelectedRecentPR": selectedRecentPRKey as Any,
-      "gitAvailableRepos": uniqueGitRepoPaths as Any,
-      "gitAvailableRepoNames": uniqueGitRepoNames as Any,
-      "gitSelectedRepo": gitSelectedRepo as Any,
-      "lastUIActionHandled": lastUIActionHandled as Any,
-      "lastUIActionHandledAt": lastUIActionHandledAt.map { formatter.string(from: $0) } as Any,
-      "pendingUIAction": lastUIAction?.controlId as Any,
-      "lastToolRequiresForeground": lastToolRequiresForeground as Any,
-      "recentUIActions": recentActions
-    ]
-    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: state))
-  }
-
-  private func handleStateList(id: Any?) -> (Int, Data) {
-    let currentViewId = currentToolId()
-    let controls = availableToolControlIds() + availableControlIds(for: currentViewId)
-    let controlsByView = Dictionary(uniqueKeysWithValues: availableViewIds().map { viewId in
-      (viewId, availableControlIds(for: viewId))
-    })
-    let controlValuesByView = Dictionary(uniqueKeysWithValues: availableViewIds().map { viewId in
-      (viewId, controlValues(for: viewId))
-    })
-    let toolForegroundByName = Dictionary(uniqueKeysWithValues: activeToolDefinitions.map { tool in
-      (tool.name, tool.requiresForeground)
-    })
-    let toolGroupsByName = Dictionary(uniqueKeysWithValues: activeToolDefinitions.map { tool in
-      (tool.name, groups(for: tool).map { $0.rawValue })
-    })
-    let state: [String: Any] = [
-      "views": availableViewIds(),
-      "tools": activeToolDefinitions.map { $0.name },
-      "controls": controls,
-      "controlsByView": controlsByView,
-      "controlValuesByView": controlValuesByView,
-      "toolRequiresForeground": toolForegroundByName,
-      "toolGroups": toolGroupsByName,
-      "toolGroupList": toolGroups.map { $0.rawValue },
-      "currentViewId": currentViewId as Any
-    ]
-    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: state))
-  }
-
-  private func handleTranslationsValidate(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    let root = (arguments["root"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let translationsPath = arguments["translationsPath"] as? String
-    let baseLocale = arguments["baseLocale"] as? String
-    let only = arguments["only"] as? String
-    let summaryOnly = arguments["summary"] as? Bool ?? false
-    let useAppleAI = arguments["useAppleAI"] as? Bool ?? false
-    let redactSamples = arguments["redactSamples"] as? Bool ?? true
-    let toolPath = arguments["toolPath"] as? String
-
-    guard let root, !root.isEmpty else {
-      return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Missing root"))
-    }
-
-    let options = TranslationValidatorService.Options(
-      root: root,
-      translationsPath: translationsPath,
-      baseLocale: baseLocale,
-      only: only,
-      summary: summaryOnly,
-      toolPath: toolPath,
-      useAppleAI: useAppleAI,
-      redactSamples: redactSamples
-    )
-
-    do {
-      let report = try await translationValidatorService.runValidator(options: options)
-      let summary = report.summary()
-      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
-        "report": encodeJSON(report),
-        "summary": encodeJSON(summary)
-      ]))
-    } catch {
-      await telemetryProvider.warning("Translation validation failed", metadata: ["error": error.localizedDescription])
-      return (500, JSONRPCResponseBuilder.makeError(id: id, code: -32001, message: error.localizedDescription))
-    }
-  }
-
-  // VM tool handlers moved to VMToolsHandler.swift (#161)
-
-  private func handlePIIScrub(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    let inputPath = (arguments["inputPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let outputPath = (arguments["outputPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let reportPath = (arguments["reportPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let reportFormat = (arguments["reportFormat"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let configPath = (arguments["configPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let seed = (arguments["seed"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let maxSamples = arguments["maxSamples"] as? Int
-    let enableNER = arguments["enableNER"] as? Bool ?? false
-    let toolPath = arguments["toolPath"] as? String
-
-    guard let inputPath, !inputPath.isEmpty else {
-      return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Missing inputPath"))
-    }
-    guard let outputPath, !outputPath.isEmpty else {
-      return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Missing outputPath"))
-    }
-
-    let options = PIIScrubberService.Options(
-      inputPath: inputPath,
-      outputPath: outputPath,
-      reportPath: reportPath,
-      reportFormat: reportFormat,
-      configPath: configPath,
-      seed: seed,
-      maxSamples: maxSamples,
-      enableNER: enableNER,
-      toolPath: toolPath
-    )
-
-    do {
-      let result = try await piiScrubberService.runScrubber(options: options)
-      var payload: [String: Any] = [
-        "inputPath": result.inputPath,
-        "outputPath": result.outputPath,
-        "reportPath": result.reportPath as Any
-      ]
-      if let report = result.report {
-        payload["report"] = encodeJSON(report)
-      }
-      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: payload))
-    } catch {
-      await telemetryProvider.warning("PII scrubber failed", metadata: ["error": error.localizedDescription])
-      return (500, JSONRPCResponseBuilder.makeError(id: id, code: -32001, message: error.localizedDescription))
-    }
-  }
-
-  private func handleDoclingConvert(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    let inputPath = (arguments["inputPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let outputPath = (arguments["outputPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let pythonPath = (arguments["pythonPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let scriptPath = (arguments["scriptPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let profile = (arguments["profile"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let includeText = arguments["includeText"] as? Bool ?? false
-    let maxChars = arguments["maxChars"] as? Int ?? 20000
-
-    guard let inputPath, !inputPath.isEmpty else {
-      return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Missing inputPath"))
-    }
-    guard let outputPath, !outputPath.isEmpty else {
-      return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Missing outputPath"))
-    }
-
-    let options = DoclingService.Options(
-      inputPath: inputPath,
-      outputPath: outputPath,
-      pythonPath: pythonPath,
-      scriptPath: scriptPath,
-      profile: profile
-    )
-
-    do {
-      let result = try await doclingService.runConvert(options: options)
-      var payload: [String: Any] = [
-        "inputPath": result.inputPath,
-        "outputPath": result.outputPath,
-        "bytesWritten": result.bytesWritten,
-        "pythonPath": result.pythonPath,
-        "scriptPath": result.scriptPath
-      ]
-      if let profile, !profile.isEmpty {
-        payload["profile"] = profile
-      }
-      if includeText {
-        let maxLength = max(1, maxChars)
-        if let data = try? Data(contentsOf: URL(fileURLWithPath: result.outputPath)),
-           let text = String(data: data, encoding: .utf8) {
-          payload["text"] = String(text.prefix(maxLength))
-          payload["textTruncated"] = text.count > maxLength
-        }
-      }
-      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: payload))
-    } catch {
-      await telemetryProvider.warning("Docling conversion failed", metadata: ["error": error.localizedDescription])
-      return (500, JSONRPCResponseBuilder.makeError(id: id, code: -32001, message: error.localizedDescription))
-    }
-  }
-
-  private func handleDoclingSetup(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    let pythonPath = (arguments["pythonPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-
-    do {
-      let result = try await doclingService.ensureDoclingInstalled(pythonPath: pythonPath)
-      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
-        "pythonPath": result.pythonPath,
-        "log": result.log
-      ]))
-    } catch {
-      await telemetryProvider.warning("Docling setup failed", metadata: ["error": error.localizedDescription])
-      return (500, JSONRPCResponseBuilder.makeError(id: id, code: -32001, message: error.localizedDescription))
-    }
-  }
-
-  // Parallel tool handlers moved to ParallelToolsHandler.swift (#162)
-  // RAG tool handlers moved to RAGToolsHandler.swift
-
-  private func encodeJSON<T: Encodable>(_ value: T) -> [String: Any] {
-    guard let data = try? JSONEncoder().encode(value),
-          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-      return [:]
-    }
-    return object
-  }
-
   // MARK: - Chain Handler Methods (Internal)
   // Note: These methods are kept for internal use by rerun() and handleChainRunBatch().
   // MCP routing goes through ChainToolsHandler; these are internal helpers.
@@ -2630,7 +998,7 @@ public final class MCPServerService {
     return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["runs": payload]))
   }
 
-  private func handleAgentWorkspacesList(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+  func handleAgentWorkspacesList(id: Any?, arguments: [String: Any]) -> (Int, Data) {
     let repoPath = arguments["repoPath"] as? String
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -2662,7 +1030,7 @@ public final class MCPServerService {
     return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["workspaces": workspaces]))
   }
 
-  private func handleAgentWorkspacesCleanupStatus(id: Any?) -> (Int, Data) {
+  func handleAgentWorkspacesCleanupStatus(id: Any?) -> (Int, Data) {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 
@@ -3188,7 +1556,7 @@ public final class MCPServerService {
     return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["step": runId.uuidString]))
   }
 
-  private func handleServerRestart(id: Any?) async -> (Int, Data) {
+  func handleServerRestart(id: Any?) async -> (Int, Data) {
     stop()
     start()
     await waitForServerStart()
@@ -3200,7 +1568,7 @@ public final class MCPServerService {
     return (500, JSONRPCResponseBuilder.makeError(id: id, code: -32001, message: lastError ?? "Failed to restart server"))
   }
 
-  private func handleServerPortSet(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+  func handleServerPortSet(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
     guard let requestedPort = arguments["port"] as? Int else {
       return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Missing port"))
     }
@@ -3230,7 +1598,7 @@ public final class MCPServerService {
     return (500, JSONRPCResponseBuilder.makeError(id: id, code: -32003, message: lastError ?? "Failed to bind to port"))
   }
 
-  private func handleServerStatus(id: Any?) -> (Int, Data) {
+  func handleServerStatus(id: Any?) -> (Int, Data) {
     let status: [String: Any] = [
       "enabled": isEnabled,
       "running": isRunning,
@@ -3243,7 +1611,7 @@ public final class MCPServerService {
     return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: status))
   }
   
-  private func handleServerLanModeSet(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+  func handleServerLanModeSet(id: Any?, arguments: [String: Any]) -> (Int, Data) {
     guard let enabled = arguments["enabled"] as? Bool else {
       return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Missing enabled flag"))
     }
@@ -3256,7 +1624,7 @@ public final class MCPServerService {
     return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: result))
   }
 
-  private func handleServerSleepPreventionSet(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+  func handleServerSleepPreventionSet(id: Any?, arguments: [String: Any]) -> (Int, Data) {
     guard let enabled = arguments["enabled"] as? Bool else {
       return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Missing enabled flag"))
     }
@@ -3268,7 +1636,7 @@ public final class MCPServerService {
     ]))
   }
 
-  private func handleServerSleepPreventionStatus(id: Any?) -> (Int, Data) {
+  func handleServerSleepPreventionStatus(id: Any?) -> (Int, Data) {
     return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
       "enabled": sleepPreventionEnabled,
       "active": sleepPreventionAssertionId != nil
@@ -3571,18 +1939,18 @@ public final class MCPServerService {
     permissionsVersion &+= 1
   }
 
-  private func scheduleAppQuit() {
+  func scheduleAppQuit() {
     Task { @MainActor in
       try? await Task.sleep(for: .milliseconds(150))
       NSApp.terminate(nil)
     }
   }
 
-  private func activateApp() {
+  func activateApp() {
     NSApp.activate(ignoringOtherApps: true)
   }
 
-  private func templateList() -> [[String: Any]] {
+  func templateList() -> [[String: Any]] {
     return agentManager.allTemplates.map { template in
       [
         "id": template.id.uuidString,
@@ -3601,7 +1969,7 @@ public final class MCPServerService {
     }
   }
 
-  private func summarizeResults(_ results: [AgentChainResult]) -> [[String: Any]] {
+  func summarizeResults(_ results: [AgentChainResult]) -> [[String: Any]] {
     let formatter = ISO8601DateFormatter()
     return results.map { result in
       var item: [String: Any] = [
@@ -3635,7 +2003,7 @@ public final class MCPServerService {
     }
   }
 
-  private func parseChainSpec(_ spec: [String: Any]) -> ChainTemplate? {
+  func parseChainSpec(_ spec: [String: Any]) -> ChainTemplate? {
     let name = (spec["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
     let description = spec["description"] as? String ?? ""
     guard let stepsValue = spec["steps"] as? [[String: Any]], !stepsValue.isEmpty else {
@@ -3672,7 +2040,7 @@ public final class MCPServerService {
     )
   }
 
-  private func sendHTTPResponse(status: Int, body: Data, on connection: NWConnection) {
+  func sendHTTPResponse(status: Int, body: Data, on connection: NWConnection) {
     let statusLine: String
     switch status {
     case 200: statusLine = "HTTP/1.1 200 OK"
@@ -3702,12 +2070,12 @@ public final class MCPServerService {
     uiAutomationProvider.recordUIActionForegroundNeeded(controlId)
   }
 
-  private func viewTitle(for viewId: String) -> String {
+  func viewTitle(for viewId: String) -> String {
     uiAutomationProvider.viewTitle(for: viewId)
   }
 
 
-  private func dedupeStrings(_ values: [String]?) -> [String] {
+  func dedupeStrings(_ values: [String]?) -> [String] {
     guard let values else { return [] }
     return Array(Set(values)).sorted()
   }
