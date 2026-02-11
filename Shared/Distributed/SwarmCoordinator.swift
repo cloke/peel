@@ -1215,6 +1215,34 @@ extension SwarmCoordinator: PeerConnectionDelegate {
     delegate?.swarmCoordinator(self, didEmit: .workerConnected(peer))
     logger.info("Peel connected: \(peer.name) (commit: \(peer.capabilities.gitCommitHash ?? "unknown"))")
 
+    // Reset heartbeat timestamp on (re)connect so the monitor doesn't
+    // immediately consider this worker stale from a previous connection.
+    if role == .brain || role == .hybrid {
+      if let existing = workerStatuses[peer.id] {
+        workerStatuses[peer.id] = WorkerStatus(
+          deviceId: existing.deviceId,
+          state: .idle,
+          currentTaskId: nil,
+          lastHeartbeat: Date(),
+          uptimeSeconds: 0,
+          tasksCompleted: existing.tasksCompleted,
+          tasksFailed: existing.tasksFailed,
+          ragArtifacts: existing.ragArtifacts
+        )
+      } else {
+        workerStatuses[peer.id] = WorkerStatus(
+          deviceId: peer.id,
+          state: .idle,
+          currentTaskId: nil,
+          lastHeartbeat: Date(),
+          uptimeSeconds: 0,
+          tasksCompleted: 0,
+          tasksFailed: 0,
+          ragArtifacts: nil
+        )
+      }
+    }
+
     if role == .worker || role == .hybrid {
       Task { await sendHeartbeat() }
     }
