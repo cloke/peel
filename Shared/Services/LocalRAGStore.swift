@@ -5194,6 +5194,23 @@ actor LocalRAGStore {
   /// For each repo with a repo_identifier, looks up the local path via RepoRegistry
   /// and updates root_path so all queries work on this machine.
   /// - Returns: Number of repos successfully remapped
+  
+  /// Diagnostic log for remap operations — writes to a file next to rag.sqlite
+  /// so it can be read from the worker via `swarm.direct-command cat`.
+  private func remapLog(_ message: String) {
+    let logURL = dbURL.deletingLastPathComponent().appendingPathComponent("remap-debug.log")
+    let timestamp = ISO8601DateFormatter().string(from: Date())
+    let line = "[\(timestamp)] \(message)\n"
+    if let handle = try? FileHandle(forWritingTo: logURL) {
+      handle.seekToEndOfFile()
+      handle.write(line.data(using: .utf8) ?? Data())
+      handle.closeFile()
+    } else {
+      // Create the file if it doesn't exist
+      try? line.data(using: .utf8)?.write(to: logURL)
+    }
+  }
+  
   @discardableResult
   func remapRepoPaths() async throws -> Int {
     try openIfNeeded()
@@ -5201,6 +5218,8 @@ actor LocalRAGStore {
     guard let db else {
       throw LocalRAGError.sqlite("Database not initialized")
     }
+    
+    remapLog("Starting remapRepoPaths")
     
     // Find all repos with a repo_identifier
     let sql = "SELECT id, root_path, repo_identifier FROM repos WHERE repo_identifier IS NOT NULL"
@@ -5218,23 +5237,36 @@ actor LocalRAGStore {
       let currentPath = String(cString: sqlite3_column_text(statement, 1))
       let identifier = String(cString: sqlite3_column_text(statement, 2))
       
+      remapLog("Checking repo: id=\(repoId), path=\(currentPath), identifier=\(identifier)")
+      
       // Skip if current path already exists on this machine
-      if FileManager.default.fileExists(atPath: currentPath) { continue }
+      if FileManager.default.fileExists(atPath: currentPath) {
+        remapLog("  Path exists locally, skipping: \(currentPath)")
+        continue
+      }
+      remapLog("  Path does NOT exist locally: \(currentPath)")
       
       // Try to resolve via RepoRegistry (which maps remote URLs to local paths)
       if let localPath = await RepoRegistry.shared.getLocalPath(for: identifier),
          FileManager.default.fileExists(atPath: localPath) {
+        remapLog("  RepoRegistry resolved: \(identifier) -> \(localPath)")
         remaps.append((id: repoId, newPath: localPath))
         continue
       }
+      remapLog("  RepoRegistry has no mapping for: \(identifier)")
       
       // RepoRegistry didn't have it — try discovering from common paths.
       // Scan well-known directories for a repo matching this identifier.
       if let localPath = await discoverRepoPath(for: identifier) {
         await RepoRegistry.shared.registerRepo(at: localPath)
+        remapLog("  Discovered via scan: \(identifier) -> \(localPath)")
         remaps.append((id: repoId, newPath: localPath))
+      } else {
+        remapLog("  discoverRepoPath found nothing for: \(identifier)")
       }
     }
+    
+    remapLog("Remapping \(remaps.count) repo(s)")
     
     // Apply remaps
     for remap in remaps {
@@ -5293,10 +5325,12 @@ actor LocalRAGStore {
     let fm = FileManager.default
     // Pre-normalize the identifier on the MainActor
     let normalizedIdentifier = await RepoRegistry.shared.normalizeRemoteURL(repoIdentifier)
+    remapLog("  discoverRepoPath: homeDir=\(homeDir), looking for '\(normalizedIdentifier)' (from '\(repoIdentifier)')")
     
     for dir in candidateDirs {
       guard fm.fileExists(atPath: dir) else { continue }
       guard let entries = try? fm.contentsOfDirectory(atPath: dir) else { continue }
+      remapLog("  discoverRepoPath: scanning \(dir) (\(entries.count) entries)")
       for entry in entries {
         let candidatePath = "\(dir)/\(entry)"
         var isDir: ObjCBool = false
@@ -5304,18 +5338,33 @@ actor LocalRAGStore {
         // Check if it's a git repo
         guard fm.fileExists(atPath: "\(candidatePath)/.git") else { continue }
         // Get its remote URL
-        guard let remoteURL = gitRemoteURL(for: candidatePath) else { continue }
+        guard let remoteURL = gitRemoteURL(for: candidatePath) else {
+          remapLog("  discoverRepoPath: \(entry) — git remote failed")
+          continue
+        }
         let normalized = await RepoRegistry.shared.normalizeRemoteURL(remoteURL)
         if normalized == normalizedIdentifier {
+          remapLog("  discoverRepoPath: MATCH \(entry) — \(normalized)")
           return candidatePath
         }
       }
     }
+    remapLog("  discoverRepoPath: no match found in any candidate directory")
     return nil
   }
   
-  /// Quick git remote URL lookup without going through RepoRegistry
+  /// Quick git remote URL lookup without going through RepoRegistry.
+  /// Tries Process-based `git remote get-url origin` first, falls back to parsing `.git/config`.
   private func gitRemoteURL(for repoPath: String) -> String? {
+    // Try Process-based approach first
+    if let url = gitRemoteURLViaProcess(for: repoPath) {
+      return url
+    }
+    // Fallback: parse .git/config directly (works if Process() fails in GUI context)
+    return gitRemoteURLViaConfig(for: repoPath)
+  }
+  
+  private func gitRemoteURLViaProcess(for repoPath: String) -> String? {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
     process.arguments = ["remote", "get-url", "origin"]
@@ -5332,6 +5381,34 @@ actor LocalRAGStore {
     } catch {
       return nil
     }
+  }
+  
+  /// Parse `.git/config` directly to find origin remote URL.
+  /// Fallback when Process() execution isn't available.
+  private func gitRemoteURLViaConfig(for repoPath: String) -> String? {
+    let configPath = "\(repoPath)/.git/config"
+    guard let contents = try? String(contentsOfFile: configPath, encoding: .utf8) else {
+      return nil
+    }
+    // Simple INI-style parser: find [remote "origin"] section, then url = ...
+    var inOriginRemote = false
+    for line in contents.components(separatedBy: .newlines) {
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+      if trimmed.hasPrefix("[") {
+        inOriginRemote = trimmed == "[remote \"origin\"]"
+        continue
+      }
+      if inOriginRemote && trimmed.hasPrefix("url") {
+        // Parse "url = git@github.com:user/repo.git"
+        if let eqIndex = trimmed.firstIndex(of: "=") {
+          let value = trimmed[trimmed.index(after: eqIndex)...].trimmingCharacters(in: .whitespaces)
+          if !value.isEmpty {
+            return value
+          }
+        }
+      }
+    }
+    return nil
   }
   
   // MARK: - Dependency Graph Methods (Issue #176)
