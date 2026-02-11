@@ -9,25 +9,11 @@ import SwiftUI
 import Brew
 
 struct Brew_RootView: View {
-  @State private var showActivity = false
-  
   var body: some View {
     NavigationStack {
       SidebarNavigationView()
         .toolbar {
           ToolSelectionToolbar()
-          ToolbarItem(placement: .primaryAction) {
-            Button {
-              showActivity.toggle()
-            } label: {
-              Label("Activity", systemImage: "chart.bar.fill")
-            }
-            .help("Homebrew Activity Charts")
-          }
-        }
-        .sheet(isPresented: $showActivity) {
-          BrewActivityView()
-            .frame(minWidth: 550, minHeight: 500)
         }
     }
   }
