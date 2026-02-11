@@ -128,6 +128,9 @@ public final class FirebaseService {
   /// Recent messages in the swarm (real-time)
   public private(set) var swarmMessages: [SwarmMessage] = []
 
+  /// Track seen message IDs for deduplication across listener re-fires
+  private var seenMessageIds: Set<String> = []
+
   /// Our registered worker ID (if we're acting as a worker)
   public private(set) var registeredWorkerId: String?
 
@@ -1311,6 +1314,7 @@ public final class FirebaseService {
     }
 
     let deviceId = WorkerCapabilities.current().deviceId
+    logger.info("Starting message listener for swarm \(swarmId), local deviceId: \(deviceId.prefix(8))")
 
     // Only listen for recent messages (last 5 minutes) to avoid loading history
     let cutoff = Date().addingTimeInterval(-300)
@@ -1319,34 +1323,62 @@ public final class FirebaseService {
       .whereField("createdAt", isGreaterThan: Timestamp(date: cutoff))
       .order(by: "createdAt", descending: false)
       .addSnapshotListener { [weak self] snapshot, error in
-        guard let self = self, let snapshot = snapshot else {
-          if let error = error {
-            self?.logger.error("Message listener error for swarm \(swarmId): \(error)")
-            Task { @MainActor in
-              self?.logActivity(.error, message: "Message listener error", details: [
-                "swarmId": swarmId,
-                "error": error.localizedDescription
-              ])
-            }
-          }
+        guard let self = self else { return }
+
+        if let error = error {
+          self.logger.error("Message listener error for swarm \(swarmId): \(error.localizedDescription)")
+          self.logActivity(.error, message: "Message listener error: \(error.localizedDescription)", details: ["swarmId": swarmId])
+          // Don't return — snapshot may still contain cached data alongside the error
+        }
+
+        guard let snapshot = snapshot else {
+          self.logger.warning("Message listener: nil snapshot for swarm \(swarmId)")
           return
         }
 
+        // Skip snapshots that are purely from local cache with pending writes
+        if snapshot.metadata.hasPendingWrites && snapshot.metadata.isFromCache {
+          self.logger.debug("Message listener: skipping cache-only snapshot with pending writes")
+          return
+        }
+
+        let changes = snapshot.documentChanges.filter { $0.type == .added }
+        if !changes.isEmpty {
+          self.logger.debug("Message listener: \(changes.count) new document(s) in swarm \(swarmId)")
+        }
+
         Task { @MainActor in
-          for change in snapshot.documentChanges where change.type == .added {
+          for change in changes {
+            let docId = change.document.documentID
             let data = change.document.data()
             let senderDeviceId = data["senderDeviceId"] as? String ?? ""
 
-            // Skip messages from self
-            guard senderDeviceId != deviceId else { continue }
+            // Deduplicate across listener re-fires (e.g. network reconnect)
+            guard !self.seenMessageIds.contains(docId) else {
+              self.logger.debug("Message listener: skipping already-seen message \(docId)")
+              continue
+            }
+
+            // Skip messages from self (same device)
+            guard senderDeviceId != deviceId else {
+              self.seenMessageIds.insert(docId)
+              continue
+            }
 
             // Skip targeted messages not for us
             if let target = data["targetWorkerId"] as? String, target != deviceId {
+              self.seenMessageIds.insert(docId)
+              continue
+            }
+
+            // Skip documents with unresolved server timestamp (pending write from another listener)
+            guard data["createdAt"] is Timestamp else {
+              self.logger.debug("Message listener: skipping message \(docId) with pending createdAt")
               continue
             }
 
             let message = SwarmMessage(
-              id: change.document.documentID,
+              id: docId,
               senderId: data["senderId"] as? String ?? "",
               senderDeviceId: senderDeviceId,
               senderName: data["senderName"] as? String ?? "Unknown",
@@ -1356,21 +1388,26 @@ public final class FirebaseService {
               targetWorkerId: data["targetWorkerId"] as? String
             )
 
+            self.seenMessageIds.insert(docId)
             self.swarmMessages.append(message)
-            // Keep only last 50 messages
-            if self.swarmMessages.count > 50 {
-              self.swarmMessages.removeFirst(self.swarmMessages.count - 50)
+            // Keep only last 50 messages (also prune seen set)
+            while self.swarmMessages.count > 50 {
+              let old = self.swarmMessages.removeFirst()
+              self.seenMessageIds.remove(old.id)
             }
 
+            self.logger.info("Message received from \(message.senderName) (device: \(senderDeviceId.prefix(8))): \(message.text.prefix(50))")
             self.logActivity(.messageReceived, message: "\(message.isBroadcast ? "📢" : "💬") \(message.senderName): \(message.text)", details: [
               "senderId": message.senderId,
-              "isBroadcast": String(message.isBroadcast)
+              "senderDeviceId": senderDeviceId,
+              "isBroadcast": String(message.isBroadcast),
+              "docId": docId
             ])
           }
         }
       }
     messageListeners[swarmId] = listener
-    logActivity(.listenerStarted, message: "Message listener started", details: ["swarmId": swarmId])
+    logActivity(.listenerStarted, message: "Message listener started", details: ["swarmId": swarmId, "deviceId": String(deviceId.prefix(8))])
   }
 
   /// Stop message listener for a specific swarm
@@ -1380,12 +1417,31 @@ public final class FirebaseService {
     }
   }
 
+  /// Diagnostic info about message listeners (for MCP debugging)
+  public func messageListenerDiagnostics() -> [String: Any] {
+    let deviceId = WorkerCapabilities.current().deviceId
+    return [
+      "localDeviceId": deviceId,
+      "activeListeners": Array(messageListeners.keys),
+      "listenerCount": messageListeners.count,
+      "messageCount": swarmMessages.count,
+      "seenMessageIds": seenMessageIds.count,
+      "memberSwarms": memberSwarms.map { ["id": $0.id, "name": $0.swarmName, "role": $0.role.rawValue] },
+      "isSignedIn": isSignedIn,
+      "isConfigured": isConfigured,
+      "recentMessages": swarmMessages.suffix(5).map {
+        ["id": $0.id, "from": $0.senderName, "deviceId": String($0.senderDeviceId.prefix(8)), "text": String($0.text.prefix(40)), "at": ISO8601DateFormatter().string(from: $0.createdAt)]
+      }
+    ]
+  }
+
   private func stopMessageListeners() {
     for (_, listener) in messageListeners {
       listener.remove()
     }
     messageListeners.removeAll()
     swarmMessages.removeAll()
+    seenMessageIds.removeAll()
   }
 
   // MARK: - Membership Listener (Real-time swarm list updates)
