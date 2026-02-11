@@ -751,8 +751,9 @@ public final class SwarmToolsHandler: MCPToolHandler {
               swarmId: swarm.id,
               capabilities: capabilities
             )
-            // Also start listening for other workers in this swarm
+            // Also start listening for other workers and messages in this swarm
             firebaseService.startWorkerListener(swarmId: swarm.id)
+            firebaseService.startMessageListener(swarmId: swarm.id)
             firestoreRegistrations.append([
               "swarmId": swarm.id,
               "swarmName": swarm.swarmName,
@@ -818,8 +819,9 @@ public final class SwarmToolsHandler: MCPToolHandler {
           // Best effort - log but don't fail the stop
           print("[SwarmToolsHandler] Failed to unregister from swarm \(swarm.id): \(error)")
         }
-        // Also stop the worker listener for this swarm
+        // Also stop the worker and message listeners for this swarm
         firebaseService.stopWorkerListener(swarmId: swarm.id)
+        firebaseService.stopMessageListener(swarmId: swarm.id)
       }
     }
     
