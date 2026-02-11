@@ -29,6 +29,13 @@ public protocol PRReviewAgentProvider {
   func reviewWithAgent(pr: Github.PullRequest, repo: Github.Repository)
 }
 
+/// Protocol for resolving a GitHub repository to its local clone path - implemented by main app
+@MainActor
+public protocol LocalRepoResolver {
+  /// Given a GitHub repository, returns the local path if this device has a clone
+  func localPath(for githubRepo: Github.Repository) -> String?
+}
+
 /// Lightweight struct for favorite repository info
 public struct FavoriteRepository: Identifiable, Sendable {
   public let id: Int
@@ -83,6 +90,10 @@ private struct PRReviewAgentProviderKey: EnvironmentKey {
   static let defaultValue: PRReviewAgentProvider? = nil
 }
 
+private struct LocalRepoResolverKey: EnvironmentKey {
+  static let defaultValue: LocalRepoResolver? = nil
+}
+
 public extension EnvironmentValues {
   var favoritesProvider: GitHubFavoritesProvider? {
     get { self[FavoritesProviderKey.self] }
@@ -97,6 +108,11 @@ public extension EnvironmentValues {
   var reviewWithAgentProvider: PRReviewAgentProvider? {
     get { self[PRReviewAgentProviderKey.self] }
     set { self[PRReviewAgentProviderKey.self] = newValue }
+  }
+  
+  var localRepoResolver: LocalRepoResolver? {
+    get { self[LocalRepoResolverKey.self] }
+    set { self[LocalRepoResolverKey.self] = newValue }
   }
 }
 
@@ -113,5 +129,9 @@ public extension View {
 
   func reviewWithAgentProvider(_ provider: PRReviewAgentProvider?) -> some View {
     environment(\.reviewWithAgentProvider, provider)
+  }
+
+  func localRepoResolver(_ resolver: LocalRepoResolver?) -> some View {
+    environment(\.localRepoResolver, resolver)
   }
 }

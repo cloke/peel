@@ -155,10 +155,7 @@ public struct AsyncContentView<T, Content: View, Loader: View, Empty: View>: Vie
   public var body: some View {
     Group {
       switch state {
-      case .idle:
-        Color.clear
-          .task { await performLoad() }
-      case .loading:
+      case .idle, .loading:
         loadingView()
       case .loaded(let data):
         if isEmpty(data) {
@@ -170,6 +167,11 @@ public struct AsyncContentView<T, Content: View, Loader: View, Empty: View>: Vie
         ErrorView(message: message) {
           Task { await performLoad() }
         }
+      }
+    }
+    .task {
+      if case .idle = state {
+        await performLoad()
       }
     }
   }
