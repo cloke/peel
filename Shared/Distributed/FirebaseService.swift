@@ -1242,7 +1242,18 @@ public final class FirebaseService {
       .whereField("createdAt", isGreaterThan: Timestamp(date: cutoff))
       .order(by: "createdAt", descending: false)
       .addSnapshotListener { [weak self] snapshot, error in
-        guard let self = self, let snapshot = snapshot else { return }
+        guard let self = self, let snapshot = snapshot else {
+          if let error = error {
+            self?.logger.error("Message listener error for swarm \(swarmId): \(error)")
+            Task { @MainActor in
+              self?.logActivity(.error, message: "Message listener error", details: [
+                "swarmId": swarmId,
+                "error": error.localizedDescription
+              ])
+            }
+          }
+          return
+        }
 
         Task { @MainActor in
           for change in snapshot.documentChanges where change.type == .added {
