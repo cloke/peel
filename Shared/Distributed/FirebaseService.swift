@@ -94,8 +94,27 @@ public final class FirebaseService {
   /// All members of the current swarm (for admins/owners)
   public private(set) var swarmMembers: [SwarmMember] = []
   
-  /// Registered workers in the active swarm (real-time)
-  public private(set) var swarmWorkers: [FirestoreWorker] = []
+  /// Registered workers across all active swarms (real-time, aggregated & deduplicated)
+  public var swarmWorkers: [FirestoreWorker] {
+    // Aggregate workers across all swarm listeners, deduplicating by worker ID
+    // (a worker registered in multiple swarms appears once, preferring the most recent heartbeat)
+    var seen: [String: FirestoreWorker] = [:]
+    for (_, workers) in swarmWorkersBySwarmId {
+      for worker in workers {
+        if let existing = seen[worker.id] {
+          if worker.lastHeartbeat > existing.lastHeartbeat {
+            seen[worker.id] = worker
+          }
+        } else {
+          seen[worker.id] = worker
+        }
+      }
+    }
+    return Array(seen.values)
+  }
+
+  /// Workers keyed by swarm ID (backing store for swarmWorkers)
+  private var swarmWorkersBySwarmId: [String: [FirestoreWorker]] = [:]
   
   /// Pending tasks in the active swarm (real-time, for brain/dispatch)
   public private(set) var pendingTasks: [FirestoreTask] = []
@@ -274,7 +293,17 @@ public final class FirebaseService {
     if let user = user {
       currentUserId = user.uid
       currentUserEmail = user.email
-      currentUserDisplayName = user.displayName
+      // Apple Sign-In only provides displayName on FIRST auth.
+      // Cache it so subsequent sign-ins still have it.
+      if let name = user.displayName, !name.isEmpty {
+        currentUserDisplayName = name
+        UserDefaults.standard.set(name, forKey: "peel.cachedDisplayName.\(user.uid)")
+      } else {
+        // Fall back to: cached name → worker config name → device name
+        currentUserDisplayName = UserDefaults.standard.string(forKey: "peel.cachedDisplayName.\(user.uid)")
+          ?? WorkerCapabilities.current().displayName
+          ?? ProcessInfo.processInfo.hostName
+      }
       logger.info("User signed in: \(user.uid)")
       Task {
         await loadUserSwarms()
@@ -327,6 +356,16 @@ public final class FirebaseService {
     
     let result = try await Auth.auth().signIn(with: credential)
     logger.info("Successfully signed in with Apple: \(result.user.uid)")
+    
+    // Apple only provides fullName on FIRST sign-in. Cache it eagerly so
+    // subsequent auth state changes (which will have nil displayName) can recover it.
+    if let fullName = appleIDCredential.fullName {
+      let formatted = PersonNameComponentsFormatter.localizedString(from: fullName, style: .default)
+      if !formatted.isEmpty {
+        UserDefaults.standard.set(formatted, forKey: "peel.cachedDisplayName.\(result.user.uid)")
+      }
+    }
+    
     currentNonce = nil
   }
   
@@ -611,7 +650,7 @@ public final class FirebaseService {
     // Create owner membership (include ownerId for collection group queries)
     batch.setData([
       "userId": userId,
-      "displayName": currentUserDisplayName ?? "Owner",
+      "displayName": currentUserDisplayName ?? WorkerCapabilities.current().displayName ?? ProcessInfo.processInfo.hostName,
       "email": currentUserEmail ?? "",
       "joinedAt": FieldValue.serverTimestamp(),
       "role": "owner",
@@ -853,7 +892,7 @@ public final class FirebaseService {
     // Add user as pending member (include userId for collection group queries)
     batch.setData([
       "userId": userId,
-      "displayName": currentUserDisplayName ?? "New Member",
+      "displayName": currentUserDisplayName ?? WorkerCapabilities.current().displayName ?? ProcessInfo.processInfo.hostName,
       "email": currentUserEmail ?? "",
       "joinedAt": FieldValue.serverTimestamp(),
       "invitedBy": inviteData["createdBy"] as? String ?? "",
@@ -1164,7 +1203,7 @@ public final class FirebaseService {
         }
         
         Task { @MainActor in
-          let previousWorkers = Set(self.swarmWorkers.map { $0.id })
+          let previousWorkers = Set((self.swarmWorkersBySwarmId[swarmId] ?? []).map { $0.id })
           
           let newWorkers = snapshot.documents.compactMap { doc -> FirestoreWorker? in
             let data = doc.data()
@@ -1194,13 +1233,14 @@ public final class FirebaseService {
           }
           
           let newWorkerIds = Set(newWorkers.map { $0.id })
-          for worker in self.swarmWorkers where !newWorkerIds.contains(worker.id) {
+          let previousSwarmWorkers = self.swarmWorkersBySwarmId[swarmId] ?? []
+          for worker in previousSwarmWorkers where !newWorkerIds.contains(worker.id) {
             self.logActivity(.workerOffline, message: "\(worker.displayName) left", details: [
               "workerId": worker.id
             ])
           }
           
-          self.swarmWorkers = newWorkers
+          self.swarmWorkersBySwarmId[swarmId] = newWorkers
         }
       }
     workerListeners[swarmId] = listener
@@ -1210,6 +1250,7 @@ public final class FirebaseService {
   public func stopWorkerListener(swarmId: String) {
     if let listener = workerListeners.removeValue(forKey: swarmId) {
       listener.remove()
+      swarmWorkersBySwarmId.removeValue(forKey: swarmId)
       logActivity(.listenerStopped, message: "Worker listener stopped for swarm", details: ["swarmId": swarmId])
     }
   }
@@ -1224,7 +1265,7 @@ public final class FirebaseService {
       listener.remove()
     }
     workerListeners.removeAll()
-    swarmWorkers.removeAll()
+    swarmWorkersBySwarmId.removeAll()
   }
   
   // MARK: - Messages
@@ -1232,8 +1273,11 @@ public final class FirebaseService {
   /// Send a message to a specific worker or broadcast to all workers in a swarm
   public func sendMessage(swarmId: String, text: String, targetWorkerId: String? = nil) async throws {
     guard let userId = currentUserId else { throw FirebaseError.notSignedIn }
-    let displayName = currentUserDisplayName ?? "Unknown"
-    let deviceId = WorkerCapabilities.current().deviceId
+    let caps = WorkerCapabilities.current()
+    let displayName = currentUserDisplayName
+      ?? caps.displayName
+      ?? caps.deviceName
+    let deviceId = caps.deviceId
 
     var data: [String: Any] = [
       "senderId": userId,
