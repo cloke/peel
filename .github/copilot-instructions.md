@@ -104,7 +104,7 @@ When the user asks to **start a chain**, **use the MCP CLI** instead of manually
 2. Use `Tools/PeelCLI` to run `chains-run` with `--prompt` and (optionally) `--template-name` or `--template-id`.
 3. Let the app create worktrees; do **not** create worktrees manually unless the user explicitly asks.
 
-**If local changes exist:** commit and push first (unless user says not to).
+**If local changes exist and this is an MCP chain invocation:** commit and push first (unless user says not to). When the user manually runs build-and-launch, do **not** auto-stash or commit — just build and launch.
 
 ### MCP CLI Temp Files (IMPORTANT)
 When invoking MCP tools via `Tools/PeelCLI`, write argument JSON files to the repo-local tmp directory instead of `/tmp`.

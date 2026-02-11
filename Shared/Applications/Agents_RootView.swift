@@ -21,6 +21,7 @@ enum InfrastructureView: String, Hashable {
   case doclingImport = "docling-import"
   case parallelWorktrees = "parallel-worktrees"
   case worktrees = "worktrees"
+  case localChat = "local-chat"
 }
 
 /// Main view for AI Agent Orchestration
@@ -104,6 +105,9 @@ struct Agents_RootView: View {
       case "agents.worktrees":
         selectedInfrastructure = .worktrees
         mcpServer.recordUIActionHandled(action.controlId)
+      case "agents.localChat":
+        selectedInfrastructure = .localChat
+        mcpServer.recordUIActionHandled(action.controlId)
       default:
         break
       }
@@ -183,6 +187,8 @@ struct Agents_RootView: View {
         ParallelWorktreeDashboardView(mcpServer: mcpServer)
       case .worktrees:
         WorktreesView()
+      case .localChat:
+        LocalChatView()
       }
     } else if let chain = agentManager.selectedChain {
       ChainDetailView(chain: chain, agentManager: agentManager, cliService: cliService, sessionTracker: sessionTracker)

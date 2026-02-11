@@ -222,6 +222,15 @@ struct AgentsSidebarView: View {
           .accessibilityIdentifier("agents.worktrees")
           .tag("infra:worktrees")
 
+          HStack {
+            Image(systemName: "bubble.left.and.bubble.right")
+              .foregroundStyle(.green)
+            Text("Local Chat")
+            Spacer()
+          }
+          .accessibilityIdentifier("agents.localChat")
+          .tag("infra:local-chat")
+
           if parallelWorktreeStatus.totalRuns > 0 {
             HStack(spacing: 8) {
               sidebarToken(icon: "tray.full", color: .secondary, value: parallelWorktreeStatus.totalRuns)
@@ -373,6 +382,7 @@ struct AgentsSidebarView: View {
       return "agents.vmIsolation"
     case "pii-scrubber": return "agents.piiScrubber"
     case "docling-import": return "agents.doclingImport"
+    case "local-chat": return "agents.localChat"
     default: return nil
     }
   }

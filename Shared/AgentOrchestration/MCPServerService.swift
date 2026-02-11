@@ -504,6 +504,7 @@ public final class MCPServerService {
   private var vmToolsHandler: VMToolsHandler
   private var parallelToolsHandler: ParallelToolsHandler
   private var ragToolsHandler: RAGToolsHandler?
+  private var codeEditToolsHandler: CodeEditToolsHandler?
   private var chainToolsHandler: ChainToolsHandler?
   private var swarmToolsHandler: SwarmToolsHandler
   private var repoToolsHandler: RepoToolsHandler
@@ -569,6 +570,9 @@ public final class MCPServerService {
     self.vmToolsHandler = VMToolsHandler(vmIsolationService: vmIsolationService, telemetryProvider: telemetryProvider ?? MCPTelemetryAdapter(sessionTracker: sessionTracker))
     self.parallelToolsHandler = ParallelToolsHandler()
     self.ragToolsHandler = RAGToolsHandler()
+    #if os(macOS)
+    self.codeEditToolsHandler = CodeEditToolsHandler()
+    #endif
     self.chainToolsHandler = ChainToolsHandler()
     self.repoToolsHandler = RepoToolsHandler()
     self.worktreeToolsHandler = WorktreeToolsHandler()
@@ -660,6 +664,7 @@ public final class MCPServerService {
     self.uiToolsHandler.delegate = self
     self.parallelToolsHandler.delegate = self
     self.ragToolsHandler?.delegate = self
+    self.codeEditToolsHandler?.delegate = self
     self.chainToolsHandler?.delegate = self
     self.swarmToolsHandler.delegate = self
     self.repoToolsHandler.delegate = self
@@ -2095,6 +2100,9 @@ public final class MCPServerService {
     }
     if ragToolsHandler?.supportedTools.contains(resolvedName) == true {
       return await ragToolsHandler!.handle(name: resolvedName, id: id, arguments: arguments)
+    }
+    if codeEditToolsHandler?.supportedTools.contains(resolvedName) == true {
+      return await codeEditToolsHandler!.handle(name: resolvedName, id: id, arguments: arguments)
     }
     if chainToolsHandler?.supportedTools.contains(resolvedName) == true {
       return await chainToolsHandler!.handle(name: resolvedName, id: id, arguments: arguments)
@@ -3801,6 +3809,7 @@ public final class MCPServerService {
         - medium (24-48GB): Qwen2.5-Coder-3B
         - large (48GB+): Qwen2.5-Coder-7B (best for Mac Studio)
         
+        After analyzing, run rag.enrich to re-embed chunks with AI summaries for better vector search.
         Results sync via swarm, so Mac Studio can generate high-quality analysis for the team.
         """,
         inputSchema: [
@@ -3826,13 +3835,150 @@ public final class MCPServerService {
         isMutating: false
       ),
       ToolDefinition(
+        name: "rag.enrich",
+        description: """
+        Re-embed analyzed chunks using enriched text (code + AI summary) for better vector search.
+        
+        After running rag.analyze, chunks have AI-generated summaries but the embeddings still only
+        encode the raw code. This tool re-embeds those chunks using "code + AI summary" as input,
+        so vector search captures both code structure AND semantic meaning.
+        
+        Workflow: rag.index → rag.analyze → rag.enrich → dramatically better rag.search vector results
+        
+        macOS only. Safe to run incrementally — only processes chunks not yet enriched.
+        """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": ["type": "string", "description": "Filter to specific repo (optional)"],
+            "limit": ["type": "integer", "description": "Max chunks to enrich (default 500)", "default": 500]
+          ]
+        ],
+        category: .rag,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "rag.enrich.status",
+        description: "Get embedding enrichment status — how many analyzed chunks have enriched embeddings (macOS only)",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": ["type": "string", "description": "Filter to specific repo (optional)"]
+          ]
+        ],
+        category: .rag,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "rag.duplicates",
+        description: """
+        Find duplicate/redundant code across a codebase. Returns a ranked report of all constructs
+        (functions, classes, types) that appear in multiple files — the #1 tool for code dedup,
+        reducing code size, finding copy-paste, and identifying consolidation opportunities.
+        
+        One call returns a complete ranked list sorted by wasted tokens (code that could be
+        eliminated). Each group includes file paths, token counts, and AI-generated summaries
+        confirming the duplicates are semantically identical.
+        
+        USE THIS TOOL when asked to: reduce code size, find duplicates, find redundant code,
+        find copy-paste, optimize codebase, consolidate shared code, DRY violations, or
+        find refactoring opportunities.
+        
+        Requires rag.analyze to have been run first. Examples of what it finds:
+        - Utility functions copy-pasted across files (eq, gt, formatDate, etc.)
+        - Service classes duplicated across apps (ApplicationAdapter, SessionContextService)
+        - Component variants that could be unified with a config flag
+        
+        macOS only. Prefer this over rag.similar for bulk duplicate analysis.
+        """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": ["type": "string", "description": "Filter to specific repo (optional)"],
+            "minFiles": ["type": "integer", "description": "Minimum number of distinct files a construct must appear in (default 2)", "default": 2],
+            "constructTypes": [
+              "type": "array",
+              "items": ["type": "string"],
+              "description": "Filter to specific construct types (e.g. ['function', 'classDecl']). Default: all except imports and file-level chunks"
+            ],
+            "sortBy": ["type": "string", "enum": ["wastedTokens", "fileCount", "totalTokens"], "description": "Sort order (default: wastedTokens)", "default": "wastedTokens"],
+            "limit": ["type": "integer", "description": "Max groups to return (default 25)", "default": 25]
+          ]
+        ],
+        category: .rag,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "rag.patterns",
+        description: """
+        Analyze naming conventions and pattern consistency across a codebase. Returns a breakdown
+        of how constructs are named — grouped by suffix (Route, Component, Service, Adapter, etc.)
+        — plus a list of "other" classes that don't follow any convention.
+        
+        USE THIS TOOL when asked to: enforce naming conventions, find inconsistent names, audit
+        code patterns, check code style, review codebase architecture, identify non-standard
+        classes, or improve code consistency.
+        
+        Returns: convention rate (% following a pattern), count per suffix, total tokens per
+        pattern, and 5 sample constructs for each group. The '(other)' group shows classes
+        that lack a standard suffix — these are candidates for renaming.
+        
+        Requires rag.analyze to have been run first. macOS only.
+        """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": ["type": "string", "description": "Filter to specific repo (optional)"],
+            "constructType": ["type": "string", "description": "Filter to a specific construct type (e.g. 'classDecl'). Default: all types."],
+            "limit": ["type": "integer", "description": "Max pattern groups to return (default 30)", "default": 30]
+          ]
+        ],
+        category: .rag,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "rag.hotspots",
+        description: """
+        Find complexity hotspots — "god components" and oversized constructs that are prime
+        refactoring targets. Returns constructs sorted by token count (largest first), with
+        AI summaries and tags to help understand what each one does.
+        
+        USE THIS TOOL when asked to: find refactoring targets, identify god components, find
+        large/complex code, reduce component size, improve maintainability, find code that
+        needs splitting, or assess code complexity.
+        
+        Default threshold is 5000 tokens (~2500 lines). Adjustable via minTokens parameter.
+        Results include: construct name, type, file path, token count, line range, AI summary.
+        
+        Requires rag.analyze to have been run first. macOS only.
+        """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": ["type": "string", "description": "Filter to specific repo (optional)"],
+            "constructType": ["type": "string", "description": "Filter to a specific construct type (e.g. 'classDecl'). Default: all types."],
+            "minTokens": ["type": "integer", "description": "Minimum token count threshold (default 5000)", "default": 5000],
+            "limit": ["type": "integer", "description": "Max hotspots to return (default 30)", "default": 30]
+          ]
+        ],
+        category: .rag,
+        isMutating: false
+      ),
+      ToolDefinition(
         name: "rag.search",
         description: """
         Search indexed code content. Returns matching chunks with metadata.
         
         Modes:
-        - "text" (default): Keyword search across chunk text and construct names
-        - "vector": Semantic similarity search using embeddings
+        - "text" (default): Keyword search across chunk text, construct names, and AI summaries
+        - "vector": Semantic similarity search using embeddings (enriched with AI summaries when available)
+        
+        Detail levels (IMPORTANT for context window management):
+        - "full" (default): Returns code snippet + AI summary + tags + all metadata
+        - "summary": Returns AI summary + tags + metadata WITHOUT code snippet (20-80x smaller). Use this for broad exploration — get an overview of what exists, then fetch specific files with full detail.
+        - "minimal": Returns only path + construct name/type + token count. Smallest possible response for listing/counting.
+        
+        Strategy: Start with detail:"summary" for broad queries, then use detail:"full" on specific results you need code for.
         
         Filters:
         - excludeTests: Skip test/spec files
@@ -3841,10 +3987,10 @@ public final class MCPServerService {
         - featureTag: Filter by feature tag (e.g., "rag", "mcp", "agent")
         - matchAll: For text mode - true=AND all words, false=OR any word (default true)
         
-        Reranking (Issue #128):
+        Reranking:
         - rerank: Enable HuggingFace cross-encoder reranking for better relevance. Must configure with rag.reranker.config first.
         
-        Results include: filePath, startLine, endLine, snippet, constructType, constructName, language, isTest, lineCount, score (vector only), modulePath, featureTags, rerankerProvider (when reranking)
+        Results include: filePath, startLine, endLine, constructType, name, tokenCount, isTest, lineCount + (depending on detail level) snippet, aiSummary, aiTags, language, score, modulePath, featureTags
         """,
         inputSchema: [
           "type": "object",
@@ -3853,6 +3999,7 @@ public final class MCPServerService {
             "repoPath": ["type": "string", "description": "Filter to specific repo"],
             "limit": ["type": "integer", "description": "Max results (default 10)"],
             "mode": ["type": "string", "enum": ["text", "vector"], "description": "Search mode: text (keyword) or vector (semantic)"],
+            "detail": ["type": "string", "enum": ["full", "summary", "minimal"], "description": "Response detail level. 'summary' returns AI summaries instead of code (20-80x smaller context). 'minimal' returns only paths and construct names. Default: 'full'"],
             "excludeTests": ["type": "boolean", "description": "Exclude test/spec files"],
             "constructType": ["type": "string", "description": "Filter by construct type"],
             "modulePath": ["type": "string", "description": "Filter by module path (e.g., 'Shared/Services')"],
@@ -4284,7 +4431,7 @@ public final class MCPServerService {
       ),
       ToolDefinition(
         name: "rag.similar",
-        description: "Find code chunks semantically similar to a given snippet or query. Uses embedding-based similarity search to find related code patterns, implementations, or concepts.",
+        description: "Find code chunks semantically similar to a given snippet or query. Uses embedding-based similarity search to find related code patterns, implementations, or concepts. Note: for finding duplicate/redundant code across a codebase, use rag.duplicates instead — it returns a ranked report of all same-name constructs across files in one call.",
         inputSchema: [
           "type": "object",
           "properties": [
@@ -4314,6 +4461,50 @@ public final class MCPServerService {
         ],
         category: .rag,
         isMutating: false
+      ),
+      // MARK: Local Code Editing (Qwen3-Coder-Next)
+      ToolDefinition(
+        name: "code.edit",
+        description: """
+        Edit a file using a local MLX LLM (Qwen3-Coder-Next on 96GB+ machines, Qwen2.5-Coder-7B on smaller).
+        Reads the file, applies the natural-language instruction, and returns a unified diff, the full edited file, or a changed snippet.
+        When useRag=true (default), related code from the RAG index is included as style context.
+        macOS only. Requires at least 24GB RAM.
+        """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "filePath": ["type": "string", "description": "Absolute path to the file to edit"],
+            "instruction": ["type": "string", "description": "Natural language instruction for the edit (e.g., 'convert to @Observable', 'extract validation into a protocol')"],
+            "mode": ["type": "string", "enum": ["diff", "fullFile", "snippet"], "description": "Output format (default: diff)"],
+            "context": ["type": "string", "description": "Optional additional context (related code, requirements)"],
+            "useRag": ["type": "boolean", "description": "Auto-fetch related code from RAG for style matching (default: true)"],
+            "tier": ["type": "string", "enum": ["small", "medium", "large", "auto"], "description": "Model tier override (default: auto based on RAM)"]
+          ],
+          "required": ["filePath", "instruction"]
+        ],
+        category: .codeEdit,
+        isMutating: false  // Returns edit content but does not write to disk
+      ),
+      ToolDefinition(
+        name: "code.edit.status",
+        description: "Check local code editor model status: loaded model, tier, memory requirements, feasibility on this machine. macOS only.",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .codeEdit,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "code.edit.unload",
+        description: "Unload the local code editor model to free RAM. The model will be reloaded on next code.edit call. macOS only.",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .codeEdit,
+        isMutating: true
       ),
       ToolDefinition(
         name: "github.issue.get",
@@ -6311,6 +6502,12 @@ extension MCPServerService: RepoToolsHandlerDelegate {
   }
 }
 
+// MARK: - CodeEditToolsHandlerDelegate
+
+#if os(macOS)
+extension MCPServerService: CodeEditToolsHandlerDelegate {}
+#endif
+
 // MARK: - RAGToolsHandlerDelegate
 
 extension MCPServerService: RAGToolsHandlerDelegate {
@@ -6345,7 +6542,10 @@ extension MCPServerService: RAGToolsHandlerDelegate {
         language: result.language,
         score: result.score.map { Double($0) },
         modulePath: result.modulePath,
-        featureTags: result.featureTags
+        featureTags: result.featureTags,
+        aiSummary: result.aiSummary,
+        aiTags: result.aiTags,
+        tokenCount: result.tokenCount
       )
     }
   }
@@ -6687,6 +6887,30 @@ extension MCPServerService: RAGToolsHandlerDelegate {
   
   func getAnalyzedChunkCount(repoPath: String?) async throws -> Int {
     try await localRagStore.getAnalyzedChunkCount(repoPath: repoPath)
+  }
+  
+  func enrichRagEmbeddings(repoPath: String?, limit: Int, progress: (@Sendable (Int, Int) -> Void)?) async throws -> Int {
+    try await localRagStore.enrichEmbeddings(repoPath: repoPath, limit: limit, progress: progress)
+  }
+  
+  func getUnenrichedChunkCount(repoPath: String?) async throws -> Int {
+    try await localRagStore.getUnenrichedChunkCount(repoPath: repoPath)
+  }
+  
+  func getEnrichedChunkCount(repoPath: String?) async throws -> Int {
+    try await localRagStore.getEnrichedChunkCount(repoPath: repoPath)
+  }
+  
+  func findRagDuplicates(repoPath: String?, minFiles: Int, constructTypes: [String]?, sortBy: String, limit: Int) async throws -> [LocalRAGStore.DuplicateGroup] {
+    try await localRagStore.findDuplicates(repoPath: repoPath, minFiles: minFiles, constructTypes: constructTypes, sortBy: sortBy, limit: limit)
+  }
+  
+  func findRagPatterns(repoPath: String?, constructType: String?, limit: Int) async throws -> [LocalRAGStore.PatternGroup] {
+    try await localRagStore.findPatterns(repoPath: repoPath, constructType: constructType, limit: limit)
+  }
+  
+  func findRagHotspots(repoPath: String?, constructType: String?, minTokens: Int, limit: Int) async throws -> [LocalRAGStore.Hotspot] {
+    try await localRagStore.findHotspots(repoPath: repoPath, constructType: constructType, minTokens: minTokens, limit: limit)
   }
   
   func clearRagAnalysis(repoPath: String?) async throws {

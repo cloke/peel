@@ -25,6 +25,7 @@ public enum MCPToolCategory: String, CaseIterable, Codable, Sendable {
   case worktrees
   case github
   case terminal
+  case codeEdit
 
   public var displayName: String {
     switch self {
@@ -42,6 +43,7 @@ public enum MCPToolCategory: String, CaseIterable, Codable, Sendable {
     case .worktrees: return "Worktrees"
     case .github: return "GitHub"
     case .terminal: return "AI Terminal"
+    case .codeEdit: return "Local Code Edit"
     }
   }
 }

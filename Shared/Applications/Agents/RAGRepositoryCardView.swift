@@ -101,6 +101,7 @@ struct RAGRepositoryCardView: View {
   @State private var showSkillsSheet: Bool = false
   @State private var errorMessage: String?
   @State private var showForceReindexConfirm: Bool = false
+  @State private var showForceReanalyzeConfirm: Bool = false
   
   // Computed status
   private var status: RAGRepoStatus {
@@ -323,18 +324,24 @@ struct RAGRepositoryCardView: View {
         Spacer()
         
         Button {
-          if NSEvent.modifierFlags.contains(.command) {
-            showForceReindexConfirm = true
-          } else {
-            Task { await reindexRepository(force: false) }
-          }
+          Task { await reindexRepository(force: false) }
         } label: {
           Label("Re-index", systemImage: "arrow.clockwise")
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
         .disabled(mcpServer.ragIndexingPath != nil)
-        .help("Re-index changed files. ⌘-click to force full reindex.")
+        .help("Re-index changed files")
+        
+        Button {
+          showForceReindexConfirm = true
+        } label: {
+          Label("Force Re-index", systemImage: "arrow.clockwise.circle")
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .disabled(mcpServer.ragIndexingPath != nil)
+        .help("Force full re-index of all files")
         .confirmationDialog(
           "Force Full Reindex?",
           isPresented: $showForceReindexConfirm,
@@ -397,6 +404,15 @@ struct RAGRepositoryCardView: View {
         Spacer()
         
         if analysisState.isComplete {
+          Button {
+            showForceReanalyzeConfirm = true
+          } label: {
+            Label("Reanalyze", systemImage: "arrow.clockwise")
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.mini)
+          .help("Clear AI analysis and re-run with current model tier")
+          
           Text("✓ Complete")
             .font(.caption)
             .foregroundStyle(.green)
@@ -433,13 +449,12 @@ struct RAGRepositoryCardView: View {
       HStack(spacing: 8) {
         Picker("", selection: $selectedModelTier) {
           Text("Auto").tag(MLXAnalyzerModelTier.auto)
-          Text("Tiny (0.5B)").tag(MLXAnalyzerModelTier.tiny)
-          Text("Small (1.5B)").tag(MLXAnalyzerModelTier.small)
-          Text("Medium (3B)").tag(MLXAnalyzerModelTier.medium)
-          Text("Large (7B)").tag(MLXAnalyzerModelTier.large)
+          ForEach(MLXAnalyzerModelConfig.availableModels, id: \.name) { model in
+            Text(model.name).tag(model.tier)
+          }
         }
         .pickerStyle(.menu)
-        .frame(maxWidth: 140)
+        .frame(maxWidth: 180)
         .controlSize(.small)
         
         Spacer()
@@ -517,6 +532,18 @@ struct RAGRepositoryCardView: View {
     }
     .padding(12)
     .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 8))
+    .confirmationDialog(
+      "Force Reanalyze?",
+      isPresented: $showForceReanalyzeConfirm,
+      titleVisibility: .visible
+    ) {
+      Button("Reanalyze All") {
+        Task { await forceReanalyze() }
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text("This will clear all \(analysisState.analyzedCount) AI summaries and re-analyze with the \(selectedModelTier == .auto ? "auto-selected" : "\(selectedModelTier)") model. Enriched embeddings will also be regenerated.")
+    }
   }
   
   // MARK: - Search Section
@@ -883,6 +910,9 @@ struct RAGRepositoryCardView: View {
       
       let remaining = await MainActor.run { analysisState.unanalyzedCount }
       if remaining == 0 {
+        // Analysis complete — auto-enrich embeddings with AI summaries
+        await enrichAfterAnalysis()
+        
         await MainActor.run {
           if let startTime = analysisState.analysisStartTime, analysisState.sessionChunksAnalyzed > 0 {
             let duration = Date().timeIntervalSince(startTime)
@@ -945,6 +975,40 @@ struct RAGRepositoryCardView: View {
     await MainActor.run {
       analysisState.isAnalyzing = false
       analysisState.isPaused = false
+    }
+  }
+  
+  /// Clear existing analysis and restart with the currently selected model tier.
+  private func forceReanalyze() async {
+    do {
+      // Clear existing analysis (summaries, tags, enriched_at)
+      try await mcpServer.clearRagAnalysis(repoPath: repo.rootPath)
+      
+      // Refresh counts so UI shows 0 analyzed / N unanalyzed
+      await refreshAnalysisStatus()
+      
+      // Start the full analysis loop (which auto-enriches on completion)
+      startAnalyzeAll()
+    } catch {
+      analysisState.analyzeError = error.localizedDescription
+    }
+  }
+  
+  /// After analysis completes, re-embed chunks with enriched text (code + AI summary)
+  /// so vector search captures semantic meaning from the analysis.
+  private func enrichAfterAnalysis() async {
+    do {
+      let enriched = try await mcpServer.enrichRagEmbeddings(
+        repoPath: repo.rootPath,
+        limit: 5000,
+        progress: nil
+      )
+      if enriched > 0 {
+        print("[RAG] Auto-enriched \(enriched) embeddings after analysis")
+      }
+    } catch {
+      // Non-fatal — analysis results are still useful for text search
+      print("[RAG] Auto-enrich failed (non-fatal): \(error.localizedDescription)")
     }
   }
   

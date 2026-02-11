@@ -1,6 +1,11 @@
 #!/bin/zsh
 # Self-update script for Peel
 # Run this on a worker machine to pull latest code, rebuild, and restart
+#
+# Options:
+#   --stash          Stash uncommitted changes before pulling (for MCP/automated use)
+#   --skip-build     Skip rebuild if already up to date
+#   --no-stash       (default) Abort if uncommitted changes exist instead of stashing
 
 set -e
 
@@ -8,6 +13,14 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SCHEME="Peel (macOS)"
+AUTO_STASH=false
+
+# Parse arguments
+for arg in "$@"; do
+  case $arg in
+    --stash) AUTO_STASH=true ;;
+  esac
+done
 
 cd "$REPO_DIR"
 
@@ -29,9 +42,12 @@ echo ""
 
 # Check for uncommitted changes
 if ! git diff --quiet HEAD 2>/dev/null; then
-  echo "⚠️  Warning: Uncommitted changes detected"
-  echo "   Stashing changes..."
-  git stash
+  if [ "$AUTO_STASH" = true ]; then
+    echo "⚠️  Uncommitted changes detected — stashing..."
+    git stash
+  else
+    echo "⚠️  Uncommitted changes detected — continuing anyway"
+  fi
 fi
 
 # Pull latest

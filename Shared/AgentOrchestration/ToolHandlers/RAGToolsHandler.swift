@@ -166,6 +166,24 @@ protocol RAGToolsHandlerDelegate: MCPToolHandlerDelegate {
   
   /// Get count of analyzed chunks
   func getAnalyzedChunkCount(repoPath: String?) async throws -> Int
+  
+  /// Re-embed analyzed chunks with enriched text (code + ai_summary)
+  func enrichRagEmbeddings(repoPath: String?, limit: Int, progress: (@Sendable (Int, Int) -> Void)?) async throws -> Int
+  
+  /// Get count of analyzed but not-yet-enriched chunks
+  func getUnenrichedChunkCount(repoPath: String?) async throws -> Int
+  
+  /// Get count of enriched chunks
+  func getEnrichedChunkCount(repoPath: String?) async throws -> Int
+  
+  /// Find duplicate constructs across files
+  func findRagDuplicates(repoPath: String?, minFiles: Int, constructTypes: [String]?, sortBy: String, limit: Int) async throws -> [LocalRAGStore.DuplicateGroup]
+  
+  /// Analyze naming patterns and conventions
+  func findRagPatterns(repoPath: String?, constructType: String?, limit: Int) async throws -> [LocalRAGStore.PatternGroup]
+  
+  /// Find complexity hotspots (god components)
+  func findRagHotspots(repoPath: String?, constructType: String?, minTokens: Int, limit: Int) async throws -> [LocalRAGStore.Hotspot]
   #endif
 }
 
@@ -220,6 +238,11 @@ final class RAGToolsHandler: MCPToolHandler {
     "rag.reranker.config", // Issue #128: HF reranker configuration
     "rag.analyze",         // Issue #198: Analyze chunks with MLX LLM (macOS only)
     "rag.analyze.status",  // Issue #198: Get AI analysis status (macOS only)
+    "rag.enrich",          // Re-embed analyzed chunks with enriched text (code + ai_summary)
+    "rag.enrich.status",   // Get enrichment status (analyzed vs enriched counts)
+    "rag.duplicates",      // Find duplicate constructs across files for dedup opportunities
+    "rag.patterns",        // Analyze naming conventions and pattern consistency
+    "rag.hotspots",        // Find god components / complexity hotspots
     "rag.scratch",         // Issue #111: Per-repo scratch directory for artifacts
   ]
   
@@ -302,6 +325,36 @@ final class RAGToolsHandler: MCPToolHandler {
       return await handleAnalyzeStatus(id: id, arguments: arguments, delegate: ragDelegate)
       #else
       return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "rag.analyze.status is only available on macOS"))
+      #endif
+    case "rag.enrich":
+      #if os(macOS)
+      return await handleEnrich(id: id, arguments: arguments, delegate: ragDelegate)
+      #else
+      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "rag.enrich is only available on macOS"))
+      #endif
+    case "rag.enrich.status":
+      #if os(macOS)
+      return await handleEnrichStatus(id: id, arguments: arguments, delegate: ragDelegate)
+      #else
+      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "rag.enrich.status is only available on macOS"))
+      #endif
+    case "rag.duplicates":
+      #if os(macOS)
+      return await handleDuplicates(id: id, arguments: arguments, delegate: ragDelegate)
+      #else
+      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "rag.duplicates is only available on macOS"))
+      #endif
+    case "rag.patterns":
+      #if os(macOS)
+      return await handlePatterns(id: id, arguments: arguments, delegate: ragDelegate)
+      #else
+      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "rag.patterns is only available on macOS"))
+      #endif
+    case "rag.hotspots":
+      #if os(macOS)
+      return await handleHotspots(id: id, arguments: arguments, delegate: ragDelegate)
+      #else
+      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "rag.hotspots is only available on macOS"))
       #endif
     case "rag.scratch":
       return handleScratch(id: id, arguments: arguments)
@@ -458,6 +511,7 @@ final class RAGToolsHandler: MCPToolHandler {
     let featureTagFilter = optionalString("featureTag", from: arguments)
     let matchAll = optionalBool("matchAll", from: arguments, default: true)
     let shouldRerank = optionalBool("rerank", from: arguments, default: false)
+    let detail = optionalString("detail", from: arguments, default: "full") ?? "full"
     
     do {
       let resolvedMode: MCPServerService.RAGSearchMode = mode.lowercased() == "vector" ? .vector : .text
@@ -500,9 +554,18 @@ final class RAGToolsHandler: MCPToolHandler {
           
           let reranked = try await reranker.rerank(query: query, results: rerankerInput, topK: limit)
           
+          // Build a lookup for AI fields that aren't in RerankerSearchResult
+          var aiLookup: [String: (aiSummary: String?, aiTags: [String], tokenCount: Int?)] = [:]
+          for r in results {
+            let key = "\(r.filePath):\(r.startLine)-\(r.endLine)"
+            aiLookup[key] = (r.aiSummary, r.aiTags, r.tokenCount)
+          }
+          
           // Convert back to RAGToolSearchResult
           results = reranked.map { r in
-            RAGToolSearchResult(
+            let key = "\(r.filePath):\(r.startLine)-\(r.endLine)"
+            let ai = aiLookup[key]
+            return RAGToolSearchResult(
               filePath: r.filePath,
               startLine: r.startLine,
               endLine: r.endLine,
@@ -514,7 +577,10 @@ final class RAGToolsHandler: MCPToolHandler {
               language: r.language,
               score: r.score.map { Double($0) },
               modulePath: r.modulePath,
-              featureTags: r.featureTags
+              featureTags: r.featureTags,
+              aiSummary: ai?.aiSummary,
+              aiTags: ai?.aiTags ?? [],
+              tokenCount: ai?.tokenCount
             )
           }
           
@@ -533,18 +599,33 @@ final class RAGToolsHandler: MCPToolHandler {
           "filePath": result.filePath,
           "startLine": result.startLine,
           "endLine": result.endLine,
-          "snippet": result.snippet,
           "isTest": result.isTest,
           "lineCount": result.lineCount
         ]
+        // In "summary" mode, return ai_summary instead of code snippet (20-80x smaller)
+        // In "minimal" mode, return only path + construct metadata (no code or summary)
+        // In "full" mode (default), return everything
+        if detail != "minimal" {
+          if detail == "summary", let summary = result.aiSummary, !summary.isEmpty {
+            item["aiSummary"] = summary
+          } else {
+            item["snippet"] = result.snippet
+            // Include aiSummary alongside snippet in full mode when available
+            if let summary = result.aiSummary, !summary.isEmpty {
+              item["aiSummary"] = summary
+            }
+          }
+        }
         if let constructType = result.constructType {
           item["constructType"] = constructType
         }
         if let constructName = result.constructName {
           item["name"] = constructName
         }
-        if let language = result.language {
-          item["language"] = language
+        if detail != "minimal" {
+          if let language = result.language {
+            item["language"] = language
+          }
         }
         if let score = result.score {
           item["score"] = score
@@ -556,11 +637,19 @@ final class RAGToolsHandler: MCPToolHandler {
         if !result.featureTags.isEmpty {
           item["featureTags"] = result.featureTags
         }
+        // AI tags (schema v7+) — included in summary and full modes
+        if detail != "minimal", !result.aiTags.isEmpty {
+          item["aiTags"] = result.aiTags
+        }
+        // Token count — helps agents gauge chunk size without seeing code
+        if let tokenCount = result.tokenCount {
+          item["tokenCount"] = tokenCount
+        }
         return item
       }
       
       // Build response with reranker info
-      var response: [String: Any] = ["mode": mode, "results": payload]
+      var response: [String: Any] = ["mode": mode, "detail": detail, "results": payload]
       if let provider = rerankerProvider {
         response["rerankerProvider"] = provider
       }
@@ -1543,6 +1632,255 @@ final class RAGToolsHandler: MCPToolHandler {
       return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
     }
   }
+  
+  // MARK: - rag.enrich
+  
+  private func handleEnrich(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
+    let repoPath = optionalString("repoPath", from: arguments)
+    let limit = arguments["limit"] as? Int ?? 500
+    
+    do {
+      // Check if there are chunks to enrich
+      let unenrichedCount = try await delegate.getUnenrichedChunkCount(repoPath: repoPath)
+      if unenrichedCount == 0 {
+        let enrichedCount = try await delegate.getEnrichedChunkCount(repoPath: repoPath)
+        return (200, makeResult(id: id, result: [
+          "message": enrichedCount > 0
+            ? "All analyzed chunks are already enriched"
+            : "No analyzed chunks found. Run rag.analyze first to generate AI summaries.",
+          "chunksEnriched": 0,
+          "totalEnriched": enrichedCount,
+          "unenrichedRemaining": 0
+        ]))
+      }
+      
+      // Run enrichment
+      let startTime = Date()
+      let enrichedCount = try await delegate.enrichRagEmbeddings(repoPath: repoPath, limit: limit) { current, total in
+        print("[RAG] Enriching embedding \(current)/\(total)")
+      }
+      let durationMs = Int(Date().timeIntervalSince(startTime) * 1000)
+      
+      // Get updated counts
+      let newUnenrichedCount = try await delegate.getUnenrichedChunkCount(repoPath: repoPath)
+      let totalEnriched = try await delegate.getEnrichedChunkCount(repoPath: repoPath)
+      
+      return (200, makeResult(id: id, result: [
+        "message": "Embedding enrichment complete — vector search now includes AI semantic context",
+        "chunksEnriched": enrichedCount,
+        "durationMs": durationMs,
+        "unenrichedRemaining": newUnenrichedCount,
+        "totalEnriched": totalEnriched
+      ]))
+    } catch {
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
+    }
+  }
+  
+  private func handleEnrichStatus(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
+    let repoPath = optionalString("repoPath", from: arguments)
+    
+    do {
+      let enrichedCount = try await delegate.getEnrichedChunkCount(repoPath: repoPath)
+      let unenrichedCount = try await delegate.getUnenrichedChunkCount(repoPath: repoPath)
+      let analyzedCount = try await delegate.getAnalyzedChunkCount(repoPath: repoPath)
+      let totalChunks = analyzedCount + (try await delegate.getUnanalyzedChunkCount(repoPath: repoPath))
+      let percentEnriched = analyzedCount > 0 ? Double(enrichedCount) / Double(analyzedCount) * 100 : 0
+      
+      var result: [String: Any] = [
+        "enrichedChunks": enrichedCount,
+        "unenrichedChunks": unenrichedCount,
+        "analyzedChunks": analyzedCount,
+        "totalChunks": totalChunks,
+        "percentEnriched": String(format: "%.1f", percentEnriched),
+        "hint": unenrichedCount > 0
+          ? "Run rag.enrich to re-embed \(unenrichedCount) chunks with AI summaries for better vector search"
+          : enrichedCount > 0
+            ? "All analyzed chunks have enriched embeddings"
+            : "Run rag.analyze first, then rag.enrich"
+      ]
+      
+      if let repoPath {
+        result["repoPath"] = repoPath
+      }
+      
+      return (200, makeResult(id: id, result: result))
+    } catch {
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
+    }
+  }
+
+  // MARK: - rag.duplicates
+
+  private func handleDuplicates(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
+    let repoPath = optionalString("repoPath", from: arguments)
+    let minFiles = optionalInt("minFiles", from: arguments) ?? 2
+    let sortBy = optionalString("sortBy", from: arguments) ?? "wastedTokens"
+    let limit = optionalInt("limit", from: arguments) ?? 25
+
+    // Parse constructTypes array or comma-separated string
+    var constructTypes: [String]? = nil
+    if let typesArray = arguments["constructTypes"] as? [String] {
+      constructTypes = typesArray
+    } else if let typesStr = optionalString("constructTypes", from: arguments) {
+      constructTypes = typesStr.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+    }
+
+    do {
+      let groups = try await delegate.findRagDuplicates(
+        repoPath: repoPath,
+        minFiles: minFiles,
+        constructTypes: constructTypes,
+        sortBy: sortBy,
+        limit: limit
+      )
+
+      let totalWasted = groups.reduce(0) { $0 + $1.wastedTokens }
+
+      let items: [[String: Any]] = groups.map { group in
+        var item: [String: Any] = [
+          "constructName": group.constructName,
+          "constructType": group.constructType,
+          "fileCount": group.fileCount,
+          "totalTokens": group.totalTokens,
+          "wastedTokens": group.wastedTokens,
+          "files": group.files.map { ["path": $0.path, "tokenCount": $0.tokenCount] }
+        ]
+        if let summary = group.aiSummary {
+          item["aiSummary"] = summary
+        }
+        return item
+      }
+
+      var result: [String: Any] = [
+        "duplicateGroups": items,
+        "groupCount": groups.count,
+        "totalWastedTokens": totalWasted,
+        "hint": groups.isEmpty
+          ? "No duplicates found. Run rag.analyze first if chunks are not yet analyzed."
+          : "Found \(groups.count) duplicate groups with ~\(totalWasted) wasted tokens. Top candidates can be consolidated into shared modules."
+      ]
+
+      if let repoPath {
+        result["repoPath"] = repoPath
+      }
+
+      return (200, makeResult(id: id, result: result))
+    } catch {
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
+    }
+  }
+
+  // MARK: - rag.patterns
+
+  private func handlePatterns(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
+    let repoPath = optionalString("repoPath", from: arguments)
+    let constructType = optionalString("constructType", from: arguments)
+    let limit = optionalInt("limit", from: arguments) ?? 30
+
+    do {
+      let groups = try await delegate.findRagPatterns(
+        repoPath: repoPath,
+        constructType: constructType,
+        limit: limit
+      )
+
+      let totalConstructs = groups.reduce(0) { $0 + $1.count }
+      let otherCount = groups.first(where: { $0.suffix == "(other)" })?.count ?? 0
+      let conventionRate = totalConstructs > 0
+        ? Double(totalConstructs - otherCount) / Double(totalConstructs) * 100
+        : 0
+
+      let items: [[String: Any]] = groups.map { group in
+        [
+          "suffix": group.suffix,
+          "count": group.count,
+          "totalTokens": group.totalTokens,
+          "samples": group.samples.map { [
+            "name": $0.constructName,
+            "path": $0.path,
+            "tokenCount": $0.tokenCount
+          ] }
+        ]
+      }
+
+      var result: [String: Any] = [
+        "patterns": items,
+        "totalConstructs": totalConstructs,
+        "conventionRate": String(format: "%.1f%%", conventionRate),
+        "otherCount": otherCount,
+        "hint": otherCount > 0
+          ? "\(otherCount) constructs lack a standard suffix. Review '(other)' samples to determine if they should follow a naming convention."
+          : "All constructs follow a recognized naming pattern."
+      ]
+
+      if let repoPath {
+        result["repoPath"] = repoPath
+      }
+
+      return (200, makeResult(id: id, result: result))
+    } catch {
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
+    }
+  }
+
+  // MARK: - rag.hotspots
+
+  private func handleHotspots(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
+    let repoPath = optionalString("repoPath", from: arguments)
+    let constructType = optionalString("constructType", from: arguments)
+    let minTokens = optionalInt("minTokens", from: arguments) ?? 5000
+    let limit = optionalInt("limit", from: arguments) ?? 30
+
+    do {
+      let hotspots = try await delegate.findRagHotspots(
+        repoPath: repoPath,
+        constructType: constructType,
+        minTokens: minTokens,
+        limit: limit
+      )
+
+      let totalTokens = hotspots.reduce(0) { $0 + $1.tokenCount }
+
+      let items: [[String: Any]] = hotspots.map { spot in
+        var item: [String: Any] = [
+          "constructName": spot.constructName,
+          "constructType": spot.constructType,
+          "filePath": spot.filePath,
+          "tokenCount": spot.tokenCount,
+          "startLine": spot.startLine,
+          "endLine": spot.endLine,
+          "lineCount": spot.endLine - spot.startLine + 1
+        ]
+        if let summary = spot.aiSummary {
+          item["aiSummary"] = summary
+        }
+        if !spot.aiTags.isEmpty {
+          item["aiTags"] = spot.aiTags
+        }
+        return item
+      }
+
+      var result: [String: Any] = [
+        "hotspots": items,
+        "count": hotspots.count,
+        "totalTokens": totalTokens,
+        "minTokenThreshold": minTokens,
+        "hint": hotspots.isEmpty
+          ? "No constructs exceed \(minTokens) tokens. Try lowering minTokens."
+          : "Found \(hotspots.count) constructs >= \(minTokens) tokens totaling \(totalTokens) tokens. These are refactoring candidates — consider splitting into smaller, focused components."
+      ]
+
+      if let repoPath {
+        result["repoPath"] = repoPath
+      }
+
+      return (200, makeResult(id: id, result: result))
+    } catch {
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
+    }
+  }
+
   #endif
   
   // MARK: - rag.scratch (Issue #111)
@@ -1689,8 +2027,13 @@ struct RAGToolSearchResult {
   // Facets (schema v4+)
   let modulePath: String?
   let featureTags: [String]
+  // AI analysis (schema v7+)
+  let aiSummary: String?
+  let aiTags: [String]
+  /// Token count for the original code chunk
+  let tokenCount: Int?
   
-  init(filePath: String, startLine: Int, endLine: Int, snippet: String, isTest: Bool, lineCount: Int, constructType: String? = nil, constructName: String? = nil, language: String? = nil, score: Double? = nil, modulePath: String? = nil, featureTags: [String] = []) {
+  init(filePath: String, startLine: Int, endLine: Int, snippet: String, isTest: Bool, lineCount: Int, constructType: String? = nil, constructName: String? = nil, language: String? = nil, score: Double? = nil, modulePath: String? = nil, featureTags: [String] = [], aiSummary: String? = nil, aiTags: [String] = [], tokenCount: Int? = nil) {
     self.filePath = filePath
     self.startLine = startLine
     self.endLine = endLine
@@ -1703,6 +2046,9 @@ struct RAGToolSearchResult {
     self.score = score
     self.modulePath = modulePath
     self.featureTags = featureTags
+    self.aiSummary = aiSummary
+    self.aiTags = aiTags
+    self.tokenCount = tokenCount
   }
 }
 

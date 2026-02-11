@@ -94,6 +94,9 @@ struct LocalRAGSearchResult: Sendable {
   let aiSummary: String?        // AI-generated summary of this chunk
   let aiTags: [String]          // AI-generated semantic tags
   
+  /// Token count for the original code chunk
+  let tokenCount: Int?
+  
   /// Number of lines in this chunk
   var lineCount: Int { endLine - startLine + 1 }
 }
@@ -2046,12 +2049,12 @@ actor LocalRAGStore {
       .components(separatedBy: .whitespacesAndNewlines)
       .filter { !$0.isEmpty }
 
-    // Build WHERE clause - search both text and construct_name
+    // Build WHERE clause - search text, construct_name, and ai_summary
     // matchAll=true: all words must appear (AND)
     // matchAll=false: any word can appear (OR) - better for multi-concept queries
     var whereClauses = [String]()
     for _ in words {
-      whereClauses.append("(chunks.text LIKE ? OR chunks.construct_name LIKE ?)")
+      whereClauses.append("(chunks.text LIKE ? OR chunks.construct_name LIKE ? OR chunks.ai_summary LIKE ?)")
     }
     
     let joinOperator = matchAll ? " AND " : " OR "
@@ -2059,7 +2062,7 @@ actor LocalRAGStore {
     var sqlBase = """
     SELECT repos.root_path || '/' || files.path, chunks.start_line, chunks.end_line, chunks.text,
            chunks.construct_type, chunks.construct_name, files.language, files.module_path, files.feature_tags,
-           chunks.ai_summary, chunks.ai_tags
+           chunks.ai_summary, chunks.ai_tags, chunks.token_count
     FROM chunks
     JOIN files ON files.id = chunks.file_id
     JOIN repos ON repos.id = files.repo_id
@@ -2084,7 +2087,8 @@ actor LocalRAGStore {
         let pattern = "%\(word)%"
         bindText(statement, bindIndex, pattern)      // text LIKE
         bindText(statement, bindIndex + 1, pattern)  // construct_name LIKE
-        bindIndex += 2
+        bindText(statement, bindIndex + 2, pattern)  // ai_summary LIKE
+        bindIndex += 3
       }
       if let modulePath {
         bindText(statement, bindIndex, "%\(modulePath.lowercased())%")
@@ -2606,13 +2610,13 @@ actor LocalRAGStore {
   }
   
   /// Clear AI analysis for all chunks in a repo (or all repos if nil)
-  /// This resets ai_summary, ai_tags, analyzed_at so they can be re-analyzed
+  /// This resets ai_summary, ai_tags, analyzed_at, enriched_at so they can be re-analyzed and re-enriched
   func clearAnalysis(repoPath: String? = nil) throws {
     try openIfNeeded()
     
     if let repoPath {
       try execute(sql: """
-        UPDATE chunks SET ai_summary = NULL, ai_tags = NULL, analyzed_at = NULL, analyzer_model = NULL
+        UPDATE chunks SET ai_summary = NULL, ai_tags = NULL, analyzed_at = NULL, analyzer_model = NULL, enriched_at = NULL
         WHERE file_id IN (
           SELECT f.id FROM files f
           JOIN repos r ON f.repo_id = r.id
@@ -2620,9 +2624,589 @@ actor LocalRAGStore {
         )
         """) { stmt in self.bindText(stmt, 1, repoPath) }
     } else {
-      try exec("UPDATE chunks SET ai_summary = NULL, ai_tags = NULL, analyzed_at = NULL, analyzer_model = NULL")
+      try exec("UPDATE chunks SET ai_summary = NULL, ai_tags = NULL, analyzed_at = NULL, analyzer_model = NULL, enriched_at = NULL")
     }
   }
+  
+  /// Re-embed analyzed chunks using enriched text (code + ai_summary).
+  /// This makes vector search capture both code structure AND semantic meaning
+  /// from the AI analysis, dramatically improving search relevance.
+  /// Returns count of chunks re-embedded.
+  func enrichEmbeddings(
+    repoPath: String? = nil,
+    limit: Int = 500,
+    progress: (@Sendable (Int, Int) -> Void)? = nil
+  ) async throws -> Int {
+    try openIfNeeded()
+    
+    // Find analyzed chunks that haven't been enriched yet.
+    // We track enrichment via the 'enriched_at' column (schema v8+).
+    let sql: String
+    if let repoPath {
+      sql = """
+      SELECT c.id, c.text, c.ai_summary
+      FROM chunks c
+      JOIN files f ON c.file_id = f.id
+      JOIN repos r ON f.repo_id = r.id
+      WHERE c.ai_summary IS NOT NULL
+        AND c.enriched_at IS NULL
+        AND r.root_path = ?
+      LIMIT ?
+      """
+    } else {
+      sql = """
+      SELECT c.id, c.text, c.ai_summary
+      FROM chunks c
+      WHERE c.ai_summary IS NOT NULL
+        AND c.enriched_at IS NULL
+      LIMIT ?
+      """
+    }
+    
+    guard let db else { throw LocalRAGError.sqlite("Database not initialized") }
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let statement else {
+      throw LocalRAGError.sqlite(String(cString: sqlite3_errmsg(db)))
+    }
+    defer { sqlite3_finalize(statement) }
+    
+    var bindIndex: Int32 = 1
+    if let repoPath {
+      bindText(statement, bindIndex, repoPath)
+      bindIndex += 1
+    }
+    sqlite3_bind_int(statement, bindIndex, Int32(limit))
+    
+    struct ChunkToEnrich {
+      let id: String
+      let text: String
+      let aiSummary: String
+    }
+    
+    var chunks: [ChunkToEnrich] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+      let id = String(cString: sqlite3_column_text(statement, 0))
+      let text = String(cString: sqlite3_column_text(statement, 1))
+      let summary = String(cString: sqlite3_column_text(statement, 2))
+      chunks.append(ChunkToEnrich(id: id, text: text, aiSummary: summary))
+    }
+    
+    guard !chunks.isEmpty else { return 0 }
+    
+    // Build enriched texts: code + semantic summary for richer embeddings
+    let enrichedTexts = chunks.map { chunk in
+      "\(chunk.text)\n\n// AI Summary: \(chunk.aiSummary)"
+    }
+    
+    // Embed in batches
+    let batchSize = 32
+    var enrichedCount = 0
+    let now = dateFormatter.string(from: Date())
+    
+    for batchStart in stride(from: 0, to: chunks.count, by: batchSize) {
+      let batchEnd = min(batchStart + batchSize, chunks.count)
+      let batchTexts = Array(enrichedTexts[batchStart..<batchEnd])
+      let batchChunks = Array(chunks[batchStart..<batchEnd])
+      
+      progress?(batchStart, chunks.count)
+      
+      let embeddings = try await embeddingProvider.embed(texts: batchTexts)
+      
+      for (offset, vector) in embeddings.enumerated() {
+        guard !vector.isEmpty else { continue }
+        let chunk = batchChunks[offset]
+        
+        // Update the embedding in both tables
+        try upsertEmbedding(chunkId: chunk.id, vector: vector)
+        
+        // Mark chunk as enriched
+        try execute(sql: "UPDATE chunks SET enriched_at = ? WHERE id = ?") { stmt in
+          self.bindText(stmt, 1, now)
+          self.bindText(stmt, 2, chunk.id)
+        }
+        
+        enrichedCount += 1
+      }
+      
+      // Clear MLX cache after each batch
+      if LocalRAGEmbeddingProviderFactory.mlxClearCacheAfterBatch {
+        MLX.Memory.clearCache()
+      }
+    }
+    
+    progress?(chunks.count, chunks.count)
+    print("[RAG] Enriched \(enrichedCount) embeddings with AI summaries")
+    return enrichedCount
+  }
+  
+  /// Get count of analyzed but not-yet-enriched chunks
+  func getUnenrichedChunkCount(repoPath: String? = nil) throws -> Int {
+    try openIfNeeded()
+    
+    if let repoPath {
+      return try queryInt("""
+        SELECT COUNT(*) FROM chunks c
+        JOIN files f ON c.file_id = f.id
+        JOIN repos r ON f.repo_id = r.id
+        WHERE c.ai_summary IS NOT NULL AND c.enriched_at IS NULL AND r.root_path = ?
+        """, bind: { stmt in self.bindText(stmt, 1, repoPath) })
+    } else {
+      return try queryInt("SELECT COUNT(*) FROM chunks WHERE ai_summary IS NOT NULL AND enriched_at IS NULL")
+    }
+  }
+  
+  /// Get count of enriched (re-embedded with AI summary) chunks
+  func getEnrichedChunkCount(repoPath: String? = nil) throws -> Int {
+    try openIfNeeded()
+    
+    if let repoPath {
+      return try queryInt("""
+        SELECT COUNT(*) FROM chunks c
+        JOIN files f ON c.file_id = f.id
+        JOIN repos r ON f.repo_id = r.id
+        WHERE c.enriched_at IS NOT NULL AND r.root_path = ?
+        """, bind: { stmt in self.bindText(stmt, 1, repoPath) })
+    } else {
+      return try queryInt("SELECT COUNT(*) FROM chunks WHERE enriched_at IS NOT NULL")
+    }
+  }
+
+  // MARK: - Duplicate Detection
+
+  /// A duplicate group found across multiple files
+  struct DuplicateGroup: Sendable {
+    let constructName: String
+    let constructType: String
+    let fileCount: Int
+    let totalTokens: Int
+    let wastedTokens: Int
+    let aiSummary: String?
+    let files: [(path: String, tokenCount: Int)]
+  }
+
+  /// Find constructs with the same name appearing in multiple files — signals duplicate code
+  func findDuplicates(
+    repoPath: String? = nil,
+    minFiles: Int = 2,
+    constructTypes: [String]? = nil,
+    sortBy: String = "wastedTokens",
+    limit: Int = 25
+  ) throws -> [DuplicateGroup] {
+    try openIfNeeded()
+    guard let db else { throw LocalRAGError.sqlite("Database not initialized") }
+
+    // Build the query — group by construct_name, find those appearing in 2+ distinct files
+    let typeFilter: String
+    if let types = constructTypes, !types.isEmpty {
+      let placeholders = types.map { _ in "?" }.joined(separator: ", ")
+      typeFilter = "AND c.construct_type IN (\(placeholders))"
+    } else {
+      // Default: skip imports and file-level chunks which are naturally repetitive
+      typeFilter = "AND c.construct_type NOT IN ('imports', 'file')"
+    }
+
+    let repoFilter = repoPath != nil ? "AND r.root_path = ?" : ""
+
+    let orderClause: String
+    switch sortBy {
+    case "fileCount": orderClause = "file_count DESC, wasted_tokens DESC"
+    case "totalTokens": orderClause = "total_tokens DESC"
+    default: orderClause = "wasted_tokens DESC"
+    }
+
+    let sql = """
+    SELECT
+      c.construct_name,
+      c.construct_type,
+      COUNT(DISTINCT f.path) as file_count,
+      SUM(c.token_count) as total_tokens,
+      SUM(c.token_count) - MIN(c.token_count) as wasted_tokens,
+      MAX(c.ai_summary) as sample_summary
+    FROM chunks c
+    JOIN files f ON c.file_id = f.id
+    JOIN repos r ON f.repo_id = r.id
+    WHERE c.ai_summary IS NOT NULL
+      \(typeFilter)
+      \(repoFilter)
+    GROUP BY c.construct_name
+    HAVING COUNT(DISTINCT f.path) >= ?
+    ORDER BY \(orderClause)
+    LIMIT ?
+    """
+
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let statement else {
+      throw LocalRAGError.sqlite(String(cString: sqlite3_errmsg(db)))
+    }
+    defer { sqlite3_finalize(statement) }
+
+    var bindIndex: Int32 = 1
+
+    // Bind construct type filters
+    if let types = constructTypes, !types.isEmpty {
+      for t in types {
+        bindText(statement, bindIndex, t)
+        bindIndex += 1
+      }
+    }
+
+    if let repoPath {
+      bindText(statement, bindIndex, repoPath)
+      bindIndex += 1
+    }
+
+    sqlite3_bind_int(statement, bindIndex, Int32(minFiles))
+    bindIndex += 1
+    sqlite3_bind_int(statement, bindIndex, Int32(limit))
+
+    var groups: [DuplicateGroup] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+      let name = String(cString: sqlite3_column_text(statement, 0))
+      let type = String(cString: sqlite3_column_text(statement, 1))
+      let fileCount = Int(sqlite3_column_int(statement, 2))
+      let totalTokens = Int(sqlite3_column_int(statement, 3))
+      let wastedTokens = Int(sqlite3_column_int(statement, 4))
+      let summary: String? = sqlite3_column_type(statement, 5) == SQLITE_NULL
+        ? nil
+        : String(cString: sqlite3_column_text(statement, 5))
+
+      groups.append(DuplicateGroup(
+        constructName: name,
+        constructType: type,
+        fileCount: fileCount,
+        totalTokens: totalTokens,
+        wastedTokens: wastedTokens,
+        aiSummary: summary,
+        files: []  // Populated in second pass
+      ))
+    }
+
+    // Second pass: get per-file details for each group
+    let detailSql = """
+    SELECT f.path, c.token_count
+    FROM chunks c
+    JOIN files f ON c.file_id = f.id
+    JOIN repos r ON f.repo_id = r.id
+    WHERE c.construct_name = ?
+      AND c.ai_summary IS NOT NULL
+      \(repoFilter.isEmpty ? "" : "AND r.root_path = ?")
+    ORDER BY c.token_count DESC
+    """
+
+    var enrichedGroups: [DuplicateGroup] = []
+    for group in groups {
+      var detailStmt: OpaquePointer?
+      let detailResult = sqlite3_prepare_v2(db, detailSql, -1, &detailStmt, nil)
+      guard detailResult == SQLITE_OK, let detailStmt else { continue }
+      defer { sqlite3_finalize(detailStmt) }
+
+      bindText(detailStmt, 1, group.constructName)
+      if let repoPath {
+        bindText(detailStmt, 2, repoPath)
+      }
+
+      var files: [(path: String, tokenCount: Int)] = []
+      while sqlite3_step(detailStmt) == SQLITE_ROW {
+        let path = String(cString: sqlite3_column_text(detailStmt, 0))
+        let tokens = Int(sqlite3_column_int(detailStmt, 1))
+        files.append((path: path, tokenCount: tokens))
+      }
+
+      enrichedGroups.append(DuplicateGroup(
+        constructName: group.constructName,
+        constructType: group.constructType,
+        fileCount: group.fileCount,
+        totalTokens: group.totalTokens,
+        wastedTokens: group.wastedTokens,
+        aiSummary: group.aiSummary,
+        files: files
+      ))
+    }
+
+    return enrichedGroups
+  }
+
+  // MARK: - Pattern Analysis
+
+  /// Naming pattern group result
+  struct PatternGroup: Sendable {
+    let suffix: String
+    let count: Int
+    let totalTokens: Int
+    /// Sample constructs in this group (up to 5)
+    let samples: [(constructName: String, path: String, tokenCount: Int)]
+  }
+
+  /// Analyze naming conventions in the codebase — groups constructs by suffix pattern
+  /// to help agents understand and enforce consistency
+  func findPatterns(
+    repoPath: String? = nil,
+    constructType: String? = nil,
+    limit: Int = 30
+  ) throws -> [PatternGroup] {
+    try openIfNeeded()
+    guard let db else { throw LocalRAGError.sqlite("Database not initialized") }
+
+    // Known suffixes to look for
+    let suffixes = [
+      "Route", "Component", "Controller", "Model", "Adapter", "Service",
+      "Helper", "Mixin", "Serializer", "Transform", "Validator", "Util",
+      "Store", "Provider", "Factory", "Manager", "Handler", "Middleware",
+      "View", "Page", "Screen", "Layout", "Form", "Modal", "Dialog"
+    ]
+
+    var repoFilter = ""
+    if repoPath != nil {
+      repoFilter = "AND r.root_path = ?"
+    }
+    var typeFilter = ""
+    if let constructType, !constructType.isEmpty {
+      typeFilter = "AND c.construct_type = ?"
+    }
+
+    var groups: [PatternGroup] = []
+
+    // Query each suffix pattern
+    for suffix in suffixes {
+      let countSql = """
+      SELECT COUNT(*) as cnt, COALESCE(SUM(c.token_count), 0) as tokens
+      FROM chunks c
+      JOIN files f ON c.file_id = f.id
+      JOIN repos r ON f.repo_id = r.id
+      WHERE c.construct_name LIKE ?
+        AND c.ai_summary IS NOT NULL
+        \(repoFilter) \(typeFilter)
+      """
+
+      var stmt: OpaquePointer?
+      guard sqlite3_prepare_v2(db, countSql, -1, &stmt, nil) == SQLITE_OK, let stmt else { continue }
+      defer { sqlite3_finalize(stmt) }
+
+      var bindIdx: Int32 = 1
+      bindText(stmt, bindIdx, "%\(suffix)")
+      bindIdx += 1
+      if let repoPath {
+        bindText(stmt, bindIdx, repoPath)
+        bindIdx += 1
+      }
+      if let constructType, !constructType.isEmpty {
+        bindText(stmt, bindIdx, constructType)
+        bindIdx += 1
+      }
+
+      guard sqlite3_step(stmt) == SQLITE_ROW else { continue }
+      let count = Int(sqlite3_column_int(stmt, 0))
+      let tokens = Int(sqlite3_column_int(stmt, 1))
+      guard count > 0 else { continue }
+
+      // Get sample constructs
+      let sampleSql = """
+      SELECT c.construct_name, f.path, c.token_count
+      FROM chunks c
+      JOIN files f ON c.file_id = f.id
+      JOIN repos r ON f.repo_id = r.id
+      WHERE c.construct_name LIKE ?
+        AND c.ai_summary IS NOT NULL
+        \(repoFilter) \(typeFilter)
+      ORDER BY c.token_count DESC LIMIT 5
+      """
+
+      var sampleStmt: OpaquePointer?
+      guard sqlite3_prepare_v2(db, sampleSql, -1, &sampleStmt, nil) == SQLITE_OK, let sampleStmt else { continue }
+      defer { sqlite3_finalize(sampleStmt) }
+
+      var sBindIdx: Int32 = 1
+      bindText(sampleStmt, sBindIdx, "%\(suffix)")
+      sBindIdx += 1
+      if let repoPath {
+        bindText(sampleStmt, sBindIdx, repoPath)
+        sBindIdx += 1
+      }
+      if let constructType, !constructType.isEmpty {
+        bindText(sampleStmt, sBindIdx, constructType)
+        sBindIdx += 1
+      }
+
+      var samples: [(constructName: String, path: String, tokenCount: Int)] = []
+      while sqlite3_step(sampleStmt) == SQLITE_ROW {
+        let name = String(cString: sqlite3_column_text(sampleStmt, 0))
+        let path = String(cString: sqlite3_column_text(sampleStmt, 1))
+        let tc = Int(sqlite3_column_int(sampleStmt, 2))
+        samples.append((constructName: name, path: path, tokenCount: tc))
+      }
+
+      groups.append(PatternGroup(suffix: suffix, count: count, totalTokens: tokens, samples: samples))
+    }
+
+    // Also find "other" — constructs that don't match any known suffix
+    let notLikeClauses = suffixes.map { "c.construct_name NOT LIKE '%\($0)'" }.joined(separator: " AND ")
+    let otherCountSql = """
+    SELECT COUNT(*) as cnt, COALESCE(SUM(c.token_count), 0) as tokens
+    FROM chunks c
+    JOIN files f ON c.file_id = f.id
+    JOIN repos r ON f.repo_id = r.id
+    WHERE c.construct_type = 'classDecl'
+      AND c.ai_summary IS NOT NULL
+      AND \(notLikeClauses)
+      \(repoFilter) \(typeFilter)
+    """
+
+    var otherStmt: OpaquePointer?
+    if sqlite3_prepare_v2(db, otherCountSql, -1, &otherStmt, nil) == SQLITE_OK, let otherStmt {
+      defer { sqlite3_finalize(otherStmt) }
+      var bindIdx: Int32 = 1
+      if let repoPath {
+        bindText(otherStmt, bindIdx, repoPath)
+        bindIdx += 1
+      }
+      if let constructType, !constructType.isEmpty {
+        bindText(otherStmt, bindIdx, constructType)
+        bindIdx += 1
+      }
+
+      if sqlite3_step(otherStmt) == SQLITE_ROW {
+        let count = Int(sqlite3_column_int(otherStmt, 0))
+        let tokens = Int(sqlite3_column_int(otherStmt, 1))
+        if count > 0 {
+          // Get samples of "other" classes
+          let otherSampleSql = """
+          SELECT c.construct_name, f.path, c.token_count
+          FROM chunks c
+          JOIN files f ON c.file_id = f.id
+          JOIN repos r ON f.repo_id = r.id
+          WHERE c.construct_type = 'classDecl'
+            AND c.ai_summary IS NOT NULL
+            AND \(notLikeClauses)
+            \(repoFilter) \(typeFilter)
+          ORDER BY c.token_count DESC LIMIT 5
+          """
+
+          var sStmt: OpaquePointer?
+          var samples: [(constructName: String, path: String, tokenCount: Int)] = []
+          if sqlite3_prepare_v2(db, otherSampleSql, -1, &sStmt, nil) == SQLITE_OK, let sStmt {
+            defer { sqlite3_finalize(sStmt) }
+            var sBindIdx: Int32 = 1
+            if let repoPath {
+              bindText(sStmt, sBindIdx, repoPath)
+              sBindIdx += 1
+            }
+            if let constructType, !constructType.isEmpty {
+              bindText(sStmt, sBindIdx, constructType)
+              sBindIdx += 1
+            }
+            while sqlite3_step(sStmt) == SQLITE_ROW {
+              let name = String(cString: sqlite3_column_text(sStmt, 0))
+              let path = String(cString: sqlite3_column_text(sStmt, 1))
+              let tc = Int(sqlite3_column_int(sStmt, 2))
+              samples.append((constructName: name, path: path, tokenCount: tc))
+            }
+          }
+
+          groups.append(PatternGroup(suffix: "(other)", count: count, totalTokens: tokens, samples: samples))
+        }
+      }
+    }
+
+    // Sort by count descending
+    return groups.sorted { $0.count > $1.count }.prefix(limit).map { $0 }
+  }
+
+  // MARK: - Hotspot Detection
+
+  /// A construct that exceeds a token threshold — a refactoring candidate
+  struct Hotspot: Sendable {
+    let constructName: String
+    let constructType: String
+    let filePath: String
+    let tokenCount: Int
+    let startLine: Int
+    let endLine: Int
+    let aiSummary: String?
+    let aiTags: [String]
+  }
+
+  /// Find "god components" — constructs over a given token threshold
+  /// These are refactoring targets that bloat context windows and are hard to maintain
+  func findHotspots(
+    repoPath: String? = nil,
+    constructType: String? = nil,
+    minTokens: Int = 5000,
+    limit: Int = 30
+  ) throws -> [Hotspot] {
+    try openIfNeeded()
+    guard let db else { throw LocalRAGError.sqlite("Database not initialized") }
+
+    var whereClauses = ["c.token_count >= ?", "c.ai_summary IS NOT NULL"]
+    if repoPath != nil {
+      whereClauses.append("r.root_path = ?")
+    }
+    if let constructType, !constructType.isEmpty {
+      whereClauses.append("c.construct_type = ?")
+    }
+
+    let sql = """
+    SELECT c.construct_name, c.construct_type, r.root_path || '/' || f.path,
+           c.token_count, c.start_line, c.end_line, c.ai_summary, c.ai_tags
+    FROM chunks c
+    JOIN files f ON c.file_id = f.id
+    JOIN repos r ON f.repo_id = r.id
+    WHERE \(whereClauses.joined(separator: " AND "))
+    ORDER BY c.token_count DESC
+    LIMIT ?
+    """
+
+    var stmt: OpaquePointer?
+    guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else {
+      let message = String(cString: sqlite3_errmsg(db))
+      throw LocalRAGError.sqlite(message)
+    }
+    defer { sqlite3_finalize(stmt) }
+
+    var bindIdx: Int32 = 1
+    sqlite3_bind_int(stmt, bindIdx, Int32(minTokens))
+    bindIdx += 1
+    if let repoPath {
+      bindText(stmt, bindIdx, repoPath)
+      bindIdx += 1
+    }
+    if let constructType, !constructType.isEmpty {
+      bindText(stmt, bindIdx, constructType)
+      bindIdx += 1
+    }
+    sqlite3_bind_int(stmt, bindIdx, Int32(limit))
+
+    var results: [Hotspot] = []
+    while sqlite3_step(stmt) == SQLITE_ROW {
+      let name = String(cString: sqlite3_column_text(stmt, 0))
+      let type = String(cString: sqlite3_column_text(stmt, 1))
+      let path = String(cString: sqlite3_column_text(stmt, 2))
+      let tokens = Int(sqlite3_column_int(stmt, 3))
+      let startLine = Int(sqlite3_column_int(stmt, 4))
+      let endLine = Int(sqlite3_column_int(stmt, 5))
+      let summary = sqlite3_column_text(stmt, 6).map { String(cString: $0) }
+      let tagsJson = sqlite3_column_text(stmt, 7).map { String(cString: $0) }
+      let tags: [String] = tagsJson.flatMap { json in
+        guard let data = json.data(using: .utf8) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data) as? [String]
+      } ?? []
+
+      results.append(Hotspot(
+        constructName: name,
+        constructType: type,
+        filePath: path,
+        tokenCount: tokens,
+        startLine: startLine,
+        endLine: endLine,
+        aiSummary: summary,
+        aiTags: tags
+      ))
+    }
+
+    return results
+  }
+
   #endif
 
   // MARK: - Query Hints
@@ -3052,7 +3636,8 @@ actor LocalRAGStore {
         files.feature_tags,
         vec_distance_cosine(v.embedding, ?) as distance,
         chunks.ai_summary,
-        chunks.ai_tags
+        chunks.ai_tags,
+        chunks.token_count
       FROM vec_chunks v
       JOIN chunks ON chunks.id = v.chunk_id
       JOIN files ON files.id = chunks.file_id
@@ -3115,6 +3700,8 @@ actor LocalRAGStore {
       let distance = Float(sqlite3_column_double(stmt, 9))
       let aiSummary = sqlite3_column_text(stmt, 10).map { String(cString: $0) }
       let aiTagsJSON = sqlite3_column_text(stmt, 11).map { String(cString: $0) }
+      let tokenCount: Int? = sqlite3_column_type(stmt, 12) != SQLITE_NULL
+        ? Int(sqlite3_column_int(stmt, 12)) : nil
       
       // Convert cosine distance to similarity score (1 - distance)
       let score = 1.0 - distance
@@ -3149,7 +3736,8 @@ actor LocalRAGStore {
         modulePath: modulePath,
         featureTags: featureTags,
         aiSummary: aiSummary,
-        aiTags: aiTags
+        aiTags: aiTags,
+        tokenCount: tokenCount
       )
       results.append(result)
     }
@@ -3163,7 +3751,7 @@ actor LocalRAGStore {
     var sqlBase = """
     SELECT repos.root_path || '/' || files.path, chunks.start_line, chunks.end_line, chunks.text, embeddings.embedding,
            chunks.construct_type, chunks.construct_name, files.language, files.module_path, files.feature_tags,
-           chunks.ai_summary, chunks.ai_tags
+           chunks.ai_summary, chunks.ai_tags, chunks.token_count
     FROM embeddings
     JOIN chunks ON chunks.id = embeddings.chunk_id
     JOIN files ON files.id = chunks.file_id
@@ -3209,7 +3797,8 @@ actor LocalRAGStore {
         modulePath: row.modulePath,
         featureTags: row.featureTags,
         aiSummary: row.aiSummary,
-        aiTags: row.aiTags
+        aiTags: row.aiTags,
+        tokenCount: row.tokenCount
       )
       return (result, score)
     }
@@ -3669,7 +4258,22 @@ actor LocalRAGStore {
       try exec("UPDATE rag_meta SET value = '11' WHERE key = 'schema_version'")
     }
     
-    schemaVersion = 11
+    // Migration to v12: Add enriched_at column for tracking enriched embeddings
+    // When chunks are analyzed (ai_summary), we can re-embed with enriched text
+    // (code + summary) for better vector search quality. This column tracks which
+    // chunks have been re-embedded with their AI summary.
+    if currentVersion < 12 {
+      if try !columnExists(table: "chunks", column: "enriched_at") {
+        try exec("ALTER TABLE chunks ADD COLUMN enriched_at TEXT")
+      }
+      
+      // Index for finding unenriched analyzed chunks
+      try exec("CREATE INDEX IF NOT EXISTS idx_chunks_enriched ON chunks(enriched_at)")
+      
+      try exec("UPDATE rag_meta SET value = '12' WHERE key = 'schema_version'")
+    }
+    
+    schemaVersion = 12
     
     // Set up vec_chunks virtual table if extension is loaded
     if extensionLoaded {
@@ -3797,6 +4401,7 @@ actor LocalRAGStore {
     let featureTags: [String]
     let aiSummary: String?
     let aiTags: [String]
+    let tokenCount: Int?
   }
 
   private func queryEmbeddingRows(
@@ -3853,6 +4458,10 @@ actor LocalRAGStore {
         return try? JSONDecoder().decode([String].self, from: data)
       } ?? []
       
+      // Token count (column 12)
+      let tokenCount: Int? = sqlite3_column_type(statement, 12) != SQLITE_NULL
+        ? Int(sqlite3_column_int(statement, 12)) : nil
+      
       if let blobPointer, blobSize > 0 {
         let data = Data(bytes: blobPointer, count: Int(blobSize))
         rows.append(
@@ -3868,7 +4477,8 @@ actor LocalRAGStore {
             modulePath: modulePath,
             featureTags: featureTags,
             aiSummary: aiSummary,
-            aiTags: aiTags
+            aiTags: aiTags,
+            tokenCount: tokenCount
           )
         )
       }
@@ -4010,6 +4620,10 @@ actor LocalRAGStore {
         return try? JSONDecoder().decode([String].self, from: data)
       } ?? []
       
+      // Token count (column 11)
+      let tokenCount: Int? = sqlite3_column_type(statement, 11) != SQLITE_NULL
+        ? Int(sqlite3_column_int(statement, 11)) : nil
+      
       results.append(
         LocalRAGSearchResult(
           filePath: path,
@@ -4024,7 +4638,8 @@ actor LocalRAGStore {
           modulePath: modulePath,
           featureTags: featureTags,
           aiSummary: aiSummary,
-          aiTags: aiTags
+          aiTags: aiTags,
+          tokenCount: tokenCount
         )
       )
     }
