@@ -82,6 +82,24 @@ fi
 echo ""
 echo "🔄 Restarting Peel..."
 
+# Find the built app first (needed for bundle ID lookup before kill)
+DERIVED_APPS=(~/Library/Developer/Xcode/DerivedData/Peel-*/Build/Products/Debug/Peel.app)
+echo "Searching for built app in DerivedData..."
+if [ ${#DERIVED_APPS[@]} -gt 0 ] && [ -e "${DERIVED_APPS[1]}" ]; then
+  printf '  %s\n' "${DERIVED_APPS[@]}"
+fi
+APP_PATH=$(printf '%s\n' "${DERIVED_APPS[@]}" 2>/dev/null | head -1)
+
+# Disable macOS state restoration before killing — prevents OS from auto-relaunching
+# the app behind our back (which causes the double-instance bug)
+if [ -n "$APP_PATH" ]; then
+  BUNDLE_ID=$(defaults read "$APP_PATH/Contents/Info" CFBundleIdentifier 2>/dev/null || echo "com.crunchy-bananas.Peel")
+else
+  BUNDLE_ID="com.crunchy-bananas.Peel"
+fi
+defaults write "$BUNDLE_ID" NSQuitAlwaysKeepsWindows -bool false 2>/dev/null || true
+echo "Disabled state restoration for $BUNDLE_ID"
+
 # Kill ALL Peel processes (there might be multiple from previous failed restarts)
 PEEL_PIDS=$(pgrep -x Peel 2>/dev/null || true)
 if [ -n "$PEEL_PIDS" ]; then
@@ -120,14 +138,14 @@ else
   echo "✅ All Peel processes terminated"
 fi
 
-# Find and launch the built app
-DERIVED_APPS=(~/Library/Developer/Xcode/DerivedData/Peel-*/Build/Products/Debug/Peel.app)
-echo "Searching for built app in DerivedData..."
-if [ ${#DERIVED_APPS[@]} -gt 0 ] && [ -e "${DERIVED_APPS[1]}" ]; then
-  printf '  %s\n' "${DERIVED_APPS[@]}"
+# Wait for any macOS state restoration relaunch attempts to settle
+sleep 2
+ZOMBIE_CHECK=$(pgrep -x Peel 2>/dev/null || true)
+if [ -n "$ZOMBIE_CHECK" ]; then
+  echo "⚠️  macOS relaunched Peel (state restoration) — killing zombie..."
+  echo "$ZOMBIE_CHECK" | xargs kill -9 2>/dev/null || true
+  sleep 1
 fi
-
-APP_PATH=$(printf '%s\n' "${DERIVED_APPS[@]}" 2>/dev/null | head -1)
 if [ -n "$APP_PATH" ]; then
   echo "Launching: $APP_PATH"
   
@@ -140,7 +158,7 @@ if [ -n "$APP_PATH" ]; then
   fi
   
   echo "Launching via detached open..."
-  nohup /bin/zsh -lc "/usr/bin/open -n \"$APP_PATH\" --args --worker" >/dev/null 2>&1 &
+  nohup /bin/zsh -lc "/usr/bin/open \"$APP_PATH\" --args --worker" >/dev/null 2>&1 &
   RELAUNCH_PID=$!
   echo "Spawned relaunch process: $RELAUNCH_PID"
   
@@ -158,7 +176,7 @@ if [ -n "$APP_PATH" ]; then
   else
     echo "⚠️  Peel did not appear to launch (no process detected)"
     echo "   Retrying launch..."
-    /usr/bin/open -n "$APP_PATH" --args --worker &
+    /usr/bin/open "$APP_PATH" --args --worker &
     sleep 3
     if pgrep -x Peel >/dev/null 2>&1; then
       echo "✅ Peel started on retry"
