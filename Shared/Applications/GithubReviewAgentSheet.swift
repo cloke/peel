@@ -41,6 +41,8 @@ struct GithubReviewAgentSheet: View {
   @State private var selectedTemplateId: UUID?
   @State private var prompt: String = ""
   @State private var isRunning = false
+  @State private var isQueuing = false
+  @State private var didQueue = false
   @State private var lastSummary: AgentChainRunner.RunSummary?
 
   var body: some View {
@@ -166,6 +168,15 @@ struct GithubReviewAgentSheet: View {
             }
             .pickerStyle(.menu)
             .accessibilityIdentifier("github.reviewAgent.template")
+
+            if let pr = pullRequest {
+              let totalLines = (pr.additions ?? 0) + (pr.deletions ?? 0)
+              Text(totalLines < 200
+                ? "\(totalLines) lines changed — auto-selected free review"
+                : "\(totalLines) lines changed — auto-selected deep review")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
           }
 
           SectionCard("Prompt") {
@@ -213,11 +224,25 @@ struct GithubReviewAgentSheet: View {
 
       Spacer()
 
-      Button(isRunning ? "Running…" : "Run Review") {
+      if didQueue {
+        Label("Queued — check Agents tab", systemImage: "checkmark.circle.fill")
+          .foregroundStyle(.green)
+          .font(.callout)
+      }
+
+      Button(isQueuing ? "Queuing\u{2026}" : "Queue & Close") {
+        Task { await queueReviewInBackground() }
+      }
+      .buttonStyle(.bordered)
+      .disabled(isRunning || isQueuing || didQueue || selectedRepoPath.isEmpty || pullRequest == nil || repository == nil)
+      .help("Start the review in a worktree and close this window. Check progress in the Agents tab.")
+      .accessibilityIdentifier("github.reviewAgent.queueAndClose")
+
+      Button(isRunning ? "Running\u{2026}" : "Run Review") {
         Task { await runReview() }
       }
       .buttonStyle(.borderedProminent)
-      .disabled(isRunning || selectedRepoPath.isEmpty || pullRequest == nil || repository == nil)
+      .disabled(isRunning || isQueuing || didQueue || selectedRepoPath.isEmpty || pullRequest == nil || repository == nil)
       .keyboardShortcut(.defaultAction)
       .accessibilityIdentifier("github.reviewAgent.run")
     }
@@ -230,7 +255,7 @@ struct GithubReviewAgentSheet: View {
         if let selectedTemplateId {
           return selectedTemplateId
         }
-        let defaultTemplate = mcpServer.agentManager.allTemplates.first { $0.name == "Code Review" }
+        let defaultTemplate = recommendedTemplate(for: pullRequest)
           ?? mcpServer.agentManager.allTemplates.first
         let value = defaultTemplate?.id ?? UUID()
         selectedTemplateId = value
@@ -238,6 +263,23 @@ struct GithubReviewAgentSheet: View {
       },
       set: { selectedTemplateId = $0 }
     )
+  }
+
+  /// Auto-select the best review template based on PR size.
+  /// Small PRs (<200 lines) → Quick PR Review (free single-agent).
+  /// Larger PRs → Deep PR Review (premium analysis).
+  /// Falls back to Code Review if the specific templates aren't found.
+  private func recommendedTemplate(for pr: Github.PullRequest?) -> ChainTemplate? {
+    let templates = mcpServer.agentManager.allTemplates
+    let totalLines = (pr?.additions ?? 0) + (pr?.deletions ?? 0)
+
+    if totalLines < 200 {
+      return templates.first { $0.name == "Quick PR Review" }
+        ?? templates.first { $0.name == "Free Review" }
+    } else {
+      return templates.first { $0.name == "Deep PR Review" }
+        ?? templates.first { $0.name == "Code Review" }
+    }
   }
 
   private func loadPRIfNeeded() async {
@@ -307,12 +349,11 @@ Task:
     }
   }
 
-  private func runReview() async {
-    guard let pullRequest else { return }
+  /// Sets up the worktree and creates the chain, returning the chain and prompt to run.
+  /// Shared by both inline and background execution paths.
+  private func prepareChainForReview() async -> (AgentChain, String)? {
+    guard let pullRequest else { return nil }
     errorMessage = nil
-    isRunning = true
-    lastSummary = nil
-    defer { isRunning = false }
 
     await service.reviewLocally(
       pullRequest: pullRequest,
@@ -324,25 +365,58 @@ Task:
       if case .error(let message) = service.state {
         errorMessage = message
       }
-      return
+      return nil
     }
 
     let template = mcpServer.agentManager.allTemplates.first { $0.id == selectedTemplateId }
       ?? mcpServer.agentManager.allTemplates.first
     guard let template else {
       errorMessage = "No chain templates available."
-      return
+      return nil
     }
 
     let chain = mcpServer.agentManager.createChainFromTemplate(template, workingDirectory: worktreePath)
     mcpServer.agentManager.selectedChain = chain
+    return (chain, prompt)
+  }
+
+  /// Queue the review to run in the background, then dismiss the sheet.
+  private func queueReviewInBackground() async {
+    isQueuing = true
+    defer { isQueuing = false }
+
+    guard let (chain, reviewPrompt) = await prepareChainForReview() else { return }
+
+    // Fire off the chain run in a task that lives on AgentManager,
+    // so it survives sheet dismissal. The chain is already tracked
+    // in agentManager.chains and will appear in the sidebar.
+    mcpServer.agentManager.runChainInBackground(
+      chain,
+      prompt: reviewPrompt,
+      cliService: mcpServer.cliService,
+      sessionTracker: mcpServer.sessionTracker
+    )
+
+    didQueue = true
+    // Brief delay so the user sees the "Queued" confirmation
+    try? await Task.sleep(for: .milliseconds(600))
+    dismiss()
+  }
+
+  /// Run the review inline (keeps the sheet open to show results).
+  private func runReview() async {
+    isRunning = true
+    lastSummary = nil
+    defer { isRunning = false }
+
+    guard let (chain, reviewPrompt) = await prepareChainForReview() else { return }
 
     let runner = AgentChainRunner(
       agentManager: mcpServer.agentManager,
       cliService: mcpServer.cliService,
       telemetryProvider: MCPTelemetryAdapter(sessionTracker: mcpServer.sessionTracker)
     )
-    let summary = await runner.runChain(chain, prompt: prompt)
+    let summary = await runner.runChain(chain, prompt: reviewPrompt)
     lastSummary = summary
   }
 }

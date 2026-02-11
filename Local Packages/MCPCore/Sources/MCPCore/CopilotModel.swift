@@ -10,6 +10,7 @@ import Foundation
 /// Available models for Copilot CLI
 public enum MCPCopilotModel: String, Codable, CaseIterable, Identifiable, Sendable {
   // Claude models
+  case claudeOpus46 = "claude-opus-4.6"
   case claudeSonnet45 = "claude-sonnet-4.5"
   case claudeHaiku45 = "claude-haiku-4.5"
   case claudeOpus45 = "claude-opus-4.5"
@@ -180,6 +181,7 @@ public enum MCPCopilotModel: String, Codable, CaseIterable, Identifiable, Sendab
   }
 
   private static let metadataMap: [MCPCopilotModel: Metadata] = [
+    .claudeOpus46: Metadata(displayName: "Claude Opus 4.6", shortName: "Opus 4.6", premiumCost: 3.0, family: .claude),
     .claudeSonnet45: Metadata(displayName: "Claude Sonnet 4.5", shortName: "Sonnet 4.5", premiumCost: 1.0, family: .claude),
     .claudeHaiku45: Metadata(displayName: "Claude Haiku 4.5", shortName: "Haiku 4.5", premiumCost: 0.33, family: .claude),
     .claudeOpus45: Metadata(displayName: "Claude Opus 4.5", shortName: "Opus 4.5", premiumCost: 3.0, family: .claude),
@@ -226,6 +228,31 @@ public enum MCPCopilotModel: String, Codable, CaseIterable, Identifiable, Sendab
       return .premium
     }
   }
+
+  // MARK: - Dynamic Model Recommendations
+
+  /// Returns the best available model for a given cost tier.
+  /// Instead of hardcoding model names in templates, use these so
+  /// templates automatically pick the best model as availability changes.
+  public static func recommended(for tier: CostTier) -> MCPCopilotModel {
+    let candidates = allCases.filter { $0.costTier == tier }
+    // Prefer Claude for reasoning tasks, but any model in the tier works
+    // Sort: Claude first, then by newest (earlier in enum = newer)
+    let sorted = candidates.sorted { a, b in
+      if a.isClaude != b.isClaude { return a.isClaude }
+      return allCases.firstIndex(of: a)! < allCases.firstIndex(of: b)!
+    }
+    return sorted.first ?? .gpt41
+  }
+
+  /// Best free model (currently GPT-4.1)
+  public static var bestFree: MCPCopilotModel { recommended(for: .free) }
+  /// Best low-cost model (currently Haiku)
+  public static var bestLow: MCPCopilotModel { recommended(for: .low) }
+  /// Best standard model (currently Sonnet)
+  public static var bestStandard: MCPCopilotModel { recommended(for: .standard) }
+  /// Best premium model (currently Opus)
+  public static var bestPremium: MCPCopilotModel { recommended(for: .premium) }
 }
 
 // MARK: - Premium Cost Formatting
