@@ -216,14 +216,21 @@ extension MCPServerService {
       ),
       ToolDefinition(
         name: "rag.index",
-        description: "Index a repository path into the Local RAG database. Use forceReindex=true to re-index all files regardless of whether they've changed.",
+        description: """
+        Index a repository path into the Local RAG database. Use forceReindex=true to re-index all files regardless of whether they've changed.
+        
+        Workspace/monorepo support: If the path contains multiple git sub-repos or sub-packages \
+        (directories with Package.swift, package.json, Cargo.toml, etc.), each sub-package is \
+        automatically indexed as a separate repo entry with parent/child relationships tracked. \
+        Use allowWorkspace=true to instead index everything as a single flat repo.
+        """,
         inputSchema: [
           "type": "object",
           "properties": [
             "repoPath": ["type": "string"],
             "forceReindex": ["type": "boolean", "default": false, "description": "If true, re-index all files even if unchanged. Useful after changing chunking or embedding settings."],
-            "allowWorkspace": ["type": "boolean", "default": false, "description": "Allow indexing a workspace folder that contains multiple repos."],
-            "excludeSubrepos": ["type": "boolean", "default": true, "description": "When indexing a workspace, skip sub-repo folders (index only workspace-level content)." ]
+            "allowWorkspace": ["type": "boolean", "default": false, "description": "If true, index workspace as a single flat repo instead of auto-indexing sub-packages separately."],
+            "excludeSubrepos": ["type": "boolean", "default": true, "description": "When indexing a workspace with allowWorkspace=true, skip sub-repo folders (index only workspace-level content)." ]
           ],
           "required": ["repoPath"]
         ],

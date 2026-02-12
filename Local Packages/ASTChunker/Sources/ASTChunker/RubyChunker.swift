@@ -159,6 +159,8 @@ public struct RubyChunker: LanguageChunker, Sendable {
       if construct.endLine - construct.startLine + 1 <= maxChunkLines {
         // Construct fits in one chunk
         let text = extractLines(from: lines, start: construct.startLine, end: construct.endLine)
+        var metadata = extractRubyMetadata(from: lines, construct: construct)
+        metadata.typeReferences = extractTypeReferences(from: text)
         chunks.append(ASTChunk(
           constructType: construct.type,
           constructName: construct.name,
@@ -412,13 +414,88 @@ public struct RubyChunker: LanguageChunker, Sendable {
         endLine: currentEnd + 1,
         text: text,
         language: Self.language,
-        metadata: metadata
+        metadata: ASTChunkMetadata(
+          superclass: metadata.superclass,
+          mixins: metadata.mixins,
+          callbacks: metadata.callbacks,
+          associations: metadata.associations,
+          frameworks: metadata.frameworks,
+          typeReferences: extractTypeReferences(from: text)
+        )
       ))
       
       currentStart = currentEnd + 1
     }
     
     return chunks
+  }
+  
+  // MARK: - Type Reference Extraction
+  
+  /// Extract type/constant names referenced in Ruby source text (for orphan detection).
+  /// Finds references to:
+  /// - Superclasses: `class Foo < Bar`
+  /// - Class/module constants: `SomeClass.new`, `SomeModule::Nested`
+  /// - Include/extend/prepend: `include SomeModule`
+  /// - Constant access: `SomeClass.find`, `SomeModule::CONSTANT`
+  private func extractTypeReferences(from text: String) -> [String] {
+    var refs = Set<String>()
+    let nsText = text as NSString
+    let fullRange = NSRange(location: 0, length: nsText.length)
+    
+    // Skip Ruby built-in types/classes
+    let builtins: Set<String> = [
+      "Object", "BasicObject", "Kernel", "Module", "Class",
+      "String", "Integer", "Float", "Numeric", "Symbol",
+      "Array", "Hash", "Set", "Range", "Regexp",
+      "TrueClass", "FalseClass", "NilClass",
+      "IO", "File", "Dir", "Proc", "Method", "Thread",
+      "Exception", "StandardError", "RuntimeError", "ArgumentError",
+      "TypeError", "NameError", "NoMethodError", "Struct",
+      "Comparable", "Enumerable", "Enumerator"
+    ]
+    
+    let patterns: [(String, Int)] = [
+      // Superclass: `class Foo < Bar`
+      (#"class\s+\w+\s*<\s*([A-Z][\w:]*?)(?:\s|$)"#, 1),
+      // Include/extend/prepend: `include SomeModule`
+      (#"\b(?:include|extend|prepend)\s+([A-Z][\w:]*)"#, 1),
+      // Class.new or Class.method_call: `SomeClass.new`, `SomeClass.find`
+      (#"\b([A-Z]\w+)\.(?:new|create|find|where|all|first|last|count|build|\w+)"#, 1),
+      // Namespaced constant: `SomeModule::SomeClass`
+      (#"\b([A-Z]\w+)::[A-Z]"#, 1),
+      // Nested constant access (capture the nested part too)
+      (#"[A-Z]\w+::([A-Z]\w+)"#, 1),
+      // raise SomeError
+      (#"\braise\s+([A-Z]\w+)"#, 1),
+      // rescue SomeError
+      (#"\brescue\s+([A-Z][\w:]+)"#, 1),
+      // is_a? / kind_of? / instance_of?
+      (#"\b(?:is_a\?|kind_of\?|instance_of\?)\s*\(?\s*([A-Z]\w+)"#, 1),
+    ]
+    
+    for (pattern, group) in patterns {
+      guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+      let matches = regex.matches(in: text, range: fullRange)
+      
+      for match in matches {
+        guard match.numberOfRanges > group else { continue }
+        let range = match.range(at: group)
+        guard range.location != NSNotFound else { continue }
+        let captured = nsText.substring(with: range)
+        // Strip namespace prefix for the top-level name
+        let name = captured.components(separatedBy: "::").last ?? captured
+        if !builtins.contains(name) && !name.isEmpty {
+          refs.insert(name)
+        }
+        // Also insert the full namespaced reference if it contains ::
+        if captured.contains("::") && !builtins.contains(captured) {
+          refs.insert(captured)
+        }
+      }
+    }
+    
+    return refs.sorted()
   }
   
   private func extractLines(from lines: [String], start: Int, end: Int) -> String {

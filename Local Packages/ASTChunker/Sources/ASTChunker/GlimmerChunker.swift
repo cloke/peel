@@ -200,13 +200,15 @@ public struct GlimmerChunker: LanguageChunker, Sendable {
       if construct.endLine - construct.startLine + 1 <= maxChunkLines {
         // Construct fits in one chunk
         let text = extractLines(from: lines, start: construct.startLine, end: construct.endLine)
+        let typeRefs = extractTypeReferences(from: text)
         chunks.append(ASTChunk(
           constructType: construct.type,
           constructName: construct.name,
           startLine: construct.startLine + 1, // Convert to 1-indexed
           endLine: construct.endLine + 1,
           text: text,
-          language: "Glimmer TypeScript"
+          language: "Glimmer TypeScript",
+          metadata: ASTChunkMetadata(typeReferences: typeRefs)
         ))
       } else {
         // Split large construct into smaller chunks
@@ -380,11 +382,74 @@ public struct GlimmerChunker: LanguageChunker, Sendable {
         startLine: chunkStart + 1,
         endLine: chunkEnd + 1,
         text: text,
-        language: "Glimmer TypeScript"
+        language: "Glimmer TypeScript",
+        metadata: ASTChunkMetadata(typeReferences: extractTypeReferences(from: text))
       ))
     }
     
     return chunks
+  }
+  
+  // MARK: - Type Reference Extraction
+  
+  /// Extract type names referenced in Glimmer TypeScript/JavaScript source (for orphan detection).
+  /// Handles the same TS/JS patterns plus Glimmer-specific template invocations.
+  private func extractTypeReferences(from text: String) -> [String] {
+    var refs = Set<String>()
+    let nsText = text as NSString
+    let fullRange = NSRange(location: 0, length: nsText.length)
+    
+    let builtins: Set<String> = [
+      "string", "number", "boolean", "void", "any", "unknown", "never", "null",
+      "undefined", "object", "symbol", "bigint",
+      "String", "Number", "Boolean", "Object", "Symbol", "BigInt",
+      "Array", "Map", "Set", "WeakMap", "WeakSet", "Promise", "Date",
+      "Error", "RegExp", "Function", "Record", "Partial", "Required",
+      "Readonly", "Pick", "Omit", "Exclude", "Extract", "NonNullable",
+      "ReturnType", "InstanceType", "Parameters", "ConstructorParameters"
+    ]
+    
+    let patterns: [(String, Int)] = [
+      (#":\s+([A-Z]\w+)"#, 1),
+      (#"\bas\s+([A-Z]\w+)"#, 1),
+      (#"\bnew\s+([A-Z]\w+)"#, 1),
+      (#"\b(?:extends|implements)\s+([A-Z]\w+)"#, 1),
+      (#"<([A-Z]\w+)[,>]"#, 1),
+      (#"import\s+\{([^}]+)\}\s+from"#, 1),
+      (#"\btypeof\s+([A-Z]\w+)"#, 1),
+      (#"\b([A-Z]\w+)\.\w+"#, 1),
+      // Glimmer component invocations: <SomeComponent or <SomeComponent>
+      (#"<([A-Z]\w+)[\s/>]"#, 1),
+    ]
+    
+    for (pattern, group) in patterns {
+      guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+      let matches = regex.matches(in: text, range: fullRange)
+      
+      for match in matches {
+        guard match.numberOfRanges > group else { continue }
+        let range = match.range(at: group)
+        guard range.location != NSNotFound else { continue }
+        let captured = nsText.substring(with: range)
+        
+        if pattern.contains("import") {
+          let names = captured.components(separatedBy: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .map { $0.components(separatedBy: " as ").first ?? $0 }
+            .filter { !$0.isEmpty && $0.first?.isUppercase == true }
+          for name in names {
+            let cleaned = name.trimmingCharacters(in: .whitespaces)
+            if !builtins.contains(cleaned) {
+              refs.insert(cleaned)
+            }
+          }
+        } else if !builtins.contains(captured) {
+          refs.insert(captured)
+        }
+      }
+    }
+    
+    return refs.sorted()
   }
   
   private func extractLines(from lines: [String], start: Int, end: Int) -> String {
