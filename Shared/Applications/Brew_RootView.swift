@@ -12,9 +12,9 @@ struct Brew_RootView: View {
   var body: some View {
     NavigationStack {
       SidebarNavigationView()
-        .toolbar(content: {
+        .toolbar {
           ToolSelectionToolbar()
-        })
+        }
     }
   }
 }

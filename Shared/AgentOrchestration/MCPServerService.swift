@@ -176,8 +176,9 @@ public final class MCPServerService {
     public let fileCount: Int
     public let chunkCount: Int
     public let repoIdentifier: String?
+    public let parentRepoId: String?
 
-    public init(id: String, name: String, rootPath: String, lastIndexedAt: Date?, fileCount: Int, chunkCount: Int, repoIdentifier: String? = nil) {
+    public init(id: String, name: String, rootPath: String, lastIndexedAt: Date?, fileCount: Int, chunkCount: Int, repoIdentifier: String? = nil, parentRepoId: String? = nil) {
       self.id = id
       self.name = name
       self.rootPath = rootPath
@@ -185,6 +186,7 @@ public final class MCPServerService {
       self.fileCount = fileCount
       self.chunkCount = chunkCount
       self.repoIdentifier = repoIdentifier
+      self.parentRepoId = parentRepoId
     }
   }
 
@@ -843,7 +845,8 @@ public final class MCPServerService {
           lastIndexedAt: repo.lastIndexedAt,
           fileCount: repo.fileCount,
           chunkCount: repo.chunkCount,
-          repoIdentifier: repo.repoIdentifier
+          repoIdentifier: repo.repoIdentifier,
+          parentRepoId: repo.parentRepoId
         )
       }
       lastRagError = nil

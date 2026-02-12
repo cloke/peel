@@ -29,6 +29,31 @@ struct LocalRAGIndexReport: Sendable {
   let astFilesChunked: Int
   let lineFilesChunked: Int
   let chunkingFailures: Int
+
+  // Workspace aggregate: reports for each sub-repo/sub-package indexed
+  let subReports: [LocalRAGIndexReport]
+
+  init(
+    repoId: String, repoPath: String,
+    filesIndexed: Int, filesSkipped: Int, chunksIndexed: Int, bytesScanned: Int,
+    durationMs: Int, embeddingCount: Int, embeddingDurationMs: Int,
+    astFilesChunked: Int, lineFilesChunked: Int, chunkingFailures: Int,
+    subReports: [LocalRAGIndexReport] = []
+  ) {
+    self.repoId = repoId
+    self.repoPath = repoPath
+    self.filesIndexed = filesIndexed
+    self.filesSkipped = filesSkipped
+    self.chunksIndexed = chunksIndexed
+    self.bytesScanned = bytesScanned
+    self.durationMs = durationMs
+    self.embeddingCount = embeddingCount
+    self.embeddingDurationMs = embeddingDurationMs
+    self.astFilesChunked = astFilesChunked
+    self.lineFilesChunked = lineFilesChunked
+    self.chunkingFailures = chunkingFailures
+    self.subReports = subReports
+  }
 }
 
 /// Progress updates during indexing operations
@@ -1438,6 +1463,73 @@ actor LocalRAGStore {
     return Array(Set(repos)).sorted()
   }
 
+  /// Detect sub-packages within a workspace that have their own package manifests
+  /// but are NOT separate git repos (e.g., `Local Packages/Git/`, `packages/foo/`).
+  /// These are filtered to exclude paths already covered by `detectWorkspaceRepos`.
+  private static let packageManifests: Set<String> = [
+    "Package.swift",      // Swift packages
+    "package.json",       // Node.js / npm / pnpm / yarn
+    "Cargo.toml",         // Rust crates
+    "go.mod",             // Go modules
+    "pyproject.toml",     // Python (PEP 621)
+    "Gemfile",            // Ruby gems
+    "build.gradle",       // Gradle / Android
+    "build.gradle.kts",   // Gradle Kotlin DSL
+    "pom.xml",            // Maven
+    "mix.exs",            // Elixir
+    "pubspec.yaml",       // Dart/Flutter
+    "CMakeLists.txt"      // C/C++ / CMake
+  ]
+
+  private func detectSubPackages(rootURL: URL, excludingGitRepos gitRepos: [String]) -> [String] {
+    let resolvedRoot = rootURL.resolvingSymlinksInPath()
+    guard let enumerator = FileManager.default.enumerator(
+      at: resolvedRoot,
+      includingPropertiesForKeys: [.isDirectoryKey],
+      options: [.skipsHiddenFiles]
+    ) else {
+      return []
+    }
+
+    let excluded = Set([".git", ".build", ".swiftpm", "build", "dist", "DerivedData", "node_modules", "coverage", "tmp", "Carthage", ".turbo", "__snapshots__", "vendor"])
+    let baseDepth = resolvedRoot.pathComponents.count
+    let rootPath = resolvedRoot.path
+    var packages: [String] = []
+    let gitRepoSet = Set(gitRepos)
+
+    for case let url as URL in enumerator {
+      let depth = url.pathComponents.count - baseDepth
+      if depth <= 0 { continue }
+      if depth > 4 {
+        enumerator.skipDescendants()
+        continue
+      }
+      let lastName = url.lastPathComponent
+      if excluded.contains(lastName) {
+        enumerator.skipDescendants()
+        continue
+      }
+
+      // Skip paths inside git sub-repos (already covered)
+      let urlPath = url.path
+      if gitRepoSet.contains(where: { urlPath == $0 || urlPath.hasPrefix($0 + "/") }) {
+        enumerator.skipDescendants()
+        continue
+      }
+
+      // Check if this is a file that's a package manifest
+      if Self.packageManifests.contains(lastName) {
+        let parentDir = url.deletingLastPathComponent().path
+        // Don't include the root itself — only nested packages
+        if parentDir != rootPath {
+          packages.append(parentDir)
+        }
+      }
+    }
+
+    return Array(Set(packages)).sorted()
+  }
+
   private func isGitRepo(at url: URL) -> Bool {
     let gitURL = url.appendingPathComponent(".git")
     var isDir = ObjCBool(false)
@@ -1579,6 +1671,7 @@ actor LocalRAGStore {
     let fileCount: Int
     let chunkCount: Int
     let repoIdentifier: String?
+    let parentRepoId: String?
   }
 
   func listRepos() throws -> [RepoInfo] {
@@ -1589,7 +1682,8 @@ actor LocalRAGStore {
       SELECT r.id, r.name, r.root_path, r.last_indexed_at,
              (SELECT COUNT(*) FROM files WHERE repo_id = r.id) as file_count,
              (SELECT COUNT(*) FROM chunks c JOIN files f ON c.file_id = f.id WHERE f.repo_id = r.id) as chunk_count,
-             r.repo_identifier
+             r.repo_identifier,
+             r.parent_repo_id
       FROM repos r
       ORDER BY r.name
       """
@@ -1616,6 +1710,7 @@ actor LocalRAGStore {
       let fileCount = Int(sqlite3_column_int(statement, 4))
       let chunkCount = Int(sqlite3_column_int(statement, 5))
       let repoIdentifier = sqlite3_column_text(statement, 6).map { String(cString: $0) }
+      let parentRepoId = sqlite3_column_text(statement, 7).map { String(cString: $0) }
 
       repos.append(RepoInfo(
         id: id,
@@ -1624,7 +1719,8 @@ actor LocalRAGStore {
         lastIndexedAt: lastIndexedAt,
         fileCount: fileCount,
         chunkCount: chunkCount,
-        repoIdentifier: repoIdentifier
+        repoIdentifier: repoIdentifier,
+        parentRepoId: parentRepoId
       ))
     }
     return repos
@@ -1739,11 +1835,78 @@ actor LocalRAGStore {
 
     let repoURL = URL(fileURLWithPath: path)
     let workspaceRepos = detectWorkspaceRepos(rootURL: repoURL)
-    if !allowWorkspace {
-      if workspaceRepos.count >= 2 {
-        throw LocalRAGError.workspaceDetected(rootPath: path, repoPaths: workspaceRepos)
+    let subPackages = detectSubPackages(rootURL: repoURL, excludingGitRepos: workspaceRepos)
+    let allSubPaths = workspaceRepos + subPackages
+
+    // Workspace auto-indexing: if sub-repos or sub-packages are found,
+    // auto-index each one as a separate repo entry with parent_repo_id (#262)
+    if allSubPaths.count >= 2 && !allowWorkspace {
+      let parentRepoId = stableId(for: path)
+      let parentName = repoURL.lastPathComponent
+      let now = dateFormatter.string(from: Date())
+      let parentIdentifier = Self.discoverNormalizedRemoteURL(for: path)
+
+      // Create a parent repo entry to anchor the workspace
+      try upsertRepo(id: parentRepoId, name: parentName, rootPath: path, lastIndexedAt: now, repoIdentifier: parentIdentifier, parentRepoId: nil)
+
+      var subReports: [LocalRAGIndexReport] = []
+      var totalFiles = 0, totalSkipped = 0, totalChunks = 0
+      var totalBytes = 0, totalEmbeddings = 0, totalEmbeddingMs = 0
+      var totalAST = 0, totalLine = 0, totalFailures = 0
+
+      print("[RAG] Workspace detected at \(path): auto-indexing \(allSubPaths.count) sub-packages")
+      for (idx, subPath) in allSubPaths.enumerated() {
+        let subURL = URL(fileURLWithPath: subPath)
+        let subRepoId = stableId(for: subPath)
+        let subName = subURL.lastPathComponent
+        print("[RAG] Indexing sub-package \(idx + 1)/\(allSubPaths.count): \(subName)")
+
+        // Set parent_repo_id for this sub-repo
+        let subIdentifier = Self.discoverNormalizedRemoteURL(for: subPath)
+        let subNow = dateFormatter.string(from: Date())
+        try upsertRepo(id: subRepoId, name: subName, rootPath: subPath, lastIndexedAt: subNow, repoIdentifier: subIdentifier, parentRepoId: parentRepoId)
+
+        // Recursively index with allowWorkspace=true to skip re-detection
+        let subReport = try await indexRepository(
+          path: subPath,
+          forceReindex: forceReindex,
+          allowWorkspace: true,
+          excludeSubrepos: true,
+          progress: progress
+        )
+        subReports.append(subReport)
+        totalFiles += subReport.filesIndexed
+        totalSkipped += subReport.filesSkipped
+        totalChunks += subReport.chunksIndexed
+        totalBytes += subReport.bytesScanned
+        totalEmbeddings += subReport.embeddingCount
+        totalEmbeddingMs += subReport.embeddingDurationMs
+        totalAST += subReport.astFilesChunked
+        totalLine += subReport.lineFilesChunked
+        totalFailures += subReport.chunkingFailures
       }
+
+      let durationMs = Int(Date().timeIntervalSince(startTime) * 1000)
+      let report = LocalRAGIndexReport(
+        repoId: parentRepoId,
+        repoPath: path,
+        filesIndexed: totalFiles,
+        filesSkipped: totalSkipped,
+        chunksIndexed: totalChunks,
+        bytesScanned: totalBytes,
+        durationMs: durationMs,
+        embeddingCount: totalEmbeddings,
+        embeddingDurationMs: totalEmbeddingMs,
+        astFilesChunked: totalAST,
+        lineFilesChunked: totalLine,
+        chunkingFailures: totalFailures,
+        subReports: subReports
+      )
+      progress?(.complete(report: report))
+      return report
     }
+
+    // Single repo (or allowWorkspace=true for flat indexing) — index normally
     let excludedRoots = (allowWorkspace && excludeSubrepos) ? workspaceRepos : []
     let scannedFiles = scanner.scan(rootURL: repoURL, excludingRoots: excludedRoots)
     logMemory("after scan \(scannedFiles.count) files")
@@ -4273,7 +4436,18 @@ actor LocalRAGStore {
       try exec("UPDATE rag_meta SET value = '12' WHERE key = 'schema_version'")
     }
     
-    schemaVersion = 12
+    // Migration to v13: Add parent_repo_id for workspace/monorepo sub-package tracking (#262)
+    // When a workspace is indexed, the parent workspace gets a repo entry and each sub-package
+    // gets its own repo entry with parent_repo_id pointing to the workspace repo.
+    if currentVersion < 13 {
+      if try !columnExists(table: "repos", column: "parent_repo_id") {
+        try exec("ALTER TABLE repos ADD COLUMN parent_repo_id TEXT REFERENCES repos(id) ON DELETE SET NULL")
+      }
+      try exec("CREATE INDEX IF NOT EXISTS idx_repos_parent ON repos(parent_repo_id)")
+      try exec("UPDATE rag_meta SET value = '13' WHERE key = 'schema_version'")
+    }
+
+    schemaVersion = 13
     
     // Set up vec_chunks virtual table if extension is loaded
     if extensionLoaded {
@@ -4647,17 +4821,18 @@ actor LocalRAGStore {
     return results
   }
 
-  private func upsertRepo(id: String, name: String, rootPath: String, lastIndexedAt: String, repoIdentifier: String? = nil) throws {
+  private func upsertRepo(id: String, name: String, rootPath: String, lastIndexedAt: String, repoIdentifier: String? = nil, parentRepoId: String? = nil) throws {
     // Use INSERT ... ON CONFLICT ... DO UPDATE to avoid triggering CASCADE DELETE
     // INSERT OR REPLACE would delete the repo row and cascade delete all files!
     let sql = """
-    INSERT INTO repos (id, name, root_path, last_indexed_at, repo_identifier)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO repos (id, name, root_path, last_indexed_at, repo_identifier, parent_repo_id)
+    VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       root_path = excluded.root_path,
       last_indexed_at = excluded.last_indexed_at,
-      repo_identifier = COALESCE(excluded.repo_identifier, repos.repo_identifier)
+      repo_identifier = COALESCE(excluded.repo_identifier, repos.repo_identifier),
+      parent_repo_id = COALESCE(excluded.parent_repo_id, repos.parent_repo_id)
     """
     try execute(sql: sql) { statement in
       bindText(statement, 1, id)
@@ -4668,6 +4843,11 @@ actor LocalRAGStore {
         bindText(statement, 5, repoIdentifier)
       } else {
         sqlite3_bind_null(statement, 5)
+      }
+      if let parentRepoId {
+        bindText(statement, 6, parentRepoId)
+      } else {
+        sqlite3_bind_null(statement, 6)
       }
     }
   }
@@ -5681,6 +5861,21 @@ actor LocalRAGStore {
           sourceFileId: fileId,
           referencedName: superclass,
           refKind: "inherit"
+        ))
+      }
+      
+      // Include mixins as references (Ruby include/extend/prepend)
+      for mixin in metadata.mixins {
+        guard !seenNames.contains(mixin) else { continue }
+        seenNames.insert(mixin)
+        
+        let id = stableId(for: "\(fileId):\(mixin)")
+        refs.append(LocalRAGSymbolRef(
+          id: id,
+          repoId: repoId,
+          sourceFileId: fileId,
+          referencedName: mixin,
+          refKind: "mixin"
         ))
       }
     }

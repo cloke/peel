@@ -111,6 +111,7 @@ public struct SidebarNavigationView: View {
   @AppStorage("brew.source") private var sourceRaw: String = PackageSource.installed.rawValue
   @AppStorage("brew.searchText") private var storedSearchText: String = ""
   @State private var selection: String?
+  @State private var showActivity = false
   
   public init() {}
   
@@ -162,6 +163,20 @@ public struct SidebarNavigationView: View {
       }
     }
     .navigationSplitViewStyle(.balanced)
+    .toolbar {
+      ToolbarItem(placement: .primaryAction) {
+        Button {
+          showActivity.toggle()
+        } label: {
+          Label("Activity", systemImage: "chart.bar.fill")
+        }
+        .help("Homebrew Activity Charts")
+      }
+    }
+    .sheet(isPresented: $showActivity) {
+      BrewActivityView()
+        .frame(minWidth: 550, minHeight: 500)
+    }
     .searchable(text: $results.searchText)
     .onChange(of: results.searchText) { _, newValue in
       if storedSearchText != newValue {
