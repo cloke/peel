@@ -219,9 +219,10 @@ extension MCPServerService {
     lastRagIndexReport = report
     lastRagIndexAt = Date()
     let skipInfo = report.filesSkipped > 0 ? " (\(report.filesSkipped) unchanged)" : ""
+    let removeInfo = report.filesRemoved > 0 ? " (\(report.filesRemoved) removed)" : ""
     appendRagEvent(
       kind: .index,
-      title: "Indexed \(report.filesIndexed) files\(skipInfo) · \(report.chunksIndexed) chunks",
+      title: "Indexed \(report.filesIndexed) files\(skipInfo)\(removeInfo) · \(report.chunksIndexed) chunks",
       detail: report.repoPath
     )
     lastRagError = nil
