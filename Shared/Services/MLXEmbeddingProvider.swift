@@ -13,6 +13,7 @@ import Foundation
 import Hub
 import MLX
 import MLXEmbedders
+import RAGCore
 import Tokenizers
 
 // MARK: - Model Configuration
@@ -119,7 +120,7 @@ struct MLXEmbeddingModelConfig: Sendable {
 
 /// Native Swift embedding provider using Apple's MLX framework.
 /// Maximizes utilization of Apple Silicon (CPU, GPU, Neural Engine).
-actor MLXEmbeddingProvider: LocalRAGEmbeddingProvider {
+actor MLXEmbeddingProvider: LocalRAGEmbeddingProvider, BatchAwareEmbeddingProvider {
   private var container: MLXEmbedders.ModelContainer?
   private let config: MLXEmbeddingModelConfig
   private var isLoaded = false
@@ -273,6 +274,14 @@ actor MLXEmbeddingProvider: LocalRAGEmbeddingProvider {
       "isCodeOptimized": config.isCodeOptimized,
       "isLoaded": isLoaded
     ]
+  }
+
+  // MARK: - BatchAwareEmbeddingProvider
+
+  nonisolated func didCompleteBatch() async {
+    if LocalRAGEmbeddingProviderFactory.mlxClearCacheAfterBatch {
+      MLX.Memory.clearCache()
+    }
   }
 }
 

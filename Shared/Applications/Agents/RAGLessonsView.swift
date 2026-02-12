@@ -24,7 +24,7 @@ struct RAGLessonsView: View {
   @State private var lessonErrorSignature: String = ""
   @State private var lessonFixDescription: String = ""
   @State private var lessonFixCode: String = ""
-  @State private var lessonConfidence: Float = 0.5
+  @State private var lessonConfidence: Double = 0.5
   @State private var lessonIsActive: Bool = true
   
   // New lesson mode
@@ -156,7 +156,7 @@ struct RAGLessonsView: View {
             .foregroundStyle(.secondary)
         }
         
-        Label("\(lesson.occurrences)×", systemImage: "arrow.clockwise")
+        Label("\(lesson.applyCount)×", systemImage: "arrow.clockwise")
           .font(.caption)
           .foregroundStyle(.secondary)
         
@@ -171,7 +171,7 @@ struct RAGLessonsView: View {
   }
   
   @ViewBuilder
-  private func confidenceIndicator(_ confidence: Float) -> some View {
+  private func confidenceIndicator(_ confidence: Double) -> some View {
     let color: Color = confidence >= 0.7 ? .green : confidence >= 0.4 ? .orange : .red
     Circle()
       .fill(color)

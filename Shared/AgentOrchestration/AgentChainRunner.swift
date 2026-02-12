@@ -112,7 +112,7 @@ public final class AgentChainRunner {
   private let validationRunner = ValidationRunner()
   private let mergeCoordinator = MergeCoordinator.shared
   private let screenshotService = ScreenshotService()
-  private let localRagStore = LocalRAGStore()
+  private let localRagStore = makeDefaultRAGStore()
   private var runGates: [UUID: ChainRunGate] = [:]
 
   public init(
@@ -150,6 +150,7 @@ public final class AgentChainRunner {
     chain.runStartTime = Date()
     chain.state = .running(agentIndex: 0)
     chain.addStatusMessage("Starting chain execution...", type: .info)
+    PeonPingService.shared.chainStarted(name: chain.name)
     if let runOptions {
       chain.plannerOverridesAllowed = runOptions.allowPlannerImplementerScaling
         || runOptions.allowPlannerModelSelection
@@ -198,6 +199,7 @@ public final class AgentChainRunner {
 
         chain.state = .complete
         chain.addStatusMessage("✓ Chain completed successfully!", type: .complete)
+        PeonPingService.shared.chainCompleted(name: chain.name)
         telemetryProvider.recordChainRun(chain)
       }
     } catch {
@@ -210,6 +212,7 @@ public final class AgentChainRunner {
         errorMessage = error.localizedDescription
         chain.state = .failed(message: error.localizedDescription)
         chain.addStatusMessage("Error: \(error.localizedDescription)", type: .error)
+        PeonPingService.shared.chainFailed(name: chain.name, error: error.localizedDescription)
       }
     }
 

@@ -17,7 +17,7 @@ let package = Package(
     // CrunchyCommon removed - migrated to Shared/Extensions
     .package(url: "https://github.com/crunchybananas/TaskRunner.git", branch: "main"),
     .package(name: "PeelUI", path: "../PeelUI"),
-    .package(name: "MCPCore", path: "../MCPCore")
+    .package(url: "https://github.com/crunchybananas/MCPCore.git", from: "1.0.0")
   ],
   targets: [
     // Targets are the basic building blocks of a package. A target can define a module or a test suite.

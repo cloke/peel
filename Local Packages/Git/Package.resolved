@@ -1,6 +1,15 @@
 {
   "pins" : [
     {
+      "identity" : "mcpcore",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/crunchybananas/MCPCore.git",
+      "state" : {
+        "revision" : "c0cc9bdc4d28e5fd540a7c807a97fbca81d74e42",
+        "version" : "1.1.0"
+      }
+    },
+    {
       "identity" : "taskrunner",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/crunchybananas/TaskRunner.git",

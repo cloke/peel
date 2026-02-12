@@ -481,9 +481,9 @@ public struct PrePlannerOutput: Sendable {
     public let errorSignature: String?
     public let fixDescription: String
     public let fixCode: String?
-    public let confidence: Float
+    public let confidence: Double
     
-    public init(id: String, filePattern: String?, errorSignature: String?, fixDescription: String, fixCode: String?, confidence: Float) {
+    public init(id: String, filePattern: String?, errorSignature: String?, fixDescription: String, fixCode: String?, confidence: Double) {
       self.id = id
       self.filePattern = filePattern
       self.errorSignature = errorSignature

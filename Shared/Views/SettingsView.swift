@@ -250,6 +250,10 @@ struct SettingsView: View {
       }
       .tabItem { Label("Beta", systemImage: "flask") }
 
+      // MARK: - Notifications Tab (Peon Ping)
+      PeonPingSettingsTab()
+        .tabItem { Label("Sounds", systemImage: "speaker.wave.2") }
+
       SettingsPage {
         SettingsSection("About") {
           VStack(alignment: .leading, spacing: 8) {
