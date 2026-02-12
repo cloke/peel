@@ -423,6 +423,7 @@ final class ParallelWorktreeRunner {
     run.status = .running
     run.startedAt = Date()
     recordSnapshot(for: run)
+    PeonPingService.shared.chainStarted(name: run.name)
     if let guidance = await buildRepoGuidance(repoPath: run.projectPath) {
       run.operatorGuidance.append(guidance)
       recordSnapshot(for: run)
@@ -571,8 +572,10 @@ final class ParallelWorktreeRunner {
       // Set status based on review gate
       if run.requireReviewGate {
         execution.status = .awaitingReview
+        PeonPingService.shared.worktreeNeedsReview(taskTitle: execution.task.title)
       } else {
         execution.status = .approved
+        PeonPingService.shared.worktreeCompleted(taskTitle: execution.task.title)
       }
       
       execution.completedAt = Date()
@@ -591,6 +594,7 @@ final class ParallelWorktreeRunner {
       execution.status = .failed(error.localizedDescription)
       execution.completedAt = Date()
       recordSnapshot(for: run)
+      PeonPingService.shared.worktreeFailed(taskTitle: execution.task.title, error: error.localizedDescription)
       await mcpLog.error(error, context: "Parallel worktree failed", metadata: [
         "runId": run.id.uuidString,
         "executionId": execution.id.uuidString
@@ -942,11 +946,14 @@ final class ParallelWorktreeRunner {
     
     if anyFailed && run.executions.filter({ if case .failed = $0.status { return true }; return false }).count == run.executions.count {
       run.status = .failed("All tasks failed")
+      PeonPingService.shared.chainFailed(name: run.name, error: "All tasks failed")
     } else if anyAwaitingReview {
       run.status = .awaitingReview
+      PeonPingService.shared.needsReview(name: run.name)
     } else if allTerminal {
       run.completedAt = Date()
       run.status = .completed
+      PeonPingService.shared.chainCompleted(name: run.name)
     }
   }
   

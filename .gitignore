@@ -79,8 +79,10 @@ tmp/
 *.dylib
 *.p8
 
-# Nested git repos in local packages (now on GitHub)
-Local Packages/MCPCore/.git
-Local Packages/MCPServerKit/.git
+# External packages (now remote SPM deps via GitHub)
+Local Packages/MCPCore/
+Local Packages/MCPServerKit/
+Local Packages/ASTChunker/
+Local Packages/RAGCore/
 Local Packages/*/.build
 Local Packages/*/.swiftpm

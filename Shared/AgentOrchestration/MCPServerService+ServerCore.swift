@@ -11,7 +11,7 @@ extension MCPServerService {
   // MARK: - Server Core (#210)
   
   func listLessons(repoPath: String, includeInactive: Bool, limit: Int?) async throws -> [LocalRAGLesson] {
-    try await localRagStore.listLessons(repoPath: repoPath, includeInactive: includeInactive, limit: limit)
+    try await localRagStore.listLessons(repoPath: repoPath, includeInactive: includeInactive, limit: limit ?? 50)
   }
   
   func addLesson(
@@ -56,16 +56,18 @@ extension MCPServerService {
     id: String,
     fixDescription: String?,
     fixCode: String?,
-    confidence: Float?,
+    confidence: Double?,
     isActive: Bool?
   ) async throws -> LocalRAGLesson? {
-    if let updated = try await localRagStore.updateLesson(
-      id: id,
+    try await localRagStore.updateLesson(
+      lessonId: id,
       fixDescription: fixDescription,
       fixCode: fixCode,
       confidence: confidence,
       isActive: isActive
-    ) {
+    )
+    // Re-fetch the updated lesson to return it
+    if let updated = try await localRagStore.getLesson(lessonId: id) {
       appendRagEvent(
         kind: .lessonUpdated,
         title: "Lesson updated",
@@ -77,37 +79,33 @@ extension MCPServerService {
   }
   
   func deleteLesson(id: String) async throws -> Bool {
-    let deleted = try await localRagStore.deleteLesson(id: id)
-    if deleted {
+    do {
+      try await localRagStore.deleteLesson(lessonId: id)
       appendRagEvent(
         kind: .lessonDeleted,
         title: "Lesson deleted",
         detail: id
       )
+      return true
+    } catch {
+      return false
     }
-    return deleted
   }
   
   func recordLessonApplied(id: String, success: Bool) async throws {
+    try await localRagStore.recordLessonUsed(lessonId: id, success: success)
     if success {
-      // Increase confidence and occurrence count
-      try await localRagStore.recordLessonUsed(id: id)
       appendRagEvent(
         kind: .lessonApplied,
         title: "Lesson applied",
         detail: "Confidence increased for lesson \(id.prefix(8))..."
       )
     } else {
-      // Decrease confidence for unsuccessful application
-      if let lesson = try await localRagStore.getLesson(id: id) {
-        let newConfidence = max(0.1, lesson.confidence - 0.1)
-        _ = try await localRagStore.updateLesson(id: id, confidence: newConfidence)
-        appendRagEvent(
-          kind: .lessonApplied,
-          title: "Lesson not helpful",
-          detail: "Confidence decreased for lesson \(id.prefix(8))..."
-        )
-      }
+      appendRagEvent(
+        kind: .lessonApplied,
+        title: "Lesson not helpful",
+        detail: "Confidence decreased for lesson \(id.prefix(8))..."
+      )
     }
   }
 
@@ -194,7 +192,7 @@ extension MCPServerService {
   }
 
   func applyRagEmbeddingSettings() async {
-    localRagStore = LocalRAGStore()
+    localRagStore = makeDefaultRAGStore()
     parallelWorktreeRunner?.setRAGStore(localRagStore)
     ragIndexingPath = nil
     ragIndexProgress = nil
@@ -308,9 +306,8 @@ extension MCPServerService {
       do {
         try await localRagStore.recordQueryHint(
           query: query,
-          repoPath: repoPath,
-          mode: mode.rawValue,
-          resultCount: results.count
+          resultCount: results.count,
+          searchMode: mode.rawValue
         )
       } catch {
         await telemetryProvider.warning("RAG query hint insert failed", metadata: ["error": error.localizedDescription])
@@ -322,17 +319,17 @@ extension MCPServerService {
   private func refreshRagQueryHints(query: String?, repoPath: String?, mode: RAGSearchMode?, resultCount: Int?) async {
     do {
       if let query, let mode, let resultCount {
-        try await localRagStore.recordQueryHint(query: query, repoPath: repoPath, mode: mode.rawValue, resultCount: resultCount)
+        try await localRagStore.recordQueryHint(query: query, resultCount: resultCount, searchMode: mode.rawValue)
       }
       let hints = try await localRagStore.fetchQueryHints(limit: 25)
       ragQueryHints = hints.map {
         RAGQueryHint(
           query: $0.query,
-          repoPath: $0.repoPath,
-          mode: RAGSearchMode(rawValue: $0.mode) ?? .text,
+          repoPath: nil,
+          mode: RAGSearchMode(rawValue: $0.searchMode) ?? .text,
           resultCount: $0.resultCount,
-          useCount: $0.useCount,
-          lastUsedAt: $0.lastUsedAt
+          useCount: 0,
+          lastUsedAt: Date()
         )
       }
     } catch {

@@ -20,6 +20,15 @@
         }
       },
       {
+        "package": "ASTChunker",
+        "repositoryURL": "https://github.com/crunchybananas/ast-chunker.git",
+        "state": {
+          "branch": null,
+          "revision": "1726e45e92ba05c67ba8da35e8ab74cbc55b5140",
+          "version": "1.1.0"
+        }
+      },
+      {
         "package": "AttributedText",
         "repositoryURL": "https://github.com/gonzalezreal/AttributedText",
         "state": {
@@ -164,6 +173,15 @@
         }
       },
       {
+        "package": "MCPCore",
+        "repositoryURL": "https://github.com/crunchybananas/MCPCore.git",
+        "state": {
+          "branch": null,
+          "revision": "c0cc9bdc4d28e5fd540a7c807a97fbca81d74e42",
+          "version": "1.1.0"
+        }
+      },
+      {
         "package": "mlx-swift",
         "repositoryURL": "https://github.com/ml-explore/mlx-swift",
         "state": {
@@ -215,6 +233,15 @@
           "branch": null,
           "revision": "540318ecedd63d883069ae7f1ed811a2df00b6ac",
           "version": "2.4.0"
+        }
+      },
+      {
+        "package": "RAGCore",
+        "repositoryURL": "https://github.com/crunchybananas/RAGCore.git",
+        "state": {
+          "branch": null,
+          "revision": "fb1e2143ba8009eea7388f330b8a1134b0325aca",
+          "version": "1.0.0"
         }
       },
       {

@@ -130,7 +130,7 @@ protocol RAGToolsHandlerDelegate: MCPToolHandlerDelegate {
   func queryLessons(repoPath: String, filePattern: String?, errorSignature: String?, limit: Int) async throws -> [LocalRAGLesson]
   
   /// Update a lesson
-  func updateLesson(id: String, fixDescription: String?, fixCode: String?, confidence: Float?, isActive: Bool?) async throws -> LocalRAGLesson?
+  func updateLesson(id: String, fixDescription: String?, fixCode: String?, confidence: Double?, isActive: Bool?) async throws -> LocalRAGLesson?
   
   /// Delete a lesson
   func deleteLesson(id: String) async throws -> Bool
@@ -1086,14 +1086,8 @@ final class RAGToolsHandler: MCPToolHandler {
     
     let fixDescription = optionalString("fixDescription", from: arguments)
     let fixCode = optionalString("fixCode", from: arguments)
-    // JSON numbers come in as Double, so accept both Float and Double
-    let confidence: Float? = if let f = arguments["confidence"] as? Float {
-      f
-    } else if let d = arguments["confidence"] as? Double {
-      Float(d)
-    } else {
-      nil
-    }
+    // JSON numbers come in as Double
+    let confidence: Double? = arguments["confidence"] as? Double
     let isActive = arguments["isActive"] as? Bool
     
     do {
@@ -1156,10 +1150,11 @@ final class RAGToolsHandler: MCPToolHandler {
       "repoId": lesson.repoId,
       "fixDescription": lesson.fixDescription,
       "confidence": lesson.confidence,
-      "occurrences": lesson.occurrences,
+      "applyCount": lesson.applyCount,
+      "successCount": lesson.successCount,
       "source": lesson.source,
       "isActive": lesson.isActive,
-      "createdAt": formatter.string(from: lesson.createdAt)
+      "createdAt": lesson.createdAt
     ]
     if let filePattern = lesson.filePattern {
       result["filePattern"] = filePattern
@@ -1170,8 +1165,8 @@ final class RAGToolsHandler: MCPToolHandler {
     if let fixCode = lesson.fixCode {
       result["fixCode"] = fixCode
     }
-    if let lastUsedAt = lesson.lastUsedAt {
-      result["lastUsedAt"] = formatter.string(from: lastUsedAt)
+    if let updatedAt = lesson.updatedAt {
+      result["updatedAt"] = updatedAt
     }
     return result
   }

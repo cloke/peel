@@ -7,14 +7,13 @@
 
 import CryptoKit
 import Foundation
+import MLX
 @preconcurrency import NaturalLanguage
+import RAGCore
 import SwiftBPETokenizer
 
-protocol LocalRAGEmbeddingProvider: Sendable {
-  func embed(texts: [String]) async throws -> [[Float]]
-  var dimensions: Int { get }
-  var modelName: String { get }
-}
+/// Backward-compatible alias — the protocol signatures are identical.
+typealias LocalRAGEmbeddingProvider = EmbeddingProvider
 
 /// Provider preference for embedding generation
 enum EmbeddingProviderType: String, CaseIterable {
@@ -349,5 +348,35 @@ struct HashEmbeddingProvider: LocalRAGEmbeddingProvider {
     let sumSquares = vector.reduce(0) { $0 + $1 * $1 }
     let magnitude = sqrt(max(sumSquares, 0.000001))
     return vector.map { $0 / magnitude }
+  }
+}
+
+// MARK: - MLX Memory Pressure Monitor
+
+/// Bridges the app's MLX memory management into RAGCore's protocol.
+struct MLXMemoryPressureMonitor: MemoryPressureMonitor {
+  func isMemoryPressureHigh() -> Bool {
+    LocalRAGEmbeddingProviderFactory.isMemoryPressureHigh()
+  }
+
+  func clearCaches() async {
+    #if os(macOS)
+    if LocalRAGEmbeddingProviderFactory.mlxClearCacheAfterBatch {
+      await MainActor.run {
+        MLX.Memory.clearCache()
+      }
+    }
+    #endif
+  }
+
+  func memoryDescription() -> String {
+    #if os(macOS)
+    let snapshot = MLX.Memory.snapshot()
+    let peakMB = Double(snapshot.peakMemory) / 1_048_576
+    let currentMB = Double(snapshot.activeMemory) / 1_048_576
+    return String(format: "MLX active=%.1f MB, peak=%.1f MB", currentMB, peakMB)
+    #else
+    return "no MLX on iOS"
+    #endif
   }
 }

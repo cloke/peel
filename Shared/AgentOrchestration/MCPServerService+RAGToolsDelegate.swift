@@ -304,7 +304,16 @@ extension MCPServerService: RAGToolsHandlerDelegate {
     largestFile: (path: String, lines: Int)?,
     mostMethods: (path: String, count: Int)?
   ) {
-    return try await localRagStore.getStructuralStats(for: repoPath)
+    let stats = try await localRagStore.getStructuralStats(for: repoPath)
+    return (
+      totalFiles: stats.totalFiles,
+      totalLines: stats.totalLines,
+      totalMethods: stats.totalMethods,
+      avgLinesPerFile: stats.avgLinesPerFile,
+      avgMethodsPerFile: stats.avgMethodsPerFile,
+      largestFile: stats.largestFile,
+      mostMethods: stats.mostMethods
+    )
   }
   
   func findSimilarCode(
@@ -378,7 +387,8 @@ extension MCPServerService: RAGToolsHandlerDelegate {
   
   #if os(macOS)
   func analyzeRagChunks(repoPath: String?, limit: Int, modelTier: MLXAnalyzerModelTier = .auto, progress: (@Sendable (Int, Int) -> Void)?) async throws -> Int {
-    try await localRagStore.analyzeChunks(repoPath: repoPath, limit: limit, modelTier: modelTier, progress: progress)
+    // Note: modelTier is not used directly — the chunkAnalyzer was configured at store creation
+    try await localRagStore.analyzeChunks(repoPath: repoPath, limit: limit, progress: progress)
   }
   
   func getUnanalyzedChunkCount(repoPath: String?) async throws -> Int {
@@ -402,15 +412,15 @@ extension MCPServerService: RAGToolsHandlerDelegate {
   }
   
   func findRagDuplicates(repoPath: String?, minFiles: Int, constructTypes: [String]?, sortBy: String, limit: Int) async throws -> [LocalRAGStore.DuplicateGroup] {
-    try await localRagStore.findDuplicates(repoPath: repoPath, minFiles: minFiles, constructTypes: constructTypes, sortBy: sortBy, limit: limit)
+    try await localRagStore.findDuplicates(repoPath: repoPath, minTokens: minFiles, limit: limit)
   }
   
   func findRagPatterns(repoPath: String?, constructType: String?, limit: Int) async throws -> [LocalRAGStore.PatternGroup] {
-    try await localRagStore.findPatterns(repoPath: repoPath, constructType: constructType, limit: limit)
+    try await localRagStore.findPatterns(repoPath: repoPath, limit: limit)
   }
   
   func findRagHotspots(repoPath: String?, constructType: String?, minTokens: Int, limit: Int) async throws -> [LocalRAGStore.Hotspot] {
-    try await localRagStore.findHotspots(repoPath: repoPath, constructType: constructType, minTokens: minTokens, limit: limit)
+    try await localRagStore.findHotspots(repoPath: repoPath, tokenThreshold: minTokens, limit: limit)
   }
   
   func clearRagAnalysis(repoPath: String?) async throws {

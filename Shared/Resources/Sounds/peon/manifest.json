@@ -1,0 +1,44 @@
+{
+  "name": "peon",
+  "display_name": "Orc Peon (Warcraft III)",
+  "attribution": "Sound files are property of Blizzard Entertainment. Sourced from tonyyont/peon-ping (MIT).",
+  "categories": {
+    "greeting": {
+      "sounds": [
+        { "file": "PeonReady1.wav", "line": "Ready to work?" },
+        { "file": "PeonWhat1.wav", "line": "Yes?" },
+        { "file": "PeonWhat3.wav", "line": "What you want?" }
+      ]
+    },
+    "acknowledge": {
+      "sounds": [
+        { "file": "PeonYes1.wav", "line": "I can do that." },
+        { "file": "PeonYes2.wav", "line": "Be happy to." },
+        { "file": "PeonYes3.wav", "line": "Work, work." },
+        { "file": "PeonYes4.wav", "line": "Okie dokie." }
+      ]
+    },
+    "complete": {
+      "sounds": [
+        { "file": "PeonReady1.wav", "line": "Ready to work?" },
+        { "file": "PeonYes3.wav", "line": "Work, work." },
+        { "file": "PeonYes4.wav", "line": "Okie dokie." },
+        { "file": "PeonYes1.wav", "line": "I can do that." }
+      ]
+    },
+    "error": {
+      "sounds": [
+        { "file": "PeonAngry4.wav", "line": "Me not that kind of orc!" },
+        { "file": "PeonDeath.wav", "line": "Ugh." },
+        { "file": "PeonAngry1.wav", "line": "Whaaat?" }
+      ]
+    },
+    "permission": {
+      "sounds": [
+        { "file": "PeonWhat4.wav", "line": "Something need doing?" },
+        { "file": "PeonWhat2.wav", "line": "Hmm?" },
+        { "file": "PeonWhat3.wav", "line": "What you want?" }
+      ]
+    }
+  }
+}

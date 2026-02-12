@@ -84,12 +84,11 @@
 		04A7BD85258E77D8000E55A8 /* Tests macOS.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Tests macOS.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests_macOS.swift; sourceTree = "<group>"; };
 		04A7BD8B258E77D8000E55A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		04ASTCHK2F2E000100000001 /* ASTChunker */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = ASTChunker; path = "Local Packages/ASTChunker"; sourceTree = "<group>"; };
 		04PIISCR2F2E000100000001 /* PIIScrubber */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = PIIScrubber; path = "Local Packages/PIIScrubber"; sourceTree = "<group>"; };
 		04ASTCLI2F3B000100000002 /* ast-chunker-cli */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = "ast-chunker-cli"; path = "Tools/Binaries/ast-chunker-cli"; sourceTree = "<group>"; };
 		04F4F9772596AAD7005B30B4 /* Peel.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Peel.entitlements; sourceTree = "<group>"; };
 		04F582A6269FD388003A8403 /* Github */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Github; path = "Local Packages/Github"; sourceTree = "<group>"; };
-		04MCPCOR2F2E000100000001 /* MCPCore */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = MCPCore; path = "Local Packages/MCPCore"; sourceTree = "<group>"; };
+
 		04PEELUI2F2E000100000001 /* PeelUI */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = PeelUI; path = "Local Packages/PeelUI"; sourceTree = "<group>"; };
 		0A11B6D02F1234567890ABCD /* PeelApp_iOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeelApp_iOS.swift; sourceTree = "<group>"; };
 		0B1E3C9B2FABCDEF00112233 /* DataServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataServiceTests.swift; sourceTree = "<group>"; };
@@ -147,6 +146,7 @@
 				Services/VSCodeService.swift,
 				Services/WorkspaceDashboardService.swift,
 				Services/WorktreeErrors.swift,
+				Views/PeonPingSettingsTab.swift,
 			);
 			target = 04A7BD69258E77D8000E55A8 /* Peel (iOS) */;
 		};
@@ -210,11 +210,9 @@
 		042D2CC32891E44100E162D3 /* Packages */ = {
 			isa = PBXGroup;
 			children = (
-				04ASTCHK2F2E000100000001 /* ASTChunker */,
 				048086642A2D21A300536A3E /* Brew */,
 				04510A5E2A2D20F1001DEF5B /* Git */,
 				04F582A6269FD388003A8403 /* Github */,
-				04MCPCOR2F2E000100000001 /* MCPCore */,
 				04PEELUI2F2E000100000001 /* PeelUI */,
 				04PIISCR2F2E000100000001 /* PIIScrubber */,
 			);
@@ -356,10 +354,13 @@
 				03MLXLMC2F30000100000002 /* MLXLMCommon */,
 				04ASTCHK2F2E000100000003 /* ASTChunker */,
 				04PIISCR2F2E000100000003 /* PIIScrubber */,
+				04MCPCOR2F2E000100000004 /* MCPCore */,
 				04A236472F2E34510055F436 /* FirebaseAppCheck */,
 				04A236492F2E34510055F436 /* FirebaseAuth */,
 				04A2364B2F2E34510055F436 /* FirebaseFirestore */,
 				04A2364D2F2E34510055F436 /* FirebaseFunctions */,
+				04RAGCOR2F3C000100000003 /* RAGCore */,
+				04MCPCOR2F2E000100000004 /* MCPCore */,
 			);
 			productName = "Peel (macOS)";
 			productReference = 04A7BD72258E77D8000E55A8 /* Peel.app */;
@@ -441,8 +442,9 @@
 				046C6AAE2F1BE07D006CDAC7 /* XCRemoteSwiftPackageReference "TaskRunner" */,
 				03BPETOK2F2A000100000003 /* XCRemoteSwiftPackageReference "swift-bpe-tokenizer" */,
 				03MLXEMB2F2B000100000003 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
-				04LOCPKG0001000000000001 /* XCLocalSwiftPackageReference "Local Packages/ASTChunker" */,
-				04LOCPKG0002000000000001 /* XCLocalSwiftPackageReference "Local Packages/MCPCore" */,
+				04REMPKG0001000000000001 /* XCRemoteSwiftPackageReference "ast-chunker" */,
+				04REMPKG0002000000000001 /* XCRemoteSwiftPackageReference "MCPCore" */,
+				04REMPKG0003000000000001 /* XCRemoteSwiftPackageReference "RAGCore" */,
 				04LOCPKG0003000000000001 /* XCLocalSwiftPackageReference "Local Packages/PeelUI" */,
 				04LOCPKG0004000000000001 /* XCLocalSwiftPackageReference "Local Packages/Git" */,
 				04LOCPKG0005000000000001 /* XCLocalSwiftPackageReference "Local Packages/Github" */,
@@ -504,7 +506,6 @@
 			inputFileListPaths = (
 			);
 			inputPaths = (
-				"$(SRCROOT)/Local Packages/ASTChunker/Sources/ASTChunkerCLI/main.swift",
 			);
 			name = "Build ast-chunker-cli";
 			outputFileListPaths = (
@@ -514,7 +515,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/zsh;
-			shellScript = "set -e\ncd \"${PROJECT_DIR}/Local Packages/ASTChunker\"\n\n# Check if rebuild needed\nBINARY=\"${PROJECT_DIR}/Tools/Binaries/ast-chunker-cli\"\nif [ ! -f \"$BINARY\" ] || [ -n \"$(find Sources -newer \"$BINARY\" -type f -name '*.swift' 2>/dev/null)\" ]; then\n    echo \"Building ast-chunker-cli...\"\n    swift build -c release --product ast-chunker-cli\n    mkdir -p \"${PROJECT_DIR}/Tools/Binaries\"\n    cp \".build/release/ast-chunker-cli\" \"$BINARY\"\n    echo \"ast-chunker-cli built successfully\"\nelse\n    echo \"ast-chunker-cli is up to date\"\nfi\n";
+			shellScript = "set -e\nBINARY=\"${PROJECT_DIR}/Tools/Binaries/ast-chunker-cli\"\nCACHE_DIR=\"${PROJECT_DIR}/.build/ast-chunker-checkout\"\nREPO_URL=\"https://github.com/crunchybananas/ast-chunker.git\"\n\nmkdir -p \"${PROJECT_DIR}/Tools/Binaries\"\n\n# Clone or update the repo\nif [ ! -d \"$CACHE_DIR/.git\" ]; then\n    echo \"Cloning ast-chunker...\"\n    git clone --depth 1 \"$REPO_URL\" \"$CACHE_DIR\"\nelse\n    echo \"Updating ast-chunker...\"\n    cd \"$CACHE_DIR\" && git pull --ff-only 2>/dev/null || true\nfi\n\ncd \"$CACHE_DIR\"\n\n# Check if rebuild needed\nif [ ! -f \"$BINARY\" ] || [ -n \"$(find Sources -newer \"$BINARY\" -type f -name '*.swift' 2>/dev/null)\" ]; then\n    echo \"Building ast-chunker-cli...\"\n    swift build -c release --product ast-chunker-cli\n    cp \".build/release/ast-chunker-cli\" \"$BINARY\"\n    echo \"ast-chunker-cli built successfully\"\nelse\n    echo \"ast-chunker-cli is up to date\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -1080,14 +1081,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		04LOCPKG0001000000000001 /* XCLocalSwiftPackageReference "Local Packages/ASTChunker" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = "Local Packages/ASTChunker";
-		};
-		04LOCPKG0002000000000001 /* XCLocalSwiftPackageReference "Local Packages/MCPCore" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = "Local Packages/MCPCore";
-		};
+
 		04LOCPKG0003000000000001 /* XCLocalSwiftPackageReference "Local Packages/PeelUI" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = "Local Packages/PeelUI";
@@ -1149,6 +1143,30 @@
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 2.2.0;
+			};
+		};
+		04REMPKG0001000000000001 /* XCRemoteSwiftPackageReference "ast-chunker" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/crunchybananas/ast-chunker.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.0;
+			};
+		};
+		04REMPKG0002000000000001 /* XCRemoteSwiftPackageReference "MCPCore" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/crunchybananas/MCPCore.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.0;
+			};
+		};
+		04REMPKG0003000000000001 /* XCRemoteSwiftPackageReference "RAGCore" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/crunchybananas/RAGCore.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.0;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
@@ -1226,7 +1244,7 @@
 		};
 		04ASTCHK2F2E000100000003 /* ASTChunker */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 04LOCPKG0001000000000001 /* XCLocalSwiftPackageReference "Local Packages/ASTChunker" */;
+			package = 04REMPKG0001000000000001 /* XCRemoteSwiftPackageReference "ast-chunker" */;
 			productName = ASTChunker;
 		};
 		04PIISCR2F2E000100000003 /* PIIScrubber */ = {
@@ -1238,6 +1256,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 04DD2F49269E6AED000994E1 /* XCRemoteSwiftPackageReference "OAuthSwift" */;
 			productName = OAuthSwift;
+		};
+		04RAGCOR2F3C000100000003 /* RAGCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 04REMPKG0003000000000001 /* XCRemoteSwiftPackageReference "RAGCore" */;
+			productName = RAGCore;
+		};
+		04MCPCOR2F2E000100000004 /* MCPCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 04REMPKG0002000000000001 /* XCRemoteSwiftPackageReference "MCPCore" */;
+			productName = MCPCore;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
