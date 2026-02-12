@@ -140,7 +140,6 @@ extension MCPServerService: RAGToolsHandlerDelegate {
       repoPath: report.repoPath,
       filesIndexed: report.filesIndexed,
       filesSkipped: report.filesSkipped,
-      filesRemoved: report.filesRemoved,
       chunksIndexed: report.chunksIndexed,
       bytesScanned: report.bytesScanned,
       durationMs: report.durationMs,
