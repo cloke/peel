@@ -910,9 +910,8 @@ struct RAGRepositoryCardView: View {
       
       let remaining = await MainActor.run { analysisState.unanalyzedCount }
       if remaining == 0 {
-        // Analysis complete — auto-enrich embeddings with AI summaries
-        await enrichAfterAnalysis()
-        
+        // Clear analyzing state FIRST so UI shows "Complete" without
+        // simultaneously showing the running state (Pause button, chunks/sec, etc.)
         await MainActor.run {
           if let startTime = analysisState.analysisStartTime, analysisState.sessionChunksAnalyzed > 0 {
             let duration = Date().timeIntervalSince(startTime)
@@ -924,6 +923,9 @@ struct RAGRepositoryCardView: View {
           analysisState.sessionChunksAnalyzed = 0
           analysisState.analysisStartTime = nil
         }
+        
+        // Auto-enrich embeddings with AI summaries (runs after UI is updated)
+        await enrichAfterAnalysis()
         return
       }
       
