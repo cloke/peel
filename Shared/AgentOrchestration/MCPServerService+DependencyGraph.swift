@@ -226,8 +226,11 @@ extension MCPServerService {
 
   /// Delete a repository from the RAG index
   public func deleteRagRepo(repoId: String) async throws -> Int {
+    print("[RAG] deleteRagRepo called with repoId=\(repoId)")
     let deleted = try await localRagStore.deleteRepo(repoId: repoId)
+    print("[RAG] deleteRagRepo: localRagStore.deleteRepo returned \(deleted) files deleted")
     await refreshRagSummary()
+    print("[RAG] deleteRagRepo: refreshRagSummary complete, ragRepos count=\(ragRepos.count)")
     return deleted
   }
   

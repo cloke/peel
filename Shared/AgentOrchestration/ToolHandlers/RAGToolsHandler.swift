@@ -711,6 +711,7 @@ final class RAGToolsHandler: MCPToolHandler {
         "repoPath": report.repoPath,
         "filesIndexed": report.filesIndexed,
         "filesSkipped": report.filesSkipped,
+        "filesRemoved": report.filesRemoved,
         "chunksIndexed": report.chunksIndexed,
         "bytesScanned": report.bytesScanned,
         "durationMs": report.durationMs,
@@ -2101,6 +2102,7 @@ struct RAGToolIndexReport {
   let repoPath: String
   let filesIndexed: Int
   let filesSkipped: Int
+  let filesRemoved: Int
   let chunksIndexed: Int
   let bytesScanned: Int
   let durationMs: Int
@@ -2108,11 +2110,12 @@ struct RAGToolIndexReport {
   let embeddingDurationMs: Int
   let subReports: [RAGToolIndexReport]
   
-  init(repoId: String, repoPath: String, filesIndexed: Int, filesSkipped: Int, chunksIndexed: Int, bytesScanned: Int, durationMs: Int, embeddingCount: Int, embeddingDurationMs: Int, subReports: [RAGToolIndexReport] = []) {
+  init(repoId: String, repoPath: String, filesIndexed: Int, filesSkipped: Int, filesRemoved: Int = 0, chunksIndexed: Int, bytesScanned: Int, durationMs: Int, embeddingCount: Int, embeddingDurationMs: Int, subReports: [RAGToolIndexReport] = []) {
     self.repoId = repoId
     self.repoPath = repoPath
     self.filesIndexed = filesIndexed
     self.filesSkipped = filesSkipped
+    self.filesRemoved = filesRemoved
     self.chunksIndexed = chunksIndexed
     self.bytesScanned = bytesScanned
     self.durationMs = durationMs

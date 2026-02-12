@@ -19,6 +19,7 @@ struct LocalRAGIndexReport: Sendable {
   let repoPath: String
   let filesIndexed: Int
   let filesSkipped: Int
+  let filesRemoved: Int
   let chunksIndexed: Int
   let bytesScanned: Int
   let durationMs: Int
@@ -35,7 +36,8 @@ struct LocalRAGIndexReport: Sendable {
 
   init(
     repoId: String, repoPath: String,
-    filesIndexed: Int, filesSkipped: Int, chunksIndexed: Int, bytesScanned: Int,
+    filesIndexed: Int, filesSkipped: Int, filesRemoved: Int = 0,
+    chunksIndexed: Int, bytesScanned: Int,
     durationMs: Int, embeddingCount: Int, embeddingDurationMs: Int,
     astFilesChunked: Int, lineFilesChunked: Int, chunkingFailures: Int,
     subReports: [LocalRAGIndexReport] = []
@@ -44,6 +46,7 @@ struct LocalRAGIndexReport: Sendable {
     self.repoPath = repoPath
     self.filesIndexed = filesIndexed
     self.filesSkipped = filesSkipped
+    self.filesRemoved = filesRemoved
     self.chunksIndexed = chunksIndexed
     self.bytesScanned = bytesScanned
     self.durationMs = durationMs
@@ -1744,6 +1747,29 @@ actor LocalRAGStore {
       throw LocalRAGError.sqlite("Must provide repoId or repoPath")
     }
 
+    print("[RAG] deleteRepo: targetId=\(targetId)")
+
+    // Helper to execute a DELETE and check for errors
+    func execDelete(_ sql: String, label: String) throws {
+      var stmt: OpaquePointer?
+      let prepareResult = sqlite3_prepare_v2(db, sql, -1, &stmt, nil)
+      guard prepareResult == SQLITE_OK, let stmt else {
+        let msg = String(cString: sqlite3_errmsg(db))
+        print("[RAG] deleteRepo: PREPARE failed for \(label): \(msg)")
+        throw LocalRAGError.sqlite("deleteRepo \(label) prepare failed: \(msg)")
+      }
+      defer { sqlite3_finalize(stmt) }
+      sqlite3_bind_text(stmt, 1, targetId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+      let stepResult = sqlite3_step(stmt)
+      if stepResult != SQLITE_DONE {
+        let msg = String(cString: sqlite3_errmsg(db))
+        print("[RAG] deleteRepo: STEP failed for \(label): code=\(stepResult) msg=\(msg)")
+        throw LocalRAGError.sqlite("deleteRepo \(label) failed: \(msg)")
+      }
+      let changes = sqlite3_changes(db)
+      print("[RAG] deleteRepo: \(label) removed \(changes) rows")
+    }
+
     // Count files before deletion
     let countSql = "SELECT COUNT(*) FROM files WHERE repo_id = ?"
     var countStmt: OpaquePointer?
@@ -1754,65 +1780,60 @@ actor LocalRAGStore {
     if sqlite3_step(countStmt) == SQLITE_ROW {
       deletedFiles = Int(sqlite3_column_int(countStmt, 0))
     }
+    print("[RAG] deleteRepo: repo has \(deletedFiles) files to delete")
 
     // Delete from vec_chunks first (virtual table - CASCADE doesn't apply)
     if extensionLoaded {
-      let deleteVecSql = """
+      try execDelete("""
         DELETE FROM vec_chunks WHERE chunk_id IN (
           SELECT c.id FROM chunks c
           JOIN files f ON c.file_id = f.id
           WHERE f.repo_id = ?
         )
-        """
-      var vecStmt: OpaquePointer?
-      sqlite3_prepare_v2(db, deleteVecSql, -1, &vecStmt, nil)
-      defer { sqlite3_finalize(vecStmt) }
-      sqlite3_bind_text(vecStmt, 1, targetId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
-      sqlite3_step(vecStmt)
+        """, label: "vec_chunks")
     }
 
-    // Delete orphaned embeddings (chunks that belong to files of this repo)
-    let deleteEmbeddingsSql = """
+    // Delete dependencies
+    try execDelete("""
+      DELETE FROM dependencies WHERE chunk_id IN (
+        SELECT c.id FROM chunks c
+        JOIN files f ON c.file_id = f.id
+        WHERE f.repo_id = ?
+      )
+      """, label: "dependencies")
+
+    // Delete symbol_refs
+    try execDelete("""
+      DELETE FROM symbol_refs WHERE chunk_id IN (
+        SELECT c.id FROM chunks c
+        JOIN files f ON c.file_id = f.id
+        WHERE f.repo_id = ?
+      )
+      """, label: "symbol_refs")
+
+    // Delete embeddings
+    try execDelete("""
       DELETE FROM embeddings WHERE chunk_id IN (
         SELECT c.id FROM chunks c
         JOIN files f ON c.file_id = f.id
         WHERE f.repo_id = ?
       )
-      """
-    var embStmt: OpaquePointer?
-    sqlite3_prepare_v2(db, deleteEmbeddingsSql, -1, &embStmt, nil)
-    defer { sqlite3_finalize(embStmt) }
-    sqlite3_bind_text(embStmt, 1, targetId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
-    sqlite3_step(embStmt)
+      """, label: "embeddings")
 
     // Delete chunks
-    let deleteChunksSql = """
+    try execDelete("""
       DELETE FROM chunks WHERE file_id IN (
         SELECT id FROM files WHERE repo_id = ?
       )
-      """
-    var chunkStmt: OpaquePointer?
-    sqlite3_prepare_v2(db, deleteChunksSql, -1, &chunkStmt, nil)
-    defer { sqlite3_finalize(chunkStmt) }
-    sqlite3_bind_text(chunkStmt, 1, targetId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
-    sqlite3_step(chunkStmt)
+      """, label: "chunks")
 
     // Delete files
-    let deleteFilesSql = "DELETE FROM files WHERE repo_id = ?"
-    var fileStmt: OpaquePointer?
-    sqlite3_prepare_v2(db, deleteFilesSql, -1, &fileStmt, nil)
-    defer { sqlite3_finalize(fileStmt) }
-    sqlite3_bind_text(fileStmt, 1, targetId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
-    sqlite3_step(fileStmt)
+    try execDelete("DELETE FROM files WHERE repo_id = ?", label: "files")
 
     // Delete repo
-    let deleteRepoSql = "DELETE FROM repos WHERE id = ?"
-    var repoStmt: OpaquePointer?
-    sqlite3_prepare_v2(db, deleteRepoSql, -1, &repoStmt, nil)
-    defer { sqlite3_finalize(repoStmt) }
-    sqlite3_bind_text(repoStmt, 1, targetId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
-    sqlite3_step(repoStmt)
+    try execDelete("DELETE FROM repos WHERE id = ?", label: "repo")
 
+    print("[RAG] deleteRepo: completed, \(deletedFiles) files removed")
     return deletedFiles
   }
 
@@ -1835,12 +1856,15 @@ actor LocalRAGStore {
 
     let repoURL = URL(fileURLWithPath: path)
     let workspaceRepos = detectWorkspaceRepos(rootURL: repoURL)
-    let subPackages = detectSubPackages(rootURL: repoURL, excludingGitRepos: workspaceRepos)
-    let allSubPaths = workspaceRepos + subPackages
 
-    // Workspace auto-indexing: if sub-repos or sub-packages are found,
-    // auto-index each one as a separate repo entry with parent_repo_id (#262)
-    if allSubPaths.count >= 2 && !allowWorkspace {
+    // Workspace auto-indexing: only split into sub-indexes when multiple
+    // separate git repos are detected (e.g., a workspace folder containing
+    // several cloned repos). Sub-packages within a single repo (nested
+    // package.json, Package.swift, etc.) should NOT cause splitting — those
+    // are part of the same codebase and belong in one index.
+    if workspaceRepos.count >= 2 && !allowWorkspace {
+      let subPackages = detectSubPackages(rootURL: repoURL, excludingGitRepos: workspaceRepos)
+      let allSubPaths = workspaceRepos + subPackages
       let parentRepoId = stableId(for: path)
       let parentName = repoURL.lastPathComponent
       let now = dateFormatter.string(from: Date())
@@ -1850,7 +1874,7 @@ actor LocalRAGStore {
       try upsertRepo(id: parentRepoId, name: parentName, rootPath: path, lastIndexedAt: now, repoIdentifier: parentIdentifier, parentRepoId: nil)
 
       var subReports: [LocalRAGIndexReport] = []
-      var totalFiles = 0, totalSkipped = 0, totalChunks = 0
+      var totalFiles = 0, totalSkipped = 0, totalRemoved = 0, totalChunks = 0
       var totalBytes = 0, totalEmbeddings = 0, totalEmbeddingMs = 0
       var totalAST = 0, totalLine = 0, totalFailures = 0
 
@@ -1877,6 +1901,7 @@ actor LocalRAGStore {
         subReports.append(subReport)
         totalFiles += subReport.filesIndexed
         totalSkipped += subReport.filesSkipped
+        totalRemoved += subReport.filesRemoved
         totalChunks += subReport.chunksIndexed
         totalBytes += subReport.bytesScanned
         totalEmbeddings += subReport.embeddingCount
@@ -1892,6 +1917,7 @@ actor LocalRAGStore {
         repoPath: path,
         filesIndexed: totalFiles,
         filesSkipped: totalSkipped,
+        filesRemoved: totalRemoved,
         chunksIndexed: totalChunks,
         bytesScanned: totalBytes,
         durationMs: durationMs,
@@ -1952,8 +1978,15 @@ actor LocalRAGStore {
     let memoryLimitGB = LocalRAGEmbeddingProviderFactory.mlxMemoryLimitGB
     print("[RAG] Memory limit set to \(String(format: "%.1f", memoryLimitGB)) GB")
 
+    // Throttle progress callbacks to avoid flooding the main thread
+    // For large repos (2000+ files), per-file callbacks can lock up the UI
+    let progressInterval = max(1, scannedFiles.count / 100)  // ~100 updates total
+    var lastEmbeddingProgressTime = Date.distantPast
+
     for (fileIndex, candidate) in scannedFiles.enumerated() {
-      progress?(.analyzing(current: fileIndex + 1, total: scannedFiles.count, fileName: URL(fileURLWithPath: candidate.path).lastPathComponent))
+      if fileIndex % progressInterval == 0 {
+        progress?(.analyzing(current: fileIndex + 1, total: scannedFiles.count, fileName: URL(fileURLWithPath: candidate.path).lastPathComponent))
+      }
       
       // Memory pressure check - aggressively clear caches if approaching limit
       if fileIndex % memoryCheckInterval == 0 {
@@ -2043,7 +2076,6 @@ actor LocalRAGStore {
       }
 
       if !missingEmbeddings.isEmpty {
-        progress?(.embedding(current: 0, total: missingEmbeddings.count))
         let embedStart = Date()
 
         for batchStart in stride(from: 0, to: missingEmbeddings.count, by: embeddingBatchSize) {
@@ -2061,7 +2093,12 @@ actor LocalRAGStore {
             }
           }
 
-          progress?(.embedding(current: batchEnd, total: missingEmbeddings.count))
+          // Throttle embedding progress — at most once per second
+          let now = Date()
+          if now.timeIntervalSince(lastEmbeddingProgressTime) >= 1.0 {
+            lastEmbeddingProgressTime = now
+            progress?(.embedding(current: batchEnd, total: missingEmbeddings.count))
+          }
 
           // Always clear MLX cache after each batch to prevent memory accumulation
           // This is critical for preventing unbounded memory growth on large repos
@@ -2072,13 +2109,14 @@ actor LocalRAGStore {
 
         let embedDuration = Int(Date().timeIntervalSince(embedStart) * 1000)
         embeddingDurationMs += embedDuration
-        progress?(.embedding(current: missingEmbeddings.count, total: missingEmbeddings.count))
         
         // Clear embedding cache after storing to DB - no need to keep in memory
         embeddingCache.removeAll(keepingCapacity: false)
       }
 
-      progress?(.storing(current: filesIndexed + 1, total: scannedFiles.count))
+      if filesIndexed % progressInterval == 0 {
+        progress?(.storing(current: filesIndexed + 1, total: scannedFiles.count))
+      }
       
       // Extract facets for filtering/grouping
       let modulePath = extractModulePath(from: relativePath)
@@ -2177,6 +2215,18 @@ actor LocalRAGStore {
     }
     logMemory("index complete")
     
+    // Prune files from the index that no longer exist on disk
+    let currentPaths = Set(scannedFiles.map { file -> String in
+      let filePath = file.path
+      return filePath.hasPrefix(path + "/")
+        ? String(filePath.dropFirst(path.count + 1))
+        : filePath
+    })
+    let filesRemovedCount = try pruneDeletedFiles(repoId: repoId, currentPaths: currentPaths)
+    if filesRemovedCount > 0 {
+      print("[RAG] Pruned \(filesRemovedCount) deleted files from index")
+    }
+    
     // Log AST stats and memory stats
     print("[RAG] AST stats: \(astFilesChunked) AST, \(lineFilesChunked) line-based, \(chunkingFailures) failures")
     if memoryPauseCount > 0 {
@@ -2189,6 +2239,7 @@ actor LocalRAGStore {
       repoPath: path,
       filesIndexed: filesIndexed,
       filesSkipped: skippedUnchanged,
+      filesRemoved: filesRemovedCount,
       chunksIndexed: chunkCount,
       bytesScanned: bytesScanned,
       durationMs: durationMs,
@@ -5026,6 +5077,59 @@ actor LocalRAGStore {
     try execute(sql: sql) { statement in
       bindText(statement, 1, fileId)
     }
+  }
+
+  /// Remove files from the index that no longer exist on disk.
+  /// Cascades to chunks → embeddings via FK constraints; vec_chunks
+  /// must be cleaned explicitly since virtual tables don't support CASCADE.
+  private func pruneDeletedFiles(repoId: String, currentPaths: Set<String>) throws -> Int {
+    guard let db else {
+      throw LocalRAGError.sqlite("Database not initialized")
+    }
+
+    // Fetch all indexed paths for this repo
+    let sql = "SELECT id, path FROM files WHERE repo_id = ?"
+    var statement: OpaquePointer?
+    let result = sqlite3_prepare_v2(db, sql, -1, &statement, nil)
+    guard result == SQLITE_OK, let statement else {
+      let message = String(cString: sqlite3_errmsg(db))
+      throw LocalRAGError.sqlite(message)
+    }
+    defer { sqlite3_finalize(statement) }
+    bindText(statement, 1, repoId)
+
+    var staleFiles: [(id: String, path: String)] = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+      guard let idPtr = sqlite3_column_text(statement, 0),
+            let pathPtr = sqlite3_column_text(statement, 1) else { continue }
+      let fileId = String(cString: idPtr)
+      let filePath = String(cString: pathPtr)
+      if !currentPaths.contains(filePath) {
+        staleFiles.append((id: fileId, path: filePath))
+      }
+    }
+
+    guard !staleFiles.isEmpty else { return 0 }
+
+    for staleFile in staleFiles {
+      // vec_chunks first (virtual table — no CASCADE)
+      if extensionLoaded {
+        let vecSql = "DELETE FROM vec_chunks WHERE chunk_id IN (SELECT id FROM chunks WHERE file_id = ?)"
+        try execute(sql: vecSql) { stmt in
+          bindText(stmt, 1, staleFile.id)
+        }
+      }
+      // Delete dependencies and symbol refs
+      try deleteDependencies(for: staleFile.id)
+      try deleteSymbolRefs(for: staleFile.id)
+      // Delete the file row — chunks and embeddings cascade
+      let delSql = "DELETE FROM files WHERE id = ?"
+      try execute(sql: delSql) { stmt in
+        bindText(stmt, 1, staleFile.id)
+      }
+    }
+
+    return staleFiles.count
   }
 
   private func execute(sql: String, binder: (OpaquePointer) -> Void) throws {

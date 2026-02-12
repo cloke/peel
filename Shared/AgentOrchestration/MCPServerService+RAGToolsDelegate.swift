@@ -140,6 +140,7 @@ extension MCPServerService: RAGToolsHandlerDelegate {
       repoPath: report.repoPath,
       filesIndexed: report.filesIndexed,
       filesSkipped: report.filesSkipped,
+      filesRemoved: report.filesRemoved,
       chunksIndexed: report.chunksIndexed,
       bytesScanned: report.bytesScanned,
       durationMs: report.durationMs,
@@ -166,7 +167,9 @@ extension MCPServerService: RAGToolsHandlerDelegate {
   }
   
   func deleteRagRepo(repoId: String?, repoPath: String?) async throws -> Int {
-    return try await localRagStore.deleteRepo(repoId: repoId, repoPath: repoPath)
+    let deleted = try await localRagStore.deleteRepo(repoId: repoId, repoPath: repoPath)
+    await refreshRagSummary()
+    return deleted
   }
   
   func getIndexStats(repoPath: String) async throws -> RAGToolIndexStats {

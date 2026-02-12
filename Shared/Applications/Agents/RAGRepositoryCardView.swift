@@ -102,6 +102,8 @@ struct RAGRepositoryCardView: View {
   @State private var errorMessage: String?
   @State private var showForceReindexConfirm: Bool = false
   @State private var showForceReanalyzeConfirm: Bool = false
+  @State private var showDeleteConfirm: Bool = false
+  @State private var isDeleting: Bool = false
   
   // Computed status
   private var status: RAGRepoStatus {
@@ -771,18 +773,40 @@ struct RAGRepositoryCardView: View {
   private var actionsFooter: some View {
     HStack {
       Button(role: .destructive) {
-        Task {
-          do {
-            _ = try await mcpServer.deleteRagRepo(repoId: repo.id)
-          } catch {
-            errorMessage = error.localizedDescription
-          }
-        }
+        showDeleteConfirm = true
       } label: {
-        Label("Remove from Index", systemImage: "trash")
+        if isDeleting {
+          ProgressView()
+            .scaleEffect(0.6)
+        } else {
+          Label("Remove from Index", systemImage: "trash")
+        }
       }
       .buttonStyle(.bordered)
       .controlSize(.small)
+      .disabled(isDeleting)
+      .confirmationDialog(
+        "Remove \"\(repo.name)\" from Index?",
+        isPresented: $showDeleteConfirm,
+        titleVisibility: .visible
+      ) {
+        Button("Remove", role: .destructive) {
+          Task {
+            isDeleting = true
+            defer { isDeleting = false }
+            do {
+              print("[RAG-UI] Delete button tapped for repo: \(repo.name) id=\(repo.id)")
+              let deleted = try await mcpServer.deleteRagRepo(repoId: repo.id)
+              print("[RAG-UI] Delete completed: \(deleted) files removed")
+            } catch {
+              print("[RAG-UI] Delete failed: \(error)")
+              errorMessage = error.localizedDescription
+            }
+          }
+        }
+      } message: {
+        Text("This will remove \(repo.fileCount) files and \(repo.chunkCount) chunks from the index. You can re-index later.")
+      }
       
       Spacer()
       
