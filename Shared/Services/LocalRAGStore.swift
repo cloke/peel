@@ -1794,22 +1794,10 @@ actor LocalRAGStore {
     }
 
     // Delete dependencies
-    try execDelete("""
-      DELETE FROM dependencies WHERE chunk_id IN (
-        SELECT c.id FROM chunks c
-        JOIN files f ON c.file_id = f.id
-        WHERE f.repo_id = ?
-      )
-      """, label: "dependencies")
+    try execDelete("DELETE FROM dependencies WHERE repo_id = ?", label: "dependencies")
 
     // Delete symbol_refs
-    try execDelete("""
-      DELETE FROM symbol_refs WHERE chunk_id IN (
-        SELECT c.id FROM chunks c
-        JOIN files f ON c.file_id = f.id
-        WHERE f.repo_id = ?
-      )
-      """, label: "symbol_refs")
+    try execDelete("DELETE FROM symbol_refs WHERE repo_id = ?", label: "symbol_refs")
 
     // Delete embeddings
     try execDelete("""
