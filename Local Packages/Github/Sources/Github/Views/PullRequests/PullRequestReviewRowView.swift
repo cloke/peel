@@ -6,36 +6,69 @@
 //
 
 import SwiftUI
+import MarkdownUI
 
 struct PullRequestReviewRowView: View {
   let organization: Github.User?
   let repository: Github.Repository
   let pullNumber: Int
-  
+
   @State private var reviews = [Github.Review]()
-  
+  @State private var expandedReviewIds = Set<Int>()
+
   var body: some View {
     if !reviews.isEmpty {
-      VStack(alignment: .leading, spacing: 8) {
+      VStack(alignment: .leading, spacing: 10) {
         ForEach(deduplicatedReviews) { review in
-          HStack(spacing: 10) {
-            AvatarView(url: URL(string: review.user.avatar_url), maxWidth: 24, maxHeight: 24)
-              .frame(width: 24, height: 24)
+          VStack(alignment: .leading, spacing: 6) {
+            Button {
+              withAnimation(.easeInOut(duration: 0.2)) {
+                if expandedReviewIds.contains(review.id) {
+                  expandedReviewIds.remove(review.id)
+                } else {
+                  expandedReviewIds.insert(review.id)
+                }
+              }
+            } label: {
+              HStack(spacing: 10) {
+                AvatarView(url: URL(string: review.user.avatar_url), maxWidth: 24, maxHeight: 24)
+                  .frame(width: 24, height: 24)
 
-            VStack(alignment: .leading, spacing: 1) {
-              Text(review.user.publicName)
-                .font(.callout)
-              if !review.body.isEmpty {
-                Text(review.body)
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
-                  .lineLimit(2)
+                VStack(alignment: .leading, spacing: 1) {
+                  Text(review.user.publicName)
+                    .font(.callout)
+                  if !review.body.isEmpty && !expandedReviewIds.contains(review.id) {
+                    Text(review.body)
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                      .lineLimit(2)
+                  }
+                }
+
+                Spacer()
+
+                ReviewStateBadge(state: review.state)
+
+                if !review.body.isEmpty {
+                  Image(systemName: expandedReviewIds.contains(review.id) ? "chevron.up" : "chevron.down")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                }
               }
             }
+            .buttonStyle(.plain)
 
-            Spacer()
+            if expandedReviewIds.contains(review.id) && !review.body.isEmpty {
+              Markdown(Document(stringLiteral: review.body))
+                .font(.callout)
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 8))
+            }
+          }
 
-            ReviewStateBadge(state: review.state)
+          if review.id != deduplicatedReviews.last?.id {
+            Divider()
           }
         }
       }

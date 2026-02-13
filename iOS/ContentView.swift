@@ -11,8 +11,7 @@ import SwiftUI
 /// Available tools for iOS
 /// Note: Workspaces and Agents are macOS-only due to terminal/VM requirements
 enum iOSTool: String, CaseIterable, Identifiable {
-  case github = "GitHub"
-  case git = "Git"
+  case repositories = "Repositories"
   case brew = "Brew"
   case agents = "Agents"
   
@@ -20,8 +19,7 @@ enum iOSTool: String, CaseIterable, Identifiable {
   
   var icon: String {
     switch self {
-    case .github: "person.2.fill"
-    case .git: "arrow.triangle.branch"
+    case .repositories: "tray.full.fill"
     case .brew: "mug.fill"
     case .agents: "cpu.fill"
     }
@@ -30,16 +28,12 @@ enum iOSTool: String, CaseIterable, Identifiable {
 
 /// Entry point for iOS
 struct ContentView: View {
-  @State private var selectedTool: iOSTool = .github
+  @State private var selectedTool: iOSTool = .repositories
   
   var body: some View {
     TabView(selection: $selectedTool) {
-      Tab(iOSTool.github.rawValue, systemImage: iOSTool.github.icon, value: .github) {
-        Github_RootView()
-      }
-      
-      Tab(iOSTool.git.rawValue, systemImage: iOSTool.git.icon, value: .git) {
-        GitUnavailableView()
+      Tab(iOSTool.repositories.rawValue, systemImage: iOSTool.repositories.icon, value: .repositories) {
+        Repositories_RootView(initialScope: .remote)
       }
       
       Tab(iOSTool.brew.rawValue, systemImage: iOSTool.brew.icon, value: .brew) {
@@ -49,24 +43,6 @@ struct ContentView: View {
       Tab(iOSTool.agents.rawValue, systemImage: iOSTool.agents.icon, value: .agents) {
         AgentsUnavailableView()
       }
-    }
-  }
-}
-
-/// Placeholder for Git tab on iOS
-struct GitUnavailableView: View {
-  var body: some View {
-    NavigationStack {
-      ContentUnavailableView {
-        Label("Git Repositories", systemImage: "arrow.triangle.branch")
-      } description: {
-        Text("Local git repository management requires filesystem access and is only available on macOS.")
-      } actions: {
-        Text("Use the GitHub tab to browse your remote repositories.")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      }
-      .navigationTitle("Git")
     }
   }
 }
