@@ -89,6 +89,8 @@ struct Github_RootView: View {
                       Image(systemName: "book.closed")
                         .foregroundStyle(.secondary)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                   }
                 }
               } else {
@@ -101,6 +103,8 @@ struct Github_RootView: View {
                       Image(systemName: "book.closed")
                         .foregroundStyle(.secondary)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                   }
                 }
               }
@@ -145,6 +149,7 @@ struct Github_RootView: View {
                     .foregroundStyle(.tertiary)
                     .monospacedDigit()
                 }
+                .contentShape(Rectangle())
               }
             }
           } header: {
@@ -211,6 +216,8 @@ struct Github_RootView: View {
             Divider()
             NavigationLink(destination: PersonalView(organizations: organizations)) {
               ProfileNameView(me: me)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .padding(.horizontal)
