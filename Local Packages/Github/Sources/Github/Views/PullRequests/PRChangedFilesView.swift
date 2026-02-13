@@ -2,7 +2,7 @@
 //  PRChangedFilesView.swift
 //  Github
 //
-//  Shows files changed in a pull request with expandable diffs.
+//  Shows files changed in a pull request with expandable inline diffs.
 //  Reuses Git.DiffView for rendering patches.
 //
 
@@ -17,7 +17,8 @@ struct PRChangedFilesView: View {
   let pullNumber: Int
 
   @State private var files: [Github.PRFile] = []
-  @State private var diff: Diff?
+  @State private var fileDiffs: [String: Diff] = [:]  // filename -> parsed Diff
+  @State private var expandedFiles: Set<String> = []
   @State private var isLoading = true
   @State private var error: String?
 
@@ -66,24 +67,63 @@ struct PRChangedFilesView: View {
           .frame(maxWidth: .infinity, alignment: .leading)
           .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 10))
       } else {
-        // File list
+        // Expand/collapse all
+        HStack(spacing: 12) {
+          Button {
+            if expandedFiles.count == files.count {
+              expandedFiles.removeAll()
+            } else {
+              expandedFiles = Set(files.map(\.filename))
+            }
+          } label: {
+            Text(expandedFiles.count == files.count ? "Collapse All" : "Expand All")
+              .font(.caption)
+          }
+          .buttonStyle(.plain)
+          .foregroundStyle(.secondary)
+        }
+
+        // File rows with inline diffs
         VStack(alignment: .leading, spacing: 0) {
           ForEach(files) { file in
-            FileRow(file: file)
+            VStack(alignment: .leading, spacing: 0) {
+              FileRow(
+                file: file,
+                isExpanded: expandedFiles.contains(file.filename)
+              ) {
+                if expandedFiles.contains(file.filename) {
+                  expandedFiles.remove(file.filename)
+                } else {
+                  expandedFiles.insert(file.filename)
+                }
+              }
+
+              if expandedFiles.contains(file.filename) {
+                if let diff = fileDiffs[file.filename], !diff.files.isEmpty {
+                  Git.DiffView(diff: diff)
+                    .frame(maxHeight: 400)
+                } else if file.patch == nil {
+                  HStack(spacing: 6) {
+                    Image(systemName: "doc.zipper")
+                      .foregroundStyle(.secondary)
+                    Text("Binary file — no diff available")
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                  }
+                  .padding(12)
+                  .frame(maxWidth: .infinity, alignment: .leading)
+                  .background(Color.secondary.opacity(0.04))
+                }
+              }
+            }
+
             if file.id != files.last?.id {
               Divider()
             }
           }
         }
-        .padding(4)
         .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 10))
-
-        // Diff view
-        if let diff, !diff.files.isEmpty {
-          Git.DiffView(diff: diff)
-            .frame(maxHeight: 600)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-        }
+        .clipShape(RoundedRectangle(cornerRadius: 10))
       }
     }
     .task {
@@ -120,12 +160,10 @@ struct PRChangedFilesView: View {
     do {
       files = try await Github.pullRequestFiles(owner: owner, repository: repo, number: pullNumber)
 
-      // Convert patches to a Diff for the DiffView
-      var patchLines = [String]()
+      // Parse each file's patch into its own Diff object
       for file in files {
         guard let patch = file.patch else { continue }
-        let lines = patch.components(separatedBy: "\n")
-        // Reconstruct a git diff header so processDiff can parse it
+        var patchLines = [String]()
         patchLines.append("diff --git a/\(file.filename) b/\(file.filename)")
         if file.status == "added" {
           patchLines.append("new file mode 100644")
@@ -138,10 +176,9 @@ struct PRChangedFilesView: View {
         }
         patchLines.append("--- a/\(file.previous_filename ?? file.filename)")
         patchLines.append("+++ b/\(file.filename)")
-        patchLines.append(contentsOf: lines)
-      }
-      if !patchLines.isEmpty {
-        diff = Commands.processDiff(lines: patchLines)
+        patchLines.append(contentsOf: patch.components(separatedBy: "\n"))
+
+        fileDiffs[file.filename] = Commands.processDiff(lines: patchLines)
       }
     } catch {
       self.error = "Failed to load files: \(error.localizedDescription)"
@@ -153,45 +190,57 @@ struct PRChangedFilesView: View {
 
 private struct FileRow: View {
   let file: Github.PRFile
+  let isExpanded: Bool
+  let onToggle: () -> Void
 
   var body: some View {
-    HStack(spacing: 8) {
-      Image(systemName: statusIcon)
-        .font(.caption)
-        .foregroundStyle(statusColor)
-        .frame(width: 16)
+    Button(action: onToggle) {
+      HStack(spacing: 8) {
+        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+          .font(.system(size: 10, weight: .semibold))
+          .foregroundStyle(.tertiary)
+          .frame(width: 12)
 
-      Text(file.filename)
-        .font(.callout.monospaced())
-        .lineLimit(1)
-        .truncationMode(.middle)
+        Image(systemName: statusIcon)
+          .font(.caption)
+          .foregroundStyle(statusColor)
+          .frame(width: 16)
 
-      Spacer()
+        Text(file.filename)
+          .font(.system(size: 13, design: .monospaced))
+          .lineLimit(1)
+          .truncationMode(.middle)
 
-      HStack(spacing: 6) {
-        if file.additions > 0 {
-          Text("+\(file.additions)")
-            .font(.caption2.monospaced())
-            .foregroundStyle(.green)
+        Spacer(minLength: 4)
+
+        HStack(spacing: 6) {
+          if file.additions > 0 {
+            Text("+\(file.additions)")
+              .font(.system(size: 11, design: .monospaced))
+              .foregroundStyle(.green)
+          }
+          if file.deletions > 0 {
+            Text("-\(file.deletions)")
+              .font(.system(size: 11, design: .monospaced))
+              .foregroundStyle(.red)
+          }
         }
-        if file.deletions > 0 {
-          Text("-\(file.deletions)")
-            .font(.caption2.monospaced())
-            .foregroundStyle(.red)
-        }
+
+        Text(file.status)
+          .font(.caption2)
+          .fontWeight(.medium)
+          .padding(.horizontal, 6)
+          .padding(.vertical, 2)
+          .background(statusColor.opacity(0.15))
+          .foregroundStyle(statusColor)
+          .clipShape(Capsule())
       }
-
-      Text(file.status)
-        .font(.caption2)
-        .fontWeight(.medium)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .background(statusColor.opacity(0.15))
-        .foregroundStyle(statusColor)
-        .clipShape(Capsule())
+      .padding(.horizontal, 10)
+      .padding(.vertical, 6)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .contentShape(Rectangle())
     }
-    .padding(.horizontal, 8)
-    .padding(.vertical, 4)
+    .buttonStyle(.plain)
   }
 
   private var statusIcon: String {
