@@ -44,6 +44,7 @@ struct Github_RootView: View {
   private enum GitHubAutomationDestination: Hashable {
     case favorite(String)
     case recentPR(String)
+    case personal
   }
 
   private func loadProfile() async {
@@ -214,7 +215,9 @@ struct Github_RootView: View {
         if hasToken, let me = viewModel.me {
           VStack(spacing: 0) {
             Divider()
-            NavigationLink(destination: PersonalView(organizations: organizations)) {
+            Button {
+              selectedAutomationDestination = .personal
+            } label: {
               ProfileNameView(me: me)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
@@ -439,6 +442,8 @@ struct Github_RootView: View {
           Text("PR not found")
             .foregroundStyle(.secondary)
         }
+      case .personal:
+        PersonalView(organizations: organizations)
       }
     } else if viewModel.me != nil {
       PersonalView(organizations: organizations)
