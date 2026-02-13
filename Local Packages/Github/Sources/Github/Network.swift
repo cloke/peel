@@ -158,7 +158,17 @@ extension Github {
   public static func pullRequestFiles(owner: String, repository: String, number: Int) async throws -> [Github.PRFile] {
     try await loadMany(url: "https://api.github.com/repos/\(owner)/\(repository)/pulls/\(number)/files?per_page=100")
   }
-  
+
+  /// Fetch general conversation comments on a PR (issue comments endpoint)
+  public static func issueComments(owner: String, repository: String, number: Int) async throws -> [Github.IssueComment] {
+    try await loadMany(url: "https://api.github.com/repos/\(owner)/\(repository)/issues/\(number)/comments?per_page=100")
+  }
+
+  /// Fetch inline review comments on a PR diff
+  public static func reviewComments(owner: String, repository: String, number: Int) async throws -> [Github.ReviewComment] {
+    try await loadMany(url: "https://api.github.com/repos/\(owner)/\(repository)/pulls/\(number)/comments?per_page=100")
+  }
+
   /// Fetch a user by login
   public static func user(login: String) async throws -> Github.User {
     try await load(url: "https://api.github.com/users/\(login)")
