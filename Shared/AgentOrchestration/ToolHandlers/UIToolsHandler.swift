@@ -164,6 +164,17 @@ public final class UIToolsHandler: MCPToolHandler {
     let value = optionalString("value", from: arguments) ?? ""
 
     switch controlId {
+    case "repositories.selectScope":
+      let normalized = value.lowercased()
+      guard ["local", "remote"].contains(normalized) else {
+        return invalidParamError(id: id, param: "value", reason: "Must be local/remote")
+      }
+      UserDefaults.standard.set(normalized, forKey: "repositories.selectedScope")
+      UserDefaults.standard.set("repositories", forKey: "current-tool")
+      delegate.recordUIActionRequested(controlId)
+      delegate.recordUIActionHandled(controlId)
+      return (200, makeResult(id: id, result: ["controlId": controlId, "value": normalized]))
+
     case "brew.source":
       guard value == "Installed" || value == "Available" else {
         return invalidParamError(id: id, param: "value", reason: "Must be 'Installed' or 'Available'")
@@ -252,6 +263,9 @@ public final class UIToolsHandler: MCPToolHandler {
       return (200, makeResult(id: id, result: ["controlId": controlId, "value": value]))
 
     case "github.selectFavorite":
+      UserDefaults.standard.set(value, forKey: "github.automationSelectedFavoriteKey")
+      UserDefaults.standard.set("", forKey: "github.automationSelectedRecentPRKey")
+      // Backward compatibility with legacy keys
       UserDefaults.standard.set(value, forKey: "github.selectedFavoriteKey")
       UserDefaults.standard.set("", forKey: "github.selectedRecentPRKey")
       delegate.recordUIActionRequested(controlId)
@@ -259,6 +273,9 @@ public final class UIToolsHandler: MCPToolHandler {
       return (200, makeResult(id: id, result: ["controlId": controlId, "value": value]))
 
     case "github.selectRecentPR":
+      UserDefaults.standard.set(value, forKey: "github.automationSelectedRecentPRKey")
+      UserDefaults.standard.set("", forKey: "github.automationSelectedFavoriteKey")
+      // Backward compatibility with legacy keys
       UserDefaults.standard.set(value, forKey: "github.selectedRecentPRKey")
       UserDefaults.standard.set("", forKey: "github.selectedFavoriteKey")
       delegate.recordUIActionRequested(controlId)

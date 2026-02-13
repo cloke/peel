@@ -16,6 +16,8 @@ import Github
 
 #if canImport(Github)
 struct Github_RootView: View {
+  var showToolSelectionToolbar = true
+
   #if os(macOS)
   @Environment(MCPServerService.self) private var mcpServer
   #endif
@@ -35,8 +37,8 @@ struct Github_RootView: View {
   @State private var isLoading = false
   @State private var errorMessage: String?
   @AppStorage("github-show-archived") private var showArchivedRepos = false
-  @AppStorage("github.selectedFavoriteKey") private var selectedFavoriteKey: String = ""
-  @AppStorage("github.selectedRecentPRKey") private var selectedRecentPRKey: String = ""
+  @AppStorage("github.automationSelectedFavoriteKey") private var automationSelectedFavoriteKey: String = ""
+  @AppStorage("github.automationSelectedRecentPRKey") private var automationSelectedRecentPRKey: String = ""
   @State private var selectedAutomationDestination: GitHubAutomationDestination?
 
   private enum GitHubAutomationDestination: Hashable {
@@ -284,16 +286,18 @@ struct Github_RootView: View {
       persistAutomationTargets()
       syncAutomationSelection()
     }
-    .onChange(of: selectedFavoriteKey) { _, _ in
+    .onChange(of: automationSelectedFavoriteKey) { _, _ in
       syncAutomationSelection()
     }
-    .onChange(of: selectedRecentPRKey) { _, _ in
+    .onChange(of: automationSelectedRecentPRKey) { _, _ in
       syncAutomationSelection()
     }
     .frame(idealHeight: 400)
     .toolbar {
       #if os(macOS)
-      ToolSelectionToolbar()
+      if showToolSelectionToolbar {
+        ToolSelectionToolbar()
+      }
       #endif
       ToolbarItem(placement: .navigation) {
         Menu {
@@ -397,13 +401,13 @@ struct Github_RootView: View {
   }
 
   private func syncAutomationSelection() {
-    if !selectedFavoriteKey.isEmpty,
-       favoriteItems.contains(where: { favoriteAutomationKey(for: $0) == selectedFavoriteKey }) {
-      selectedAutomationDestination = .favorite(selectedFavoriteKey)
-    } else if !selectedRecentPRKey.isEmpty,
-              recentPRItems.contains(where: { recentPRAutomationKey(for: $0) == selectedRecentPRKey }) {
-      selectedAutomationDestination = .recentPR(selectedRecentPRKey)
-    } else if selectedFavoriteKey.isEmpty && selectedRecentPRKey.isEmpty {
+    if !automationSelectedFavoriteKey.isEmpty,
+       favoriteItems.contains(where: { favoriteAutomationKey(for: $0) == automationSelectedFavoriteKey }) {
+      selectedAutomationDestination = .favorite(automationSelectedFavoriteKey)
+    } else if !automationSelectedRecentPRKey.isEmpty,
+              recentPRItems.contains(where: { recentPRAutomationKey(for: $0) == automationSelectedRecentPRKey }) {
+      selectedAutomationDestination = .recentPR(automationSelectedRecentPRKey)
+    } else if automationSelectedFavoriteKey.isEmpty && automationSelectedRecentPRKey.isEmpty {
       selectedAutomationDestination = nil
     }
   }
@@ -428,8 +432,7 @@ struct Github_RootView: View {
         }
       }
     } else {
-      Text("Select an organization or repository")
-        .foregroundStyle(.secondary)
+      PersonalView(organizations: organizations)
     }
   }
 }

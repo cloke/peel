@@ -126,7 +126,7 @@ public final class MCPUIAutomationStore: MCPUIAutomationProviding {
   }
 
   public func availableViewIds() -> [String] {
-    ["agents", "workspaces", "brew", "git", "github"]
+    ["agents", "workspaces", "brew", "repositories", "git", "github"]
   }
 
   public func viewTitle(for viewId: String) -> String {
@@ -134,6 +134,7 @@ public final class MCPUIAutomationStore: MCPUIAutomationProviding {
     case "agents": return "Agents"
     case "workspaces": return "Workspaces"
     case "brew": return "Homebrew"
+    case "repositories": return "Repositories"
     case "git": return "Git"
     case "github": return "GitHub"
     default: return viewId.capitalized
@@ -191,6 +192,13 @@ public final class MCPUIAutomationStore: MCPUIAutomationProviding {
         "github.selectFavorite",
         "github.selectRecentPR"
       ]
+    case "repositories":
+      return [
+        "repositories.selectScope",
+        "repositories.openLocal",
+        "repositories.openRemote",
+        "repositories.resetScope"
+      ]
     case "brew":
       return ["brew.source", "brew.search"]
     case "workspaces":
@@ -234,6 +242,10 @@ public final class MCPUIAutomationStore: MCPUIAutomationProviding {
     case "brew":
       return [
         "brew.source": ["Installed", "Available"]
+      ]
+    case "repositories":
+      return [
+        "repositories.selectScope": ["local", "remote"]
       ]
     case "workspaces":
       let workspaceNames = UserDefaults.standard.stringArray(forKey: "workspaces.availableNames") ?? []

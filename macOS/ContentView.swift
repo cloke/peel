@@ -10,13 +10,13 @@ import Git
 import Github
 
 enum CurrentTool: String, Identifiable, CaseIterable {
-  case agents = "agents", workspaces = "workspaces", brew = "brew", git = "git", github = "github", swarm = "swarm"
+  case agents = "agents", workspaces = "workspaces", brew = "brew", repositories = "repositories", git = "git", github = "github", swarm = "swarm"
   var id: String { rawValue }
 }
 
 /// Entry point for MacOS
 struct ContentView: View {
-  @AppStorage(wrappedValue: .brew, "current-tool") private var currentTool: CurrentTool
+  @AppStorage(wrappedValue: .repositories, "current-tool") private var currentTool: CurrentTool
   @AppStorage("feature.showBrew") private var showBrew = false
   @State private var firebaseService = FirebaseService.shared
   @State private var showingInvitePreview = false
@@ -32,8 +32,9 @@ struct ContentView: View {
         } else {
           Agents_RootView()
         }
-      case .git: Git_RootView()
-      case .github: Github_RootView()
+      case .repositories: Repositories_RootView()
+      case .git: Repositories_RootView(initialScope: .local)
+      case .github: Repositories_RootView(initialScope: .remote)
       case .swarm: SwarmStatusView()
       }
     }
@@ -41,11 +42,15 @@ struct ContentView: View {
       if currentTool == .brew && !showBrew {
         currentTool = .agents
       }
+      migrateLegacyToolSelectionIfNeeded(currentTool)
     }
     .onChange(of: showBrew) { _, newValue in
       if !newValue && currentTool == .brew {
         currentTool = .agents
       }
+    }
+    .onChange(of: currentTool) { _, newValue in
+      migrateLegacyToolSelectionIfNeeded(newValue)
     }
     .onChange(of: firebaseService.pendingInvitePreview) { _, newValue in
       if newValue != nil {
@@ -61,6 +66,19 @@ struct ContentView: View {
       // Populate RepoRegistry from all known local paths on launch
       // so URL-based lookups work everywhere (Review with Agent, etc.)
       await populateRepoRegistry()
+    }
+  }
+
+  private func migrateLegacyToolSelectionIfNeeded(_ tool: CurrentTool) {
+    switch tool {
+    case .git:
+      UserDefaults.standard.set(Repositories_RootView.Scope.local.rawValue, forKey: "repositories.selectedScope")
+      currentTool = .repositories
+    case .github:
+      UserDefaults.standard.set(Repositories_RootView.Scope.remote.rawValue, forKey: "repositories.selectedScope")
+      currentTool = .repositories
+    default:
+      break
     }
   }
 

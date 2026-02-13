@@ -52,7 +52,7 @@ These JSON files describe step-by-step demos for Peel features. They are **human
 ## UI Automation
 
 UI steps use MCP tools (`ui.navigate`, `ui.tap`, `ui.setText`, `ui.select`, `ui.toggle`, `ui.snapshot`).
-View IDs are reported by `state.list` (e.g., `agents`, `workspaces`, `brew`, `git`, `github`).
+View IDs are reported by `state.list` (e.g., `agents`, `workspaces`, `brew`, `repositories`; legacy: `git`, `github`).
 Control IDs are the app's accessibility identifiers (e.g., `agents.localRag`).
 
 ### Local RAG controls (agents view)
