@@ -100,7 +100,7 @@ struct PRChangedFilesView: View {
 
               if expandedFiles.contains(file.filename) {
                 if let diff = fileDiffs[file.filename], !diff.files.isEmpty {
-                  Git.DiffView(diff: diff)
+                  Git.DiffView(diff: diff, compact: true)
                     .frame(maxHeight: 400)
                 } else if file.patch == nil {
                   HStack(spacing: 6) {
