@@ -48,6 +48,11 @@ public struct PullRequestDetailView: View {
         // MARK: - CI Checks
         checksSection
 
+        // MARK: - Changed Files
+        #if os(macOS)
+        changedFilesSection
+        #endif
+
         // MARK: - Reviews
         reviewsSection
 
@@ -321,6 +326,16 @@ public struct PullRequestDetailView: View {
       }
     }
   }
+
+  // MARK: - Changed Files
+
+  #if os(macOS)
+  @ViewBuilder
+  private var changedFilesSection: some View {
+    let owner = organization?.login ?? repository.owner?.login ?? ""
+    PRChangedFilesView(owner: owner, repo: repository.name, pullNumber: pullRequest.number)
+  }
+  #endif
 
   // MARK: - Reviews Section
 

@@ -153,6 +153,11 @@ extension Github {
   public static func pullRequest(owner: String, repository: String, number: Int) async throws -> Github.PullRequest {
     try await load(url: "https://api.github.com/repos/\(owner)/\(repository)/pulls/\(number)")
   }
+
+  /// Fetch files changed in a pull request
+  public static func pullRequestFiles(owner: String, repository: String, number: Int) async throws -> [Github.PRFile] {
+    try await loadMany(url: "https://api.github.com/repos/\(owner)/\(repository)/pulls/\(number)/files?per_page=100")
+  }
   
   /// Fetch a user by login
   public static func user(login: String) async throws -> Github.User {
