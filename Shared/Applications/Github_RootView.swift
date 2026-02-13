@@ -44,7 +44,6 @@ struct Github_RootView: View {
   private enum GitHubAutomationDestination: Hashable {
     case favorite(String)
     case recentPR(String)
-    case personal
   }
 
   private func loadProfile() async {
@@ -209,28 +208,16 @@ struct Github_RootView: View {
             }
           }
         }
-      }
-      .safeAreaInset(edge: .bottom) {
-        // User profile pinned to bottom
+
+        // Profile link at bottom of sidebar
         if hasToken, let me = viewModel.me {
-          VStack(spacing: 0) {
-            Divider()
-            Button {
-              selectedAutomationDestination = .personal
-            } label: {
+          Section {
+            NavigationLink(destination: PersonalView(organizations: organizations)) {
               ProfileNameView(me: me)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .padding(.horizontal)
-            .padding(.vertical, 10)
           }
-          #if os(macOS)
-          .background(Color(nsColor: .windowBackgroundColor))
-          #else
-          .background(Color(.systemBackground))
-          #endif
         }
       }
       .task {
@@ -442,8 +429,6 @@ struct Github_RootView: View {
           Text("PR not found")
             .foregroundStyle(.secondary)
         }
-      case .personal:
-        PersonalView(organizations: organizations)
       }
     } else if viewModel.me != nil {
       PersonalView(organizations: organizations)
