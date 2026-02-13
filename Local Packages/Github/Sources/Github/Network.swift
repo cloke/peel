@@ -77,6 +77,62 @@ extension Github {
   public static func loadReviews(organization: String, repository: String, pullNumber: Int) async throws -> [Github.Review] {
     try await loadMany(url: "https://api.github.com/repos/\(organization)/\(repository)/pulls/\(pullNumber)/reviews")
   }
+
+  /// Fetch combined commit status (legacy status API) for a specific ref
+  public static func combinedStatus(owner: String, repo: String, ref: String) async throws -> Github.CombinedStatus {
+    try await load(url: "https://api.github.com/repos/\(owner)/\(repo)/commits/\(ref)/status")
+  }
+
+  /// Fetch check runs for a specific ref
+  public static func checkRuns(owner: String, repo: String, ref: String) async throws -> Github.CheckRunsResponse {
+    try await load(url: "https://api.github.com/repos/\(owner)/\(repo)/commits/\(ref)/check-runs")
+  }
+
+  /// Fetch aggregated check status combining both status API and check runs API
+  public static func aggregatedCheckStatus(owner: String, repo: String, ref: String) async throws -> Github.AggregatedCheckStatus {
+    async let statusTask = combinedStatus(owner: owner, repo: repo, ref: ref)
+    async let checksTask = checkRuns(owner: owner, repo: repo, ref: ref)
+
+    var items: [Github.CheckItem] = []
+
+    // Collect legacy statuses
+    if let combined = try? await statusTask {
+      for s in combined.statuses {
+        let state: Github.CheckItemState = switch s.state {
+        case "success": .success
+        case "failure", "error": .failure
+        case "pending": .pending
+        default: .neutral
+        }
+        items.append(Github.CheckItem(id: "status-\(s.id)", name: s.context, state: state, url: s.target_url))
+      }
+    }
+
+    // Collect check runs
+    if let runs = try? await checksTask {
+      for run in runs.check_runs {
+        let state: Github.CheckItemState
+        if run.status != "completed" {
+          state = .pending
+        } else {
+          state = switch run.conclusion {
+          case "success": .success
+          case "failure", "timed_out", "action_required": .failure
+          case "skipped": .skipped
+          case "neutral", "cancelled": .neutral
+          default: .neutral
+          }
+        }
+        items.append(Github.CheckItem(id: "check-\(run.id)", name: run.name, state: state, url: run.html_url))
+      }
+    }
+
+    let passed = items.filter { $0.state == .success }.count
+    let failed = items.filter { $0.state == .failure }.count
+    let pending = items.filter { $0.state == .pending }.count
+
+    return Github.AggregatedCheckStatus(total: items.count, passed: passed, failed: failed, pending: pending, checks: items)
+  }
   
   /// Provides the user record of the current authenticated user.
   public static func me() async throws -> Github.User {
