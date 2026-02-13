@@ -297,6 +297,7 @@ extension Github {
     var request = URLRequest(url: url)
     request.httpMethod = method
     request.httpBody = body
+    request.cachePolicy = .reloadIgnoringLocalCacheData
     let headerValues = await headers
     for (key, value) in headerValues {
       request.setValue(value, forHTTPHeaderField: key)
