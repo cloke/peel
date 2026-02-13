@@ -270,16 +270,21 @@ public struct DiffView: View {
   public var onStageHunk: ((String) async -> Void)?
   /// Callback for reverting a hunk - receives the patch text
   public var onRevertHunk: ((String) async -> Void)?
+  /// When true, hides the summary bar and file headers, auto-expands all content.
+  /// Use for embedding a single-file diff where the caller already shows file info.
+  public var compact: Bool
 
   private let logger = Logger(subsystem: "Peel", category: "Git.DiffRender")
   @State private var expandedFiles: Set<UUID> = []
 
   public init(
     diff: Diff,
+    compact: Bool = false,
     onStageHunk: ((String) async -> Void)? = nil,
     onRevertHunk: ((String) async -> Void)? = nil
   ) {
     self.diff = diff
+    self.compact = compact
     self.onStageHunk = onStageHunk
     self.onRevertHunk = onRevertHunk
   }
@@ -287,25 +292,29 @@ public struct DiffView: View {
   public var body: some View {
     ScrollView([.horizontal, .vertical]) {
       VStack(alignment: .leading, spacing: 0) {
-        // Summary bar
-        if !diff.files.isEmpty {
-          diffSummaryBar
+        if !compact {
+          // Summary bar
+          if !diff.files.isEmpty {
+            diffSummaryBar
+          }
         }
 
         ForEach(diff.files) { file in
           VStack(alignment: .leading, spacing: 0) {
-            DiffFileHeaderView(
-              file: file,
-              isExpanded: expandedFiles.contains(file.id)
-            ) {
-              if expandedFiles.contains(file.id) {
-                expandedFiles.remove(file.id)
-              } else {
-                expandedFiles.insert(file.id)
+            if !compact {
+              DiffFileHeaderView(
+                file: file,
+                isExpanded: expandedFiles.contains(file.id)
+              ) {
+                if expandedFiles.contains(file.id) {
+                  expandedFiles.remove(file.id)
+                } else {
+                  expandedFiles.insert(file.id)
+                }
               }
             }
 
-            if expandedFiles.contains(file.id) {
+            if compact || expandedFiles.contains(file.id) {
               DiffFileContentView(
                 file: file,
                 onStageHunk: onStageHunk,
@@ -319,6 +328,9 @@ public struct DiffView: View {
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .onAppear {
+      if compact {
+        expandedFiles = Set(diff.files.map(\.id))
+      }
       #if DEBUG
       logger.notice("Diff render appear (files: \(diff.files.count))")
       #endif
