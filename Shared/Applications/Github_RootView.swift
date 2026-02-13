@@ -431,8 +431,14 @@ struct Github_RootView: View {
             .foregroundStyle(.secondary)
         }
       }
-    } else {
+    } else if viewModel.me != nil {
       PersonalView(organizations: organizations)
+        .id(organizations.count)
+    } else if isLoading {
+      ProgressView("Loading profile…")
+    } else {
+      Text("Select an organization or repository")
+        .foregroundStyle(.secondary)
     }
   }
 }
