@@ -15,8 +15,10 @@ public struct PullRequestDetailView: View {
 
   public let organization: Github.User?
   public let repository: Github.Repository
-  public let pullRequest: Github.PullRequest
+  public let initialPullRequest: Github.PullRequest
 
+  /// Live PR data, refreshed on appear
+  @State private var pullRequest: Github.PullRequest
   @State private var checkStatus: Github.AggregatedCheckStatus?
   @State private var isLoadingChecks = true
   @State private var comments = [Github.IssueComment]()
@@ -30,7 +32,8 @@ public struct PullRequestDetailView: View {
   public init(organization: Github.User?, repository: Github.Repository, pullRequest: Github.PullRequest) {
     self.organization = organization
     self.repository = repository
-    self.pullRequest = pullRequest
+    self.initialPullRequest = pullRequest
+    self._pullRequest = State(initialValue: pullRequest)
   }
 
   public var body: some View {
@@ -66,11 +69,13 @@ public struct PullRequestDetailView: View {
       }
       .padding()
     }
-    .task(id: pullRequest.id) {
+    .task(id: initialPullRequest.id) {
       await Task.yield()
       await MainActor.run {
         recentPRsProvider?.recordView(pr: pullRequest, repo: repository)
       }
+      // Refresh PR data to get current state (merged, closed, etc.)
+      await refreshPullRequest()
       await loadCheckStatus()
       await loadComments()
     }
@@ -377,6 +382,13 @@ public struct PullRequestDetailView: View {
   }
 
   // MARK: - Helpers
+
+  private func refreshPullRequest() async {
+    guard let owner = organization?.login ?? repository.owner?.login else { return }
+    if let fresh = try? await Github.pullRequest(owner: owner, repository: repository.name, number: pullRequest.number) {
+      pullRequest = fresh
+    }
+  }
 
   private func loadCheckStatus() async {
     isLoadingChecks = true
