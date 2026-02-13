@@ -75,45 +75,78 @@ struct Github_RootView: View {
       List {
         // Favorites section
         if !favoriteItems.isEmpty {
-          Section("Favorites") {
-            ForEach(favoriteItems) { favorite in
-              NavigationLink(destination: FavoriteRepositoryDestination(favorite: favorite)) {
-                HStack {
-                  Image(systemName: "star.fill")
-                    .foregroundStyle(.yellow)
-                  VStack(alignment: .leading, spacing: 2) {
-                    Text(favorite.repoName)
-                      .font(.callout)
-                    Text(favorite.ownerLogin)
-                      .font(.caption)
-                      .foregroundStyle(.secondary)
+          Section {
+            ForEach(groupedFavorites, id: \.owner) { group in
+              if groupedFavorites.count > 1 {
+                ForEach(group.repos) { favorite in
+                  NavigationLink(destination: FavoriteRepositoryDestination(favorite: favorite)) {
+                    Label {
+                      Text(favorite.fullName)
+                        .font(.callout)
+                    } icon: {
+                      Image(systemName: "book.closed")
+                        .foregroundStyle(.secondary)
+                    }
+                  }
+                }
+              } else {
+                ForEach(group.repos) { favorite in
+                  NavigationLink(destination: FavoriteRepositoryDestination(favorite: favorite)) {
+                    Label {
+                      Text(favorite.repoName)
+                        .font(.callout)
+                    } icon: {
+                      Image(systemName: "book.closed")
+                        .foregroundStyle(.secondary)
+                    }
                   }
                 }
               }
+            }
+          } header: {
+            HStack {
+              Label("Favorites", systemImage: "star.fill")
+              Spacer()
+              Text("\(favoriteItems.count)")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .monospacedDigit()
             }
           }
         }
         
         // Recent PRs section
         if !recentPRItems.isEmpty {
-          Section("Recent PRs") {
+          Section {
             ForEach(recentPRItems.prefix(5)) { recent in
               NavigationLink(destination: RecentPRDestination(recentPR: recent)) {
-                HStack {
-                  Image(systemName: recent.state == "open" ? "circle.fill" : "checkmark.circle.fill")
-                    .foregroundStyle(recent.state == "open" ? .green : .purple)
+                HStack(spacing: 8) {
+                  Image(systemName: recentPRIcon(for: recent.state))
+                    .foregroundStyle(recentPRColor(for: recent.state))
                     .font(.caption)
+                    .frame(width: 16)
                   VStack(alignment: .leading, spacing: 2) {
-                    Text("#\(recent.prNumber) \(recent.title)")
+                    Text(recent.title)
                       .font(.callout)
                       .lineLimit(1)
-                    Text(recent.repoFullName)
-                      .font(.caption)
-                      .foregroundStyle(.secondary)
+                    HStack(spacing: 4) {
+                      Text(recent.repoFullName)
+                      Text("#\(recent.prNumber)")
+                        .foregroundStyle(.tertiary)
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                   }
+                  Spacer()
+                  Text(recentPRTimeAgo(recent.viewedAt))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .monospacedDigit()
                 }
               }
             }
+          } header: {
+            Label("Recent PRs", systemImage: "clock")
           }
         }
         
@@ -309,6 +342,42 @@ struct Github_RootView: View {
         viewedAt: record.viewedAt
       )
     }
+  }
+
+  private struct FavoriteGroup {
+    let owner: String
+    let repos: [FavoriteRepository]
+  }
+
+  private var groupedFavorites: [FavoriteGroup] {
+    let grouped = Dictionary(grouping: favoriteItems) { $0.ownerLogin }
+    return grouped.keys.sorted().map { owner in
+      FavoriteGroup(owner: owner, repos: grouped[owner] ?? [])
+    }
+  }
+
+  private func recentPRIcon(for state: String) -> String {
+    switch state {
+    case "open": "circle.fill"
+    case "closed": "xmark.circle.fill"
+    case "merged": "arrow.triangle.merge"
+    default: "circle"
+    }
+  }
+
+  private func recentPRColor(for state: String) -> Color {
+    switch state {
+    case "open": .green
+    case "closed": .red
+    case "merged": .purple
+    default: .secondary
+    }
+  }
+
+  private func recentPRTimeAgo(_ date: Date) -> String {
+    let formatter = RelativeDateTimeFormatter()
+    formatter.unitsStyle = .abbreviated
+    return formatter.localizedString(for: date, relativeTo: Date())
   }
 
   private func favoriteAutomationKey(for favorite: FavoriteRepository) -> String {

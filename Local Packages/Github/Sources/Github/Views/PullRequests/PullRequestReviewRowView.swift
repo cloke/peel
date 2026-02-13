@@ -15,25 +15,106 @@ struct PullRequestReviewRowView: View {
   @State private var reviews = [Github.Review]()
   
   var body: some View {
-    VStack {
-      ForEach(reviews) { review in
-        HStack {
-          Spacer()
-          Text(review.user.login ?? "Unknown Login")
-          Text(review.state)
-            .padding(3)
-            .background(review.state == "APPROVED" ? Color.green : Color.clear)
-            .cornerRadius(3)
-          AvatarView(url: URL(string: review.user.avatar_url))
+    if !reviews.isEmpty {
+      VStack(alignment: .leading, spacing: 8) {
+        ForEach(deduplicatedReviews) { review in
+          HStack(spacing: 10) {
+            AvatarView(url: URL(string: review.user.avatar_url), maxWidth: 24, maxHeight: 24)
+              .frame(width: 24, height: 24)
+
+            VStack(alignment: .leading, spacing: 1) {
+              Text(review.user.publicName)
+                .font(.callout)
+              if !review.body.isEmpty {
+                Text(review.body)
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+                  .lineLimit(2)
+              }
+            }
+
+            Spacer()
+
+            ReviewStateBadge(state: review.state)
+          }
         }
       }
-    }
-    .task {
-      do {
-        reviews = try await Github.loadReviews(organization: organization?.login ?? "", repository: repository.name, pullNumber: pullNumber)
-      } catch {
-        
+      .task {
+        do {
+          reviews = try await Github.loadReviews(organization: organization?.login ?? "", repository: repository.name, pullNumber: pullNumber)
+        } catch {}
       }
+    } else {
+      Color.clear
+        .frame(height: 0)
+        .task {
+          do {
+            reviews = try await Github.loadReviews(organization: organization?.login ?? "", repository: repository.name, pullNumber: pullNumber)
+          } catch {}
+        }
+    }
+  }
+
+  /// Show only the most recent review per user
+  private var deduplicatedReviews: [Github.Review] {
+    var seen = Set<String>()
+    var result = [Github.Review]()
+    for review in reviews.reversed() {
+      let key = review.user.login ?? review.user.avatar_url
+      if !seen.contains(key) {
+        seen.insert(key)
+        result.append(review)
+      }
+    }
+    return result.reversed()
+  }
+}
+
+private struct ReviewStateBadge: View {
+  let state: String
+
+  var body: some View {
+    HStack(spacing: 4) {
+      Image(systemName: icon)
+        .font(.caption2)
+      Text(label)
+        .font(.caption2)
+        .fontWeight(.medium)
+    }
+    .padding(.horizontal, 6)
+    .padding(.vertical, 3)
+    .background(color.opacity(0.15))
+    .foregroundStyle(color)
+    .clipShape(Capsule())
+  }
+
+  private var icon: String {
+    switch state {
+    case "APPROVED": "checkmark"
+    case "CHANGES_REQUESTED": "xmark"
+    case "COMMENTED": "text.bubble"
+    case "DISMISSED": "minus"
+    default: "ellipsis"
+    }
+  }
+
+  private var label: String {
+    switch state {
+    case "APPROVED": "Approved"
+    case "CHANGES_REQUESTED": "Changes"
+    case "COMMENTED": "Commented"
+    case "DISMISSED": "Dismissed"
+    default: state.capitalized
+    }
+  }
+
+  private var color: Color {
+    switch state {
+    case "APPROVED": .green
+    case "CHANGES_REQUESTED": .orange
+    case "COMMENTED": .blue
+    case "DISMISSED": .secondary
+    default: .secondary
     }
   }
 }

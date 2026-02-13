@@ -15,25 +15,39 @@ public struct ProfileNameView: View {
   }
   
   public var body: some View {
-    HStack {
+    HStack(spacing: 10) {
       AsyncImage(url: URL(string: me.avatar_url)) { image in
         image
           .resizable()
-          .scaledToFit()
-          .clipped()
+          .scaledToFill()
           .clipShape(Circle())
       } placeholder: {
-        ProgressView()
+        Circle()
+          .fill(.quaternary)
+          .overlay {
+            Image(systemName: "person.fill")
+              .foregroundStyle(.tertiary)
+              .font(.caption)
+          }
       }
-      .frame(minWidth: 0, maxWidth: 30, maxHeight: 30, alignment: .center)
-      Text(me.name ?? "")
+      .frame(width: 28, height: 28)
+      
+      VStack(alignment: .leading, spacing: 1) {
+        Text(me.name ?? me.login ?? "")
+          .font(.callout)
+          .fontWeight(.medium)
+        if let login = me.login, login != me.name {
+          Text("@\(login)")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+      }
+      
       Spacer()
+      
+      Image(systemName: "chevron.right")
+        .font(.caption2)
+        .foregroundStyle(.tertiary)
     }
   }
 }
-
-//struct ProfileNameView_Previews: PreviewProvider {
-//    static var previews: some View {
-//      ProfileNameView()
-//    }
-//}

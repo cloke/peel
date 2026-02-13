@@ -11,23 +11,6 @@ import Charts
 import PeelUI
 import SwiftUI
 
-public struct PersonalHeaderView: View {
-  @Binding var showingMyRequests: Bool
-  
-  public var body: some View {
-    HStack {
-      Spacer()
-      
-      Picker("Filter", selection: $showingMyRequests) {
-        Text("All").tag(false)
-        Text("My Requests").tag(true)
-      }
-      .pickerStyle(.segmented)
-      .frame(maxWidth: 200)
-    }
-  }
-}
-
 public struct PersonalView: View {
   @Environment(Github.ViewModel.self) private var viewModel
   @Environment(\.favoritesProvider) private var favoritesProvider
@@ -52,27 +35,7 @@ public struct PersonalView: View {
   
   public var body: some View {
     NavigationStack {
-      VStack {
-        HStack {
-          Picker("Scope", selection: $scanScope) {
-            ForEach(ScanScope.allCases, id: \.self) { scope in
-              Text(scope.rawValue).tag(scope)
-            }
-          }
-          .pickerStyle(.segmented)
-          .frame(maxWidth: 200)
-          
-          Spacer()
-          
-          Picker("Filter", selection: $showingMyRequests) {
-            Text("All").tag(false)
-            Text("My Requests").tag(true)
-          }
-          .pickerStyle(.segmented)
-          .frame(maxWidth: 200)
-        }
-        .padding(.horizontal)
-        
+      Group {
         if isLoading {
           VStack(spacing: 12) {
             ProgressView()
@@ -85,39 +48,81 @@ public struct PersonalView: View {
           ContentUnavailableView(
             "No Pull Requests",
             systemImage: "arrow.triangle.pull",
-            description: Text("No pull requests found")
+            description: Text(scanScope == .favorites
+              ? "No open pull requests in your favorite repos"
+              : "No open pull requests found")
           )
         } else {
           List {
-            Section {
-              PRInsightsChartsView(pullRequests: allPullRequests)
-            }
-            if filteredPullRequests.isEmpty {
+            if !filteredPullRequests.isEmpty {
               Section {
-                ContentUnavailableView(
-                  "No Pull Requests",
-                  systemImage: "arrow.triangle.pull",
-                  description: Text(showingMyRequests ? "No pull requests assigned to you" : "No pull requests found")
-                )
+                PRInsightsChartsView(pullRequests: filteredPullRequests)
+              } header: {
+                Label("Insights", systemImage: "chart.bar")
               }
-            } else {
-              Section {
+            }
+
+            Section {
+              if filteredPullRequests.isEmpty {
+                ContentUnavailableView(
+                  "No Matching PRs",
+                  systemImage: "line.3.horizontal.decrease.circle",
+                  description: Text(showingMyRequests
+                    ? "No pull requests where you're a reviewer"
+                    : "No pull requests match the current filters")
+                )
+              } else {
                 ForEach(filteredPullRequests.sorted(by: { $0.updated_at ?? "" > $1.updated_at ?? ""})) { pullRequest in
-                  VStack {
-                    NavigationLink(destination: PullRequestDetailView(organization: pullRequest.base.repo.owner, repository: pullRequest.base.repo, pullRequest: pullRequest)) {
-                      PullRequestsListItemView(pullRequest: pullRequest, organization: pullRequest.base.repo.owner, repository: pullRequest.base.repo, showAvatar: true, showRepository: true)
-                    }
-                    #if os(macOS)
-                    Divider()
-                    #endif
+                  NavigationLink(destination: PullRequestDetailView(organization: pullRequest.base.repo.owner, repository: pullRequest.base.repo, pullRequest: pullRequest)) {
+                    PullRequestsListItemView(pullRequest: pullRequest, organization: pullRequest.base.repo.owner, repository: pullRequest.base.repo, showAvatar: true, showRepository: true)
                   }
                 }
+              }
+            } header: {
+              HStack {
+                Label("Pull Requests", systemImage: "arrow.triangle.pull")
+                Spacer()
+                Text("\(filteredPullRequests.count)")
+                  .font(.caption2)
+                  .foregroundStyle(.tertiary)
+                  .monospacedDigit()
               }
             }
           }
         }
       }
       .navigationTitle("Pull Requests")
+      .toolbar {
+        ToolbarItem(placement: .primaryAction) {
+          Menu {
+            Section("Scope") {
+              Picker("Scope", selection: $scanScope) {
+                ForEach(ScanScope.allCases, id: \.self) { scope in
+                  Label(scope.rawValue, systemImage: scope == .favorites ? "star" : "folder")
+                    .tag(scope)
+                }
+              }
+            }
+            Section("Filter") {
+              Picker("Filter", selection: $showingMyRequests) {
+                Label("All PRs", systemImage: "list.bullet").tag(false)
+                Label("My Reviews", systemImage: "person").tag(true)
+              }
+            }
+          } label: {
+            Image(systemName: "line.3.horizontal.decrease.circle")
+          }
+        }
+
+        ToolbarItem(placement: .primaryAction) {
+          Button {
+            Task { await loadPullRequests() }
+          } label: {
+            Image(systemName: "arrow.clockwise")
+          }
+          .disabled(isLoading)
+        }
+      }
     }
     .task {
       await loadPullRequests()

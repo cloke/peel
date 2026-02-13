@@ -37,86 +37,110 @@ struct PullRequestsListItemView: View {
     
     return state
   }
-  
-  
-  var body: some View {
-    VStack {
-      AvatarAndRepositoryView()
-      HStack(alignment: .top) {
-        Text(prState)
-          .font(.headline)
-        Spacer()
-        Text(pullRequest.dateFormatted)
-          .font(.subheadline)
-      }
-      .task {
-        do {
-          reviews = try await Github.loadReviews(organization: organization?.login ?? "", repository: repository.name, pullNumber: pullRequest.number)
-        } catch {
-          // Handle the error
-          print("Error: \(error)")
-        }
-      }
-      TitleAndLabelsView()
-      ReviewerViews()
-    }
-  }
-  
-  @ViewBuilder
-  private func AvatarAndRepositoryView() -> some View {
-    if showAvatar || showRepository {
-      HStack {
-        if showAvatar {
-          AvatarView(url: URL(string: organization?.avatar_url ?? ""), maxHeight: 20)
-        }
-        Spacer()
-        if showRepository {
-          Text(repository.name)
-            .padding(3)
-            .cornerRadius(3)
-        }
-      }
-    }
-  }
-  
-  @ViewBuilder
-  private func TitleAndLabelsView() -> some View {
-    Text(pullRequest.title ?? "")
-      .font(.body)
-      .frame(maxWidth: .infinity, alignment: .leading)
 
-    HStack {
-      ForEach(pullRequest.labels ?? []) { label in
-        let color = Color.init(hex: label.color)
-        Text(label.name)
-          .padding(3)
-          .background(color)
-          .cornerRadius(3)
-          .foregroundColor(color.isDarkColor ? .white : .black)
-      }
-      Spacer()
+  private var stateColor: Color {
+    switch prState {
+    case "Approved": .green
+    case "Changes Requested": .orange
+    case "Discussing": .blue
+    default: .secondary
     }
   }
-  
-  @ViewBuilder
-  private func ReviewerViews() -> some View {
-    if let htmlUrl = pullRequest.html_url,
-       let url = URL(string: htmlUrl),
-       let reviewers = pullRequest.requested_reviewers,
-        viewModel.hasMe(in: reviewers) {
-      HStack {
-        Link("Review Requested of Me", destination: url)
-          .foregroundColor(.yellow)
-        Spacer()
+
+  var body: some View {
+    HStack(alignment: .top, spacing: 10) {
+      // Left icon — fixed size, always aligned
+      if showAvatar {
+        AvatarView(url: URL(string: organization?.avatar_url ?? ""), maxWidth: 32, maxHeight: 32)
+          .frame(width: 32, height: 32)
+      } else {
+        Image(systemName: "arrow.triangle.pull")
+          .font(.system(size: 14))
+          .foregroundStyle(.secondary)
+          .frame(width: 32, height: 32)
+          .background(.quaternary, in: Circle())
+      }
+
+      // Main content
+      VStack(alignment: .leading, spacing: 4) {
+        // Title row
+        Text(pullRequest.title ?? "")
+          .font(.body)
+          .lineLimit(2)
+
+        // Labels
+        if let labels = pullRequest.labels, !labels.isEmpty {
+          HStack(spacing: 4) {
+            ForEach(labels) { label in
+              let color = Color.init(hex: label.color)
+              Text(label.name)
+                .font(.caption2)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(color)
+                .foregroundColor(color.isDarkColor ? .white : .black)
+                .clipShape(Capsule())
+            }
+          }
+        }
+
+        // Bottom row: repo + date on the left, status badge on the right
+        HStack(alignment: .center) {
+          HStack(spacing: 4) {
+            if showRepository {
+              Text(repository.name)
+                .foregroundStyle(.secondary)
+            }
+            Text(pullRequest.dateFormatted)
+              .foregroundStyle(.tertiary)
+          }
+          .font(.caption)
+
+          Spacer()
+
+          // Reviewer avatars
+          if let reviewers = pullRequest.requested_reviewers, !reviewers.isEmpty {
+            HStack(spacing: -4) {
+              ForEach(reviewers.prefix(4)) {
+                AvatarView(url: URL(string: $0.avatar_url), maxWidth: 16, maxHeight: 16)
+                  .frame(width: 16, height: 16)
+              }
+            }
+          }
+
+          // Status badge
+          Text(prState)
+            .font(.caption2)
+            .fontWeight(.medium)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(stateColor.opacity(0.15))
+            .foregroundStyle(stateColor)
+            .clipShape(Capsule())
+        }
+
+        // Review requested callout
+        if let htmlUrl = pullRequest.html_url,
+           let url = URL(string: htmlUrl),
+           let reviewers = pullRequest.requested_reviewers,
+           viewModel.hasMe(in: reviewers) {
+          Link(destination: url) {
+            Label("Review requested", systemImage: "exclamationmark.bubble")
+              .font(.caption)
+              .foregroundStyle(.yellow)
+          }
+        }
       }
     }
-    if pullRequest.requested_reviewers != nil && pullRequest.requested_reviewers!.count > 0 {
-      HStack {
-          ForEach(pullRequest.requested_reviewers!) {
-            AvatarView(url: URL(string: $0.avatar_url), maxWidth: 15, maxHeight: 15)
-          }
-        
-        Spacer()
+    .task {
+      do {
+        reviews = try await Github.loadReviews(
+          organization: organization?.login ?? "",
+          repository: repository.name,
+          pullNumber: pullRequest.number
+        )
+      } catch {
+        print("Error: \(error)")
       }
     }
   }
