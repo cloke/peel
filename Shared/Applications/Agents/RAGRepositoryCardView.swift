@@ -105,6 +105,19 @@ struct RAGRepositoryCardView: View {
   @State private var showDeleteConfirm: Bool = false
   @State private var isDeleting: Bool = false
   
+  /// Adaptive batch size based on available RAM.
+  /// Smaller batches = more frequent UI progress updates (important on laptops).
+  private var adaptiveBatchSize: Int {
+    let memGB = Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824.0
+    if memGB >= 48 {
+      return 50   // Mac Studio / Mac Pro
+    } else if memGB >= 32 {
+      return 25   // MacBook Pro 32GB
+    } else {
+      return 10   // Laptops (8-18GB) — fast feedback
+    }
+  }
+
   // Computed status
   private var status: RAGRepoStatus {
     if mcpServer.ragIndexingPath == repo.rootPath {
@@ -435,6 +448,13 @@ struct RAGRepositoryCardView: View {
             Text("\(analysisState.analyzedCount) / \(analysisState.totalChunks) chunks")
               .font(.caption2)
               .foregroundStyle(.secondary)
+            
+            if analysisState.isAnalyzing, let batch = analysisState.batchProgress {
+              Text("(\(batch.current)/\(batch.total))")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .monospacedDigit()
+            }
             
             Spacer()
             
@@ -871,7 +891,7 @@ struct RAGRepositoryCardView: View {
     do {
       let count = try await mcpServer.analyzeRagChunks(
         repoPath: repo.rootPath,
-        limit: 50,
+        limit: adaptiveBatchSize,
         modelTier: selectedModelTier
       ) { current, total in
         Task { @MainActor in
@@ -924,7 +944,7 @@ struct RAGRepositoryCardView: View {
   }
   
   private func runAnalyzeAllLoop() async {
-    let batchSize = 50
+    let batchSize = adaptiveBatchSize
     
     while !Task.isCancelled {
       if await MainActor.run(body: { analysisState.isPaused }) {

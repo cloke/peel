@@ -251,6 +251,7 @@ struct ParallelRunDetailView: View {
   @Binding var selectedExecution: ParallelWorktreeExecution?
   @Binding var expandedExecutions: Set<UUID>
   @State private var showingCancelConfirmation = false
+  @State private var mergeError: String?
   
   var body: some View {
     ScrollView {
@@ -440,14 +441,26 @@ struct ParallelRunDetailView: View {
       
       if run.readyToMergeCount > 0 {
         Button {
+          mergeError = nil
           Task {
-            try? await runner.mergeAllApproved(in: run)
+            do {
+              try await runner.mergeAllApproved(in: run)
+            } catch {
+              mergeError = error.localizedDescription
+            }
           }
         } label: {
           Label("Merge All Ready", systemImage: "arrow.triangle.merge")
         }
         .buttonStyle(.bordered)
         .accessibilityIdentifier("parallelRun.mergeAll")
+      }
+      
+      if let mergeError {
+        Label(mergeError, systemImage: "exclamationmark.triangle")
+          .font(.caption)
+          .foregroundStyle(.red)
+          .lineLimit(3)
       }
       
       Spacer()
