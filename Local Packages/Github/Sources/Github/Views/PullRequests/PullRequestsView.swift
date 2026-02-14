@@ -19,6 +19,9 @@ public struct PullRequestDetailView: View {
 
   @State private var checkStatus: Github.AggregatedCheckStatus?
   @State private var isLoadingChecks = true
+  @State private var comments = [Github.IssueComment]()
+  @State private var isLoadingComments = true
+  @State private var expandedCommentIds = Set<Int>()
 
   #if os(macOS)
   @State private var showingReviewLocally = false
@@ -48,6 +51,9 @@ public struct PullRequestDetailView: View {
         // MARK: - Reviews
         reviewsSection
 
+        // MARK: - Comments
+        commentsSection
+
         // MARK: - Description
         descriptionSection
 
@@ -61,6 +67,7 @@ public struct PullRequestDetailView: View {
         recentPRsProvider?.recordView(pr: pullRequest, repo: repository)
       }
       await loadCheckStatus()
+      await loadComments()
     }
     #if os(macOS)
     .sheet(isPresented: $showingReviewLocally) {
@@ -329,6 +336,106 @@ public struct PullRequestDetailView: View {
     }
   }
 
+  // MARK: - Comments Section
+
+  @ViewBuilder
+  private var commentsSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack {
+        Text("Comments")
+          .font(.headline)
+        if !isLoadingComments {
+          Text("\(comments.count)")
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .monospacedDigit()
+        }
+      }
+
+      if isLoadingComments {
+        HStack {
+          ProgressView()
+            .controlSize(.small)
+          Text("Loading comments…")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 10))
+      } else if comments.isEmpty {
+        Text("No comments yet")
+          .font(.callout)
+          .foregroundStyle(.secondary)
+          .padding(12)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 10))
+      } else {
+        VStack(alignment: .leading, spacing: 0) {
+          ForEach(Array(comments.enumerated()), id: \.element.id) { index, comment in
+            VStack(alignment: .leading, spacing: 6) {
+              Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                  if expandedCommentIds.contains(comment.id) {
+                    expandedCommentIds.remove(comment.id)
+                  } else {
+                    expandedCommentIds.insert(comment.id)
+                  }
+                }
+              } label: {
+                HStack(spacing: 10) {
+                  AvatarView(url: URL(string: comment.user.avatar_url), maxWidth: 24, maxHeight: 24)
+                    .frame(width: 24, height: 24)
+
+                  VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 6) {
+                      Text(comment.user.publicName)
+                        .font(.callout)
+                        .fontWeight(.medium)
+                      if let date = comment.created_at {
+                        Text(formattedDate(date))
+                          .font(.caption2)
+                          .foregroundStyle(.tertiary)
+                      }
+                    }
+                    if !expandedCommentIds.contains(comment.id) {
+                      Text(comment.body)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                    }
+                  }
+
+                  Spacer()
+
+                  Image(systemName: expandedCommentIds.contains(comment.id) ? "chevron.up" : "chevron.down")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                }
+              }
+              .buttonStyle(.plain)
+
+              if expandedCommentIds.contains(comment.id) {
+                Markdown(Document(stringLiteral: comment.body))
+                  .font(.callout)
+                  .padding(10)
+                  .frame(maxWidth: .infinity, alignment: .leading)
+                  .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 8))
+              }
+            }
+            .padding(.vertical, 8)
+
+            if index < comments.count - 1 {
+              Divider()
+            }
+          }
+        }
+        .padding(12)
+        .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 10))
+      }
+    }
+  }
+
   // MARK: - Description
 
   @ViewBuilder
@@ -356,6 +463,14 @@ public struct PullRequestDetailView: View {
     let ref = pullRequest.head.sha
 
     checkStatus = try? await Github.aggregatedCheckStatus(owner: owner, repo: repository.name, ref: ref)
+  }
+
+  private func loadComments() async {
+    isLoadingComments = true
+    defer { isLoadingComments = false }
+
+    guard let owner = organization?.login ?? repository.owner?.login else { return }
+    comments = (try? await Github.loadComments(owner: owner, repository: repository.name, number: pullRequest.number)) ?? []
   }
 
   private func stateIcon(for state: String) -> String {

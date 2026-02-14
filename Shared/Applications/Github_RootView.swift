@@ -181,10 +181,12 @@ struct Github_RootView: View {
           }
           .listRowBackground(Color.clear)
         } else if hasToken && viewModel.me != nil {
-          Section("Organizations") {
+          Section {
             ForEach(organizations) { organization in
               OrganizationRepositoryView(organization: organization)
             }
+          } header: {
+            Label("Organizations", systemImage: "building.2")
           }
         } else if hasToken {
           // Token exists but user data not loaded yet - show loading
