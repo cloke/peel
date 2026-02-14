@@ -111,9 +111,7 @@ public struct OrganizationRepositoryView: View {
       }
     } label: {
       Text(organization.login ?? "")
-        .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .onTapGesture { withAnimation { isExpanded.toggle() } }
         .contextMenu {
           Picker("Sort", selection: $sortOrder) {
             ForEach(RepoSortOrder.allCases) { order in
@@ -130,13 +128,12 @@ public struct OrganizationRepositoryView: View {
   
   @ViewBuilder
   private func repoLabel(for repository: Github.Repository) -> some View {
-    HStack(spacing: 6) {
-      if favoritesProvider?.isFavorite(repoId: repository.id) == true {
-        Image(systemName: "star.fill")
-          .foregroundStyle(.yellow)
-          .font(.caption2)
-      }
+    Label {
       Text(repository.name)
+        .font(.callout)
+    } icon: {
+      Image(systemName: favoritesProvider?.isFavorite(repoId: repository.id) == true ? "star.fill" : "book.closed")
+        .foregroundStyle(favoritesProvider?.isFavorite(repoId: repository.id) == true ? .yellow : .secondary)
     }
   }
   

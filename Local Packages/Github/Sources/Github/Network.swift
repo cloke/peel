@@ -78,6 +78,11 @@ extension Github {
     try await loadMany(url: "https://api.github.com/repos/\(organization)/\(repository)/pulls/\(pullNumber)/reviews")
   }
 
+  /// Fetch issue/PR comments (general conversation comments)
+  public static func loadComments(owner: String, repository: String, number: Int) async throws -> [Github.IssueComment] {
+    try await loadMany(url: "https://api.github.com/repos/\(owner)/\(repository)/issues/\(number)/comments?per_page=100")
+  }
+
   /// Fetch combined commit status (legacy status API) for a specific ref
   public static func combinedStatus(owner: String, repo: String, ref: String) async throws -> Github.CombinedStatus {
     try await load(url: "https://api.github.com/repos/\(owner)/\(repo)/commits/\(ref)/status")
