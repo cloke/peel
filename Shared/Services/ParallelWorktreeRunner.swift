@@ -1003,65 +1003,107 @@ final class ParallelWorktreeRunner {
   }
   
   // MARK: - Merge Operations
-  
+
+  /// Resolve the actual branch name to merge into.
+  /// If `targetBranch` is set, use that. Otherwise fall back to `baseBranch`.
+  /// When baseBranch is "HEAD", resolve it to the concrete branch name so we
+  /// don't accidentally merge into a detached HEAD state (which loses all work).
+  private func resolveTargetBranch(for run: ParallelWorktreeRun) async throws -> String {
+    let candidate = run.targetBranch ?? run.baseBranch
+
+    // "HEAD" is not a real branch — resolve it to the current branch name
+    if candidate == "HEAD" {
+      let (output, exitCode) = await runGit(
+        ["rev-parse", "--abbrev-ref", "HEAD"],
+        in: run.projectPath
+      )
+      let resolved = output.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard exitCode == 0, !resolved.isEmpty, resolved != "HEAD" else {
+        throw ParallelRunError.checkoutFailed(
+          "Cannot merge: the project is in detached HEAD state and no target branch was specified"
+        )
+      }
+      return resolved
+    }
+    return candidate
+  }
+
+  /// Run a git command off the main thread and return (stdout+stderr, exitCode).
+  private func runGit(_ arguments: [String], in directoryPath: String) async -> (String, Int32) {
+    await withCheckedContinuation { continuation in
+      DispatchQueue.global(qos: .userInitiated).async {
+        let process = Process()
+        process.currentDirectoryURL = URL(fileURLWithPath: directoryPath)
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = arguments
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+
+        do {
+          try process.run()
+          process.waitUntilExit()
+          let data = pipe.fileHandleForReading.readDataToEndOfFile()
+          let output = String(data: data, encoding: .utf8) ?? ""
+          continuation.resume(returning: (output, process.terminationStatus))
+        } catch {
+          continuation.resume(returning: (error.localizedDescription, -1))
+        }
+      }
+    }
+  }
+
   /// Merge a single execution
   func mergeExecution(_ execution: ParallelWorktreeExecution, in run: ParallelWorktreeRun) async throws {
     guard execution.status == .approved else {
       throw ParallelRunError.invalidState("Execution must be approved before merging")
     }
-    
-        guard execution.worktreePath != nil,
-              let branchName = execution.branchName else {
+
+    guard execution.worktreePath != nil,
+          let branchName = execution.branchName else {
       throw ParallelRunError.missingWorktree
     }
-    
+
     execution.status = .merging
-    
+
     do {
-      // Merge the branch into target (or base)
-      let targetBranch = run.targetBranch ?? run.baseBranch
-      
-      // Use git commands directly for checkout and merge
-      let checkoutProcess = Process()
-      checkoutProcess.currentDirectoryURL = URL(fileURLWithPath: run.projectPath)
-      checkoutProcess.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-      checkoutProcess.arguments = ["checkout", targetBranch]
-      try checkoutProcess.run()
-      checkoutProcess.waitUntilExit()
-      
-      guard checkoutProcess.terminationStatus == 0 else {
-        throw ParallelRunError.checkoutFailed(targetBranch)
+      // Resolve the real branch name (not "HEAD")
+      let targetBranch = try await resolveTargetBranch(for: run)
+
+      // Checkout the target branch (runs off main thread)
+      let (checkoutOutput, checkoutExit) = await runGit(
+        ["checkout", targetBranch],
+        in: run.projectPath
+      )
+
+      guard checkoutExit == 0 else {
+        throw ParallelRunError.checkoutFailed(
+          "\(targetBranch): \(checkoutOutput.trimmingCharacters(in: .whitespacesAndNewlines))"
+        )
       }
-      
+
       // Merge the worktree branch
-      let mergeProcess = Process()
-      mergeProcess.currentDirectoryURL = URL(fileURLWithPath: run.projectPath)
-      mergeProcess.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-      mergeProcess.arguments = ["merge", branchName, "--no-edit"]
-      
-      let pipe = Pipe()
-      mergeProcess.standardOutput = pipe
-      mergeProcess.standardError = pipe
-      
-      try mergeProcess.run()
-      mergeProcess.waitUntilExit()
-      
-      if mergeProcess.terminationStatus != 0 {
-        let outputData = pipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: outputData, encoding: .utf8) ?? ""
-        if output.contains("CONFLICT") || output.contains("conflict") {
+      let (mergeOutput, mergeExit) = await runGit(
+        ["merge", branchName, "--no-edit"],
+        in: run.projectPath
+      )
+
+      if mergeExit != 0 {
+        if mergeOutput.contains("CONFLICT") || mergeOutput.contains("conflict") {
+          // Abort the failed merge so the working tree is clean for the next execution
+          _ = await runGit(["merge", "--abort"], in: run.projectPath)
           throw ParallelRunError.mergeConflict(branchName)
         }
-        throw ParallelRunError.mergeFailed(output)
+        throw ParallelRunError.mergeFailed(mergeOutput.trimmingCharacters(in: .whitespacesAndNewlines))
       }
-      
+
       execution.status = .merged
-      
+
       // Cleanup the worktree
       try? await workspaceService.removeWorktreeForChain(chainId: execution.id)
-      
+
     } catch let error as ParallelRunError {
-      // Check if it's a merge conflict
       if case .mergeConflict = error {
         execution.mergeConflicts = ["Merge conflict detected"]
         execution.status = .approved // Reset to approved so user can resolve
@@ -1074,16 +1116,25 @@ final class ParallelWorktreeRunner {
       throw error
     }
   }
-  
-  /// Merge all approved executions
+
+  /// Merge all approved executions, continuing past individual failures.
   func mergeAllApproved(in run: ParallelWorktreeRun) async throws {
     run.status = .merging
-    
+
+    var firstError: Error?
     for execution in run.executions where execution.isReadyToMerge {
-      try await mergeExecution(execution, in: run)
+      do {
+        try await mergeExecution(execution, in: run)
+      } catch {
+        // Record the first error but keep trying remaining executions
+        if firstError == nil { firstError = error }
+      }
     }
-    
+
     updateRunStatus(run)
+
+    // Surface the first error after attempting all merges
+    if let firstError { throw firstError }
   }
   
   // MARK: - Run Control
