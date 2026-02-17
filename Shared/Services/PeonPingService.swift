@@ -62,7 +62,9 @@ final class PeonPingService {
   // MARK: - Settings (persisted via @AppStorage in views, read here)
 
   var isEnabled: Bool {
-    UserDefaults.standard.bool(forKey: "peonPing.enabled")
+    // Default to true so sounds work out of the box
+    if UserDefaults.standard.object(forKey: "peonPing.enabled") == nil { return true }
+    return UserDefaults.standard.bool(forKey: "peonPing.enabled")
   }
 
   var volume: Float {
@@ -84,16 +86,15 @@ final class PeonPingService {
 
   // MARK: - State
 
-  private var manifest: SoundPackManifest?
-  private var lastPlayed: [String: String] = [:] // category -> last file played
-  private var audioPlayer: AVAudioPlayer?
-  private var notificationRequested = false
+  @ObservationIgnored private var manifest: SoundPackManifest?
+  @ObservationIgnored private var lastPlayed: [String: String] = [:] // category -> last file played
+  @ObservationIgnored private var audioPlayer: AVAudioPlayer?
+  @ObservationIgnored private var notificationRequested = false
 
   // MARK: - Init
 
   init() {
     loadManifest()
-    requestNotificationPermission()
   }
 
   // MARK: - Public API
@@ -145,12 +146,32 @@ final class PeonPingService {
     sendNotification(title: "Worktree Review", body: "\(taskTitle) — Something need doing?")
   }
 
+  /// Preview a specific category sound from Settings — always plays regardless of enabled state.
+  func playPreview(_ category: PeonSoundCategory) {
+    playSound(for: category, bypassEnabledCheck: true)
+  }
+
   // MARK: - Sound Playback
 
   private func play(_ category: PeonSoundCategory) {
-    guard isEnabled, isCategoryEnabled(category) else { return }
+    playSound(for: category, bypassEnabledCheck: false)
+  }
+
+  private func playSound(for category: PeonSoundCategory, bypassEnabledCheck: Bool) {
+    if !bypassEnabledCheck {
+      guard isEnabled, isCategoryEnabled(category) else {
+        Self.logger.debug("Sound disabled – isEnabled: \(self.isEnabled), category \(category.rawValue) enabled: \(self.isCategoryEnabled(category))")
+        return
+      }
+    }
     guard let manifest else {
-      Self.logger.warning("No sound pack manifest loaded")
+      Self.logger.warning("No sound pack manifest loaded – attempting reload")
+      loadManifest()
+      guard self.manifest != nil else {
+        Self.logger.error("Sound pack manifest still not available after reload")
+        return
+      }
+      playSound(for: category, bypassEnabledCheck: bypassEnabledCheck)
       return
     }
 
@@ -175,22 +196,29 @@ final class PeonPingService {
 
     // Find the sound file in the bundle
     let soundName = (pick.file as NSString).deletingPathExtension
+    let soundExt = (pick.file as NSString).pathExtension
     guard let url = Bundle.main.url(
       forResource: soundName,
-      withExtension: (pick.file as NSString).pathExtension,
-      subdirectory: "Sounds/peon"
+      withExtension: soundExt
     ) else {
-      Self.logger.warning("Sound file not found in bundle: \(pick.file)")
+      Self.logger.warning("Sound file not found in bundle: \(pick.file) (searched for resource '\(soundName)' ext '\(soundExt)')")
       return
     }
 
     do {
-      audioPlayer = try AVAudioPlayer(contentsOf: url)
-      audioPlayer?.volume = volume
-      audioPlayer?.play()
-      Self.logger.debug("Playing \(category.rawValue): \(pick.line)")
+      let player = try AVAudioPlayer(contentsOf: url)
+      player.volume = volume
+      player.prepareToPlay()
+      let started = player.play()
+      // Store reference AFTER play() to keep player alive during playback
+      audioPlayer = player
+      if started {
+        Self.logger.debug("Playing \(category.rawValue): \(pick.line)")
+      } else {
+        Self.logger.error("AVAudioPlayer.play() returned false for \(pick.file)")
+      }
     } catch {
-      Self.logger.error("Failed to play sound: \(error.localizedDescription)")
+      Self.logger.error("Failed to create AVAudioPlayer: \(error.localizedDescription)")
     }
   }
 
@@ -199,8 +227,7 @@ final class PeonPingService {
   private func loadManifest() {
     guard let url = Bundle.main.url(
       forResource: "manifest",
-      withExtension: "json",
-      subdirectory: "Sounds/peon"
+      withExtension: "json"
     ) else {
       Self.logger.warning("Sound pack manifest not found in bundle")
       return
@@ -234,6 +261,9 @@ final class PeonPingService {
     #if os(macOS)
     guard !NSApp.isActive else { return } // Only notify when app is in background
     #endif
+
+    // Lazily request permission on first actual notification attempt
+    requestNotificationPermission()
 
     let content = UNMutableNotificationContent()
     content.title = title
