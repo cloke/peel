@@ -9,7 +9,7 @@ import PeelUI
 import SwiftUI
 
 struct PeonPingSettingsTab: View {
-  @AppStorage("peonPing.enabled") private var enabled = false
+  @AppStorage("peonPing.enabled") private var enabled = true
   @AppStorage("peonPing.volume") private var volume: Double = 0.5
   @AppStorage("peonPing.desktopNotifications") private var desktopNotifications = true
   @AppStorage("peonPing.category.greeting") private var greetingEnabled = true
@@ -30,13 +30,12 @@ struct PeonPingSettingsTab: View {
               Spacer()
               // Test button
               Button {
-                PeonPingService.shared.chainCompleted(name: "Test")
+                PeonPingService.shared.playPreview(.complete)
               } label: {
                 Label("Test", systemImage: "play.fill")
               }
               .buttonStyle(.bordered)
               .controlSize(.small)
-              .disabled(!enabled)
             }
 
             Text("Play Warcraft III Peon voice lines when agents finish or need attention.")
@@ -154,18 +153,7 @@ private struct CategoryToggle: View {
       }
       Spacer()
       Button {
-        let service = PeonPingService.shared
-        // Temporarily override enabled check for preview
-        let wasEnabled = UserDefaults.standard.bool(forKey: "peonPing.enabled")
-        UserDefaults.standard.set(true, forKey: "peonPing.enabled")
-        switch category {
-        case .greeting: service.chainStarted(name: "Preview")
-        case .acknowledge: service.agentStarted(name: "Preview")
-        case .complete: service.chainCompleted(name: "Preview")
-        case .error: service.chainFailed(name: "Preview", error: "Test error")
-        case .permission: service.needsReview(name: "Preview")
-        }
-        UserDefaults.standard.set(wasEnabled, forKey: "peonPing.enabled")
+        PeonPingService.shared.playPreview(category)
       } label: {
         Image(systemName: "play.circle")
           .foregroundStyle(.secondary)
