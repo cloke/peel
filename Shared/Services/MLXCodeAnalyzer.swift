@@ -374,6 +374,31 @@ enum MLXAnalyzerError: LocalizedError {
   }
 }
 
+// MARK: - ChunkAnalyzer Conformance
+
+import RAGCore
+
+extension MLXCodeAnalyzer: ChunkAnalyzer {
+  nonisolated var analyzerName: String {
+    modelName
+  }
+  
+  func analyze(
+    chunk: String,
+    constructType: String?,
+    constructName: String?,
+    language: String?
+  ) async throws -> ChunkAnalysis {
+    let result = try await analyze(
+      code: chunk,
+      language: language,
+      constructType: constructType,
+      constructName: constructName
+    )
+    return ChunkAnalysis(summary: result.summary, tags: result.tags)
+  }
+}
+
 // MARK: - Factory
 
 enum MLXCodeAnalyzerFactory {

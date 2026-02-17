@@ -175,6 +175,19 @@ extension MCPServerService {
         isMutating: false
       ),
       ToolDefinition(
+        name: "repos.delete",
+        description: "Delete a repository from Peel's SwiftData store by repoId or localPath",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoId": ["type": "string", "description": "Repository UUID to delete"],
+            "localPath": ["type": "string", "description": "Local path of repository to delete"]
+          ]
+        ],
+        category: .state,
+        isMutating: true
+      ),
+      ToolDefinition(
         name: "rag.status",
         description: "Get Local RAG database status",
         inputSchema: [
