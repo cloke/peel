@@ -37,10 +37,16 @@ func makeDefaultRAGStore(
   dbURL: URL? = nil,
   chunkAnalyzer: ChunkAnalyzer? = nil
 ) -> RAGStore {
-  RAGStore(
+  #if os(macOS)
+  let analyzer: ChunkAnalyzer? = chunkAnalyzer ?? MLXCodeAnalyzerFactory.makeAnalyzer(tier: .auto)
+  #else
+  let analyzer = chunkAnalyzer
+  #endif
+  
+  return RAGStore(
     dbURL: dbURL,
     embeddingProvider: LocalRAGEmbeddingProviderFactory.makeDefault(),
-    chunkAnalyzer: chunkAnalyzer,
+    chunkAnalyzer: analyzer,
     memoryMonitor: MLXMemoryPressureMonitor()
   )
 }
