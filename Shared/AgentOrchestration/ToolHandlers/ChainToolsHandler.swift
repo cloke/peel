@@ -170,7 +170,9 @@ final class ChainToolsHandler: MCPToolHandler {
     guard case .success(let prompt) = requireString("prompt", from: arguments, id: id) else {
       return missingParamError(id: id, param: "prompt")
     }
-    guard case .success(let repoPath) = requireString("repoPath", from: arguments, id: id) else {
+    // Accept both repoPath (preferred) and workingDirectory (PeelCLI compat)
+    let repoPathValue = (arguments["repoPath"] as? String) ?? (arguments["workingDirectory"] as? String)
+    guard let repoPath = repoPathValue, !repoPath.isEmpty else {
       return missingParamError(id: id, param: "repoPath")
     }
     

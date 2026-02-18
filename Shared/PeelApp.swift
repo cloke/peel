@@ -39,6 +39,8 @@ struct PeelApp: App {
     Task { @MainActor in
       dataService.normalizeCommunitySkills()
     }
+    // Wire SwiftData context into swarm coordinator for worktree persistence (#282)
+    SwarmCoordinator.shared.modelContext = context
     
     // Note: Ember skills update check is performed in ContentView.task (Issue #263)
     
@@ -66,6 +68,7 @@ struct PeelApp: App {
       // Device-local only
       LocalRepositoryPath.self,
       TrackedWorktree.self,
+      SwarmBranchReservation.self,
       DeviceSettings.self,
       MCPRunRecord.self,
       MCPRunResultRecord.self,
