@@ -6,6 +6,7 @@
 
 import Foundation
 import Network
+import SwiftData
 import os.log
 
 // MARK: - Swarm Mode
@@ -221,11 +222,19 @@ public final class SwarmCoordinator {
   private var _worktreeManager: SwarmWorktreeManager?
   private var worktreeManager: SwarmWorktreeManager {
     if _worktreeManager == nil {
-      _worktreeManager = SwarmWorktreeManager()
+      _worktreeManager = SwarmWorktreeManager(modelContext: modelContext)
     }
     return _worktreeManager!
   }
-  
+
+  /// SwiftData context for worktree persistence. Set this before the first task is executed.
+  public var modelContext: ModelContext? {
+    didSet {
+      _worktreeManager?.modelContext = modelContext
+      branchQueue.modelContext = modelContext
+    }
+  }
+
   /// Whether to use worktrees for task isolation (default: true)
   public var useWorktreeIsolation: Bool = true
   
