@@ -183,7 +183,8 @@ final class ChainToolsHandler: MCPToolHandler {
       maxPremiumCost: optionalDouble("maxPremiumCost", from: arguments),
       requireRag: optionalBool("requireRag", from: arguments, default: false),
       skipReview: optionalBool("skipReview", from: arguments, default: false),
-      dryRun: optionalBool("dryRun", from: arguments, default: false)
+      dryRun: optionalBool("dryRun", from: arguments, default: false),
+      returnImmediately: optionalBool("returnImmediately", from: arguments, default: false)
     )
     
     do {
@@ -517,6 +518,7 @@ struct ChainToolRunOptions {
   let requireRag: Bool
   let skipReview: Bool
   let dryRun: Bool
+  var returnImmediately: Bool = false
 }
 
 /// Result of starting a chain run

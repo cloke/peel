@@ -42,22 +42,38 @@ extension MCPServerService: ChainToolsHandlerDelegate {
     if options.skipReview {
       arguments["enableReviewLoop"] = false
     }
-    if options.dryRun {
+    if options.dryRun || options.returnImmediately {
       arguments["returnImmediately"] = true
     }
     
     let (status, data) = await handleChainRun(id: nil, arguments: arguments)
     
-    // Parse the response to extract runId
+    // handleChainRun returns makeToolResult, which wraps the data as:
+    // { "result": { "content": [{"type":"text","text":"<json>"}], "isError": false } }
+    // Parse through the MCP content envelope then look for runId.
     if status == 200,
        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-       let result = json["result"] as? [String: Any],
-       let runId = result["runId"] as? String {
-      return ChainToolRunResult(
-        chainId: runId,
-        status: "started",
-        message: result["message"] as? String ?? "Chain started"
-      )
+       let outerResult = json["result"] as? [String: Any] {
+      // Try MCP content envelope first
+      let chainData: [String: Any]?
+      if let content = outerResult["content"] as? [[String: Any]],
+         let text = content.first?["text"] as? String,
+         let parsed = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] {
+        chainData = parsed
+      } else {
+        chainData = outerResult
+      }
+      if let chainData {
+        let runId = chainData["runId"] as? String
+          ?? (chainData["queue"] as? [String: Any])?["runId"] as? String
+        if let runId {
+          return ChainToolRunResult(
+            chainId: runId,
+            status: "started",
+            message: chainData["message"] as? String ?? "Chain started"
+          )
+        }
+      }
     }
     
     // Parse error
