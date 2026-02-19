@@ -539,6 +539,11 @@ public struct RAGArtifactRepoSnapshot: Codable, Sendable {
   }
 }
 
+public enum RAGSnapshotKind: String, Codable, Sendable {
+  case base
+  case delta
+}
+
 public struct RAGArtifactManifest: Codable, Sendable {
   public let formatVersion: Int
   public let version: String
@@ -549,6 +554,34 @@ public struct RAGArtifactManifest: Codable, Sendable {
   public let lastIndexedAt: Date?
   public let files: [RAGArtifactFileInfo]
   public let repos: [RAGArtifactRepoSnapshot]
+  public let embeddingModelId: String?
+  public let snapshotKind: RAGSnapshotKind
+
+  public init(
+    formatVersion: Int,
+    version: String,
+    createdAt: Date,
+    schemaVersion: Int,
+    totalBytes: Int,
+    embeddingCacheCount: Int,
+    lastIndexedAt: Date?,
+    files: [RAGArtifactFileInfo],
+    repos: [RAGArtifactRepoSnapshot],
+    embeddingModelId: String? = nil,
+    snapshotKind: RAGSnapshotKind = .base
+  ) {
+    self.formatVersion = formatVersion
+    self.version = version
+    self.createdAt = createdAt
+    self.schemaVersion = schemaVersion
+    self.totalBytes = totalBytes
+    self.embeddingCacheCount = embeddingCacheCount
+    self.lastIndexedAt = lastIndexedAt
+    self.files = files
+    self.repos = repos
+    self.embeddingModelId = embeddingModelId
+    self.snapshotKind = snapshotKind
+  }
 }
 
 public struct RAGArtifactStatus: Codable, Sendable {
