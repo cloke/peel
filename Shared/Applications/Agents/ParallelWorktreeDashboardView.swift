@@ -649,6 +649,9 @@ struct ExecutionCard: View {
     case .pending:
       Image(systemName: "clock")
         .foregroundStyle(.secondary)
+    case .waitingForDependencies:
+      Image(systemName: "arrow.triangle.branch")
+        .foregroundStyle(.secondary)
     case .creatingWorktree:
       ProgressView()
         .scaleEffect(0.6)

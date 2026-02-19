@@ -29,7 +29,10 @@ final class ParallelToolsHandler {
       "parallel.pause",
       "parallel.resume",
       "parallel.instruct",
-      "parallel.cancel"
+      "parallel.cancel",
+      "parallel.diff",
+      "parallel.retry",
+      "parallel.append"
     ]
   }
 
@@ -193,6 +196,12 @@ final class ParallelToolsHandler {
       return handleInstruct(id: id, arguments: arguments)
     case "parallel.cancel":
       return await handleCancel(id: id, arguments: arguments)
+    case "parallel.diff":
+      return await handleDiff(id: id, arguments: arguments)
+    case "parallel.retry":
+      return await handleRetry(id: id, arguments: arguments)
+    case "parallel.append":
+      return await handleAppend(id: id, arguments: arguments)
     default:
       return (400, JSONRPCResponseBuilder.makeError(
         id: id,
@@ -232,8 +241,8 @@ final class ParallelToolsHandler {
     let maxImplementers = arguments["maxImplementers"] as? Int
     let maxPremiumCost = arguments["maxPremiumCost"] as? Double
 
-    // Parse tasks
-    let tasks: [WorktreeTask] = tasksArray.compactMap { taskDict in
+    // Parse tasks — first pass creates stable IDs; second pass resolves dependsOn indices
+    var tasks: [WorktreeTask] = tasksArray.compactMap { taskDict in
       guard let title = (taskDict["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
             !title.isEmpty,
             let prompt = (taskDict["prompt"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -242,16 +251,37 @@ final class ParallelToolsHandler {
       }
       let description = taskDict["description"] as? String ?? ""
       let focusPaths = taskDict["focusPaths"] as? [String] ?? []
-      return WorktreeTask(
-        title: title,
-        description: description,
-        prompt: prompt,
-        focusPaths: focusPaths
-      )
+      return WorktreeTask(title: title, description: description, prompt: prompt, focusPaths: focusPaths)
     }
 
     guard tasks.count == tasksArray.count else {
       return invalidParamError(id: id, param: "tasks", reason: "Invalid task format - each task needs title and prompt")
+    }
+
+    // Resolve dependsOn indices → stable task UUIDs
+    for (idx, taskDict) in tasksArray.enumerated() {
+      if let depIndices = taskDict["dependsOn"] as? [Int] {
+        tasks[idx].dependsOn = depIndices.compactMap { depIdx -> UUID? in
+          guard depIdx >= 0, depIdx < tasks.count, depIdx != idx else { return nil }
+          return tasks[depIdx].id
+        }
+      }
+    }
+    // Detect circular dependencies (DFS)
+    let taskIds = Set(tasks.map { $0.id })
+    var visited = Set<UUID>(); var stack = Set<UUID>()
+    func hasCycle(_ id: UUID) -> Bool {
+      guard taskIds.contains(id) else { return false }
+      if stack.contains(id) { return true }
+      if visited.contains(id) { return false }
+      stack.insert(id)
+      if let t = tasks.first(where: { $0.id == id }) {
+        for dep in t.dependsOn where hasCycle(dep) { return true }
+      }
+      stack.remove(id); visited.insert(id); return false
+    }
+    if tasks.contains(where: { hasCycle($0.id) }) {
+      return invalidParamError(id: id, param: "tasks", reason: "Circular dependency detected in dependsOn")
     }
 
     let hasRunOptions = allowPlannerModelSelection != nil
@@ -723,6 +753,78 @@ final class ParallelToolsHandler {
       "runId": runId.uuidString,
       "status": "cancelled"
     ]))
+  }
+
+  // MARK: - New Tool Handlers (#295 – #298)
+
+  private func handleDiff(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard case .success(let runner) = getRunner(id: id) else { return runnerNotInitializedError(id: id) }
+    guard case .success(let runId) = getUUID("runId", from: arguments, id: id) else { return missingParamError(id: id, param: "runId") }
+    guard case .success(let run) = getRun(runId: runId, from: runner, id: id) else { return runNotFoundError(id: id, runId: runId.uuidString, runner: runner) }
+    guard case .success(let executionId) = getUUID("executionId", from: arguments, id: id) else { return missingParamError(id: id, param: "executionId") }
+    guard case .success(let execution) = getExecution(executionId: executionId, from: run, id: id) else {
+      return (404, JSONRPCResponseBuilder.makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.notFound, message: "Execution not found"))
+    }
+    let maxLines = arguments["maxLines"] as? Int
+    let diff = await runner.diffExecution(execution, in: run, maxLines: maxLines)
+    let truncated = maxLines.map { diff.components(separatedBy: "\n").count >= $0 } ?? false
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
+      "runId": runId.uuidString,
+      "executionId": executionId.uuidString,
+      "branchName": execution.branchName as Any,
+      "diff": diff,
+      "truncated": truncated
+    ]))
+  }
+
+  private func handleRetry(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard case .success(let runner) = getRunner(id: id) else { return runnerNotInitializedError(id: id) }
+    guard case .success(let runId) = getUUID("runId", from: arguments, id: id) else { return missingParamError(id: id, param: "runId") }
+    guard case .success(let run) = getRun(runId: runId, from: runner, id: id) else { return runNotFoundError(id: id, runId: runId.uuidString, runner: runner) }
+    guard case .success(let executionId) = getUUID("executionId", from: arguments, id: id) else { return missingParamError(id: id, param: "executionId") }
+    guard case .success(let execution) = getExecution(executionId: executionId, from: run, id: id) else {
+      return (404, JSONRPCResponseBuilder.makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.notFound, message: "Execution not found"))
+    }
+    let amendedPrompt = optionalString("amendedPrompt", from: arguments)
+    let guidance = optionalString("guidance", from: arguments)
+    do {
+      try await runner.retryExecution(execution, in: run, amendedPrompt: amendedPrompt, guidance: guidance)
+      await delegate?.parallelTelemetryProvider.info("Parallel execution retried", metadata: ["runId": runId.uuidString, "executionId": executionId.uuidString])
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
+        "runId": runId.uuidString,
+        "executionId": executionId.uuidString,
+        "status": execution.status.displayName
+      ]))
+    } catch {
+      return (400, JSONRPCResponseBuilder.makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: error.localizedDescription))
+    }
+  }
+
+  private func handleAppend(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard case .success(let runner) = getRunner(id: id) else { return runnerNotInitializedError(id: id) }
+    guard case .success(let runId) = getUUID("runId", from: arguments, id: id) else { return missingParamError(id: id, param: "runId") }
+    guard case .success(let run) = getRun(runId: runId, from: runner, id: id) else { return runNotFoundError(id: id, runId: runId.uuidString, runner: runner) }
+    guard let tasksArray = arguments["tasks"] as? [[String: Any]], !tasksArray.isEmpty else { return missingParamError(id: id, param: "tasks") }
+    let newTasks: [WorktreeTask] = tasksArray.compactMap { taskDict in
+      guard let title = (taskDict["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty,
+            let prompt = (taskDict["prompt"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !prompt.isEmpty else { return nil }
+      return WorktreeTask(title: title, description: taskDict["description"] as? String ?? "", prompt: prompt, focusPaths: taskDict["focusPaths"] as? [String] ?? [])
+    }
+    guard newTasks.count == tasksArray.count else {
+      return invalidParamError(id: id, param: "tasks", reason: "Invalid task format — each task needs title and prompt")
+    }
+    do {
+      try runner.appendTasks(newTasks, to: run)
+      await delegate?.parallelTelemetryProvider.info("Tasks appended to parallel run", metadata: ["runId": runId.uuidString, "count": "\(newTasks.count)"])
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
+        "runId": runId.uuidString,
+        "addedCount": newTasks.count,
+        "totalExecutionCount": run.executions.count,
+        "status": run.status.displayName
+      ]))
+    } catch {
+      return (400, JSONRPCResponseBuilder.makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: error.localizedDescription))
+    }
   }
 
   // MARK: - Encoding Helpers
