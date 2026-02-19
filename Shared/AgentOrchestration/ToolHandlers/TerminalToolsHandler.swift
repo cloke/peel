@@ -127,25 +127,53 @@ public final class TerminalToolsHandler: MCPToolHandler {
       commandToRun = command
     }
     
-    // 3. Execute the command
+    // 3. Isolate xcodebuild: inject per-worktree -derivedDataPath and
+    //    serialize through the global build queue to prevent collisions
+    //    when multiple agent worktrees build simultaneously.
+    let isXcodeBuild = commandToRun.contains("xcodebuild")
+      && !commandToRun.contains("-showBuildSettings")
+      && !commandToRun.contains("-list")
+    let finalCommand: String
+    var buildDerivedDataPath: String?
+    if isXcodeBuild {
+      let derivedBase = workingDirectory ?? configuration.defaultWorkingDirectory ?? "/tmp"
+      let derivedPath = "\(derivedBase)/.xcode-derived"
+      buildDerivedDataPath = derivedPath
+      finalCommand = commandToRun.injectingXcodebuildDerivedDataPath(derivedPath)
+      logger.info("xcodebuild isolation: derivedDataPath=\(derivedPath, privacy: .public)")
+    } else {
+      finalCommand = commandToRun
+    }
+
+    // 4. Execute (serialized for xcodebuild, direct for everything else)
     let startTime = Date()
-    let (stdout, stderr, exitCode) = await executeCommand(
-      commandToRun,
-      workingDirectory: workingDirectory,
-      timeout: timeout
-    )
+    let (stdout, stderr, exitCode): (String, String, Int32)
+    if isXcodeBuild {
+      (stdout, stderr, exitCode) = await XcodeBuildQueue.shared.withSlot {
+        await self.executeCommand(finalCommand, workingDirectory: workingDirectory, timeout: timeout)
+      }
+    } else {
+      (stdout, stderr, exitCode) = await executeCommand(
+        finalCommand,
+        workingDirectory: workingDirectory,
+        timeout: timeout
+      )
+    }
     let duration = Date().timeIntervalSince(startTime)
-    
-    // 4. Build result
+
+    // 5. Build result
     var result: [String: Any] = [
       "command": command,
-      "executed_command": commandToRun,
+      "executed_command": finalCommand,
       "stdout": stdout,
       "stderr": stderr,
       "exit_code": exitCode,
       "success": exitCode == 0,
       "duration_ms": Int(duration * 1000)
     ]
+    if let ddp = buildDerivedDataPath {
+      result["xcodebuild_derived_data_path"] = ddp
+    }
     
     // Add adaptation info
     if let adaptation = adaptationResult {
