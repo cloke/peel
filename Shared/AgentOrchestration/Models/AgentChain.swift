@@ -26,6 +26,9 @@ public final class AgentChain: Identifiable {
 
   public var runSource: RunSource = .manual
   
+  /// The initial prompt used to start the chain (for MCP chains)
+  public var initialPrompt: String?
+  
   /// Shared working directory for all agents in the chain
   public var workingDirectory: String?
   
