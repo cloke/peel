@@ -207,58 +207,62 @@ actor MLXEmbeddingProvider: LocalRAGEmbeddingProvider, BatchAwareEmbeddingProvid
     
     // Use the model container for thread-safe embedding
     // Based on MLXEmbedders README usage pattern
-    let results = await container.perform { (model: EmbeddingModel, tokenizer: any Tokenizer, pooling: Pooling) -> [[Float]] in
-      // Encode all texts
-      let encodedInputs = texts.map { text in
-        let sanitized = TextSanitizer.sanitize(text)
-        return tokenizer.encode(text: sanitized, addSpecialTokens: true)
-      }
-      
-      // Pad to longest sequence
-      let maxLength = encodedInputs.reduce(into: 16) { acc, elem in
-        acc = max(acc, elem.count)
-      }
-      
-      let padTokenId = tokenizer.eosTokenId ?? 0
-      let padded = MLX.stacked(
-        encodedInputs.map { elem in
-          MLXArray(
-            elem + Array(repeating: padTokenId, count: maxLength - elem.count)
-          )
+    // Wrap with withError to convert MLX C++ errors into Swift throws
+    // instead of fatalError (see ErrorHandler.dispatch in mlx-swift)
+    let results = try await container.perform { (model: EmbeddingModel, tokenizer: any Tokenizer, pooling: Pooling) -> [[Float]] in
+      try withError {
+        // Encode all texts
+        let encodedInputs = texts.map { text in
+          let sanitized = TextSanitizer.sanitize(text)
+          return tokenizer.encode(text: sanitized, addSpecialTokens: true)
         }
-      )
-      
-      // Create attention mask (1 for real tokens, 0 for padding)
-      let attentionMask = (padded .!= padTokenId)
-      let tokenTypes = MLXArray.zeros(like: padded)
-      
-      // Run model to get hidden states
-      let modelOutput = model(padded, positionIds: nil, tokenTypeIds: tokenTypes, attentionMask: attentionMask)
-      
-      // Use mean pooling if the loaded pooling strategy is .none (missing config file case)
-      // Many embedding models like Qwen3 don't include 1_Pooling/config.json
-      let effectivePooling: Pooling
-      if pooling.strategy == .none {
-        effectivePooling = Pooling(strategy: .mean)
-      } else {
-        effectivePooling = pooling
+        
+        // Pad to longest sequence
+        let maxLength = encodedInputs.reduce(into: 16) { acc, elem in
+          acc = max(acc, elem.count)
+        }
+        
+        let padTokenId = tokenizer.eosTokenId ?? 0
+        let padded = MLX.stacked(
+          encodedInputs.map { elem in
+            MLXArray(
+              elem + Array(repeating: padTokenId, count: maxLength - elem.count)
+            )
+          }
+        )
+        
+        // Create attention mask (1 for real tokens, 0 for padding)
+        let attentionMask = (padded .!= padTokenId)
+        let tokenTypes = MLXArray.zeros(like: padded)
+        
+        // Run model to get hidden states
+        let modelOutput = model(padded, positionIds: nil, tokenTypeIds: tokenTypes, attentionMask: attentionMask)
+        
+        // Use mean pooling if the loaded pooling strategy is .none (missing config file case)
+        // Many embedding models like Qwen3 don't include 1_Pooling/config.json
+        let effectivePooling: Pooling
+        if pooling.strategy == .none {
+          effectivePooling = Pooling(strategy: .mean)
+        } else {
+          effectivePooling = pooling
+        }
+        
+        // Apply pooling with mask for proper mean calculation
+        let pooledResult = effectivePooling(modelOutput, mask: attentionMask, normalize: true, applyLayerNorm: true)
+        
+        // Evaluate and convert to Float arrays
+        // pooledResult shape should be [batch, hidden_dim]
+        pooledResult.eval()
+        
+        // Convert each batch item to a Float array
+        let batchSize = pooledResult.dim(0)
+        var embeddings: [[Float]] = []
+        for i in 0..<batchSize {
+          let embedding = pooledResult[i].asArray(Float.self)
+          embeddings.append(embedding)
+        }
+        return embeddings
       }
-      
-      // Apply pooling with mask for proper mean calculation
-      let pooledResult = effectivePooling(modelOutput, mask: attentionMask, normalize: true, applyLayerNorm: true)
-      
-      // Evaluate and convert to Float arrays
-      // pooledResult shape should be [batch, hidden_dim]
-      pooledResult.eval()
-      
-      // Convert each batch item to a Float array
-      let batchSize = pooledResult.dim(0)
-      var embeddings: [[Float]] = []
-      for i in 0..<batchSize {
-        let embedding = pooledResult[i].asArray(Float.self)
-        embeddings.append(embedding)
-      }
-      return embeddings
     }
     
     return results
@@ -291,6 +295,7 @@ enum MLXEmbeddingError: LocalizedError {
   case modelNotLoaded
   case embeddingFailed(String)
   case modelNotSupported(String)
+  case evaluationFailed(String)
   
   var errorDescription: String? {
     switch self {
@@ -300,6 +305,8 @@ enum MLXEmbeddingError: LocalizedError {
       return "Embedding failed: \(reason)"
     case .modelNotSupported(let model):
       return "Model not supported: \(model)"
+    case .evaluationFailed(let reason):
+      return "MLX evaluation failed: \(reason)"
     }
   }
 }
