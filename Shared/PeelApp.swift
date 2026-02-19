@@ -159,6 +159,8 @@ struct PeelApp: App {
             skillUpdateAvailable = true
             print("[PeelApp] Ember skills update available")
           }
+          // Resume any RAG indexing or analysis that was interrupted by the previous app quit
+          await mcpServer.resumeInterruptedRAGOperations()
         }
         .alert("Ember Best Practices Updated", isPresented: $skillUpdateAvailable) {
           Button("Update Skills") {

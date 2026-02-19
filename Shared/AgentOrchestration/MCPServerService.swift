@@ -41,6 +41,8 @@ public final class MCPServerService {
     static let localRagSearchLimit = "localrag.searchLimit"
     static let ragUsageStats = "localrag.usageStats"
     static let ragSessionEvents = "localrag.sessionEvents"
+    static let ragInterruptedIndexingPaths = "localrag.resume.indexingPaths"
+    static let ragInterruptedAnalysisPaths = "localrag.resume.analysisPaths"
   }
 
   // Tool types from MCPCore
@@ -454,6 +456,72 @@ public final class MCPServerService {
   var ragStatus: LocalRAGStore.Status?
   var ragStats: LocalRAGStore.Stats?
   var ragUsage = RAGUsageStats()
+
+  // MARK: - Interrupted operation resume
+
+  /// Repo paths that were mid-index when the app last quit. Persisted so we can resume on launch.
+  var interruptedIndexingPaths: Set<String> {
+    get { Set(UserDefaults.standard.stringArray(forKey: StorageKey.ragInterruptedIndexingPaths) ?? []) }
+    set { UserDefaults.standard.set(Array(newValue), forKey: StorageKey.ragInterruptedIndexingPaths) }
+  }
+
+  /// Repo paths that were mid-analysis when the app last quit. Persisted so cards can auto-resume.
+  var interruptedAnalysisPaths: Set<String> {
+    get { Set(UserDefaults.standard.stringArray(forKey: StorageKey.ragInterruptedAnalysisPaths) ?? []) }
+    set { UserDefaults.standard.set(Array(newValue), forKey: StorageKey.ragInterruptedAnalysisPaths) }
+  }
+
+  func markIndexingStarted(path: String) {
+    var paths = interruptedIndexingPaths
+    paths.insert(path)
+    interruptedIndexingPaths = paths
+  }
+
+  func markIndexingStopped(path: String) {
+    var paths = interruptedIndexingPaths
+    paths.remove(path)
+    interruptedIndexingPaths = paths
+  }
+
+  func markAnalysisStarted(repoPath: String) {
+    var paths = interruptedAnalysisPaths
+    paths.insert(repoPath)
+    interruptedAnalysisPaths = paths
+  }
+
+  func markAnalysisStopped(repoPath: String) {
+    var paths = interruptedAnalysisPaths
+    paths.remove(repoPath)
+    interruptedAnalysisPaths = paths
+  }
+
+  /// Called on launch to resume any indexing or analysis that was interrupted by app quit.
+  func resumeInterruptedRAGOperations() async {
+    let indexPaths = interruptedIndexingPaths
+    guard !indexPaths.isEmpty || !interruptedAnalysisPaths.isEmpty else { return }
+
+    if !indexPaths.isEmpty {
+      print("[RAG Resume] Resuming indexing for \(indexPaths.count) repo(s): \(indexPaths)")
+      for path in indexPaths {
+        guard FileManager.default.fileExists(atPath: path) else {
+          markIndexingStopped(path: path)
+          continue
+        }
+        do {
+          try await indexRagRepo(path: path)
+        } catch {
+          print("[RAG Resume] Indexing failed for \(path): \(error)")
+        }
+      }
+    }
+
+    // Analysis paths are consumed by RAGRepositoryCardView.onAppear — no action needed here,
+    // but log so it's visible in the console.
+    let analysisPaths = interruptedAnalysisPaths
+    if !analysisPaths.isEmpty {
+      print("[RAG Resume] \(analysisPaths.count) repo(s) will auto-resume analysis when their cards appear: \(analysisPaths)")
+    }
+  }
   var ragSessionEvents: [RAGSessionEvent] = []
   var ragQueryHints: [RAGQueryHint] = []
   var ragRepos: [RAGRepoInfo] = []

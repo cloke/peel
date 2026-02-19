@@ -163,6 +163,13 @@ struct RAGRepositoryCardView: View {
       repoRemoteURL = await RepoRegistry.shared.registerRepo(at: repo.rootPath)
         ?? RepoRegistry.shared.getCachedRemoteURL(for: repo.rootPath)
       repoTechTags = RepoTechDetector.detectTags(repoPath: repo.rootPath)
+      // Auto-resume analysis that was interrupted by an app quit
+      if mcpServer.interruptedAnalysisPaths.contains(repo.rootPath),
+         !analysisState.isAnalyzing,
+         analysisState.unanalyzedCount > 0 {
+        print("[RAG Resume] Auto-resuming analysis for \(repo.rootPath)")
+        startAnalyzeAll()
+      }
     }
     .sheet(isPresented: $showSkillsSheet) {
       RAGRepoSkillsSheet(repo: repo, mcpServer: mcpServer)
@@ -911,6 +918,7 @@ struct RAGRepositoryCardView: View {
   }
   
   private func startAnalyzeAll() {
+    mcpServer.markAnalysisStarted(repoPath: repo.rootPath)
     analysisState.isAnalyzing = true
     analysisState.isPaused = false
     analysisState.analyzeError = nil
@@ -930,6 +938,7 @@ struct RAGRepositoryCardView: View {
   private func stopAnalysis() {
     analysisState.analyzeTask?.cancel()
     analysisState.analyzeTask = nil
+    mcpServer.markAnalysisStopped(repoPath: repo.rootPath)
     
     if let startTime = analysisState.analysisStartTime, analysisState.sessionChunksAnalyzed > 0 {
       let duration = Date().timeIntervalSince(startTime)
@@ -966,6 +975,7 @@ struct RAGRepositoryCardView: View {
           analysisState.batchProgress = nil
           analysisState.sessionChunksAnalyzed = 0
           analysisState.analysisStartTime = nil
+          mcpServer.markAnalysisStopped(repoPath: repo.rootPath)
         }
         
         // Auto-enrich embeddings with AI summaries (runs after UI is updated)
