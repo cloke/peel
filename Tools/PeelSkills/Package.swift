@@ -11,7 +11,8 @@ let package = Package(
     .executable(name: "roadmap-audit", targets: ["RoadmapAudit"]),
     .executable(name: "pattern-audit", targets: ["PatternAudit"]),
     .executable(name: "file-rewrite", targets: ["FileRewrite"]),
-    .executable(name: "translation-validator", targets: ["TranslationValidator"])
+    .executable(name: "translation-validator", targets: ["TranslationValidator"]),
+    .library(name: "TranslationTypes", targets: ["TranslationTypes"])
   ],
   dependencies: [
     .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0"),
@@ -52,9 +53,14 @@ let package = Package(
       name: "TranslationValidator",
       dependencies: [
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
-        .product(name: "Yams", package: "Yams")
+        .product(name: "Yams", package: "Yams"),
+        "TranslationTypes"
       ],
       path: "Sources/TranslationValidator"
+    ),
+    .target(
+      name: "TranslationTypes",
+      path: "Sources/TranslationTypes"
     )
   ]
 )

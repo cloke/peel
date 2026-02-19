@@ -4,6 +4,10 @@
 //
 //  Extracted from AgentManager.swift on 1/20/26.
 //
+//  NOTE: The Translation model types below are mirrored from the canonical source at:
+//  Tools/PeelSkills/Sources/TranslationTypes/TranslationTypes.swift
+//  Keep both copies in sync when modifying.
+//
 
 import Foundation
 import TaskRunner

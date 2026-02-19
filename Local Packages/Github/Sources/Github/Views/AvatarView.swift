@@ -26,14 +26,18 @@ public struct AvatarView: View {
     AsyncImage(url: url, transaction: Transaction(animation: .easeInOut)) { phase in
       switch phase {
       case .empty:
-        ProgressView()
+        Image(systemName: "person.crop.circle.fill")
+          .resizable()
+          .foregroundStyle(.secondary)
       case .success(let image):
         image
           .resizable()
           .scaledToFit()
           .transition(.opacity)
       case .failure(_):
-        Image(systemName: "exclamationmark.icloud")
+        Image(systemName: "person.crop.circle.badge.exclamationmark")
+          .resizable()
+          .foregroundStyle(.secondary)
       @unknown default: EmptyView()
       }
     }

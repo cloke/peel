@@ -91,14 +91,16 @@ struct Repositories_RootView: View {
 
   /// Custom two-tab picker. Re-tapping the active tab resets it to root.
   private var scopePicker: some View {
-    HStack(spacing: 2) {
+    HStack(spacing: 0) {
       ForEach(Scope.allCases) { scope in
         scopeTab(scope)
       }
     }
-    .padding(.horizontal)
-    .padding(.top, 8)
-    .padding(.bottom, 6)
+    .padding(3)
+    .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 11))
+    .padding(.horizontal, 16)
+    .padding(.top, 10)
+    .padding(.bottom, 8)
   }
 
   private func scopeTab(_ scope: Scope) -> some View {
@@ -111,18 +113,19 @@ struct Repositories_RootView: View {
     } label: {
       Label(scope.title, systemImage: scope.icon)
         .font(.callout.weight(currentScope == scope ? .semibold : .regular))
-        .padding(.horizontal, 16)
-        .padding(.vertical, 6)
-        .frame(maxWidth: 200)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
         .background(
           currentScope == scope
-            ? Color.accentColor.opacity(0.15)
+            ? Color.primary.opacity(0.08)
             : Color.clear,
           in: RoundedRectangle(cornerRadius: 8)
         )
         .foregroundStyle(currentScope == scope ? .primary : .secondary)
     }
     .buttonStyle(.plain)
+    .animation(.easeInOut(duration: 0.15), value: currentScope)
     .help(currentScope == scope
       ? "Return \(scope.title) to its root"
       : "Switch to \(scope.title)")
