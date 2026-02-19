@@ -39,6 +39,22 @@ struct WorktreeTask: Identifiable, Sendable {
   }
 }
 
+// MARK: - Conflict Resolution
+
+/// A file that has merge conflicts, with its raw content (including conflict markers)
+struct MergeConflictFile: Identifiable, Sendable {
+  let id = UUID()
+  let filePath: String
+  var content: String
+}
+
+/// How to resolve a single conflicted file
+enum ConflictResolution: Equatable {
+  case ours
+  case theirs
+  case editor  // user edited the file directly in an external editor
+}
+
 /// Status of a single worktree in a parallel run
 enum ParallelWorktreeStatus: Sendable, Equatable {
   case pending
@@ -53,6 +69,7 @@ enum ParallelWorktreeStatus: Sendable, Equatable {
   case merged
   case failed(String)
   case cancelled
+  case conflicted([String])  // associated value = list of conflicted file paths
 
   var isTerminal: Bool {
     switch self {
@@ -75,6 +92,7 @@ enum ParallelWorktreeStatus: Sendable, Equatable {
     case .merged: return "Merged"
     case .failed: return "Failed"
     case .cancelled: return "Cancelled"
+    case .conflicted: return "Conflicted"
     }
   }
 }
@@ -101,7 +119,7 @@ final class ParallelWorktreeExecution: Identifiable, @unchecked Sendable {
   var filesChanged: Int = 0
   var insertions: Int = 0
   var deletions: Int = 0
-  var mergeConflicts: [String] = []
+  var conflictFiles: [MergeConflictFile] = []
   var ragSnippets: [RAGSnippet] = []
   var operatorGuidance: [String] = []
   /// Overrides task.prompt for this execution (set via parallel.retry amendedPrompt)
@@ -129,7 +147,7 @@ final class ParallelWorktreeExecution: Identifiable, @unchecked Sendable {
   }
   
   var isReadyToMerge: Bool {
-    status == .approved && mergeConflicts.isEmpty
+    status == .approved && conflictFiles.isEmpty
   }
 }
 
@@ -623,7 +641,7 @@ final class ParallelWorktreeRunner {
     execution.filesChanged = 0
     execution.insertions = 0
     execution.deletions = 0
-    execution.mergeConflicts = []
+    execution.conflictFiles = []
     execution.worktreePath = nil
     execution.branchName = nil
     execution.chainId = nil
@@ -725,9 +743,9 @@ final class ParallelWorktreeRunner {
       execution.insertions = result.insertions
       execution.deletions = result.deletions
       
-      // Check for merge conflicts
-      if let conflicts = result.mergeConflicts {
-        execution.mergeConflicts = conflicts
+      // Populate conflict files from pre-merge detection (if any)
+      if let conflicts = result.mergeConflicts, !conflicts.isEmpty {
+        execution.conflictFiles = conflicts.map { MergeConflictFile(filePath: $0, content: "") }
       }
       
       // Set status based on review gate
@@ -1101,7 +1119,13 @@ final class ParallelWorktreeRunner {
   
   /// Update run status based on execution results
   private func updateRunStatus(_ run: ParallelWorktreeRun) {
-    let allTerminal = run.executions.allSatisfy { $0.status.isTerminal || $0.status == .approved || $0.status == .awaitingReview }
+    let allTerminal = run.executions.allSatisfy {
+      if $0.status.isTerminal { return true }
+      if $0.status == .approved { return true }
+      if $0.status == .awaitingReview { return true }
+      if case .conflicted = $0.status { return true }
+      return false
+    }
     let anyFailed = run.executions.contains { if case .failed = $0.status { return true }; return false }
     let anyAwaitingReview = run.executions.contains { $0.status == .awaitingReview }
     
@@ -1252,8 +1276,20 @@ final class ParallelWorktreeRunner {
 
       if mergeExit != 0 {
         if mergeOutput.contains("CONFLICT") || mergeOutput.contains("conflict") {
-          // Abort the failed merge so the working tree is clean for the next execution
-          _ = await runGit(["merge", "--abort"], in: run.projectPath)
+          // Leave the working tree in the conflicted state for user resolution
+          // Enumerate the conflicted files so the UI can show them
+          let (conflictList, _) = await runGit(
+            ["diff", "--name-only", "--diff-filter=U"],
+            in: run.projectPath
+          )
+          let conflictPaths = conflictList
+            .components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+          execution.conflictFiles = conflictPaths.isEmpty
+            ? [MergeConflictFile(filePath: branchName, content: "")]
+            : conflictPaths.map { MergeConflictFile(filePath: $0, content: "") }
+          execution.status = .conflicted(conflictPaths)
           throw ParallelRunError.mergeConflict(branchName)
         }
         throw ParallelRunError.mergeFailed(mergeOutput.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -1280,8 +1316,7 @@ final class ParallelWorktreeRunner {
 
     } catch let error as ParallelRunError {
       if case .mergeConflict = error {
-        execution.mergeConflicts = ["Merge conflict detected"]
-        execution.status = .approved // Reset to approved so user can resolve
+        // Status + conflictFiles already set inside the do block above; just re-throw
       } else {
         execution.status = .failed("Merge failed: \(error.localizedDescription)")
       }
@@ -1290,6 +1325,81 @@ final class ParallelWorktreeRunner {
       execution.status = .failed("Merge failed: \(error.localizedDescription)")
       throw error
     }
+  }
+
+  /// Resolve conflicts for an execution and complete the merge.
+  /// `resolutions` maps each conflicted filePath to the chosen resolution strategy.
+  func resolveAndMerge(
+    _ execution: ParallelWorktreeExecution,
+    in run: ParallelWorktreeRun,
+    resolutions: [String: ConflictResolution]
+  ) async throws {
+    guard case .conflicted = execution.status else {
+      throw ParallelRunError.invalidState("Execution is not in conflicted state")
+    }
+    guard let branchName = execution.branchName else {
+      throw ParallelRunError.missingWorktree
+    }
+
+    let targetBranch = try await resolveTargetBranch(for: run)
+
+    // Checkout target branch (the merge is already in progress in the working tree)
+    let (checkoutOut, checkoutExit) = await runGit(["checkout", targetBranch], in: run.projectPath)
+    guard checkoutExit == 0 else {
+      throw ParallelRunError.checkoutFailed("\(targetBranch): \(checkoutOut)")
+    }
+
+    // Attempt the merge; exit == 0 means it resolved cleanly (e.g. user fixed externally)
+    let (mergeOut, mergeExit) = await runGit(["merge", branchName, "--no-edit"], in: run.projectPath)
+    if mergeExit == 0 {
+      execution.conflictFiles = []
+      execution.status = .merged
+      PeonPingService.shared.worktreeCompleted(taskTitle: execution.task.title)
+      try? await workspaceService.removeWorktreeForChain(chainId: execution.id)
+      updateRunStatus(run)
+      recordSnapshot(for: run)
+      return
+    }
+
+    guard mergeOut.contains("CONFLICT") || mergeOut.contains("conflict") else {
+      throw ParallelRunError.mergeFailed(mergeOut.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    // Apply per-file resolutions
+    for (filePath, resolution) in resolutions {
+      switch resolution {
+      case .ours:
+        _ = await runGit(["checkout", "--ours", "--", filePath], in: run.projectPath)
+        _ = await runGit(["add", "--", filePath], in: run.projectPath)
+      case .theirs:
+        _ = await runGit(["checkout", "--theirs", "--", filePath], in: run.projectPath)
+        _ = await runGit(["add", "--", filePath], in: run.projectPath)
+      case .editor:
+        // User already edited the file; just stage it
+        _ = await runGit(["add", "--", filePath], in: run.projectPath)
+      }
+    }
+
+    // Commit the resolved merge
+    let (commitOut, commitExit) = await runGit(
+      ["commit", "--no-edit", "-m", "Merge \(branchName) (conflict resolved)"],
+      in: run.projectPath
+    )
+    guard commitExit == 0 else {
+      throw ParallelRunError.mergeFailed("Commit failed: \(commitOut)")
+    }
+
+    execution.conflictFiles = []
+    execution.status = .merged
+    PeonPingService.shared.worktreeCompleted(taskTitle: execution.task.title)
+    try? await workspaceService.removeWorktreeForChain(chainId: execution.id)
+    updateRunStatus(run)
+    recordSnapshot(for: run)
+  }
+
+  /// Abort an in-progress merge (called when user cancels conflict resolution).
+  func abortMerge(in run: ParallelWorktreeRun) async {
+    _ = await runGit(["merge", "--abort"], in: run.projectPath)
   }
 
   /// Merge all approved executions, continuing past individual failures.
