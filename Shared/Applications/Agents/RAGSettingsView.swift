@@ -15,6 +15,7 @@ struct RAGSettingsView: View {
   
   // Embedding settings state
   @State private var embeddingSettingsChanged = false
+  @State private var analysisSettingsChanged = false
   @State private var isApplyingSettings = false
   
   // Database state
@@ -72,6 +73,31 @@ struct RAGSettingsView: View {
     return downloaded.compactMap { id in
       configs.first(where: { $0.huggingFaceId == id || $0.name == id })?.name ?? id
     }.sorted()
+  }
+  
+  // Bindings for analysis settings
+  private var analysisEnabled: Binding<Bool> {
+    Binding(
+      get: { UserDefaults.standard.bool(forKey: "rag.analyzer.enabled") },
+      set: { newValue in
+        UserDefaults.standard.set(newValue, forKey: "rag.analyzer.enabled")
+        analysisSettingsChanged = true
+      }
+    )
+  }
+  
+  private var analyzerTierSelection: Binding<String> {
+    Binding(
+      get: { UserDefaults.standard.string(forKey: "rag.analyzer.tier") ?? "" },
+      set: { newValue in
+        if newValue.isEmpty {
+          UserDefaults.standard.removeObject(forKey: "rag.analyzer.tier")
+        } else {
+          UserDefaults.standard.set(newValue, forKey: "rag.analyzer.tier")
+        }
+        analysisSettingsChanged = true
+      }
+    )
   }
   
   var body: some View {
@@ -137,33 +163,66 @@ struct RAGSettingsView: View {
         Section {
           let ramGB = Double(LocalRAGEmbeddingProviderFactory.physicalMemoryBytes()) / 1_073_741_824.0
           let recommendedTier = MLXAnalyzerModelTier.recommended(forMemoryGB: ramGB)
+          let selectedTierRaw = analyzerTierSelection.wrappedValue
+          let selectedTier = MLXAnalyzerModelTier(rawValue: selectedTierRaw)
+          let effectiveTier = selectedTier ?? recommendedTier
           
-          HStack {
-            VStack(alignment: .leading, spacing: 4) {
-              Text("Recommended: \(recommendedTier.modelName)")
-                .font(.callout.weight(.medium))
-              Text("Based on \(String(format: "%.0f", ramGB)) GB RAM")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+          Toggle("Enable AI analysis during indexing", isOn: analysisEnabled)
+          
+          if analysisEnabled.wrappedValue {
+            Picker("Model Tier", selection: analyzerTierSelection) {
+              Text("Auto (\(recommendedTier.modelName))").tag("")
+              ForEach(MLXAnalyzerModelTier.allCases.filter { $0 != .auto }, id: \.rawValue) { tier in
+                Text(tier.description).tag(tier.rawValue)
+              }
             }
-            Spacer()
-            Image(systemName: "checkmark.circle.fill")
-              .foregroundStyle(.green)
+            
+            HStack {
+              VStack(alignment: .leading, spacing: 4) {
+                Text("Active: \(effectiveTier.modelName)")
+                  .font(.callout.weight(.medium))
+                Text("Based on \(String(format: "%.0f", ramGB)) GB RAM")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+              Spacer()
+              Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+            }
+            
+            DisclosureGroup("Model Tiers") {
+              VStack(alignment: .leading, spacing: 8) {
+                modelTierRow("Tiny (0.5B)", ram: "8GB+", speed: "Fastest", selected: effectiveTier == .tiny)
+                modelTierRow("Small (1.5B)", ram: "12GB+", speed: "Balanced", selected: effectiveTier == .small)
+                modelTierRow("Medium (3B)", ram: "24GB+", speed: "Quality", selected: effectiveTier == .medium)
+                modelTierRow("Large (7B)", ram: "48GB+", speed: "Best", selected: effectiveTier == .large)
+              }
+              .padding(.vertical, 4)
+            }
           }
           
-          DisclosureGroup("Model Tiers") {
-            VStack(alignment: .leading, spacing: 8) {
-              modelTierRow("Tiny (0.5B)", ram: "8GB+", speed: "Fastest", selected: recommendedTier == .tiny)
-              modelTierRow("Small (1.5B)", ram: "12GB+", speed: "Balanced", selected: recommendedTier == .small)
-              modelTierRow("Medium (3B)", ram: "24GB+", speed: "Quality", selected: recommendedTier == .medium)
-              modelTierRow("Large (7B)", ram: "48GB+", speed: "Best", selected: recommendedTier == .large)
+          // Apply changes banner
+          if analysisSettingsChanged {
+            HStack(spacing: 12) {
+              Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+              Text("Settings changed")
+                .font(.callout)
+              Spacer()
+              Button("Apply") {
+                Task { await applyAnalysisSettings() }
+              }
+              .buttonStyle(.borderedProminent)
+              .controlSize(.small)
+              .disabled(isApplyingSettings)
             }
-            .padding(.vertical, 4)
+            .padding(12)
+            .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
           }
         } header: {
           Label("Analysis Model", systemImage: "brain")
         } footer: {
-          Text("Analysis adds semantic understanding to chunks for better search quality.")
+          Text("Analysis adds semantic understanding to chunks for better search quality. Disable to speed up indexing.")
         }
         
         // MARK: - Database Section
@@ -472,6 +531,14 @@ struct RAGSettingsView: View {
     isApplyingSettings = true
     defer { isApplyingSettings = false }
     embeddingSettingsChanged = false
+    await mcpServer.applyRagEmbeddingSettings()
+    await mcpServer.refreshRagSummary()
+  }
+  
+  private func applyAnalysisSettings() async {
+    isApplyingSettings = true
+    defer { isApplyingSettings = false }
+    analysisSettingsChanged = false
     await mcpServer.applyRagEmbeddingSettings()
     await mcpServer.refreshRagSummary()
   }
