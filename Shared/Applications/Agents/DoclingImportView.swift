@@ -45,6 +45,9 @@ struct DoclingImportView: View {
   @State private var installLog: String?
   @State private var installStatus: String?
   @State private var indexStatus: String?
+  @State private var conversionStatus = ""
+  @State private var conversionStartTime: Date?
+  @State private var conversionDuration: TimeInterval?
 
   private var service: DoclingService { mcpServer.doclingService }
 
@@ -231,13 +234,24 @@ struct DoclingImportView: View {
           .disabled(isRunning)
           .accessibilityIdentifier("agents.docling.convert")
 
-          if let lastResult {
+          if isRunning {
+            ProgressView()
+              .scaleEffect(0.7)
+          }
+
+          if let lastResult, !isRunning {
             Button("Open Output") {
               openOutput(at: lastResult.outputPath)
             }
             .buttonStyle(.bordered)
             .accessibilityIdentifier("agents.docling.openOutput")
           }
+        }
+
+        if isRunning, !conversionStatus.isEmpty {
+          Text(conversionStatus)
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
       }
 
@@ -250,10 +264,8 @@ struct DoclingImportView: View {
           .disabled(isInstalling)
           .accessibilityIdentifier("agents.docling.install")
 
-          if let installStatus {
-            Text(installStatus)
-              .font(.caption)
-              .foregroundStyle(.secondary)
+          if installStatus != nil {
+            installStatusBadge
           }
         }
 
@@ -340,22 +352,45 @@ struct DoclingImportView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
         } else {
+          Text("\(lastViolations.count) violation(s) found")
+            .font(.caption)
+            .foregroundStyle(.secondary)
           ForEach(lastViolations) { violation in
-            VStack(alignment: .leading, spacing: 2) {
-              Text("\(violation.severity.uppercased()): \(violation.ruleName)")
-                .font(.caption)
-              Text("Line \(violation.lineNumber): \(violation.snippet)")
+            DisclosureGroup {
+              Text(violation.snippet)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .padding(.leading, 16)
+            } label: {
+              HStack(spacing: 6) {
+                Circle()
+                  .fill(severityColor(violation.severity))
+                  .frame(width: 8, height: 8)
+                Text(violation.ruleName)
+                  .font(.caption)
+                  .bold()
+                Spacer()
+                Text("L\(violation.lineNumber)")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              }
             }
           }
         }
       }
 
       if let lastError {
-        Text(lastError)
-          .font(.caption)
-          .foregroundStyle(.red)
+        VStack(alignment: .leading, spacing: 4) {
+          Label(lastError, systemImage: "exclamationmark.triangle.fill")
+            .font(.caption)
+            .foregroundStyle(.red)
+          if let guidance = errorGuidance(for: lastError) {
+            Text("💡 \(guidance)")
+              .font(.caption2)
+              .foregroundStyle(.orange)
+          }
+        }
       }
 
       if let lastResult {
@@ -363,9 +398,14 @@ struct DoclingImportView: View {
           Text("Output: \(lastResult.outputPath)")
             .font(.caption)
             .foregroundStyle(.secondary)
-          Text("Bytes written: \(lastResult.bytesWritten)")
+          Text("Size: \(formattedBytes(lastResult.bytesWritten))")
             .font(.caption)
             .foregroundStyle(.secondary)
+          if let conversionDuration {
+            Text("Time: \(formattedDuration(conversionDuration))")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
         }
       }
 
@@ -418,7 +458,13 @@ struct DoclingImportView: View {
     lastStoredMarkdownPath = nil
     lastDiagnostics = nil
     lastViolations = []
-    defer { isRunning = false }
+    conversionStartTime = Date()
+    conversionStatus = "Starting conversion…"
+    defer {
+      isRunning = false
+      conversionDuration = Date().timeIntervalSince(conversionStartTime ?? Date())
+      conversionStatus = ""
+    }
 
     guard let company = selectedCompany else {
       lastError = "Select a company before converting."
@@ -439,9 +485,11 @@ struct DoclingImportView: View {
     )
 
     do {
+      conversionStatus = "Converting PDF…"
       let result = try await service.runConvert(options: options)
       lastResult = result
 
+      conversionStatus = "Storing document…"
       let storedPath = try storePolicyMarkdown(sourcePath: result.outputPath, company: company)
       lastStoredMarkdownPath = storedPath
       let diagnostics = computeDiagnostics(markdownPath: storedPath)
@@ -464,6 +512,7 @@ struct DoclingImportView: View {
       try? modelContext.save()
 
       indexStatus = "Indexing…"
+      conversionStatus = "Indexing…"
       do {
         _ = try await mcpServer.indexPolicyRepository(path: policyCompanyRoot(company: company).path)
         document.lastIndexedAt = Date()
@@ -482,7 +531,7 @@ struct DoclingImportView: View {
     isInstalling = true
     lastError = nil
     installLog = nil
-    installStatus = nil
+    installStatus = "Installing…"
     defer { isInstalling = false }
 
     do {
@@ -680,6 +729,67 @@ struct DoclingImportView: View {
     }.joined()
     let collapsed = allowed.replacingOccurrences(of: "-+", with: "-", options: .regularExpression)
     return collapsed.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+  }
+
+  private var installStatusBadge: some View {
+    Group {
+      if let status = installStatus {
+        switch status {
+        case "Ready", "Installed":
+          Label(status, systemImage: "checkmark.circle.fill")
+            .font(.caption)
+            .foregroundStyle(.green)
+        case "Install failed", "Not installed":
+          Label(status, systemImage: "xmark.circle.fill")
+            .font(.caption)
+            .foregroundStyle(.red)
+        case "Installing…":
+          Label(status, systemImage: "arrow.clockwise.circle.fill")
+            .font(.caption)
+            .foregroundStyle(.orange)
+        default:
+          Label(status, systemImage: "questionmark.circle")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+    }
+  }
+
+  private func severityColor(_ severity: String) -> Color {
+    switch severity.lowercased() {
+    case "critical": return .red
+    case "warning": return .orange
+    case "info": return .blue
+    default: return .secondary
+    }
+  }
+
+  private func errorGuidance(for error: String) -> String? {
+    if error.contains("python3 not found") || error.contains("Install Python") {
+      return "Install Python 3.10+ via Homebrew: brew install python@3.11"
+    }
+    if error.contains("not found") && error.contains("docling-convert.py") {
+      return "Run 'Install Docling' in Setup, or set the script path manually."
+    }
+    if error.contains("No module named 'docling'") {
+      return "Docling is not installed. Click 'Install Docling' in the Setup section."
+    }
+    if error.contains("Select a company") {
+      return "Add a company in the Policy Scope section first."
+    }
+    return nil
+  }
+
+  private func formattedBytes(_ bytes: Int) -> String {
+    if bytes < 1024 { return "\(bytes) B" }
+    if bytes < 1_048_576 { return "\(bytes / 1024) KB" }
+    return String(format: "%.1f MB", Double(bytes) / 1_048_576.0)
+  }
+
+  private func formattedDuration(_ seconds: TimeInterval) -> String {
+    if seconds < 60 { return "\(Int(seconds))s" }
+    return "\(Int(seconds / 60))m \(Int(seconds.truncatingRemainder(dividingBy: 60)))s"
   }
 
   private func selectInputPDF() {
