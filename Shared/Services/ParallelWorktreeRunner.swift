@@ -237,6 +237,19 @@ final class ParallelWorktreeRun: Identifiable, @unchecked Sendable, Hashable {
     executions.filter { $0.status == .awaitingReview }.count
   }
 
+  var reviewedCount: Int {
+    executions.filter { $0.status == .reviewed }.count
+  }
+
+  var activeCount: Int {
+    executions.filter {
+      switch $0.status {
+      case .pending, .waitingForDependencies, .creatingWorktree, .running: return true
+      default: return false
+      }
+    }.count
+  }
+
   var rejectedCount: Int {
     executions.filter { if case .rejected = $0.status { return true }; return false }.count
   }

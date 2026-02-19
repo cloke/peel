@@ -400,7 +400,9 @@ struct ParallelRunDetailView: View {
       
       LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 16)], spacing: 12) {
         statBox(title: "Total", value: "\(run.executions.count)", color: .primary)
+        statBox(title: "Running", value: "\(run.activeCount)", color: .primary)
         statBox(title: "Pending Review", value: "\(run.pendingReviewCount)", color: .orange)
+        statBox(title: "Reviewed", value: "\(run.reviewedCount)", color: .purple)
         statBox(title: "Ready to Merge", value: "\(run.readyToMergeCount)", color: .green)
         statBox(title: "Merged", value: "\(run.mergedCount)", color: .blue)
         statBox(title: "Rejected", value: "\(run.rejectedCount)", color: .red)
