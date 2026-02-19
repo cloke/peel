@@ -328,3 +328,87 @@ public final class WorktreeToolsHandler: MCPToolHandler {
     return formatter.string(fromByteCount: bytes)
   }
 }
+
+// MARK: - Tool Definitions
+
+extension WorktreeToolsHandler {
+  public var toolDefinitions: [MCPToolDefinition] {
+    [
+      MCPToolDefinition(
+        name: "worktree.list",
+        description: "List all git worktrees across registered repositories and the peel-worktrees directory. Returns path, branch, disk size, and status for each worktree.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": [
+              "type": "string",
+              "description": "Optional: Filter to worktrees for a specific repository path"
+            ],
+            "includeMain": [
+              "type": "boolean",
+              "description": "Include main worktrees (the original repo checkouts). Default: false"
+            ]
+          ],
+          "required": []
+        ],
+        category: .worktrees,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "worktree.remove",
+        description: "Remove a git worktree by path. Use force=true if the worktree has uncommitted changes.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "path": [
+              "type": "string",
+              "description": "The absolute path to the worktree to remove"
+            ],
+            "force": [
+              "type": "boolean",
+              "description": "Force removal even if worktree is dirty. Default: false"
+            ]
+          ],
+          "required": ["path"]
+        ],
+        category: .worktrees,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "worktree.stats",
+        description: "Get aggregate statistics about all worktrees: total count, disk usage, prunable count, grouped by repository.",
+        inputSchema: [
+          "type": "object",
+          "properties": [:],
+          "required": []
+        ],
+        category: .worktrees,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "worktree.create",
+        description: "Create a new git worktree for ad-hoc work, PR review, or experiments. The worktree will be created in ~/peel-worktrees/ with the specified branch.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": [
+              "type": "string",
+              "description": "Path to the git repository"
+            ],
+            "branchName": [
+              "type": "string",
+              "description": "Name for the new branch (will be sanitized)"
+            ],
+            "baseBranch": [
+              "type": "string",
+              "description": "Base branch to create from (default: origin/main)"
+            ]
+          ],
+          "required": ["repoPath", "branchName"]
+        ],
+        category: .worktrees,
+        isMutating: true
+      ),
+    ]
+  }
+}

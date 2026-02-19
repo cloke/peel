@@ -153,3 +153,48 @@ final class GitHubToolsHandler: MCPToolHandler {
     ))
   }
 }
+
+// MARK: - Tool Definitions
+
+extension GitHubToolsHandler {
+  public var toolDefinitions: [MCPToolDefinition] {
+    [
+      MCPToolDefinition(
+        name: "github.issue.get",
+        description: """
+        Fetch a single GitHub issue by owner, repository, and issue number.
+        Returns issue title, body, state, labels, comments count, and timestamps.
+        """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "owner": ["type": "string", "description": "Repository owner (username or organization)"],
+            "repo": ["type": "string", "description": "Repository name"],
+            "number": ["type": "integer", "description": "Issue number"]
+          ],
+          "required": ["owner", "repo", "number"]
+        ],
+        category: .github,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "github.issues.list",
+        description: """
+        List issues for a repository.
+        Returns an array of issue summaries with title, state, labels, and metadata.
+        """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "owner": ["type": "string", "description": "Repository owner (username or organization)"],
+            "repo": ["type": "string", "description": "Repository name"],
+            "state": ["type": "string", "enum": ["open", "closed", "all"], "description": "Issue state filter (default: open)"]
+          ],
+          "required": ["owner", "repo"]
+        ],
+        category: .github,
+        isMutating: false
+      ),
+    ]
+  }
+}

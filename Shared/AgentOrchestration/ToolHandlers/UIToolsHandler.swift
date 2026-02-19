@@ -322,3 +322,107 @@ public final class UIToolsHandler: MCPToolHandler {
     return (200, makeResult(id: id, result: snapshot))
   }
 }
+
+// MARK: - Tool Definitions
+
+extension UIToolsHandler {
+  public var toolDefinitions: [MCPToolDefinition] {
+    [
+      MCPToolDefinition(
+        name: "ui.tap",
+        description: "Tap a control by controlId",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "controlId": ["type": "string"]
+          ],
+          "required": ["controlId"]
+        ],
+        category: .ui,
+        isMutating: true,
+        requiresForeground: true
+      ),
+      MCPToolDefinition(
+        name: "ui.setText",
+        description: "Set text for a control",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "controlId": ["type": "string"],
+            "value": ["type": "string"]
+          ],
+          "required": ["controlId", "value"]
+        ],
+        category: .ui,
+        isMutating: true,
+        requiresForeground: true
+      ),
+      MCPToolDefinition(
+        name: "ui.toggle",
+        description: "Toggle a control",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "controlId": ["type": "string"],
+            "on": ["type": "boolean"]
+          ],
+          "required": ["controlId"]
+        ],
+        category: .ui,
+        isMutating: true,
+        requiresForeground: true
+      ),
+      MCPToolDefinition(
+        name: "ui.select",
+        description: "Select a value for a control",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "controlId": ["type": "string"],
+            "value": ["type": "string"]
+          ],
+          "required": ["controlId", "value"]
+        ],
+        category: .ui,
+        isMutating: true,
+        requiresForeground: true
+      ),
+      MCPToolDefinition(
+        name: "ui.navigate",
+        description: "Navigate to a top-level view by viewId",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "viewId": ["type": "string"]
+          ],
+          "required": ["viewId"]
+        ],
+        category: .ui,
+        isMutating: true,
+        requiresForeground: true
+      ),
+      MCPToolDefinition(
+        name: "ui.back",
+        description: "Navigate back to the previous view (if supported)",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .ui,
+        isMutating: true,
+        requiresForeground: true
+      ),
+      MCPToolDefinition(
+        name: "ui.snapshot",
+        description: "Return the current view and visible control IDs",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .ui,
+        isMutating: false,
+        requiresForeground: true
+      ),
+    ]
+  }
+}

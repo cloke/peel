@@ -223,3 +223,52 @@ final class RepoToolsHandler: MCPToolHandler {
     return (200, makeResult(id: id, result: result))
   }
 }
+
+// MARK: - Tool Definitions
+
+extension RepoToolsHandler {
+  public var toolDefinitions: [MCPToolDefinition] {
+    [
+      MCPToolDefinition(
+        name: "repos.list",
+        description: "List git repositories tracked in Peel on this device",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "includeInvalid": ["type": "boolean", "default": true]
+          ]
+        ],
+        category: .state,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "repos.resolve",
+        description: "Resolve repositories by name (exact, contains, or pathSuffix match)",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "name": ["type": "string"],
+            "match": ["type": "string", "enum": ["exact", "contains", "pathSuffix"], "default": "exact"],
+            "includeInvalid": ["type": "boolean", "default": true]
+          ],
+          "required": ["name"]
+        ],
+        category: .state,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "repos.delete",
+        description: "Delete a repository from Peel's SwiftData store by repoId or localPath",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoId": ["type": "string", "description": "Repository UUID to delete"],
+            "localPath": ["type": "string", "description": "Local path of repository to delete"]
+          ]
+        ],
+        category: .state,
+        isMutating: true
+      ),
+    ]
+  }
+}

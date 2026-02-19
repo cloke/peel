@@ -133,3 +133,74 @@ public final class VMToolsHandler: MCPToolHandler {
     }
   }
 }
+
+// MARK: - Tool Definitions
+
+extension VMToolsHandler {
+  public var toolDefinitions: [MCPToolDefinition] {
+    [
+      MCPToolDefinition(
+        name: "vm.macos.status",
+        description: "Get macOS VM readiness and status",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .vm,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "vm.macos.restore.download",
+        description: "Download the macOS restore image",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .vm,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "vm.macos.install",
+        description: "Install macOS into the VM disk",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .vm,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "vm.macos.start",
+        description: "Start the macOS VM",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .vm,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "vm.macos.stop",
+        description: "Stop the macOS VM",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .vm,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "vm.macos.reset",
+        description: "Delete the macOS VM bundle and reset install state",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "deleteRestoreImage": ["type": "boolean"]
+          ]
+        ],
+        category: .vm,
+        isMutating: true
+      ),
+    ]
+  }
+}

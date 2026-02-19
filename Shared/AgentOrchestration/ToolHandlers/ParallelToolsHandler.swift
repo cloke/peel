@@ -967,3 +967,271 @@ final class ParallelToolsHandler {
     return result
   }
 }
+
+// MARK: - Tool Definitions
+
+extension ParallelToolsHandler {
+  public var toolDefinitions: [MCPToolDefinition] {
+    [
+      MCPToolDefinition(
+        name: "parallel.create",
+        description: "Create a new parallel worktree run with multiple tasks",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "name": ["type": "string"],
+            "projectPath": ["type": "string"],
+            "baseBranch": ["type": "string"],
+            "targetBranch": ["type": "string"],
+            "requireReviewGate": ["type": "boolean"],
+            "autoMergeOnApproval": ["type": "boolean"],
+            "templateName": ["type": "string"],
+            "allowPlannerModelSelection": ["type": "boolean"],
+            "allowImplementerModelOverride": ["type": "boolean"],
+            "allowPlannerImplementerScaling": ["type": "boolean"],
+            "maxImplementers": ["type": "integer"],
+            "maxPremiumCost": ["type": "number"],
+            "tasks": [
+              "type": "array",
+              "items": [
+                "type": "object",
+                "properties": [
+                  "title": ["type": "string"],
+                  "description": ["type": "string"],
+                  "prompt": ["type": "string"],
+                  "focusPaths": [
+                    "type": "array",
+                    "items": ["type": "string"]
+                  ],
+                  "dependsOn": [
+                    "type": "array",
+                    "items": ["type": "integer"],
+                    "description": "0-based indices of other tasks in this batch that must be merged before this task starts"
+                  ]
+                ],
+                "required": ["title", "prompt"]
+              ]
+            ]
+          ],
+          "required": ["name", "projectPath", "tasks"]
+        ],
+        category: .parallelWorktrees,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "parallel.start",
+        description: "Start a pending parallel worktree run",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"]
+          ],
+          "required": ["runId"]
+        ],
+        category: .parallelWorktrees,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "parallel.status",
+        description: "Get status of a parallel worktree run",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"]
+          ],
+          "required": ["runId"]
+        ],
+        category: .parallelWorktrees,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "parallel.list",
+        description: "List all parallel worktree runs",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "includeCompleted": ["type": "boolean"]
+          ]
+        ],
+        category: .parallelWorktrees,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "parallel.approve",
+        description: "Approve an execution in a parallel run",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"],
+            "executionId": ["type": "string"],
+            "approveAll": ["type": "boolean"]
+          ],
+          "required": ["runId"]
+        ],
+        category: .parallelWorktrees,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "parallel.reject",
+        description: "Reject an execution in a parallel run",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"],
+            "executionId": ["type": "string"],
+            "reason": ["type": "string"]
+          ],
+          "required": ["runId", "executionId"]
+        ],
+        category: .parallelWorktrees,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "parallel.reviewed",
+        description: "Mark an execution as reviewed without approving",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"],
+            "executionId": ["type": "string"],
+            "reviewAll": ["type": "boolean"]
+          ],
+          "required": ["runId"]
+        ],
+        category: .parallelWorktrees,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "parallel.merge",
+        description: "Merge approved executions in a parallel run",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"],
+            "executionId": ["type": "string"],
+            "mergeAll": ["type": "boolean"]
+          ],
+          "required": ["runId"]
+        ],
+        category: .parallelWorktrees,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "parallel.pause",
+        description: "Pause a parallel run (halts new executions and pauses active chains)",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"]
+          ],
+          "required": ["runId"]
+        ],
+        category: .parallelWorktrees,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "parallel.resume",
+        description: "Resume a paused parallel run",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"]
+          ],
+          "required": ["runId"]
+        ],
+        category: .parallelWorktrees,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "parallel.instruct",
+        description: "Inject operator guidance into a parallel run or execution",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"],
+            "executionId": ["type": "string"],
+            "guidance": ["type": "string"]
+          ],
+          "required": ["runId", "guidance"]
+        ],
+        category: .parallelWorktrees,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "parallel.cancel",
+        description: "Cancel a parallel worktree run",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"]
+          ],
+          "required": ["runId"]
+        ],
+        category: .parallelWorktrees,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "parallel.diff",
+        description: "Return the unified git diff for an execution's branch vs the run's base branch. Use this to review actual code changes before approving or rejecting.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"],
+            "executionId": ["type": "string"],
+            "maxLines": ["type": "integer", "description": "Truncate diff output at this many lines"]
+          ],
+          "required": ["runId", "executionId"]
+        ],
+        category: .parallelWorktrees,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "parallel.retry",
+        description: "Re-queue a failed, rejected, reviewed, or cancelled execution, optionally with an amended prompt and/or additional guidance.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"],
+            "executionId": ["type": "string"],
+            "amendedPrompt": ["type": "string", "description": "Replace the task prompt for this retry"],
+            "guidance": ["type": "string", "description": "Additional operator guidance to inject"]
+          ],
+          "required": ["runId", "executionId"]
+        ],
+        category: .parallelWorktrees,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "parallel.append",
+        description: "Add new tasks to an in-flight parallel run (running or awaiting review). Throws if the run is completed, cancelled, or failed.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"],
+            "tasks": [
+              "type": "array",
+              "items": [
+                "type": "object",
+                "properties": [
+                  "title": ["type": "string"],
+                  "prompt": ["type": "string"],
+                  "description": ["type": "string"],
+                  "focusPaths": ["type": "array", "items": ["type": "string"]],
+                  "dependsOn": [
+                    "type": "array",
+                    "items": ["type": "integer"],
+                    "description": "0-based indices of other tasks in this append batch that must be merged before this task starts"
+                  ]
+                ],
+                "required": ["title", "prompt"]
+              ]
+            ]
+          ],
+          "required": ["runId", "tasks"]
+        ],
+        category: .parallelWorktrees,
+        isMutating: true
+      ),
+    ]
+  }
+}
