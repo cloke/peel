@@ -124,7 +124,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         name: "Quick Task",
         description: "Fast single-file changes using free models (Cost: Free)",
         steps: [
-          AgentStepTemplate(role: .implementer, model: .gpt41, name: "Implementer")
+          AgentStepTemplate(role: .implementer, model: .bestFree, name: "Implementer")
         ],
         isBuiltIn: true,
         category: .core
@@ -135,7 +135,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         name: "Analyze and Plan",
         description: "Create implementation plan without executing (Cost: Standard)",
         steps: [
-          AgentStepTemplate(role: .planner, model: .claudeSonnet45, name: "Planner")
+          AgentStepTemplate(role: .planner, model: .bestStandard, name: "Planner")
         ],
         isBuiltIn: true,
         category: .core
@@ -146,9 +146,9 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         name: "Full Implementation",
         description: "Complete workflow with planning, implementation, and review (Cost: Standard)",
         steps: [
-          AgentStepTemplate(role: .planner, model: .claudeSonnet45, name: "Planner"),
-          AgentStepTemplate(role: .implementer, model: .claudeSonnet45, name: "Implementer"),
-          AgentStepTemplate(role: .reviewer, model: .gpt41, name: "Reviewer")
+          AgentStepTemplate(role: .planner, model: .bestStandard, name: "Planner"),
+          AgentStepTemplate(role: .implementer, model: .bestStandard, name: "Implementer"),
+          AgentStepTemplate(role: .reviewer, model: .bestFree, name: "Reviewer")
         ],
         isBuiltIn: true,
         category: .core
@@ -159,8 +159,8 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         name: "Parallel Implementation",
         description: "Planner with multiple parallel implementers for complex multi-file tasks (Cost: Standard)",
         steps: [
-          AgentStepTemplate(role: .planner, model: .claudeSonnet45, name: "Planner"),
-          AgentStepTemplate(role: .implementer, model: .claudeSonnet45, name: "Implementer A"),
+          AgentStepTemplate(role: .planner, model: .bestStandard, name: "Planner"),
+          AgentStepTemplate(role: .implementer, model: .bestStandard, name: "Implementer A"),
           AgentStepTemplate(role: .implementer, model: .gpt51Codex, name: "Implementer B")
         ],
         isBuiltIn: true,
@@ -176,7 +176,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         steps: [
           AgentStepTemplate(
             role: .planner,
-            model: .gpt41,
+            model: .bestFree,
             name: "RAG Indexer",
             customInstructions: """
               You are a RAG indexing specialist. Your task is to:
@@ -203,7 +203,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         steps: [
           AgentStepTemplate(
             role: .planner,
-            model: .gpt41,
+            model: .bestFree,
             name: "Issue Analyzer",
             customInstructions: """
               You are an Issue Analyzer agent. Your task is to:
@@ -251,7 +251,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         steps: [
           AgentStepTemplate(
             role: .planner,
-            model: .gpt41,
+            model: .bestFree,
             name: "PR Reviewer",
             customInstructions: """
               You are a PR Review specialist. Your task is to:
@@ -284,9 +284,9 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         name: "Refactor",
         description: "Deep refactoring with premium models for complex restructuring (Cost: Premium)",
         steps: [
-          AgentStepTemplate(role: .planner, model: .claudeOpus45, name: "Architect"),
-          AgentStepTemplate(role: .implementer, model: .claudeSonnet45, name: "Implementer"),
-          AgentStepTemplate(role: .reviewer, model: .claudeSonnet45, name: "Reviewer")
+          AgentStepTemplate(role: .planner, model: .bestPremium, name: "Architect"),
+          AgentStepTemplate(role: .implementer, model: .bestStandard, name: "Implementer"),
+          AgentStepTemplate(role: .reviewer, model: .bestStandard, name: "Reviewer")
         ],
         isBuiltIn: true,
         category: .specialized
