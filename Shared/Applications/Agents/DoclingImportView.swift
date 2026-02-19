@@ -45,6 +45,12 @@ struct DoclingImportView: View {
   @State private var installLog: String?
   @State private var installStatus: String?
   @State private var indexStatus: String?
+  @State private var showVersionHistory = false
+  @State private var compareDocA: PolicyDocument?
+  @State private var compareDocB: PolicyDocument?
+  @State private var showDiff = false
+
+  @Query private var allDocuments: [PolicyDocument]
 
   private var service: DoclingService { mcpServer.doclingService }
 
@@ -391,6 +397,41 @@ struct DoclingImportView: View {
             .foregroundStyle(.secondary)
         }
       }
+
+      if let company = selectedCompany, !documentsForSelectedCompany.isEmpty {
+        ToolSection("Version History") {
+          Text("\(documentsForSelectedCompany.count) version(s) for \(company.name)")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+          if versionHistoryHasDrift {
+            Label("Drift detected: current version differs from baseline", systemImage: "exclamationmark.triangle")
+              .font(.caption)
+              .foregroundStyle(.orange)
+          }
+
+          Button("Show History") {
+            showVersionHistory = true
+          }
+          .buttonStyle(.bordered)
+        }
+      }
+    }
+    .sheet(isPresented: $showVersionHistory) {
+      if let company = selectedCompany {
+        PolicyVersionHistoryView(
+          company: company,
+          compareDocA: $compareDocA,
+          compareDocB: $compareDocB,
+          showDiff: $showDiff
+        )
+        .environment(\.modelContext, modelContext)
+      }
+    }
+    .sheet(isPresented: $showDiff) {
+      if let a = compareDocA, let b = compareDocB {
+        PolicyDiffView(docA: a, docB: b)
+      }
     }
     .task {
       if pythonPath.isEmpty, let detected = service.suggestedPythonPath() {
@@ -540,6 +581,21 @@ struct DoclingImportView: View {
   private var rulesForSelectedCompany: [PolicyRule] {
     guard let selectedCompanyId else { return [] }
     return rules.filter { $0.companyId == selectedCompanyId && $0.isEnabled }
+  }
+
+  private var documentsForSelectedCompany: [PolicyDocument] {
+    guard let selectedCompanyId else { return [] }
+    return allDocuments
+      .filter { $0.companyId == selectedCompanyId }
+      .sorted { $0.importedAt > $1.importedAt }
+  }
+
+  private var versionHistoryHasDrift: Bool {
+    let docs = documentsForSelectedCompany
+    guard let baseline = docs.first(where: { $0.isBaseline }),
+          let latest = docs.first,
+          baseline.id != latest.id else { return false }
+    return baseline.violationCount != latest.violationCount
   }
 
   private func addCompany() {
