@@ -274,6 +274,12 @@ extension MCPServerService {
         chainWorkingDirectory = workspace.path.path
       } catch {
         await telemetryProvider.error(error, context: "Failed to create chain workspace", metadata: [:])
+        // Fail hard: never let the agent run in the main repo without a worktree
+        return (500, JSONRPCResponseBuilder.makeError(
+          id: id,
+          code: -32000,
+          message: "Failed to create git worktree for chain workspace: \(error.localizedDescription)"
+        ))
       }
     }
 
