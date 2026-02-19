@@ -918,6 +918,9 @@ struct RAGRepositoryCardView: View {
   }
   
   private func startAnalyzeAll() {
+    // Cancel any existing task before starting a new one to prevent double-running
+    analysisState.analyzeTask?.cancel()
+    analysisState.analyzeTask = nil
     mcpServer.markAnalysisStarted(repoPath: repo.rootPath)
     analysisState.isAnalyzing = true
     analysisState.isPaused = false
@@ -1012,6 +1015,32 @@ struct RAGRepositoryCardView: View {
             }
           }
         }
+
+        // If the batch returned 0, the chunk analyzer is silently failing for every
+        // chunk in the batch (RAGCore catches individual errors without re-throwing).
+        // Re-query the DB to distinguish "actually done" from "stalled analyzer".
+        if count == 0 {
+          let dbRemaining = (try? await mcpServer.getUnanalyzedChunkCount(repoPath: repo.rootPath)) ?? 0
+          if dbRemaining == 0 {
+            // All chunks were actually already analyzed — let the next loop check see 0 and finish cleanly
+            await MainActor.run { analysisState.unanalyzedCount = 0 }
+          } else {
+            // Analyzer is consistently failing — stop with a message rather than spinning
+            await MainActor.run {
+              if let startTime = analysisState.analysisStartTime, analysisState.sessionChunksAnalyzed > 0 {
+                let duration = Date().timeIntervalSince(startTime)
+                mcpServer.recordAnalysisSession(chunksAnalyzed: analysisState.sessionChunksAnalyzed, durationSeconds: duration)
+              }
+              analysisState.analyzeError = "Analysis stalled: \(dbRemaining) chunks could not be processed (check model/logs)"
+              analysisState.isAnalyzing = false
+              analysisState.isPaused = false
+              analysisState.sessionChunksAnalyzed = 0
+              analysisState.analysisStartTime = nil
+              mcpServer.markAnalysisStopped(repoPath: repo.rootPath)
+            }
+            return
+          }
+        }
       } catch {
         await MainActor.run {
           if let startTime = analysisState.analysisStartTime, analysisState.sessionChunksAnalyzed > 0 {
@@ -1023,6 +1052,7 @@ struct RAGRepositoryCardView: View {
           analysisState.isPaused = false
           analysisState.sessionChunksAnalyzed = 0
           analysisState.analysisStartTime = nil
+          mcpServer.markAnalysisStopped(repoPath: repo.rootPath)
         }
         return
       }
