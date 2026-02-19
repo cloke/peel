@@ -16,75 +16,146 @@ Tools/PeelCLI/.build/debug/peel-mcp
 
 ## Common commands
 
-- chains-run --prompt "..." --template-name "default"
-  - Start a chain with a natural language prompt.
-  - Flags: --prompt (string), --template-name (string), --config (path to JSON/YAML config), --tmp-dir (workspace root)
+- `chains-run --prompt "..." [--template-name "default"]`
+  Start a chain with a natural language prompt.
+  Flags: `--prompt` (string), `--template-name` (string), `--template-id` (string)
 
-- chains-status --run-id <id>
-  - Query the status of a running or completed chain.
+- `chains-run-status --run-id <id>`
+  Query the status of a running or completed chain.
 
-- chains-list --limit 20
-  - List recent chain runs (id, status, startedAt).
+- `chains-run-list [--limit 20]`
+  List recent chain runs (id, status, startedAt).
 
-- server-start --config /path/to/config.json
-  - Launch MCPCore in headless mode using the provided config. Useful to run as a long-lived service.
+- `chains-poll --run-id <id>`
+  Poll a chain run until it completes and print the result.
 
-- server-stop --address <host:port>
-  - Stop a running headless server (if supported by transport).
+- `chains-run-batch`
+  Start multiple chains in a batch.
+
+- `tools-list`
+  List all available MCP tools registered with the running Peel app.
+
+- `tools-call --tool-name <name> [--arguments-json <path>]`
+  Invoke any MCP tool directly. Pass arguments as a JSON file path.
+  Example: `tools-call --tool-name rag.search --arguments-json tmp/args.json`
+
+- `templates-list`
+  List available chain templates (by name and ID).
+
+- `rag-pattern-check --repo-path <path>`
+  Run a RAG pattern check against a local repo to detect deprecated patterns.
+
+- `rag-audit`
+  Audit the current RAG index for consistency.
+
+- `parallel-create`
+  Create a parallel chain group.
+
+- `parallel-start`
+  Start a previously created parallel chain group.
+
+- `parallel-status`
+  Show status of a parallel chain group.
+
+- `workspaces-agent-list`
+  List active agent workspaces (worktrees created for chain runs).
+
+- `workspaces-agent-cleanup-status`
+  Show cleanup status of agent workspaces.
+
+- `server-stop --address <host:port>`
+  Stop a running Peel MCP server (sends a stop signal to the app).
+
+- `app-quit`
+  Quit the running Peel app.
 
 ## Global flags
 
-- --config / -c <path>  : Path to JSON/YAML config file (port, allowedTools, repoRoot, logLevel)
-- --port -p <port>      : Port to bind the server (overrides config)
-- --tmp-dir             : Directory used for temporary workspaces (defaults to tmp/)
-- --log-level           : debug|info|warn|error
-- --allow-while-chains-running : When starting build-and-launch scripts, allow launching while chains are active
+- `--log-level` : debug|info|warn|error
+- `--allow-while-chains-running` : When starting build-and-launch scripts, allow launching while chains are active
 
-## Sample config (JSON)
+> **Note:** PeelCLI connects to a **running Peel app** over the local MCP socket (default port 8765). It does not start a server itself. To run a headless server without the Peel app, use `Tools/MCPCLI` (see [Headless Server (MCPCLI)](#headless-server-mcpcli) below).
+
+## Sample config (JSON) — for MCPCLI headless only
 
 ```json
 {
   "port": 8765,
-  "transport": "tcp",
-  "allowedTools": ["git", "shell"],
   "repoRoot": "/path/to/repo",
-  "defaultTemplates": ["free-review"],
+  "dataStorePath": "/path/to/data",
+  "allowedTools": null,
   "logLevel": "info"
 }
 ```
 
+See `Tools/MCPCLI/config.example.json` for the canonical template.
+
 ## Common workflows
 
-1. Start headless server and keep running (daemon):
+1. Run a chain from the CLI (requires Peel app running with MCP enabled):
 
 ```
-Tools/PeelCLI/.build/debug/peel-mcp server-start --config /etc/mcp/config.json --tmp-dir /var/tmp/peel
+Tools/PeelCLI/.build/debug/peel-mcp chains-run --prompt "Audit src/ for security issues"
 ```
 
-2. Run a chain from the CLI (one-off):
+2. Check status of a run:
 
 ```
-Tools/PeelCLI/.build/debug/peel-mcp chains-run --prompt "Audit src/ for security issues" --config ./mcp-config.json
+Tools/PeelCLI/.build/debug/peel-mcp chains-run-status --run-id abc123
 ```
 
-3. Check status of a run:
+3. List recent runs:
 
 ```
-Tools/PeelCLI/.build/debug/peel-mcp chains-status --run-id abc123
+Tools/PeelCLI/.build/debug/peel-mcp chains-run-list --limit 50
 ```
 
-4. List runs:
+4. Invoke a tool directly:
 
-```
-Tools/PeelCLI/.build/debug/peel-mcp chains-list --limit 50
+```bash
+echo '{"query": "error handling", "repoPath": "/path/to/repo", "mode": "vector", "limit": 5}' > tmp/args.json
+Tools/PeelCLI/.build/debug/peel-mcp tools-call --tool-name rag.search --arguments-json tmp/args.json
 ```
 
 ## Notes & recommendations
 
-- Use the --config file to pin server settings for reproducible CI runs.
-- For long-lived services, run PeelCLI under a process manager (systemd, launchd) and configure logs to rotate.
-- Keep tmp/ inside the repo (per project guidance) to avoid macOS permission prompts.
-- Headless servers will not provide UI-driven tools (screenshots, UI automation).
+- PeelCLI requires the Peel app to be running with MCP enabled (use `Tools/build-and-launch.sh --wait-for-server`).
+- Store argument JSON files in the repo-local `tmp/` directory (never `/tmp`) to avoid macOS permission prompts.
+- Keep `tmp/` inside the repo; it is gitignored per project guidelines.
+- Headless servers (MCPCLI) will not provide UI-driven tools (screenshots, UI automation).
+
+---
+
+## Headless Server (MCPCLI)
+
+`Tools/MCPCLI` is a **separate** headless server binary. It runs the MCP server without the Peel app — useful for CI, servers, or other tools that don't need a GUI.
+
+**Build:**
+```bash
+cd Tools/MCPCLI
+swift build -c release
+```
+
+**Run:**
+```bash
+.build/release/mcp-server --config config.json
+# Override port at runtime:
+.build/release/mcp-server --config config.json --port 9000
+```
+
+**Config fields** (see `config.example.json`):
+
+| Field | Description |
+|-------|-------------|
+| `port` | TCP port to listen on (default 8765) |
+| `repoRoot` | Path to the repository to serve |
+| `dataStorePath` | Path to the persistent data store |
+| `allowedTools` | Array of tool names to expose, or `null` for all |
+| `logLevel` | `debug`, `info`, `warn`, or `error` |
+
+**Key difference from PeelCLI:**
+- `Tools/PeelCLI` — sends commands to a **running Peel app** over the local MCP socket
+- `Tools/MCPCLI` — **is** the server; runs standalone without the Peel app
 
 ---
 
