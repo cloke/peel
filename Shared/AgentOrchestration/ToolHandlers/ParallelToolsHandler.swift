@@ -903,7 +903,7 @@ final class ParallelToolsHandler {
       "insertions": execution.insertions,
       "deletions": execution.deletions,
       "ragSnippetCount": execution.ragSnippets.count,
-      "mergeConflictCount": execution.mergeConflicts.count,
+      "mergeConflictCount": execution.conflictFiles.count,
       "guidanceCount": execution.operatorGuidance.count
     ]
 
@@ -922,8 +922,8 @@ final class ParallelToolsHandler {
     if let duration = execution.duration {
       result["durationSeconds"] = duration
     }
-    if !execution.mergeConflicts.isEmpty {
-      result["mergeConflicts"] = execution.mergeConflicts
+    if !execution.conflictFiles.isEmpty {
+      result["mergeConflicts"] = execution.conflictFiles.map { $0.filePath }
     }
     if !execution.output.isEmpty {
       result["output"] = execution.output
