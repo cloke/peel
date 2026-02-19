@@ -1611,6 +1611,11 @@ extension MCPServerService {
                   "focusPaths": [
                     "type": "array",
                     "items": ["type": "string"]
+                  ],
+                  "dependsOn": [
+                    "type": "array",
+                    "items": ["type": "integer"],
+                    "description": "0-based indices of other tasks in this batch that must be merged before this task starts"
                   ]
                 ],
                 "required": ["title", "prompt"]
@@ -1820,7 +1825,12 @@ extension MCPServerService {
                   "title": ["type": "string"],
                   "prompt": ["type": "string"],
                   "description": ["type": "string"],
-                  "focusPaths": ["type": "array", "items": ["type": "string"]]
+                  "focusPaths": ["type": "array", "items": ["type": "string"]],
+                  "dependsOn": [
+                    "type": "array",
+                    "items": ["type": "integer"],
+                    "description": "0-based indices of other tasks in this append batch that must be merged before this task starts"
+                  ]
                 ],
                 "required": ["title", "prompt"]
               ]

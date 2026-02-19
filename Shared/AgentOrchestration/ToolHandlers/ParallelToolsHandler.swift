@@ -813,8 +813,32 @@ final class ParallelToolsHandler {
     guard newTasks.count == tasksArray.count else {
       return invalidParamError(id: id, param: "tasks", reason: "Invalid task format — each task needs title and prompt")
     }
+    // Resolve dependsOn indices → stable task UUIDs (relative to new batch)
+    var resolvedTasks = newTasks
+    for (idx, taskDict) in tasksArray.enumerated() {
+      if let depIndices = taskDict["dependsOn"] as? [Int] {
+        resolvedTasks[idx].dependsOn = depIndices.compactMap { depIdx -> UUID? in
+          guard depIdx >= 0, depIdx < resolvedTasks.count, depIdx != idx else { return nil }
+          return resolvedTasks[depIdx].id
+        }
+      }
+    }
+    // Detect circular dependencies within the new batch (DFS)
+    var visited2 = Set<UUID>(); var stack2 = Set<UUID>()
+    func hasCycleAppend(_ taskId: UUID) -> Bool {
+      if stack2.contains(taskId) { return true }
+      if visited2.contains(taskId) { return false }
+      stack2.insert(taskId)
+      if let t = resolvedTasks.first(where: { $0.id == taskId }) {
+        for dep in t.dependsOn where hasCycleAppend(dep) { return true }
+      }
+      stack2.remove(taskId); visited2.insert(taskId); return false
+    }
+    if resolvedTasks.contains(where: { hasCycleAppend($0.id) }) {
+      return invalidParamError(id: id, param: "tasks", reason: "Circular dependency detected in dependsOn")
+    }
     do {
-      try runner.appendTasks(newTasks, to: run)
+      try runner.appendTasks(resolvedTasks, to: run)
       await delegate?.parallelTelemetryProvider.info("Tasks appended to parallel run", metadata: ["runId": runId.uuidString, "count": "\(newTasks.count)"])
       return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
         "runId": runId.uuidString,
