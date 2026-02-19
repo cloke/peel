@@ -1,0 +1,8 @@
+{
+  "_comment": "Example MCPCLI headless config. Copy to config.json and edit.",
+  "port": 8765,
+  "repoRoot": "/path/to/your/repo",
+  "dataStorePath": "/path/to/data",
+  "allowedTools": null,
+  "logLevel": "info"
+}
