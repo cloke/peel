@@ -513,6 +513,7 @@ public final class MCPServerService {
   var worktreeToolsHandler: WorktreeToolsHandler
   var githubToolsHandler: GitHubToolsHandler?
   var terminalToolsHandler: TerminalToolsHandler
+  var gitToolsHandler: GitToolsHandler
 
   public struct ActiveRunInfo: Identifiable {
     public let id: UUID
@@ -580,6 +581,7 @@ public final class MCPServerService {
     self.worktreeToolsHandler = WorktreeToolsHandler()
     self.githubToolsHandler = GitHubToolsHandler()
     self.terminalToolsHandler = TerminalToolsHandler()
+    self.gitToolsHandler = GitToolsHandler()
 
     self.agentManager = agentManager
     self.sessionTracker = sessionTracker
