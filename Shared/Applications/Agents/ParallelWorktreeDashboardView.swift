@@ -160,7 +160,7 @@ struct ParallelWorktreeDashboardView: View {
           expandedExecutions: $expandedExecutions
         )
       } else if let snapshot = runner.historicalRuns.first(where: { $0.id == selectedRunId }) {
-        ParallelRunSnapshotDetailView(snapshot: snapshot)
+        ParallelRunSnapshotDetailView(snapshot: snapshot, runner: runner, selectedRunId: $selectedRunId)
       } else {
         emptyDetailView
       }
@@ -1030,6 +1030,8 @@ struct ParallelRunSnapshotRow: View {
 
 struct ParallelRunSnapshotDetailView: View {
   let snapshot: ParallelRunSnapshot
+  let runner: ParallelWorktreeRunner
+  @Binding var selectedRunId: UUID?
 
   private var executions: [SnapshotExecution] { snapshot.decodedExecutions }
 
@@ -1085,11 +1087,29 @@ struct ParallelRunSnapshotDetailView: View {
           }
         }
         Spacer()
-        Label("History", systemImage: "clock.arrow.circlepath")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .labelStyle(.iconOnly)
-          .imageScale(.large)
+        VStack(alignment: .trailing, spacing: 6) {
+          Label("History", systemImage: "clock.arrow.circlepath")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .labelStyle(.iconOnly)
+            .imageScale(.large)
+          if executions.contains(where: {
+            let s = $0.status.lowercased()
+            return s == "awaiting review" || s == "reviewed" ||
+                   (s == "running" && $0.branchName != nil)
+          }) {
+            Button {
+              let run = runner.restoreFromSnapshot(snapshot)
+              selectedRunId = run.id
+            } label: {
+              Label("Restore to Active", systemImage: "arrow.uturn.backward.circle")
+                .font(.caption)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .help("Re-load this run into the active list with full approve/reject/merge controls")
+          }
+        }
       }
 
       HStack(spacing: 16) {

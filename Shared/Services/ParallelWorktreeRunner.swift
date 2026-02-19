@@ -1473,6 +1473,73 @@ final class ParallelWorktreeRunner {
     }
     return nil
   }
+
+  /// Re-hydrate a historical snapshot into an active run so full review UX is available.
+  /// Returns the existing run immediately if it is already active.
+  @discardableResult
+  func restoreFromSnapshot(_ snapshot: ParallelRunSnapshot) -> ParallelWorktreeRun {
+    if let existing = runs.first(where: { $0.id.uuidString.uppercased() == snapshot.runId.uppercased() }) {
+      return existing
+    }
+
+    let run = ParallelWorktreeRun(
+      id: UUID(uuidString: snapshot.runId) ?? UUID(),
+      name: snapshot.name,
+      projectPath: snapshot.projectPath,
+      baseBranch: snapshot.baseBranch,
+      requireReviewGate: snapshot.requireReviewGate
+    )
+    run.targetBranch = snapshot.targetBranch
+    run.templateName = snapshot.templateName
+    run.autoMergeOnApproval = snapshot.autoMergeOnApproval
+    run.createdAt = snapshot.createdAt
+
+    if let data = snapshot.executionsJSON.data(using: .utf8),
+       let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+      for dict in array {
+        guard let idStr = dict["id"] as? String,
+              let taskId = UUID(uuidString: idStr),
+              let title = dict["taskTitle"] as? String else { continue }
+        let task = WorktreeTask(
+          id: taskId,
+          title: title,
+          description: dict["taskDescription"] as? String ?? "",
+          prompt: title
+        )
+        let execution = ParallelWorktreeExecution(task: task)
+        execution.filesChanged = dict["filesChanged"] as? Int ?? 0
+        execution.insertions   = dict["insertions"] as? Int ?? 0
+        execution.deletions    = dict["deletions"] as? Int ?? 0
+        execution.branchName   = dict["branchName"] as? String
+        execution.status = restoredExecutionStatus(
+          from: dict["status"] as? String ?? "",
+          hasBranch: execution.branchName != nil
+        )
+        run.executions.append(execution)
+      }
+    }
+
+    let hasActionable = run.executions.contains { $0.status == .awaitingReview || $0.status == .reviewed }
+    let allDone = !run.executions.isEmpty && run.executions.allSatisfy { $0.status.isTerminal || $0.status == .merged }
+    run.status = allDone ? .completed : (hasActionable ? .awaitingReview : .awaitingReview)
+
+    runs.append(run)
+    recordSnapshot(for: run)
+    return run
+  }
+
+  private func restoredExecutionStatus(from displayName: String, hasBranch: Bool) -> ParallelWorktreeStatus {
+    switch displayName {
+    case "Awaiting Review": return .awaitingReview
+    case "Reviewed":        return .reviewed
+    case "Approved":        return .approved
+    case "Merged":          return .merged
+    case "Rejected":        return .rejected("(historical)")
+    case "Failed":          return .failed("(historical)")
+    case "Running":         return hasBranch ? .awaitingReview : .cancelled
+    default:                return .cancelled
+    }
+  }
 }
 
 // MARK: - Errors
