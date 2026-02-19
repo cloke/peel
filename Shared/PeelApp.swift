@@ -573,7 +573,7 @@ final class DataService {
         "filesChanged": execution.filesChanged,
         "insertions": execution.insertions,
         "deletions": execution.deletions,
-        "mergeConflictCount": execution.mergeConflicts.count,
+        "mergeConflictCount": execution.conflictFiles.count,
         "guidanceCount": execution.operatorGuidance.count
       ]
       if let chainId = execution.chainId {
@@ -592,8 +592,8 @@ final class DataService {
       if let completedAt = execution.completedAt {
         result["completedAt"] = formatter.string(from: completedAt)
       }
-      if !execution.mergeConflicts.isEmpty {
-        result["mergeConflicts"] = execution.mergeConflicts
+      if !execution.conflictFiles.isEmpty {
+        result["mergeConflicts"] = execution.conflictFiles.map { $0.filePath }
       }
       return result
     }
