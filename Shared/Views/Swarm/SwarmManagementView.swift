@@ -20,13 +20,14 @@ struct SwarmManagementView: View {
   @State private var errorMessage: String?
   @State private var showingDeepLinkAlert = false
   @State private var showingInvitePreview = false
+  @State private var showLocalOnly = false
   
   var body: some View {
     Group {
-      if firebaseService.isSignedIn {
+      if firebaseService.isSignedIn || showLocalOnly {
         signedInContent
       } else {
-        SwarmAuthView()
+        SwarmAuthView(onSkip: { showLocalOnly = true })
       }
     }
     .onChange(of: firebaseService.deepLinkReceived) { _, received in

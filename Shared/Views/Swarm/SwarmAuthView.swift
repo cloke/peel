@@ -14,6 +14,9 @@ struct SwarmAuthView: View {
   @State private var firebaseService = FirebaseService.shared
   @State private var isSigningIn = false
   @State private var errorMessage: String?
+
+  /// Optional callback invoked when the user taps "Not now".
+  var onSkip: (() -> Void)? = nil
   
   var body: some View {
     VStack(spacing: 24) {
@@ -69,6 +72,17 @@ struct SwarmAuthView: View {
       
       // Info footer
       VStack(spacing: 4) {
+        if let onSkip {
+          Button("Not now") {
+            onSkip()
+          }
+          .buttonStyle(.borderless)
+          .foregroundStyle(.secondary)
+
+          Text("Local LAN swarm works without sign in.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
         Text("Swarms enable distributed task execution")
           .font(.caption)
           .foregroundStyle(.secondary)

@@ -14,6 +14,7 @@ enum iOSTool: String, CaseIterable, Identifiable {
   case repositories = "Repositories"
   case brew = "Brew"
   case agents = "Agents"
+  case swarm = "Swarm"
   
   var id: String { rawValue }
   
@@ -22,6 +23,7 @@ enum iOSTool: String, CaseIterable, Identifiable {
     case .repositories: "tray.full.fill"
     case .brew: "mug.fill"
     case .agents: "cpu.fill"
+    case .swarm: "network"
     }
   }
 }
@@ -42,6 +44,10 @@ struct ContentView: View {
       
       Tab(iOSTool.agents.rawValue, systemImage: iOSTool.agents.icon, value: .agents) {
         AgentsUnavailableView()
+      }
+      
+      Tab(iOSTool.swarm.rawValue, systemImage: iOSTool.swarm.icon, value: .swarm) {
+        SwarmMonitorView()
       }
     }
   }
@@ -85,4 +91,69 @@ struct AgentsUnavailableView: View {
 
 #Preview {
   ContentView()
+}
+
+// MARK: - Swarm Monitor
+
+/// iOS swarm monitoring view – shows membership and connected workers.
+@MainActor
+struct SwarmMonitorView: View {
+  @State private var firebaseService = FirebaseService.shared
+
+  var body: some View {
+    NavigationStack {
+      Group {
+        if !firebaseService.isSignedIn {
+          SwarmAuthView()
+        } else if firebaseService.memberSwarms.isEmpty {
+          ContentUnavailableView {
+            Label("No Swarms", systemImage: "network")
+          } description: {
+            Text("Join or create a swarm on your Mac.")
+          }
+        } else {
+          List {
+            Section("My Swarms") {
+              ForEach(firebaseService.memberSwarms) { swarm in
+                SwarmMembershipRow(swarm: swarm)
+              }
+            }
+
+            if !firebaseService.swarmWorkers.isEmpty {
+              Section("Connected Workers") {
+                ForEach(firebaseService.swarmWorkers) { worker in
+                  FirestoreWorkerRow(worker: worker)
+                }
+              }
+            }
+          }
+        }
+      }
+      .navigationTitle("Swarm")
+    }
+  }
+}
+
+/// Simple row displaying a swarm membership entry.
+private struct SwarmMembershipRow: View {
+  let swarm: SwarmMembership
+
+  var body: some View {
+    HStack {
+      VStack(alignment: .leading, spacing: 2) {
+        Text(swarm.swarmName)
+          .font(.subheadline)
+          .fontWeight(.medium)
+        Text(swarm.role.rawValue.capitalized)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+
+      Spacer()
+
+      Circle()
+        .fill(swarm.role == .pending ? Color.orange : Color.green)
+        .frame(width: 8, height: 8)
+    }
+  }
 }
