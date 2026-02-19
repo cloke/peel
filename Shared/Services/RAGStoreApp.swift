@@ -398,9 +398,39 @@ extension RAGStore {
   }
 }
 
+// MARK: - Portable Repo Identification (Issue #278)
+//
+// To support cross-machine SQLite sync:
+// 1. `repoIdentifier` column stores normalized git remote URL
+// 2. `RepoRegistry.shared` maps remote URLs to local paths
+// 3. `remapRepoPaths()` updates `root_path` when DB is synced to a new machine
+// 4. All MCP tools resolve repoPath via RepoRegistry before querying
+//
+// This allows the same RAG database to work on different machines
+// where repos are cloned at different paths.
+
 // MARK: - Repo Path Remapping (uses RepoRegistry)
 
 extension RAGStore {
+
+  /// Resolve a repo path to its local equivalent using RepoRegistry.
+  /// - Parameter repoPath: Path or remote URL to resolve
+  /// - Returns: Local path if resolvable, original path otherwise
+  func resolveRepoPath(_ repoPath: String) async -> String {
+    // First, try the path as-is if it exists locally
+    if FileManager.default.fileExists(atPath: repoPath) {
+      return repoPath
+    }
+    
+    // Try RepoRegistry in case repoPath is a remote URL or identifier
+    if let resolved = await RepoRegistry.shared.getLocalPath(for: repoPath),
+       FileManager.default.fileExists(atPath: resolved) {
+      return resolved
+    }
+    
+    // Fall back to original path (may not exist, but preserves caller's intent)
+    return repoPath
+  }
 
   @discardableResult
   func remapRepoPaths() async throws -> Int {
