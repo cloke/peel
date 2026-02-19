@@ -79,7 +79,11 @@ struct ParallelWorktreeDashboardView: View {
   
   @ViewBuilder
   private func runList(runner: ParallelWorktreeRunner) -> some View {
-    if runner.runs.isEmpty {
+    let history = deduplicatedHistory(runner: runner)
+    let hasActive = !runner.runs.isEmpty
+    let hasHistory = !history.isEmpty
+
+    if !hasActive && !hasHistory {
       VStack(alignment: .leading, spacing: 12) {
         ContentUnavailableView {
           Label("No Parallel Runs", systemImage: "arrow.triangle.branch")
@@ -96,9 +100,28 @@ struct ParallelWorktreeDashboardView: View {
       .padding(16)
     } else {
       List(selection: $selectedRunId) {
-        ForEach(runner.runs) { run in
-          ParallelRunRow(run: run)
-            .tag(run.id)
+        if hasActive {
+          if hasHistory {
+            Section("Active") {
+              ForEach(runner.runs) { run in
+                ParallelRunRow(run: run)
+                  .tag(run.id)
+              }
+            }
+          } else {
+            ForEach(runner.runs) { run in
+              ParallelRunRow(run: run)
+                .tag(run.id)
+            }
+          }
+        }
+        if hasHistory {
+          Section("History") {
+            ForEach(history) { snapshot in
+              ParallelRunSnapshotRow(snapshot: snapshot)
+                .tag(snapshot.id)
+            }
+          }
         }
       }
       .listStyle(.plain)
@@ -108,32 +131,52 @@ struct ParallelWorktreeDashboardView: View {
         }
       }
       .onChange(of: runner.runs.map(\.id)) { _, newIds in
-        if let selectedRunId, newIds.contains(selectedRunId) {
-          return
-        }
+        if let selectedRunId, newIds.contains(selectedRunId) { return }
+        // Don't clobber a historical snapshot selection
+        if let selectedRunId, history.contains(where: { $0.id == selectedRunId }) { return }
         selectedRunId = newIds.first
       }
+    }
+  }
+
+  /// Returns one snapshot per runId (most recent), excluding currently active runs.
+  private func deduplicatedHistory(runner: ParallelWorktreeRunner) -> [ParallelRunSnapshot] {
+    let activeIds = Set(runner.runs.map(\.id.uuidString))
+    var seen = Set<String>()
+    return runner.historicalRuns.filter { snap in
+      guard !activeIds.contains(snap.runId) else { return false }
+      return seen.insert(snap.runId).inserted
     }
   }
   
   @ViewBuilder
   private func detailContent(runner: ParallelWorktreeRunner) -> some View {
-    if let selectedRunId, let run = runner.runs.first(where: { $0.id == selectedRunId }) {
-      ParallelRunDetailView(
-        run: run,
-        runner: runner,
-        selectedExecution: $selectedExecution,
-        expandedExecutions: $expandedExecutions
-      )
-    } else {
-      ContentUnavailableView {
-        Label("Select a Run", systemImage: "square.stack.3d.up")
-      } description: {
-        Text("Select a parallel run from the sidebar to view details.")
+    if let selectedRunId {
+      if let run = runner.runs.first(where: { $0.id == selectedRunId }) {
+        ParallelRunDetailView(
+          run: run,
+          runner: runner,
+          selectedExecution: $selectedExecution,
+          expandedExecutions: $expandedExecutions
+        )
+      } else if let snapshot = runner.historicalRuns.first(where: { $0.id == selectedRunId }) {
+        ParallelRunSnapshotDetailView(snapshot: snapshot)
+      } else {
+        emptyDetailView
       }
-      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-      .padding(24)
+    } else {
+      emptyDetailView
     }
+  }
+
+  private var emptyDetailView: some View {
+    ContentUnavailableView {
+      Label("Select a Run", systemImage: "square.stack.3d.up")
+    } description: {
+      Text("Select a parallel run from the sidebar to view details.")
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .padding(24)
   }
 }
 
@@ -912,6 +955,331 @@ struct NewParallelRunSheet: View {
           prompt: prompt
         )
       }
+  }
+}
+
+// MARK: - Snapshot Row
+
+struct ParallelRunSnapshotRow: View {
+  let snapshot: ParallelRunSnapshot
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      HStack {
+        statusIcon
+        Text(snapshot.name)
+          .fontWeight(.medium)
+        Spacer()
+        Text("\(snapshot.executionCount)")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+
+      HStack(spacing: 8) {
+        ProgressView(value: snapshot.progress)
+          .progressViewStyle(.linear)
+          .tint(progressTint)
+          .frame(maxWidth: 100)
+
+        Text(snapshot.status)
+          .font(.caption)
+          .foregroundStyle(statusColor)
+      }
+
+      Text(snapshot.updatedAt, style: .relative)
+        .font(.caption2)
+        .foregroundStyle(.tertiary)
+    }
+    .padding(.vertical, 4)
+  }
+
+  private var progressTint: Color {
+    switch snapshot.status.lowercased() {
+    case "completed": return .green
+    case "cancelled": return .secondary
+    case "failed": return .red
+    default: return .blue
+    }
+  }
+
+  private var statusColor: Color {
+    switch snapshot.status.lowercased() {
+    case "completed": return .green
+    case "cancelled": return .secondary
+    case "failed": return .red
+    default: return .secondary
+    }
+  }
+
+  @ViewBuilder
+  private var statusIcon: some View {
+    switch snapshot.status.lowercased() {
+    case "completed":
+      Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+    case "failed":
+      Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+    case "cancelled":
+      Image(systemName: "slash.circle.fill").foregroundStyle(.secondary)
+    default:
+      Image(systemName: "clock.fill").foregroundStyle(.secondary)
+    }
+  }
+}
+
+// MARK: - Snapshot Detail View
+
+struct ParallelRunSnapshotDetailView: View {
+  let snapshot: ParallelRunSnapshot
+
+  private var executions: [SnapshotExecution] { snapshot.decodedExecutions }
+
+  var body: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 20) {
+        snapshotHeader
+        Divider()
+        statsGrid
+        if !executions.isEmpty {
+          Divider()
+          executionList
+        }
+      }
+      .padding()
+    }
+    .navigationTitle(snapshot.name)
+  }
+
+  // MARK: Header
+
+  private var snapshotHeader: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(alignment: .top) {
+        VStack(alignment: .leading, spacing: 4) {
+          Text(snapshot.name)
+            .font(.title2)
+            .fontWeight(.semibold)
+
+          HStack(spacing: 6) {
+            Text(snapshot.status)
+              .font(.subheadline)
+              .foregroundStyle(statusColor)
+              .fontWeight(.medium)
+
+            Text("·")
+              .foregroundStyle(.tertiary)
+
+            Text(snapshot.baseBranch)
+              .font(.subheadline)
+              .foregroundStyle(.secondary)
+              .fontDesign(.monospaced)
+
+            if let target = snapshot.targetBranch {
+              Image(systemName: "arrow.right")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              Text(target)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fontDesign(.monospaced)
+            }
+          }
+        }
+        Spacer()
+        Label("History", systemImage: "clock.arrow.circlepath")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .labelStyle(.iconOnly)
+          .imageScale(.large)
+      }
+
+      HStack(spacing: 16) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text("Created")
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+          Text(snapshot.createdAt, style: .date)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        VStack(alignment: .leading, spacing: 2) {
+          Text("Last Updated")
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+          Text(snapshot.updatedAt, style: .relative)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        if let templateName = snapshot.templateName {
+          VStack(alignment: .leading, spacing: 2) {
+            Text("Template")
+              .font(.caption2)
+              .foregroundStyle(.tertiary)
+            Text(templateName)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
+      }
+    }
+  }
+
+  private var statusColor: Color {
+    switch snapshot.status.lowercased() {
+    case "completed": return .green
+    case "failed": return .red
+    case "cancelled": return .secondary
+    default: return .primary
+    }
+  }
+
+  // MARK: Stats Grid
+
+  private var statsGrid: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("Results")
+        .font(.headline)
+
+      LazyVGrid(columns: [GridItem(.adaptive(minimum: 90))], spacing: 12) {
+        snapshotStatBox(value: snapshot.executionCount, label: "Total", color: .primary)
+        snapshotStatBox(value: snapshot.mergedCount, label: "Merged", color: .green)
+        if snapshot.pendingReviewCount > 0 {
+          snapshotStatBox(value: snapshot.pendingReviewCount, label: "Pending Review", color: .orange)
+        }
+        if snapshot.readyToMergeCount > 0 {
+          snapshotStatBox(value: snapshot.readyToMergeCount, label: "Ready to Merge", color: .blue)
+        }
+        if snapshot.rejectedCount > 0 {
+          snapshotStatBox(value: snapshot.rejectedCount, label: "Rejected", color: .red)
+        }
+        if snapshot.failedCount > 0 {
+          snapshotStatBox(value: snapshot.failedCount, label: "Failed", color: .red)
+        }
+        if snapshot.hungCount > 0 {
+          snapshotStatBox(value: snapshot.hungCount, label: "Hung", color: .yellow)
+        }
+      }
+    }
+  }
+
+  private func snapshotStatBox(value: Int, label: String, color: Color) -> some View {
+    VStack(spacing: 4) {
+      Text("\(value)")
+        .font(.title2)
+        .fontWeight(.bold)
+        .foregroundStyle(color)
+      Text(label)
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+    }
+    .frame(maxWidth: .infinity)
+    .padding(.vertical, 10)
+    .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+  }
+
+  // MARK: Execution List
+
+  private var executionList: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Text("Tasks (\(executions.count))")
+        .font(.headline)
+
+      ForEach(executions) { exec in
+        HStack(alignment: .top, spacing: 10) {
+          executionStatusIcon(exec.status)
+            .frame(width: 18)
+
+          VStack(alignment: .leading, spacing: 2) {
+            Text(exec.taskTitle)
+              .font(.subheadline)
+              .fontWeight(.medium)
+
+            HStack(spacing: 8) {
+              Text(exec.status)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+              if exec.filesChanged > 0 {
+                Text("·")
+                  .foregroundStyle(.tertiary)
+                  .font(.caption)
+                Text("\(exec.filesChanged)F +\(exec.insertions) -\(exec.deletions)")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+                  .fontDesign(.monospaced)
+              }
+            }
+
+            if let branch = exec.branchName {
+              Text(branch)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .fontDesign(.monospaced)
+            }
+          }
+        }
+        .padding(.vertical, 4)
+
+        if exec.id != executions.last?.id {
+          Divider()
+        }
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func executionStatusIcon(_ status: String) -> some View {
+    switch status.lowercased() {
+    case "merged":
+      Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+    case "rejected":
+      Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+    case "failed":
+      Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
+    case "awaiting review":
+      Image(systemName: "eye.circle.fill").foregroundStyle(.orange)
+    case "ready to merge":
+      Image(systemName: "arrow.triangle.merge").foregroundStyle(.blue)
+    default:
+      Image(systemName: "circle").foregroundStyle(.secondary)
+    }
+  }
+}
+
+// MARK: - Snapshot Execution (for decoding executionsJSON)
+
+struct SnapshotExecution: Identifiable {
+  let id: UUID
+  let taskTitle: String
+  let status: String
+  let filesChanged: Int
+  let insertions: Int
+  let deletions: Int
+  let branchName: String?
+}
+
+extension ParallelRunSnapshot {
+  var decodedExecutions: [SnapshotExecution] {
+    guard !executionsJSON.isEmpty,
+          let data = executionsJSON.data(using: .utf8),
+          let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+      return []
+    }
+    return array.compactMap { dict in
+      guard let idStr = dict["id"] as? String,
+            let id = UUID(uuidString: idStr),
+            let title = dict["taskTitle"] as? String,
+            let status = dict["status"] as? String else { return nil }
+      return SnapshotExecution(
+        id: id,
+        taskTitle: title,
+        status: status,
+        filesChanged: dict["filesChanged"] as? Int ?? 0,
+        insertions: dict["insertions"] as? Int ?? 0,
+        deletions: dict["deletions"] as? Int ?? 0,
+        branchName: dict["branchName"] as? String
+      )
+    }
   }
 }
 
