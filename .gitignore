@@ -7,6 +7,8 @@ RunningLinuxInAVirtualMachine/
 ## Build generated
 build/
 DerivedData/
+# Per-worktree agent build isolation dirs (created by XcodeBuildQueue)
+**/.xcode-derived/
 
 ## Various settings
 *.pbxuser
