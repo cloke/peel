@@ -321,13 +321,23 @@ gh issue create --repo cloke/peel --template <template-file>
 ```
 
 ### Issue Body Formatting (IMPORTANT)
-To avoid escaped newline formatting in issue bodies, use the repo script instead of inline `gh issue create` bodies:
+**ALWAYS use `Tools/gh-issue-create.sh`** instead of `gh issue create` directly. The script:
+- Avoids escaped newline formatting issues
+- **Automatically adds the issue to the project board** (https://github.com/users/cloke/projects/1)
 
 ```bash
-Tools/gh-issue-create.sh --repo cloke/peel --title "Title" --body-file /path/to/body.md
+Tools/gh-issue-create.sh --repo cloke/peel --title "Title" --body-file tmp/issue-body.md
 # or pipe from stdin
-cat /path/to/body.md | Tools/gh-issue-create.sh --repo cloke/peel --title "Title"
+cat tmp/issue-body.md | Tools/gh-issue-create.sh --repo cloke/peel --title "Title"
+# skip project board (rare):
+Tools/gh-issue-create.sh --repo cloke/peel --title "Title" --body-file tmp/issue-body.md --no-project
 ```
+
+**Required auth scope:** If you see "Could not add to project board", run:
+```bash
+gh auth refresh -s project
+```
+(Requires device-flow browser confirmation once — ask the user to complete it.)
 
 ### Delegating to GitHub Copilot Workspace
 For simple, well-defined tasks, you can delegate to Copilot Workspace:
