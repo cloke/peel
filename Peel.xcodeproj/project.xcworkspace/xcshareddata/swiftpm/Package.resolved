@@ -20,15 +20,6 @@
         }
       },
       {
-        "package": "ASTChunker",
-        "repositoryURL": "https://github.com/crunchybananas/ast-chunker.git",
-        "state": {
-          "branch": null,
-          "revision": "1726e45e92ba05c67ba8da35e8ab74cbc55b5140",
-          "version": "1.1.0"
-        }
-      },
-      {
         "package": "AttributedText",
         "repositoryURL": "https://github.com/gonzalezreal/AttributedText",
         "state": {

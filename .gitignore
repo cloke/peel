@@ -82,7 +82,6 @@ tmp/
 # External packages (now remote SPM deps via GitHub)
 Local Packages/MCPCore/
 Local Packages/MCPServerKit/
-Local Packages/ASTChunker/
 Local Packages/RAGCore/
 Local Packages/*/.build
 Local Packages/*/.swiftpm
