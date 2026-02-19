@@ -265,3 +265,55 @@ final class CodeEditToolsHandler: MCPToolHandler {
 }
 
 #endif
+
+// MARK: - Tool Definitions
+
+extension CodeEditToolsHandler {
+  public var toolDefinitions: [MCPToolDefinition] {
+    [
+      MCPToolDefinition(
+        name: "code.edit",
+        description: """
+        Edit a file using a local MLX LLM (Qwen3-Coder-Next on 96GB+ machines, Qwen2.5-Coder-7B on smaller).
+        Reads the file, applies the natural-language instruction, and returns a unified diff, the full edited file, or a changed snippet.
+        When useRag=true (default), related code from the RAG index is included as style context.
+        macOS only. Requires at least 24GB RAM.
+        """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "filePath": ["type": "string", "description": "Absolute path to the file to edit"],
+            "instruction": ["type": "string", "description": "Natural language instruction for the edit (e.g., 'convert to @Observable', 'extract validation into a protocol')"],
+            "mode": ["type": "string", "enum": ["diff", "fullFile", "snippet"], "description": "Output format (default: diff)"],
+            "context": ["type": "string", "description": "Optional additional context (related code, requirements)"],
+            "useRag": ["type": "boolean", "description": "Auto-fetch related code from RAG for style matching (default: true)"],
+            "tier": ["type": "string", "enum": ["small", "medium", "large", "auto"], "description": "Model tier override (default: auto based on RAM)"]
+          ],
+          "required": ["filePath", "instruction"]
+        ],
+        category: .codeEdit,
+        isMutating: false  // Returns edit content but does not write to disk
+      ),
+      MCPToolDefinition(
+        name: "code.edit.status",
+        description: "Check local code editor model status: loaded model, tier, memory requirements, feasibility on this machine. macOS only.",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .codeEdit,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "code.edit.unload",
+        description: "Unload the local code editor model to free RAM. The model will be reloaded on next code.edit call. macOS only.",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .codeEdit,
+        isMutating: true
+      ),
+    ]
+  }
+}

@@ -361,3 +361,68 @@ extension JSONRPCResponseBuilder.ErrorCode {
   /// Command blocked due to safety concerns
   public static let blocked = -32050
 }
+
+// MARK: - Tool Definitions
+
+extension TerminalToolsHandler {
+  public var toolDefinitions: [MCPToolDefinition] {
+    [
+      MCPToolDefinition(
+        name: "terminal.run",
+        description: """
+          Run a shell command with automatic bash→zsh adaptation and safety analysis.
+          Automatically converts common bash patterns to zsh (echo -e, backticks, heredocs, read -p).
+          Analyzes commands for safety and blocks critical operations (rm -rf /, curl|sh, etc.).
+          Returns structured output with stdout, stderr, exit code, and adaptation/safety info.
+          """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "command": ["type": "string", "description": "The command to execute"],
+            "workingDirectory": ["type": "string", "description": "Working directory (optional)"],
+            "timeout": ["type": "integer", "description": "Timeout in seconds (default: 30)"],
+            "skipAdaptation": ["type": "boolean", "description": "Skip bash→zsh adaptation (default: false)"],
+            "skipSafetyCheck": ["type": "boolean", "description": "Skip safety analysis (default: false)"]
+          ],
+          "required": ["command"]
+        ],
+        category: .terminal,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "terminal.analyze",
+        description: """
+          Analyze a command for safety without executing it.
+          Returns risk level (safe/low/medium/high/critical), detected risks, and suggestions.
+          Use this to pre-flight check commands before running them.
+          """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "command": ["type": "string", "description": "The command to analyze"]
+          ],
+          "required": ["command"]
+        ],
+        category: .terminal,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "terminal.adapt",
+        description: """
+          Preview bash→zsh shell adaptation without executing.
+          Shows what transformations would be applied: echo -e removal, backtick→$() conversion,
+          read -p adaptation, heredoc escaping, declare→typeset, etc.
+          """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "command": ["type": "string", "description": "The command to adapt"]
+          ],
+          "required": ["command"]
+        ],
+        category: .terminal,
+        isMutating: false
+      ),
+    ]
+  }
+}

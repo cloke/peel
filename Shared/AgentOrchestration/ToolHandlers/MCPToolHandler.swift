@@ -20,6 +20,10 @@ public protocol MCPToolHandler {
   /// Tool names this handler supports
   var supportedTools: Set<String> { get }
 
+  /// Tool definitions for all tools this handler supports.
+  /// Used by MCPServerService to aggregate the full tool list.
+  var toolDefinitions: [MCPToolDefinition] { get }
+
   /// Handle a tool call
   /// - Parameters:
   ///   - name: The tool name
@@ -88,6 +92,9 @@ public protocol MCPToolHandlerDelegate: AnyObject {
 
 /// Extension providing convenient response builders using MCPCore
 extension MCPToolHandler {
+  /// Default empty tool definitions — handlers should override this.
+  public var toolDefinitions: [MCPToolDefinition] { [] }
+
   /// Create a successful MCP-compliant tool result response
   /// Uses the content array format required by the MCP specification
   public func makeResult(id: Any?, result: [String: Any]) -> Data {

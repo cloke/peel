@@ -595,3 +595,288 @@ struct ChainToolBatchItem {
     self.templateName = templateName
   }
 }
+
+// MARK: - Tool Definitions
+
+extension ChainToolsHandler {
+  public var toolDefinitions: [MCPToolDefinition] {
+    [
+      MCPToolDefinition(
+        name: "templates.list",
+        description: "List available chain templates",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .chains,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "chains.run",
+        description: "Run a chain template with a prompt",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "templateId": ["type": "string"],
+            "templateName": ["type": "string"],
+            "chainSpec": [
+              "type": "object",
+              "properties": [
+                "name": ["type": "string"],
+                "description": ["type": "string"],
+                "steps": [
+                  "type": "array",
+                  "items": [
+                    "type": "object",
+                    "properties": [
+                      "role": ["type": "string"],
+                      "model": ["type": "string"],
+                      "name": ["type": "string"],
+                      "frameworkHint": ["type": "string"],
+                      "customInstructions": ["type": "string"]
+                    ],
+                    "required": ["role", "model"]
+                  ]
+                ]
+              ],
+              "required": ["steps"]
+            ],
+            "prompt": ["type": "string"],
+            "workingDirectory": ["type": "string"],
+            "enableReviewLoop": ["type": "boolean"],
+            "pauseOnReview": ["type": "boolean"],
+            "enablePrePlanner": ["type": "boolean", "description": "Enable RAG-grounded pre-planner step before main planner runs"],
+            "allowPlannerModelSelection": ["type": "boolean"],
+            "allowImplementerModelOverride": ["type": "boolean"],
+            "allowPlannerImplementerScaling": ["type": "boolean"],
+            "maxImplementers": ["type": "integer"],
+            "maxPremiumCost": ["type": "number"],
+            "priority": ["type": "integer"],
+            "timeoutSeconds": ["type": "number"],
+            "returnImmediately": ["type": "boolean"],
+            "keepWorkspace": ["type": "boolean"],
+            "requireRagUsage": ["type": "boolean"]
+          ],
+          "required": ["prompt"]
+        ],
+        category: .chains,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "chains.run.status",
+        description: "Get status for a running or queued chain by runId",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"]
+          ],
+          "required": ["runId"]
+        ],
+        category: .chains,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "chains.run.list",
+        description: "List recent chain runs and optional logs",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "limit": ["type": "integer"],
+            "chainId": ["type": "string"],
+            "runId": ["type": "string"],
+            "includeResults": ["type": "boolean"],
+            "includeOutputs": ["type": "boolean"]
+          ]
+        ],
+        category: .chains,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "workspaces.agent.list",
+        description: "List agent workspaces and their status",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": ["type": "string"]
+          ]
+        ],
+        category: .state,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "workspaces.agent.cleanup.status",
+        description: "Get agent worktree cleanup status",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .state,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "chains.runBatch",
+        description: "Run multiple chains (optionally in parallel)",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runs": [
+              "type": "array",
+              "items": [
+                "type": "object",
+                "properties": [
+                  "templateId": ["type": "string"],
+                  "templateName": ["type": "string"],
+                  "prompt": ["type": "string"],
+                  "workingDirectory": ["type": "string"],
+                  "enableReviewLoop": ["type": "boolean"],
+                  "pauseOnReview": ["type": "boolean"],
+                  "enablePrePlanner": ["type": "boolean"],
+                  "allowPlannerModelSelection": ["type": "boolean"],
+                  "allowImplementerModelOverride": ["type": "boolean"],
+                  "allowPlannerImplementerScaling": ["type": "boolean"],
+                  "maxImplementers": ["type": "integer"],
+                  "maxPremiumCost": ["type": "number"],
+                  "priority": ["type": "integer"],
+                  "timeoutSeconds": ["type": "number"]
+                ],
+                "required": ["prompt"]
+              ]
+            ],
+            "parallel": ["type": "boolean"]
+          ],
+          "required": ["runs"]
+        ],
+        category: .chains,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "chains.stop",
+        description: "Cancel a running chain by runId (or all running chains)",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"],
+            "all": ["type": "boolean"]
+          ]
+        ],
+        category: .chains,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "chains.pause",
+        description: "Pause a running chain by runId",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"]
+          ],
+          "required": ["runId"]
+        ],
+        category: .chains,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "chains.resume",
+        description: "Resume a paused chain by runId",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"]
+          ],
+          "required": ["runId"]
+        ],
+        category: .chains,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "chains.instruct",
+        description: "Inject operator guidance into a running chain",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"],
+            "guidance": ["type": "string"]
+          ],
+          "required": ["runId", "guidance"]
+        ],
+        category: .chains,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "chains.step",
+        description: "Step a paused chain to the next agent by runId",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"]
+          ],
+          "required": ["runId"]
+        ],
+        category: .chains,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "chains.queue.status",
+        description: "Get chain queue status",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .chains,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "chains.queue.configure",
+        description: "Configure chain queue limits",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "maxConcurrent": ["type": "integer"],
+            "maxQueued": ["type": "integer"]
+          ]
+        ],
+        category: .chains,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "chains.queue.cancel",
+        description: "Cancel a queued chain by runId",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"]
+          ],
+          "required": ["runId"]
+        ],
+        category: .chains,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "chains.promptRules.get",
+        description: "Get current prompt rules and guardrails configuration",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .chains,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "chains.promptRules.set",
+        description: "Update prompt rules and guardrails. Partial updates supported.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "globalPrefix": ["type": "string", "description": "Text prepended to all prompts"],
+            "enforcePlannerModel": ["type": "string", "description": "Model name to enforce for planner"],
+            "maxPremiumCostDefault": ["type": "number", "description": "Default max premium cost"],
+            "requireRagByDefault": ["type": "boolean", "description": "Require RAG usage by default"],
+            "perTemplateOverrides": ["type": "object", "description": "Per-template overrides keyed by template name"]
+          ]
+        ],
+        category: .chains,
+        isMutating: true
+      ),
+    ]
+  }
+}

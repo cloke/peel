@@ -190,3 +190,89 @@ final class GitToolsHandler: MCPToolHandler {
 #endif
   }
 }
+
+// MARK: - Tool Definitions
+
+extension GitToolsHandler {
+  public var toolDefinitions: [MCPToolDefinition] {
+    [
+      MCPToolDefinition(
+        name: "git.status",
+        description: "Show git working tree status. Returns clean/dirty indicator plus the status lines.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "path": ["type": "string", "description": "Absolute path to the git repository"],
+            "short": ["type": "boolean", "description": "Use --short format (default: true)"]
+          ],
+          "required": ["path"]
+        ],
+        category: .terminal,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "git.add",
+        description: "Stage files for commit. Defaults to staging everything ('.'). Pass a 'files' array to stage specific paths.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "path": ["type": "string", "description": "Absolute path to the git repository"],
+            "files": ["type": "array", "items": ["type": "string"], "description": "Paths to stage (default: [\".\"])"]
+          ],
+          "required": ["path"]
+        ],
+        category: .terminal,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "git.commit",
+        description: """
+          Create a git commit. The message is passed directly to the git Process argument list — \
+          no shell involved, so quotes, backticks, and special characters never need escaping.
+          Set addAll=true to automatically stage all tracked-file changes before committing.
+          """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "path": ["type": "string", "description": "Absolute path to the git repository"],
+            "message": ["type": "string", "description": "Commit message (no escaping needed)"],
+            "addAll": ["type": "boolean", "description": "Stage all tracked changes first (-a flag, default: false)"]
+          ],
+          "required": ["path", "message"]
+        ],
+        category: .terminal,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "git.push",
+        description: "Push commits to a remote. Defaults to 'origin'. Omit 'branch' to push the current branch.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "path": ["type": "string", "description": "Absolute path to the git repository"],
+            "remote": ["type": "string", "description": "Remote name (default: 'origin')"],
+            "branch": ["type": "string", "description": "Branch name (default: current branch)"]
+          ],
+          "required": ["path"]
+        ],
+        category: .terminal,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "git.log",
+        description: "Show recent commit history.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "path": ["type": "string", "description": "Absolute path to the git repository"],
+            "limit": ["type": "integer", "description": "Number of commits (default: 10)"],
+            "format": ["type": "string", "description": "Log format: 'oneline', 'short', 'medium' (default: 'oneline')"]
+          ],
+          "required": ["path"]
+        ],
+        category: .terminal,
+        isMutating: false
+      ),
+    ]
+  }
+}
