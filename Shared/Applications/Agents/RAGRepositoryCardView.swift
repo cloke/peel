@@ -921,7 +921,7 @@ struct RAGRepositoryCardView: View {
     // Guard: AI Analysis must be enabled in Settings before chunks can be analyzed.
     // makeDefaultRAGStore checks this same key — if false, chunkAnalyzer is nil and
     // RAGCore silently returns 0 for every batch, causing an infinite stall loop.
-    guard UserDefaults.standard.bool(forKey: "rag.analyzer.enabled") else {
+    guard UserDefaults.standard.ragAnalyzerEnabled else {
       analysisState.analyzeError = "AI Analysis is disabled. Enable it in Settings → AI Analysis to get started."
       return
     }
@@ -1038,7 +1038,7 @@ struct RAGRepositoryCardView: View {
                 let duration = Date().timeIntervalSince(startTime)
                 mcpServer.recordAnalysisSession(chunksAnalyzed: analysisState.sessionChunksAnalyzed, durationSeconds: duration)
               }
-              let analyzerEnabled = UserDefaults.standard.bool(forKey: "rag.analyzer.enabled")
+              let analyzerEnabled = UserDefaults.standard.ragAnalyzerEnabled
               if analyzerEnabled {
                 analysisState.analyzeError = "Analysis stalled: \(dbRemaining) chunks could not be processed. The MLX model may have failed — try Force Re-analyze or check Console logs."
               } else {

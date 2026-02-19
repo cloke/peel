@@ -30,6 +30,17 @@ extension RAGStore {
   typealias LocalRAGError = RAGError
 }
 
+// MARK: - UserDefaults helpers
+
+extension UserDefaults {
+  /// Whether AI chunk analysis is enabled.
+  /// Treats a **missing** key as `true` so analysis works out-of-the-box on first install
+  /// and doesn't silently break when prefs are reset/cleared.
+  var ragAnalyzerEnabled: Bool {
+    object(forKey: "rag.analyzer.enabled") == nil ? true : bool(forKey: "rag.analyzer.enabled")
+  }
+}
+
 // MARK: - Factory (no-arg, uses app defaults)
 
 /// Creates a RAGStore with the app's default embedding provider and memory monitor.
@@ -38,7 +49,9 @@ func makeDefaultRAGStore(
   chunkAnalyzer: ChunkAnalyzer? = nil
 ) -> RAGStore {
   #if os(macOS)
-  let analysisEnabled = UserDefaults.standard.bool(forKey: "rag.analyzer.enabled")
+  // Default to enabled when key has never been explicitly set (nil object = first run or cleared prefs).
+  // This prevents analysis from silently doing nothing for users who never toggled the setting.
+  let analysisEnabled = UserDefaults.standard.ragAnalyzerEnabled
   let tierRaw = UserDefaults.standard.string(forKey: "rag.analyzer.tier")
   let tier = tierRaw.flatMap { MLXAnalyzerModelTier(rawValue: $0) } ?? .auto
   let analyzer: ChunkAnalyzer? = chunkAnalyzer ?? (analysisEnabled ? MLXCodeAnalyzerFactory.makeAnalyzer(tier: tier) : nil)

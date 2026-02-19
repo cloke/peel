@@ -81,7 +81,9 @@ struct RAGSettingsView: View {
   // Bindings for analysis settings
   private var analysisEnabled: Binding<Bool> {
     Binding(
-      get: { UserDefaults.standard.bool(forKey: "rag.analyzer.enabled") },
+      get: {
+        UserDefaults.standard.ragAnalyzerEnabled
+      },
       set: { newValue in
         UserDefaults.standard.set(newValue, forKey: "rag.analyzer.enabled")
         analysisSettingsChanged = true
