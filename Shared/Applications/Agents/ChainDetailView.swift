@@ -191,12 +191,28 @@ struct ChainDetailView: View {
             if case .running = chain.state {
               SectionCard {
                 VStack(alignment: .leading, spacing: 12) {
-                  // Current agent
-                  if let (index, agent) = activeAgent {
-                    HStack {
-                      Text("Step \(index + 1) of \(chain.agents.count)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                  // Current agent / phase
+                  HStack {
+                    if let (index, agent) = activeAgent {
+                      VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                          Text("Step \(index + 1) of \(chain.agents.count)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                          Text("•")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                          Text(chain.state.displayName)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        }
+                        Text(agent.name)
+                          .font(.body)
+                          .fontWeight(.medium)
+                        Text("\(agent.role.displayName) • \(agent.model.displayName)")
+                          .font(.caption2)
+                          .foregroundStyle(.secondary)
+                      }
                       Spacer()
                       Chip(
                         text: agent.state.displayName,
@@ -204,10 +220,12 @@ struct ChainDetailView: View {
                         background: agent.state.color,
                         verticalPadding: 3
                       )
+                    } else {
+                      Text(chain.state.displayName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                      Spacer()
                     }
-                    Text(agent.name)
-                      .font(.body)
-                      .fontWeight(.medium)
                   }
 
                   // Elapsed time
@@ -225,7 +243,7 @@ struct ChainDetailView: View {
                 HStack(spacing: 8) {
                   Image(systemName: "play.circle.fill")
                     .foregroundStyle(.blue)
-                  Text("Running")
+                  Text(chain.state.displayName)
                 }
               }
             }
