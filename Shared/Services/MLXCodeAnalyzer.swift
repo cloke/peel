@@ -402,8 +402,20 @@ extension MLXCodeAnalyzer: ChunkAnalyzer {
 // MARK: - Factory
 
 enum MLXCodeAnalyzerFactory {
-  /// User's preferred analyzer tier (nil = auto-detect)
-  @MainActor static var preferredTier: MLXAnalyzerModelTier?
+  /// User's preferred analyzer tier (nil = auto-detect), persisted to UserDefaults
+  @MainActor static var preferredTier: MLXAnalyzerModelTier? {
+    get {
+      guard let raw = UserDefaults.standard.string(forKey: "rag.analyzer.tier") else { return nil }
+      return MLXAnalyzerModelTier(rawValue: raw)
+    }
+    set {
+      if let newValue {
+        UserDefaults.standard.set(newValue.rawValue, forKey: "rag.analyzer.tier")
+      } else {
+        UserDefaults.standard.removeObject(forKey: "rag.analyzer.tier")
+      }
+    }
+  }
   
   /// Whether AI analysis is enabled during indexing
   @MainActor static var analysisEnabled: Bool {
