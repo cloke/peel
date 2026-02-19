@@ -513,6 +513,24 @@ final class ParallelWorktreeRunner {
   private func resolveWaitingExecutions(in run: ParallelWorktreeRun) {
     guard run.executions.contains(where: { !$0.task.dependsOn.isEmpty }) else { return }
     let mergedIds = Set(run.executions.filter { $0.status == .merged }.map { $0.id })
+    // Build set of IDs that are permanently non-mergeable (failed/rejected/cancelled only — NOT .reviewed)
+    let blockedIds: Set<UUID> = Set(run.executions.compactMap { exec -> UUID? in
+      switch exec.status {
+      case .failed, .rejected, .cancelled: return exec.id
+      default: return nil
+      }
+    })
+    // Cascade-fail executions whose dependency is permanently blocked
+    var didCascade = false
+    for execution in run.executions where execution.status == .pending || execution.status == .waitingForDependencies {
+      if let blockedDep = execution.task.dependsOn.first(where: { blockedIds.contains($0) }),
+         let depTitle = run.executions.first(where: { $0.id == blockedDep })?.task.title {
+        execution.status = .failed("Dependency \"\(depTitle)\" failed or was rejected")
+        didCascade = true
+      }
+    }
+    if didCascade { recordSnapshot(for: run) }
+    // Transition waiting ↔ pending based on merged deps
     for execution in run.executions where execution.status == .pending || execution.status == .waitingForDependencies {
       let satisfied = execution.task.dependsOn.allSatisfy { mergedIds.contains($0) }
       if satisfied {
