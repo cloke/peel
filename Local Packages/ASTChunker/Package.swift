@@ -3,7 +3,7 @@
 import PackageDescription
 
 let package = Package(
-  name: "ASTChunker",
+  name: "astchunker",
   platforms: [
     .macOS(.v15),
     .iOS(.v18),

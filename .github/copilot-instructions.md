@@ -106,6 +106,28 @@ When the user asks to **start a chain**, **use the MCP CLI** instead of manually
 
 **If local changes exist and this is an MCP chain invocation:** commit and push first (unless user says not to). When the user manually runs build-and-launch, do **not** auto-stash or commit — just build and launch.
 
+### Agents MUST Always Work in Worktrees (CRITICAL)
+All agent/chain work **must** happen inside a git worktree, never in the main repository checkout.
+
+**How it works:**
+- `chains.run` (and `chains.runBatch`) automatically create a git worktree via `WorkspaceManager.createWorkspace` before passing a working directory to the chain.
+- If worktree creation fails, the chain is now **rejected with an error** (not silently fallen back to the main repo).
+- Worktrees are created under `<repo>/.agent-workspaces/workspace-<UUID>/`.
+
+**Signs that work happened in the main repo (BAD):**
+- Branch has commits but no corresponding `workspace-*` directory in `.agent-workspaces/`
+- `git log --all --oneline` shows `feature/*` or `agent/*` branches with commits, but audit finds no worktree for them
+
+**If you suspect an agent ran in the main repo:**
+1. Check with: `ls /path/to/repo/.agent-workspaces/`
+2. For each feature branch, verify it has a matching workspace directory
+3. Do NOT merge work that was done outside a worktree without manual review
+
+**Do NOT:**
+- Ask MCP chains to work directly in the main repo path
+- Use `git checkout` instead of worktrees for agent work
+- Ignore `Failed to create git worktree` errors from `chains.run`
+
 ### Temp Files — Always Use Project `tmp/` (IMPORTANT)
 **Never write temp files to `/tmp` or system temp directories.** Always use the repo-local `tmp/` directory instead.
 
