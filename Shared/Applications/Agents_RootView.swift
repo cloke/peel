@@ -22,6 +22,7 @@ enum InfrastructureView: String, Hashable {
   case parallelWorktrees = "parallel-worktrees"
   case worktrees = "worktrees"
   case localChat = "local-chat"
+  case chainHistory = "chain-history"
 }
 
 /// Main view for AI Agent Orchestration
@@ -90,6 +91,9 @@ struct Agents_RootView: View {
         mcpServer.recordUIActionHandled(action.controlId)
       case "agents.templateGallery":
         selectedInfrastructure = .templateGallery
+        mcpServer.recordUIActionHandled(action.controlId)
+      case "agents.chainHistory":
+        selectedInfrastructure = .chainHistory
         mcpServer.recordUIActionHandled(action.controlId)
       case "agents.localRag":
         selectedInfrastructure = .localRag
@@ -190,6 +194,8 @@ struct Agents_RootView: View {
         WorktreesView()
       case .localChat:
         LocalChatView()
+      case .chainHistory:
+        ChainHistoryView(agentManager: agentManager, cliService: cliService, sessionTracker: sessionTracker)
       }
     } else if let chain = agentManager.selectedChain {
       ChainDetailView(chain: chain, agentManager: agentManager, cliService: cliService, sessionTracker: sessionTracker)
