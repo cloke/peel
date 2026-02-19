@@ -19,11 +19,12 @@ extension MCPServerService: RAGToolsHandlerDelegate {
   // MARK: - LocalRAGStore Access
   
   func searchRagForTool(query: String, mode: RAGSearchMode, repoPath: String?, limit: Int, matchAll: Bool, modulePath: String? = nil) async throws -> [RAGToolSearchResult] {
+    let resolvedPath = await resolveRepoPathForTool(repoPath)
     let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
     let results = try await runRagSearch(
       query: trimmedQuery,
       mode: mode,
-      repoPath: repoPath,
+      repoPath: resolvedPath,
       limit: limit,
       matchAll: matchAll,
       recordHints: true,
@@ -166,14 +167,16 @@ extension MCPServerService: RAGToolsHandlerDelegate {
   }
   
   func deleteRagRepo(repoId: String?, repoPath: String?) async throws -> Int {
-    let deleted = try await localRagStore.deleteRepo(repoId: repoId, repoPath: repoPath)
+    let resolvedPath = await resolveRepoPathForTool(repoPath)
+    let deleted = try await localRagStore.deleteRepo(repoId: repoId, repoPath: resolvedPath)
     await refreshRagSummary()
     return deleted
   }
   
   func getIndexStats(repoPath: String) async throws -> RAGToolIndexStats {
-    let stats = try await localRagStore.getIndexStats(repoPath: repoPath)
-    let depStats = try await localRagStore.getDependencyStats(for: repoPath)
+    let resolvedPath = await resolveRepoPathForTool(repoPath) ?? repoPath
+    let stats = try await localRagStore.getIndexStats(repoPath: resolvedPath)
+    let depStats = try await localRagStore.getDependencyStats(for: resolvedPath)
     return RAGToolIndexStats(
       fileCount: stats.fileCount,
       chunkCount: stats.chunkCount,
@@ -185,7 +188,8 @@ extension MCPServerService: RAGToolsHandlerDelegate {
   }
   
   func getLargeFiles(repoPath: String, limit: Int) async throws -> [RAGToolLargeFile] {
-    let files = try await localRagStore.getLargeFiles(repoPath: repoPath, limit: limit)
+    let resolvedPath = await resolveRepoPathForTool(repoPath) ?? repoPath
+    let files = try await localRagStore.getLargeFiles(repoPath: resolvedPath, limit: limit)
     return files.map { file in
       RAGToolLargeFile(
         path: file.path,
@@ -197,14 +201,16 @@ extension MCPServerService: RAGToolsHandlerDelegate {
   }
   
   func getConstructTypeStats(repoPath: String) async throws -> [RAGToolConstructTypeStat] {
-    let stats = try await localRagStore.getConstructTypeStats(repoPath: repoPath)
+    let resolvedPath = await resolveRepoPathForTool(repoPath) ?? repoPath
+    let stats = try await localRagStore.getConstructTypeStats(repoPath: resolvedPath)
     return stats.map { stat in
       RAGToolConstructTypeStat(type: stat.type, count: stat.count)
     }
   }
   
   func getFacets(repoPath: String?) async throws -> RAGToolFacetCounts {
-    let facets = try await localRagStore.getFacets(repoPath: repoPath)
+    let resolvedPath = await resolveRepoPathForTool(repoPath)
+    let facets = try await localRagStore.getFacets(repoPath: resolvedPath)
     return RAGToolFacetCounts(
       modulePaths: facets.modulePaths,
       featureTags: facets.featureTags,
@@ -214,7 +220,8 @@ extension MCPServerService: RAGToolsHandlerDelegate {
   }
   
   func getDependencies(filePath: String, repoPath: String) async throws -> [RAGToolDependencyResult] {
-    let deps = try await localRagStore.getDependencies(for: filePath, inRepo: repoPath)
+    let resolvedPath = await resolveRepoPathForTool(repoPath) ?? repoPath
+    let deps = try await localRagStore.getDependencies(for: filePath, inRepo: resolvedPath)
     return deps.map { dep in
       RAGToolDependencyResult(
         sourceFile: dep.sourceFile,
@@ -227,7 +234,8 @@ extension MCPServerService: RAGToolsHandlerDelegate {
   }
   
   func getDependents(filePath: String, repoPath: String) async throws -> [RAGToolDependencyResult] {
-    let deps = try await localRagStore.getDependents(for: filePath, inRepo: repoPath)
+    let resolvedPath = await resolveRepoPathForTool(repoPath) ?? repoPath
+    let deps = try await localRagStore.getDependents(for: filePath, inRepo: resolvedPath)
     return deps.map { dep in
       RAGToolDependencyResult(
         sourceFile: dep.sourceFile,
@@ -240,8 +248,9 @@ extension MCPServerService: RAGToolsHandlerDelegate {
   }
   
   func findOrphans(repoPath: String, excludeTests: Bool, excludeEntryPoints: Bool, limit: Int) async throws -> [RAGToolOrphanResult] {
+    let resolvedPath = await resolveRepoPathForTool(repoPath) ?? repoPath
     let orphans = try await localRagStore.findOrphans(
-      repoPath: repoPath,
+      repoPath: resolvedPath,
       excludeTests: excludeTests,
       excludeEntryPoints: excludeEntryPoints,
       limit: limit
@@ -270,8 +279,9 @@ extension MCPServerService: RAGToolsHandlerDelegate {
     sortBy: String,
     limit: Int
   ) async throws -> [RAGToolStructuralResult] {
+    let resolvedPath = await resolveRepoPathForTool(repoPath) ?? repoPath
     let results = try await localRagStore.queryFilesByStructure(
-      inRepo: repoPath,
+      inRepo: resolvedPath,
       minLines: minLines,
       maxLines: maxLines,
       minMethods: minMethods,
@@ -303,7 +313,8 @@ extension MCPServerService: RAGToolsHandlerDelegate {
     largestFile: (path: String, lines: Int)?,
     mostMethods: (path: String, count: Int)?
   ) {
-    let stats = try await localRagStore.getStructuralStats(for: repoPath)
+    let resolvedPath = await resolveRepoPathForTool(repoPath) ?? repoPath
+    let stats = try await localRagStore.getStructuralStats(for: resolvedPath)
     return (
       totalFiles: stats.totalFiles,
       totalLines: stats.totalLines,
@@ -322,9 +333,10 @@ extension MCPServerService: RAGToolsHandlerDelegate {
     limit: Int,
     excludePath: String?
   ) async throws -> [RAGToolSimilarResult] {
+    let resolvedPath = await resolveRepoPathForTool(repoPath)
     let results = try await localRagStore.findSimilarCode(
       query: query,
-      repoPath: repoPath,
+      repoPath: resolvedPath,
       threshold: threshold,
       limit: limit,
       excludePath: excludePath
@@ -386,44 +398,78 @@ extension MCPServerService: RAGToolsHandlerDelegate {
   
   #if os(macOS)
   func analyzeRagChunks(repoPath: String?, limit: Int, modelTier: MLXAnalyzerModelTier = .auto, progress: (@Sendable (Int, Int) -> Void)?) async throws -> Int {
+    let resolvedPath = await resolveRepoPathForTool(repoPath)
     // Note: modelTier is not used directly — the chunkAnalyzer was configured at store creation
-    try await localRagStore.analyzeChunks(repoPath: repoPath, limit: limit, progress: progress)
+    return try await localRagStore.analyzeChunks(repoPath: resolvedPath, limit: limit, progress: progress)
   }
   
   func getUnanalyzedChunkCount(repoPath: String?) async throws -> Int {
-    try await localRagStore.getUnanalyzedChunkCount(repoPath: repoPath)
+    let resolvedPath = await resolveRepoPathForTool(repoPath)
+    return try await localRagStore.getUnanalyzedChunkCount(repoPath: resolvedPath)
   }
   
   func getAnalyzedChunkCount(repoPath: String?) async throws -> Int {
-    try await localRagStore.getAnalyzedChunkCount(repoPath: repoPath)
+    let resolvedPath = await resolveRepoPathForTool(repoPath)
+    return try await localRagStore.getAnalyzedChunkCount(repoPath: resolvedPath)
   }
   
   func enrichRagEmbeddings(repoPath: String?, limit: Int, progress: (@Sendable (Int, Int) -> Void)?) async throws -> Int {
-    try await localRagStore.enrichEmbeddings(repoPath: repoPath, limit: limit, progress: progress)
+    let resolvedPath = await resolveRepoPathForTool(repoPath)
+    return try await localRagStore.enrichEmbeddings(repoPath: resolvedPath, limit: limit, progress: progress)
   }
   
   func getUnenrichedChunkCount(repoPath: String?) async throws -> Int {
-    try await localRagStore.getUnenrichedChunkCount(repoPath: repoPath)
+    let resolvedPath = await resolveRepoPathForTool(repoPath)
+    return try await localRagStore.getUnenrichedChunkCount(repoPath: resolvedPath)
   }
   
   func getEnrichedChunkCount(repoPath: String?) async throws -> Int {
-    try await localRagStore.getEnrichedChunkCount(repoPath: repoPath)
+    let resolvedPath = await resolveRepoPathForTool(repoPath)
+    return try await localRagStore.getEnrichedChunkCount(repoPath: resolvedPath)
   }
   
   func findRagDuplicates(repoPath: String?, minFiles: Int, constructTypes: [String]?, sortBy: String, limit: Int) async throws -> [LocalRAGStore.DuplicateGroup] {
-    try await localRagStore.findDuplicates(repoPath: repoPath, minTokens: minFiles, limit: limit)
+    let resolvedPath = await resolveRepoPathForTool(repoPath)
+    return try await localRagStore.findDuplicates(repoPath: resolvedPath, minTokens: minFiles, limit: limit)
   }
   
   func findRagPatterns(repoPath: String?, constructType: String?, limit: Int) async throws -> [LocalRAGStore.PatternGroup] {
-    try await localRagStore.findPatterns(repoPath: repoPath, limit: limit)
+    let resolvedPath = await resolveRepoPathForTool(repoPath)
+    return try await localRagStore.findPatterns(repoPath: resolvedPath, limit: limit)
   }
   
   func findRagHotspots(repoPath: String?, constructType: String?, minTokens: Int, limit: Int) async throws -> [LocalRAGStore.Hotspot] {
-    try await localRagStore.findHotspots(repoPath: repoPath, tokenThreshold: minTokens, limit: limit)
+    let resolvedPath = await resolveRepoPathForTool(repoPath)
+    return try await localRagStore.findHotspots(repoPath: resolvedPath, tokenThreshold: minTokens, limit: limit)
   }
   
   func clearRagAnalysis(repoPath: String?) async throws {
-    try await localRagStore.clearAnalysis(repoPath: repoPath)
+    let resolvedPath = await resolveRepoPathForTool(repoPath)
+    try await localRagStore.clearAnalysis(repoPath: resolvedPath)
   }
   #endif
+  
+  // MARK: - Repo Path Resolution Helper
+  
+  /// Resolve a repo path via RepoRegistry to support portable repo identifiers.
+  /// This enables cross-machine SQLite sync by resolving git remote URLs to local paths.
+  /// - Parameter repoPath: The path or remote URL to resolve (nil passes through as nil)
+  /// - Returns: Resolved local path if possible, original path otherwise, or nil if input was nil
+  private func resolveRepoPathForTool(_ repoPath: String?) async -> String? {
+    guard let repoPath else { return nil }
+    
+    // If path exists locally, use it directly
+    if FileManager.default.fileExists(atPath: repoPath) {
+      return repoPath
+    }
+    
+    // Try RepoRegistry in case repoPath is a remote URL or identifier
+    if let resolved = await RepoRegistry.shared.getLocalPath(for: repoPath),
+       FileManager.default.fileExists(atPath: resolved) {
+      return resolved
+    }
+    
+    // Fall back to original (will likely fail in RAGStore, but preserves caller's intent)
+    return repoPath
+  }
 }
