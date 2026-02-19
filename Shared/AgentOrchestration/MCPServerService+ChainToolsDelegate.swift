@@ -322,20 +322,22 @@ extension MCPServerService: ChainToolsHandlerDelegate {
   
   func runBatch(prompts: [ChainToolBatchItem], templateId: String?, templateName: String?) async throws -> [ChainToolRunResult] {
     var results: [ChainToolRunResult] = []
-    
+
     for item in prompts {
       do {
         let options = ChainToolRunOptions(
           maxPremiumCost: nil,
           requireRag: promptRules.requireRagByDefault,
           skipReview: false,
-          dryRun: false
+          dryRun: false,
+          returnImmediately: true
         )
+        // Per-item templateId/templateName takes precedence over batch-level defaults
         let result = try await startChain(
           prompt: item.prompt,
           repoPath: item.repoPath,
-          templateId: templateId,
-          templateName: templateName,
+          templateId: item.templateId ?? templateId,
+          templateName: item.templateName ?? templateName,
           options: options
         )
         results.append(result)
@@ -347,7 +349,7 @@ extension MCPServerService: ChainToolsHandlerDelegate {
         ))
       }
     }
-    
+
     return results
   }
 }
