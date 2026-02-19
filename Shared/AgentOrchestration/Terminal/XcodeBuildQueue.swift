@@ -3,15 +3,18 @@
 //  XcodeBuildQueue.swift
 //  KitchenSync
 //
-//  Serializes xcodebuild invocations across agent worktrees to prevent
-//  build conflicts when multiple agents run simultaneously.
+//  Serializes build invocations across ALL agent worktrees to prevent
+//  CPU/memory pressure when multiple agents build simultaneously.
+//
+//  Covers: xcodebuild, swift build/test, npm/yarn/pnpm, cargo, gradle,
+//          make, rake — any command that compiles or bundles.
 //
 //  Strategy:
-//  1. Per-worktree -derivedDataPath so each agent builds into its own
-//     derived data folder — prevents file-level collisions.
-//  2. Global concurrency limit (default: 1) to avoid CPU/memory pressure
-//     when many agents build at the same time. Configurable via
-//     XcodeBuildQueue.shared.maxConcurrent.
+//  1. Per-worktree -derivedDataPath (xcodebuild only) so each agent
+//     builds into its own derived data folder — no file-level collisions.
+//  2. Global concurrency limit (default: 1) to avoid CPU/memory pressure.
+//     One queue instance covers ALL repos — cross-project by design.
+//     Raise XcodeBuildQueue.shared.maxConcurrent on high-core machines.
 //
 
 import Foundation
@@ -93,6 +96,52 @@ actor XcodeBuildQueue {
 /// Opaque token returned by `XcodeBuildQueue.acquire()`.
 struct BuildToken: Sendable {
   let id: UUID
+}
+
+// MARK: - Build command detection
+
+extension XcodeBuildQueue {
+  /// Returns true if `command` invokes a known build/compile/bundle tool
+  /// that should be serialized through the global queue.
+  ///
+  /// This is intentionally broad — false positives (e.g. `cargo --version`)
+  /// are harmless: they just queue briefly and exit fast. False negatives
+  /// (an unlisted tool) would allow concurrent builds to compete.
+  static func isBuildCommand(_ command: String) -> Bool {
+    // Xcode
+    if command.contains("xcodebuild"),
+       !command.contains("-showBuildSettings"),
+       !command.contains("-list"),
+       !command.contains("-exportArchive"),
+       !command.contains("-exportLocalizations") {
+      return true
+    }
+    // Swift Package Manager
+    if command.contains("swift build") || command.contains("swift test") {
+      return true
+    }
+    // JavaScript/Node
+    let jsPatterns = ["npm run build", "npm run compile", "yarn build", "yarn compile",
+                      "pnpm build", "pnpm compile", "npx tsc", "npx vite build",
+                      "npx webpack", "ember build"]
+    if jsPatterns.contains(where: { command.contains($0) }) { return true }
+    // Rust
+    if command.contains("cargo build") || command.contains("cargo test") {
+      return true
+    }
+    // JVM
+    if command.contains("gradle build") || command.contains("./gradlew build")
+        || command.contains("mvn package") || command.contains("mvn install") {
+      return true
+    }
+    // Make / Rake (build targets only, not `make clean` etc.)
+    if command.hasPrefix("make ") || command.hasPrefix("rake ") {
+      let lower = command.lowercased()
+      if lower.contains("clean") || lower.contains("install") { return false }
+      return true
+    }
+    return false
+  }
 }
 
 // MARK: - xcodebuild command augmentation

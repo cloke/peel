@@ -127,28 +127,38 @@ public final class TerminalToolsHandler: MCPToolHandler {
       commandToRun = command
     }
     
-    // 3. Isolate xcodebuild: inject per-worktree -derivedDataPath and
-    //    serialize through the global build queue to prevent collisions
-    //    when multiple agent worktrees build simultaneously.
-    let isXcodeBuild = commandToRun.contains("xcodebuild")
-      && !commandToRun.contains("-showBuildSettings")
-      && !commandToRun.contains("-list")
+    // 3. Isolate builds: inject per-worktree -derivedDataPath for xcodebuild
+    //    and serialize ALL build commands through the global build queue to
+    //    prevent CPU/memory pressure when multiple agent worktrees build.
+    let isBuild = XcodeBuildQueue.isBuildCommand(commandToRun)
+    let isXcodeBuild = isBuild && commandToRun.contains("xcodebuild")
     let finalCommand: String
     var buildDerivedDataPath: String?
     if isXcodeBuild {
-      let derivedBase = workingDirectory ?? configuration.defaultWorkingDirectory ?? "/tmp"
-      let derivedPath = "\(derivedBase)/.xcode-derived"
-      buildDerivedDataPath = derivedPath
-      finalCommand = commandToRun.injectingXcodebuildDerivedDataPath(derivedPath)
-      logger.info("xcodebuild isolation: derivedDataPath=\(derivedPath, privacy: .public)")
+      // Resolve a stable per-worktree derived data path.
+      // IMPORTANT: never fall back to /tmp — that path is shared across all
+      // processes and would negate per-worktree isolation.
+      let derivedBase = workingDirectory ?? configuration.defaultWorkingDirectory
+      if let derivedBase {
+        let derivedPath = "\(derivedBase)/.xcode-derived"
+        buildDerivedDataPath = derivedPath
+        finalCommand = commandToRun.injectingXcodebuildDerivedDataPath(derivedPath)
+        logger.info("xcodebuild isolation: derivedDataPath=\(derivedPath, privacy: .public)")
+      } else {
+        // No working directory available — pass through without injection.
+        // The queue still serializes it to prevent CPU pressure.
+        logger.warning("xcodebuild: no workingDirectory set, skipping derivedDataPath injection")
+        finalCommand = commandToRun
+      }
     } else {
       finalCommand = commandToRun
     }
 
-    // 4. Execute (serialized for xcodebuild, direct for everything else)
+    // 4. Execute (serialized for all build commands, direct for everything else)
     let startTime = Date()
     let (stdout, stderr, exitCode): (String, String, Int32)
-    if isXcodeBuild {
+    if isBuild {
+      logger.info("build command queued: \(commandToRun.prefix(80), privacy: .public)")
       (stdout, stderr, exitCode) = await XcodeBuildQueue.shared.withSlot {
         await self.executeCommand(finalCommand, workingDirectory: workingDirectory, timeout: timeout)
       }
