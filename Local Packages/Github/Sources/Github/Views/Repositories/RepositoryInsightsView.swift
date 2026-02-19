@@ -59,16 +59,11 @@ private func loadInsightsData(for repository: Github.Repository) async throws ->
   )
 }
 
-private func chartWeekStarts(calendar: Calendar, weeks: Int = 12) -> [Date] {
-  let now = Date()
-  let currentWeekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? now
-  let start = calendar.date(byAdding: .weekOfYear, value: -(weeks - 1), to: currentWeekStart) ?? currentWeekStart
-  return (0..<weeks).compactMap { calendar.date(byAdding: .weekOfYear, value: $0, to: start) }
-}
+// chartWeekStarts() moved to Date+Formatting.swift
 
 private func makeItem(created: String?, closed: String?) -> RepoTrendItem? {
-  guard let createdDate = parseDate(created) else { return nil }
-  return RepoTrendItem(createdAt: createdDate, closedAt: parseDate(closed))
+  guard let createdDate = GithubDateParser.parse(created) else { return nil }
+  return RepoTrendItem(createdAt: createdDate, closedAt: GithubDateParser.parse(closed))
 }
 
 private func openCount(items: [RepoTrendItem], weekStart: Date, calendar: Calendar) -> Int {
@@ -80,13 +75,7 @@ private func openCount(items: [RepoTrendItem], weekStart: Date, calendar: Calend
   }
 }
 
-private func parseDate(_ value: String?) -> Date? {
-  guard let value else { return nil }
-  let isoFormatter = ISO8601DateFormatter()
-  isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-  if let parsed = isoFormatter.date(from: value) { return parsed }
-  return ISO8601DateFormatter().date(from: value)
-}
+// parseDate() moved to Date+Formatting.swift — use GithubDateParser.parse()
 
 // MARK: - Supporting Views
 

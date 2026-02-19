@@ -89,6 +89,8 @@ struct Github_RootView: View {
                       Image(systemName: "book.closed")
                         .foregroundStyle(.secondary)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                   }
                 }
               } else {
@@ -101,12 +103,14 @@ struct Github_RootView: View {
                       Image(systemName: "book.closed")
                         .foregroundStyle(.secondary)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                   }
                 }
               }
             }
           } header: {
-            HStack {
+            HStack(alignment: .center, spacing: 4) {
               Label("Favorites", systemImage: "star.fill")
               Spacer()
               Text("\(favoriteItems.count)")
@@ -122,30 +126,27 @@ struct Github_RootView: View {
           Section {
             ForEach(recentPRItems.prefix(5)) { recent in
               NavigationLink(destination: RecentPRDestination(recentPR: recent)) {
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                   Image(systemName: recentPRIcon(for: recent.state))
                     .foregroundStyle(recentPRColor(for: recent.state))
-                    .font(.caption)
-                    .frame(width: 16)
-                  VStack(alignment: .leading, spacing: 2) {
+                    .font(.system(size: 8))
+                  VStack(alignment: .leading, spacing: 1) {
                     Text(recent.title)
                       .font(.callout)
                       .lineLimit(1)
-                    HStack(spacing: 4) {
-                      Text(recent.repoFullName)
-                      Text("#\(recent.prNumber)")
-                        .foregroundStyle(.tertiary)
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    Text("\(recent.repoFullName)  #\(recent.prNumber)")
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                      .lineLimit(1)
+                    Text(recentPRTimeAgo(recent.viewedAt))
+                      .font(.caption2)
+                      .foregroundStyle(.tertiary)
+                      .monospacedDigit()
                   }
-                  Spacer()
-                  Text(recentPRTimeAgo(recent.viewedAt))
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .monospacedDigit()
                 }
+                .contentShape(Rectangle())
               }
+              .listRowInsets(EdgeInsets(top: 3, leading: 8, bottom: 3, trailing: 8))
             }
           } header: {
             Label("Recent PRs", systemImage: "clock")
@@ -203,24 +204,16 @@ struct Github_RootView: View {
             }
           }
         }
-      }
-      .safeAreaInset(edge: .bottom) {
-        // User profile pinned to bottom
+
+        // Profile link at bottom of sidebar
         if hasToken, let me = viewModel.me {
-          VStack(spacing: 0) {
-            Divider()
+          Section {
             NavigationLink(destination: PersonalView(organizations: organizations)) {
               ProfileNameView(me: me)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .padding(.horizontal)
-            .padding(.vertical, 10)
           }
-          #if os(macOS)
-          .background(Color(nsColor: .windowBackgroundColor))
-          #else
-          .background(Color(.systemBackground))
-          #endif
         }
       }
       .task {

@@ -117,7 +117,18 @@ protocol RAGToolsHandlerDelegate: MCPToolHandlerDelegate {
   
   /// Delete a guidance skill
   func deleteRepoGuidanceSkill(id: UUID) -> Bool
-  
+
+  // MARK: - Skill File I/O (#264)
+
+  /// Export skills for a repo to .peel/skills.json. Returns (count, filePath).
+  func exportSkillsToFile(repoPath: String) throws -> (count: Int, path: String)
+
+  /// Import skills from .peel/skills.json into the DB. Returns (imported, skipped).
+  func importSkillsFromFile(repoPath: String) throws -> (imported: Int, skipped: Int)
+
+  /// Two-way sync: export DB-only skills, import file-only skills.
+  func syncSkillsWithFile(repoPath: String) throws -> (exported: Int, imported: Int, path: String)
+
   // MARK: - Learning Loop (#210)
   
   /// List lessons for a repo
@@ -216,6 +227,9 @@ final class RAGToolsHandler: MCPToolHandler {
     "rag.skills.add",
     "rag.skills.update",
     "rag.skills.delete",
+    "rag.skills.export",   // Issue #264: Export skills to .peel/skills.json
+    "rag.skills.import",   // Issue #264: Import skills from .peel/skills.json
+    "rag.skills.sync",     // Issue #264: Two-way sync DB <-> .peel/skills.json
     "rag.skills.ember.detect",  // Issue #263: Detect Ember project and seed skills
     "rag.skills.ember.update",  // Issue #263: Check for and apply Ember skills updates
     "rag.lessons.list",    // Issue #210: Learning loop - list lessons
@@ -278,6 +292,12 @@ final class RAGToolsHandler: MCPToolHandler {
       return handleSkillsUpdate(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.skills.delete":
       return handleSkillsDelete(id: id, arguments: arguments, delegate: ragDelegate)
+    case "rag.skills.export":
+      return handleSkillsExport(id: id, arguments: arguments, delegate: ragDelegate)
+    case "rag.skills.import":
+      return handleSkillsImport(id: id, arguments: arguments, delegate: ragDelegate)
+    case "rag.skills.sync":
+      return handleSkillsSync(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.skills.ember.detect":
       return handleSkillsEmberDetect(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.skills.ember.update":
@@ -889,7 +909,49 @@ final class RAGToolsHandler: MCPToolHandler {
     }
     return (200, makeResult(id: id, result: ["deleted": skillId.uuidString]))
   }
-  
+
+  // MARK: - rag.skills.export (#264)
+
+  private func handleSkillsExport(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) -> (Int, Data) {
+    guard case .success(let repoPath) = requireString("repoPath", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "repoPath")
+    }
+    do {
+      let (count, path) = try delegate.exportSkillsToFile(repoPath: repoPath)
+      return (200, makeResult(id: id, result: ["exported": count, "path": path]))
+    } catch {
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Export failed: \(error.localizedDescription)"))
+    }
+  }
+
+  // MARK: - rag.skills.import (#264)
+
+  private func handleSkillsImport(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) -> (Int, Data) {
+    guard case .success(let repoPath) = requireString("repoPath", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "repoPath")
+    }
+    do {
+      let (imported, skipped) = try delegate.importSkillsFromFile(repoPath: repoPath)
+      return (200, makeResult(id: id, result: ["imported": imported, "skipped": skipped]))
+    } catch {
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Import failed: \(error.localizedDescription)"))
+    }
+  }
+
+  // MARK: - rag.skills.sync (#264)
+
+  private func handleSkillsSync(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) -> (Int, Data) {
+    guard case .success(let repoPath) = requireString("repoPath", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "repoPath")
+    }
+    do {
+      let (exported, imported, path) = try delegate.syncSkillsWithFile(repoPath: repoPath)
+      return (200, makeResult(id: id, result: ["exported": exported, "imported": imported, "path": path]))
+    } catch {
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Sync failed: \(error.localizedDescription)"))
+    }
+  }
+
   // MARK: - rag.skills.ember.detect (#263)
   
   private func handleSkillsEmberDetect(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) -> (Int, Data) {

@@ -5,17 +5,22 @@
 // Manages isolated git worktrees for swarm task execution.
 
 import Foundation
+import SwiftData
 import os.log
 
 /// Manages git worktrees for isolated swarm task execution
 @MainActor
 public final class SwarmWorktreeManager {
-  
+
   private let logger = Logger(subsystem: "com.peel.distributed", category: "WorktreeManager")
-  
+
   /// Base directory for worktrees (default: ~/peel-worktrees)
   private let worktreeBaseDir: String
-  
+
+  /// SwiftData context for persisting worktree records across restarts.
+  /// Optional so tests can run without a full model container.
+  public var modelContext: ModelContext?
+
   /// Track active worktrees (taskId -> worktreePath)
   private var activeWorktrees: [UUID: WorktreeInfo] = [:]
   
@@ -45,7 +50,7 @@ public final class SwarmWorktreeManager {
     }
   }
   
-  public init(baseDir: String? = nil) {
+  public init(baseDir: String? = nil, modelContext: ModelContext? = nil) {
     if let baseDir = baseDir {
       self.worktreeBaseDir = baseDir
     } else {
@@ -53,14 +58,22 @@ public final class SwarmWorktreeManager {
       let home = FileManager.default.homeDirectoryForCurrentUser.path
       self.worktreeBaseDir = "\(home)/peel-worktrees"
     }
-    
+    self.modelContext = modelContext
+
     // Ensure base directory exists
     try? FileManager.default.createDirectory(
       atPath: worktreeBaseDir,
       withIntermediateDirectories: true
     )
-    
+
     logger.info("SwarmWorktreeManager initialized with base: \(self.worktreeBaseDir)")
+
+    // Recover in-memory state from SwiftData on startup
+    if modelContext != nil {
+      recoverFromPersistence()
+      // Schedule orphan prune asynchronously so init returns immediately
+      Task { await self.recoverAndPrune() }
+    }
   }
   
   /// Create an isolated worktree for a swarm task
@@ -80,23 +93,34 @@ public final class SwarmWorktreeManager {
     let worktreePath = "\(worktreeBaseDir)/task-\(shortId)"
     
     logger.info("Creating worktree for task \(shortId): \(worktreePath)")
-    
+
     // Remove existing worktree at this path if it exists
     if FileManager.default.fileExists(atPath: worktreePath) {
       logger.warning("Worktree path exists, removing: \(worktreePath)")
       try await removeWorktreeAtPath(worktreePath, repoPath: repoPath)
     }
-    
-    // Fetch latest from origin first
-    let fetchResult = try await runGitCommand(
-      args: ["fetch", "origin"],
-      in: repoPath
-    )
-    if fetchResult.exitCode != 0 {
-      logger.warning("Git fetch failed: \(fetchResult.stderr)")
-      // Continue anyway, might work with local refs
+
+    // Only block on fetch if the base branch ref is missing locally.
+    // If origin/main already exists we skip the network round-trip entirely.
+    let baseRefExists = await refExists(baseBranch, in: repoPath)
+    if !baseRefExists {
+      logger.info("Base ref \(baseBranch) not found locally — fetching origin (timeout 15s)")
+      let fetchResult = try await runGitCommandWithTimeout(
+        args: ["fetch", "origin"],
+        in: repoPath,
+        timeout: 15
+      )
+      if fetchResult.exitCode != 0 {
+        logger.warning("Git fetch failed (will try worktree anyway): \(fetchResult.stderr)")
+      }
+    } else {
+      // Fire-and-forget background fetch to keep refs fresh without blocking task start
+      Task { [weak self, repoPath] in
+        guard let self else { return }
+        _ = try? await self.runGitCommand(args: ["fetch", "origin"], in: repoPath)
+      }
     }
-    
+
     // Check if branch already exists (locally or remotely)
     let branchCheck = try await runGitCommand(
       args: ["rev-parse", "--verify", branchName],
@@ -126,7 +150,7 @@ public final class SwarmWorktreeManager {
       }
     }
     
-    // Track the worktree
+    // Track the worktree in memory and persist to SwiftData
     let info = WorktreeInfo(
       taskId: taskId,
       worktreePath: worktreePath,
@@ -135,7 +159,8 @@ public final class SwarmWorktreeManager {
       createdAt: Date()
     )
     activeWorktrees[taskId] = info
-    
+    persistWorktreeRecord(info)
+
     logger.info("Worktree created - taskId: \(taskId.uuidString), path: \(worktreePath), branch: \(branchName)")
     logger.info("activeWorktrees after create: \(self.activeWorktrees.count) entries, keys: \(self.activeWorktrees.keys.map { $0.uuidString })")
     return worktreePath
@@ -154,8 +179,29 @@ public final class SwarmWorktreeManager {
     logger.info("Active worktrees count: \(self.activeWorktrees.count)")
     logger.info("Active worktree keys: \(self.activeWorktrees.keys.map { $0.uuidString })")
     
-    guard let info = activeWorktrees[taskId] else {
-      logger.warning("No worktree found for task \(taskId) - activeWorktrees: \(self.activeWorktrees.keys.map { $0.uuidString })")
+    // Try in-memory first; fall back to SwiftData for post-restart recovery
+    var info = activeWorktrees[taskId]
+    if info == nil, let context = modelContext {
+      logger.info("Task \(taskId) not in memory — querying SwiftData for restart recovery")
+      let idString = taskId.uuidString
+      let descriptor = FetchDescriptor<TrackedWorktree>(
+        predicate: #Predicate { $0.taskId == idString }
+      )
+      if let record = try? context.fetch(descriptor).first {
+        let recovered = WorktreeInfo(
+          taskId: taskId,
+          worktreePath: record.localPath,
+          branchName: record.branch,
+          repoPath: record.mainRepoPath,
+          createdAt: record.createdAt
+        )
+        activeWorktrees[taskId] = recovered
+        info = recovered
+        logger.info("Recovered worktree from SwiftData for task \(taskId): \(record.localPath)")
+      }
+    }
+    guard let info else {
+      logger.warning("No worktree found for task \(taskId) — neither in memory nor in SwiftData")
       return false
     }
     
@@ -206,6 +252,7 @@ public final class SwarmWorktreeManager {
     }
     
     logger.info("Successfully committed and pushed changes for task \(taskId) on branch \(branchName)")
+    updateWorktreeStatus(taskId: taskId, status: TrackedWorktree.Status.committed)
     return true
   }
   
@@ -213,14 +260,17 @@ public final class SwarmWorktreeManager {
   /// - Parameters:
   ///   - taskId: The task ID
   ///   - force: Force removal even if there are uncommitted changes
-  public func removeWorktree(taskId: UUID, force: Bool = false) async throws {
+  ///   - failed: If true, marks the SwiftData record as failed instead of cleaned
+  public func removeWorktree(taskId: UUID, force: Bool = false, failed: Bool = false) async throws {
     guard let info = activeWorktrees[taskId] else {
       logger.warning("No worktree found for task \(taskId)")
       return
     }
-    
+
     try await removeWorktreeAtPath(info.worktreePath, repoPath: info.repoPath, force: force)
     activeWorktrees.removeValue(forKey: taskId)
+    let finalStatus = failed ? TrackedWorktree.Status.failed : TrackedWorktree.Status.cleaned
+    updateWorktreeStatus(taskId: taskId, status: finalStatus)
   }
   
   /// Remove a worktree at a specific path
@@ -346,8 +396,157 @@ public final class SwarmWorktreeManager {
     }
   }
   
+  // MARK: - SwiftData Persistence
+
+  /// Persists a new worktree record to SwiftData. No-op if modelContext is nil.
+  private func persistWorktreeRecord(_ info: WorktreeInfo) {
+    guard let context = modelContext else { return }
+    let record = TrackedWorktree(
+      repositoryId: UUID(), // No SyncedRepository link for swarm worktrees
+      localPath: info.worktreePath,
+      branch: info.branchName,
+      source: TrackedWorktree.Source.swarm
+    )
+    record.taskId = info.taskId.uuidString
+    record.taskStatus = TrackedWorktree.Status.active
+    record.mainRepoPath = info.repoPath
+    context.insert(record)
+    try? context.save()
+    logger.debug("Persisted worktree record for task \(info.taskId.uuidString)")
+  }
+
+  /// Updates the `taskStatus` (and optionally `completedAt`) on an existing SwiftData record.
+  private func updateWorktreeStatus(taskId: UUID, status: String, failureReason: String? = nil) {
+    guard let context = modelContext else { return }
+    let idString = taskId.uuidString
+    let descriptor = FetchDescriptor<TrackedWorktree>(
+      predicate: #Predicate { $0.taskId == idString }
+    )
+    guard let record = try? context.fetch(descriptor).first else { return }
+    record.taskStatus = status
+    record.completedAt = Date()
+    if let reason = failureReason {
+      record.failureReason = reason
+    }
+    try? context.save()
+  }
+
+  /// Reloads in-memory `activeWorktrees` from SwiftData records with `taskStatus == "active"`.
+  /// Called automatically from `init` when a modelContext is provided.
+  private func recoverFromPersistence() {
+    guard let context = modelContext else { return }
+    let activeStatus = TrackedWorktree.Status.active
+    let swarmSource = TrackedWorktree.Source.swarm
+    let descriptor = FetchDescriptor<TrackedWorktree>(
+      predicate: #Predicate { $0.taskStatus == activeStatus && $0.source == swarmSource }
+    )
+    let records = (try? context.fetch(descriptor)) ?? []
+    var recovered = 0
+    for record in records {
+      guard let taskId = UUID(uuidString: record.taskId), !record.localPath.isEmpty else { continue }
+      // Only recover if the worktree path still exists on disk
+      if FileManager.default.fileExists(atPath: record.localPath) {
+        activeWorktrees[taskId] = WorktreeInfo(
+          taskId: taskId,
+          worktreePath: record.localPath,
+          branchName: record.branch,
+          repoPath: record.mainRepoPath,
+          createdAt: record.createdAt
+        )
+        recovered += 1
+      } else {
+        // Disk is gone but DB says active — mark as orphaned
+        record.taskStatus = TrackedWorktree.Status.orphaned
+        record.completedAt = Date()
+      }
+    }
+    if !records.isEmpty {
+      try? context.save()
+    }
+    if recovered > 0 {
+      logger.info("Recovered \(recovered) active swarm worktrees from SwiftData")
+    }
+  }
+
+  /// Prunes orphaned worktrees: filesystem entries with no DB record and DB records
+  /// whose worktree directory is gone. Safe to call at startup.
+  public func recoverAndPrune() async {
+    guard let context = modelContext else { return }
+    logger.info("Starting orphan worktree recovery and prune")
+
+    // 1. Find filesystem worktrees with no DB record
+    if let contents = try? FileManager.default.contentsOfDirectory(atPath: worktreeBaseDir) {
+      for item in contents where item.hasPrefix("task-") {
+        let path = "\(worktreeBaseDir)/\(item)"
+        // Check if any DB record matches this path
+        let descriptor = FetchDescriptor<TrackedWorktree>(
+          predicate: #Predicate { $0.localPath == path }
+        )
+        if let records = try? context.fetch(descriptor), records.isEmpty {
+          logger.warning("Orphaned fs worktree (no DB record): \(path) — removing")
+          try? FileManager.default.removeItem(atPath: path)
+        }
+      }
+    }
+
+    // 2. Find DB records whose path no longer exists on disk
+    let swarmSource = TrackedWorktree.Source.swarm
+    let notCleaned = TrackedWorktree.Status.cleaned
+    let descriptor = FetchDescriptor<TrackedWorktree>(
+      predicate: #Predicate { $0.source == swarmSource && $0.taskStatus != notCleaned }
+    )
+    let records = (try? context.fetch(descriptor)) ?? []
+    var changed = false
+    for record in records {
+      guard !record.localPath.isEmpty,
+            !FileManager.default.fileExists(atPath: record.localPath) else { continue }
+      if record.taskStatus == TrackedWorktree.Status.active {
+        logger.warning("Marking task \(record.taskId) orphaned: path missing \(record.localPath)")
+        record.taskStatus = TrackedWorktree.Status.orphaned
+        record.completedAt = record.completedAt ?? Date()
+        changed = true
+        // Attempt git worktree prune for the parent repo
+        if !record.mainRepoPath.isEmpty {
+          _ = try? await runGitCommand(args: ["worktree", "prune"], in: record.mainRepoPath)
+        }
+      }
+    }
+    if changed { try? context.save() }
+    logger.info("Orphan recovery complete")
+  }
+
+  // MARK: - Git Utilities
+
+  /// Returns true if the given git ref exists locally in the repo.
+  private func refExists(_ ref: String, in repoPath: String) async -> Bool {
+    guard let result = try? await runGitCommand(
+      args: ["rev-parse", "--verify", ref],
+      in: repoPath
+    ) else { return false }
+    return result.exitCode == 0
+  }
+
+  /// Runs a git command with a wall-clock timeout (seconds). Returns the result or a
+  /// synthetic failure result if the process exceeds the timeout.
+  private func runGitCommandWithTimeout(
+    args: [String],
+    in directory: String,
+    timeout: TimeInterval
+  ) async throws -> GitResult {
+    try await withThrowingTaskGroup(of: GitResult.self) { group in
+      group.addTask { try await self.runGitCommand(args: args, in: directory) }
+      group.addTask {
+        try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+        return GitResult(exitCode: -1, stdout: "", stderr: "git command timed out after \(timeout)s")
+      }
+      let result = try await group.next()!
+      group.cancelAll()
+      return result
+    }
+  }
+
   // MARK: - Git Command Execution
-  
+
   private struct GitResult {
     let exitCode: Int32
     let stdout: String

@@ -201,18 +201,6 @@ private struct PRInsightsChartsView: View {
   @State private var topReviewerPoints: [PRReviewerCountPoint] = []
   @State private var isLoadingReviews = false
 
-  private static let isoFormatter: ISO8601DateFormatter = {
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return formatter
-  }()
-  private static let fallbackFormatter = ISO8601DateFormatter()
-  private static let reviewFormatter: ISO8601DateFormatter = {
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return formatter
-  }()
-
   private let calendar = Calendar.current
   private let chartWeeks = 12
 
@@ -317,7 +305,7 @@ private struct PRInsightsChartsView: View {
     isLoadingReviews = true
     defer { isLoadingReviews = false }
 
-    let weeks = chartWeekStarts
+    let weeks = chartWeekStartDates
     var requestedByWeek = Dictionary(uniqueKeysWithValues: weeks.map { ($0, 0) })
     var completedByWeek = Dictionary(uniqueKeysWithValues: weeks.map { ($0, 0) })
     var reviewerCounts: [String: Int] = [:]
@@ -371,7 +359,7 @@ private struct PRInsightsChartsView: View {
   }
 
   private var throughputPoints: [PRThroughputPoint] {
-    let weeks = chartWeekStarts
+    let weeks = chartWeekStartDates
     var openedByWeek = Dictionary(uniqueKeysWithValues: weeks.map { ($0, 0) })
     var mergedByWeek = Dictionary(uniqueKeysWithValues: weeks.map { ($0, 0) })
 
@@ -399,7 +387,7 @@ private struct PRInsightsChartsView: View {
   }
 
   private var cycleTimePoints: [PRCycleTimePoint] {
-    guard let start = chartWeekStarts.first else { return [] }
+    guard let start = chartWeekStartDates.first else { return [] }
     var durationsByWeek: [Date: [Double]] = [:]
 
     for pr in pullRequests {
@@ -418,11 +406,8 @@ private struct PRInsightsChartsView: View {
     }
   }
 
-  private var chartWeekStarts: [Date] {
-    let now = Date()
-    let currentWeekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? now
-    let start = calendar.date(byAdding: .weekOfYear, value: -(chartWeeks - 1), to: currentWeekStart) ?? currentWeekStart
-    return (0..<chartWeeks).compactMap { calendar.date(byAdding: .weekOfYear, value: $0, to: start) }
+  private var chartWeekStartDates: [Date] {
+    chartWeekStarts(calendar: calendar, weeks: chartWeeks)
   }
 
   private func weekStart(for date: Date) -> Date {
@@ -430,18 +415,11 @@ private struct PRInsightsChartsView: View {
   }
 
   private func parseDate(_ value: String?) -> Date? {
-    guard let value else { return nil }
-    if let parsed = Self.isoFormatter.date(from: value) {
-      return parsed
-    }
-    return Self.fallbackFormatter.date(from: value)
+    GithubDateParser.parse(value)
   }
 
   private func parseReviewDate(_ value: String) -> Date {
-    if let parsed = Self.reviewFormatter.date(from: value) {
-      return parsed
-    }
-    return Self.fallbackFormatter.date(from: value) ?? Date()
+    GithubDateParser.parse(value) ?? Date()
   }
 
   private func median(_ values: [Double]) -> Double {
