@@ -228,14 +228,12 @@ struct ChainDetailView: View {
                     }
                   }
 
-                  // Elapsed time
-                  if let elapsed = elapsedTime {
+                  // Elapsed time (live, updates every second)
+                  if let startTime = chain.runStartTime {
                     HStack {
                       Image(systemName: "clock")
                         .foregroundStyle(.secondary)
-                      Text("Elapsed: \(elapsed)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                      ElapsedTimeView(startTime: startTime)
                     }
                   }
                 }
@@ -246,6 +244,11 @@ struct ChainDetailView: View {
                   Text(chain.state.displayName)
                 }
               }
+            }
+
+            // Live status panel (scrollable log + progress bars)
+            if case .running = chain.state {
+              LiveStatusPanel(chain: chain)
             }
 
             // MCP managed badge (small, not dominant)
