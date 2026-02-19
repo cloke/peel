@@ -35,6 +35,7 @@ public struct MCPTemplateExecutor {
     let chainTemplate = ChainTemplate(name: template.name, description: template.description ?? "", steps: steps, isBuiltIn: false)
     let chain = agentManager.createChainFromTemplate(chainTemplate, workingDirectory: workingDirectory)
     chain.runSource = .mcp
+    chain.initialPrompt = prompt
     let summary = await chainRunner.runChain(chain, prompt: prompt)
     return summary
   }
