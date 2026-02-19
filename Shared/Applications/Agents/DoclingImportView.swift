@@ -250,6 +250,12 @@ struct DoclingImportView: View {
           .disabled(isInstalling)
           .accessibilityIdentifier("agents.docling.install")
 
+          Button("Open Guide") {
+            openGuide()
+          }
+          .buttonStyle(.bordered)
+          .accessibilityIdentifier("agents.docling.openGuide")
+
           if let installStatus {
             Text(installStatus)
               .font(.caption)
@@ -498,6 +504,27 @@ struct DoclingImportView: View {
 
   private func openOutput(at path: String) {
     NSWorkspace.shared.open(URL(fileURLWithPath: path))
+  }
+
+  private func openGuide() {
+    let fm = FileManager.default
+    var candidates: [String] = []
+    candidates.append(URL(fileURLWithPath: fm.currentDirectoryPath).appendingPathComponent("Docs/guides/DOCLING_POLICY_WORKFLOW.md").path)
+    candidates.append(URL(fileURLWithPath: fm.homeDirectoryForCurrentUser.path).appendingPathComponent("code/peel/Docs/guides/DOCLING_POLICY_WORKFLOW.md").path)
+    if let bundle = Bundle.main.resourceURL {
+      candidates.append(bundle.appendingPathComponent("Docs/guides/DOCLING_POLICY_WORKFLOW.md").path)
+    }
+
+    for path in candidates {
+      if fm.fileExists(atPath: path) {
+        NSWorkspace.shared.open(URL(fileURLWithPath: path))
+        return
+      }
+    }
+
+    if let url = URL(string: "https://raw.githubusercontent.com/cloke/peel/main/Docs/guides/DOCLING_POLICY_WORKFLOW.md") {
+      NSWorkspace.shared.open(url)
+    }
   }
 
   private var selectedCompany: PolicyCompany? {
