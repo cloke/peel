@@ -151,6 +151,11 @@ final class PeonPingService {
     playSound(for: category, bypassEnabledCheck: true)
   }
 
+  /// Send a swarm-related notification (membership approval, new worker, etc.)
+  func sendSwarmNotification(title: String, body: String) {
+    sendNotification(title: title, body: body)
+  }
+
   // MARK: - Sound Playback
 
   private func play(_ category: PeonSoundCategory) {
