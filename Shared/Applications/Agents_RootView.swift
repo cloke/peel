@@ -37,6 +37,7 @@ struct Agents_RootView: View {
   @AppStorage("feature.showPIIScrubber") private var showPIIScrubber = false
   @AppStorage("feature.showDoclingImport") private var showDoclingImport = false
   @AppStorage("feature.showTranslationValidation") private var showTranslationValidation = false
+  @AppStorage(wrappedValue: CurrentTool.agents, "current-tool") private var currentTool: CurrentTool
 
   private var agentManager: AgentManager { mcpServer.agentManager }
   private var cliService: CLIService { mcpServer.cliService }
@@ -200,32 +201,44 @@ struct Agents_RootView: View {
   }
   
   private var emptyStateView: some View {
-    VStack(spacing: 20) {
-      Image(systemName: "cpu")
-        .font(.system(size: 48))
-        .foregroundStyle(.secondary)
-      Text("No Agent Selected")
-        .font(.title2)
-      Text("Create an agent or chain to get started")
-        .foregroundStyle(.secondary)
-      
-      HStack(spacing: 16) {
-        Button {
-          showingNewAgentSheet = true
-        } label: {
-          Label("New Agent", systemImage: "cpu")
+    ScrollView {
+      VStack(spacing: 20) {
+        FeatureDiscoveryView(
+          onAddRepo: { currentTool = .repositories },
+          onRunChain: { showingNewChainSheet = true },
+          onIndexRAG: { selectedInfrastructure = .localRag },
+          onConnectMCP: { selectedInfrastructure = .mcpDashboard },
+          onJoinSwarm: { currentTool = .swarm }
+        )
+        .padding(.horizontal)
+
+        Image(systemName: "cpu")
+          .font(.system(size: 48))
+          .foregroundStyle(.secondary)
+        Text("No Agent Selected")
+          .font(.title2)
+        Text("Create an agent or chain to get started")
+          .foregroundStyle(.secondary)
+
+        HStack(spacing: 16) {
+          Button {
+            showingNewAgentSheet = true
+          } label: {
+            Label("New Agent", systemImage: "cpu")
+          }
+          .buttonStyle(.bordered)
+          .accessibilityIdentifier("agents.emptyState.newAgent")
+
+          Button {
+            showingNewChainSheet = true
+          } label: {
+            Label("New Chain", systemImage: "link")
+          }
+          .buttonStyle(.borderedProminent)
+          .accessibilityIdentifier("agents.emptyState.newChain")
         }
-        .buttonStyle(.bordered)
-        .accessibilityIdentifier("agents.emptyState.newAgent")
-        
-        Button {
-          showingNewChainSheet = true
-        } label: {
-          Label("New Chain", systemImage: "link")
-        }
-        .buttonStyle(.borderedProminent)
-        .accessibilityIdentifier("agents.emptyState.newChain")
       }
+      .padding()
     }
   }
   

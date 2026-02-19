@@ -102,6 +102,7 @@ struct PeelApp: App {
       ParallelRunSnapshot.self,
       RepoGuidanceSkill.self,
       CIFailureRecord.self,
+      FeatureDiscoveryChecklist.self,
     ])
     
     let modelConfiguration = ModelConfiguration(
