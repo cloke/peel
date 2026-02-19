@@ -79,14 +79,21 @@ public struct SwarmStatusView: View {
           }
         }
         
-        HStack(spacing: 4) {
+        HStack(spacing: 6) {
           Circle()
             .fill(coordinator.isActive ? Color.green : Color.secondary)
             .frame(width: 8, height: 8)
           
-          Text(coordinator.isActive ? "Active (\(roleDisplayName))" : "Inactive")
-            .font(.caption)
-            .foregroundStyle(.secondary)
+          VStack(alignment: .leading, spacing: 0) {
+            Text(coordinator.isActive ? "Active (\(roleDisplayName))" : "Inactive")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            if coordinator.autoRestored {
+              Text("Auto-restored")
+                .font(.caption2.bold())
+                .foregroundStyle(.blue)
+            }
+          }
         }
       }
       
