@@ -38,7 +38,10 @@ func makeDefaultRAGStore(
   chunkAnalyzer: ChunkAnalyzer? = nil
 ) -> RAGStore {
   #if os(macOS)
-  let analyzer: ChunkAnalyzer? = chunkAnalyzer ?? MLXCodeAnalyzerFactory.makeAnalyzer(tier: .auto)
+  let analysisEnabled = UserDefaults.standard.bool(forKey: "rag.analyzer.enabled")
+  let tierRaw = UserDefaults.standard.string(forKey: "rag.analyzer.tier")
+  let tier = tierRaw.flatMap { MLXAnalyzerModelTier(rawValue: $0) } ?? .auto
+  let analyzer: ChunkAnalyzer? = chunkAnalyzer ?? (analysisEnabled ? MLXCodeAnalyzerFactory.makeAnalyzer(tier: tier) : nil)
   #else
   let analyzer = chunkAnalyzer
   #endif
