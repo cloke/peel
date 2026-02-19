@@ -239,6 +239,12 @@ final class DeviceSettings {
   var worktreeRetentionDays: Int = 7
   var worktreeMaxDiskGB: Double = 10.0
   var worktreeAutoCleanup: Bool = true
+
+  // Swarm auto-start: whether this device should automatically join the swarm on launch
+  var swarmAutoStart: Bool = true
+  
+  // Whether the swarm onboarding hint (first-run) has been shown to the user
+  var swarmOnboardingShown: Bool = false
   
   @MainActor
   init() {
