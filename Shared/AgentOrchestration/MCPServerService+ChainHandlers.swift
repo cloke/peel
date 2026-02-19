@@ -311,6 +311,9 @@ extension MCPServerService {
       templateName: template.name,
       options: initialOptions
     )
+    
+    // Store the prompt for UI display
+    chain.initialPrompt = prompt
 
     await telemetryProvider.info("Chain run started", metadata: [
       "runId": runId.uuidString,

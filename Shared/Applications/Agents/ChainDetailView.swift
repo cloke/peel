@@ -41,6 +41,29 @@ struct ChainDetailView: View {
     }
   }
 
+  /// Calculate elapsed time for running chains
+  private var elapsedTime: String? {
+    guard let startTime = chain.runStartTime else { return nil }
+    let elapsed = Date().timeIntervalSince(startTime)
+    let minutes = Int(elapsed) / 60
+    let seconds = Int(elapsed) % 60
+    if minutes > 0 {
+      return "\(minutes)m \(seconds)s"
+    } else {
+      return "\(seconds)s"
+    }
+  }
+
+  /// Get the currently active agent (if any)
+  private var activeAgent: (index: Int, agent: Agent)? {
+    for (index, agent) in chain.agents.enumerated() {
+      if agent.state.isActive {
+        return (index, agent)
+      }
+    }
+    return nil
+  }
+
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 24) {
@@ -143,15 +166,79 @@ struct ChainDetailView: View {
         Divider()
 
         if chain.runSource == .mcp {
-          SectionCard {
-            Text("This chain is controlled by MCP. Prompt entry and manual run are hidden.")
-              .font(.caption)
-              .foregroundStyle(.secondary)
-          } header: {
-            HStack(spacing: 8) {
-              Image(systemName: "bolt.horizontal.circle.fill")
-                .foregroundStyle(.purple)
-              Text("MCP Managed")
+          // MCP chain - show prompt and live status
+          VStack(alignment: .leading, spacing: 16) {
+            // Task prompt section
+            if let initialPrompt = chain.initialPrompt {
+              SectionCard {
+                ScrollView {
+                  Text(initialPrompt)
+                    .font(.system(.body, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 200)
+              } header: {
+                HStack(spacing: 8) {
+                  Image(systemName: "text.alignleft")
+                    .foregroundStyle(.purple)
+                  Text("Task Prompt")
+                }
+              }
+            }
+
+            // Live status section (when running)
+            if case .running = chain.state {
+              SectionCard {
+                VStack(alignment: .leading, spacing: 12) {
+                  // Current agent
+                  if let (index, agent) = activeAgent {
+                    HStack {
+                      Text("Step \(index + 1) of \(chain.agents.count)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                      Spacer()
+                      Chip(
+                        text: agent.state.displayName,
+                        foreground: .white,
+                        background: agent.state.color,
+                        verticalPadding: 3
+                      )
+                    }
+                    Text(agent.name)
+                      .font(.body)
+                      .fontWeight(.medium)
+                  }
+
+                  // Elapsed time
+                  if let elapsed = elapsedTime {
+                    HStack {
+                      Image(systemName: "clock")
+                        .foregroundStyle(.secondary)
+                      Text("Elapsed: \(elapsed)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                  }
+                }
+              } header: {
+                HStack(spacing: 8) {
+                  Image(systemName: "play.circle.fill")
+                    .foregroundStyle(.blue)
+                  Text("Running")
+                }
+              }
+            }
+
+            // MCP managed badge (small, not dominant)
+            HStack {
+              Chip(
+                text: "MCP Managed",
+                foreground: .purple,
+                background: Color.purple.opacity(0.1),
+                verticalPadding: 3
+              )
+              Spacer()
             }
           }
         } else {
