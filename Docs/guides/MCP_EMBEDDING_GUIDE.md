@@ -20,22 +20,20 @@ In your Package.swift, add MCPCore as a dependency (example):
 
 ```swift
 // Package.swift (snippet)
-.package(url: "https://github.com/cloke/peel.git", from: "0.0.0"),
+.package(url: "https://github.com/crunchybananas/MCPCore.git", from: "0.0.0"),
 // then add "MCPCore" to the target dependencies
 ```
 
-(If MCPCore is published as a separate repo, use that URL; if using this repo as a package, point to the repo and the package target.)
-
 ## 2. Initialize the server (app-embedded mode)
 
-MCPCore exposes a server service that can be started inside your app lifecycle. Typical pattern in an AppDelegate/SceneDelegate or SwiftUI App:
+MCPCore exposes a server service that can be started inside your app lifecycle. Typical pattern in a SwiftUI App:
 
 ```swift
 import MCPCore
 
 @main
 struct MyApp: App {
-  @StateObject private var mcpService = MCPServerService.shared // or init(config:)
+  @State private var mcpService = MCPServerService()
 
   var body: some Scene {
     WindowGroup {
@@ -53,29 +51,13 @@ struct MyApp: App {
 }
 ```
 
-Example init with config:
-
-```swift
-let config = MCPConfig(port: 8765, allowedTools: ["git", "shell"], repoRoot: "/path/to/repo")
-let mcp = MCPServerService(config: config)
-try await mcp.start()
-```
+> **Note:** In app-embedded mode (Peel), server settings (port, allowed tools, repo root) are configured via the Settings UI and stored in UserDefaults. There is no public `MCPServerService.shared` singleton or `MCPConfig(...)` initializer in the current API — the service reads from app settings on start. For file-based config in headless mode, use `Tools/MCPCLI` instead (see [Headless section in MCP_CLI_USAGE](MCP_CLI_USAGE.md#headless-server-mcpcli)).
 
 ## 3. Registering tools
 
-MCPCore provides a ToolRegistry where app code can register custom tools (Swift closures or types conforming to the MCP tool protocol).
+In Peel, custom tools are added by extending the MCPServerService tool handlers in `Shared/AgentOrchestration/`. There is no public `toolRegistry.register(...)` API; instead, add a new `case` in the appropriate handler file and implement its logic following the existing patterns.
 
-```swift
-mcpService.toolRegistry.register(name: "my.custom.tool") { params in
-  // handle invocation
-  return .success(["result": "ok"])
-}
-
-// Or register a typed handler
-mcpService.toolRegistry.register(MyGitTool())
-```
-
-When registering tools, provide clear, documented parameter and result schemas so clients know how to call them.
+When adding tools, provide clear parameter and result schemas so clients know how to call them. Use `JSONRPCResponseBuilder.makeResult` / `makeError` (from `MCPCore/JSONRPC.swift`) to build responses.
 
 ## 4. Connecting a client
 
@@ -87,34 +69,30 @@ Example JSON-RPC request (HTTP transport):
 {
   "jsonrpc": "2.0",
   "id": 1,
-  "method": "tool.invoke",
-  "params": { "tool": "my.custom.tool", "args": { "path": "/" } }
+  "method": "tools/call",
+  "params": { "name": "my.custom.tool", "arguments": { "path": "/" } }
 }
 ```
 
 Expect a JSON-RPC response with either a `result` or `error` field.
 
-## 5. Sample config file
+## 5. Sample config file (headless / MCPCLI)
 
-Save a simple config file (YAML/JSON) and load it at startup to decouple from UserDefaults:
+When running the server headlessly via `Tools/MCPCLI`, use a JSON config file:
 
 ```json
 {
   "port": 8765,
-  "transport": "tcp",
-  "allowedTools": ["git", "shell", "my.custom.tool"],
   "repoRoot": "/Users/me/code/repo",
+  "dataStorePath": "/Users/me/Library/Application Support/Peel",
+  "allowedTools": null,
   "logLevel": "info"
 }
 ```
 
-Load via:
+See `Tools/MCPCLI/config.example.json` for the canonical template.
 
-```swift
-let config = try MCPConfig.from(path: "/path/to/mcp-config.json")
-let mcp = MCPServerService(config: config)
-try await mcp.start()
-```
+For app-embedded mode, the app configures the server via its Settings UI (no config file needed).
 
 ## 6. App-embedded vs Headless (CLI) differences and limitations
 
