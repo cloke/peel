@@ -826,69 +826,141 @@ private struct RAGSkillsResolverSheet: View {
       VStack(spacing: 0) {
         if skills.isEmpty {
           ContentUnavailableView(
-            "No Unresolved Skills",
-            systemImage: "checkmark.circle",
-            description: Text("All repo guidance skills are resolved for this machine.")
+            "All Skills Resolved",
+            systemImage: "checkmark.circle.fill",
+            description: Text("All repo guidance skills are mapped to local repositories on this Mac.")
           )
           .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
           List {
-            ForEach(skills) { skill in
+            Section {
+              HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                  .foregroundStyle(.orange)
+                  .font(.title3)
+                VStack(alignment: .leading, spacing: 4) {
+                  Text("These skills are scoped to repositories that Peel can't find on this Mac.")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                  Text("Map each skill to its local repo path, or skip it to hide this warning.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+              }
+              .padding(.vertical, 4)
+            }
+
+            ForEach(Array(skills.enumerated()), id: \.element.id) { index, skill in
               Section {
-                VStack(alignment: .leading, spacing: 8) {
-                  Text(skill.title.isEmpty ? "Skill" : skill.title)
-                    .font(.headline)
+                VStack(alignment: .leading, spacing: 10) {
 
-                  if !skill.repoRemoteURL.isEmpty {
-                    Text(skill.repoRemoteURL)
-                      .font(.caption)
-                      .foregroundStyle(.secondary)
-                      .textSelection(.enabled)
-                  } else if !skill.repoName.isEmpty {
-                    Text("Repo: \(skill.repoName)")
-                      .font(.caption)
-                      .foregroundStyle(.secondary)
-                  } else {
-                    Text("Repo: \(skill.repoPath)")
-                      .font(.caption)
-                      .foregroundStyle(.secondary)
-                  }
-
-                  Picker("Map to", selection: binding(for: skill)) {
-                    Text("Select a local repo...").tag("")
-                    ForEach(repoCandidates) { candidate in
-                      Text(candidate.name).tag(candidate.path)
+                  // Skill identity row
+                  VStack(alignment: .leading, spacing: 2) {
+                    Text(skill.title.isEmpty ? "Untitled Skill" : skill.title)
+                      .font(.headline)
+                    if !skill.repoRemoteURL.isEmpty {
+                      HStack(spacing: 4) {
+                        Image(systemName: "link")
+                          .foregroundStyle(.secondary)
+                          .font(.caption2)
+                        Text(skill.repoRemoteURL)
+                          .font(.caption)
+                          .foregroundStyle(.secondary)
+                          .textSelection(.enabled)
+                      }
+                    } else if !skill.repoName.isEmpty {
+                      HStack(spacing: 4) {
+                        Image(systemName: "folder")
+                          .foregroundStyle(.secondary)
+                          .font(.caption2)
+                        Text(skill.repoName)
+                          .font(.caption)
+                          .foregroundStyle(.secondary)
+                      }
+                    } else {
+                      HStack(spacing: 4) {
+                        Image(systemName: "folder")
+                          .foregroundStyle(.secondary)
+                          .font(.caption2)
+                        Text(skill.repoPath)
+                          .font(.caption)
+                          .foregroundStyle(.secondary)
+                          .textSelection(.enabled)
+                      }
                     }
                   }
-                  .labelsHidden()
+
+                  // Skill body preview
+                  if !skill.body.isEmpty {
+                    Text(skill.body.prefix(200).trimmingCharacters(in: .whitespacesAndNewlines))
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                      .lineLimit(3)
+                      .padding(8)
+                      .frame(maxWidth: .infinity, alignment: .leading)
+                      .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+                  }
+
+                  // Repo picker — shows full path as subtitle
+                  VStack(alignment: .leading, spacing: 4) {
+                    Text("Map to local repo")
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                    Picker("", selection: binding(for: skill)) {
+                      Text("Select a local repo...").tag("")
+                      ForEach(repoCandidates) { candidate in
+                        VStack(alignment: .leading) {
+                          Text(candidate.name)
+                          Text(candidate.path)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        }.tag(candidate.path)
+                      }
+                    }
+                    .labelsHidden()
+                    if let sel = selectedPaths[skill.id], !sel.isEmpty {
+                      Text(sel)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    }
+                  }
 
                   HStack(spacing: 8) {
                     Button("Choose Folder...") {
                       chooseFolder(for: skill)
                     }
                     .buttonStyle(.bordered)
+                    .help("Browse for the local folder containing this repository")
 
                     if !skill.repoRemoteURL.isEmpty {
                       Button("Clone...") {
                         cloneRepo(for: skill)
                       }
                       .buttonStyle(.bordered)
+                      .help("Clone the repository from \(skill.repoRemoteURL) to a local folder")
                     }
 
                     Button("Map") {
                       applyMapping(for: skill)
                     }
                     .buttonStyle(.borderedProminent)
+                    .disabled((selectedPaths[skill.id] ?? "").isEmpty)
+                    .help("Save the mapping from this skill to the selected local repository")
 
-                    Button("Ignore") {
+                    Spacer()
+
+                    Button("Skip on This Mac") {
                       ignoreSkill(skill)
                     }
                     .buttonStyle(.bordered)
+                    .help("Hide this skill from the Resolve Skills list on this Mac. The skill is not deleted.")
                   }
                 }
                 .padding(.vertical, 6)
               } header: {
-                Text("Skill \(skill.id.uuidString.prefix(8))")
+                Text("Skill \(index + 1) of \(skills.count)")
               }
             }
           }
