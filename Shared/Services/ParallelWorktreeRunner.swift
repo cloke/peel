@@ -479,7 +479,6 @@ final class ParallelWorktreeRunner {
     
     await runSchedulingLoop(for: run)
     updateRunStatus(run)
-    recordSnapshot(for: run)
   }
 
   func pauseRun(_ run: ParallelWorktreeRun) async {
@@ -608,7 +607,6 @@ final class ParallelWorktreeRunner {
         guard let self else { return }
         await self.runSchedulingLoop(for: run)
         self.updateRunStatus(run)
-        self.recordSnapshot(for: run)
       }
     }
   }
@@ -662,7 +660,6 @@ final class ParallelWorktreeRunner {
         guard let self else { return }
         await self.runSchedulingLoop(for: run)
         self.updateRunStatus(run)
-        self.recordSnapshot(for: run)
       }
     }
   }
@@ -1117,7 +1114,7 @@ final class ParallelWorktreeRunner {
     let mergeConflicts: [String]?
   }
   
-  /// Update run status based on execution results
+  /// Update run status based on execution results and record a snapshot.
   private func updateRunStatus(_ run: ParallelWorktreeRun) {
     let allTerminal = run.executions.allSatisfy {
       if $0.status.isTerminal { return true }
@@ -1128,7 +1125,7 @@ final class ParallelWorktreeRunner {
     }
     let anyFailed = run.executions.contains { if case .failed = $0.status { return true }; return false }
     let anyAwaitingReview = run.executions.contains { $0.status == .awaitingReview }
-    
+
     if anyFailed && run.executions.filter({ if case .failed = $0.status { return true }; return false }).count == run.executions.count {
       run.status = .failed("All tasks failed")
       PeonPingService.shared.chainFailed(name: run.name, error: "All tasks failed")
@@ -1140,6 +1137,9 @@ final class ParallelWorktreeRunner {
       run.status = .completed
       PeonPingService.shared.chainCompleted(name: run.name)
     }
+
+    // Always persist the latest state so history snapshots are never stale.
+    recordSnapshot(for: run)
   }
   
   // MARK: - Review Gate
@@ -1309,7 +1309,6 @@ final class ParallelWorktreeRunner {
             guard let self else { return }
             await self.runSchedulingLoop(for: run)
             self.updateRunStatus(run)
-            self.recordSnapshot(for: run)
           }
         }
       }
@@ -1357,7 +1356,6 @@ final class ParallelWorktreeRunner {
       PeonPingService.shared.worktreeCompleted(taskTitle: execution.task.title)
       try? await workspaceService.removeWorktreeForChain(chainId: execution.id)
       updateRunStatus(run)
-      recordSnapshot(for: run)
       return
     }
 
@@ -1394,7 +1392,6 @@ final class ParallelWorktreeRunner {
     PeonPingService.shared.worktreeCompleted(taskTitle: execution.task.title)
     try? await workspaceService.removeWorktreeForChain(chainId: execution.id)
     updateRunStatus(run)
-    recordSnapshot(for: run)
   }
 
   /// Abort an in-progress merge (called when user cancels conflict resolution).
