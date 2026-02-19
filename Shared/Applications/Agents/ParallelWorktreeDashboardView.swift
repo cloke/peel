@@ -19,6 +19,7 @@ struct ParallelWorktreeDashboardView: View {
   @State private var selectedExecution: ParallelWorktreeExecution?
   @State private var showingNewRunSheet = false
   @State private var expandedExecutions: Set<UUID> = []
+  @State private var showOtherMachines = false
   
   var body: some View {
     if let runner {
@@ -116,10 +117,32 @@ struct ParallelWorktreeDashboardView: View {
           }
         }
         if hasHistory {
-          Section("History") {
-            ForEach(history) { snapshot in
-              ParallelRunSnapshotRow(snapshot: snapshot)
-                .tag(snapshot.id)
+          let localHistory = history.filter { FileManager.default.fileExists(atPath: $0.projectPath) }
+          let otherHistory = history.filter { !FileManager.default.fileExists(atPath: $0.projectPath) }
+
+          if !localHistory.isEmpty {
+            Section("History") {
+              ForEach(localHistory) { snapshot in
+                ParallelRunSnapshotRow(snapshot: snapshot)
+                  .tag(snapshot.id)
+              }
+            }
+          }
+          if !otherHistory.isEmpty {
+            Section {
+              DisclosureGroup(isExpanded: $showOtherMachines) {
+                ForEach(otherHistory) { snapshot in
+                  ParallelRunSnapshotRow(snapshot: snapshot, isLocal: false)
+                    .tag(snapshot.id)
+                }
+              } label: {
+                Label(
+                  "Other Machines (\(otherHistory.count))",
+                  systemImage: "desktopcomputer.trianglebadge.exclamationmark"
+                )
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+              }
             }
           }
         }
@@ -962,6 +985,7 @@ struct NewParallelRunSheet: View {
 
 struct ParallelRunSnapshotRow: View {
   let snapshot: ParallelRunSnapshot
+  var isLocal: Bool = true
 
   var body: some View {
     VStack(alignment: .leading, spacing: 4) {
@@ -991,6 +1015,7 @@ struct ParallelRunSnapshotRow: View {
         .foregroundStyle(.tertiary)
     }
     .padding(.vertical, 4)
+    .opacity(isLocal ? 1 : 0.55)
   }
 
   private var progressTint: Color {
@@ -1034,6 +1059,7 @@ struct ParallelRunSnapshotDetailView: View {
   @Binding var selectedRunId: UUID?
 
   private var executions: [SnapshotExecution] { snapshot.decodedExecutions }
+  private var isProjectLocal: Bool { FileManager.default.fileExists(atPath: snapshot.projectPath) }
 
   var body: some View {
     ScrollView {
@@ -1093,7 +1119,12 @@ struct ParallelRunSnapshotDetailView: View {
             .foregroundStyle(.secondary)
             .labelStyle(.iconOnly)
             .imageScale(.large)
-          if executions.contains(where: {
+          if !isProjectLocal {
+            Label("Project not on this machine", systemImage: "externaldrive.badge.xmark")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .help(snapshot.projectPath)
+          } else if executions.contains(where: {
             let s = $0.status.lowercased()
             return s == "awaiting review" || s == "reviewed" ||
                    (s == "running" && $0.branchName != nil)
@@ -1128,6 +1159,29 @@ struct ParallelRunSnapshotDetailView: View {
           Text(snapshot.updatedAt, style: .relative)
             .font(.caption)
             .foregroundStyle(.secondary)
+        }
+        VStack(alignment: .leading, spacing: 2) {
+          HStack(spacing: 4) {
+            Text("Project")
+              .font(.caption2)
+              .foregroundStyle(.tertiary)
+            if !isProjectLocal {
+              Image(systemName: "externaldrive.badge.xmark")
+                .font(.caption2)
+                .foregroundStyle(Color.red.opacity(0.8))
+            }
+          }
+          Group {
+            if isProjectLocal {
+              Text(URL(fileURLWithPath: snapshot.projectPath).lastPathComponent)
+                .foregroundStyle(.secondary)
+            } else {
+              Text(URL(fileURLWithPath: snapshot.projectPath).lastPathComponent)
+                .foregroundStyle(Color.red.opacity(0.7))
+            }
+          }
+          .font(.caption)
+          .help(snapshot.projectPath)
         }
         if let templateName = snapshot.templateName {
           VStack(alignment: .leading, spacing: 2) {
