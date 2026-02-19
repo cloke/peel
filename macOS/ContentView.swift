@@ -18,8 +18,10 @@ enum CurrentTool: String, Identifiable, CaseIterable {
 struct ContentView: View {
   @AppStorage(wrappedValue: .repositories, "current-tool") private var currentTool: CurrentTool
   @AppStorage("feature.showBrew") private var showBrew = false
+  @AppStorage("onboarding.checklistDismissed") private var checklistDismissed = false
   @State private var firebaseService = FirebaseService.shared
   @State private var showingInvitePreview = false
+  @State private var showChecklist = false
   
   var body: some View {
     Group {
@@ -43,6 +45,9 @@ struct ContentView: View {
         currentTool = .agents
       }
       migrateLegacyToolSelectionIfNeeded(currentTool)
+      if !checklistDismissed {
+        showChecklist = true
+      }
     }
     .onChange(of: showBrew) { _, newValue in
       if !newValue && currentTool == .brew {
@@ -60,6 +65,21 @@ struct ContentView: View {
     .sheet(isPresented: $showingInvitePreview) {
       if let preview = firebaseService.pendingInvitePreview {
         InvitePreviewSheet(preview: preview, firebaseService: firebaseService)
+      }
+    }
+    .sheet(isPresented: $showChecklist) {
+      FeatureDiscoveryChecklistView()
+    }
+    .toolbar {
+      if !checklistDismissed {
+        ToolbarItem(placement: .automatic) {
+          Button {
+            showChecklist = true
+          } label: {
+            Image(systemName: "checklist")
+          }
+          .help("Feature Discovery Checklist")
+        }
       }
     }
     .task {

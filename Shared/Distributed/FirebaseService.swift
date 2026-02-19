@@ -1236,6 +1236,13 @@ public final class FirebaseService {
                 "workerId": worker.id,
                 "device": worker.deviceName
               ])
+              // Notify when a new worker connects (only when we are an active coordinator)
+              if self.activeSwarmPermission.canApproveMembers || self.activeSwarmPermission.canRegisterWorkers {
+                PeonPingService.shared.sendSwarmNotification(
+                  title: "Swarm Worker Connected",
+                  body: "\(worker.displayName) joined the swarm"
+                )
+              }
             }
           }
           
@@ -1536,6 +1543,14 @@ public final class FirebaseService {
     // Only update if changed
     if swarms != memberSwarms {
       logger.info("Membership changed: \(self.memberSwarms.count) -> \(swarms.count) swarms")
+      // Detect newly approved memberships (role changed from .pending to non-pending)
+      let previousPending = Set(memberSwarms.filter { $0.role == .pending }.map { $0.id })
+      for swarm in swarms where swarm.role != .pending && previousPending.contains(swarm.id) {
+        PeonPingService.shared.sendSwarmNotification(
+          title: "Swarm Access Approved",
+          body: "You've been approved to join \(swarm.swarmName)"
+        )
+      }
       memberSwarms = swarms
     }
   }

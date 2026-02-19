@@ -145,6 +145,11 @@ final class PeonPingService {
     sendNotification(title: "Worktree Review", body: "\(taskTitle) — Something need doing?")
   }
 
+  /// Send a swarm-related notification (membership approval, new worker, etc.)
+  func sendSwarmNotification(title: String, body: String) {
+    sendNotification(title: title, body: body)
+  }
+
   // MARK: - Sound Playback
 
   private func play(_ category: PeonSoundCategory) {
