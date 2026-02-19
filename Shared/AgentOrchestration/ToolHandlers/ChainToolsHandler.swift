@@ -170,7 +170,9 @@ final class ChainToolsHandler: MCPToolHandler {
     guard case .success(let prompt) = requireString("prompt", from: arguments, id: id) else {
       return missingParamError(id: id, param: "prompt")
     }
-    guard case .success(let repoPath) = requireString("repoPath", from: arguments, id: id) else {
+    // Accept both repoPath (preferred) and workingDirectory (PeelCLI compat)
+    let repoPathValue = (arguments["repoPath"] as? String) ?? (arguments["workingDirectory"] as? String)
+    guard let repoPath = repoPathValue, !repoPath.isEmpty else {
       return missingParamError(id: id, param: "repoPath")
     }
     
@@ -181,7 +183,8 @@ final class ChainToolsHandler: MCPToolHandler {
       maxPremiumCost: optionalDouble("maxPremiumCost", from: arguments),
       requireRag: optionalBool("requireRag", from: arguments, default: false),
       skipReview: optionalBool("skipReview", from: arguments, default: false),
-      dryRun: optionalBool("dryRun", from: arguments, default: false)
+      dryRun: optionalBool("dryRun", from: arguments, default: false),
+      returnImmediately: optionalBool("returnImmediately", from: arguments, default: false)
     )
     
     do {
@@ -202,28 +205,42 @@ final class ChainToolsHandler: MCPToolHandler {
   // MARK: - chains.runBatch
   
   private func handleChainRunBatch(id: Any?, arguments: [String: Any], delegate: ChainToolsHandlerDelegate) async -> (Int, Data) {
-    guard let itemsArray = arguments["items"] as? [[String: Any]], !itemsArray.isEmpty else {
+    // Accept both "items" (documented) and "runs" (PeelCLI compat) as the array key
+    let itemsArray = (arguments["items"] as? [[String: Any]]) ?? (arguments["runs"] as? [[String: Any]])
+    guard let itemsArray, !itemsArray.isEmpty else {
       return missingParamError(id: id, param: "items")
     }
-    
-    let templateId = optionalString("templateId", from: arguments)
-    let templateName = optionalString("templateName", from: arguments)
-    
+
+    let batchTemplateId = optionalString("templateId", from: arguments)
+    let batchTemplateName = optionalString("templateName", from: arguments)
+
     var items: [ChainToolBatchItem] = []
     for (index, item) in itemsArray.enumerated() {
       guard let prompt = item["prompt"] as? String else {
         return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "Missing prompt in item \(index)"))
       }
-      guard let repoPath = item["repoPath"] as? String else {
-        return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "Missing repoPath in item \(index)"))
+      // Accept "repoPath" or "workingDirectory" as the path key
+      guard let repoPath = (item["repoPath"] as? String) ?? (item["workingDirectory"] as? String), !repoPath.isEmpty else {
+        return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "Missing repoPath or workingDirectory in item \(index)"))
       }
-      items.append(ChainToolBatchItem(prompt: prompt, repoPath: repoPath))
+      // Per-item template overrides batch-level template
+      let itemTemplateId = item["templateId"] as? String
+      let itemTemplateName = item["templateName"] as? String
+      items.append(ChainToolBatchItem(
+        prompt: prompt,
+        repoPath: repoPath,
+        templateId: itemTemplateId ?? batchTemplateId,
+        templateName: itemTemplateName ?? batchTemplateName
+      ))
     }
+
+    let templateId = batchTemplateId
+    let templateName = batchTemplateName
     
     do {
       let results = try await delegate.runBatch(prompts: items, templateId: templateId, templateName: templateName)
       let payload = results.map { encodeRunResult($0) }
-      return (200, makeResult(id: id, result: ["results": payload]))
+      return (200, makeResult(id: id, result: ["results": payload, "count": results.count]))
     } catch {
       await delegate.logWarning("Batch run failed", metadata: ["error": error.localizedDescription])
       return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
@@ -515,6 +532,7 @@ struct ChainToolRunOptions {
   let requireRag: Bool
   let skipReview: Bool
   let dryRun: Bool
+  var returnImmediately: Bool = false
 }
 
 /// Result of starting a chain run
@@ -566,4 +584,14 @@ struct ChainToolQueueStatus {
 struct ChainToolBatchItem {
   let prompt: String
   let repoPath: String
+  /// Per-item template override (takes precedence over the batch-level templateId)
+  let templateId: String?
+  let templateName: String?
+
+  init(prompt: String, repoPath: String, templateId: String? = nil, templateName: String? = nil) {
+    self.prompt = prompt
+    self.repoPath = repoPath
+    self.templateId = templateId
+    self.templateName = templateName
+  }
 }

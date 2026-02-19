@@ -131,10 +131,12 @@ public struct OrganizationRepositoryView: View {
     Label {
       Text(repository.name)
         .font(.callout)
+      Spacer()
     } icon: {
       Image(systemName: favoritesProvider?.isFavorite(repoId: repository.id) == true ? "star.fill" : "book.closed")
         .foregroundStyle(favoritesProvider?.isFavorite(repoId: repository.id) == true ? .yellow : .secondary)
     }
+    .contentShape(Rectangle())
   }
   
   @ViewBuilder

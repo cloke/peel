@@ -15,8 +15,10 @@ public struct PullRequestDetailView: View {
 
   public let organization: Github.User?
   public let repository: Github.Repository
-  public let pullRequest: Github.PullRequest
+  public let initialPullRequest: Github.PullRequest
 
+  /// Live PR data, refreshed on appear
+  @State private var pullRequest: Github.PullRequest
   @State private var checkStatus: Github.AggregatedCheckStatus?
   @State private var isLoadingChecks = true
   @State private var comments = [Github.IssueComment]()
@@ -30,7 +32,8 @@ public struct PullRequestDetailView: View {
   public init(organization: Github.User?, repository: Github.Repository, pullRequest: Github.PullRequest) {
     self.organization = organization
     self.repository = repository
-    self.pullRequest = pullRequest
+    self.initialPullRequest = pullRequest
+    self._pullRequest = State(initialValue: pullRequest)
   }
 
   public var body: some View {
@@ -48,6 +51,11 @@ public struct PullRequestDetailView: View {
         // MARK: - CI Checks
         checksSection
 
+        // MARK: - Changed Files
+        #if os(macOS)
+        changedFilesSection
+        #endif
+
         // MARK: - Reviews
         reviewsSection
 
@@ -61,11 +69,13 @@ public struct PullRequestDetailView: View {
       }
       .padding()
     }
-    .task(id: pullRequest.id) {
+    .task(id: initialPullRequest.id) {
       await Task.yield()
       await MainActor.run {
         recentPRsProvider?.recordView(pr: pullRequest, repo: repository)
       }
+      // Refresh PR data to get current state (merged, closed, etc.)
+      await refreshPullRequest()
       await loadCheckStatus()
       await loadComments()
     }
@@ -322,6 +332,16 @@ public struct PullRequestDetailView: View {
     }
   }
 
+  // MARK: - Changed Files
+
+  #if os(macOS)
+  @ViewBuilder
+  private var changedFilesSection: some View {
+    let owner = organization?.login ?? repository.owner?.login ?? ""
+    PRChangedFilesView(owner: owner, repo: repository.name, pullNumber: pullRequest.number)
+  }
+  #endif
+
   // MARK: - Reviews Section
 
   @ViewBuilder
@@ -340,100 +360,8 @@ public struct PullRequestDetailView: View {
 
   @ViewBuilder
   private var commentsSection: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      HStack {
-        Text("Comments")
-          .font(.headline)
-        if !isLoadingComments {
-          Text("\(comments.count)")
-            .font(.caption2)
-            .foregroundStyle(.tertiary)
-            .monospacedDigit()
-        }
-      }
-
-      if isLoadingComments {
-        HStack {
-          ProgressView()
-            .controlSize(.small)
-          Text("Loading comments…")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 10))
-      } else if comments.isEmpty {
-        Text("No comments yet")
-          .font(.callout)
-          .foregroundStyle(.secondary)
-          .padding(12)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 10))
-      } else {
-        VStack(alignment: .leading, spacing: 0) {
-          ForEach(Array(comments.enumerated()), id: \.element.id) { index, comment in
-            VStack(alignment: .leading, spacing: 6) {
-              Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                  if expandedCommentIds.contains(comment.id) {
-                    expandedCommentIds.remove(comment.id)
-                  } else {
-                    expandedCommentIds.insert(comment.id)
-                  }
-                }
-              } label: {
-                HStack(spacing: 10) {
-                  AvatarView(url: URL(string: comment.user.avatar_url), maxWidth: 24, maxHeight: 24)
-                    .frame(width: 24, height: 24)
-
-                  VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 6) {
-                      Text(comment.user.publicName)
-                        .font(.callout)
-                        .fontWeight(.medium)
-                      if let date = comment.created_at {
-                        Text(formattedDate(date))
-                          .font(.caption2)
-                          .foregroundStyle(.tertiary)
-                      }
-                    }
-                    if !expandedCommentIds.contains(comment.id) {
-                      Text(comment.body)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                    }
-                  }
-
-                  Spacer()
-
-                  Image(systemName: expandedCommentIds.contains(comment.id) ? "chevron.up" : "chevron.down")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                }
-              }
-              .buttonStyle(.plain)
-
-              if expandedCommentIds.contains(comment.id) {
-                Markdown(Document(stringLiteral: comment.body))
-                  .font(.callout)
-                  .padding(10)
-                  .frame(maxWidth: .infinity, alignment: .leading)
-                  .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 8))
-              }
-            }
-            .padding(.vertical, 8)
-
-            if index < comments.count - 1 {
-              Divider()
-            }
-          }
-        }
-        .padding(12)
-        .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 10))
-      }
-    }
+    let owner = organization?.login ?? repository.owner?.login ?? ""
+    PRCommentsView(owner: owner, repo: repository.name, pullNumber: pullRequest.number)
   }
 
   // MARK: - Description
@@ -454,6 +382,13 @@ public struct PullRequestDetailView: View {
   }
 
   // MARK: - Helpers
+
+  private func refreshPullRequest() async {
+    guard let owner = organization?.login ?? repository.owner?.login else { return }
+    if let fresh = try? await Github.pullRequest(owner: owner, repository: repository.name, number: pullRequest.number) {
+      pullRequest = fresh
+    }
+  }
 
   private func loadCheckStatus() async {
     isLoadingChecks = true
@@ -557,8 +492,7 @@ public struct PullRequestDetailView: View {
 
   private func formattedDate(_ value: String?) -> String {
     guard let value, !value.isEmpty else { return "–" }
-    let formatter = ISO8601DateFormatter()
-    if let date = formatter.date(from: value) {
+    if let date = GithubDateParser.parse(value) {
       return date.formatted(date: .abbreviated, time: .shortened)
     }
     return value

@@ -18,7 +18,8 @@ final class RepoToolsHandler: MCPToolHandler {
 
   let supportedTools: Set<String> = [
     "repos.list",
-    "repos.resolve"
+    "repos.resolve",
+    "repos.delete"
   ]
 
   private struct RepoToolRepository {
@@ -73,6 +74,8 @@ final class RepoToolsHandler: MCPToolHandler {
       return handleList(id: id, arguments: arguments, delegate: repoDelegate)
     case "repos.resolve":
       return handleResolve(id: id, arguments: arguments, delegate: repoDelegate)
+    case "repos.delete":
+      return await handleDelete(id: id, arguments: arguments, delegate: repoDelegate)
     default:
       return (404, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.methodNotFound, message: "Unknown repo tool: \(name)"))
     }
@@ -178,5 +181,45 @@ final class RepoToolsHandler: MCPToolHandler {
         return localPath.hasSuffix("/\(needle)")
       }
     }
+  }
+
+  private func handleDelete(id: Any?, arguments: [String: Any], delegate: RepoToolsHandlerDelegate) async -> (Int, Data) {
+    let repoIdString = optionalString("repoId", from: arguments)
+    let localPath = optionalString("localPath", from: arguments)
+
+    guard repoIdString != nil || localPath != nil else {
+      return missingParamError(id: id, param: "repoId or localPath")
+    }
+
+    guard let dataService = delegate.repoDataService else {
+      return notConfiguredError(id: id)
+    }
+
+    let repos = dataService.getAllRepositories()
+    var toDelete: SyncedRepository?
+
+    if let repoIdString, let repoId = UUID(uuidString: repoIdString) {
+      toDelete = repos.first { $0.id == repoId }
+    } else if let localPath {
+      toDelete = repos.first { repo in
+        dataService.getLocalPath(for: repo)?.localPath == localPath
+      }
+    }
+
+    guard let repository = toDelete else {
+      return (404, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "Repository not found"))
+    }
+
+    let repoName = repository.name
+
+    // Delete from SwiftData
+    dataService.deleteRepository(repository)
+
+    let result: [String: Any] = [
+      "deleted": true,
+      "repositoryName": repoName
+    ]
+
+    return (200, makeResult(id: id, result: result))
   }
 }

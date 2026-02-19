@@ -153,7 +153,22 @@ extension Github {
   public static func pullRequest(owner: String, repository: String, number: Int) async throws -> Github.PullRequest {
     try await load(url: "https://api.github.com/repos/\(owner)/\(repository)/pulls/\(number)")
   }
-  
+
+  /// Fetch files changed in a pull request
+  public static func pullRequestFiles(owner: String, repository: String, number: Int) async throws -> [Github.PRFile] {
+    try await loadMany(url: "https://api.github.com/repos/\(owner)/\(repository)/pulls/\(number)/files?per_page=100")
+  }
+
+  /// Fetch general conversation comments on a PR (issue comments endpoint)
+  public static func issueComments(owner: String, repository: String, number: Int) async throws -> [Github.IssueComment] {
+    try await loadMany(url: "https://api.github.com/repos/\(owner)/\(repository)/issues/\(number)/comments?per_page=100")
+  }
+
+  /// Fetch inline review comments on a PR diff
+  public static func reviewComments(owner: String, repository: String, number: Int) async throws -> [Github.ReviewComment] {
+    try await loadMany(url: "https://api.github.com/repos/\(owner)/\(repository)/pulls/\(number)/comments?per_page=100")
+  }
+
   /// Fetch a user by login
   public static func user(login: String) async throws -> Github.User {
     try await load(url: "https://api.github.com/users/\(login)")
@@ -282,6 +297,7 @@ extension Github {
     var request = URLRequest(url: url)
     request.httpMethod = method
     request.httpBody = body
+    request.cachePolicy = .reloadIgnoringLocalCacheData
     let headerValues = await headers
     for (key, value) in headerValues {
       request.setValue(value, forHTTPHeaderField: key)

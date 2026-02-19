@@ -175,6 +175,19 @@ extension MCPServerService {
         isMutating: false
       ),
       ToolDefinition(
+        name: "repos.delete",
+        description: "Delete a repository from Peel's SwiftData store by repoId or localPath",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoId": ["type": "string", "description": "Repository UUID to delete"],
+            "localPath": ["type": "string", "description": "Local path of repository to delete"]
+          ]
+        ],
+        category: .state,
+        isMutating: true
+      ),
+      ToolDefinition(
         name: "rag.status",
         description: "Get Local RAG database status",
         inputSchema: [
@@ -2506,6 +2519,84 @@ extension MCPServerService {
             "command": ["type": "string", "description": "The command to adapt"]
           ],
           "required": ["command"]
+        ],
+        category: .terminal,
+        isMutating: false
+      ),
+      // MARK: - Git tools (bypasses shell — no escaping issues)
+      ToolDefinition(
+        name: "git.status",
+        description: "Show git working tree status. Returns clean/dirty indicator plus the status lines.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "path": ["type": "string", "description": "Absolute path to the git repository"],
+            "short": ["type": "boolean", "description": "Use --short format (default: true)"]
+          ],
+          "required": ["path"]
+        ],
+        category: .terminal,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "git.add",
+        description: "Stage files for commit. Defaults to staging everything ('.'). Pass a 'files' array to stage specific paths.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "path": ["type": "string", "description": "Absolute path to the git repository"],
+            "files": ["type": "array", "items": ["type": "string"], "description": "Paths to stage (default: [\".\"])"]
+          ],
+          "required": ["path"]
+        ],
+        category: .terminal,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "git.commit",
+        description: """
+          Create a git commit. The message is passed directly to the git Process argument list — \
+          no shell involved, so quotes, backticks, and special characters never need escaping.
+          Set addAll=true to automatically stage all tracked-file changes before committing.
+          """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "path": ["type": "string", "description": "Absolute path to the git repository"],
+            "message": ["type": "string", "description": "Commit message (no escaping needed)"],
+            "addAll": ["type": "boolean", "description": "Stage all tracked changes first (-a flag, default: false)"]
+          ],
+          "required": ["path", "message"]
+        ],
+        category: .terminal,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "git.push",
+        description: "Push commits to a remote. Defaults to 'origin'. Omit 'branch' to push the current branch.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "path": ["type": "string", "description": "Absolute path to the git repository"],
+            "remote": ["type": "string", "description": "Remote name (default: 'origin')"],
+            "branch": ["type": "string", "description": "Branch name (default: current branch)"]
+          ],
+          "required": ["path"]
+        ],
+        category: .terminal,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "git.log",
+        description: "Show recent commit history.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "path": ["type": "string", "description": "Absolute path to the git repository"],
+            "limit": ["type": "integer", "description": "Number of commits (default: 10)"],
+            "format": ["type": "string", "description": "Log format: 'oneline', 'short', 'medium' (default: 'oneline')"]
+          ],
+          "required": ["path"]
         ],
         category: .terminal,
         isMutating: false

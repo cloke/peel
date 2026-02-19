@@ -6,6 +6,7 @@
 
 import Foundation
 import os.log
+import SwiftData
 
 /// Tracks branches being worked on across the swarm to prevent name collisions
 @MainActor
@@ -19,6 +20,15 @@ public final class BranchQueue {
   
   /// Completed branches waiting for PR creation or merge
   private var completedBranches: [UUID: CompletedBranch] = [:]
+
+  /// SwiftData context for persisting reservations across app restarts.
+  public var modelContext: ModelContext? {
+    didSet {
+      if modelContext != nil {
+        recoverFromPersistence()
+      }
+    }
+  }
   
   /// Information about a reserved branch
   public struct BranchReservation: Sendable {
@@ -98,7 +108,19 @@ public final class BranchQueue {
       workerId: workerId
     )
     inFlightBranches[taskId] = reservation
-    
+
+    // Persist so the reservation survives app restart
+    if let ctx = modelContext {
+      let record = SwarmBranchReservation(
+        taskId: taskId,
+        branchName: branchName,
+        repoPath: repoPath,
+        workerId: workerId
+      )
+      ctx.insert(record)
+      try? ctx.save()
+    }
+
     if branchName != preferredName {
       logger.info("Branch '\(preferredName)' was taken, reserved '\(branchName)' instead")
     } else {
@@ -127,7 +149,20 @@ public final class BranchQueue {
       status: status
     )
     completedBranches[taskId] = completed
-    
+
+    // Update persisted record
+    if let ctx = modelContext {
+      let taskIdStr = taskId.uuidString
+      let descriptor = FetchDescriptor<SwarmBranchReservation>(
+        predicate: #Predicate { $0.taskId == taskIdStr && $0.isInFlight == true }
+      )
+      if let record = try? ctx.fetch(descriptor).first {
+        record.isInFlight = false
+        record.completionStatus = status.rawValue
+        try? ctx.save()
+      }
+    }
+
     logger.info("Branch '\(reservation.branchName)' completed with status: \(status.rawValue)")
   }
   
@@ -205,5 +240,33 @@ public final class BranchQueue {
     public let completedCount: Int
     public let readyForPRCount: Int
     public let needingReviewCount: Int
+  }
+
+  // MARK: - Persistence Recovery
+
+  /// Repopulate `inFlightBranches` from SwiftData after an app restart.
+  private func recoverFromPersistence() {
+    guard let ctx = modelContext else { return }
+    let descriptor = FetchDescriptor<SwarmBranchReservation>(
+      predicate: #Predicate { $0.isInFlight == true }
+    )
+    guard let records = try? ctx.fetch(descriptor) else { return }
+    var recovered = 0
+    for record in records {
+      guard let taskUUID = UUID(uuidString: record.taskId),
+            inFlightBranches[taskUUID] == nil else { continue }
+      let reservation = BranchReservation(
+        taskId: taskUUID,
+        branchName: record.branchName,
+        repoPath: record.repoPath,
+        workerId: record.workerId,
+        createdAt: record.createdAt
+      )
+      inFlightBranches[taskUUID] = reservation
+      recovered += 1
+    }
+    if recovered > 0 {
+      logger.info("BranchQueue recovered \(recovered) in-flight reservation(s) from SwiftData")
+    }
   }
 }

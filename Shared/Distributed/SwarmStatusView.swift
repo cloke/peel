@@ -5,6 +5,7 @@
 // SwiftUI view showing swarm status and connected workers.
 
 import SwiftUI
+import SwiftData
 import os.log
 
 /// View showing distributed swarm status
@@ -19,6 +20,10 @@ public struct SwarmStatusView: View {
   @State private var messageText: String = ""
   @State private var isSendingMessage = false
   @State private var lastSeenMessageCount: Int = 0
+  @Query(filter: #Predicate<TrackedWorktree> { $0.source == "swarm" },
+         sort: \TrackedWorktree.createdAt, order: .reverse)
+  private var swarmWorktrees: [TrackedWorktree]
+  @State private var diskSizes: [String: Int64] = [:]
   
   public init() {}
   
@@ -119,6 +124,12 @@ public struct SwarmStatusView: View {
       // Workers list
       workersSection
         .frame(minWidth: 200)
+
+      // Swarm worktrees (brain/hybrid only)
+      if coordinator.role != .worker {
+        worktreesSection
+          .frame(minWidth: 180)
+      }
       
       // Task log + messages
       VStack(spacing: 0) {
@@ -209,6 +220,90 @@ public struct SwarmStatusView: View {
         .listStyle(.plain)
       }
     }
+  }
+
+  // MARK: - Worktrees Section
+
+  private var worktreesSection: some View {
+    let cutoff = Date().addingTimeInterval(-7200)
+    let visible = swarmWorktrees.filter {
+      $0.taskStatus == TrackedWorktree.Status.active ||
+      ($0.completedAt.map { $0 > cutoff } ?? false)
+    }
+    let activeCount = swarmWorktrees.filter { $0.taskStatus == TrackedWorktree.Status.active }.count
+
+    return VStack(alignment: .leading, spacing: 0) {
+      DisclosureGroup {
+        if visible.isEmpty {
+          Text("No swarm worktrees recently")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal)
+            .padding(.vertical, 4)
+        } else {
+          ForEach(visible) { wt in
+            HStack(spacing: 6) {
+              Text(wt.taskId.isEmpty ? "–" : String(wt.taskId.prefix(8)))
+                .font(.caption.monospaced())
+                .foregroundStyle(.primary)
+              Text(wt.branch.hasPrefix("swarm/") ? String(wt.branch.dropFirst(6)) : wt.branch)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+              Spacer()
+              Circle()
+                .fill(statusColor(wt.taskStatus))
+                .frame(width: 7, height: 7)
+              Text(relativeAge(from: wt.createdAt))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+              if let bytes = diskSizes[wt.localPath] {
+                Text("\(bytes / 1_048_576) MB")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 2)
+            .task(id: wt.localPath) {
+              diskSizes[wt.localPath] = SwarmWorktreeManager.calculateDiskSize(for: wt.localPath)
+            }
+          }
+        }
+      } label: {
+        HStack {
+          Text("Worktrees")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+          if activeCount > 0 {
+            Text("(\(activeCount) active)")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
+        .padding(.horizontal)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
+      }
+      Spacer()
+    }
+  }
+
+  private func statusColor(_ status: String) -> Color {
+    switch status {
+    case TrackedWorktree.Status.active:    return .green
+    case TrackedWorktree.Status.committed: return .blue
+    case TrackedWorktree.Status.failed:    return .red
+    default:                               return .gray
+    }
+  }
+
+  private func relativeAge(from date: Date) -> String {
+    let s = Int(Date().timeIntervalSince(date))
+    if s < 60 { return "\(s)s" }
+    if s < 3600 { return "\(s / 60)m" }
+    return "\(s / 3600)h"
   }
 
   /// Firestore workers excluding self and any already shown as LAN peers
