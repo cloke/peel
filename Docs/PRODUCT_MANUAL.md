@@ -827,6 +827,9 @@ The MCP server exposes these tool categories via JSON-RPC at `http://127.0.0.1:8
 | `parallel.resume` | Resume a paused run |
 | `parallel.instruct` | Inject guidance into a run or execution |
 | `parallel.cancel` | Cancel run |
+| `parallel.diff` | Show unified git diff for an execution's branch vs base |
+| `parallel.retry` | Re-queue a failed or rejected execution, optionally with an amended prompt and/or guidance |
+| `parallel.append` | Add new tasks to an in-flight parallel run |
 
 ### Swarm (Distributed Execution)
 
