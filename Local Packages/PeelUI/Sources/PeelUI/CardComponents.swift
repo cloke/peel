@@ -276,7 +276,7 @@ public struct StatPill: View {
   }
 
   public var body: some View {
-    HStack(spacing: 4) {
+    HStack(spacing: 8) {
       if let icon {
         Image(systemName: icon)
           .font(.caption)
@@ -287,12 +287,17 @@ public struct StatPill: View {
           .frame(width: 8, height: 8)
       }
 
+      // Show the numeric value first so it's clearly associated with the label
+      Text(value)
+        .font(.system(.caption, design: .rounded, weight: .semibold))
+        .lineLimit(1)
+        .foregroundStyle(.primary)
+
       Text(label)
         .font(.caption2)
         .foregroundStyle(.secondary)
-
-      Text(value)
-        .font(.system(.caption, design: .rounded, weight: .medium))
+        .lineLimit(1)
+        .frame(minWidth: 56, alignment: .leading)
     }
     .padding(.horizontal, 10)
     .padding(.vertical, 6)
