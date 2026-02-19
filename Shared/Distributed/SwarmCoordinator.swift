@@ -59,11 +59,25 @@ public final class SwarmCoordinator {
   /// Our capabilities
   public private(set) var capabilities: WorkerCapabilities = WorkerCapabilities.current()
   
+  // MARK: - Persistence Keys
+  private let swarmIsActiveKey = "swarm.isActive"
+  private let swarmConnectedPeersKey = "swarm.connectedPeers"
+  private let swarmLastRoleKey = "swarm.lastRole"
+  private let swarmLastCoordinatorKey = "swarm.lastCoordinator"
+  
   /// Whether the swarm is active
-  public private(set) var isActive = false
+  public private(set) var isActive = false {
+    didSet {
+      UserDefaults.standard.set(isActive, forKey: swarmIsActiveKey)
+    }
+  }
   
   /// Connected workers (for brain mode)
-  public private(set) var connectedWorkers: [ConnectedPeer] = []
+  public private(set) var connectedWorkers: [ConnectedPeer] = [] {
+    didSet {
+      persistConnectedPeers()
+    }
+  }
   
   /// Current task being executed (for worker mode)
   public private(set) var currentTask: ChainRequest?
@@ -104,6 +118,15 @@ public final class SwarmCoordinator {
   /// Network path monitor for sleep/wake reconnection
   private var pathMonitor: NWPathMonitor?
   private var lastPathStatus: NWPath.Status = .satisfied
+
+  /// Last-known connected peer ids persisted across launches
+  public private(set) var lastKnownConnectedPeerIDs: [String] = []
+  
+  /// Last-known coordinator id (for worker to quickly reconnect)
+  public private(set) var lastKnownCoordinatorId: String?
+
+  /// Whether the swarm was auto-restored on launch
+  public private(set) var autoRestored: Bool = false
 
   /// WAN auto-connect task
   private var wanAutoConnectTask: Task<Void, Never>?
@@ -250,12 +273,42 @@ public final class SwarmCoordinator {
   /// Pending task continuations (for async result delivery)
   private var pendingTasks: [UUID: CheckedContinuation<ChainResult, Error>] = [:]
   
+  // MARK: - Persistence helpers
+  
+  private func persistConnectedPeers() {
+    let ids = connectedWorkers.map { $0.id }
+    UserDefaults.standard.set(ids, forKey: swarmConnectedPeersKey)
+  }
+  
   // MARK: - Initialization
   
   /// Private init for singleton pattern
   private init() {
     // Set up PR queue delegate
     prQueue.delegate = self
+
+    // Restore persisted role/active state
+    let wasActive = UserDefaults.standard.bool(forKey: swarmIsActiveKey)
+    if wasActive {
+      let savedRoleRaw = UserDefaults.standard.string(forKey: swarmLastRoleKey) ?? SwarmRole.worker.rawValue
+      let savedRole = SwarmRole(rawValue: savedRoleRaw) ?? .worker
+      autoRestored = true
+      Task { @MainActor in
+        do {
+          try self.start(role: savedRole)
+        } catch {
+          logger.error("Failed to auto-start SwarmCoordinator: \(error.localizedDescription)")
+        }
+      }
+    }
+
+    // Restore known connected peer ids (used for UI/quick reconnect heuristics)
+    if let ids = UserDefaults.standard.stringArray(forKey: swarmConnectedPeersKey) {
+      self.lastKnownConnectedPeerIDs = ids
+    }
+    if let coordinatorId = UserDefaults.standard.string(forKey: swarmLastCoordinatorKey) {
+      self.lastKnownCoordinatorId = coordinatorId
+    }
   }
   
   /// Configure with a chain executor (for worker mode task execution)
@@ -280,6 +333,8 @@ public final class SwarmCoordinator {
     guard !isActive else { return }
     
     self.role = role
+    // Persist chosen role
+    UserDefaults.standard.set(role.rawValue, forKey: swarmLastRoleKey)
     self.capabilities = WorkerCapabilities.current()
     self.startedAt = Date()
     
@@ -1380,6 +1435,12 @@ extension SwarmCoordinator: PeerConnectionDelegate {
     connectedWorkers.append(peer)
     delegate?.swarmCoordinator(self, didEmit: .workerConnected(peer))
     logger.info("Peel connected: \(peer.name) (commit: \(peer.capabilities.gitCommitHash ?? "unknown"))")
+
+    // Persist last-known coordinator for worker quick reconnect
+    if role == .worker {
+      lastKnownCoordinatorId = peer.id
+      UserDefaults.standard.set(peer.id, forKey: swarmLastCoordinatorKey)
+    }
 
     // Reset heartbeat timestamp on (re)connect so the monitor doesn't
     // immediately consider this worker stale from a previous connection.
