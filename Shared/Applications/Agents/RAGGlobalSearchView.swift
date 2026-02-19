@@ -88,9 +88,11 @@ struct RAGGlobalSearchView: View {
           .tag(MCPServerService.RAGSearchMode.vector)
         Label("Text", systemImage: "textformat")
           .tag(MCPServerService.RAGSearchMode.text)
+        Label("Hybrid", systemImage: "arrow.triangle.merge")
+          .tag(MCPServerService.RAGSearchMode.hybrid)
       }
       .pickerStyle(.segmented)
-      .frame(width: 140)
+      .frame(width: 210)
       
       // Search button
       Button {

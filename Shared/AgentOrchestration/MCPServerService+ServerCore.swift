@@ -254,6 +254,9 @@ extension MCPServerService {
       ragUsage.textSearches += 1
     case .vector:
       ragUsage.vectorSearches += 1
+    case .hybrid:
+      ragUsage.textSearches += 1
+      ragUsage.vectorSearches += 1
     }
     ragUsage.lastSearchAt = Date()
     if !results.isEmpty {
@@ -300,6 +303,27 @@ extension MCPServerService {
       results = try await localRagStore.searchVector(query: query, repoPath: repoPath, limit: limit, modulePath: modulePath)
     case .text:
       results = try await localRagStore.search(query: query, repoPath: repoPath, limit: limit, matchAll: matchAll, modulePath: modulePath)
+    case .hybrid:
+      // Run text + vector concurrently, merge via Reciprocal Rank Fusion (k=60)
+      async let textSearch = localRagStore.search(query: query, repoPath: repoPath, limit: limit, matchAll: matchAll, modulePath: modulePath)
+      async let vectorSearch = localRagStore.searchVector(query: query, repoPath: repoPath, limit: limit, modulePath: modulePath)
+      let (textRes, vectorRes) = try await (textSearch, vectorSearch)
+      var rrfScores: [String: Float] = [:]
+      var rrfLookup: [String: LocalRAGSearchResult] = [:]
+      for (rank, r) in textRes.enumerated() {
+        let key = "\(r.filePath):\(r.startLine)"
+        rrfScores[key, default: 0] += 1.0 / (60 + Float(rank + 1))
+        if rrfLookup[key] == nil { rrfLookup[key] = r }
+      }
+      for (rank, r) in vectorRes.enumerated() {
+        let key = "\(r.filePath):\(r.startLine)"
+        rrfScores[key, default: 0] += 1.0 / (60 + Float(rank + 1))
+        if rrfLookup[key] == nil { rrfLookup[key] = r }
+      }
+      results = rrfScores
+        .sorted { $0.value > $1.value }
+        .prefix(limit)
+        .compactMap { rrfLookup[$0.key] }
     }
     if recordHints, !results.isEmpty {
       do {

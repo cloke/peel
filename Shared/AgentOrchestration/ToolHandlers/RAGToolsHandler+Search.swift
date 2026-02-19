@@ -31,10 +31,24 @@ extension RAGToolsHandler {
     let detail = optionalString("detail", from: arguments, default: "full") ?? "full"
     
     do {
-      let resolvedMode: MCPServerService.RAGSearchMode = mode.lowercased() == "vector" ? .vector : .text
-      // Fetch more results initially if reranking is enabled
-      let fetchLimit = shouldRerank ? max(limit * 3, 30) : limit * 2
-      var results = try await delegate.searchRagForTool(query: query, mode: resolvedMode, repoPath: repoPath, limit: fetchLimit, matchAll: matchAll, modulePath: modulePathFilter)
+      let resolvedMode: MCPServerService.RAGSearchMode = {
+        switch mode.lowercased() {
+        case "vector": return .vector
+        case "hybrid": return .hybrid
+        default: return .text
+        }
+      }()
+      // Fetch more results initially if reranking or hybrid is enabled
+      let fetchLimit = (shouldRerank || resolvedMode == .hybrid) ? max(limit * 3, 30) : limit * 2
+      var results: [RAGToolSearchResult]
+      if resolvedMode == .hybrid {
+        // Run text and vector searches then merge with Reciprocal Rank Fusion
+        let textRes = try await delegate.searchRagForTool(query: query, mode: .text, repoPath: repoPath, limit: fetchLimit, matchAll: matchAll, modulePath: modulePathFilter)
+        let vectorRes = try await delegate.searchRagForTool(query: query, mode: .vector, repoPath: repoPath, limit: fetchLimit, matchAll: matchAll, modulePath: modulePathFilter)
+        results = LocalRRFMerger.merge(text: textRes, vector: vectorRes, topK: fetchLimit)
+      } else {
+        results = try await delegate.searchRagForTool(query: query, mode: resolvedMode, repoPath: repoPath, limit: fetchLimit, matchAll: matchAll, modulePath: modulePathFilter)
+      }
       
       // Apply post-query filters (modulePath is now pushed into SQL)
       if excludeTests {

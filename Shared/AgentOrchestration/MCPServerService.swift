@@ -53,6 +53,8 @@ public final class MCPServerService {
   public enum RAGSearchMode: String, CaseIterable, Codable {
     case text
     case vector
+    /// Runs both text and vector search then merges results via Reciprocal Rank Fusion.
+    case hybrid
   }
 
   public enum RAGUserAction: String, CaseIterable {
