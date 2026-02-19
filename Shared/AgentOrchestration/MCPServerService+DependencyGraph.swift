@@ -243,6 +243,7 @@ extension MCPServerService {
   ) async throws {
     ragIndexingPath = path
     ragIndexProgress = nil
+    markIndexingStarted(path: path)
     
     let task = Task {
       let report = try await localRagStore.indexRepository(
@@ -263,6 +264,7 @@ extension MCPServerService {
       let report = try await task.value
       ragIndexingTask = nil
       ragIndexingPath = nil
+      markIndexingStopped(path: path)
       ragIndexProgress = .complete(report: report)
       lastRagIndexReport = report
       lastRagIndexAt = Date()
@@ -270,11 +272,13 @@ extension MCPServerService {
     } catch is CancellationError {
       ragIndexingTask = nil
       ragIndexingPath = nil
+      markIndexingStopped(path: path)
       ragIndexProgress = nil
       // Indexing was cancelled - not an error
     } catch {
       ragIndexingTask = nil
       ragIndexingPath = nil
+      markIndexingStopped(path: path)
       ragIndexProgress = nil
       throw error
     }
@@ -282,6 +286,7 @@ extension MCPServerService {
   
   /// Cancel any in-progress indexing
   func cancelRagIndexing() {
+    if let path = ragIndexingPath { markIndexingStopped(path: path) }
     ragIndexingTask?.cancel()
     ragIndexingTask = nil
     ragIndexingPath = nil
