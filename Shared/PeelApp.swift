@@ -166,7 +166,11 @@ struct PeelApp: App {
           Button("Update Skills") {
             applyEmberSkillsUpdates()
           }
-          Button("Later", role: .cancel) {}
+          Button("Later", role: .cancel) {
+            // Acknowledge the current remote SHA so we don't re-alert until a new commit lands
+            let remoteSHA = UserDefaults.standard.string(forKey: "peel.skills.ember.remoteCommitHash")
+            UserDefaults.standard.set(remoteSHA, forKey: "peel.skills.ember.appliedCommitHash")
+          }
         } message: {
           Text("New Ember best practices are available from NullVoxPopuli/agent-skills. Apply updated rules to your Ember projects?")
         }
@@ -209,6 +213,9 @@ struct PeelApp: App {
     for repoPath in repoPaths {
       DefaultSkillsService.updateEmberSkills(context: context, repoPath: repoPath)
     }
+    // Store the remote SHA we just applied so future checks don't re-alert for the same commit
+    let appliedSHA = UserDefaults.standard.string(forKey: "peel.skills.ember.remoteCommitHash")
+    UserDefaults.standard.set(appliedSHA, forKey: "peel.skills.ember.appliedCommitHash")
     UserDefaults.standard.set(false, forKey: "peel.skills.ember.updateAvailable")
   }
 

@@ -23,6 +23,8 @@ actor SkillUpdateService {
   private let lastUpdateCheckKey = "peel.skills.lastUpdateCheck"
   private let remoteCommitHashKey = "peel.skills.ember.remoteCommitHash"
   private let updateAvailableKey = "peel.skills.ember.updateAvailable"
+  /// The remote commit SHA we last acted on ("Update" or "Later")
+  private let appliedCommitHashKey = "peel.skills.ember.appliedCommitHash"
   
   /// Minimum interval between update checks (1 hour)
   private let minCheckInterval: TimeInterval = 3600
@@ -68,9 +70,12 @@ actor SkillUpdateService {
       let latestSHA = try await fetchLatestCommitSHA()
       let storedHash = DefaultSkillsService.storedEmberSkillsHash
       let bundle = DefaultSkillsService.loadEmberSkillsBundle()
-      
-      // Compare with stored hash
-      let hasUpdate = storedHash != nil && storedHash != latestSHA
+
+      // Compare the last-acknowledged remote SHA to the latest.
+      // (storedEmberSkillsHash is a SHA256 of the local bundle file, NOT a git SHA,
+      //  so comparing it directly to latestSHA would always return true.)
+      let appliedCommitHash = UserDefaults.standard.string(forKey: appliedCommitHashKey)
+      let hasUpdate = storedHash != nil && appliedCommitHash != latestSHA
       
       // Store results
       UserDefaults.standard.set(Date(), forKey: lastUpdateCheckKey)
@@ -146,7 +151,10 @@ actor SkillUpdateService {
     // In the future, this could fetch from GitHub directly
     
     let count = DefaultSkillsService.updateEmberSkills(context: context, repoPath: repoPath)
-    
+
+    // Store the remote SHA we just applied so future checks don't re-alert for the same commit
+    let appliedSHA = UserDefaults.standard.string(forKey: remoteCommitHashKey)
+    UserDefaults.standard.set(appliedSHA, forKey: appliedCommitHashKey)
     // Clear update available flag
     UserDefaults.standard.set(false, forKey: updateAvailableKey)
     
