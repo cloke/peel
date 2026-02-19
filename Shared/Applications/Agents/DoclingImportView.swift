@@ -49,6 +49,10 @@ struct DoclingImportView: View {
   @State private var compareDocA: PolicyDocument?
   @State private var compareDocB: PolicyDocument?
   @State private var showDiff = false
+  @State private var exportStatus: String?
+  @State private var isExporting = false
+  @State private var showImportPreview = false
+  @State private var pendingImportPackage: PolicyPackage?
 
   @Query private var allDocuments: [PolicyDocument]
 
@@ -364,6 +368,29 @@ struct DoclingImportView: View {
         }
       }
 
+      ToolSection("Export / Share") {
+        HStack(spacing: 8) {
+          Button(isExporting ? "Exporting..." : "Export Policy Package") {
+            Task { await exportPolicyPackage() }
+          }
+          .buttonStyle(.bordered)
+          .disabled(isExporting)
+          .accessibilityIdentifier("agents.docling.exportPackage")
+
+          Button("Import Policy Package") {
+            importPolicyPackage()
+          }
+          .buttonStyle(.bordered)
+          .accessibilityIdentifier("agents.docling.importPackage")
+        }
+
+        if let exportStatus {
+          Text(exportStatus)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+
       if let lastError {
         Text(lastError)
           .font(.caption)
@@ -454,6 +481,67 @@ struct DoclingImportView: View {
       }
       let available = await service.isDoclingAvailable(pythonPath: pythonPath.isEmpty ? nil : pythonPath)
       installStatus = available ? "Ready" : "Not installed"
+    }
+    .sheet(isPresented: $showImportPreview) {
+      if let pkg = pendingImportPackage {
+        PolicyImportPreviewSheet(
+          package: pkg,
+          modelContext: modelContext,
+          onDismiss: { showImportPreview = false }
+        )
+      }
+    }
+  }
+
+  @MainActor
+  private func exportPolicyPackage() async {
+    guard let company = selectedCompany else {
+      exportStatus = "Select a company first"
+      return
+    }
+    isExporting = true
+    defer { isExporting = false }
+
+    let companyId = company.id
+    let allRules = rules.filter { $0.companyId == companyId }
+    let companyDocuments: [PolicyDocument] = {
+      let descriptor = FetchDescriptor<PolicyDocument>(
+        predicate: #Predicate { $0.companyId == companyId }
+      )
+      return (try? modelContext.fetch(descriptor)) ?? []
+    }()
+
+    do {
+      let data = try PolicyExportService().exportPackage(
+        company: company,
+        documents: companyDocuments,
+        rules: allRules,
+        presets: Array(presets)
+      )
+      let panel = NSSavePanel()
+      panel.allowedContentTypes = [.json]
+      panel.nameFieldStringValue = "\(company.slug)-policy-package.json"
+      guard panel.runModal() == .OK, let url = panel.url else { return }
+      try data.write(to: url)
+      exportStatus = "Exported to \(url.lastPathComponent)"
+    } catch {
+      exportStatus = error.localizedDescription
+    }
+  }
+
+  private func importPolicyPackage() {
+    let panel = NSOpenPanel()
+    panel.allowsMultipleSelection = false
+    panel.canChooseDirectories = false
+    panel.allowedContentTypes = [.json]
+    guard panel.runModal() == .OK, let url = panel.url else { return }
+    do {
+      let data = try Data(contentsOf: url)
+      let package = try PolicyExportService().importPackage(from: data)
+      pendingImportPackage = package
+      showImportPreview = true
+    } catch {
+      exportStatus = "Import failed: \(error.localizedDescription)"
     }
   }
 
