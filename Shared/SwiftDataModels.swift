@@ -299,6 +299,7 @@ final class PolicyDocument {
   var listItemCount: Int = 0
   var lastValidatedAt: Date?
   var violationCount: Int = 0
+  var isBaseline: Bool = false
 
   init(
     companyId: UUID,
