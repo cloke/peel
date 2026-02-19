@@ -60,6 +60,17 @@ protocol RAGToolsHandlerDelegate: MCPToolHandlerDelegate {
   
   /// Find orphaned files with no dependents - Issue #248
   func findOrphans(repoPath: String, excludeTests: Bool, excludeEntryPoints: Bool, limit: Int) async throws -> [RAGToolOrphanResult]
+
+  /// Index a repository branch/worktree incrementally by copying main branch index then re-indexing changed files - Issue #260
+  func indexBranchRepository(
+    repoPath: String,
+    baseBranch: String,
+    baseRepoPath: String?,
+    progressHandler: (@Sendable (RAGToolIndexProgress) -> Void)?
+  ) async throws -> (report: RAGToolIndexReport, changedFilesCount: Int, deletedFilesCount: Int, wasCopiedFromBase: Bool, baseRepoPath: String?)
+
+  /// Remove stale branch/worktree RAG indexes for repos no longer on disk - Issue #260
+  func cleanupBranchIndexes(dryRun: Bool) async throws -> (removedCount: Int, removedPaths: [String])
   
   /// Query files by structural characteristics - Issue #174
   func queryFilesByStructure(
@@ -258,6 +269,8 @@ final class RAGToolsHandler: MCPToolHandler {
     "rag.patterns",        // Analyze naming conventions and pattern consistency
     "rag.hotspots",        // Find god components / complexity hotspots
     "rag.scratch",         // Issue #111: Per-repo scratch directory for artifacts
+    "rag.branch.index",    // Issue #260: Branch-aware incremental RAG indexing for worktrees
+    "rag.branch.cleanup",  // Issue #260: Clean up stale branch/worktree RAG indexes
   ]
   
   init() {}
@@ -378,6 +391,10 @@ final class RAGToolsHandler: MCPToolHandler {
       #endif
     case "rag.scratch":
       return handleScratch(id: id, arguments: arguments)
+    case "rag.branch.index":
+      return await handleBranchIndex(id: id, arguments: arguments, delegate: ragDelegate)
+    case "rag.branch.cleanup":
+      return await handleBranchCleanup(id: id, arguments: arguments, delegate: ragDelegate)
     default:
       // For tools not yet extracted, return method not found
       // The MCPServerService will handle these until full extraction is complete
@@ -2052,8 +2069,71 @@ final class RAGToolsHandler: MCPToolHandler {
     formatter.countStyle = .file
     return formatter.string(fromByteCount: bytes)
   }
-  
+
+  // MARK: - rag.branch.index (Issue #260)
+
+  private func handleBranchIndex(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate?) async -> (Int, Data) {
+    guard let delegate else {
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "RAG delegate unavailable"))
+    }
+    guard let repoPath = optionalString("repoPath", from: arguments) else {
+      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "repoPath is required"))
+    }
+    let baseBranch = optionalString("baseBranch", from: arguments) ?? "main"
+    let baseRepoPath = optionalString("baseRepoPath", from: arguments)
+
+    do {
+      let result = try await delegate.indexBranchRepository(
+        repoPath: repoPath,
+        baseBranch: baseBranch,
+        baseRepoPath: baseRepoPath,
+        progressHandler: nil
+      )
+      let report = result.report
+      var payload: [String: Any] = [
+        "repoId": report.repoId,
+        "repoPath": report.repoPath,
+        "filesIndexed": report.filesIndexed,
+        "filesSkipped": report.filesSkipped,
+        "chunksIndexed": report.chunksIndexed,
+        "bytesScanned": report.bytesScanned,
+        "durationMs": report.durationMs,
+        "embeddingCount": report.embeddingCount,
+        "changedFilesCount": result.changedFilesCount,
+        "deletedFilesCount": result.deletedFilesCount,
+        "wasCopiedFromBase": result.wasCopiedFromBase,
+      ]
+      if let base = result.baseRepoPath {
+        payload["baseRepoPath"] = base
+      }
+      return (200, makeResult(id: id, result: payload))
+    } catch {
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
+    }
+  }
+
+  // MARK: - rag.branch.cleanup (Issue #260)
+
+  private func handleBranchCleanup(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate?) async -> (Int, Data) {
+    guard let delegate else {
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "RAG delegate unavailable"))
+    }
+    let dryRun = optionalBool("dryRun", from: arguments, default: false)
+
+    do {
+      let result = try await delegate.cleanupBranchIndexes(dryRun: dryRun)
+      return (200, makeResult(id: id, result: [
+        "removedCount": result.removedCount,
+        "removedPaths": result.removedPaths,
+        "dryRun": dryRun,
+      ]))
+    } catch {
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
+    }
+  }
+
   // MARK: - Helpers
+
   
   private func encodeSkill(_ skill: RepoGuidanceSkill, formatter: ISO8601DateFormatter) -> [String: Any] {
     var payload: [String: Any] = [
