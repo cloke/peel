@@ -102,6 +102,7 @@ NavigationStack {
 | [Plans/CODE_AUDIT_INDEX.md](Plans/CODE_AUDIT_INDEX.md) | File review tracking |
 | [Plans/AGENT_ORCHESTRATION_PLAN.md](Plans/AGENT_ORCHESTRATION_PLAN.md) | AI agent architecture |
 | [.github/copilot-instructions.md](.github/copilot-instructions.md) | Coding standards |
+| [Docs/guides/DOCLING_POLICY_WORKFLOW.md](Docs/guides/DOCLING_POLICY_WORKFLOW.md) | Docling policy workflow guide |
 
 ---
 
