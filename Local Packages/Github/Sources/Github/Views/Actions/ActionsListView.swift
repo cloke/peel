@@ -94,7 +94,7 @@ private func loadActionsData(for repository: Github.Repository) async throws -> 
   var successes = Dictionary(uniqueKeysWithValues: weeks.map { ($0, 0) })
   
   for action in allActions {
-    guard let created = parseDate(action.created_at) else { continue }
+    guard let created = GithubDateParser.parse(action.created_at) else { continue }
     let week = calendar.dateInterval(of: .weekOfYear, for: created)?.start ?? created
     guard totals[week] != nil, let conclusion = action.conclusion else { continue }
     totals[week, default: 0] += 1
@@ -121,19 +121,7 @@ private func loadActionsData(for repository: Github.Repository) async throws -> 
   return ActionsData(actions: allActions, reliabilityPoints: reliabilityPoints, failurePoints: failurePoints)
 }
 
-private func chartWeekStarts(calendar: Calendar, weeks: Int = 12) -> [Date] {
-  let now = Date()
-  let currentWeekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start ?? now
-  let start = calendar.date(byAdding: .weekOfYear, value: -(weeks - 1), to: currentWeekStart) ?? currentWeekStart
-  return (0..<weeks).compactMap { calendar.date(byAdding: .weekOfYear, value: $0, to: start) }
-}
-
-private func parseDate(_ value: String) -> Date? {
-  let isoFormatter = ISO8601DateFormatter()
-  isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-  if let parsed = isoFormatter.date(from: value) { return parsed }
-  return ISO8601DateFormatter().date(from: value)
-}
+// chartWeekStarts() and parseDate() moved to Date+Formatting.swift
 
 // MARK: - Charts
 

@@ -1011,30 +1011,7 @@ private struct RAGSkillsResolverSheet: View {
   }
 }
 
-// MARK: - Stat Pill Component
 
-private struct StatPill: View {
-  let value: Int
-  let label: String
-  let icon: String
-  var color: Color = .secondary
-  
-  var body: some View {
-    HStack(spacing: 4) {
-      Image(systemName: icon)
-        .font(.caption)
-        .foregroundStyle(color)
-      Text("\(value)")
-        .font(.system(.caption, design: .rounded, weight: .medium))
-      Text(label)
-        .font(.caption2)
-        .foregroundStyle(.secondary)
-    }
-    .padding(.horizontal, 10)
-    .padding(.vertical, 6)
-    .background(.fill.tertiary, in: Capsule())
-  }
-}
 
 // MARK: - Preview
 

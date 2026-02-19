@@ -492,8 +492,7 @@ public struct PullRequestDetailView: View {
 
   private func formattedDate(_ value: String?) -> String {
     guard let value, !value.isEmpty else { return "–" }
-    let formatter = ISO8601DateFormatter()
-    if let date = formatter.date(from: value) {
+    if let date = GithubDateParser.parse(value) {
       return date.formatted(date: .abbreviated, time: .shortened)
     }
     return value

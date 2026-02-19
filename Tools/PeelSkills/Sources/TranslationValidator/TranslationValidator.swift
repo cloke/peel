@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import TranslationTypes
 import Yams
 
 @main
@@ -270,55 +271,9 @@ func extractPlaceholders(from value: String) -> Set<String> {
   return results
 }
 
-// MARK: - Reporting
+// MARK: - Reporting (shared types imported from TranslationTypes)
 
-struct TranslationReport: Codable {
-  var roots: [TranslationRootReport]
-}
-
-struct TranslationRootReport: Codable {
-  var path: String
-  var baseLocale: String
-  var locales: [String]
-  var files: [FileReport]
-}
-
-struct FileReport: Codable {
-  var file: String
-  var localesMissingFile: [String]
-  var missingKeys: [LocaleKeyList]
-  var extraKeys: [LocaleKeyList]
-  var placeholderMismatches: [PlaceholderMismatch]
-  var typeMismatches: [TypeMismatch]
-  var suspectTranslations: [SuspectTranslation]
-}
-
-struct LocaleKeyList: Codable {
-  var locale: String
-  var keys: [String]
-}
-
-struct PlaceholderMismatch: Codable {
-  var key: String
-  var locale: String
-  var expected: [String]
-  var found: [String]
-}
-
-struct TypeMismatch: Codable {
-  var key: String
-  var locale: String
-  var expected: ValueKind
-  var found: ValueKind
-}
-
-struct SuspectTranslation: Codable {
-  var key: String
-  var locale: String
-  var reason: String
-  var baseSample: String?
-  var localeSample: String?
-}
+// CLI-only types
 
 struct LocaleTranslationData {
   var files: [String: [String: KeyInfo]]
@@ -328,15 +283,6 @@ struct KeyInfo {
   var kind: ValueKind
   var placeholders: Set<String>
   var sample: String?
-}
-
-enum ValueKind: String, Codable {
-  case string
-  case number
-  case array
-  case object
-  case null
-  case unknown
 }
 
 struct IssueFilter {
@@ -355,14 +301,6 @@ struct IssueFilter {
   func includes(_ kind: IssueKind) -> Bool {
     allowed.contains(kind)
   }
-}
-
-enum IssueKind: String, CaseIterable {
-  case missing
-  case extra
-  case placeholders
-  case types
-  case suspects
 }
 
 struct ReportSummary {

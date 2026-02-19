@@ -110,7 +110,7 @@ struct Github_RootView: View {
               }
             }
           } header: {
-            HStack {
+            HStack(alignment: .center, spacing: 4) {
               Label("Favorites", systemImage: "star.fill")
               Spacer()
               Text("\(favoriteItems.count)")
@@ -126,31 +126,27 @@ struct Github_RootView: View {
           Section {
             ForEach(recentPRItems.prefix(5)) { recent in
               NavigationLink(destination: RecentPRDestination(recentPR: recent)) {
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                   Image(systemName: recentPRIcon(for: recent.state))
                     .foregroundStyle(recentPRColor(for: recent.state))
-                    .font(.caption)
-                    .frame(width: 16)
-                  VStack(alignment: .leading, spacing: 2) {
+                    .font(.system(size: 8))
+                  VStack(alignment: .leading, spacing: 1) {
                     Text(recent.title)
                       .font(.callout)
                       .lineLimit(1)
-                    HStack(spacing: 4) {
-                      Text(recent.repoFullName)
-                      Text("#\(recent.prNumber)")
-                        .foregroundStyle(.tertiary)
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    Text("\(recent.repoFullName)  #\(recent.prNumber)")
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                      .lineLimit(1)
+                    Text(recentPRTimeAgo(recent.viewedAt))
+                      .font(.caption2)
+                      .foregroundStyle(.tertiary)
+                      .monospacedDigit()
                   }
-                  Spacer()
-                  Text(recentPRTimeAgo(recent.viewedAt))
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .monospacedDigit()
                 }
                 .contentShape(Rectangle())
               }
+              .listRowInsets(EdgeInsets(top: 3, leading: 8, bottom: 3, trailing: 8))
             }
           } header: {
             Label("Recent PRs", systemImage: "clock")

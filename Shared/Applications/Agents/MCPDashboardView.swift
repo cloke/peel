@@ -823,9 +823,9 @@ private struct MCPAnalyticsSheet: View {
               .font(.headline)
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
-              StatCard(title: "Total Runs", value: "\(mcpRuns.count)")
-              StatCard(title: "Success Rate", value: successRate)
-              StatCard(title: "This Week", value: "\(runsThisWeek)")
+              StatCard(value: "\(mcpRuns.count)", label: "Total Runs", icon: "play.circle")
+              StatCard(value: successRate, label: "Success Rate", icon: "checkmark.circle")
+              StatCard(value: "\(runsThisWeek)", label: "This Week", icon: "calendar")
             }
           }
         }
@@ -962,20 +962,4 @@ private struct MCPLatencyPoint: Identifiable {
   let metric: String
 }
 
-private struct StatCard: View {
-  let title: String
-  let value: String
 
-  var body: some View {
-    VStack(spacing: 4) {
-      Text(value)
-        .font(.title2.weight(.semibold))
-      Text(title)
-        .font(.caption)
-        .foregroundStyle(.secondary)
-    }
-    .frame(maxWidth: .infinity)
-    .padding(.vertical, 12)
-    .background(Color.secondary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
-  }
-}

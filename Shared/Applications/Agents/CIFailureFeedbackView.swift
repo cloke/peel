@@ -65,20 +65,20 @@ struct CIFailurePatternsPanel: View {
   private var statsBar: some View {
     HStack(spacing: 16) {
       StatPill(
-        label: "Total",
         value: "\(feedbackService.totalFailuresRecorded)",
+        label: "Total",
         color: .red
       )
 
       StatPill(
-        label: "Patterns",
         value: "\(feedbackService.uniquePatterns)",
+        label: "Patterns",
         color: .orange
       )
 
       StatPill(
-        label: "Guidance",
         value: "\(feedbackService.guidanceGenerated)",
+        label: "Guidance",
         color: .green
       )
     }
@@ -104,33 +104,7 @@ struct CIFailurePatternsPanel: View {
   }
 }
 
-// MARK: - Stat Pill
 
-private struct StatPill: View {
-  let label: String
-  let value: String
-  let color: Color
-
-  var body: some View {
-    HStack(spacing: 4) {
-      Circle()
-        .fill(color)
-        .frame(width: 8, height: 8)
-
-      Text(label)
-        .font(.caption2)
-        .foregroundStyle(.secondary)
-
-      Text(value)
-        .font(.caption.monospaced())
-        .fontWeight(.medium)
-    }
-    .padding(.horizontal, 8)
-    .padding(.vertical, 4)
-    .background(color.opacity(0.1))
-    .clipShape(Capsule())
-  }
-}
 
 // MARK: - Pattern Row
 

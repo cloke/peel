@@ -238,3 +238,64 @@ public struct SettingsRow<Content: View>: View {
     }
   }
 }
+
+// MARK: - Stat Pill
+
+/// A compact pill-shaped indicator for displaying a labeled statistic
+///
+/// Supports two patterns:
+/// - Icon + numeric value: `StatPill(value: "42", label: "files", icon: "doc", color: .green)`
+/// - Color dot + text:     `StatPill(value: "5", label: "Total", color: .red)`
+///
+/// Example:
+/// ```swift
+/// HStack(spacing: 8) {
+///   StatPill(value: "12", label: "repos", icon: "folder.fill", color: .blue)
+///   StatPill(value: "3", label: "Errors", color: .red)
+/// }
+/// ```
+public struct StatPill: View {
+  public let value: String
+  public let label: String
+  public let icon: String?
+  public let color: Color
+
+  public init(value: String, label: String, icon: String? = nil, color: Color = .secondary) {
+    self.value = value
+    self.label = label
+    self.icon = icon
+    self.color = color
+  }
+
+  /// Convenience initializer for integer values
+  public init(value: Int, label: String, icon: String? = nil, color: Color = .secondary) {
+    self.value = "\(value)"
+    self.label = label
+    self.icon = icon
+    self.color = color
+  }
+
+  public var body: some View {
+    HStack(spacing: 4) {
+      if let icon {
+        Image(systemName: icon)
+          .font(.caption)
+          .foregroundStyle(color)
+      } else {
+        Circle()
+          .fill(color)
+          .frame(width: 8, height: 8)
+      }
+
+      Text(label)
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+
+      Text(value)
+        .font(.system(.caption, design: .rounded, weight: .medium))
+    }
+    .padding(.horizontal, 10)
+    .padding(.vertical, 6)
+    .background(icon != nil ? AnyShapeStyle(.fill.tertiary) : AnyShapeStyle(color.opacity(0.1)), in: Capsule())
+  }
+}
