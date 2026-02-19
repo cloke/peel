@@ -54,14 +54,6 @@ struct AgentsSidebarView: View {
           }
         }
 
-        if !idleChains.isEmpty {
-          Section("Recent Chains") {
-            ForEach(idleChains) { chain in
-              ChainRowView(chain: chain)
-                .tag("chain:\(chain.id.uuidString)")
-            }
-          }
-        }
 
         if !agentManager.activeAgents.isEmpty {
           Section("Active") {
@@ -138,6 +130,15 @@ struct AgentsSidebarView: View {
           }
           .accessibilityIdentifier("agents.templateGallery")
           .tag("infra:template-gallery")
+
+          HStack {
+            Image(systemName: "clock.arrow.circlepath")
+              .foregroundStyle(.gray)
+            Text("Chain History")
+            Spacer()
+          }
+          .accessibilityIdentifier("agents.chainHistory")
+          .tag("infra:chain-history")
 
           HStack {
             Image(systemName: "magnifyingglass.circle")
@@ -383,6 +384,7 @@ struct AgentsSidebarView: View {
     case "pii-scrubber": return "agents.piiScrubber"
     case "docling-import": return "agents.doclingImport"
     case "local-chat": return "agents.localChat"
+    case "chain-history": return "agents.chainHistory"
     default: return nil
     }
   }
