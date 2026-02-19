@@ -998,6 +998,11 @@ public final class AgentChainRunner {
       if let newReviewerResult = chain.results.last(where: { $0.reviewVerdict != nil }),
          let newVerdict = newReviewerResult.reviewVerdict {
         if newVerdict == .approved {
+          await autoCaptureLessonFromFix(
+            chain: chain,
+            reviewerFeedback: latestFeedback,
+            implementerFix: implementerResult.output
+          )
           return
         } else if newVerdict == .rejected {
           throw ChainError.reviewRejected(reason: newReviewerResult.output)
@@ -1318,6 +1323,45 @@ public final class AgentChainRunner {
   // MARK: - Lesson Query (#210)
   
   /// Query lessons relevant to the files we'll be working with
+  private func autoCaptureLessonFromFix(
+    chain: AgentChain,
+    reviewerFeedback: String,
+    implementerFix: String
+  ) async {
+    guard let repoPath = chain.workingDirectory, !repoPath.isEmpty else { return }
+
+    let fileExt = chain.prePlannerOutput?.relevantFiles.first
+      .flatMap { URL(fileURLWithPath: $0.path).pathExtension }
+      .flatMap { $0.isEmpty ? nil : "*.\($0)" }
+    
+    let errorSignature: String? = reviewerFeedback
+      .split(separator: "\n", omittingEmptySubsequences: true)
+      .first
+      .map { String($0).trimmingCharacters(in: .whitespaces) }
+      .flatMap { $0.isEmpty ? nil : String($0.prefix(200)) }
+
+    let fixLine = implementerFix
+      .split(separator: "\n", omittingEmptySubsequences: true)
+      .first
+      .map { String($0).trimmingCharacters(in: .whitespaces) } ?? ""
+    let fixDescription = "Auto-captured: \(String(fixLine.prefix(150)))"
+
+    let fixCode: String? = implementerFix.isEmpty ? nil : String(implementerFix.prefix(500))
+
+    do {
+      _ = try await localRagStore.addLesson(
+        repoPath: repoPath,
+        filePattern: fileExt,
+        errorSignature: errorSignature,
+        fixDescription: fixDescription,
+        fixCode: fixCode,
+        source: "auto-capture"
+      )
+    } catch {
+      // Silently ignore capture failures
+    }
+  }
+
   private func queryRelevantLessons(repoPath: String, relevantFiles: [PrePlannerOutput.RelevantFile], prompt: String) async -> [PrePlannerOutput.Lesson] {
     guard !repoPath.isEmpty else { return [] }
     
