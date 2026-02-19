@@ -32,6 +32,9 @@ struct RAGSettingsView: View {
   @State private var isLoadingArtifacts = false
   @State private var showFirestorePull = false
   
+  // Nightly sync state
+  @State private var nightlySync = NightlyRAGSyncService.shared
+
   // Bindings for embedding settings
   private var providerSelection: Binding<EmbeddingProviderType> {
     Binding(
@@ -381,6 +384,76 @@ struct RAGSettingsView: View {
           firestorePullSheet
         }
         
+        // MARK: - Nightly Sync Section
+        Section {
+          Toggle(
+            "Enable nightly index export",
+            isOn: Binding(
+              get: { nightlySync.isEnabled },
+              set: { nightlySync.isEnabled = $0; if $0 { nightlySync.enable(mcpServer: mcpServer) } else { nightlySync.disable() } }
+            )
+          )
+
+          if nightlySync.isEnabled {
+            Picker("Run at", selection: Binding(
+              get: { nightlySync.scheduleHour },
+              set: { nightlySync.scheduleHour = $0 }
+            )) {
+              ForEach(0..<24, id: \.self) { hour in
+                let formatted = String(format: "%02d:00", hour)
+                Text(formatted).tag(hour)
+              }
+            }
+
+            Stepper(
+              "Keep \(nightlySync.maxSnapshots) snapshot\(nightlySync.maxSnapshots == 1 ? "" : "s")",
+              value: Binding(
+                get: { nightlySync.maxSnapshots },
+                set: { nightlySync.maxSnapshots = $0 }
+              ),
+              in: 1...30
+            )
+
+            if let lastRun = nightlySync.lastRunAt {
+              LabeledContent("Last Export") {
+                Text(lastRun, style: .relative)
+                  .foregroundStyle(.secondary)
+              }
+            }
+
+            if let nextRun = nightlySync.nextRunAt {
+              LabeledContent("Next Export") {
+                Text(nextRun, style: .date)
+                  .foregroundStyle(.secondary)
+              }
+            }
+
+            HStack(spacing: 8) {
+              Button("Export Now") {
+                Task { try? await nightlySync.runExport(mcpServer: mcpServer) }
+              }
+              .disabled(nightlySync.isRunning)
+
+              if nightlySync.isRunning {
+                ProgressView()
+                  .controlSize(.small)
+              }
+
+              Button("Rebuild Local Delta") {
+                Task { await triggerFullReindex() }
+              }
+            }
+
+            if let errorMsg = nightlySync.lastError {
+              Text(errorMsg)
+                .font(.caption)
+                .foregroundStyle(.red)
+            }
+          }
+        } header: {
+          Label("Nightly Sync", systemImage: "clock.badge.checkmark")
+        }
+
         // MARK: - Usage Statistics
         Section {
           let usage = mcpServer.ragUsage
@@ -564,6 +637,13 @@ struct RAGSettingsView: View {
     }
   }
   
+  private func triggerFullReindex() async {
+    for repo in mcpServer.ragRepos {
+      _ = try? await mcpServer.localRagStore.indexRepository(path: repo.rootPath)
+    }
+    await mcpServer.refreshRagSummary()
+  }
+
   // MARK: - Artifact Sync Actions
   
   private func performPeerSync(direction: RAGArtifactSyncDirection) async {

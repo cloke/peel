@@ -148,6 +148,8 @@ enum LocalRAGArtifacts {
       + "|repos:\(snapshots.map(\.fingerprint).joined(separator: ","))"
     let versionHash = sha256Hex(for: Data(hashSeed.utf8)).prefix(12)
 
+    let modelId = LocalRAGEmbeddingProviderFactory.preferredMLXModelId
+      ?? LocalRAGEmbeddingProviderFactory.preferredProvider.rawValue
     return RAGArtifactManifest(
       formatVersion: formatVersion,
       version: "v\(formatVersion)-\(versionHash)",
@@ -157,8 +159,35 @@ enum LocalRAGArtifacts {
       embeddingCacheCount: stats?.cacheEmbeddingCount ?? 0,
       lastIndexedAt: stats?.lastIndexedAt,
       files: files,
-      repos: snapshots
+      repos: snapshots,
+      embeddingModelId: modelId,
+      snapshotKind: .base
     )
+  }
+
+  static func buildManifest(
+    status: RAGStore.Status,
+    stats: RAGStore.Stats?,
+    repos: [RAGStore.RepoInfo],
+    snapshotKind: RAGSnapshotKind
+  ) async -> RAGArtifactManifest {
+    var manifest = await buildManifest(status: status, stats: stats, repos: repos)
+    guard snapshotKind != .base else { return manifest }
+    // Rebuild with the requested snapshot kind
+    manifest = RAGArtifactManifest(
+      formatVersion: manifest.formatVersion,
+      version: manifest.version,
+      createdAt: manifest.createdAt,
+      schemaVersion: manifest.schemaVersion,
+      totalBytes: manifest.totalBytes,
+      embeddingCacheCount: manifest.embeddingCacheCount,
+      lastIndexedAt: manifest.lastIndexedAt,
+      files: manifest.files,
+      repos: manifest.repos,
+      embeddingModelId: manifest.embeddingModelId,
+      snapshotKind: snapshotKind
+    )
+    return manifest
   }
 
   static func createBundle(
@@ -370,6 +399,30 @@ enum LocalRAGArtifacts {
     if process.terminationStatus != 0 {
       throw RAGStore.RAGError.sqlite("Failed to extract RAG artifact bundle")
     }
+  }
+}
+
+// MARK: - Snapshot Compatibility
+
+enum RAGSnapshotCompatibility {
+  case compatible
+  case schemaVersionMismatch(stored: Int, snapshot: Int)
+  case embeddingModelMismatch(stored: String, snapshot: String)
+  case incompatible(reason: String)
+}
+
+extension LocalRAGArtifacts {
+  static func checkCompatibility(manifest: RAGArtifactManifest) async -> RAGSnapshotCompatibility {
+    let currentSchema = await RAGStore.shared.status().schemaVersion
+    if currentSchema != manifest.schemaVersion {
+      return .schemaVersionMismatch(stored: currentSchema, snapshot: manifest.schemaVersion)
+    }
+    let currentModelId = LocalRAGEmbeddingProviderFactory.preferredMLXModelId
+      ?? LocalRAGEmbeddingProviderFactory.preferredProvider.rawValue
+    if let snapshotModelId = manifest.embeddingModelId, snapshotModelId != currentModelId {
+      return .embeddingModelMismatch(stored: currentModelId, snapshot: snapshotModelId)
+    }
+    return .compatible
   }
 }
 
