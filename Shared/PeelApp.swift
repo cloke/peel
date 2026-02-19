@@ -160,6 +160,14 @@ struct PeelApp: App {
             print("[PeelApp] Ember skills update available")
           }
         }
+        .alert("Ember Best Practices Updated", isPresented: $skillUpdateAvailable) {
+          Button("Update Skills") {
+            applyEmberSkillsUpdates()
+          }
+          Button("Later", role: .cancel) {}
+        } message: {
+          Text("New Ember best practices are available from NullVoxPopuli/agent-skills. Apply updated rules to your Ember projects?")
+        }
         .environment(mcpServer)
         .environment(vmIsolationService)
         .environment(dataService)
@@ -186,6 +194,20 @@ struct PeelApp: App {
         .environment(dataService)
     }
     .modelContainer(Self.sharedModelContainer)
+  }
+
+  private func applyEmberSkillsUpdates() {
+    let context = dataService.modelContext
+    let source = "NullVoxPopuli/agent-skills"
+    let descriptor = FetchDescriptor<RepoGuidanceSkill>(
+      predicate: #Predicate { $0.source == source }
+    )
+    let emberSkills = (try? context.fetch(descriptor)) ?? []
+    let repoPaths = Set(emberSkills.map { $0.repoPath })
+    for repoPath in repoPaths {
+      DefaultSkillsService.updateEmberSkills(context: context, repoPath: repoPath)
+    }
+    UserDefaults.standard.set(false, forKey: "peel.skills.ember.updateAvailable")
   }
 
   private func showAboutPanel() {
