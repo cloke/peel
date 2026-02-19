@@ -10,6 +10,8 @@ Step-by-step instructions for common tasks.
 |-------|-------------|
 | [MCP_AGENT_WORKFLOW](guides/MCP_AGENT_WORKFLOW.md) | Build, launch, and connect via MCP |
 | [MCP_TEST_PLAN](guides/MCP_TEST_PLAN.md) | Testing the MCP server |
+| [MCP_EMBEDDING_GUIDE](guides/MCP_EMBEDDING_GUIDE.md) | Embed MCPCore in another app; app-embedded vs headless differences |
+| [MCP_CLI_USAGE](guides/MCP_CLI_USAGE.md) | PeelCLI commands, tools-call workflow, and MCPCLI headless server |
 
 ## Reference
 
