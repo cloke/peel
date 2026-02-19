@@ -472,4 +472,93 @@ extension MCPServerService: RAGToolsHandlerDelegate {
     // Fall back to original (will likely fail in RAGStore, but preserves caller's intent)
     return repoPath
   }
+
+  // MARK: - Skill File I/O (#264)
+
+  private static let skillsFileName = ".peel/skills.json"
+
+  /// Codable envelope for .peel/skills.json
+  private struct SkillsFile: Codable {
+    var version: Int = 1
+    var skills: [SkillEntry]
+
+    struct SkillEntry: Codable {
+      var title: String
+      var body: String
+      var tags: String
+      var priority: Int
+      var isActive: Bool
+    }
+  }
+
+  private func skillsFilePath(repoPath: String) -> String {
+    (repoPath as NSString).appendingPathComponent(Self.skillsFileName)
+  }
+
+  func exportSkillsToFile(repoPath: String) throws -> (count: Int, path: String) {
+    let skills = listRepoGuidanceSkills(repoPath: repoPath, repoRemoteURL: nil, includeInactive: true, limit: nil)
+    let entries = skills.map { s in
+      SkillsFile.SkillEntry(title: s.title, body: s.body, tags: s.tags, priority: s.priority, isActive: s.isActive)
+    }
+    let file = SkillsFile(version: 1, skills: entries)
+    let filePath = skillsFilePath(repoPath: repoPath)
+    let dir = (filePath as NSString).deletingLastPathComponent
+    try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+    let data = try JSONEncoder().encode(file)
+    try data.write(to: URL(fileURLWithPath: filePath))
+    return (entries.count, filePath)
+  }
+
+  func importSkillsFromFile(repoPath: String) throws -> (imported: Int, skipped: Int) {
+    let filePath = skillsFilePath(repoPath: repoPath)
+    let data = try Data(contentsOf: URL(fileURLWithPath: filePath))
+    let file = try JSONDecoder().decode(SkillsFile.self, from: data)
+    let existing = Set(listRepoGuidanceSkills(repoPath: repoPath, repoRemoteURL: nil, includeInactive: true, limit: nil).map { $0.title })
+    var imported = 0
+    var skipped = 0
+    for entry in file.skills {
+      if existing.contains(entry.title) {
+        skipped += 1
+      } else {
+        addRepoGuidanceSkill(repoPath: repoPath, repoRemoteURL: nil, repoName: nil,
+          title: entry.title, body: entry.body, source: "file",
+          tags: entry.tags, priority: entry.priority, isActive: entry.isActive)
+        imported += 1
+      }
+    }
+    return (imported, skipped)
+  }
+
+  func syncSkillsWithFile(repoPath: String) throws -> (exported: Int, imported: Int, path: String) {
+    let filePath = skillsFilePath(repoPath: repoPath)
+    let fm = FileManager.default
+    // Load existing file skills (if any)
+    var fileEntries: [SkillsFile.SkillEntry] = []
+    if fm.fileExists(atPath: filePath) {
+      let data = try Data(contentsOf: URL(fileURLWithPath: filePath))
+      fileEntries = (try? JSONDecoder().decode(SkillsFile.self, from: data))?.skills ?? []
+    }
+    let fileTitles = Set(fileEntries.map { $0.title })
+    let dbSkills = listRepoGuidanceSkills(repoPath: repoPath, repoRemoteURL: nil, includeInactive: true, limit: nil)
+    let dbTitles = Set(dbSkills.map { $0.title })
+    // Export DB skills not in file
+    let toExport = dbSkills.filter { !fileTitles.contains($0.title) }
+    let newEntries = toExport.map { s in
+      SkillsFile.SkillEntry(title: s.title, body: s.body, tags: s.tags, priority: s.priority, isActive: s.isActive)
+    }
+    let merged = SkillsFile(version: 1, skills: fileEntries + newEntries)
+    let dir = (filePath as NSString).deletingLastPathComponent
+    try fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
+    let data = try JSONEncoder().encode(merged)
+    try data.write(to: URL(fileURLWithPath: filePath))
+    // Import file skills not in DB
+    var imported = 0
+    for entry in fileEntries where !dbTitles.contains(entry.title) {
+      addRepoGuidanceSkill(repoPath: repoPath, repoRemoteURL: nil, repoName: nil,
+        title: entry.title, body: entry.body, source: "file",
+        tags: entry.tags, priority: entry.priority, isActive: entry.isActive)
+      imported += 1
+    }
+    return (newEntries.count, imported, filePath)
+  }
 }
