@@ -166,7 +166,7 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		0422A2DE2F2AD1E500186BBF /* Tools */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Tools; sourceTree = "<group>"; };
 		042793A42F0DEAE7002A5499 /* Plans */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Plans; sourceTree = "<group>"; };
-		04913BB52F0F4ED7001EF810 /* Shared */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (04913BD12F0F4ED7001EF810 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = Shared; sourceTree = "<group>"; };
+		04913BB52F0F4ED7001EF810 /* Shared */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (04913BD12F0F4ED7001EF810 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (Resources/Sounds, ); path = Shared; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
