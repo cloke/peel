@@ -251,6 +251,43 @@ extension MCPServerService {
         isMutating: true
       ),
       ToolDefinition(
+        name: "rag.branch.index",
+        description: """
+        Index a repository branch or worktree incrementally. Uses copy-on-branch strategy:
+        1) If no existing index for this path, copies file/chunk/embedding records from the base
+           repo's index (fast — avoids re-embedding unchanged files).
+        2) Uses git diff to find changed files since the base branch.
+        3) Force-reindexes only the changed/added files.
+        4) Deleted files are naturally removed by the incremental scan.
+
+        Use this instead of rag.index when working in a git worktree or on a feature branch
+        to get fast, branch-accurate search results.
+        """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": ["type": "string", "description": "Path to the worktree or branch checkout to index"],
+            "baseBranch": ["type": "string", "default": "main", "description": "The base branch to diff against for finding changed files. Default: main"],
+            "baseRepoPath": ["type": "string", "description": "Optional: explicit path to the main repo. If omitted, auto-detected via git worktree list."]
+          ],
+          "required": ["repoPath"]
+        ],
+        category: .rag,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "rag.branch.cleanup",
+        description: "Remove stale RAG index entries for repository paths that no longer exist on disk. Use after deleting worktrees or old branch checkouts to reclaim database space.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "dryRun": ["type": "boolean", "default": false, "description": "If true, report what would be removed without deleting. Default: false"]
+          ]
+        ],
+        category: .rag,
+        isMutating: true
+      ),
+      ToolDefinition(
         name: "rag.analyze",
         description: """
         Analyze indexed chunks using local MLX LLM to generate semantic summaries and tags.

@@ -561,4 +561,80 @@ extension MCPServerService: RAGToolsHandlerDelegate {
     }
     return (newEntries.count, imported, filePath)
   }
+
+  // MARK: - Branch-Aware RAG Indexing (Issue #260)
+
+  func indexBranchRepository(
+    repoPath: String,
+    baseBranch: String,
+    baseRepoPath: String?,
+    progressHandler: (@Sendable (RAGToolIndexProgress) -> Void)?
+  ) async throws -> (report: RAGToolIndexReport, changedFilesCount: Int, deletedFilesCount: Int, wasCopiedFromBase: Bool, baseRepoPath: String?) {
+    // Get DB URL
+    let status = await localRagStore.status()
+    let dbURL = URL(fileURLWithPath: status.dbPath)
+
+    // Detect main repo path
+    let resolvedBaseRepoPath = baseRepoPath ?? BranchIndexService.gitMainWorktreePath(from: repoPath)
+
+    // Find changed/deleted files relative to baseBranch
+    let (changedFiles, deletedFiles) = BranchIndexService.gitChangedFiles(repoPath: repoPath, baseBranch: baseBranch)
+
+    // Attempt to copy index from base repo if this repo has no existing index
+    var wasCopiedFromBase = false
+    if let base = resolvedBaseRepoPath {
+      do {
+        let existingStats = try await getIndexStats(repoPath: repoPath)
+        if existingStats.fileCount == 0 {
+          let copied = try BranchIndexService.copyRepoIndex(from: base, to: repoPath, dbURL: dbURL)
+          if copied > 0 {
+            wasCopiedFromBase = true
+          }
+        }
+      } catch {
+        // Log but don't fail — fall through to full reindex
+        await logWarning("Branch index copy failed, falling back to full index", metadata: [
+          "error": error.localizedDescription,
+          "repoPath": repoPath,
+          "baseRepoPath": base
+        ])
+      }
+    }
+
+    // Run incremental index (re-indexes changed files, removes deleted)
+    let report = try await indexRepository(
+      path: repoPath,
+      forceReindex: false,
+      allowWorkspace: false,
+      excludeSubrepos: true,
+      progressHandler: progressHandler
+    )
+
+    return (
+      report: report,
+      changedFilesCount: changedFiles.count,
+      deletedFilesCount: deletedFiles.count,
+      wasCopiedFromBase: wasCopiedFromBase,
+      baseRepoPath: resolvedBaseRepoPath
+    )
+  }
+
+  func cleanupBranchIndexes(dryRun: Bool) async throws -> (removedCount: Int, removedPaths: [String]) {
+    let repos = try await listRagRepos()
+    let stale = repos.filter { !FileManager.default.fileExists(atPath: $0.rootPath) }
+
+    if dryRun {
+      return (stale.count, stale.map { $0.rootPath })
+    }
+
+    var removedPaths = [String]()
+    for repo in stale {
+      _ = try await deleteRagRepo(repoId: repo.id, repoPath: nil)
+      removedPaths.append(repo.rootPath)
+    }
+    if !removedPaths.isEmpty {
+      await refreshRagSummary()
+    }
+    return (removedPaths.count, removedPaths)
+  }
 }
