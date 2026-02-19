@@ -570,10 +570,9 @@ public final class AgentChainRunner {
     let repoURL = URL(fileURLWithPath: workingDirectory)
     let repository = Model.Repository(name: repoURL.lastPathComponent, path: workingDirectory)
     
-    // Check if we're already in a chain worktree (from ParallelWorktreeRunner)
-    // In this case, don't create additional workspaces - use the worktree directly
-    let isInChainWorktree = workingDirectory.contains("Peel-Worktrees") ||
-                            workingDirectory.contains("chain-")
+    // Check if we're already running inside a managed worktree (e.g. from ParallelWorktreeRunner).
+    // In that case, don't create additional workspaces — use the worktree directly.
+    let isInChainWorktree = workingDirectory.contains(AgentWorkspaceService.workspacesDirName)
     
     if isInChainWorktree {
       await telemetryProvider.info("Running in existing chain worktree - skipping workspace creation", metadata: [

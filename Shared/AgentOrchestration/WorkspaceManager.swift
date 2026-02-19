@@ -9,161 +9,81 @@ import Foundation
 import Observation
 import Git
 
-/// Manages isolated workspaces for AI agents and chain worktrees using git worktrees
+/// Manages isolated workspaces for AI agents and chain worktrees using git worktrees.
+/// All worktrees — single-chain, parallel, and direct-agent — use `AgentWorkspace` as the
+/// unified model stored in the single `workspaces` array. Chain/parallel worktrees are
+/// distinguished by `assignedAgentId` being set to the owning chainId or executionId.
 @MainActor
 @Observable
 public final class AgentWorkspaceService {
-  
-  /// All managed workspaces
+
+  /// All managed workspaces (agent workspaces and chain/parallel worktrees unified)
   public private(set) var workspaces: [AgentWorkspace] = []
 
-  /// Active chain worktrees managed by this service
-  public private(set) var activeChainWorktrees: [ChainWorktree] = []
-  
-  /// Workspaces directory relative to repository
+  /// Workspaces directory name (relative to the parent of the repository)
   public static let workspacesDirName = ".agent-workspaces"
 
-  /// Base directory for chain worktrees
-  private let chainWorktreeBaseDir: URL
-  
-  public init() {
-    let tempDir = FileManager.default.temporaryDirectory
-    self.chainWorktreeBaseDir = tempDir.appendingPathComponent("Peel-Worktrees", isDirectory: true)
+  public init() {}
 
-    // Ensure the base directory exists
-    try? FileManager.default.createDirectory(at: chainWorktreeBaseDir, withIntermediateDirectories: true)
-  }
+  // MARK: - Chain / Parallel Worktrees
 
-  // MARK: - Chain Worktrees
-
-  public struct ChainWorktree: Identifiable {
-    public let id: UUID
-    public let chainId: UUID
-    public let chainName: String
-    public let path: String
-    public let branch: String
-    public let createdAt: Date
-    public var status: Status = .active
-
-    public enum Status {
-      case active
-      case completing
-      case failed(String)
-    }
-  }
-
+  /// Creates a worktree for a chain or parallel execution.
+  /// Returns the path to the new worktree directory.
+  /// The workspace is stored as an `AgentWorkspace` with `assignedAgentId == chainId`.
   public func createWorktreeForChain(
     chainId: UUID,
     chainName: String,
     projectPath: String,
     branchName: String? = nil
   ) async throws -> String {
-    guard FileManager.default.fileExists(atPath: projectPath.appendingPathComponent(".git")) else {
-      throw WorktreeError.repositoryNotFound(projectPath)
-    }
+    let repoPath = URL(fileURLWithPath: projectPath)
+    let repository = Model.Repository(name: repoPath.lastPathComponent, path: projectPath)
 
-    let repository = Model.Repository(
-      name: URL(fileURLWithPath: projectPath).lastPathComponent,
-      path: projectPath
-    )
+    let worktreeId = UUID()
+    let worktreePath = AgentWorkspace.generatePath(from: repoPath, taskId: worktreeId)
 
     let timestamp = Int(Date().timeIntervalSince1970)
-    let sanitizedChainName = BranchNameSanitizer.sanitize(chainName)
-    let worktreeName = "chain-\(sanitizedChainName)-\(timestamp)"
-    let worktreePath = chainWorktreeBaseDir.appendingPathComponent(worktreeName).path
-    let branch = branchName ?? "chain/\(sanitizedChainName)-\(timestamp)"
+    let sanitizedName = BranchNameSanitizer.sanitize(chainName)
+    let branch = branchName ?? "chain/\(sanitizedName)-\(timestamp)"
+
+    let workspace = AgentWorkspace(
+      id: worktreeId,
+      name: chainName,
+      path: worktreePath,
+      parentRepositoryPath: repoPath,
+      branch: branch,
+      status: .creating
+    )
+    workspace.assignedAgentId = chainId
+    workspaces.append(workspace)
 
     do {
+      let workspacesDir = worktreePath.deletingLastPathComponent()
+      try FileManager.default.createDirectory(at: workspacesDir, withIntermediateDirectories: true)
+
       try await Commands.Worktree.addWithNewBranch(
-        path: worktreePath,
+        path: worktreePath.path,
         newBranch: branch,
         startPoint: "HEAD",
         on: repository
       )
 
-      let chainWorktree = ChainWorktree(
-        id: UUID(),
-        chainId: chainId,
-        chainName: chainName,
-        path: worktreePath,
-        branch: branch,
-        createdAt: Date()
-      )
-      activeChainWorktrees.append(chainWorktree)
+      let listed = try await Commands.Worktree.list(on: repository)
+      let headCommit = listed.first { $0.path == worktreePath.path }?.head
+      workspace.markReady(headCommit: headCommit)
 
-      return worktreePath
+      return worktreePath.path
     } catch {
-      throw WorktreeError.worktreeCreationFailed(error.localizedDescription)
+      workspace.markError(error.localizedDescription)
+      workspaces.removeAll { $0.id == worktreeId }
+      throw WorktreeError.creationFailed(error)
     }
   }
 
-  public func createWorktreesForParallelChain(
-    chainId: UUID,
-    chainName: String,
-    projectPath: String,
-    count: Int,
-    baseBranch: String? = nil
-  ) async throws -> [String] {
-    var paths: [String] = []
-    let timestamp = Int(Date().timeIntervalSince1970)
-    let sanitizedChainName = BranchNameSanitizer.sanitize(chainName)
-    let baseBranchName = baseBranch ?? "chain/\(sanitizedChainName)-\(timestamp)"
-
-    for index in 0..<count {
-      let branchName = "\(baseBranchName)-impl\(index)"
-      let path = try await createWorktreeForChain(
-        chainId: chainId,
-        chainName: "\(chainName) (Impl \(index + 1))",
-        projectPath: projectPath,
-        branchName: branchName
-      )
-      paths.append(path)
-    }
-
-    return paths
-  }
-
+  /// Removes the worktree associated with a chain or parallel execution.
   public func removeWorktreeForChain(chainId: UUID) async throws {
-    guard let worktree = activeChainWorktrees.first(where: { $0.chainId == chainId }) else {
-      return
-    }
-    try await removeChainWorktree(worktree)
-  }
-
-  public func removeAllWorktreesForChain(chainId: UUID) async throws {
-    let worktreesToRemove = activeChainWorktrees.filter { $0.chainId == chainId }
-    for worktree in worktreesToRemove {
-      try await removeChainWorktree(worktree)
-    }
-  }
-
-  public func getWorktreePath(for chainId: UUID) -> String? {
-    activeChainWorktrees.first { $0.chainId == chainId }?.path
-  }
-
-  public func getAllWorktreePaths(for chainId: UUID) -> [String] {
-    activeChainWorktrees.filter { $0.chainId == chainId }.map { $0.path }
-  }
-
-  public func cleanupAllWorktrees() async {
-    for worktree in activeChainWorktrees {
-      try? await removeChainWorktree(worktree)
-    }
-  }
-
-  public func cleanupStaleWorktrees() async {
-    guard let contents = try? FileManager.default.contentsOfDirectory(
-      at: chainWorktreeBaseDir,
-      includingPropertiesForKeys: nil
-    ) else { return }
-
-    for url in contents {
-      guard url.lastPathComponent.hasPrefix("chain-") else { continue }
-      let isTracked = activeChainWorktrees.contains { $0.path == url.path }
-      if !isTracked {
-        try? FileManager.default.removeItem(at: url)
-      }
-    }
+    guard let workspace = workspaces.first(where: { $0.assignedAgentId == chainId }) else { return }
+    try await cleanupWorkspace(workspace, force: true)
   }
   
   // MARK: - Workspace Lifecycle
@@ -394,63 +314,6 @@ public final class AgentWorkspaceService {
     workspace.unlock()
   }
 
-  // MARK: - Private Helpers (Chain Worktrees)
-
-  private func removeChainWorktree(_ worktree: ChainWorktree) async throws {
-    if let index = activeChainWorktrees.firstIndex(where: { $0.id == worktree.id }) {
-      activeChainWorktrees[index].status = .completing
-    }
-
-    let gitDir = findGitDir(from: worktree.path)
-    guard let mainRepoPath = gitDir else {
-      throw WorktreeError.worktreeRemovalFailed("Could not find main repository")
-    }
-
-    let repository = Model.Repository(
-      name: URL(fileURLWithPath: mainRepoPath).lastPathComponent,
-      path: mainRepoPath
-    )
-
-    do {
-      try await Commands.Worktree.remove(path: worktree.path, force: true, on: repository)
-      activeChainWorktrees.removeAll { $0.id == worktree.id }
-      try? await deleteBranch(worktree.branch, on: repository)
-    } catch {
-      if let index = activeChainWorktrees.firstIndex(where: { $0.id == worktree.id }) {
-        activeChainWorktrees[index].status = .failed(error.localizedDescription)
-      }
-      throw WorktreeError.worktreeRemovalFailed(error.localizedDescription)
-    }
-  }
-
-  private func findGitDir(from worktreePath: String) -> String? {
-    let gitPath = worktreePath.appendingPathComponent(".git")
-    guard let content = try? String(contentsOfFile: gitPath, encoding: .utf8) else {
-      return nil
-    }
-
-    if content.hasPrefix("gitdir: ") {
-      let gitDir = content.dropFirst("gitdir: ".count).trimmingCharacters(in: .whitespacesAndNewlines)
-      if let worktreesRange = gitDir.range(of: "/.git/worktrees/") {
-        return String(gitDir[..<worktreesRange.lowerBound])
-      }
-    }
-
-    return nil
-  }
-
-  private func deleteBranch(_ branch: String, on repository: Model.Repository) async throws {
-    _ = try await Commands.simple(
-      arguments: ["branch", "-D", branch],
-      in: repository
-    )
-  }
-}
-
-private extension String {
-  func appendingPathComponent(_ component: String) -> String {
-    (self as NSString).appendingPathComponent(component)
-  }
 }
 
 
