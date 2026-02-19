@@ -518,6 +518,7 @@ struct ExecutionCard: View {
   let onToggleExpand: () -> Void
   @State private var rejectReason = ""
   @State private var showingRejectDialog = false
+  @State private var showingConflictResolution = false
   
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -611,14 +612,14 @@ struct ExecutionCard: View {
           }
           
           // Merge Conflicts
-          if !execution.mergeConflicts.isEmpty {
+          if !execution.conflictFiles.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
               Label("Merge Conflicts", systemImage: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
                 .font(.caption.bold())
               
-              ForEach(execution.mergeConflicts, id: \.self) { conflict in
-                Text(conflict)
+              ForEach(execution.conflictFiles) { conflict in
+                Text(conflict.filePath)
                   .font(.caption.monospaced())
                   .foregroundStyle(.secondary)
               }
@@ -642,6 +643,9 @@ struct ExecutionCard: View {
       }
     } message: {
       Text("Provide a reason for rejecting this execution.")
+    }
+    .sheet(isPresented: $showingConflictResolution) {
+      ConflictResolutionView(execution: execution, run: run, runner: runner)
     }
   }
   
@@ -671,6 +675,9 @@ struct ExecutionCard: View {
     case .approved:
       Image(systemName: "checkmark.circle.fill")
         .foregroundStyle(.green)
+    case .conflicted:
+      Image(systemName: "exclamationmark.triangle.fill")
+        .foregroundStyle(.orange)
     case .rejected:
       Image(systemName: "xmark.circle.fill")
         .foregroundStyle(.red)
@@ -729,6 +736,17 @@ struct ExecutionCard: View {
         }
         .buttonStyle(.borderedProminent)
         .accessibilityIdentifier("execution.merge.\(execution.id)")
+      }
+
+      if case .conflicted = execution.status {
+        Button {
+          showingConflictResolution = true
+        } label: {
+          Label("Resolve Conflicts", systemImage: "exclamationmark.triangle.fill")
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(.orange)
+        .accessibilityIdentifier("execution.resolveConflicts.\(execution.id)")
       }
       
       Spacer()
