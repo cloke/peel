@@ -1774,6 +1774,63 @@ extension MCPServerService {
         category: .parallelWorktrees,
         isMutating: true
       ),
+      ToolDefinition(
+        name: "parallel.diff",
+        description: "Return the unified git diff for an execution's branch vs the run's base branch. Use this to review actual code changes before approving or rejecting.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"],
+            "executionId": ["type": "string"],
+            "maxLines": ["type": "integer", "description": "Truncate diff output at this many lines"]
+          ],
+          "required": ["runId", "executionId"]
+        ],
+        category: .parallelWorktrees,
+        isMutating: false
+      ),
+      ToolDefinition(
+        name: "parallel.retry",
+        description: "Re-queue a failed, rejected, reviewed, or cancelled execution, optionally with an amended prompt and/or additional guidance.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"],
+            "executionId": ["type": "string"],
+            "amendedPrompt": ["type": "string", "description": "Replace the task prompt for this retry"],
+            "guidance": ["type": "string", "description": "Additional operator guidance to inject"]
+          ],
+          "required": ["runId", "executionId"]
+        ],
+        category: .parallelWorktrees,
+        isMutating: true
+      ),
+      ToolDefinition(
+        name: "parallel.append",
+        description: "Add new tasks to an in-flight parallel run (running or awaiting review). Throws if the run is completed, cancelled, or failed.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"],
+            "tasks": [
+              "type": "array",
+              "items": [
+                "type": "object",
+                "properties": [
+                  "title": ["type": "string"],
+                  "prompt": ["type": "string"],
+                  "description": ["type": "string"],
+                  "focusPaths": ["type": "array", "items": ["type": "string"]]
+                ],
+                "required": ["title", "prompt"]
+              ]
+            ]
+          ],
+          "required": ["runId", "tasks"]
+        ],
+        category: .parallelWorktrees,
+        isMutating: true
+      ),
       // MARK: - Swarm Tools
       ToolDefinition(
         name: "swarm.start",

@@ -19,25 +19,30 @@ struct WorktreeTask: Identifiable, Sendable {
   let prompt: String
   /// Optional file paths to focus on (for RAG grounding)
   var focusPaths: [String]
-  
+  /// UUIDs of other tasks in the same run that must be .merged before this one starts
+  var dependsOn: [UUID]
+
   init(
     id: UUID = UUID(),
     title: String,
     description: String,
     prompt: String,
-    focusPaths: [String] = []
+    focusPaths: [String] = [],
+    dependsOn: [UUID] = []
   ) {
     self.id = id
     self.title = title
     self.description = description
     self.prompt = prompt
     self.focusPaths = focusPaths
+    self.dependsOn = dependsOn
   }
 }
 
 /// Status of a single worktree in a parallel run
 enum ParallelWorktreeStatus: Sendable, Equatable {
   case pending
+  case waitingForDependencies
   case creatingWorktree
   case running
   case awaitingReview
@@ -48,17 +53,18 @@ enum ParallelWorktreeStatus: Sendable, Equatable {
   case merged
   case failed(String)
   case cancelled
-  
+
   var isTerminal: Bool {
     switch self {
     case .merged, .failed, .cancelled, .rejected, .reviewed: return true
     default: return false
     }
   }
-  
+
   var displayName: String {
     switch self {
     case .pending: return "Pending"
+    case .waitingForDependencies: return "Waiting for Dependencies"
     case .creatingWorktree: return "Creating Worktree"
     case .running: return "Running"
     case .awaitingReview: return "Awaiting Review"
@@ -98,6 +104,8 @@ final class ParallelWorktreeExecution: Identifiable, @unchecked Sendable {
   var mergeConflicts: [String] = []
   var ragSnippets: [RAGSnippet] = []
   var operatorGuidance: [String] = []
+  /// Overrides task.prompt for this execution (set via parallel.retry amendedPrompt)
+  var amendedPrompt: String?
   
   /// RAG snippet injected into the prompt
   struct RAGSnippet: Identifiable, Sendable {
@@ -438,32 +446,7 @@ final class ParallelWorktreeRunner {
     // Ground each task with RAG snippets
     await groundTasksWithRAG(run)
     
-    // Execute tasks in parallel with concurrency limit
-    let concurrencyLimit = run.templateName == "Free Review" ? 1 : maxConcurrentWorktrees
-    await withTaskGroup(of: Void.self) { group in
-      var activeCount = 0
-      var pendingExecutions = run.executions.filter { $0.status == .pending }
-      
-      while !pendingExecutions.isEmpty || activeCount > 0 {
-        // Start new tasks up to the limit
-        while activeCount < concurrencyLimit, let execution = pendingExecutions.first {
-          pendingExecutions.removeFirst()
-          activeCount += 1
-          
-          group.addTask { [weak self] in
-            await self?.executeWorktree(execution, in: run)
-          }
-        }
-        
-        // Wait for one to complete
-        if activeCount > 0 {
-          await group.next()
-          activeCount -= 1
-        }
-      }
-    }
-    
-    // Update run status based on results
+    await runSchedulingLoop(for: run)
     updateRunStatus(run)
     recordSnapshot(for: run)
   }
@@ -510,6 +493,152 @@ final class ParallelWorktreeRunner {
     recordSnapshot(for: run)
   }
   
+  // MARK: - Scheduling Primitives
+
+  /// Update dependency-blocked executions: transitions .waitingForDependencies → .pending when
+  /// all upstream executions have been merged, and .pending → .waitingForDependencies when not.
+  private func resolveWaitingExecutions(in run: ParallelWorktreeRun) {
+    guard run.executions.contains(where: { !$0.task.dependsOn.isEmpty }) else { return }
+    let mergedIds = Set(run.executions.filter { $0.status == .merged }.map { $0.id })
+    for execution in run.executions where execution.status == .pending || execution.status == .waitingForDependencies {
+      let satisfied = execution.task.dependsOn.allSatisfy { mergedIds.contains($0) }
+      if satisfied {
+        if execution.status == .waitingForDependencies { execution.status = .pending }
+      } else {
+        execution.status = .waitingForDependencies
+      }
+    }
+  }
+
+  /// Core scheduling loop. Handles dependsOn resolution and tasks appended mid-run.
+  /// Uses execution.status = .creatingWorktree as a synchronous claim to prevent
+  /// multiple concurrent drain loops from double-scheduling the same execution.
+  private func runSchedulingLoop(for run: ParallelWorktreeRun) async {
+    let concurrencyLimit = run.templateName == "Free Review" ? 1 : maxConcurrentWorktrees
+    await withTaskGroup(of: Void.self) { [weak self] group in
+      guard let self else { return }
+      // Initial scheduling pass
+      self.resolveWaitingExecutions(in: run)
+      let initialFlight = run.executions.filter { $0.status == .creatingWorktree || $0.status == .running }.count
+      for execution in run.executions.filter({ $0.status == .pending }).prefix(max(0, concurrencyLimit - initialFlight)) {
+        execution.status = .creatingWorktree  // Claim synchronously before suspension
+        group.addTask { [weak self] in await self?.executeWorktree(execution, in: run) }
+      }
+      // Drain loop
+      while await group.next() != nil {
+        self.resolveWaitingExecutions(in: run)
+        let active = run.executions.filter { $0.status == .creatingWorktree || $0.status == .running }.count
+        for execution in run.executions.filter({ $0.status == .pending }).prefix(max(0, concurrencyLimit - active)) {
+          execution.status = .creatingWorktree
+          group.addTask { [weak self] in await self?.executeWorktree(execution, in: run) }
+        }
+      }
+    }
+  }
+
+  // MARK: - Append & Retry (#295–#298)
+
+  /// Append new tasks to an active or paused run. Kicks a new scheduling pass if the
+  /// run's own loop has already completed (e.g. all current tasks are awaiting review).
+  /// - Throws: `ParallelRunError.invalidState` if the run is completed, cancelled, or failed.
+  func appendTasks(_ tasks: [WorktreeTask], to run: ParallelWorktreeRun) throws {
+    switch run.status {
+    case .completed, .cancelled, .failed:
+      throw ParallelRunError.invalidState("Cannot append tasks to a \(run.status.displayName) run")
+    default: break
+    }
+    for task in tasks {
+      run.executions.append(ParallelWorktreeExecution(task: task))
+    }
+    recordSnapshot(for: run)
+    // If the scheduler loop is still active (run.status == .running), it will pick up the new
+    // pending executions via scheduleNext(). Otherwise kick a fresh drain.
+    if run.status != .running {
+      run.status = .running
+      Task { [weak self] in
+        guard let self else { return }
+        await self.runSchedulingLoop(for: run)
+        self.updateRunStatus(run)
+        self.recordSnapshot(for: run)
+      }
+    }
+  }
+
+  /// Re-queue a failed, rejected, reviewed, or cancelled execution, optionally with an
+  /// amended prompt and/or additional guidance.
+  func retryExecution(
+    _ execution: ParallelWorktreeExecution,
+    in run: ParallelWorktreeRun,
+    amendedPrompt: String? = nil,
+    guidance: String? = nil
+  ) async throws {
+    guard execution.status.isTerminal else {
+      throw ParallelRunError.invalidState(
+        "Only terminal executions can be retried (current: \(execution.status.displayName))"
+      )
+    }
+    let runIsTerminal: Bool
+    switch run.status {
+    case .cancelled: throw ParallelRunError.invalidState("Cannot retry in a cancelled run")
+    case .completed, .failed, .awaitingReview: runIsTerminal = true
+    default: runIsTerminal = false
+    }
+    // Clean up old worktree
+    try? await workspaceService.removeWorktreeForChain(chainId: execution.id)
+    // Reset execution state
+    execution.status = .pending
+    execution.output = ""
+    execution.diffSummary = nil
+    execution.filesChanged = 0
+    execution.insertions = 0
+    execution.deletions = 0
+    execution.mergeConflicts = []
+    execution.worktreePath = nil
+    execution.branchName = nil
+    execution.chainId = nil
+    execution.startedAt = nil
+    execution.completedAt = nil
+    if let p = amendedPrompt?.trimmingCharacters(in: .whitespacesAndNewlines), !p.isEmpty {
+      execution.amendedPrompt = p
+    }
+    if let g = guidance?.trimmingCharacters(in: .whitespacesAndNewlines), !g.isEmpty {
+      execution.operatorGuidance.append(g)
+    }
+    if runIsTerminal {
+      run.status = .running
+    }
+    recordSnapshot(for: run)
+    if runIsTerminal {
+      Task { [weak self] in
+        guard let self else { return }
+        await self.runSchedulingLoop(for: run)
+        self.updateRunStatus(run)
+        self.recordSnapshot(for: run)
+      }
+    }
+  }
+
+  /// Return the unified git diff for an execution's branch vs the run's base branch.
+  /// Safe to call on @MainActor — delegates blocking subprocess to a background queue.
+  func diffExecution(
+    _ execution: ParallelWorktreeExecution,
+    in run: ParallelWorktreeRun,
+    maxLines: Int? = nil
+  ) async -> String {
+    guard let branchName = execution.branchName else {
+      return "(no branch — execution has not started yet)"
+    }
+    let base = run.baseBranch == "HEAD" ? "HEAD" : run.baseBranch
+    let (diff, _) = await runGit(["diff", "\(base)...\(branchName)"], in: run.projectPath)
+    let result = diff.trimmingCharacters(in: .whitespacesAndNewlines)
+    if result.isEmpty { return "(no changes compared to \(base))" }
+    guard let maxLines else { return result }
+    let lines = result.components(separatedBy: "\n")
+    guard lines.count > maxLines else { return result }
+    return lines.prefix(maxLines).joined(separator: "\n")
+      + "\n\n... (truncated: \(lines.count - maxLines) more lines)"
+  }
+
   /// Execute a single worktree task
   private func executeWorktree(_ execution: ParallelWorktreeExecution, in run: ParallelWorktreeRun) async {
     if let gate = runGates[run.id] {
@@ -608,7 +737,7 @@ final class ParallelWorktreeRunner {
     run: ParallelWorktreeRun,
     includeRAG: Bool
   ) -> String {
-    var prompt = execution.task.prompt
+    var prompt = execution.amendedPrompt ?? execution.task.prompt
 
     if includeRAG, !execution.ragSnippets.isEmpty {
       var contextSection = "\n\n## Relevant Code Context\n\n"
@@ -1102,6 +1231,19 @@ final class ParallelWorktreeRunner {
 
       // Cleanup the worktree
       try? await workspaceService.removeWorktreeForChain(chainId: execution.id)
+
+      // Kick a new scheduling pass if any executions were waiting on this branch (#297)
+      if run.executions.contains(where: { $0.status == .waitingForDependencies }) {
+        if run.status != .running {
+          run.status = .running
+          Task { [weak self] in
+            guard let self else { return }
+            await self.runSchedulingLoop(for: run)
+            self.updateRunStatus(run)
+            self.recordSnapshot(for: run)
+          }
+        }
+      }
 
     } catch let error as ParallelRunError {
       if case .mergeConflict = error {
