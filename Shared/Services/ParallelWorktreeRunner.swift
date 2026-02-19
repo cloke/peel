@@ -670,6 +670,7 @@ final class ParallelWorktreeRunner {
       execution.worktreePath = worktreePath
       execution.branchName = branchName
       execution.status = .running
+      PeonPingService.shared.agentStarted(name: execution.task.title)
       recordSnapshot(for: run)
       
       // Build the grounded prompt
@@ -1228,6 +1229,7 @@ final class ParallelWorktreeRunner {
       }
 
       execution.status = .merged
+      PeonPingService.shared.worktreeCompleted(taskTitle: execution.task.title)
 
       // Cleanup the worktree
       try? await workspaceService.removeWorktreeForChain(chainId: execution.id)
