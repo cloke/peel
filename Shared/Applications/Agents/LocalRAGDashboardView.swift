@@ -201,11 +201,16 @@ struct LocalRAGDashboardView: View {
               .foregroundStyle(.blue)
             Text(status.embeddingModelName)
               .font(.headline)
+              .lineLimit(1)
+              .truncationMode(.middle)
           }
           Text("\(status.embeddingDimensions) dimensions · \(status.providerName)")
             .font(.caption)
             .foregroundStyle(.secondary)
+            .lineLimit(1)
         }
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(minWidth: 0, maxWidth: 220)
       }
       
       Spacer()

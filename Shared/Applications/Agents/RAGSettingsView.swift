@@ -32,6 +32,11 @@ struct RAGSettingsView: View {
   @State private var isLoadingArtifacts = false
   @State private var showFirestorePull = false
   
+  // Reranker state
+  @State private var rerankerEnabled: Bool = HFRerankerFactory.isEnabled
+  @State private var rerankerModelId: String = HFRerankerFactory.modelId
+  @State private var rerankerApiToken: String = HFRerankerFactory.apiToken ?? ""
+
   // Nightly sync state
   @State private var nightlySync = NightlyRAGSyncService.shared
 
@@ -229,7 +234,51 @@ struct RAGSettingsView: View {
         } footer: {
           Text("Analysis adds semantic understanding to chunks for better search quality. Disable to speed up indexing.")
         }
-        
+
+        // MARK: - Reranker Section
+        Section {
+          Toggle("Enable HuggingFace reranking", isOn: $rerankerEnabled)
+            .onChange(of: rerankerEnabled) { _, newValue in
+              HFRerankerFactory.isEnabled = newValue
+            }
+
+          if rerankerEnabled {
+            Picker("Model", selection: $rerankerModelId) {
+              Text("bge-reranker-base (balanced)").tag("BAAI/bge-reranker-base")
+              Text("bge-reranker-v2-m3 (fast)").tag("BAAI/bge-reranker-v2-m3")
+              Text("bge-reranker-large (best quality)").tag("BAAI/bge-reranker-large")
+            }
+            .onChange(of: rerankerModelId) { _, newValue in
+              HFRerankerFactory.modelId = newValue
+            }
+
+            LabeledContent("API Token") {
+              HStack {
+                SecureField("Optional — increases rate limit", text: $rerankerApiToken)
+                  .textFieldStyle(.roundedBorder)
+                  .frame(maxWidth: 260)
+                  .onChange(of: rerankerApiToken) { _, newValue in
+                    HFRerankerFactory.apiToken = newValue.isEmpty ? nil : newValue
+                  }
+                if !rerankerApiToken.isEmpty {
+                  Button {
+                    rerankerApiToken = ""
+                    HFRerankerFactory.apiToken = nil
+                  } label: {
+                    Image(systemName: "xmark.circle.fill")
+                      .foregroundStyle(.secondary)
+                  }
+                  .buttonStyle(.plain)
+                }
+              }
+            }
+          }
+        } header: {
+          Label("Reranking", systemImage: "arrow.up.arrow.down")
+        } footer: {
+          Text("Reranking fetches more initial results then re-scores them with a cross-encoder for higher precision. Pass \"rerank\": true in rag.search to activate. An API token is optional but raises the free-tier rate limit from 100 to 1,000 requests/day.")
+        }
+
         // MARK: - Database Section
         Section {
           if let status = mcpServer.ragStatus {
