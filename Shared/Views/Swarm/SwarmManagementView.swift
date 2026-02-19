@@ -7,6 +7,7 @@
 
 import CoreImage
 import SwiftUI
+import SwiftData
 
 /// Main swarm management view - shows swarms, members, invites
 @MainActor
@@ -264,6 +265,9 @@ struct LocalWorkerStatusView: View {
   @State private var coordinator = SwarmCoordinator.shared
   @State private var firebaseService = FirebaseService.shared
   @State private var isStartingSwarm = false
+  @Query private var deviceSettings: [DeviceSettings]
+  @Environment(\.modelContext) private var modelContext
+  @State private var showingOnboardingAlert = false
   
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
@@ -332,9 +336,52 @@ struct LocalWorkerStatusView: View {
             .font(.caption2)
             .foregroundStyle(.secondary)
         }
+
+        // Auto-start toggle (device-level setting)
+        if let settings = deviceSettings.first {
+          Toggle("Auto-start swarm on launch", isOn: Binding(
+            get: { settings.swarmAutoStart },
+            set: { newValue in
+              settings.swarmAutoStart = newValue
+              settings.touch()
+              try? modelContext.save()
+            }
+          ))
+          .font(.caption2)
+        }
       }
     }
     .padding(.vertical, 4)
+    .onAppear {
+      // Show onboarding hint once when auto-start is enabled
+      if let settings = deviceSettings.first, settings.swarmAutoStart && !settings.swarmOnboardingShown {
+        showingOnboardingAlert = true
+      }
+    }
+    .alert("Swarm Auto-start", isPresented: $showingOnboardingAlert) {
+      Button("Keep Enabled") {
+        if let settings = deviceSettings.first {
+          settings.swarmOnboardingShown = true
+          try? modelContext.save()
+        }
+      }
+      Button("Turn Off") {
+        if let settings = deviceSettings.first {
+          settings.swarmAutoStart = false
+          settings.swarmOnboardingShown = true
+          settings.touch()
+          try? modelContext.save()
+        }
+      }
+      Button("Dismiss", role: .cancel) {
+        if let settings = deviceSettings.first {
+          settings.swarmOnboardingShown = true
+          try? modelContext.save()
+        }
+      }
+    } message: {
+      Text("Peel can automatically join the local swarm on launch so peer discovery (Bonjour) and background workers start immediately. You can turn this off here if you prefer to start the swarm manually.")
+    }
   }
   
   private func startSwarm() {
