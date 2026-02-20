@@ -38,6 +38,7 @@
 		0B1E3C9C2FABCDEF00112233 /* DataServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B1E3C9B2FABCDEF00112233 /* DataServiceTests.swift */; };
 		DD3900B27EF856FDCE71847E /* ValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1EDC3CED1C274FD0649E03C /* ValidationTests.swift */; };
 		0C2A4B5E2D000001000E55A8 /* RAGStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C2A4B5D2D000001000E55A8 /* RAGStoreTests.swift */; };
+		0CVM000001000001000E55A8 /* VMIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CVM000001000002000E55A8 /* VMIntegrationTests.swift */; };
 		0C2A4B602D000002000E55A8 /* MCPRAGToolsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C2A4B5F2D000002000E55A8 /* MCPRAGToolsTests.swift */; };
 		0C2A4B622D000003000E55A8 /* UtilitiesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C2A4B612D000003000E55A8 /* UtilitiesTests.swift */; };
 		0C2A4B642D000004000E55A8 /* MCPTemplateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C2A4B632D000004000E55A8 /* MCPTemplateTests.swift */; };
@@ -103,6 +104,7 @@
 		0B1E3C9B2FABCDEF00112233 /* DataServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataServiceTests.swift; sourceTree = "<group>"; };
 		D1EDC3CED1C274FD0649E03C /* ValidationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ValidationTests.swift; sourceTree = "<group>"; };
 		0C2A4B5D2D000001000E55A8 /* RAGStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RAGStoreTests.swift; sourceTree = "<group>"; };
+		0CVM000001000002000E55A8 /* VMIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VMIntegrationTests.swift; sourceTree = "<group>"; };
 		0C2A4B5F2D000002000E55A8 /* MCPRAGToolsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPRAGToolsTests.swift; sourceTree = "<group>"; };
 		0C2A4B612D000003000E55A8 /* UtilitiesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UtilitiesTests.swift; sourceTree = "<group>"; };
 		0C2A4B632D000004000E55A8 /* MCPTemplateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPTemplateTests.swift; sourceTree = "<group>"; };
@@ -309,6 +311,7 @@
 				04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */,
 				0B1E3C9B2FABCDEF00112233 /* DataServiceTests.swift */,
 				0C2A4B5D2D000001000E55A8 /* RAGStoreTests.swift */,
+				0CVM000001000002000E55A8 /* VMIntegrationTests.swift */,
 				0C2A4B5F2D000002000E55A8 /* MCPRAGToolsTests.swift */,
 				0C2A4B612D000003000E55A8 /* UtilitiesTests.swift */,
 				0C2A4B632D000004000E55A8 /* MCPTemplateTests.swift */,
@@ -593,6 +596,7 @@
 				0B1E3C9C2FABCDEF00112233 /* DataServiceTests.swift in Sources */,
 				DD3900B27EF856FDCE71847E /* ValidationTests.swift in Sources */,
 				0C2A4B5E2D000001000E55A8 /* RAGStoreTests.swift in Sources */,
+				0CVM000001000001000E55A8 /* VMIntegrationTests.swift in Sources */,
 				0C2A4B602D000002000E55A8 /* MCPRAGToolsTests.swift in Sources */,
 				0C2A4B622D000003000E55A8 /* UtilitiesTests.swift in Sources */,
 				0C2A4B642D000004000E55A8 /* MCPTemplateTests.swift in Sources */,
