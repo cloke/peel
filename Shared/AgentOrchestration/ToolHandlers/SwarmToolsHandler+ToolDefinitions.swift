@@ -526,7 +526,7 @@ extension SwarmToolsHandler {
       ),
       MCPToolDefinition(
         name: "swarm.firestore.rag.push",
-        description: "Push local RAG artifacts to Firestore swarm for sharing with other members. Requires contributor+ role. When repoIdentifier is provided, pushes only that repo's data (much smaller).",
+        description: "Push local RAG artifacts to Firestore swarm for sharing with other members. Requires contributor+ role. Uses safe per-repo sync by default — auto-detects repoIdentifier from git remote if not provided.",
         inputSchema: [
           "type": "object",
           "properties": [
@@ -540,7 +540,11 @@ extension SwarmToolsHandler {
             ],
             "repoIdentifier": [
               "type": "string",
-              "description": "Optional normalized git remote URL to push only that repo's embeddings (per-repo sync)"
+              "description": "Repository identifier (e.g. github.com/org/repo). Auto-detected from git remote if not provided. Enables safe per-repo sync."
+            ],
+            "fullDB": [
+              "type": "boolean",
+              "description": "Force legacy full-DB sync (replaces entire database on pull side). Defaults to false. NOT RECOMMENDED — overwrites all repos on the receiving machine."
             ]
           ],
           "required": ["swarmId", "repoPath"]
@@ -550,7 +554,7 @@ extension SwarmToolsHandler {
       ),
       MCPToolDefinition(
         name: "swarm.firestore.rag.pull",
-        description: "Pull RAG artifacts from Firestore swarm to local storage. Requires reader+ role. When repoIdentifier is provided, applies per-repo merge instead of full DB replacement.",
+        description: "Pull RAG artifacts from Firestore swarm to local storage. Requires reader+ role. Uses safe per-repo sync by default — auto-detects repoIdentifier from git remote if not provided.",
         inputSchema: [
           "type": "object",
           "properties": [
@@ -568,7 +572,11 @@ extension SwarmToolsHandler {
             ],
             "repoIdentifier": [
               "type": "string",
-              "description": "Optional normalized git remote URL — when set, the pulled data is a per-repo JSON bundle instead of a full DB zip"
+              "description": "Repository identifier (e.g. github.com/org/repo). Auto-detected from git remote if not provided. Enables safe per-repo sync."
+            ],
+            "fullDB": [
+              "type": "boolean",
+              "description": "Force legacy full-DB sync (replaces entire database). Defaults to false. NOT RECOMMENDED — overwrites all repos and embeddings."
             ]
           ],
           "required": ["swarmId", "artifactId", "repoPath"]

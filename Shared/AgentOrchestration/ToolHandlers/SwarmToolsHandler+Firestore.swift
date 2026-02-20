@@ -390,15 +390,27 @@ extension SwarmToolsHandler {
       return missingParamError(id: id, param: "repoPath")
     }
     
-    let repoIdentifier = optionalString("repoIdentifier", from: arguments)
+    let forceFullDB = (arguments["fullDB"] as? Bool) ?? false
     let service = FirebaseService.shared
     let ragStore = LocalRAGStore.shared
     
     do {
-      // Per-repo sync: export only the specified repo as JSON and push that
-      if let repoIdentifier {
+      // Auto-detect repoIdentifier from argument, RepoRegistry cache, or git remote
+      var repoIdentifier = optionalString("repoIdentifier", from: arguments)
+      if repoIdentifier == nil && !forceFullDB {
+        // Try cached lookup first (fast, no git process)
+        if let cached = await RepoRegistry.shared.getCachedRemoteURL(for: repoPath) {
+          repoIdentifier = await RepoRegistry.shared.normalizeRemoteURL(cached)
+        } else {
+          // Discover from git remote (runs git process)
+          repoIdentifier = await RepoRegistry.shared.registerRepo(at: repoPath)
+        }
+      }
+
+      // Per-repo sync (default, safe path)
+      if let repoIdentifier, !forceFullDB {
         guard let repoBundle = try await ragStore.exportRepo(identifier: repoIdentifier) else {
-          return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "No RAG index found for repo identifier: \(repoIdentifier)"))
+          return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "No RAG index found for repo identifier: \(repoIdentifier). Ensure the repo is indexed and has a repo_identifier set."))
         }
         let jsonData = try JSONEncoder().encode(repoBundle)
         let artifactId = try await service.pushRAGRepoBundle(swarmId: swarmId, repoIdentifier: repoIdentifier, data: jsonData)
@@ -415,7 +427,7 @@ extension SwarmToolsHandler {
         ]))
       }
 
-      // Full DB sync (legacy path)
+      // Full DB sync (legacy path — requires explicit fullDB: true)
       guard let bundle = try await ragStore.createArtifactBundle(for: repoPath) else {
         return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "No RAG index found for repo: \(repoPath)"))
       }
@@ -432,7 +444,8 @@ extension SwarmToolsHandler {
         "formattedSize": ByteCountFormatter.string(fromByteCount: Int64(bundle.bundleSizeBytes), countStyle: .file),
         "repoCount": bundle.manifest.repos.count,
         "embeddingCacheCount": bundle.manifest.embeddingCacheCount,
-        "mode": "full-db"
+        "mode": "full-db",
+        "warning": "Full-DB sync replaces the ENTIRE database on the pull side, including all repos and embeddings. Consider using per-repo sync instead."
       ]))
     } catch {
       return internalError(id: id, message: "Failed to push RAG artifacts: \(error.localizedDescription)")
@@ -450,13 +463,23 @@ extension SwarmToolsHandler {
       return missingParamError(id: id, param: "repoPath")
     }
     
-    let repoIdentifier = optionalString("repoIdentifier", from: arguments)
+    let forceFullDB = (arguments["fullDB"] as? Bool) ?? false
     let service = FirebaseService.shared
     let ragStore = LocalRAGStore.shared
     
     do {
-      // Per-repo sync: pull JSON bundle, decode, and merge
-      if let repoIdentifier {
+      // Auto-detect repoIdentifier from argument, RepoRegistry cache, or git remote
+      var repoIdentifier = optionalString("repoIdentifier", from: arguments)
+      if repoIdentifier == nil && !forceFullDB {
+        if let cached = await RepoRegistry.shared.getCachedRemoteURL(for: repoPath) {
+          repoIdentifier = await RepoRegistry.shared.normalizeRemoteURL(cached)
+        } else {
+          repoIdentifier = await RepoRegistry.shared.registerRepo(at: repoPath)
+        }
+      }
+
+      // Per-repo sync (default, safe path): pull JSON bundle, decode, and merge
+      if let repoIdentifier, !forceFullDB {
         let jsonData = try await service.pullRAGRepoBundle(swarmId: swarmId, artifactId: artifactId)
         let repoBundle = try JSONDecoder().decode(RAGRepoExportBundle.self, from: jsonData)
         let result = try await ragStore.importRepoBundle(repoBundle, localRepoPath: repoPath)
@@ -480,7 +503,7 @@ extension SwarmToolsHandler {
         return (200, makeResult(id: id, result: resultDict))
       }
 
-      // Full DB sync (legacy path)
+      // Full DB sync (legacy path — requires explicit fullDB: true)
       let tempDir = FileManager.default.temporaryDirectory
       let bundleURL = tempDir.appendingPathComponent("rag-artifact-\(artifactId).zip")
       
@@ -503,7 +526,8 @@ extension SwarmToolsHandler {
         "repoPath": repoPath,
         "repoCount": manifest.repos.count,
         "embeddingCacheCount": manifest.embeddingCacheCount,
-        "mode": "full-db"
+        "mode": "full-db",
+        "warning": "Full-DB sync replaced the ENTIRE local database, including all repos and embeddings. All previously indexed repos may need re-indexing with the local model."
       ]))
     } catch {
       return internalError(id: id, message: "Failed to pull RAG artifacts: \(error.localizedDescription)")
