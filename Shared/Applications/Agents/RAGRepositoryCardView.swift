@@ -105,6 +105,8 @@ struct RAGRepositoryCardView: View {
   @State private var showDeleteConfirm: Bool = false
   @State private var isDeleting: Bool = false
   @State private var isSyncing: Bool = false
+  @State private var syncDirection: RAGArtifactSyncDirection?
+  @State private var activeTransferId: UUID?
   @State private var syncResultMessage: String?
   
   /// Adaptive batch size based on available RAM.
@@ -837,29 +839,54 @@ struct RAGRepositoryCardView: View {
         Text("This will remove \(repo.fileCount) files and \(repo.chunkCount) chunks from the index. You can re-index later.")
       }
 
-      // Per-repo sync button (requires repoIdentifier and active swarm)
+      // Per-repo sync buttons (requires repoIdentifier and active swarm)
       if let repoIdentifier = repo.repoIdentifier,
          SwarmCoordinator.shared.isActive,
          !SwarmCoordinator.shared.connectedWorkers.isEmpty {
         Button {
-          Task { await pushRepoToSwarm(repoIdentifier: repoIdentifier) }
+          Task { await syncRepoWithPeers(repoIdentifier: repoIdentifier, direction: .push) }
         } label: {
-          if isSyncing {
-            ProgressView()
-              .scaleEffect(0.6)
+          if isSyncing && syncDirection == .push {
+            HStack(spacing: 4) {
+              ProgressView()
+                .scaleEffect(0.5)
+              Text("Pushing…")
+            }
           } else {
-            Label("Push to Peers", systemImage: "arrow.up.circle")
+            Label("Push", systemImage: "arrow.up.circle")
           }
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
         .disabled(isSyncing)
         .help("Push this repo's embeddings to connected swarm peers")
+
+        Button {
+          Task { await syncRepoWithPeers(repoIdentifier: repoIdentifier, direction: .pull) }
+        } label: {
+          if isSyncing && syncDirection == .pull {
+            HStack(spacing: 4) {
+              ProgressView()
+                .scaleEffect(0.5)
+              Text("Pulling…")
+            }
+          } else {
+            Label("Pull", systemImage: "arrow.down.circle")
+          }
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .disabled(isSyncing)
+        .help("Pull this repo's embeddings from connected swarm peers")
       }
-      
+
       Spacer()
-      
-      if let syncResultMessage {
+
+      // Transfer progress indicator
+      if let transferId = activeTransferId,
+         let transfer = SwarmCoordinator.shared.ragTransfers.first(where: { $0.id == transferId }) {
+        syncTransferStatus(transfer)
+      } else if let syncResultMessage {
         Text(syncResultMessage)
           .font(.caption)
           .foregroundStyle(.green)
@@ -873,20 +900,92 @@ struct RAGRepositoryCardView: View {
     }
   }
 
-  /// Push per-repo sync to all connected peers
-  private func pushRepoToSwarm(repoIdentifier: String) async {
+  /// Sync per-repo artifacts with connected swarm peers
+  private func syncRepoWithPeers(repoIdentifier: String, direction: RAGArtifactSyncDirection) async {
     isSyncing = true
+    syncDirection = direction
     syncResultMessage = nil
+    activeTransferId = nil
     errorMessage = nil
-    defer { isSyncing = false }
+
     do {
       let transferId = try await SwarmCoordinator.shared.requestRagArtifactSync(
-        direction: .push,
+        direction: direction,
         repoIdentifier: repoIdentifier
       )
-      syncResultMessage = "Syncing... (\(transferId.uuidString.prefix(8)))"
+      activeTransferId = transferId
+
+      // Poll transfer status until it completes
+      while !Task.isCancelled {
+        try? await Task.sleep(for: .seconds(0.5))
+        if let transfer = SwarmCoordinator.shared.ragTransfers.first(where: { $0.id == transferId }) {
+          switch transfer.status {
+          case .complete:
+            syncResultMessage = direction == .push ? "Pushed to \(transfer.peerName)" : "Pulled from \(transfer.peerName)"
+            activeTransferId = nil
+            isSyncing = false
+            syncDirection = nil
+            if direction == .pull {
+              await mcpServer.refreshRagSummary()
+            }
+            // Auto-dismiss success message
+            Task { @MainActor in
+              try? await Task.sleep(for: .seconds(4))
+              if syncResultMessage != nil { syncResultMessage = nil }
+            }
+            return
+          case .failed:
+            errorMessage = transfer.errorMessage ?? "Transfer failed"
+            activeTransferId = nil
+            isSyncing = false
+            syncDirection = nil
+            return
+          default:
+            continue
+          }
+        }
+      }
     } catch {
       errorMessage = "Sync failed: \(error.localizedDescription)"
+    }
+    isSyncing = false
+    syncDirection = nil
+  }
+
+  /// Transfer progress display
+  @ViewBuilder
+  private func syncTransferStatus(_ transfer: RAGArtifactTransferState) -> some View {
+    HStack(spacing: 6) {
+      ProgressView()
+        .scaleEffect(0.5)
+
+      VStack(alignment: .leading, spacing: 1) {
+        Text(transferStatusLabel(transfer))
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+
+        if transfer.totalBytes > 0 {
+          ProgressView(value: transfer.progress)
+            .frame(width: 80)
+        }
+      }
+    }
+  }
+
+  private func transferStatusLabel(_ transfer: RAGArtifactTransferState) -> String {
+    let dir = transfer.direction == .push ? "Pushing" : "Pulling"
+    switch transfer.status {
+    case .queued: return "\(dir): queued…"
+    case .preparing: return "\(dir): preparing…"
+    case .transferring:
+      if transfer.totalBytes > 0 {
+        let pct = Int(transfer.progress * 100)
+        return "\(dir): \(pct)%"
+      }
+      return "\(dir)…"
+    case .applying: return "Applying…"
+    case .complete: return "Done"
+    case .failed: return "Failed"
     }
   }
   

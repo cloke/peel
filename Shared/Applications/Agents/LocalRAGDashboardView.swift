@@ -192,10 +192,10 @@ struct LocalRAGDashboardView: View {
   
   @ViewBuilder
   private var headerView: some View {
-    HStack(alignment: .center, spacing: 16) {
-      // Status summary
-      if let status = mcpServer.ragStatus {
-        VStack(alignment: .leading, spacing: 2) {
+    VStack(spacing: 10) {
+      // Row 1: Model info + settings
+      HStack(alignment: .center, spacing: 12) {
+        if let status = mcpServer.ragStatus {
           HStack(spacing: 6) {
             Image(systemName: "cpu")
               .foregroundStyle(.blue)
@@ -204,52 +204,51 @@ struct LocalRAGDashboardView: View {
               .lineLimit(1)
               .truncationMode(.middle)
           }
-          Text("\(status.embeddingDimensions) dimensions · \(status.providerName)")
+          Text("\(status.embeddingDimensions)d · \(status.providerName)")
             .font(.caption)
             .foregroundStyle(.secondary)
             .lineLimit(1)
         }
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(minWidth: 0, maxWidth: 220)
+
+        Spacer()
+
+        if unresolvedSkills.count > 0 {
+          Button {
+            showSkillResolver = true
+          } label: {
+            Label("Resolve Skills", systemImage: "exclamationmark.triangle")
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
+          .help("Resolve repo guidance skills for this machine")
+        }
+
+        Button {
+          showSettings = true
+        } label: {
+          Image(systemName: "gearshape")
+            .font(.body)
+            .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .help("RAG Settings")
       }
-      
-      Spacer()
-      
-      // Quick stats pills
-      HStack(spacing: 12) {
+
+      // Row 2: Quick stats pills
+      HStack(spacing: 8) {
         StatPill(value: mcpServer.ragRepos.count, label: "repos", icon: "folder.fill", color: .blue)
-        
+
         if let stats = mcpServer.ragStats {
           StatPill(value: stats.fileCount, label: "files", icon: "doc", color: .green)
           StatPill(value: stats.chunkCount, label: "chunks", icon: "text.alignleft", color: .purple)
         }
-        
-        // Overall analysis progress
+
         if mcpServer.ragUsage.chunksAnalyzedTotal > 0 {
           StatPill(value: mcpServer.ragUsage.chunksAnalyzedTotal, label: "analyzed", icon: "checkmark.circle", color: .orange)
         }
-      }
-      
-      if unresolvedSkills.count > 0 {
-        Button {
-          showSkillResolver = true
-        } label: {
-          Label("Resolve Skills", systemImage: "exclamationmark.triangle")
-        }
-        .buttonStyle(.bordered)
-        .help("Resolve repo guidance skills for this machine")
-      }
 
-      // Settings button - always visible
-      Button {
-        showSettings = true
-      } label: {
-        Image(systemName: "gearshape")
-          .font(.title2)
-          .foregroundStyle(.secondary)
+        Spacer()
       }
-      .buttonStyle(.plain)
-      .help("RAG Settings")
     }
     .padding(.horizontal, 4)
   }
