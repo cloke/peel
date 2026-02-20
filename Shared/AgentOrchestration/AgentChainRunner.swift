@@ -158,11 +158,42 @@ public final class AgentChainRunner {
       }
     }
 
+    // If we booted a VM for this chain, ensure it is torn down when the run finishes.
+    defer {
+      if vmWasBooted {
+        Task { @MainActor in
+          try? await self.vmChainExecutor?.tearDown()
+          self.vmChainExecutor = nil
+        }
+      }
+    }
+
     var mergeConflicts: [String] = []
     var errorMessage: String?
     var validationResult: ValidationResult? = nil
+    var vmWasBooted = false
 
     chain.reset()
+    // If this chain requires a VM, boot it once and keep it running for the chain lifetime.
+    if chain.requiresVM {
+      chain.addStatusMessage("Booting VM for isolated execution...", type: .progress)
+      if let executor = getVMExecutor() {
+        var shares = chain.directoryShares
+        if let wd = chain.workingDirectory {
+          shares.append(VMDirectoryShare.workspace(wd))
+        }
+        do {
+          try await executor.bootVM(environment: chain.executionEnvironment, toolchain: chain.toolchain, directoryShares: shares)
+          vmWasBooted = true
+          chain.addStatusMessage("VM booted for isolated execution", type: .complete)
+        } catch {
+          chain.addStatusMessage("VM boot failed: \(error.localizedDescription)", type: .error)
+          throw error
+        }
+      } else {
+        chain.addStatusMessage("VM service not configured - continuing on host", type: .error)
+      }
+    }
     chain.clearLiveStatus()
     chain.runStartTime = Date()
     chain.state = .running(agentIndex: 0)
@@ -1066,40 +1097,68 @@ public final class AgentChainRunner {
     ])
 
     do {
-      let result = try await executor.execute(
-        environment: chain.executionEnvironment,
-        toolchain: chain.toolchain,
-        workspacePath: chain.workingDirectory ?? FileManager.default.currentDirectoryPath,
-        extraShares: chain.directoryShares,
-        commands: [(name: agent.name, command: command)]
-      )
+      if chain.executionEnvironment == .linux, let vmService = vmIsolationService {
+        // Use already-booted VM to run the command
+        let output = try await vmService.sendLinuxCommand("cd /mnt/workspace 2>/dev/null || cd /workspace; \(command)", timeout: 300)
+        let exitCode = vmService.lastCommandExitCode
+        let duration = Date().timeIntervalSince(startTime)
+        let durationStr = String(format: "%.1fs", duration)
+        let out = output
 
-      let duration = Date().timeIntervalSince(startTime)
-      let durationStr = String(format: "%.1fs", duration)
-      let output = result.stepResults.first?.stdout ?? ""
+        if exitCode != 0 {
+          agent.updateState(.failed(message: "Exit code \(exitCode)"))
+          chain.addStatusMessage("VM step '\(agent.name)' failed (exit \(exitCode))", type: .error)
+          throw ChainError.deterministicStepFailed(stepName: agent.name, exitCode: exitCode, output: out)
+        }
 
-      if result.success {
         agent.updateState(.complete)
         chain.addStatusMessage("VM step '\(agent.name)' completed (\(durationStr))", type: .complete)
+        return AgentChainResult(
+          agentId: agent.id,
+          agentName: agent.name,
+          model: "vm-deterministic",
+          prompt: command,
+          output: out,
+          duration: durationStr,
+          premiumCost: 0
+        )
       } else {
-        agent.updateState(.failed(message: result.errorMessage ?? "VM step failed"))
-        chain.addStatusMessage("VM step '\(agent.name)' failed: \(result.errorMessage ?? "unknown")", type: .error)
-        throw ChainError.deterministicStepFailed(
-          stepName: agent.name,
-          exitCode: result.stepResults.first.map { $0.exitCode } ?? 1,
-          output: output
+        // Fallback to executor's execute for macOS or if vmService missing
+        let result = try await executor.execute(
+          environment: chain.executionEnvironment,
+          toolchain: chain.toolchain,
+          workspacePath: chain.workingDirectory ?? FileManager.default.currentDirectoryPath,
+          extraShares: chain.directoryShares,
+          commands: [(name: agent.name, command: command)]
+        )
+
+        let duration = Date().timeIntervalSince(startTime)
+        let durationStr = String(format: "%.1fs", duration)
+        let output = result.stepResults.first?.stdout ?? ""
+
+        if result.success {
+          agent.updateState(.complete)
+          chain.addStatusMessage("VM step '\(agent.name)' completed (\(durationStr))", type: .complete)
+        } else {
+          agent.updateState(.failed(message: result.errorMessage ?? "VM step failed"))
+          chain.addStatusMessage("VM step '\(agent.name)' failed: \(result.errorMessage ?? "unknown")", type: .error)
+          throw ChainError.deterministicStepFailed(
+            stepName: agent.name,
+            exitCode: result.stepResults.first.map { $0.exitCode } ?? 1,
+            output: output
+          )
+        }
+
+        return AgentChainResult(
+          agentId: agent.id,
+          agentName: agent.name,
+          model: "vm-deterministic",
+          prompt: command,
+          output: output,
+          duration: durationStr,
+          premiumCost: 0
         )
       }
-
-      return AgentChainResult(
-        agentId: agent.id,
-        agentName: agent.name,
-        model: "vm-deterministic",
-        prompt: command,
-        output: output,
-        duration: durationStr,
-        premiumCost: 0
-      )
     } catch let error as VMError {
       let duration = Date().timeIntervalSince(startTime)
       agent.updateState(.failed(message: error.localizedDescription))
@@ -1129,47 +1188,81 @@ public final class AgentChainRunner {
     chain.addStatusMessage("Running gate in \(chain.executionEnvironment.displayName): \(command)", type: .tool)
 
     do {
-      let result = try await executor.execute(
-        environment: chain.executionEnvironment,
-        toolchain: chain.toolchain,
-        workspacePath: chain.workingDirectory ?? FileManager.default.currentDirectoryPath,
-        extraShares: chain.directoryShares,
-        commands: [(name: agent.name, command: command)]
-      )
+      if chain.executionEnvironment == .linux, let vmService = vmIsolationService {
+        let output = try await vmService.sendLinuxCommand("cd /mnt/workspace 2>/dev/null || cd /workspace; \(command)", timeout: 300)
+        let exitCode = vmService.lastCommandExitCode
+        let duration = Date().timeIntervalSince(startTime)
+        let durationStr = String(format: "%.1fs", duration)
+        let passed = (exitCode == 0)
+        let out = output
 
-      let duration = Date().timeIntervalSince(startTime)
-      let durationStr = String(format: "%.1fs", duration)
-      let output = result.stepResults.first?.stdout ?? ""
-      let passed = result.success
+        if passed {
+          agent.updateState(.complete)
+          chain.addStatusMessage("VM gate '\(agent.name)' passed (\(durationStr))", type: .complete)
+        } else {
+          agent.updateState(.failed(message: "Gate failed (exit \(exitCode))"))
+          chain.addStatusMessage("VM gate '\(agent.name)' failed", type: .error)
+        }
 
-      if passed {
-        agent.updateState(.complete)
-        chain.addStatusMessage("VM gate '\(agent.name)' passed (\(durationStr))", type: .complete)
-      } else {
-        agent.updateState(.failed(message: "Gate failed"))
-        chain.addStatusMessage("VM gate '\(agent.name)' failed", type: .error)
-      }
-
-      var chainResult = AgentChainResult(
-        agentId: agent.id,
-        agentName: agent.name,
-        model: "vm-gate",
-        prompt: command,
-        output: output,
-        duration: durationStr,
-        premiumCost: 0
-      )
-      chainResult.gateResult = passed ? .passed : .failed(exitCode: result.stepResults.first?.exitCode ?? 1)
-
-      if !passed {
-        throw ChainError.gateStepFailed(
-          stepName: agent.name,
-          exitCode: result.stepResults.first?.exitCode ?? 1,
-          output: output
+        var chainResult = AgentChainResult(
+          agentId: agent.id,
+          agentName: agent.name,
+          model: "vm-gate",
+          prompt: command,
+          output: out,
+          duration: durationStr,
+          premiumCost: 0
         )
-      }
+        chainResult.gateResult = passed ? .passed : .failed(exitCode: exitCode)
 
-      return chainResult
+        if !passed {
+          throw ChainError.gateStepFailed(stepName: agent.name, exitCode: exitCode, output: out)
+        }
+
+        return chainResult
+      } else {
+        let result = try await executor.execute(
+          environment: chain.executionEnvironment,
+          toolchain: chain.toolchain,
+          workspacePath: chain.workingDirectory ?? FileManager.default.currentDirectoryPath,
+          extraShares: chain.directoryShares,
+          commands: [(name: agent.name, command: command)]
+        )
+
+        let duration = Date().timeIntervalSince(startTime)
+        let durationStr = String(format: "%.1fs", duration)
+        let output = result.stepResults.first?.stdout ?? ""
+        let passed = result.success
+
+        if passed {
+          agent.updateState(.complete)
+          chain.addStatusMessage("VM gate '\(agent.name)' passed (\(durationStr))", type: .complete)
+        } else {
+          agent.updateState(.failed(message: "Gate failed"))
+          chain.addStatusMessage("VM gate '\(agent.name)' failed", type: .error)
+        }
+
+        var chainResult = AgentChainResult(
+          agentId: agent.id,
+          agentName: agent.name,
+          model: "vm-gate",
+          prompt: command,
+          output: output,
+          duration: durationStr,
+          premiumCost: 0
+        )
+        chainResult.gateResult = passed ? .passed : .failed(exitCode: result.stepResults.first?.exitCode ?? 1)
+
+        if !passed {
+          throw ChainError.gateStepFailed(
+            stepName: agent.name,
+            exitCode: result.stepResults.first?.exitCode ?? 1,
+            output: output
+          )
+        }
+
+        return chainResult
+      }
     } catch let error as VMError {
       agent.updateState(.failed(message: error.localizedDescription))
       throw ChainError.gateStepFailed(

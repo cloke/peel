@@ -64,6 +64,10 @@ public final class VMChainExecutor {
   private let vmService: VMIsolationService
   private let logHandler: (@Sendable (String) -> Void)?
 
+  // Track last-booted environment/toolchain for external lifecycle control
+  private var lastBootedEnvironment: ExecutionEnvironment?
+  private var lastBootedToolchain: VMToolchain?
+
   // MARK: - Init
 
   public init(vmService: VMIsolationService, logHandler: (@Sendable (String) -> Void)? = nil) {
@@ -238,7 +242,41 @@ public final class VMChainExecutor {
     }
   }
 
-  private func bootstrapLinuxToolchain(_ toolchain: VMToolchain) async throws {
+  /// Public lifecycle: boot VM, mount shares, and bootstrap toolchain for later per-step execution.
+  public func bootVM(environment: ExecutionEnvironment, toolchain: VMToolchain, directoryShares: [VMDirectoryShare] = []) async throws {
+    guard environment != .host else { return }
+    state = .booting
+    let bootStart = Date()
+    try await bootVM(environment: environment, shares: directoryShares)
+    lastBootedEnvironment = environment
+    lastBootedToolchain = toolchain
+    let bootDuration = Date().timeIntervalSince(bootStart)
+    log("VM booted in \(String(format: "%.1f", bootDuration))s")
+
+    // Mount shares for Linux
+    if environment == .linux {
+      try await vmService.mountDirectoryShares(directoryShares)
+      log("Directory shares mounted inside Linux VM")
+    }
+
+    // Bootstrap toolchain if requested
+    state = .bootstrapping
+    let bootstrapStart = Date()
+    try await bootstrapToolchain(toolchain, in: environment)
+    let bootstrapDuration = Date().timeIntervalSince(bootstrapStart)
+    log("Toolchain '\(toolchain.displayName)' bootstrapped in \(String(format: "%.1f", bootstrapDuration))s")
+  }
+
+  /// Public lifecycle: tear down the last-booted VM (if any)
+  public func tearDown() async throws {
+    guard let env = lastBootedEnvironment else { return }
+    state = .tearingDown
+    try await tearDown(environment: env)
+    lastBootedEnvironment = nil
+    lastBootedToolchain = nil
+  }
+
+  private func bootstrapLinuxToolchain(_ toolchain: VMToolchain) async throws {"}{
     let packages = toolchain.alpinePackages
     if !packages.isEmpty {
       log("Installing packages: \(packages.joined(separator: ", "))")
