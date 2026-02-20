@@ -59,25 +59,11 @@ public final class SwarmCoordinator {
   /// Our capabilities
   public private(set) var capabilities: WorkerCapabilities = WorkerCapabilities.current()
   
-  // MARK: - Persistence Keys
-  private let swarmIsActiveKey = "swarm.isActive"
-  private let swarmConnectedPeersKey = "swarm.connectedPeers"
-  private let swarmLastRoleKey = "swarm.lastRole"
-  private let swarmLastCoordinatorKey = "swarm.lastCoordinator"
-  
   /// Whether the swarm is active
-  public private(set) var isActive = false {
-    didSet {
-      UserDefaults.standard.set(isActive, forKey: swarmIsActiveKey)
-    }
-  }
+  public private(set) var isActive = false
   
   /// Connected workers (for brain mode)
-  public private(set) var connectedWorkers: [ConnectedPeer] = [] {
-    didSet {
-      persistConnectedPeers()
-    }
-  }
+  public private(set) var connectedWorkers: [ConnectedPeer] = []
   
   /// Current task being executed (for worker mode)
   public private(set) var currentTask: ChainRequest?
@@ -118,15 +104,6 @@ public final class SwarmCoordinator {
   /// Network path monitor for sleep/wake reconnection
   private var pathMonitor: NWPathMonitor?
   private var lastPathStatus: NWPath.Status = .satisfied
-
-  /// Last-known connected peer ids persisted across launches
-  public private(set) var lastKnownConnectedPeerIDs: [String] = []
-  
-  /// Last-known coordinator id (for worker to quickly reconnect)
-  public private(set) var lastKnownCoordinatorId: String?
-
-  /// Whether the swarm was auto-restored on launch
-  public private(set) var autoRestored: Bool = false
 
   /// WAN auto-connect task
   private var wanAutoConnectTask: Task<Void, Never>?
@@ -236,7 +213,7 @@ public final class SwarmCoordinator {
   public weak var delegate: SwarmCoordinatorDelegate?
 
   /// Delegate for RAG artifact syncing
-  public weak var ragSyncDelegate: RAGArtifactSyncDelegate?
+  weak var ragSyncDelegate: RAGArtifactSyncDelegate?
   
   /// Chain executor for worker mode
   private var chainExecutor: ChainExecutorProtocol?
@@ -273,42 +250,12 @@ public final class SwarmCoordinator {
   /// Pending task continuations (for async result delivery)
   private var pendingTasks: [UUID: CheckedContinuation<ChainResult, Error>] = [:]
   
-  // MARK: - Persistence helpers
-  
-  private func persistConnectedPeers() {
-    let ids = connectedWorkers.map { $0.id }
-    UserDefaults.standard.set(ids, forKey: swarmConnectedPeersKey)
-  }
-  
   // MARK: - Initialization
   
   /// Private init for singleton pattern
   private init() {
     // Set up PR queue delegate
     prQueue.delegate = self
-
-    // Restore persisted role/active state
-    let wasActive = UserDefaults.standard.bool(forKey: swarmIsActiveKey)
-    if wasActive {
-      let savedRoleRaw = UserDefaults.standard.string(forKey: swarmLastRoleKey) ?? SwarmRole.worker.rawValue
-      let savedRole = SwarmRole(rawValue: savedRoleRaw) ?? .worker
-      autoRestored = true
-      Task { @MainActor in
-        do {
-          try self.start(role: savedRole)
-        } catch {
-          logger.error("Failed to auto-start SwarmCoordinator: \(error.localizedDescription)")
-        }
-      }
-    }
-
-    // Restore known connected peer ids (used for UI/quick reconnect heuristics)
-    if let ids = UserDefaults.standard.stringArray(forKey: swarmConnectedPeersKey) {
-      self.lastKnownConnectedPeerIDs = ids
-    }
-    if let coordinatorId = UserDefaults.standard.string(forKey: swarmLastCoordinatorKey) {
-      self.lastKnownCoordinatorId = coordinatorId
-    }
   }
   
   /// Configure with a chain executor (for worker mode task execution)
@@ -333,8 +280,6 @@ public final class SwarmCoordinator {
     guard !isActive else { return }
     
     self.role = role
-    // Persist chosen role
-    UserDefaults.standard.set(role.rawValue, forKey: swarmLastRoleKey)
     self.capabilities = WorkerCapabilities.current()
     self.startedAt = Date()
     
@@ -865,7 +810,8 @@ public final class SwarmCoordinator {
 
   public func requestRagArtifactSync(
     direction: RAGArtifactSyncDirection,
-    workerId: String? = nil
+    workerId: String? = nil,
+    repoIdentifier: String? = nil
   ) async throws -> UUID {
     guard isActive else {
       throw DistributedError.actorSystemNotReady
@@ -900,28 +846,29 @@ public final class SwarmCoordinator {
         startedAt: Date(),
         completedAt: nil,
         errorMessage: nil,
-        manifestVersion: nil
+        manifestVersion: nil,
+        repoIdentifier: repoIdentifier
       )
     )
 
     try await connectionManager?.send(
-      .ragArtifactsRequest(id: transferId, direction: direction),
+      .ragArtifactsRequest(id: transferId, direction: direction, repoIdentifier: repoIdentifier),
       to: targetWorker.id
     )
 
     if direction == .push {
-      Task { await sendRagArtifactBundle(transferId: transferId, to: targetWorker) }
+      Task { await sendRagArtifactBundle(transferId: transferId, to: targetWorker, repoIdentifier: repoIdentifier) }
     }
 
     return transferId
   }
 
-  private func sendRagArtifactBundle(transferId: UUID, to peer: ConnectedPeer) async {
+  private func sendRagArtifactBundle(transferId: UUID, to peer: ConnectedPeer, repoIdentifier: String? = nil) async {
     updateRagTransfer(transferId) { state in
       state.status = .preparing
     }
 
-    logger.info("RAG sync preparing bundle for \(peer.name) (\(peer.id))")
+    logger.info("RAG sync preparing bundle for \(peer.name) (\(peer.id))\(repoIdentifier.map { ", repo: \($0)" } ?? "")")
 
     guard let ragSyncDelegate else {
       await sendRagArtifactError(transferId: transferId, to: peer.id, message: "RAG sync delegate not configured")
@@ -929,6 +876,67 @@ public final class SwarmCoordinator {
     }
 
     do {
+      // Per-repo sync: export only the requested repo as JSON
+      if let repoIdentifier {
+        let repoBundle = try await ragSyncDelegate.createRepoSyncBundle(repoIdentifier: repoIdentifier, excludeFileHashes: [])
+        guard let repoBundle else {
+          await sendRagArtifactError(transferId: transferId, to: peer.id, message: "Repo '\(repoIdentifier)' not found in RAG store")
+          return
+        }
+        let jsonData = try JSONEncoder().encode(repoBundle)
+        let chunkSize = 256 * 1024
+        let totalChunks = max(1, Int(ceil(Double(max(1, jsonData.count)) / Double(chunkSize))))
+
+        logger.info("RAG repo sync bundle: \(repoBundle.manifest.repoIdentifier), \(jsonData.count) bytes, \(totalChunks) chunks")
+
+        updateRagTransfer(transferId) { state in
+          state.status = .transferring
+          state.totalBytes = jsonData.count
+          state.manifestVersion = "v\(repoBundle.manifest.schemaVersion)"
+        }
+
+        // Send as a manifest with repo info
+        let manifest = RAGArtifactManifest(
+          formatVersion: 1,
+          version: "repo-sync-\(repoBundle.manifest.repoIdentifier)",
+          createdAt: Date(),
+          schemaVersion: 13,
+          totalBytes: jsonData.count,
+          embeddingCacheCount: 0,
+          lastIndexedAt: nil,
+          files: [RAGArtifactFileInfo(relativePath: "repo-bundle.json", sizeBytes: jsonData.count, sha256: "", modifiedAt: Date())],
+          repos: []
+        )
+        try await connectionManager?.send(.ragArtifactsManifest(id: transferId, manifest: manifest), to: peer.id)
+
+        // Send in chunks
+        var offset = 0
+        var chunkIndex = 0
+        while offset < jsonData.count {
+          let end = min(offset + chunkSize, jsonData.count)
+          let chunkData = jsonData[offset..<end]
+          let base64 = chunkData.base64EncodedString()
+          try await connectionManager?.send(
+            .ragArtifactsChunk(id: transferId, index: chunkIndex, total: totalChunks, data: base64),
+            to: peer.id
+          )
+          updateRagTransfer(transferId) { state in
+            state.transferredBytes += chunkData.count
+          }
+          offset = end
+          chunkIndex += 1
+        }
+
+        try await connectionManager?.send(.ragArtifactsComplete(id: transferId), to: peer.id)
+        updateRagTransfer(transferId) { state in
+          state.status = .complete
+          state.completedAt = Date()
+        }
+        logger.info("RAG repo sync completed: \(transferId) to \(peer.name)")
+        return
+      }
+
+      // Full DB sync (legacy path)
       let bundle = try await ragSyncDelegate.createRagArtifactBundle()
       let fileAttributes = try FileManager.default.attributesOfItem(atPath: bundle.bundleURL.path)
       let fileSize = (fileAttributes[.size] as? NSNumber)?.intValue ?? bundle.bundleSizeBytes
@@ -1436,12 +1444,6 @@ extension SwarmCoordinator: PeerConnectionDelegate {
     delegate?.swarmCoordinator(self, didEmit: .workerConnected(peer))
     logger.info("Peel connected: \(peer.name) (commit: \(peer.capabilities.gitCommitHash ?? "unknown"))")
 
-    // Persist last-known coordinator for worker quick reconnect
-    if role == .worker {
-      lastKnownCoordinatorId = peer.id
-      UserDefaults.standard.set(peer.id, forKey: swarmLastCoordinatorKey)
-    }
-
     // Reset heartbeat timestamp on (re)connect so the monitor doesn't
     // immediately consider this worker stale from a previous connection.
     if role == .brain || role == .hybrid {
@@ -1562,7 +1564,7 @@ extension SwarmCoordinator: PeerConnectionDelegate {
         continuation.resume(returning: DirectCommandResult(exitCode: exitCode, output: output, error: error))
       }
 
-    case .ragArtifactsRequest(let id, let direction):
+    case .ragArtifactsRequest(let id, let direction, let repoIdentifier):
       let peer = connectedWorkers.first(where: { $0.id == peerId })
       let peerName = peer?.name ?? "Peer"
       if direction == .pull {
@@ -1578,11 +1580,12 @@ extension SwarmCoordinator: PeerConnectionDelegate {
           startedAt: Date(),
           completedAt: nil,
           errorMessage: nil,
-          manifestVersion: nil
+          manifestVersion: nil,
+          repoIdentifier: repoIdentifier
         )
         recordRagTransfer(transfer)
         if let peer {
-          Task { await sendRagArtifactBundle(transferId: id, to: peer) }
+          Task { await sendRagArtifactBundle(transferId: id, to: peer, repoIdentifier: repoIdentifier) }
         } else {
           Task { await sendRagArtifactError(transferId: id, to: peerId, message: "Peer not found") }
         }
@@ -1599,7 +1602,8 @@ extension SwarmCoordinator: PeerConnectionDelegate {
           startedAt: Date(),
           completedAt: nil,
           errorMessage: nil,
-          manifestVersion: nil
+          manifestVersion: nil,
+          repoIdentifier: repoIdentifier
         )
         recordRagTransfer(transfer)
         prepareIncomingRagTransfer(id: id, from: peerId, direction: direction)

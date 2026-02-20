@@ -2006,7 +2006,143 @@ public final class FirebaseService {
     logger.info("Pushed RAG artifact \(artifactId) to swarm \(swarmId) (\(chunkCount) chunks, \(totalBytes) bytes)")
     return artifactId
   }
-  
+
+  /// Push a per-repo RAG bundle (JSON) to Firestore.
+  /// Stored under ragArtifacts/{repoId-hash}/chunks/ like the full-DB path.
+  public func pushRAGRepoBundle(
+    swarmId: String,
+    repoIdentifier: String,
+    data: Data
+  ) async throws -> String {
+    guard let userId = currentUserId else { throw FirebaseError.notSignedIn }
+
+    let memberDoc = try await membersCollection(swarmId: swarmId).document(userId).getDocument()
+    guard let roleLevel = memberDoc.data()?["roleLevel"] as? Int, roleLevel >= 2 else {
+      throw FirebaseError.permissionDenied
+    }
+
+    // Use a stable artifact ID derived from the repo identifier
+    let artifactId = "repo-\(repoIdentifier.hash)"
+    let collection = ragArtifactsCollection(swarmId: swarmId)
+    let artifactRef = collection.document(artifactId)
+    let totalBytes = data.count
+
+    await MainActor.run {
+      ragSyncState = FirestoreRAGSyncState(
+        direction: .push,
+        artifactId: artifactId,
+        status: .uploading,
+        totalBytes: totalBytes,
+        transferredBytes: 0,
+        startedAt: Date()
+      )
+    }
+
+    try await artifactRef.setData([
+      "version": artifactId,
+      "formatVersion": "repo-sync-v1",
+      "repoIdentifier": repoIdentifier,
+      "totalBytes": totalBytes,
+      "chunkCount": (totalBytes + Self.maxChunkSize - 1) / Self.maxChunkSize,
+      "uploadedBy": userId,
+      "uploadedAt": FieldValue.serverTimestamp(),
+      "mode": "per-repo"
+    ])
+
+    let chunkCount = (totalBytes + Self.maxChunkSize - 1) / Self.maxChunkSize
+    var transferred = 0
+
+    for i in 0..<chunkCount {
+      let start = i * Self.maxChunkSize
+      let end = min(start + Self.maxChunkSize, totalBytes)
+      let chunk = data[start..<end]
+
+      try await artifactRef.collection("chunks").document(String(format: "%05d", i)).setData([
+        "index": i,
+        "data": chunk.base64EncodedString(),
+        "size": chunk.count
+      ])
+
+      transferred = end
+      await MainActor.run {
+        ragSyncState?.transferredBytes = transferred
+      }
+    }
+
+    await MainActor.run {
+      ragSyncState?.status = .complete
+      ragSyncState?.completedAt = Date()
+    }
+
+    logger.info("Pushed per-repo RAG bundle for '\(repoIdentifier)' to swarm \(swarmId) (\(chunkCount) chunks, \(totalBytes) bytes)")
+    return artifactId
+  }
+
+  /// Pull a per-repo RAG bundle (JSON) from Firestore.
+  /// Returns the raw JSON data to be decoded as `RAGRepoExportBundle`.
+  public func pullRAGRepoBundle(
+    swarmId: String,
+    artifactId: String
+  ) async throws -> Data {
+    guard let userId = currentUserId else { throw FirebaseError.notSignedIn }
+
+    let memberDoc = try await membersCollection(swarmId: swarmId).document(userId).getDocument()
+    guard let roleLevel = memberDoc.data()?["roleLevel"] as? Int, roleLevel >= 1 else {
+      throw FirebaseError.permissionDenied
+    }
+
+    let collection = ragArtifactsCollection(swarmId: swarmId)
+    let artifactRef = collection.document(artifactId)
+
+    let doc = try await artifactRef.getDocument()
+    guard doc.exists, let data = doc.data() else {
+      throw RAGArtifactError.artifactNotFound(artifactId)
+    }
+
+    let totalBytes = data["totalBytes"] as? Int ?? 0
+
+    await MainActor.run {
+      ragSyncState = FirestoreRAGSyncState(
+        direction: .pull,
+        artifactId: artifactId,
+        status: .downloading,
+        totalBytes: totalBytes,
+        transferredBytes: 0,
+        startedAt: Date()
+      )
+    }
+
+    var assembledData = Data()
+    assembledData.reserveCapacity(totalBytes)
+
+    let chunksSnapshot = try await artifactRef.collection("chunks")
+      .order(by: "index")
+      .getDocuments()
+
+    for chunkDoc in chunksSnapshot.documents {
+      guard let base64 = chunkDoc.data()["data"] as? String,
+            let chunkData = Data(base64Encoded: base64) else {
+        throw RAGArtifactError.invalidChunk(chunkDoc.documentID)
+      }
+      assembledData.append(chunkData)
+      await MainActor.run {
+        ragSyncState?.transferredBytes = assembledData.count
+      }
+    }
+
+    guard assembledData.count == totalBytes else {
+      throw RAGArtifactError.sizeMismatch(expected: totalBytes, actual: assembledData.count)
+    }
+
+    await MainActor.run {
+      ragSyncState?.status = .complete
+      ragSyncState?.completedAt = Date()
+    }
+
+    logger.info("Pulled per-repo RAG bundle \(artifactId) from swarm \(swarmId) (\(assembledData.count) bytes)")
+    return assembledData
+  }
+
   /// Pull RAG artifacts from Firestore
   ///
   /// Downloads the manifest and all chunks, reassembles into a local bundle.

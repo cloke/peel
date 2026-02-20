@@ -104,6 +104,8 @@ struct RAGRepositoryCardView: View {
   @State private var showForceReanalyzeConfirm: Bool = false
   @State private var showDeleteConfirm: Bool = false
   @State private var isDeleting: Bool = false
+  @State private var isSyncing: Bool = false
+  @State private var syncResultMessage: String?
   
   /// Adaptive batch size based on available RAM.
   /// Smaller batches = more frequent UI progress updates (important on laptops).
@@ -834,14 +836,57 @@ struct RAGRepositoryCardView: View {
       } message: {
         Text("This will remove \(repo.fileCount) files and \(repo.chunkCount) chunks from the index. You can re-index later.")
       }
+
+      // Per-repo sync button (requires repoIdentifier and active swarm)
+      if let repoIdentifier = repo.repoIdentifier,
+         SwarmCoordinator.shared.isActive,
+         !SwarmCoordinator.shared.connectedWorkers.isEmpty {
+        Button {
+          Task { await pushRepoToSwarm(repoIdentifier: repoIdentifier) }
+        } label: {
+          if isSyncing {
+            ProgressView()
+              .scaleEffect(0.6)
+          } else {
+            Label("Push to Peers", systemImage: "arrow.up.circle")
+          }
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .disabled(isSyncing)
+        .help("Push this repo's embeddings to connected swarm peers")
+      }
       
       Spacer()
       
+      if let syncResultMessage {
+        Text(syncResultMessage)
+          .font(.caption)
+          .foregroundStyle(.green)
+      }
+
       if let errorMessage {
         Text(errorMessage)
           .font(.caption)
           .foregroundStyle(.red)
       }
+    }
+  }
+
+  /// Push per-repo sync to all connected peers
+  private func pushRepoToSwarm(repoIdentifier: String) async {
+    isSyncing = true
+    syncResultMessage = nil
+    errorMessage = nil
+    defer { isSyncing = false }
+    do {
+      let transferId = try await SwarmCoordinator.shared.requestRagArtifactSync(
+        direction: .push,
+        repoIdentifier: repoIdentifier
+      )
+      syncResultMessage = "Syncing... (\(transferId.uuidString.prefix(8)))"
+    } catch {
+      errorMessage = "Sync failed: \(error.localizedDescription)"
     }
   }
   

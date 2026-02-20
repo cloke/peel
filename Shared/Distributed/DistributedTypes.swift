@@ -607,6 +607,8 @@ public struct RAGArtifactTransferState: Identifiable, Sendable {
   public var completedAt: Date?
   public var errorMessage: String?
   public var manifestVersion: String?
+  /// When set, this transfer is scoped to a single repo (by normalized git remote URL).
+  public var repoIdentifier: String?
 
   public var progress: Double {
     guard totalBytes > 0 else { return status == .complete ? 1.0 : 0 }
@@ -712,7 +714,7 @@ public enum PeerMessage: Codable, Sendable {
   case taskCancel(taskId: UUID)
   case directCommand(id: UUID, command: String, args: [String], workingDirectory: String?)
   case directCommandResult(id: UUID, exitCode: Int32, output: String, error: String?)
-  case ragArtifactsRequest(id: UUID, direction: RAGArtifactSyncDirection)
+  case ragArtifactsRequest(id: UUID, direction: RAGArtifactSyncDirection, repoIdentifier: String? = nil)
   case ragArtifactsManifest(id: UUID, manifest: RAGArtifactManifest)
   case ragArtifactsChunk(id: UUID, index: Int, total: Int, data: String)
   case ragArtifactsComplete(id: UUID)
