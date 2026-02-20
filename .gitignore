@@ -41,6 +41,9 @@ playground.xcworkspace
 # Packages/
 .build/
 
+# Built CLI binaries (produced by Xcode build phases)
+Tools/Binaries/
+
 # CocoaPods
 #
 # We recommend against adding the Pods directory to your .gitignore. However
