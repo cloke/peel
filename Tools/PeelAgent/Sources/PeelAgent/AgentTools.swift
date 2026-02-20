@@ -1,4 +1,5 @@
 import Foundation
+import LLMClient
 
 /// Defines all tools available to the agent
 enum AgentTools {

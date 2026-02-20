@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import LLMClient
 
 @main
 struct PeelCommand: AsyncParsableCommand {
@@ -54,7 +55,10 @@ struct CommonOptions: ParsableArguments {
 
     switch kind {
     case .copilot:
-      let session = try await CopilotAuth.resolveSession(explicitKey: apiKey)
+      let session = try await CopilotAuth.resolveSession(
+        explicitKey: apiKey,
+        onWarning: { Terminal.warning($0) }
+      )
       let selectedModel = model ?? "claude-sonnet-4.5"
       return CopilotClient(session: session, model: selectedModel)
 

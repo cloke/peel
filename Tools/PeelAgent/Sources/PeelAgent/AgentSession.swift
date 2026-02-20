@@ -1,4 +1,5 @@
 import Foundation
+import LLMClient
 
 /// The main agent session — manages conversation, tool execution, and the interactive loop
 final class AgentSession: Sendable {

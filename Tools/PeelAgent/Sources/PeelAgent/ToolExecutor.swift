@@ -1,4 +1,5 @@
 import Foundation
+import LLMClient
 
 /// Executes tool calls requested by the LLM
 final class ToolExecutor: Sendable {
@@ -322,20 +323,5 @@ final class ToolExecutor: Sendable {
     } catch {
       return .error("Failed to run command: \(error.localizedDescription)")
     }
-  }
-}
-
-// MARK: - Tool Result
-
-struct ToolResult: Sendable {
-  let content: String
-  let isError: Bool
-
-  static func success(_ content: String) -> ToolResult {
-    ToolResult(content: content, isError: false)
-  }
-
-  static func error(_ message: String) -> ToolResult {
-    ToolResult(content: message, isError: true)
   }
 }
