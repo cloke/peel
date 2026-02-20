@@ -5,7 +5,7 @@ let package = Package(
   name: "PeelAgent",
   platforms: [.macOS(.v14)],
   products: [
-    .executable(name: "peel", targets: ["PeelAgent"])
+    .executable(name: "peel-agent", targets: ["PeelAgent"])
   ],
   dependencies: [
     .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0"),
