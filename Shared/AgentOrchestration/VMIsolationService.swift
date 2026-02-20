@@ -733,12 +733,13 @@ public final class VMIsolationService {
     let kernelPath = linuxDir.appendingPathComponent("vmlinuz")
     let initramfsPath = linuxDir.appendingPathComponent("initramfs")
     let distroTagPath = linuxDir.appendingPathComponent(".distro")
-    let targetTag = "alpine-3.21-custom-initramfs"
+    let targetTagPrefix = "alpine-3.21-"
 
     // Validate Distro Tag
-    let currentTag = (try? String(contentsOf: distroTagPath, encoding: .utf8)) ?? ""
-    if currentTag != targetTag {
-      print("[VM Check] Distro tag mismatch. Found: '\(currentTag)', Expected: '\(targetTag)'. Marking as not ready.")
+    let currentTag = (try? String(contentsOf: distroTagPath, encoding: .utf8))?
+      .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    if !currentTag.hasPrefix(targetTagPrefix) {
+      print("[VM Check] Distro tag mismatch. Found: '\(currentTag)', Expected prefix: '\(targetTagPrefix)'. Marking as not ready.")
       isLinuxReady = false
       return
     }
@@ -750,12 +751,10 @@ public final class VMIsolationService {
     let initramfsIsCpio = initramfsExists && isCpioFile(at: initramfsPath.path)
     
     let kernelIsPE = kernelExists && isPEKernel(at: kernelPath.path)
-    isLinuxReady = kernelExists && initramfsExists && initramfsIsCpio
-    
-    if kernelIsPE {
-      print("[VM Check] Kernel appears to be EFI/PE (MZ). Marking as not ready to force fixup.")
-      isLinuxReady = false
-    }
+    // Accept CPIO (raw) or gzip-compressed CPIO — both work with VZLinuxBootLoader
+    isLinuxReady = kernelExists && initramfsExists && (initramfsIsCpio || initramfsIsGzip)
+    // NOTE: ARM64 Linux kernels in EFI stub format (MZ/PE header) are the CORRECT
+    // format for VZLinuxBootLoader. Do NOT reject them.
     
     // Log what we found for debugging
     if isLinuxReady {
@@ -833,7 +832,7 @@ public final class VMIsolationService {
     let kernelPath = linuxDir.appendingPathComponent("vmlinuz")
     let initramfsPath = linuxDir.appendingPathComponent("initramfs")
     let distroTagPath = linuxDir.appendingPathComponent(".distro")
-    let targetTag = "alpine-3.21-custom-initramfs"
+    let targetTag = "alpine-3.21-"
     
     // WARNING: Alpine vmlinuz is an EFI/PE executable. VZLinuxBootLoader requires a raw Image.
     // 'setupLinuxVM' calls 'extractEmbeddedKernel' to fix this.
