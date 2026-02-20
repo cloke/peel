@@ -276,7 +276,7 @@ public final class VMChainExecutor {
     lastBootedToolchain = nil
   }
 
-  private func bootstrapLinuxToolchain(_ toolchain: VMToolchain) async throws {"}{
+  private func bootstrapLinuxToolchain(_ toolchain: VMToolchain) async throws {
     let packages = toolchain.alpinePackages
     if !packages.isEmpty {
       log("Installing packages: \(packages.joined(separator: ", "))")
