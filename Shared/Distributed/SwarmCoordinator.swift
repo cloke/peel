@@ -1079,12 +1079,29 @@ public final class SwarmCoordinator {
 
     do {
       logger.info("RAG sync applying bundle \(id) from \(peerId)")
-      try await ragSyncDelegate.applyRagArtifactBundle(
-        at: transfer.tempURL,
-        manifest: manifest,
-        from: peerId,
-        direction: transfer.direction
-      )
+
+      // Per-repo sync bundles have version "repo-sync-<repoIdentifier>"
+      if manifest.version.hasPrefix("repo-sync-") {
+        let jsonData = try Data(contentsOf: transfer.tempURL)
+        let repoBundle = try JSONDecoder().decode(RAGRepoExportBundle.self, from: jsonData)
+        let result = try await ragSyncDelegate.applyRepoSyncBundle(repoBundle, localRepoPath: nil)
+        if result.needsLocalReembedding {
+          logger.warning(
+            "RAG repo sync: embedding model mismatch — imported text/analysis only. "
+            + "Remote model: \(result.remoteEmbeddingModel ?? "unknown"), skipped \(result.embeddingsSkippedModelMismatch) embeddings. "
+            + "Re-index '\(result.repoName)' to generate local embeddings."
+          )
+        }
+        logger.info("RAG repo sync applied \(id): files \(result.filesImported), chunks \(result.chunksImported), embeddings \(result.embeddingsImported)")
+      } else {
+        // Full DB sync (legacy path)
+        try await ragSyncDelegate.applyRagArtifactBundle(
+          at: transfer.tempURL,
+          manifest: manifest,
+          from: peerId,
+          direction: transfer.direction
+        )
+      }
       updateRagTransfer(id) { state in
         state.status = .complete
         state.completedAt = Date()

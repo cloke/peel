@@ -388,12 +388,16 @@ enum RAGRepoImporter {
   ///   - bundle: The exported repo data
   ///   - dbPath: Path to the local rag.sqlite
   ///   - localRepoPath: Local path where this repo lives (for path remapping)
+  ///   - localEmbeddingModel: The embedding model name used locally (for compatibility check)
+  ///   - localEmbeddingDimensions: The embedding dimensions used locally (for compatibility check)
   /// - Returns: Import summary
   @discardableResult
   static func importRepo(
     bundle: RAGRepoExportBundle,
     dbPath: String,
-    localRepoPath: String? = nil
+    localRepoPath: String? = nil,
+    localEmbeddingModel: String? = nil,
+    localEmbeddingDimensions: Int? = nil
   ) throws -> ImportResult {
     var db: OpaquePointer?
     let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX
@@ -411,6 +415,22 @@ enum RAGRepoImporter {
     var filesSkipped = 0
     var chunksImported = 0
     var embeddingsImported = 0
+    var embeddingsSkippedModelMismatch = 0
+
+    // Check embedding model compatibility: if the bundle has a different
+    // embedding model or dimension than the local DB, skip embedding import
+    // to avoid mixing incompatible vectors. Text/chunks/AI summaries are
+    // still imported so text search works; the receiver can re-embed locally.
+    let embeddingsCompatible: Bool
+    if let localModel = localEmbeddingModel,
+       let localDims = localEmbeddingDimensions {
+      let modelMatch = bundle.manifest.embeddingModel == localModel
+      let dimsMatch = bundle.manifest.embeddingDimensions == localDims
+      embeddingsCompatible = modelMatch && dimsMatch
+    } else {
+      // No local model info provided — assume compatible (legacy callers)
+      embeddingsCompatible = true
+    }
 
     execSQL(db, "BEGIN TRANSACTION")
 
@@ -510,16 +530,20 @@ enum RAGRepoImporter {
           }
           chunksImported += 1
 
-          // Insert embedding if present
+          // Insert embedding if present and models are compatible
           if let embeddingBase64 = chunk.embeddingBase64,
              let embeddingData = Data(base64Encoded: embeddingBase64) {
-            let embSql = "INSERT OR REPLACE INTO embeddings (chunk_id, embedding) VALUES (?, ?)"
-            try execBind(db, embSql) { stmt in
-              bindText(stmt, 1, chunkId)
-              sqlite3_bind_blob(stmt, 2, (embeddingData as NSData).bytes, Int32(embeddingData.count),
-                                unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+            if embeddingsCompatible {
+              let embSql = "INSERT OR REPLACE INTO embeddings (chunk_id, embedding) VALUES (?, ?)"
+              try execBind(db, embSql) { stmt in
+                bindText(stmt, 1, chunkId)
+                sqlite3_bind_blob(stmt, 2, (embeddingData as NSData).bytes, Int32(embeddingData.count),
+                                  unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+              }
+              embeddingsImported += 1
+            } else {
+              embeddingsSkippedModelMismatch += 1
             }
-            embeddingsImported += 1
           }
         }
 
@@ -538,7 +562,10 @@ enum RAGRepoImporter {
       filesImported: filesImported,
       filesSkipped: filesSkipped,
       chunksImported: chunksImported,
-      embeddingsImported: embeddingsImported
+      embeddingsImported: embeddingsImported,
+      embeddingsSkippedModelMismatch: embeddingsSkippedModelMismatch,
+      remoteEmbeddingModel: bundle.manifest.embeddingModel,
+      remoteEmbeddingDimensions: bundle.manifest.embeddingDimensions
     )
   }
 
@@ -585,9 +612,17 @@ enum RAGRepoImporter {
     let filesSkipped: Int
     let chunksImported: Int
     let embeddingsImported: Int
+    /// Number of embeddings skipped because the remote model differs from local.
+    let embeddingsSkippedModelMismatch: Int
+    /// The embedding model used by the sender.
+    let remoteEmbeddingModel: String?
+    /// The embedding dimensions used by the sender.
+    let remoteEmbeddingDimensions: Int?
 
     var totalFiles: Int { filesImported + filesSkipped }
     var isDelta: Bool { filesSkipped > 0 }
+    /// True if embeddings were skipped due to model mismatch. Receiver should re-embed locally.
+    var needsLocalReembedding: Bool { embeddingsSkippedModelMismatch > 0 }
   }
 
   // MARK: - Private Helpers
@@ -732,7 +767,8 @@ extension RAGStore {
     _ bundle: RAGRepoExportBundle,
     localRepoPath: String? = nil
   ) async throws -> RAGRepoImporter.ImportResult {
-    let dbPath = status().dbPath
+    let currentStatus = status()
+    let dbPath = currentStatus.dbPath
     // Close our connection so the importer can write
     closeDatabase()
 
@@ -741,7 +777,9 @@ extension RAGStore {
       result = try RAGRepoImporter.importRepo(
         bundle: bundle,
         dbPath: dbPath,
-        localRepoPath: localRepoPath
+        localRepoPath: localRepoPath,
+        localEmbeddingModel: currentStatus.embeddingModelName,
+        localEmbeddingDimensions: currentStatus.embeddingDimensions
       )
     } catch {
       // Re-open db
