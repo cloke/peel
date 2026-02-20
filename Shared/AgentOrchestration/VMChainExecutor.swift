@@ -142,12 +142,13 @@ public final class VMChainExecutor {
       switch environment {
       case .linux:
         let output = try await vmService.sendLinuxCommand(
-          "cd /mnt/workspace && \(command)",
+          "cd /mnt/workspace 2>/dev/null || cd /workspace; \(command)",
           timeout: 300
         )
+        let exitCode = vmService.lastCommandExitCode
         result = VMStepResult(
           stepName: name,
-          exitCode: 0,  // Console-based execution doesn't easily give exit codes
+          exitCode: exitCode,
           stdout: output,
           stderr: "",
           duration: Date().timeIntervalSince(stepStart)
@@ -205,8 +206,8 @@ public final class VMChainExecutor {
     switch environment {
     case .linux:
       try await vmService.startLinuxVM(directoryShares: shares)
-      // Wait for boot to settle (console prompt)
-      try await Task.sleep(for: .seconds(5))
+      // Poll for shell readiness instead of fixed sleep
+      try await waitForVMReady(maxAttempts: 30, interval: .seconds(1))
 
     case .macos:
       // macOS VM boot is more complex — for now use existing startMacOSVM
@@ -280,5 +281,33 @@ public final class VMChainExecutor {
     let formatted = "[VMChainExecutor] \(message)"
     print(formatted)
     logHandler?(formatted)
+  }
+
+  /// Poll the VM until the shell is responsive.
+  ///
+  /// Sends `echo PEEL_READY` via the console and waits for a response.
+  /// This replaces the old fixed `Task.sleep(for: .seconds(5))` — the
+  /// actual boot time can vary from 2s to 15s depending on the host load.
+  private func waitForVMReady(
+    maxAttempts: Int = 30,
+    interval: Duration = .seconds(1)
+  ) async throws {
+    log("Waiting for VM shell to become responsive...")
+    for attempt in 1...maxAttempts {
+      do {
+        let output = try await vmService.sendLinuxCommand("echo PEEL_READY", timeout: 3)
+        if output.contains("PEEL_READY") {
+          log("VM shell responsive after \(attempt) attempt(s)")
+          return
+        }
+      } catch {
+        // Timeout or other error — VM shell not ready yet
+        if attempt % 5 == 0 {
+          log("Still waiting for VM shell (attempt \(attempt)/\(maxAttempts))...")
+        }
+      }
+      try await Task.sleep(for: interval)
+    }
+    throw VMError.bootstrapFailed("VM shell did not become responsive after \(maxAttempts) attempts")
   }
 }
