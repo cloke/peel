@@ -1,7 +1,7 @@
 # PeelAgent — Interactive AI Coding CLI
 
 An interactive AI coding agent for your terminal, inspired by Claude Code.
-Uses the **GitHub Models API** (via your Copilot subscription) by default,
+Uses the **GitHub Copilot API** (via your Copilot subscription) by default,
 or optionally the Anthropic API for direct Claude access.
 Can read/write files, run commands, search code, and use git.
 
@@ -12,7 +12,7 @@ Can read/write files, run commands, search code, and use git.
 cd Tools/PeelAgent
 swift build -c release
 
-# Run (interactive mode) — uses GitHub token automatically
+# Run (interactive mode) — uses GitHub token automatically, Claude by default
 .build/release/peel
 
 # Run with a single prompt
@@ -22,7 +22,7 @@ swift build -c release
 .build/release/peel --yolo
 
 # Use a specific model
-.build/release/peel --model gpt-4o
+.build/release/peel --model claude-sonnet-4.6
 
 # Use Anthropic (Claude direct) instead of Copilot
 .build/release/peel --provider anthropic --api-key "sk-ant-..."
@@ -35,11 +35,14 @@ swift build -c release
 
 | Provider | Auth | Default Model | Models Available |
 |----------|------|---------------|------------------|
-| **copilot** (default) | `gh auth token` / `GH_TOKEN` | gpt-4.1 (free) | gpt-4.1, gpt-4.1-mini, gpt-4.1-nano, gpt-4o, o1, o3-mini |
-| **anthropic** | `ANTHROPIC_API_KEY` | claude-sonnet-4-20250514 | All Claude models |
+| **copilot** (default) | `copilot login` (preferred) or `gh auth` | claude-sonnet-4.5 | Claude (sonnet-4.5, sonnet-4.6, opus-4.5, opus-4.6, haiku-4.5), GPT (4.1, 4.1-mini, 4o, o1, o3-mini), Gemini |
+| **anthropic** | `ANTHROPIC_API_KEY` | claude-sonnet-4-20250514 | All Claude models (direct API) |
 
-The provider is auto-detected: if you have `gh` authenticated, it uses Copilot.
+The provider is auto-detected: if you have `copilot login` done (or `gh` authenticated), it uses Copilot.
 If only `ANTHROPIC_API_KEY` is set, it uses Anthropic.
+
+> **Note:** `copilot login` gives access to all models (Claude, GPT, Gemini).
+> Plain `gh auth` falls back to the GitHub Models API which only supports GPT models.
 
 ## Features
 
@@ -84,7 +87,7 @@ Once in a chat session:
 PeelAgent/
 ├── PeelCommand.swift     — CLI entry point (ArgumentParser)
 ├── LLMProvider.swift     — Provider protocol abstraction
-├── CopilotClient.swift   — GitHub Models API (OpenAI-compatible, default)
+├── CopilotClient.swift   — GitHub Copilot API (OpenAI-compatible, default)
 ├── ClaudeClient.swift    — Anthropic Messages API (direct Claude access)
 ├── AgentSession.swift    — Main agent loop (conversation + tool dispatch)
 ├── ToolExecutor.swift    — Tool implementations (file, terminal, git, search)
@@ -96,7 +99,7 @@ PeelAgent/
 
 - macOS 14+
 - Swift 6.0+
-- GitHub CLI (`gh`) authenticated (for Copilot provider) **or** Anthropic API key
+- `copilot login` for full model access (Claude, GPT, Gemini), **or** `gh auth login` for GPT-only, **or** Anthropic API key
 
 ## Relationship to Peel App
 

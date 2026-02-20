@@ -21,7 +21,7 @@ struct CommonOptions: ParsableArguments {
   @Option(name: .long, help: "API key or token. For copilot: GitHub token (auto-detected from `gh auth token`). For anthropic: ANTHROPIC_API_KEY.")
   var apiKey: String?
 
-  @Option(name: .long, help: "Model to use. Copilot models: gpt-4.1 (default/free), gpt-4.1-mini, gpt-4o, o1, o3-mini. Anthropic: claude-sonnet-4-20250514")
+  @Option(name: .long, help: "Model to use. Copilot: claude-sonnet-4.5 (default), claude-sonnet-4.6, claude-haiku-4.5, gpt-4.1, o3-mini, etc. Anthropic: claude-sonnet-4-20250514")
   var model: String?
 
   @Option(name: .long, help: "Working directory (default: current directory)")
@@ -49,18 +49,14 @@ struct CommonOptions: ParsableArguments {
     return .copilot
   }
 
-  func buildProvider() throws -> any LLMProvider {
+  func buildProvider() async throws -> any LLMProvider {
     let kind = resolvedProvider()
 
     switch kind {
     case .copilot:
-      let token = apiKey ?? GitHubTokenHelper.resolveToken()
-      guard let token, !token.isEmpty else {
-        Terminal.error("No GitHub token found. Run 'gh auth login' or set GH_TOKEN/GITHUB_TOKEN")
-        throw ExitCode.failure
-      }
-      let selectedModel = model ?? "gpt-4.1"
-      return CopilotClient(token: token, model: selectedModel)
+      let session = try await CopilotAuth.resolveSession(explicitKey: apiKey)
+      let selectedModel = model ?? "claude-sonnet-4.5"
+      return CopilotClient(session: session, model: selectedModel)
 
     case .anthropic:
       let key = apiKey ?? ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"]
@@ -85,7 +81,7 @@ struct ChatCommand: AsyncParsableCommand {
   @OptionGroup var options: CommonOptions
 
   func run() async throws {
-    let provider = try options.buildProvider()
+    let provider = try await options.buildProvider()
     let workDir = options.directory ?? FileManager.default.currentDirectoryPath
     let toolExecutor = ToolExecutor(workingDirectory: workDir)
     let session = AgentSession(
@@ -119,7 +115,7 @@ struct PromptCommand: AsyncParsableCommand {
   @OptionGroup var options: CommonOptions
 
   func run() async throws {
-    let provider = try options.buildProvider()
+    let provider = try await options.buildProvider()
     let workDir = options.directory ?? FileManager.default.currentDirectoryPath
     let toolExecutor = ToolExecutor(workingDirectory: workDir)
     let session = AgentSession(

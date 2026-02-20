@@ -1,25 +1,45 @@
 import Foundation
 
-// MARK: - GitHub Copilot / OpenAI-Compatible Provider
+// MARK: - GitHub Copilot Provider
 
-/// Uses the GitHub Models API (OpenAI chat/completions format) with a GitHub token.
-/// This is the default provider — no separate API key needed, just `gh auth token`.
+/// Uses the GitHub Copilot API (OpenAI chat/completions format) with a Copilot session token.
+/// Supports Claude, GPT, and Gemini models through your Copilot subscription.
 ///
-/// Endpoint: https://models.inference.ai.github.com/chat/completions
-/// Auth: Bearer <github-token>
-/// Format: OpenAI chat completions with tool_calls
+/// Auth flow:
+/// 1. Read Copilot OAuth token from ~/.config/github-copilot/apps.json
+/// 2. Exchange via api.github.com/copilot_internal/v2/token → session token + endpoint
+/// 3. Use session token against the returned endpoint (e.g. api.enterprise.githubcopilot.com)
+///
+/// Falls back to GitHub Models API (models.github.ai) for PAT-based auth (GPT only).
 final class CopilotClient: LLMProvider, Sendable {
   private let token: String
   let model: String
-  private let baseURL: String
+  private let chatCompletionsURL: String
+  private let extraHeaders: [(String, String)]
 
-  /// Default endpoint for GitHub Models API
-  static let defaultEndpoint = "https://models.github.ai/inference/chat/completions"
+  /// Fallback endpoint for direct PAT usage (GPT models only)
+  static let modelsAPIEndpoint = "https://models.github.ai/inference/chat/completions"
 
-  init(token: String, model: String, endpoint: String? = nil) {
-    self.token = token
+  /// Create a CopilotClient from a resolved session (preferred — supports all models).
+  init(session: CopilotAuth.CopilotSession, model: String) {
+    self.token = session.token
     self.model = model
-    self.baseURL = endpoint ?? Self.defaultEndpoint
+    let base = session.endpoint.hasSuffix("/") ? String(session.endpoint.dropLast()) : session.endpoint
+    self.chatCompletionsURL = base.hasSuffix("/chat/completions")
+      ? base
+      : base + "/chat/completions"
+    self.extraHeaders = [
+      ("editor-version", "PeelAgent/0.2.0"),
+      ("copilot-integration-id", "vscode-chat"),
+    ]
+  }
+
+  /// Create a CopilotClient with a raw PAT (falls back to GitHub Models API — GPT only).
+  init(pat: String, model: String) {
+    self.token = pat
+    self.model = model
+    self.chatCompletionsURL = Self.modelsAPIEndpoint
+    self.extraHeaders = []
   }
 
   // MARK: - LLMProvider
@@ -314,7 +334,7 @@ final class CopilotClient: LLMProvider, Sendable {
   }
 
   private func buildHTTPRequest<T: Encodable>(body: T) throws -> URLRequest {
-    guard let url = URL(string: baseURL) else {
+    guard let url = URL(string: chatCompletionsURL) else {
       throw CopilotError.invalidURL
     }
 
@@ -322,6 +342,10 @@ final class CopilotClient: LLMProvider, Sendable {
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+    for (name, value) in extraHeaders {
+      request.setValue(value, forHTTPHeaderField: name)
+    }
 
     let encoder = JSONEncoder()
     request.httpBody = try encoder.encode(body)
@@ -443,12 +467,99 @@ private struct OpenAIChatChunk: Decodable {
   }
 }
 
-// MARK: - GitHub Token Helper
+// MARK: - Copilot Auth (Token Exchange)
 
-enum GitHubTokenHelper {
-  /// Get a GitHub token from `gh auth token`, the GH_TOKEN env var, or GITHUB_TOKEN env var
-  static func resolveToken() -> String? {
-    // 1. Check env vars
+enum CopilotAuth {
+  struct CopilotSession: Sendable {
+    let token: String
+    let endpoint: String
+    let expiresAt: Date
+  }
+
+  /// Full auth flow: find OAuth token → exchange for session → return session.
+  /// Falls back to a PAT-based session (GitHub Models API) if no Copilot login found.
+  static func resolveSession(explicitKey: String? = nil) async throws -> CopilotSession {
+    // 1. If explicit key is provided, try it as an OAuth token for exchange
+    if let key = explicitKey, !key.isEmpty {
+      if let session = try? await exchangeToken(key) {
+        return session
+      }
+      // If exchange fails, use it as a PAT (GitHub Models API fallback)
+      return CopilotSession(
+        token: key,
+        endpoint: CopilotClient.modelsAPIEndpoint,
+        expiresAt: .distantFuture
+      )
+    }
+
+    // 2. Check ~/.config/github-copilot/apps.json for Copilot OAuth token
+    if let oauthToken = readCopilotOAuthToken() {
+      return try await exchangeToken(oauthToken)
+    }
+
+    // 3. Fall back to gh auth token / env vars → GitHub Models API (GPT only)
+    if let pat = resolveGitHubPAT() {
+      Terminal.warning(
+        "No Copilot login found — using GitHub Models API (GPT models only).\n"
+        + "  Run 'copilot login' for Claude/Gemini model access."
+      )
+      return CopilotSession(
+        token: pat,
+        endpoint: CopilotClient.modelsAPIEndpoint,
+        expiresAt: .distantFuture
+      )
+    }
+
+    throw CopilotError.noToken
+  }
+
+  /// Read the Copilot CLI OAuth token from ~/.config/github-copilot/apps.json
+  static func readCopilotOAuthToken() -> String? {
+    let path = NSString("~/.config/github-copilot/apps.json").expandingTildeInPath
+    guard let data = FileManager.default.contents(atPath: path),
+          let json = try? JSONDecoder().decode([String: CopilotApp].self, from: data),
+          let app = json.values.first
+    else { return nil }
+    return app.oauth_token
+  }
+
+  /// Exchange a Copilot OAuth token for a session token via the internal API.
+  static func exchangeToken(_ oauthToken: String) async throws -> CopilotSession {
+    guard let url = URL(string: "https://api.github.com/copilot_internal/v2/token") else {
+      throw CopilotError.invalidURL
+    }
+
+    var request = URLRequest(url: url)
+    request.httpMethod = "GET"
+    request.setValue("token \(oauthToken)", forHTTPHeaderField: "Authorization")
+    request.setValue("PeelAgent/0.2.0", forHTTPHeaderField: "editor-version")
+    request.setValue("copilot/1.0.0", forHTTPHeaderField: "editor-plugin-version")
+    request.setValue("GithubCopilot/1.0.0", forHTTPHeaderField: "user-agent")
+
+    let (data, response) = try await URLSession.shared.data(for: request)
+
+    guard let httpResponse = response as? HTTPURLResponse else {
+      throw CopilotError.invalidResponse
+    }
+
+    guard (200...299).contains(httpResponse.statusCode) else {
+      let body = String(data: data, encoding: .utf8) ?? "(empty)"
+      throw CopilotError.apiError(statusCode: httpResponse.statusCode, body: body)
+    }
+
+    let tokenResponse = try JSONDecoder().decode(TokenExchangeResponse.self, from: data)
+    let endpoint = tokenResponse.endpoints.api
+    let expiresAt = Date(timeIntervalSince1970: TimeInterval(tokenResponse.expires_at))
+
+    return CopilotSession(
+      token: tokenResponse.token,
+      endpoint: endpoint,
+      expiresAt: expiresAt
+    )
+  }
+
+  /// Get a GitHub PAT from GH_TOKEN, GITHUB_TOKEN, or `gh auth token`
+  static func resolveGitHubPAT() -> String? {
     if let token = ProcessInfo.processInfo.environment["GH_TOKEN"], !token.isEmpty {
       return token
     }
@@ -456,7 +567,6 @@ enum GitHubTokenHelper {
       return token
     }
 
-    // 2. Try `gh auth token`
     let process = Process()
     let pipe = Pipe()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -474,11 +584,42 @@ enum GitHubTokenHelper {
           return token
         }
       }
-    } catch {
-      // gh not available
-    }
+    } catch {}
 
     return nil
+  }
+
+  /// Check if any Copilot-compatible auth is available (without exchanging)
+  static func isAvailable() -> Bool {
+    readCopilotOAuthToken() != nil || resolveGitHubPAT() != nil
+  }
+
+  // MARK: - Internal Types
+
+  private struct CopilotApp: Decodable {
+    let user: String?
+    let oauth_token: String
+    let githubAppId: String?
+  }
+
+  private struct TokenExchangeResponse: Decodable {
+    let token: String
+    let endpoints: Endpoints
+    let expires_at: Int
+    let refresh_in: Int?
+
+    struct Endpoints: Decodable {
+      let api: String
+    }
+  }
+}
+
+// MARK: - Legacy Helper (for auto-detection)
+
+enum GitHubTokenHelper {
+  /// Check if Copilot auth is available (apps.json or gh token)
+  static func resolveToken() -> String? {
+    CopilotAuth.readCopilotOAuthToken() ?? CopilotAuth.resolveGitHubPAT()
   }
 }
 
