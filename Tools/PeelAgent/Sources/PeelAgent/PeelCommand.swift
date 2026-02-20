@@ -11,6 +11,42 @@ struct PeelCommand: AsyncParsableCommand {
     subcommands: [ChatCommand.self, PromptCommand.self],
     defaultSubcommand: ChatCommand.self
   )
+
+  /// Override the entry point to strip macOS/Xcode debug launch arguments
+  /// (e.g. `-NSDocumentRevisionsDebugMode YES`, `-ApplePersistenceIgnoreState YES`)
+  /// that ArgumentParser doesn't recognise.
+  static func main() async {
+    let rawArgs = Array(CommandLine.arguments.dropFirst())
+    let cleanArgs = filterMacOSDebugArgs(rawArgs)
+
+    do {
+      var command = try parseAsRoot(cleanArgs)
+      if var asyncCommand = command as? AsyncParsableCommand {
+        try await asyncCommand.run()
+      } else {
+        try command.run()
+      }
+    } catch {
+      exit(withError: error)
+    }
+  }
+
+  /// Remove `-NS*` and `-Apple*` key-value pairs injected by Xcode at launch.
+  private static func filterMacOSDebugArgs(_ args: [String]) -> [String] {
+    var filtered: [String] = []
+    var i = 0
+    while i < args.count {
+      let arg = args[i]
+      if arg.hasPrefix("-NS") || arg.hasPrefix("-Apple") {
+        // Skip the flag and its companion value (e.g. "YES")
+        i += 2
+      } else {
+        filtered.append(arg)
+        i += 1
+      }
+    }
+    return filtered
+  }
 }
 
 // MARK: - Shared Options
