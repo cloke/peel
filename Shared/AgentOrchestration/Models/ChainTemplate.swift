@@ -21,6 +21,102 @@ public enum TemplateCategory: String, Codable, CaseIterable, Sendable {
   }
 }
 
+// MARK: - VM Toolchain & Directory Sharing
+
+/// Pre-configured toolchain to bootstrap inside a VM before running agent steps.
+/// Each toolchain maps to a setup script that installs packages into the VM.
+public enum VMToolchain: String, Codable, Sendable, CaseIterable {
+  /// Minimal shell environment (BusyBox / base Alpine). No extra packages.
+  case minimal = "minimal"
+  /// Git + SSH (git, openssh-client)
+  case git = "git"
+  /// Swift toolchain (swiftly + latest Swift release)
+  case swift = "swift"
+  /// Node.js / npm ecosystem
+  case node = "node"
+  /// Ruby / Bundler / Rake
+  case ruby = "ruby"
+  /// Ember.js (Node + ember-cli)
+  case ember = "ember"
+  /// Full-stack: Git + Node + Ruby + common build tools
+  case fullStack = "full-stack"
+
+  public var displayName: String {
+    switch self {
+    case .minimal: "Minimal"
+    case .git: "Git"
+    case .swift: "Swift"
+    case .node: "Node.js"
+    case .ruby: "Ruby"
+    case .ember: "Ember.js"
+    case .fullStack: "Full Stack"
+    }
+  }
+
+  /// Packages to install via `apk add` (Alpine Linux).
+  /// macOS VMs use Homebrew equivalents instead.
+  public var alpinePackages: [String] {
+    switch self {
+    case .minimal: []
+    case .git: ["git", "openssh-client"]
+    case .swift: ["git", "openssh-client", "bash", "curl", "libstdc++"]
+    case .node: ["git", "nodejs", "npm"]
+    case .ruby: ["git", "ruby", "ruby-bundler", "build-base"]
+    case .ember: ["git", "nodejs", "npm"]
+    case .fullStack: ["git", "openssh-client", "nodejs", "npm", "ruby", "ruby-bundler", "build-base", "curl", "bash"]
+    }
+  }
+
+  /// Extra setup commands to run after package install
+  public var postInstallCommands: [String] {
+    switch self {
+    case .ember: ["npm install -g ember-cli"]
+    case .swift: ["curl -L https://swift.org/install.sh | bash"]
+    case .fullStack: ["npm install -g ember-cli"]
+    default: []
+    }
+  }
+
+  /// Estimated additional disk space in MB
+  public var estimatedDiskMB: Int {
+    switch self {
+    case .minimal: 0
+    case .git: 20
+    case .swift: 800
+    case .node: 100
+    case .ruby: 80
+    case .ember: 200
+    case .fullStack: 500
+    }
+  }
+}
+
+/// Describes a directory to share between host and VM via VirtioFS.
+public struct VMDirectoryShare: Codable, Hashable, Sendable {
+  /// Host-side directory path to share
+  public var hostPath: String
+  /// Mount tag visible inside the VM (e.g. "workspace", "output")
+  public var tag: String
+  /// Whether the VM can write to this share
+  public var readOnly: Bool
+
+  public init(hostPath: String, tag: String, readOnly: Bool = false) {
+    self.hostPath = hostPath
+    self.tag = tag
+    self.readOnly = readOnly
+  }
+
+  /// Standard share for the agent workspace (worktree)
+  public static func workspace(_ path: String) -> VMDirectoryShare {
+    VMDirectoryShare(hostPath: path, tag: "workspace", readOnly: false)
+  }
+
+  /// Read-only share for reference data (e.g. RAG index, docs)
+  public static func reference(_ path: String, tag: String = "reference") -> VMDirectoryShare {
+    VMDirectoryShare(hostPath: path, tag: tag, readOnly: true)
+  }
+}
+
 /// A reusable template for creating agent chains
 public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
   public let id: UUID
@@ -30,6 +126,15 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
   public let createdAt: Date
   public var isBuiltIn: Bool
   public var category: TemplateCategory
+
+  /// Where chain steps execute: host (default), linux VM, or macOS VM
+  public var executionEnvironment: ExecutionEnvironment
+
+  /// Toolchain to bootstrap inside the VM before running steps (ignored when environment is .host)
+  public var toolchain: VMToolchain
+
+  /// Extra directories to share between host and VM via VirtioFS
+  public var directoryShares: [VMDirectoryShare]
   
   #if os(macOS)
   public var validationConfig: ValidationConfiguration
@@ -43,6 +148,9 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     case createdAt
     case isBuiltIn
     case category
+    case executionEnvironment
+    case toolchain
+    case directoryShares
     #if os(macOS)
     case validationConfig
     #endif
@@ -56,6 +164,9 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     steps: [AgentStepTemplate] = [],
     isBuiltIn: Bool = false,
     category: TemplateCategory = .core,
+    executionEnvironment: ExecutionEnvironment = .host,
+    toolchain: VMToolchain = .minimal,
+    directoryShares: [VMDirectoryShare] = [],
     validationConfig: ValidationConfiguration? = nil
   ) {
     self.id = id
@@ -65,6 +176,9 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     self.createdAt = Date()
     self.isBuiltIn = isBuiltIn
     self.category = category
+    self.executionEnvironment = executionEnvironment
+    self.toolchain = toolchain
+    self.directoryShares = directoryShares
     self.validationConfig = validationConfig ?? .default
   }
   #else
@@ -74,7 +188,10 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     description: String = "",
     steps: [AgentStepTemplate] = [],
     isBuiltIn: Bool = false,
-    category: TemplateCategory = .core
+    category: TemplateCategory = .core,
+    executionEnvironment: ExecutionEnvironment = .host,
+    toolchain: VMToolchain = .minimal,
+    directoryShares: [VMDirectoryShare] = []
   ) {
     self.id = id
     self.name = name
@@ -83,6 +200,9 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     self.createdAt = Date()
     self.isBuiltIn = isBuiltIn
     self.category = category
+    self.executionEnvironment = executionEnvironment
+    self.toolchain = toolchain
+    self.directoryShares = directoryShares
   }
   #endif
 
@@ -95,6 +215,9 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     self.createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
     self.isBuiltIn = try container.decodeIfPresent(Bool.self, forKey: .isBuiltIn) ?? false
     self.category = try container.decodeIfPresent(TemplateCategory.self, forKey: .category) ?? .core
+    self.executionEnvironment = try container.decodeIfPresent(ExecutionEnvironment.self, forKey: .executionEnvironment) ?? .host
+    self.toolchain = try container.decodeIfPresent(VMToolchain.self, forKey: .toolchain) ?? .minimal
+    self.directoryShares = try container.decodeIfPresent([VMDirectoryShare].self, forKey: .directoryShares) ?? []
     #if os(macOS)
     self.validationConfig = try container.decodeIfPresent(ValidationConfiguration.self, forKey: .validationConfig) ?? .default
     #endif
@@ -109,6 +232,16 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     try container.encode(createdAt, forKey: .createdAt)
     try container.encode(isBuiltIn, forKey: .isBuiltIn)
     try container.encode(category, forKey: .category)
+    // Only encode VM fields when non-default to keep JSON clean
+    if executionEnvironment != .host {
+      try container.encode(executionEnvironment, forKey: .executionEnvironment)
+    }
+    if toolchain != .minimal {
+      try container.encode(toolchain, forKey: .toolchain)
+    }
+    if !directoryShares.isEmpty {
+      try container.encode(directoryShares, forKey: .directoryShares)
+    }
     #if os(macOS)
     try container.encode(validationConfig, forKey: .validationConfig)
     #endif
@@ -330,6 +463,92 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         ],
         isBuiltIn: true,
         category: .specialized
+      ),
+
+      // VM ISOLATED TEMPLATES
+
+      // 10. VM Quick Task (Linux): Run a quick command inside an isolated Linux VM
+      ChainTemplate(
+        name: "VM Quick Task (Linux)",
+        description: "Run a single command inside an isolated Linux VM with Git toolchain (Cost: Free)",
+        steps: [
+          AgentStepTemplate(
+            role: .implementer,
+            model: .bestFree,
+            name: "VM Exec",
+            stepType: .deterministic,
+            command: "cd /mnt/workspace && git status && ls -la"
+          )
+        ],
+        isBuiltIn: true,
+        category: .specialized,
+        executionEnvironment: .linux,
+        toolchain: .git
+      ),
+
+      // 11. VM Full Build (Linux): Plan on host, build+test inside Linux VM
+      ChainTemplate(
+        name: "VM Full Build (Linux)",
+        description: "Plan on host, execute build and tests inside an isolated Linux VM (Cost: Standard)",
+        steps: [
+          AgentStepTemplate(role: .planner, model: .bestStandard, name: "Planner"),
+          AgentStepTemplate(role: .implementer, model: .bestStandard, name: "Implementer"),
+          AgentStepTemplate(
+            role: .implementer,
+            model: .bestFree,
+            name: "VM Build Gate",
+            stepType: .gate,
+            command: "cd /mnt/workspace && swift build 2>&1"
+          ),
+          AgentStepTemplate(
+            role: .implementer,
+            model: .bestFree,
+            name: "VM Test Gate",
+            stepType: .gate,
+            command: "cd /mnt/workspace && swift test 2>&1"
+          ),
+          AgentStepTemplate(role: .reviewer, model: .bestFree, name: "Reviewer")
+        ],
+        isBuiltIn: true,
+        category: .specialized,
+        executionEnvironment: .linux,
+        toolchain: .swift
+      ),
+
+      // 12. VM Ember Build: Plan on host, build+lint Ember.js project inside Linux VM
+      ChainTemplate(
+        name: "VM Ember Build (Linux)",
+        description: "Plan on host, build and lint Ember.js project inside an isolated Linux VM (Cost: Standard)",
+        steps: [
+          AgentStepTemplate(role: .planner, model: .bestStandard, name: "Planner"),
+          AgentStepTemplate(role: .implementer, model: .bestStandard, name: "Implementer"),
+          AgentStepTemplate(
+            role: .implementer,
+            model: .bestFree,
+            name: "VM Install Gate",
+            stepType: .gate,
+            command: "cd /mnt/workspace && npm ci 2>&1"
+          ),
+          AgentStepTemplate(
+            role: .implementer,
+            model: .bestFree,
+            name: "VM Lint Gate",
+            stepType: .gate,
+            command: "cd /mnt/workspace && npm run lint 2>&1"
+          ),
+          AgentStepTemplate(
+            role: .implementer,
+            model: .bestFree,
+            name: "VM Build Gate",
+            stepType: .gate,
+            command: "cd /mnt/workspace && ember build 2>&1"
+          ),
+          AgentStepTemplate(role: .reviewer, model: .bestFree, name: "Reviewer")
+        ],
+        isBuiltIn: true,
+        category: .specialized,
+        executionEnvironment: .linux,
+        toolchain: .ember
       )
     ]
 
@@ -440,6 +659,19 @@ extension ChainTemplate {
   /// Total estimated premium cost for all steps
   public var estimatedTotalCost: Double {
     steps.reduce(0) { $0 + $1.estimatedCost }
+  }
+
+  /// Whether this template runs inside a VM
+  public var requiresVM: Bool {
+    executionEnvironment != .host
+  }
+
+  /// Human-readable execution environment label
+  public var environmentLabel: String {
+    if executionEnvironment == .host { return "Host" }
+    let env = executionEnvironment.displayName
+    if toolchain == .minimal { return env }
+    return "\(env) (\(toolchain.displayName))"
   }
   
   /// Cost display string

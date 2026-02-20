@@ -60,6 +60,20 @@ public final class AgentChain: Identifiable {
   
   /// Current review iteration (0 = first pass)
   public var currentReviewIteration: Int = 0
+
+  // MARK: - VM Execution
+
+  /// Where this chain's deterministic/gate steps execute (default: host)
+  public var executionEnvironment: ExecutionEnvironment = .host
+
+  /// Toolchain to bootstrap inside the VM (ignored for .host)
+  public var toolchain: VMToolchain = .minimal
+
+  /// Extra directory shares for VM-based execution
+  public var directoryShares: [VMDirectoryShare] = []
+
+  /// Whether this chain runs any steps inside a VM
+  public var requiresVM: Bool { executionEnvironment != .host }
   
   // MARK: - Live Status (for UI updates during execution)
   

@@ -170,6 +170,11 @@ public final class AgentManager {
   /// Create a chain from a template
   public func createChainFromTemplate(_ template: ChainTemplate, workingDirectory: String? = nil) -> AgentChain {
     let chain = createChain(name: template.name, workingDirectory: workingDirectory)
+
+    // Copy VM execution settings from template
+    chain.executionEnvironment = template.executionEnvironment
+    chain.toolchain = template.toolchain
+    chain.directoryShares = template.directoryShares
     
     for step in template.steps {
       let agent = createAgent(

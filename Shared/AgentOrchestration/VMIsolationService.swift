@@ -44,7 +44,7 @@ import Darwin
 // MARK: - Execution Environment
 
 /// Where to run a task - from lightest to heaviest isolation
-enum ExecutionEnvironment: String, Sendable, CaseIterable {
+public enum ExecutionEnvironment: String, Codable, Sendable, CaseIterable {
   /// Run on host - fastest, full hardware access, least isolated
   /// Use for: trusted code, ANE inference, GPU compute
   case host = "host"
@@ -1035,7 +1035,8 @@ public final class VMIsolationService {
   @available(macOS 12.0, *)
   private func createMacOSVMConfiguration(
     restoreImage: VZMacOSRestoreImage,
-    resources: VMResourceLimits
+    resources: VMResourceLimits,
+    directoryShares: [VMDirectoryShare] = []
   ) throws -> VZVirtualMachineConfiguration {
     try FileManager.default.createDirectory(at: macOSVMBundlePath, withIntermediateDirectories: true)
 
@@ -1084,13 +1085,43 @@ public final class VMIsolationService {
 
     config.entropyDevices = [VZVirtioEntropyDeviceConfiguration()]
 
+    // Attach VirtioFS directory shares (host ↔ VM file sharing)
+    if !directoryShares.isEmpty {
+      let fsDevices = createDirectorySharingDevices(from: directoryShares)
+      config.directorySharingDevices = fsDevices
+      vmDebug("macOS VM: Attached \(fsDevices.count) VirtioFS directory share(s)")
+    }
+
     try config.validate()
     return config
   }
   
   // MARK: - VM Lifecycle
   
-  private func createMinimalLinuxVMConfiguration() throws -> VZVirtualMachineConfiguration {
+  /// Create VirtioFS directory sharing devices from share descriptors.
+  /// Each share maps a host directory into the VM, mountable via `mount -t virtiofs <tag> <mountpoint>`.
+  @available(macOS 12.0, *)
+  private func createDirectorySharingDevices(
+    from shares: [VMDirectoryShare]
+  ) -> [VZVirtioFileSystemDeviceConfiguration] {
+    shares.compactMap { share in
+      let hostURL = URL(fileURLWithPath: share.hostPath)
+      guard FileManager.default.fileExists(atPath: share.hostPath) else {
+        vmDebug("Skipping directory share '\(share.tag)': path does not exist: \(share.hostPath)")
+        return nil
+      }
+      let sharedDir = VZSharedDirectory(url: hostURL, readOnly: share.readOnly)
+      let singleShare = VZSingleDirectoryShare(directory: sharedDir)
+      let fsDevice = VZVirtioFileSystemDeviceConfiguration(tag: share.tag)
+      fsDevice.share = singleShare
+      vmDebug("Directory share: '\(share.tag)' → \(share.hostPath) (readOnly: \(share.readOnly))")
+      return fsDevice
+    }
+  }
+
+  private func createMinimalLinuxVMConfiguration(
+    directoryShares: [VMDirectoryShare] = []
+  ) throws -> VZVirtualMachineConfiguration {
     let linuxDir = linuxVMDirectory
     let kernelPath = linuxDir.appendingPathComponent("vmlinuz")
     let initramfsPath = linuxDir.appendingPathComponent("initramfs")
@@ -1202,6 +1233,13 @@ public final class VMIsolationService {
     consoleOutputPipe = consoleOutput
     serialInputPipe = serialInput
     serialOutputPipe = serialOutput
+
+    // Attach VirtioFS directory shares (host ↔ VM file sharing)
+    if #available(macOS 12.0, *), !directoryShares.isEmpty {
+      let fsDevices = createDirectorySharingDevices(from: directoryShares)
+      config.directorySharingDevices = fsDevices
+      vmDebug("Attached \(fsDevices.count) VirtioFS directory share(s)")
+    }
     
     try config.validate()
     vmDebug("Minimal configuration validated successfully")
@@ -1209,7 +1247,7 @@ public final class VMIsolationService {
   }
   
   /// Start a Linux VM for testing
-  func startLinuxVM() async throws {
+  func startLinuxVM(directoryShares: [VMDirectoryShare] = []) async throws {
     guard isVirtualizationAvailable else {
       throw VMError.virtualizationNotAvailable
     }
@@ -1234,7 +1272,7 @@ public final class VMIsolationService {
     // Create configuration (minimal diagnostics first)
     let config: VZVirtualMachineConfiguration
     do {
-      config = try createMinimalLinuxVMConfiguration()
+      config = try createMinimalLinuxVMConfiguration(directoryShares: directoryShares)
     } catch {
       print("[VM] ERROR: Failed to create configuration: \(error)")
       statusMessage = "Configuration failed: \(error.localizedDescription)"
@@ -1680,6 +1718,76 @@ public final class VMIsolationService {
         networkBytesReceived: 0
       )
     )
+  }
+
+  // MARK: - VM Console Command Execution
+
+  /// Send a command to the running Linux VM via its console input pipe.
+  /// Returns the console output captured after the command, with a sentinel marker
+  /// to delimit the response.
+  ///
+  /// - Parameters:
+  ///   - command: Shell command to execute inside the VM
+  ///   - timeout: Maximum time to wait for output (default 30s)
+  /// - Returns: Captured stdout from the VM
+  func sendLinuxCommand(_ command: String, timeout: TimeInterval = 30) async throws -> String {
+    guard runningLinuxVM != nil else {
+      throw VMError.vmNotRunning
+    }
+    guard let inputPipe = consoleInputPipe else {
+      throw VMError.vmCreationFailed("Console input pipe not available")
+    }
+
+    // Use a unique sentinel to delimit command output
+    let sentinel = "PEEL_CMD_DONE_\(UUID().uuidString.prefix(8))"
+    let wrappedCommand = "\(command); echo \(sentinel)\n"
+
+    guard let data = wrappedCommand.data(using: .utf8) else {
+      throw VMError.vmCreationFailed("Failed to encode command")
+    }
+
+    // Capture console output before sending
+    let previousOutput = consoleOutput
+
+    inputPipe.fileHandleForWriting.write(data)
+
+    // Poll for sentinel in console output
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+      try await Task.sleep(for: .milliseconds(200))
+      let currentOutput = consoleOutput
+      if currentOutput.contains(sentinel) {
+        // Extract output between previous state and sentinel
+        let newOutput = String(currentOutput.dropFirst(previousOutput.count))
+        if let sentinelRange = newOutput.range(of: sentinel) {
+          let result = String(newOutput[newOutput.startIndex..<sentinelRange.lowerBound])
+          // Strip the echoed command from the beginning
+          let lines = result.split(separator: "\n", omittingEmptySubsequences: false)
+          let filtered = lines.drop { $0.contains(command.prefix(40)) }
+          return filtered.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return newOutput.replacingOccurrences(of: sentinel, with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+      }
+    }
+
+    throw VMError.commandTimeout(Int(timeout))
+  }
+
+  /// Mount all VirtioFS shares inside the running Linux VM.
+  /// Creates mount points at /mnt/<tag> and mounts using virtiofs.
+  func mountDirectoryShares(_ shares: [VMDirectoryShare]) async throws {
+    for share in shares {
+      let mountPoint = "/mnt/\(share.tag)"
+      let mountFlags = share.readOnly ? "-o ro" : ""
+      let commands = [
+        "mkdir -p \(mountPoint)",
+        "mount -t virtiofs \(mountFlags) \(share.tag) \(mountPoint)"
+      ]
+      for cmd in commands {
+        _ = try await sendLinuxCommand(cmd, timeout: 10)
+      }
+      vmLog("Mounted VirtioFS share '\(share.tag)' at \(mountPoint)")
+    }
   }
   
   // MARK: - Snapshot Management
@@ -2194,9 +2302,12 @@ enum VMError: LocalizedError {
   case macOSRestoreImageNotFound
   case poolExhausted(VMCapabilityTier)
   case taskTimeout(UUID)
+  case commandTimeout(Int)
   case snapshotNotFound(String)
   case vmCreationFailed(String)
   case vmAlreadyRunning
+  case vmNotRunning
+  case bootstrapFailed(String)
   
   var errorDescription: String? {
     switch self {
@@ -2212,12 +2323,18 @@ enum VMError: LocalizedError {
       "No available VMs in \(tier.description) pool"
     case .taskTimeout(let id):
       "Task \(id) exceeded time limit"
+    case .commandTimeout(let seconds):
+      "VM command timed out after \(seconds)s"
     case .snapshotNotFound(let name):
       "Snapshot '\(name)' not found"
     case .vmCreationFailed(let reason):
       "Failed to create VM: \(reason)"
     case .vmAlreadyRunning:
       "A Linux VM is already running"
+    case .vmNotRunning:
+      "No Linux VM is currently running"
+    case .bootstrapFailed(let reason):
+      "VM bootstrap failed: \(reason)"
     }
   }
 }
