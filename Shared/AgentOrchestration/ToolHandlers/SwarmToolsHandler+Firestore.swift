@@ -390,11 +390,32 @@ extension SwarmToolsHandler {
       return missingParamError(id: id, param: "repoPath")
     }
     
+    let repoIdentifier = optionalString("repoIdentifier", from: arguments)
     let service = FirebaseService.shared
     let ragStore = LocalRAGStore.shared
     
     do {
-      // Create a bundle from the local RAG store
+      // Per-repo sync: export only the specified repo as JSON and push that
+      if let repoIdentifier {
+        guard let repoBundle = try await ragStore.exportRepo(identifier: repoIdentifier) else {
+          return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "No RAG index found for repo identifier: \(repoIdentifier)"))
+        }
+        let jsonData = try JSONEncoder().encode(repoBundle)
+        let artifactId = try await service.pushRAGRepoBundle(swarmId: swarmId, repoIdentifier: repoIdentifier, data: jsonData)
+        return (200, makeResult(id: id, result: [
+          "success": true,
+          "swarmId": swarmId,
+          "artifactId": artifactId,
+          "repoIdentifier": repoIdentifier,
+          "totalBytes": jsonData.count,
+          "formattedSize": ByteCountFormatter.string(fromByteCount: Int64(jsonData.count), countStyle: .file),
+          "fileCount": repoBundle.files.count,
+          "chunkCount": repoBundle.files.flatMap(\.chunks).count,
+          "mode": "per-repo"
+        ]))
+      }
+
+      // Full DB sync (legacy path)
       guard let bundle = try await ragStore.createArtifactBundle(for: repoPath) else {
         return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "No RAG index found for repo: \(repoPath)"))
       }
@@ -410,7 +431,8 @@ extension SwarmToolsHandler {
         "totalBytes": bundle.bundleSizeBytes,
         "formattedSize": ByteCountFormatter.string(fromByteCount: Int64(bundle.bundleSizeBytes), countStyle: .file),
         "repoCount": bundle.manifest.repos.count,
-        "embeddingCacheCount": bundle.manifest.embeddingCacheCount
+        "embeddingCacheCount": bundle.manifest.embeddingCacheCount,
+        "mode": "full-db"
       ]))
     } catch {
       return internalError(id: id, message: "Failed to push RAG artifacts: \(error.localizedDescription)")
@@ -428,26 +450,42 @@ extension SwarmToolsHandler {
       return missingParamError(id: id, param: "repoPath")
     }
     
+    let repoIdentifier = optionalString("repoIdentifier", from: arguments)
     let service = FirebaseService.shared
     let ragStore = LocalRAGStore.shared
     
     do {
-      // Create a temp destination for the bundle
+      // Per-repo sync: pull JSON bundle, decode, and merge
+      if let repoIdentifier {
+        let jsonData = try await service.pullRAGRepoBundle(swarmId: swarmId, artifactId: artifactId)
+        let repoBundle = try JSONDecoder().decode(RAGRepoExportBundle.self, from: jsonData)
+        let result = try await ragStore.importRepoBundle(repoBundle, localRepoPath: repoPath)
+        return (200, makeResult(id: id, result: [
+          "success": true,
+          "swarmId": swarmId,
+          "artifactId": artifactId,
+          "repoIdentifier": repoIdentifier,
+          "repoPath": repoPath,
+          "filesImported": result.filesImported,
+          "filesSkipped": result.filesSkipped,
+          "chunksImported": result.chunksImported,
+          "mode": "per-repo"
+        ]))
+      }
+
+      // Full DB sync (legacy path)
       let tempDir = FileManager.default.temporaryDirectory
       let bundleURL = tempDir.appendingPathComponent("rag-artifact-\(artifactId).zip")
       
-      // Pull from Firestore
       let manifest = try await service.pullRAGArtifacts(
         swarmId: swarmId,
         artifactId: artifactId,
         destination: bundleURL
       )
       
-      // Import into local RAG store
       let bundle = LocalRAGArtifactBundle(manifest: manifest, bundleURL: bundleURL, bundleSizeBytes: try FileManager.default.attributesOfItem(atPath: bundleURL.path)[.size] as? Int ?? 0)
       try await ragStore.importArtifactBundle(bundle, for: repoPath)
       
-      // Clean up temp file
       try? FileManager.default.removeItem(at: bundleURL)
       
       return (200, makeResult(id: id, result: [
@@ -457,7 +495,8 @@ extension SwarmToolsHandler {
         "version": manifest.version,
         "repoPath": repoPath,
         "repoCount": manifest.repos.count,
-        "embeddingCacheCount": manifest.embeddingCacheCount
+        "embeddingCacheCount": manifest.embeddingCacheCount,
+        "mode": "full-db"
       ]))
     } catch {
       return internalError(id: id, message: "Failed to pull RAG artifacts: \(error.localizedDescription)")

@@ -88,11 +88,6 @@ public struct SwarmStatusView: View {
             Text(coordinator.isActive ? "Active (\(roleDisplayName))" : "Inactive")
               .font(.caption)
               .foregroundStyle(.secondary)
-            if coordinator.autoRestored {
-              Text("Auto-restored")
-                .font(.caption2.bold())
-                .foregroundStyle(.blue)
-            }
           }
         }
       }

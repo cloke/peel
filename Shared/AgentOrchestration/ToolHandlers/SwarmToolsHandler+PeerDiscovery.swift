@@ -418,14 +418,16 @@ extension SwarmToolsHandler {
     }
 
     let workerId = optionalString("workerId", from: arguments)
+    let repoIdentifier = optionalString("repoIdentifier", from: arguments)
 
     do {
-      let transferId = try await coordinator.requestRagArtifactSync(direction: direction, workerId: workerId)
+      let transferId = try await coordinator.requestRagArtifactSync(direction: direction, workerId: workerId, repoIdentifier: repoIdentifier)
       return (200, makeResult(id: id, result: [
         "success": true,
         "transferId": transferId.uuidString,
         "direction": direction.rawValue,
-        "workerId": workerId as Any
+        "workerId": workerId as Any,
+        "repoIdentifier": repoIdentifier as Any
       ]))
     } catch {
       return internalError(id: id, message: error.localizedDescription)

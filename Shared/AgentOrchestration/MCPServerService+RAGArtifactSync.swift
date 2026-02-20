@@ -81,4 +81,29 @@ extension MCPServerService: RAGArtifactSyncDelegate {
     await updateRagArtifactStatus(from: manifest, lastSyncedAt: Date(), direction: direction)
     logger.info("RAG sync: complete — applied bundle \(manifest.version), ragRepos count: \(self.ragRepos.count)")
   }
+
+  // MARK: - Per-repo sync
+
+  func createRepoSyncBundle(repoIdentifier: String, excludeFileHashes: Set<String>) async throws -> RAGRepoExportBundle? {
+    logger.info("RAG repo sync: exporting '\(repoIdentifier)', excluding \(excludeFileHashes.count) hashes")
+    let bundle = try await localRagStore.exportRepo(identifier: repoIdentifier, excludeFileHashes: excludeFileHashes)
+    if let bundle {
+      logger.info("RAG repo sync: exported \(bundle.files.count) files, \(bundle.files.flatMap(\.chunks).count) chunks")
+    } else {
+      logger.warning("RAG repo sync: repo '\(repoIdentifier)' not found")
+    }
+    return bundle
+  }
+
+  func applyRepoSyncBundle(_ bundle: RAGRepoExportBundle, localRepoPath: String?) async throws -> RAGRepoImporter.ImportResult {
+    logger.info("RAG repo sync: importing '\(bundle.manifest.repoIdentifier)', \(bundle.files.count) files")
+    let result = try await localRagStore.importRepoBundle(bundle, localRepoPath: localRepoPath)
+    logger.info("RAG repo sync: imported — inserted \(result.filesImported), skipped \(result.filesSkipped), chunks \(result.chunksImported)")
+    await refreshRagSummary()
+    return result
+  }
+
+  func localRepoFileHashes(repoIdentifier: String) async throws -> Set<String> {
+    try await localRagStore.localFileHashes(identifier: repoIdentifier)
+  }
 }

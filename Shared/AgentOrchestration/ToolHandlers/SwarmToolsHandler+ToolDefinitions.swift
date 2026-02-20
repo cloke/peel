@@ -71,7 +71,7 @@ extension SwarmToolsHandler {
       ),
       MCPToolDefinition(
         name: "swarm.rag.sync",
-        description: "Request a Local RAG artifact sync to or from a peel. Direction is 'push' or 'pull'.",
+        description: "Request a Local RAG artifact sync to or from a peel. Direction is 'push' or 'pull'. Optionally scope to a single repo by repoIdentifier.",
         inputSchema: [
           "type": "object",
           "properties": [
@@ -83,6 +83,10 @@ extension SwarmToolsHandler {
             "workerId": [
               "type": "string",
               "description": "Optional worker device ID (defaults to first connected peel)"
+            ],
+            "repoIdentifier": [
+              "type": "string",
+              "description": "Optional normalized git remote URL (e.g. 'github.com/org/repo') to sync only one repo. If omitted, syncs all repos."
             ]
           ],
           "required": ["direction"]
@@ -522,7 +526,7 @@ extension SwarmToolsHandler {
       ),
       MCPToolDefinition(
         name: "swarm.firestore.rag.push",
-        description: "Push local RAG artifacts to Firestore swarm for sharing with other members. Requires contributor+ role.",
+        description: "Push local RAG artifacts to Firestore swarm for sharing with other members. Requires contributor+ role. When repoIdentifier is provided, pushes only that repo's data (much smaller).",
         inputSchema: [
           "type": "object",
           "properties": [
@@ -533,6 +537,10 @@ extension SwarmToolsHandler {
             "repoPath": [
               "type": "string",
               "description": "Path to the repository whose RAG index to push"
+            ],
+            "repoIdentifier": [
+              "type": "string",
+              "description": "Optional normalized git remote URL to push only that repo's embeddings (per-repo sync)"
             ]
           ],
           "required": ["swarmId", "repoPath"]
@@ -542,7 +550,7 @@ extension SwarmToolsHandler {
       ),
       MCPToolDefinition(
         name: "swarm.firestore.rag.pull",
-        description: "Pull RAG artifacts from Firestore swarm to local storage. Requires reader+ role.",
+        description: "Pull RAG artifacts from Firestore swarm to local storage. Requires reader+ role. When repoIdentifier is provided, applies per-repo merge instead of full DB replacement.",
         inputSchema: [
           "type": "object",
           "properties": [
@@ -557,6 +565,10 @@ extension SwarmToolsHandler {
             "repoPath": [
               "type": "string",
               "description": "Path to the repository to import the RAG index into"
+            ],
+            "repoIdentifier": [
+              "type": "string",
+              "description": "Optional normalized git remote URL — when set, the pulled data is a per-repo JSON bundle instead of a full DB zip"
             ]
           ],
           "required": ["swarmId", "artifactId", "repoPath"]
