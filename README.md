@@ -1,10 +1,12 @@
 # Peel
 
-Peel back the layers of your dev environment. A macOS/iOS developer tools app for managing GitHub, Git repositories, Homebrew, and AI coding agents.
+> Peel back the layers of your dev environment.
 
-**Status:** ✅ Active Development  
-**Swift:** 6.0 with strict concurrency  
-**Targets:** macOS 26, iOS 26
+A macOS/iOS developer tools app for managing AI coding agents, git repositories, GitHub, Homebrew, and distributed swarm execution.
+
+**Status:** Active Development
+**Swift:** 6.0 with strict concurrency
+**Targets:** macOS 26 (Tahoe), iOS 26
 
 ---
 
@@ -12,11 +14,23 @@ Peel back the layers of your dev environment. A macOS/iOS developer tools app fo
 
 | Feature | macOS | iOS | Description |
 |---------|-------|-----|-------------|
-| **GitHub** | ✅ | ✅ | Repos, PRs, issues, actions, OAuth |
-| **Git** | ✅ | ❌ | Local repo management, commits, branches |
-| **Homebrew** | ✅ | ❌ | Package search, install with streaming output |
-| **AI Agents** | ✅ | ❌ | Orchestrated coding agents with VM isolation |
-| **Workspaces** | ✅ | ❌ | Multi-worktree management |
+| **AI Agents & Chains** | Yes | -- | Orchestrated coding agents with review gates, live status |
+| **Parallel Worktrees** | Yes | -- | Multi-task parallel execution with conflict resolution |
+| **Local RAG** | Yes | -- | On-device code search with MLX embeddings, lessons, skills |
+| **Local Chat (MLX)** | Yes | -- | Chat with on-device LLMs (Qwen3-Coder, etc.) |
+| **Code Editing (MLX)** | Yes | -- | Edit code with local models via MCP |
+| **Dependency Graph** | Yes | -- | Interactive D3 force-directed module visualization |
+| **MCP Server** | Yes | -- | 120+ tools via JSON-RPC for IDE integration |
+| **Template Gallery** | Yes | -- | Pre-built chain templates with semantic model tiers |
+| **Distributed Swarm** | Yes | Monitor | Scale agents across Macs (Bonjour LAN + Firestore WAN) |
+| **Repositories** | Yes | Yes | Unified local + remote repository view |
+| **GitHub** | Yes | Yes | OAuth, PRs, issues, actions |
+| **Git** | Yes | -- | Local repo management, commits, branches |
+| **Homebrew** | Yes | -- | Package search, install with streaming output |
+| **Workspaces** | Yes | -- | Multi-repo project management |
+| **VM Isolation** | Yes | -- | Run agents in isolated VMs |
+| **PII Scrubber** | Yes | -- | Remove PII from datasets (opt-in) |
+| **Docling Import** | Yes | -- | Import documents via Docling (opt-in) |
 
 ---
 
@@ -25,6 +39,9 @@ Peel back the layers of your dev environment. A macOS/iOS developer tools app fo
 ```bash
 # Open in Xcode and press Cmd+R
 open Peel.xcodeproj
+
+# Or build + launch with MCP server
+./Tools/build-and-launch.sh --wait-for-server
 ```
 
 See [START_HERE.md](START_HERE.md) for detailed setup.
@@ -34,63 +51,90 @@ See [START_HERE.md](START_HERE.md) for detailed setup.
 ## Project Structure
 
 ```
-KitchenSink/
-├── Shared/                    # Cross-platform SwiftUI code
-│   ├── PeelApp.swift          # Entry point, SwiftData config
-│   ├── Applications/          # Root views (Git, Brew, GitHub, Agents, Workspaces)
-│   ├── AgentOrchestration/    # AI agent management system
-│   ├── Services/              # Shared services (VSCode, etc.)
-│   └── Views/                 # Reusable components
-├── Local Packages/
-│   ├── Brew/                  # Homebrew package management
-│   ├── Git/                   # Git operations and UI
-│   └── Github/                # GitHub API client and UI
-├── iOS/                       # iOS app entry point
-├── macOS/                     # macOS app entry point
-└── Plans/                     # Architecture documentation
+Peel/
++-- Shared/                      # Cross-platform SwiftUI code
+|   +-- PeelApp.swift            # Entry point, SwiftData config
+|   +-- Applications/            # Root views per feature area
+|   +-- AgentOrchestration/      # AI agents, chains, MCP server, RAG, swarm
+|   +-- Services/                # Shared services
+|   +-- Views/                   # Reusable components
+|   +-- Distributed/             # Firestore swarm coordination
++-- Local Packages/
+|   +-- ASTChunker/              # AST-based code chunking for RAG
+|   +-- Brew/                    # Homebrew package management
+|   +-- Git/                     # Git operations and UI
+|   +-- Github/                  # GitHub API client and UI
+|   +-- MCPCore/                 # MCP protocol types and helpers
+|   +-- PeelUI/                  # Shared UI components
+|   +-- PIIScrubber/             # PII scrubbing engine
++-- iOS/                         # iOS app entry point
++-- macOS/                       # macOS app entry point
++-- Tools/                       # Build scripts, CLI tools, skills
++-- Plans/                       # Architecture plans and roadmaps
++-- Docs/                        # Documentation
 ```
 
 ---
 
 ## Architecture
 
+### MCP Server
+
+Peel includes an MCP (Model Context Protocol) server on port 8765 with 120+ tools:
+
+```bash
+# Connect from VS Code (settings.json)
+{
+  "mcp.servers": {
+    "peel": { "url": "http://127.0.0.1:8765/rpc" }
+  }
+}
+
+# List available tools
+curl -X POST http://127.0.0.1:8765/rpc \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+### Local RAG
+
+On-device code indexing and search using MLX embeddings (nomic-embed-text-v1.5):
+- Hybrid search (text + vector with RRF fusion)
+- Dependency graph with D3 visualization
+- Learned lessons and repo-scoped skills
+- Code analysis with local MLX LLMs
+
+### Distributed Swarm
+
+Scale agent execution across multiple Macs:
+- **Bonjour LAN** — Auto-discovery on local network
+- **Firestore WAN** — Coordination across networks with invite links
+
 ### Modern Swift 6 Patterns
 
-This codebase follows Swift 6 and SwiftUI 6 best practices:
-
 ```swift
-// ViewModels use @Observable (not ObservableObject)
-@MainActor
-@Observable
+// @Observable (not ObservableObject)
+@MainActor @Observable
 class ViewModel {
   var items = [Item]()
-  
-  func load() async {
-    items = await fetchItems()
-  }
+  func load() async { items = await fetchItems() }
 }
 
-// Thread-safe services use actors
-actor KeychainService {
-  func save(_ token: String) throws { ... }
+// Actors for thread safety
+actor NetworkService {
+  func fetch<T: Decodable>(_ url: URL) async throws -> T { ... }
 }
 
-// Navigation uses NavigationStack (not NavigationView)
-NavigationStack {
-  List(items) { item in
-    NavigationLink(value: item) { ... }
-  }
-  .navigationDestination(for: Item.self) { ... }
-}
+// NavigationStack (not NavigationView)
+NavigationStack(path: $path) { ... }
 ```
 
 ### Data Persistence
 
 | Data Type | Storage | Sync |
 |-----------|---------|------|
-| OAuth tokens | Keychain | ❌ |
-| User preferences | @AppStorage | ❌ |
-| Favorites, history | SwiftData | ✅ iCloud |
+| OAuth tokens | Keychain | No |
+| User preferences | @AppStorage | No |
+| Favorites, history | SwiftData | iCloud |
 
 ---
 
@@ -98,18 +142,21 @@ NavigationStack {
 
 | Document | Description |
 |----------|-------------|
+| [Docs/PRODUCT_MANUAL.md](Docs/PRODUCT_MANUAL.md) | Full product manual with MCP API reference |
+| [Docs/README.md](Docs/README.md) | Documentation index |
+| [Docs/guides/MCP_AGENT_WORKFLOW.md](Docs/guides/MCP_AGENT_WORKFLOW.md) | MCP build, launch, and chain workflow |
+| [Docs/guides/LOCAL_RAG_GUIDE.md](Docs/guides/LOCAL_RAG_GUIDE.md) | Local RAG setup, search, and management |
+| [Docs/guides/SWARM_GUIDE.md](Docs/guides/SWARM_GUIDE.md) | Distributed swarm setup and usage |
+| [Docs/guides/LOCAL_CHAT_GUIDE.md](Docs/guides/LOCAL_CHAT_GUIDE.md) | Local MLX LLM chat guide |
 | [START_HERE.md](START_HERE.md) | Quick start guide |
-| [Plans/CODE_AUDIT_INDEX.md](Plans/CODE_AUDIT_INDEX.md) | File review tracking |
-| [Plans/AGENT_ORCHESTRATION_PLAN.md](Plans/AGENT_ORCHESTRATION_PLAN.md) | AI agent architecture |
-| [.github/copilot-instructions.md](.github/copilot-instructions.md) | Coding standards |
-| [Docs/guides/DOCLING_POLICY_WORKFLOW.md](Docs/guides/DOCLING_POLICY_WORKFLOW.md) | Docling policy workflow guide |
+| [.github/copilot-instructions.md](.github/copilot-instructions.md) | Coding standards for AI agents |
 
 ---
 
 ## Development
 
 ### Prerequisites
-- Xcode 16+ 
+- Xcode 16+
 - macOS 26 SDK
 - Homebrew (for Brew features)
 
@@ -120,32 +167,10 @@ xcodebuild -scheme "Peel (macOS)" build
 
 # Build for iOS
 xcodebuild -scheme "Peel (iOS)" -destination 'platform=iOS Simulator,name=iPhone 16' build
+
+# Build + launch with MCP
+./Tools/build-and-launch.sh --wait-for-server
 ```
-
-### Code Quality
-
-Before committing, check for deprecated patterns:
-```bash
-# Should return no results
-grep -r "ObservableObject\|@Published\|@StateObject\|NavigationView" --include="*.swift" .
-```
-
-See [Plans/CODE_AUDIT_INDEX.md](Plans/CODE_AUDIT_INDEX.md) for the full audit checklist.
-
----
-
-## Roadmap
-
-### Completed ✅
-- Swift 6 modernization (all packages)
-- SwiftData + iCloud sync
-- iOS support (GitHub features)
-- VM isolation foundation
-
-### Future 📋
-- Apple Intelligence integration
-- Metal GPU acceleration for agents
-- Distributed actors across devices
 
 ---
 
