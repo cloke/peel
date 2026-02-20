@@ -279,6 +279,24 @@ public struct PlannerDecision: Codable, Sendable {
   }
 }
 
+/// Result of a gate step check
+public enum GateResult: Sendable {
+  case passed
+  case failed(exitCode: Int32)
+
+  public var passed: Bool {
+    if case .passed = self { return true }
+    return false
+  }
+
+  public var displayName: String {
+    switch self {
+    case .passed: return "Passed"
+    case .failed(let code): return "Failed (exit \(code))"
+    }
+  }
+}
+
 /// Result from a single agent in the chain
 public struct AgentChainResult: Identifiable, Sendable {
   public let id: UUID
@@ -297,6 +315,9 @@ public struct AgentChainResult: Identifiable, Sendable {
 
   /// For planner agents, the parsed decision
   public var plannerDecision: PlannerDecision?
+
+  /// For gate steps, whether the gate passed or failed
+  public var gateResult: GateResult?
   
   public init(
     agentId: UUID,

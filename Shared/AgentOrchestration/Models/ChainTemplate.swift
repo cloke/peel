@@ -141,13 +141,20 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         category: .core
       ),
       
-      // 3. Full Implementation: Planner + Implementer + Reviewer
+      // 3. Full Implementation: Planner + Implementer + Build Gate + Reviewer
       ChainTemplate(
         name: "Full Implementation",
-        description: "Complete workflow with planning, implementation, and review (Cost: Standard)",
+        description: "Complete workflow with planning, implementation, build verification, and review (Cost: Standard)",
         steps: [
           AgentStepTemplate(role: .planner, model: .bestStandard, name: "Planner"),
           AgentStepTemplate(role: .implementer, model: .bestStandard, name: "Implementer"),
+          AgentStepTemplate(
+            role: .implementer,
+            model: .bestFree,
+            name: "Build Check",
+            stepType: .gate,
+            command: "swift build 2>&1 || xcodebuild -scheme \"$(xcodebuild -list -json 2>/dev/null | python3 -c \"import sys,json; print(json.load(sys.stdin)['project']['schemes'][0])\" 2>/dev/null || echo 'default')\" build 2>&1"
+          ),
           AgentStepTemplate(role: .reviewer, model: .bestFree, name: "Reviewer")
         ],
         isBuiltIn: true,
@@ -290,10 +297,82 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         ],
         isBuiltIn: true,
         category: .specialized
+      ),
+
+      // 9. Guarded Implementation: git stash + plan + implement + build gate + commit
+      ChainTemplate(
+        name: "Guarded Implementation",
+        description: "Deterministic setup, agentic work, then gate checks before completion (Cost: Standard)",
+        steps: [
+          AgentStepTemplate(
+            role: .implementer,
+            model: .bestFree,
+            name: "Setup",
+            stepType: .deterministic,
+            command: "git fetch origin && git diff --stat HEAD"
+          ),
+          AgentStepTemplate(role: .planner, model: .bestStandard, name: "Planner"),
+          AgentStepTemplate(role: .implementer, model: .bestStandard, name: "Implementer"),
+          AgentStepTemplate(
+            role: .implementer,
+            model: .bestFree,
+            name: "Build Gate",
+            stepType: .gate,
+            command: "swift build 2>&1"
+          ),
+          AgentStepTemplate(
+            role: .implementer,
+            model: .bestFree,
+            name: "Commit",
+            stepType: .deterministic,
+            command: "git add -A && git commit -m 'Agent implementation' --allow-empty"
+          )
+        ],
+        isBuiltIn: true,
+        category: .specialized
       )
     ]
 
     return templates
+  }
+}
+
+/// Determines how a step in a chain is executed
+public enum StepType: String, Codable, Hashable, Sendable, CaseIterable {
+  /// Normal LLM-driven agent step (default)
+  case agentic
+  /// Shell command executed deterministically — no LLM involved
+  case deterministic
+  /// Shell command that acts as a quality gate — exit 0 passes, non-zero halts the chain
+  case gate
+
+  public var displayName: String {
+    switch self {
+    case .agentic: "Agentic"
+    case .deterministic: "Deterministic"
+    case .gate: "Gate"
+    }
+  }
+
+  public var description: String {
+    switch self {
+    case .agentic: "LLM-driven agent step"
+    case .deterministic: "Shell command (no LLM)"
+    case .gate: "Quality gate — halts chain on failure"
+    }
+  }
+
+  public var iconName: String {
+    switch self {
+    case .agentic: "brain"
+    case .deterministic: "terminal"
+    case .gate: "checkmark.shield"
+    }
+  }
+
+  /// Whether this step type requires an LLM call
+  public var requiresLLM: Bool {
+    self == .agentic
   }
 }
 
@@ -305,6 +384,18 @@ public struct AgentStepTemplate: Identifiable, Codable, Hashable, Sendable {
   public var name: String
   public var frameworkHint: FrameworkHint
   public var customInstructions: String?
+
+  /// How this step executes: agentic (LLM), deterministic (shell), or gate (check)
+  public var stepType: StepType
+
+  /// Shell command to run for deterministic/gate steps (ignored for agentic)
+  public var command: String?
+
+  /// Tools explicitly allowed for this step (overrides role defaults; agentic only)
+  public var allowedTools: [String]?
+
+  /// Tools explicitly denied for this step (merged with role defaults; agentic only)
+  public var deniedTools: [String]?
   
   public init(
     id: UUID = UUID(),
@@ -312,7 +403,11 @@ public struct AgentStepTemplate: Identifiable, Codable, Hashable, Sendable {
     model: CopilotModel,
     name: String,
     frameworkHint: FrameworkHint = .auto,
-    customInstructions: String? = nil
+    customInstructions: String? = nil,
+    stepType: StepType = .agentic,
+    command: String? = nil,
+    allowedTools: [String]? = nil,
+    deniedTools: [String]? = nil
   ) {
     self.id = id
     self.role = role
@@ -320,11 +415,24 @@ public struct AgentStepTemplate: Identifiable, Codable, Hashable, Sendable {
     self.name = name
     self.frameworkHint = frameworkHint
     self.customInstructions = customInstructions
+    self.stepType = stepType
+    self.command = command
+    self.allowedTools = allowedTools
+    self.deniedTools = deniedTools
   }
   
+  /// Effective denied tools: merges per-step overrides with role defaults
+  public var effectiveDeniedTools: [String] {
+    let roleDenied = role.deniedTools
+    let stepDenied = deniedTools ?? []
+    return Array(Set(roleDenied + stepDenied)).sorted()
+  }
+
   /// Estimated premium cost for this step
   public var estimatedCost: Double {
-    model.premiumCost
+    // Deterministic/gate steps cost nothing
+    guard stepType.requiresLLM else { return 0 }
+    return model.premiumCost
   }
 }
 

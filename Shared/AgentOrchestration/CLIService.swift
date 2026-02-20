@@ -372,6 +372,8 @@ public final class CLIService {
   ///   - role: The agent role (determines tool access)
   ///   - workingDirectory: Optional directory to run in (for repo context)
   ///   - allowAllTools: If true, auto-approve all tool usage (required for non-interactive)
+  ///   - allowedTools: Per-step tool allowlist (overrides role defaults)
+  ///   - deniedTools: Per-step tool denylist (merged with role defaults)
   ///   - onOutput: Optional callback for streaming output lines
   /// - Returns: CopilotResponse with content and model info
   public func runCopilotSession(
@@ -380,6 +382,8 @@ public final class CLIService {
     role: AgentRole = .implementer,
     workingDirectory: String? = nil,
     allowAllTools: Bool = true,
+    allowedTools: [String]? = nil,
+    deniedTools: [String]? = nil,
     onOutput: StreamCallback? = nil
   ) async throws -> CopilotResponse {
     guard copilotStatus.isAvailable else {
@@ -397,11 +401,13 @@ public final class CLIService {
       arguments.append("--allow-all-tools")
     }
     
-    // Apply role-based tool restrictions
-    let deniedTools = role.deniedTools
-    if !deniedTools.isEmpty {
+    // Build effective denied tools: merge role defaults with per-step overrides
+    let roleDenied = role.deniedTools
+    let stepDenied = deniedTools ?? []
+    let effectiveDenied = Array(Set(roleDenied + stepDenied)).sorted()
+    if !effectiveDenied.isEmpty {
       arguments.append("--deny-tool")
-      arguments.append(contentsOf: deniedTools)
+      arguments.append(contentsOf: effectiveDenied)
     }
     
     // Build environment with GH_TOKEN if available

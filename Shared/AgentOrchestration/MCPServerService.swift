@@ -1165,12 +1165,28 @@ public final class MCPServerService {
       let frameworkHintValue = (step["frameworkHint"] as? String) ?? FrameworkHint.auto.rawValue
       let frameworkHint = FrameworkHint(rawValue: frameworkHintValue) ?? .auto
       let customInstructions = step["customInstructions"] as? String
+
+      // Parse step type (defaults to .agentic for backward compatibility)
+      let stepTypeValue = (step["stepType"] as? String) ?? "agentic"
+      let stepType = StepType(rawValue: stepTypeValue) ?? .agentic
+
+      // Parse command for deterministic/gate steps
+      let command = step["command"] as? String
+
+      // Parse per-step tool scoping
+      let allowedTools = step["allowedTools"] as? [String]
+      let deniedTools = step["deniedTools"] as? [String]
+
       return AgentStepTemplate(
         role: role,
         model: model,
         name: stepName?.isEmpty == false ? stepName! : role.displayName,
         frameworkHint: frameworkHint,
-        customInstructions: customInstructions
+        customInstructions: customInstructions,
+        stepType: stepType,
+        command: command,
+        allowedTools: allowedTools,
+        deniedTools: deniedTools
       )
     }
 
