@@ -733,7 +733,7 @@ public final class VMIsolationService {
     let kernelPath = linuxDir.appendingPathComponent("vmlinuz")
     let initramfsPath = linuxDir.appendingPathComponent("initramfs")
     let distroTagPath = linuxDir.appendingPathComponent(".distro")
-    let targetTag = "alpine-3.21-virt"
+    let targetTag = "alpine-3.21-custom-initramfs"
 
     // Validate Distro Tag
     let currentTag = (try? String(contentsOf: distroTagPath, encoding: .utf8)) ?? ""
@@ -823,7 +823,7 @@ public final class VMIsolationService {
   }
   
   /// Download and set up a Linux VM
-  /// Downloads Alpine Linux kernel and initramfs (arm64) for VZLinuxBootLoader compatibility
+  /// Downloads Alpine Linux kernel and builds a custom initramfs from minirootfs
   func setupLinuxVM() async throws {
     statusMessage = "Setting up Linux VM environment..."
     
@@ -831,9 +831,9 @@ public final class VMIsolationService {
     try FileManager.default.createDirectory(at: linuxDir, withIntermediateDirectories: true)
     
     let kernelPath = linuxDir.appendingPathComponent("vmlinuz")
-    let initrdPath = linuxDir.appendingPathComponent("initramfs")
+    let initramfsPath = linuxDir.appendingPathComponent("initramfs")
     let distroTagPath = linuxDir.appendingPathComponent(".distro")
-    let targetTag = "alpine-3.21-virt"
+    let targetTag = "alpine-3.21-custom-initramfs"
     
     // WARNING: Alpine vmlinuz is an EFI/PE executable. VZLinuxBootLoader requires a raw Image.
     // 'setupLinuxVM' calls 'extractEmbeddedKernel' to fix this.
@@ -842,7 +842,7 @@ public final class VMIsolationService {
     // Check if we already have the correct files
     let currentTag = (try? String(contentsOf: distroTagPath, encoding: .utf8)) ?? ""
     let filesExist = FileManager.default.fileExists(atPath: kernelPath.path) &&
-                     FileManager.default.fileExists(atPath: initrdPath.path)
+                     FileManager.default.fileExists(atPath: initramfsPath.path)
     
     if currentTag == targetTag && filesExist {
       print("[VM Setup] Files already present for \(targetTag). Skipping download.")
@@ -851,74 +851,220 @@ public final class VMIsolationService {
       if currentTag != targetTag {
         print("[VM Setup] Distro changed (was: \(currentTag)), cleaning up...")
         try? FileManager.default.removeItem(at: kernelPath)
-        try? FileManager.default.removeItem(at: initrdPath)
+        try? FileManager.default.removeItem(at: initramfsPath)
         try? FileManager.default.removeItem(at: linuxDir.appendingPathComponent("initramfs.raw"))
       }
       
-      statusMessage = "Downloading Alpine Linux..."
-      // Alpine is lightweight and uses a standard uncompressed/gzip kernel format that works well with VZ
+      // --- Download kernel ---
+      statusMessage = "Downloading Alpine Linux kernel..."
       let base = "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/aarch64/netboot"
       let kernelURL = URL(string: "\(base)/vmlinuz-virt")!
-      let initrdURL = URL(string: "\(base)/initramfs-virt")!
-        
       let kData = try await downloadFirstAvailable(urls: [kernelURL], minimumBytes: 5_000_000, label: "Alpine Kernel")
-      let iData = try await downloadFirstAvailable(urls: [initrdURL], minimumBytes: 2_000_000, label: "Alpine Initramfs")
-      
       try kData.write(to: kernelPath)
-      try iData.write(to: initrdPath)
+      print("[VM Setup] Alpine kernel downloaded")
+
+      // Fix kernel: extract raw Image from EFI/PE wrapper if needed
+      let kernelIsPE = isPEKernel(at: kernelPath.path)
+      if kernelIsPE {
+        print("[VM Setup] Kernel appears to be EFI/PE (MZ). Extracting raw Image...")
+        let rawKernelPath = linuxDir.appendingPathComponent("vmlinuz.raw")
+        if try await extractEmbeddedKernel(inputPath: kernelPath.path, outputPath: rawKernelPath.path) {
+          try? FileManager.default.removeItem(at: kernelPath)
+          try FileManager.default.moveItem(at: rawKernelPath, to: kernelPath)
+          print("[VM Setup] Replaced EFI kernel with raw Image.")
+        } else {
+          print("[VM Setup] WARNING: Failed to extract raw kernel. Boot may fail.")
+        }
+      }
+
+      // --- Build custom initramfs from Alpine minirootfs ---
+      statusMessage = "Building custom initramfs..."
+      try await buildAlpineInitramfs(outputPath: initramfsPath)
       
       try targetTag.write(to: distroTagPath, atomically: true, encoding: .utf8)
     }
 
-    print("[VM Setup] Alpine kernel/initramfs ready")
-
-    if isXZFile(at: initrdPath.path) {
-      // Convert XZ to raw cpio (Virtualization.framework initrd handling is finicky with XZ)
-      statusMessage = "Decompressing initramfs (XZ → raw)..."
-      print("[VM Setup] Decompressing initramfs (XZ → raw)")
-      let initrdRawPath = linuxDir.appendingPathComponent("initramfs.raw")
-      let xzResult = try await decompressXZ(inputPath: initrdPath.path, outputPath: initrdRawPath.path)
-      guard xzResult else {
-        throw VMError.vmCreationFailed("Failed to decompress XZ initramfs. Ensure 'xz' is installed.")
-      }
-      guard isCpioFile(at: initrdRawPath.path) else {
-        throw VMError.vmCreationFailed("Initramfs conversion failed. Output is not CPIO.")
-      }
-      try? FileManager.default.removeItem(at: initrdPath)
-      try FileManager.default.moveItem(at: initrdRawPath, to: initrdPath)
-      print("[VM Setup] Initramfs converted to raw CPIO format.")
+    guard isCpioFile(at: initramfsPath.path) else {
+      throw VMError.vmCreationFailed("Initramfs at \(initramfsPath.path) is not a valid CPIO archive.")
     }
-
-    if isGzipFile(at: initrdPath.path) {
-      statusMessage = "Decompressing initramfs (gzip → raw)..."
-      print("[VM Setup] Decompressing initramfs (gzip → raw)")
-      let initrdRawPath = linuxDir.appendingPathComponent("initramfs.raw")
-      let gzipResult = try await decompressGzip(inputPath: initrdPath.path, outputPath: initrdRawPath.path)
-      guard gzipResult else {
-        throw VMError.vmCreationFailed("Failed to decompress gzip initramfs.")
-      }
-      guard isCpioFile(at: initrdRawPath.path) else {
-        throw VMError.vmCreationFailed("Initramfs conversion failed. Output is not CPIO.")
-      }
-      try? FileManager.default.removeItem(at: initrdPath)
-      try FileManager.default.moveItem(at: initrdRawPath, to: initrdPath)
-      print("[VM Setup] Initramfs converted to raw CPIO format.")
-    }
-
-    let kernelIsPE = isPEKernel(at: kernelPath.path)
-    if kernelIsPE {
-      print("[VM Setup] Kernel appears to be EFI/PE (MZ). Attempting to extract raw Image...")
-      let rawKernelPath = linuxDir.appendingPathComponent("vmlinuz.raw")
-      if try await extractEmbeddedKernel(inputPath: kernelPath.path, outputPath: rawKernelPath.path) {
-        try? FileManager.default.removeItem(at: kernelPath)
-        try FileManager.default.moveItem(at: rawKernelPath, to: kernelPath)
-        print("[VM Setup] Replaced EFI kernel with raw Image.")
-      } else {
-        print("[VM Setup] Failed to extract raw kernel. This may fail to boot.")
-      }
-    }
-    isLinuxReady = isCpioFile(at: initrdPath.path)
+    isLinuxReady = true
     statusMessage = "Linux VM ready"
+    print("[VM Setup] Linux VM setup complete (custom initramfs)")
+  }
+
+  // MARK: - Custom Initramfs Builder
+
+  /// Build a custom initramfs from Alpine minirootfs.
+  ///
+  /// This downloads the Alpine minirootfs tarball (~3.5MB), extracts it,
+  /// writes a custom `/init` script, and packs everything into a CPIO
+  /// archive using macOS-native `/usr/bin/cpio`.
+  ///
+  /// The resulting initramfs boots to a fully functional Alpine shell with
+  /// `apk`, networking, and VirtioFS support — no disk image required.
+  private func buildAlpineInitramfs(outputPath: URL) async throws {
+    let alpineVersion = "3.21.3"
+    let arch = "aarch64"
+    let tarballURL = URL(string: "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/\(arch)/alpine-minirootfs-\(alpineVersion)-\(arch).tar.gz")!
+
+    print("[VM Setup] Downloading Alpine minirootfs \(alpineVersion)...")
+    statusMessage = "Downloading Alpine minirootfs..."
+    let tarballData = try await downloadFirstAvailable(
+      urls: [tarballURL],
+      minimumBytes: 2_000_000,
+      label: "Alpine minirootfs"
+    )
+
+    // Extract to a staging directory
+    let stagingDir = FileManager.default.temporaryDirectory
+      .appendingPathComponent("peel-initramfs-\(UUID().uuidString)")
+    let rootfsDir = stagingDir.appendingPathComponent("rootfs")
+    try FileManager.default.createDirectory(at: rootfsDir, withIntermediateDirectories: true)
+
+    defer {
+      try? FileManager.default.removeItem(at: stagingDir)
+    }
+
+    // Write tarball and extract
+    let tarballPath = stagingDir.appendingPathComponent("minirootfs.tar.gz")
+    try tarballData.write(to: tarballPath)
+
+    statusMessage = "Extracting minirootfs..."
+    print("[VM Setup] Extracting minirootfs to staging directory...")
+    let tarProcess = Process()
+    tarProcess.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+    tarProcess.arguments = ["xzf", tarballPath.path, "-C", rootfsDir.path]
+    try tarProcess.run()
+    tarProcess.waitUntilExit()
+    guard tarProcess.terminationStatus == 0 else {
+      throw VMError.vmCreationFailed("Failed to extract minirootfs (exit code \(tarProcess.terminationStatus))")
+    }
+
+    // Write custom /init script
+    let initScript = buildInitScript()
+    let initPath = rootfsDir.appendingPathComponent("init")
+    try initScript.write(to: initPath, atomically: true, encoding: .utf8)
+
+    // chmod 755 /init
+    let chmodProcess = Process()
+    chmodProcess.executableURL = URL(fileURLWithPath: "/bin/chmod")
+    chmodProcess.arguments = ["755", initPath.path]
+    try chmodProcess.run()
+    chmodProcess.waitUntilExit()
+
+    // Create essential directories that might be missing from minirootfs
+    for dir in ["proc", "sys", "dev", "dev/pts", "dev/shm", "tmp", "run", "mnt", "workspace"] {
+      try FileManager.default.createDirectory(
+        at: rootfsDir.appendingPathComponent(dir),
+        withIntermediateDirectories: true
+      )
+    }
+
+    // Pack as CPIO newc archive using macOS /usr/bin/cpio
+    statusMessage = "Building initramfs CPIO archive..."
+    print("[VM Setup] Packing initramfs CPIO archive...")
+
+    // Use find | cpio pipeline via /bin/sh
+    let cpioProcess = Process()
+    cpioProcess.executableURL = URL(fileURLWithPath: "/bin/sh")
+    cpioProcess.arguments = [
+      "-c",
+      "cd \(rootfsDir.path) && find . | /usr/bin/cpio -o -H newc --quiet > \(outputPath.path)"
+    ]
+    let cpioPipe = Pipe()
+    cpioProcess.standardError = cpioPipe
+    try cpioProcess.run()
+    cpioProcess.waitUntilExit()
+
+    guard cpioProcess.terminationStatus == 0 else {
+      let stderrData = cpioPipe.fileHandleForReading.readDataToEndOfFile()
+      let stderr = String(data: stderrData, encoding: .utf8) ?? ""
+      throw VMError.vmCreationFailed("Failed to create CPIO initramfs (exit \(cpioProcess.terminationStatus)): \(stderr)")
+    }
+
+    // Verify output
+    let attrs = try FileManager.default.attributesOfItem(atPath: outputPath.path)
+    let size = attrs[.size] as? Int64 ?? 0
+    guard size > 1_000_000 else {
+      throw VMError.vmCreationFailed("Initramfs too small (\(size) bytes). Expected >1MB.")
+    }
+
+    print("[VM Setup] Custom initramfs built successfully (\(size / 1024)KB)")
+  }
+
+  /// Generate the /init script for the custom initramfs.
+  ///
+  /// This script runs as PID 1 inside the VM. It sets up:
+  /// - Essential filesystems (proc, sys, dev, etc.)
+  /// - Networking via udhcpc (DHCP on eth0)
+  /// - VirtioFS mounts (workspace at /workspace, others at /mnt/<tag>)
+  /// - Alpine package repos
+  /// - Prints a ready sentinel that VMChainExecutor watches for
+  private func buildInitScript() -> String {
+    return """
+    #!/bin/sh
+    # Peel VM Init — Alpine minirootfs custom init
+    # Runs as PID 1 inside the Virtualization.framework guest
+
+    # Mount essential filesystems
+    mount -t proc proc /proc
+    mount -t sysfs sysfs /sys
+    mount -t devtmpfs devtmpfs /dev
+    mkdir -p /dev/pts /dev/shm
+    mount -t devpts devpts /dev/pts
+    mount -t tmpfs tmpfs /dev/shm
+    mount -t tmpfs tmpfs /tmp
+    mount -t tmpfs tmpfs /run
+
+    # Set hostname
+    hostname peel-vm
+
+    # Configure loopback
+    ip link set lo up
+
+    # Configure networking (virtio-net → eth0)
+    for iface in eth0 enp0s1; do
+      if [ -e "/sys/class/net/$iface" ]; then
+        ip link set "$iface" up
+        udhcpc -i "$iface" -b -q -s /usr/share/udhcpc/default.script 2>/dev/null &
+      fi
+    done
+
+    # Wait briefly for DHCP
+    sleep 1
+
+    # Setup DNS fallback
+    if [ ! -s /etc/resolv.conf ]; then
+      echo "nameserver 8.8.8.8" > /etc/resolv.conf
+    fi
+
+    # Configure Alpine package repos
+    mkdir -p /etc/apk
+    echo "https://dl-cdn.alpinelinux.org/alpine/v3.21/main" > /etc/apk/repositories
+    echo "https://dl-cdn.alpinelinux.org/alpine/v3.21/community" >> /etc/apk/repositories
+
+    # Initialize apk database
+    apk update 2>/dev/null || true
+
+    # Mount VirtioFS shares (best-effort)
+    # The "workspace" share is the agent worktree
+    mkdir -p /workspace
+    mount -t virtiofs workspace /workspace 2>/dev/null || true
+
+    # Mount any additional shares at /mnt/<tag>
+    # These are configured via VMDirectoryShare and show up as virtiofs tags
+    for tag in reference output; do
+      if mount -t virtiofs "$tag" "/mnt/$tag" 2>/dev/null; then
+        true
+      fi
+    done
+
+    # Signal readiness — VMChainExecutor polls for this
+    echo "PEEL_VM_READY"
+
+    # Drop to interactive shell (PID 1 keeps running)
+    exec /bin/sh
+    """
   }
   
   private func extractEmbeddedKernel(inputPath: String, outputPath: String) async throws -> Bool {
@@ -1142,14 +1288,10 @@ public final class VMIsolationService {
     
     let bootLoader = VZLinuxBootLoader(kernelURL: kernelPath)
     bootLoader.initialRamdiskURL = initramfsPath
-    // console=hvc0/hvc1 -> Virtio consoles (primary for Apple VZ)
-    // console=ttyAMA0   -> PL011 (ARM default - valid if we have PL011, ignored otherwise)
-    //
-    // TODO: The current Alpine boot fails at "Mounting boot media".
-    // Use netboot repo + modloop to provide rootfs for diskless boot.
-    let alpineRepo = "http://dl-cdn.alpinelinux.org/alpine/v3.21/main"
-    let modloop = "http://dl-cdn.alpinelinux.org/alpine/v3.21/releases/aarch64/netboot/modloop-virt"
-    bootLoader.commandLine = "console=ttyS0 console=ttyAMA0 console=hvc0 console=hvc1 earlycon loglevel=7 debug alpine_repo=\(alpineRepo) modloop=\(modloop)"
+    // Use rdinit=/init to run our custom init script from the initramfs.
+    // console=hvc0 for the Virtio console device.
+    // The custom initramfs includes a full Alpine minirootfs — no disk or network boot needed.
+    bootLoader.commandLine = "console=hvc0 rdinit=/init loglevel=4"
     vmLog("Boot command line: \(bootLoader.commandLine)")
     
     let config = VZVirtualMachineConfiguration()
@@ -1738,9 +1880,10 @@ public final class VMIsolationService {
       throw VMError.vmCreationFailed("Console input pipe not available")
     }
 
-    // Use a unique sentinel to delimit command output
+    // Use a unique sentinel to delimit command output and capture exit code.
+    // Format: run command, capture $?, echo sentinel + exit code on one line.
     let sentinel = "PEEL_CMD_DONE_\(UUID().uuidString.prefix(8))"
-    let wrappedCommand = "\(command); echo \(sentinel)\n"
+    let wrappedCommand = "\(command)\nPEEL_EC=$?\necho \(sentinel) $PEEL_EC\n"
 
     guard let data = wrappedCommand.data(using: .utf8) else {
       throw VMError.vmCreationFailed("Failed to encode command")
@@ -1764,7 +1907,17 @@ public final class VMIsolationService {
           // Strip the echoed command from the beginning
           let lines = result.split(separator: "\n", omittingEmptySubsequences: false)
           let filtered = lines.drop { $0.contains(command.prefix(40)) }
-          return filtered.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+          let output = filtered.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+
+          // Parse exit code from the sentinel line: "PEEL_CMD_DONE_xxxx <exitCode>"
+          let sentinelLine = String(newOutput[sentinelRange.lowerBound...])
+            .split(separator: "\n").first.map(String.init) ?? ""
+          let exitCode = sentinelLine
+            .replacingOccurrences(of: sentinel, with: "")
+            .trimmingCharacters(in: .whitespaces)
+          lastCommandExitCode = Int32(exitCode) ?? 0
+
+          return output
         }
         return newOutput.replacingOccurrences(of: sentinel, with: "").trimmingCharacters(in: .whitespacesAndNewlines)
       }
@@ -1772,6 +1925,10 @@ public final class VMIsolationService {
 
     throw VMError.commandTimeout(Int(timeout))
   }
+
+  /// Exit code from the most recent `sendLinuxCommand` call.
+  /// Gate steps use this to determine pass/fail.
+  private(set) var lastCommandExitCode: Int32 = 0
 
   /// Mount all VirtioFS shares inside the running Linux VM.
   /// Creates mount points at /mnt/<tag> and mounts using virtiofs.

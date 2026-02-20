@@ -285,6 +285,13 @@ extension MCPServerService {
 
     let chain = agentManager.createChainFromTemplate(template, workingDirectory: chainWorkingDirectory)
     chain.runSource = .mcp
+
+    // If this chain runs inside a VM, add the workspace directory share so the VM can access the worktree via VirtioFS
+    if chain.requiresVM {
+      let workspacePath = chain.workingDirectory ?? chainWorkingDirectory ?? FileManager.default.currentDirectoryPath
+      let workspaceShare = VMDirectoryShare.workspace(workspacePath)
+      chain.directoryShares.append(workspaceShare)
+    }
     if let enableReviewLoop {
       chain.enableReviewLoop = enableReviewLoop
     }

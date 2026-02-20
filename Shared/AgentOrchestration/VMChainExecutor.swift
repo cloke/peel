@@ -64,6 +64,10 @@ public final class VMChainExecutor {
   private let vmService: VMIsolationService
   private let logHandler: (@Sendable (String) -> Void)?
 
+  // Track last-booted environment/toolchain for external lifecycle control
+  private var lastBootedEnvironment: ExecutionEnvironment?
+  private var lastBootedToolchain: VMToolchain?
+
   // MARK: - Init
 
   public init(vmService: VMIsolationService, logHandler: (@Sendable (String) -> Void)? = nil) {
@@ -142,12 +146,13 @@ public final class VMChainExecutor {
       switch environment {
       case .linux:
         let output = try await vmService.sendLinuxCommand(
-          "cd /mnt/workspace && \(command)",
+          "cd /mnt/workspace 2>/dev/null || cd /workspace; \(command)",
           timeout: 300
         )
+        let exitCode = vmService.lastCommandExitCode
         result = VMStepResult(
           stepName: name,
-          exitCode: 0,  // Console-based execution doesn't easily give exit codes
+          exitCode: exitCode,
           stdout: output,
           stderr: "",
           duration: Date().timeIntervalSince(stepStart)
@@ -205,8 +210,8 @@ public final class VMChainExecutor {
     switch environment {
     case .linux:
       try await vmService.startLinuxVM(directoryShares: shares)
-      // Wait for boot to settle (console prompt)
-      try await Task.sleep(for: .seconds(5))
+      // Poll for shell readiness instead of fixed sleep
+      try await waitForVMReady(maxAttempts: 30, interval: .seconds(1))
 
     case .macos:
       // macOS VM boot is more complex — for now use existing startMacOSVM
@@ -237,12 +242,47 @@ public final class VMChainExecutor {
     }
   }
 
-  private func bootstrapLinuxToolchain(_ toolchain: VMToolchain) async throws {
+  /// Public lifecycle: boot VM, mount shares, and bootstrap toolchain for later per-step execution.
+  public func bootVM(environment: ExecutionEnvironment, toolchain: VMToolchain, directoryShares: [VMDirectoryShare] = []) async throws {
+    guard environment != .host else { return }
+    state = .booting
+    let bootStart = Date()
+    try await bootVM(environment: environment, shares: directoryShares)
+    lastBootedEnvironment = environment
+    lastBootedToolchain = toolchain
+    let bootDuration = Date().timeIntervalSince(bootStart)
+    log("VM booted in \(String(format: "%.1f", bootDuration))s")
+
+    // Mount shares for Linux
+    if environment == .linux {
+      try await vmService.mountDirectoryShares(directoryShares)
+      log("Directory shares mounted inside Linux VM")
+    }
+
+    // Bootstrap toolchain if requested
+    state = .bootstrapping
+    let bootstrapStart = Date()
+    try await bootstrapToolchain(toolchain, in: environment)
+    let bootstrapDuration = Date().timeIntervalSince(bootstrapStart)
+    log("Toolchain '\(toolchain.displayName)' bootstrapped in \(String(format: "%.1f", bootstrapDuration))s")
+  }
+
+  /// Public lifecycle: tear down the last-booted VM (if any)
+  public func tearDown() async throws {
+    guard let env = lastBootedEnvironment else { return }
+    state = .tearingDown
+    try await tearDown(environment: env)
+    lastBootedEnvironment = nil
+    lastBootedToolchain = nil
+  }
+
+  private func bootstrapLinuxToolchain(_ toolchain: VMToolchain) async throws {"}{
     let packages = toolchain.alpinePackages
     if !packages.isEmpty {
       log("Installing packages: \(packages.joined(separator: ", "))")
+      let installCmd = "cd /mnt/workspace 2>/dev/null || cd /workspace; apk update && apk add --no-cache \(packages.joined(separator: " "))"
       let output = try await vmService.sendLinuxCommand(
-        "apk update && apk add --no-cache \(packages.joined(separator: " "))",
+        installCmd,
         timeout: 120
       )
       log("Package install output: \(output.suffix(200))")
@@ -250,7 +290,8 @@ public final class VMChainExecutor {
 
     for cmd in toolchain.postInstallCommands {
       log("Running post-install: \(cmd.prefix(60))...")
-      let output = try await vmService.sendLinuxCommand(cmd, timeout: 180)
+      let wrapped = "cd /mnt/workspace 2>/dev/null || cd /workspace; \(cmd)"
+      let output = try await vmService.sendLinuxCommand(wrapped, timeout: 180)
       log("Post-install output: \(output.suffix(200))")
     }
   }
@@ -280,5 +321,33 @@ public final class VMChainExecutor {
     let formatted = "[VMChainExecutor] \(message)"
     print(formatted)
     logHandler?(formatted)
+  }
+
+  /// Poll the VM until the shell is responsive.
+  ///
+  /// Sends `echo PEEL_READY` via the console and waits for a response.
+  /// This replaces the old fixed `Task.sleep(for: .seconds(5))` — the
+  /// actual boot time can vary from 2s to 15s depending on the host load.
+  private func waitForVMReady(
+    maxAttempts: Int = 30,
+    interval: Duration = .seconds(1)
+  ) async throws {
+    log("Waiting for VM shell to become responsive...")
+    for attempt in 1...maxAttempts {
+      do {
+        let output = try await vmService.sendLinuxCommand("echo PEEL_READY", timeout: 3)
+        if output.contains("PEEL_READY") {
+          log("VM shell responsive after \(attempt) attempt(s)")
+          return
+        }
+      } catch {
+        // Timeout or other error — VM shell not ready yet
+        if attempt % 5 == 0 {
+          log("Still waiting for VM shell (attempt \(attempt)/\(maxAttempts))...")
+        }
+      }
+      try await Task.sleep(for: interval)
+    }
+    throw VMError.bootstrapFailed("VM shell did not become responsive after \(maxAttempts) attempts")
   }
 }
