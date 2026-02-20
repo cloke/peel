@@ -247,6 +247,21 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     #endif
   }
   
+  // MARK: - Stable Built-in Template IDs
+  // These must never change once shipped — external tools and MCP clients reference them.
+  private static let quickTaskId             = UUID(uuidString: "A0000001-0001-4000-8000-000000000001")!
+  private static let analyzePlanId           = UUID(uuidString: "A0000001-0002-4000-8000-000000000002")!
+  private static let fullImplementationId    = UUID(uuidString: "A0000001-0003-4000-8000-000000000003")!
+  private static let parallelImplementationId = UUID(uuidString: "A0000001-0004-4000-8000-000000000004")!
+  private static let ragIndexId              = UUID(uuidString: "A0000001-0005-4000-8000-000000000005")!
+  private static let issueAnalysisId         = UUID(uuidString: "A0000001-0006-4000-8000-000000000006")!
+  private static let prReviewId              = UUID(uuidString: "A0000001-0007-4000-8000-000000000007")!
+  private static let refactorId              = UUID(uuidString: "A0000001-0008-4000-8000-000000000008")!
+  private static let guardedImplementationId = UUID(uuidString: "A0000001-0009-4000-8000-000000000009")!
+  private static let vmQuickTaskId           = UUID(uuidString: "A0000001-000A-4000-8000-00000000000A")!
+  private static let vmFullBuildId           = UUID(uuidString: "A0000001-000B-4000-8000-00000000000B")!
+  private static let vmEmberBuildId          = UUID(uuidString: "A0000001-000C-4000-8000-00000000000C")!
+
   /// Built-in templates
   public static var builtInTemplates: [ChainTemplate] {
     let templates: [ChainTemplate] = [
@@ -254,6 +269,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
       
       // 1. Quick Task: Single implementer, free model, fast turnaround
       ChainTemplate(
+        id: quickTaskId,
         name: "Quick Task",
         description: "Fast single-file changes using free models (Cost: Free)",
         steps: [
@@ -265,6 +281,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
       
       // 2. Analyze and Plan: Planner only, outputs task list
       ChainTemplate(
+        id: analyzePlanId,
         name: "Analyze and Plan",
         description: "Create implementation plan without executing (Cost: Standard)",
         steps: [
@@ -276,6 +293,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
       
       // 3. Full Implementation: Planner + Implementer + Build Gate + Reviewer
       ChainTemplate(
+        id: fullImplementationId,
         name: "Full Implementation",
         description: "Complete workflow with planning, implementation, build verification, and review (Cost: Standard)",
         steps: [
@@ -296,6 +314,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
       
       // 4. Parallel Implementation: Planner + 2-3 Implementers for multi-file work
       ChainTemplate(
+        id: parallelImplementationId,
         name: "Parallel Implementation",
         description: "Planner with multiple parallel implementers for complex multi-file tasks (Cost: Standard)",
         steps: [
@@ -311,6 +330,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
       
       // 5. RAG Index Repository: For indexing/chunking workflows
       ChainTemplate(
+        id: ragIndexId,
         name: "RAG Index Repository",
         description: "Index repository for RAG-based code search (Cost: Free)",
         steps: [
@@ -338,6 +358,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
       
       // 6. Issue Analysis: Keep existing Issue Analyzer template
       ChainTemplate(
+        id: issueAnalysisId,
         name: "Issue Analysis",
         description: "Analyze GitHub issue and produce structured implementation plan (Cost: Free)",
         steps: [
@@ -386,6 +407,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
       
       // 7. PR Review: Review PR diff, suggest fixes, check for issues
       ChainTemplate(
+        id: prReviewId,
         name: "PR Review",
         description: "Review pull request and provide feedback (Cost: Free)",
         steps: [
@@ -421,6 +443,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
       
       // 8. Refactor: Deep analysis + careful implementation + thorough review
       ChainTemplate(
+        id: refactorId,
         name: "Refactor",
         description: "Deep refactoring with premium models for complex restructuring (Cost: Premium)",
         steps: [
@@ -434,6 +457,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
 
       // 9. Guarded Implementation: git stash + plan + implement + build gate + commit
       ChainTemplate(
+        id: guardedImplementationId,
         name: "Guarded Implementation",
         description: "Deterministic setup, agentic work, then gate checks before completion (Cost: Standard)",
         steps: [
@@ -469,6 +493,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
 
       // 10. VM Quick Task (Linux): Run a quick command inside an isolated Linux VM
       ChainTemplate(
+        id: vmQuickTaskId,
         name: "VM Quick Task (Linux)",
         description: "Run a single command inside an isolated Linux VM with Git toolchain (Cost: Free)",
         steps: [
@@ -488,6 +513,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
 
       // 11. VM Full Build (Linux): Plan on host, build+test inside Linux VM
       ChainTemplate(
+        id: vmFullBuildId,
         name: "VM Full Build (Linux)",
         description: "Plan on host, execute build and tests inside an isolated Linux VM (Cost: Standard)",
         steps: [
@@ -517,6 +543,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
 
       // 12. VM Ember Build: Plan on host, build+lint Ember.js project inside Linux VM
       ChainTemplate(
+        id: vmEmberBuildId,
         name: "VM Ember Build (Linux)",
         description: "Plan on host, build and lint Ember.js project inside an isolated Linux VM (Cost: Standard)",
         steps: [

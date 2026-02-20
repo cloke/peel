@@ -581,7 +581,7 @@ public final class VMIsolationService {
   /// Throttle console output to avoid UI hangs
   private let consoleFlushInterval: TimeInterval = 0.25
   private let consoleFlushByteThreshold = 4096
-  private(set) var isConsoleOutputEnabled = false
+  private(set) var isConsoleOutputEnabled = true
   
   // MARK: - Configuration
   
@@ -1892,7 +1892,17 @@ public final class VMIsolationService {
     // Capture console output before sending
     let previousOutput = consoleOutput
 
-    inputPipe.fileHandleForWriting.write(data)
+    // Write to all available input pipes (console and serial fallback)
+    // The VM shell may read from either device depending on kernel config
+    let pipes = [consoleInputPipe, serialInputPipe].compactMap { $0 }
+    for pipe in pipes {
+      do {
+        try pipe.fileHandleForWriting.write(contentsOf: data)
+      } catch {
+        vmLog("Failed to write to pipe: \(error)")
+      }
+    }
+    _ = inputPipe // suppress unused warning
 
     // Poll for sentinel in console output
     let deadline = Date().addingTimeInterval(timeout)
@@ -1902,20 +1912,35 @@ public final class VMIsolationService {
       if currentOutput.contains(sentinel) {
         // Extract output between previous state and sentinel
         let newOutput = String(currentOutput.dropFirst(previousOutput.count))
-        if let sentinelRange = newOutput.range(of: sentinel) {
-          let result = String(newOutput[newOutput.startIndex..<sentinelRange.lowerBound])
-          // Strip the echoed command from the beginning
-          let lines = result.split(separator: "\n", omittingEmptySubsequences: false)
-          let filtered = lines.drop { $0.contains(command.prefix(40)) }
-          let output = filtered.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-
+        // Use backward search to find the LAST sentinel occurrence (the actual output
+        // line), not the first (which is in the shell-echoed command line).
+        if let sentinelRange = newOutput.range(of: sentinel, options: .backwards) {
           // Parse exit code from the sentinel line: "PEEL_CMD_DONE_xxxx <exitCode>"
-          let sentinelLine = String(newOutput[sentinelRange.lowerBound...])
-            .split(separator: "\n").first.map(String.init) ?? ""
+          let sentinelAndAfter = String(newOutput[sentinelRange.lowerBound...])
+          let sentinelLine = sentinelAndAfter.components(separatedBy: "\n").first ?? ""
           let exitCode = sentinelLine
             .replacingOccurrences(of: sentinel, with: "")
-            .trimmingCharacters(in: .whitespaces)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
           lastCommandExitCode = Int32(exitCode) ?? 0
+
+          // Get everything before the last sentinel occurrence
+          let beforeSentinel = String(newOutput[newOutput.startIndex..<sentinelRange.lowerBound])
+          var lines = beforeSentinel.components(separatedBy: "\n")
+
+          // Drop the echoed command line(s) from the beginning
+          let cmdPrefix = String(command.prefix(40))
+          if let idx = lines.firstIndex(where: { $0.contains(cmdPrefix) }) {
+            lines = Array(lines[(idx + 1)...])
+          }
+
+          // Remove infrastructure lines (PEEL_EC assignment, sentinel echo)
+          lines = lines.filter { line in
+            !line.contains("PEEL_EC=") && !line.contains("echo \(sentinel)")
+          }
+
+          let output = lines.joined(separator: "\n")
+            .replacingOccurrences(of: "\r", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
 
           return output
         }
@@ -2394,6 +2419,19 @@ public final class VMIsolationService {
 
   func clearConsoleOutput() {
     consoleOutput = ""
+  }
+
+  func consoleReaderDiagnostics() -> [String: Any] {
+    return [
+      "totalBytesRead": consoleState.totalBytesRead(),
+      "isStopping": consoleState.isStopping(),
+      "lastOutputAt": consoleState.lastOutputTimestamp()?.description ?? "nil",
+      "consoleOutputLength": consoleOutput.count,
+      "hasInputPipe": consoleInputPipe != nil,
+      "hasOutputPipe": consoleOutputPipe != nil,
+      "isConsoleOutputEnabled": isConsoleOutputEnabled,
+      "hasFlushTimer": consoleFlushTimer != nil,
+    ]
   }
 
   func sendConsoleInput(_ input: String) {

@@ -152,11 +152,15 @@ public final class VMToolsHandler: MCPToolHandler {
   private func handleLinuxStatus(id: Any?) async -> (Int, Data) {
     await vmIsolationService.initialize()
 
+    let consoleSnippet = String(vmIsolationService.consoleOutput.suffix(2000))
+    let diag = vmIsolationService.consoleReaderDiagnostics()
     let status: [String: Any] = [
       "virtualizationAvailable": vmIsolationService.isVirtualizationAvailable,
       "linuxReady": vmIsolationService.isLinuxReady,
       "linuxRunning": vmIsolationService.runningLinuxVM != nil,
-      "statusMessage": vmIsolationService.statusMessage
+      "statusMessage": vmIsolationService.statusMessage,
+      "consoleOutput": consoleSnippet,
+      "consoleDiag": diag
     ]
     return (200, makeResult(id: id, result: status))
   }
