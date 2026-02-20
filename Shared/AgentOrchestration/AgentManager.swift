@@ -181,6 +181,10 @@ public final class AgentManager {
       )
       agent.frameworkHint = step.frameworkHint
       agent.customInstructions = step.customInstructions
+      agent.stepType = step.stepType
+      agent.command = step.command
+      agent.allowedTools = step.allowedTools
+      agent.stepDeniedTools = step.deniedTools
       chain.addAgent(agent)
     }
     
@@ -217,7 +221,11 @@ public final class AgentManager {
         model: agent.model,
         name: agent.name,
         frameworkHint: agent.frameworkHint,
-        customInstructions: agent.customInstructions
+        customInstructions: agent.customInstructions,
+        stepType: agent.stepType,
+        command: agent.command,
+        allowedTools: agent.allowedTools,
+        deniedTools: agent.stepDeniedTools
       )
     }
     

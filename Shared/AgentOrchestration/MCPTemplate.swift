@@ -27,19 +27,35 @@ public struct MCPTemplate: Codable, Hashable, Sendable {
     public var name: String?
     public var frameworkHint: String?
     public var customInstructions: String?
+    /// Step execution type: "agentic" (default), "deterministic", or "gate"
+    public var stepType: String?
+    /// Shell command to run for deterministic/gate steps
+    public var command: String?
+    /// Tools explicitly allowed for this step (agentic only)
+    public var allowedTools: [String]?
+    /// Tools explicitly denied for this step (agentic only)
+    public var deniedTools: [String]?
 
     public init(
       role: String,
       model: String,
       name: String? = nil,
       frameworkHint: String? = nil,
-      customInstructions: String? = nil
+      customInstructions: String? = nil,
+      stepType: String? = nil,
+      command: String? = nil,
+      allowedTools: [String]? = nil,
+      deniedTools: [String]? = nil
     ) {
       self.role = role
       self.model = model
       self.name = name
       self.frameworkHint = frameworkHint
       self.customInstructions = customInstructions
+      self.stepType = stepType
+      self.command = command
+      self.allowedTools = allowedTools
+      self.deniedTools = deniedTools
     }
   }
 }

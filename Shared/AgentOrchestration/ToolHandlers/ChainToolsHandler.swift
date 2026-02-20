@@ -633,7 +633,11 @@ extension ChainToolsHandler {
                       "model": ["type": "string"],
                       "name": ["type": "string"],
                       "frameworkHint": ["type": "string"],
-                      "customInstructions": ["type": "string"]
+                      "customInstructions": ["type": "string"],
+                      "stepType": ["type": "string", "description": "Execution type: 'agentic' (default, LLM), 'deterministic' (shell command), or 'gate' (check command)"],
+                      "command": ["type": "string", "description": "Shell command for deterministic/gate steps"],
+                      "allowedTools": ["type": "array", "items": ["type": "string"], "description": "Tools explicitly allowed for this step (agentic only)"],
+                      "deniedTools": ["type": "array", "items": ["type": "string"], "description": "Tools explicitly denied for this step (agentic only)"]
                     ],
                     "required": ["role", "model"]
                   ]

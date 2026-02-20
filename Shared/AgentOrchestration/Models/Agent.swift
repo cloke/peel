@@ -114,6 +114,18 @@ public final class Agent: Identifiable {
   
   /// Custom instructions to append to prompts
   public var customInstructions: String?
+
+  /// How this agent's step executes: agentic (LLM), deterministic (shell), or gate (check)
+  public var stepType: StepType
+
+  /// Shell command for deterministic/gate steps
+  public var command: String?
+
+  /// Tools explicitly allowed for this agent (overrides role defaults; agentic only)
+  public var allowedTools: [String]?
+
+  /// Tools explicitly denied for this agent (merged with role defaults; agentic only)
+  public var stepDeniedTools: [String]?
   
   /// Working directory for the agent (project folder path)
   public var workingDirectory: String?
@@ -133,6 +145,10 @@ public final class Agent: Identifiable {
     model: CopilotModel = .claudeSonnet45,
     frameworkHint: FrameworkHint = .auto,
     customInstructions: String? = nil,
+    stepType: StepType = .agentic,
+    command: String? = nil,
+    allowedTools: [String]? = nil,
+    stepDeniedTools: [String]? = nil,
     workingDirectory: String? = nil,
     currentTask: AgentTask? = nil,
     workspace: AgentWorkspace? = nil,
@@ -147,6 +163,10 @@ public final class Agent: Identifiable {
     self.model = model
     self.frameworkHint = frameworkHint
     self.customInstructions = customInstructions
+    self.stepType = stepType
+    self.command = command
+    self.allowedTools = allowedTools
+    self.stepDeniedTools = stepDeniedTools
     self.workingDirectory = workingDirectory
     self.currentTask = currentTask
     self.workspace = workspace
