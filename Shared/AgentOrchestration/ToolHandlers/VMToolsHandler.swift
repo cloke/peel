@@ -10,18 +10,24 @@ import MCPCore
 
 // MARK: - VM Tools Handler
 
-/// Handles VM isolation tools: vm.macos.status, vm.macos.restore.download, vm.macos.install, vm.macos.start, vm.macos.stop, vm.macos.reset
+/// Handles VM isolation tools for both macOS and Linux VMs
 @MainActor
 public final class VMToolsHandler: MCPToolHandler {
   public weak var delegate: MCPToolHandlerDelegate?
 
   public let supportedTools: Set<String> = [
+    // macOS VM tools
     "vm.macos.status",
     "vm.macos.restore.download",
     "vm.macos.install",
     "vm.macos.start",
     "vm.macos.stop",
-    "vm.macos.reset"
+    "vm.macos.reset",
+    // Linux VM tools
+    "vm.linux.status",
+    "vm.linux.start",
+    "vm.linux.stop",
+    "vm.linux.exec"
   ]
 
   private let vmIsolationService: VMIsolationService
@@ -46,6 +52,14 @@ public final class VMToolsHandler: MCPToolHandler {
       return await handleStop(id: id)
     case "vm.macos.reset":
       return await handleReset(id: id, arguments: arguments)
+    case "vm.linux.status":
+      return await handleLinuxStatus(id: id)
+    case "vm.linux.start":
+      return await handleLinuxStart(id: id, arguments: arguments)
+    case "vm.linux.stop":
+      return await handleLinuxStop(id: id)
+    case "vm.linux.exec":
+      return await handleLinuxExec(id: id, arguments: arguments)
     default:
       return (404, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.methodNotFound, message: "Unknown tool"))
     }
@@ -132,6 +146,82 @@ public final class VMToolsHandler: MCPToolHandler {
       return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.vmError, message: error.localizedDescription))
     }
   }
+
+  // MARK: - vm.linux.status
+
+  private func handleLinuxStatus(id: Any?) async -> (Int, Data) {
+    await vmIsolationService.initialize()
+
+    let status: [String: Any] = [
+      "virtualizationAvailable": vmIsolationService.isVirtualizationAvailable,
+      "linuxReady": vmIsolationService.isLinuxReady,
+      "linuxRunning": vmIsolationService.runningLinuxVM != nil,
+      "statusMessage": vmIsolationService.statusMessage
+    ]
+    return (200, makeResult(id: id, result: status))
+  }
+
+  // MARK: - vm.linux.start
+
+  private func handleLinuxStart(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    do {
+      await vmIsolationService.initialize()
+
+      // Parse optional directory shares
+      var shares: [VMDirectoryShare] = []
+      if let sharesArray = arguments["directoryShares"] as? [[String: Any]] {
+        for shareDict in sharesArray {
+          if let hostPath = shareDict["hostPath"] as? String,
+             let tag = shareDict["tag"] as? String {
+            let readOnly = shareDict["readOnly"] as? Bool ?? false
+            shares.append(VMDirectoryShare(hostPath: hostPath, tag: tag, readOnly: readOnly))
+          }
+        }
+      }
+
+      try await vmIsolationService.startLinuxVM(directoryShares: shares)
+      return await handleLinuxStatus(id: id)
+    } catch {
+      await telemetryProvider.warning("Linux VM start failed", metadata: ["error": error.localizedDescription])
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.vmError, message: error.localizedDescription))
+    }
+  }
+
+  // MARK: - vm.linux.stop
+
+  private func handleLinuxStop(id: Any?) async -> (Int, Data) {
+    do {
+      await vmIsolationService.initialize()
+      try await vmIsolationService.stopLinuxVM()
+      return await handleLinuxStatus(id: id)
+    } catch {
+      await telemetryProvider.warning("Linux VM stop failed", metadata: ["error": error.localizedDescription])
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.vmError, message: error.localizedDescription))
+    }
+  }
+
+  // MARK: - vm.linux.exec
+
+  private func handleLinuxExec(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let command = arguments["command"] as? String, !command.isEmpty else {
+      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "Missing required 'command' parameter"))
+    }
+
+    let timeout = arguments["timeout"] as? Double ?? 30.0
+
+    do {
+      let output = try await vmIsolationService.sendLinuxCommand(command, timeout: timeout)
+      let result: [String: Any] = [
+        "command": command,
+        "output": output,
+        "success": true
+      ]
+      return (200, makeResult(id: id, result: result))
+    } catch {
+      await telemetryProvider.warning("Linux VM exec failed", metadata: ["error": error.localizedDescription, "command": command])
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.vmError, message: error.localizedDescription))
+    }
+  }
 }
 
 // MARK: - Tool Definitions
@@ -139,6 +229,7 @@ public final class VMToolsHandler: MCPToolHandler {
 extension VMToolsHandler {
   public var toolDefinitions: [MCPToolDefinition] {
     [
+      // macOS VM tools
       MCPToolDefinition(
         name: "vm.macos.status",
         description: "Get macOS VM readiness and status",
@@ -197,6 +288,65 @@ extension VMToolsHandler {
           "properties": [
             "deleteRestoreImage": ["type": "boolean"]
           ]
+        ],
+        category: .vm,
+        isMutating: true
+      ),
+      // Linux VM tools
+      MCPToolDefinition(
+        name: "vm.linux.status",
+        description: "Get Linux VM readiness and running status",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .vm,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "vm.linux.start",
+        description: "Start a Linux VM with optional VirtioFS directory shares",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "directoryShares": [
+              "type": "array",
+              "description": "Directories to share between host and VM via VirtioFS",
+              "items": [
+                "type": "object",
+                "properties": [
+                  "hostPath": ["type": "string", "description": "Host directory path"],
+                  "tag": ["type": "string", "description": "Mount tag inside VM"],
+                  "readOnly": ["type": "boolean", "description": "Whether share is read-only"]
+                ],
+                "required": ["hostPath", "tag"]
+              ]
+            ]
+          ]
+        ],
+        category: .vm,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "vm.linux.stop",
+        description: "Stop the running Linux VM",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .vm,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "vm.linux.exec",
+        description: "Execute a command inside the running Linux VM via console",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "command": ["type": "string", "description": "Shell command to execute inside the Linux VM"],
+            "timeout": ["type": "number", "description": "Timeout in seconds (default: 30)"]
+          ],
+          "required": ["command"]
         ],
         category: .vm,
         isMutating: true

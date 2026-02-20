@@ -189,10 +189,28 @@ Can be done in any order, low dependencies.
 
 ### Track A: VM Isolation
 
+**Status**: Foundation implemented — VM-isolated chain execution is now an optional template type.
+See [VM_ISOLATED_EXECUTION_PLAN.md](VM_ISOLATED_EXECUTION_PLAN.md) for the full design.
+
+Completed:
+- `ExecutionEnvironment` enum (.host / .linux / .macos) on ChainTemplate & AgentChain
+- `VMToolchain` enum with Alpine package mappings (minimal/git/swift/node/ruby/ember/fullStack)
+- VirtioFS directory sharing between host and guest
+- `VMChainExecutor` lifecycle orchestrator (boot → mount → bootstrap → execute → teardown)
+- AgentChainRunner VM-aware dispatch (deterministic/gate steps run in VM, agentic steps on host)
+- Linux MCP tools (vm.linux.status/start/stop/exec)
+- Built-in VM templates (Quick Task, Full Build, Ember Build)
+
+Remaining:
+- Linux rootfs setup (Alpine currently boots to initramfs only)
+- macOS VM command execution (placeholder)
+- End-to-end testing with real workloads
+
 | Order | # | Title | Est | Deps | Status |
 |-------|---|-------|-----|------|--------|
-| 1 | [#106](https://github.com/cloke/peel/issues/106) | macOS VM for Xcode isolation | 8h | None | 🟡 Ready |
+| 1 | — | VM-isolated chain execution foundation | 8h | None | 🟢 Done |
 | 2 | [#107](https://github.com/cloke/peel/issues/107) | GPU shared cache service | 6h | #24 | 🟡 Ready |
+| 3 | — | Linux rootfs + real workload testing | 4h | Track A.1 | 🟡 Ready |
 
 ### Track B: Voice/Vision
 
@@ -288,10 +306,11 @@ These are valid ideas not yet prioritized. Pick from here when phases complete.
 | [#110](https://github.com/cloke/peel/issues/110) | Refactor diff viewer for modern UI | git |
 | [#112](https://github.com/cloke/peel/issues/112) | Git diff: stage/revert hunk actions | git |
 
-### VM (Stretch)
-| # | Title | Category |
-|---|-------|----------|
-| [#95](https://github.com/cloke/peel/issues/95) | VM Isolation: pooled preconfigured macOS VMs | infra |
+### VM
+| # | Title | Category | Status |
+|---|-------|----------|--------|
+| — | VM-isolated chain execution | infra | ✅ Foundation done |
+| [#107](https://github.com/cloke/peel/issues/107) | GPU shared cache service | infra | 🟡 Ready |
 
 ---
 

@@ -115,14 +115,31 @@ public final class AgentChainRunner {
   private let localRagStore = makeDefaultRAGStore()
   private var runGates: [UUID: ChainRunGate] = [:]
 
+  /// VM chain executor — lazily created when a chain requires VM execution
+  private var vmChainExecutor: VMChainExecutor?
+  private let vmIsolationService: VMIsolationService?
+
   public init(
     agentManager: AgentManager,
     cliService: CLIService,
-    telemetryProvider: MCPTelemetryProviding
+    telemetryProvider: MCPTelemetryProviding,
+    vmIsolationService: VMIsolationService? = nil
   ) {
     self.agentManager = agentManager
     self.cliService = cliService
     self.telemetryProvider = telemetryProvider
+    self.vmIsolationService = vmIsolationService
+  }
+
+  /// Get or create the VMChainExecutor for VM-based chains
+  private func getVMExecutor() -> VMChainExecutor? {
+    if let executor = vmChainExecutor { return executor }
+    guard let vmService = vmIsolationService else { return nil }
+    let executor = VMChainExecutor(vmService: vmService) { message in
+      print(message)
+    }
+    vmChainExecutor = executor
+    return executor
   }
 
   public func runChain(
@@ -822,10 +839,19 @@ public final class AgentChainRunner {
     // Dispatch based on step type
     switch agent.stepType {
     case .deterministic:
+      // VM-aware: route deterministic steps through VM when chain requires it
+      if chain.requiresVM, let command = agent.command, !command.isEmpty {
+        return try await runDeterministicStepInVM(agent, at: index, chain: chain, command: command)
+      }
       return try await runDeterministicStep(agent, at: index, chain: chain, prompt: prompt)
     case .gate:
+      // VM-aware: route gate steps through VM when chain requires it
+      if chain.requiresVM, let command = agent.command, !command.isEmpty {
+        return try await runGateStepInVM(agent, at: index, chain: chain, command: command)
+      }
       return try await runGateStep(agent, at: index, chain: chain, prompt: prompt)
     case .agentic:
+      // LLM steps always run on host — they read/write the shared workspace via VirtioFS
       return try await runAgenticStep(agent, at: index, chain: chain, prompt: prompt, contextOverride: contextOverride)
     }
   }
@@ -1008,6 +1034,149 @@ public final class AgentChainRunner {
       } catch {
         continuation.resume(returning: (1, "", error.localizedDescription))
       }
+    }
+  }
+
+  // MARK: - VM Step Execution
+
+  /// Run a deterministic step inside a VM via the VMChainExecutor.
+  private func runDeterministicStepInVM(
+    _ agent: Agent,
+    at index: Int,
+    chain: AgentChain,
+    command: String
+  ) async throws -> AgentChainResult {
+    guard let executor = getVMExecutor() else {
+      // Fall back to host if VM service unavailable
+      await telemetryProvider.warning("VM service unavailable, falling back to host execution", metadata: [
+        "agentName": agent.name
+      ])
+      return try await runDeterministicStep(agent, at: index, chain: chain, prompt: command)
+    }
+
+    let startTime = Date()
+    agent.updateState(.working)
+    chain.addStatusMessage("Running in \(chain.executionEnvironment.displayName): \(command)", type: .tool)
+
+    await telemetryProvider.info("VM deterministic step start", metadata: [
+      "chainId": chain.id.uuidString,
+      "agentName": agent.name,
+      "environment": chain.executionEnvironment.rawValue,
+      "command": command
+    ])
+
+    do {
+      let result = try await executor.execute(
+        environment: chain.executionEnvironment,
+        toolchain: chain.toolchain,
+        workspacePath: chain.workingDirectory ?? FileManager.default.currentDirectoryPath,
+        extraShares: chain.directoryShares,
+        commands: [(name: agent.name, command: command)]
+      )
+
+      let duration = Date().timeIntervalSince(startTime)
+      let durationStr = String(format: "%.1fs", duration)
+      let output = result.stepResults.first?.stdout ?? ""
+
+      if result.success {
+        agent.updateState(.complete)
+        chain.addStatusMessage("VM step '\(agent.name)' completed (\(durationStr))", type: .complete)
+      } else {
+        agent.updateState(.failed(message: result.errorMessage ?? "VM step failed"))
+        chain.addStatusMessage("VM step '\(agent.name)' failed: \(result.errorMessage ?? "unknown")", type: .error)
+        throw ChainError.deterministicStepFailed(
+          stepName: agent.name,
+          exitCode: result.stepResults.first.map { $0.exitCode } ?? 1,
+          output: output
+        )
+      }
+
+      return AgentChainResult(
+        agentId: agent.id,
+        agentName: agent.name,
+        model: "vm-deterministic",
+        prompt: command,
+        output: output,
+        duration: durationStr,
+        premiumCost: 0
+      )
+    } catch let error as VMError {
+      let duration = Date().timeIntervalSince(startTime)
+      agent.updateState(.failed(message: error.localizedDescription))
+      chain.addStatusMessage("VM step '\(agent.name)' error: \(error.localizedDescription)", type: .error)
+      throw ChainError.deterministicStepFailed(
+        stepName: agent.name,
+        exitCode: 1,
+        output: error.localizedDescription
+      )
+    }
+  }
+
+  /// Run a gate step inside a VM via the VMChainExecutor.
+  private func runGateStepInVM(
+    _ agent: Agent,
+    at index: Int,
+    chain: AgentChain,
+    command: String
+  ) async throws -> AgentChainResult {
+    guard let executor = getVMExecutor() else {
+      // Fall back to host if VM service unavailable
+      return try await runGateStep(agent, at: index, chain: chain, prompt: command)
+    }
+
+    let startTime = Date()
+    agent.updateState(.working)
+    chain.addStatusMessage("Running gate in \(chain.executionEnvironment.displayName): \(command)", type: .tool)
+
+    do {
+      let result = try await executor.execute(
+        environment: chain.executionEnvironment,
+        toolchain: chain.toolchain,
+        workspacePath: chain.workingDirectory ?? FileManager.default.currentDirectoryPath,
+        extraShares: chain.directoryShares,
+        commands: [(name: agent.name, command: command)]
+      )
+
+      let duration = Date().timeIntervalSince(startTime)
+      let durationStr = String(format: "%.1fs", duration)
+      let output = result.stepResults.first?.stdout ?? ""
+      let passed = result.success
+
+      if passed {
+        agent.updateState(.complete)
+        chain.addStatusMessage("VM gate '\(agent.name)' passed (\(durationStr))", type: .complete)
+      } else {
+        agent.updateState(.failed(message: "Gate failed"))
+        chain.addStatusMessage("VM gate '\(agent.name)' failed", type: .error)
+      }
+
+      var chainResult = AgentChainResult(
+        agentId: agent.id,
+        agentName: agent.name,
+        model: "vm-gate",
+        prompt: command,
+        output: output,
+        duration: durationStr,
+        premiumCost: 0
+      )
+      chainResult.gateResult = passed ? .passed : .failed(exitCode: result.stepResults.first?.exitCode ?? 1)
+
+      if !passed {
+        throw ChainError.gateStepFailed(
+          stepName: agent.name,
+          exitCode: result.stepResults.first?.exitCode ?? 1,
+          output: output
+        )
+      }
+
+      return chainResult
+    } catch let error as VMError {
+      agent.updateState(.failed(message: error.localizedDescription))
+      throw ChainError.gateStepFailed(
+        stepName: agent.name,
+        exitCode: 1,
+        output: error.localizedDescription
+      )
     }
   }
 
