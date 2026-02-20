@@ -1,6 +1,7 @@
 # MCP Agent Workflow
 
 **Created:** January 18, 2026  
+**Updated:** February 19, 2026  
 **Status:** Active
 
 ---
@@ -101,13 +102,24 @@ curl -X POST -H 'Content-Type: application/json' \
 
 ### Tool Categories
 
-| Category | Tools | Purpose |
-|----------|-------|---------|
-| **RAG** | `rag.status`, `rag.index`, `rag.search`, `rag.repos.*`, `rag.skills.*` | Local vector search |
-| **Chains** | `chains.run`, `chains.stop`, `chains.pause`, `chains.resume`, `chains.instruct` | Agent chain execution |
-| **Templates** | `templates.list`, `templates.create`, `templates.validate` | Chain template management |
-| **UI** | `ui.tap`, `ui.navigate`, `ui.snapshot`, `ui.setText` | UI automation |
-| **Server** | `server.status`, `server.restart`, `app.quit` | Server lifecycle |
+| Category | Tools (examples) | Purpose |
+|----------|-------|--------|
+| **Chains** | `chains.run`, `chains.runBatch`, `chains.stop`, `chains.pause`, `chains.resume`, `chains.instruct`, `chains.step`, `chains.queue.*`, `chains.promptRules.*` | Agent chain execution |
+| **Parallel** | `parallel.create`, `parallel.start`, `parallel.approve`, `parallel.reject`, `parallel.merge`, `parallel.diff`, `parallel.retry`, `parallel.append` | Parallel worktree execution |
+| **RAG** | `rag.search`, `rag.index`, `rag.status`, `rag.repos.*`, `rag.skills.*`, `rag.lessons.*`, `rag.model.*`, `rag.dependencies`, `rag.dependents`, `rag.duplicates`, `rag.hotspots`, `rag.analyze` | Local code search & intelligence |
+| **Swarm** | `swarm.start`, `swarm.dispatch`, `swarm.workers`, `swarm.firestore.*` | Distributed execution (LAN + WAN) |
+| **Code** | `code.edit`, `code.edit.status`, `code.edit.unload` | Local MLX code editing |
+| **Terminal** | `terminal.run`, `terminal.analyze`, `terminal.adapt` | Shell command execution |
+| **Templates** | `templates.list` | Chain template management |
+| **Worktree** | `worktree.create`, `worktree.list`, `worktree.remove`, `worktree.stats` | Git worktree management |
+| **UI** | `ui.tap`, `ui.navigate`, `ui.snapshot`, `ui.setText`, `ui.toggle`, `ui.select`, `ui.back` | UI automation |
+| **Server** | `server.status`, `server.restart`, `server.stop`, `server.lan`, `server.port.set`, `server.sleep.prevent` | Server lifecycle |
+| **App** | `app.activate`, `app.quit`, `screenshot.capture` | App lifecycle |
+| **Repos** | `repos.list`, `repos.delete`, `repos.resolve` | Repository tracking |
+| **Docling** | `docling.convert`, `docling.setup` | Document import |
+| **PII** | `pii.scrub` | PII removal |
+
+See [PRODUCT_MANUAL.md](../PRODUCT_MANUAL.md#mcp-api-reference) for the complete API reference (120+ tools).
 
 ### Prompt Rule Enforcement
 
@@ -577,12 +589,16 @@ requests.post("http://127.0.0.1:8765/rpc", json={
 
 - [Tools/build-and-launch.sh](../../Tools/build-and-launch.sh) - Build and launch script
 - [Tools/PeelCLI/](../../Tools/PeelCLI/) - CLI wrapper for MCP
-- [Shared/AgentOrchestration/AgentManager.swift](../../Shared/AgentOrchestration/AgentManager.swift) - MCPServerService implementation
+- [Shared/AgentOrchestration/MCPServerService.swift](../../Shared/AgentOrchestration/MCPServerService.swift) - MCP server implementation
+- [Shared/AgentOrchestration/AgentChainRunner.swift](../../Shared/AgentOrchestration/AgentChainRunner.swift) - Chain execution engine
+- [Shared/AgentOrchestration/AgentManager.swift](../../Shared/AgentOrchestration/AgentManager.swift) - Agent lifecycle management
 - [MCP_TEST_PLAN.md](MCP_TEST_PLAN.md) - Test cases
 
 ---
 
-## Open Issues
+## Related Docs
 
-- [#13](https://github.com/cloke/peel/issues/13) - Add validation pipeline for MCP runs
-- [#16](https://github.com/cloke/peel/issues/16) - MCP activity log + cleanup actions
+- [PRODUCT_MANUAL.md](../PRODUCT_MANUAL.md) - Full product manual with complete MCP API reference
+- [LOCAL_RAG_GUIDE.md](LOCAL_RAG_GUIDE.md) - Local RAG search and management
+- [SWARM_GUIDE.md](SWARM_GUIDE.md) - Distributed swarm setup
+- [LOCAL_CHAT_GUIDE.md](LOCAL_CHAT_GUIDE.md) - Local MLX chat
