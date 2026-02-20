@@ -32,6 +32,8 @@ Peel is a macOS/iOS SwiftUI application for managing GitHub, Git repositories, a
 | App entry point | `Shared/PeelApp.swift` |
 | MCP Server | `Shared/AgentOrchestration/MCPServerService.swift` |
 | Agent chain execution | `Shared/AgentOrchestration/AgentChainRunner.swift` |
+| Step type dispatch | `AgentChainRunner.runAgenticStep/runDeterministicStep/runGateStep` |
+| Chain templates & StepType enum | `Shared/AgentOrchestration/Models/ChainTemplate.swift` |
 | Agent lifecycle | `Shared/AgentOrchestration/AgentManager.swift` |
 | CLI tool detection | `Shared/AgentOrchestration/CLIService.swift` |
 | Git operations | `Local Packages/Git/Sources/Git/` |
