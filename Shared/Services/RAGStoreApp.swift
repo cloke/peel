@@ -467,6 +467,42 @@ extension RAGStore {
   }
 }
 
+// MARK: - Per-Repo Embedding Counts
+
+extension RAGStore {
+  /// Query the number of embeddings per repo (keyed by repo id).
+  /// This is an app-level query since RAGCore's RepoInfo doesn't include embedding counts.
+  /// Opens a separate read-only connection to avoid interfering with the main RAGStore handle.
+  func embeddingCountsByRepo() -> [String: Int] {
+    let dbPath = status().dbPath
+    guard FileManager.default.fileExists(atPath: dbPath) else { return [:] }
+
+    var readDb: OpaquePointer?
+    guard sqlite3_open_v2(dbPath, &readDb, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
+          let readDb else { return [:] }
+    defer { sqlite3_close(readDb) }
+
+    let sql = """
+      SELECT f.repo_id, COUNT(e.chunk_id)
+      FROM embeddings e
+      JOIN chunks c ON e.chunk_id = c.id
+      JOIN files f ON c.file_id = f.id
+      GROUP BY f.repo_id
+      """
+    var stmt: OpaquePointer?
+    guard sqlite3_prepare_v2(readDb, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return [:] }
+    defer { sqlite3_finalize(stmt) }
+
+    var counts: [String: Int] = [:]
+    while sqlite3_step(stmt) == SQLITE_ROW {
+      let repoId = String(cString: sqlite3_column_text(stmt, 0))
+      let count = Int(sqlite3_column_int(stmt, 1))
+      counts[repoId] = count
+    }
+    return counts
+  }
+}
+
 // MARK: - Portable Repo Identification (Issue #278)
 //
 // To support cross-machine SQLite sync:
