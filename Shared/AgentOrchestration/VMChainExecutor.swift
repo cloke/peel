@@ -280,8 +280,9 @@ public final class VMChainExecutor {
     let packages = toolchain.alpinePackages
     if !packages.isEmpty {
       log("Installing packages: \(packages.joined(separator: ", "))")
+      let installCmd = "cd /mnt/workspace 2>/dev/null || cd /workspace; apk update && apk add --no-cache \(packages.joined(separator: " "))"
       let output = try await vmService.sendLinuxCommand(
-        "apk update && apk add --no-cache \(packages.joined(separator: " "))",
+        installCmd,
         timeout: 120
       )
       log("Package install output: \(output.suffix(200))")
@@ -289,7 +290,8 @@ public final class VMChainExecutor {
 
     for cmd in toolchain.postInstallCommands {
       log("Running post-install: \(cmd.prefix(60))...")
-      let output = try await vmService.sendLinuxCommand(cmd, timeout: 180)
+      let wrapped = "cd /mnt/workspace 2>/dev/null || cd /workspace; \(cmd)"
+      let output = try await vmService.sendLinuxCommand(wrapped, timeout: 180)
       log("Post-install output: \(output.suffix(200))")
     }
   }
