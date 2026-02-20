@@ -212,7 +212,18 @@ struct RAGRepositoryCardView: View {
         HStack(spacing: 12) {
           Label("\(repo.fileCount)", systemImage: "doc")
           Label("\(repo.chunkCount)", systemImage: "text.alignleft")
-          
+
+          // Embedding status indicator
+          if repo.needsEmbedding {
+            Label("No embeddings", systemImage: "exclamationmark.triangle")
+              .foregroundStyle(.orange)
+              .help("Synced from peer with different model. Re-index to generate local embeddings.")
+          } else if repo.hasPartialEmbeddings {
+            Label("\(repo.embeddingCount)/\(repo.chunkCount)", systemImage: "bolt.trianglebadge.exclamationmark")
+              .foregroundStyle(.yellow)
+              .help("Some chunks missing embeddings. Re-index to complete.")
+          }
+
           if analysisState.totalChunks > 0 {
             let pct = Int(analysisState.progress * 100)
             Label("\(pct)%", systemImage: "cpu")
@@ -346,6 +357,15 @@ struct RAGRepositoryCardView: View {
             .font(.caption2)
             .foregroundStyle(.secondary)
         }
+
+        VStack(alignment: .leading, spacing: 2) {
+          Text("\(repo.embeddingCount)")
+            .font(.title3.weight(.medium))
+            .foregroundStyle(repo.needsEmbedding ? .orange : .primary)
+          Text("embeddings")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
         
         Spacer()
         
@@ -388,7 +408,25 @@ struct RAGRepositoryCardView: View {
           Text("This will re-index all \(repo.fileCount) files. Choose whether to also clear AI analysis.")
         }
       }
-      
+
+      // Embedding model mismatch warning
+      if repo.needsEmbedding {
+        HStack(spacing: 6) {
+          Image(systemName: "exclamationmark.triangle.fill")
+            .foregroundStyle(.orange)
+          VStack(alignment: .leading, spacing: 2) {
+            Text("No local embeddings — synced from peer with different model")
+              .font(.caption)
+              .foregroundStyle(.orange)
+            Text("Vector search unavailable. Re-index to generate embeddings with \(mcpServer.ragStatus?.embeddingModelName ?? "local model").")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+        }
+        .padding(8)
+        .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+      }
+
       // Index progress
       if let progress = mcpServer.ragIndexProgress, 
          mcpServer.ragIndexingPath == repo.rootPath,
@@ -1635,7 +1673,8 @@ struct RAGRepoSkillsSheet: View {
       rootPath: "/Users/dev/code/peel",
       lastIndexedAt: Date().addingTimeInterval(-3600),
       fileCount: 340,
-      chunkCount: 3029
+      chunkCount: 3029,
+      embeddingCount: 3029
     ),
     mcpServer: MCPServerService(),
     isExpanded: .constant(true)

@@ -179,19 +179,26 @@ public final class MCPServerService {
     public let lastIndexedAt: Date?
     public let fileCount: Int
     public let chunkCount: Int
+    public let embeddingCount: Int
     public let repoIdentifier: String?
     public let parentRepoId: String?
 
-    public init(id: String, name: String, rootPath: String, lastIndexedAt: Date?, fileCount: Int, chunkCount: Int, repoIdentifier: String? = nil, parentRepoId: String? = nil) {
+    public init(id: String, name: String, rootPath: String, lastIndexedAt: Date?, fileCount: Int, chunkCount: Int, embeddingCount: Int = 0, repoIdentifier: String? = nil, parentRepoId: String? = nil) {
       self.id = id
       self.name = name
       self.rootPath = rootPath
       self.lastIndexedAt = lastIndexedAt
       self.fileCount = fileCount
       self.chunkCount = chunkCount
+      self.embeddingCount = embeddingCount
       self.repoIdentifier = repoIdentifier
       self.parentRepoId = parentRepoId
     }
+
+    /// True when this repo has chunks but no embeddings (e.g. synced from a peer with a different model).
+    public var needsEmbedding: Bool { chunkCount > 0 && embeddingCount == 0 }
+    /// True when some but not all chunks have embeddings.
+    public var hasPartialEmbeddings: Bool { embeddingCount > 0 && embeddingCount < chunkCount }
   }
 
   // MARK: - RAG Analysis State (per repo)
@@ -909,6 +916,7 @@ public final class MCPServerService {
       let repos = try await localRagStore.listRepos()
       ragStatus = status
       ragStats = stats
+      let embeddingCounts = await localRagStore.embeddingCountsByRepo()
       ragRepos = repos.map { repo in
         RAGRepoInfo(
           id: repo.id,
@@ -917,6 +925,7 @@ public final class MCPServerService {
           lastIndexedAt: repo.lastIndexedAt,
           fileCount: repo.fileCount,
           chunkCount: repo.chunkCount,
+          embeddingCount: embeddingCounts[repo.id] ?? 0,
           repoIdentifier: repo.repoIdentifier,
           parentRepoId: repo.parentRepoId
         )
