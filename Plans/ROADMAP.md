@@ -189,7 +189,7 @@ Can be done in any order, low dependencies.
 
 ### Track A: VM Isolation
 
-**Status**: Foundation implemented — VM-isolated chain execution is now an optional template type.
+**Status**: Nearly complete — model layer, VMChainExecutor lifecycle, VirtioFS workspace sharing, and MCP tools are implemented. Only live end-to-end testing remains (requires booting real VMs).
 See [VM_ISOLATED_EXECUTION_PLAN.md](VM_ISOLATED_EXECUTION_PLAN.md) for the full design.
 
 Completed:
@@ -202,9 +202,8 @@ Completed:
 - Built-in VM templates (Quick Task, Full Build, Ember Build)
 
 Remaining:
-- Linux rootfs setup (Alpine currently boots to initramfs only)
-- macOS VM command execution (placeholder)
-- End-to-end testing with real workloads
+- End-to-end testing with real workloads (stage 6: pools & golden images)
+
 
 | Order | # | Title | Est | Deps | Status |
 |-------|---|-------|-----|------|--------|

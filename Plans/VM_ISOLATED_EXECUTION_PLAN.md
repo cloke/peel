@@ -146,29 +146,28 @@ This avoids installing CLI tools inside VMs and keeps API keys off the VM.
 - Add `VMToolchain` enum
 - Add `executionEnvironment` and `toolchain` fields to `ChainTemplate`
 
-### Stage 2: Directory Sharing
+### Stage 2: Directory Sharing ✅
 - macOS VM: `VZSharedDirectory` + `VZVirtioFileSystemDeviceConfiguration`
 - Linux VM: Same virtio-fs approach
 - Auto-mount at `/workspace` inside VM
 
-### Stage 3: VM Command Execution
+### Stage 3: VM Command Execution ✅
 - `VMChainExecutor`: boot VM → mount → bootstrap → run → teardown
 - Execute commands via console pipe (serial I/O)
 - Parse command output and exit codes
 
-### Stage 4: Chain Runner Integration
+### Stage 4: Chain Runner Integration ✅
 - Dispatch to `VMChainExecutor` when `executionEnvironment != .host`
 - Deterministic/gate steps run via VM console
 - Agentic steps use host LLM with shared mount for file access
 
-### Stage 5: Linux MCP Tools + Built-in Templates
+### Stage 5: Linux MCP Tools + Built-in Templates ✅
 - Add `vm.linux.start`, `vm.linux.stop`, `vm.linux.status`
 - Built-in VM templates for common workflows
 
-### Stage 6: Pools & Golden Images (Future)
-- Snapshot-based fast boot
-- Pre-warmed VM pools
-- Golden image builder
+### Stage 6: Pools & Golden Images (Remaining)
+- End-to-end smoke testing with real workloads (requires booting real VMs)
+- Snapshot-based fast boot and pre-warmed pools (future work)
 
 ---
 
