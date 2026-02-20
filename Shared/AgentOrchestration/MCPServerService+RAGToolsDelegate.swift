@@ -397,6 +397,18 @@ extension MCPServerService: RAGToolsHandlerDelegate {
   // MARK: - AI Analysis (#198)
   
   #if os(macOS)
+
+  /// Validate that the MLX analysis model can load before starting a batch.
+  /// Creates a temporary analyzer with the requested tier, tries to preload it,
+  /// and surfaces any download/init error to the caller.
+  /// The downloaded model files are cache-local so the real analyzer benefits too.
+  func validateAnalysisModel(tier: MLXAnalyzerModelTier = .auto) async throws {
+    let analyzer = MLXCodeAnalyzerFactory.makeAnalyzer(tier: tier)
+    try await analyzer.preload()
+    // Immediately unload — the real analyzer inside RAGStore will reload from cache.
+    await analyzer.unload()
+  }
+
   func analyzeRagChunks(repoPath: String?, limit: Int, modelTier: MLXAnalyzerModelTier = .auto, progress: (@Sendable (Int, Int) -> Void)?) async throws -> Int {
     let resolvedPath = await resolveRepoPathForTool(repoPath)
     // Note: modelTier is not used directly — the chunkAnalyzer was configured at store creation

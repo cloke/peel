@@ -168,7 +168,9 @@ actor MLXCodeAnalyzer {
   private var modelContainer: ModelContainer?
   private let config: MLXAnalyzerModelConfig
   private var isLoaded = false
-  
+  /// Cached load error — prevents retrying a failed download for every chunk in a batch.
+  private var loadError: Error?
+
   nonisolated let modelName: String
   nonisolated let tier: MLXAnalyzerModelTier
   
@@ -197,24 +199,44 @@ actor MLXCodeAnalyzer {
     self.tier = tier
   }
   
+  /// Pre-load the model so download/init errors surface early.
+  /// Call this before starting a batch analysis loop to verify the model works.
+  func preload() async throws {
+    try await ensureLoaded()
+  }
+
   /// Load the model (lazy - called on first analyze)
   private func ensureLoaded() async throws {
     guard !isLoaded else { return }
-    
-    print("[MLXAnalyzer] Loading model: \(config.huggingFaceId)")
-    
-    // Create ModelConfiguration with the HuggingFace ID
-    let modelConfig = ModelConfiguration(id: config.huggingFaceId)
-    
-    // Load the model with progress tracking
-    modelContainer = try await LLMModelFactory.shared.loadContainer(configuration: modelConfig) { progress in
-      // Progress is Foundation.Progress
-      let percent = Int(progress.fractionCompleted * 100)
-      print("[MLXAnalyzer] Loading: \(percent)% - \(progress.localizedDescription ?? "")")
+
+    // If a previous load already failed, fast-fail so we don't retry the download
+    // for every chunk in a batch.
+    if let previousError = loadError {
+      throw previousError
     }
-    
-    isLoaded = true
-    print("[MLXAnalyzer] Model ready: \(config.name)")
+
+    print("[MLXAnalyzer] Loading model: \(config.huggingFaceId)")
+
+    do {
+      // Create ModelConfiguration with the HuggingFace ID
+      let modelConfig = ModelConfiguration(id: config.huggingFaceId)
+
+      // Load the model with progress tracking
+      modelContainer = try await LLMModelFactory.shared.loadContainer(configuration: modelConfig) { progress in
+        // Progress is Foundation.Progress
+        let percent = Int(progress.fractionCompleted * 100)
+        print("[MLXAnalyzer] Loading: \(percent)% - \(progress.localizedDescription ?? "")")
+      }
+
+      isLoaded = true
+      print("[MLXAnalyzer] Model ready: \(config.name)")
+    } catch {
+      // Cache the error so subsequent calls fail fast instead of retrying
+      // the download 4000+ times in a batch loop.
+      loadError = error
+      print("[MLXAnalyzer] Model load FAILED: \(error.localizedDescription)")
+      throw error
+    }
   }
   
   /// Analyze a code chunk and generate summary + tags
@@ -294,6 +316,7 @@ actor MLXCodeAnalyzer {
   func unload() {
     modelContainer = nil
     isLoaded = false
+    loadError = nil
     print("[MLXAnalyzer] Model unloaded")
   }
   

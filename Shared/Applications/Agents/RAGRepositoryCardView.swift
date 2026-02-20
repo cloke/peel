@@ -1252,7 +1252,26 @@ struct RAGRepositoryCardView: View {
   
   private func runAnalyzeAllLoop() async {
     let batchSize = adaptiveBatchSize
-    
+
+    // Pre-flight: verify the MLX analysis model can load (downloads if needed).
+    // This surfaces download/init errors immediately instead of silently failing
+    // every chunk and showing a generic "Analysis stalled" message.
+    #if os(macOS)
+    do {
+      try await mcpServer.validateAnalysisModel(tier: selectedModelTier)
+    } catch {
+      await MainActor.run {
+        analysisState.analyzeError = "MLX model failed to load: \(error.localizedDescription). Check your network connection and try again, or select a different model tier."
+        analysisState.isAnalyzing = false
+        analysisState.isPaused = false
+        analysisState.sessionChunksAnalyzed = 0
+        analysisState.analysisStartTime = nil
+        mcpServer.markAnalysisStopped(repoPath: repo.rootPath)
+      }
+      return
+    }
+    #endif
+
     while !Task.isCancelled {
       if await MainActor.run(body: { analysisState.isPaused }) {
         await MainActor.run { analysisState.isAnalyzing = false }
@@ -1328,7 +1347,7 @@ struct RAGRepositoryCardView: View {
               }
               let analyzerEnabled = UserDefaults.standard.ragAnalyzerEnabled
               if analyzerEnabled {
-                analysisState.analyzeError = "Analysis stalled: \(dbRemaining) chunks could not be processed. The MLX model may have failed — try Force Re-analyze or check Console logs."
+                analysisState.analyzeError = "Analysis stalled: \(dbRemaining) chunks could not be processed. The MLX model may have failed to load or run out of memory — try selecting a smaller model tier, or use Force Re-analyze."
               } else {
                 analysisState.analyzeError = "AI Analysis is disabled. Enable it in Settings → AI Analysis to analyze chunks."
               }
