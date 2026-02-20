@@ -416,6 +416,8 @@ enum RAGRepoImporter {
     var chunksImported = 0
     var embeddingsImported = 0
     var embeddingsSkippedModelMismatch = 0
+    var chunksAnalysisUpdated = 0
+    var embeddingsBackfilled = 0
 
     // Check embedding model compatibility: if the bundle has a different
     // embedding model or dimension than the local DB, skip embedding import
@@ -469,6 +471,16 @@ enum RAGRepoImporter {
       for file in bundle.files {
         let existingHash = queryFileHash(db: db, repoId: targetRepoId, path: file.path)
         if existingHash == file.hash {
+          // File content unchanged — but incoming bundle may have newer analysis data
+          // or embeddings that the local DB lacks (e.g., analysis done on remote after initial sync).
+          let updates = try updateAnalysisForExistingFile(
+            db: db,
+            repoId: targetRepoId,
+            file: file,
+            embeddingsCompatible: embeddingsCompatible
+          )
+          chunksAnalysisUpdated += updates.analysisCount
+          embeddingsBackfilled += updates.embeddingsCount
           filesSkipped += 1
           continue
         }
@@ -564,6 +576,8 @@ enum RAGRepoImporter {
       chunksImported: chunksImported,
       embeddingsImported: embeddingsImported,
       embeddingsSkippedModelMismatch: embeddingsSkippedModelMismatch,
+      chunksAnalysisUpdated: chunksAnalysisUpdated,
+      embeddingsBackfilled: embeddingsBackfilled,
       remoteEmbeddingModel: bundle.manifest.embeddingModel,
       remoteEmbeddingDimensions: bundle.manifest.embeddingDimensions
     )
@@ -614,6 +628,10 @@ enum RAGRepoImporter {
     let embeddingsImported: Int
     /// Number of embeddings skipped because the remote model differs from local.
     let embeddingsSkippedModelMismatch: Int
+    /// Number of chunks whose analysis fields (ai_summary, etc.) were updated from incoming data.
+    let chunksAnalysisUpdated: Int
+    /// Number of embeddings backfilled on existing (hash-matched) files.
+    let embeddingsBackfilled: Int
     /// The embedding model used by the sender.
     let remoteEmbeddingModel: String?
     /// The embedding dimensions used by the sender.
@@ -623,6 +641,8 @@ enum RAGRepoImporter {
     var isDelta: Bool { filesSkipped > 0 }
     /// True if embeddings were skipped due to model mismatch. Receiver should re-embed locally.
     var needsLocalReembedding: Bool { embeddingsSkippedModelMismatch > 0 }
+    /// True if analysis data was synced for already-imported files.
+    var hadAnalysisUpdates: Bool { chunksAnalysisUpdated > 0 }
   }
 
   // MARK: - Private Helpers
@@ -674,6 +694,63 @@ enum RAGRepoImporter {
     execSQL(db, "DELETE FROM embeddings WHERE chunk_id IN (SELECT id FROM chunks WHERE file_id = '\(fileId.replacingOccurrences(of: "'", with: "''"))')")
     execSQL(db, "DELETE FROM chunks WHERE file_id = '\(fileId.replacingOccurrences(of: "'", with: "''"))'")
     execSQL(db, "DELETE FROM files WHERE id = '\(fileId.replacingOccurrences(of: "'", with: "''"))'")
+  }
+
+  /// Update analysis fields and backfill embeddings for an existing file whose hash hasn't changed.
+  /// This handles the case where a file was imported in a prior sync without analysis data,
+  /// and the sender has since analyzed those chunks.
+  private static func updateAnalysisForExistingFile(
+    db: OpaquePointer,
+    repoId: String,
+    file: ExportedFile,
+    embeddingsCompatible: Bool
+  ) throws -> (analysisCount: Int, embeddingsCount: Int) {
+    let fileId = stableId(for: "\(repoId):\(file.path)")
+    var analysisCount = 0
+    var embeddingsCount = 0
+
+    for chunk in file.chunks {
+      let chunkId = stableId(for: "\(fileId):\(chunk.startLine)-\(chunk.endLine)")
+
+      // Update analysis fields if incoming chunk has analysis and local doesn't (or is older)
+      if chunk.analyzedAt != nil {
+        let updateSql = """
+          UPDATE chunks SET
+            ai_summary = ?, ai_tags = ?, analyzed_at = ?, analyzer_model = ?, enriched_at = ?
+          WHERE id = ? AND (analyzed_at IS NULL OR analyzed_at < ?)
+          """
+        try execBind(db, updateSql) { stmt in
+          bindTextOrNull(stmt, 1, chunk.aiSummary)
+          bindTextOrNull(stmt, 2, chunk.aiTags)
+          bindTextOrNull(stmt, 3, chunk.analyzedAt)
+          bindTextOrNull(stmt, 4, chunk.analyzerModel)
+          bindTextOrNull(stmt, 5, chunk.enrichedAt)
+          bindText(stmt, 6, chunkId)
+          bindTextOrNull(stmt, 7, chunk.analyzedAt)
+        }
+        if sqlite3_changes(db) > 0 {
+          analysisCount += 1
+        }
+      }
+
+      // Backfill embedding if compatible and local chunk lacks one
+      if let embeddingBase64 = chunk.embeddingBase64,
+         let embeddingData = Data(base64Encoded: embeddingBase64),
+         embeddingsCompatible {
+        // INSERT OR IGNORE: only inserts if no embedding exists for this chunk
+        let embSql = "INSERT OR IGNORE INTO embeddings (chunk_id, embedding) VALUES (?, ?)"
+        try execBind(db, embSql) { stmt in
+          bindText(stmt, 1, chunkId)
+          sqlite3_bind_blob(stmt, 2, (embeddingData as NSData).bytes, Int32(embeddingData.count),
+                            unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        }
+        if sqlite3_changes(db) > 0 {
+          embeddingsCount += 1
+        }
+      }
+    }
+
+    return (analysisCount, embeddingsCount)
   }
 
   private static func stableId(for input: String) -> String {

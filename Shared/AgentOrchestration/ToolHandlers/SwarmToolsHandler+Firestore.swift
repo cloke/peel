@@ -493,6 +493,8 @@ extension SwarmToolsHandler {
           "filesSkipped": result.filesSkipped,
           "chunksImported": result.chunksImported,
           "embeddingsImported": result.embeddingsImported,
+          "chunksAnalysisUpdated": result.chunksAnalysisUpdated,
+          "embeddingsBackfilled": result.embeddingsBackfilled,
           "mode": "per-repo"
         ]
         if result.needsLocalReembedding {

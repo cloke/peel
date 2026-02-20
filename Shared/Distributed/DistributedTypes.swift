@@ -609,6 +609,10 @@ public struct RAGArtifactTransferState: Identifiable, Sendable {
   public var manifestVersion: String?
   /// When set, this transfer is scoped to a single repo (by normalized git remote URL).
   public var repoIdentifier: String?
+  /// Summary of what was imported (populated on pull completion for per-repo sync).
+  public var resultSummary: String?
+  /// The embedding model used by the remote peer (populated on pull completion).
+  public var remoteEmbeddingModel: String?
 
   public var progress: Double {
     guard totalBytes > 0 else { return status == .complete ? 1.0 : 0 }
