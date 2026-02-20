@@ -460,7 +460,7 @@ extension SwarmToolsHandler {
         let jsonData = try await service.pullRAGRepoBundle(swarmId: swarmId, artifactId: artifactId)
         let repoBundle = try JSONDecoder().decode(RAGRepoExportBundle.self, from: jsonData)
         let result = try await ragStore.importRepoBundle(repoBundle, localRepoPath: repoPath)
-        return (200, makeResult(id: id, result: [
+        var resultDict: [String: Any] = [
           "success": true,
           "swarmId": swarmId,
           "artifactId": artifactId,
@@ -469,8 +469,15 @@ extension SwarmToolsHandler {
           "filesImported": result.filesImported,
           "filesSkipped": result.filesSkipped,
           "chunksImported": result.chunksImported,
+          "embeddingsImported": result.embeddingsImported,
           "mode": "per-repo"
-        ]))
+        ]
+        if result.needsLocalReembedding {
+          resultDict["needsReembedding"] = true
+          resultDict["embeddingsSkipped"] = result.embeddingsSkippedModelMismatch
+          resultDict["remoteEmbeddingModel"] = result.remoteEmbeddingModel ?? "unknown"
+        }
+        return (200, makeResult(id: id, result: resultDict))
       }
 
       // Full DB sync (legacy path)
