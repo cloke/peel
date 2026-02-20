@@ -1086,11 +1086,10 @@ public final class SwarmCoordinator {
         let repoBundle = try JSONDecoder().decode(RAGRepoExportBundle.self, from: jsonData)
         let result = try await ragSyncDelegate.applyRepoSyncBundle(repoBundle, localRepoPath: nil)
         if result.needsLocalReembedding {
-          logger.warning(
-            "RAG repo sync: embedding model mismatch — imported text/analysis only. "
-            + "Remote model: \(result.remoteEmbeddingModel ?? "unknown"), skipped \(result.embeddingsSkippedModelMismatch) embeddings. "
-            + "Re-index '\(result.repoName)' to generate local embeddings."
-          )
+          let remoteModel = result.remoteEmbeddingModel ?? "unknown"
+          let skipped = result.embeddingsSkippedModelMismatch
+          let repoName = result.repoName
+          logger.warning("RAG repo sync: embedding model mismatch — imported text/analysis only. Remote model: \(remoteModel), skipped \(skipped) embeddings. Re-index '\(repoName)' to generate local embeddings.")
         }
         logger.info("RAG repo sync applied \(id): files \(result.filesImported), chunks \(result.chunksImported), embeddings \(result.embeddingsImported)")
       } else {

@@ -99,11 +99,9 @@ extension MCPServerService: RAGArtifactSyncDelegate {
     logger.info("RAG repo sync: importing '\(bundle.manifest.repoIdentifier)', \(bundle.files.count) files")
     let result = try await localRagStore.importRepoBundle(bundle, localRepoPath: localRepoPath)
     if result.needsLocalReembedding {
-      logger.warning(
-        "RAG repo sync: imported text/analysis only — embedding model mismatch "
-        + "(remote: \(result.remoteEmbeddingModel ?? "unknown"), local model differs). "
-        + "Skipped \(result.embeddingsSkippedModelMismatch) embeddings. Re-index to generate local embeddings."
-      )
+      let remoteModel = result.remoteEmbeddingModel ?? "unknown"
+      let skipped = result.embeddingsSkippedModelMismatch
+      logger.warning("RAG repo sync: imported text/analysis only — embedding model mismatch (remote: \(remoteModel), local model differs). Skipped \(skipped) embeddings. Re-index to generate local embeddings.")
     }
     logger.info("RAG repo sync: imported — files \(result.filesImported), skipped \(result.filesSkipped), chunks \(result.chunksImported), embeddings \(result.embeddingsImported)")
     await refreshRagSummary()
