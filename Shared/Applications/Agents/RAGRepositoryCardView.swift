@@ -879,8 +879,8 @@ struct RAGRepositoryCardView: View {
 
       // Per-repo sync buttons (requires repoIdentifier and active swarm)
       if let repoIdentifier = repo.repoIdentifier,
-         SwarmCoordinator.shared.isActive,
-         !SwarmCoordinator.shared.connectedWorkers.isEmpty {
+         SwarmCoordinator.shared.isActive {
+        let hasPeers = !SwarmCoordinator.shared.connectedWorkers.isEmpty
         Button {
           Task { await syncRepoWithPeers(repoIdentifier: repoIdentifier, direction: .push) }
         } label: {
@@ -896,8 +896,8 @@ struct RAGRepositoryCardView: View {
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
-        .disabled(isSyncing)
-        .help("Push this repo's embeddings to connected swarm peers")
+        .disabled(isSyncing || !hasPeers)
+        .help(hasPeers ? "Push this repo's embeddings to connected swarm peers" : "No peers connected")
 
         Button {
           Task { await syncRepoWithPeers(repoIdentifier: repoIdentifier, direction: .pull) }
@@ -914,8 +914,8 @@ struct RAGRepositoryCardView: View {
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
-        .disabled(isSyncing)
-        .help("Pull this repo's embeddings from connected swarm peers")
+        .disabled(isSyncing || !hasPeers)
+        .help(hasPeers ? "Pull this repo's embeddings from connected swarm peers" : "No peers connected")
       }
 
       Spacer()
