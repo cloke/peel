@@ -673,7 +673,8 @@ public final class MCPServerService {
     self.chainRunner = AgentChainRunner(
       agentManager: agentManager,
       cliService: resolvedCLIService,
-      telemetryProvider: resolvedTelemetry
+      telemetryProvider: resolvedTelemetry,
+      vmIsolationService: vmIsolationService
     )
     
     // Initialize SwarmToolsHandler with chainRunner and agentManager for distributed execution
