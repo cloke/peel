@@ -158,6 +158,11 @@ public final class AgentChainRunner {
       }
     }
 
+    var mergeConflicts: [String] = []
+    var errorMessage: String?
+    var validationResult: ValidationResult? = nil
+    var vmWasBooted = false
+
     // If we booted a VM for this chain, ensure it is torn down when the run finishes.
     defer {
       if vmWasBooted {
@@ -167,11 +172,6 @@ public final class AgentChainRunner {
         }
       }
     }
-
-    var mergeConflicts: [String] = []
-    var errorMessage: String?
-    var validationResult: ValidationResult? = nil
-    var vmWasBooted = false
 
     chain.reset()
     // If this chain requires a VM, boot it once and keep it running for the chain lifetime.
@@ -188,7 +188,17 @@ public final class AgentChainRunner {
           chain.addStatusMessage("VM booted for isolated execution", type: .complete)
         } catch {
           chain.addStatusMessage("VM boot failed: \(error.localizedDescription)", type: .error)
-          throw error
+          chain.state = .failed(message: "VM boot failed: \(error.localizedDescription)")
+          return RunSummary(
+            chainId: chain.id,
+            chainName: chain.name,
+            stateDescription: "failed",
+            results: [],
+            mergeConflicts: [],
+            errorMessage: "VM boot failed: \(error.localizedDescription)",
+            noWorkReason: nil,
+            validationResult: nil
+          )
         }
       } else {
         chain.addStatusMessage("VM service not configured - continuing on host", type: .error)
