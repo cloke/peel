@@ -1,7 +1,7 @@
 # MCP Agent Workflow
 
 **Created:** January 18, 2026  
-**Updated:** February 19, 2026  
+**Updated:** February 20, 2026  
 **Status:** Active
 
 ---
@@ -228,8 +228,65 @@ Step object fields:
 - name: friendly name for the agent (optional)
 - frameworkHint: optional framework hint (e.g. "swiftui")
 - customInstructions: optional freeform instructions for the agent
+- **stepType**: "agentic" | "deterministic" | "gate" (default: "agentic")
+- **command**: shell command to run (required for deterministic/gate steps)
+- **allowedTools**: array of tool names explicitly allowed (agentic only)
+- **deniedTools**: array of tool names explicitly denied (merged with role defaults; agentic only)
 
 Validators in Peel enforce a maximum of 8 steps and basic role/model presence.
+
+### Step Types (Blueprint Formalization)
+
+Chain steps now support three execution modes, allowing chains to mix LLM-driven work with
+deterministic shell commands and quality gates:
+
+| Step Type | Execution | LLM Cost | Use Case |
+|-----------|-----------|----------|----------|
+| `agentic` (default) | LLM agent via Copilot/Claude CLI | Yes | Planning, implementation, review |
+| `deterministic` | Shell command (`/bin/zsh`) | None | Git setup, formatting, commits |
+| `gate` | Shell command — exit 0 passes, non-zero halts chain | None | Build checks, lint, tests |
+
+**Deterministic steps** run a shell command and fail the chain if the command exits non-zero.
+They're ideal for scripted setup (e.g., `git checkout -b feature/...`) or post-processing
+(e.g., `swift format ...`, `git add -A && git commit`).
+
+**Gate steps** also run a shell command, but their semantics are pass/fail:
+- Exit code 0 → gate passed, chain continues
+- Non-zero exit → gate failed, chain stops with a `GateResult.failed` status
+
+Gates are perfect for build verification (`xcodebuild build`), test suites, or lint checks
+between implementation and review phases.
+
+**Tool restrictions** (agentic steps only):
+- `allowedTools` — whitelist of tools the agent can use (overrides role defaults)
+- `deniedTools` — additional tools to deny for this step (merged with role defaults)
+
+Example template mixing all three types:
+```json
+{
+  "name": "Guarded Implementation",
+  "steps": [
+    {"role": "implementer", "model": "gpt-4.1-mini", "name": "Setup",
+     "stepType": "deterministic",
+     "command": "cd $WORKSPACE && git checkout -b feature/task"},
+    {"role": "planner", "model": "claude-sonnet-4", "name": "Planner"},
+    {"role": "implementer", "model": "claude-sonnet-4", "name": "Implementer"},
+    {"role": "implementer", "model": "gpt-4.1-mini", "name": "Build Gate",
+     "stepType": "gate",
+     "command": "cd $WORKSPACE && xcodebuild -scheme MyApp build 2>&1 | tail -5"},
+    {"role": "reviewer", "model": "gpt-4.1", "name": "Reviewer"},
+    {"role": "implementer", "model": "gpt-4.1-mini", "name": "Commit",
+     "stepType": "deterministic",
+     "command": "cd $WORKSPACE && git add -A && git commit -m 'feat: implement task'"}
+  ]
+}
+```
+
+Notes:
+- Deterministic/gate steps still require a `role` and `model` (for schema consistency) but the
+  model is not used — no LLM call is made, and `estimatedCost` returns 0.
+- The `command` field is ignored for `agentic` steps.
+- Shell commands run in `/bin/zsh` with `/opt/homebrew/bin` on PATH.
 
 
 
@@ -337,6 +394,8 @@ Example (JSON body excerpt):
     {"role": "planner", "model": "gpt-4.1", "name": "Planner"},
     {"role": "implementer", "model": "gpt-5-mini", "name": "Impl A"},
     {"role": "implementer", "model": "gpt-4.1", "name": "Impl B"},
+    {"role": "implementer", "model": "gpt-4.1-mini", "name": "Build Check",
+     "stepType": "gate", "command": "cd $WORKSPACE && swift build 2>&1 | tail -5"},
     {"role": "reviewer", "model": "gpt-4.1", "name": "Reviewer"}
   ]
 }
@@ -346,6 +405,9 @@ Notes:
 - Max 8 steps.
 - `role` must be one of `planner`, `implementer`, `reviewer`.
 - `model` can be a Copilot model id (e.g. `gpt-4.1`, `claude-sonnet-4.5`).
+- `stepType` can be `agentic` (default), `deterministic`, or `gate` — see [Step Types](#step-types-blueprint-formalization).
+- `command` is required for `deterministic` and `gate` steps.
+- `allowedTools` / `deniedTools` restrict tool access for `agentic` steps.
 
 #### Chain Limits & Planner Constraints
 The caller defines the step count and model selection in `chainSpec`. Planners cannot currently
@@ -549,6 +611,10 @@ requests.post("http://127.0.0.1:8765/rpc", json={
 │                         │                                   │
 │  ┌──────────────────────▼───────────────────────────────┐  │
 │  │           AgentChainRunner                            │  │
+│  │  - Dispatches by stepType:                           │  │
+│  │    • agentic → LLM agent (Copilot/Claude CLI)        │  │
+│  │    • deterministic → shell command (/bin/zsh)        │  │
+│  │    • gate → shell command (pass/fail check)          │  │
 │  │  - Planner → Parallel Implementers → Merge → Review  │  │
 │  │  - Creates git worktrees for isolation               │  │
 │  │  - Tracks session costs                              │  │

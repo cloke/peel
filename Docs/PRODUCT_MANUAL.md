@@ -245,6 +245,23 @@ Chains pause at review gates, allowing you to:
 | Complete | All tasks finished |
 | Failed | Error occurred |
 
+#### Step Types (Blueprint Formalization)
+
+Each step in a chain has a **step type** that determines how it executes:
+
+| Step Type | Icon | Execution | LLM Cost |
+|-----------|------|-----------|----------|
+| **Agentic** (default) | brain | LLM agent via Copilot/Claude CLI | Yes |
+| **Deterministic** | terminal | Shell command (`/bin/zsh`) | None |
+| **Gate** | checkmark.shield | Shell command — exit 0 passes, non-zero halts chain | None |
+
+This allows chains to mix LLM-driven implementation with zero-cost scripted steps:
+- **Deterministic** steps run a shell command (e.g., git setup, formatting, commits). Chain fails on non-zero exit.
+- **Gate** steps run a shell command as a quality check (e.g., `xcodebuild build`). Exit 0 = pass, non-zero = fail and stop chain.
+- **Agentic** steps support per-step tool restrictions via `allowedTools` and `deniedTools`.
+
+Built-in templates like "Full Implementation" and "Guarded Implementation" use gates for build verification between implementation and review.
+
 #### Worktree Isolation
 
 All agent work **must** happen inside a git worktree — never in the main repository checkout. When a chain starts:
