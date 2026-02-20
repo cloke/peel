@@ -49,7 +49,7 @@ public final class VMChainExecutor {
 
   // MARK: - State
 
-  public enum State: Sendable {
+  public enum State: Sendable, Equatable {
     case idle
     case booting
     case bootstrapping
