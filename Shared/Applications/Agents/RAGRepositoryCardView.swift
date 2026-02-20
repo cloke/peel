@@ -108,6 +108,7 @@ struct RAGRepositoryCardView: View {
   @State private var syncDirection: RAGArtifactSyncDirection?
   @State private var activeTransferId: UUID?
   @State private var syncResultMessage: String?
+  @State private var selectedPeerId: String?
   
   /// Adaptive batch size based on available RAM.
   /// Smaller batches = more frequent UI progress updates (important on laptops).
@@ -221,7 +222,7 @@ struct RAGRepositoryCardView: View {
           } else if repo.hasPartialEmbeddings {
             Label("\(repo.embeddingCount)/\(repo.chunkCount)", systemImage: "bolt.trianglebadge.exclamationmark")
               .foregroundStyle(.yellow)
-              .help("Some chunks missing embeddings. Re-index to complete.")
+              .help("\(repo.chunkCount - repo.embeddingCount) chunks missing embeddings. Re-index to generate them locally.")
           }
 
           if analysisState.totalChunks > 0 {
@@ -232,6 +233,11 @@ struct RAGRepositoryCardView: View {
           
           if !repoSkills.isEmpty {
             Label("\(repoSkills.count)", systemImage: "lightbulb")
+          }
+          
+          // Incoming transfer indicator (visible even when collapsed)
+          if let incomingTransfer = incomingTransferForThisRepo {
+            incomingTransferBadge(incomingTransfer)
           }
         }
         .font(.caption)
@@ -880,50 +886,62 @@ struct RAGRepositoryCardView: View {
       // Per-repo sync buttons (requires repoIdentifier and active swarm)
       if let repoIdentifier = repo.repoIdentifier,
          SwarmCoordinator.shared.isActive {
-        let hasPeers = !SwarmCoordinator.shared.connectedWorkers.isEmpty
-        Button {
-          Task { await syncRepoWithPeers(repoIdentifier: repoIdentifier, direction: .push) }
-        } label: {
-          if isSyncing && syncDirection == .push {
-            HStack(spacing: 4) {
-              ProgressView()
-                .scaleEffect(0.5)
-              Text("Pushing…")
-            }
-          } else {
-            Label("Push", systemImage: "arrow.up.circle")
-          }
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-        .disabled(isSyncing || !hasPeers)
-        .help(hasPeers ? "Push this repo's embeddings to connected swarm peers" : "No peers connected")
+        let peers = SwarmCoordinator.shared.connectedWorkers
+        let hasPeers = !peers.isEmpty
 
-        Button {
-          Task { await syncRepoWithPeers(repoIdentifier: repoIdentifier, direction: .pull) }
-        } label: {
-          if isSyncing && syncDirection == .pull {
-            HStack(spacing: 4) {
-              ProgressView()
-                .scaleEffect(0.5)
-              Text("Pulling…")
+        if peers.count > 1 {
+          // Multiple peers: show menus to pick which peer
+          syncPeerMenu(peers: peers, repoIdentifier: repoIdentifier, direction: .push)
+          syncPeerMenu(peers: peers, repoIdentifier: repoIdentifier, direction: .pull)
+        } else {
+          // Single peer (or none): direct buttons
+          Button {
+            Task { await syncRepoWithPeers(repoIdentifier: repoIdentifier, direction: .push) }
+          } label: {
+            if isSyncing && syncDirection == .push {
+              HStack(spacing: 4) {
+                ProgressView()
+                  .scaleEffect(0.5)
+                Text("Pushing…")
+              }
+            } else {
+              Label("Push", systemImage: "arrow.up.circle")
             }
-          } else {
-            Label("Pull", systemImage: "arrow.down.circle")
           }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
+          .disabled(isSyncing || !hasPeers)
+          .help(hasPeers ? "Push to \(peers.first?.displayName ?? "peer")" : "No peers connected")
+
+          Button {
+            Task { await syncRepoWithPeers(repoIdentifier: repoIdentifier, direction: .pull) }
+          } label: {
+            if isSyncing && syncDirection == .pull {
+              HStack(spacing: 4) {
+                ProgressView()
+                  .scaleEffect(0.5)
+                Text("Pulling…")
+              }
+            } else {
+              Label("Pull", systemImage: "arrow.down.circle")
+            }
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
+          .disabled(isSyncing || !hasPeers)
+          .help(hasPeers ? "Pull from \(peers.first?.displayName ?? "peer")" : "No peers connected")
         }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-        .disabled(isSyncing || !hasPeers)
-        .help(hasPeers ? "Pull this repo's embeddings from connected swarm peers" : "No peers connected")
       }
 
       Spacer()
 
-      // Transfer progress indicator
+      // Transfer progress indicator (outgoing — initiated by this card)
       if let transferId = activeTransferId,
          let transfer = SwarmCoordinator.shared.ragTransfers.first(where: { $0.id == transferId }) {
         syncTransferStatus(transfer)
+      } else if let incomingTransfer = incomingTransferForThisRepo {
+        // Incoming transfer (peer is pulling from us or pushing to us)
+        syncTransferStatus(incomingTransfer)
       } else if let syncResultMessage {
         Text(syncResultMessage)
           .font(.caption)
@@ -939,7 +957,7 @@ struct RAGRepositoryCardView: View {
   }
 
   /// Sync per-repo artifacts with connected swarm peers
-  private func syncRepoWithPeers(repoIdentifier: String, direction: RAGArtifactSyncDirection) async {
+  private func syncRepoWithPeers(repoIdentifier: String, direction: RAGArtifactSyncDirection, workerId: String? = nil) async {
     isSyncing = true
     syncDirection = direction
     syncResultMessage = nil
@@ -949,6 +967,7 @@ struct RAGRepositoryCardView: View {
     do {
       let transferId = try await SwarmCoordinator.shared.requestRagArtifactSync(
         direction: direction,
+        workerId: workerId,
         repoIdentifier: repoIdentifier
       )
       activeTransferId = transferId
@@ -959,16 +978,22 @@ struct RAGRepositoryCardView: View {
         if let transfer = SwarmCoordinator.shared.ragTransfers.first(where: { $0.id == transferId }) {
           switch transfer.status {
           case .complete:
-            syncResultMessage = direction == .push ? "Pushed to \(transfer.peerName)" : "Pulled from \(transfer.peerName)"
+            if direction == .pull, let summary = transfer.resultSummary {
+              let modelNote = transfer.remoteEmbeddingModel.map { " (model: \($0))" } ?? ""
+              syncResultMessage = "Pulled from \(transfer.peerName): \(summary)\(modelNote)"
+            } else {
+              syncResultMessage = direction == .push ? "Pushed to \(transfer.peerName)" : "Pulled from \(transfer.peerName)"
+            }
             activeTransferId = nil
             isSyncing = false
             syncDirection = nil
             if direction == .pull {
               await mcpServer.refreshRagSummary()
+              await refreshAnalysisStatus()
             }
             // Auto-dismiss success message
             Task { @MainActor in
-              try? await Task.sleep(for: .seconds(4))
+              try? await Task.sleep(for: .seconds(6))
               if syncResultMessage != nil { syncResultMessage = nil }
             }
             return
@@ -1011,20 +1036,101 @@ struct RAGRepositoryCardView: View {
   }
 
   private func transferStatusLabel(_ transfer: RAGArtifactTransferState) -> String {
-    let dir = transfer.direction == .push ? "Pushing" : "Pulling"
+    let isIncoming = transfer.id != activeTransferId
+    let peer = transfer.peerName
+    switch (transfer.direction, transfer.role) {
+    case (.push, .sender):
+      // We are pushing to peer
+      return statusText("Pushing to \(peer)", transfer: transfer)
+    case (.pull, .receiver):
+      // We are pulling from peer
+      return statusText("Pulling from \(peer)", transfer: transfer)
+    case (.pull, .sender):
+      // Peer is pulling from us
+      return statusText("\(peer) pulling", transfer: transfer)
+    case (.push, .receiver):
+      // Peer is pushing to us
+      return statusText("\(peer) pushing", transfer: transfer)
+    }
+  }
+
+  private func statusText(_ prefix: String, transfer: RAGArtifactTransferState) -> String {
     switch transfer.status {
-    case .queued: return "\(dir): queued…"
-    case .preparing: return "\(dir): preparing…"
+    case .queued: return "\(prefix): queued…"
+    case .preparing: return "\(prefix): preparing…"
     case .transferring:
       if transfer.totalBytes > 0 {
         let pct = Int(transfer.progress * 100)
-        return "\(dir): \(pct)%"
+        return "\(prefix): \(pct)%"
       }
-      return "\(dir)…"
-    case .applying: return "Applying…"
-    case .complete: return "Done"
-    case .failed: return "Failed"
+      return "\(prefix)…"
+    case .applying: return "\(prefix): applying…"
+    case .complete: return "\(prefix): done"
+    case .failed: return "\(prefix): failed"
     }
+  }
+
+  // MARK: - Incoming Transfer Detection
+
+  /// Find any active incoming transfer for this repo (initiated by a peer, not by us)
+  private var incomingTransferForThisRepo: RAGArtifactTransferState? {
+    guard let repoId = repo.repoIdentifier else { return nil }
+    return SwarmCoordinator.shared.ragTransfers.first { transfer in
+      transfer.repoIdentifier == repoId
+      && transfer.id != activeTransferId
+      && transfer.status != .complete
+      && transfer.status != .failed
+    }
+  }
+
+  /// Compact badge for the card header showing an incoming transfer
+  @ViewBuilder
+  private func incomingTransferBadge(_ transfer: RAGArtifactTransferState) -> some View {
+    HStack(spacing: 3) {
+      ProgressView()
+        .scaleEffect(0.4)
+      let icon = transfer.role == .sender ? "arrow.up.circle.fill" : "arrow.down.circle.fill"
+      Image(systemName: icon)
+        .font(.caption2)
+      Text(transfer.peerName)
+        .lineLimit(1)
+    }
+    .font(.caption2)
+    .foregroundStyle(.blue)
+    .help(transferStatusLabel(transfer))
+  }
+
+  // MARK: - Peer Picker Menu
+
+  @ViewBuilder
+  private func syncPeerMenu(peers: [ConnectedPeer], repoIdentifier: String, direction: RAGArtifactSyncDirection) -> some View {
+    let isPush = direction == .push
+    let label = isPush ? "Push" : "Pull"
+    let icon = isPush ? "arrow.up.circle" : "arrow.down.circle"
+    let isActive = isSyncing && syncDirection == direction
+
+    Menu {
+      ForEach(peers) { peer in
+        Button {
+          Task { await syncRepoWithPeers(repoIdentifier: repoIdentifier, direction: direction, workerId: peer.id) }
+        } label: {
+          Label(peer.displayName, systemImage: "desktopcomputer")
+        }
+      }
+    } label: {
+      if isActive {
+        HStack(spacing: 4) {
+          ProgressView()
+            .scaleEffect(0.5)
+          Text("\(label)…")
+        }
+      } else {
+        Label(label, systemImage: icon)
+      }
+    }
+    .buttonStyle(.bordered)
+    .controlSize(.small)
+    .disabled(isSyncing)
   }
   
   // MARK: - Card Background

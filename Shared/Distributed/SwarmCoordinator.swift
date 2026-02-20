@@ -1091,7 +1091,24 @@ public final class SwarmCoordinator {
           let repoName = result.repoName
           logger.warning("RAG repo sync: embedding model mismatch — imported text/analysis only. Remote model: \(remoteModel), skipped \(skipped) embeddings. Re-index '\(repoName)' to generate local embeddings.")
         }
-        logger.info("RAG repo sync applied \(id): files \(result.filesImported), chunks \(result.chunksImported), embeddings \(result.embeddingsImported)")
+        logger.info("RAG repo sync applied \(id): files \(result.filesImported), chunks \(result.chunksImported), embeddings \(result.embeddingsImported), analysisUpdated \(result.chunksAnalysisUpdated)")
+
+        // Build a result summary for the UI
+        var summaryParts: [String] = []
+        if result.filesImported > 0 { summaryParts.append("\(result.filesImported) files") }
+        if result.chunksImported > 0 { summaryParts.append("\(result.chunksImported) chunks") }
+        if result.embeddingsImported > 0 { summaryParts.append("\(result.embeddingsImported) embeddings") }
+        if result.chunksAnalysisUpdated > 0 { summaryParts.append("\(result.chunksAnalysisUpdated) analysis synced") }
+        if result.embeddingsBackfilled > 0 { summaryParts.append("\(result.embeddingsBackfilled) embeddings backfilled") }
+        if result.needsLocalReembedding { summaryParts.append("needs re-embed") }
+        let summary = summaryParts.isEmpty ? "Up to date" : summaryParts.joined(separator: ", ")
+
+        updateRagTransfer(id) { state in
+          state.status = .complete
+          state.completedAt = Date()
+          state.resultSummary = summary
+          state.remoteEmbeddingModel = result.remoteEmbeddingModel
+        }
       } else {
         // Full DB sync (legacy path)
         try await ragSyncDelegate.applyRagArtifactBundle(
@@ -1100,10 +1117,10 @@ public final class SwarmCoordinator {
           from: peerId,
           direction: transfer.direction
         )
-      }
-      updateRagTransfer(id) { state in
-        state.status = .complete
-        state.completedAt = Date()
+        updateRagTransfer(id) { state in
+          state.status = .complete
+          state.completedAt = Date()
+        }
       }
       logger.info("RAG sync applied bundle \(id) from \(peerId)")
     } catch {
