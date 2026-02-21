@@ -398,7 +398,7 @@ public final class AgentChainRunner {
     }
 
     let nonImplementerCount = preAgents.count + postAgents.count
-    let maxBySteps = max(1, MCPTemplateValidator.maxSteps - nonImplementerCount)
+    let maxBySteps = max(1, 8 - nonImplementerCount)  // max chain steps
     desiredCount = min(desiredCount, maxBySteps)
 
     if desiredCount != implementerIndices.count {
