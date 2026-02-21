@@ -236,29 +236,6 @@ struct SystemEmbeddingProvider: LocalRAGEmbeddingProvider, @unchecked Sendable {
   }
 }
 
-enum LocalRAGEmbeddingError: LocalizedError {
-  case modelNotConfigured
-  case unsupportedModel
-  case tokenizerMissing
-  case invalidInput
-  case predictionFailed
-
-  var errorDescription: String? {
-    switch self {
-    case .modelNotConfigured:
-      return "Core ML model is not configured"
-    case .unsupportedModel:
-      return "Core ML model output format is not supported"
-    case .tokenizerMissing:
-      return "Tokenizer assets are missing for the Core ML embedding model"
-    case .invalidInput:
-      return "Invalid embedding input"
-    case .predictionFailed:
-      return "Core ML prediction failed"
-    }
-  }
-}
-
 protocol LocalRAGTokenizer: Sendable {
   func encode(_ text: String, maxLength: Int) -> ([Int32], [Int32])
 }

@@ -31,7 +31,6 @@
 		04A7BD8A258E77D8000E55A8 /* Tests_macOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */; };
 		04A7BD8F258E77D8000E55A8 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD64258E77D7000E55A8 /* ContentView.swift */; };
 		04ASTCLI2F3B000100000001 /* ast-chunker-cli in CopyFiles */ = {isa = PBXBuildFile; fileRef = 04ASTCLI2F3B000100000002 /* ast-chunker-cli */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
-		04PEELAG2F4D000100000001 /* peel-agent in CopyFiles */ = {isa = PBXBuildFile; fileRef = 04PEELAG2F4D000100000002 /* peel-agent */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		04D09EFD26A85E8100072702 /* OAuthSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 04D09EFC26A85E8100072702 /* OAuthSwift */; };
 		04PIISCR2F2E000100000002 /* PIIScrubber in Frameworks */ = {isa = PBXBuildFile; productRef = 04PIISCR2F2E000100000003 /* PIIScrubber */; };
 		0A11B6D12F1234567890ABCD /* PeelApp_iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A11B6D02F1234567890ABCD /* PeelApp_iOS.swift */; };
@@ -41,7 +40,6 @@
 		0CVM000001000001000E55A8 /* VMIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CVM000001000002000E55A8 /* VMIntegrationTests.swift */; };
 		0C2A4B602D000002000E55A8 /* MCPRAGToolsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C2A4B5F2D000002000E55A8 /* MCPRAGToolsTests.swift */; };
 		0C2A4B622D000003000E55A8 /* UtilitiesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C2A4B612D000003000E55A8 /* UtilitiesTests.swift */; };
-		0C2A4B642D000004000E55A8 /* MCPTemplateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C2A4B632D000004000E55A8 /* MCPTemplateTests.swift */; };
 		0C2A4B662D000005000E55A8 /* DoclingValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C2A4B652D000005000E55A8 /* DoclingValidationTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -70,7 +68,6 @@
 			dstSubfolderSpec = 6;
 			files = (
 				04ASTCLI2F3B000100000001 /* ast-chunker-cli in CopyFiles */,
-				04PEELAG2F4D000100000001 /* peel-agent in CopyFiles */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -95,7 +92,6 @@
 		04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests_macOS.swift; sourceTree = "<group>"; };
 		04A7BD8B258E77D8000E55A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		04ASTCLI2F3B000100000002 /* ast-chunker-cli */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = "ast-chunker-cli"; path = "Tools/Binaries/ast-chunker-cli"; sourceTree = "<group>"; };
-		04PEELAG2F4D000100000002 /* peel-agent */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.executable"; name = "peel-agent"; path = "Tools/Binaries/peel-agent"; sourceTree = "<group>"; };
 		04F4F9772596AAD7005B30B4 /* Peel.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Peel.entitlements; sourceTree = "<group>"; };
 		04F582A6269FD388003A8403 /* Github */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Github; path = "Local Packages/Github"; sourceTree = "<group>"; };
 		04PEELUI2F2E000100000001 /* PeelUI */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = PeelUI; path = "Local Packages/PeelUI"; sourceTree = "<group>"; };
@@ -107,7 +103,6 @@
 		0CVM000001000002000E55A8 /* VMIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VMIntegrationTests.swift; sourceTree = "<group>"; };
 		0C2A4B5F2D000002000E55A8 /* MCPRAGToolsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPRAGToolsTests.swift; sourceTree = "<group>"; };
 		0C2A4B612D000003000E55A8 /* UtilitiesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UtilitiesTests.swift; sourceTree = "<group>"; };
-		0C2A4B632D000004000E55A8 /* MCPTemplateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPTemplateTests.swift; sourceTree = "<group>"; };
 		0C2A4B652D000005000E55A8 /* DoclingValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoclingValidationTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -248,7 +243,6 @@
 			isa = PBXGroup;
 			children = (
 				04ASTCLI2F3B000100000002 /* ast-chunker-cli */,
-				04PEELAG2F4D000100000002 /* peel-agent */,
 				042793A42F0DEAE7002A5499 /* Plans */,
 				042D2CC32891E44100E162D3 /* Packages */,
 				043A532125998D1E00980BE2 /* README.md */,
@@ -314,7 +308,6 @@
 				0CVM000001000002000E55A8 /* VMIntegrationTests.swift */,
 				0C2A4B5F2D000002000E55A8 /* MCPRAGToolsTests.swift */,
 				0C2A4B612D000003000E55A8 /* UtilitiesTests.swift */,
-				0C2A4B632D000004000E55A8 /* MCPTemplateTests.swift */,
 				0C2A4B652D000005000E55A8 /* DoclingValidationTests.swift */,
 				04A7BD8B258E77D8000E55A8 /* Info.plist */,
 				D1EDC3CED1C274FD0649E03C /* ValidationTests.swift */
@@ -355,7 +348,6 @@
 			buildConfigurationList = 04A7BD97258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "Peel (macOS)" */;
 			buildPhases = (
 				04ASTBLD2F3B000100000004 /* Build ast-chunker-cli */,
-				04PEELAG2F4D000100000004 /* Build peel-agent */,
 				04A7BD6E258E77D8000E55A8 /* Sources */,
 				04A7BD6F258E77D8000E55A8 /* Frameworks */,
 				04A7BD70258E77D8000E55A8 /* Resources */,
@@ -541,25 +533,6 @@
 			shellPath = /bin/zsh;
 			shellScript = "set -e\nBINARY=\"${PROJECT_DIR}/Tools/Binaries/ast-chunker-cli\"\nCACHE_DIR=\"${PROJECT_DIR}/.build/ast-chunker-checkout\"\nREPO_URL=\"https://github.com/crunchybananas/ast-chunker.git\"\n\nmkdir -p \"${PROJECT_DIR}/Tools/Binaries\"\n\n# Clone or update the repo\nif [ ! -d \"$CACHE_DIR/.git\" ]; then\n    echo \"Cloning ast-chunker...\"\n    git clone --depth 1 \"$REPO_URL\" \"$CACHE_DIR\"\nelse\n    echo \"Updating ast-chunker...\"\n    cd \"$CACHE_DIR\" && git pull --ff-only 2>/dev/null || true\nfi\n\ncd \"$CACHE_DIR\"\n\n# Check if rebuild needed\nif [ ! -f \"$BINARY\" ] || [ -n \"$(find Sources -newer \"$BINARY\" -type f -name '*.swift' 2>/dev/null)\" ]; then\n    echo \"Building ast-chunker-cli...\"\n    swift build -c release --product ast-chunker-cli\n    cp \".build/release/ast-chunker-cli\" \"$BINARY\"\n    echo \"ast-chunker-cli built successfully\"\nelse\n    echo \"ast-chunker-cli is up to date\"\nfi\n";
 		};
-		04PEELAG2F4D000100000004 /* Build peel-agent */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Build peel-agent";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(SRCROOT)/Tools/Binaries/peel-agent",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/zsh;
-			shellScript = "set -e\nBINARY=\"${PROJECT_DIR}/Tools/Binaries/peel-agent\"\nPKG_DIR=\"${PROJECT_DIR}/Tools/PeelAgent\"\n\nmkdir -p \"${PROJECT_DIR}/Tools/Binaries\"\n\n# Check if rebuild needed (any .swift file newer than binary)\nif [ ! -f \"$BINARY\" ] || [ -n \"$(find \"$PKG_DIR/Sources\" \"${PROJECT_DIR}/Local Packages/LLMClient/Sources\" -newer \"$BINARY\" -type f -name '*.swift' 2>/dev/null)\" ]; then\n    echo \"Building peel-agent...\"\n    cd \"$PKG_DIR\"\n    swift build -c release --product peel-agent 2>&1\n    cp \".build/release/peel-agent\" \"$BINARY\"\n    echo \"peel-agent built successfully\"\nelse\n    echo \"peel-agent is up to date\"\nfi\n";
-		};
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -599,7 +572,6 @@
 				0CVM000001000001000E55A8 /* VMIntegrationTests.swift in Sources */,
 				0C2A4B602D000002000E55A8 /* MCPRAGToolsTests.swift in Sources */,
 				0C2A4B622D000003000E55A8 /* UtilitiesTests.swift in Sources */,
-				0C2A4B642D000004000E55A8 /* MCPTemplateTests.swift in Sources */,
 				0C2A4B662D000005000E55A8 /* DoclingValidationTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
