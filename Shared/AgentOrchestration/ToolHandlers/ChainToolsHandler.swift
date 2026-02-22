@@ -29,6 +29,9 @@ protocol ChainToolsHandlerDelegate: MCPToolHandlerDelegate {
   
   /// List all chain runs
   func listChainRuns(limit: Int?, status: String?) -> [ChainToolRunSummary]
+
+  /// Get persisted run details including per-agent outputs
+  func chainRunResults(runId: String?, chainId: String?, includeOutputs: Bool) -> [[String: Any]]
   
   /// Stop a chain run
   func stopChain(chainId: String) async throws
@@ -100,6 +103,7 @@ final class ChainToolsHandler: MCPToolHandler {
     "chains.runBatch",
     "chains.run.status",
     "chains.run.list",
+    "chains.run.results",
     "chains.stop",
     "chains.pause",
     "chains.resume",
@@ -131,6 +135,8 @@ final class ChainToolsHandler: MCPToolHandler {
       return handleChainRunStatus(id: id, arguments: arguments, delegate: chainDelegate)
     case "chains.run.list":
       return handleChainRunList(id: id, arguments: arguments, delegate: chainDelegate)
+    case "chains.run.results":
+      return handleChainRunResults(id: id, arguments: arguments, delegate: chainDelegate)
     case "chains.stop":
       return await handleChainStop(id: id, arguments: arguments, delegate: chainDelegate)
     case "chains.pause":
@@ -270,6 +276,24 @@ final class ChainToolsHandler: MCPToolHandler {
     let runs = delegate.listChainRuns(limit: limit, status: statusFilter)
     let payload = runs.map { encodeSummary($0) }
     return (200, makeResult(id: id, result: ["runs": payload]))
+  }
+
+  // MARK: - chains.run.results
+
+  private func handleChainRunResults(id: Any?, arguments: [String: Any], delegate: ChainToolsHandlerDelegate) -> (Int, Data) {
+    let runId = optionalString("runId", from: arguments)
+    let chainId = optionalString("chainId", from: arguments)
+    let includeOutputs = optionalBool("includeOutputs", from: arguments, default: true)
+
+    guard runId != nil || chainId != nil else {
+      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "runId or chainId is required"))
+    }
+
+    let runs = delegate.chainRunResults(runId: runId, chainId: chainId, includeOutputs: includeOutputs)
+    if runs.isEmpty {
+      return notFoundError(id: id, what: "Run")
+    }
+    return (200, makeResult(id: id, result: ["runs": runs]))
   }
   
   // MARK: - chains.stop
@@ -690,6 +714,20 @@ extension ChainToolsHandler {
             "runId": ["type": "string"],
             "includeResults": ["type": "boolean"],
             "includeOutputs": ["type": "boolean"]
+          ]
+        ],
+        category: .chains,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "chains.run.results",
+        description: "Get persisted chain run details including per-agent results and optional outputs",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string", "description": "Run UUID from chains.run/list"],
+            "chainId": ["type": "string", "description": "Chain UUID (alternate lookup key)"],
+            "includeOutputs": ["type": "boolean", "description": "Include full agent output text (default: true)"]
           ]
         ],
         category: .chains,

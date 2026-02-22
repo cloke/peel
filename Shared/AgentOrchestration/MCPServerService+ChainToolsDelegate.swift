@@ -175,6 +175,28 @@ extension MCPServerService: ChainToolsHandlerDelegate {
         ))
       }
     }
+
+    if let dataService {
+      let persistedRuns = dataService.getRecentMCPRuns(limit: max(limit ?? 100, 200))
+      let knownRunIDs = Set(runs.compactMap { UUID(uuidString: $0.chainId) })
+
+      for persisted in persistedRuns {
+        guard !knownRunIDs.contains(persisted.id) else { continue }
+
+        let persistedStatus = persisted.success ? "completed" : "failed"
+        if let status, status != persistedStatus {
+          continue
+        }
+
+        runs.append(ChainToolRunSummary(
+          chainId: persisted.id.uuidString,
+          status: persistedStatus,
+          prompt: persisted.prompt,
+          startedAt: persisted.createdAt,
+          completedAt: persisted.createdAt
+        ))
+      }
+    }
     
     // Sort by most recent first
     runs.sort { ($0.startedAt ?? $0.completedAt ?? Date.distantPast) > ($1.startedAt ?? $1.completedAt ?? Date.distantPast) }
@@ -183,6 +205,82 @@ extension MCPServerService: ChainToolsHandlerDelegate {
       return Array(runs.prefix(limit))
     }
     return runs
+  }
+
+  func chainRunResults(runId: String?, chainId: String?, includeOutputs: Bool) -> [[String: Any]] {
+    guard let dataService else { return [] }
+
+    func splitLines(_ value: String) -> [String] {
+      value
+        .split(whereSeparator: { $0.isNewline })
+        .map { String($0) }
+        .filter { !$0.isEmpty }
+    }
+
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+    var runs: [MCPRunRecord] = []
+
+    if let runId {
+      if let uuid = UUID(uuidString: runId) {
+        let recent = dataService.getRecentMCPRuns(limit: 5_000)
+        if let found = recent.first(where: { $0.id == uuid }) {
+          runs = [found]
+        }
+      }
+
+      if runs.isEmpty, let found = dataService.getMCPRun(forChainId: runId) {
+        runs = [found]
+      }
+    } else if let chainId, !chainId.isEmpty {
+      if let found = dataService.getMCPRun(forChainId: chainId) {
+        runs = [found]
+      }
+    }
+
+    return runs.map { run in
+      var runPayload: [String: Any] = [
+        "runId": run.id.uuidString,
+        "chainId": run.chainId,
+        "templateId": run.templateId,
+        "templateName": run.templateName,
+        "prompt": run.prompt,
+        "workingDirectory": run.workingDirectory as Any,
+        "implementerBranches": splitLines(run.implementerBranches),
+        "implementerWorkspacePaths": splitLines(run.implementerWorkspacePaths),
+        "screenshotPaths": splitLines(run.screenshotPaths),
+        "success": run.success,
+        "errorMessage": run.errorMessage as Any,
+        "noWorkReason": run.noWorkReason as Any,
+        "mergeConflictsCount": run.mergeConflictsCount,
+        "resultCount": run.resultCount,
+        "validationStatus": run.validationStatus as Any,
+        "validationReasons": splitLines(run.validationReasons ?? ""),
+        "createdAt": formatter.string(from: run.createdAt)
+      ]
+
+      if !run.chainId.isEmpty {
+        let results = dataService.getMCPRunResults(chainId: run.chainId)
+        runPayload["results"] = results.map { result in
+          var resultPayload: [String: Any] = [
+            "agentId": result.agentId,
+            "agentName": result.agentName,
+            "model": result.model,
+            "prompt": result.prompt,
+            "premiumCost": result.premiumCost,
+            "reviewVerdict": result.reviewVerdict as Any,
+            "createdAt": formatter.string(from: result.createdAt)
+          ]
+          if includeOutputs {
+            resultPayload["output"] = result.output
+          }
+          return resultPayload
+        }
+      }
+
+      return runPayload
+    }
   }
   
   func stopChain(chainId: String) async throws {
