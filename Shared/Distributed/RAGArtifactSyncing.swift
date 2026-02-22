@@ -17,7 +17,11 @@ protocol RAGArtifactSyncDelegate: AnyObject {
   /// Export a single repo's RAG data as a JSON bundle.
   func createRepoSyncBundle(repoIdentifier: String, excludeFileHashes: Set<String>) async throws -> RAGRepoExportBundle?
   /// Import a per-repo bundle, merging into local DB without touching other repos.
-  func applyRepoSyncBundle(_ bundle: RAGRepoExportBundle, localRepoPath: String?) async throws -> RAGRepoImporter.ImportResult
+  /// - Parameters:
+  ///   - bundle: The exported repo data
+  ///   - localRepoPath: Local path where this repo lives (for path remapping). If nil, attempts to resolve via RepoRegistry.
+  ///   - forceImportEmbeddings: When true, import embeddings even if models differ (useful when not indexing locally)
+  func applyRepoSyncBundle(_ bundle: RAGRepoExportBundle, localRepoPath: String?, forceImportEmbeddings: Bool) async throws -> RAGRepoImporter.ImportResult
   /// Get local file hashes for delta comparison.
   func localRepoFileHashes(repoIdentifier: String) async throws -> Set<String>
 }

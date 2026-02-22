@@ -477,6 +477,7 @@ enum RAGRepoImporter {
   ///   - localRepoPath: Local path where this repo lives (for path remapping)
   ///   - localEmbeddingModel: The embedding model name used locally (for compatibility check)
   ///   - localEmbeddingDimensions: The embedding dimensions used locally (for compatibility check)
+  ///   - forceImportEmbeddings: When true, import embeddings even if models differ (useful when not indexing locally)
   /// - Returns: Import summary
   @discardableResult
   static func importRepo(
@@ -484,7 +485,8 @@ enum RAGRepoImporter {
     dbPath: String,
     localRepoPath: String? = nil,
     localEmbeddingModel: String? = nil,
-    localEmbeddingDimensions: Int? = nil
+    localEmbeddingDimensions: Int? = nil,
+    forceImportEmbeddings: Bool = false
   ) throws -> ImportResult {
     var db: OpaquePointer?
     let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX
@@ -514,9 +516,14 @@ enum RAGRepoImporter {
     // embedding model or dimension than the local DB, skip embedding import
     // to avoid mixing incompatible vectors. Text/chunks/AI summaries are
     // still imported so text search works; the receiver can re-embed locally.
+    //
+    // When forceImportEmbeddings is true, always import (useful when the
+    // receiver won't index locally and wants to use the sender's vectors).
     let embeddingsCompatible: Bool
-    if let localModel = localEmbeddingModel,
-       let localDims = localEmbeddingDimensions {
+    if forceImportEmbeddings {
+      embeddingsCompatible = true
+    } else if let localModel = localEmbeddingModel,
+              let localDims = localEmbeddingDimensions {
       let modelMatch = bundle.manifest.embeddingModel == localModel
       let dimsMatch = bundle.manifest.embeddingDimensions == localDims
       embeddingsCompatible = modelMatch && dimsMatch
@@ -995,7 +1002,8 @@ extension RAGStore {
   @discardableResult
   func importRepoBundle(
     _ bundle: RAGRepoExportBundle,
-    localRepoPath: String? = nil
+    localRepoPath: String? = nil,
+    forceImportEmbeddings: Bool = false
   ) async throws -> RAGRepoImporter.ImportResult {
     let currentStatus = status()
     let dbPath = currentStatus.dbPath
@@ -1009,7 +1017,8 @@ extension RAGStore {
         dbPath: dbPath,
         localRepoPath: localRepoPath,
         localEmbeddingModel: currentStatus.embeddingModelName,
-        localEmbeddingDimensions: currentStatus.embeddingDimensions
+        localEmbeddingDimensions: currentStatus.embeddingDimensions,
+        forceImportEmbeddings: forceImportEmbeddings
       )
     } catch {
       // Re-open db

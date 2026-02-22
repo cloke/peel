@@ -597,6 +597,12 @@ extension RAGStore {
     }
   }
 
+  /// Public wrapper for discoverRepoPath — used by sync delegates that need
+  /// to resolve a repo identifier to a local filesystem path.
+  public func discoverRepoPathPublic(for repoIdentifier: String) async -> String? {
+    return await discoverRepoPath(for: repoIdentifier)
+  }
+
   private func discoverRepoPath(for repoIdentifier: String) async -> String? {
     let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
     let candidateDirs = [

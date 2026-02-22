@@ -223,6 +223,10 @@ struct RAGRepositoryCardView: View {
             Label("\(repo.embeddingCount)/\(repo.chunkCount)", systemImage: "bolt.trianglebadge.exclamationmark")
               .foregroundStyle(.yellow)
               .help("\(repo.chunkCount - repo.embeddingCount) chunks missing embeddings. Re-index to generate them locally.")
+          } else if repo.hasSyncedEmbeddings, let model = repo.embeddingModel {
+            Label(model, systemImage: "arrow.down.circle")
+              .foregroundStyle(.blue)
+              .help("Embeddings synced from peer (\(model))")
           }
 
           if analysisState.totalChunks > 0 {
@@ -415,7 +419,7 @@ struct RAGRepositoryCardView: View {
         }
       }
 
-      // Embedding model mismatch warning
+      // Embedding source info
       if repo.needsEmbedding {
         HStack(spacing: 6) {
           Image(systemName: "exclamationmark.triangle.fill")
@@ -431,6 +435,25 @@ struct RAGRepositoryCardView: View {
         }
         .padding(8)
         .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+      } else if repo.hasSyncedEmbeddings, let model = repo.embeddingModel {
+        let localModel = mcpServer.ragStatus?.embeddingModelName
+        let isSameModel = localModel.map { $0 == model } ?? false
+        HStack(spacing: 6) {
+          Image(systemName: isSameModel ? "checkmark.circle.fill" : "arrow.down.circle.fill")
+            .foregroundStyle(isSameModel ? .green : .blue)
+          VStack(alignment: .leading, spacing: 2) {
+            Text("Embeddings: \(model)\(isSameModel ? "" : " (synced from peer)")")
+              .font(.caption)
+              .foregroundStyle(isSameModel ? .green : .blue)
+            if !isSameModel {
+              Text("Using remote embeddings — vector search is available. Local model: \(localModel ?? "none").")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+          }
+        }
+        .padding(8)
+        .background((isSameModel ? Color.green : Color.blue).opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
       }
 
       // Index progress
