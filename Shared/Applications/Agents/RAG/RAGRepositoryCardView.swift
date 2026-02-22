@@ -223,10 +223,12 @@ struct RAGRepositoryCardView: View {
             Label("\(repo.embeddingCount)/\(repo.chunkCount)", systemImage: "bolt.trianglebadge.exclamationmark")
               .foregroundStyle(.yellow)
               .help("\(repo.chunkCount - repo.embeddingCount) chunks missing embeddings. Re-index to generate them locally.")
-          } else if repo.hasSyncedEmbeddings, let model = repo.embeddingModel {
-            Label(model, systemImage: "arrow.down.circle")
-              .foregroundStyle(.blue)
-              .help("Embeddings synced from peer (\(model))")
+          } else if let model = repo.inferredEmbeddingModel {
+            let localDims = mcpServer.ragStatus?.embeddingDimensions ?? 768
+            let hasMismatch = repo.embeddingDimensions != nil && repo.embeddingDimensions != localDims
+            Label(model, systemImage: hasMismatch ? "exclamationmark.triangle" : "arrow.down.circle")
+              .foregroundStyle(hasMismatch ? .orange : .blue)
+              .help(hasMismatch ? "Dimension mismatch (\(repo.embeddingDimensions ?? 0)d vs local \(localDims)d) — vector search won't work. Re-index to fix." : "Embeddings: \(model)")
           }
 
           if analysisState.totalChunks > 0 {
@@ -435,50 +437,27 @@ struct RAGRepositoryCardView: View {
         }
         .padding(8)
         .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
-      } else if repo.hasSyncedEmbeddings, let model = repo.embeddingModel {
+      } else if let model = repo.inferredEmbeddingModel {
+        let localDims = mcpServer.ragStatus?.embeddingDimensions ?? 768
+        let repoDims = repo.embeddingDimensions
+        let hasDimMismatch = repoDims != nil && repoDims != localDims
         let localModel = mcpServer.ragStatus?.embeddingModelName
-        let isSameModel = localModel.map { $0 == model } ?? false
         HStack(spacing: 6) {
-          Image(systemName: isSameModel ? "checkmark.circle.fill" : "arrow.down.circle.fill")
-            .foregroundStyle(isSameModel ? .green : .blue)
+          Image(systemName: hasDimMismatch ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+            .foregroundStyle(hasDimMismatch ? .orange : .green)
           VStack(alignment: .leading, spacing: 2) {
-            Text("Embeddings: \(model)\(isSameModel ? "" : " (synced from peer)")")
+            Text("Embeddings: \(model)")
               .font(.caption)
-              .foregroundStyle(isSameModel ? .green : .blue)
-            if !isSameModel {
-              Text("Using remote embeddings — vector search is available. Local model: \(localModel ?? "none").")
+              .foregroundStyle(hasDimMismatch ? .orange : .green)
+            if hasDimMismatch {
+              Text("Dimension mismatch: repo has \(repoDims ?? 0)d, local model (\(localModel ?? "unknown")) uses \(localDims)d. Vector search won't work — re-index to fix.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             }
           }
         }
         .padding(8)
-        .background((isSameModel ? Color.green : Color.blue).opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
-      }
-
-      // Index progress
-      if let progress = mcpServer.ragIndexProgress, 
-         mcpServer.ragIndexingPath == repo.rootPath,
-         !progress.isComplete {
-        HStack(spacing: 8) {
-          VStack(alignment: .leading, spacing: 4) {
-            ProgressView(value: progress.progress)
-              .progressViewStyle(.linear)
-            Text(progress.description)
-              .font(.caption2)
-              .foregroundStyle(.secondary)
-          }
-          
-          Button {
-            mcpServer.cancelRagIndexing()
-          } label: {
-            Image(systemName: "stop.fill")
-          }
-          .buttonStyle(.bordered)
-          .controlSize(.small)
-          .tint(.red)
-          .help("Cancel indexing")
-        }
+        .background((hasDimMismatch ? Color.orange : Color.green).opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
       }
     }
     .padding(12)

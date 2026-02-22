@@ -236,15 +236,6 @@
         }
       },
       {
-        "package": "RAGCore",
-        "repositoryURL": "https://github.com/crunchybananas/RAGCore.git",
-        "state": {
-          "branch": null,
-          "revision": "b28234cd6cc802fc818ea88ac857be13710751c2",
-          "version": "1.1.0"
-        }
-      },
-      {
         "package": "swift-argument-parser",
         "repositoryURL": "https://github.com/apple/swift-argument-parser",
         "state": {

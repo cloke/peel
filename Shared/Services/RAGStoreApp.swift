@@ -501,6 +501,38 @@ extension RAGStore {
     }
     return counts
   }
+
+  /// Returns the embedding dimensions for each repo (by repo ID).
+  /// Dimensions are derived from the blob size of a sample embedding (float32 = 4 bytes).
+  func embeddingDimensionsByRepo() -> [String: Int] {
+    let dbPath = status().dbPath
+    guard FileManager.default.fileExists(atPath: dbPath) else { return [:] }
+
+    var readDb: OpaquePointer?
+    guard sqlite3_open_v2(dbPath, &readDb, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
+          let readDb else { return [:] }
+    defer { sqlite3_close(readDb) }
+
+    // Get one sample embedding per repo, compute dimensions from blob size
+    let sql = """
+      SELECT f.repo_id, LENGTH(e.embedding) / 4 as dims
+      FROM embeddings e
+      JOIN chunks c ON e.chunk_id = c.id
+      JOIN files f ON c.file_id = f.id
+      GROUP BY f.repo_id
+      """
+    var stmt: OpaquePointer?
+    guard sqlite3_prepare_v2(readDb, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return [:] }
+    defer { sqlite3_finalize(stmt) }
+
+    var dims: [String: Int] = [:]
+    while sqlite3_step(stmt) == SQLITE_ROW {
+      let repoId = String(cString: sqlite3_column_text(stmt, 0))
+      let dimensions = Int(sqlite3_column_int(stmt, 1))
+      dims[repoId] = dimensions
+    }
+    return dims
+  }
 }
 
 // MARK: - Portable Repo Identification (Issue #278)
