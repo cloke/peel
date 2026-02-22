@@ -580,92 +580,44 @@ struct RAGRepositoryCardView: View {
   
   @ViewBuilder
   private var searchSection: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      Label("Search This Repo", systemImage: "magnifyingglass")
-        .font(.subheadline.weight(.semibold))
-      
-      HStack(spacing: 8) {
-        TextField("Search query...", text: $searchQuery)
-          .textFieldStyle(.roundedBorder)
-          .onSubmit {
-            Task { await runSearch() }
-          }
-        
-        Picker("", selection: $searchMode) {
-          Text("Vector").tag(MCPServerService.RAGSearchMode.vector)
-          Text("Text").tag(MCPServerService.RAGSearchMode.text)
-        }
-        .pickerStyle(.segmented)
-        .frame(width: 120)
-        
-        Button {
-          Task { await runSearch() }
-        } label: {
-          if isSearching {
-            ProgressView()
-              .scaleEffect(0.7)
-          } else {
-            Image(systemName: "arrow.right.circle.fill")
-          }
-        }
-        .buttonStyle(.borderedProminent)
-        .disabled(searchQuery.trimmingCharacters(in: .whitespaces).isEmpty || isSearching)
-      }
-      
-      // Search results
-      if !searchResults.isEmpty {
-        VStack(alignment: .leading, spacing: 4) {
-          ForEach(searchResults.prefix(5), id: \.filePath) { result in
-            searchResultRow(result)
-          }
-          
-          if searchResults.count > 5 {
-            Text("+ \(searchResults.count - 5) more results")
-              .font(.caption2)
-              .foregroundStyle(.secondary)
-          }
-        }
-        .padding(.top, 4)
-      }
-    }
-    .padding(12)
-    .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 8))
+    RAGRepositorySearchSection(
+      searchQuery: $searchQuery,
+      searchMode: searchModeBinding,
+      searchResults: searchDisplayResults,
+      isSearching: $isSearching,
+      runSearch: { await runSearch() },
+      languageIcon: { languageIcon(for: $0) }
+    )
   }
-  
-  @ViewBuilder
-  private func searchResultRow(_ result: LocalRAGSearchResult) -> some View {
-    HStack(spacing: 8) {
-      Image(systemName: languageIcon(for: result.filePath))
-        .font(.caption)
-        .foregroundStyle(.secondary)
-      
-      VStack(alignment: .leading, spacing: 1) {
-        Text(URL(fileURLWithPath: result.filePath).lastPathComponent)
-          .font(.caption)
-          .lineLimit(1)
-        
-        Text("L\(result.startLine)–\(result.endLine)")
-          .font(.caption2)
-          .foregroundStyle(.secondary)
+
+  private var searchModeBinding: Binding<RAGRepositorySearchMode> {
+    Binding(
+      get: {
+        switch searchMode {
+        case .text: return .text
+        case .vector, .hybrid: return .vector
+        }
+      },
+      set: { newValue in
+        switch newValue {
+        case .text:
+          searchMode = .text
+        case .vector:
+          searchMode = .vector
+        }
       }
-      
-      Spacer()
-      
-      if let score = result.score {
-        Text("\(Int(score * 100))%")
-          .font(.caption2)
-          .foregroundStyle(score >= 0.8 ? .green : score >= 0.6 ? .orange : .secondary)
-      }
-      
-      Button {
-        NSWorkspace.shared.open(URL(fileURLWithPath: result.filePath))
-      } label: {
-        Image(systemName: "arrow.up.forward")
-      }
-      .buttonStyle(.borderless)
-      .controlSize(.small)
+    )
+  }
+
+  private var searchDisplayResults: [RAGRepositorySearchDisplayResult] {
+    searchResults.map {
+      RAGRepositorySearchDisplayResult(
+        filePath: $0.filePath,
+        startLine: $0.startLine,
+        endLine: $0.endLine,
+        score: $0.score
+      )
     }
-    .padding(.vertical, 2)
   }
   
   // MARK: - Skills Section
