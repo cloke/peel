@@ -1406,7 +1406,8 @@ struct InviteShareSheet: View {
             copied = true
             
             // Reset after 2 seconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            Task { @MainActor in
+              try? await Task.sleep(for: .seconds(2))
               copied = false
             }
           } label: {
