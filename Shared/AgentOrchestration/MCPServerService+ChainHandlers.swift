@@ -325,8 +325,8 @@ extension MCPServerService {
       options: initialOptions
     )
     
-    // Store the prompt for UI display
-    chain.initialPrompt = prompt
+    // Store the original dispatch prompt for UI display
+    chain.initialPrompt = rawPrompt
 
     await telemetryProvider.info("Chain run started", metadata: [
       "runId": runId.uuidString,
