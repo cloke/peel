@@ -54,6 +54,11 @@ struct LocalRAGDashboardView: View {
       VStack(alignment: .leading, spacing: 16) {
         // MARK: - Header with Quick Stats
         headerView
+
+        // MARK: - Active Sync Transfers
+        if !activeRAGTransfers.isEmpty {
+          syncTransfersBanner
+        }
         
         // MARK: - Global Search
         RAGGlobalSearchView(mcpServer: mcpServer)
@@ -120,6 +125,61 @@ struct LocalRAGDashboardView: View {
     .onChange(of: ignoredSkillIdentities) { _, newValue in
       UserDefaults.standard.set(Array(newValue), forKey: "rag.skills.ignoredIdentityKeys")
     }
+  }
+
+  private var activeRAGTransfers: [RAGArtifactTransferState] {
+    SwarmCoordinator.shared.ragTransfers.filter {
+      $0.status == .queued || $0.status == .preparing || $0.status == .transferring || $0.status == .applying
+    }
+  }
+
+  @ViewBuilder
+  private var syncTransfersBanner: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Label("Sync in Progress", systemImage: "arrow.triangle.2.circlepath")
+        .font(.subheadline.weight(.semibold))
+
+      ForEach(activeRAGTransfers.prefix(3)) { transfer in
+        VStack(alignment: .leading, spacing: 4) {
+          Text(transferBannerTitle(transfer))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+          if transfer.totalBytes > 0 {
+            ProgressView(value: transfer.progress)
+            Text(transferBytesText(transfer))
+              .font(.caption2)
+              .foregroundStyle(.tertiary)
+          } else {
+            ProgressView()
+              .controlSize(.small)
+          }
+        }
+      }
+
+      if activeRAGTransfers.count > 3 {
+        Text("+ \(activeRAGTransfers.count - 3) more transfer(s)")
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+      }
+    }
+    .padding(12)
+    .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 10))
+  }
+
+  private func transferBannerTitle(_ transfer: RAGArtifactTransferState) -> String {
+    let direction = switch transfer.direction {
+    case .push: "Push"
+    case .pull: "Pull"
+    }
+    let repo = transfer.repoIdentifier ?? "all repos"
+    return "\(direction) \(repo) • \(transfer.peerName)"
+  }
+
+  private func transferBytesText(_ transfer: RAGArtifactTransferState) -> String {
+    let transferred = ByteCountFormatter.string(fromByteCount: Int64(transfer.transferredBytes), countStyle: .file)
+    let total = ByteCountFormatter.string(fromByteCount: Int64(transfer.totalBytes), countStyle: .file)
+    return "\(transferred) / \(total)"
   }
 
   private var unresolvedSkills: [RepoGuidanceSkill] {

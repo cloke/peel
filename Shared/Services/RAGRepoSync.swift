@@ -26,7 +26,7 @@ struct RAGRepoExportBundle: Codable, Sendable {
 }
 
 /// Manifest for a per-repo sync — describes what the sender has.
-struct RAGRepoSyncManifest: Codable, Sendable {
+public struct RAGRepoSyncManifest: Codable, Sendable {
   let repoIdentifier: String
   let repoName: String
   let schemaVersion: Int
@@ -56,6 +56,8 @@ struct ExportedRepo: Codable, Sendable {
   let repoIdentifier: String
   let lastIndexedAt: String?
   let parentRepoId: String?
+  let embeddingModel: String?
+  let embeddingDimensions: Int?
 }
 
 /// Exported file with its chunks and embeddings.
@@ -133,12 +135,14 @@ enum RAGRepoExporter {
 
     // Build manifest
     let headSHA = gitHeadSHA(for: repo.rootPath)
+    let effectiveEmbeddingModel = repo.embeddingModel ?? embeddingModel
+    let effectiveEmbeddingDimensions = repo.embeddingDimensions ?? embeddingDimensions
     let manifest = RAGRepoSyncManifest(
       repoIdentifier: repoIdentifier,
       repoName: repo.name,
       schemaVersion: schemaVersion,
-      embeddingModel: embeddingModel,
-      embeddingDimensions: embeddingDimensions,
+      embeddingModel: effectiveEmbeddingModel,
+      embeddingDimensions: effectiveEmbeddingDimensions,
       createdAt: Date(),
       headSHA: headSHA,
       fileCount: allFileHashes.count,
@@ -187,12 +191,15 @@ enum RAGRepoExporter {
     let fileHashes = queryFileHashes(db: db, repoId: repo.id)
     let headSHA = gitHeadSHA(for: repo.rootPath)
 
+    let effectiveEmbeddingModel = repo.embeddingModel ?? embeddingModel
+    let effectiveEmbeddingDimensions = repo.embeddingDimensions ?? embeddingDimensions
+
     return RAGRepoSyncManifest(
       repoIdentifier: repoIdentifier,
       repoName: repo.name,
       schemaVersion: schemaVersion,
-      embeddingModel: embeddingModel,
-      embeddingDimensions: embeddingDimensions,
+      embeddingModel: effectiveEmbeddingModel,
+      embeddingDimensions: effectiveEmbeddingDimensions,
       createdAt: Date(),
       headSHA: headSHA,
       fileCount: fileHashes.count,
@@ -233,12 +240,16 @@ enum RAGRepoExporter {
     // repo_identifier added in v11, parent_repo_id in v12 — adapt query for older schemas
     let hasRepoIdentifier = columnExists(db, table: "repos", column: "repo_identifier")
     let hasParentRepoId = columnExists(db, table: "repos", column: "parent_repo_id")
+    let hasEmbeddingModel = columnExists(db, table: "repos", column: "embedding_model")
+    let hasEmbeddingDimensions = columnExists(db, table: "repos", column: "embedding_dimensions")
 
     // If the source DB doesn't have repo_identifier column, we can't match by it
     guard hasRepoIdentifier else { return nil }
 
     var columns = "id, name, root_path, repo_identifier, last_indexed_at"
     if hasParentRepoId { columns += ", parent_repo_id" }
+    if hasEmbeddingModel { columns += ", embedding_model" }
+    if hasEmbeddingDimensions { columns += ", embedding_dimensions" }
 
     let sql = "SELECT \(columns) FROM repos WHERE repo_identifier = ?"
     var stmt: OpaquePointer?
@@ -249,13 +260,19 @@ enum RAGRepoExporter {
 
     guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
 
+    let parentIndex: Int32 = hasParentRepoId ? 5 : -1
+    let embeddingModelIndex: Int32 = hasEmbeddingModel ? (hasParentRepoId ? 6 : 5) : -1
+    let embeddingDimensionsIndex: Int32 = hasEmbeddingDimensions ? (embeddingModelIndex >= 0 ? embeddingModelIndex + 1 : (hasParentRepoId ? 6 : 5)) : -1
+
     return ExportedRepo(
       id: columnString(stmt, 0),
       name: columnString(stmt, 1),
       rootPath: columnString(stmt, 2),
       repoIdentifier: columnString(stmt, 3),
       lastIndexedAt: columnOptionalString(stmt, 4),
-      parentRepoId: hasParentRepoId ? columnOptionalString(stmt, 5) : nil
+      parentRepoId: parentIndex >= 0 ? columnOptionalString(stmt, parentIndex) : nil,
+      embeddingModel: embeddingModelIndex >= 0 ? columnOptionalString(stmt, embeddingModelIndex) : nil,
+      embeddingDimensions: embeddingDimensionsIndex >= 0 ? columnOptionalInt(stmt, embeddingDimensionsIndex) : nil
     )
   }
 
@@ -444,6 +461,11 @@ enum RAGRepoExporter {
     return String(cString: text)
   }
 
+  private static func columnOptionalInt(_ stmt: OpaquePointer, _ index: Int32) -> Int? {
+    guard sqlite3_column_type(stmt, index) != SQLITE_NULL else { return nil }
+    return Int(sqlite3_column_int(stmt, index))
+  }
+
   private static func gitHeadSHA(for repoPath: String) -> String? {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
@@ -542,18 +564,20 @@ enum RAGRepoImporter {
       if let existingId = findRepoByIdentifier(db: db, identifier: bundle.manifest.repoIdentifier) {
         // Update existing repo
         targetRepoId = existingId
-        let updateSql = "UPDATE repos SET last_indexed_at = ?, root_path = ? WHERE id = ?"
+        let updateSql = "UPDATE repos SET last_indexed_at = ?, root_path = ?, embedding_model = ?, embedding_dimensions = ? WHERE id = ?"
         try execBind(db, updateSql) { stmt in
           bindTextOrNull(stmt, 1, bundle.repo.lastIndexedAt)
           bindText(stmt, 2, targetRootPath)
-          bindText(stmt, 3, existingId)
+          bindTextOrNull(stmt, 3, bundle.manifest.embeddingModel)
+          bindIntOrNull(stmt, 4, bundle.manifest.embeddingDimensions)
+          bindText(stmt, 5, existingId)
         }
       } else {
         // Insert new repo — use local path-based ID for consistency
         targetRepoId = stableId(for: targetRootPath)
         let insertSql = """
-          INSERT INTO repos (id, name, root_path, last_indexed_at, repo_identifier, parent_repo_id)
-          VALUES (?, ?, ?, ?, ?, ?)
+          INSERT INTO repos (id, name, root_path, last_indexed_at, repo_identifier, parent_repo_id, embedding_model, embedding_dimensions)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
           """
         try execBind(db, insertSql) { stmt in
           bindText(stmt, 1, targetRepoId)
@@ -562,6 +586,8 @@ enum RAGRepoImporter {
           bindTextOrNull(stmt, 4, bundle.repo.lastIndexedAt)
           bindText(stmt, 5, bundle.manifest.repoIdentifier)
           bindTextOrNull(stmt, 6, bundle.repo.parentRepoId)
+          bindTextOrNull(stmt, 7, bundle.manifest.embeddingModel)
+          bindIntOrNull(stmt, 8, bundle.manifest.embeddingDimensions)
         }
       }
 
@@ -781,6 +807,13 @@ enum RAGRepoImporter {
     if !columnExists(db, table: "repos", column: "parent_repo_id") {
       execSQL(db, "ALTER TABLE repos ADD COLUMN parent_repo_id TEXT")
     }
+    // v14 columns on repos
+    if !columnExists(db, table: "repos", column: "embedding_model") {
+      execSQL(db, "ALTER TABLE repos ADD COLUMN embedding_model TEXT")
+    }
+    if !columnExists(db, table: "repos", column: "embedding_dimensions") {
+      execSQL(db, "ALTER TABLE repos ADD COLUMN embedding_dimensions INTEGER")
+    }
     // v13 columns on files
     if !columnExists(db, table: "files", column: "line_count") {
       execSQL(db, "ALTER TABLE files ADD COLUMN line_count INTEGER DEFAULT 0")
@@ -950,6 +983,14 @@ enum RAGRepoImporter {
   private static func bindTextOrNull(_ stmt: OpaquePointer, _ index: Int32, _ value: String?) {
     if let value {
       bindText(stmt, index, value)
+    } else {
+      sqlite3_bind_null(stmt, index)
+    }
+  }
+
+  private static func bindIntOrNull(_ stmt: OpaquePointer, _ index: Int32, _ value: Int?) {
+    if let value {
+      sqlite3_bind_int(stmt, index, Int32(value))
     } else {
       sqlite3_bind_null(stmt, index)
     }

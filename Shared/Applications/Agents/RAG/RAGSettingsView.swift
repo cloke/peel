@@ -415,12 +415,23 @@ struct RAGSettingsView: View {
             }
             
             if isSyncing {
-              HStack(spacing: 8) {
-                ProgressView()
-                  .controlSize(.small)
-                Text(syncDirection == .push ? "Pushing…" : "Pulling…")
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
+              if let transfer = SwarmCoordinator.shared.ragTransfers.first(where: {
+                $0.status == .queued || $0.status == .preparing || $0.status == .transferring || $0.status == .applying
+              }), transfer.totalBytes > 0 {
+                VStack(alignment: .leading, spacing: 4) {
+                  ProgressView(value: transfer.progress)
+                  Text("\(ByteCountFormatter.string(fromByteCount: Int64(transfer.transferredBytes), countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: Int64(transfer.totalBytes), countStyle: .file))")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                }
+              } else {
+                HStack(spacing: 8) {
+                  ProgressView()
+                    .controlSize(.small)
+                  Text(syncDirection == .push ? "Pushing…" : "Pulling…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
               }
             }
           } else {
