@@ -236,6 +236,17 @@ struct ChainDetailView: View {
                       ElapsedTimeView(startTime: startTime)
                     }
                   }
+
+                  // Partial usage while running (if results already available)
+                  if !chain.results.isEmpty {
+                    HStack(spacing: 6) {
+                      Image(systemName: "creditcard")
+                        .foregroundStyle(.secondary)
+                      Text("Partial usage: \(chain.results.reduce(0.0) { $0 + $1.premiumCost }.premiumCostDisplay)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                  }
                 }
               } header: {
                 HStack(spacing: 8) {
