@@ -719,6 +719,8 @@ public enum PeerMessage: Codable, Sendable {
   case directCommand(id: UUID, command: String, args: [String], workingDirectory: String?)
   case directCommandResult(id: UUID, exitCode: Int32, output: String, error: String?)
   case ragArtifactsRequest(id: UUID, direction: RAGArtifactSyncDirection, repoIdentifier: String? = nil)
+  case ragRepoManifest(id: UUID, manifest: RAGRepoSyncManifest)
+  case ragRepoDeltaRequest(id: UUID, excludeFileHashes: [String])
   case ragArtifactsManifest(id: UUID, manifest: RAGArtifactManifest)
   case ragArtifactsChunk(id: UUID, index: Int, total: Int, data: String)
   case ragArtifactsComplete(id: UUID)
@@ -741,6 +743,8 @@ public enum PeerMessage: Codable, Sendable {
     case .directCommand: return "directCommand"
     case .directCommandResult: return "directCommandResult"
     case .ragArtifactsRequest: return "ragArtifactsRequest"
+    case .ragRepoManifest: return "ragRepoManifest"
+    case .ragRepoDeltaRequest: return "ragRepoDeltaRequest"
     case .ragArtifactsManifest: return "ragArtifactsManifest"
     case .ragArtifactsChunk: return "ragArtifactsChunk"
     case .ragArtifactsComplete: return "ragArtifactsComplete"

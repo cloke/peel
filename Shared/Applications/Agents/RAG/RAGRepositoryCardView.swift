@@ -213,6 +213,27 @@ struct RAGRepositoryCardView: View {
         isExpanded.toggle()
       }
     }
+    .contextMenu {
+      if let repoIdentifier = repo.repoIdentifier {
+        if SwarmCoordinator.shared.isActive {
+          Button {
+            Task { await syncRepoWithPeers(repoIdentifier: repoIdentifier, direction: .push) }
+          } label: {
+            Label("Push to Peer", systemImage: "arrow.up.circle")
+          }
+          .disabled(!hasConnectedPeers || isSyncing)
+
+          Button {
+            Task { await syncRepoWithPeers(repoIdentifier: repoIdentifier, direction: .pull) }
+          } label: {
+            Label("Pull from Peer", systemImage: "arrow.down.circle")
+          }
+          .disabled(!hasConnectedPeers || isSyncing)
+        } else {
+          Label("Start Swarm to sync", systemImage: "network.slash")
+        }
+      }
+    }
   }
   
   // MARK: - Expanded Content
@@ -468,13 +489,12 @@ struct RAGRepositoryCardView: View {
         Text("This will remove \(repo.fileCount) files and \(repo.chunkCount) chunks from the index. You can re-index later.")
       }
 
-      // Per-repo sync buttons (requires repoIdentifier and active swarm)
-      if let repoIdentifier = repo.repoIdentifier,
-         SwarmCoordinator.shared.isActive {
+      // Per-repo sync buttons
+      if let repoIdentifier = repo.repoIdentifier {
         let peers = SwarmCoordinator.shared.connectedWorkers
-        let hasPeers = !peers.isEmpty
+        let hasPeers = !peers.isEmpty && SwarmCoordinator.shared.isActive
 
-        if peers.count > 1 {
+        if SwarmCoordinator.shared.isActive && peers.count > 1 {
           // Multiple peers: show menus to pick which peer
           syncPeerMenu(peers: peers, repoIdentifier: repoIdentifier, direction: .push)
           syncPeerMenu(peers: peers, repoIdentifier: repoIdentifier, direction: .pull)
@@ -496,7 +516,11 @@ struct RAGRepositoryCardView: View {
           .buttonStyle(.bordered)
           .controlSize(.small)
           .disabled(isSyncing || !hasPeers)
-          .help(hasPeers ? "Push to \(peers.first?.displayName ?? "peer")" : "No peers connected")
+          .help(
+            SwarmCoordinator.shared.isActive
+            ? (hasPeers ? "Push to \(peers.first?.displayName ?? "peer")" : "No peers connected")
+            : "Start Swarm to sync"
+          )
 
           Button {
             Task { await syncRepoWithPeers(repoIdentifier: repoIdentifier, direction: .pull) }
@@ -514,7 +538,17 @@ struct RAGRepositoryCardView: View {
           .buttonStyle(.bordered)
           .controlSize(.small)
           .disabled(isSyncing || !hasPeers)
-          .help(hasPeers ? "Pull from \(peers.first?.displayName ?? "peer")" : "No peers connected")
+          .help(
+            SwarmCoordinator.shared.isActive
+            ? (hasPeers ? "Pull from \(peers.first?.displayName ?? "peer")" : "No peers connected")
+            : "Start Swarm to sync"
+          )
+
+          if !SwarmCoordinator.shared.isActive {
+            Text("Start Swarm to sync")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
         }
       }
 
@@ -716,6 +750,10 @@ struct RAGRepositoryCardView: View {
     .buttonStyle(.bordered)
     .controlSize(.small)
     .disabled(isSyncing)
+  }
+
+  private var hasConnectedPeers: Bool {
+    SwarmCoordinator.shared.isActive && !SwarmCoordinator.shared.connectedWorkers.isEmpty
   }
   
   // MARK: - Card Background

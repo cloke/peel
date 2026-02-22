@@ -95,6 +95,15 @@ extension MCPServerService: RAGArtifactSyncDelegate {
     return bundle
   }
 
+  func createRepoSyncManifest(repoIdentifier: String) async throws -> RAGRepoSyncManifest? {
+    logger.info("RAG repo sync: building manifest for '\(repoIdentifier)'")
+    let manifest = try await localRagStore.repoSyncManifest(identifier: repoIdentifier)
+    if manifest == nil {
+      logger.warning("RAG repo sync: no manifest for '\(repoIdentifier)' (repo not found)")
+    }
+    return manifest
+  }
+
   func applyRepoSyncBundle(_ bundle: RAGRepoExportBundle, localRepoPath: String?, forceImportEmbeddings: Bool) async throws -> RAGRepoImporter.ImportResult {
     // Resolve local repo path: use provided path, or look up via RepoRegistry, or discover
     let resolvedPath: String?

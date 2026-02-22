@@ -16,6 +16,8 @@ protocol RAGArtifactSyncDelegate: AnyObject {
 
   /// Export a single repo's RAG data as a JSON bundle.
   func createRepoSyncBundle(repoIdentifier: String, excludeFileHashes: Set<String>) async throws -> RAGRepoExportBundle?
+  /// Export only manifest metadata for repo delta negotiation.
+  func createRepoSyncManifest(repoIdentifier: String) async throws -> RAGRepoSyncManifest?
   /// Import a per-repo bundle, merging into local DB without touching other repos.
   /// - Parameters:
   ///   - bundle: The exported repo data

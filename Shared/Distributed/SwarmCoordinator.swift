@@ -96,6 +96,9 @@ public final class SwarmCoordinator {
   /// Pending incoming RAG artifact transfers
   private var incomingRagTransfers: [UUID: RAGIncomingTransfer] = [:]
 
+  /// Pending outgoing per-repo sync transfers awaiting delta request from receiver
+  private var pendingOutgoingRepoSyncTransfers: [UUID: PendingOutgoingRepoSyncTransfer] = [:]
+
   /// Heartbeat loop task (worker/hybrid)
   private var heartbeatTask: Task<Void, Never>?
 
@@ -145,6 +148,13 @@ public final class SwarmCoordinator {
       self.direction = direction
       self.tempURL = tempURL
     }
+  }
+
+  private struct PendingOutgoingRepoSyncTransfer: Sendable {
+    let id: UUID
+    let peerId: String
+    let peerName: String
+    let repoIdentifier: String
   }
   
   /// Discovered peers (for debugging - from Bonjour discovery)
@@ -877,63 +887,29 @@ public final class SwarmCoordinator {
     }
 
     do {
-      // Per-repo sync: export only the requested repo as JSON
+      // Per-repo sync: send manifest first, then wait for receiver delta request
       if let repoIdentifier {
-        let repoBundle = try await ragSyncDelegate.createRepoSyncBundle(repoIdentifier: repoIdentifier, excludeFileHashes: [])
-        guard let repoBundle else {
+        guard let repoManifest = try await ragSyncDelegate.createRepoSyncManifest(repoIdentifier: repoIdentifier) else {
           await sendRagArtifactError(transferId: transferId, to: peer.id, message: "Repo '\(repoIdentifier)' not found in RAG store")
           return
         }
-        let jsonData = try JSONEncoder().encode(repoBundle)
-        let chunkSize = 256 * 1024
-        let totalChunks = max(1, Int(ceil(Double(max(1, jsonData.count)) / Double(chunkSize))))
-
-        logger.info("RAG repo sync bundle: \(repoBundle.manifest.repoIdentifier), \(jsonData.count) bytes, \(totalChunks) chunks")
 
         updateRagTransfer(transferId) { state in
-          state.status = .transferring
-          state.totalBytes = jsonData.count
-          state.manifestVersion = "v\(repoBundle.manifest.schemaVersion)"
+          state.status = .preparing
+          state.totalBytes = 0
+          state.transferredBytes = 0
+          state.manifestVersion = "v\(repoManifest.schemaVersion)"
         }
 
-        // Send as a manifest with repo info
-        let manifest = RAGArtifactManifest(
-          formatVersion: 1,
-          version: "repo-sync-\(repoBundle.manifest.repoIdentifier)",
-          createdAt: Date(),
-          schemaVersion: 13,
-          totalBytes: jsonData.count,
-          embeddingCacheCount: 0,
-          lastIndexedAt: nil,
-          files: [RAGArtifactFileInfo(relativePath: "repo-bundle.json", sizeBytes: jsonData.count, sha256: "", modifiedAt: Date())],
-          repos: []
+        pendingOutgoingRepoSyncTransfers[transferId] = PendingOutgoingRepoSyncTransfer(
+          id: transferId,
+          peerId: peer.id,
+          peerName: peer.name,
+          repoIdentifier: repoIdentifier
         )
-        try await connectionManager?.send(.ragArtifactsManifest(id: transferId, manifest: manifest), to: peer.id)
 
-        // Send in chunks
-        var offset = 0
-        var chunkIndex = 0
-        while offset < jsonData.count {
-          let end = min(offset + chunkSize, jsonData.count)
-          let chunkData = jsonData[offset..<end]
-          let base64 = chunkData.base64EncodedString()
-          try await connectionManager?.send(
-            .ragArtifactsChunk(id: transferId, index: chunkIndex, total: totalChunks, data: base64),
-            to: peer.id
-          )
-          updateRagTransfer(transferId) { state in
-            state.transferredBytes += chunkData.count
-          }
-          offset = end
-          chunkIndex += 1
-        }
-
-        try await connectionManager?.send(.ragArtifactsComplete(id: transferId), to: peer.id)
-        updateRagTransfer(transferId) { state in
-          state.status = .complete
-          state.completedAt = Date()
-        }
-        logger.info("RAG repo sync completed: \(transferId) to \(peer.name)")
+        try await connectionManager?.send(.ragRepoManifest(id: transferId, manifest: repoManifest), to: peer.id)
+        logger.info("RAG repo sync manifest sent: \(repoIdentifier), transfer \(transferId), waiting for delta request")
         return
       }
 
@@ -1144,6 +1120,130 @@ public final class SwarmCoordinator {
     }
 
     incomingRagTransfers.removeValue(forKey: id)
+  }
+
+  private func handleRagRepoManifest(id: UUID, manifest: RAGRepoSyncManifest, from peerId: String) async {
+    logger.info("RAG repo sync received manifest for \(manifest.repoIdentifier) from \(peerId)")
+
+    do {
+      let localHashes = try await ragSyncDelegate?.localRepoFileHashes(repoIdentifier: manifest.repoIdentifier) ?? []
+      let remoteHashes = Set(manifest.fileHashes.map(\.hash))
+      let excludeHashes = Array(localHashes.intersection(remoteHashes))
+
+      updateRagTransfer(id) { state in
+        state.status = .preparing
+        state.manifestVersion = "v\(manifest.schemaVersion)"
+        state.repoIdentifier = manifest.repoIdentifier
+      }
+
+      try await connectionManager?.send(
+        .ragRepoDeltaRequest(id: id, excludeFileHashes: excludeHashes),
+        to: peerId
+      )
+      logger.info("RAG repo sync delta request sent: \(excludeHashes.count) hashes excluded, transfer \(id)")
+    } catch {
+      updateRagTransfer(id) { state in
+        state.status = .failed
+        state.errorMessage = "Failed to compute local delta: \(error.localizedDescription)"
+        state.completedAt = Date()
+      }
+      await sendRagArtifactError(transferId: id, to: peerId, message: "Delta negotiation failed: \(error.localizedDescription)")
+    }
+  }
+
+  private func handleRagRepoDeltaRequest(id: UUID, excludeFileHashes: [String], from peerId: String) async {
+    guard let pending = pendingOutgoingRepoSyncTransfers[id] else {
+      await sendRagArtifactError(transferId: id, to: peerId, message: "No pending repo sync transfer for delta request")
+      return
+    }
+
+    guard pending.peerId == peerId else {
+      await sendRagArtifactError(transferId: id, to: peerId, message: "Delta request peer mismatch")
+      return
+    }
+
+    pendingOutgoingRepoSyncTransfers.removeValue(forKey: id)
+    await sendRepoSyncBundleDelta(transferId: id, to: pending, excludeFileHashes: Set(excludeFileHashes))
+  }
+
+  private func sendRepoSyncBundleDelta(
+    transferId: UUID,
+    to pending: PendingOutgoingRepoSyncTransfer,
+    excludeFileHashes: Set<String>
+  ) async {
+    guard let ragSyncDelegate else {
+      await sendRagArtifactError(transferId: transferId, to: pending.peerId, message: "RAG sync delegate not configured")
+      return
+    }
+
+    do {
+      guard let repoBundle = try await ragSyncDelegate.createRepoSyncBundle(
+        repoIdentifier: pending.repoIdentifier,
+        excludeFileHashes: excludeFileHashes
+      ) else {
+        await sendRagArtifactError(transferId: transferId, to: pending.peerId, message: "Repo '\(pending.repoIdentifier)' not found in RAG store")
+        return
+      }
+
+      let jsonData = try JSONEncoder().encode(repoBundle)
+      let chunkSize = 256 * 1024
+      let totalChunks = max(1, Int(ceil(Double(max(1, jsonData.count)) / Double(chunkSize))))
+
+      logger.info("RAG repo sync delta bundle: \(repoBundle.manifest.repoIdentifier), \(jsonData.count) bytes, \(totalChunks) chunks, excluded hashes: \(excludeFileHashes.count)")
+
+      updateRagTransfer(transferId) { state in
+        state.status = .transferring
+        state.totalBytes = jsonData.count
+        state.transferredBytes = 0
+        state.manifestVersion = "v\(repoBundle.manifest.schemaVersion)"
+      }
+
+      let artifactManifest = RAGArtifactManifest(
+        formatVersion: 1,
+        version: "repo-sync-\(repoBundle.manifest.repoIdentifier)",
+        createdAt: Date(),
+        schemaVersion: repoBundle.manifest.schemaVersion,
+        totalBytes: jsonData.count,
+        embeddingCacheCount: 0,
+        lastIndexedAt: nil,
+        files: [RAGArtifactFileInfo(relativePath: "repo-bundle.json", sizeBytes: jsonData.count, sha256: "", modifiedAt: Date())],
+        repos: []
+      )
+
+      try await connectionManager?.send(.ragArtifactsManifest(id: transferId, manifest: artifactManifest), to: pending.peerId)
+
+      var offset = 0
+      var chunkIndex = 0
+      while offset < jsonData.count {
+        let end = min(offset + chunkSize, jsonData.count)
+        let chunkData = jsonData[offset..<end]
+        let base64 = chunkData.base64EncodedString()
+        try await connectionManager?.send(
+          .ragArtifactsChunk(id: transferId, index: chunkIndex, total: totalChunks, data: base64),
+          to: pending.peerId
+        )
+        updateRagTransfer(transferId) { state in
+          state.transferredBytes += chunkData.count
+        }
+        offset = end
+        chunkIndex += 1
+      }
+
+      try await connectionManager?.send(.ragArtifactsComplete(id: transferId), to: pending.peerId)
+      updateRagTransfer(transferId) { state in
+        state.status = .complete
+        state.completedAt = Date()
+      }
+      logger.info("RAG repo sync delta completed: \(transferId) to \(pending.peerName)")
+    } catch {
+      logger.error("RAG repo sync delta failed: \(transferId) to \(pending.peerName) - \(error.localizedDescription)")
+      await sendRagArtifactError(transferId: transferId, to: pending.peerId, message: error.localizedDescription)
+      updateRagTransfer(transferId) { state in
+        state.status = .failed
+        state.errorMessage = error.localizedDescription
+        state.completedAt = Date()
+      }
+    }
   }
 
   private func sendRagArtifactError(transferId: UUID, to peerId: String, message: String) async {
@@ -1653,6 +1753,12 @@ extension SwarmCoordinator: PeerConnectionDelegate {
         prepareIncomingRagTransfer(id: id, from: peerId, direction: direction)
       }
 
+    case .ragRepoManifest(let id, let manifest):
+      Task { await handleRagRepoManifest(id: id, manifest: manifest, from: peerId) }
+
+    case .ragRepoDeltaRequest(let id, let excludeFileHashes):
+      Task { await handleRagRepoDeltaRequest(id: id, excludeFileHashes: excludeFileHashes, from: peerId) }
+
     case .ragArtifactsManifest(let id, let manifest):
       handleRagArtifactsManifest(id: id, manifest: manifest, from: peerId)
 
@@ -1663,6 +1769,7 @@ extension SwarmCoordinator: PeerConnectionDelegate {
       Task { await handleRagArtifactsComplete(id: id, from: peerId) }
 
     case .ragArtifactsError(let id, let message):
+      pendingOutgoingRepoSyncTransfers.removeValue(forKey: id)
       updateRagTransfer(id) { state in
         state.status = .failed
         state.errorMessage = message
