@@ -286,133 +286,32 @@ struct RAGRepositoryCardView: View {
   
   @ViewBuilder
   private var indexSection: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      HStack {
-        Label("Index", systemImage: "folder.fill")
-          .font(.subheadline.weight(.semibold))
-        
-        Spacer()
-        
-        if mcpServer.ragIndexingPath == repo.rootPath {
-          Text("Indexing...")
-            .font(.caption)
-            .foregroundStyle(.blue)
-        } else {
-          Text("✓ Indexed")
-            .font(.caption)
-            .foregroundStyle(.green)
-        }
-      }
-      
-      HStack(spacing: 16) {
-        VStack(alignment: .leading, spacing: 2) {
-          Text("\(repo.fileCount)")
-            .font(.title3.weight(.medium))
-          Text("files")
-            .font(.caption2)
-            .foregroundStyle(.secondary)
-        }
-        
-        VStack(alignment: .leading, spacing: 2) {
-          Text("\(repo.chunkCount)")
-            .font(.title3.weight(.medium))
-          Text("chunks")
-            .font(.caption2)
-            .foregroundStyle(.secondary)
-        }
+    RAGRepositoryIndexSection(
+      state: indexDisplayState,
+      showForceReindexConfirm: $showForceReindexConfirm,
+      onReindex: { await reindexRepository(force: false) },
+      onForceReindexWithAnalysisClear: {
+        await reindexRepository(force: true)
+        try? await mcpServer.clearRagAnalysis(repoPath: repo.rootPath)
+        await refreshAnalysisStatus()
+      },
+      onForceReindexOnly: { await reindexRepository(force: true) }
+    )
+  }
 
-        VStack(alignment: .leading, spacing: 2) {
-          Text("\(repo.embeddingCount)")
-            .font(.title3.weight(.medium))
-            .foregroundStyle(repo.needsEmbedding ? .orange : .primary)
-          Text("embeddings")
-            .font(.caption2)
-            .foregroundStyle(.secondary)
-        }
-        
-        Spacer()
-        
-        Button {
-          Task { await reindexRepository(force: false) }
-        } label: {
-          Label("Re-index", systemImage: "arrow.clockwise")
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-        .disabled(mcpServer.ragIndexingPath != nil)
-        .help("Re-index changed files")
-        
-        Button {
-          showForceReindexConfirm = true
-        } label: {
-          Label("Force Re-index", systemImage: "arrow.clockwise.circle")
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-        .disabled(mcpServer.ragIndexingPath != nil)
-        .help("Force full re-index of all files")
-        .confirmationDialog(
-          "Force Full Reindex?",
-          isPresented: $showForceReindexConfirm,
-          titleVisibility: .visible
-        ) {
-          Button("Reindex + Clear Analysis") {
-            Task {
-              await reindexRepository(force: true)
-              try? await mcpServer.clearRagAnalysis(repoPath: repo.rootPath)
-              await refreshAnalysisStatus()
-            }
-          }
-          Button("Reindex Only") {
-            Task { await reindexRepository(force: true) }
-          }
-          Button("Cancel", role: .cancel) {}
-        } message: {
-          Text("This will re-index all \(repo.fileCount) files. Choose whether to also clear AI analysis.")
-        }
-      }
-
-      // Embedding source info
-      if repo.needsEmbedding {
-        HStack(spacing: 6) {
-          Image(systemName: "exclamationmark.triangle.fill")
-            .foregroundStyle(.orange)
-          VStack(alignment: .leading, spacing: 2) {
-            Text("No local embeddings — synced from peer with different model")
-              .font(.caption)
-              .foregroundStyle(.orange)
-            Text("Vector search unavailable. Re-index to generate embeddings with \(mcpServer.ragStatus?.embeddingModelName ?? "local model").")
-              .font(.caption2)
-              .foregroundStyle(.secondary)
-          }
-        }
-        .padding(8)
-        .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
-      } else if let model = repo.inferredEmbeddingModel {
-        let localDims = mcpServer.ragStatus?.embeddingDimensions ?? 768
-        let repoDims = repo.embeddingDimensions
-        let hasDimMismatch = repoDims != nil && repoDims != localDims
-        let localModel = mcpServer.ragStatus?.embeddingModelName
-        HStack(spacing: 6) {
-          Image(systemName: hasDimMismatch ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-            .foregroundStyle(hasDimMismatch ? .orange : .green)
-          VStack(alignment: .leading, spacing: 2) {
-            Text("Embeddings: \(model)")
-              .font(.caption)
-              .foregroundStyle(hasDimMismatch ? .orange : .green)
-            if hasDimMismatch {
-              Text("Dimension mismatch: repo has \(repoDims ?? 0)d, local default model (\(localModel ?? "unknown")) uses \(localDims)d. Queries use a per-repo embedding profile when available.")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            }
-          }
-        }
-        .padding(8)
-        .background((hasDimMismatch ? Color.orange : Color.green).opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
-      }
-    }
-    .padding(12)
-    .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 8))
+  private var indexDisplayState: RAGRepositoryIndexDisplayState {
+    RAGRepositoryIndexDisplayState(
+      fileCount: repo.fileCount,
+      chunkCount: repo.chunkCount,
+      embeddingCount: repo.embeddingCount,
+      needsEmbedding: repo.needsEmbedding,
+      inferredEmbeddingModel: repo.inferredEmbeddingModel,
+      embeddingDimensions: repo.embeddingDimensions,
+      localEmbeddingDimensions: mcpServer.ragStatus?.embeddingDimensions ?? 768,
+      localEmbeddingModelName: mcpServer.ragStatus?.embeddingModelName,
+      isIndexingCurrentRepo: mcpServer.ragIndexingPath == repo.rootPath,
+      isAnyIndexingActive: mcpServer.ragIndexingPath != nil
+    )
   }
   
   // MARK: - Analysis Section
