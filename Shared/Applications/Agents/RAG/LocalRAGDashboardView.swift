@@ -621,7 +621,7 @@ struct LocalRAGDashboardView: View {
       provider.loadItem(forTypeIdentifier: "public.file-url", options: nil) { item, _ in
         if let data = item as? Data,
            let url = URL(dataRepresentation: data, relativeTo: nil) {
-          DispatchQueue.main.async {
+          Task { @MainActor in
             newRepoPath = url.path
           }
         }
