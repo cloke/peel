@@ -27,7 +27,7 @@ Tools/PeelCLI/.build/debug/peel-mcp tools-call --tool-name rag.status
 
 ### Prereqs
 - Peel built and running with MCP enabled
-- Local RAG model installed (see `Docs/guides/LOCAL_RAG_MODEL_SETUP.md`)
+- Local RAG model available (see `Docs/guides/LOCAL_RAG_GUIDE.md`)
 - MCP tool permissions enabled for `rag.init`, `rag.index`, `rag.search`
 
 ---
@@ -155,4 +155,4 @@ Expected: Core ML asset flags are true and `schemaVersion` is 1.
 
 **"Connection refused"** - MCP server not running. Launch Peel with MCP enabled.
 
-**"Core ML assets missing"** - Follow `LOCAL_RAG_MODEL_SETUP.md` to install models.
+**"Embedding/model missing"** - Follow `LOCAL_RAG_GUIDE.md` to configure Local RAG providers and indexing.
