@@ -54,7 +54,8 @@ public final class SwarmCoordinator {
   // MARK: - Public State
   
   /// Our role in the swarm (set when starting)
-  public private(set) var role: SwarmRole = .worker
+  /// Defaults to .hybrid so we can both execute work and send direct commands to workers.
+  public private(set) var role: SwarmRole = .hybrid
   
   /// Our capabilities
   public private(set) var capabilities: WorkerCapabilities = WorkerCapabilities.current()

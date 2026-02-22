@@ -108,6 +108,28 @@ When the user asks to **start a chain**, **use the MCP CLI** instead of manually
 
 **If local changes exist and this is an MCP chain invocation:** commit and push first (unless user says not to). When the user manually runs build-and-launch, do **not** auto-stash or commit — just build and launch.
 
+### Updating Swarm Workers (IMPORTANT)
+When the user asks to **update the Mac Studio** (or any swarm worker), use the **swarm MCP tools**:
+
+**Preferred flow (LAN):**
+1. Ensure swarm is started: `swarm.start` (defaults to `hybrid` role — can both execute and dispatch)
+2. Check connectivity: `swarm.diagnostics` — verify `peers` array is not empty
+3. Update all workers: `swarm.update-workers` — runs `Tools/self-update.sh` on every connected worker (git pull + rebuild + restart)
+
+**Single worker command:**
+Use `swarm.direct-command` with `command: "git pull origin main"` and optionally `workingDirectory` (auto-detected if omitted).
+To pull submodules/local packages too: `command: "git pull origin main && cd 'Local Packages/RAGCore' && git pull origin main"`
+
+**Requirements:**
+- This machine must be `brain` or `hybrid` role (hybrid is now the default)
+- Target worker must be TCP-connected (same LAN, visible in `swarm.diagnostics` → `peers`)
+- If `peers` is empty but `discovered` has entries, the worker is Bonjour-visible but not TCP-connected — it may need to be running Peel with swarm active
+
+**Do NOT:**
+- Use `swarm.firestore.submit-task` for git pull (it dispatches an LLM agent chain — overkill)
+- Use `swarm.dispatch` for simple shell commands (it's for chain execution)
+- Use `terminal.run` — that runs locally, not on the remote worker
+
 ### Agents MUST Always Work in Worktrees (CRITICAL)
 All agent/chain work **must** happen inside a git worktree, never in the main repository checkout.
 
