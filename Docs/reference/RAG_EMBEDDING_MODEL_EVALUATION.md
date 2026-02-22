@@ -1,7 +1,7 @@
 # RAG Embedding Model Evaluation
 
 **Date:** 2026-01-25  
-**Updated:** 2026-01-26 (MLX implementation tested, quantized model bug found)  
+**Updated:** 2026-02-22 (Qwen re-enabled after mlx-swift 0.30.3 fix; dimension-aware search)  
 **Test Corpus:** tio-front-end (Ember/TypeScript, 1,846 files, 4,043 chunks)  
 **Test Type:** Vector semantic search for refactoring patterns
 
@@ -11,13 +11,13 @@
 
 | Provider | Vector Search Quality | Speed | Recommended Use |
 |----------|----------------------|-------|-----------------|
-| **MLX nomic-embed-text-v1.5** | ✅ Good | ~5 emb/s | **Current default (macOS)** |
+| **MLX Qwen3-Embedding-0.6B-4bit** | ✅ Good | ~5 emb/s | **Default for 24GB+ (macOS)** |
+| **MLX nomic-embed-text-v1.5** | ✅ Good | ~5 emb/s | **Default for 16-24GB (macOS)** |
 | **Text Search (any)** | ✅ Excellent | Fast | **Primary method for code search** |
 | CodeBERT (CoreML) | ⚠️ Poor | ~90s index | Legacy fallback |
 | Apple NLEmbedding | ❌ Very Poor | ~10s index | Not for code |
-| ⚠️ MLX Qwen3-4bit | 🔴 CRASHES | N/A | Disabled - GPU bugs |
 
-**Key Finding:** For code search, **text/keyword search significantly outperforms vector search** with local models tested so far. However, **MLX with nomic-embed-text-v1.5** now provides reasonable semantic search as a complement to text search.
+**Key Finding:** For code search, **text/keyword search significantly outperforms vector search** with local models tested so far. However, **MLX with nomic or Qwen** provides reasonable semantic search as a complement to text search. Dimension-aware search handles cross-machine synced repos automatically.
 
 ---
 
@@ -31,13 +31,23 @@
 - Auto-selects model tier based on available memory
 - **Bug Fix:** Mean pooling for correct embedding dimensions
 
-### Known Issues
+### Qwen Crash Fix (Feb 2026)
 
-⚠️ **Qwen3-Embedding-0.6B-4bit-DWQ CRASHES** (Issue #163)
-- The quantized 4-bit model causes Metal GPU command buffer errors
-- Crash in `mlx::core::gpu::check_error(MTL::CommandBuffer*)`
-- Stack: `QuantizedMatmul::eval_gpu` → `MetalAllocator::malloc`
-- **Workaround:** Force medium tier (nomic) for all machines until MLX-swift fixes this
+The Qwen3-Embedding-0.6B-4bit-DWQ model previously crashed due to a Metal GPU race condition in mlx-swift's `clearCache`. This was fixed in **mlx-swift 0.30.3** ([PR #331: Fix race condition in clearCache causing Metal crash](https://github.com/ml-explore/mlx-swift/pull/331)).
+
+**Qwen is now re-enabled** for machines with 24GB+ RAM. The `MLXEmbeddingProvider.recommendedModel()` function returns `.large` (Qwen, 1024d) for these machines.
+
+### Dimension-Aware Search (Feb 2026)
+
+When repos are synced between machines with different embedding models (e.g., Mac Studio using Qwen 1024d, laptop using nomic 768d), the vector search now:
+
+1. **Detects dimension mismatch** between the local provider and stored embeddings
+2. **Creates a temporary provider** matching the stored embedding dimensions
+3. **Generates the query embedding** with the matching model
+4. **Calls `searchVectorWithEmbedding()`** in RAGCore with the pre-computed vector
+5. **Falls back to text search** if no matching model is available locally
+
+This is implemented in `MCPServerService+ServerCore.swift` via `vectorSearchWithDimensionCheck()`.
 
 ### Architecture
 
@@ -58,8 +68,8 @@ Native MLX inference (CPU + GPU + Neural Engine)
 | Tier | RAM | Model | Dims | Status | Notes |
 |------|-----|-------|------|--------|-------|
 | **Small** | 8GB+ | all-MiniLM-L6-v2 | 384 | ✅ Works | Fast, general purpose |
-| **Medium** | 16GB+ | nomic-embed-text-v1.5 | 768 | ✅ Works | **Current default** |
-| **Large** | 24GB+ | Qwen3-Embedding-0.6B-4bit | 1024 | 🔴 Crashes | Disabled until MLX fix |
+| **Medium** | 16GB+ | nomic-embed-text-v1.5 | 768 | ✅ Works | Good balance |
+| **Large** | 24GB+ | Qwen3-Embedding-0.6B-4bit | 1024 | ✅ Works | Best quality, code-aware |
 
 ### Model/Machine Matrix
 
@@ -67,10 +77,8 @@ Native MLX inference (CPU + GPU + Neural Engine)
 |----------------|----------------|------------|--------|
 | < 12GB | all-MiniLM-L6-v2 | 384 | ✅ |
 | 12-24GB | nomic-embed-text-v1.5 | 768 | ✅ |
-| 24GB+ | nomic-embed-text-v1.5 | 768 | ✅ (forced) |
-| 256GB (planned) | nomic-embed-text-v1.5 | 768 | 🔄 Test tomorrow |
-
-**TODO:** Re-enable Qwen3 for 24GB+ machines once MLX-swift quantized model bug is fixed.
+| 24GB+ | Qwen3-Embedding-0.6B-4bit | 1024 | ✅ |
+| 256GB (Mac Studio) | Qwen3-Embedding-0.6B-4bit | 1024 | ✅ |
 
 ### Provider Priority (Auto Mode)
 
@@ -245,9 +253,9 @@ MLXEmbedders supports these models out of the box (no conversion needed):
 
 | Model | HuggingFace ID | Size | Status |
 |-------|----------------|------|--------|
-| **Qwen3-Embedding-0.6B-4bit** | mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ | ~300MB | ✅ Default (large tier) |
-| nomic-embed-text-v1.5 | nomic-ai/nomic-embed-text-v1.5 | ~500MB | ✅ Medium tier |
-| all-MiniLM-L6-v2 | sentence-transformers/all-MiniLM-L6-v2 | ~100MB | ✅ Small tier |
+| **Qwen3-Embedding-0.6B-4bit** | mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ | ~300MB | ✅ Default (large tier, 24GB+) |
+| nomic-embed-text-v1.5 | nomic-ai/nomic-embed-text-v1.5 | ~500MB | ✅ Medium tier (16-24GB) |
+| all-MiniLM-L6-v2 | sentence-transformers/all-MiniLM-L6-v2 | ~100MB | ✅ Small tier (<16GB) |
 
 ### Adding More Models
 
@@ -300,16 +308,19 @@ curl -X POST -H 'Content-Type: application/json' \
 2. ✅ Added model tiering (small/medium/large based on RAM)
 3. ✅ Native Swift, no Python dependencies
 4. ✅ Document vector search as experimental
+5. ✅ Re-enabled Qwen3 for 24GB+ after mlx-swift 0.30.3 fix
+6. ✅ Dimension-aware search for cross-machine synced repos
+7. ✅ RAGCore `searchVectorWithEmbedding()` for pre-computed query vectors
 
-### Short Term (Now)
-1. Test MLX Qwen3-Embedding quality vs CoreML CodeBERT
+### Short Term
+1. Test Qwen3 search quality vs nomic on code corpora
 2. Exclude lock files from indexing (pnpm-lock.yaml, package-lock.json)
-3. Update `rag.config` MCP tool to support `provider=mlx`
+3. Repo path remapping for synced repos (DB stores source machine paths)
 
-### Medium Term (Next Sprint)
+### Medium Term
 1. Add file exclusion patterns to indexer
 2. Improve chunking to respect code boundaries (functions, classes)
-3. Add hybrid search (text + vector reranking)
+3. Remote query embedding via Mac Studio (avoid downloading large models locally)
 4. Test additional MLX models (jina if converted)
 
 ### Long Term

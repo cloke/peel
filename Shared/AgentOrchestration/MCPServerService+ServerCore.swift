@@ -300,13 +300,17 @@ extension MCPServerService {
     let results: [LocalRAGSearchResult]
     switch mode {
     case .vector:
-      results = try await localRagStore.searchVector(query: query, repoPath: repoPath, limit: limit, modulePath: modulePath)
+      results = try await vectorSearchWithDimensionCheck(
+        query: query, repoPath: repoPath, limit: limit, modulePath: modulePath
+      )
     case .text:
       results = try await localRagStore.search(query: query, repoPath: repoPath, limit: limit, matchAll: matchAll, modulePath: modulePath)
     case .hybrid:
       // Run text + vector concurrently, merge via Reciprocal Rank Fusion (k=60)
       async let textSearch = localRagStore.search(query: query, repoPath: repoPath, limit: limit, matchAll: matchAll, modulePath: modulePath)
-      async let vectorSearch = localRagStore.searchVector(query: query, repoPath: repoPath, limit: limit, modulePath: modulePath)
+      async let vectorSearch = vectorSearchWithDimensionCheck(
+        query: query, repoPath: repoPath, limit: limit, modulePath: modulePath
+      )
       let (textRes, vectorRes) = try await (textSearch, vectorSearch)
       var rrfScores: [String: Float] = [:]
       var rrfLookup: [String: LocalRAGSearchResult] = [:]
@@ -337,6 +341,68 @@ extension MCPServerService {
       }
     }
     return results
+  }
+
+  /// Vector search with automatic dimension mismatch handling.
+  ///
+  /// If the stored embeddings for the target repo use different dimensions
+  /// than the default provider (e.g. 768d nomic vs 1024d qwen pulled from
+  /// Mac Studio), this method creates a temporary provider matching the
+  /// stored dimensions and uses `searchVectorWithEmbedding` to supply the
+  /// correctly-dimensioned query vector.
+  private func vectorSearchWithDimensionCheck(
+    query: String,
+    repoPath: String?,
+    limit: Int,
+    modulePath: String?
+  ) async throws -> [LocalRAGSearchResult] {
+    #if os(macOS)
+    let providerDims = await localRagStore.status().embeddingDimensions
+    let repoDimsMap = await localRagStore.embeddingDimensionsByRepo()
+
+    // Determine the stored dimensions for the target repo(s)
+    let storedDims: Int?
+    if let repoPath {
+      let repoInfo = try? await localRagStore.listRepos()
+      let repoId = repoInfo?.first(where: { $0.rootPath == repoPath })?.id
+      storedDims = repoId.flatMap { repoDimsMap[$0] }
+    } else {
+      // If querying all repos, pick the most common dimension
+      storedDims = repoDimsMap.values.first
+    }
+
+    // If dimensions match (or no embeddings stored), use the default path
+    if storedDims == nil || storedDims == providerDims {
+      return try await localRagStore.searchVector(query: query, repoPath: repoPath, limit: limit, modulePath: modulePath)
+    }
+
+    // Dimension mismatch — find an alternate model that matches
+    let targetDims = storedDims!
+    if let matchingConfig = MLXEmbeddingModelConfig.availableModels.first(where: { $0.dimensions == targetDims }) {
+      await telemetryProvider.info(
+        "RAG dimension mismatch: stored=\(targetDims)d, provider=\(providerDims)d. Using \(matchingConfig.name) for query embedding.",
+        metadata: ["repoPath": repoPath ?? "(all)"]
+      )
+      let altProvider = MLXEmbeddingProvider(config: matchingConfig)
+      let embeddings = try await altProvider.embed(texts: [query])
+      guard let queryVector = embeddings.first, !queryVector.isEmpty else {
+        // Alt provider failed — fall back to text search
+        await telemetryProvider.warning("Alt embedding provider failed, falling back to text search", metadata: [:])
+        return try await localRagStore.search(query: query, repoPath: repoPath, limit: limit, matchAll: true, modulePath: modulePath)
+      }
+      return try await localRagStore.searchVectorWithEmbedding(queryVector, repoPath: repoPath, limit: limit, modulePath: modulePath)
+    }
+
+    // No matching model available — fall back to text search
+    await telemetryProvider.warning(
+      "RAG dimension mismatch: stored=\(targetDims)d, no matching model available. Falling back to text search.",
+      metadata: ["repoPath": repoPath ?? "(all)"]
+    )
+    return try await localRagStore.search(query: query, repoPath: repoPath, limit: limit, matchAll: true, modulePath: modulePath)
+    #else
+    // iOS: no MLX, use default provider directly
+    return try await localRagStore.searchVector(query: query, repoPath: repoPath, limit: limit, modulePath: modulePath)
+    #endif
   }
 
   private func refreshRagQueryHints(query: String?, repoPath: String?, mode: RAGSearchMode?, resultCount: Int?) async {

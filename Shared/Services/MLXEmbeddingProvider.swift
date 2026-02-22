@@ -88,12 +88,11 @@ struct MLXEmbeddingModelConfig: Sendable {
     let availableMemoryGB = getAvailableMemoryGB()
     let tier: MLXEmbeddingModelTier
     
-    // TEMPORARY: Force medium tier to avoid quantized model GPU crashes
-    // The Qwen3-4bit-DWQ model causes MLX Metal command buffer errors
-    // See: https://github.com/ml-explore/mlx-swift/issues
-    // TODO: Re-enable large tier once MLX quantized model bug is fixed
+    // Re-enabled large tier (Qwen3-Embedding) for 24GB+ machines.
+    // The Metal GPU crash (QuantizedMatmul::eval_gpu) was caused by a race
+    // condition in MLX clearCache, fixed in mlx-swift 0.30.3 (#331).
     if availableMemoryGB >= 24 {
-      tier = .medium  // Was .large - crashes with quantized models
+      tier = .large
     } else if availableMemoryGB >= 12 {
       tier = .medium
     } else {

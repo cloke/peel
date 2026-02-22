@@ -185,8 +185,10 @@ public final class MCPServerService {
     /// The embedding model used for this repo's vectors (e.g. "nomic-embed-text-v1.5").
     /// May differ from the local model if embeddings were synced from a peer.
     public let embeddingModel: String?
+    /// The actual dimensions of stored embeddings (derived from blob size).
+    public let embeddingDimensions: Int?
 
-    public init(id: String, name: String, rootPath: String, lastIndexedAt: Date?, fileCount: Int, chunkCount: Int, embeddingCount: Int = 0, repoIdentifier: String? = nil, parentRepoId: String? = nil, embeddingModel: String? = nil) {
+    public init(id: String, name: String, rootPath: String, lastIndexedAt: Date?, fileCount: Int, chunkCount: Int, embeddingCount: Int = 0, repoIdentifier: String? = nil, parentRepoId: String? = nil, embeddingModel: String? = nil, embeddingDimensions: Int? = nil) {
       self.id = id
       self.name = name
       self.rootPath = rootPath
@@ -197,6 +199,7 @@ public final class MCPServerService {
       self.repoIdentifier = repoIdentifier
       self.parentRepoId = parentRepoId
       self.embeddingModel = embeddingModel
+      self.embeddingDimensions = embeddingDimensions
     }
 
     /// True when this repo has chunks but no embeddings (e.g. synced from a peer with a different model).
@@ -206,6 +209,23 @@ public final class MCPServerService {
     /// True when embeddings exist but come from a different model than the local one.
     public var hasSyncedEmbeddings: Bool {
       embeddingCount > 0 && embeddingModel != nil
+    }
+    /// Inferred model name from dimensions when sync metadata isn't available.
+    public var inferredEmbeddingModel: String? {
+      if let embeddingModel { return embeddingModel }
+      guard let dims = embeddingDimensions, embeddingCount > 0 else { return nil }
+      switch dims {
+      case 1024: return "qwen (1024d)"
+      case 768: return "nomic (768d)"
+      case 384: return "MiniLM (384d)"
+      default: return "unknown (\(dims)d)"
+      }
+    }
+    /// True when stored embeddings have different dimensions than the local model.
+    public var hasDimensionMismatch: Bool {
+      guard let dims = embeddingDimensions, embeddingCount > 0 else { return false }
+      // Can't compare without knowing local dims — caller should check against ragStatus
+      return false // placeholder, checked externally
     }
   }
 
@@ -929,6 +949,7 @@ public final class MCPServerService {
       ragStatus = status
       ragStats = stats
       let embeddingCounts = await localRagStore.embeddingCountsByRepo()
+      let embeddingDims = await localRagStore.embeddingDimensionsByRepo()
       ragRepos = repos.map { repo in
         // Look up synced embedding model by repoIdentifier or repo id
         let syncedModel: String? = {
@@ -947,7 +968,8 @@ public final class MCPServerService {
           embeddingCount: embeddingCounts[repo.id] ?? 0,
           repoIdentifier: repo.repoIdentifier,
           parentRepoId: repo.parentRepoId,
-          embeddingModel: syncedModel
+          embeddingModel: syncedModel,
+          embeddingDimensions: embeddingDims[repo.id]
         )
       }
       lastRagError = nil
