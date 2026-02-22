@@ -12,11 +12,32 @@ import MCPCore
 public enum TemplateCategory: String, Codable, CaseIterable, Sendable {
   case core
   case specialized
+  case yolo
   
   public var displayName: String {
     switch self {
     case .core: return "Core Templates"
     case .specialized: return "Specialized Templates"
+    case .yolo: return "Yolo Templates"
+    }
+  }
+
+  public var description: String {
+    switch self {
+    case .core:
+      return "General-purpose templates for common coding workflows"
+    case .specialized:
+      return "Task-specific templates for indexing, review, and guided execution"
+    case .yolo:
+      return "Run coding agents with full autonomy inside an isolated VM — safe sandbox for untrusted execution"
+    }
+  }
+
+  public var iconName: String {
+    switch self {
+    case .core: return "square.grid.2x2"
+    case .specialized: return "slider.horizontal.3"
+    case .yolo: return "shield.checkmark"
     }
   }
 }
@@ -261,6 +282,10 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
   private static let vmQuickTaskId           = UUID(uuidString: "A0000001-000A-4000-8000-00000000000A")!
   private static let vmFullBuildId           = UUID(uuidString: "A0000001-000B-4000-8000-00000000000B")!
   private static let vmEmberBuildId          = UUID(uuidString: "A0000001-000C-4000-8000-00000000000C")!
+  private static let yoloAgentAnyCLIId       = UUID(uuidString: "A0000001-000D-4000-8000-00000000000D")!
+  private static let yoloReviewId            = UUID(uuidString: "A0000001-000E-4000-8000-00000000000E")!
+  private static let yoloCopilotId           = UUID(uuidString: "A0000001-000F-4000-8000-00000000000F")!
+  private static let yoloClaudeId            = UUID(uuidString: "A0000001-0010-4000-8000-000000000010")!
 
   /// Built-in templates
   public static var builtInTemplates: [ChainTemplate] {
@@ -576,6 +601,114 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         category: .specialized,
         executionEnvironment: .linux,
         toolchain: .ember
+      ),
+
+      // YOLO TEMPLATES
+
+      // 13. Yolo Agent (Any CLI): single autonomous agent step in Linux VM
+      ChainTemplate(
+        id: yoloAgentAnyCLIId,
+        name: "Yolo Agent (Any CLI)",
+        description: "Run a fully autonomous coding agent inside an isolated Linux VM. Specify agent binary and flags in your task prompt.",
+        steps: [
+          AgentStepTemplate(
+            role: .implementer,
+            model: .bestStandard,
+            name: "VM Yolo Agent",
+            customInstructions: """
+              Execute the requested coding agent fully inside the Linux VM workspace.
+              Treat the user's prompt as the source of truth for which CLI binary and flags to use.
+              Prefer full-autonomy flags when provided, and complete the task end-to-end inside /mnt/workspace.
+              """
+          )
+        ],
+        isBuiltIn: true,
+        category: .yolo,
+        executionEnvironment: .linux,
+        toolchain: .fullStack
+      ),
+
+      // 14. Yolo + Review: autonomous VM agent + gates + host review
+      ChainTemplate(
+        id: yoloReviewId,
+        name: "Yolo + Review",
+        description: "Autonomous VM execution followed by build/test gates and reviewer feedback (Cost: Standard)",
+        steps: [
+          AgentStepTemplate(
+            role: .implementer,
+            model: .bestStandard,
+            name: "VM Yolo Agent",
+            customInstructions: """
+              Execute the coding task autonomously inside the Linux VM.
+              Make all required code changes in /mnt/workspace before handing off to verification gates.
+              """
+          ),
+          AgentStepTemplate(
+            role: .implementer,
+            model: .bestFree,
+            name: "VM Build Gate",
+            stepType: .gate,
+            command: "cd /mnt/workspace && swift build 2>&1"
+          ),
+          AgentStepTemplate(
+            role: .implementer,
+            model: .bestFree,
+            name: "VM Test Gate",
+            stepType: .gate,
+            command: "cd /mnt/workspace && swift test 2>&1"
+          ),
+          AgentStepTemplate(role: .reviewer, model: .bestFree, name: "Reviewer")
+        ],
+        isBuiltIn: true,
+        category: .yolo,
+        executionEnvironment: .linux,
+        toolchain: .fullStack
+      ),
+
+      // 15. Yolo Copilot: pre-configured autonomous Copilot CLI usage in VM
+      ChainTemplate(
+        id: yoloCopilotId,
+        name: "Yolo Copilot",
+        description: "Pre-configured for Copilot CLI autonomous mode in isolated Linux VM (Cost: Standard)",
+        steps: [
+          AgentStepTemplate(
+            role: .implementer,
+            model: .bestStandard,
+            name: "VM Copilot Yolo",
+            customInstructions: """
+              Run Copilot CLI inside the VM with full autonomy.
+              Use flags equivalent to: --allow-all-tools --yolo.
+              Complete the user's task end-to-end in /mnt/workspace and summarize changed files.
+              """
+          )
+        ],
+        isBuiltIn: true,
+        category: .yolo,
+        executionEnvironment: .linux,
+        toolchain: .node
+      ),
+
+      // 16. Yolo Claude: pre-configured autonomous Claude CLI usage in VM
+      ChainTemplate(
+        id: yoloClaudeId,
+        name: "Yolo Claude",
+        description: "Pre-configured for Claude CLI with skip-permissions mode in isolated Linux VM (Cost: Standard)",
+        steps: [
+          AgentStepTemplate(
+            role: .implementer,
+            model: .claudeSonnet45,
+            name: "VM Claude Yolo",
+            customInstructions: """
+              Run Claude CLI inside the VM in full-autonomy mode.
+              Use flags equivalent to: --dangerously-skip-permissions.
+              Complete all requested code changes in /mnt/workspace before finishing.
+              """
+          )
+        ],
+        isBuiltIn: true,
+        category: .yolo,
+        executionEnvironment: .linux,
+        toolchain: .node
       )
     ]
 
