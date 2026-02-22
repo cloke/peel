@@ -1084,7 +1084,17 @@ public final class SwarmCoordinator {
       if manifest.version.hasPrefix("repo-sync-") {
         let jsonData = try Data(contentsOf: transfer.tempURL)
         let repoBundle = try JSONDecoder().decode(RAGRepoExportBundle.self, from: jsonData)
-        let result = try await ragSyncDelegate.applyRepoSyncBundle(repoBundle, localRepoPath: nil)
+        // Resolve local repo path via RepoRegistry (fixes nil path bug)
+        let localRepoPath: String? = await {
+          let identifier = repoBundle.manifest.repoIdentifier
+          if let path = await RepoRegistry.shared.getLocalPath(for: identifier),
+             FileManager.default.fileExists(atPath: path) {
+            return path
+          }
+          return nil
+        }()
+        // Force import embeddings from peer — peer-to-peer syncs are from a more-capable machine
+        let result = try await ragSyncDelegate.applyRepoSyncBundle(repoBundle, localRepoPath: localRepoPath, forceImportEmbeddings: true)
         if result.needsLocalReembedding {
           let remoteModel = result.remoteEmbeddingModel ?? "unknown"
           let skipped = result.embeddingsSkippedModelMismatch

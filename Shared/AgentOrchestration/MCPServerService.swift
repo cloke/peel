@@ -182,8 +182,11 @@ public final class MCPServerService {
     public let embeddingCount: Int
     public let repoIdentifier: String?
     public let parentRepoId: String?
+    /// The embedding model used for this repo's vectors (e.g. "nomic-embed-text-v1.5").
+    /// May differ from the local model if embeddings were synced from a peer.
+    public let embeddingModel: String?
 
-    public init(id: String, name: String, rootPath: String, lastIndexedAt: Date?, fileCount: Int, chunkCount: Int, embeddingCount: Int = 0, repoIdentifier: String? = nil, parentRepoId: String? = nil) {
+    public init(id: String, name: String, rootPath: String, lastIndexedAt: Date?, fileCount: Int, chunkCount: Int, embeddingCount: Int = 0, repoIdentifier: String? = nil, parentRepoId: String? = nil, embeddingModel: String? = nil) {
       self.id = id
       self.name = name
       self.rootPath = rootPath
@@ -193,12 +196,17 @@ public final class MCPServerService {
       self.embeddingCount = embeddingCount
       self.repoIdentifier = repoIdentifier
       self.parentRepoId = parentRepoId
+      self.embeddingModel = embeddingModel
     }
 
     /// True when this repo has chunks but no embeddings (e.g. synced from a peer with a different model).
     public var needsEmbedding: Bool { chunkCount > 0 && embeddingCount == 0 }
     /// True when some but not all chunks have embeddings.
     public var hasPartialEmbeddings: Bool { embeddingCount > 0 && embeddingCount < chunkCount }
+    /// True when embeddings exist but come from a different model than the local one.
+    public var hasSyncedEmbeddings: Bool {
+      embeddingCount > 0 && embeddingModel != nil
+    }
   }
 
   // MARK: - RAG Analysis State (per repo)
@@ -534,6 +542,9 @@ public final class MCPServerService {
   var ragSessionEvents: [RAGSessionEvent] = []
   var ragQueryHints: [RAGQueryHint] = []
   var ragRepos: [RAGRepoInfo] = []
+  /// Tracks the embedding model used for each repo (by repoIdentifier) when synced from a peer.
+  /// Populated from import results; persists across refreshes.
+  var ragSyncedEmbeddingModels: [String: String] = [:]
   var ragIndexingPath: String?
   var ragIndexProgress: LocalRAGIndexProgress?
   var ragIndexingTask: Task<LocalRAGIndexReport, Error>?
@@ -919,7 +930,14 @@ public final class MCPServerService {
       ragStats = stats
       let embeddingCounts = await localRagStore.embeddingCountsByRepo()
       ragRepos = repos.map { repo in
-        RAGRepoInfo(
+        // Look up synced embedding model by repoIdentifier or repo id
+        let syncedModel: String? = {
+          if let identifier = repo.repoIdentifier, let model = ragSyncedEmbeddingModels[identifier] {
+            return model
+          }
+          return ragSyncedEmbeddingModels[repo.id]
+        }()
+        return RAGRepoInfo(
           id: repo.id,
           name: repo.name,
           rootPath: repo.rootPath,
@@ -928,7 +946,8 @@ public final class MCPServerService {
           chunkCount: repo.chunkCount,
           embeddingCount: embeddingCounts[repo.id] ?? 0,
           repoIdentifier: repo.repoIdentifier,
-          parentRepoId: repo.parentRepoId
+          parentRepoId: repo.parentRepoId,
+          embeddingModel: syncedModel ?? ragStatus?.embeddingModelName
         )
       }
       lastRagError = nil

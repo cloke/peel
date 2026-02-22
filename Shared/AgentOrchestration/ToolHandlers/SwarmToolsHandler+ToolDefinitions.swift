@@ -577,6 +577,10 @@ extension SwarmToolsHandler {
             "fullDB": [
               "type": "boolean",
               "description": "Force legacy full-DB sync (replaces entire database). Defaults to false. NOT RECOMMENDED — overwrites all repos and embeddings."
+            ],
+            "forceEmbeddings": [
+              "type": "boolean",
+              "description": "Import embeddings from remote even if the embedding model differs from local. Defaults to true — use remote embeddings as-is. Set false to skip embeddings and re-generate locally."
             ]
           ],
           "required": ["swarmId", "artifactId", "repoPath"]

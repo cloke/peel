@@ -464,6 +464,7 @@ extension SwarmToolsHandler {
     }
     
     let forceFullDB = (arguments["fullDB"] as? Bool) ?? false
+    let forceEmbeddings = (arguments["forceEmbeddings"] as? Bool) ?? true  // Default true: import remote embeddings
     let service = FirebaseService.shared
     let ragStore = LocalRAGStore.shared
     
@@ -482,7 +483,7 @@ extension SwarmToolsHandler {
       if let repoIdentifier, !forceFullDB {
         let jsonData = try await service.pullRAGRepoBundle(swarmId: swarmId, artifactId: artifactId)
         let repoBundle = try JSONDecoder().decode(RAGRepoExportBundle.self, from: jsonData)
-        let result = try await ragStore.importRepoBundle(repoBundle, localRepoPath: repoPath)
+        let result = try await ragStore.importRepoBundle(repoBundle, localRepoPath: repoPath, forceImportEmbeddings: forceEmbeddings)
         var resultDict: [String: Any] = [
           "success": true,
           "swarmId": swarmId,

@@ -95,9 +95,41 @@ extension MCPServerService: RAGArtifactSyncDelegate {
     return bundle
   }
 
-  func applyRepoSyncBundle(_ bundle: RAGRepoExportBundle, localRepoPath: String?) async throws -> RAGRepoImporter.ImportResult {
-    logger.info("RAG repo sync: importing '\(bundle.manifest.repoIdentifier)', \(bundle.files.count) files")
-    let result = try await localRagStore.importRepoBundle(bundle, localRepoPath: localRepoPath)
+  func applyRepoSyncBundle(_ bundle: RAGRepoExportBundle, localRepoPath: String?, forceImportEmbeddings: Bool) async throws -> RAGRepoImporter.ImportResult {
+    // Resolve local repo path: use provided path, or look up via RepoRegistry, or discover
+    let resolvedPath: String?
+    if let localRepoPath {
+      resolvedPath = localRepoPath
+    } else if !bundle.manifest.repoIdentifier.isEmpty {
+      let identifier = bundle.manifest.repoIdentifier
+      // Try RepoRegistry first
+      if let registryPath = await RepoRegistry.shared.getLocalPath(for: identifier),
+         FileManager.default.fileExists(atPath: registryPath) {
+        resolvedPath = registryPath
+        logger.info("RAG repo sync: resolved '\(identifier)' to '\(registryPath)' via RepoRegistry")
+      } else {
+        // Fall back to filesystem discovery
+        resolvedPath = await localRagStore.discoverRepoPathPublic(for: identifier)
+        if let discovered = resolvedPath {
+          logger.info("RAG repo sync: discovered '\(identifier)' at '\(discovered)' via filesystem scan")
+          await RepoRegistry.shared.registerRepo(at: discovered)
+        } else {
+          logger.warning("RAG repo sync: could not resolve local path for '\(identifier)' — using remote path")
+        }
+      }
+    } else {
+      resolvedPath = nil
+    }
+
+    logger.info("RAG repo sync: importing '\(bundle.manifest.repoIdentifier)', \(bundle.files.count) files, localPath: \(resolvedPath ?? "nil"), forceEmbeddings: \(forceImportEmbeddings)")
+    let result = try await localRagStore.importRepoBundle(bundle, localRepoPath: resolvedPath, forceImportEmbeddings: forceImportEmbeddings)
+
+    // Record the synced embedding model for UX display
+    if let remoteModel = result.remoteEmbeddingModel, result.embeddingsImported > 0 {
+      let identifier = bundle.manifest.repoIdentifier
+      self.ragSyncedEmbeddingModels[identifier] = remoteModel
+    }
+
     if result.needsLocalReembedding {
       let remoteModel = result.remoteEmbeddingModel ?? "unknown"
       let skipped = result.embeddingsSkippedModelMismatch
