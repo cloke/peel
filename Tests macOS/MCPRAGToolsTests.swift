@@ -13,18 +13,27 @@ import XCTest
 @MainActor
 final class MCPRAGToolsTests: XCTestCase {
 
-  var mcpServer: MCPServerService!
+  var mcpServer: MCPServerService?
 
   override func setUp() async throws {
     try await super.setUp()
-    mcpServer = MCPServerService()
+    mcpServer = nil
+  }
+
+  private func server() -> MCPServerService {
+    if let mcpServer {
+      return mcpServer
+    }
+    let created = MCPServerService(config: MCPFileConfig())
+    mcpServer = created
+    return created
   }
 
   // MARK: - Tool Availability Tests
 
   /// Test that rag.analyze tool is registered
   func testRAGAnalyzeToolExists() {
-    let allTools = mcpServer.allToolDefinitions
+    let allTools = server().allToolDefinitions
 
     let ragAnalyzeTool = allTools.first { $0.name == "rag.analyze" }
     XCTAssertNotNil(ragAnalyzeTool, "rag.analyze tool should be registered")
@@ -44,13 +53,13 @@ final class MCPRAGToolsTests: XCTestCase {
 
   /// Test that rag.analyze.status tool is registered
   func testRAGAnalyzeStatusToolExists() {
-    let statusTool = mcpServer.allToolDefinitions.first { $0.name == "rag.analyze.status" }
+    let statusTool = server().allToolDefinitions.first { $0.name == "rag.analyze.status" }
     XCTAssertNotNil(statusTool, "rag.analyze.status tool should be registered")
   }
 
   /// Test that rag.index tool is registered
   func testRAGIndexToolExists() {
-    let indexTool = mcpServer.allToolDefinitions.first { $0.name == "rag.index" }
+    let indexTool = server().allToolDefinitions.first { $0.name == "rag.index" }
     XCTAssertNotNil(indexTool, "rag.index tool should be registered")
 
     if let tool = indexTool {
@@ -63,14 +72,14 @@ final class MCPRAGToolsTests: XCTestCase {
 
   /// Test that rag.search tool is registered
   func testRAGSearchToolExists() {
-    let searchTool = mcpServer.allToolDefinitions.first { $0.name == "rag.search" }
+    let searchTool = server().allToolDefinitions.first { $0.name == "rag.search" }
     XCTAssertNotNil(searchTool, "rag.search tool should be registered")
   }
 
   /// Test that repos.delete tool is registered
   /// Regression: Tool was added to fix database cleanup
   func testReposDeleteToolExists() {
-    let deleteTool = mcpServer.allToolDefinitions.first { $0.name == "repos.delete" }
+    let deleteTool = server().allToolDefinitions.first { $0.name == "repos.delete" }
     XCTAssertNotNil(deleteTool, "repos.delete tool should be registered")
 
     if let tool = deleteTool {
@@ -79,11 +88,21 @@ final class MCPRAGToolsTests: XCTestCase {
     }
   }
 
+  /// Test that swarm.reindex tool is registered
+  func testSwarmReindexToolExists() {
+    let reindexTool = server().allToolDefinitions.first { $0.name == "swarm.reindex" }
+    XCTAssertNotNil(reindexTool, "swarm.reindex tool should be registered")
+
+    if let tool = reindexTool {
+      XCTAssertTrue(tool.isMutating, "swarm.reindex should be mutating")
+    }
+  }
+
   // MARK: - Parameter Validation Tests
 
   /// Test that rag.analyze has expected parameters in its schema
   func testRAGAnalyzeParameterSchema() {
-    let ragAnalyzeTool = mcpServer.allToolDefinitions.first { $0.name == "rag.analyze" }
+    let ragAnalyzeTool = server().allToolDefinitions.first { $0.name == "rag.analyze" }
 
     guard let tool = ragAnalyzeTool,
       let schema = tool.inputSchema as? [String: Any],
@@ -99,7 +118,7 @@ final class MCPRAGToolsTests: XCTestCase {
 
   /// Test that rag.search has expected parameters
   func testRAGSearchParameterSchema() {
-    let searchTool = mcpServer.allToolDefinitions.first { $0.name == "rag.search" }
+    let searchTool = server().allToolDefinitions.first { $0.name == "rag.search" }
 
     guard let tool = searchTool,
       let schema = tool.inputSchema as? [String: Any],
@@ -115,7 +134,7 @@ final class MCPRAGToolsTests: XCTestCase {
 
   /// Test repos.delete parameter schema
   func testReposDeleteParameterSchema() {
-    let deleteTool = mcpServer.allToolDefinitions.first { $0.name == "repos.delete" }
+    let deleteTool = server().allToolDefinitions.first { $0.name == "repos.delete" }
 
     guard let tool = deleteTool,
       let schema = tool.inputSchema as? [String: Any],
@@ -130,11 +149,32 @@ final class MCPRAGToolsTests: XCTestCase {
     XCTAssertNotNil(properties["localPath"], "Should have localPath parameter")
   }
 
+  /// Test swarm.reindex parameter schema
+  func testSwarmReindexParameterSchema() {
+    let reindexTool = server().allToolDefinitions.first { $0.name == "swarm.reindex" }
+
+    guard let tool = reindexTool,
+      let schema = tool.inputSchema as? [String: Any],
+      let properties = schema["properties"] as? [String: Any],
+      let required = schema["required"] as? [String]
+    else {
+      XCTFail("swarm.reindex should have valid schema with properties")
+      return
+    }
+
+    XCTAssertNotNil(properties["repoPath"], "Should have repoPath parameter")
+    XCTAssertNotNil(properties["workerId"], "Should have workerId parameter")
+    XCTAssertNotNil(properties["pullFirst"], "Should have pullFirst parameter")
+    XCTAssertNotNil(properties["forceReindex"], "Should have forceReindex parameter")
+    XCTAssertNotNil(properties["allowWorkspace"], "Should have allowWorkspace parameter")
+    XCTAssertNotNil(properties["excludeSubrepos"], "Should have excludeSubrepos parameter")
+    XCTAssertTrue(required.contains("repoPath"), "repoPath should be required")
+  }
   // MARK: - Tool Categories
 
   /// Test that RAG tools are properly categorized
   func testRAGToolsCategorization() {
-    let allTools = mcpServer.allToolDefinitions
+    let allTools = server().allToolDefinitions
     let ragTools = allTools.filter { $0.name.hasPrefix("rag.") }
 
     XCTAssertFalse(ragTools.isEmpty, "Should have RAG tools")
@@ -149,7 +189,7 @@ final class MCPRAGToolsTests: XCTestCase {
 
   /// Test that repos tools are in state category
   func testReposToolsCategorization() {
-    let allTools = mcpServer.allToolDefinitions
+    let allTools = server().allToolDefinitions
     let reposTools = allTools.filter { $0.name.hasPrefix("repos.") }
 
     XCTAssertFalse(reposTools.isEmpty, "Should have repos tools")
@@ -174,7 +214,7 @@ final class MCPRAGToolsTests: XCTestCase {
       "rag.status",
     ]
 
-    let allTools = mcpServer.allToolDefinitions
+    let allTools = server().allToolDefinitions
     let toolNames = Set(allTools.map { $0.name })
 
     for expected in expectedTools {
@@ -193,7 +233,7 @@ final class MCPRAGToolsTests: XCTestCase {
       "repos.delete",
     ]
 
-    let allTools = mcpServer.allToolDefinitions
+    let allTools = server().allToolDefinitions
     let toolNames = Set(allTools.map { $0.name })
 
     for expected in expectedTools {

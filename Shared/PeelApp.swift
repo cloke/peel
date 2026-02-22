@@ -22,6 +22,10 @@ struct PeelApp: App {
   @State private var workerModeActive = false
   @State private var skillUpdateAvailable = false
 
+  private static var isRunningTests: Bool {
+    ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+  }
+
   init() {
     // Configure Firebase first (before other services)
     FirebaseService.shared.configure()
@@ -43,28 +47,30 @@ struct PeelApp: App {
     SwarmCoordinator.shared.modelContext = context
 
     // Auto-start swarm on launch when device setting enables it (defaults to true for new installs)
-    Task { @MainActor in
-      let settings = dataService.getDeviceSettings()
-      // Respect explicit worker-mode flag
-      if settings.swarmAutoStart && !WorkerMode.shared.shouldRunInWorkerMode {
-        do {
-          try SwarmCoordinator.shared.start(role: .hybrid, port: 8766)
+    if !Self.isRunningTests {
+      Task { @MainActor in
+        let settings = dataService.getDeviceSettings()
+        // Respect explicit worker-mode flag
+        if settings.swarmAutoStart && !WorkerMode.shared.shouldRunInWorkerMode {
+          do {
+            try SwarmCoordinator.shared.start(role: .hybrid, port: 8766)
 
-          // If signed into Firebase, register worker and start listeners so WAN peers are visible
-          if FirebaseService.shared.isSignedIn {
-            let wanAddress = await WANAddressResolver.resolve()
-            let capabilities = WorkerCapabilities.current(
-              wanAddress: wanAddress,
-              wanPort: 8766
-            )
-            for swarm in FirebaseService.shared.memberSwarms where swarm.role.canRegisterWorkers {
-              _ = try? await FirebaseService.shared.registerWorker(swarmId: swarm.id, capabilities: capabilities)
-              FirebaseService.shared.startWorkerListener(swarmId: swarm.id)
-              FirebaseService.shared.startMessageListener(swarmId: swarm.id)
+            // If signed into Firebase, register worker and start listeners so WAN peers are visible
+            if FirebaseService.shared.isSignedIn {
+              let wanAddress = await WANAddressResolver.resolve()
+              let capabilities = WorkerCapabilities.current(
+                wanAddress: wanAddress,
+                wanPort: 8766
+              )
+              for swarm in FirebaseService.shared.memberSwarms where swarm.role.canRegisterWorkers {
+                _ = try? await FirebaseService.shared.registerWorker(swarmId: swarm.id, capabilities: capabilities)
+                FirebaseService.shared.startWorkerListener(swarmId: swarm.id)
+                FirebaseService.shared.startMessageListener(swarmId: swarm.id)
+              }
             }
+          } catch {
+            print("Failed to auto-start swarm: \(error)")
           }
-        } catch {
-          print("Failed to auto-start swarm: \(error)")
         }
       }
     }
@@ -72,7 +78,7 @@ struct PeelApp: App {
     // Note: Ember skills update check is performed in ContentView.task (Issue #263)
     
     // Check for worker mode (--worker flag)
-    if WorkerMode.shared.shouldRunInWorkerMode {
+    if WorkerMode.shared.shouldRunInWorkerMode && !Self.isRunningTests {
       _workerModeActive = State(initialValue: true)
       Task { @MainActor in
         do {

@@ -202,6 +202,42 @@ extension SwarmToolsHandler {
         isMutating: true
       ),
       MCPToolDefinition(
+        name: "swarm.reindex",
+        description: "Run remote repository update (optional git pull) and rag.index on one or more connected workers.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": [
+              "type": "string",
+              "description": "Repository path on the worker to index"
+            ],
+            "workerId": [
+              "type": "string",
+              "description": "Optional worker ID. If omitted, runs on all connected workers."
+            ],
+            "pullFirst": [
+              "type": "boolean",
+              "description": "Run git pull in repoPath before indexing (default: true)"
+            ],
+            "forceReindex": [
+              "type": "boolean",
+              "description": "Force full reindex (default: false)"
+            ],
+            "allowWorkspace": [
+              "type": "boolean",
+              "description": "Allow workspace indexing for monorepos (default: false)"
+            ],
+            "excludeSubrepos": [
+              "type": "boolean",
+              "description": "Exclude subrepos when indexing (default: true)"
+            ]
+          ],
+          "required": ["repoPath"]
+        ],
+        category: .swarm,
+        isMutating: true
+      ),
+      MCPToolDefinition(
         name: "swarm.update-log",
         description: "Fetch the latest lines from the worker self-update log.",
         inputSchema: [

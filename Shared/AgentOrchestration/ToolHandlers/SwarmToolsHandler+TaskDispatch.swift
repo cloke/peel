@@ -2,7 +2,7 @@
 //  SwarmToolsHandler+TaskDispatch.swift
 //  Peel
 //
-//  Handles: swarm.dispatch, swarm.tasks, swarm.update-workers,
+//  Handles: swarm.dispatch, swarm.tasks, swarm.update-workers, swarm.reindex,
 //           swarm.update-log, swarm.direct-command, swarm.branch-queue,
 //           swarm.pr-queue, swarm.create-pr, swarm.setup-labels
 //  Split from SwarmToolsHandler.swift as part of #301.
@@ -220,6 +220,155 @@ extension SwarmToolsHandler {
       "workersFailed": failed,
       "workers": dispatched
     ]))
+  }
+
+  // MARK: - swarm.reindex
+
+  func handleReindex(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard coordinator.isActive else {
+      return serviceNotActiveError(id: id, service: "Swarm", hint: "Call swarm.start with role 'brain' or 'hybrid' first")
+    }
+
+    guard coordinator.role == .brain || coordinator.role == .hybrid else {
+      return internalError(id: id, message: "Only brain or hybrid can trigger remote reindex")
+    }
+
+    guard case .success(let repoPath) = requireString("repoPath", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "repoPath")
+    }
+
+    let pullFirst = optionalBool("pullFirst", from: arguments, default: true)
+    let forceReindex = optionalBool("forceReindex", from: arguments, default: false)
+    let allowWorkspace = optionalBool("allowWorkspace", from: arguments, default: false)
+    let excludeSubrepos = optionalBool("excludeSubrepos", from: arguments, default: true)
+    let workerId = optionalString("workerId", from: arguments)
+
+    let targetWorkers: [ConnectedPeer]
+    if let workerId {
+      guard let worker = coordinator.connectedWorkers.first(where: { $0.id == workerId }) else {
+        return internalError(id: id, message: "Worker not found: \(workerId)")
+      }
+      targetWorkers = [worker]
+    } else {
+      targetWorkers = coordinator.connectedWorkers
+    }
+
+    guard !targetWorkers.isEmpty else {
+      return (200, makeResult(id: id, result: [
+        "success": false,
+        "message": "No workers connected",
+        "workersSucceeded": 0,
+        "workersFailed": 0,
+        "workers": []
+      ]))
+    }
+
+    var workerResults: [[String: Any]] = []
+
+    for worker in targetWorkers {
+      let script = buildRemoteReindexScript(
+        repoPath: repoPath,
+        pullFirst: pullFirst,
+        forceReindex: forceReindex,
+        allowWorkspace: allowWorkspace,
+        excludeSubrepos: excludeSubrepos
+      )
+
+      do {
+        let commandResult = try await coordinator.sendDirectCommandAndWait(
+          "/bin/zsh",
+          args: ["-lc", script],
+          workingDirectory: nil,
+          to: worker.id,
+          timeout: .seconds(420)
+        )
+
+        workerResults.append([
+          "workerId": worker.id,
+          "workerName": worker.displayName,
+          "status": commandResult.exitCode == 0 ? "success" : "failed",
+          "exitCode": commandResult.exitCode,
+          "output": String(commandResult.output.suffix(1200)),
+          "error": commandResult.error as Any,
+        ])
+      } catch {
+        workerResults.append([
+          "workerId": worker.id,
+          "workerName": worker.displayName,
+          "status": "failed",
+          "error": error.localizedDescription,
+        ])
+      }
+    }
+
+    let succeeded = workerResults.filter { ($0["status"] as? String) == "success" }.count
+    let failed = workerResults.count - succeeded
+
+    return (200, makeResult(id: id, result: [
+      "success": failed == 0,
+      "message": failed == 0
+        ? "Remote reindex completed on all targeted workers"
+        : "\(succeeded) workers succeeded, \(failed) failed",
+      "repoPath": repoPath,
+      "pullFirst": pullFirst,
+      "forceReindex": forceReindex,
+      "allowWorkspace": allowWorkspace,
+      "excludeSubrepos": excludeSubrepos,
+      "workersSucceeded": succeeded,
+      "workersFailed": failed,
+      "workers": workerResults
+    ]))
+  }
+
+  private func buildRemoteReindexScript(
+    repoPath: String,
+    pullFirst: Bool,
+    forceReindex: Bool,
+    allowWorkspace: Bool,
+    excludeSubrepos: Bool
+  ) -> String {
+    let payload: [String: Any] = [
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "tools/call",
+      "params": [
+        "name": "rag.index",
+        "arguments": [
+          "repoPath": repoPath,
+          "forceReindex": forceReindex,
+          "allowWorkspace": allowWorkspace,
+          "excludeSubrepos": excludeSubrepos
+        ]
+      ]
+    ]
+
+    let payloadData = (try? JSONSerialization.data(withJSONObject: payload, options: [])) ?? Data()
+    let payloadJSON = String(data: payloadData, encoding: .utf8) ?? "{}"
+
+    var lines: [String] = [
+      "set -e",
+      "REPO_PATH=\(shellSingleQuote(repoPath))",
+    ]
+
+    if pullFirst {
+      lines.append("echo '[swarm.reindex] Pulling latest in '$REPO_PATH")
+      lines.append("git -C \"$REPO_PATH\" pull --ff-only || git -C \"$REPO_PATH\" pull")
+    }
+
+    lines.append("echo '[swarm.reindex] Calling rag.index for '$REPO_PATH")
+    lines.append("PAYLOAD=\(shellSingleQuote(payloadJSON))")
+    lines.append("RESPONSE=$(curl -sS -X POST http://127.0.0.1:8765/rpc -H 'Content-Type: application/json' -d \"$PAYLOAD\")")
+    lines.append("echo \"$RESPONSE\"")
+    lines.append("if echo \"$RESPONSE\" | grep -q '\"error\"'; then")
+    lines.append("  echo '[swarm.reindex] rag.index returned error' >&2")
+    lines.append("  exit 2")
+    lines.append("fi")
+
+    return lines.joined(separator: "\n")
+  }
+
+  private func shellSingleQuote(_ value: String) -> String {
+    "'\(value.replacingOccurrences(of: "'", with: "'\\''"))'"
   }
 
   // MARK: - swarm.update-log

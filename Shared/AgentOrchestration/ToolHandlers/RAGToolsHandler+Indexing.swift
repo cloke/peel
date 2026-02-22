@@ -142,6 +142,12 @@ extension RAGToolsHandler {
             dict["parentName"] = parent.name
           }
         }
+        if let embeddingModel = repo.embeddingModel {
+          dict["embeddingModel"] = embeddingModel
+        }
+        if let embeddingDimensions = repo.embeddingDimensions {
+          dict["embeddingDimensions"] = embeddingDimensions
+        }
         return dict
       }
       return (200, makeResult(id: id, result: ["repos": repoList]))
