@@ -13,55 +13,6 @@ import SwiftUI
 
 private let repoSkillsLogger = Logger(subsystem: "com.peel.rag", category: "skills")
 
-// MARK: - Repository Status
-
-/// Visual status states for a repository
-enum RAGRepoStatus: Equatable {
-  case notIndexed
-  case indexing
-  case indexedOnly
-  case analyzing(progress: Double)
-  case partiallyAnalyzed(progress: Double)
-  case fullyAnalyzed
-  case stale
-  
-  var badge: String {
-    switch self {
-    case .notIndexed: return "○"
-    case .indexing: return "◐"
-    case .indexedOnly: return "◑"
-    case .analyzing: return "◐"
-    case .partiallyAnalyzed: return "◕"
-    case .fullyAnalyzed: return "●"
-    case .stale: return "⚠"
-    }
-  }
-  
-  var color: Color {
-    switch self {
-    case .notIndexed: return .gray
-    case .indexing: return .blue
-    case .indexedOnly: return .yellow
-    case .analyzing: return .purple
-    case .partiallyAnalyzed: return .orange
-    case .fullyAnalyzed: return .green
-    case .stale: return .orange
-    }
-  }
-  
-  var label: String {
-    switch self {
-    case .notIndexed: return "Not indexed"
-    case .indexing: return "Indexing..."
-    case .indexedOnly: return "Indexed"
-    case .analyzing(let progress): return "Analyzing \(Int(progress * 100))%"
-    case .partiallyAnalyzed(let progress): return "\(Int(progress * 100))% analyzed"
-    case .fullyAnalyzed: return "Complete"
-    case .stale: return "Stale"
-    }
-  }
-}
-
 // MARK: - Repository Card View
 
 struct RAGRepositoryCardView: View {
@@ -450,7 +401,7 @@ struct RAGRepositoryCardView: View {
               .font(.caption)
               .foregroundStyle(hasDimMismatch ? .orange : .green)
             if hasDimMismatch {
-              Text("Dimension mismatch: repo has \(repoDims ?? 0)d, local model (\(localModel ?? "unknown")) uses \(localDims)d. Vector search won't work — re-index to fix.")
+              Text("Dimension mismatch: repo has \(repoDims ?? 0)d, local default model (\(localModel ?? "unknown")) uses \(localDims)d. Queries use a per-repo embedding profile when available.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             }
