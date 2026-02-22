@@ -80,8 +80,42 @@ struct NewChainSheet: View {
             Picker("Template", selection: $selectedTemplate) {
               Text("Select...").tag(nil as ChainTemplate?)
 
-              Section("Built-in") {
-                ForEach(ChainTemplate.builtInTemplates) { template in
+              Section(TemplateCategory.core.displayName) {
+                ForEach(ChainTemplate.builtInTemplates.filter { $0.category == .core }) { template in
+                  HStack {
+                    if !template.isFullyAvailable(copilotAvailable: cliService.copilotStatus.isAvailable, claudeAvailable: cliService.claudeStatus.isAvailable) {
+                      Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    }
+                    Text(template.name)
+                    Spacer()
+                    Text(template.costDisplay)
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                  }
+                  .tag(template as ChainTemplate?)
+                }
+              }
+
+              Section(TemplateCategory.specialized.displayName) {
+                ForEach(ChainTemplate.builtInTemplates.filter { $0.category == .specialized }) { template in
+                  HStack {
+                    if !template.isFullyAvailable(copilotAvailable: cliService.copilotStatus.isAvailable, claudeAvailable: cliService.claudeStatus.isAvailable) {
+                      Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    }
+                    Text(template.name)
+                    Spacer()
+                    Text(template.costDisplay)
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                  }
+                  .tag(template as ChainTemplate?)
+                }
+              }
+
+              Section(TemplateCategory.yolo.displayName) {
+                ForEach(ChainTemplate.builtInTemplates.filter { $0.category == .yolo }) { template in
                   HStack {
                     if !template.isFullyAvailable(copilotAvailable: cliService.copilotStatus.isAvailable, claudeAvailable: cliService.claudeStatus.isAvailable) {
                       Image(systemName: "exclamationmark.triangle.fill")

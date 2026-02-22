@@ -39,6 +39,13 @@ struct ChainTemplateGalleryView: View {
     }
   }
 
+  private var yoloTemplates: [ChainTemplate] {
+    agentManager.allTemplates.filter { template in
+      template.isBuiltIn && template.category == .yolo &&
+        (!hideUnavailableTemplates || isTemplateAvailable(template))
+    }
+  }
+
   private var savedTemplates: [ChainTemplate] {
     agentManager.allTemplates.filter { template in
       !template.isBuiltIn &&
@@ -69,6 +76,14 @@ struct ChainTemplateGalleryView: View {
 
           if !specializedTemplates.isEmpty {
             templateSection(title: "Specialized Templates", templates: specializedTemplates)
+          }
+
+          if !yoloTemplates.isEmpty {
+            templateSection(
+              title: TemplateCategory.yolo.displayName,
+              icon: TemplateCategory.yolo.iconName,
+              templates: yoloTemplates
+            )
           }
 
           if !savedTemplates.isEmpty {
@@ -203,10 +218,16 @@ struct ChainTemplateGalleryView: View {
     return Text(message)
   }
 
-  private func templateSection(title: String, templates: [ChainTemplate]) -> some View {
+  private func templateSection(title: String, icon: String? = nil, templates: [ChainTemplate]) -> some View {
     VStack(alignment: .leading, spacing: 12) {
-      Text(title)
-        .font(.headline)
+      HStack(spacing: 8) {
+        if let icon {
+          Image(systemName: icon)
+            .foregroundStyle(.secondary)
+        }
+        Text(title)
+          .font(.headline)
+      }
 
       LazyVGrid(columns: [GridItem(.adaptive(minimum: 280), spacing: 16)], spacing: 16) {
         ForEach(templates) { template in
