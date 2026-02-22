@@ -539,12 +539,12 @@ extension RAGStore {
 //
 // To support cross-machine SQLite sync:
 // 1. `repoIdentifier` column stores normalized git remote URL
-// 2. `RepoRegistry.shared` maps remote URLs to local paths
-// 3. `remapRepoPaths()` updates `root_path` when DB is synced to a new machine
-// 4. All MCP tools resolve repoPath via RepoRegistry before querying
-//
-// This allows the same RAG database to work on different machines
-// where repos are cloned at different paths.
+// 2. RAGCore's `resolveRepo(for:)` now transparently resolves repos by
+//    `repo_identifier` + auto-updates `root_path` on mismatch — this handles
+//    cross-machine path differences without explicit remapping.
+// 3. `RepoRegistry.shared` provides additional resolution for remote-URL inputs.
+// 4. `remapRepoPaths()` is largely superseded by the resolver but kept for
+//    backward compatibility during artifact sync.
 
 // MARK: - Repo Path Remapping (uses RepoRegistry)
 
@@ -553,6 +553,9 @@ extension RAGStore {
   /// Resolve a repo path to its local equivalent using RepoRegistry.
   /// - Parameter repoPath: Path or remote URL to resolve
   /// - Returns: Local path if resolvable, original path otherwise
+  ///
+  /// - Note: RAGCore's `resolveRepo(for:)` now handles most cross-machine resolution
+  ///   internally. This method adds RepoRegistry fallback for remote-URL inputs.
   func resolveRepoPath(_ repoPath: String) async -> String {
     // First, try the path as-is if it exists locally
     if FileManager.default.fileExists(atPath: repoPath) {
