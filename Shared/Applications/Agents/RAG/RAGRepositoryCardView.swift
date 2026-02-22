@@ -624,56 +624,20 @@ struct RAGRepositoryCardView: View {
   
   @ViewBuilder
   private var skillsSection: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      HStack {
-        Label("Guidance Skills", systemImage: "lightbulb")
-          .font(.subheadline.weight(.semibold))
-        
-        Spacer()
-        
-        Button {
-          showSkillsSheet = true
-        } label: {
-          Label("Manage", systemImage: "gear")
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-      }
-      
-      if repoSkills.isEmpty {
-        Text("No skills configured for this repository")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      } else {
-        VStack(alignment: .leading, spacing: 4) {
-          ForEach(repoSkills.prefix(3)) { skill in
-            HStack(spacing: 6) {
-              Circle()
-                .fill(.green)
-                .frame(width: 6, height: 6)
-              
-              Text(skill.title.isEmpty ? "Untitled" : skill.title)
-                .font(.caption)
-                .lineLimit(1)
-              
-              Spacer()
-              
-              Text("Priority \(skill.priority)")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            }
-          }
-          
-          if repoSkills.count > 3 {
-            Text("+ \(repoSkills.count - 3) more")
-              .font(.caption2)
-              .foregroundStyle(.secondary)
-          }
-        }
-      }
+    RAGRepositorySkillsSection(
+      skills: repoSkillDisplayItems,
+      onManage: { showSkillsSheet = true }
+    )
+  }
+
+  private var repoSkillDisplayItems: [RAGRepositorySkillDisplayItem] {
+    repoSkills.map {
+      RAGRepositorySkillDisplayItem(
+        id: $0.id.uuidString,
+        title: $0.title,
+        priority: $0.priority
+      )
     }
-    .padding(12)
-    .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 8))
   }
   
   // MARK: - Lessons Section
