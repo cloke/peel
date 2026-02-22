@@ -282,6 +282,142 @@ extension MCPServerService: ChainToolsHandlerDelegate {
       return runPayload
     }
   }
+
+  func aggregateAuditFindings(limit: Int, top: Int, promptContains: String?) -> [String: Any] {
+    guard let dataService else {
+      return [
+        "runsAnalyzed": 0,
+        "parsedFindings": 0,
+        "dedupedFindings": 0,
+        "topFindings": [],
+        "markdown": "No data service available."
+      ]
+    }
+
+    struct Finding {
+      let title: String
+      let area: String
+      let impact: String
+      let effort: String
+      let confidence: Double
+      let files: [String]
+      let recommendation: String
+      let score: Double
+    }
+
+    let runFetchLimit = max(limit * 25, 400)
+    let recentRuns = dataService.getRecentMCPRuns(limit: runFetchLimit)
+    let normalizedPromptFilter = promptContains?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    let defaultNeedles = ["optimization audit #", "global pass"]
+
+    let filteredRuns = recentRuns.filter { run in
+      let prompt = run.prompt.lowercased()
+      if let normalizedPromptFilter, !normalizedPromptFilter.isEmpty {
+        return prompt.contains(normalizedPromptFilter)
+      }
+      return defaultNeedles.contains { prompt.contains($0) }
+    }
+
+    let selectedRuns = Array(filteredRuns.prefix(max(1, limit)))
+    var allFindings: [Finding] = []
+
+    for run in selectedRuns {
+      guard !run.chainId.isEmpty else { continue }
+      let runResults = dataService.getMCPRunResults(chainId: run.chainId)
+      for result in runResults {
+        guard let outputJSON = extractFirstJSONObject(from: result.output),
+              let findingObjects = outputJSON["findings"] as? [[String: Any]] else {
+          continue
+        }
+
+        let area = normalizeArea(outputJSON["area"] as? String, promptFallback: run.prompt)
+
+        for findingObject in findingObjects {
+          let title = ((findingObject["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
+            ? (findingObject["title"] as? String ?? "")
+            : "Untitled finding"
+          let impact = normalizeBucket(findingObject["impact"], defaultValue: "med")
+          let effort = normalizeBucket(findingObject["effort"], defaultValue: "med")
+          let confidence = normalizeConfidence(findingObject["confidence"])
+          let files = normalizeFiles(findingObject["files"])
+          let recommendation = (findingObject["recommendation"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+          let impactWeight: [String: Double] = ["low": 1, "med": 2, "medium": 2, "high": 3]
+          let effortWeight: [String: Double] = ["low": 1, "med": 2, "medium": 2, "high": 3]
+          let score = (impactWeight[impact] ?? 2) * 2 + (4 - (effortWeight[effort] ?? 2)) + confidence
+
+          allFindings.append(Finding(
+            title: title,
+            area: area,
+            impact: impact,
+            effort: effort,
+            confidence: confidence,
+            files: files,
+            recommendation: recommendation,
+            score: score
+          ))
+        }
+      }
+    }
+
+    var deduped: [String: Finding] = [:]
+    for finding in allFindings {
+      let key = "\(finding.title.lowercased())|\(finding.files.prefix(3).joined(separator: "|"))"
+      if let existing = deduped[key], existing.score >= finding.score {
+        continue
+      }
+      deduped[key] = finding
+    }
+
+    let ranked = deduped.values.sorted { $0.score > $1.score }
+    let topFindings = Array(ranked.prefix(max(1, top)))
+
+    let topPayload: [[String: Any]] = topFindings.map { finding in
+      [
+        "title": finding.title,
+        "area": finding.area,
+        "impact": finding.impact,
+        "effort": finding.effort,
+        "confidence": finding.confidence,
+        "files": finding.files,
+        "recommendation": finding.recommendation,
+        "score": finding.score
+      ]
+    }
+
+    var lines: [String] = []
+    lines.append("Automated aggregation update (20 free-agent optimization audit)")
+    lines.append("")
+    lines.append("- Runs analyzed: \(selectedRuns.count)")
+    lines.append("- Parsed findings: \(allFindings.count)")
+    lines.append("- Deduped findings: \(ranked.count)")
+    lines.append("")
+    lines.append("## Top \(topFindings.count) Opportunities (ranked)")
+
+    for (index, finding) in topFindings.enumerated() {
+      let confidenceText = String(format: "%.2f", finding.confidence)
+      lines.append("\(index + 1). **\(finding.title)**")
+      lines.append("   - Area: \(finding.area)")
+      lines.append("   - Impact/Effort/Confidence: \(finding.impact)/\(finding.effort)/\(confidenceText)")
+      lines.append("   - Files: \(finding.files.isEmpty ? "n/a" : finding.files.prefix(4).joined(separator: ", "))")
+      if !finding.recommendation.isEmpty {
+        lines.append("   - Recommendation: \(String(finding.recommendation.prefix(220)))")
+      }
+    }
+
+    lines.append("")
+    lines.append("## Next Actions")
+    lines.append("- Review top findings and mark accepted items.")
+    lines.append("- Create one implementation issue per accepted finding and link each back to tracker issue.")
+
+    return [
+      "runsAnalyzed": selectedRuns.count,
+      "parsedFindings": allFindings.count,
+      "dedupedFindings": ranked.count,
+      "topFindings": topPayload,
+      "markdown": lines.joined(separator: "\n")
+    ]
+  }
   
   func stopChain(chainId: String) async throws {
     guard let runId = UUID(uuidString: chainId) else {
@@ -449,5 +585,105 @@ extension MCPServerService: ChainToolsHandlerDelegate {
     }
 
     return results
+  }
+}
+
+private extension MCPServerService {
+  func extractFirstJSONObject(from text: String) -> [String: Any]? {
+    guard let start = text.firstIndex(of: "{") else { return nil }
+    var depth = 0
+    var current = start
+
+    while current < text.endIndex {
+      let character = text[current]
+      if character == "{" {
+        depth += 1
+      } else if character == "}" {
+        depth -= 1
+        if depth == 0 {
+          let candidate = String(text[start...current])
+          guard let data = candidate.data(using: .utf8),
+                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+          }
+          return json
+        }
+      }
+      current = text.index(after: current)
+    }
+
+    return nil
+  }
+
+  func normalizeBucket(_ value: Any?, defaultValue: String) -> String {
+    guard let text = value as? String else { return defaultValue }
+    let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if normalized == "medium" { return "med" }
+    if ["low", "med", "high"].contains(normalized) { return normalized }
+    return defaultValue
+  }
+
+  func normalizeConfidence(_ value: Any?) -> Double {
+    if let number = value as? Double { return min(max(number, 0), 1) }
+    if let number = value as? NSNumber { return min(max(number.doubleValue, 0), 1) }
+    if let text = value as? String, let number = Double(text) { return min(max(number, 0), 1) }
+    return 0.5
+  }
+
+  func normalizeFiles(_ value: Any?) -> [String] {
+    guard let rawFiles = value as? [Any] else { return [] }
+    return rawFiles.compactMap { item in
+      if let text = item as? String {
+        if let parsed = parseJSONObjectString(text), let normalized = extractPathPatterns(from: parsed), !normalized.isEmpty {
+          return normalized.joined(separator: ", ")
+        }
+        return text
+      }
+      if let object = item as? [String: Any],
+         let normalized = extractPathPatterns(from: object), !normalized.isEmpty {
+        return normalized.joined(separator: ", ")
+      }
+      if let object = item as? [String: Any],
+         let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]),
+         let text = String(data: data, encoding: .utf8) {
+        return text
+      }
+      return nil
+    }
+  }
+
+  func normalizeArea(_ area: String?, promptFallback: String) -> String {
+    if let area {
+      let normalized = area.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !normalized.isEmpty {
+        let firstLine = normalized.split(separator: "\n").first.map(String.init) ?? normalized
+        if !firstLine.lowercased().contains("always follow best practices") {
+          return firstLine
+        }
+      }
+    }
+
+    if let startRange = promptFallback.range(of: "Optimization audit #") {
+      let suffix = String(promptFallback[startRange.lowerBound...])
+      let line = suffix.split(separator: "\n").first.map(String.init) ?? suffix
+      return String(line.prefix(120))
+    }
+
+    return String(promptFallback.prefix(120))
+  }
+
+  func parseJSONObjectString(_ value: String) -> [String: Any]? {
+    guard let data = value.data(using: .utf8),
+          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+      return nil
+    }
+    return json
+  }
+
+  func extractPathPatterns(from object: [String: Any]) -> [String]? {
+    if let patterns = object["path_patterns"] as? [String], !patterns.isEmpty {
+      return patterns
+    }
+    return nil
   }
 }

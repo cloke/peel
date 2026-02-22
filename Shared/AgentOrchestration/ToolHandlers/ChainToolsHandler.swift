@@ -32,6 +32,9 @@ protocol ChainToolsHandlerDelegate: MCPToolHandlerDelegate {
 
   /// Get persisted run details including per-agent outputs
   func chainRunResults(runId: String?, chainId: String?, includeOutputs: Bool) -> [[String: Any]]
+
+  /// Aggregate optimization audit findings from recent persisted runs
+  func aggregateAuditFindings(limit: Int, top: Int, promptContains: String?) -> [String: Any]
   
   /// Stop a chain run
   func stopChain(chainId: String) async throws
@@ -104,6 +107,7 @@ final class ChainToolsHandler: MCPToolHandler {
     "chains.run.status",
     "chains.run.list",
     "chains.run.results",
+    "chains.audit.aggregate",
     "chains.stop",
     "chains.pause",
     "chains.resume",
@@ -137,6 +141,8 @@ final class ChainToolsHandler: MCPToolHandler {
       return handleChainRunList(id: id, arguments: arguments, delegate: chainDelegate)
     case "chains.run.results":
       return handleChainRunResults(id: id, arguments: arguments, delegate: chainDelegate)
+    case "chains.audit.aggregate":
+      return handleChainsAuditAggregate(id: id, arguments: arguments, delegate: chainDelegate)
     case "chains.stop":
       return await handleChainStop(id: id, arguments: arguments, delegate: chainDelegate)
     case "chains.pause":
@@ -294,6 +300,17 @@ final class ChainToolsHandler: MCPToolHandler {
       return notFoundError(id: id, what: "Run")
     }
     return (200, makeResult(id: id, result: ["runs": runs]))
+  }
+
+  // MARK: - chains.audit.aggregate
+
+  private func handleChainsAuditAggregate(id: Any?, arguments: [String: Any], delegate: ChainToolsHandlerDelegate) -> (Int, Data) {
+    let limit = max(1, optionalInt("limit", from: arguments) ?? 20)
+    let top = max(1, optionalInt("top", from: arguments) ?? 10)
+    let promptContains = optionalString("promptContains", from: arguments)
+
+    let payload = delegate.aggregateAuditFindings(limit: limit, top: top, promptContains: promptContains)
+    return (200, makeResult(id: id, result: payload))
   }
   
   // MARK: - chains.stop
@@ -728,6 +745,20 @@ extension ChainToolsHandler {
             "runId": ["type": "string", "description": "Run UUID from chains.run/list"],
             "chainId": ["type": "string", "description": "Chain UUID (alternate lookup key)"],
             "includeOutputs": ["type": "boolean", "description": "Include full agent output text (default: true)"]
+          ]
+        ],
+        category: .chains,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "chains.audit.aggregate",
+        description: "Aggregate optimization audit findings from recent runs and return ranked top findings plus markdown",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "limit": ["type": "integer", "description": "How many recent matching runs to analyze (default: 20)"],
+            "top": ["type": "integer", "description": "How many ranked findings to return (default: 10)"],
+            "promptContains": ["type": "string", "description": "Optional substring filter for run prompts"]
           ]
         ],
         category: .chains,
