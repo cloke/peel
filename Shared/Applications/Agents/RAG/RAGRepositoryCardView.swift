@@ -406,7 +406,7 @@ struct RAGRepositoryCardView: View {
   private var repoLessonDisplayItems: [RAGRepositoryLessonDisplayItem] {
     repoLessons.map {
       RAGRepositoryLessonDisplayItem(
-        id: $0.id.uuidString,
+        id: $0.id,
         fixDescription: $0.fixDescription,
         confidence: $0.confidence
       )
