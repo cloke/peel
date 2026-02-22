@@ -947,7 +947,7 @@ public final class MCPServerService {
           embeddingCount: embeddingCounts[repo.id] ?? 0,
           repoIdentifier: repo.repoIdentifier,
           parentRepoId: repo.parentRepoId,
-          embeddingModel: syncedModel ?? ragStatus?.embeddingModelName
+          embeddingModel: syncedModel
         )
       }
       lastRagError = nil
