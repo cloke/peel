@@ -952,12 +952,14 @@ public final class MCPServerService {
       let embeddingDims = await localRagStore.embeddingDimensionsByRepo()
       ragRepos = repos.map { repo in
         // Look up synced embedding model by repoIdentifier or repo id
-        let syncedModel: String? = {
+        let syncedModelFallback: String? = {
           if let identifier = repo.repoIdentifier, let model = ragSyncedEmbeddingModels[identifier] {
             return model
           }
           return ragSyncedEmbeddingModels[repo.id]
         }()
+        let effectiveModel = repo.embeddingModel ?? syncedModelFallback
+        let effectiveDims = repo.embeddingDimensions ?? embeddingDims[repo.id]
         return RAGRepoInfo(
           id: repo.id,
           name: repo.name,
@@ -968,8 +970,8 @@ public final class MCPServerService {
           embeddingCount: embeddingCounts[repo.id] ?? 0,
           repoIdentifier: repo.repoIdentifier,
           parentRepoId: repo.parentRepoId,
-          embeddingModel: syncedModel,
-          embeddingDimensions: embeddingDims[repo.id]
+          embeddingModel: effectiveModel,
+          embeddingDimensions: effectiveDims
         )
       }
       lastRagError = nil

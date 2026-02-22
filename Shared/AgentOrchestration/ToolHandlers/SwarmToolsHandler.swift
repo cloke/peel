@@ -48,6 +48,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
     "swarm.discovered",
     "swarm.tasks",
     "swarm.update-workers",
+    "swarm.reindex",
     "swarm.update-log",
     "swarm.direct-command",
     "swarm.branch-queue",
@@ -112,6 +113,8 @@ public final class SwarmToolsHandler: MCPToolHandler {
       return handleTasks(id: id, arguments: arguments)
     case "swarm.update-workers":
       return await handleUpdateWorkers(id: id, arguments: arguments)
+    case "swarm.reindex":
+      return await handleReindex(id: id, arguments: arguments)
     case "swarm.update-log":
       return await handleUpdateLog(id: id, arguments: arguments)
     case "swarm.direct-command":

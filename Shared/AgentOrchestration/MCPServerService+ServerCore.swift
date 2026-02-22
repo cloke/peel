@@ -357,48 +357,116 @@ extension MCPServerService {
     modulePath: String?
   ) async throws -> [LocalRAGSearchResult] {
     #if os(macOS)
-    let providerDims = await localRagStore.status().embeddingDimensions
-    let repoDimsMap = await localRagStore.embeddingDimensionsByRepo()
+    let status = await localRagStore.status()
+    let providerDims = status.embeddingDimensions
+    let providerModel = status.embeddingModelName.lowercased()
+    let repos = (try? await localRagStore.listRepos()) ?? []
+    let sampledDims = await localRagStore.embeddingDimensionsByRepo()
 
-    // Determine the stored dimensions for the target repo(s)
-    let storedDims: Int?
-    if let repoPath {
-      let repoInfo = try? await localRagStore.listRepos()
-      let repoId = repoInfo?.first(where: { $0.rootPath == repoPath })?.id
-      storedDims = repoId.flatMap { repoDimsMap[$0] }
-    } else {
-      // If querying all repos, pick the most common dimension
-      storedDims = repoDimsMap.values.first
+    func normalizedModel(_ model: String?) -> String? {
+      model?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
-    // If dimensions match (or no embeddings stored), use the default path
-    if storedDims == nil || storedDims == providerDims {
+    func isProviderCompatible(repoModel: String?, repoDims: Int?) -> Bool {
+      let dimsMatch = repoDims == nil || repoDims == providerDims
+      guard dimsMatch else { return false }
+      guard let repoModel = normalizedModel(repoModel), !repoModel.isEmpty else { return true }
+      return repoModel == providerModel
+    }
+
+    func vectorFor(repoModel: String?, repoDims: Int, cache: inout [String: [Float]]) async throws -> [Float]? {
+      let modelKey = normalizedModel(repoModel) ?? ""
+      let cacheKey = "\(modelKey)|\(repoDims)"
+      if let cached = cache[cacheKey] { return cached }
+
+      let config: MLXEmbeddingModelConfig?
+      if let model = normalizedModel(repoModel) {
+        config = MLXEmbeddingModelConfig.availableModels.first {
+          $0.huggingFaceId.lowercased() == model || $0.name.lowercased() == model
+        } ?? MLXEmbeddingModelConfig.availableModels.first { $0.dimensions == repoDims }
+      } else {
+        config = MLXEmbeddingModelConfig.availableModels.first { $0.dimensions == repoDims }
+      }
+
+      guard let config else { return nil }
+
+      await telemetryProvider.info(
+        "RAG using per-repo embedding profile for query",
+        metadata: [
+          "model": config.huggingFaceId,
+          "dimensions": "\(config.dimensions)",
+        ]
+      )
+      let provider = MLXEmbeddingProvider(config: config)
+      let embeddings = try await provider.embed(texts: [query])
+      guard let queryVector = embeddings.first, !queryVector.isEmpty else { return nil }
+      cache[cacheKey] = queryVector
+      return queryVector
+    }
+
+    func searchRepo(_ repo: LocalRAGStore.RepoInfo, vectorCache: inout [String: [Float]]) async throws -> [LocalRAGSearchResult] {
+      let repoDims = repo.embeddingDimensions ?? sampledDims[repo.id]
+      if isProviderCompatible(repoModel: repo.embeddingModel, repoDims: repoDims) {
+        return try await localRagStore.searchVector(query: query, repoPath: repo.rootPath, limit: limit, modulePath: modulePath)
+      }
+
+      guard let dims = repoDims,
+            let queryVector = try await vectorFor(repoModel: repo.embeddingModel, repoDims: dims, cache: &vectorCache) else {
+        await telemetryProvider.warning(
+          "No compatible local query embedding model for repo profile; falling back to text search",
+          metadata: [
+            "repoPath": repo.rootPath,
+            "repoModel": repo.embeddingModel ?? "unknown",
+            "repoDims": "\(repoDims ?? -1)",
+          ]
+        )
+        return try await localRagStore.search(query: query, repoPath: repo.rootPath, limit: limit, matchAll: true, modulePath: modulePath)
+      }
+
+      return try await localRagStore.searchVectorWithEmbedding(queryVector, repoPath: repo.rootPath, limit: limit, modulePath: modulePath)
+    }
+
+    if let repoPath {
+      if let targetRepo = repos.first(where: { $0.rootPath == repoPath }) {
+        var singleRepoVectorCache: [String: [Float]] = [:]
+        return try await searchRepo(targetRepo, vectorCache: &singleRepoVectorCache)
+      }
       return try await localRagStore.searchVector(query: query, repoPath: repoPath, limit: limit, modulePath: modulePath)
     }
 
-    // Dimension mismatch — find an alternate model that matches
-    let targetDims = storedDims!
-    if let matchingConfig = MLXEmbeddingModelConfig.availableModels.first(where: { $0.dimensions == targetDims }) {
-      await telemetryProvider.info(
-        "RAG dimension mismatch: stored=\(targetDims)d, provider=\(providerDims)d. Using \(matchingConfig.name) for query embedding.",
-        metadata: ["repoPath": repoPath ?? "(all)"]
-      )
-      let altProvider = MLXEmbeddingProvider(config: matchingConfig)
-      let embeddings = try await altProvider.embed(texts: [query])
-      guard let queryVector = embeddings.first, !queryVector.isEmpty else {
-        // Alt provider failed — fall back to text search
-        await telemetryProvider.warning("Alt embedding provider failed, falling back to text search", metadata: [:])
-        return try await localRagStore.search(query: query, repoPath: repoPath, limit: limit, matchAll: true, modulePath: modulePath)
-      }
-      return try await localRagStore.searchVectorWithEmbedding(queryVector, repoPath: repoPath, limit: limit, modulePath: modulePath)
+    var vectorCache: [String: [Float]] = [:]
+    var aggregated: [LocalRAGSearchResult] = []
+
+    for repo in repos {
+      // Skip repos without embeddings entirely
+      let hasEmbeddings = (sampledDims[repo.id] ?? repo.embeddingDimensions) != nil
+      guard hasEmbeddings else { continue }
+      let repoResults = try await searchRepo(repo, vectorCache: &vectorCache)
+      aggregated.append(contentsOf: repoResults)
     }
 
-    // No matching model available — fall back to text search
-    await telemetryProvider.warning(
-      "RAG dimension mismatch: stored=\(targetDims)d, no matching model available. Falling back to text search.",
-      metadata: ["repoPath": repoPath ?? "(all)"]
-    )
-    return try await localRagStore.search(query: query, repoPath: repoPath, limit: limit, matchAll: true, modulePath: modulePath)
+    if aggregated.isEmpty {
+      return try await localRagStore.search(query: query, repoPath: nil, limit: limit, matchAll: true, modulePath: modulePath)
+    }
+
+    var deduped: [String: LocalRAGSearchResult] = [:]
+    for result in aggregated {
+      let key = "\(result.filePath):\(result.startLine)-\(result.endLine)"
+      if let existing = deduped[key] {
+        let existingScore = existing.score ?? -1
+        let resultScore = result.score ?? -1
+        if resultScore > existingScore {
+          deduped[key] = result
+        }
+      } else {
+        deduped[key] = result
+      }
+    }
+
+    return deduped.values
+      .sorted { ($0.score ?? -1) > ($1.score ?? -1) }
+      .prefix(limit)
+      .map { $0 }
     #else
     // iOS: no MLX, use default provider directly
     return try await localRagStore.searchVector(query: query, repoPath: repoPath, limit: limit, modulePath: modulePath)

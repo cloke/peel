@@ -27,6 +27,7 @@ Step-by-step instructions for common tasks.
 | [MCP_CLI_USAGE](guides/MCP_CLI_USAGE.md) | PeelCLI commands, tools-call workflow, and MCPCLI headless server |
 | [MCP_TEST_PLAN](guides/MCP_TEST_PLAN.md) | Testing the MCP server |
 | [MCP_EMBEDDING_GUIDE](guides/MCP_EMBEDDING_GUIDE.md) | Embed MCPCore in another app; app-embedded vs headless differences |
+| [MCPCLI Config Example](guides/examples/mcpcli.config.example.json) | Copy/paste starter config for `Tools/MCPCLI` headless server |
 
 ## Reference
 

@@ -120,8 +120,10 @@ struct RAGToolRepoInfo {
   let lastIndexedAt: Date?
   let repoIdentifier: String?
   let parentRepoId: String?
+  let embeddingModel: String?
+  let embeddingDimensions: Int?
   
-  init(id: String, name: String, rootPath: String, fileCount: Int, chunkCount: Int, lastIndexedAt: Date?, repoIdentifier: String? = nil, parentRepoId: String? = nil) {
+  init(id: String, name: String, rootPath: String, fileCount: Int, chunkCount: Int, lastIndexedAt: Date?, repoIdentifier: String? = nil, parentRepoId: String? = nil, embeddingModel: String? = nil, embeddingDimensions: Int? = nil) {
     self.id = id
     self.name = name
     self.rootPath = rootPath
@@ -130,6 +132,8 @@ struct RAGToolRepoInfo {
     self.lastIndexedAt = lastIndexedAt
     self.repoIdentifier = repoIdentifier
     self.parentRepoId = parentRepoId
+    self.embeddingModel = embeddingModel
+    self.embeddingDimensions = embeddingDimensions
   }
 }
 
