@@ -11,7 +11,7 @@ struct RAGRepositorySearchDisplayResult {
   let filePath: String
   let startLine: Int
   let endLine: Int
-  let score: Double?
+  let score: Float?
 }
 
 struct RAGRepositorySearchSection: View {
