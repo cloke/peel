@@ -201,13 +201,46 @@ enum RAGRepoExporter {
     )
   }
 
+  // MARK: - Schema Introspection
+
+  /// Check if a column exists in a table (works on read-only connections).
+  private static func columnExists(_ db: OpaquePointer, table: String, column: String) -> Bool {
+    let sql = "PRAGMA table_info(\(table))"
+    var stmt: OpaquePointer?
+    guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return false }
+    defer { sqlite3_finalize(stmt) }
+    while sqlite3_step(stmt) == SQLITE_ROW {
+      if let name = sqlite3_column_text(stmt, 1) {
+        if String(cString: name) == column { return true }
+      }
+    }
+    return false
+  }
+
+  /// Read current schema version from rag_meta.
+  private static func readSchemaVersion(_ db: OpaquePointer) -> Int {
+    let sql = "SELECT CAST(value AS INTEGER) FROM rag_meta WHERE key = 'schema_version'"
+    var stmt: OpaquePointer?
+    guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return 0 }
+    defer { sqlite3_finalize(stmt) }
+    guard sqlite3_step(stmt) == SQLITE_ROW else { return 0 }
+    return Int(sqlite3_column_int(stmt, 0))
+  }
+
   // MARK: - Private Queries
 
   private static func queryRepo(db: OpaquePointer, repoIdentifier: String) -> ExportedRepo? {
-    let sql = """
-      SELECT id, name, root_path, repo_identifier, last_indexed_at, parent_repo_id
-      FROM repos WHERE repo_identifier = ?
-      """
+    // repo_identifier added in v11, parent_repo_id in v12 — adapt query for older schemas
+    let hasRepoIdentifier = columnExists(db, table: "repos", column: "repo_identifier")
+    let hasParentRepoId = columnExists(db, table: "repos", column: "parent_repo_id")
+
+    // If the source DB doesn't have repo_identifier column, we can't match by it
+    guard hasRepoIdentifier else { return nil }
+
+    var columns = "id, name, root_path, repo_identifier, last_indexed_at"
+    if hasParentRepoId { columns += ", parent_repo_id" }
+
+    let sql = "SELECT \(columns) FROM repos WHERE repo_identifier = ?"
     var stmt: OpaquePointer?
     guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return nil }
     defer { sqlite3_finalize(stmt) }
@@ -222,7 +255,7 @@ enum RAGRepoExporter {
       rootPath: columnString(stmt, 2),
       repoIdentifier: columnString(stmt, 3),
       lastIndexedAt: columnOptionalString(stmt, 4),
-      parentRepoId: columnOptionalString(stmt, 5)
+      parentRepoId: hasParentRepoId ? columnOptionalString(stmt, 5) : nil
     )
   }
 
@@ -254,11 +287,36 @@ enum RAGRepoExporter {
   }
 
   private static func queryFile(db: OpaquePointer, fileId: String) -> ExportedFile? {
-    let fileSql = """
-      SELECT id, path, hash, language, updated_at, module_path, feature_tags,
-             line_count, method_count, byte_size
-      FROM files WHERE id = ?
-      """
+    // module_path/feature_tags added in v7, line_count/method_count/byte_size in v13
+    let hasModulePath = columnExists(db, table: "files", column: "module_path")
+    let hasLineCount = columnExists(db, table: "files", column: "line_count")
+
+    var columns = "id, path, hash, language, updated_at"
+    // Track column indices dynamically
+    var idx: Int32 = 5
+    let modulePathIdx: Int32?
+    let featureTagsIdx: Int32?
+    let lineCountIdx: Int32?
+    let methodCountIdx: Int32?
+    let byteSizeIdx: Int32?
+
+    if hasModulePath {
+      columns += ", module_path, feature_tags"
+      modulePathIdx = idx; idx += 1
+      featureTagsIdx = idx; idx += 1
+    } else {
+      modulePathIdx = nil; featureTagsIdx = nil
+    }
+    if hasLineCount {
+      columns += ", line_count, method_count, byte_size"
+      lineCountIdx = idx; idx += 1
+      methodCountIdx = idx; idx += 1
+      byteSizeIdx = idx; idx += 1
+    } else {
+      lineCountIdx = nil; methodCountIdx = nil; byteSizeIdx = nil
+    }
+
+    let fileSql = "SELECT \(columns) FROM files WHERE id = ?"
     var fileStmt: OpaquePointer?
     guard sqlite3_prepare_v2(db, fileSql, -1, &fileStmt, nil) == SQLITE_OK, let fileStmt else { return nil }
     defer { sqlite3_finalize(fileStmt) }
@@ -272,11 +330,11 @@ enum RAGRepoExporter {
       hash: columnString(fileStmt, 2),
       language: columnOptionalString(fileStmt, 3),
       updatedAt: columnOptionalString(fileStmt, 4),
-      modulePath: columnOptionalString(fileStmt, 5),
-      featureTags: columnOptionalString(fileStmt, 6),
-      lineCount: Int(sqlite3_column_int(fileStmt, 7)),
-      methodCount: Int(sqlite3_column_int(fileStmt, 8)),
-      byteSize: Int(sqlite3_column_int(fileStmt, 9))
+      modulePath: modulePathIdx.flatMap { columnOptionalString(fileStmt, $0) },
+      featureTags: featureTagsIdx.flatMap { columnOptionalString(fileStmt, $0) },
+      lineCount: lineCountIdx.map { Int(sqlite3_column_int(fileStmt, $0)) } ?? 0,
+      methodCount: methodCountIdx.map { Int(sqlite3_column_int(fileStmt, $0)) } ?? 0,
+      byteSize: byteSizeIdx.map { Int(sqlite3_column_int(fileStmt, $0)) } ?? 0
     )
 
     // Query chunks for this file
@@ -298,11 +356,40 @@ enum RAGRepoExporter {
   }
 
   private static func queryChunks(db: OpaquePointer, fileId: String) -> [ExportedChunk] {
+    // ai_summary/ai_tags/analyzed_at/analyzer_model added in v6, enriched_at in v8
+    let hasAnalysis = columnExists(db, table: "chunks", column: "ai_summary")
+    let hasEnrichedAt = columnExists(db, table: "chunks", column: "enriched_at")
+
+    var columns = "c.id, c.start_line, c.end_line, c.text, c.token_count, c.construct_type, c.construct_name, c.metadata"
+    // Track column indices dynamically (base columns = 0..7)
+    var idx: Int32 = 8
+    let aiSummaryIdx: Int32?
+    let aiTagsIdx: Int32?
+    let analyzedAtIdx: Int32?
+    let analyzerModelIdx: Int32?
+    let enrichedAtIdx: Int32?
+    let embeddingIdx: Int32
+
+    if hasAnalysis {
+      columns += ", c.ai_summary, c.ai_tags, c.analyzed_at, c.analyzer_model"
+      aiSummaryIdx = idx; idx += 1
+      aiTagsIdx = idx; idx += 1
+      analyzedAtIdx = idx; idx += 1
+      analyzerModelIdx = idx; idx += 1
+    } else {
+      aiSummaryIdx = nil; aiTagsIdx = nil; analyzedAtIdx = nil; analyzerModelIdx = nil
+    }
+    if hasEnrichedAt {
+      columns += ", c.enriched_at"
+      enrichedAtIdx = idx; idx += 1
+    } else {
+      enrichedAtIdx = nil
+    }
+    columns += ", e.embedding"
+    embeddingIdx = idx
+
     let sql = """
-      SELECT c.id, c.start_line, c.end_line, c.text, c.token_count,
-             c.construct_type, c.construct_name, c.metadata,
-             c.ai_summary, c.ai_tags, c.analyzed_at, c.analyzer_model, c.enriched_at,
-             e.embedding
+      SELECT \(columns)
       FROM chunks c
       LEFT JOIN embeddings e ON e.chunk_id = c.id
       WHERE c.file_id = ?
@@ -318,8 +405,8 @@ enum RAGRepoExporter {
     while sqlite3_step(stmt) == SQLITE_ROW {
       // Read embedding blob as base64
       var embeddingBase64: String?
-      if let blob = sqlite3_column_blob(stmt, 13) {
-        let blobSize = Int(sqlite3_column_bytes(stmt, 13))
+      if let blob = sqlite3_column_blob(stmt, embeddingIdx) {
+        let blobSize = Int(sqlite3_column_bytes(stmt, embeddingIdx))
         let data = Data(bytes: blob, count: blobSize)
         embeddingBase64 = data.base64EncodedString()
       }
@@ -333,11 +420,11 @@ enum RAGRepoExporter {
         constructType: columnOptionalString(stmt, 5),
         constructName: columnOptionalString(stmt, 6),
         metadata: columnOptionalString(stmt, 7),
-        aiSummary: columnOptionalString(stmt, 8),
-        aiTags: columnOptionalString(stmt, 9),
-        analyzedAt: columnOptionalString(stmt, 10),
-        analyzerModel: columnOptionalString(stmt, 11),
-        enrichedAt: columnOptionalString(stmt, 12),
+        aiSummary: aiSummaryIdx.flatMap { columnOptionalString(stmt, $0) },
+        aiTags: aiTagsIdx.flatMap { columnOptionalString(stmt, $0) },
+        analyzedAt: analyzedAtIdx.flatMap { columnOptionalString(stmt, $0) },
+        analyzerModel: analyzerModelIdx.flatMap { columnOptionalString(stmt, $0) },
+        enrichedAt: enrichedAtIdx.flatMap { columnOptionalString(stmt, $0) },
         embeddingBase64: embeddingBase64
       ))
     }
@@ -410,6 +497,10 @@ enum RAGRepoImporter {
     // Enable WAL and busy timeout
     execSQL(db, "PRAGMA journal_mode=WAL")
     execSQL(db, "PRAGMA busy_timeout=5000")
+
+    // Ensure the target DB has all columns needed for import.
+    // The main RAGStore.ensureSchema() may not have run on this connection.
+    ensureSyncSchema(db)
 
     var filesImported = 0
     var filesSkipped = 0
@@ -646,6 +737,68 @@ enum RAGRepoImporter {
   }
 
   // MARK: - Private Helpers
+
+  /// Ensure the target database has all columns needed for sync import.
+  /// This handles the case where the target DB was created by an older version
+  /// of RAGStore and hasn't had migrations run via ensureSchema().
+  private static func ensureSyncSchema(_ db: OpaquePointer) {
+    // v6 columns on chunks
+    if !columnExists(db, table: "chunks", column: "ai_summary") {
+      execSQL(db, "ALTER TABLE chunks ADD COLUMN ai_summary TEXT")
+    }
+    if !columnExists(db, table: "chunks", column: "ai_tags") {
+      execSQL(db, "ALTER TABLE chunks ADD COLUMN ai_tags TEXT")
+    }
+    if !columnExists(db, table: "chunks", column: "analyzed_at") {
+      execSQL(db, "ALTER TABLE chunks ADD COLUMN analyzed_at TEXT")
+    }
+    if !columnExists(db, table: "chunks", column: "analyzer_model") {
+      execSQL(db, "ALTER TABLE chunks ADD COLUMN analyzer_model TEXT")
+    }
+    // v7 columns on files
+    if !columnExists(db, table: "files", column: "module_path") {
+      execSQL(db, "ALTER TABLE files ADD COLUMN module_path TEXT")
+    }
+    if !columnExists(db, table: "files", column: "feature_tags") {
+      execSQL(db, "ALTER TABLE files ADD COLUMN feature_tags TEXT")
+    }
+    // v8 column on chunks
+    if !columnExists(db, table: "chunks", column: "enriched_at") {
+      execSQL(db, "ALTER TABLE chunks ADD COLUMN enriched_at TEXT")
+    }
+    // v11 column on repos
+    if !columnExists(db, table: "repos", column: "repo_identifier") {
+      execSQL(db, "ALTER TABLE repos ADD COLUMN repo_identifier TEXT")
+    }
+    // v12 column on repos
+    if !columnExists(db, table: "repos", column: "parent_repo_id") {
+      execSQL(db, "ALTER TABLE repos ADD COLUMN parent_repo_id TEXT")
+    }
+    // v13 columns on files
+    if !columnExists(db, table: "files", column: "line_count") {
+      execSQL(db, "ALTER TABLE files ADD COLUMN line_count INTEGER DEFAULT 0")
+    }
+    if !columnExists(db, table: "files", column: "method_count") {
+      execSQL(db, "ALTER TABLE files ADD COLUMN method_count INTEGER DEFAULT 0")
+    }
+    if !columnExists(db, table: "files", column: "byte_size") {
+      execSQL(db, "ALTER TABLE files ADD COLUMN byte_size INTEGER DEFAULT 0")
+    }
+  }
+
+  /// Check if a column exists in a table.
+  private static func columnExists(_ db: OpaquePointer, table: String, column: String) -> Bool {
+    let sql = "PRAGMA table_info(\(table))"
+    var stmt: OpaquePointer?
+    guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return false }
+    defer { sqlite3_finalize(stmt) }
+    while sqlite3_step(stmt) == SQLITE_ROW {
+      if let name = sqlite3_column_text(stmt, 1) {
+        if String(cString: name) == column { return true }
+      }
+    }
+    return false
+  }
 
   private static func findRepoByIdentifier(db: OpaquePointer, identifier: String) -> String? {
     let sql = "SELECT id FROM repos WHERE repo_identifier = ?"
