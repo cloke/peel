@@ -1,0 +1,8 @@
+{
+  "_comment": "Headless MCPCLI example config for embedding MCP in non-UI environments.",
+  "port": 8765,
+  "repoRoot": "/Users/me/code/my-repo",
+  "dataStorePath": "/Users/me/Library/Application Support/MyApp/MCP",
+  "allowedTools": null,
+  "logLevel": "info"
+}

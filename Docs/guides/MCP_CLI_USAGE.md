@@ -1,7 +1,7 @@
 ---
 title: MCP CLI Usage (PeelCLI)
-status: draft
-updated: 2026-02-19
+status: active
+updated: 2026-02-22
 ---
 
 # MCP CLI Usage (PeelCLI)
@@ -88,7 +88,9 @@ Tools/PeelCLI/.build/debug/peel-mcp
 }
 ```
 
-See `Tools/MCPCLI/config.example.json` for the canonical template.
+See:
+- `Tools/MCPCLI/config.example.json`
+- `Docs/guides/examples/mcpcli.config.example.json`
 
 ## Common workflows
 
