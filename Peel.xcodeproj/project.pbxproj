@@ -460,7 +460,7 @@
 				03BPETOK2F2A000100000003 /* XCRemoteSwiftPackageReference "swift-bpe-tokenizer" */,
 				03MLXEMB2F2B000100000003 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
 				04REMPKG0002000000000001 /* XCRemoteSwiftPackageReference "MCPCore" */,
-				04LOCPKG0008000000000001 /* XCLocalSwiftPackageReference "Local Packages/RAGCore" */,
+				04REMPKG0003000000000001 /* XCRemoteSwiftPackageReference "RAGCore" */,
 				04LOCPKG0003000000000001 /* XCLocalSwiftPackageReference "Local Packages/PeelUI" */,
 				04LOCPKG0004000000000001 /* XCLocalSwiftPackageReference "Local Packages/Git" */,
 				04LOCPKG0005000000000001 /* XCLocalSwiftPackageReference "Local Packages/Github" */,
@@ -1124,10 +1124,6 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = "Local Packages/PIIScrubber";
 		};
-		04LOCPKG0008000000000001 /* XCLocalSwiftPackageReference "Local Packages/RAGCore" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = "Local Packages/RAGCore";
-		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -1177,6 +1173,14 @@
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 1.0.0;
+			};
+		};
+		04REMPKG0003000000000001 /* XCRemoteSwiftPackageReference "RAGCore" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/crunchybananas/RAGCore.git";
+			requirement = {
+				branch = main;
+				kind = branch;
 			};
 		};
 
@@ -1270,7 +1274,7 @@
 		};
 		04RAGCOR2F3C000100000003 /* RAGCore */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 04LOCPKG0008000000000001 /* XCLocalSwiftPackageReference "Local Packages/RAGCore" */;
+			package = 04REMPKG0003000000000001 /* XCRemoteSwiftPackageReference "RAGCore" */;
 			productName = RAGCore;
 		};
 /* End XCSwiftPackageProductDependency section */
