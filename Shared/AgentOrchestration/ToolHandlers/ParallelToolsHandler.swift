@@ -38,8 +38,16 @@ final class ParallelToolsHandler {
 
   // MARK: - Helper Methods (reduces boilerplate)
 
+  private func toolResult(id: Any?, result: [String: Any]) -> Data {
+    JSONRPCResponseBuilder.makeToolResult(id: id, result: result)
+  }
+
+  private func rpcError(id: Any?, code: Int, message: String, data: [String: Any]? = nil) -> Data {
+    JSONRPCResponseBuilder.makeError(id: id, code: code, message: message, data: data)
+  }
+
   private func runnerNotInitializedError(id: Any?) -> (Int, Data) {
-    (500, JSONRPCResponseBuilder.makeError(
+    (500, rpcError(
       id: id,
       code: JSONRPCResponseBuilder.ErrorCode.internalError,
       message: "Parallel worktree runner not initialized"
@@ -47,7 +55,7 @@ final class ParallelToolsHandler {
   }
 
   private func missingParamError(id: Any?, param: String) -> (Int, Data) {
-    (400, JSONRPCResponseBuilder.makeError(
+    (400, rpcError(
       id: id,
       code: JSONRPCResponseBuilder.ErrorCode.invalidParams,
       message: "Missing \(param)"
@@ -55,7 +63,7 @@ final class ParallelToolsHandler {
   }
 
   private func invalidParamError(id: Any?, param: String, reason: String? = nil) -> (Int, Data) {
-    (400, JSONRPCResponseBuilder.makeError(
+    (400, rpcError(
       id: id,
       code: JSONRPCResponseBuilder.ErrorCode.invalidParams,
       message: reason ?? "Invalid \(param)"
@@ -64,7 +72,7 @@ final class ParallelToolsHandler {
 
   private func runNotFoundError(id: Any?, runId: String, runner: ParallelWorktreeRunner) -> (Int, Data) {
     let knownRuns = runner.runs.map { encodeParallelRun($0) }
-    return (404, JSONRPCResponseBuilder.makeError(
+    return (404, rpcError(
       id: id,
       code: JSONRPCResponseBuilder.ErrorCode.notFound,
       message: "Run not found",
@@ -137,7 +145,7 @@ final class ParallelToolsHandler {
     id: Any?
   ) -> ValidationResult<ParallelWorktreeExecution> {
     guard let execution = run.executions.first(where: { $0.id == executionId }) else {
-      let error = (404, JSONRPCResponseBuilder.makeError(
+      let error = (404, rpcError(
         id: id,
         code: JSONRPCResponseBuilder.ErrorCode.notFound,
         message: "Execution not found"
@@ -203,7 +211,7 @@ final class ParallelToolsHandler {
     case "parallel.append":
       return await handleAppend(id: id, arguments: arguments)
     default:
-      return (400, JSONRPCResponseBuilder.makeError(
+      return (400, rpcError(
         id: id,
         code: JSONRPCResponseBuilder.ErrorCode.methodNotFound,
         message: "Unknown parallel tool: \(name)"
@@ -317,7 +325,7 @@ final class ParallelToolsHandler {
       "taskCount": "\(tasks.count)"
     ])
 
-    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: encodeParallelRun(run)))
+    return (200, toolResult(id: id, result: encodeParallelRun(run)))
   }
 
   private func handleStart(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
@@ -352,7 +360,7 @@ final class ParallelToolsHandler {
       }
     }
 
-    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
+    return (200, toolResult(id: id, result: [
       "runId": runId.uuidString,
       "status": "starting"
     ]))
@@ -369,7 +377,7 @@ final class ParallelToolsHandler {
 
     // First try in-memory
     if let run = runner.getRun(id: runId) {
-      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: encodeParallelRun(run, includeDetails: true)))
+      return (200, toolResult(id: id, result: encodeParallelRun(run, includeDetails: true)))
     }
 
     // Fall back to SwiftData snapshot
@@ -399,10 +407,10 @@ final class ParallelToolsHandler {
         "executions": snapshot.executionsJSON,
         "source": "snapshot"
       ]
-      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: snapshotPayload))
+      return (200, toolResult(id: id, result: snapshotPayload))
     }
 
-    return (404, JSONRPCResponseBuilder.makeError(
+    return (404, rpcError(
       id: id,
       code: JSONRPCResponseBuilder.ErrorCode.notFound,
       message: "Run not found"
@@ -411,7 +419,7 @@ final class ParallelToolsHandler {
 
   private func handleList(id: Any?, arguments: [String: Any]) -> (Int, Data) {
     guard let runner = delegate?.parallelWorktreeRunner else {
-      return (500, JSONRPCResponseBuilder.makeError(
+      return (500, rpcError(
         id: id,
         code: JSONRPCResponseBuilder.ErrorCode.internalError,
         message: "Parallel worktree runner not initialized"
@@ -467,7 +475,7 @@ final class ParallelToolsHandler {
       }
     }
 
-    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
+    return (200, toolResult(id: id, result: [
       "runs": runPayloads,
       "snapshots": snapshots,
       "totalCount": runPayloads.count
@@ -494,7 +502,7 @@ final class ParallelToolsHandler {
           "source": "snapshot"
         ]
       }
-      return (404, JSONRPCResponseBuilder.makeError(
+      return (404, rpcError(
         id: id,
         code: JSONRPCResponseBuilder.ErrorCode.notFound,
         message: "Run not found",
@@ -510,7 +518,7 @@ final class ParallelToolsHandler {
 
     if approveAll {
       runner.approveAllPending(in: run)
-      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
+      return (200, toolResult(id: id, result: [
         "runId": runId.uuidString,
         "approved": "all",
         "pendingReviewCount": run.pendingReviewCount
@@ -522,7 +530,7 @@ final class ParallelToolsHandler {
     }
 
     guard case .success(let execution) = getExecution(executionId: executionId, from: run, id: id) else {
-      return (404, JSONRPCResponseBuilder.makeError(
+      return (404, rpcError(
         id: id,
         code: JSONRPCResponseBuilder.ErrorCode.notFound,
         message: "Execution not found"
@@ -530,7 +538,7 @@ final class ParallelToolsHandler {
     }
 
     runner.approveExecution(execution, in: run)
-    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
+    return (200, toolResult(id: id, result: [
       "runId": runId.uuidString,
       "executionId": executionId.uuidString,
       "status": execution.status.displayName
@@ -555,7 +563,7 @@ final class ParallelToolsHandler {
     }
 
     guard case .success(let execution) = getExecution(executionId: executionId, from: run, id: id) else {
-      return (404, JSONRPCResponseBuilder.makeError(
+      return (404, rpcError(
         id: id,
         code: JSONRPCResponseBuilder.ErrorCode.notFound,
         message: "Execution not found"
@@ -565,7 +573,7 @@ final class ParallelToolsHandler {
     let reason = optionalString("reason", from: arguments, default: "Rejected via MCP") ?? "Rejected via MCP"
     runner.rejectExecution(execution, in: run, reason: reason)
 
-    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
+    return (200, toolResult(id: id, result: [
       "runId": runId.uuidString,
       "executionId": executionId.uuidString,
       "status": execution.status.displayName
@@ -589,7 +597,7 @@ final class ParallelToolsHandler {
 
     if reviewAll {
       runner.markAllReviewed(in: run)
-      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
+      return (200, toolResult(id: id, result: [
         "runId": runId.uuidString,
         "reviewed": "all",
         "pendingReviewCount": run.pendingReviewCount
@@ -601,7 +609,7 @@ final class ParallelToolsHandler {
     }
 
     guard case .success(let execution) = getExecution(executionId: executionId, from: run, id: id) else {
-      return (404, JSONRPCResponseBuilder.makeError(
+      return (404, rpcError(
         id: id,
         code: JSONRPCResponseBuilder.ErrorCode.notFound,
         message: "Execution not found"
@@ -609,7 +617,7 @@ final class ParallelToolsHandler {
     }
 
     runner.markReviewed(execution, in: run)
-    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
+    return (200, toolResult(id: id, result: [
       "runId": runId.uuidString,
       "executionId": executionId.uuidString,
       "status": execution.status.displayName
@@ -634,7 +642,7 @@ final class ParallelToolsHandler {
     do {
       if mergeAll {
         try await runner.mergeAllApproved(in: run)
-        return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
+        return (200, toolResult(id: id, result: [
           "runId": runId.uuidString,
           "merged": "all",
           "mergedCount": run.mergedCount
@@ -646,7 +654,7 @@ final class ParallelToolsHandler {
       }
 
       guard case .success(let execution) = getExecution(executionId: executionId, from: run, id: id) else {
-        return (404, JSONRPCResponseBuilder.makeError(
+        return (404, rpcError(
           id: id,
           code: JSONRPCResponseBuilder.ErrorCode.notFound,
           message: "Execution not found"
@@ -654,14 +662,14 @@ final class ParallelToolsHandler {
       }
 
       try await runner.mergeExecution(execution, in: run)
-      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
+      return (200, toolResult(id: id, result: [
         "runId": runId.uuidString,
         "executionId": executionId.uuidString,
         "status": execution.status.displayName
       ]))
     } catch {
       await delegate?.parallelTelemetryProvider.warning("Parallel merge failed", metadata: ["error": error.localizedDescription])
-      return (500, JSONRPCResponseBuilder.makeError(
+      return (500, rpcError(
         id: id,
         code: JSONRPCResponseBuilder.ErrorCode.internalError,
         message: error.localizedDescription
@@ -684,7 +692,7 @@ final class ParallelToolsHandler {
 
     await runner.pauseRun(run)
     await delegate?.parallelTelemetryProvider.info("Parallel run paused", metadata: ["runId": runId.uuidString])
-    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["runId": runId.uuidString, "paused": true]))
+    return (200, toolResult(id: id, result: ["runId": runId.uuidString, "paused": true]))
   }
 
   private func handleResume(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
@@ -702,7 +710,7 @@ final class ParallelToolsHandler {
 
     await runner.resumeRun(run)
     await delegate?.parallelTelemetryProvider.info("Parallel run resumed", metadata: ["runId": runId.uuidString])
-    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["runId": runId.uuidString, "paused": false]))
+    return (200, toolResult(id: id, result: ["runId": runId.uuidString, "paused": false]))
   }
 
   private func handleInstruct(id: Any?, arguments: [String: Any]) -> (Int, Data) {
@@ -725,7 +733,7 @@ final class ParallelToolsHandler {
     let executionId = optionalUUID("executionId", from: arguments)
 
     runner.addGuidance(guidance, to: run, executionId: executionId)
-    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
+    return (200, toolResult(id: id, result: [
       "runId": runId.uuidString,
       "executionId": executionId?.uuidString as Any,
       "guidanceCount": run.operatorGuidance.count
@@ -749,7 +757,7 @@ final class ParallelToolsHandler {
 
     await delegate?.parallelTelemetryProvider.info("Parallel run cancelled", metadata: ["runId": runId.uuidString])
 
-    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
+    return (200, toolResult(id: id, result: [
       "runId": runId.uuidString,
       "status": "cancelled"
     ]))
@@ -763,12 +771,12 @@ final class ParallelToolsHandler {
     guard case .success(let run) = getRun(runId: runId, from: runner, id: id) else { return runNotFoundError(id: id, runId: runId.uuidString, runner: runner) }
     guard case .success(let executionId) = getUUID("executionId", from: arguments, id: id) else { return missingParamError(id: id, param: "executionId") }
     guard case .success(let execution) = getExecution(executionId: executionId, from: run, id: id) else {
-      return (404, JSONRPCResponseBuilder.makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.notFound, message: "Execution not found"))
+      return (404, rpcError(id: id, code: JSONRPCResponseBuilder.ErrorCode.notFound, message: "Execution not found"))
     }
     let maxLines = arguments["maxLines"] as? Int
     let diff = await runner.diffExecution(execution, in: run, maxLines: maxLines)
     let truncated = maxLines.map { diff.components(separatedBy: "\n").count >= $0 } ?? false
-    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
+    return (200, toolResult(id: id, result: [
       "runId": runId.uuidString,
       "executionId": executionId.uuidString,
       "branchName": execution.branchName as Any,
@@ -783,20 +791,20 @@ final class ParallelToolsHandler {
     guard case .success(let run) = getRun(runId: runId, from: runner, id: id) else { return runNotFoundError(id: id, runId: runId.uuidString, runner: runner) }
     guard case .success(let executionId) = getUUID("executionId", from: arguments, id: id) else { return missingParamError(id: id, param: "executionId") }
     guard case .success(let execution) = getExecution(executionId: executionId, from: run, id: id) else {
-      return (404, JSONRPCResponseBuilder.makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.notFound, message: "Execution not found"))
+      return (404, rpcError(id: id, code: JSONRPCResponseBuilder.ErrorCode.notFound, message: "Execution not found"))
     }
     let amendedPrompt = optionalString("amendedPrompt", from: arguments)
     let guidance = optionalString("guidance", from: arguments)
     do {
       try await runner.retryExecution(execution, in: run, amendedPrompt: amendedPrompt, guidance: guidance)
       await delegate?.parallelTelemetryProvider.info("Parallel execution retried", metadata: ["runId": runId.uuidString, "executionId": executionId.uuidString])
-      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
+      return (200, toolResult(id: id, result: [
         "runId": runId.uuidString,
         "executionId": executionId.uuidString,
         "status": execution.status.displayName
       ]))
     } catch {
-      return (400, JSONRPCResponseBuilder.makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: error.localizedDescription))
+      return (400, rpcError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: error.localizedDescription))
     }
   }
 
@@ -840,14 +848,14 @@ final class ParallelToolsHandler {
     do {
       try runner.appendTasks(resolvedTasks, to: run)
       await delegate?.parallelTelemetryProvider.info("Tasks appended to parallel run", metadata: ["runId": runId.uuidString, "count": "\(newTasks.count)"])
-      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
+      return (200, toolResult(id: id, result: [
         "runId": runId.uuidString,
         "addedCount": newTasks.count,
         "totalExecutionCount": run.executions.count,
         "status": run.status.displayName
       ]))
     } catch {
-      return (400, JSONRPCResponseBuilder.makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: error.localizedDescription))
+      return (400, rpcError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: error.localizedDescription))
     }
   }
 
