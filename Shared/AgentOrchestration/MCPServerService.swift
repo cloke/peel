@@ -786,18 +786,7 @@ public final class MCPServerService {
     )
     self.parallelWorktreeRunner?.setRAGStore(localRagStore)
 
-    // Wire up tool handler delegates (must be after self is fully initialized)
-    self.uiToolsHandler.delegate = self
-    self.parallelToolsHandler.delegate = self
-    self.ragToolsHandler?.delegate = self
-    self.codeEditToolsHandler?.delegate = self
-    self.chainToolsHandler?.delegate = self
-    self.swarmToolsHandler.delegate = self
-    self.repoToolsHandler.delegate = self
-    self.worktreeToolsHandler.delegate = self
-    self.githubToolsHandler?.delegate = self
-    self.terminalToolsHandler.delegate = self
-    SwarmCoordinator.shared.ragSyncDelegate = self
+    wireToolHandlerDelegates()
 
     // If running in worker mode, inject the chain executor into the already-running SwarmCoordinator
     // This enables workers to actually execute chains instead of returning mock results
@@ -824,6 +813,20 @@ public final class MCPServerService {
     let executor = DefaultChainExecutor(chainRunner: chainRunner, agentManager: agentManager)
     SwarmCoordinator.shared.configure(chainExecutor: executor)
     logger.info("SwarmCoordinator configured with chain executor via UI")
+  }
+
+  private func wireToolHandlerDelegates() {
+    uiToolsHandler.delegate = self
+    parallelToolsHandler.delegate = self
+    ragToolsHandler?.delegate = self
+    codeEditToolsHandler?.delegate = self
+    chainToolsHandler?.delegate = self
+    swarmToolsHandler.delegate = self
+    repoToolsHandler.delegate = self
+    worktreeToolsHandler.delegate = self
+    githubToolsHandler?.delegate = self
+    terminalToolsHandler.delegate = self
+    SwarmCoordinator.shared.ragSyncDelegate = self
   }
 
   public var toolCategories: [ToolCategory] {
