@@ -147,8 +147,19 @@ public final class WorktreeToolsHandler: MCPToolHandler {
     }
 
     do {
-      let includeMain = arguments["includeMain"] as? Bool ?? false
-      let repoPath = arguments["repoPath"] as? String
+      let schema: [ToolArgSchemaField] = [
+        .optional("includeMain", .bool, default: false),
+        .optional("repoPath", .string)
+      ]
+      let parsedResult = parseArguments(arguments, schema: schema, id: id)
+      guard case .success(let parsed) = parsedResult else {
+        if case .failure(let error) = parsedResult {
+          return error.response
+        }
+        return invalidParamError(id: id, param: "arguments")
+      }
+      let includeMain = parsed.bool("includeMain") ?? false
+      let repoPath = parsed.string("repoPath")
 
       var allWorktrees = try await worktreeDelegate.listAllWorktrees()
 
@@ -190,11 +201,21 @@ public final class WorktreeToolsHandler: MCPToolHandler {
       return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Worktree delegate not configured"))
     }
 
-    guard let path = arguments["path"] as? String else {
+    let schema: [ToolArgSchemaField] = [
+      .required("path", .string),
+      .optional("force", .bool, default: false)
+    ]
+    let parsedResult = parseArguments(arguments, schema: schema, id: id)
+    guard case .success(let parsed) = parsedResult else {
+      if case .failure(let error) = parsedResult {
+        return error.response
+      }
+      return invalidParamError(id: id, param: "arguments")
+    }
+    guard let path = parsed.string("path") else {
       return missingParamError(id: id, param: "path")
     }
-
-    let force = arguments["force"] as? Bool ?? false
+    let force = parsed.bool("force") ?? false
 
     do {
       try await worktreeDelegate.removeWorktree(path: path, force: force)
@@ -264,15 +285,25 @@ public final class WorktreeToolsHandler: MCPToolHandler {
       return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Worktree delegate not configured"))
     }
 
-    guard let repoPath = arguments["repoPath"] as? String else {
+    let schema: [ToolArgSchemaField] = [
+      .required("repoPath", .string),
+      .required("branchName", .string),
+      .optional("baseBranch", .string, default: "origin/main")
+    ]
+    let parsedResult = parseArguments(arguments, schema: schema, id: id)
+    guard case .success(let parsed) = parsedResult else {
+      if case .failure(let error) = parsedResult {
+        return error.response
+      }
+      return invalidParamError(id: id, param: "arguments")
+    }
+    guard let repoPath = parsed.string("repoPath") else {
       return missingParamError(id: id, param: "repoPath")
     }
-
-    guard let branchName = arguments["branchName"] as? String else {
+    guard let branchName = parsed.string("branchName") else {
       return missingParamError(id: id, param: "branchName")
     }
-
-    let baseBranch = arguments["baseBranch"] as? String ?? "origin/main"
+    let baseBranch = parsed.string("baseBranch") ?? "origin/main"
 
     // Sanitize branch name
     let sanitizedBranch = sanitizeBranchName(branchName)
