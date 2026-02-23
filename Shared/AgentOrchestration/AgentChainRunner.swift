@@ -877,7 +877,22 @@ public final class AgentChainRunner {
   ) async throws -> AgentChainResult {
     try checkCancellation(chain: chain)
 
-    // Dispatch based on step type
+    return try await dispatchStep(
+      agent,
+      at: index,
+      chain: chain,
+      prompt: prompt,
+      contextOverride: contextOverride
+    )
+  }
+
+  private func dispatchStep(
+    _ agent: Agent,
+    at index: Int,
+    chain: AgentChain,
+    prompt: String,
+    contextOverride: String?
+  ) async throws -> AgentChainResult {
     switch agent.stepType {
     case .deterministic:
       // VM-aware: route deterministic steps through VM when chain requires it
@@ -897,6 +912,143 @@ public final class AgentChainRunner {
     }
   }
 
+  private enum ShellStepMode {
+    case deterministic
+    case gate
+
+    var startTelemetry: String {
+      switch self {
+      case .deterministic: "Deterministic step start"
+      case .gate: "Gate step start"
+      }
+    }
+
+    var completeTelemetry: String {
+      switch self {
+      case .deterministic: "Deterministic step complete"
+      case .gate: "Gate step complete"
+      }
+    }
+
+    var failedTelemetry: String {
+      switch self {
+      case .deterministic: "Deterministic step failed"
+      case .gate: "Gate step failed"
+      }
+    }
+
+    var model: String {
+      switch self {
+      case .deterministic: "deterministic"
+      case .gate: "gate"
+      }
+    }
+  }
+
+  private func runShellBackedStep(
+    _ agent: Agent,
+    chain: AgentChain,
+    command: String,
+    mode: ShellStepMode
+  ) async throws -> AgentChainResult {
+    let workingDirectory = agent.workingDirectory ?? chain.workingDirectory
+    let startTime = Date()
+
+    await telemetryProvider.info(mode.startTelemetry, metadata: [
+      "chainId": chain.id.uuidString,
+      "agentName": agent.name,
+      "command": command,
+      "workingDirectory": workingDirectory ?? ""
+    ])
+
+    switch mode {
+    case .deterministic:
+      agent.updateState(.working)
+      chain.addStatusMessage("Running: \(command)", type: .tool)
+    case .gate:
+      agent.updateState(.testing)
+      chain.addStatusMessage("Gate check: \(command)", type: .tool)
+    }
+
+    let (exitCode, stdout, stderr) = await runShellCommand(command, in: workingDirectory)
+    let duration = Date().timeIntervalSince(startTime)
+    let durationStr = String(format: "%.1fs", duration)
+    let output = [
+      stdout.isEmpty ? nil : stdout,
+      stderr.isEmpty ? nil : "stderr: \(stderr)"
+    ].compactMap { $0 }.joined(separator: "\n")
+
+    if mode == .deterministic, exitCode != 0 {
+      agent.updateState(.failed(message: "Exit code \(exitCode)"))
+      chain.addStatusMessage("Step '\(agent.name)' failed (exit \(exitCode))", type: .error)
+      await telemetryProvider.warning(mode.failedTelemetry, metadata: [
+        "agentName": agent.name,
+        "exitCode": "\(exitCode)",
+        "stderr": stderr
+      ])
+      throw ChainError.deterministicStepFailed(
+        stepName: agent.name,
+        exitCode: exitCode,
+        output: output
+      )
+    }
+
+    if mode == .gate {
+      let passed = exitCode == 0
+      if passed {
+        agent.updateState(.complete)
+        chain.addStatusMessage("Gate '\(agent.name)' passed (\(durationStr))", type: .complete)
+      } else {
+        agent.updateState(.failed(message: "Gate failed (exit \(exitCode))"))
+        chain.addStatusMessage("Gate '\(agent.name)' failed (exit \(exitCode))", type: .error)
+      }
+
+      await telemetryProvider.info(mode.completeTelemetry, metadata: [
+        "agentName": agent.name,
+        "passed": "\(passed)",
+        "exitCode": "\(exitCode)",
+        "duration": durationStr
+      ])
+
+      var result = AgentChainResult(
+        agentId: agent.id,
+        agentName: agent.name,
+        model: mode.model,
+        prompt: command,
+        output: output,
+        duration: durationStr,
+        premiumCost: 0
+      )
+      result.gateResult = passed ? .passed : .failed(exitCode: exitCode)
+
+      if !passed {
+        throw ChainError.gateStepFailed(
+          stepName: agent.name,
+          exitCode: exitCode,
+          output: output
+        )
+      }
+      return result
+    }
+
+    agent.updateState(.complete)
+    chain.addStatusMessage("Step '\(agent.name)' completed (\(durationStr))", type: .complete)
+    await telemetryProvider.info(mode.completeTelemetry, metadata: [
+      "agentName": agent.name,
+      "duration": durationStr
+    ])
+
+    return AgentChainResult(
+      agentId: agent.id,
+      agentName: agent.name,
+      model: mode.model,
+      prompt: command,
+      output: output,
+      duration: durationStr,
+      premiumCost: 0
+    )
+  }
+
   // MARK: - Deterministic Step Execution
 
   /// Run a deterministic step: execute a shell command directly, no LLM involved.
@@ -910,61 +1062,7 @@ public final class AgentChainRunner {
     guard let command = agent.command, !command.isEmpty else {
       throw ChainError.configurationError("Deterministic step '\(agent.name)' has no command")
     }
-
-    let workingDirectory = agent.workingDirectory ?? chain.workingDirectory
-    let startTime = Date()
-
-    await telemetryProvider.info("Deterministic step start", metadata: [
-      "chainId": chain.id.uuidString,
-      "agentName": agent.name,
-      "command": command,
-      "workingDirectory": workingDirectory ?? ""
-    ])
-
-    agent.updateState(.working)
-    chain.addStatusMessage("Running: \(command)", type: .tool)
-
-    let (exitCode, stdout, stderr) = await runShellCommand(command, in: workingDirectory)
-    let duration = Date().timeIntervalSince(startTime)
-    let durationStr = String(format: "%.1fs", duration)
-
-    let output = [
-      stdout.isEmpty ? nil : stdout,
-      stderr.isEmpty ? nil : "stderr: \(stderr)"
-    ].compactMap { $0 }.joined(separator: "\n")
-
-    if exitCode != 0 {
-      agent.updateState(.failed(message: "Exit code \(exitCode)"))
-      chain.addStatusMessage("Step '\(agent.name)' failed (exit \(exitCode))", type: .error)
-      await telemetryProvider.warning("Deterministic step failed", metadata: [
-        "agentName": agent.name,
-        "exitCode": "\(exitCode)",
-        "stderr": stderr
-      ])
-      throw ChainError.deterministicStepFailed(
-        stepName: agent.name,
-        exitCode: exitCode,
-        output: output
-      )
-    }
-
-    agent.updateState(.complete)
-    chain.addStatusMessage("Step '\(agent.name)' completed (\(durationStr))", type: .complete)
-
-    await telemetryProvider.info("Deterministic step complete", metadata: [
-      "agentName": agent.name,
-      "duration": durationStr
-    ])
-
-    return AgentChainResult(
-      agentId: agent.id,
-      agentName: agent.name,
-      model: "deterministic",
-      prompt: command,
-      output: output,
-      duration: durationStr,
-      premiumCost: 0
-    )
+    return try await runShellBackedStep(agent, chain: chain, command: command, mode: .deterministic)
   }
 
   // MARK: - Gate Step Execution
@@ -980,66 +1078,7 @@ public final class AgentChainRunner {
     guard let command = agent.command, !command.isEmpty else {
       throw ChainError.configurationError("Gate step '\(agent.name)' has no command")
     }
-
-    let workingDirectory = agent.workingDirectory ?? chain.workingDirectory
-    let startTime = Date()
-
-    await telemetryProvider.info("Gate step start", metadata: [
-      "chainId": chain.id.uuidString,
-      "agentName": agent.name,
-      "command": command,
-      "workingDirectory": workingDirectory ?? ""
-    ])
-
-    agent.updateState(.testing)
-    chain.addStatusMessage("Gate check: \(command)", type: .tool)
-
-    let (exitCode, stdout, stderr) = await runShellCommand(command, in: workingDirectory)
-    let duration = Date().timeIntervalSince(startTime)
-    let durationStr = String(format: "%.1fs", duration)
-
-    let output = [
-      stdout.isEmpty ? nil : stdout,
-      stderr.isEmpty ? nil : "stderr: \(stderr)"
-    ].compactMap { $0 }.joined(separator: "\n")
-
-    let passed = exitCode == 0
-
-    if passed {
-      agent.updateState(.complete)
-      chain.addStatusMessage("Gate '\(agent.name)' passed (\(durationStr))", type: .complete)
-    } else {
-      agent.updateState(.failed(message: "Gate failed (exit \(exitCode))"))
-      chain.addStatusMessage("Gate '\(agent.name)' failed (exit \(exitCode))", type: .error)
-    }
-
-    await telemetryProvider.info("Gate step complete", metadata: [
-      "agentName": agent.name,
-      "passed": "\(passed)",
-      "exitCode": "\(exitCode)",
-      "duration": durationStr
-    ])
-
-    var result = AgentChainResult(
-      agentId: agent.id,
-      agentName: agent.name,
-      model: "gate",
-      prompt: command,
-      output: output,
-      duration: durationStr,
-      premiumCost: 0
-    )
-    result.gateResult = passed ? .passed : .failed(exitCode: exitCode)
-
-    if !passed {
-      throw ChainError.gateStepFailed(
-        stepName: agent.name,
-        exitCode: exitCode,
-        output: output
-      )
-    }
-
-    return result
+    return try await runShellBackedStep(agent, chain: chain, command: command, mode: .gate)
   }
 
   /// Execute a shell command via /bin/zsh and return (exitCode, stdout, stderr)
