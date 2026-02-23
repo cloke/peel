@@ -509,7 +509,7 @@ final class ChainToolsHandler: MCPToolHandler {
       dict["reviewGate"] = reviewGate
     }
     if let startedAt = status.startedAt {
-      dict["startedAt"] = ISO8601DateFormatter().string(from: startedAt)
+      dict["startedAt"] = startedAt.iso8601
     }
     return dict
   }
@@ -521,10 +521,10 @@ final class ChainToolsHandler: MCPToolHandler {
       "prompt": summary.prompt
     ]
     if let startedAt = summary.startedAt {
-      dict["startedAt"] = ISO8601DateFormatter().string(from: startedAt)
+      dict["startedAt"] = startedAt.iso8601
     }
     if let completedAt = summary.completedAt {
-      dict["completedAt"] = ISO8601DateFormatter().string(from: completedAt)
+      dict["completedAt"] = completedAt.iso8601
     }
     return dict
   }
