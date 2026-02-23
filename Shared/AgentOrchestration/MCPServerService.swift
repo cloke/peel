@@ -605,7 +605,20 @@ public final class MCPServerService {
   let piiScrubberService = PIIScrubberService()
   let doclingService = DoclingService()
   let vmIsolationService: VMIsolationService
-  var localRagStore = makeDefaultRAGStore()
+  @ObservationIgnored private var cachedLocalRagStore: LocalRAGStore?
+  var localRagStore: LocalRAGStore {
+    get {
+      if let cachedLocalRagStore {
+        return cachedLocalRagStore
+      }
+      let store = makeDefaultRAGStore()
+      cachedLocalRagStore = store
+      return store
+    }
+    set {
+      cachedLocalRagStore = newValue
+    }
+  }
   var parallelWorktreeRunner: ParallelWorktreeRunner?
 
   // MARK: - Tool Handlers (extracted from this file for maintainability)
