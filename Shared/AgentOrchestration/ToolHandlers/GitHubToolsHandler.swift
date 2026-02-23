@@ -62,15 +62,22 @@ final class GitHubToolsHandler: MCPToolHandler {
     arguments: [String: Any],
     delegate: GitHubToolsHandlerDelegate
   ) async -> (Int, Data) {
-    guard let owner = arguments["owner"] as? String,
-          let repo = arguments["repo"] as? String,
-          let number = arguments["number"] as? Int else {
-      return (400, makeError(
-        id: id,
-        code: -32602,
-        message: "Invalid params",
-        data: ["error": "Required: owner (string), repo (string), number (int)"]
-      ))
+    let schema: [ToolArgSchemaField] = [
+      .required("owner", .string),
+      .required("repo", .string),
+      .required("number", .int)
+    ]
+    let parsedResult = parseArguments(arguments, schema: schema, id: id)
+    guard case .success(let parsed) = parsedResult else {
+      if case .failure(let error) = parsedResult {
+        return error.response
+      }
+      return invalidParamError(id: id, param: "arguments")
+    }
+    guard let owner = parsed.string("owner"),
+          let repo = parsed.string("repo"),
+          let number = parsed.int("number") else {
+      return invalidParamError(id: id, param: "arguments")
     }
     
     do {
@@ -104,17 +111,23 @@ final class GitHubToolsHandler: MCPToolHandler {
     arguments: [String: Any],
     delegate: GitHubToolsHandlerDelegate
   ) async -> (Int, Data) {
-    guard let owner = arguments["owner"] as? String,
-          let repo = arguments["repo"] as? String else {
-      return (400, makeError(
-        id: id,
-        code: -32602,
-        message: "Invalid params",
-        data: ["error": "Required: owner (string), repo (string). Optional: state (string)"]
-      ))
+    let schema: [ToolArgSchemaField] = [
+      .required("owner", .string),
+      .required("repo", .string),
+      .optional("state", .string, default: "open")
+    ]
+    let parsedResult = parseArguments(arguments, schema: schema, id: id)
+    guard case .success(let parsed) = parsedResult else {
+      if case .failure(let error) = parsedResult {
+        return error.response
+      }
+      return invalidParamError(id: id, param: "arguments")
     }
-    
-    let state = arguments["state"] as? String ?? "open"
+    guard let owner = parsed.string("owner"),
+          let repo = parsed.string("repo") else {
+      return invalidParamError(id: id, param: "arguments")
+    }
+    let state = parsed.string("state") ?? "open"
     
     do {
       let issues = try await delegate.listGitHubIssues(owner: owner, repo: repo, state: state)

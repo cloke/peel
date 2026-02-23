@@ -163,10 +163,179 @@ public struct ParamError: Error {
   }
 }
 
+public enum ToolArgType: String {
+  case string
+  case int
+  case double
+  case bool
+  case uuid
+  case array
+  case object
+}
+
+public struct ToolArgSchemaField {
+  public let key: String
+  public let type: ToolArgType
+  public let required: Bool
+  public let defaultValue: Any?
+  public let trimString: Bool
+  public let allowEmptyString: Bool
+
+  public init(
+    key: String,
+    type: ToolArgType,
+    required: Bool = false,
+    defaultValue: Any? = nil,
+    trimString: Bool = true,
+    allowEmptyString: Bool = false
+  ) {
+    self.key = key
+    self.type = type
+    self.required = required
+    self.defaultValue = defaultValue
+    self.trimString = trimString
+    self.allowEmptyString = allowEmptyString
+  }
+
+  public static func required(
+    _ key: String,
+    _ type: ToolArgType,
+    trimString: Bool = true,
+    allowEmptyString: Bool = false
+  ) -> ToolArgSchemaField {
+    ToolArgSchemaField(
+      key: key,
+      type: type,
+      required: true,
+      trimString: trimString,
+      allowEmptyString: allowEmptyString
+    )
+  }
+
+  public static func optional(
+    _ key: String,
+    _ type: ToolArgType,
+    default defaultValue: Any? = nil,
+    trimString: Bool = true,
+    allowEmptyString: Bool = false
+  ) -> ToolArgSchemaField {
+    ToolArgSchemaField(
+      key: key,
+      type: type,
+      required: false,
+      defaultValue: defaultValue,
+      trimString: trimString,
+      allowEmptyString: allowEmptyString
+    )
+  }
+}
+
+public struct ToolArgValues {
+  private let values: [String: Any]
+
+  public init(values: [String: Any]) {
+    self.values = values
+  }
+
+  public func string(_ key: String) -> String? {
+    values[key] as? String
+  }
+
+  public func int(_ key: String) -> Int? {
+    values[key] as? Int
+  }
+
+  public func double(_ key: String) -> Double? {
+    values[key] as? Double
+  }
+
+  public func bool(_ key: String) -> Bool? {
+    values[key] as? Bool
+  }
+
+  public func uuid(_ key: String) -> UUID? {
+    values[key] as? UUID
+  }
+
+  public func object(_ key: String) -> [String: Any]? {
+    values[key] as? [String: Any]
+  }
+
+  public func array<T>(_ key: String, as _: T.Type = T.self) -> [T]? {
+    values[key] as? [T]
+  }
+}
+
 /// Extension providing parameter extraction with automatic error handling
 extension MCPToolHandler {
   /// Result type for parameter extraction - either the value or an error response
   public typealias ParamResult<T> = Result<T, ParamError>
+
+  public func parseArguments(
+    _ arguments: [String: Any],
+    schema: [ToolArgSchemaField],
+    id: Any?
+  ) -> ParamResult<ToolArgValues> {
+    var parsed: [String: Any] = [:]
+
+    for field in schema {
+      if let rawValue = arguments[field.key] {
+        switch field.type {
+        case .string:
+          guard let stringValue = rawValue as? String else {
+            return .failure(ParamError(argumentTypeError(id: id, field: field, value: rawValue)))
+          }
+          let normalized = field.trimString
+            ? stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            : stringValue
+          guard field.allowEmptyString || !normalized.isEmpty else {
+            return .failure(ParamError(argumentValueError(id: id, field: field, reason: "String cannot be empty")))
+          }
+          parsed[field.key] = normalized
+        case .int:
+          guard let intValue = rawValue as? Int else {
+            return .failure(ParamError(argumentTypeError(id: id, field: field, value: rawValue)))
+          }
+          parsed[field.key] = intValue
+        case .double:
+          if let doubleValue = rawValue as? Double {
+            parsed[field.key] = doubleValue
+          } else if let intValue = rawValue as? Int {
+            parsed[field.key] = Double(intValue)
+          } else {
+            return .failure(ParamError(argumentTypeError(id: id, field: field, value: rawValue)))
+          }
+        case .bool:
+          guard let boolValue = rawValue as? Bool else {
+            return .failure(ParamError(argumentTypeError(id: id, field: field, value: rawValue)))
+          }
+          parsed[field.key] = boolValue
+        case .uuid:
+          guard let stringValue = rawValue as? String,
+                let uuidValue = UUID(uuidString: stringValue.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            return .failure(ParamError(argumentValueError(id: id, field: field, reason: "Invalid UUID format")))
+          }
+          parsed[field.key] = uuidValue
+        case .array:
+          guard let arrayValue = rawValue as? [Any] else {
+            return .failure(ParamError(argumentTypeError(id: id, field: field, value: rawValue)))
+          }
+          parsed[field.key] = arrayValue
+        case .object:
+          guard let objectValue = rawValue as? [String: Any] else {
+            return .failure(ParamError(argumentTypeError(id: id, field: field, value: rawValue)))
+          }
+          parsed[field.key] = objectValue
+        }
+      } else if let defaultValue = field.defaultValue {
+        parsed[field.key] = defaultValue
+      } else if field.required {
+        return .failure(ParamError(missingRequiredArgumentError(id: id, field: field)))
+      }
+    }
+
+    return .success(ToolArgValues(values: parsed))
+  }
 
   /// Extract a required string parameter, trimmed and non-empty
   public func requireString(_ key: String, from arguments: [String: Any], id: Any?) -> ParamResult<String> {
@@ -236,5 +405,67 @@ extension MCPToolHandler {
       return .failure(ParamError(missingParamError(id: id, param: key)))
     }
     return .success(value)
+  }
+
+  private func missingRequiredArgumentError(id: Any?, field: ToolArgSchemaField) -> (Int, Data) {
+    (
+      400,
+      makeError(
+        id: id,
+        code: JSONRPCResponseBuilder.ErrorCode.invalidParams,
+        message: "Invalid params",
+        data: [
+          "parameter": field.key,
+          "error": "Missing required parameter",
+          "expectedType": field.type.rawValue
+        ]
+      )
+    )
+  }
+
+  private func argumentTypeError(id: Any?, field: ToolArgSchemaField, value: Any) -> (Int, Data) {
+    (
+      400,
+      makeError(
+        id: id,
+        code: JSONRPCResponseBuilder.ErrorCode.invalidParams,
+        message: "Invalid params",
+        data: [
+          "parameter": field.key,
+          "error": "Type mismatch",
+          "expectedType": field.type.rawValue,
+          "receivedType": argumentTypeName(value)
+        ]
+      )
+    )
+  }
+
+  private func argumentValueError(id: Any?, field: ToolArgSchemaField, reason: String) -> (Int, Data) {
+    (
+      400,
+      makeError(
+        id: id,
+        code: JSONRPCResponseBuilder.ErrorCode.invalidParams,
+        message: "Invalid params",
+        data: [
+          "parameter": field.key,
+          "error": reason,
+          "expectedType": field.type.rawValue
+        ]
+      )
+    )
+  }
+
+  private func argumentTypeName(_ value: Any) -> String {
+    switch value {
+    case is String: "string"
+    case is Int: "int"
+    case is Double: "double"
+    case is Bool: "bool"
+    case is UUID: "uuid"
+    case is [Any]: "array"
+    case is [String: Any]: "object"
+    default: String(describing: type(of: value))
+    }
   }
 }
