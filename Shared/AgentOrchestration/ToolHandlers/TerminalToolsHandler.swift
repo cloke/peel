@@ -304,12 +304,12 @@ public final class TerminalToolsHandler: MCPToolHandler {
       process.standardError = stderrPipe
       
       // Set up timeout
-      let timeoutTask = Task {
-        try? await Task.sleep(for: .seconds(timeout))
+      let timeoutTask = AsyncHandler.launch(operation: {
+        try await Task.sleep(for: .seconds(timeout))
         if process.isRunning {
           process.terminate()
         }
-      }
+      })
       
       do {
         try process.run()

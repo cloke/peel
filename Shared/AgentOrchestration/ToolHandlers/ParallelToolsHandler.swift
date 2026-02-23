@@ -348,17 +348,18 @@ final class ParallelToolsHandler {
     await delegate?.parallelTelemetryProvider.info("Starting parallel run", metadata: ["runId": runId.uuidString])
 
     // Start the run in a task so we don't block
-    Task {
-      do {
+    _ = AsyncHandler.launch(
+      operation: {
         try await runner.startRun(run)
-        await delegate?.parallelTelemetryProvider.info("Parallel run completed", metadata: [
+        await self.delegate?.parallelTelemetryProvider.info("Parallel run completed", metadata: [
           "runId": runId.uuidString,
           "status": run.status.displayName
         ])
-      } catch {
-        await delegate?.parallelTelemetryProvider.error(error, context: "Parallel run failed", metadata: [:])
+      },
+      onError: { error in
+        await self.delegate?.parallelTelemetryProvider.error(error, context: "Parallel run failed", metadata: [:])
       }
-    }
+    )
 
     return (200, toolResult(id: id, result: [
       "runId": runId.uuidString,

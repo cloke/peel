@@ -88,6 +88,33 @@ public protocol MCPToolHandlerDelegate: AnyObject {
   var lastUIAction: UIAction? { get set }
 }
 
+// MARK: - Async Task Helper
+
+/// Shared helper for handler async/task scaffolding.
+public enum AsyncHandler {
+  @discardableResult
+  @MainActor
+  public static func launch(
+    operation: @escaping () async throws -> Void,
+    onCancelled: (@MainActor () async -> Void)? = nil,
+    onError: (@MainActor (Error) async -> Void)? = nil
+  ) -> Task<Void, Never> {
+    Task { @MainActor in
+      do {
+        try await operation()
+      } catch is CancellationError {
+        if let onCancelled {
+          await onCancelled()
+        }
+      } catch {
+        if let onError {
+          await onError(error)
+        }
+      }
+    }
+  }
+}
+
 // MARK: - Response Builder Convenience
 
 /// Extension providing convenient response builders using MCPCore
