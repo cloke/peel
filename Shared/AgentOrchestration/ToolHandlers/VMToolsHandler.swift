@@ -247,6 +247,19 @@ public final class VMToolsHandler: MCPToolHandler {
     let model = arguments["model"] as? String
     let timeoutSeconds = arguments["timeoutSeconds"] as? Double ?? 600
 
+    // Validate agentBinary to prevent shell injection (allow alphanumeric, dash, underscore, period, slash)
+    let safeBinaryPattern = /^[a-zA-Z0-9._\-\/]+$/
+    guard agentBinary.wholeMatch(of: safeBinaryPattern) != nil else {
+      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "Invalid agentBinary: must contain only alphanumeric characters, dashes, underscores, periods, or slashes"))
+    }
+
+    // Validate model if provided
+    if let model = model, !model.isEmpty {
+      guard model.wholeMatch(of: safeBinaryPattern) != nil else {
+        return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "Invalid model: must contain only alphanumeric characters, dashes, underscores, periods, or slashes"))
+      }
+    }
+
     // Verify workspace path exists on host
     var isDir: ObjCBool = false
     guard FileManager.default.fileExists(atPath: workspacePath, isDirectory: &isDir), isDir.boolValue else {
@@ -329,7 +342,7 @@ public final class VMToolsHandler: MCPToolHandler {
       agentCmd += " --model \(model)"
     }
     for arg in agentArgs {
-      agentCmd += " \(arg)"
+      agentCmd += " \(shellEscape(arg))"
     }
     // Pass prompt via stdin heredoc to avoid shell escaping issues
     let escapedPrompt = prompt.replacingOccurrences(of: "'", with: "'\\''")
@@ -401,6 +414,13 @@ public final class VMToolsHandler: MCPToolHandler {
       try await Task.sleep(for: interval)
     }
     throw VMError.bootstrapFailed("VM shell did not become responsive after \(maxAttempts) attempts")
+  }
+
+  // MARK: - Shell Escaping
+
+  /// Escape a string for safe use as a shell argument by wrapping in single quotes.
+  private func shellEscape(_ value: String) -> String {
+    "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
   }
 }
 
