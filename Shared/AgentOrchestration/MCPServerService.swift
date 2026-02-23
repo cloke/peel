@@ -974,8 +974,8 @@ public final class MCPServerService {
           }
           return ragSyncedEmbeddingModels[repo.id]
         }()
-        let effectiveModel = repo.embeddingModel ?? syncedModelFallback
-        let effectiveDims = repo.embeddingDimensions ?? embeddingDims[repo.id]
+        let effectiveModel = syncedModelFallback
+        let effectiveDims = embeddingDims[repo.id]
         return RAGRepoInfo(
           id: repo.id,
           name: repo.name,
