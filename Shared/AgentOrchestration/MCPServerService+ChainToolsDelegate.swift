@@ -129,8 +129,61 @@ extension MCPServerService: ChainToolsHandlerDelegate {
         startedAt: completed.completedAt
       )
     }
+
+    // Check parallel-routed runs
+    if let run = parallelWorktreeRunner?.findRunBySourceChainRunId(runId) {
+      return parallelRunToChainStatus(run, chainId: chainId)
+    }
     
     return nil
+  }
+
+  /// Translate a parallel worktree run's status into a `ChainToolStatus` for backward compat.
+  private func parallelRunToChainStatus(_ run: ParallelWorktreeRun, chainId: String) -> ChainToolStatus {
+    let execution = run.executions.first
+    let statusString: String
+    var errorMessage: String?
+    var reviewGate: String?
+
+    switch run.status {
+    case .pending:
+      statusString = "queued"
+    case .running:
+      statusString = "running"
+    case .awaitingReview:
+      statusString = "awaiting_review"
+      reviewGate = "Review required"
+    case .completed:
+      statusString = "completed"
+    case .failed(let msg):
+      statusString = "failed"
+      errorMessage = msg
+    case .cancelled:
+      statusString = "cancelled"
+    case .merging:
+      statusString = "merging"
+    }
+
+    let progress: Double = {
+      guard let execution else { return 0 }
+      switch execution.status {
+      case .merged, .approved, .awaitingReview, .reviewed: return 1.0
+      case .running: return 0.5
+      case .creatingWorktree: return 0.1
+      default: return 0
+      }
+    }()
+
+    return ChainToolStatus(
+      chainId: chainId,
+      status: statusString,
+      progress: progress,
+      currentStep: execution?.status.isTerminal == true ? 1 : 0,
+      totalSteps: 1,
+      error: errorMessage,
+      reviewGate: reviewGate,
+      startedAt: run.startedAt ?? run.createdAt
+    )
   }
   
   func listChainRuns(limit: Int?, status: String?) -> [ChainToolRunSummary] {
@@ -173,6 +226,36 @@ extension MCPServerService: ChainToolsHandlerDelegate {
           startedAt: nil,
           completedAt: completed.completedAt
         ))
+      }
+    }
+
+    // Add parallel-routed runs
+    if let runner = parallelWorktreeRunner {
+      let knownSourceIds = Set(runs.compactMap { UUID(uuidString: $0.chainId) })
+      for run in runner.runs where run.sourceChainRunId != nil {
+        let sourceId = run.sourceChainRunId!
+        guard !knownSourceIds.contains(sourceId) else { continue }
+        let parallelStatus: String = {
+          switch run.status {
+          case .pending: return "queued"
+          case .running: return "running"
+          case .awaitingReview: return "awaiting_review"
+          case .completed: return "completed"
+          case .failed: return "failed"
+          case .cancelled: return "cancelled"
+          case .merging: return "merging"
+          }
+        }()
+        if status == nil || status == parallelStatus {
+          let taskPrompt = run.executions.first?.task.prompt ?? ""
+          runs.append(ChainToolRunSummary(
+            chainId: sourceId.uuidString,
+            status: parallelStatus,
+            prompt: taskPrompt,
+            startedAt: run.startedAt ?? run.createdAt,
+            completedAt: run.completedAt
+          ))
+        }
       }
     }
 

@@ -170,6 +170,9 @@ final class ParallelWorktreeRun: Identifiable, @unchecked Sendable, Hashable {
   var autoMergeOnApproval: Bool = false
   var isPaused: Bool = false
   var operatorGuidance: [String] = []
+  /// When this run was created by `chains.run`, stores the original chain run UUID
+  /// so `chains.run.status` / `chains.run.results` can find it.
+  var sourceChainRunId: UUID?
   
   enum RunStatus: Sendable, Equatable {
     case pending
@@ -450,7 +453,90 @@ final class ParallelWorktreeRunner {
     }
     return run
   }
-  
+
+  /// Create a single-task parallel run from a `chains.run` invocation, and start it immediately.
+  ///
+  /// This bridges the chain execution path into the parallel worktree infrastructure so that
+  /// every MCP-dispatched chain appears in the Parallel Worktrees panel with the same
+  /// review/approve/merge workflow.
+  ///
+  /// - Returns: The created `ParallelWorktreeRun` (already started in a background task).
+  func createAndStartSingleTaskRun(
+    prompt: String,
+    projectPath: String,
+    templateName: String? = nil,
+    baseBranch: String = "HEAD",
+    requireReviewGate: Bool = true,
+    runOptions: AgentChainRunner.ChainRunOptions? = nil,
+    sourceChainRunId: UUID? = nil,
+    operatorGuidance: [String] = []
+  ) -> ParallelWorktreeRun {
+    let taskTitle = templateName.map { "Chain: \($0)" } ?? "Chain Run"
+    let task = WorktreeTask(
+      title: taskTitle,
+      description: prompt,
+      prompt: prompt
+    )
+    let run = createRun(
+      name: taskTitle,
+      projectPath: projectPath,
+      tasks: [task],
+      baseBranch: baseBranch,
+      requireReviewGate: requireReviewGate,
+      templateName: templateName,
+      runOptions: runOptions
+    )
+    run.sourceChainRunId = sourceChainRunId
+    run.operatorGuidance = operatorGuidance
+
+    // Fire-and-forget start (same pattern as parallel.start handler)
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      do {
+        try await self.startRun(run)
+      } catch {
+        await self.mcpLog.error("Single-task parallel run failed to start: \(error)", metadata: [
+          "runId": run.id.uuidString
+        ])
+      }
+    }
+    return run
+  }
+
+  /// Wait for a parallel run to reach a terminal state.
+  ///
+  /// Polls the run's status at short intervals. Returns when the run is completed,
+  /// failed, or cancelled — or when the optional timeout expires.
+  func waitForRunCompletion(_ run: ParallelWorktreeRun, timeoutSeconds: Double? = nil) async -> ParallelWorktreeRun.RunStatus {
+    let deadline: Date? = timeoutSeconds.map { Date().addingTimeInterval($0) }
+    while true {
+      switch run.status {
+      case .completed, .failed, .cancelled:
+        return run.status
+      case .awaitingReview:
+        // If there's no review gate, this is terminal-ish, but we should still wait
+        // for the user to approve/merge. If there IS a review gate, also wait.
+        // However, if ALL executions are in terminal states, we're done.
+        let allTerminal = run.executions.allSatisfy { $0.status.isTerminal || $0.status == .awaitingReview || $0.status == .approved }
+        if allTerminal && run.executions.contains(where: { $0.status == .awaitingReview }) {
+          // Run is waiting for review — return so caller can report this state
+          return run.status
+        }
+      default:
+        break
+      }
+      if let deadline, Date() >= deadline {
+        return run.status
+      }
+      try? await Task.sleep(for: .milliseconds(500))
+    }
+  }
+
+  /// Find a parallel run that was created by a specific `chains.run` invocation.
+  func findRunBySourceChainRunId(_ chainRunId: UUID) -> ParallelWorktreeRun? {
+    runs.first { $0.sourceChainRunId == chainRunId }
+  }
+
   /// Start a parallel run
   func startRun(_ run: ParallelWorktreeRun) async throws {
     guard run.status == .pending else {

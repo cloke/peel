@@ -250,6 +250,116 @@ extension MCPServerService {
       return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: message))
     }
 
+    // ── Parallel Worktree Routing ──────────────────────────────────────────
+    // Route through the parallel worktree infrastructure so every MCP-dispatched
+    // chain appears in the Parallel Worktrees panel with review/approve/merge.
+    // Skip this path for VM-based templates (parallel runner doesn't support VM).
+    if let runner = parallelWorktreeRunner, !template.requiresVM {
+      var resolvedWorkingDir = workingDirectory ?? agentManager.lastUsedWorkingDirectory
+      guard let projectPath = resolvedWorkingDir else {
+        await telemetryProvider.warning("chains.run missing workingDirectory", metadata: ["runId": runId.uuidString])
+        return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Missing workingDirectory"))
+      }
+
+      // Apply prompt rules
+      let initialOptions = AgentChainRunner.ChainRunOptions(
+        allowPlannerModelSelection: allowPlannerModelSelection,
+        allowImplementerModelOverride: allowImplementerModelOverride,
+        allowPlannerImplementerScaling: allowPlannerImplementerScaling,
+        maxImplementers: maxImplementers,
+        maxPremiumCost: maxPremiumCost
+      )
+      let (prompt, runOptions) = applyPromptRules(
+        prompt: rawPrompt,
+        templateName: template.name,
+        options: initialOptions
+      )
+
+      // Build operator guidance
+      var guidance: [String] = []
+      if let repoGuidance = await buildRepoGuidance(repoPath: projectPath) {
+        guidance.append(repoGuidance)
+      }
+      if requireRagUsage {
+        guidance.append(
+          "RAG tool usage is required for this run. Call a rag.* tool (e.g., rag.search) before planning; missing usage will emit a validation warning."
+        )
+      }
+
+      let run = runner.createAndStartSingleTaskRun(
+        prompt: prompt,
+        projectPath: projectPath,
+        templateName: template.name,
+        requireReviewGate: true,
+        runOptions: runOptions,
+        sourceChainRunId: runId,
+        operatorGuidance: guidance
+      )
+
+      await telemetryProvider.info("Chain run routed to parallel worktree", metadata: [
+        "runId": runId.uuidString,
+        "parallelRunId": run.id.uuidString,
+        "template": template.name,
+        "workingDirectory": projectPath
+      ])
+
+      if returnImmediately {
+        let result: [String: Any] = [
+          "runId": runId.uuidString,
+          "parallelRunId": run.id.uuidString,
+          "status": "starting",
+          "async": true,
+          "routedToParallel": true,
+          "chain": [
+            "name": template.name,
+            "state": "queued",
+            "gated": false,
+            "noWorkReason": NSNull()
+          ]
+        ]
+        return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: result))
+      }
+
+      // Synchronous mode — wait for the run to complete or reach review gate
+      let timeoutSecs = timeoutSeconds ?? 600 // 10-minute default
+      let finalStatus = await runner.waitForRunCompletion(run, timeoutSeconds: timeoutSecs)
+
+      let execution = run.executions.first
+      var result: [String: Any] = [
+        "runId": runId.uuidString,
+        "parallelRunId": run.id.uuidString,
+        "routedToParallel": true,
+        "chain": [
+          "name": template.name,
+          "state": finalStatus.displayName
+        ],
+        "success": {
+          switch finalStatus {
+          case .completed: return true
+          case .awaitingReview: return true
+          case .failed: return false
+          default: return false
+          }
+        }() as Bool,
+        "status": finalStatus.displayName,
+        "execution": [
+          "status": execution?.status.displayName as Any,
+          "filesChanged": execution?.filesChanged as Any,
+          "insertions": execution?.insertions as Any,
+          "deletions": execution?.deletions as Any,
+          "diffSummary": execution?.diffSummary as Any,
+          "output": execution?.output as Any
+        ]
+      ]
+
+      if case .failed(let msg) = finalStatus {
+        result["errorMessage"] = msg
+      }
+
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: result))
+    }
+    // ── End Parallel Worktree Routing ──────────────────────────────────────
+
     var chainWorkspace: AgentWorkspace?
     var chainWorkingDirectory = workingDirectory ?? agentManager.lastUsedWorkingDirectory
     if chainWorkingDirectory == nil {
