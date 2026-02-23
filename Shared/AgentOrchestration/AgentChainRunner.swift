@@ -1119,6 +1119,78 @@ public final class AgentChainRunner {
 
   // MARK: - VM Step Execution
 
+  private enum VMStepMode {
+    case deterministic
+    case gate
+
+    var modelName: String {
+      switch self {
+      case .deterministic: "vm-deterministic"
+      case .gate: "vm-gate"
+      }
+    }
+  }
+
+  private func completeVMStep(
+    _ agent: Agent,
+    chain: AgentChain,
+    command: String,
+    mode: VMStepMode,
+    output: String,
+    exitCode: Int32,
+    durationStr: String,
+    failureDetail: String? = nil
+  ) throws -> AgentChainResult {
+    let passed = exitCode == 0
+
+    switch mode {
+    case .deterministic:
+      if passed {
+        agent.updateState(.complete)
+        chain.addStatusMessage("VM step '\(agent.name)' completed (\(durationStr))", type: .complete)
+      } else {
+        let detail = failureDetail ?? "exit \(exitCode)"
+        agent.updateState(.failed(message: "Exit code \(exitCode)"))
+        chain.addStatusMessage("VM step '\(agent.name)' failed: \(detail)", type: .error)
+        throw ChainError.deterministicStepFailed(stepName: agent.name, exitCode: exitCode, output: output)
+      }
+
+      return AgentChainResult(
+        agentId: agent.id,
+        agentName: agent.name,
+        model: mode.modelName,
+        prompt: command,
+        output: output,
+        duration: durationStr,
+        premiumCost: 0
+      )
+    case .gate:
+      if passed {
+        agent.updateState(.complete)
+        chain.addStatusMessage("VM gate '\(agent.name)' passed (\(durationStr))", type: .complete)
+      } else {
+        agent.updateState(.failed(message: "Gate failed (exit \(exitCode))"))
+        chain.addStatusMessage("VM gate '\(agent.name)' failed", type: .error)
+      }
+
+      var result = AgentChainResult(
+        agentId: agent.id,
+        agentName: agent.name,
+        model: mode.modelName,
+        prompt: command,
+        output: output,
+        duration: durationStr,
+        premiumCost: 0
+      )
+      result.gateResult = passed ? .passed : .failed(exitCode: exitCode)
+
+      if !passed {
+        throw ChainError.gateStepFailed(stepName: agent.name, exitCode: exitCode, output: output)
+      }
+      return result
+    }
+  }
+
   /// Run a deterministic step inside a VM via the VMChainExecutor.
   private func runDeterministicStepInVM(
     _ agent: Agent,
@@ -1152,24 +1224,14 @@ public final class AgentChainRunner {
         let exitCode = vmService.lastCommandExitCode
         let duration = Date().timeIntervalSince(startTime)
         let durationStr = String(format: "%.1fs", duration)
-        let out = output
-
-        if exitCode != 0 {
-          agent.updateState(.failed(message: "Exit code \(exitCode)"))
-          chain.addStatusMessage("VM step '\(agent.name)' failed (exit \(exitCode))", type: .error)
-          throw ChainError.deterministicStepFailed(stepName: agent.name, exitCode: exitCode, output: out)
-        }
-
-        agent.updateState(.complete)
-        chain.addStatusMessage("VM step '\(agent.name)' completed (\(durationStr))", type: .complete)
-        return AgentChainResult(
-          agentId: agent.id,
-          agentName: agent.name,
-          model: "vm-deterministic",
-          prompt: command,
-          output: out,
-          duration: durationStr,
-          premiumCost: 0
+        return try completeVMStep(
+          agent,
+          chain: chain,
+          command: command,
+          mode: .deterministic,
+          output: output,
+          exitCode: exitCode,
+          durationStr: durationStr
         )
       } else {
         // Fallback to executor's execute for macOS or if vmService missing
@@ -1184,32 +1246,20 @@ public final class AgentChainRunner {
         let duration = Date().timeIntervalSince(startTime)
         let durationStr = String(format: "%.1fs", duration)
         let output = result.stepResults.first?.stdout ?? ""
+        let exitCode: Int32 = result.stepResults.first.map { $0.exitCode } ?? (result.success ? 0 : 1)
 
-        if result.success {
-          agent.updateState(.complete)
-          chain.addStatusMessage("VM step '\(agent.name)' completed (\(durationStr))", type: .complete)
-        } else {
-          agent.updateState(.failed(message: result.errorMessage ?? "VM step failed"))
-          chain.addStatusMessage("VM step '\(agent.name)' failed: \(result.errorMessage ?? "unknown")", type: .error)
-          throw ChainError.deterministicStepFailed(
-            stepName: agent.name,
-            exitCode: result.stepResults.first.map { $0.exitCode } ?? 1,
-            output: output
-          )
-        }
-
-        return AgentChainResult(
-          agentId: agent.id,
-          agentName: agent.name,
-          model: "vm-deterministic",
-          prompt: command,
+        return try completeVMStep(
+          agent,
+          chain: chain,
+          command: command,
+          mode: .deterministic,
           output: output,
-          duration: durationStr,
-          premiumCost: 0
+          exitCode: exitCode,
+          durationStr: durationStr,
+          failureDetail: result.errorMessage
         )
       }
     } catch let error as VMError {
-      let duration = Date().timeIntervalSince(startTime)
       agent.updateState(.failed(message: error.localizedDescription))
       chain.addStatusMessage("VM step '\(agent.name)' error: \(error.localizedDescription)", type: .error)
       throw ChainError.deterministicStepFailed(
@@ -1242,33 +1292,15 @@ public final class AgentChainRunner {
         let exitCode = vmService.lastCommandExitCode
         let duration = Date().timeIntervalSince(startTime)
         let durationStr = String(format: "%.1fs", duration)
-        let passed = (exitCode == 0)
-        let out = output
-
-        if passed {
-          agent.updateState(.complete)
-          chain.addStatusMessage("VM gate '\(agent.name)' passed (\(durationStr))", type: .complete)
-        } else {
-          agent.updateState(.failed(message: "Gate failed (exit \(exitCode))"))
-          chain.addStatusMessage("VM gate '\(agent.name)' failed", type: .error)
-        }
-
-        var chainResult = AgentChainResult(
-          agentId: agent.id,
-          agentName: agent.name,
-          model: "vm-gate",
-          prompt: command,
-          output: out,
-          duration: durationStr,
-          premiumCost: 0
+        return try completeVMStep(
+          agent,
+          chain: chain,
+          command: command,
+          mode: .gate,
+          output: output,
+          exitCode: exitCode,
+          durationStr: durationStr
         )
-        chainResult.gateResult = passed ? .passed : .failed(exitCode: exitCode)
-
-        if !passed {
-          throw ChainError.gateStepFailed(stepName: agent.name, exitCode: exitCode, output: out)
-        }
-
-        return chainResult
       } else {
         let result = try await executor.execute(
           environment: chain.executionEnvironment,
@@ -1281,36 +1313,17 @@ public final class AgentChainRunner {
         let duration = Date().timeIntervalSince(startTime)
         let durationStr = String(format: "%.1fs", duration)
         let output = result.stepResults.first?.stdout ?? ""
-        let passed = result.success
+        let exitCode: Int32 = result.stepResults.first.map { $0.exitCode } ?? (result.success ? 0 : 1)
 
-        if passed {
-          agent.updateState(.complete)
-          chain.addStatusMessage("VM gate '\(agent.name)' passed (\(durationStr))", type: .complete)
-        } else {
-          agent.updateState(.failed(message: "Gate failed"))
-          chain.addStatusMessage("VM gate '\(agent.name)' failed", type: .error)
-        }
-
-        var chainResult = AgentChainResult(
-          agentId: agent.id,
-          agentName: agent.name,
-          model: "vm-gate",
-          prompt: command,
+        return try completeVMStep(
+          agent,
+          chain: chain,
+          command: command,
+          mode: .gate,
           output: output,
-          duration: durationStr,
-          premiumCost: 0
+          exitCode: exitCode,
+          durationStr: durationStr
         )
-        chainResult.gateResult = passed ? .passed : .failed(exitCode: result.stepResults.first?.exitCode ?? 1)
-
-        if !passed {
-          throw ChainError.gateStepFailed(
-            stepName: agent.name,
-            exitCode: result.stepResults.first?.exitCode ?? 1,
-            output: output
-          )
-        }
-
-        return chainResult
       }
     } catch let error as VMError {
       agent.updateState(.failed(message: error.localizedDescription))
