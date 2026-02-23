@@ -897,15 +897,15 @@ public final class AgentChainRunner {
     case .deterministic:
       // VM-aware: route deterministic steps through VM when chain requires it
       if chain.requiresVM, let command = agent.command, !command.isEmpty {
-        return try await runDeterministicStepInVM(agent, at: index, chain: chain, command: command)
+        return try await runDeterministicStepInVM(agent, chain: chain, command: command)
       }
-      return try await runDeterministicStep(agent, at: index, chain: chain, prompt: prompt)
+      return try await runDeterministicStep(agent, chain: chain)
     case .gate:
       // VM-aware: route gate steps through VM when chain requires it
       if chain.requiresVM, let command = agent.command, !command.isEmpty {
-        return try await runGateStepInVM(agent, at: index, chain: chain, command: command)
+        return try await runGateStepInVM(agent, chain: chain, command: command)
       }
-      return try await runGateStep(agent, at: index, chain: chain, prompt: prompt)
+      return try await runGateStep(agent, chain: chain)
     case .agentic:
       // LLM steps always run on host — they read/write the shared workspace via VirtioFS
       return try await runAgenticStep(agent, at: index, chain: chain, prompt: prompt, contextOverride: contextOverride)
@@ -1055,9 +1055,7 @@ public final class AgentChainRunner {
   /// The command string is run via /bin/zsh. Stdout/stderr are captured as the step output.
   private func runDeterministicStep(
     _ agent: Agent,
-    at index: Int,
-    chain: AgentChain,
-    prompt: String
+    chain: AgentChain
   ) async throws -> AgentChainResult {
     guard let command = agent.command, !command.isEmpty else {
       throw ChainError.configurationError("Deterministic step '\(agent.name)' has no command")
@@ -1071,9 +1069,7 @@ public final class AgentChainRunner {
   /// Exit code 0 = pass (continue), non-zero = fail (stop chain).
   private func runGateStep(
     _ agent: Agent,
-    at index: Int,
-    chain: AgentChain,
-    prompt: String
+    chain: AgentChain
   ) async throws -> AgentChainResult {
     guard let command = agent.command, !command.isEmpty else {
       throw ChainError.configurationError("Gate step '\(agent.name)' has no command")
@@ -1194,7 +1190,6 @@ public final class AgentChainRunner {
   /// Run a deterministic step inside a VM via the VMChainExecutor.
   private func runDeterministicStepInVM(
     _ agent: Agent,
-    at index: Int,
     chain: AgentChain,
     command: String
   ) async throws -> AgentChainResult {
@@ -1203,7 +1198,7 @@ public final class AgentChainRunner {
       await telemetryProvider.warning("VM service unavailable, falling back to host execution", metadata: [
         "agentName": agent.name
       ])
-      return try await runDeterministicStep(agent, at: index, chain: chain, prompt: command)
+      return try await runDeterministicStep(agent, chain: chain)
     }
 
     let startTime = Date()
@@ -1273,13 +1268,12 @@ public final class AgentChainRunner {
   /// Run a gate step inside a VM via the VMChainExecutor.
   private func runGateStepInVM(
     _ agent: Agent,
-    at index: Int,
     chain: AgentChain,
     command: String
   ) async throws -> AgentChainResult {
     guard let executor = getVMExecutor() else {
       // Fall back to host if VM service unavailable
-      return try await runGateStep(agent, at: index, chain: chain, prompt: command)
+      return try await runGateStep(agent, chain: chain)
     }
 
     let startTime = Date()
