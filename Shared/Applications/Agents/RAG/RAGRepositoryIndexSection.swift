@@ -11,6 +11,27 @@ struct RAGRepositoryIndexDisplayState {
   let localEmbeddingModelName: String?
   let isIndexingCurrentRepo: Bool
   let isAnyIndexingActive: Bool
+  let lastIndexReport: LocalRAGIndexReport?
+
+  init(
+    fileCount: Int, chunkCount: Int, embeddingCount: Int,
+    needsEmbedding: Bool, inferredEmbeddingModel: String?,
+    embeddingDimensions: Int?, localEmbeddingDimensions: Int,
+    localEmbeddingModelName: String?, isIndexingCurrentRepo: Bool,
+    isAnyIndexingActive: Bool, lastIndexReport: LocalRAGIndexReport? = nil
+  ) {
+    self.fileCount = fileCount
+    self.chunkCount = chunkCount
+    self.embeddingCount = embeddingCount
+    self.needsEmbedding = needsEmbedding
+    self.inferredEmbeddingModel = inferredEmbeddingModel
+    self.embeddingDimensions = embeddingDimensions
+    self.localEmbeddingDimensions = localEmbeddingDimensions
+    self.localEmbeddingModelName = localEmbeddingModelName
+    self.isIndexingCurrentRepo = isIndexingCurrentRepo
+    self.isAnyIndexingActive = isAnyIndexingActive
+    self.lastIndexReport = lastIndexReport
+  }
 }
 
 struct RAGRepositoryIndexSection: View {
@@ -103,6 +124,11 @@ struct RAGRepositoryIndexSection: View {
         }
       }
 
+      // Post-reindex summary
+      if !state.isIndexingCurrentRepo, let report = state.lastIndexReport {
+        indexReportSummary(report)
+      }
+
       if state.needsEmbedding {
         HStack(spacing: 6) {
           Image(systemName: "exclamationmark.triangle.fill")
@@ -141,5 +167,46 @@ struct RAGRepositoryIndexSection: View {
     }
     .padding(12)
     .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 8))
+  }
+
+  @ViewBuilder
+  private func indexReportSummary(_ report: LocalRAGIndexReport) -> some View {
+    let durationSec = Double(report.durationMs) / 1000.0
+    let parts: [String] = {
+      var items = [String]()
+      if report.filesIndexed > 0 {
+        items.append("\(report.filesIndexed) files indexed")
+      }
+      if report.filesRemoved > 0 {
+        items.append("\(report.filesRemoved) removed")
+      }
+      if report.filesSkipped > 0 {
+        items.append("\(report.filesSkipped) skipped")
+      }
+      if report.chunksIndexed > 0 {
+        items.append("\(report.chunksIndexed) chunks")
+      }
+      if report.embeddingCount > 0 {
+        items.append("\(report.embeddingCount) embeddings")
+      }
+      return items
+    }()
+
+    if !parts.isEmpty {
+      HStack(spacing: 6) {
+        Image(systemName: "doc.text.magnifyingglass")
+          .foregroundStyle(.blue)
+        VStack(alignment: .leading, spacing: 2) {
+          Text("Last reindex: \(parts.joined(separator: " · "))")
+            .font(.caption)
+            .foregroundStyle(.primary)
+          Text(String(format: "Completed in %.1fs", durationSec))
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+      }
+      .padding(8)
+      .background(.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+    }
   }
 }

@@ -285,7 +285,12 @@ struct RAGRepositoryCardView: View {
   }
 
   private var indexDisplayState: RAGRepositoryIndexDisplayState {
-    RAGRepositoryIndexDisplayState(
+    let reportForThisRepo: LocalRAGIndexReport? = {
+      guard let report = mcpServer.lastRagIndexReport,
+            report.repoPath == repo.rootPath else { return nil }
+      return report
+    }()
+    return RAGRepositoryIndexDisplayState(
       fileCount: repo.fileCount,
       chunkCount: repo.chunkCount,
       embeddingCount: repo.embeddingCount,
@@ -295,7 +300,8 @@ struct RAGRepositoryCardView: View {
       localEmbeddingDimensions: mcpServer.ragStatus?.embeddingDimensions ?? 768,
       localEmbeddingModelName: mcpServer.ragStatus?.embeddingModelName,
       isIndexingCurrentRepo: mcpServer.ragIndexingPath == repo.rootPath,
-      isAnyIndexingActive: mcpServer.ragIndexingPath != nil
+      isAnyIndexingActive: mcpServer.ragIndexingPath != nil,
+      lastIndexReport: reportForThisRepo
     )
   }
   
@@ -789,6 +795,7 @@ struct RAGRepositoryCardView: View {
     errorMessage = nil
     do {
       try await mcpServer.indexRagRepo(path: repo.rootPath, forceReindex: force)
+      await refreshAnalysisStatus()
     } catch {
       errorMessage = error.localizedDescription
     }
