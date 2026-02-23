@@ -405,18 +405,17 @@ extension MCPServerService {
     }
 
     func searchRepo(_ repo: LocalRAGStore.RepoInfo, vectorCache: inout [String: [Float]]) async throws -> [LocalRAGSearchResult] {
-      let repoDims = repo.embeddingDimensions ?? sampledDims[repo.id]
-      if isProviderCompatible(repoModel: repo.embeddingModel, repoDims: repoDims) {
+      let repoDims = sampledDims[repo.id]
+      if isProviderCompatible(repoModel: nil, repoDims: repoDims) {
         return try await localRagStore.searchVector(query: query, repoPath: repo.rootPath, limit: limit, modulePath: modulePath)
       }
 
       guard let dims = repoDims,
-            let queryVector = try await vectorFor(repoModel: repo.embeddingModel, repoDims: dims, cache: &vectorCache) else {
+            let queryVector = try await vectorFor(repoModel: nil, repoDims: dims, cache: &vectorCache) else {
         await telemetryProvider.warning(
           "No compatible local query embedding model for repo profile; falling back to text search",
           metadata: [
             "repoPath": repo.rootPath,
-            "repoModel": repo.embeddingModel ?? "unknown",
             "repoDims": "\(repoDims ?? -1)",
           ]
         )
@@ -439,7 +438,7 @@ extension MCPServerService {
 
     for repo in repos {
       // Skip repos without embeddings entirely
-      let hasEmbeddings = (sampledDims[repo.id] ?? repo.embeddingDimensions) != nil
+      let hasEmbeddings = sampledDims[repo.id] != nil
       guard hasEmbeddings else { continue }
       let repoResults = try await searchRepo(repo, vectorCache: &vectorCache)
       aggregated.append(contentsOf: repoResults)

@@ -161,9 +161,7 @@ extension MCPServerService: RAGToolsHandlerDelegate {
         chunkCount: repo.chunkCount,
         lastIndexedAt: repo.lastIndexedAt,
         repoIdentifier: repo.repoIdentifier,
-        parentRepoId: repo.parentRepoId,
-        embeddingModel: repo.embeddingModel,
-        embeddingDimensions: repo.embeddingDimensions
+        parentRepoId: repo.parentRepoId
       )
     }
   }
