@@ -106,8 +106,8 @@ actor MLXChatService {
 
     let parameters = GenerateParameters(
       maxTokens: config.maxTokens,
-      temperature: 0.7,
-      topP: 0.9
+      temperature: config.tier == .xlarge ? 1.0 : 0.7,
+      topP: config.tier == .xlarge ? 0.95 : 0.9
     )
 
     let lmInput = try await container.prepare(input: input)

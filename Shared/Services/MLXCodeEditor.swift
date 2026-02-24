@@ -2,17 +2,15 @@
 //  MLXCodeEditor.swift
 //  Peel
 //
-//  Local code editor using MLX LLM models (Qwen3-Coder-30B MoE).
+//  Local code editor using MLX LLM models.
 //  Generates unified diffs, refactoring suggestions, and code completions
-//  using a locally-running MoE model on Apple Silicon.
+//  using a locally-running model on Apple Silicon.
 //
 //  Model tiers:
 //    Small  - Qwen2.5-Coder-7B  (24-48GB RAM)
 //    Medium - Qwen2.5-Coder-14B (48-96GB RAM)
 //    Large  - Qwen3-Coder-30B-A3B MoE (96GB+ RAM, qwen3_moe arch)
-//
-//  NOTE: Qwen3-Coder-Next uses qwen3_next architecture which is NOT YET
-//  supported by mlx-swift-lm. Once support is added, upgrade the large tier.
+//    XLarge - Qwen3-Coder-Next 80B MoE (128GB+ RAM, qwen3_next arch)
 //
 //  Created on 2/10/26.
 //
@@ -43,12 +41,17 @@ enum MLXEditorModelTier: String, CaseIterable, Sendable {
   /// Full agentic edits: multi-file refactors, architecture changes
   case large
 
+  /// XLarge models (Qwen3-Coder-Next 80B MoE, 3B active) - 128GB+ RAM
+  /// Best local coding model; hybrid DeltaNet + Attention + MoE architecture
+  case xlarge
+
   var description: String {
     switch self {
     case .auto: return "Auto (based on RAM)"
     case .small: return "Small (24-48GB RAM) - Qwen2.5-Coder-7B"
     case .medium: return "Medium (48-96GB RAM) - Qwen2.5-Coder-14B"
     case .large: return "Large (96GB+ RAM) - Qwen3-Coder-30B MoE"
+    case .xlarge: return "XLarge (128GB+ RAM) - Qwen3-Coder-Next"
     }
   }
 
@@ -58,12 +61,15 @@ enum MLXEditorModelTier: String, CaseIterable, Sendable {
     case .small: return "Qwen2.5-Coder-7B"
     case .medium: return "Qwen2.5-Coder-14B"
     case .large: return "Qwen3-Coder-30B"
+    case .xlarge: return "Qwen3-Coder-Next"
     }
   }
 
   /// Get recommended tier for given RAM
   static func recommended(forMemoryGB gb: Double) -> MLXEditorModelTier {
-    if gb >= 96 {
+    if gb >= 128 {
+      return .xlarge  // Mac Studio Ultra 192GB+, Mac Pro
+    } else if gb >= 96 {
       return .large   // Mac Studio Ultra 96GB+
     } else if gb >= 48 {
       return .medium  // Mac Studio 64GB
@@ -104,8 +110,7 @@ struct MLXEditorModelConfig: Sendable {
     ),
 
     // Large tier - Qwen3-Coder-30B-A3B MoE (qwen3_moe architecture, ~3B active)
-    // Best code-editing MoE model compatible with current MLX Swift.
-    // Qwen3-Coder-Next (qwen3_next arch) is NOT yet supported by mlx-swift-lm.
+    // Good MoE model for machines with 96GB+ RAM.
     // Requires ~10-15GB RAM at 4-bit quantization.
     MLXEditorModelConfig(
       name: "Qwen3-Coder-30B",
@@ -113,6 +118,18 @@ struct MLXEditorModelConfig: Sendable {
       tier: .large,
       maxTokens: 16384,
       contextLength: 131072  // 128K context
+    ),
+
+    // XLarge tier - Qwen3-Coder-Next 80B MoE (qwen3_next architecture, 3B active)
+    // Best local coding model. Hybrid DeltaNet + Attention + MoE with 512 experts.
+    // Requires ~45GB RAM at 4-bit quantization. 128GB+ recommended.
+    // Recommended sampling: temperature=1.0, top_p=0.95, top_k=40
+    MLXEditorModelConfig(
+      name: "Qwen3-Coder-Next",
+      huggingFaceId: "mlx-community/Qwen3-Coder-Next-4bit",
+      tier: .xlarge,
+      maxTokens: 32768,
+      contextLength: 262144  // 256K context
     )
   ]
 

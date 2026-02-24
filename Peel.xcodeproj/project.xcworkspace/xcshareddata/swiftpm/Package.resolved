@@ -186,8 +186,8 @@
         "repositoryURL": "https://github.com/ml-explore/mlx-swift",
         "state": {
           "branch": null,
-          "revision": "4dccaeda1d83cf8697f235d2786c2d72ad4bb925",
-          "version": "0.30.3"
+          "revision": "6ba4827fb82c97d012eec9ab4b2de21f85c3b33d",
+          "version": "0.30.6"
         }
       },
       {
@@ -195,8 +195,8 @@
         "repositoryURL": "https://github.com/ml-explore/mlx-swift-lm",
         "state": {
           "branch": null,
-          "revision": "360c5052b81cc154b04ee0933597a4ad6db4b8ae",
-          "version": "2.30.3"
+          "revision": "7e19e09027923d89ac47dd087d9627f610e5a91a",
+          "version": "2.30.6"
         }
       },
       {
@@ -233,6 +233,15 @@
           "branch": null,
           "revision": "540318ecedd63d883069ae7f1ed811a2df00b6ac",
           "version": "2.4.0"
+        }
+      },
+      {
+        "package": "RAGCore",
+        "repositoryURL": "https://github.com/crunchybananas/RAGCore.git",
+        "state": {
+          "branch": "main",
+          "revision": "66891a6a5ce1018f98ad672710675be5710904ad",
+          "version": null
         }
       },
       {

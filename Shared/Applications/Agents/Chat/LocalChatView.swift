@@ -197,18 +197,20 @@ struct LocalChatView: View {
 
       // Status bar
       HStack(spacing: 12) {
-        // Model picker
+        // Model picker — menu style scales better than segmented with 5+ items
         Picker("Model", selection: Binding(
           get: { viewModel.selectedTier },
           set: { viewModel.switchModel(to: $0) }
         )) {
-          Text("Auto").tag(MLXEditorModelTier.auto)
+          Label("Auto", systemImage: "cpu")
+            .tag(MLXEditorModelTier.auto)
+          Divider()
           ForEach(MLXEditorModelConfig.availableModels, id: \.name) { model in
             Text(model.name).tag(model.tier)
           }
         }
-        .pickerStyle(.segmented)
-        .frame(maxWidth: 360)
+        .pickerStyle(.menu)
+        .fixedSize()
 
         Spacer()
 

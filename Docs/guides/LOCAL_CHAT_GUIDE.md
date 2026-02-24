@@ -31,11 +31,12 @@ On first use, Peel will download the appropriate model from HuggingFace. This is
 
 Peel auto-selects the best model for your hardware:
 
-| RAM | Default Model | Notes |
-|-----|--------------|-------|
-| 96GB+ | Qwen3-Coder-Next | Large, high quality |
-| 16-96GB | Qwen2.5-Coder-7B | Balanced quality/speed |
-| 8GB | Smaller quantized model | Faster, less capable |
+| RAM | Default Model | Architecture | Notes |
+|-----|--------------|-------------|-------|
+| 128GB+ | Qwen3-Coder-Next (80B MoE) | `qwen3_next` | Best quality, 3B active params, 256K context |
+| 96GB+ | Qwen3-Coder-30B (MoE) | `qwen3_moe` | Good quality, 3B active params, 128K context |
+| 48-96GB | Qwen2.5-Coder-14B | `qwen2` | Balanced quality/speed |
+| 24-48GB | Qwen2.5-Coder-7B | `qwen2` | Faster, lighter |
 
 ### Manual Tier Selection
 

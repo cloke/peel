@@ -24,6 +24,8 @@ done
 
 cd "$REPO_DIR"
 
+BUILD_DIR="${REPO_DIR}/build"
+
 LOG_DIR="$HOME/Library/Logs/Peel"
 LOG_FILE="$LOG_DIR/swarm-self-update.log"
 mkdir -p "$LOG_DIR"
@@ -37,7 +39,7 @@ echo "Directory: $REPO_DIR"
 echo "Host: $(hostname)"
 echo "Branch: $(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'unknown')"
 echo "Commit: $(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
-echo "Self-update script version: 3"
+echo "Self-update script version: 4"
 echo ""
 
 # Check for uncommitted changes
@@ -72,7 +74,16 @@ fi
 
 echo ""
 echo "🔨 Building..."
-if xcodebuild -scheme "$SCHEME" -destination 'platform=macOS' build 2>&1 | grep -q "BUILD SUCCEEDED"; then
+# Use repo-local build dir so we build AND launch from the same path
+# (avoids the stale-DerivedData bug where xcodebuild writes to one
+#  DerivedData dir but the glob picks an older one to launch)
+if xcodebuild \
+  -project Peel.xcodeproj \
+  -scheme "$SCHEME" \
+  -configuration Debug \
+  -derivedDataPath "$BUILD_DIR" \
+  -destination 'platform=macOS' \
+  build 2>&1 | grep -q "BUILD SUCCEEDED"; then
   echo "✅ Build succeeded"
 else
   echo "❌ Build failed"
@@ -82,13 +93,9 @@ fi
 echo ""
 echo "🔄 Restarting Peel..."
 
-# Find the built app first (needed for bundle ID lookup before kill)
-DERIVED_APPS=(~/Library/Developer/Xcode/DerivedData/Peel-*/Build/Products/Debug/Peel.app)
-echo "Searching for built app in DerivedData..."
-if [ ${#DERIVED_APPS[@]} -gt 0 ] && [ -e "${DERIVED_APPS[1]}" ]; then
-  printf '  %s\n' "${DERIVED_APPS[@]}"
-fi
-APP_PATH=$(printf '%s\n' "${DERIVED_APPS[@]}" 2>/dev/null | head -1)
+# Find the built app in our known build directory
+APP_PATH=$(find "$BUILD_DIR" -name "Peel.app" -type d | head -1)
+echo "Built app: $APP_PATH"
 
 # Disable macOS state restoration before killing — prevents OS from auto-relaunching
 # the app behind our back (which causes the double-instance bug)
@@ -186,7 +193,7 @@ if [ -n "$APP_PATH" ]; then
     fi
   fi
 else
-  echo "❌ Could not find Peel.app in DerivedData"
+  echo "❌ Could not find Peel.app in build directory: $BUILD_DIR"
   echo "Tip: ensure Xcode has built Peel at least once on this machine."
   exit 1
 fi

@@ -220,6 +220,7 @@ final class CodeEditToolsHandler: MCPToolHandler {
     case "small": tier = .small
     case "medium": tier = .medium
     case "large": tier = .large
+    case "xlarge": tier = .xlarge
     default: tier = .auto
     }
 

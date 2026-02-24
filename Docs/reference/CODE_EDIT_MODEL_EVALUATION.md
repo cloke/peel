@@ -22,14 +22,13 @@ Tested local on-device code editing through Peel's `code.edit` MCP tool using tw
 | Small | Qwen2.5-Coder-7B | `mlx-community/Qwen2.5-Coder-7B-Instruct-4bit` | `qwen2` | ~4GB | ✅ Works |
 | Medium | Qwen2.5-Coder-14B | `lmstudio-community/Qwen2.5-Coder-14B-Instruct-MLX-4bit` | `qwen2` | ~8GB | ✅ Configured |
 | Large | Qwen3-Coder-30B-A3B | `lmstudio-community/Qwen3-Coder-30B-A3B-Instruct-MLX-4bit` | `qwen3_moe` | ~17GB | ✅ Works |
-| ~~Large~~ | ~~Qwen3-Coder-Next~~ | ~~`mlx-community/Qwen3-Coder-Next-4bit`~~ | ~~`qwen3_next`~~ | ~~~48GB~~ | ❌ Unsupported |
+| XLarge | Qwen3-Coder-Next | `mlx-community/Qwen3-Coder-Next-4bit` | `qwen3_next` | ~45GB | ✅ Supported (mlx-swift-lm 2.30.6+) |
 
-### Supported vs Unsupported Architectures
+### Supported Architectures
 
-MLX Swift's `LLMModelFactory` supports: `qwen2`, `qwen3`, `qwen3_moe`  
-**NOT supported:** `qwen3_next` (used by Qwen3-Coder-Next)
+MLX Swift's `LLMModelFactory` (2.30.6+) supports: `qwen2`, `qwen3`, `qwen3_moe`, `qwen3_next`
 
-The `qwen3_next` model type maps to `Qwen3NextForCausalLM` which is a newer architecture not yet in the MLX Swift library. Error: `"Unsupported model type: qwen3_next"`.
+The `qwen3_next` architecture (hybrid DeltaNet + Attention + MoE) was added in mlx-swift-lm 2.30.6 via PR #70.
 
 ---
 
