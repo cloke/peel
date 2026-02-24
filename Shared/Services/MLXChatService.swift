@@ -37,6 +37,53 @@ struct ChatMessage: Identifiable, Sendable {
   }
 }
 
+// MARK: - Chat Context
+
+/// Extensible context container for injecting knowledge into chat sessions.
+/// Modeled after Copilot's approach — skills, files, instructions, etc. can be
+/// composed and injected into the system prompt without the service knowing the details.
+struct ChatContext: Sendable {
+  /// Repo-scoped skills (ember best practices, project conventions, etc.)
+  var skills: String?
+
+  /// Custom instructions from the user (like Copilot's .github/copilot-instructions.md)
+  var instructions: String?
+
+  /// File context — contents or summaries of referenced files
+  var fileContext: String?
+
+  /// Repo metadata (name, path, tech stack)
+  var repoInfo: String?
+
+  /// Whether any context is present
+  var isEmpty: Bool {
+    skills == nil && instructions == nil && fileContext == nil && repoInfo == nil
+  }
+
+  /// Combine all context blocks into one prompt section
+  func buildPromptSection() -> String? {
+    var sections: [String] = []
+
+    if let repoInfo {
+      sections.append("## Project Context\n\n\(repoInfo)")
+    }
+    if let skills {
+      sections.append(skills) // Already formatted as "## Repo Skills\n\n..."
+    }
+    if let instructions {
+      sections.append("## Custom Instructions\n\n\(instructions)")
+    }
+    if let fileContext {
+      sections.append("## Referenced Files\n\n\(fileContext)")
+    }
+
+    guard !sections.isEmpty else { return nil }
+    return sections.joined(separator: "\n\n---\n\n")
+  }
+
+  static let empty = ChatContext()
+}
+
 // MARK: - Chat Service Actor
 
 /// Interactive chat service using local MLX LLM models.
@@ -46,13 +93,14 @@ actor MLXChatService {
   private let config: MLXEditorModelConfig
   private var isLoaded = false
   private var conversationHistory: [Chat.Message] = []
+  private var context: ChatContext
 
   nonisolated let modelName: String
   nonisolated let tier: MLXEditorModelTier
   nonisolated let huggingFaceId: String
 
-  private static func buildSystemMessage(config: MLXEditorModelConfig) -> String {
-    """
+  private static func buildSystemMessage(config: MLXEditorModelConfig, context: ChatContext = .empty) -> String {
+    var prompt = """
     You are \(config.name), a local coding assistant running on the user's Mac via MLX.
     Model: \(config.name) (\(config.huggingFaceId)), \(config.tier.rawValue) tier.
     You have expertise in Swift, SwiftUI, Python, Rust, and general software engineering.
@@ -60,9 +108,15 @@ actor MLXChatService {
     You can help with: code review, debugging, architecture advice, refactoring suggestions,
     explaining concepts, and general programming questions.
     """
+
+    if let contextSection = context.buildPromptSection() {
+      prompt += "\n\n" + contextSection
+    }
+
+    return prompt
   }
 
-  init(tier: MLXEditorModelTier = .auto) {
+  init(tier: MLXEditorModelTier = .auto, context: ChatContext = .empty) {
     let config: MLXEditorModelConfig
     if tier == .auto {
       config = MLXEditorModelConfig.recommendedModel()
@@ -70,11 +124,13 @@ actor MLXChatService {
       config = MLXEditorModelConfig.model(for: tier) ?? MLXEditorModelConfig.recommendedModel()
     }
     self.config = config
+    self.context = context
     self.modelName = config.name
     self.tier = config.tier
     self.huggingFaceId = config.huggingFaceId
-    self.conversationHistory = [.system(Self.buildSystemMessage(config: config))]
-    print("[MLXChat] Init: \(config.name) (\(config.huggingFaceId)), tier=\(config.tier.rawValue)")
+    self.conversationHistory = [.system(Self.buildSystemMessage(config: config, context: context))]
+    let skillCount = context.skills != nil ? " +skills" : ""
+    print("[MLXChat] Init: \(config.name) (\(config.huggingFaceId)), tier=\(config.tier.rawValue)\(skillCount)")
   }
 
   // MARK: - Model Loading
@@ -144,21 +200,33 @@ actor MLXChatService {
     conversationHistory.append(.assistant(text))
   }
 
+  /// Update context (skills, instructions, etc.) and rebuild system prompt
+  func updateContext(_ newContext: ChatContext) {
+    self.context = newContext
+    // Rebuild system message as first entry in history
+    if !conversationHistory.isEmpty {
+      conversationHistory[0] = .system(Self.buildSystemMessage(config: config, context: newContext))
+    }
+    let skillCount = newContext.skills != nil ? " +skills" : ""
+    print("[MLXChat] Context updated\(skillCount)")
+  }
+
   /// Clear conversation history (keep system prompt)
   func clearHistory() {
-    conversationHistory = [.system(Self.buildSystemMessage(config: config))]
+    conversationHistory = [.system(Self.buildSystemMessage(config: config, context: context))]
   }
 
   /// Unload model to free memory
   func unload() {
     modelContainer = nil
     isLoaded = false
-    conversationHistory = [.system(Self.buildSystemMessage(config: config))]
+    conversationHistory = [.system(Self.buildSystemMessage(config: config, context: context))]
     print("[MLXChat] Model unloaded")
   }
 
   func getIsLoaded() -> Bool { isLoaded }
   func getHistoryCount() -> Int { conversationHistory.count - 1 } // minus system prompt
+  func getContext() -> ChatContext { context }
 }
 
 // MARK: - Errors

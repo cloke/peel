@@ -10,6 +10,7 @@
 
 #if os(macOS)
 import SwiftUI
+import SwiftData
 
 // MARK: - View Model
 
@@ -24,6 +25,8 @@ class LocalChatViewModel {
   var selectedTier: MLXEditorModelTier = .auto
   var error: String?
   var tokensPerSecond: Double = 0
+  var selectedRepoPath: String?
+  var activeSkillCount = 0
 
   private var chatService: MLXChatService?
   private var generationTask: Task<Void, Never>?
@@ -31,7 +34,11 @@ class LocalChatViewModel {
   var modelStatusText: String {
     if isLoadingModel { return "Loading model..." }
     if let service = chatService {
-      return "\(service.modelName) (\(service.tier.rawValue)) ready"
+      var status = "\(service.modelName) (\(service.tier.rawValue)) ready"
+      if activeSkillCount > 0 {
+        status += " · \(activeSkillCount) skill\(activeSkillCount == 1 ? "" : "s")"
+      }
+      return status
     }
     let rec = MLXEditorModelConfig.recommendedModel()
     return "Will load: \(rec.name) (\(rec.huggingFaceId))"
@@ -41,7 +48,44 @@ class LocalChatViewModel {
     chatService != nil
   }
 
-  func send() {
+  /// Build a ChatContext from the current repo selection using DataService
+  func buildContext(dataService: DataService?) -> ChatContext {
+    guard let dataService, let repoPath = selectedRepoPath else {
+      return .empty
+    }
+
+    var context = ChatContext()
+
+    // Auto-seed Ember skills if needed
+    let seededCount = DefaultSkillsService.autoSeedEmberSkillsIfNeeded(
+      context: dataService.modelContext,
+      repoPath: repoPath
+    )
+    if seededCount > 0 {
+      print("[LocalChat] Auto-seeded \(seededCount) Ember skills for \(repoPath)")
+    }
+
+    // Fetch skills block (same format used by agent chains)
+    let repoRemoteURL = RepoRegistry.shared.getCachedRemoteURL(for: repoPath)
+    if let (skillsBlock, skills) = dataService.repoGuidanceSkillsBlock(
+      repoPath: repoPath,
+      repoRemoteURL: repoRemoteURL
+    ) {
+      context.skills = skillsBlock
+      activeSkillCount = skills.count
+      dataService.markRepoGuidanceSkillsApplied(skills)
+    } else {
+      activeSkillCount = 0
+    }
+
+    // Add repo info
+    let repoName = URL(fileURLWithPath: repoPath).lastPathComponent
+    context.repoInfo = "Repository: \(repoName)\nPath: \(repoPath)"
+
+    return context
+  }
+
+  func send(dataService: DataService?) {
     let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty, !isGenerating else { return }
 
@@ -57,13 +101,15 @@ class LocalChatViewModel {
         // Create service lazily on first send
         if chatService == nil {
           isLoadingModel = true
-          let newService = MLXChatService(tier: selectedTier)
+          let context = buildContext(dataService: dataService)
+          let newService = MLXChatService(tier: selectedTier, context: context)
           chatService = newService
           // Show which model is being loaded
-          messages.append(ChatMessage(
-            role: .system,
-            content: "Loading **\(newService.modelName)** (\(newService.huggingFaceId))..."
-          ))
+          var loadingMsg = "Loading **\(newService.modelName)** (\(newService.huggingFaceId))..."
+          if activeSkillCount > 0 {
+            loadingMsg += " with \(activeSkillCount) skill\(activeSkillCount == 1 ? "" : "s")"
+          }
+          messages.append(ChatMessage(role: .system, content: loadingMsg))
         }
 
         guard let service = chatService else { return }
@@ -76,10 +122,11 @@ class LocalChatViewModel {
 
         // Update the system message to show model is ready
         if let idx = messages.lastIndex(where: { $0.role == .system }) {
-          messages[idx] = ChatMessage(
-            role: .system,
-            content: "**\(service.modelName)** (\(service.huggingFaceId)) ready"
-          )
+          var readyMsg = "**\(service.modelName)** (\(service.huggingFaceId)) ready"
+          if activeSkillCount > 0 {
+            readyMsg += " · \(activeSkillCount) skill\(activeSkillCount == 1 ? "" : "s") loaded"
+          }
+          messages[idx] = ChatMessage(role: .system, content: readyMsg)
         }
 
         for await chunk in stream {
@@ -147,6 +194,15 @@ class LocalChatViewModel {
     }
   }
 
+  /// Update the repo context — refreshes skills and injects into active session
+  func setRepo(_ repoPath: String?, dataService: DataService?) {
+    selectedRepoPath = repoPath
+    let context = buildContext(dataService: dataService)
+    if let service = chatService {
+      Task { await service.updateContext(context) }
+    }
+  }
+
   func unloadModel() {
     Task {
       await chatService?.unload()
@@ -159,7 +215,15 @@ class LocalChatViewModel {
 
 struct LocalChatView: View {
   @State private var viewModel = LocalChatViewModel()
+  @Environment(DataService.self) private var dataService
   @FocusState private var inputFocused: Bool
+
+  /// Computed list of repos from the registry
+  private var availableRepos: [(name: String, path: String)] {
+    RepoRegistry.shared.registeredRepos
+      .map { (name: URL(fileURLWithPath: $0.localPath).lastPathComponent, path: $0.localPath) }
+      .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+  }
 
   var body: some View {
     VStack(spacing: 0) {
@@ -229,6 +293,23 @@ struct LocalChatView: View {
         .pickerStyle(.menu)
         .fixedSize()
 
+        // Repo picker — attaches skills/context from the selected repo
+        Picker("Repo", selection: Binding(
+          get: { viewModel.selectedRepoPath ?? "" },
+          set: { viewModel.setRepo($0.isEmpty ? nil : $0, dataService: dataService) }
+        )) {
+          Label("No Repo", systemImage: "folder")
+            .tag("")
+          if !availableRepos.isEmpty {
+            Divider()
+            ForEach(availableRepos, id: \.path) { repo in
+              Text(repo.name).tag(repo.path)
+            }
+          }
+        }
+        .pickerStyle(.menu)
+        .fixedSize()
+
         Spacer()
 
         if viewModel.isGenerating && viewModel.tokensPerSecond > 0 {
@@ -263,7 +344,7 @@ struct LocalChatView: View {
           .focused($inputFocused)
           .onSubmit {
             if !NSEvent.modifierFlags.contains(.shift) {
-              viewModel.send()
+              viewModel.send(dataService: dataService)
             }
           }
 
@@ -279,7 +360,7 @@ struct LocalChatView: View {
           .help("Stop generating")
         } else {
           Button {
-            viewModel.send()
+            viewModel.send(dataService: dataService)
           } label: {
             Image(systemName: "arrow.up.circle.fill")
               .font(.title2)
@@ -352,15 +433,15 @@ struct LocalChatView: View {
       VStack(alignment: .leading, spacing: 8) {
         SuggestionButton(text: "Explain @Observable vs ObservableObject in Swift 6") {
           viewModel.inputText = "Explain @Observable vs ObservableObject in Swift 6"
-          viewModel.send()
+          viewModel.send(dataService: dataService)
         }
         SuggestionButton(text: "Help me refactor a Combine pipeline to async/await") {
           viewModel.inputText = "Help me refactor a Combine pipeline to async/await"
-          viewModel.send()
+          viewModel.send(dataService: dataService)
         }
         SuggestionButton(text: "What's the actor reentrancy problem in Swift?") {
           viewModel.inputText = "What's the actor reentrancy problem in Swift?"
-          viewModel.send()
+          viewModel.send(dataService: dataService)
         }
       }
       .padding(.top, 8)
@@ -477,9 +558,10 @@ private struct SuggestionButton: View {
   }
 }
 
-#Preview {
-  LocalChatView()
-    .frame(width: 700, height: 600)
-}
+// Preview requires DataService with ModelContext — use Xcode canvas with app target
+// #Preview {
+//   LocalChatView()
+//     .frame(width: 700, height: 600)
+// }
 
 #endif

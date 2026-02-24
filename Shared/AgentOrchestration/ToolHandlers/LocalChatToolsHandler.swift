@@ -18,9 +18,13 @@ import MCPCore
 final class LocalChatToolsHandler: MCPToolHandler {
   weak var delegate: MCPToolHandlerDelegate?
 
+  /// DataService for skills/context injection
+  var dataService: DataService?
+
   /// The chat service instance — lazily created on first use
   private var chatService: MLXChatService?
   private var currentTier: MLXEditorModelTier = .auto
+  private var currentRepoPath: String?
 
   let supportedTools: Set<String> = [
     "chat.send",
@@ -52,16 +56,28 @@ final class LocalChatToolsHandler: MCPToolHandler {
 
     let tierString = optionalString("tier", from: arguments, default: "auto") ?? "auto"
     let requestedTier = parseTier(tierString)
+    let repoPath = optionalString("repoPath", from: arguments, default: nil)
 
-    // If tier changed or no service, create a new one
-    if chatService == nil || requestedTier != currentTier {
+    // Build context from skills if a repo path is provided
+    let context: ChatContext? = await buildContext(repoPath: repoPath)
+
+    // If tier, repo, or context changed — recreate the service
+    let needsNewService = chatService == nil
+      || requestedTier != currentTier
+      || repoPath != currentRepoPath
+
+    if needsNewService {
       if let old = chatService {
         print("[MCP Chat] Unloading previous model (tier was \(currentTier), now \(requestedTier))")
         await old.unload()
       }
       currentTier = requestedTier
-      chatService = MLXChatService(tier: requestedTier)
-      print("[MCP Chat] Created service with tier: \(requestedTier)")
+      currentRepoPath = repoPath
+      chatService = MLXChatService(tier: requestedTier, context: context ?? .empty)
+      print("[MCP Chat] Created service with tier: \(requestedTier), repoPath: \(repoPath ?? "none")")
+    } else if let context, let service = chatService {
+      // Same service but update context (e.g., skills may have changed)
+      await service.updateContext(context)
     }
 
     guard let service = chatService else {
@@ -86,7 +102,7 @@ final class LocalChatToolsHandler: MCPToolHandler {
       let elapsed = Date().timeIntervalSince(startTime)
       let tokensPerSecond = elapsed > 0 ? Double(tokenCount) / elapsed : 0
 
-      return (200, makeResult(id: id, result: [
+      var result: [String: Any] = [
         "response": fullResponse,
         "model": service.modelName,
         "tier": service.tier.rawValue,
@@ -94,7 +110,12 @@ final class LocalChatToolsHandler: MCPToolHandler {
         "tokensPerSecond": round(tokensPerSecond * 10) / 10,
         "elapsedSeconds": round(elapsed * 10) / 10,
         "historyLength": await service.getHistoryCount(),
-      ]))
+      ]
+      if let repoPath {
+        result["repoPath"] = repoPath
+        result["hasSkills"] = context?.skills != nil
+      }
+      return (200, makeResult(id: id, result: result))
     } catch {
       return internalError(id: id, message: "Chat error: \(error.localizedDescription)")
     }
@@ -162,6 +183,7 @@ final class LocalChatToolsHandler: MCPToolHandler {
           "properties": [
             "message": ["type": "string", "description": "The message to send to the chat model"],
             "tier": ["type": "string", "description": "Model tier: auto, small, medium, large, xlarge (default: auto)"],
+            "repoPath": ["type": "string", "description": "Optional: path to a repository to inject relevant skills/context into the chat"],
           ],
           "required": ["message"],
         ],
@@ -201,6 +223,32 @@ final class LocalChatToolsHandler: MCPToolHandler {
     case "xlarge": return .xlarge
     default: return .auto
     }
+  }
+
+  // MARK: - Context Building
+
+  private func buildContext(repoPath: String?) async -> ChatContext? {
+    guard let repoPath, let dataService else { return nil }
+
+    // Auto-seed Ember skills for this repo
+    let seeded = await DefaultSkillsService.autoSeedEmberSkillsIfNeeded(
+      context: dataService.modelContext,
+      repoPath: repoPath
+    )
+    if seeded > 0 {
+      print("[MCP Chat] Auto-seeded \(seeded) Ember skills for \(repoPath)")
+    }
+
+    // Fetch skills block
+    let remoteURL = RepoRegistry.shared.getCachedRemoteURL(for: repoPath)
+    let skillsBlock = await dataService.repoGuidanceSkillsBlock(
+      repoPath: repoPath,
+      repoRemoteURL: remoteURL,
+      limit: 20
+    )
+
+    guard let (block, _) = skillsBlock else { return nil }
+    return ChatContext(skills: block)
   }
 
   private func getMemoryGB() -> Double {

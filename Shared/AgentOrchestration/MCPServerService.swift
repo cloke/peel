@@ -963,6 +963,7 @@ public final class MCPServerService {
     }
     if let dataService {
       parallelWorktreeRunner?.setDataService(dataService)
+      localChatToolsHandler?.dataService = dataService
     }
   }
 
