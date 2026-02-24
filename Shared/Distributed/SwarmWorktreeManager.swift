@@ -208,37 +208,51 @@ public final class SwarmWorktreeManager {
     let worktreePath = info.worktreePath
     let branchName = info.branchName
     
-    // Check if there are any changes to commit
+    // Check if there are any uncommitted changes to stage and commit
     let statusResult = try await runGitCommand(
       args: ["status", "--porcelain"],
       in: worktreePath
     )
     
-    if statusResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-      logger.info("No changes to commit in worktree for task \(taskId)")
+    let hasDirtyChanges = !statusResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    
+    if hasDirtyChanges {
+      logger.info("Committing uncommitted changes in worktree for task \(taskId)")
+      
+      // Stage all changes
+      let addResult = try await runGitCommand(
+        args: ["add", "."],
+        in: worktreePath
+      )
+      if addResult.exitCode != 0 {
+        logger.error("git add failed: \(addResult.stderr)")
+        throw WorktreeError.gitCommandFailed("git add failed: \(addResult.stderr)")
+      }
+      
+      // Commit
+      let commitResult = try await runGitCommand(
+        args: ["commit", "-m", commitMessage],
+        in: worktreePath
+      )
+      if commitResult.exitCode != 0 {
+        logger.error("git commit failed: \(commitResult.stderr)")
+        throw WorktreeError.gitCommandFailed("git commit failed: \(commitResult.stderr)")
+      }
+    } else {
+      logger.info("No uncommitted changes for task \(taskId), checking for unpushed commits")
+    }
+    
+    // Always check if the branch has commits ahead of origin — the agent may have
+    // committed inside the chain execution, leaving a clean working dir but unpushed commits.
+    let logResult = try await runGitCommand(
+      args: ["log", "origin/main..\(branchName)", "--oneline"],
+      in: worktreePath
+    )
+    let hasUnpushedCommits = !logResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    
+    guard hasDirtyChanges || hasUnpushedCommits else {
+      logger.info("No changes to commit or push in worktree for task \(taskId)")
       return false
-    }
-    
-    logger.info("Committing changes in worktree for task \(taskId)")
-    
-    // Stage all changes
-    let addResult = try await runGitCommand(
-      args: ["add", "."],
-      in: worktreePath
-    )
-    if addResult.exitCode != 0 {
-      logger.error("git add failed: \(addResult.stderr)")
-      throw WorktreeError.gitCommandFailed("git add failed: \(addResult.stderr)")
-    }
-    
-    // Commit
-    let commitResult = try await runGitCommand(
-      args: ["commit", "-m", commitMessage],
-      in: worktreePath
-    )
-    if commitResult.exitCode != 0 {
-      logger.error("git commit failed: \(commitResult.stderr)")
-      throw WorktreeError.gitCommandFailed("git commit failed: \(commitResult.stderr)")
     }
     
     // Push to origin
