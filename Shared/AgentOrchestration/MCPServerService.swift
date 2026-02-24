@@ -635,6 +635,9 @@ public final class MCPServerService {
   var githubToolsHandler: GitHubToolsHandler?
   var terminalToolsHandler: TerminalToolsHandler
   var gitToolsHandler: GitToolsHandler
+  #if os(macOS)
+  var localChatToolsHandler: LocalChatToolsHandler?
+  #endif
 
   public struct ActiveRunInfo: Identifiable {
     public let id: UUID
@@ -703,6 +706,9 @@ public final class MCPServerService {
     self.githubToolsHandler = GitHubToolsHandler()
     self.terminalToolsHandler = TerminalToolsHandler()
     self.gitToolsHandler = GitToolsHandler()
+    #if os(macOS)
+    self.localChatToolsHandler = LocalChatToolsHandler()
+    #endif
 
     self.agentManager = agentManager
     self.sessionTracker = sessionTracker
@@ -826,6 +832,9 @@ public final class MCPServerService {
     worktreeToolsHandler.delegate = self
     githubToolsHandler?.delegate = self
     terminalToolsHandler.delegate = self
+    #if os(macOS)
+    localChatToolsHandler?.delegate = self
+    #endif
     SwarmCoordinator.shared.ragSyncDelegate = self
   }
 

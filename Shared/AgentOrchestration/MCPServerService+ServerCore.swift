@@ -1045,6 +1045,11 @@ extension MCPServerService {
     if gitToolsHandler.supportedTools.contains(resolvedName) {
       return await gitToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
     }
+    #if os(macOS)
+    if localChatToolsHandler?.supportedTools.contains(resolvedName) == true {
+      return await localChatToolsHandler!.handle(name: resolvedName, id: id, arguments: arguments)
+    }
+    #endif
 
     // Fall through to inline handlers (to be extracted in future)
     switch resolvedName {
