@@ -124,9 +124,12 @@ class LocalChatViewModel {
   func switchModel(to tier: MLXEditorModelTier) {
     guard tier != selectedTier || chatService == nil else { return }
     selectedTier = tier
-    Task {
-      await chatService?.unload()
-      chatService = nil
+    // Nil out chatService immediately so send() creates a new one for the new tier.
+    // Then unload the old model's memory in the background.
+    let oldService = chatService
+    chatService = nil
+    if let oldService {
+      Task { await oldService.unload() }
     }
   }
 
