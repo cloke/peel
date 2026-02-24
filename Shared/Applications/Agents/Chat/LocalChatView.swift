@@ -216,11 +216,13 @@ class LocalChatViewModel {
 struct LocalChatView: View {
   @State private var viewModel = LocalChatViewModel()
   @Environment(DataService.self) private var dataService
+  @Environment(MCPServerService.self) private var mcpServer
   @FocusState private var inputFocused: Bool
+  @State private var availableRepos: [(name: String, path: String)] = []
 
-  /// Computed list of repos from the registry
-  private var availableRepos: [(name: String, path: String)] {
-    RepoRegistry.shared.registeredRepos
+  /// Refresh the repo list from the RepoRegistry
+  private func refreshRepoList() {
+    availableRepos = RepoRegistry.shared.registeredRepos
       .map { (name: URL(fileURLWithPath: $0.localPath).lastPathComponent, path: $0.localPath) }
       .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
   }
@@ -412,6 +414,32 @@ struct LocalChatView: View {
     }
     .onAppear {
       inputFocused = true
+    }
+    .task {
+      // 1) Populate from SwiftData persisted repos
+      let syncedRepos = dataService.getAllRepositories()
+      var paths: [String] = []
+      for repo in syncedRepos {
+        if let mapping = dataService.getLocalPath(for: repo) {
+          paths.append(mapping.localPath)
+        }
+      }
+
+      // 2) Populate from RAG-indexed repos
+      if let ragRepos = try? await mcpServer.localRagStore.listRepos() {
+        for repo in ragRepos {
+          let p = repo.rootPath
+          if !paths.contains(p) && FileManager.default.fileExists(atPath: p) {
+            paths.append(p)
+          }
+        }
+      }
+
+      // 3) Register all discovered paths
+      if !paths.isEmpty {
+        await RepoRegistry.shared.registerAllPaths(paths)
+      }
+      refreshRepoList()
     }
   }
 

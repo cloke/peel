@@ -293,45 +293,85 @@ final class LocalChatToolsHandler: MCPToolHandler {
   /// Concise, directive rules that are always injected for Ember projects.
   /// Skills provide reference examples; these rules provide firm constraints.
   private static let emberDirectiveRules = """
-  MANDATORY IMPORTS FOR .gjs FILES — missing imports crash at runtime:
-  - `import Component from '@glimmer/component';` — ALWAYS
-  - `import { tracked } from '@glimmer/tracking';` — if you use @tracked
-  - `import { on } from '@ember/modifier';` — if template uses {{on "click" ...}} or any {{on ...}}
-  - `import { fn } from '@ember/helper';` — if template uses (fn ...)
+  .gjs FILE FORMAT — CRITICAL RULES (READ BEFORE WRITING CODE)
 
-  EXAMPLE 1 — List with per-item action (uses `on` AND `fn`):
+  ⚠️ RULE 1 — IMPORTS: Every `{{on ...}}` in template REQUIRES `import { on } from '@ember/modifier';`
+  Every `(fn ...)` in template REQUIRES `import { fn } from '@ember/helper';`
+  Missing imports = runtime crash. Scan your <template> for {{on}} and (fn), then add matching imports.
+
+  ⚠️ RULE 2 — fn USAGE: `fn` only curries existing methods: `(fn this.myMethod arg)`.
+  NEVER write `(fn (x) => ...)` or `(fn someInlineFunction)`. fn is NOT a lambda/closure.
+  For input handlers, write a class method: `handleInput = (event) => { this.val = event.target.value; };`
+  Then use: `{{on "input" this.handleInput}}`
+
+  ⚠️ RULE 3 — NO <script> tags. .gjs is NOT Vue/Svelte. There is no <script> block.
+
+  PATTERN A — Template-only (no state, no handlers, args only):
+  ```gjs
+  <template>
+    <button
+      class="ui-button {{@variant}}"
+      type={{if @type @type "button"}}
+      disabled={{@disabled}}
+      ...attributes
+    >
+      {{yield}}
+    </button>
+  </template>
+  ```
+  ↑ No imports, no class. Just <template> at top level. Use {{@argName}} for args.
+
+  PATTERN B — Class component (has state or handlers):
+  Imports at top, <template> INSIDE the class body.
+
+  Example with on + fn (note: both are imported because both are used in the template):
   ```gjs
   import Component from '@glimmer/component';
   import { tracked } from '@glimmer/tracking';
-  import { on } from '@ember/modifier';
-  import { fn } from '@ember/helper';
+  import { on } from '@ember/modifier';  // ← REQUIRED: template uses {{on ...}}
+  import { fn } from '@ember/helper';    // ← REQUIRED: template uses (fn ...)
 
   export default class TodoList extends Component {
     @tracked items = ['Buy milk', 'Walk dog'];
+    @tracked newItem = '';
+
+    handleInput = (event) => {
+      this.newItem = event.target.value;
+    };
+
+    addItem = () => {
+      if (this.newItem.trim()) {
+        this.items = [...this.items, this.newItem.trim()];
+        this.newItem = '';
+      }
+    };
 
     deleteItem = (item) => {
       this.items = this.items.filter(i => i !== item);
     };
 
     <template>
-      <ul>
-        {{#each this.items as |item|}}
-          <li>
-            {{item}}
-            <button type="button" {{on "click" (fn this.deleteItem item)}}>Delete</button>
-          </li>
-        {{/each}}
-      </ul>
+      <div>
+        <input type="text" value={{this.newItem}} {{on "input" this.handleInput}} />
+        <button type="button" {{on "click" this.addItem}}>Add</button>
+        <ul>
+          {{#each this.items as |item|}}
+            <li>
+              {{item}}
+              <button type="button" {{on "click" (fn this.deleteItem item)}}>Delete</button>
+            </li>
+          {{/each}}
+        </ul>
+      </div>
     </template>
   }
   ```
-  ↑ `fn` IS imported because template uses `(fn this.deleteItem item)`.
 
-  EXAMPLE 2 — Simple button (uses `on`, no `fn`):
+  Example with on only (no fn needed):
   ```gjs
   import Component from '@glimmer/component';
   import { tracked } from '@glimmer/tracking';
-  import { on } from '@ember/modifier';
+  import { on } from '@ember/modifier';  // ← REQUIRED: template uses {{on ...}}
 
   export default class ToggleButton extends Component {
     @tracked isActive = false;
@@ -349,13 +389,14 @@ final class LocalChatToolsHandler: MCPToolHandler {
     </template>
   }
   ```
-  ↑ `on` IS imported because template uses `{{on "click" this.toggle}}`. No `fn` needed here.
 
   TEMPLATE RULES:
   - Glimmer templates are NOT JavaScript — no ternary, no arithmetic, no comparisons
   - Use {{#if}} for conditionals, getters for computed values
   - Arrow function class properties for handlers (NOT @action decorator)
   - {{this.prop}} for own state, {{@argName}} for parent args
+  - {{yield}} to render child content passed by parent
+  - ...attributes to pass through HTML attributes
   - Reassign arrays: this.items = [...this.items, newItem]
   - Input: <input value={{this.val}} {{on "input" this.updateVal}} />
   - Handler: updateVal = (event) => { this.val = event.target.value; };
