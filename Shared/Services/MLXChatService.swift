@@ -60,18 +60,19 @@ struct ChatContext: Sendable {
     skills == nil && instructions == nil && fileContext == nil && repoInfo == nil
   }
 
-  /// Combine all context blocks into one prompt section
+  /// Combine all context blocks into one prompt section.
+  /// Instructions come first (directive rules), then project context, then skills (reference).
   func buildPromptSection() -> String? {
     var sections: [String] = []
 
+    if let instructions {
+      sections.append("## Critical Rules\n\n\(instructions)")
+    }
     if let repoInfo {
       sections.append("## Project Context\n\n\(repoInfo)")
     }
     if let skills {
       sections.append(skills) // Already formatted as "## Repo Skills\n\n..."
-    }
-    if let instructions {
-      sections.append("## Custom Instructions\n\n\(instructions)")
     }
     if let fileContext {
       sections.append("## Referenced Files\n\n\(fileContext)")

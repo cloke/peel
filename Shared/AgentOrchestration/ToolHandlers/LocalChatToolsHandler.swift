@@ -57,9 +57,23 @@ final class LocalChatToolsHandler: MCPToolHandler {
     let tierString = optionalString("tier", from: arguments, default: "auto") ?? "auto"
     let requestedTier = parseTier(tierString)
     let repoPath = optionalString("repoPath", from: arguments, default: nil)
+    let instructions = optionalString("instructions", from: arguments, default: nil)
+    let clearHistory = (arguments["clearHistory"] as? Bool) == true
 
-    // Build context from skills if a repo path is provided
-    let context: ChatContext? = await buildContext(repoPath: repoPath)
+    // Build context from skills + auto-detected instructions
+    var context: ChatContext? = await buildContext(repoPath: repoPath)
+    if let instructions {
+      // Append explicit instructions to any auto-detected ones
+      if context != nil {
+        if let existing = context?.instructions {
+          context?.instructions = existing + "\n\n" + instructions
+        } else {
+          context?.instructions = instructions
+        }
+      } else {
+        context = ChatContext(instructions: instructions)
+      }
+    }
 
     // If tier, repo, or context changed — recreate the service
     let needsNewService = chatService == nil
@@ -75,9 +89,16 @@ final class LocalChatToolsHandler: MCPToolHandler {
       currentRepoPath = repoPath
       chatService = MLXChatService(tier: requestedTier, context: context ?? .empty)
       print("[MCP Chat] Created service with tier: \(requestedTier), repoPath: \(repoPath ?? "none")")
-    } else if let context, let service = chatService {
-      // Same service but update context (e.g., skills may have changed)
-      await service.updateContext(context)
+    } else if let service = chatService {
+      // Update context if provided (instructions/skills may have changed)
+      if let context {
+        await service.updateContext(context)
+      }
+      // Clear history if requested (keeps context but resets conversation)
+      if clearHistory {
+        await service.clearHistory()
+        print("[MCP Chat] Cleared conversation history")
+      }
     }
 
     guard let service = chatService else {
@@ -184,6 +205,8 @@ final class LocalChatToolsHandler: MCPToolHandler {
             "message": ["type": "string", "description": "The message to send to the chat model"],
             "tier": ["type": "string", "description": "Model tier: auto, small, medium, large, xlarge (default: auto)"],
             "repoPath": ["type": "string", "description": "Optional: path to a repository to inject relevant skills/context into the chat"],
+            "instructions": ["type": "string", "description": "Optional: custom instructions to inject into the system prompt (e.g., framework-specific coding guidelines)"],
+            "clearHistory": ["type": "boolean", "description": "If true, clear conversation history before sending (keeps model loaded and context)"],
           ],
           "required": ["message"],
         ],
@@ -239,17 +262,106 @@ final class LocalChatToolsHandler: MCPToolHandler {
       print("[MCP Chat] Auto-seeded \(seeded) Ember skills for \(repoPath)")
     }
 
-    // Fetch skills block
+    // Fetch skills block — limit to 8 highest-priority to avoid diluting directive rules
     let remoteURL = RepoRegistry.shared.getCachedRemoteURL(for: repoPath)
     let skillsBlock = await dataService.repoGuidanceSkillsBlock(
       repoPath: repoPath,
       repoRemoteURL: remoteURL,
-      limit: 20
+      limit: 8
     )
 
-    guard let (block, _) = skillsBlock else { return nil }
-    return ChatContext(skills: block)
+    var context = ChatContext()
+
+    // Auto-inject directive rules for detected project types.
+    // When directive rules are present, skip skills injection —
+    // the directive rules are concise and focused; mixing in verbose
+    // skill examples dilutes the model's adherence to critical rules.
+    let isEmber = DefaultSkillsService.detectEmberProject(repoPath: repoPath)
+    if isEmber {
+      context.instructions = Self.emberDirectiveRules
+      print("[MCP Chat] Injected Ember directive rules for \(repoPath)")
+    } else if let (block, _) = skillsBlock {
+      // Only inject skills when no directive rules are present
+      context.skills = block
+    }
+
+    return context.isEmpty ? nil : context
   }
+
+  // MARK: - Ember Directive Rules
+
+  /// Concise, directive rules that are always injected for Ember projects.
+  /// Skills provide reference examples; these rules provide firm constraints.
+  private static let emberDirectiveRules = """
+  MANDATORY IMPORTS FOR .gjs FILES — missing imports crash at runtime:
+  - `import Component from '@glimmer/component';` — ALWAYS
+  - `import { tracked } from '@glimmer/tracking';` — if you use @tracked
+  - `import { on } from '@ember/modifier';` — if template uses {{on "click" ...}} or any {{on ...}}
+  - `import { fn } from '@ember/helper';` — if template uses (fn ...)
+
+  EXAMPLE 1 — List with per-item action (uses `on` AND `fn`):
+  ```gjs
+  import Component from '@glimmer/component';
+  import { tracked } from '@glimmer/tracking';
+  import { on } from '@ember/modifier';
+  import { fn } from '@ember/helper';
+
+  export default class TodoList extends Component {
+    @tracked items = ['Buy milk', 'Walk dog'];
+
+    deleteItem = (item) => {
+      this.items = this.items.filter(i => i !== item);
+    };
+
+    <template>
+      <ul>
+        {{#each this.items as |item|}}
+          <li>
+            {{item}}
+            <button type="button" {{on "click" (fn this.deleteItem item)}}>Delete</button>
+          </li>
+        {{/each}}
+      </ul>
+    </template>
+  }
+  ```
+  ↑ `fn` IS imported because template uses `(fn this.deleteItem item)`.
+
+  EXAMPLE 2 — Simple button (uses `on`, no `fn`):
+  ```gjs
+  import Component from '@glimmer/component';
+  import { tracked } from '@glimmer/tracking';
+  import { on } from '@ember/modifier';
+
+  export default class ToggleButton extends Component {
+    @tracked isActive = false;
+
+    toggle = () => {
+      this.isActive = !this.isActive;
+    };
+
+    get label() {
+      return this.isActive ? 'On' : 'Off';
+    }
+
+    <template>
+      <button type="button" {{on "click" this.toggle}}>{{this.label}}</button>
+    </template>
+  }
+  ```
+  ↑ `on` IS imported because template uses `{{on "click" this.toggle}}`. No `fn` needed here.
+
+  TEMPLATE RULES:
+  - Glimmer templates are NOT JavaScript — no ternary, no arithmetic, no comparisons
+  - Use {{#if}} for conditionals, getters for computed values
+  - Arrow function class properties for handlers (NOT @action decorator)
+  - {{this.prop}} for own state, {{@argName}} for parent args
+  - Reassign arrays: this.items = [...this.items, newItem]
+  - Input: <input value={{this.val}} {{on "input" this.updateVal}} />
+  - Handler: updateVal = (event) => { this.val = event.target.value; };
+  - Place handlers/getters BEFORE <template>
+  - NEVER use @action, {{action}}, {{mut}}, this.set(), inline arrows in templates
+  """
 
   private func getMemoryGB() -> Double {
     var size = 0

@@ -2,8 +2,8 @@
   "meta": {
     "source": "NullVoxPopuli/agent-skills",
     "skill": "ember-best-practices",
-    "version": "1.0.0",
-    "lastUpdated": "2026-02-04",
+    "version": "1.1.0",
+    "lastUpdated": "2026-02-24",
     "hash": "",
     "url": "https://github.com/NullVoxPopuli/agent-skills/tree/main/skills/ember-best-practices"
   },
@@ -247,6 +247,30 @@
       "priority": 7,
       "category": "service",
       "impact": "MEDIUM-HIGH"
+    },
+    {
+      "title": "Template: No JavaScript Expressions in Glimmer Templates",
+      "body": "Glimmer templates are NOT JavaScript. You cannot use JS expressions like ternary operators, arithmetic, comparisons, or method calls inside {{ }} or in helper arguments.\n\n❌ WRONG — these will fail or produce unexpected results:\n```handlebars\n{{this.isHello ? \"Hello\" : \"Goodbye\"}}\n{{this.items.length > 0}}\n{{this.count + 1}}\n{{this.name.toUpperCase()}}\n```\n\n✅ CORRECT — use {{#if}} blocks for conditionals:\n```handlebars\n{{#if this.isHello}}Hello{{else}}Goodbye{{/if}}\n```\n\n✅ CORRECT — use getters for computed values:\n```javascript\nget itemCount() { return this.items.length; }\nget displayName() { return this.name.toUpperCase(); }\n```\n```handlebars\n{{this.itemCount}}\n{{this.displayName}}\n```\n\nThis is the most common source of bugs in generated .gjs code. Always use getters for any computation and {{#if}}/{{else}} for conditionals.",
+      "tags": "template,expressions,critical,gjs",
+      "priority": 10,
+      "category": "template",
+      "impact": "CRITICAL"
+    },
+    {
+      "title": "Template: Mandatory Import Checklist for GJS Files",
+      "body": "Every helper and modifier used in a .gjs `<template>` block MUST be imported at the top of the file. Missing imports cause runtime crashes.\n\nIMPORT CHECKLIST:\n- If template uses `{{on \"event\" ...}}` → `import { on } from '@ember/modifier';`\n- If template uses `(fn handler arg)` → `import { fn } from '@ember/helper';`\n- If template uses `(eq a b)` → `import { eq } from '@ember/helper';`\n- If template uses `(and ...)` or `(or ...)` → `import { and, or } from '@ember/helper';`\n- If template uses `(hash ...)` → `import { hash } from '@ember/helper';`\n- If template uses `(array ...)` → `import { array } from '@ember/helper';`\n- If template uses `(concat ...)` → `import { concat } from '@ember/helper';`\n- If template uses `(get obj key)` → `import { get } from '@ember/helper';`\n\n✅ Complete example with fn import:\n```gjs\nimport Component from '@glimmer/component';\nimport { tracked } from '@glimmer/tracking';\nimport { on } from '@ember/modifier';\nimport { fn } from '@ember/helper';\n\nexport default class ItemList extends Component {\n  @tracked items = ['Buy milk', 'Walk dog'];\n\n  deleteItem = (item) => {\n    this.items = this.items.filter(i => i !== item);\n  };\n\n  <template>\n    <ul>\n      {{#each this.items as |item|}}\n        <li>\n          {{item}}\n          <button type=\"button\" {{on \"click\" (fn this.deleteItem item)}}>Delete</button>\n        </li>\n      {{/each}}\n    </ul>\n  </template>\n}\n```\n\nNotice: `fn` is imported because the template uses `(fn this.deleteItem item)`. Without this import, the app will crash at runtime.",
+      "tags": "template,imports,critical,gjs,fn,on",
+      "priority": 10,
+      "category": "template",
+      "impact": "CRITICAL"
+    },
+    {
+      "title": "Component: Complete GJS Single-File Format Reference",
+      "body": "The .gjs format is Ember's single-file component format with inline `<template>` blocks.\n\nStructure:\n1. Imports at top (Component, tracked, on, fn, etc.)\n2. Class declaration extending Component\n3. @tracked properties for reactive state\n4. Arrow function class properties for handlers (auto-bound)\n5. Native getters for computed values\n6. `<template>` block inline in the class body\n\nRules:\n- Arrow class properties for handlers (NOT @action decorator)\n- `{{this.prop}}` for own state (always prefix with `this.`)\n- `{{@argName}}` for parent-passed arguments\n- `this.args.argName` in JavaScript for reading args\n- Reassign arrays/objects for reactivity: `this.items = [...this.items, newItem]`\n- Input handling: `<input value={{this.val}} {{on \"input\" this.updateVal}} />`\n- Handler pattern: `updateVal = (event) => { this.val = event.target.value; };`\n- NEVER use inline arrow functions in templates\n- NEVER use {{action}}, {{mut}}, @action decorator, or this.set()\n- Place all handlers and getters BEFORE the `<template>` block\n\n✅ Complete .gjs file:\n```gjs\nimport Component from '@glimmer/component';\nimport { tracked } from '@glimmer/tracking';\nimport { on } from '@ember/modifier';\n\nexport default class ToggleButton extends Component {\n  @tracked isActive = false;\n\n  get buttonLabel() {\n    return this.isActive ? 'Active' : 'Inactive';\n  }\n\n  toggle = () => {\n    this.isActive = !this.isActive;\n  };\n\n  <template>\n    <button type=\"button\" {{on \"click\" this.toggle}}>\n      {{this.buttonLabel}}\n    </button>\n  </template>\n}\n```",
+      "tags": "component,gjs,format,reference,critical",
+      "priority": 10,
+      "category": "component",
+      "impact": "CRITICAL"
     }
   ]
 }
