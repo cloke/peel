@@ -49,14 +49,18 @@ actor MLXChatService {
 
   nonisolated let modelName: String
   nonisolated let tier: MLXEditorModelTier
+  nonisolated let huggingFaceId: String
 
-  private let systemMessage = """
-  You are a helpful coding assistant running locally on the user's Mac via MLX.
-  You have expertise in Swift, SwiftUI, Python, Rust, and general software engineering.
-  Keep responses concise and practical. Use code blocks with language tags when showing code.
-  You can help with: code review, debugging, architecture advice, refactoring suggestions,
-  explaining concepts, and general programming questions.
-  """
+  private static func buildSystemMessage(config: MLXEditorModelConfig) -> String {
+    """
+    You are \(config.name), a local coding assistant running on the user's Mac via MLX.
+    Model: \(config.name) (\(config.huggingFaceId)), \(config.tier.rawValue) tier.
+    You have expertise in Swift, SwiftUI, Python, Rust, and general software engineering.
+    Keep responses concise and practical. Use code blocks with language tags when showing code.
+    You can help with: code review, debugging, architecture advice, refactoring suggestions,
+    explaining concepts, and general programming questions.
+    """
+  }
 
   init(tier: MLXEditorModelTier = .auto) {
     let config: MLXEditorModelConfig
@@ -68,7 +72,9 @@ actor MLXChatService {
     self.config = config
     self.modelName = config.name
     self.tier = config.tier
-    self.conversationHistory = [.system(systemMessage)]
+    self.huggingFaceId = config.huggingFaceId
+    self.conversationHistory = [.system(Self.buildSystemMessage(config: config))]
+    print("[MLXChat] Init: \(config.name) (\(config.huggingFaceId)), tier=\(config.tier.rawValue)")
   }
 
   // MARK: - Model Loading
@@ -140,14 +146,14 @@ actor MLXChatService {
 
   /// Clear conversation history (keep system prompt)
   func clearHistory() {
-    conversationHistory = [.system(systemMessage)]
+    conversationHistory = [.system(Self.buildSystemMessage(config: config))]
   }
 
   /// Unload model to free memory
   func unload() {
     modelContainer = nil
     isLoaded = false
-    conversationHistory = [.system(systemMessage)]
+    conversationHistory = [.system(Self.buildSystemMessage(config: config))]
     print("[MLXChat] Model unloaded")
   }
 

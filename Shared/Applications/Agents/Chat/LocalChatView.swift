@@ -31,9 +31,10 @@ class LocalChatViewModel {
   var modelStatusText: String {
     if isLoadingModel { return "Loading model..." }
     if let service = chatService {
-      return "\(service.modelName) ready"
+      return "\(service.modelName) (\(service.tier.rawValue)) ready"
     }
-    return MLXCodeEditorFactory.recommendedTierDescription()
+    let rec = MLXEditorModelConfig.recommendedModel()
+    return "Will load: \(rec.name) (\(rec.huggingFaceId))"
   }
 
   var isModelLoaded: Bool {
@@ -56,8 +57,13 @@ class LocalChatViewModel {
         // Create service lazily on first send
         if chatService == nil {
           isLoadingModel = true
-          chatService = MLXChatService(tier: selectedTier)
-          // The first sendMessage will trigger model load
+          let newService = MLXChatService(tier: selectedTier)
+          chatService = newService
+          // Show which model is being loaded
+          messages.append(ChatMessage(
+            role: .system,
+            content: "Loading **\(newService.modelName)** (\(newService.huggingFaceId))..."
+          ))
         }
 
         guard let service = chatService else { return }
@@ -67,6 +73,14 @@ class LocalChatViewModel {
 
         let stream = try await service.sendMessage(text)
         isLoadingModel = false
+
+        // Update the system message to show model is ready
+        if let idx = messages.lastIndex(where: { $0.role == .system }) {
+          messages[idx] = ChatMessage(
+            role: .system,
+            content: "**\(service.modelName)** (\(service.huggingFaceId)) ready"
+          )
+        }
 
         for await chunk in stream {
           currentStreamText += chunk
