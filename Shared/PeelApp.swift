@@ -230,13 +230,14 @@ struct PeelApp: App {
     let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
     let versionText = build.isEmpty ? version : "\(version) (\(build))"
 
+    guard let donateURL = URL(string: "https://github.com/sponsors/crunchybananas") else { return }
     let credits = NSMutableAttributedString(
       string: "Peel keeps GitHub, git, and Homebrew close at hand so you can stay in flow.\n\nSupport development: "
     )
     let donateLink = NSAttributedString(
       string: "github.com/sponsors/crunchybananas",
       attributes: [
-        .link: URL(string: "https://github.com/sponsors/crunchybananas")!,
+        .link: donateURL,
         .foregroundColor: NSColor.linkColor
       ]
     )

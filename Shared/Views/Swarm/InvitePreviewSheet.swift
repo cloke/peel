@@ -158,7 +158,7 @@ struct InvitePreviewSheet: View {
 #Preview {
   InvitePreviewSheet(
     preview: InvitePreview(
-      url: URL(string: "peel://swarm/join?s=test&i=test&t=test")!,
+      url: URL(string: "peel://swarm/join?s=test&i=test&t=test") ?? URL(fileURLWithPath: "/"),
       swarmId: "test-swarm-id",
       swarmName: "My Team Swarm",
       inviteId: "invite-123",

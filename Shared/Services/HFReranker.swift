@@ -130,7 +130,7 @@ actor HFReranker: LocalRAGReranker {
     guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return results }
     
     // Build request for HuggingFace Inference API
-    let url = buildEndpointURL()
+    let url = try buildEndpointURL()
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -202,13 +202,17 @@ actor HFReranker: LocalRAGReranker {
   
   // MARK: - Private Helpers
   
-  private func buildEndpointURL() -> URL {
+  private func buildEndpointURL() throws -> URL {
     if let custom = config.customEndpoint {
-      return URL(string: custom)!
+      guard let url = URL(string: custom) else { throw URLError(.badURL) }
+      return url
     }
     
     // HuggingFace Serverless Inference API
-    return URL(string: "https://api-inference.huggingface.co/models/\(config.modelId)")!
+    guard let url = URL(string: "https://api-inference.huggingface.co/models/\(config.modelId)") else {
+      throw URLError(.badURL)
+    }
+    return url
   }
   
   private func getStoredAPIToken() -> String? {

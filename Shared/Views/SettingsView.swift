@@ -263,8 +263,11 @@ struct SettingsView: View {
               .font(.caption)
               .foregroundStyle(.secondary)
             HStack(spacing: 12) {
-              Link("GitHub", destination: URL(string: "https://github.com/cloke/peel")!)
-              Link("Donate", destination: URL(string: "https://github.com/sponsors/crunchybananas")!)
+              if let githubURL = URL(string: "https://github.com/cloke/peel"),
+                 let donateURL = URL(string: "https://github.com/sponsors/crunchybananas") {
+                Link("GitHub", destination: githubURL)
+                Link("Donate", destination: donateURL)
+              }
             }
             .font(.caption)
           }
