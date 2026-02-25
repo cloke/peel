@@ -119,7 +119,7 @@ actor ScreenshotService {
       try? fm.createDirectory(at: screenshotsDir, withIntermediateDirectories: true)
     }
 
-    let timestamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+    let timestamp = Formatter.iso8601.string(from: Date()).replacingOccurrences(of: ":", with: "-")
     let safeLabel = (label ?? "screenshot").replacingOccurrences(of: " ", with: "_")
     let fileName = "\(timestamp)-\(safeLabel).png"
     let fileURL = screenshotsDir.appendingPathComponent(fileName)

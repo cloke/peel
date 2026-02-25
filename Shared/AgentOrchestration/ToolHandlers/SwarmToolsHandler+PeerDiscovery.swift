@@ -228,7 +228,7 @@ extension SwarmToolsHandler {
   // MARK: - swarm.diagnostics
 
   func handleDiagnostics(id: Any?) -> (Int, Data) {
-    let formatter = ISO8601DateFormatter()
+    let formatter = Formatter.iso8601
     let peers = coordinator.connectedWorkers.map { peer in
       let status = coordinator.workerStatuses[peer.id]
       let rag = status?.ragArtifacts
@@ -332,7 +332,7 @@ extension SwarmToolsHandler {
     
     // Get brain's commit hash for comparison
     let brainCommitHash = coordinator.capabilities.gitCommitHash
-    let formatter = ISO8601DateFormatter()
+    let formatter = Formatter.iso8601
     
     let workers = coordinator.connectedWorkers.map { peer in
       let workerHash = peer.capabilities.gitCommitHash

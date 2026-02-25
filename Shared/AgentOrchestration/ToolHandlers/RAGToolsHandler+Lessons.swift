@@ -22,7 +22,7 @@ extension RAGToolsHandler {
     
     do {
       let lessons = try await delegate.listLessons(repoPath: repoPath, includeInactive: includeInactive, limit: limit)
-      let formatter = ISO8601DateFormatter()
+      let formatter = Formatter.iso8601
       let payload = lessons.map { encodeLesson($0, formatter: formatter) }
       return (200, makeResult(id: id, result: ["lessons": payload]))
     } catch {
@@ -54,7 +54,7 @@ extension RAGToolsHandler {
         fixCode: fixCode,
         source: source
       )
-      let formatter = ISO8601DateFormatter()
+      let formatter = Formatter.iso8601
       return (200, makeResult(id: id, result: ["lesson": encodeLesson(lesson, formatter: formatter)]))
     } catch {
       return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
@@ -79,7 +79,7 @@ extension RAGToolsHandler {
         errorSignature: errorSignature,
         limit: limit
       )
-      let formatter = ISO8601DateFormatter()
+      let formatter = Formatter.iso8601
       let payload = lessons.map { encodeLesson($0, formatter: formatter) }
       return (200, makeResult(id: id, result: ["lessons": payload, "query": ["filePattern": filePattern as Any, "errorSignature": errorSignature as Any]]))
     } catch {
@@ -110,7 +110,7 @@ extension RAGToolsHandler {
       ) else {
         return notFoundError(id: id, what: "Lesson")
       }
-      let formatter = ISO8601DateFormatter()
+      let formatter = Formatter.iso8601
       return (200, makeResult(id: id, result: ["lesson": encodeLesson(lesson, formatter: formatter)]))
     } catch {
       return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))

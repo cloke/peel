@@ -197,7 +197,7 @@ extension RAGToolsHandler {
   func handleQueryHints(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
     let limit = optionalInt("limit", from: arguments, default: 10) ?? 10
     let hints = await delegate.getRagQueryHints(limit: limit)
-    let formatter = ISO8601DateFormatter()
+    let formatter = Formatter.iso8601
     let payload: [[String: Any]] = hints.map { hint in
       var item: [String: Any] = [
         "query": hint.query,

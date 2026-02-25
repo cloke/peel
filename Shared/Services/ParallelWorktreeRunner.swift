@@ -1191,7 +1191,7 @@ final class ParallelWorktreeRunner {
     taskTitle: String,
     stepSummaries: [ParallelWorktreeExecution.ChainStepSummary]
   ) {
-    let formatter = ISO8601DateFormatter()
+    let formatter = Formatter.iso8601
     let steps: [[String: Any]] = runSummary.results.map { result in
       var step: [String: Any] = [
         "agentName": result.agentName,

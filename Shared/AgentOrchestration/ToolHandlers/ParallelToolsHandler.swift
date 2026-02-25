@@ -869,7 +869,7 @@ final class ParallelToolsHandler {
   // MARK: - Encoding Helpers
 
   private func encodeParallelRun(_ run: ParallelWorktreeRun, includeDetails: Bool = false) -> [String: Any] {
-    let formatter = ISO8601DateFormatter()
+    let formatter = Formatter.iso8601
     var result: [String: Any] = [
       "id": run.id.uuidString,
       "name": run.name,
@@ -932,7 +932,7 @@ final class ParallelToolsHandler {
   }
 
   private func encodeExecution(_ execution: ParallelWorktreeExecution) -> [String: Any] {
-    let formatter = ISO8601DateFormatter()
+    let formatter = Formatter.iso8601
     var result: [String: Any] = [
       "id": execution.id.uuidString,
       "taskTitle": execution.task.title,

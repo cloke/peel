@@ -18,7 +18,7 @@ actor MCPLogService {
   static let shared = MCPLogService()
 
   private let fileURL: URL
-  private let formatter = ISO8601DateFormatter()
+  private let formatter = Formatter.iso8601
 
   private init() {
     let baseURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first

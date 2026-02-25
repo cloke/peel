@@ -19,7 +19,7 @@ extension RAGToolsHandler {
     let repoRemoteURL = optionalString("repoRemoteURL", from: arguments)
     let includeInactive = optionalBool("includeInactive", from: arguments, default: false)
     let limit = optionalInt("limit", from: arguments)
-    let formatter = ISO8601DateFormatter()
+    let formatter = Formatter.iso8601
     
     let skills = delegate.listRepoGuidanceSkills(
       repoPath: repoPath?.isEmpty == false ? repoPath : nil,
@@ -63,7 +63,7 @@ extension RAGToolsHandler {
     guard let skill else {
       return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Failed to create skill"))
     }
-    let formatter = ISO8601DateFormatter()
+    let formatter = Formatter.iso8601
     return (200, makeResult(id: id, result: ["skill": encodeSkill(skill, formatter: formatter)]))
   }
   
@@ -90,7 +90,7 @@ extension RAGToolsHandler {
     guard let skill else {
       return notFoundError(id: id, what: "Skill")
     }
-    let formatter = ISO8601DateFormatter()
+    let formatter = Formatter.iso8601
     return (200, makeResult(id: id, result: ["skill": encodeSkill(skill, formatter: formatter)]))
   }
   
@@ -205,7 +205,7 @@ extension RAGToolsHandler {
         response["latestCommitSHA"] = String(sha.prefix(8))
       }
       if let lastUpdated = result.lastUpdated {
-        response["lastChecked"] = ISO8601DateFormatter().string(from: lastUpdated)
+        response["lastChecked"] = Formatter.iso8601.string(from: lastUpdated)
       }
       if let error = result.error {
         response["error"] = error.localizedDescription

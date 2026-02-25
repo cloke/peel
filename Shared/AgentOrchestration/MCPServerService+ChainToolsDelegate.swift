@@ -300,8 +300,7 @@ extension MCPServerService: ChainToolsHandlerDelegate {
         .filter { !$0.isEmpty }
     }
 
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let formatter = Formatter.iso8601
 
     var runs: [MCPRunRecord] = []
 

@@ -167,7 +167,7 @@ final class NightlyRAGSyncService {
       let snapshotsDir = snapshotsDirectory()
       try FileManager.default.createDirectory(at: snapshotsDir, withIntermediateDirectories: true)
 
-      let timestamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+      let timestamp = Formatter.iso8601.string(from: Date()).replacingOccurrences(of: ":", with: "-")
       let destZip = snapshotsDir.appendingPathComponent("snapshot-\(timestamp).zip")
       try FileManager.default.copyItem(at: bundle.bundleURL, to: destZip)
 

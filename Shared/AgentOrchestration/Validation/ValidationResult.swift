@@ -86,7 +86,7 @@ extension ValidationResult {
       "status": status.rawValue,
       "reasons": reasons,
       "metadata": metadata,
-      "timestamp": ISO8601DateFormatter().string(from: timestamp)
+      "timestamp": Formatter.iso8601.string(from: timestamp)
     ]
     return dict
   }

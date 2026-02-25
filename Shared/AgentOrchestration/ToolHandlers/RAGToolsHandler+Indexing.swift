@@ -15,7 +15,7 @@ extension RAGToolsHandler {
   
   func handleStatus(id: Any?, delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
     let status = await delegate.ragStatus()
-    let formatter = ISO8601DateFormatter()
+    let formatter = Formatter.iso8601
     var result: [String: Any] = [
       "dbPath": status.dbPath,
       "exists": status.exists,
@@ -40,7 +40,7 @@ extension RAGToolsHandler {
     do {
       let status = try await delegate.initializeRag(extensionPath: extensionPath)
       await delegate.refreshRagSummary()
-      let formatter = ISO8601DateFormatter()
+      let formatter = Formatter.iso8601
       var result: [String: Any] = [
         "dbPath": status.dbPath,
         "exists": status.exists,
@@ -120,7 +120,7 @@ extension RAGToolsHandler {
   func handleReposList(id: Any?, delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
     do {
       let repos = try await delegate.listRagRepos()
-      let formatter = ISO8601DateFormatter()
+      let formatter = Formatter.iso8601
       let repoList = repos.map { repo -> [String: Any] in
         var dict: [String: Any] = [
           "id": repo.id,

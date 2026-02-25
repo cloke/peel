@@ -1175,7 +1175,7 @@ extension MCPServerService {
     let gitRepoPaths = UserDefaults.standard.stringArray(forKey: "git.availableRepoPaths")
     let gitRepoNames = UserDefaults.standard.stringArray(forKey: "git.availableRepoNames")
     let gitSelectedRepo = UserDefaults.standard.string(forKey: "git.selectedRepoPath")
-    let formatter = ISO8601DateFormatter()
+    let formatter = Formatter.iso8601
     let uniqueGitRepoPaths = dedupeStrings(gitRepoPaths)
     let uniqueGitRepoNames = dedupeStrings(gitRepoNames)
     let uniqueWorkspaceNames = dedupeStrings(workspaceNames)

@@ -123,7 +123,7 @@ struct WorktreeToolInfo: Sendable {
       dict["diskSizeFormatted"] = formatBytes(diskSizeBytes)
     }
     if let createdAt = createdAt {
-      dict["createdAt"] = ISO8601DateFormatter().string(from: createdAt)
+      dict["createdAt"] = Formatter.iso8601.string(from: createdAt)
     }
     return dict
   }
@@ -462,7 +462,7 @@ public final class WorktreeToolsHandler: MCPToolHandler {
     }
     let limit = arguments["limit"] as? Int ?? 20
     let results = await worktreeDelegate.gateAgentHistory(limit: limit)
-    let iso = ISO8601DateFormatter()
+    let iso = Formatter.iso8601
     let items: [[String: Any]] = results.map { r in
       ["branchName": r.branchName, "outcome": r.outcome, "timestamp": iso.string(from: r.timestamp), "reasons": r.reasons]
     }

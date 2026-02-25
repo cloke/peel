@@ -17,7 +17,7 @@ extension MCPServerService {
       return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Missing or invalid runId"))
     }
 
-    let formatter = ISO8601DateFormatter()
+    let formatter = Formatter.iso8601
 
     if let runInfo = activeRunsById[runId] {
       let chain = activeRunChains[runId]
@@ -74,8 +74,7 @@ extension MCPServerService {
     let includeResults = arguments["includeResults"] as? Bool ?? false
     let includeOutputs = arguments["includeOutputs"] as? Bool ?? false
 
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let formatter = Formatter.iso8601
 
     func splitLines(_ value: String) -> [String] {
       value
@@ -149,8 +148,7 @@ extension MCPServerService {
 
   func handleAgentWorkspacesList(id: Any?, arguments: [String: Any]) -> (Int, Data) {
     let repoPath = arguments["repoPath"] as? String
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let formatter = Formatter.iso8601
 
     let workspaces = agentManager.workspaceManager.workspaces
       .filter { workspace in
@@ -180,8 +178,7 @@ extension MCPServerService {
   }
 
   func handleAgentWorkspacesCleanupStatus(id: Any?) -> (Int, Data) {
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let formatter = Formatter.iso8601
 
     let result: [String: Any] = [
       "isCleaning": isCleaningAgentWorkspaces,
@@ -1031,7 +1028,7 @@ extension MCPServerService {
       "queued": chainQueue.map {
         [
           "runId": $0.id.uuidString,
-          "enqueuedAt": ISO8601DateFormatter().string(from: $0.enqueuedAt),
+          "enqueuedAt": Formatter.iso8601.string(from: $0.enqueuedAt),
           "priority": $0.priority
         ]
       },

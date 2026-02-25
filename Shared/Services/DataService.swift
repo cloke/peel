@@ -317,7 +317,7 @@ final class DataService {
   }
 
   private func encodeParallelExecutions(_ run: ParallelWorktreeRun) -> String {
-    let formatter = ISO8601DateFormatter()
+    let formatter = Formatter.iso8601
     let payload = run.executions.map { execution in
       var result: [String: Any] = [
         "id": execution.id.uuidString,
@@ -405,7 +405,7 @@ final class DataService {
       return []
     }
 
-    let formatter = ISO8601DateFormatter()
+    let formatter = Formatter.iso8601
 
     return array.compactMap { dict in
       guard let idString = dict["id"] as? String,

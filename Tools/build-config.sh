@@ -44,6 +44,7 @@ PEELCLI_PATH="${PROJECT_DIR}/Tools/PeelCLI/.build/debug/peel-mcp"
 # Helper: build the app with consistent settings
 peel_build() {
   local config="${1:-Debug}"
+  shift 2>/dev/null || true
   echo "🔨 Building Peel (${config})..."
   cd "$PROJECT_DIR"
   xcodebuild \

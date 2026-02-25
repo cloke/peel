@@ -239,7 +239,7 @@ enum LocalRAGArtifacts {
     let data = try encoder.encode(manifest)
     try data.write(to: manifestURL, options: [.atomic])
 
-    let timestamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+    let timestamp = Formatter.iso8601.string(from: Date()).replacingOccurrences(of: ":", with: "-")
     let bundleURL = artifactsDir.appendingPathComponent("rag-artifacts-\(timestamp).zip")
     if FileManager.default.fileExists(atPath: bundleURL.path) {
       try FileManager.default.removeItem(at: bundleURL)

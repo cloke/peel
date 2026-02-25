@@ -133,7 +133,7 @@ extension SwarmToolsHandler {
           "swarms": swarms.count,
           "totalMembers": totalMembers,
           "totalInvites": totalInvites,
-          "backupTimestamp": ISO8601DateFormatter().string(from: Date())
+          "backupTimestamp": Formatter.iso8601.string(from: Date())
         ]
       ]
       return (200, makeResult(id: id, result: result))

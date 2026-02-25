@@ -88,7 +88,7 @@ final class RepoToolsHandler: MCPToolHandler {
     }
 
     let (repos, selectedId) = loadRepositories(from: dataService, includeInvalid: includeInvalid)
-    let formatter = ISO8601DateFormatter()
+    let formatter = Formatter.iso8601
     let encoded = repos.map { $0.dictionary(selectedId: selectedId, formatter: formatter) }
 
     return (200, makeResult(id: id, result: [
@@ -113,7 +113,7 @@ final class RepoToolsHandler: MCPToolHandler {
 
     let (repos, selectedId) = loadRepositories(from: dataService, includeInvalid: includeInvalid)
     let matches = filterRepositories(repos, by: name, mode: matchMode)
-    let formatter = ISO8601DateFormatter()
+    let formatter = Formatter.iso8601
     let encodedMatches = matches.map { $0.dictionary(selectedId: selectedId, formatter: formatter) }
 
     var result: [String: Any] = [

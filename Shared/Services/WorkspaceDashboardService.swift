@@ -687,7 +687,7 @@ public final class WorkspaceDashboardService {
       let parts = joined.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: "|")
       if parts.count >= 2 {
         lastMessage = parts[0]
-        let formatter = ISO8601DateFormatter()
+        let formatter = Formatter.iso8601
         lastDate = formatter.date(from: parts[1])
       }
     } catch {

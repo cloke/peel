@@ -478,7 +478,7 @@ extension SwarmToolsHandler {
         "branchName": reservation.branchName,
         "repoPath": reservation.repoPath,
         "workerId": reservation.workerId,
-        "createdAt": ISO8601DateFormatter().string(from: reservation.createdAt)
+        "createdAt": Formatter.iso8601.string(from: reservation.createdAt)
       ]
     }
     
@@ -488,7 +488,7 @@ extension SwarmToolsHandler {
         "branchName": branch.branchName,
         "repoPath": branch.repoPath,
         "workerId": branch.workerId,
-        "completedAt": ISO8601DateFormatter().string(from: branch.completedAt),
+        "completedAt": Formatter.iso8601.string(from: branch.completedAt),
         "status": branch.status.rawValue
       ]
     }
@@ -515,7 +515,7 @@ extension SwarmToolsHandler {
         "prURL": pr.prURL,
         "branchName": pr.branchName,
         "repoPath": pr.repoPath,
-        "createdAt": ISO8601DateFormatter().string(from: pr.createdAt),
+        "createdAt": Formatter.iso8601.string(from: pr.createdAt),
         "labels": pr.labels.map(\.rawValue),
         "status": pr.status.rawValue
       ]

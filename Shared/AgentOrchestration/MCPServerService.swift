@@ -1184,7 +1184,7 @@ public final class MCPServerService {
   }
 
   func summarizeResults(_ results: [AgentChainResult]) -> [[String: Any]] {
-    let formatter = ISO8601DateFormatter()
+    let formatter = Formatter.iso8601
     return results.map { result in
       var item: [String: Any] = [
         "agentId": result.agentId.uuidString,

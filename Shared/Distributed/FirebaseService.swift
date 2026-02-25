@@ -623,7 +623,7 @@ public final class FirebaseService {
     }
 
     return [
-      "exportedAt": ISO8601DateFormatter().string(from: Date()),
+      "exportedAt": Formatter.iso8601.string(from: Date()),
       "exportedBy": currentUserId ?? "unknown",
       "swarms": swarmsData
     ]
@@ -1437,7 +1437,7 @@ public final class FirebaseService {
       "isSignedIn": isSignedIn,
       "isConfigured": isConfigured,
       "recentMessages": swarmMessages.suffix(5).map {
-        ["id": $0.id, "from": $0.senderName, "deviceId": String($0.senderDeviceId.prefix(8)), "text": String($0.text.prefix(40)), "at": ISO8601DateFormatter().string(from: $0.createdAt)]
+        ["id": $0.id, "from": $0.senderName, "deviceId": String($0.senderDeviceId.prefix(8)), "text": String($0.text.prefix(40)), "at": Formatter.iso8601.string(from: $0.createdAt)]
       }
     ]
   }

@@ -362,7 +362,7 @@ public final class SwarmWorktreeManager {
           "path": info.worktreePath,
           "branch": info.branchName,
           "repoPath": info.repoPath,
-          "createdAt": ISO8601DateFormatter().string(from: info.createdAt)
+          "createdAt": Formatter.iso8601.string(from: info.createdAt)
         ]
       }
     ]
