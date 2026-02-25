@@ -16,6 +16,7 @@ struct WorktreesView: View {
   @State private var isLoading = false
   @State private var errorMessage: String?
   @State private var selectedWorktree: WorktreeItem?
+  @State private var worktreeToDelete: WorktreeItem? = nil
   @State private var showingNewWorktreeSheet = false
   
   var body: some View {
@@ -114,13 +115,30 @@ struct WorktreesView: View {
   private var worktreeList: some View {
     List(worktrees, selection: $selectedWorktree) { worktree in
       WorktreeRow(worktree: worktree, onDelete: {
-        Task { await deleteWorktree(worktree) }
+        worktreeToDelete = worktree
       }, onOpen: {
         openInVSCode(worktree)
       })
       .tag(worktree)
     }
     .listStyle(.inset)
+    .confirmationDialog(
+      "Delete Worktree?",
+      isPresented: Binding(
+        get: { worktreeToDelete != nil },
+        set: { if !$0 { worktreeToDelete = nil } }
+      ),
+      presenting: worktreeToDelete
+    ) { worktree in
+      Button("Delete \(worktree.branch)", role: .destructive) {
+        Task { await deleteWorktree(worktree) }
+      }
+      Button("Cancel", role: .cancel) {
+        worktreeToDelete = nil
+      }
+    } message: { worktree in
+      Text("This will permanently remove the worktree for \"\(worktree.branch)\" and all its files.")
+    }
   }
   
   // MARK: - Actions
