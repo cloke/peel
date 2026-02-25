@@ -2007,6 +2007,42 @@ public final class FirebaseService {
     return artifactId
   }
 
+  /// Compute a stable, deterministic artifact ID from a repo identifier.
+  /// Uses SHA256 prefix for cross-process/cross-machine stability.
+  public static func stableRepoArtifactId(for repoIdentifier: String) -> String {
+    let hash = SHA256.hash(data: Data(repoIdentifier.utf8))
+      .prefix(16)
+      .map { String(format: "%02x", $0) }
+      .joined()
+    return "repo-\(hash)"
+  }
+
+  /// Find the latest per-repo artifact for a given repo identifier.
+  /// First tries the stable hash-based document ID, then falls back to a query
+  /// on the `repoIdentifier` field (for artifacts pushed with the old unstable hash).
+  public func findRepoArtifactId(
+    swarmId: String,
+    repoIdentifier: String
+  ) async throws -> String? {
+    let collection = ragArtifactsCollection(swarmId: swarmId)
+
+    // Strategy 1: direct lookup by stable hash (fast, no query)
+    let stableId = Self.stableRepoArtifactId(for: repoIdentifier)
+    let stableDoc = try await collection.document(stableId).getDocument()
+    if stableDoc.exists {
+      return stableId
+    }
+
+    // Strategy 2: query by repoIdentifier field (catches old unstable-hash artifacts)
+    let snapshot = try await collection
+      .whereField("repoIdentifier", isEqualTo: repoIdentifier)
+      .order(by: "uploadedAt", descending: true)
+      .limit(to: 1)
+      .getDocuments()
+
+    return snapshot.documents.first?.documentID
+  }
+
   /// Push a per-repo RAG bundle (JSON) to Firestore.
   /// Stored under ragArtifacts/{repoId-hash}/chunks/ like the full-DB path.
   public func pushRAGRepoBundle(
@@ -2021,8 +2057,8 @@ public final class FirebaseService {
       throw FirebaseError.permissionDenied
     }
 
-    // Use a stable artifact ID derived from the repo identifier
-    let artifactId = "repo-\(repoIdentifier.hash)"
+    // Use a stable artifact ID derived from the repo identifier (SHA256 for cross-process stability)
+    let artifactId = Self.stableRepoArtifactId(for: repoIdentifier)
     let collection = ragArtifactsCollection(swarmId: swarmId)
     let artifactRef = collection.document(artifactId)
     let totalBytes = data.count

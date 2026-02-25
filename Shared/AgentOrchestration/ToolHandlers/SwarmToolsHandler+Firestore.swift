@@ -538,19 +538,24 @@ extension SwarmToolsHandler {
       }
 
       // Firestore relay fallback — no P2P peers connected, pull from Firestore
-      guard let artifactId, !artifactId.isEmpty else {
-        return missingParamError(id: id, param: "artifactId (required for Firestore relay — no P2P peers available)")
+      // Auto-resolve artifactId from repoIdentifier if not explicitly provided
+      var resolvedArtifactId = artifactId
+      if (resolvedArtifactId == nil || resolvedArtifactId?.isEmpty == true), let repoIdentifier, !forceFullDB {
+        resolvedArtifactId = try await service.findRepoArtifactId(swarmId: swarmId, repoIdentifier: repoIdentifier)
+      }
+      guard let resolvedArtifactId, !resolvedArtifactId.isEmpty else {
+        return internalError(id: id, message: "No artifact found in Firestore for this repo. Either push from the source machine first (swarm.firestore.rag.push with forceRelay: true), or provide an explicit artifactId.")
       }
 
       // Per-repo sync (default, safe path): pull JSON bundle, decode, and merge
       if let repoIdentifier, !forceFullDB {
-        let jsonData = try await service.pullRAGRepoBundle(swarmId: swarmId, artifactId: artifactId)
+        let jsonData = try await service.pullRAGRepoBundle(swarmId: swarmId, artifactId: resolvedArtifactId)
         let repoBundle = try JSONDecoder().decode(RAGRepoExportBundle.self, from: jsonData)
         let result = try await ragStore.importRepoBundle(repoBundle, localRepoPath: repoPath, forceImportEmbeddings: forceEmbeddings)
         var resultDict: [String: Any] = [
           "success": true,
           "swarmId": swarmId,
-          "artifactId": artifactId,
+          "artifactId": resolvedArtifactId,
           "repoIdentifier": repoIdentifier,
           "repoPath": repoPath,
           "filesImported": result.filesImported,
@@ -561,6 +566,7 @@ extension SwarmToolsHandler {
           "embeddingsBackfilled": result.embeddingsBackfilled,
           "mode": "per-repo",
           "transport": "firestore-relay",
+          "artifactAutoResolved": artifactId == nil,
           "note": "No P2P peers connected. Data fetched from Firestore relay. Connect peers for direct P2P transfer."
         ]
         if result.needsLocalReembedding {
@@ -573,11 +579,11 @@ extension SwarmToolsHandler {
 
       // Full DB sync (legacy path — requires explicit fullDB: true)
       let tempDir = FileManager.default.temporaryDirectory
-      let bundleURL = tempDir.appendingPathComponent("rag-artifact-\(artifactId).zip")
+      let bundleURL = tempDir.appendingPathComponent("rag-artifact-\(resolvedArtifactId).zip")
       
       let manifest = try await service.pullRAGArtifacts(
         swarmId: swarmId,
-        artifactId: artifactId,
+        artifactId: resolvedArtifactId,
         destination: bundleURL
       )
       
@@ -589,7 +595,7 @@ extension SwarmToolsHandler {
       return (200, makeResult(id: id, result: [
         "success": true,
         "swarmId": swarmId,
-        "artifactId": artifactId,
+        "artifactId": resolvedArtifactId,
         "version": manifest.version,
         "repoPath": repoPath,
         "repoCount": manifest.repos.count,

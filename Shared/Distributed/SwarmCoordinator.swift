@@ -208,7 +208,10 @@ public final class SwarmCoordinator {
   
   /// NAT traversal manager for UDP hole punching across networks
   private var natTraversalManager: NATTraversalManager?
-  
+
+  /// Public read-only access to NAT traversal manager (for STUN diagnostics)
+  public var natTraversal: NATTraversalManager? { natTraversalManager }
+
   /// Delegate
   public weak var delegate: SwarmCoordinatorDelegate?
 

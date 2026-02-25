@@ -508,5 +508,114 @@ extension SwarmToolsHandler {
       ] }
     ]))
   }
-  
+
+  // MARK: - swarm.stun-test
+
+  func handleStunTest(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    let localPort = UInt16(arguments["localPort"] as? Int ?? 8766)
+
+    // Query multiple STUN servers to detect NAT type
+    let servers: [(host: String, port: UInt16)] = [
+      ("stun.l.google.com", 19302),
+      ("stun1.l.google.com", 19302),
+      ("stun.cloudflare.com", 3478),
+      ("stun.services.mozilla.com", 3478),
+    ]
+
+    var results: [[String: Any]] = []
+    var discoveredPorts: Set<UInt16> = []
+    var discoveredAddresses: Set<String> = []
+
+    for server in servers {
+      if let result = await STUNClient.queryServer(
+        host: server.host,
+        port: server.port,
+        localPort: localPort,
+        timeout: 5
+      ) {
+        results.append([
+          "server": "\(server.host):\(server.port)",
+          "externalAddress": result.address,
+          "externalPort": Int(result.port),
+          "latencyMs": result.latencyMs,
+        ])
+        discoveredPorts.insert(result.port)
+        discoveredAddresses.insert(result.address)
+      } else {
+        results.append([
+          "server": "\(server.host):\(server.port)",
+          "error": "No response (timeout or blocked)",
+        ])
+      }
+    }
+
+    // Analyze NAT type based on port consistency
+    let natType: String
+    let holePunchViable: Bool
+    if results.isEmpty || discoveredPorts.isEmpty {
+      natType = "unknown (all servers failed)"
+      holePunchViable = false
+    } else if discoveredPorts.count == 1 {
+      natType = "Endpoint Independent Mapping (cone NAT)"
+      holePunchViable = true
+    } else if discoveredPorts.count <= 2 {
+      natType = "Address Dependent Mapping (restricted cone)"
+      holePunchViable = true  // Usually works with coordination
+    } else {
+      natType = "Endpoint Dependent Mapping (symmetric NAT)"
+      holePunchViable = false
+    }
+
+    // Check current swarm STUN registration
+    let currentSTUN: [String: Any]
+    if let natManager = coordinator.natTraversal {
+      let endpoint = natManager.stunEndpoint
+      if let ep = endpoint {
+        currentSTUN = [
+          "registered": true,
+          "address": ep.address,
+          "port": Int(ep.port),
+        ]
+      } else {
+        currentSTUN = ["registered": false, "note": "NAT traversal manager active but no endpoint discovered yet"]
+      }
+    } else {
+      currentSTUN = ["registered": false, "note": "NAT traversal manager not started (swarm may not be running)"]
+    }
+
+    // Check what Firestore knows about our STUN endpoint
+    let service = FirebaseService.shared
+    let firestoreEndpoint: [String: Any]
+    if let myWorker = service.swarmWorkers.first(where: { $0.id == coordinator.capabilities.deviceId }) {
+      firestoreEndpoint = [
+        "stunAddress": myWorker.stunAddress as Any,
+        "stunPort": myWorker.stunPort.map { Int($0) } as Any,
+        "wanAddress": myWorker.wanAddress as Any,
+        "wanPort": myWorker.wanPort.map { Int($0) } as Any,
+        "hasSTUNEndpoint": myWorker.hasSTUNEndpoint,
+        "hasWANEndpoint": myWorker.hasWANEndpoint,
+      ]
+    } else {
+      firestoreEndpoint = ["note": "Not registered as Firestore worker"]
+    }
+
+    return (200, makeResult(id: id, result: [
+      "localPort": Int(localPort),
+      "serverResults": results,
+      "analysis": [
+        "natType": natType,
+        "holePunchViable": holePunchViable,
+        "uniqueExternalPorts": discoveredPorts.sorted().map { Int($0) },
+        "uniqueExternalAddresses": Array(discoveredAddresses),
+        "serversResponded": results.filter { $0["error"] == nil }.count,
+        "serversFailed": results.filter { $0["error"] != nil }.count,
+      ],
+      "currentSwarmSTUN": currentSTUN,
+      "firestoreEndpoint": firestoreEndpoint,
+      "recommendations": holePunchViable
+        ? ["NAT type supports hole punching. Ensure both peers have STUN endpoints in Firestore and both are online simultaneously."]
+        : ["Symmetric NAT detected — STUN hole punching will NOT work. Use Firestore relay (forceRelay: true) or configure port forwarding on your router."],
+    ]))
+  }
+
 }

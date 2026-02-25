@@ -70,6 +70,22 @@ extension SwarmToolsHandler {
         isMutating: false
       ),
       MCPToolDefinition(
+        name: "swarm.stun-test",
+        description: "Test STUN NAT traversal. Queries public STUN servers to discover this machine's external IP:port and NAT type. Useful for diagnosing WAN peer connectivity. Queries multiple servers to detect if NAT port mapping is consistent (cone NAT) or changes per destination (symmetric NAT — hole punching won't work).",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "localPort": [
+              "type": "integer",
+              "description": "Local UDP port to bind for discovery (default: 8766, the swarm port). Use the same port you'd use for hole punching."
+            ]
+          ],
+          "required": []
+        ],
+        category: .swarm,
+        isMutating: false
+      ),
+      MCPToolDefinition(
         name: "swarm.rag.sync",
         description: "Request a Local RAG artifact sync to or from a peel. Direction is 'push' or 'pull'. Optionally scope to a single repo by repoIdentifier.",
         inputSchema: [

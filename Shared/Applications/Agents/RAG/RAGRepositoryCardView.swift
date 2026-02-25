@@ -215,21 +215,40 @@ struct RAGRepositoryCardView: View {
     }
     .contextMenu {
       if let repoIdentifier = repo.repoIdentifier {
-        if SwarmCoordinator.shared.isActive {
+        if SwarmCoordinator.shared.isActive && hasConnectedPeers {
           Button {
             Task { await syncRepoWithPeers(repoIdentifier: repoIdentifier, direction: .push) }
           } label: {
             Label("Push to Peer", systemImage: "arrow.up.circle")
           }
-          .disabled(!hasConnectedPeers || isSyncing)
+          .disabled(isSyncing)
 
           Button {
             Task { await syncRepoWithPeers(repoIdentifier: repoIdentifier, direction: .pull) }
           } label: {
             Label("Pull from Peer", systemImage: "arrow.down.circle")
           }
-          .disabled(!hasConnectedPeers || isSyncing)
-        } else {
+          .disabled(isSyncing)
+        }
+
+        if FirebaseService.shared.isSignedIn && !FirebaseService.shared.memberSwarms.isEmpty {
+          Divider()
+          Button {
+            Task { await syncRepoViaFirestore(repoIdentifier: repoIdentifier, direction: .push) }
+          } label: {
+            Label("Push to Cloud", systemImage: "icloud.and.arrow.up")
+          }
+          .disabled(isSyncing)
+
+          Button {
+            Task { await syncRepoViaFirestore(repoIdentifier: repoIdentifier, direction: .pull) }
+          } label: {
+            Label("Pull from Cloud", systemImage: "icloud.and.arrow.down")
+          }
+          .disabled(isSyncing)
+        }
+
+        if !SwarmCoordinator.shared.isActive && !FirebaseService.shared.isSignedIn {
           Label("Start Swarm to sync", systemImage: "network.slash")
         }
       }
@@ -499,13 +518,14 @@ struct RAGRepositoryCardView: View {
       if let repoIdentifier = repo.repoIdentifier {
         let peers = SwarmCoordinator.shared.connectedWorkers
         let hasPeers = !peers.isEmpty && SwarmCoordinator.shared.isActive
+        let hasFirestoreRelay = FirebaseService.shared.isSignedIn && !FirebaseService.shared.memberSwarms.isEmpty
 
         if SwarmCoordinator.shared.isActive && peers.count > 1 {
           // Multiple peers: show menus to pick which peer
           syncPeerMenu(peers: peers, repoIdentifier: repoIdentifier, direction: .push)
           syncPeerMenu(peers: peers, repoIdentifier: repoIdentifier, direction: .pull)
-        } else {
-          // Single peer (or none): direct buttons
+        } else if hasPeers {
+          // Single peer: direct P2P buttons
           Button {
             Task { await syncRepoWithPeers(repoIdentifier: repoIdentifier, direction: .push) }
           } label: {
@@ -521,12 +541,8 @@ struct RAGRepositoryCardView: View {
           }
           .buttonStyle(.bordered)
           .controlSize(.small)
-          .disabled(isSyncing || !hasPeers)
-          .help(
-            SwarmCoordinator.shared.isActive
-            ? (hasPeers ? "Push to \(peers.first?.displayName ?? "peer")" : "No peers connected")
-            : "Start Swarm to sync"
-          )
+          .disabled(isSyncing)
+          .help("Push to \(peers.first?.displayName ?? "peer")")
 
           Button {
             Task { await syncRepoWithPeers(repoIdentifier: repoIdentifier, direction: .pull) }
@@ -543,15 +559,59 @@ struct RAGRepositoryCardView: View {
           }
           .buttonStyle(.bordered)
           .controlSize(.small)
-          .disabled(isSyncing || !hasPeers)
-          .help(
-            SwarmCoordinator.shared.isActive
-            ? (hasPeers ? "Pull from \(peers.first?.displayName ?? "peer")" : "No peers connected")
-            : "Start Swarm to sync"
-          )
+          .disabled(isSyncing)
+          .help("Pull from \(peers.first?.displayName ?? "peer")")
+        } else if hasFirestoreRelay {
+          // No P2P peers but signed into Firebase: offer cloud relay
+          Button {
+            Task { await syncRepoViaFirestore(repoIdentifier: repoIdentifier, direction: .push) }
+          } label: {
+            if isSyncing && syncDirection == .push {
+              HStack(spacing: 4) {
+                ProgressView()
+                  .scaleEffect(0.5)
+                Text("Pushing…")
+              }
+            } else {
+              Label("Push to Cloud", systemImage: "icloud.and.arrow.up")
+            }
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
+          .disabled(isSyncing)
+          .help("Push via Firestore relay for WAN peers to pull later")
+
+          Button {
+            Task { await syncRepoViaFirestore(repoIdentifier: repoIdentifier, direction: .pull) }
+          } label: {
+            if isSyncing && syncDirection == .pull {
+              HStack(spacing: 4) {
+                ProgressView()
+                  .scaleEffect(0.5)
+                Text("Pulling…")
+              }
+            } else {
+              Label("Pull from Cloud", systemImage: "icloud.and.arrow.down")
+            }
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
+          .disabled(isSyncing)
+          .help("Pull latest from Firestore relay (auto-discovers artifact)")
 
           if !SwarmCoordinator.shared.isActive {
+            Text("Start Swarm for P2P sync")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+        } else {
+          // Not signed in to Firebase, no peers
+          if !SwarmCoordinator.shared.isActive {
             Text("Start Swarm to sync")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          } else {
+            Text("No peers connected")
               .font(.caption2)
               .foregroundStyle(.secondary)
           }
@@ -636,6 +696,77 @@ struct RAGRepositoryCardView: View {
     } catch {
       errorMessage = "Sync failed: \(error.localizedDescription)"
     }
+    isSyncing = false
+    syncDirection = nil
+  }
+
+  /// Sync per-repo artifacts via Firestore relay (for WAN peers without P2P connection)
+  private func syncRepoViaFirestore(repoIdentifier: String, direction: RAGArtifactSyncDirection) async {
+    isSyncing = true
+    syncDirection = direction
+    syncResultMessage = nil
+    errorMessage = nil
+
+    let service = FirebaseService.shared
+    guard let swarm = service.memberSwarms.first else {
+      errorMessage = "No swarm membership found. Join a swarm first."
+      isSyncing = false
+      syncDirection = nil
+      return
+    }
+
+    do {
+      if direction == .push {
+        // Export and push to Firestore
+        guard let repoBundle = try await LocalRAGStore.shared.exportRepo(identifier: repoIdentifier) else {
+          errorMessage = "No RAG index found for \(repoIdentifier)"
+          isSyncing = false
+          syncDirection = nil
+          return
+        }
+        let jsonData = try JSONEncoder().encode(repoBundle)
+        let artifactId = try await service.pushRAGRepoBundle(
+          swarmId: swarm.id,
+          repoIdentifier: repoIdentifier,
+          data: jsonData
+        )
+        let sizeStr = ByteCountFormatter.string(fromByteCount: Int64(jsonData.count), countStyle: .file)
+        syncResultMessage = "Pushed to cloud (\(sizeStr), artifact: \(artifactId.prefix(12))…)"
+      } else {
+        // Pull from Firestore — auto-resolve artifactId
+        guard let artifactId = try await service.findRepoArtifactId(
+          swarmId: swarm.id,
+          repoIdentifier: repoIdentifier
+        ) else {
+          errorMessage = "No artifact found in cloud for \(repoIdentifier). Push from the source machine first."
+          isSyncing = false
+          syncDirection = nil
+          return
+        }
+        let jsonData = try await service.pullRAGRepoBundle(
+          swarmId: swarm.id,
+          artifactId: artifactId
+        )
+        let repoBundle = try JSONDecoder().decode(RAGRepoExportBundle.self, from: jsonData)
+        let result = try await LocalRAGStore.shared.importRepoBundle(
+          repoBundle,
+          localRepoPath: repo.rootPath,
+          forceImportEmbeddings: true
+        )
+        syncResultMessage = "Pulled from cloud: \(result.filesImported) files, \(result.chunksImported) chunks"
+        await mcpServer.refreshRagSummary()
+        await refreshAnalysisStatus()
+      }
+
+      // Auto-dismiss success message
+      Task { @MainActor in
+        try? await Task.sleep(for: .seconds(6))
+        if syncResultMessage != nil { syncResultMessage = nil }
+      }
+    } catch {
+      errorMessage = "Cloud sync failed: \(error.localizedDescription)"
+    }
+
     isSyncing = false
     syncDirection = nil
   }

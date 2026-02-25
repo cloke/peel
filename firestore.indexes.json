@@ -23,6 +23,14 @@
         { "fieldPath": "revoked", "order": "ASCENDING" },
         { "fieldPath": "expires", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "ragArtifacts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "repoIdentifier", "order": "ASCENDING" },
+        { "fieldPath": "uploadedAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [

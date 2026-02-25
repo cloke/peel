@@ -99,6 +99,8 @@ public final class SwarmToolsHandler: MCPToolHandler {
       return handleStatus(id: id)
     case "swarm.diagnostics":
       return handleDiagnostics(id: id)
+    case "swarm.stun-test":
+      return await handleStunTest(id: id, arguments: arguments)
     case "swarm.rag.sync":
       return await handleRagSync(id: id, arguments: arguments)
     case "swarm.workers":
