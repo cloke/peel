@@ -125,6 +125,23 @@ final class ParallelWorktreeExecution: Identifiable, @unchecked Sendable {
   /// Overrides task.prompt for this execution (set via parallel.retry amendedPrompt)
   var amendedPrompt: String?
   
+  /// Per-step results from the agent chain (planner decisions, review verdicts, gate results)
+  var chainStepResults: [ChainStepSummary] = []
+
+  /// Compact per-step summary for logging and status exposure
+  struct ChainStepSummary: Identifiable, Sendable {
+    let id = UUID()
+    let stepName: String
+    let role: String
+    let model: String
+    let durationSeconds: Double?
+    let premiumCost: Double
+    let reviewVerdict: String?
+    let plannerDecision: String?
+    let gateResult: String?
+    let outputPreview: String
+  }
+
   /// RAG snippet injected into the prompt
   struct RAGSnippet: Identifiable, Sendable {
     let id = UUID()
@@ -829,16 +846,19 @@ final class ParallelWorktreeRunner {
       execution.filesChanged = result.filesChanged
       execution.insertions = result.insertions
       execution.deletions = result.deletions
+      execution.chainStepResults = result.chainStepResults
       
       // Populate conflict files from pre-merge detection (if any)
       if let conflicts = result.mergeConflicts, !conflicts.isEmpty {
         execution.conflictFiles = conflicts.map { MergeConflictFile(filePath: $0, content: "") }
       }
       
-      // Set status based on review gate and chain outcome
+      // Set status based on review verdict, review gate, and chain outcome
       if !result.chainSucceeded {
         execution.status = .failed("Chain failed — check output for gate or step errors")
         PeonPingService.shared.worktreeFailed(taskTitle: execution.task.title, error: "Gate or step failed")
+      } else if let verdict = result.reviewVerdict, verdict == .rejected {
+        execution.status = .rejected("Reviewer rejected: see chain log for details")
       } else if run.requireReviewGate {
         execution.status = .awaitingReview
         PeonPingService.shared.worktreeNeedsReview(taskTitle: execution.task.title)
@@ -1064,15 +1084,82 @@ final class ParallelWorktreeRunner {
       break
     }
 
-    let diffStats = computeDiffStats(in: worktreePath)
-    let gitStatus = runGit(args: ["status", "-sb"], at: worktreePath)
+    // Extract per-step summaries from chain results
+    var stepSummaries: [ParallelWorktreeExecution.ChainStepSummary] = []
+    var reviewVerdict: ReviewVerdict?
 
     if let runSummary = lastSummary {
+      for result in runSummary.results {
+        let outputPreview = String(result.output.prefix(500))
+        let durationSec: Double? = result.duration.flatMap { Double($0) }
+
+        let verdictStr = result.reviewVerdict?.rawValue
+        let plannerStr: String? = result.plannerDecision.map { decision in
+          if decision.shouldSkipWork { return "skip: \(decision.noWorkReason ?? "no work needed")" }
+          return "\(decision.tasks.count) tasks planned"
+        }
+        let gateStr = result.gateResult?.displayName
+
+        stepSummaries.append(ParallelWorktreeExecution.ChainStepSummary(
+          stepName: result.agentName,
+          role: result.agentName.lowercased().contains("planner") ? "planner"
+            : result.agentName.lowercased().contains("review") ? "reviewer"
+            : result.gateResult != nil ? "gate"
+            : "implementer",
+          model: result.model,
+          durationSeconds: durationSec,
+          premiumCost: result.premiumCost,
+          reviewVerdict: verdictStr,
+          plannerDecision: plannerStr,
+          gateResult: gateStr,
+          outputPreview: outputPreview
+        ))
+
+        // Capture last reviewer verdict
+        if let verdict = result.reviewVerdict {
+          reviewVerdict = verdict
+        }
+
+        // Record per-step result to SwiftData for post-mortem
+        dataService?.recordMCPRunResult(
+          chainId: result.agentId.uuidString,
+          agentId: result.id.uuidString,
+          agentName: result.agentName,
+          model: result.model,
+          prompt: result.prompt,
+          output: result.output,
+          premiumCost: result.premiumCost,
+          reviewVerdict: result.reviewVerdict?.rawValue
+        )
+      }
+
+      // Write chain log JSON to worktree for post-mortem analysis
+      writeChainLogFile(
+        worktreePath: worktreePath,
+        runSummary: runSummary,
+        taskTitle: task.title,
+        stepSummaries: stepSummaries
+      )
+
+      // Log per-step summary
       await mcpLog.info("Parallel worktree run summary", metadata: [
         "chainId": runSummary.chainId.uuidString,
         "taskTitle": task.title,
         "state": runSummary.stateDescription,
         "noWork": runSummary.noWorkReason ?? "",
+        "steps": "\(stepSummaries.count)",
+        "reviewVerdict": reviewVerdict?.rawValue ?? "none",
+        "templateName": template?.name ?? "bare-implementer"
+      ])
+    }
+
+    let diffStats = computeDiffStats(in: worktreePath)
+    let gitStatus = runGit(args: ["status", "-sb"], at: worktreePath)
+
+    if let runSummary = lastSummary {
+      await mcpLog.info("Parallel worktree diff stats", metadata: [
+        "chainId": runSummary.chainId.uuidString,
+        "taskTitle": task.title,
         "filesChanged": "\(diffStats.filesChanged)",
         "insertions": "\(diffStats.insertions)",
         "deletions": "\(diffStats.deletions)",
@@ -1087,7 +1174,9 @@ final class ParallelWorktreeRunner {
       insertions: diffStats.insertions,
       deletions: diffStats.deletions,
       mergeConflicts: lastSummary?.mergeConflicts ?? [],
-      chainSucceeded: lastSummary?.stateDescription.lowercased() != "failed"
+      chainSucceeded: lastSummary?.stateDescription.lowercased() != "failed",
+      reviewVerdict: reviewVerdict,
+      chainStepResults: stepSummaries
     )
   }
 
@@ -1095,32 +1184,89 @@ final class ParallelWorktreeRunner {
     dataService?.recordParallelRunSnapshot(run: run)
   }
 
+  /// Write a structured JSON chain log file to the worktree for post-mortem analysis
+  private func writeChainLogFile(
+    worktreePath: String,
+    runSummary: AgentChainRunner.RunSummary,
+    taskTitle: String,
+    stepSummaries: [ParallelWorktreeExecution.ChainStepSummary]
+  ) {
+    let formatter = ISO8601DateFormatter()
+    let steps: [[String: Any]] = runSummary.results.map { result in
+      var step: [String: Any] = [
+        "agentName": result.agentName,
+        "model": result.model,
+        "premiumCost": result.premiumCost,
+        "timestamp": formatter.string(from: result.timestamp),
+        "output": result.output
+      ]
+      if let duration = result.duration {
+        step["duration"] = duration
+      }
+      if let verdict = result.reviewVerdict {
+        step["reviewVerdict"] = verdict.rawValue
+      }
+      if let decision = result.plannerDecision {
+        step["plannerDecision"] = [
+          "branch": decision.branch,
+          "taskCount": decision.tasks.count,
+          "noWorkReason": decision.noWorkReason as Any,
+          "tasks": decision.tasks.map { ["title": $0.title, "description": $0.description] }
+        ] as [String: Any]
+      }
+      if let gate = result.gateResult {
+        step["gateResult"] = gate.displayName
+      }
+      if let screenshot = result.screenshotPath {
+        step["screenshotPath"] = screenshot
+      }
+      return step
+    }
+
+    let logPayload: [String: Any] = [
+      "chainId": runSummary.chainId.uuidString,
+      "chainName": runSummary.chainName,
+      "taskTitle": taskTitle,
+      "state": runSummary.stateDescription,
+      "noWorkReason": runSummary.noWorkReason as Any,
+      "errorMessage": runSummary.errorMessage as Any,
+      "timestamp": formatter.string(from: Date()),
+      "steps": steps
+    ]
+
+    guard let data = try? JSONSerialization.data(withJSONObject: logPayload, options: [.prettyPrinted, .sortedKeys]),
+          let json = String(data: data, encoding: .utf8) else { return }
+
+    let logPath = (worktreePath as NSString).appendingPathComponent(".peel-chain-log.json")
+    try? json.write(toFile: logPath, atomically: true, encoding: .utf8)
+  }
+
   private func preferredTemplate(for run: ParallelWorktreeRun) -> ChainTemplate? {
     let templates = agentManager.allTemplates
+    // 1. Explicit template name from the run takes priority
     if let templateName = run.templateName,
        let match = templates.first(where: { $0.name == templateName }) {
       return match
     }
+    // 2. When run options request advanced features, use Full Implementation
+    //    (Planner + Implementer + Build Gate + Reviewer)
     if let runOptions = run.runOptions,
        runOptions.allowPlannerModelSelection
         || runOptions.allowPlannerImplementerScaling
         || runOptions.maxImplementers != nil
         || runOptions.maxPremiumCost != nil {
-      if let codeReview = templates.first(where: { $0.name == "Code Review" }) {
-        return codeReview
-      }
-      if let harness = templates.first(where: { $0.name == "MCP Harness" }) {
-        return harness
+      if let full = templates.first(where: { $0.name == "Full Implementation" }) {
+        return full
       }
     }
-    if let freeReview = templates.first(where: { $0.name == "Free Review" }) {
-      return freeReview
+    // 3. Default: Full Implementation — every parallel worktree task deserves
+    //    at least a planner + implementer + reviewer to catch problems early
+    if let full = templates.first(where: { $0.name == "Full Implementation" }) {
+      return full
     }
-    if let quick = templates.first(where: { $0.name == "Quick Fix" }) {
+    // 4. Fallback: Quick Task (single implementer, free model)
+    if let quick = templates.first(where: { $0.name == "Quick Task" }) {
       return quick
-    }
-    if let free = templates.first(where: { $0.name == "MCP Harness (Free)" }) {
-      return free
     }
     return templates.first
   }
@@ -1207,6 +1353,8 @@ final class ParallelWorktreeRunner {
     let deletions: Int
     let mergeConflicts: [String]?
     let chainSucceeded: Bool
+    let reviewVerdict: ReviewVerdict?
+    let chainStepResults: [ParallelWorktreeExecution.ChainStepSummary]
   }
   
   /// Update run status based on execution results and record a snapshot.

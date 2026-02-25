@@ -973,6 +973,29 @@ final class ParallelToolsHandler {
       break
     }
 
+    // Surface per-step chain results for post-mortem analysis
+    if !execution.chainStepResults.isEmpty {
+      result["chainSteps"] = execution.chainStepResults.map { step -> [String: Any] in
+        var s: [String: Any] = [
+          "stepName": step.stepName,
+          "role": step.role,
+          "model": step.model,
+          "premiumCost": step.premiumCost
+        ]
+        if let dur = step.durationSeconds { s["durationSeconds"] = dur }
+        if let verdict = step.reviewVerdict { s["reviewVerdict"] = verdict }
+        if let planner = step.plannerDecision { s["plannerDecision"] = planner }
+        if let gate = step.gateResult { s["gateResult"] = gate }
+        s["outputPreview"] = step.outputPreview
+        return s
+      }
+
+      // Surface final review verdict at the execution level
+      if let lastVerdict = execution.chainStepResults.last(where: { $0.reviewVerdict != nil })?.reviewVerdict {
+        result["reviewVerdict"] = lastVerdict
+      }
+    }
+
     return result
   }
 }
