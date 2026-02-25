@@ -500,7 +500,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
             model: .bestFree,
             name: "Build Gate",
             stepType: .gate,
-            command: #"if [ -f Package.swift ]; then swift build 2>&1; elif ls *.xcodeproj 1>/dev/null 2>&1; then xcodebuild -quiet build 2>&1; elif [ -f Makefile ] || [ -f makefile ]; then make 2>&1; else echo 'No build system found' >&2; exit 1; fi"#
+            command: #"if [ -f Package.swift ]; then swift build 2>&1; elif ls *.xcodeproj 1>/dev/null 2>&1; then SCHEME=$(xcodebuild -list 2>/dev/null | grep -m1 'macOS' | xargs); DD="$PWD/.build-gate-dd"; xcodebuild -quiet -scheme "$SCHEME" -destination 'platform=macOS' -derivedDataPath "$DD" build 2>&1; EXIT=$?; rm -rf "$DD" 2>/dev/null; exit $EXIT; elif [ -f Makefile ] || [ -f makefile ]; then make 2>&1; else echo 'No build system found' >&2; exit 1; fi"#
           ),
           AgentStepTemplate(
             role: .implementer,
