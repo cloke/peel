@@ -27,7 +27,9 @@ public final class VMToolsHandler: MCPToolHandler {
     "vm.linux.status",
     "vm.linux.start",
     "vm.linux.stop",
-    "vm.linux.exec"
+    "vm.linux.exec",
+    // Ad-hoc agent run
+    "vm.agent.run"
   ]
 
   private let vmIsolationService: VMIsolationService
@@ -60,6 +62,8 @@ public final class VMToolsHandler: MCPToolHandler {
       return await handleLinuxStop(id: id)
     case "vm.linux.exec":
       return await handleLinuxExec(id: id, arguments: arguments)
+    case "vm.agent.run":
+      return await handleAgentRun(id: id, arguments: arguments)
     default:
       return (404, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.methodNotFound, message: "Unknown tool"))
     }
@@ -226,6 +230,198 @@ public final class VMToolsHandler: MCPToolHandler {
       return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.vmError, message: error.localizedDescription))
     }
   }
+
+  // MARK: - vm.agent.run
+
+  private func handleAgentRun(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let prompt = arguments["prompt"] as? String, !prompt.isEmpty else {
+      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "Missing required 'prompt' parameter"))
+    }
+    guard let workspacePath = arguments["workspacePath"] as? String, !workspacePath.isEmpty else {
+      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "Missing required 'workspacePath' parameter"))
+    }
+
+    let agentBinary = arguments["agentBinary"] as? String ?? "copilot"
+    let installCommand = arguments["installCommand"] as? String
+    let agentArgs = arguments["agentArgs"] as? [String] ?? []
+    let model = arguments["model"] as? String
+    let timeoutSeconds = arguments["timeoutSeconds"] as? Double ?? 600
+
+    // Validate agentBinary to prevent shell injection (allow alphanumeric, dash, underscore, period, slash)
+    let safeBinaryPattern = /^[a-zA-Z0-9._\-\/]+$/
+    guard agentBinary.wholeMatch(of: safeBinaryPattern) != nil else {
+      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "Invalid agentBinary: must contain only alphanumeric characters, dashes, underscores, periods, or slashes"))
+    }
+
+    // Validate model if provided
+    if let model = model, !model.isEmpty {
+      guard model.wholeMatch(of: safeBinaryPattern) != nil else {
+        return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "Invalid model: must contain only alphanumeric characters, dashes, underscores, periods, or slashes"))
+      }
+    }
+
+    // Verify workspace path exists on host
+    var isDir: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: workspacePath, isDirectory: &isDir), isDir.boolValue else {
+      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "workspacePath does not exist or is not a directory: \(workspacePath)"))
+    }
+
+    let startTime = Date()
+    await telemetryProvider.info("vm.agent.run start", metadata: [
+      "agentBinary": agentBinary,
+      "workspacePath": workspacePath,
+      "timeoutSeconds": String(Int(timeoutSeconds))
+    ])
+
+    // 1. Boot VM with VirtioFS workspace share
+    do {
+      await vmIsolationService.initialize()
+      let shares = [VMDirectoryShare.workspace(workspacePath)]
+      try await vmIsolationService.startLinuxVM(directoryShares: shares)
+    } catch {
+      await telemetryProvider.warning("vm.agent.run: VM boot failed", metadata: ["error": error.localizedDescription])
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.vmError, message: "VM boot failed: \(error.localizedDescription)"))
+    }
+
+    // Ensure VM is cleaned up when we're done
+    defer {
+      Task { @MainActor in
+        try? await self.vmIsolationService.stopLinuxVM()
+      }
+    }
+
+    // 2. Wait for VM shell to become responsive
+    do {
+      try await waitForVMReady()
+    } catch {
+      await telemetryProvider.warning("vm.agent.run: VM not responsive", metadata: ["error": error.localizedDescription])
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.vmError, message: "VM shell not responsive: \(error.localizedDescription)"))
+    }
+
+    // 3. Mount workspace inside VM
+    do {
+      try await vmIsolationService.mountDirectoryShares([VMDirectoryShare.workspace(workspacePath)])
+    } catch {
+      await telemetryProvider.warning("vm.agent.run: Mount failed", metadata: ["error": error.localizedDescription])
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.vmError, message: "Failed to mount workspace: \(error.localizedDescription)"))
+    }
+
+    // 4. Install agent if needed
+    do {
+      let checkCmd = "which \(agentBinary) 2>/dev/null && echo AGENT_FOUND || echo AGENT_MISSING"
+      let checkOutput = try await vmIsolationService.sendLinuxCommand(checkCmd, timeout: 10)
+      if checkOutput.contains("AGENT_MISSING") {
+        if let installCommand = installCommand, !installCommand.isEmpty {
+          await telemetryProvider.info("vm.agent.run: Installing agent", metadata: ["command": installCommand])
+          _ = try await vmIsolationService.sendLinuxCommand(installCommand, timeout: 120)
+        } else {
+          return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.vmError, message: "Agent binary '\(agentBinary)' not found in VM and no installCommand provided"))
+        }
+      }
+    } catch {
+      await telemetryProvider.warning("vm.agent.run: Agent install failed", metadata: ["error": error.localizedDescription])
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.vmError, message: "Agent install failed: \(error.localizedDescription)"))
+    }
+
+    // 5. Initialize git in workspace for diff tracking
+    _ = try? await vmIsolationService.sendLinuxCommand(
+      "cd /mnt/workspace && git rev-parse --git-dir >/dev/null 2>&1 || git init -q && git add -A && git commit -q -m 'pre-agent snapshot' --allow-empty 2>/dev/null",
+      timeout: 30
+    )
+
+    // 6. Build and run the agent command
+    var cmdParts: [String] = []
+    cmdParts.append("cd /mnt/workspace")
+    // Export environment variables for agent RAG callback
+    cmdParts.append("export GH_TOKEN=${GH_TOKEN:-}")
+    cmdParts.append("export PEEL_HOST_IP=$(ip route | grep default | awk '{print $3}')")
+    cmdParts.append("export PEEL_MCP_PORT=8765")
+    // Build the agent invocation
+    var agentCmd = agentBinary
+    if let model = model, !model.isEmpty {
+      agentCmd += " --model \(model)"
+    }
+    for arg in agentArgs {
+      agentCmd += " \(shellEscape(arg))"
+    }
+    // Pass prompt via stdin heredoc to avoid shell escaping issues
+    let escapedPrompt = prompt.replacingOccurrences(of: "'", with: "'\\''")
+    agentCmd += " <<'PEEL_PROMPT_EOF'\n\(escapedPrompt)\nPEEL_PROMPT_EOF"
+    cmdParts.append(agentCmd)
+
+    let fullCommand = cmdParts.joined(separator: " && ")
+
+    // Run with timeout
+    var agentOutput = ""
+    var agentExitCode: Int32 = 1
+    do {
+      agentOutput = try await vmIsolationService.sendLinuxCommand(fullCommand, timeout: timeoutSeconds)
+      agentExitCode = vmIsolationService.lastCommandExitCode
+    } catch {
+      // Timeout or other error — capture partial results
+      agentOutput = "Agent execution error: \(error.localizedDescription)"
+      agentExitCode = 124  // conventional timeout exit code
+      await telemetryProvider.warning("vm.agent.run: Agent execution failed/timed out", metadata: ["error": error.localizedDescription])
+    }
+
+    // 7. Capture git diff summary
+    var diffSummary = ""
+    do {
+      diffSummary = try await vmIsolationService.sendLinuxCommand(
+        "cd /mnt/workspace && git add -A && git diff --cached --stat 2>/dev/null || echo 'No git diff available'",
+        timeout: 15
+      )
+    } catch {
+      diffSummary = "Unable to capture diff: \(error.localizedDescription)"
+    }
+
+    let duration = Date().timeIntervalSince(startTime)
+    let durationStr = String(format: "%.1fs", duration)
+
+    await telemetryProvider.info("vm.agent.run complete", metadata: [
+      "agentBinary": agentBinary,
+      "exitCode": String(agentExitCode),
+      "duration": durationStr
+    ])
+
+    let result: [String: Any] = [
+      "agentBinary": agentBinary,
+      "prompt": String(prompt.prefix(200)),
+      "output": agentOutput,
+      "exitCode": Int(agentExitCode),
+      "diffSummary": diffSummary,
+      "duration": durationStr,
+      "success": agentExitCode == 0
+    ]
+    return (200, makeResult(id: id, result: result))
+  }
+
+  // MARK: - VM Ready Polling
+
+  /// Poll the VM until the shell is responsive.
+  private func waitForVMReady(maxAttempts: Int = 30, interval: Duration = .seconds(1)) async throws {
+    for attempt in 1...maxAttempts {
+      do {
+        let output = try await vmIsolationService.sendLinuxCommand("echo PEEL_READY", timeout: 3)
+        if output.contains("PEEL_READY") {
+          return
+        }
+      } catch {
+        if attempt % 5 == 0 {
+          await telemetryProvider.info("vm.agent.run: Waiting for VM shell (attempt \(attempt)/\(maxAttempts))", metadata: [:])
+        }
+      }
+      try await Task.sleep(for: interval)
+    }
+    throw VMError.bootstrapFailed("VM shell did not become responsive after \(maxAttempts) attempts")
+  }
+
+  // MARK: - Shell Escaping
+
+  /// Escape a string for safe use as a shell argument by wrapping in single quotes.
+  private func shellEscape(_ value: String) -> String {
+    "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+  }
 }
 
 // MARK: - Tool Definitions
@@ -351,6 +547,30 @@ extension VMToolsHandler {
             "timeout": ["type": "number", "description": "Timeout in seconds (default: 30)"]
           ],
           "required": ["command"]
+        ],
+        category: .vm,
+        isMutating: true
+      ),
+      // Ad-hoc agent run
+      MCPToolDefinition(
+        name: "vm.agent.run",
+        description: "Run a coding agent inside an isolated Linux VM with a shared workspace. Boots a VM, installs the agent if needed, runs it with the given prompt, captures output and git diff summary, then tears down the VM.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "prompt": ["type": "string", "description": "The task for the agent to perform"],
+            "workspacePath": ["type": "string", "description": "Host path to the workspace directory to share with the VM via VirtioFS"],
+            "agentBinary": ["type": "string", "description": "Which agent CLI to run (default: 'copilot'). Examples: copilot, claude, aider"],
+            "installCommand": ["type": "string", "description": "Shell command to install the agent if not already present in the VM (e.g. 'pip install aider-chat')"],
+            "agentArgs": [
+              "type": "array",
+              "description": "Additional CLI arguments to pass to the agent",
+              "items": ["type": "string"]
+            ],
+            "model": ["type": "string", "description": "Model name to pass to the agent CLI via --model flag"],
+            "timeoutSeconds": ["type": "number", "description": "Maximum runtime in seconds (default: 600)"]
+          ],
+          "required": ["prompt", "workspacePath"]
         ],
         category: .vm,
         isMutating: true
