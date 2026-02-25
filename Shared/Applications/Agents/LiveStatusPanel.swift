@@ -131,24 +131,18 @@ struct LiveStatusPanel: View {
 
 struct ElapsedTimeView: View {
   let startTime: Date
-  @State private var elapsed: TimeInterval = 0
-
-  private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
   var body: some View {
-    Text(formattedElapsed)
-      .font(.caption)
-      .foregroundStyle(.secondary)
-      .monospacedDigit()
-      .onReceive(timer) { _ in
-        elapsed = Date().timeIntervalSince(startTime)
-      }
-      .onAppear {
-        elapsed = Date().timeIntervalSince(startTime)
-      }
+    TimelineView(.periodic(from: startTime, by: 1.0)) { context in
+      Text(formattedElapsed(from: context.date))
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .monospacedDigit()
+    }
   }
 
-  private var formattedElapsed: String {
+  private func formattedElapsed(from now: Date) -> String {
+    let elapsed = max(0, now.timeIntervalSince(startTime))
     let minutes = Int(elapsed) / 60
     let seconds = Int(elapsed) % 60
     return String(format: "%d:%02d", minutes, seconds)
