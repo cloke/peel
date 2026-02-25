@@ -159,15 +159,6 @@ public final class SwarmToolsHandler: MCPToolHandler {
       return await handleFirestoreSubmitTask(id: id, arguments: arguments)
     case "swarm.firestore.tasks":
       return handleFirestoreTasks(id: id, arguments: arguments)
-    // Firestore RAG artifact sync (#226)
-    case "swarm.firestore.rag.artifacts":
-      return await handleFirestoreRAGArtifacts(id: id, arguments: arguments)
-    case "swarm.firestore.rag.push":
-      return await handleFirestoreRAGPush(id: id, arguments: arguments)
-    case "swarm.firestore.rag.pull":
-      return await handleFirestoreRAGPull(id: id, arguments: arguments)
-    case "swarm.firestore.rag.delete":
-      return await handleFirestoreRAGDelete(id: id, arguments: arguments)
     // Firebase emulator management
     case "firebase.emulator.status":
       return handleEmulatorStatus(id: id)

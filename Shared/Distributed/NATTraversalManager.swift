@@ -9,7 +9,6 @@
 //  Connection priority:
 //    1. LAN (Bonjour/direct TCP) — fastest, zero config
 //    2. STUN hole punch → TCP  — works through most NATs
-//    3. Firestore relay         — always works, slower
 //
 
 import Foundation
@@ -44,10 +43,9 @@ public enum ConnectionMethod: String, Sendable {
   case lan = "LAN"
   case holePunchTCP = "hole-punch-TCP"
   case holePunchUDP = "hole-punch-UDP"
-  case firestoreRelay = "Firestore-relay"
 }
 
-/// A peer's STUN-discovered endpoint stored in Firestore for signaling
+/// A peer's STUN-discovered endpoint used for signaling
 public struct PeerEndpoint: Codable, Sendable {
   public let deviceId: String
   public let address: String
@@ -72,7 +70,7 @@ public protocol NATTraversalDelegate: AnyObject {
   func natTraversal(_ manager: NATTraversalManager, didChangeState state: NATTraversalState)
   /// Called when a UDP hole punch succeeds and TCP connection should be attempted
   func natTraversal(_ manager: NATTraversalManager, shouldConnectTCP address: String, port: UInt16)
-  /// Called when hole punching fails and Firestore relay should be used
+  /// Called when hole punching fails and no direct connection could be established
   func natTraversalShouldFallbackToRelay(_ manager: NATTraversalManager, peerId: String)
 }
 
@@ -82,11 +80,10 @@ public protocol NATTraversalDelegate: AnyObject {
 ///
 /// Flow:
 /// 1. Discover our external endpoint via STUN
-/// 2. Write our endpoint to Firestore signaling doc
-/// 3. Watch for peer's endpoint in Firestore
-/// 4. When both endpoints known, simultaneously send UDP probes (hole punching)
-/// 5. On success, upgrade to TCP connection
-/// 6. On failure, fall back to Firestore relay
+/// 2. Exchange endpoint info with peer via signaling
+/// 3. When both endpoints known, simultaneously send UDP probes (hole punching)
+/// 4. On success, upgrade to TCP connection
+/// 5. On failure, notify delegate
 @MainActor
 public final class NATTraversalManager {
   private let logger = Logger(subsystem: "com.peel.distributed", category: "NATTraversal")
@@ -163,7 +160,7 @@ public final class NATTraversalManager {
 
   // MARK: - Hole Punching
 
-  /// Initiate a hole punch to a peer whose STUN endpoint we've learned via Firestore.
+  /// Initiate a hole punch to a peer whose STUN endpoint we've discovered.
   /// Both sides should call this simultaneously for maximum success rate.
   public func punchThrough(to peerEndpoint: PeerEndpoint) async -> Bool {
     guard let myEndpoint = stunEndpoint else {

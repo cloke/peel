@@ -28,9 +28,6 @@ struct RAGSettingsView: View {
   @State private var isSyncing = false
   @State private var syncDirection: RAGArtifactSyncDirection?
   @State private var syncError: String?
-  @State private var firestoreArtifacts: [FirestoreRAGArtifact] = []
-  @State private var isLoadingArtifacts = false
-  @State private var showFirestorePull = false
   
   // Reranker state
   @State private var rerankerEnabled: Bool = HFRerankerFactory.isEnabled
@@ -389,31 +386,6 @@ struct RAGSettingsView: View {
               .padding(.vertical, 4)
             }
             
-            // Firestore sync buttons (requires Firebase swarm)
-            if let activeSwarm = firebase.activeSwarm {
-              Divider()
-              
-              HStack(spacing: 12) {
-                Button {
-                  Task { await performFirestorePush(swarmId: activeSwarm.id) }
-                } label: {
-                  Label("Push to Cloud", systemImage: "icloud.and.arrow.up")
-                }
-                .buttonStyle(.bordered)
-                .disabled(isSyncing)
-                
-                Button {
-                  showFirestorePull = true
-                  Task { await loadFirestoreArtifacts(swarmId: activeSwarm.id) }
-                } label: {
-                  Label("Pull from Cloud", systemImage: "icloud.and.arrow.down")
-                }
-                .buttonStyle(.bordered)
-                .disabled(isSyncing)
-              }
-              .padding(.vertical, 4)
-            }
-            
             if isSyncing {
               if let transfer = SwarmCoordinator.shared.ragTransfers.first(where: {
                 $0.status == .queued || $0.status == .preparing || $0.status == .transferring || $0.status == .applying
@@ -435,15 +407,12 @@ struct RAGSettingsView: View {
               }
             }
           } else {
-            Text("Start Swarm or join a Firestore swarm to enable artifact sync")
+            Text("Start Swarm to enable artifact sync")
               .font(.callout)
               .foregroundStyle(.secondary)
           }
         } header: {
           Label("Artifact Sync", systemImage: "arrow.triangle.2.circlepath")
-        }
-        .sheet(isPresented: $showFirestorePull) {
-          firestorePullSheet
         }
         
         // MARK: - Nightly Sync Section
@@ -723,126 +692,4 @@ struct RAGSettingsView: View {
     }
   }
   
-  private func performFirestorePush(swarmId: String) async {
-    isSyncing = true
-    syncDirection = .push
-    syncError = nil
-    defer { isSyncing = false; syncDirection = nil }
-    
-    do {
-      let ragStore = mcpServer.localRagStore
-      let status = await ragStore.status()
-      let stats = try? await ragStore.stats()
-      let repos = (try? await ragStore.listRepos()) ?? []
-      let bundle = try await LocalRAGArtifacts.createBundle(status: status, stats: stats, repos: repos)
-      _ = try await FirebaseService.shared.pushRAGArtifacts(swarmId: swarmId, bundle: bundle)
-      await mcpServer.refreshRagSummary()
-    } catch {
-      syncError = error.localizedDescription
-    }
-  }
-  
-  private func performFirestorePull(swarmId: String, artifactId: String, repoPath: String) async {
-    isSyncing = true
-    syncDirection = .pull
-    syncError = nil
-    showFirestorePull = false
-    defer { isSyncing = false; syncDirection = nil }
-    
-    do {
-      let tempDir = FileManager.default.temporaryDirectory
-      let bundleURL = tempDir.appendingPathComponent("rag-artifact-\(artifactId).zip")
-      
-      let manifest = try await FirebaseService.shared.pullRAGArtifacts(
-        swarmId: swarmId,
-        artifactId: artifactId,
-        destination: bundleURL
-      )
-      
-      let bundleSize = (try? FileManager.default.attributesOfItem(atPath: bundleURL.path)[.size] as? Int) ?? 0
-      let bundle = LocalRAGArtifactBundle(manifest: manifest, bundleURL: bundleURL, bundleSizeBytes: bundleSize)
-      try await mcpServer.localRagStore.importArtifactBundle(bundle, for: repoPath)
-      
-      try? FileManager.default.removeItem(at: bundleURL)
-      await mcpServer.refreshRagSummary()
-    } catch {
-      syncError = error.localizedDescription
-    }
-  }
-  
-  private func loadFirestoreArtifacts(swarmId: String) async {
-    isLoadingArtifacts = true
-    defer { isLoadingArtifacts = false }
-    do {
-      firestoreArtifacts = try await FirebaseService.shared.listRAGArtifacts(swarmId: swarmId)
-    } catch {
-      syncError = error.localizedDescription
-    }
-  }
-  
-  // MARK: - Firestore Pull Sheet
-  
-  @ViewBuilder
-  private var firestorePullSheet: some View {
-    NavigationStack {
-      List {
-        if isLoadingArtifacts {
-          HStack {
-            ProgressView()
-              .controlSize(.small)
-            Text("Loading artifacts…")
-              .foregroundStyle(.secondary)
-          }
-        } else if firestoreArtifacts.isEmpty {
-          Text("No artifacts available")
-            .foregroundStyle(.secondary)
-        } else {
-          ForEach(firestoreArtifacts) { artifact in
-            Button {
-              // Use the first indexed repo path as default, or home dir
-              let repoPath = mcpServer.ragRepos.first?.rootPath
-                ?? FileManager.default.homeDirectoryForCurrentUser.path
-              let swarmId = FirebaseService.shared.activeSwarm?.id ?? ""
-              Task {
-                await performFirestorePull(
-                  swarmId: swarmId,
-                  artifactId: artifact.id,
-                  repoPath: repoPath
-                )
-              }
-            } label: {
-              VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                  Text(artifact.version)
-                    .font(.headline)
-                  Spacer()
-                  Text(artifact.formattedSize)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                }
-                HStack(spacing: 12) {
-                  Label("\(artifact.repoCount) repos", systemImage: "folder")
-                  Label("\(artifact.embeddingCacheCount) embeddings", systemImage: "brain")
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                Text(artifact.uploadedAt, style: .relative)
-                  .font(.caption2)
-                  .foregroundStyle(.tertiary)
-              }
-              .padding(.vertical, 2)
-            }
-            .buttonStyle(.plain)
-          }
-        }
-      }
-      .navigationTitle("Pull RAG Artifact")
-      .toolbar {
-        ToolbarItem(placement: .cancellationAction) {
-          Button("Cancel") { showFirestorePull = false }
-        }
-      }
-    }
-    .frame(minWidth: 400, minHeight: 300)
-  }
 }

@@ -525,7 +525,7 @@ public final class SwarmCoordinator {
   // MARK: - WAN Auto-Connect
 
   /// Check Firestore workers for WAN/STUN endpoints and auto-connect.
-  /// Priority: STUN hole punch (no router config) → direct TCP → Firestore relay
+  /// Priority: STUN hole punch (no router config) → direct TCP
   public func autoConnectWANPeers() {
     guard isActive else { return }
 
@@ -591,8 +591,7 @@ public final class SwarmCoordinator {
           }
         }
 
-        // Strategy 3: Firestore relay (always works, delegate handles this)
-        logger.info("WAN auto-connect: all P2P methods failed for \(worker.displayName), Firestore relay available for artifact sync")
+        logger.info("WAN auto-connect: all P2P methods failed for \(worker.displayName) — no direct connection available")
       }
     }
   }
@@ -1921,8 +1920,6 @@ extension SwarmCoordinator: NATTraversalDelegate {
   }
 
   public func natTraversalShouldFallbackToRelay(_ manager: NATTraversalManager, peerId: String) {
-    logger.info("NAT traversal: falling back to Firestore relay for peer \(peerId)")
-    // Firestore relay is always available via pushRAGArtifacts/pullRAGArtifacts
-    // No action needed here — the user can trigger relay sync from the UI
+    logger.info("NAT traversal: hole punch failed for peer \(peerId) — no fallback available")
   }
 }
