@@ -182,7 +182,7 @@ public final class WorktreeToolsHandler: MCPToolHandler {
         "count": allWorktrees.count,
         "prunableCount": prunableCount,
         "totalDiskBytes": totalDiskBytes,
-        "totalDiskFormatted": formatBytes(totalDiskBytes)
+        "totalDiskFormatted": totalDiskBytes.formattedBytes
       ]))
     } catch {
       return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Failed to list worktrees: \(error.localizedDescription)"))
@@ -264,7 +264,7 @@ public final class WorktreeToolsHandler: MCPToolHandler {
         "lockedCount": lockedCount,
         "detachedCount": detachedCount,
         "totalDiskBytes": totalDiskBytes,
-        "totalDiskFormatted": formatBytes(totalDiskBytes),
+        "totalDiskFormatted": totalDiskBytes.formattedBytes,
         "byRepository": byRepo.map { ["repoPath": $0.key, "worktreeCount": $0.value] },
         "baseDir": worktreeDelegate.worktreeBaseDir()
       ]))

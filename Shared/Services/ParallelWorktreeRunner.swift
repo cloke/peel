@@ -377,6 +377,10 @@ final class ParallelWorktreeRunner {
   private var runGates: [UUID: ParallelRunGate] = [:]
   private var activeChainIds: [UUID: UUID] = [:]
   private var dataService: DataService?
+
+  // Serial queue for auto-merge to prevent concurrent git index.lock collisions
+  private var autoMergeQueue: [(ParallelWorktreeExecution, ParallelWorktreeRun)] = []
+  private var isAutoMerging = false
   
   init(
     workspaceService: AgentWorkspaceService,
@@ -831,8 +835,11 @@ final class ParallelWorktreeRunner {
         execution.conflictFiles = conflicts.map { MergeConflictFile(filePath: $0, content: "") }
       }
       
-      // Set status based on review gate
-      if run.requireReviewGate {
+      // Set status based on review gate and chain outcome
+      if !result.chainSucceeded {
+        execution.status = .failed("Chain failed — check output for gate or step errors")
+        PeonPingService.shared.worktreeFailed(taskTitle: execution.task.title, error: "Gate or step failed")
+      } else if run.requireReviewGate {
         execution.status = .awaitingReview
         PeonPingService.shared.worktreeNeedsReview(taskTitle: execution.task.title)
       } else {
@@ -1079,7 +1086,8 @@ final class ParallelWorktreeRunner {
       filesChanged: diffStats.filesChanged,
       insertions: diffStats.insertions,
       deletions: diffStats.deletions,
-      mergeConflicts: lastSummary?.mergeConflicts ?? []
+      mergeConflicts: lastSummary?.mergeConflicts ?? [],
+      chainSucceeded: lastSummary?.stateDescription.lowercased() != "failed"
     )
   }
 
@@ -1198,6 +1206,7 @@ final class ParallelWorktreeRunner {
     let insertions: Int
     let deletions: Int
     let mergeConflicts: [String]?
+    let chainSucceeded: Bool
   }
   
   /// Update run status based on execution results and record a snapshot.
@@ -1237,9 +1246,7 @@ final class ParallelWorktreeRunner {
     
     // Check if auto-merge is enabled
     if run.autoMergeOnApproval && execution.isReadyToMerge {
-      Task {
-        try? await mergeExecution(execution, in: run)
-      }
+      enqueueAutoMerge(execution, in: run)
     }
     
     updateRunStatus(run)
@@ -1274,6 +1281,28 @@ final class ParallelWorktreeRunner {
   }
   
   // MARK: - Merge Operations
+
+  /// Enqueue an auto-merge and start processing if not already running.
+  /// Serializes merges to prevent concurrent git index.lock collisions.
+  private func enqueueAutoMerge(_ execution: ParallelWorktreeExecution, in run: ParallelWorktreeRun) {
+    autoMergeQueue.append((execution, run))
+    if !isAutoMerging {
+      processAutoMergeQueue()
+    }
+  }
+
+  private func processAutoMergeQueue() {
+    guard !autoMergeQueue.isEmpty else {
+      isAutoMerging = false
+      return
+    }
+    isAutoMerging = true
+    let (execution, run) = autoMergeQueue.removeFirst()
+    Task {
+      try? await mergeExecution(execution, in: run)
+      processAutoMergeQueue()
+    }
+  }
 
   /// Resolve the actual branch name to merge into.
   /// If `targetBranch` is set, use that. Otherwise fall back to `baseBranch`.
