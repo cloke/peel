@@ -1341,14 +1341,14 @@ public final class VMIsolationService {
         throw VMError.linuxNotConfigured
       }
       bootTime = 3.0  // Typical Linux VM boot
-      // TODO: Actually execute in Linux VM
+      print("[VM] Linux VM execution not yet implemented; returning placeholder result")
       
     case .macos:
       guard isMacOSReady else {
         throw VMError.macOSRestoreImageNotFound
       }
       bootTime = 30.0  // Typical macOS VM boot
-      // TODO: Actually execute in macOS VM
+      print("[VM] macOS VM execution not yet implemented; returning placeholder result")
     }
     
     // Placeholder result for VM execution
@@ -1552,7 +1552,26 @@ public final class VMIsolationService {
   }
   
   private func loadSnapshots() async {
-    // TODO: Scan vmBasePath for existing snapshots
+    guard FileManager.default.fileExists(atPath: vmBasePath.path) else {
+      print("[VM] No VM base path found, skipping snapshot load")
+      return
+    }
+    let contents: [URL]
+    do {
+      contents = try FileManager.default.contentsOfDirectory(
+        at: vmBasePath,
+        includingPropertiesForKeys: [.creationDateKey, .fileSizeKey],
+        options: [.skipsHiddenFiles]
+      )
+    } catch {
+      print("[VM] Failed to scan for snapshots: \(error)")
+      return
+    }
+    for url in contents where url.pathExtension == "vmstate" {
+      let creationDate = (try? url.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date()
+      snapshots[url.deletingPathExtension().lastPathComponent] = creationDate
+    }
+    print("[VM] Loaded \(snapshots.count) snapshot(s) from disk")
   }
   
   // MARK: - Support Checks
