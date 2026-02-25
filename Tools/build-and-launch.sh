@@ -19,11 +19,10 @@
 
 set -e
 
-# Configuration
-PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-SCHEME="Peel (macOS)"
-BUILD_DIR="${PROJECT_DIR}/build"
-APP_NAME="Peel.app"
+# Shared build configuration (single source of truth for paths)
+source "$(dirname "$0")/build-config.sh"
+
+# Runtime options
 MCP_PORT=8765
 WAIT_FOR_SERVER=false
 SKIP_BUILD=false
@@ -32,7 +31,6 @@ EMULATOR_MODE=false
 EMULATOR_HOST=""
 SWARM_MODE=false
 SWARM_ROLE="hybrid"
-PEELCLI_PATH="${PROJECT_DIR}/Tools/PeelCLI/.build/debug/peel-mcp"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -159,18 +157,11 @@ fi
 
 # Build the app
 if [[ "$SKIP_BUILD" == "false" ]]; then
-  echo "🔨 Building Peel..."
   cd "$PROJECT_DIR"
 
   BUILD_LOG=$(mktemp)
   set +e
-  xcodebuild \
-    -project Peel.xcodeproj \
-    -scheme "$SCHEME" \
-    -configuration Debug \
-    -derivedDataPath "$BUILD_DIR" \
-    -destination 'platform=macOS' \
-    build > "$BUILD_LOG" 2>&1
+  peel_build Debug > "$BUILD_LOG" 2>&1
   BUILD_STATUS=$?
   set -e
 
@@ -190,10 +181,9 @@ else
   echo "⏭️  Skipping build (--skip-build)"
 fi
 
-# Find the built app
-APP_PATH=$(find "$BUILD_DIR" -name "$APP_NAME" -type d | head -1)
-if [[ -z "$APP_PATH" ]]; then
-  echo "❌ Could not find ${APP_NAME} in ${BUILD_DIR}"
+# Verify the built app exists (APP_PATH set by build-config.sh)
+if [[ ! -d "$APP_PATH" ]]; then
+  echo "❌ Could not find ${APP_NAME} at ${APP_PATH}"
   exit 1
 fi
 

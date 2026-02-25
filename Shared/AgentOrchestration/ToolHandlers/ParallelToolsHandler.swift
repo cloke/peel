@@ -132,11 +132,17 @@ final class ParallelToolsHandler {
     from runner: ParallelWorktreeRunner,
     id: Any?
   ) -> ValidationResult<ParallelWorktreeRun> {
-    guard let run = runner.getRun(id: runId) else {
-      let error = runNotFoundError(id: id, runId: runId.uuidString, runner: runner)
-      return .failure(error.0, error.1)
+    // First try in-memory active runs
+    if let run = runner.getRun(id: runId) {
+      return .success(run)
     }
-    return .success(run)
+    // Fall back to restoring from snapshot (e.g. after app restart or run completion)
+    if let snapshot = delegate?.parallelDataService?.getLatestParallelRunSnapshot(runId: runId.uuidString) {
+      let run = runner.restoreFromSnapshot(snapshot)
+      return .success(run)
+    }
+    let error = runNotFoundError(id: id, runId: runId.uuidString, runner: runner)
+    return .failure(error.0, error.1)
   }
 
   private func getExecution(

@@ -58,6 +58,8 @@ Peel is a macOS/iOS SwiftUI application for managing GitHub, Git repositories, a
 ### Tools
 | Tool | Path | Purpose |
 |------|------|---------|
+| Build config | `Tools/build-config.sh` | Shared build paths (source this, don't duplicate) |
+| Build only | `Tools/build.sh` | Build app to repo-local derivedData |
 | Build & launch | `Tools/build-and-launch.sh` | Build app, enable MCP, launch |
 | MCP CLI | `Tools/PeelCLI/` | CLI wrapper for MCP commands |
 | gh-issue-sync | `Tools/PeelSkills/` | Sync GitHub issues with plan files |
@@ -953,7 +955,7 @@ Use `Tools/build-and-launch.sh --wait-for-server` (or `--skip-build` if a build 
 The script now **refuses to relaunch** if MCP chains are running or if Peel is running but MCP is unresponsive, unless you pass `--allow-while-chains-running`.
 
 Normal dev flow:
-1. Build the project: `xcodebuild -scheme "Peel (macOS)" build`
+1. Build the project: `./Tools/build.sh`
 2. Tell the user the build succeeded
 3. Let the user run from Xcode with ⌘R
 
@@ -964,15 +966,18 @@ MCP flow:
 4. If chains are running, avoid relaunching; use `--skip-build` or wait until chains finish
 
 ```bash
-# ✅ DO: Just build (normal dev)
-xcodebuild -scheme "Peel (macOS)" -destination 'platform=macOS' build
+# ✅ DO: Just build (normal dev) — uses repo-local derivedDataPath
+./Tools/build.sh
 
 # ✅ DO: Launch via script (MCP dev/testing)
 ./Tools/build-and-launch.sh --wait-for-server
 
-# ❌ DON'T: Launch the app
-# open "/path/to/Kitchen Sync.app"  # Don't do this
-# pkill -f "Kitchen Sync"           # Don't do this
+# ❌ DON'T: Run bare xcodebuild without -derivedDataPath
+# xcodebuild -scheme "Peel (macOS)" build    # Builds to ~/Library DerivedData, NOT what the launch script uses!
+
+# ❌ DON'T: Launch the app directly
+# open "/path/to/Peel.app"  # Don't do this
+# pkill -f "Peel"           # Don't do this
 ```
 
 ---

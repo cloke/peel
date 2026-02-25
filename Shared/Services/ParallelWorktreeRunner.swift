@@ -1586,8 +1586,41 @@ final class ParallelWorktreeRunner {
       throw ParallelRunError.invalidState("Execution must be approved before merging")
     }
 
-    guard execution.worktreePath != nil,
-          let branchName = execution.branchName else {
+    guard let branchName = execution.branchName else {
+      throw ParallelRunError.missingWorktree
+    }
+
+    // Check if the branch still exists — if not, it was likely already merged and cleaned up
+    let (_, branchCheckExit) = await runGit(
+      ["rev-parse", "--verify", branchName],
+      in: run.projectPath
+    )
+    if branchCheckExit != 0 {
+      // Branch doesn't exist. Verify it's already been merged into the target.
+      let targetBranch = (try? await resolveTargetBranch(for: run)) ?? "main"
+      let (mergedBranches, _) = await runGit(
+        ["branch", "--merged", targetBranch, "--list", branchName],
+        in: run.projectPath
+      )
+      // Also check if the branch name appears in the log (it may have been deleted after merge)
+      let (logCheck, logExit) = await runGit(
+        ["log", "--oneline", "--grep=Merge branch '\(branchName)'", "-1", targetBranch],
+        in: run.projectPath
+      )
+      let wasLikelyMerged = !mergedBranches.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        || (logExit == 0 && !logCheck.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+      if wasLikelyMerged || execution.worktreePath == nil {
+        // Branch was already merged — just update state
+        await mcpLog.info("Branch already merged (or removed), marking execution as merged", metadata: [
+          "branch": branchName,
+          "executionId": execution.id.uuidString
+        ])
+        execution.status = .merged
+        PeonPingService.shared.worktreeCompleted(taskTitle: execution.task.title)
+        recordSnapshot(for: run)
+        return
+      }
       throw ParallelRunError.missingWorktree
     }
 
