@@ -91,12 +91,13 @@ struct SwarmManagementView: View {
     .onChange(of: firebaseService.memberSwarms) { _, swarms in
       handleMemberSwarmsChange(swarms)
     }
-    .alert("Error", isPresented: .constant(errorMessage != nil)) {
+    .alert("Error", isPresented: Binding(
+      get: { errorMessage != nil },
+      set: { if !$0 { errorMessage = nil } }
+    )) {
       Button("OK") { errorMessage = nil }
     } message: {
-      if let error = errorMessage {
-        Text(error)
-      }
+      Text(errorMessage ?? "")
     }
   }
   
@@ -486,12 +487,13 @@ struct SwarmDetailView: View {
     .sheet(isPresented: $showingInviteSheet) {
       InviteShareSheet(url: inviteURL)
     }
-    .alert("Error", isPresented: .constant(errorMessage != nil)) {
+    .alert("Error", isPresented: Binding(
+      get: { errorMessage != nil },
+      set: { if !$0 { errorMessage = nil } }
+    )) {
       Button("OK") { errorMessage = nil }
     } message: {
-      if let error = errorMessage {
-        Text(error)
-      }
+      Text(errorMessage ?? "")
     }
     .task {
       // Start worker listener for this swarm so the Workers tab count is accurate immediately
@@ -850,12 +852,13 @@ struct InvitesListView: View {
     .onDisappear {
       firebaseService.stopInvitesListener()
     }
-    .alert("Error", isPresented: .constant(errorMessage != nil)) {
+    .alert("Error", isPresented: Binding(
+      get: { errorMessage != nil },
+      set: { if !$0 { errorMessage = nil } }
+    )) {
       Button("OK") { errorMessage = nil }
     } message: {
-      if let error = errorMessage {
-        Text(error)
-      }
+      Text(errorMessage ?? "")
     }
   }
   
