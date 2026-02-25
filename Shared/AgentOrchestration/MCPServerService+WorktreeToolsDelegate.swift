@@ -286,4 +286,24 @@ extension MCPServerService: WorktreeToolsHandlerDelegate {
   func diskSize(for path: String) -> Int64? {
     SwarmWorktreeManager.calculateDiskSize(for: path)
   }
+
+  func worktreePoolStatus() async -> WorktreePoolStatus {
+    // TODO: Wire up to WorktreePool service when available
+    return WorktreePoolStatus(poolSize: 0, warmCount: 0, claimedCount: 0, baseBranch: "origin/main", recyclePolicy: "on-success")
+  }
+
+  func configureWorktreePool(size: Int?, baseBranch: String?, recyclePolicy: String?) async throws {
+    // TODO: Wire up to WorktreePool service when available
+    logger.info("configureWorktreePool size=\(size ?? -1) baseBranch=\(baseBranch ?? "nil") recyclePolicy=\(recyclePolicy ?? "nil")")
+  }
+
+  func gateAgentStatus() async -> GateAgentStatus {
+    // TODO: Wire up to GateAgent service when available
+    return GateAgentStatus(pendingValidations: 0, passCount: 0, failCount: 0, retryCount: 0, isActive: false)
+  }
+
+  func gateAgentHistory(limit: Int) async -> [GateValidationResult] {
+    // TODO: Wire up to GateAgent service when available
+    return []
+  }
 }

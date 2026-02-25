@@ -31,9 +31,44 @@ protocol WorktreeToolsHandlerDelegate: MCPToolHandlerDelegate {
 
   /// Get disk size for a directory
   func diskSize(for path: String) -> Int64?
+
+  /// Get current WorktreePool status
+  func worktreePoolStatus() async -> WorktreePoolStatus
+
+  /// Configure the WorktreePool
+  func configureWorktreePool(size: Int?, baseBranch: String?, recyclePolicy: String?) async throws
+
+  /// Get current GateAgent status
+  func gateAgentStatus() async -> GateAgentStatus
+
+  /// Get recent GateAgent validation results
+  func gateAgentHistory(limit: Int) async -> [GateValidationResult]
 }
 
 // MARK: - Worktree Tool Types
+
+struct WorktreePoolStatus: Sendable {
+  let poolSize: Int
+  let warmCount: Int
+  let claimedCount: Int
+  let baseBranch: String
+  let recyclePolicy: String
+}
+
+struct GateAgentStatus: Sendable {
+  let pendingValidations: Int
+  let passCount: Int
+  let failCount: Int
+  let retryCount: Int
+  let isActive: Bool
+}
+
+struct GateValidationResult: Sendable {
+  let branchName: String
+  let outcome: String  // "pass", "fail", "retry"
+  let timestamp: Date
+  let reasons: [String]
+}
 
 /// Information about a worktree for MCP tool responses
 struct WorktreeToolInfo: Sendable {
@@ -117,7 +152,11 @@ public final class WorktreeToolsHandler: MCPToolHandler {
     "worktree.list",
     "worktree.remove",
     "worktree.stats",
-    "worktree.create"
+    "worktree.create",
+    "worktree.pool.status",
+    "worktree.pool.configure",
+    "gate.status",
+    "gate.history"
   ]
 
   public init() {}
@@ -132,6 +171,14 @@ public final class WorktreeToolsHandler: MCPToolHandler {
       return await handleStats(id: id, arguments: arguments)
     case "worktree.create":
       return await handleCreate(id: id, arguments: arguments)
+    case "worktree.pool.status":
+      return await handlePoolStatus(id: id, arguments: arguments)
+    case "worktree.pool.configure":
+      return await handlePoolConfigure(id: id, arguments: arguments)
+    case "gate.status":
+      return await handleGateStatus(id: id, arguments: arguments)
+    case "gate.history":
+      return await handleGateHistory(id: id, arguments: arguments)
     default:
       return (404, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.methodNotFound, message: "Unknown tool"))
     }
@@ -349,88 +396,81 @@ public final class WorktreeToolsHandler: MCPToolHandler {
     }
     return sanitized
   }
-}
 
-// MARK: - Tool Definitions
+  // MARK: - worktree.pool.status
 
-extension WorktreeToolsHandler {
-  public var toolDefinitions: [MCPToolDefinition] {
-    [
-      MCPToolDefinition(
-        name: "worktree.list",
-        description: "List all git worktrees across registered repositories and the peel-worktrees directory. Returns path, branch, disk size, and status for each worktree.",
-        inputSchema: [
-          "type": "object",
-          "properties": [
-            "repoPath": [
-              "type": "string",
-              "description": "Optional: Filter to worktrees for a specific repository path"
-            ],
-            "includeMain": [
-              "type": "boolean",
-              "description": "Include main worktrees (the original repo checkouts). Default: false"
-            ]
-          ],
-          "required": []
-        ],
-        category: .worktrees,
-        isMutating: false
-      ),
-      MCPToolDefinition(
-        name: "worktree.remove",
-        description: "Remove a git worktree by path. Use force=true if the worktree has uncommitted changes.",
-        inputSchema: [
-          "type": "object",
-          "properties": [
-            "path": [
-              "type": "string",
-              "description": "The absolute path to the worktree to remove"
-            ],
-            "force": [
-              "type": "boolean",
-              "description": "Force removal even if worktree is dirty. Default: false"
-            ]
-          ],
-          "required": ["path"]
-        ],
-        category: .worktrees,
-        isMutating: true
-      ),
-      MCPToolDefinition(
-        name: "worktree.stats",
-        description: "Get aggregate statistics about all worktrees: total count, disk usage, prunable count, grouped by repository.",
-        inputSchema: [
-          "type": "object",
-          "properties": [:],
-          "required": []
-        ],
-        category: .worktrees,
-        isMutating: false
-      ),
-      MCPToolDefinition(
-        name: "worktree.create",
-        description: "Create a new git worktree for ad-hoc work, PR review, or experiments. The worktree will be created in ~/peel-worktrees/ with the specified branch.",
-        inputSchema: [
-          "type": "object",
-          "properties": [
-            "repoPath": [
-              "type": "string",
-              "description": "Path to the git repository"
-            ],
-            "branchName": [
-              "type": "string",
-              "description": "Name for the new branch (will be sanitized)"
-            ],
-            "baseBranch": [
-              "type": "string",
-              "description": "Base branch to create from (default: origin/main)"
-            ]
-          ],
-          "required": ["repoPath", "branchName"]
-        ],
-        category: .worktrees,
-        isMutating: true
-      ),
-    ]
+  private func handlePoolStatus(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let worktreeDelegate else {
+      return notConfiguredError(id: id)
+    }
+    let status = await worktreeDelegate.worktreePoolStatus()
+    return (200, makeResult(id: id, result: [
+      "poolSize": status.poolSize,
+      "warmCount": status.warmCount,
+      "claimedCount": status.claimedCount,
+      "baseBranch": status.baseBranch,
+      "recyclePolicy": status.recyclePolicy
+    ]))
+  }
+
+  // MARK: - worktree.pool.configure
+
+  private func handlePoolConfigure(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let worktreeDelegate else {
+      return notConfiguredError(id: id)
+    }
+    let size = arguments["size"] as? Int
+    let baseBranch = arguments["baseBranch"] as? String
+    let recyclePolicy = arguments["recyclePolicy"] as? String
+
+    if let recyclePolicy, !["always", "on-success", "never"].contains(recyclePolicy) {
+      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "recyclePolicy must be one of: always, on-success, never"))
+    }
+
+    do {
+      try await worktreeDelegate.configureWorktreePool(size: size, baseBranch: baseBranch, recyclePolicy: recyclePolicy)
+      return (200, makeResult(id: id, result: [
+        "success": true,
+        "message": "Pool configuration updated"
+      ]))
+    } catch {
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Failed to configure pool: \(error.localizedDescription)"))
+    }
+  }
+
+  // MARK: - gate.status
+
+  private func handleGateStatus(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let worktreeDelegate else {
+      return notConfiguredError(id: id)
+    }
+    let status = await worktreeDelegate.gateAgentStatus()
+    return (200, makeResult(id: id, result: [
+      "isActive": status.isActive,
+      "pendingValidations": status.pendingValidations,
+      "passCount": status.passCount,
+      "failCount": status.failCount,
+      "retryCount": status.retryCount
+    ]))
+  }
+
+  // MARK: - gate.history
+
+  private func handleGateHistory(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let worktreeDelegate else {
+      return notConfiguredError(id: id)
+    }
+    let limit = arguments["limit"] as? Int ?? 20
+    let results = await worktreeDelegate.gateAgentHistory(limit: limit)
+    let iso = ISO8601DateFormatter()
+    let items: [[String: Any]] = results.map { r in
+      ["branchName": r.branchName, "outcome": r.outcome, "timestamp": iso.string(from: r.timestamp), "reasons": r.reasons]
+    }
+    return (200, makeResult(id: id, result: ["results": items, "count": items.count]))
+  }
+
+  private func notConfiguredError(id: Any?) -> (Int, Data) {
+    (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Worktree delegate not configured"))
   }
 }
+
