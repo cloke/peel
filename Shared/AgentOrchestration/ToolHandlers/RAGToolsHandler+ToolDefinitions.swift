@@ -512,6 +512,20 @@ extension RAGToolsHandler {
         isMutating: true
       ),
       MCPToolDefinition(
+        name: "rag.skills.init",
+        description: "Bootstrap .peel/directives.md and .peel/skills.json in a repository from bundled defaults. Idempotent by default — skips files that already exist unless force is true.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": ["type": "string", "description": "Absolute path to the repository to initialize"],
+            "force": ["type": "boolean", "description": "Overwrite existing files (default: false)"]
+          ],
+          "required": ["repoPath"]
+        ],
+        category: .rag,
+        isMutating: true
+      ),
+      MCPToolDefinition(
         name: "rag.lessons.list",
         description: "List lessons learned from agent fixes. Lessons capture recurring error patterns and their fixes to help prevent future mistakes.",
         inputSchema: [

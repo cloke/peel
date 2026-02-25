@@ -51,6 +51,7 @@ final class RAGToolsHandler: MCPToolHandler {
     "rag.skills.sync",     // Issue #264: Two-way sync DB <-> .peel/skills.json
     "rag.skills.ember.detect",  // Issue #263: Detect Ember project and seed skills
     "rag.skills.ember.update",  // Issue #263: Check for and apply Ember skills updates
+    "rag.skills.init",          // Bootstrap .peel/directives.md and .peel/skills.json from bundled defaults
     "rag.lessons.list",    // Issue #210: Learning loop - list lessons
     "rag.lessons.add",     // Issue #210: Learning loop - add lesson
     "rag.lessons.query",   // Issue #210: Learning loop - query relevant lessons
@@ -123,6 +124,8 @@ final class RAGToolsHandler: MCPToolHandler {
       return handleSkillsEmberDetect(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.skills.ember.update":
       return await handleSkillsEmberUpdate(id: id, arguments: arguments, delegate: ragDelegate)
+    case "rag.skills.init":
+      return handleSkillsInit(id: id, arguments: arguments)
     case "rag.lessons.list":
       return await handleLessonsList(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.lessons.add":

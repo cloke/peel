@@ -260,4 +260,49 @@ extension RAGToolsHandler {
     }
   }
   
+  func handleSkillsInit(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    guard let repoPath = arguments["repoPath"] as? String else {
+      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "Missing required parameter: repoPath"))
+    }
+    let force = arguments["force"] as? Bool ?? false
+
+    let peelDir = URL(fileURLWithPath: repoPath).appendingPathComponent(".peel")
+    let directivesURL = peelDir.appendingPathComponent("directives.md")
+    let skillsURL = peelDir.appendingPathComponent("skills.json")
+
+    var created: [String] = []
+    var skipped: [String] = []
+
+    do {
+      try FileManager.default.createDirectory(at: peelDir, withIntermediateDirectories: true)
+
+      if force || !FileManager.default.fileExists(atPath: directivesURL.path) {
+        let directivesContent = LocalChatToolsHandler.emberDirectiveRules
+        try directivesContent.write(to: directivesURL, atomically: true, encoding: .utf8)
+        created.append("directives.md")
+      } else {
+        skipped.append("directives.md")
+      }
+
+      if force || !FileManager.default.fileExists(atPath: skillsURL.path) {
+        guard let bundleURL = Bundle.main.url(forResource: "EmberSkillsBundle", withExtension: "json"),
+              let bundleData = try? Data(contentsOf: bundleURL) else {
+          return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "EmberSkillsBundle.json not found in app bundle"))
+        }
+        try bundleData.write(to: skillsURL)
+        created.append("skills.json")
+      } else {
+        skipped.append("skills.json")
+      }
+    } catch {
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Failed to initialize .peel directory: \(error.localizedDescription)"))
+    }
+
+    var summary = "Initialized .peel/ in \(repoPath)"
+    if !created.isEmpty { summary += "\nCreated: \(created.joined(separator: ", "))" }
+    if !skipped.isEmpty { summary += "\nSkipped (already exist): \(skipped.joined(separator: ", "))" }
+
+    return (200, makeResult(id: id, result: ["summary": summary, "created": created, "skipped": skipped]))
+  }
+
 }

@@ -302,7 +302,7 @@ final class LocalChatToolsHandler: MCPToolHandler {
 
   /// Concise, directive rules that are always injected for Ember projects.
   /// Skills provide reference examples; these rules provide firm constraints.
-  private static let emberDirectiveRules = """
+  static let emberDirectiveRules = """
   .gjs FILE FORMAT — CRITICAL RULES (READ BEFORE WRITING CODE)
 
   ⚠️ RULE 1 — IMPORTS: Every `{{on ...}}` in template REQUIRES `import { on } from '@ember/modifier';`
