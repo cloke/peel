@@ -123,6 +123,13 @@ service cloud.firestore {
         allow read: if isReader(swarmId);  // Readers can pull
         allow create, update: if isContributor(swarmId);  // Contributors+ can push
         allow delete: if isAdmin(swarmId);
+
+        // Chunks subcollection (used for large artifacts that exceed Firestore's 1MB doc limit)
+        match /chunks/{chunkId} {
+          allow read: if isReader(swarmId);
+          allow create, update: if isContributor(swarmId);
+          allow delete: if isAdmin(swarmId);
+        }
       }
 
       // Messages subcollection (broadcast & direct messages)

@@ -391,6 +391,8 @@ extension SwarmToolsHandler {
     }
     
     let forceFullDB = (arguments["fullDB"] as? Bool) ?? false
+    let forceRelay = (arguments["forceRelay"] as? Bool) ?? false
+    let targetWorkerId = optionalString("workerId", from: arguments)
     let service = FirebaseService.shared
     let ragStore = LocalRAGStore.shared
     
@@ -406,6 +408,33 @@ extension SwarmToolsHandler {
           repoIdentifier = await RepoRegistry.shared.registerRepo(at: repoPath)
         }
       }
+
+      // P2P-first: if the swarm has connected TCP peers, transfer data directly
+      // instead of storing in Firestore. Firestore is used only for signaling/discovery.
+      if !forceRelay && coordinator.isActive && !coordinator.connectedWorkers.isEmpty {
+        let transferId = try await coordinator.requestRagArtifactSync(
+          direction: .push,
+          workerId: targetWorkerId,
+          repoIdentifier: forceFullDB ? nil : repoIdentifier
+        )
+        let targetPeer = targetWorkerId.flatMap { wid in coordinator.connectedWorkers.first { $0.id == wid } }
+          ?? coordinator.connectedWorkers.first
+        return (200, makeResult(id: id, result: [
+          "success": true,
+          "transferId": transferId.uuidString,
+          "transport": "p2p",
+          "targetWorker": targetPeer?.displayName ?? "unknown",
+          "targetWorkerId": targetPeer?.id ?? "unknown",
+          "direction": "push",
+          "swarmId": swarmId,
+          "repoIdentifier": repoIdentifier as Any,
+          "mode": forceFullDB ? "full-db" : "per-repo",
+          "note": "Transfer initiated over P2P connection. Data flows directly between peers — Firestore is not used for storage. Use swarm.status to monitor transfer progress."
+        ]))
+      }
+
+      // Firestore relay fallback — no P2P peers connected, store in Firestore
+      // so other workers can pull asynchronously.
 
       // Per-repo sync (default, safe path)
       if let repoIdentifier, !forceFullDB {
@@ -423,7 +452,9 @@ extension SwarmToolsHandler {
           "formattedSize": ByteCountFormatter.string(fromByteCount: Int64(jsonData.count), countStyle: .file),
           "fileCount": repoBundle.files.count,
           "chunkCount": repoBundle.files.flatMap(\.chunks).count,
-          "mode": "per-repo"
+          "mode": "per-repo",
+          "transport": "firestore-relay",
+          "note": "No P2P peers connected. Data stored in Firestore for async pull. Use forceRelay: false and ensure peers are connected for direct P2P transfer."
         ]))
       }
 
@@ -445,6 +476,7 @@ extension SwarmToolsHandler {
         "repoCount": bundle.manifest.repos.count,
         "embeddingCacheCount": bundle.manifest.embeddingCacheCount,
         "mode": "full-db",
+        "transport": "firestore-relay",
         "warning": "Full-DB sync replaces the ENTIRE database on the pull side, including all repos and embeddings. Consider using per-repo sync instead."
       ]))
     } catch {
@@ -456,14 +488,15 @@ extension SwarmToolsHandler {
     guard let swarmId = arguments["swarmId"] as? String, !swarmId.isEmpty else {
       return missingParamError(id: id, param: "swarmId")
     }
-    guard let artifactId = arguments["artifactId"] as? String, !artifactId.isEmpty else {
-      return missingParamError(id: id, param: "artifactId")
-    }
+    // artifactId is required for Firestore relay but not for P2P (data comes live from peer)
+    let artifactId = optionalString("artifactId", from: arguments)
     guard let repoPath = arguments["repoPath"] as? String, !repoPath.isEmpty else {
       return missingParamError(id: id, param: "repoPath")
     }
     
     let forceFullDB = (arguments["fullDB"] as? Bool) ?? false
+    let forceRelay = (arguments["forceRelay"] as? Bool) ?? false
+    let targetWorkerId = optionalString("workerId", from: arguments)
     let forceEmbeddings = (arguments["forceEmbeddings"] as? Bool) ?? true  // Default true: import remote embeddings
     let service = FirebaseService.shared
     let ragStore = LocalRAGStore.shared
@@ -477,6 +510,36 @@ extension SwarmToolsHandler {
         } else {
           repoIdentifier = await RepoRegistry.shared.registerRepo(at: repoPath)
         }
+      }
+
+      // P2P-first: if the swarm has connected TCP peers, pull data directly
+      // instead of fetching from Firestore. Firestore is used only for signaling/discovery.
+      if !forceRelay && coordinator.isActive && !coordinator.connectedWorkers.isEmpty {
+        let transferId = try await coordinator.requestRagArtifactSync(
+          direction: .pull,
+          workerId: targetWorkerId,
+          repoIdentifier: forceFullDB ? nil : repoIdentifier
+        )
+        let targetPeer = targetWorkerId.flatMap { wid in coordinator.connectedWorkers.first { $0.id == wid } }
+          ?? coordinator.connectedWorkers.first
+        return (200, makeResult(id: id, result: [
+          "success": true,
+          "transferId": transferId.uuidString,
+          "transport": "p2p",
+          "targetWorker": targetPeer?.displayName ?? "unknown",
+          "targetWorkerId": targetPeer?.id ?? "unknown",
+          "direction": "pull",
+          "swarmId": swarmId,
+          "repoPath": repoPath,
+          "repoIdentifier": repoIdentifier as Any,
+          "mode": forceFullDB ? "full-db" : "per-repo",
+          "note": "Pull initiated over P2P connection. Data flows directly from peer — Firestore is not used for storage. Use swarm.status to monitor transfer progress."
+        ]))
+      }
+
+      // Firestore relay fallback — no P2P peers connected, pull from Firestore
+      guard let artifactId, !artifactId.isEmpty else {
+        return missingParamError(id: id, param: "artifactId (required for Firestore relay — no P2P peers available)")
       }
 
       // Per-repo sync (default, safe path): pull JSON bundle, decode, and merge
@@ -496,7 +559,9 @@ extension SwarmToolsHandler {
           "embeddingsImported": result.embeddingsImported,
           "chunksAnalysisUpdated": result.chunksAnalysisUpdated,
           "embeddingsBackfilled": result.embeddingsBackfilled,
-          "mode": "per-repo"
+          "mode": "per-repo",
+          "transport": "firestore-relay",
+          "note": "No P2P peers connected. Data fetched from Firestore relay. Connect peers for direct P2P transfer."
         ]
         if result.needsLocalReembedding {
           resultDict["needsReembedding"] = true
@@ -530,6 +595,7 @@ extension SwarmToolsHandler {
         "repoCount": manifest.repos.count,
         "embeddingCacheCount": manifest.embeddingCacheCount,
         "mode": "full-db",
+        "transport": "firestore-relay",
         "warning": "Full-DB sync replaced the ENTIRE local database, including all repos and embeddings. All previously indexed repos may need re-indexing with the local model."
       ]))
     } catch {

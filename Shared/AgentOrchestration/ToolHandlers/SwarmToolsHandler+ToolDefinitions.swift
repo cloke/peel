@@ -562,7 +562,7 @@ extension SwarmToolsHandler {
       ),
       MCPToolDefinition(
         name: "swarm.firestore.rag.push",
-        description: "Push local RAG artifacts to Firestore swarm for sharing with other members. Requires contributor+ role. Uses safe per-repo sync by default — auto-detects repoIdentifier from git remote if not provided.",
+        description: "Push local RAG artifacts to swarm peers. Tries P2P direct transfer first (via TCP hole punch) — falls back to Firestore relay only when no peers are connected. Requires contributor+ role. Uses safe per-repo sync by default.",
         inputSchema: [
           "type": "object",
           "properties": [
@@ -578,6 +578,14 @@ extension SwarmToolsHandler {
               "type": "string",
               "description": "Repository identifier (e.g. github.com/org/repo). Auto-detected from git remote if not provided. Enables safe per-repo sync."
             ],
+            "workerId": [
+              "type": "string",
+              "description": "Target worker ID for P2P transfer. If omitted, sends to the first connected peer."
+            ],
+            "forceRelay": [
+              "type": "boolean",
+              "description": "Skip P2P and force Firestore relay for data storage. Defaults to false. Use when you want to publish data for offline peers to pull later."
+            ],
             "fullDB": [
               "type": "boolean",
               "description": "Force legacy full-DB sync (replaces entire database on pull side). Defaults to false. NOT RECOMMENDED — overwrites all repos on the receiving machine."
@@ -590,7 +598,7 @@ extension SwarmToolsHandler {
       ),
       MCPToolDefinition(
         name: "swarm.firestore.rag.pull",
-        description: "Pull RAG artifacts from Firestore swarm to local storage. Requires reader+ role. Uses safe per-repo sync by default — auto-detects repoIdentifier from git remote if not provided.",
+        description: "Pull RAG artifacts from swarm peers. Tries P2P direct transfer first (via TCP hole punch) — falls back to Firestore relay only when no peers are connected. Requires reader+ role. Uses safe per-repo sync by default.",
         inputSchema: [
           "type": "object",
           "properties": [
@@ -600,7 +608,7 @@ extension SwarmToolsHandler {
             ],
             "artifactId": [
               "type": "string",
-              "description": "The artifact ID (version) to pull"
+              "description": "The artifact ID (version) to pull. Required for Firestore relay; not needed for P2P (data comes live from peer)."
             ],
             "repoPath": [
               "type": "string",
@@ -609,6 +617,14 @@ extension SwarmToolsHandler {
             "repoIdentifier": [
               "type": "string",
               "description": "Repository identifier (e.g. github.com/org/repo). Auto-detected from git remote if not provided. Enables safe per-repo sync."
+            ],
+            "workerId": [
+              "type": "string",
+              "description": "Target worker ID to pull from via P2P. If omitted, pulls from the first connected peer."
+            ],
+            "forceRelay": [
+              "type": "boolean",
+              "description": "Skip P2P and force Firestore relay for data retrieval. Defaults to false. Requires artifactId when true."
             ],
             "fullDB": [
               "type": "boolean",
@@ -619,7 +635,7 @@ extension SwarmToolsHandler {
               "description": "Import embeddings from remote even if the embedding model differs from local. Defaults to true — use remote embeddings as-is. Set false to skip embeddings and re-generate locally."
             ]
           ],
-          "required": ["swarmId", "artifactId", "repoPath"]
+          "required": ["swarmId", "repoPath"]
         ],
         category: .swarm,
         isMutating: true

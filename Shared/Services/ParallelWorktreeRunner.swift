@@ -1231,6 +1231,10 @@ final class ParallelWorktreeRunner {
       run.completedAt = Date()
       run.status = .completed
       PeonPingService.shared.chainCompleted(name: run.name)
+      // Run integration build check in the background after all merges land
+      Task { [weak self] in
+        await self?.runPostMergeBuildCheck(for: run)
+      }
     }
 
     // Always persist the latest state so history snapshots are never stale.
@@ -1299,7 +1303,19 @@ final class ParallelWorktreeRunner {
     isAutoMerging = true
     let (execution, run) = autoMergeQueue.removeFirst()
     Task {
-      try? await mergeExecution(execution, in: run)
+      do {
+        try await mergeExecution(execution, in: run)
+      } catch {
+        // mergeExecution already sets execution.status on failure;
+        // log and record a snapshot so the UI reflects the failure immediately.
+        await mcpLog.error(error, context: "Auto-merge failed", metadata: [
+          "runId": run.id.uuidString,
+          "executionId": execution.id.uuidString,
+          "task": execution.task.title
+        ])
+        recordSnapshot(for: run)
+      }
+      // Continue draining the queue regardless of success/failure
       processAutoMergeQueue()
     }
   }
@@ -1354,6 +1370,68 @@ final class ParallelWorktreeRunner {
     }
   }
 
+  /// Run a shell command off the main thread and return (stdout+stderr, exitCode).
+  private func runShell(_ command: String, in directoryPath: String) async -> (String, Int32) {
+    await withCheckedContinuation { continuation in
+      DispatchQueue.global(qos: .userInitiated).async {
+        let process = Process()
+        process.currentDirectoryURL = URL(fileURLWithPath: directoryPath)
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = ["-c", command]
+
+        var env = ProcessInfo.processInfo.environment
+        let existingPath = env["PATH"] ?? ""
+        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:\(existingPath)"
+        process.environment = env
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+
+        do {
+          try process.run()
+          process.waitUntilExit()
+          let data = pipe.fileHandleForReading.readDataToEndOfFile()
+          let output = String(data: data, encoding: .utf8) ?? ""
+          continuation.resume(returning: (output, process.terminationStatus))
+        } catch {
+          continuation.resume(returning: (error.localizedDescription, -1))
+        }
+      }
+    }
+  }
+
+  /// Run a build check after all merges in a run have completed.
+  /// Catches integration issues where branches compile individually but conflict together.
+  private func runPostMergeBuildCheck(for run: ParallelWorktreeRun) async {
+    let mergedCount = run.executions.filter { $0.status == .merged }.count
+    guard mergedCount > 0 else { return }
+
+    await mcpLog.info("Running post-merge integration build check", metadata: [
+      "runId": run.id.uuidString,
+      "mergedCount": "\(mergedCount)"
+    ])
+
+    let command = #"if [ -f Package.swift ]; then swift build 2>&1; elif ls *.xcodeproj 1>/dev/null 2>&1; then xcodebuild -quiet build 2>&1; elif [ -f Makefile ] || [ -f makefile ]; then make 2>&1; else echo 'SKIP: No build system detected'; exit 0; fi"#
+
+    let (output, exitCode) = await runShell(command, in: run.projectPath)
+    let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+
+    if exitCode == 0 {
+      await mcpLog.info("Post-merge integration build PASSED", metadata: [
+        "runId": run.id.uuidString
+      ])
+      run.operatorGuidance.append("Post-merge integration build passed")
+    } else {
+      await mcpLog.warning("Post-merge integration build FAILED", metadata: [
+        "runId": run.id.uuidString,
+        "output": String(trimmed.suffix(1000))
+      ])
+      run.operatorGuidance.append("Post-merge integration build FAILED — manual review needed. Last output: \(String(trimmed.suffix(500)))")
+    }
+    recordSnapshot(for: run)
+  }
+
   /// Merge a single execution
   func mergeExecution(_ execution: ParallelWorktreeExecution, in run: ParallelWorktreeRun) async throws {
     guard execution.status == .approved else {
@@ -1383,7 +1461,29 @@ final class ParallelWorktreeRunner {
         )
       }
 
-      // Merge the worktree branch
+      // Rebase the branch onto the current target to minimize merge conflicts.
+      // This is important when prior branches in the same batch have already merged,
+      // advancing the target branch beyond the common base.
+      let (rebaseOutput, rebaseExit) = await runGit(
+        ["rebase", targetBranch, branchName],
+        in: run.projectPath
+      )
+      if rebaseExit != 0 {
+        // Abort the failed rebase so the repo stays clean
+        _ = await runGit(["rebase", "--abort"], in: run.projectPath)
+        await mcpLog.warning("Pre-merge rebase failed, falling back to direct merge", metadata: [
+          "branch": branchName,
+          "target": targetBranch,
+          "output": rebaseOutput.prefix(500).description
+        ])
+        // Ensure we're back on the target branch after aborting rebase
+        _ = await runGit(["checkout", targetBranch], in: run.projectPath)
+      } else {
+        // Rebase succeeded — switch back to target for the merge
+        _ = await runGit(["checkout", targetBranch], in: run.projectPath)
+      }
+
+      // Merge the worktree branch (fast-forward if rebase succeeded)
       let (mergeOutput, mergeExit) = await runGit(
         ["merge", branchName, "--no-edit"],
         in: run.projectPath
@@ -1410,8 +1510,21 @@ final class ParallelWorktreeRunner {
         throw ParallelRunError.mergeFailed(mergeOutput.trimmingCharacters(in: .whitespacesAndNewlines))
       }
 
+      // Push the merge to origin so work is not lost if the app closes
+      let (pushOutput, pushExit) = await runGit(
+        ["push", "origin", targetBranch],
+        in: run.projectPath
+      )
+      if pushExit != 0 {
+        await mcpLog.warning("Post-merge push failed (merge is local-only)", metadata: [
+          "branch": targetBranch,
+          "output": pushOutput.prefix(500).description
+        ])
+      }
+
       execution.status = .merged
       PeonPingService.shared.worktreeCompleted(taskTitle: execution.task.title)
+      recordSnapshot(for: run)
 
       // Cleanup the worktree
       try? await workspaceService.removeWorktreeForChain(chainId: execution.id)
