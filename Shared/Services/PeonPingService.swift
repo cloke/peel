@@ -87,6 +87,7 @@ final class PeonPingService {
   // MARK: - State
 
   @ObservationIgnored private var manifest: SoundPackManifest?
+  @ObservationIgnored private var soundPackSubdirectory: String? // e.g. "Sounds/peon"
   @ObservationIgnored private var lastPlayed: [String: String] = [:] // category -> last file played
   @ObservationIgnored private var audioPlayer: AVAudioPlayer?
   @ObservationIgnored private var notificationRequested = false
@@ -202,11 +203,15 @@ final class PeonPingService {
     // Find the sound file in the bundle
     let soundName = (pick.file as NSString).deletingPathExtension
     let soundExt = (pick.file as NSString).pathExtension
-    guard let url = Bundle.main.url(
-      forResource: soundName,
-      withExtension: soundExt
-    ) else {
-      Self.logger.warning("Sound file not found in bundle: \(pick.file) (searched for resource '\(soundName)' ext '\(soundExt)')")
+    let subdir = self.soundPackSubdirectory
+    let url: URL? = if let subdir {
+      Bundle.main.url(forResource: soundName, withExtension: soundExt, subdirectory: subdir)
+    } else {
+      Bundle.main.url(forResource: soundName, withExtension: soundExt)
+    }
+    guard let url else {
+      let searchDir = subdir ?? "top-level"
+      Self.logger.warning("Sound file not found in bundle: \(pick.file) (searched for resource '\(soundName)' ext '\(soundExt)' subdirectory '\(searchDir)')")
       return
     }
 
@@ -230,18 +235,37 @@ final class PeonPingService {
   // MARK: - Manifest Loading
 
   private func loadManifest() {
-    guard let url = Bundle.main.url(
-      forResource: "manifest",
-      withExtension: "json"
-    ) else {
-      Self.logger.warning("Sound pack manifest not found in bundle")
+    // Search known subdirectories first (folder references preserve directory structure),
+    // then fall back to top-level (group-added resources are copied flat).
+    let searchPaths: [String?] = ["Sounds/peon", nil]
+    var foundURL: URL?
+    var foundSubdir: String?
+    for subdir in searchPaths {
+      let url: URL?
+      if let subdir {
+        url = Bundle.main.url(forResource: "manifest", withExtension: "json", subdirectory: subdir)
+      } else {
+        url = Bundle.main.url(forResource: "manifest", withExtension: "json")
+      }
+      if let url {
+        foundURL = url
+        foundSubdir = subdir
+        break
+      }
+    }
+
+    guard let url = foundURL else {
+      Self.logger.warning("Sound pack manifest not found in bundle (searched Sounds/peon/ and top-level)")
       return
     }
 
     do {
       let data = try Data(contentsOf: url)
       manifest = try JSONDecoder().decode(SoundPackManifest.self, from: data)
-      Self.logger.info("Loaded sound pack: \(self.manifest?.display_name ?? "unknown")")
+      soundPackSubdirectory = foundSubdir
+      let packName = self.manifest?.display_name ?? "unknown"
+      let subDirName = foundSubdir ?? "top-level"
+      Self.logger.info("Loaded sound pack: \(packName) from \(subDirName)")
     } catch {
       Self.logger.error("Failed to load manifest: \(error.localizedDescription)")
     }
