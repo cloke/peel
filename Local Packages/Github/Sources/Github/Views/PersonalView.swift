@@ -315,8 +315,8 @@ private struct PRInsightsChartsView: View {
       .prefix(40)
 
     for pr in recentPulls {
-      if let created = parseDate(pr.created_at) {
-        let week = weekStart(for: created)
+      if let created = GithubDateParser.parse(pr.created_at) {
+        let week = calendar.dateInterval(of: .weekOfYear, for: created)?.start ?? created
         let requestedCount = pr.requested_reviewers?.count ?? 0
         if requestedByWeek[week] != nil {
           requestedByWeek[week, default: 0] += requestedCount
@@ -332,8 +332,8 @@ private struct PRInsightsChartsView: View {
           pullNumber: pr.number
         )
         for review in reviews {
-          let submittedAt = parseReviewDate(review.submitted_at)
-          let week = weekStart(for: submittedAt)
+          let submittedAt = GithubDateParser.parse(review.submitted_at) ?? Date()
+          let week = calendar.dateInterval(of: .weekOfYear, for: submittedAt)?.start ?? submittedAt
           if completedByWeek[week] != nil {
             completedByWeek[week, default: 0] += 1
           }
@@ -364,14 +364,14 @@ private struct PRInsightsChartsView: View {
     var mergedByWeek = Dictionary(uniqueKeysWithValues: weeks.map { ($0, 0) })
 
     for pr in pullRequests {
-      if let created = parseDate(pr.created_at) {
-        let week = weekStart(for: created)
+      if let created = GithubDateParser.parse(pr.created_at) {
+        let week = calendar.dateInterval(of: .weekOfYear, for: created)?.start ?? created
         if openedByWeek[week] != nil {
           openedByWeek[week, default: 0] += 1
         }
       }
-      if let merged = parseDate(pr.merged_at) {
-        let week = weekStart(for: merged)
+      if let merged = GithubDateParser.parse(pr.merged_at) {
+        let week = calendar.dateInterval(of: .weekOfYear, for: merged)?.start ?? merged
         if mergedByWeek[week] != nil {
           mergedByWeek[week, default: 0] += 1
         }
@@ -391,45 +391,23 @@ private struct PRInsightsChartsView: View {
     var durationsByWeek: [Date: [Double]] = [:]
 
     for pr in pullRequests {
-      guard let created = parseDate(pr.created_at),
-            let merged = parseDate(pr.merged_at) else { continue }
+      guard let created = GithubDateParser.parse(pr.created_at),
+            let merged = GithubDateParser.parse(pr.merged_at) else { continue }
       guard merged >= start else { continue }
-      let week = weekStart(for: merged)
+      let week = calendar.dateInterval(of: .weekOfYear, for: merged)?.start ?? merged
       let hours = merged.timeIntervalSince(created) / 3600
       durationsByWeek[week, default: []].append(hours)
     }
 
     return durationsByWeek.keys.sorted().compactMap { week in
       guard let values = durationsByWeek[week], !values.isEmpty else { return nil }
-      let medianHours = median(values)
+      let medianHours = values.median()
       return PRCycleTimePoint(weekStart: week, medianDays: medianHours / 24)
     }
   }
 
   private var chartWeekStartDates: [Date] {
     chartWeekStarts(calendar: calendar, weeks: chartWeeks)
-  }
-
-  private func weekStart(for date: Date) -> Date {
-    calendar.dateInterval(of: .weekOfYear, for: date)?.start ?? date
-  }
-
-  private func parseDate(_ value: String?) -> Date? {
-    GithubDateParser.parse(value)
-  }
-
-  private func parseReviewDate(_ value: String) -> Date {
-    GithubDateParser.parse(value) ?? Date()
-  }
-
-  private func median(_ values: [Double]) -> Double {
-    let sorted = values.sorted()
-    guard !sorted.isEmpty else { return 0 }
-    if sorted.count % 2 == 1 {
-      return sorted[sorted.count / 2]
-    }
-    let upper = sorted.count / 2
-    return (sorted[upper - 1] + sorted[upper]) / 2
   }
 }
 
