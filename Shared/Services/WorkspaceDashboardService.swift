@@ -561,8 +561,50 @@ public final class WorkspaceDashboardService {
       }
     }
 
-    // TODO: Implement disk space limit cleanup (maxDiskGB)
-    // Would need to calculate total worktree disk usage and remove oldest until under limit
+    // Disk space limit cleanup
+    if maxDiskGB > 0 {
+      let maxBytes = Int64(maxDiskGB * 1_073_741_824) // GB to bytes
+
+      // Gather remaining auto-created worktrees sorted oldest-first
+      let trackedAll = dataService?.getTrackedWorktrees() ?? []
+      let autoWorktrees = trackedAll
+        .filter { $0.source != "manual" }
+        .sorted { $0.createdAt < $1.createdAt }
+
+      // Calculate current total disk usage across all existing auto worktrees
+      var totalBytes = autoWorktrees.compactMap { tracked -> Int64? in
+        guard worktrees.first(where: { $0.path == tracked.localPath }) != nil else { return nil }
+        return directorySize(at: tracked.localPath)
+      }.reduce(0, +)
+
+      if totalBytes > maxBytes {
+        print("Worktree disk usage \(totalBytes) bytes exceeds limit \(maxBytes) bytes, cleaning up oldest first")
+      }
+
+      for tracked in autoWorktrees {
+        guard totalBytes > maxBytes else { break }
+        guard let worktree = worktrees.first(where: { $0.path == tracked.localPath }) else { continue }
+        // Skip if already cleaned up by retention pass
+        guard !cleanedPaths.contains(where: { $0.hasPrefix(worktree.path) }) else { continue }
+        // Skip if has uncommitted changes
+        let hasChanges = await hasUncommittedChanges(worktree)
+        if hasChanges { continue }
+        let size = directorySize(at: worktree.path)
+        if dryRun {
+          cleanedPaths.append(worktree.path + " (disk limit)")
+        } else {
+          do {
+            try await removeWorktree(worktree)
+            cleanedPaths.append(worktree.path + " (disk limit)")
+            print("Removed worktree \(worktree.path) to free \(size) bytes (disk space limit)")
+          } catch {
+            print("Failed to cleanup worktree \(worktree.path) for disk limit: \(error)")
+            continue
+          }
+        }
+        totalBytes -= size
+      }
+    }
 
     return cleanedPaths
   }
@@ -608,6 +650,23 @@ public final class WorkspaceDashboardService {
     }
   }
   
+  /// Calculate the total disk size of a directory recursively
+  private func directorySize(at path: String) -> Int64 {
+    let url = URL(fileURLWithPath: path)
+    guard let enumerator = FileManager.default.enumerator(
+      at: url,
+      includingPropertiesForKeys: [.fileSizeKey],
+      options: [.skipsHiddenFiles]
+    ) else { return 0 }
+    var totalSize: Int64 = 0
+    for case let fileURL as URL in enumerator {
+      if let size = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize {
+        totalSize += Int64(size)
+      }
+    }
+    return totalSize
+  }
+
   /// Get status for a worktree
   public func getWorktreeStatus(_ worktree: Git.Worktree) async -> WorktreeStatus {
     let hasChanges = await hasUncommittedChanges(worktree)
