@@ -349,15 +349,6 @@ public final class WorktreeToolsHandler: MCPToolHandler {
     }
     return sanitized
   }
-
-  // MARK: - Helpers
-
-  private func formatBytes(_ bytes: Int64) -> String {
-    let formatter = ByteCountFormatter()
-    formatter.allowedUnits = [.useKB, .useMB, .useGB]
-    formatter.countStyle = .file
-    return formatter.string(fromByteCount: bytes)
-  }
 }
 
 // MARK: - Tool Definitions

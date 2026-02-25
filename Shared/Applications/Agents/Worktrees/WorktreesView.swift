@@ -81,7 +81,7 @@ struct WorktreesView: View {
       
       StatItem(
         label: "Disk Usage",
-        value: formatBytes(stats.totalDiskBytes),
+        value: stats.totalDiskBytes.formattedBytes,
         icon: "internaldrive"
       )
       
@@ -171,20 +171,13 @@ struct WorktreesView: View {
   
   private func openInVSCode(_ worktree: WorktreeItem) {
     #if os(macOS)
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-    process.arguments = ["-a", "Visual Studio Code", worktree.path]
-    try? process.run()
+    Task {
+      try? await VSCodeService.shared.open(path: worktree.path)
+    }
     #endif
   }
   
   // MARK: - Helpers
-  
-  private func formatBytes(_ bytes: Int64) -> String {
-    let formatter = ByteCountFormatter()
-    formatter.countStyle = .file
-    return formatter.string(fromByteCount: bytes)
-  }
 }
 
 // MARK: - Supporting Types
@@ -275,7 +268,7 @@ private struct WorktreeRow: View {
           Text("•")
             .foregroundStyle(.quaternary)
           
-          Text(formatBytes(worktree.diskSizeBytes))
+          Text(worktree.diskSizeBytes.formattedBytes)
             .foregroundStyle(.secondary)
         }
         .font(.caption)
@@ -303,12 +296,6 @@ private struct WorktreeRow: View {
       #endif
     }
     .padding(.vertical, 4)
-  }
-  
-  private func formatBytes(_ bytes: Int64) -> String {
-    let formatter = ByteCountFormatter()
-    formatter.countStyle = .file
-    return formatter.string(fromByteCount: bytes)
   }
 }
 
@@ -442,10 +429,7 @@ struct NewWorktreeSheet: View {
       
       if openInVSCode {
         #if os(macOS)
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        process.arguments = ["-a", "Visual Studio Code", worktreePath]
-        try? process.run()
+        try? await VSCodeService.shared.open(path: worktreePath)
         #endif
       }
       
