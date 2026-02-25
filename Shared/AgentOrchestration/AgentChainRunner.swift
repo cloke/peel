@@ -909,6 +909,9 @@ public final class AgentChainRunner {
     case .agentic:
       // LLM steps always run on host — they read/write the shared workspace via VirtioFS
       return try await runAgenticStep(agent, at: index, chain: chain, prompt: prompt, contextOverride: contextOverride)
+    case .vmAgentic:
+      // VM-sandboxed agent: invoke the configured CLI agent inside the VM
+      return try await runAgenticStep(agent, at: index, chain: chain, prompt: prompt, contextOverride: contextOverride)
     }
   }
 

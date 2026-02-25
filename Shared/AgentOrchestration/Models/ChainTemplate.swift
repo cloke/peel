@@ -724,12 +724,15 @@ public enum StepType: String, Codable, Hashable, Sendable, CaseIterable {
   case deterministic
   /// Shell command that acts as a quality gate — exit 0 passes, non-zero halts the chain
   case gate
+  /// LLM coding agent running inside a VM sandbox (the VM agent CLI calls the LLM, not Peel)
+  case vmAgentic
 
   public var displayName: String {
     switch self {
     case .agentic: "Agentic"
     case .deterministic: "Deterministic"
     case .gate: "Gate"
+    case .vmAgentic: "VM Agent"
     }
   }
 
@@ -738,6 +741,7 @@ public enum StepType: String, Codable, Hashable, Sendable, CaseIterable {
     case .agentic: "LLM-driven agent step"
     case .deterministic: "Shell command (no LLM)"
     case .gate: "Quality gate — halts chain on failure"
+    case .vmAgentic: "LLM agent running inside VM sandbox"
     }
   }
 
@@ -746,12 +750,79 @@ public enum StepType: String, Codable, Hashable, Sendable, CaseIterable {
     case .agentic: "brain"
     case .deterministic: "terminal"
     case .gate: "checkmark.shield"
+    case .vmAgentic: "shield.checkmark"
     }
   }
 
-  /// Whether this step type requires an LLM call
+  /// Whether this step type requires an LLM call from Peel
   public var requiresLLM: Bool {
     self == .agentic
+  }
+}
+
+/// Configuration for a VM-sandboxed LLM coding agent (e.g. copilot, claude, aider)
+public struct VMAgentConfig: Codable, Sendable, Hashable, Equatable {
+  /// CLI binary name (e.g. "copilot", "claude", "aider")
+  public var binaryName: String
+  /// Shell command to install the binary inside the VM (nil if pre-installed)
+  public var installCommand: String?
+  /// CLI arguments passed to the agent binary
+  public var arguments: [String]
+  /// Extra environment variables to set before invoking the agent
+  public var environment: [String: String]
+  /// Maximum seconds to wait for the agent to complete (default 600)
+  public var timeoutSeconds: Int
+
+  public init(
+    binaryName: String,
+    installCommand: String? = nil,
+    arguments: [String] = [],
+    environment: [String: String] = [:],
+    timeoutSeconds: Int = 600
+  ) {
+    self.binaryName = binaryName
+    self.installCommand = installCommand
+    self.arguments = arguments
+    self.environment = environment
+    self.timeoutSeconds = timeoutSeconds
+  }
+
+  public static func copilot(model: String = "gpt-4o") -> VMAgentConfig {
+    VMAgentConfig(
+      binaryName: "copilot",
+      installCommand: "npm install -g @github/copilot-cli",
+      arguments: ["--model", model, "--yolo"]
+    )
+  }
+
+  public static func claude(model: String = "claude-sonnet-4-20250514") -> VMAgentConfig {
+    VMAgentConfig(
+      binaryName: "claude",
+      installCommand: nil,
+      arguments: ["--model", model, "--allowedTools", "all"]
+    )
+  }
+
+  public static func aider(model: String = "gpt-4o") -> VMAgentConfig {
+    VMAgentConfig(
+      binaryName: "aider",
+      installCommand: "pip install aider-chat",
+      arguments: ["--model", model, "--yes"]
+    )
+  }
+
+  public static func custom(
+    binary: String,
+    install: String?,
+    args: [String],
+    env: [String: String] = [:]
+  ) -> VMAgentConfig {
+    VMAgentConfig(
+      binaryName: binary,
+      installCommand: install,
+      arguments: args,
+      environment: env
+    )
   }
 }
 
@@ -775,6 +846,9 @@ public struct AgentStepTemplate: Identifiable, Codable, Hashable, Sendable {
 
   /// Tools explicitly denied for this step (merged with role defaults; agentic only)
   public var deniedTools: [String]?
+
+  /// Configuration for a VM-sandboxed agent (vmAgentic steps only)
+  public var vmAgentConfig: VMAgentConfig?
   
   public init(
     id: UUID = UUID(),
@@ -786,7 +860,8 @@ public struct AgentStepTemplate: Identifiable, Codable, Hashable, Sendable {
     stepType: StepType = .agentic,
     command: String? = nil,
     allowedTools: [String]? = nil,
-    deniedTools: [String]? = nil
+    deniedTools: [String]? = nil,
+    vmAgentConfig: VMAgentConfig? = nil
   ) {
     self.id = id
     self.role = role
@@ -798,6 +873,7 @@ public struct AgentStepTemplate: Identifiable, Codable, Hashable, Sendable {
     self.command = command
     self.allowedTools = allowedTools
     self.deniedTools = deniedTools
+    self.vmAgentConfig = vmAgentConfig
   }
   
   /// Effective denied tools: merges per-step overrides with role defaults
