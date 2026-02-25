@@ -276,13 +276,23 @@ final class LocalChatToolsHandler: MCPToolHandler {
     // When directive rules are present, skip skills injection —
     // the directive rules are concise and focused; mixing in verbose
     // skill examples dilutes the model's adherence to critical rules.
-    let isEmber = DefaultSkillsService.detectEmberProject(repoPath: repoPath)
-    if isEmber {
-      context.instructions = Self.emberDirectiveRules
-      print("[MCP Chat] Injected Ember directive rules for \(repoPath)")
-    } else if let (block, _) = skillsBlock {
-      // Only inject skills when no directive rules are present
-      context.skills = block
+    //
+    // Priority: repo-local .peel/directives.md → hardcoded ember rules → skills fallback
+    let directivesPath = (repoPath as NSString).appendingPathComponent(".peel/directives.md")
+    let repoDirectives = try? String(contentsOfFile: directivesPath, encoding: .utf8)
+
+    if let directives = repoDirectives, !directives.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      context.instructions = directives
+      print("[MCP Chat] Injected repo-local directives from .peel/directives.md for \(repoPath)")
+    } else {
+      let isEmber = DefaultSkillsService.detectEmberProject(repoPath: repoPath)
+      if isEmber {
+        context.instructions = Self.emberDirectiveRules
+        print("[MCP Chat] Injected Ember directive rules for \(repoPath)")
+      } else if let (block, _) = skillsBlock {
+        // Only inject skills when no directive rules are present
+        context.skills = block
+      }
     }
 
     return context.isEmpty ? nil : context
