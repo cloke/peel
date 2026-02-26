@@ -52,12 +52,15 @@ struct ChatContext: Sendable {
   /// File context — contents or summaries of referenced files
   var fileContext: String?
 
+  /// RAG-retrieved context — code snippets fetched via vector search for the current query
+  var ragContext: String?
+
   /// Repo metadata (name, path, tech stack)
   var repoInfo: String?
 
   /// Whether any context is present
   var isEmpty: Bool {
-    skills == nil && instructions == nil && fileContext == nil && repoInfo == nil
+    skills == nil && instructions == nil && fileContext == nil && ragContext == nil && repoInfo == nil
   }
 
   /// Combine all context blocks into one prompt section.
@@ -73,6 +76,9 @@ struct ChatContext: Sendable {
     }
     if let skills {
       sections.append(skills) // Already formatted as "## Repo Skills\n\n..."
+    }
+    if let ragContext {
+      sections.append("## Relevant Code (from local RAG index)\n\n\(ragContext)")
     }
     if let fileContext {
       sections.append("## Referenced Files\n\n\(fileContext)")
@@ -152,8 +158,17 @@ actor MLXChatService {
 
   // MARK: - Chat
 
-  /// Send a message and get a streaming response
-  func sendMessage(_ text: String) async throws -> AsyncStream<String> {
+  /// Send a message with optional RAG context injected into the system prompt for this turn.
+  /// The RAG context is set before generation and cleared after, so it only applies to this message.
+  func sendMessage(_ text: String, ragContext: String? = nil) async throws -> AsyncStream<String> {
+    // Temporarily inject RAG context for this message
+    if let ragContext {
+      var augmented = self.context
+      augmented.ragContext = ragContext
+      if !conversationHistory.isEmpty {
+        conversationHistory[0] = .system(Self.buildSystemMessage(config: config, context: augmented))
+      }
+    }
     try await ensureLoaded()
 
     guard let container = modelContainer else {
@@ -176,8 +191,6 @@ actor MLXChatService {
     let lmInput = try await container.prepare(input: input)
     let stream = try await container.generate(input: lmInput, parameters: parameters)
 
-    // Capture self for the actor-isolated closure
-    let history = conversationHistory
     return AsyncStream { continuation in
       Task {
         var fullResponse = ""
@@ -192,8 +205,17 @@ actor MLXChatService {
         }
         // Add assistant response to history on the actor
         await self.appendAssistantMessage(fullResponse)
+        // Restore system prompt without per-turn RAG context
+        await self.restoreBaseSystemPrompt()
         continuation.finish()
       }
+    }
+  }
+
+  /// Restore the system prompt to the base context (without per-turn RAG)
+  private func restoreBaseSystemPrompt() {
+    if !conversationHistory.isEmpty {
+      conversationHistory[0] = .system(Self.buildSystemMessage(config: config, context: context))
     }
   }
 

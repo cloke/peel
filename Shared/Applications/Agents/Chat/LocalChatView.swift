@@ -27,6 +27,8 @@ class LocalChatViewModel {
   var tokensPerSecond: Double = 0
   var selectedRepoPath: String?
   var activeSkillCount = 0
+  var ragSnippetCount = 0
+  var useRAG = true
 
   private var chatService: MLXChatService?
   private var generationTask: Task<Void, Never>?
@@ -85,7 +87,7 @@ class LocalChatViewModel {
     return context
   }
 
-  func send(dataService: DataService?) {
+  func send(dataService: DataService?, mcpServer: MCPServerService?) {
     let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty, !isGenerating else { return }
 
@@ -95,6 +97,7 @@ class LocalChatViewModel {
     error = nil
     currentStreamText = ""
     tokensPerSecond = 0
+    ragSnippetCount = 0
 
     generationTask = Task {
       do {
@@ -114,10 +117,13 @@ class LocalChatViewModel {
 
         guard let service = chatService else { return }
 
+        // RAG-augment: search local index for relevant code snippets
+        let ragContext = await fetchRAGContext(query: text, mcpServer: mcpServer)
+
         let startTime = Date()
         var tokenCount = 0
 
-        let stream = try await service.sendMessage(text)
+        let stream = try await service.sendMessage(text, ragContext: ragContext)
         isLoadingModel = false
 
         // Update the system message to show model is ready
@@ -177,8 +183,47 @@ class LocalChatViewModel {
     messages.removeAll()
     currentStreamText = ""
     error = nil
+    ragSnippetCount = 0
     Task {
       await chatService?.clearHistory()
+    }
+  }
+
+  // MARK: - RAG Context Retrieval
+
+  /// Search the local RAG index for code snippets relevant to the user's query.
+  /// Returns a formatted string to inject into the system prompt, or nil if no results.
+  private func fetchRAGContext(query: String, mcpServer: MCPServerService?) async -> String? {
+    guard useRAG, let mcpServer, let repoPath = selectedRepoPath else { return nil }
+
+    do {
+      let results = try await mcpServer.runRagSearch(
+        query: query,
+        mode: .hybrid,
+        repoPath: repoPath,
+        limit: 5,
+        matchAll: false,
+        recordHints: false
+      )
+
+      guard !results.isEmpty else { return nil }
+      ragSnippetCount = results.count
+
+      let formatted = results.map { result in
+        let header = "### \(result.filePath)" +
+          (result.constructName != nil ? " — \(result.constructName!)" : "") +
+          " (L\(result.startLine)-\(result.endLine))"
+        let snippet = result.snippet
+          .split(separator: "\n")
+          .prefix(30)
+          .joined(separator: "\n")
+        return "\(header)\n```\n\(snippet)\n```"
+      }
+
+      return formatted.joined(separator: "\n\n")
+    } catch {
+      print("[LocalChat] RAG search failed: \(error.localizedDescription)")
+      return nil
     }
   }
 
@@ -314,6 +359,22 @@ struct LocalChatView: View {
 
         Spacer()
 
+        if viewModel.ragSnippetCount > 0 {
+          Label("\(viewModel.ragSnippetCount) RAG", systemImage: "doc.text.magnifyingglass")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .help("\(viewModel.ragSnippetCount) code snippets from local RAG index")
+        }
+
+        Button {
+          viewModel.useRAG.toggle()
+        } label: {
+          Image(systemName: viewModel.useRAG ? "brain.filled.head.profile" : "brain.head.profile")
+            .foregroundStyle(viewModel.useRAG ? .blue : .secondary)
+        }
+        .buttonStyle(.plain)
+        .help(viewModel.useRAG ? "RAG enabled — click to disable" : "RAG disabled — click to enable")
+
         if viewModel.isGenerating && viewModel.tokensPerSecond > 0 {
           Text(String(format: "%.1f tok/s", viewModel.tokensPerSecond))
             .font(.caption)
@@ -346,7 +407,7 @@ struct LocalChatView: View {
           .focused($inputFocused)
           .onSubmit {
             if !NSEvent.modifierFlags.contains(.shift) {
-              viewModel.send(dataService: dataService)
+              viewModel.send(dataService: dataService, mcpServer: mcpServer)
             }
           }
 
@@ -362,7 +423,7 @@ struct LocalChatView: View {
           .help("Stop generating")
         } else {
           Button {
-            viewModel.send(dataService: dataService)
+            viewModel.send(dataService: dataService, mcpServer: mcpServer)
           } label: {
             Image(systemName: "arrow.up.circle.fill")
               .font(.title2)
@@ -461,15 +522,15 @@ struct LocalChatView: View {
       VStack(alignment: .leading, spacing: 8) {
         SuggestionButton(text: "Explain @Observable vs ObservableObject in Swift 6") {
           viewModel.inputText = "Explain @Observable vs ObservableObject in Swift 6"
-          viewModel.send(dataService: dataService)
+          viewModel.send(dataService: dataService, mcpServer: mcpServer)
         }
         SuggestionButton(text: "Help me refactor a Combine pipeline to async/await") {
           viewModel.inputText = "Help me refactor a Combine pipeline to async/await"
-          viewModel.send(dataService: dataService)
+          viewModel.send(dataService: dataService, mcpServer: mcpServer)
         }
         SuggestionButton(text: "What's the actor reentrancy problem in Swift?") {
           viewModel.inputText = "What's the actor reentrancy problem in Swift?"
-          viewModel.send(dataService: dataService)
+          viewModel.send(dataService: dataService, mcpServer: mcpServer)
         }
       }
       .padding(.top, 8)
