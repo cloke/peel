@@ -63,6 +63,7 @@ final class LocalChatToolsHandler: MCPToolHandler {
     let repoPath = optionalString("repoPath", from: arguments, default: nil)
     let instructions = optionalString("instructions", from: arguments, default: nil)
     let clearHistory = (arguments["clearHistory"] as? Bool) == true
+    let useToolCalling = (arguments["useToolCalling"] as? Bool) ?? true
 
     // Build context from skills + auto-detected instructions
     var context: ChatContext? = await buildContext(repoPath: repoPath)
@@ -78,11 +79,12 @@ final class LocalChatToolsHandler: MCPToolHandler {
       }
     }
 
-    // Update repo path on shared session so RAG search uses it
-    if let repoPath {
-      await MainActor.run {
+    // Update repo path and tool calling preference on shared session
+    await MainActor.run {
+      if let repoPath {
         session.selectedRepoPath = repoPath
       }
+      session.useToolCalling = useToolCalling
     }
 
     do {
@@ -190,6 +192,7 @@ final class LocalChatToolsHandler: MCPToolHandler {
             "repoPath": ["type": "string", "description": "Optional: path to a repository to inject relevant skills/context into the chat"],
             "instructions": ["type": "string", "description": "Optional: custom instructions to inject into the system prompt (e.g., framework-specific coding guidelines)"],
             "clearHistory": ["type": "boolean", "description": "If true, clear conversation history before sending (keeps model loaded and context)"],
+            "useToolCalling": ["type": "boolean", "description": "Enable tool calling (rag_search, dispatch_chain, chain_status). Default: true"],
           ],
           "required": ["message"],
         ],

@@ -244,13 +244,16 @@ actor MLXChatService {
   ///   - toolCallMarker: The reconstructed tool call marker (from ChatToolCall.asToolCallMarker())
   ///   - toolResult: The JSON result from executing the tool
   func recordToolCallAndResult(assistantText: String, toolCallMarker: String, toolResult: String) {
-    // The last history entry is the assistant message from generateFromHistory
-    // Replace it with the full text including the tool call marker
+    // The last history entry is the assistant message from generateFromHistory.
+    // Replace it with the clean text + tool call marker (removing raw XML/thinking).
     if let lastIdx = conversationHistory.indices.last,
        conversationHistory[lastIdx].role == .assistant {
       conversationHistory[lastIdx] = .assistant(assistantText + toolCallMarker)
+    } else {
+      // Fallback: if no assistant message found, append one
+      conversationHistory.append(.assistant(assistantText + toolCallMarker))
     }
-    // Add tool result
+    // Add tool result as the next message
     conversationHistory.append(.tool(toolResult))
   }
 

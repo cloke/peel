@@ -124,6 +124,16 @@ final class SharedChatSession {
   }
 
   func unloadModel() {
+    // Cancel any in-flight generation first
+    generationTask?.cancel()
+    generationTask = nil
+
+    // Reset all generation state so future send() calls aren't blocked
+    isGenerating = false
+    isLoadingModel = false
+    currentStreamText = ""
+    activeToolRound = 0
+
     Task {
       await chatService?.unload()
       chatService = nil
@@ -291,11 +301,15 @@ final class SharedChatSession {
         messages[idx] = ChatMessage(role: .system, content: readyMsg)
       }
 
-      // Tool call loop — model can invoke tools up to maxToolRounds times
-      let maxToolRounds = 5
+      // Tool call loop — model can invoke tools up to maxToolRounds times,
+      // then a final generation without tools forces a text-only summary.
+      let maxToolRounds = 3
+      let hardCap = maxToolRounds + 2 // safety: absolute max iterations
       var toolRound = 0
+      var iteration = 0
 
-      while toolRound <= maxToolRounds {
+      toolLoop: while iteration < hardCap {
+        iteration += 1
         var accumulatedText = ""
         var detectedToolCall: ChatToolCall?
 
@@ -320,7 +334,7 @@ final class SharedChatSession {
         guard let toolCall = detectedToolCall else {
           // No tool call — generation is complete
           finalResponse = currentStreamText
-          break
+          break toolLoop
         }
 
         // Save the text before the tool call as a partial message
@@ -348,15 +362,39 @@ final class SharedChatSession {
           toolResult: toolResult
         )
 
-        // Reset stream text for next generation round
-        currentStreamText = ""
-        events = try await service.continueAfterTool(tools: toolSpecs)
         toolRound += 1
+        currentStreamText = ""
+
+        if toolRound >= maxToolRounds {
+          // Max tool rounds reached — final generation WITHOUT tools
+          // Disable tool instructions in system prompt so model stops calling tools
+          await service.setToolsEnabled(false)
+          print("[SharedChat] Tool round \(toolRound)/\(maxToolRounds) — forcing final text-only response")
+          events = try await service.continueAfterTool(tools: nil)
+          // Loop back to consume the final no-tools generation
+        } else {
+          events = try await service.continueAfterTool(tools: toolSpecs)
+        }
       }
 
       let elapsed = Date().timeIntervalSince(startTime)
       if elapsed > 0 {
         tokensPerSecond = Double(totalTokenCount) / elapsed
+      }
+
+      // Re-enable tools for future calls if they were disabled for final generation
+      if toolRound >= maxToolRounds {
+        await service.setToolsEnabled(useToolCalling && mcpServer != nil)
+      }
+
+      // Strip any stray <tool_call>...</tool_call> XML from the final response
+      finalResponse = Self.stripToolCallXML(finalResponse)
+
+      if finalResponse.isEmpty && toolRound > 0 {
+        // Model used all tool rounds but never produced a final text response.
+        // Use the accumulated tool results summary as a fallback.
+        finalResponse = "[Used \(toolRound) tool call\(toolRound == 1 ? "" : "s") but model did not produce a final summary. Check the tool results above.]"
+        print("[SharedChat] Warning: empty final response after \(toolRound) tool rounds")
       }
 
       if !finalResponse.isEmpty {
@@ -495,6 +533,33 @@ final class SharedChatSession {
       ] as [String: any Sendable],
     ] as [String: any Sendable],
   ]
+
+  // MARK: - Response Cleanup
+
+  /// Strip any <tool_call>...</tool_call> and <think>...</think> XML from a response string.
+  /// The model may hallucinate tool calls even when tools are disabled,
+  /// and thinking blocks should not appear in the final response.
+  private static func stripToolCallXML(_ text: String) -> String {
+    var result = text
+    // Remove complete tool call blocks
+    while let startRange = result.range(of: "<tool_call>") {
+      if let endRange = result.range(of: "</tool_call>", range: startRange.upperBound..<result.endIndex) {
+        result.removeSubrange(startRange.lowerBound..<endRange.upperBound)
+      } else {
+        // Incomplete tool call — remove from start tag to end
+        result.removeSubrange(startRange.lowerBound..<result.endIndex)
+      }
+    }
+    // Remove thinking blocks
+    while let startRange = result.range(of: "<think>") {
+      if let endRange = result.range(of: "</think>", range: startRange.upperBound..<result.endIndex) {
+        result.removeSubrange(startRange.lowerBound..<endRange.upperBound)
+      } else {
+        result.removeSubrange(startRange.lowerBound..<result.endIndex)
+      }
+    }
+    return result.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
 
   // MARK: - Tool Execution
 
