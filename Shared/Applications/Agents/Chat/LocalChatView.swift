@@ -4,6 +4,7 @@
 //
 //  Simple chat interface for interacting with local MLX LLM models.
 //  Supports model tier selection, streaming responses, and conversation history.
+//  Messages sent via MCP (chat.send) appear here in real time via SharedChatSession.
 //
 //  Created on 2/10/26.
 //
@@ -12,258 +13,19 @@
 import SwiftUI
 import SwiftData
 
-// MARK: - View Model
-
-@MainActor
-@Observable
-class LocalChatViewModel {
-  var messages: [ChatMessage] = []
-  var inputText = ""
-  var isGenerating = false
-  var isLoadingModel = false
-  var currentStreamText = ""
-  var selectedTier: MLXEditorModelTier = .auto
-  var error: String?
-  var tokensPerSecond: Double = 0
-  var selectedRepoPath: String?
-  var activeSkillCount = 0
-  var ragSnippetCount = 0
-  var useRAG = true
-
-  private var chatService: MLXChatService?
-  private var generationTask: Task<Void, Never>?
-
-  var modelStatusText: String {
-    if isLoadingModel { return "Loading model..." }
-    if let service = chatService {
-      var status = "\(service.modelName) (\(service.tier.rawValue)) ready"
-      if activeSkillCount > 0 {
-        status += " · \(activeSkillCount) skill\(activeSkillCount == 1 ? "" : "s")"
-      }
-      return status
-    }
-    let rec = MLXEditorModelConfig.recommendedModel()
-    return "Will load: \(rec.name) (\(rec.huggingFaceId))"
-  }
-
-  var isModelLoaded: Bool {
-    chatService != nil
-  }
-
-  /// Build a ChatContext from the current repo selection using DataService
-  func buildContext(dataService: DataService?) -> ChatContext {
-    guard let dataService, let repoPath = selectedRepoPath else {
-      return .empty
-    }
-
-    var context = ChatContext()
-
-    // Auto-seed Ember skills if needed
-    let seededCount = DefaultSkillsService.autoSeedEmberSkillsIfNeeded(
-      context: dataService.modelContext,
-      repoPath: repoPath
-    )
-    if seededCount > 0 {
-      print("[LocalChat] Auto-seeded \(seededCount) Ember skills for \(repoPath)")
-    }
-
-    // Fetch skills block (same format used by agent chains)
-    let repoRemoteURL = RepoRegistry.shared.getCachedRemoteURL(for: repoPath)
-    if let (skillsBlock, skills) = dataService.repoGuidanceSkillsBlock(
-      repoPath: repoPath,
-      repoRemoteURL: repoRemoteURL
-    ) {
-      context.skills = skillsBlock
-      activeSkillCount = skills.count
-      dataService.markRepoGuidanceSkillsApplied(skills)
-    } else {
-      activeSkillCount = 0
-    }
-
-    // Add repo info
-    let repoName = URL(fileURLWithPath: repoPath).lastPathComponent
-    context.repoInfo = "Repository: \(repoName)\nPath: \(repoPath)"
-
-    return context
-  }
-
-  func send(dataService: DataService?, mcpServer: MCPServerService?) {
-    let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty, !isGenerating else { return }
-
-    messages.append(ChatMessage(role: .user, content: text))
-    inputText = ""
-    isGenerating = true
-    error = nil
-    currentStreamText = ""
-    tokensPerSecond = 0
-    ragSnippetCount = 0
-
-    generationTask = Task {
-      do {
-        // Create service lazily on first send
-        if chatService == nil {
-          isLoadingModel = true
-          let context = buildContext(dataService: dataService)
-          let newService = MLXChatService(tier: selectedTier, context: context)
-          chatService = newService
-          // Show which model is being loaded
-          var loadingMsg = "Loading **\(newService.modelName)** (\(newService.huggingFaceId))..."
-          if activeSkillCount > 0 {
-            loadingMsg += " with \(activeSkillCount) skill\(activeSkillCount == 1 ? "" : "s")"
-          }
-          messages.append(ChatMessage(role: .system, content: loadingMsg))
-        }
-
-        guard let service = chatService else { return }
-
-        // RAG-augment: search local index for relevant code snippets
-        let ragContext = await fetchRAGContext(query: text, mcpServer: mcpServer)
-
-        let startTime = Date()
-        var tokenCount = 0
-
-        let stream = try await service.sendMessage(text, ragContext: ragContext)
-        isLoadingModel = false
-
-        // Update the system message to show model is ready
-        if let idx = messages.lastIndex(where: { $0.role == .system }) {
-          var readyMsg = "**\(service.modelName)** (\(service.huggingFaceId)) ready"
-          if activeSkillCount > 0 {
-            readyMsg += " · \(activeSkillCount) skill\(activeSkillCount == 1 ? "" : "s") loaded"
-          }
-          messages[idx] = ChatMessage(role: .system, content: readyMsg)
-        }
-
-        for await chunk in stream {
-          currentStreamText += chunk
-          tokenCount += 1
-
-          // Update tokens/sec periodically
-          if tokenCount % 10 == 0 {
-            let elapsed = Date().timeIntervalSince(startTime)
-            if elapsed > 0 {
-              tokensPerSecond = Double(tokenCount) / elapsed
-            }
-          }
-        }
-
-        let elapsed = Date().timeIntervalSince(startTime)
-        if elapsed > 0 {
-          tokensPerSecond = Double(tokenCount) / elapsed
-        }
-
-        // Add the complete response as a message
-        if !currentStreamText.isEmpty {
-          messages.append(ChatMessage(role: .assistant, content: currentStreamText))
-        }
-        currentStreamText = ""
-        isGenerating = false
-
-      } catch {
-        self.error = error.localizedDescription
-        isGenerating = false
-        isLoadingModel = false
-        currentStreamText = ""
-      }
-    }
-  }
-
-  func stop() {
-    generationTask?.cancel()
-    generationTask = nil
-    if !currentStreamText.isEmpty {
-      messages.append(ChatMessage(role: .assistant, content: currentStreamText + " [stopped]"))
-      currentStreamText = ""
-    }
-    isGenerating = false
-  }
-
-  func clearChat() {
-    messages.removeAll()
-    currentStreamText = ""
-    error = nil
-    ragSnippetCount = 0
-    Task {
-      await chatService?.clearHistory()
-    }
-  }
-
-  // MARK: - RAG Context Retrieval
-
-  /// Search the local RAG index for code snippets relevant to the user's query.
-  /// Returns a formatted string to inject into the system prompt, or nil if no results.
-  private func fetchRAGContext(query: String, mcpServer: MCPServerService?) async -> String? {
-    guard useRAG, let mcpServer, let repoPath = selectedRepoPath else { return nil }
-
-    do {
-      let results = try await mcpServer.runRagSearch(
-        query: query,
-        mode: .hybrid,
-        repoPath: repoPath,
-        limit: 5,
-        matchAll: false,
-        recordHints: false
-      )
-
-      guard !results.isEmpty else { return nil }
-      ragSnippetCount = results.count
-
-      let formatted = results.map { result in
-        let header = "### \(result.filePath)" +
-          (result.constructName != nil ? " — \(result.constructName!)" : "") +
-          " (L\(result.startLine)-\(result.endLine))"
-        let snippet = result.snippet
-          .split(separator: "\n")
-          .prefix(30)
-          .joined(separator: "\n")
-        return "\(header)\n```\n\(snippet)\n```"
-      }
-
-      return formatted.joined(separator: "\n\n")
-    } catch {
-      print("[LocalChat] RAG search failed: \(error.localizedDescription)")
-      return nil
-    }
-  }
-
-  func switchModel(to tier: MLXEditorModelTier) {
-    guard tier != selectedTier || chatService == nil else { return }
-    selectedTier = tier
-    // Nil out chatService immediately so send() creates a new one for the new tier.
-    // Then unload the old model's memory in the background.
-    let oldService = chatService
-    chatService = nil
-    if let oldService {
-      Task { await oldService.unload() }
-    }
-  }
-
-  /// Update the repo context — refreshes skills and injects into active session
-  func setRepo(_ repoPath: String?, dataService: DataService?) {
-    selectedRepoPath = repoPath
-    let context = buildContext(dataService: dataService)
-    if let service = chatService {
-      Task { await service.updateContext(context) }
-    }
-  }
-
-  func unloadModel() {
-    Task {
-      await chatService?.unload()
-      chatService = nil
-    }
-  }
-}
-
 // MARK: - Chat View
 
 struct LocalChatView: View {
-  @State private var viewModel = LocalChatViewModel()
   @Environment(DataService.self) private var dataService
   @Environment(MCPServerService.self) private var mcpServer
   @FocusState private var inputFocused: Bool
+  @State private var inputText = ""
   @State private var availableRepos: [(name: String, path: String)] = []
+
+  /// Convenience accessor for the shared chat session
+  private var session: SharedChatSession {
+    mcpServer.chatSession
+  }
 
   /// Refresh the repo list from the RepoRegistry
   private func refreshRepoList() {
@@ -272,28 +34,35 @@ struct LocalChatView: View {
       .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
   }
 
+  private func send() {
+    let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty else { return }
+    inputText = ""
+    session.sendFromUI(text, dataService: dataService, mcpServer: mcpServer)
+  }
+
   var body: some View {
     VStack(spacing: 0) {
       // Messages area
       ScrollViewReader { proxy in
         ScrollView {
           LazyVStack(alignment: .leading, spacing: 12) {
-            if viewModel.messages.isEmpty && !viewModel.isGenerating {
+            if session.messages.isEmpty && !session.isGenerating {
               welcomeView
             }
 
-            ForEach(viewModel.messages) { message in
+            ForEach(session.messages) { message in
               MessageBubble(message: message)
                 .id(message.id)
             }
 
             // Streaming response
-            if viewModel.isGenerating && !viewModel.currentStreamText.isEmpty {
-              StreamingBubble(text: viewModel.currentStreamText)
+            if session.isGenerating && !session.currentStreamText.isEmpty {
+              StreamingBubble(text: session.currentStreamText)
                 .id("streaming")
             }
 
-            if viewModel.isLoadingModel {
+            if session.isLoadingModel {
               HStack(spacing: 8) {
                 ProgressView()
                   .controlSize(.small)
@@ -307,14 +76,14 @@ struct LocalChatView: View {
           }
           .padding()
         }
-        .onChange(of: viewModel.messages.count) {
+        .onChange(of: session.messages.count) {
           withAnimation {
-            if let lastId = viewModel.messages.last?.id {
+            if let lastId = session.messages.last?.id {
               proxy.scrollTo(lastId, anchor: .bottom)
             }
           }
         }
-        .onChange(of: viewModel.currentStreamText) {
+        .onChange(of: session.currentStreamText) {
           withAnimation {
             proxy.scrollTo("streaming", anchor: .bottom)
           }
@@ -325,10 +94,10 @@ struct LocalChatView: View {
 
       // Status bar
       HStack(spacing: 12) {
-        // Model picker — menu style scales better than segmented with 5+ items
+        // Model picker
         Picker("Model", selection: Binding(
-          get: { viewModel.selectedTier },
-          set: { viewModel.switchModel(to: $0) }
+          get: { session.selectedTier },
+          set: { session.switchModel(to: $0) }
         )) {
           Label("Auto", systemImage: "cpu")
             .tag(MLXEditorModelTier.auto)
@@ -340,10 +109,10 @@ struct LocalChatView: View {
         .pickerStyle(.menu)
         .fixedSize()
 
-        // Repo picker — attaches skills/context from the selected repo
+        // Repo picker
         Picker("Repo", selection: Binding(
-          get: { viewModel.selectedRepoPath ?? "" },
-          set: { viewModel.setRepo($0.isEmpty ? nil : $0, dataService: dataService) }
+          get: { session.selectedRepoPath ?? "" },
+          set: { session.setRepo($0.isEmpty ? nil : $0, dataService: dataService) }
         )) {
           Label("No Repo", systemImage: "folder")
             .tag("")
@@ -359,30 +128,30 @@ struct LocalChatView: View {
 
         Spacer()
 
-        if viewModel.ragSnippetCount > 0 {
-          Label("\(viewModel.ragSnippetCount) RAG", systemImage: "doc.text.magnifyingglass")
+        if session.ragSnippetCount > 0 {
+          Label("\(session.ragSnippetCount) RAG", systemImage: "doc.text.magnifyingglass")
             .font(.caption)
             .foregroundStyle(.secondary)
-            .help("\(viewModel.ragSnippetCount) code snippets from local RAG index")
+            .help("\(session.ragSnippetCount) code snippets from local RAG index")
         }
 
         Button {
-          viewModel.useRAG.toggle()
+          session.useRAG.toggle()
         } label: {
-          Image(systemName: viewModel.useRAG ? "brain.filled.head.profile" : "brain.head.profile")
-            .foregroundStyle(viewModel.useRAG ? .blue : .secondary)
+          Image(systemName: session.useRAG ? "brain.filled.head.profile" : "brain.head.profile")
+            .foregroundStyle(session.useRAG ? .blue : .secondary)
         }
         .buttonStyle(.plain)
-        .help(viewModel.useRAG ? "RAG enabled — click to disable" : "RAG disabled — click to enable")
+        .help(session.useRAG ? "RAG enabled — click to disable" : "RAG disabled — click to enable")
 
-        if viewModel.isGenerating && viewModel.tokensPerSecond > 0 {
-          Text(String(format: "%.1f tok/s", viewModel.tokensPerSecond))
+        if session.isGenerating && session.tokensPerSecond > 0 {
+          Text(String(format: "%.1f tok/s", session.tokensPerSecond))
             .font(.caption)
             .foregroundStyle(.secondary)
             .monospacedDigit()
         }
 
-        Text(viewModel.modelStatusText)
+        Text(session.modelStatusText)
           .font(.caption)
           .foregroundStyle(.secondary)
       }
@@ -394,7 +163,7 @@ struct LocalChatView: View {
 
       // Input area
       HStack(alignment: .bottom, spacing: 8) {
-        TextEditor(text: $viewModel.inputText)
+        TextEditor(text: $inputText)
           .font(.body)
           .scrollContentBackground(.hidden)
           .frame(minHeight: 36, maxHeight: 120)
@@ -407,13 +176,13 @@ struct LocalChatView: View {
           .focused($inputFocused)
           .onSubmit {
             if !NSEvent.modifierFlags.contains(.shift) {
-              viewModel.send(dataService: dataService, mcpServer: mcpServer)
+              send()
             }
           }
 
-        if viewModel.isGenerating {
+        if session.isGenerating {
           Button {
-            viewModel.stop()
+            session.stop()
           } label: {
             Image(systemName: "stop.circle.fill")
               .font(.title2)
@@ -423,14 +192,14 @@ struct LocalChatView: View {
           .help("Stop generating")
         } else {
           Button {
-            viewModel.send(dataService: dataService, mcpServer: mcpServer)
+            send()
           } label: {
             Image(systemName: "arrow.up.circle.fill")
               .font(.title2)
               .foregroundStyle(.blue)
           }
           .buttonStyle(.plain)
-          .disabled(viewModel.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+          .disabled(inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
           .help("Send message (Enter)")
           .keyboardShortcut(.return, modifiers: [])
         }
@@ -438,7 +207,7 @@ struct LocalChatView: View {
       .padding(.horizontal)
       .padding(.vertical, 8)
 
-      if let error = viewModel.error {
+      if let error = session.error {
         HStack {
           Image(systemName: "exclamationmark.triangle.fill")
             .foregroundStyle(.orange)
@@ -446,7 +215,7 @@ struct LocalChatView: View {
             .font(.caption)
             .foregroundStyle(.secondary)
           Spacer()
-          Button("Dismiss") { viewModel.error = nil }
+          Button("Dismiss") { session.error = nil }
             .font(.caption)
         }
         .padding(.horizontal)
@@ -457,20 +226,20 @@ struct LocalChatView: View {
     .toolbar {
       ToolbarItemGroup(placement: .primaryAction) {
         Button {
-          viewModel.clearChat()
+          session.clearChat()
         } label: {
           Label("Clear Chat", systemImage: "trash")
         }
         .help("Clear conversation")
-        .disabled(viewModel.messages.isEmpty)
+        .disabled(session.messages.isEmpty)
 
         Button {
-          viewModel.unloadModel()
+          session.unloadModel()
         } label: {
           Label("Unload Model", systemImage: "memorychip")
         }
         .help("Unload model to free memory")
-        .disabled(!viewModel.isModelLoaded)
+        .disabled(!session.isModelLoaded)
       }
     }
     .onAppear {
@@ -521,16 +290,16 @@ struct LocalChatView: View {
 
       VStack(alignment: .leading, spacing: 8) {
         SuggestionButton(text: "Explain @Observable vs ObservableObject in Swift 6") {
-          viewModel.inputText = "Explain @Observable vs ObservableObject in Swift 6"
-          viewModel.send(dataService: dataService, mcpServer: mcpServer)
+          inputText = "Explain @Observable vs ObservableObject in Swift 6"
+          send()
         }
         SuggestionButton(text: "Help me refactor a Combine pipeline to async/await") {
-          viewModel.inputText = "Help me refactor a Combine pipeline to async/await"
-          viewModel.send(dataService: dataService, mcpServer: mcpServer)
+          inputText = "Help me refactor a Combine pipeline to async/await"
+          send()
         }
         SuggestionButton(text: "What's the actor reentrancy problem in Swift?") {
-          viewModel.inputText = "What's the actor reentrancy problem in Swift?"
-          viewModel.send(dataService: dataService, mcpServer: mcpServer)
+          inputText = "What's the actor reentrancy problem in Swift?"
+          send()
         }
       }
       .padding(.top, 8)

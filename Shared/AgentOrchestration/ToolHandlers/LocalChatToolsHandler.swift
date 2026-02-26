@@ -3,8 +3,7 @@
 //  Peel
 //
 //  MCP tool handler for local chat via MLX models.
-//  Provides chat.send, chat.status, and chat.unload tools for testing
-//  and programmatic access to the local LLM chat service.
+//  Delegates to SharedChatSession so messages appear in the UI in real time.
 //
 //  Created on 2/24/26.
 //
@@ -21,10 +20,8 @@ final class LocalChatToolsHandler: MCPToolHandler {
   /// DataService for skills/context injection
   var dataService: DataService?
 
-  /// The chat service instance — lazily created on first use
-  private var chatService: MLXChatService?
-  private var currentTier: MLXEditorModelTier = .auto
-  private var currentRepoPath: String?
+  /// Shared chat session — messages and streaming state visible in the UI
+  var chatSession: SharedChatSession?
 
   let supportedTools: Set<String> = [
     "chat.send",
@@ -39,7 +36,7 @@ final class LocalChatToolsHandler: MCPToolHandler {
     case "chat.send":
       return await handleSend(id: id, arguments: arguments)
     case "chat.status":
-      return handleStatus(id: id)
+      return await handleStatus(id: id)
     case "chat.unload":
       return await handleUnload(id: id)
     default:
@@ -54,6 +51,10 @@ final class LocalChatToolsHandler: MCPToolHandler {
       return missingParamError(id: id, param: "message")
     }
 
+    guard let session = chatSession else {
+      return internalError(id: id, message: "Chat session not available")
+    }
+
     let tierString = optionalString("tier", from: arguments, default: "auto") ?? "auto"
     let requestedTier = parseTier(tierString)
     let repoPath = optionalString("repoPath", from: arguments, default: nil)
@@ -63,7 +64,6 @@ final class LocalChatToolsHandler: MCPToolHandler {
     // Build context from skills + auto-detected instructions
     var context: ChatContext? = await buildContext(repoPath: repoPath)
     if let instructions {
-      // Append explicit instructions to any auto-detected ones
       if context != nil {
         if let existing = context?.instructions {
           context?.instructions = existing + "\n\n" + instructions
@@ -75,68 +75,43 @@ final class LocalChatToolsHandler: MCPToolHandler {
       }
     }
 
-    // If tier, repo, or context changed — recreate the service
-    let needsNewService = chatService == nil
-      || requestedTier != currentTier
-      || repoPath != currentRepoPath
-
-    if needsNewService {
-      if let old = chatService {
-        print("[MCP Chat] Unloading previous model (tier was \(currentTier), now \(requestedTier))")
-        await old.unload()
-      }
-      currentTier = requestedTier
-      currentRepoPath = repoPath
-      chatService = MLXChatService(tier: requestedTier, context: context ?? .empty)
-      print("[MCP Chat] Created service with tier: \(requestedTier), repoPath: \(repoPath ?? "none")")
-    } else if let service = chatService {
-      // Update context if provided (instructions/skills may have changed)
-      if let context {
-        await service.updateContext(context)
-      }
-      // Clear history if requested (keeps context but resets conversation)
-      if clearHistory {
-        await service.clearHistory()
-        print("[MCP Chat] Cleared conversation history")
+    // Update repo path on shared session so RAG search uses it
+    if let repoPath {
+      await MainActor.run {
+        session.selectedRepoPath = repoPath
       }
     }
-
-    guard let service = chatService else {
-      return internalError(id: id, message: "Failed to create chat service")
-    }
-
-    // Log what we're about to load
-    print("[MCP Chat] Service model name: \(service.modelName), tier: \(service.tier)")
 
     do {
-      let stream = try await service.sendMessage(message)
+      let result = try await session.send(
+        message,
+        dataService: dataService,
+        mcpServer: nil,  // MCP handler builds its own context; skip auto-RAG
+        context: context,
+        tier: requestedTier,
+        clearHistory: clearHistory,
+        source: .mcp
+      )
 
-      var fullResponse = ""
-      var tokenCount = 0
-      let startTime = Date()
+      let service = await session.chatService
+      let modelName = service?.modelName ?? "unknown"
+      let tierValue = service?.tier.rawValue ?? requestedTier.rawValue
+      let historyCount = await service?.getHistoryCount() ?? 0
 
-      for await chunk in stream {
-        fullResponse += chunk
-        tokenCount += 1
-      }
-
-      let elapsed = Date().timeIntervalSince(startTime)
-      let tokensPerSecond = elapsed > 0 ? Double(tokenCount) / elapsed : 0
-
-      var result: [String: Any] = [
-        "response": fullResponse,
-        "model": service.modelName,
-        "tier": service.tier.rawValue,
-        "tokens": tokenCount,
-        "tokensPerSecond": round(tokensPerSecond * 10) / 10,
-        "elapsedSeconds": round(elapsed * 10) / 10,
-        "historyLength": await service.getHistoryCount(),
+      var responseDict: [String: Any] = [
+        "response": result.response,
+        "model": modelName,
+        "tier": tierValue,
+        "tokens": result.tokens,
+        "tokensPerSecond": round(Double(result.tokens) / max(result.elapsed, 0.001) * 10) / 10,
+        "elapsedSeconds": round(result.elapsed * 10) / 10,
+        "historyLength": historyCount,
       ]
       if let repoPath {
-        result["repoPath"] = repoPath
-        result["hasSkills"] = context?.skills != nil
+        responseDict["repoPath"] = repoPath
+        responseDict["hasSkills"] = context?.skills != nil
       }
-      return (200, makeResult(id: id, result: result))
+      return (200, makeResult(id: id, result: responseDict))
     } catch {
       return internalError(id: id, message: "Chat error: \(error.localizedDescription)")
     }
@@ -144,10 +119,14 @@ final class LocalChatToolsHandler: MCPToolHandler {
 
   // MARK: - chat.status
 
-  private func handleStatus(id: Any?) -> (Int, Data) {
+  private func handleStatus(id: Any?) async -> (Int, Data) {
     let memGB = getMemoryGB()
     let recommendedTier = MLXEditorModelTier.recommended(forMemoryGB: memGB)
     let recommendedConfig = MLXEditorModelConfig.recommendedModel()
+
+    let session = chatSession
+    let currentTier = await session?.selectedTier ?? .auto
+    let isLoaded = await session?.isModelLoaded ?? false
 
     var result: [String: Any] = [
       "machineRamGB": Int(memGB),
@@ -155,7 +134,7 @@ final class LocalChatToolsHandler: MCPToolHandler {
       "recommendedModel": recommendedConfig.name,
       "recommendedHuggingFaceId": recommendedConfig.huggingFaceId,
       "currentTier": currentTier.rawValue,
-      "isLoaded": chatService != nil,
+      "isLoaded": isLoaded,
       "availableModels": MLXEditorModelConfig.availableModels.map { model in
         [
           "name": model.name,
@@ -166,7 +145,7 @@ final class LocalChatToolsHandler: MCPToolHandler {
       },
     ]
 
-    if let service = chatService {
+    if let service = await session?.chatService {
       result["loadedModel"] = service.modelName
       result["loadedTier"] = service.tier.rawValue
     }
@@ -177,19 +156,20 @@ final class LocalChatToolsHandler: MCPToolHandler {
   // MARK: - chat.unload
 
   private func handleUnload(id: Any?) async -> (Int, Data) {
-    if let service = chatService {
-      await service.unload()
-      chatService = nil
+    guard let session = chatSession else {
       return (200, makeResult(id: id, result: [
-        "message": "Chat model unloaded — memory freed",
-        "wasLoaded": true,
-      ]))
-    } else {
-      return (200, makeResult(id: id, result: [
-        "message": "No chat model was loaded",
+        "message": "No chat session available",
         "wasLoaded": false,
       ]))
     }
+
+    let wasLoaded = await session.isModelLoaded
+    await session.unloadModel()
+
+    return (200, makeResult(id: id, result: [
+      "message": wasLoaded ? "Chat model unloaded — memory freed" : "No chat model was loaded",
+      "wasLoaded": wasLoaded,
+    ]))
   }
 
   // MARK: - Tool Definitions
@@ -198,7 +178,7 @@ final class LocalChatToolsHandler: MCPToolHandler {
     [
       MCPToolDefinition(
         name: "chat.send",
-        description: "Send a message to the local MLX chat model and get a response. The model is loaded lazily on first call (~45GB download for xlarge tier). macOS only.",
+        description: "Send a message to the local MLX chat model and get a response. Messages appear in the Peel chat UI in real time. The model is loaded lazily on first call (~45GB download for xlarge tier). macOS only.",
         inputSchema: [
           "type": "object",
           "properties": [
@@ -262,7 +242,7 @@ final class LocalChatToolsHandler: MCPToolHandler {
       print("[MCP Chat] Auto-seeded \(seeded) Ember skills for \(repoPath)")
     }
 
-    // Fetch skills block — limit to 8 highest-priority to avoid diluting directive rules
+    // Fetch skills block
     let remoteURL = RepoRegistry.shared.getCachedRemoteURL(for: repoPath)
     let skillsBlock = await dataService.repoGuidanceSkillsBlock(
       repoPath: repoPath,
@@ -273,11 +253,6 @@ final class LocalChatToolsHandler: MCPToolHandler {
     var context = ChatContext()
 
     // Auto-inject directive rules for detected project types.
-    // When directive rules are present, skip skills injection —
-    // the directive rules are concise and focused; mixing in verbose
-    // skill examples dilutes the model's adherence to critical rules.
-    //
-    // Priority: repo-local .peel/directives.md → hardcoded ember rules → skills fallback
     let directivesPath = (repoPath as NSString).appendingPathComponent(".peel/directives.md")
     let repoDirectives = try? String(contentsOfFile: directivesPath, encoding: .utf8)
 
@@ -290,7 +265,6 @@ final class LocalChatToolsHandler: MCPToolHandler {
         context.instructions = Self.emberDirectiveRules
         print("[MCP Chat] Injected Ember directive rules for \(repoPath)")
       } else if let (block, _) = skillsBlock {
-        // Only inject skills when no directive rules are present
         context.skills = block
       }
     }
@@ -301,7 +275,6 @@ final class LocalChatToolsHandler: MCPToolHandler {
   // MARK: - Ember Directive Rules
 
   /// Concise, directive rules that are always injected for Ember projects.
-  /// Skills provide reference examples; these rules provide firm constraints.
   static let emberDirectiveRules = """
   .gjs FILE FORMAT — CRITICAL RULES (READ BEFORE WRITING CODE)
 

@@ -637,6 +637,7 @@ public final class MCPServerService {
   var gitToolsHandler: GitToolsHandler
   #if os(macOS)
   var localChatToolsHandler: LocalChatToolsHandler?
+  var chatSession = SharedChatSession()
   #endif
 
   public struct ActiveRunInfo: Identifiable {
@@ -793,6 +794,10 @@ public final class MCPServerService {
     self.parallelWorktreeRunner?.setRAGStore(localRagStore)
 
     wireToolHandlerDelegates()
+
+    #if os(macOS)
+    self.localChatToolsHandler?.chatSession = self.chatSession
+    #endif
 
     // If running in worker mode, inject the chain executor into the already-running SwarmCoordinator
     // This enables workers to actually execute chains instead of returning mock results
