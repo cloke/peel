@@ -839,6 +839,7 @@ public final class MCPServerService {
     terminalToolsHandler.delegate = self
     #if os(macOS)
     localChatToolsHandler?.delegate = self
+    localChatToolsHandler?.mcpServer = self
     #endif
     SwarmCoordinator.shared.ragSyncDelegate = self
   }

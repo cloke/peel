@@ -20,6 +20,9 @@ final class LocalChatToolsHandler: MCPToolHandler {
   /// DataService for skills/context injection
   var dataService: DataService?
 
+  /// MCPServerService for RAG search access
+  weak var mcpServer: MCPServerService?
+
   /// Shared chat session — messages and streaming state visible in the UI
   var chatSession: SharedChatSession?
 
@@ -86,7 +89,7 @@ final class LocalChatToolsHandler: MCPToolHandler {
       let result = try await session.send(
         message,
         dataService: dataService,
-        mcpServer: nil,  // MCP handler builds its own context; skip auto-RAG
+        mcpServer: mcpServer,
         context: context,
         tier: requestedTier,
         clearHistory: clearHistory,
