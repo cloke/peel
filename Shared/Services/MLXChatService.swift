@@ -55,15 +55,16 @@ struct ChatToolCall: Sendable {
   let name: String
   let arguments: [String: String]
 
-  /// Reconstruct the tool call in JSON tag format for conversation history.
-  /// This format matches what Qwen3 models expect when replaying tool call history.
+  /// Reconstruct the tool call in XML function format for conversation history.
+  /// This format matches what Qwen3 Coder models expect when replaying tool call history.
+  /// Format: <tool_call><function=name><parameter=key>value</parameter></function></tool_call>
   func asToolCallMarker() -> String {
-    let argsDict = arguments as [String: Any]
-    if let data = try? JSONSerialization.data(withJSONObject: argsDict, options: [.sortedKeys]),
-       let argsString = String(data: data, encoding: .utf8) {
-      return "\n<tool_call>{\"name\": \"\(name)\", \"arguments\": \(argsString)}</tool_call>"
+    var marker = "\n<tool_call>\n<function=\(name)>\n"
+    for (key, value) in arguments.sorted(by: { $0.key < $1.key }) {
+      marker += "<parameter=\(key)>\n\(value)\n</parameter>\n"
     }
-    return "\n<tool_call>{\"name\": \"\(name)\", \"arguments\": {}}</tool_call>"
+    marker += "</function>\n</tool_call>"
+    return marker
   }
 
   /// Human-readable summary for display in the UI
@@ -137,12 +138,13 @@ actor MLXChatService {
   private var isLoaded = false
   private var conversationHistory: [Chat.Message] = []
   private var context: ChatContext
+  private var toolsEnabled = false
 
   nonisolated let modelName: String
   nonisolated let tier: MLXEditorModelTier
   nonisolated let huggingFaceId: String
 
-  private static func buildSystemMessage(config: MLXEditorModelConfig, context: ChatContext = .empty) -> String {
+  private static func buildSystemMessage(config: MLXEditorModelConfig, context: ChatContext = .empty, toolsEnabled: Bool = false) -> String {
     var prompt = """
     You are \(config.name), a local coding assistant running on the user's Mac via MLX.
     Model: \(config.name) (\(config.huggingFaceId)), \(config.tier.rawValue) tier.
@@ -152,6 +154,22 @@ actor MLXChatService {
     explaining concepts, and general programming questions.
     """
 
+    if toolsEnabled {
+      prompt += """
+      \n
+      IMPORTANT: You have tools available. When the user asks about code, repositories,
+      or wants something implemented, you MUST use your tools to take action. Do NOT just
+      describe what you would do — actually call the function.
+
+      - Use rag_search to find and read code before answering questions about a codebase.
+      - Use dispatch_chain to send implementation tasks to an agent in a git worktree.
+      - Use chain_status to check progress of dispatched chains.
+
+      Always search first, then answer based on what you find. Never say "I would search"
+      or "I will look" — instead, call the tool immediately.
+      """
+    }
+
     if let contextSection = context.buildPromptSection() {
       prompt += "\n\n" + contextSection
     }
@@ -159,7 +177,7 @@ actor MLXChatService {
     return prompt
   }
 
-  init(tier: MLXEditorModelTier = .auto, context: ChatContext = .empty) {
+  init(tier: MLXEditorModelTier = .auto, context: ChatContext = .empty, toolsEnabled: Bool = false) {
     let config: MLXEditorModelConfig
     if tier == .auto {
       config = MLXEditorModelConfig.recommendedModel()
@@ -168,12 +186,14 @@ actor MLXChatService {
     }
     self.config = config
     self.context = context
+    self.toolsEnabled = toolsEnabled
     self.modelName = config.name
     self.tier = config.tier
     self.huggingFaceId = config.huggingFaceId
-    self.conversationHistory = [.system(Self.buildSystemMessage(config: config, context: context))]
+    self.conversationHistory = [.system(Self.buildSystemMessage(config: config, context: context, toolsEnabled: toolsEnabled))]
     let skillCount = context.skills != nil ? " +skills" : ""
-    print("[MLXChat] Init: \(config.name) (\(config.huggingFaceId)), tier=\(config.tier.rawValue)\(skillCount)")
+    let toolFlag = toolsEnabled ? " +tools" : ""
+    print("[MLXChat] Init: \(config.name) (\(config.huggingFaceId)), tier=\(config.tier.rawValue)\(skillCount)\(toolFlag)")
   }
 
   // MARK: - Model Loading
@@ -181,7 +201,10 @@ actor MLXChatService {
   private func ensureLoaded() async throws {
     guard !isLoaded else { return }
     print("[MLXChat] Loading model: \(config.huggingFaceId)")
-    let modelConfig = ModelConfiguration(id: config.huggingFaceId)
+    // Qwen3 Coder models use XML function format for tool calls, not JSON.
+    // The model's chat_template.jinja outputs <function=name><parameter=key>value</parameter></function>
+    let toolFormat: ToolCallFormat? = config.huggingFaceId.contains("Qwen3-Coder") ? .xmlFunction : nil
+    let modelConfig = ModelConfiguration(id: config.huggingFaceId, toolCallFormat: toolFormat)
     modelContainer = try await LLMModelFactory.shared.loadContainer(configuration: modelConfig) { progress in
       let percent = Int(progress.fractionCompleted * 100)
       if percent % 10 == 0 {
@@ -288,7 +311,7 @@ actor MLXChatService {
   /// Restore the system prompt to the base context (without per-turn RAG)
   private func restoreBaseSystemPrompt() {
     if !conversationHistory.isEmpty {
-      conversationHistory[0] = .system(Self.buildSystemMessage(config: config, context: context))
+      conversationHistory[0] = .system(Self.buildSystemMessage(config: config, context: context, toolsEnabled: toolsEnabled))
     }
   }
 
@@ -301,22 +324,32 @@ actor MLXChatService {
     self.context = newContext
     // Rebuild system message as first entry in history
     if !conversationHistory.isEmpty {
-      conversationHistory[0] = .system(Self.buildSystemMessage(config: config, context: newContext))
+      conversationHistory[0] = .system(Self.buildSystemMessage(config: config, context: newContext, toolsEnabled: toolsEnabled))
     }
     let skillCount = newContext.skills != nil ? " +skills" : ""
     print("[MLXChat] Context updated\(skillCount)")
   }
 
+  /// Enable or disable tool-use instructions in the system prompt
+  func setToolsEnabled(_ enabled: Bool) {
+    guard enabled != toolsEnabled else { return }
+    toolsEnabled = enabled
+    if !conversationHistory.isEmpty {
+      conversationHistory[0] = .system(Self.buildSystemMessage(config: config, context: context, toolsEnabled: toolsEnabled))
+    }
+    print("[MLXChat] Tools \(enabled ? "enabled" : "disabled")")
+  }
+
   /// Clear conversation history (keep system prompt)
   func clearHistory() {
-    conversationHistory = [.system(Self.buildSystemMessage(config: config, context: context))]
+    conversationHistory = [.system(Self.buildSystemMessage(config: config, context: context, toolsEnabled: toolsEnabled))]
   }
 
   /// Unload model to free memory
   func unload() {
     modelContainer = nil
     isLoaded = false
-    conversationHistory = [.system(Self.buildSystemMessage(config: config, context: context))]
+    conversationHistory = [.system(Self.buildSystemMessage(config: config, context: context, toolsEnabled: toolsEnabled))]
     print("[MLXChat] Model unloaded")
   }
 

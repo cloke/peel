@@ -220,7 +220,8 @@ final class SharedChatSession {
         }
         isLoadingModel = true
         let ctx = context ?? buildContext(dataService: dataService)
-        let newService = MLXChatService(tier: requestedTier, context: ctx)
+        let toolsActive = useToolCalling && mcpServer != nil
+        let newService = MLXChatService(tier: requestedTier, context: ctx, toolsEnabled: toolsActive)
         chatService = newService
         serviceTier = requestedTier
         selectedTier = requestedTier
@@ -228,6 +229,9 @@ final class SharedChatSession {
         var loadingMsg = "Loading **\(newService.modelName)** (\(newService.huggingFaceId))..."
         if activeSkillCount > 0 {
           loadingMsg += " with \(activeSkillCount) skill\(activeSkillCount == 1 ? "" : "s")"
+        }
+        if toolsActive {
+          loadingMsg += " · tools enabled"
         }
         if source == .mcp {
           loadingMsg += " (via MCP)"
@@ -237,6 +241,8 @@ final class SharedChatSession {
         if let context {
           await service.updateContext(context)
         }
+        // Update tool-use instructions in system prompt
+        await service.setToolsEnabled(useToolCalling && mcpServer != nil)
         if clearHistory {
           await service.clearHistory()
           print("[SharedChat] Cleared conversation history")
