@@ -281,24 +281,109 @@ actor MLXChatService {
     let lmInput = try await container.prepare(input: input)
     let stream = try await container.generate(input: lmInput, parameters: parameters)
 
+    // Capture tools value for use in the detached Task
+    let hasTools = tools != nil
     return AsyncStream { continuation in
       Task {
         var fullResponse = ""
-        for await generation in stream {
-          switch generation {
-          case .chunk(let text):
-            fullResponse += text
-            continuation.yield(.text(text))
-          case .toolCall(let toolCall):
-            // Convert MLXLMCommon.ToolCall to our ChatToolCall
-            let args = toolCall.function.arguments.reduce(into: [String: String]()) { result, pair in
-              result[pair.key] = "\(pair.value)"
+
+        if hasTools {
+          // Tool-aware streaming: the framework's XMLFunctionParser fails on
+          // multi-line content (Swift regex '.' doesn't match newlines), so we
+          // detect <tool_call>...</tool_call> boundaries ourselves.
+          var textBuffer = ""
+          var isInToolCall = false
+          var toolCallContent = ""
+
+          for await generation in stream {
+            switch generation {
+            case .chunk(let text):
+              fullResponse += text
+              textBuffer += text
+
+              // Process buffer looking for tool call tag boundaries
+              var didWork = true
+              while didWork && !textBuffer.isEmpty {
+                didWork = false
+                if isInToolCall {
+                  if let endRange = textBuffer.range(of: "</tool_call>") {
+                    toolCallContent += String(textBuffer[..<endRange.lowerBound])
+                    if let tc = Self.parseXMLToolCall(toolCallContent) {
+                      print("[MLXChat] Tool call detected: \(tc.name)(\(tc.arguments.keys.sorted().joined(separator: ", ")))")
+                      continuation.yield(.toolCall(tc))
+                    } else {
+                      // Parse failed — yield the raw content as text
+                      continuation.yield(.text("<tool_call>" + toolCallContent + "</tool_call>"))
+                    }
+                    textBuffer = String(textBuffer[endRange.upperBound...])
+                    toolCallContent = ""
+                    isInToolCall = false
+                    didWork = true
+                  } else {
+                    // Still collecting tool call content
+                    toolCallContent += textBuffer
+                    textBuffer = ""
+                  }
+                } else {
+                  if let startRange = textBuffer.range(of: "<tool_call>") {
+                    // Yield any text before the tag
+                    let prefix = String(textBuffer[..<startRange.lowerBound])
+                    if !prefix.isEmpty {
+                      continuation.yield(.text(prefix))
+                    }
+                    textBuffer = String(textBuffer[startRange.upperBound...])
+                    isInToolCall = true
+                    didWork = true
+                  } else {
+                    // Yield text that can't be a partial <tool_call> tag
+                    let safe = Self.safeTextPrefix(textBuffer, beforeTag: "<tool_call>")
+                    if !safe.isEmpty {
+                      continuation.yield(.text(safe))
+                      textBuffer = String(textBuffer.dropFirst(safe.count))
+                    }
+                    // Remaining text might be a partial tag — hold it
+                    break
+                  }
+                }
+              }
+
+            case .toolCall(let toolCall):
+              // Framework detected a tool call (unlikely with xmlFunction but handle it)
+              let args = toolCall.function.arguments.reduce(into: [String: String]()) { result, pair in
+                result[pair.key] = "\(pair.value)"
+              }
+              continuation.yield(.toolCall(ChatToolCall(name: toolCall.function.name, arguments: args)))
+            case .info:
+              break
             }
-            continuation.yield(.toolCall(ChatToolCall(name: toolCall.function.name, arguments: args)))
-          case .info:
-            break
+          }
+
+          // Flush anything remaining in the buffer
+          if isInToolCall && !toolCallContent.isEmpty {
+            continuation.yield(.text(toolCallContent))
+          }
+          if !textBuffer.isEmpty {
+            continuation.yield(.text(textBuffer))
+          }
+
+        } else {
+          // No tools — simple passthrough
+          for await generation in stream {
+            switch generation {
+            case .chunk(let text):
+              fullResponse += text
+              continuation.yield(.text(text))
+            case .toolCall(let toolCall):
+              let args = toolCall.function.arguments.reduce(into: [String: String]()) { result, pair in
+                result[pair.key] = "\(pair.value)"
+              }
+              continuation.yield(.toolCall(ChatToolCall(name: toolCall.function.name, arguments: args)))
+            case .info:
+              break
+            }
           }
         }
+
         // Add assistant response to history on the actor
         await self.appendAssistantMessage(fullResponse)
         // Restore system prompt without per-turn RAG context
@@ -307,6 +392,63 @@ actor MLXChatService {
       }
     }
   }
+
+  // MARK: - Tool Call Parsing
+
+  /// Parse XML function-format tool call content (the text between <tool_call> and </tool_call>).
+  /// Handles multi-line content that the framework's XMLFunctionParser fails on.
+  ///
+  /// Expected format:
+  /// ```
+  /// <function=rag_search>
+  /// <parameter=query>
+  /// optimization opportunities
+  /// </parameter>
+  /// </function>
+  /// ```
+  private static func parseXMLToolCall(_ content: String) -> ChatToolCall? {
+    // Extract function name: <function=name>
+    guard let nameMatch = content.range(of: #"<function=([^>]+)>"#, options: .regularExpression) else {
+      return nil
+    }
+    let matchStr = String(content[nameMatch])
+    let funcName = String(matchStr.dropFirst("<function=".count).dropLast(">".count))
+    guard !funcName.isEmpty else { return nil }
+
+    // Extract parameters using NSRegularExpression with .dotMatchesLineSeparators
+    // so we can match multi-line parameter values
+    var arguments = [String: String]()
+    guard let pattern = try? NSRegularExpression(
+      pattern: #"<parameter=([^>]+)>([\s\S]*?)</parameter>"#,
+      options: [.dotMatchesLineSeparators]
+    ) else { return nil }
+
+    let nsContent = content as NSString
+    let matches = pattern.matches(in: content, range: NSRange(location: 0, length: nsContent.length))
+    for match in matches {
+      let paramName = nsContent.substring(with: match.range(at: 1))
+      var paramValue = nsContent.substring(with: match.range(at: 2))
+      // Trim leading/trailing newlines (matching Python mlx-lm behavior)
+      if paramValue.hasPrefix("\n") { paramValue = String(paramValue.dropFirst()) }
+      if paramValue.hasSuffix("\n") { paramValue = String(paramValue.dropLast()) }
+      arguments[paramName] = paramValue
+    }
+
+    return ChatToolCall(name: funcName, arguments: arguments)
+  }
+
+  /// Return the prefix of `text` that is safe to yield — i.e. text that can't be
+  /// the beginning of a partial `<tool_call>` tag at the end of the buffer.
+  private static func safeTextPrefix(_ text: String, beforeTag tag: String) -> String {
+    for i in stride(from: min(text.count, tag.count), through: 1, by: -1) {
+      if text.hasSuffix(String(tag.prefix(i))) {
+        return String(text.dropLast(i))
+      }
+    }
+    return text
+  }
+
+  // MARK: - Conversation Management
 
   /// Restore the system prompt to the base context (without per-turn RAG)
   private func restoreBaseSystemPrompt() {
