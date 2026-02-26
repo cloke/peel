@@ -27,6 +27,8 @@ struct ChatMessage: Identifiable, Sendable {
     case user
     case assistant
     case system
+    case toolCall     // Model requested a tool call
+    case toolResult   // Result from executing a tool
   }
 
   init(role: Role, content: String) {
@@ -34,6 +36,40 @@ struct ChatMessage: Identifiable, Sendable {
     self.role = role
     self.content = content
     self.timestamp = Date()
+  }
+}
+
+// MARK: - Chat Stream Events
+
+/// Events emitted by the chat service during generation.
+/// Supports both regular text streaming and tool call detection.
+enum ChatStreamEvent: Sendable {
+  /// A text chunk from the model
+  case text(String)
+  /// The model requested a tool call
+  case toolCall(ChatToolCall)
+}
+
+/// Represents a tool call detected in the model's generation output.
+struct ChatToolCall: Sendable {
+  let name: String
+  let arguments: [String: String]
+
+  /// Reconstruct the tool call in JSON tag format for conversation history.
+  /// This format matches what Qwen3 models expect when replaying tool call history.
+  func asToolCallMarker() -> String {
+    let argsDict = arguments as [String: Any]
+    if let data = try? JSONSerialization.data(withJSONObject: argsDict, options: [.sortedKeys]),
+       let argsString = String(data: data, encoding: .utf8) {
+      return "\n<tool_call>{\"name\": \"\(name)\", \"arguments\": \(argsString)}</tool_call>"
+    }
+    return "\n<tool_call>{\"name\": \"\(name)\", \"arguments\": {}}</tool_call>"
+  }
+
+  /// Human-readable summary for display in the UI
+  var displaySummary: String {
+    let argsList = arguments.map { "\($0.key): \($0.value)" }.joined(separator: ", ")
+    return "\(name)(\(argsList))"
   }
 }
 
@@ -158,9 +194,10 @@ actor MLXChatService {
 
   // MARK: - Chat
 
-  /// Send a message with optional RAG context injected into the system prompt for this turn.
+  /// Send a message with optional RAG context and tool definitions.
   /// The RAG context is set before generation and cleared after, so it only applies to this message.
-  func sendMessage(_ text: String, ragContext: String? = nil) async throws -> AsyncStream<String> {
+  /// When tools are provided, the model may generate tool calls instead of (or alongside) text.
+  func sendMessage(_ text: String, ragContext: String? = nil, tools: [[String: any Sendable]]? = nil) async throws -> AsyncStream<ChatStreamEvent> {
     // Temporarily inject RAG context for this message
     if let ragContext {
       var augmented = self.context
@@ -169,18 +206,48 @@ actor MLXChatService {
         conversationHistory[0] = .system(Self.buildSystemMessage(config: config, context: augmented))
       }
     }
+
+    // Add user message to history
+    conversationHistory.append(.user(text))
+
+    return try await generateFromHistory(tools: tools)
+  }
+
+  /// Record a tool call exchange in the conversation history.
+  /// Call this after receiving a `.toolCall` event and executing the tool.
+  ///
+  /// - Parameters:
+  ///   - assistantText: The text the model generated before the tool call
+  ///   - toolCallMarker: The reconstructed tool call marker (from ChatToolCall.asToolCallMarker())
+  ///   - toolResult: The JSON result from executing the tool
+  func recordToolCallAndResult(assistantText: String, toolCallMarker: String, toolResult: String) {
+    // The last history entry is the assistant message from generateFromHistory
+    // Replace it with the full text including the tool call marker
+    if let lastIdx = conversationHistory.indices.last,
+       conversationHistory[lastIdx].role == .assistant {
+      conversationHistory[lastIdx] = .assistant(assistantText + toolCallMarker)
+    }
+    // Add tool result
+    conversationHistory.append(.tool(toolResult))
+  }
+
+  /// Continue generation after a tool call has been processed.
+  /// Call this after `recordToolCallAndResult` to get the model's next response.
+  func continueAfterTool(tools: [[String: any Sendable]]? = nil) async throws -> AsyncStream<ChatStreamEvent> {
+    return try await generateFromHistory(tools: tools)
+  }
+
+  /// Core generation method — builds input from conversation history and streams results.
+  private func generateFromHistory(tools: [[String: any Sendable]]? = nil) async throws -> AsyncStream<ChatStreamEvent> {
     try await ensureLoaded()
 
     guard let container = modelContainer else {
       throw MLXChatError.modelNotLoaded
     }
 
-    // Add user message to history
-    conversationHistory.append(.user(text))
-
     // Build fresh messages array for the model
     let messages: [Chat.Message] = Array(conversationHistory)
-    nonisolated(unsafe) let input = UserInput(chat: messages)
+    nonisolated(unsafe) let input = UserInput(chat: messages, tools: tools)
 
     let parameters = GenerateParameters(
       maxTokens: config.maxTokens,
@@ -198,8 +265,14 @@ actor MLXChatService {
           switch generation {
           case .chunk(let text):
             fullResponse += text
-            continuation.yield(text)
-          case .info, .toolCall:
+            continuation.yield(.text(text))
+          case .toolCall(let toolCall):
+            // Convert MLXLMCommon.ToolCall to our ChatToolCall
+            let args = toolCall.function.arguments.reduce(into: [String: String]()) { result, pair in
+              result[pair.key] = "\(pair.value)"
+            }
+            continuation.yield(.toolCall(ChatToolCall(name: toolCall.function.name, arguments: args)))
+          case .info:
             break
           }
         }

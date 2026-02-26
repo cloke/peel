@@ -30,7 +30,9 @@ final class SharedChatSession {
   var error: String?
   var ragSnippetCount = 0
   var useRAG = true
+  var useToolCalling = true
   var activeSkillCount = 0
+  var activeToolRound = 0
 
   // Model configuration
   var selectedTier: MLXEditorModelTier = .auto
@@ -169,11 +171,13 @@ final class SharedChatSession {
 
   /// Send a message through the shared chat service.
   /// Both MCP and UI callers use this. Updates all observable state in real time.
+  /// When tool calling is enabled, the model can invoke rag_search, dispatch_chain,
+  /// and chain_status tools — executing them and feeding results back automatically.
   ///
   /// - Parameters:
   ///   - text: The user message to send.
   ///   - dataService: DataService for skills/context. May be nil for MCP calls that build their own context.
-  ///   - mcpServer: MCPServerService for RAG search. May be nil if RAG is not needed.
+  ///   - mcpServer: MCPServerService for RAG search and chain dispatch. May be nil if tools are not needed.
   ///   - context: Pre-built context (MCP handler builds its own). If nil, auto-built from dataService.
   ///   - ragContext: Pre-fetched RAG context. If nil and useRAG is true, auto-fetched.
   ///   - tier: Override tier for this call. If nil, uses selectedTier.
@@ -204,6 +208,7 @@ final class SharedChatSession {
     currentStreamText = ""
     tokensPerSecond = 0
     ragSnippetCount = 0
+    activeToolRound = 0
 
     do {
       // Create or reconfigure service
@@ -252,10 +257,17 @@ final class SharedChatSession {
         finalRAGContext = await fetchRAGContext(query: text, mcpServer: mcpServer)
       }
 
-      let startTime = Date()
-      var tokenCount = 0
+      // Build tool specs if tool calling is enabled and we have an MCP server
+      let toolSpecs: [[String: any Sendable]]? = (useToolCalling && mcpServer != nil)
+        ? Self.chatToolSpecs
+        : nil
 
-      let stream = try await service.sendMessage(text, ragContext: finalRAGContext)
+      let startTime = Date()
+      var totalTokenCount = 0
+      var finalResponse = ""
+
+      // Initial generation
+      var events = try await service.sendMessage(text, ragContext: finalRAGContext, tools: toolSpecs)
       isLoadingModel = false
 
       // Update loading message to ready
@@ -264,42 +276,98 @@ final class SharedChatSession {
         if activeSkillCount > 0 {
           readyMsg += " · \(activeSkillCount) skill\(activeSkillCount == 1 ? "" : "s") loaded"
         }
+        if useToolCalling && toolSpecs != nil {
+          readyMsg += " · tools enabled"
+        }
         if source == .mcp {
           readyMsg += " · via MCP"
         }
         messages[idx] = ChatMessage(role: .system, content: readyMsg)
       }
 
-      for await chunk in stream {
-        currentStreamText += chunk
-        tokenCount += 1
-        if tokenCount % 10 == 0 {
-          let elapsed = Date().timeIntervalSince(startTime)
-          if elapsed > 0 {
-            tokensPerSecond = Double(tokenCount) / elapsed
+      // Tool call loop — model can invoke tools up to maxToolRounds times
+      let maxToolRounds = 5
+      var toolRound = 0
+
+      while toolRound <= maxToolRounds {
+        var accumulatedText = ""
+        var detectedToolCall: ChatToolCall?
+
+        for await event in events {
+          switch event {
+          case .text(let chunk):
+            accumulatedText += chunk
+            currentStreamText += chunk
+            totalTokenCount += 1
+            if totalTokenCount % 10 == 0 {
+              let elapsed = Date().timeIntervalSince(startTime)
+              if elapsed > 0 {
+                tokensPerSecond = Double(totalTokenCount) / elapsed
+              }
+            }
+          case .toolCall(let call):
+            detectedToolCall = call
+            print("[SharedChat] Tool call detected (round \(toolRound + 1)): \(call.name)(\(call.arguments))")
           }
         }
+
+        guard let toolCall = detectedToolCall else {
+          // No tool call — generation is complete
+          finalResponse = currentStreamText
+          break
+        }
+
+        // Save the text before the tool call as a partial message
+        if !accumulatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+          messages.append(ChatMessage(role: .assistant, content: accumulatedText))
+        }
+
+        // Show tool call in UI
+        activeToolRound = toolRound + 1
+        messages.append(ChatMessage(role: .toolCall, content: toolCall.displaySummary))
+
+        // Execute the tool
+        let toolResult = await executeTool(toolCall, mcpServer: mcpServer)
+
+        // Show abbreviated result in UI
+        let displayResult = toolResult.count > 500
+          ? String(toolResult.prefix(500)) + "... (\(toolResult.count) chars)"
+          : toolResult
+        messages.append(ChatMessage(role: .toolResult, content: displayResult))
+
+        // Record in service conversation history and continue
+        await service.recordToolCallAndResult(
+          assistantText: accumulatedText,
+          toolCallMarker: toolCall.asToolCallMarker(),
+          toolResult: toolResult
+        )
+
+        // Reset stream text for next generation round
+        currentStreamText = ""
+        events = try await service.continueAfterTool(tools: toolSpecs)
+        toolRound += 1
       }
 
       let elapsed = Date().timeIntervalSince(startTime)
       if elapsed > 0 {
-        tokensPerSecond = Double(tokenCount) / elapsed
+        tokensPerSecond = Double(totalTokenCount) / elapsed
       }
 
-      let response = currentStreamText
-      if !response.isEmpty {
-        messages.append(ChatMessage(role: .assistant, content: response))
+      if !finalResponse.isEmpty {
+        messages.append(ChatMessage(role: .assistant, content: finalResponse))
       }
       currentStreamText = ""
       isGenerating = false
+      activeToolRound = 0
 
-      return (response: response, tokens: tokenCount, elapsed: elapsed)
+      return (response: finalResponse, tokens: totalTokenCount, elapsed: elapsed)
 
     } catch {
       self.error = error.localizedDescription
       isGenerating = false
       isLoadingModel = false
       currentStreamText = ""
+      activeToolRound = 0
       throw error
     }
   }
@@ -347,7 +415,251 @@ final class SharedChatSession {
     currentStreamText = ""
     error = nil
     ragSnippetCount = 0
+    activeToolRound = 0
     Task { await chatService?.clearHistory() }
+  }
+
+  // MARK: - Tool Schemas
+
+  /// OpenAI-style function specs for the tools available to the local chat model.
+  /// These are passed to the model via UserInput.tools so it knows what it can call.
+  static let chatToolSpecs: [[String: any Sendable]] = [
+    [
+      "type": "function",
+      "function": [
+        "name": "rag_search",
+        "description": "Search the local code index for relevant code snippets. Use this to investigate code, find implementations, understand architecture, or answer questions about the codebase before making recommendations.",
+        "parameters": [
+          "type": "object",
+          "properties": [
+            "query": [
+              "type": "string",
+              "description": "Natural language search query describing what code you are looking for",
+            ] as [String: any Sendable],
+            "mode": [
+              "type": "string",
+              "enum": ["vector", "text", "hybrid"],
+              "description": "Search mode: 'vector' for semantic/conceptual search, 'text' for exact keyword match, 'hybrid' for both combined. Default: hybrid",
+            ] as [String: any Sendable],
+          ] as [String: any Sendable],
+          "required": ["query"],
+        ] as [String: any Sendable],
+      ] as [String: any Sendable],
+    ] as [String: any Sendable],
+    [
+      "type": "function",
+      "function": [
+        "name": "dispatch_chain",
+        "description": "Dispatch a coding task to a cloud agent chain running in an isolated git worktree. Use this for implementation tasks that require real code changes — refactoring, adding features, fixing bugs. The chain handles planning, implementation, and review automatically. Returns immediately with a chain ID for tracking.",
+        "parameters": [
+          "type": "object",
+          "properties": [
+            "prompt": [
+              "type": "string",
+              "description": "Detailed prompt describing the implementation task. Be specific about what to change and why.",
+            ] as [String: any Sendable],
+            "repoPath": [
+              "type": "string",
+              "description": "Absolute path to the repository to work in",
+            ] as [String: any Sendable],
+            "templateName": [
+              "type": "string",
+              "description": "Optional chain template name (e.g. 'Quick Fix', 'Feature Implementation'). Omit to use the default.",
+            ] as [String: any Sendable],
+          ] as [String: any Sendable],
+          "required": ["prompt", "repoPath"],
+        ] as [String: any Sendable],
+      ] as [String: any Sendable],
+    ] as [String: any Sendable],
+    [
+      "type": "function",
+      "function": [
+        "name": "chain_status",
+        "description": "Check the status of a previously dispatched chain. Returns whether it is running, completed, failed, or waiting for review, along with progress details.",
+        "parameters": [
+          "type": "object",
+          "properties": [
+            "chainId": [
+              "type": "string",
+              "description": "The chain UUID returned by dispatch_chain",
+            ] as [String: any Sendable],
+          ] as [String: any Sendable],
+          "required": ["chainId"],
+        ] as [String: any Sendable],
+      ] as [String: any Sendable],
+    ] as [String: any Sendable],
+  ]
+
+  // MARK: - Tool Execution
+
+  /// Execute a tool call from the model and return the result as a JSON string.
+  private func executeTool(_ toolCall: ChatToolCall, mcpServer: MCPServerService?) async -> String {
+    print("[SharedChat] Executing tool: \(toolCall.name) with args: \(toolCall.arguments)")
+
+    switch toolCall.name {
+    case "rag_search":
+      return await executeRagSearch(toolCall.arguments, mcpServer: mcpServer)
+    case "dispatch_chain":
+      return await executeDispatchChain(toolCall.arguments, mcpServer: mcpServer)
+    case "chain_status":
+      return await executeChainStatus(toolCall.arguments, mcpServer: mcpServer)
+    default:
+      return "{\"error\": \"Unknown tool: \(toolCall.name)\"}"
+    }
+  }
+
+  /// Execute rag_search tool — search the local code index
+  private func executeRagSearch(_ args: [String: String], mcpServer: MCPServerService?) async -> String {
+    guard let mcpServer else {
+      return "{\"error\": \"MCP server not available for RAG search\"}"
+    }
+    guard let query = args["query"], !query.isEmpty else {
+      return "{\"error\": \"Missing required parameter: query\"}"
+    }
+
+    let modeStr = args["mode"] ?? "hybrid"
+    let mode: MCPServerService.RAGSearchMode = switch modeStr {
+    case "vector": .vector
+    case "text": .text
+    default: .hybrid
+    }
+
+    let repoPath = selectedRepoPath
+
+    do {
+      let results = try await mcpServer.runRagSearch(
+        query: query,
+        mode: mode,
+        repoPath: repoPath,
+        limit: 5,
+        matchAll: false,
+        recordHints: false
+      )
+
+      guard !results.isEmpty else {
+        return "{\"results\": [], \"count\": 0, \"message\": \"No results found for query: \(query)\"}"
+      }
+
+      ragSnippetCount = results.count
+
+      // Format as structured JSON for the model
+      let formatted = results.map { result -> [String: Any] in
+        let snippet = result.snippet
+          .split(separator: "\n")
+          .prefix(30)
+          .joined(separator: "\n")
+        var entry: [String: Any] = [
+          "filePath": result.filePath,
+          "startLine": result.startLine,
+          "endLine": result.endLine,
+          "snippet": snippet,
+        ]
+        if let name = result.constructName {
+          entry["constructName"] = name
+        }
+        return entry
+      }
+
+      let payload: [String: Any] = [
+        "results": formatted,
+        "count": results.count,
+        "query": query,
+        "mode": modeStr,
+      ]
+
+      if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+         let json = String(data: data, encoding: .utf8) {
+        return json
+      }
+      return "{\"results\": [], \"error\": \"Failed to serialize results\"}"
+
+    } catch {
+      return "{\"error\": \"RAG search failed: \(error.localizedDescription)\"}"
+    }
+  }
+
+  /// Execute dispatch_chain tool — start a chain in a worktree
+  private func executeDispatchChain(_ args: [String: String], mcpServer: MCPServerService?) async -> String {
+    guard let mcpServer else {
+      return "{\"error\": \"MCP server not available for chain dispatch\"}"
+    }
+    guard let prompt = args["prompt"], !prompt.isEmpty else {
+      return "{\"error\": \"Missing required parameter: prompt\"}"
+    }
+    guard let repoPath = args["repoPath"], !repoPath.isEmpty else {
+      return "{\"error\": \"Missing required parameter: repoPath\"}"
+    }
+
+    let templateName = args["templateName"]
+
+    do {
+      // Use the chain tools handler delegate to start a chain with returnImmediately
+      let result = try await mcpServer.startChain(
+        prompt: prompt,
+        repoPath: repoPath,
+        templateId: nil,
+        templateName: templateName,
+        options: ChainToolRunOptions(
+          maxPremiumCost: nil,
+          requireRag: false,
+          skipReview: false,
+          dryRun: false,
+          returnImmediately: true
+        )
+      )
+
+      let payload: [String: Any] = [
+        "chainId": result.chainId,
+        "status": result.status,
+        "message": result.message,
+      ]
+
+      if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+         let json = String(data: data, encoding: .utf8) {
+        return json
+      }
+      return "{\"chainId\": \"\(result.chainId)\", \"status\": \"\(result.status)\"}"
+
+    } catch {
+      return "{\"error\": \"Chain dispatch failed: \(error.localizedDescription)\"}"
+    }
+  }
+
+  /// Execute chain_status tool — check status of a dispatched chain
+  private func executeChainStatus(_ args: [String: String], mcpServer: MCPServerService?) async -> String {
+    guard let mcpServer else {
+      return "{\"error\": \"MCP server not available\"}"
+    }
+    guard let chainId = args["chainId"], !chainId.isEmpty else {
+      return "{\"error\": \"Missing required parameter: chainId\"}"
+    }
+
+    guard let status = mcpServer.chainStatus(chainId: chainId) else {
+      return "{\"error\": \"Chain not found: \(chainId)\"}"
+    }
+
+    var payload: [String: Any] = [
+      "chainId": status.chainId,
+      "status": status.status,
+      "progress": status.progress,
+      "currentStep": status.currentStep,
+      "totalSteps": status.totalSteps,
+    ]
+    if let error = status.error {
+      payload["error"] = error
+    }
+    if let reviewGate = status.reviewGate {
+      payload["reviewGate"] = reviewGate
+    }
+    if let startedAt = status.startedAt {
+      payload["startedAt"] = ISO8601DateFormatter().string(from: startedAt)
+    }
+
+    if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+       let json = String(data: data, encoding: .utf8) {
+      return json
+    }
+    return "{\"chainId\": \"\(chainId)\", \"status\": \"\(status.status)\"}"
   }
 }
 

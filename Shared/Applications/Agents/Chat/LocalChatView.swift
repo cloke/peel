@@ -144,6 +144,21 @@ struct LocalChatView: View {
         .buttonStyle(.plain)
         .help(session.useRAG ? "RAG enabled — click to disable" : "RAG disabled — click to enable")
 
+        Button {
+          session.useToolCalling.toggle()
+        } label: {
+          Image(systemName: session.useToolCalling ? "wrench.and.screwdriver.fill" : "wrench.and.screwdriver")
+            .foregroundStyle(session.useToolCalling ? .orange : .secondary)
+        }
+        .buttonStyle(.plain)
+        .help(session.useToolCalling ? "Tool calling enabled (rag_search, dispatch_chain, chain_status) — click to disable" : "Tool calling disabled — click to enable")
+
+        if session.activeToolRound > 0 {
+          Label("Tool round \(session.activeToolRound)", systemImage: "gearshape.2")
+            .font(.caption)
+            .foregroundStyle(.orange)
+        }
+
         if session.isGenerating && session.tokensPerSecond > 0 {
           Text(String(format: "%.1f tok/s", session.tokensPerSecond))
             .font(.caption)
@@ -315,6 +330,17 @@ private struct MessageBubble: View {
   let message: ChatMessage
 
   var body: some View {
+    switch message.role {
+    case .toolCall:
+      toolCallBubble
+    case .toolResult:
+      toolResultBubble
+    default:
+      standardBubble
+    }
+  }
+
+  private var standardBubble: some View {
     HStack(alignment: .top, spacing: 8) {
       if message.role == .assistant {
         Image(systemName: "cpu")
@@ -348,6 +374,69 @@ private struct MessageBubble: View {
       }
     }
     .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
+  }
+
+  private var toolCallBubble: some View {
+    HStack(alignment: .top, spacing: 8) {
+      Image(systemName: "wrench.and.screwdriver")
+        .font(.caption)
+        .foregroundStyle(.orange)
+        .frame(width: 24, height: 24)
+        .background(Circle().fill(.orange.opacity(0.15)))
+
+      VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 6) {
+          Image(systemName: "gearshape")
+            .font(.caption2)
+            .foregroundStyle(.orange)
+          Text(message.content)
+            .font(.callout.monospaced())
+            .foregroundStyle(.primary)
+        }
+        .padding(8)
+        .background(
+          RoundedRectangle(cornerRadius: 10)
+            .fill(.orange.opacity(0.1))
+            .strokeBorder(.orange.opacity(0.3), lineWidth: 1)
+        )
+
+        Text(message.timestamp, style: .time)
+          .font(.caption2)
+          .foregroundStyle(.tertiary)
+      }
+      .frame(maxWidth: 600, alignment: .leading)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  private var toolResultBubble: some View {
+    HStack(alignment: .top, spacing: 8) {
+      Image(systemName: "checkmark.circle")
+        .font(.caption)
+        .foregroundStyle(.green)
+        .frame(width: 24, height: 24)
+        .background(Circle().fill(.green.opacity(0.15)))
+
+      VStack(alignment: .leading, spacing: 4) {
+        Text(message.content)
+          .font(.caption.monospaced())
+          .foregroundStyle(.secondary)
+          .textSelection(.enabled)
+          .lineLimit(8)
+          .padding(8)
+          .background(
+            RoundedRectangle(cornerRadius: 10)
+              .fill(.green.opacity(0.05))
+              .strokeBorder(.green.opacity(0.2), lineWidth: 1)
+          )
+
+        Text(message.timestamp, style: .time)
+          .font(.caption2)
+          .foregroundStyle(.tertiary)
+      }
+      .frame(maxWidth: 600, alignment: .leading)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 }
 
