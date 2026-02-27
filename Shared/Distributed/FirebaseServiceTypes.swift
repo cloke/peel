@@ -240,7 +240,11 @@ public struct FirestoreWorker: Sendable, Identifiable, Hashable {
   public let status: FirestoreWorkerStatus
   public let lastHeartbeat: Date
   public let version: String?
-  
+
+  /// LAN connection info (same network)
+  public let lanAddress: String?
+  public let lanPort: UInt16?
+
   /// WAN connection info for direct peer-to-peer connections
   public let wanAddress: String?
   public let wanPort: UInt16?
@@ -248,6 +252,9 @@ public struct FirestoreWorker: Sendable, Identifiable, Hashable {
   /// STUN-discovered endpoint (NAT-mapped address:port for UDP hole punching)
   public let stunAddress: String?
   public let stunPort: UInt16?
+
+  /// Convenience alias
+  public var workerId: String { id }
   
   /// Whether the worker is considered stale (no heartbeat in 90 seconds)
   public var isStale: Bool {

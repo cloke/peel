@@ -6,8 +6,8 @@ tags:
   - peel
   - agent-orchestration
   - mcp
-updated: 2026-01-30
-last_health_check: 2026-01-30
+updated: 2026-02-26
+last_health_check: 2026-02-26
 audience:
   - ai-agent
   - developer
@@ -16,342 +16,142 @@ audience:
 # Peel Roadmap
 
 > **Sprint Model**: One forever sprint. Treat "days" as **hours** of focused work.
-> 
+>
 > **Archived Issues**: See [Plans/Archive/CLOSED_ISSUES.md](Archive/CLOSED_ISSUES.md)
 
 ---
 
-## Quick Stats (Jan 30, 2026)
+## Quick Stats (Feb 26, 2026)
 
 | Metric | Count |
 |--------|-------|
-| **Closed** | 103 ✅ |
-| **Open - Phase 2** | 5 |
-| **Open - Phase 3 (Code Intelligence)** | 6 |
-| **Open - Swarm/Distributed** | 5 |
-| **Open - Backlog** | 14 |
-| **Total Open** | 30 |
+| **Closed** | 304 ✅ |
+| **Open** | 27 |
+| **Build** | ✅ Clean (0 warnings) |
+| **Tests** | ✅ 77/77 passing |
 
-### Recent Changes
-- 🔥 **WAN Priority Elevated** - Distributed swarm across networks now higher priority
-  - LAN swarm working well, ready to extend to WAN
-  - Firebase/Firestore design ready ([FIRESTORE_SWARM_DESIGN.md](FIRESTORE_SWARM_DESIGN.md))
-- ✅ **#102** - Model family unification COMPLETE (already implemented!)
-- ✅ **#163** - Qwen GPU crash - closed as duplicate of #219
-- ✅ **#142, #143, #147, #154** - CloudKit issues closed (Firebase design supersedes)
-- ✅ **#174** - Structural queries COMPLETE
-- ✅ **#175** - Similar code detection COMPLETE  
-- ✅ **#176** - Dependency graph indexing COMPLETE
-- ✅ **#29** - Closed as duplicate of #71
-- 🎉 **Phase 3 Layer 2** - Code Intelligence Graph COMPLETE
-- 📋 **Codebase cleanup** - Updated stale issues, archived closed items
+### Open by Category
 
----
+| Category | Count | Issues |
+|----------|-------|--------|
+| **VM Isolation** | 6 | #310, #312, #313, #314, #315, #317 |
+| **RAG Enhancements** | 5 | #249, #274, #275, #276, #277 |
+| **Skills & Intelligence** | 3 | #205, #335, #336 |
+| **Swarm / Distributed** | 2 | #193, #338 |
+| **Vision & Voice** | 4 | #35, #36, #109, #246 |
+| **Agent Infrastructure** | 4 | #23, #41, #43, #44 |
+| **Hardware / Performance** | 2 | #107, #108 |
+| **MCP & Tooling** | 1 | #91 |
 
-## Phase 1C: Polish & MCP Reliability
-
-**Goal**: Make MCP chains reliable for daily use. RAG integration. UX polish.
-
-### Track A: RAG Integration ✅ COMPLETE
-
-All RAG integration issues have been completed.
-
-| Order | # | Title | Est | Deps | Status |
-|-------|---|-------|-----|------|--------|
-| 1 | [#139](https://github.com/cloke/peel/issues/139) | Add diff-only mode to rag-pattern-check | 1h | None | ✅ Complete |
-| 2 | [#127](https://github.com/cloke/peel/issues/127) | Add Local RAG results UX | 2h | None | ✅ Complete |
-| 3 | [#136](https://github.com/cloke/peel/issues/136) | Dogfood RAG UX: session insights | 2h | #127 | ✅ Complete |
-| 4 | [#130](https://github.com/cloke/peel/issues/130) | Document Local RAG model acquisition | 2h | None | ✅ Complete |
-| 5 | [#132](https://github.com/cloke/peel/issues/132) | RAG loop test workflow | 2h | #127 | ✅ Complete |
-| 6 | [#134](https://github.com/cloke/peel/issues/134) | Project audit tooling | 3h | #132 | ✅ Complete |
-| 7 | [#141](https://github.com/cloke/peel/issues/141) | RAG Indexing Performance Optimization | 3h | None | ✅ Complete |
-| 8 | [#78](https://github.com/cloke/peel/issues/78) | Parallel runner with RAG grounding | 4h | #127 | ✅ Complete |
-| 9 | [#87](https://github.com/cloke/peel/issues/87) | RAG feedback for CI failures | 3h | #78 | ✅ Complete |
-
-**Track A Total**: ~22h ✅ DONE
-
-### Track B: MCP Packaging & Tools
-
-MCP service split complete. Registry extraction remaining.
-
-| Order | # | Title | Est | Deps | Status |
-|-------|---|-------|-----|------|--------|
-| 1 | [#121](https://github.com/cloke/peel/issues/121) | Split MCPServerService by tool category | 4h | None | ✅ Complete |
-| 2 | [#80](https://github.com/cloke/peel/issues/80) | Extract MCP tool registry into package | 3h | #121 | 🟡 Ready |
-| 3 | [#138](https://github.com/cloke/peel/issues/138) | Document MCP tool permissions | 2h | None | ✅ Complete |
-| 4 | [#85](https://github.com/cloke/peel/issues/85) | CLI: safe polling helper for MCP runs | 2h | None | ✅ Complete |
-| 5 | [#140](https://github.com/cloke/peel/issues/140) | Add Prompt Rules UI in Settings | 2h | None | 🟠 Partial (UI only) |
-
-**Track B Total**: ~13h (11h done)
-
-### Track C: UX Polish
-
-Can be done in any order, low dependencies.
-
-| Order | # | Title | Est | Deps | Status |
-|-------|---|-------|-----|------|--------|
-| 1 | [#83](https://github.com/cloke/peel/issues/83) | Cohesive Workspaces/Worktrees navigation | 3h | None | ✅ Complete |
-| 2 | [#71](https://github.com/cloke/peel/issues/71) | Add Review with Agent button for PRs | 3h | None | ✅ Complete |
-| 3 | [#30](https://github.com/cloke/peel/issues/30) | Add merge conflict resolution UI | 4h | None | 🟡 Ready |
-| 4 | [#52](https://github.com/cloke/peel/issues/52) | Fix screenshot capture vibrancy | 2h | None | ✅ Complete |
-| 5 | [#64](https://github.com/cloke/peel/issues/64) | Add Homebrew activity charts | 2h | None | ⏸ Deferred |
-| 6 | [#40](https://github.com/cloke/peel/issues/40) | Agent feedback loop - watch and retry | 4h | None | ⏸ Deferred |
-
-**Track C Total**: ~18h (8h done)
-
-**Phase 1C Grand Total**: ~53h (~7 days focused work)
+### Recent Completions (since Jan 25)
+- ✅ **Phase 1C** — All tracks complete (RAG, MCP, UX polish)
+- ✅ **Phase 2** — MLX, HF reranking, pre-planner, MCP packaging all done
+- ✅ **Phase 3 Layers 1-2** — RAG + Code Intelligence Graph complete
+- ✅ **Parallel worktrees** — Full pipeline: pool, gate agent, merge, validation (#299, #308, #309)
+- ✅ **VM foundation** — VMAgentConfig, StepType.vmAgentic, vm.agent.run (#311, #318)
+- ✅ **Skills system** — .peel/ directory bootstrap, repo-local directives (#333, #334)
+- ✅ **Local chat** — RAG-augmented chat, MLX tool calling, Ember skills injection
+- ✅ **Swarm reliability** — Worker commit/push fixes, RAG WAN sync, alert bug fixes (#337, #339, #345)
+- ✅ **Code quality** — 15+ cleanup issues: force unwraps, Combine→TimelineView, duplicate code (#320-#331, #340-#344)
 
 ---
 
-## Phase 2: Local AI Foundation
+## Active Work: VM Yolo Agent
 
-**Goal**: Run AI locally for cost/privacy. XPC isolation for safety.
+**Goal**: Run AI coding agents (Copilot, Claude) inside sandboxed Linux VMs with full autonomy.
 
-**Prerequisite**: Phase 1C RAG integration complete.
+**Foundation done** — VMChainExecutor lifecycle, VirtioFS, MCP tools, templates all implemented.
 
-| Order | # | Title | Est | Deps | Status |
-|-------|---|-------|-----|------|--------|
-| 1 | [#24](https://github.com/cloke/peel/issues/24) | MLX integration | 8h | None | ✅ Complete |
-| 2 | [#128](https://github.com/cloke/peel/issues/128) | Add Hugging Face reranking for RAG | 4h | #24 | 🟡 Ready |
-| 3 | [#133](https://github.com/cloke/peel/issues/133) | Pre-planner using RAG | 4h | #24 | 🟡 Ready |
-| 4 | [#23](https://github.com/cloke/peel/issues/23) | XPC tool broker | 6h | None | 🟡 Ready |
-| 5 | [#41](https://github.com/cloke/peel/issues/41) | Budget-aware agent scheduler | 6h | #24 | 🟡 Ready |
-| 6 | [#108](https://github.com/cloke/peel/issues/108) | ANE micro-services | 6h | #24 | 🟡 Ready |
+| # | Title | Est | Status |
+|---|-------|-----|--------|
+| [#312](https://github.com/cloke/peel/issues/312) | Host IP injection + peel-rag helper script for VM | 3h | 🟠 Partial (IP injection done, helper script missing) |
+| [#313](https://github.com/cloke/peel/issues/313) | VM IP allowlist + tool scoping on MCP server | 4h | 🟡 Ready |
+| [#314](https://github.com/cloke/peel/issues/314) | Implement `runVMAgenticStep()` in AgentChainRunner | 4h | 🟠 Partial (case routes exist, VM-specific logic missing) |
+| [#315](https://github.com/cloke/peel/issues/315) | VMChainExecutor: auto-register VM IP with MCP allowlist | 3h | 🟡 Ready (depends on #313) |
+| [#317](https://github.com/cloke/peel/issues/317) | Agent binary management: download/cache CLIs for Linux VM | 4h | 🟡 Ready |
+| [#310](https://github.com/cloke/peel/issues/310) | VM validation pipeline: isolated build/test in sandboxed VMs | 6h | 🟡 Ready (depends on #314) |
 
-**Phase 2 Total**: ~26h (~3-4 days focused work) - *MLX done!*
-
----
-
-## Phase 3: Code Intelligence System (RAG/Graph)
-
-**Goal**: Build a 3-layer Code Intelligence System that enables large refactors and cross-language reasoning.
-
-**Tracking Issue**: [#205](https://github.com/cloke/peel/issues/205) - Code Intelligence System
-
-**Prerequisite**: Phase 2 MLX integration complete (✅).
-
-### Layer 1: Raw Facts (Classic RAG) ✅ COMPLETE
-- ✅ AST-based chunking (Swift, Ruby, TypeScript/JS)
-- ✅ MLX embeddings
-- ✅ Vector search + text search
-- ✅ Basic metadata extraction (imports, decorators, frameworks)
-- ✅ Module path + feature tag facets
-
-### Layer 2: Code Intelligence Graph ✅ COMPLETE
-
-| Order | # | Title | Est | Deps | Status |
-|-------|---|-------|-----|------|--------|
-| 1 | [#176](https://github.com/cloke/peel/issues/176) | Dependency graph indexing | 6h | None | ✅ **COMPLETE** |
-| 2 | [#208](https://github.com/cloke/peel/issues/208) | Dependency polish (symbols, stats) | 3h | #176 | 🟡 Ready |
-| 3 | [#174](https://github.com/cloke/peel/issues/174) | Structural queries (file size, methods) | 3h | #176 | ✅ **COMPLETE** |
-| 4 | [#175](https://github.com/cloke/peel/issues/175) | Duplicate/similar code detection | 4h | None | ✅ **COMPLETE** |
-| 5 | [#179](https://github.com/cloke/peel/issues/179) | tree-sitter-swift evaluation | 4h | None | 🟡 Ready (stretch) |
-
-### Layer 3: Semantic Memory
-
-| Order | # | Title | Est | Deps | Status |
-|-------|---|-------|-----|------|--------|
-| 1 | [#198](https://github.com/cloke/peel/issues/198) | MLX-first code analyzer | 6h | Layer 2 | ⚪ Blocked |
-| 2 | [#128](https://github.com/cloke/peel/issues/128) | HuggingFace reranking | 4h | None | 🟡 Ready |
-| 3 | [#133](https://github.com/cloke/peel/issues/133) | Pre-planner using RAG | 4h | #128 | ⚪ Blocked |
-
-### Infrastructure & Polish
-
-| Order | # | Title | Est | Deps | Status |
-|-------|---|-------|-----|------|--------|
-| 1 | [#163](https://github.com/cloke/peel/issues/163) | Qwen3 GPU crash workaround | 2h | None | 🔴 Bug (low priority) |
-| 2 | [#168](https://github.com/cloke/peel/issues/168) | Nightly shared RAG index sync | 4h | Layer 2 | ⚪ Blocked |
-| 3 | [#206](https://github.com/cloke/peel/issues/206) | Peel sync for RAG artifacts | 4h | #168 | ⚪ Blocked |
-
-**Phase 3 Total**: ~41h (~5 days focused work)
-
-### Critical Path for Phase 3
-
-```
-#176 (Dependency Graph) ✅ ──► #174 (Structural Queries) ✅ ──► #198 (MLX Analyzer)
-         │                                                        │
-         └──► #208 (Polish)                                       │
-                                                                  │
-#175 (Similar Code) ✅ ──────────────────────────────────────────┘
-                                                                  │
-#128 (HF Reranking) ──► #133 (Pre-planner) ──────────────────────┘
-```
-
-**Layer 2 Complete!** Next focus: #198 (MLX code analyzer) or #128 (HF reranking)
+**Dependency chain**: #312 → #313 → #315, and #314 → #310
 
 ---
 
-## Phase 3B: Isolation & Voice (Stretch)
+## Active Work: Skills & Framework Intelligence
 
-**Goal**: VMs for full isolation. Voice/vision input.
+**Goal**: Generalize the Ember-specific skills system to support any framework.
 
-**Note**: Deprioritized to focus on Code Intelligence. Can run in parallel if time permits.
-
-### Track A: VM Isolation
-
-**Status**: Nearly complete — model layer, VMChainExecutor lifecycle, VirtioFS workspace sharing, and MCP tools are implemented. Only live end-to-end testing remains (requires booting real VMs).
-See [VM_ISOLATED_EXECUTION_PLAN.md](VM_ISOLATED_EXECUTION_PLAN.md) for the full design.
-
-Completed:
-- `ExecutionEnvironment` enum (.host / .linux / .macos) on ChainTemplate & AgentChain
-- `VMToolchain` enum with Alpine package mappings (minimal/git/swift/node/ruby/ember/fullStack)
-- VirtioFS directory sharing between host and guest
-- `VMChainExecutor` lifecycle orchestrator (boot → mount → bootstrap → execute → teardown)
-- AgentChainRunner VM-aware dispatch (deterministic/gate steps run in VM, agentic steps on host)
-- Linux MCP tools (vm.linux.status/start/stop/exec)
-- Built-in VM templates (Quick Task, Full Build, Ember Build)
-
-Remaining:
-- End-to-end testing with real workloads (stage 6: pools & golden images)
-
-
-| Order | # | Title | Est | Deps | Status |
-|-------|---|-------|-----|------|--------|
-| 1 | — | VM-isolated chain execution foundation | 8h | None | 🟢 Done |
-| 2 | [#107](https://github.com/cloke/peel/issues/107) | GPU shared cache service | 6h | #24 | 🟡 Ready |
-| 3 | — | Linux rootfs + real workload testing | 4h | Track A.1 | 🟡 Ready |
-
-### Track B: Voice/Vision
-
-| Order | # | Title | Est | Deps | Status |
-|-------|---|-------|-----|------|--------|
-| 1 | [#35](https://github.com/cloke/peel/issues/35) | Screen capture to Vision analysis | 6h | None | 🟡 Ready |
-| 2 | [#36](https://github.com/cloke/peel/issues/36) | Voice commands via Whisper | 6h | #24 | 🟡 Ready |
-| 3 | [#109](https://github.com/cloke/peel/issues/109) | Voice notifications + quick reply | 4h | #36 | ⚪ Blocked |
-
-### Track C: Multi-Agent
-
-| Order | # | Title | Est | Deps | Status |
-|-------|---|-------|-----|------|--------|
-| 1 | [#43](https://github.com/cloke/peel/issues/43) | Deterministic replay for agent runs | 6h | None | 🟡 Ready |
-| 2 | [#44](https://github.com/cloke/peel/issues/44) | Multi-agent quorum for destructive actions | 4h | #43 | ⚪ Blocked |
-| 3 | [#37](https://github.com/cloke/peel/issues/37) | Cross-machine distributed actors | 8h | #106 | ⚪ Blocked |
-
-**Phase 3B Total**: ~48h (~6 days focused work)
+| # | Title | Est | Status |
+|---|-------|-----|--------|
+| [#336](https://github.com/cloke/peel/issues/336) | Multi-framework directive detection: generalize beyond Ember | 4h | 🟡 Ready (Ember detection works, needs generalization) |
+| [#335](https://github.com/cloke/peel/issues/335) | Live skill updates: download from GitHub and write to .peel/ files | 4h | 🟡 Ready (local init done, remote fetch TODO in code) |
+| [#205](https://github.com/cloke/peel/issues/205) | Code Intelligence System: Beyond RAG to Persistent Understanding | — | 📋 Tracking issue (Layers 1-2 done, Layer 3 future) |
 
 ---
 
-## Phase 4: Distributed Task Execution (CloudKit)
+## RAG Enhancements
 
-**Goal**: Offload compute to other machines (Mac Studio) via CloudKit.
+**Goal**: Extend RAG analysis beyond code structure into framework-specific intelligence.
 
-**Prerequisite**: Phase 3 isolation patterns established.
-
-These issues form a logical implementation sequence:
-
-### Stage 1: Design & Schema (do first)
-| # | Title | Est |
-|---|-------|-----|
-| [#143](https://github.com/cloke/peel/issues/143) | CloudKit schema design | 4h |
-| [#150](https://github.com/cloke/peel/issues/150) | Task types + payload spec | 3h |
-| [#148](https://github.com/cloke/peel/issues/148) | Security + auth model | 4h |
-| [#154](https://github.com/cloke/peel/issues/154) | CloudKit limits + cost analysis | 2h |
-
-### Stage 2: Core Protocol
-| # | Title | Est |
-|---|-------|-----|
-| [#144](https://github.com/cloke/peel/issues/144) | Leasing + heartbeat protocol | 4h |
-| [#151](https://github.com/cloke/peel/issues/151) | Failure modes + retries | 4h |
-| [#152](https://github.com/cloke/peel/issues/152) | Observability + metrics | 3h |
-
-### Stage 3: Implementation
-| # | Title | Est |
-|---|-------|-----|
-| [#145](https://github.com/cloke/peel/issues/145) | Peel daemon prototype (Mac Studio) | 6h |
-| [#146](https://github.com/cloke/peel/issues/146) | Client submit + result sync | 4h |
-| [#142](https://github.com/cloke/peel/issues/142) | Distributed task execution via CloudKit | 6h |
-
-### Stage 4: UX & Polish
-| # | Title | Est |
-|---|-------|-----|
-| [#147](https://github.com/cloke/peel/issues/147) | CloudKit sharing UX | 3h |
-| [#153](https://github.com/cloke/peel/issues/153) | UI flows (macOS/iOS) | 4h |
-| [#155](https://github.com/cloke/peel/issues/155) | Dev tooling + test harness | 4h |
-
-### Stage 5: Production Ready
-| # | Title | Est |
-|---|-------|-----|
-| [#156](https://github.com/cloke/peel/issues/156) | Peel packaging + background scheduling | 4h |
-| [#157](https://github.com/cloke/peel/issues/157) | Entitlements + sandbox review | 3h |
-| [#149](https://github.com/cloke/peel/issues/149) | LAN direct transport (optional) | 6h |
-
-**Phase 4 Total**: ~64h (~8 days focused work)
+| # | Title | Est | Status |
+|---|-------|-----|--------|
+| [#277](https://github.com/cloke/peel/issues/277) | Framework-aware orphan detection (Ember service/route/template) | 4h | 🟡 Ready (generic orphan detection exists, needs Ember awareness) |
+| [#274](https://github.com/cloke/peel/issues/274) | Component API surface mapping and usage analysis | 6h | 🟡 Ready |
+| [#276](https://github.com/cloke/peel/issues/276) | Cross-repo API endpoint correlation and blast radius | 6h | 🟡 Ready |
+| [#275](https://github.com/cloke/peel/issues/275) | Tailwind CSS consistency lint and deprecation detection | 4h | 🟡 Ready |
+| [#249](https://github.com/cloke/peel/issues/249) | CSS redundancy detection for frontend projects | 4h | 🟡 Ready |
 
 ---
 
-## Backlog (Unscheduled)
+## Swarm & Distributed
 
-These are valid ideas not yet prioritized. Pick from here when phases complete.
+**Goal**: Reliable multi-machine agent orchestration.
 
-### MCP & Agent Polish
-| # | Title | Category |
-|---|-------|----------|
-| [#90](https://github.com/cloke/peel/issues/90) | Decide how to package repo guidance skills defaults | mcp |
-| [#91](https://github.com/cloke/peel/issues/91) | VS Code extension for MCP parallel batching | mcp |
-| [#92](https://github.com/cloke/peel/issues/92) | Parallel run quality check run | mcp |
-| [#93](https://github.com/cloke/peel/issues/93) | Guardrails for low-signal parallel runs | mcp |
-| [#94](https://github.com/cloke/peel/issues/94) | Reduce plan-only responses in templates | mcp |
-
-### Infrastructure
-| # | Title | Category |
-|---|-------|----------|
-| [#102](https://github.com/cloke/peel/issues/102) | Unify model family and helper flags | infra |
-| [#111](https://github.com/cloke/peel/issues/111) | Add per-repo scratch area for artifacts | infra |
-
-### UX & Git
-| # | Title | Category |
-|---|-------|----------|
-| [#105](https://github.com/cloke/peel/issues/105) | Define iOS GitHub review flow | ux |
-| [#110](https://github.com/cloke/peel/issues/110) | Refactor diff viewer for modern UI | git |
-| [#112](https://github.com/cloke/peel/issues/112) | Git diff: stage/revert hunk actions | git |
-
-### VM
-| # | Title | Category | Status |
-|---|-------|----------|--------|
-| — | VM-isolated chain execution | infra | ✅ Foundation done |
-| [#107](https://github.com/cloke/peel/issues/107) | GPU shared cache service | infra | 🟡 Ready |
+| # | Title | Est | Status |
+|---|-------|-----|--------|
+| [#338](https://github.com/cloke/peel/issues/338) | Swarm worker UI does not display task execution logs | 3h | 🔴 Bug (LAN view has logs, Firestore view doesn't) |
+| [#193](https://github.com/cloke/peel/issues/193) | Secure Remote Node Control | 6h | 🟡 Ready (basic auth exists, needs security hardening) |
 
 ---
 
-## Recommended Work Order
+## Vision, Voice & Perception
 
-For maximum efficiency, work these in parallel where possible:
+**Goal**: Multi-modal input — screen capture analysis, voice commands, document parsing.
 
-### Week 1 (Now → ~8h)
-**Focus: Quick wins + RAG foundation**
+| # | Title | Est | Status |
+|---|-------|-----|--------|
+| [#35](https://github.com/cloke/peel/issues/35) | Screen capture to Vision analysis pipeline | 6h | 🟡 Ready |
+| [#36](https://github.com/cloke/peel/issues/36) | Voice commands via on-device Whisper | 6h | 🟡 Ready |
+| [#109](https://github.com/cloke/peel/issues/109) | Voice notifications + quick reply commands | 4h | ⚪ Blocked (depends on #36) |
+| [#246](https://github.com/cloke/peel/issues/246) | Native document parsing with Heron layout model + Vision OCR | 6h | 🟡 Ready |
 
-| Track | Issues | Hours |
-|-------|--------|-------|
-| RAG | #139 (diff-only), #127 (UX), #141 (perf) | 6h |
-| MCP | #138 (docs), #140 (prompt UI) | 4h |
+---
 
-### Week 2 (~8h)
-**Focus: RAG completion + MCP extraction**
+## Agent Infrastructure
 
-| Track | Issues | Hours |
-|-------|--------|-------|
-| RAG | #136 (dogfood), #130 (docs), #132 (test) | 6h |
-| MCP | #121 (split service), #85 (polling) | 6h |
+**Goal**: Safety, cost control, and reliability for autonomous agents.
 
-### Week 3 (~8h)
-**Focus: UX polish + parallel runner**
+| # | Title | Est | Status |
+|---|-------|-----|--------|
+| [#23](https://github.com/cloke/peel/issues/23) | XPC tool broker | 6h | 🟡 Ready |
+| [#41](https://github.com/cloke/peel/issues/41) | Budget-aware agent scheduler | 6h | 🟡 Ready |
+| [#43](https://github.com/cloke/peel/issues/43) | Deterministic replay for agent runs | 6h | 🟡 Ready |
+| [#44](https://github.com/cloke/peel/issues/44) | Multi-agent quorum for destructive actions | 4h | ⚪ Blocked (depends on #43) |
 
-| Track | Issues | Hours |
-|-------|--------|-------|
-| UX | #83 (nav), #29 (review btn), #52 (screenshot) | 8h |
-| RAG | #78 (parallel runner) | 4h |
+---
 
-### Week 4 (~8h)
-**Focus: Complete Phase 1C**
+## Hardware & Performance
 
-| Track | Issues | Hours |
-|-------|--------|-------|
-| RAG | #134 (audit), #87 (CI feedback) | 6h |
-| MCP | #80 (extract registry) | 3h |
-| UX | #30 (merge UI), #64 (brew charts) | 6h |
+| # | Title | Est | Status |
+|---|-------|-----|--------|
+| [#107](https://github.com/cloke/peel/issues/107) | GPU shared cache service | 6h | 🟡 Ready |
+| [#108](https://github.com/cloke/peel/issues/108) | ANE micro-services for fast local agent tasks | 6h | 🟡 Ready |
 
-### Week 5+ 
-**Phase 2 begins** - MLX, XPC, HuggingFace integration
+---
+
+## MCP & Tooling
+
+| # | Title | Est | Status |
+|---|-------|-----|--------|
+| [#91](https://github.com/cloke/peel/issues/91) | VS Code extension for MCP tool discovery | 4h | 🟡 Ready — Would help agents discover and use Peel MCP tools more easily vs relying on copilot-instructions.md |
 
 ---
 
@@ -361,7 +161,7 @@ For maximum efficiency, work these in parallel where possible:
 ```
 User Prompt
     ↓
-MCPServerService (66 tools)
+MCPServerService (~70 tools)
     ↓
 Planner Agent → Task Split
     ↓
@@ -369,41 +169,44 @@ Planner Agent → Task Split
 | Agent1 | Agent2 | Agent3 |  (parallel worktrees)
 +--------+--------+--------+
     ↓
-Merge Agent → Feature Branch
+Gate Agent → Automated Review
     ↓
-Review Gate
+Merge Agent → Feature Branch
 ```
 
 ### Local RAG Flow
 ```
-File Scanner → Chunker → Embeddings → SQLite Store
-                                          ↓
-                              Query → Top-K Results
-                                          ↓
-                              Agent Prompt Injection
+File Scanner → AST Chunker → MLX Embeddings → SQLite Store
+                                                   ↓
+                                       Query → Top-K Results
+                                                   ↓
+                                       Agent Prompt Injection
 ```
 
-### Distributed Tasks Flow (Phase 4)
+### Swarm Flow
 ```
-Crown (MacBook)                      Peel (Mac Studio)
+Brain (MacBook)                    Worker (Mac Studio)
       │                                     │
-      ├─── CKRecord (task) ────────────────►│
-      │                                     ├─── Lease + Execute
-      │◄───────────── CKRecord (result) ────┤
+      ├── P2P/LAN ─────────────────────────►│
+      │   (Bonjour + TCP)                   ├── Execute Chain
       │                                     │
-      └─── Poll / Subscribe ────────────────┘
+      ├── Firestore (WAN fallback) ────────►│
+      │                                     │
+      │◄──────────── Results ───────────────┤
 ```
 
 ---
 
 ## References
 
-- [MCP_AGENT_WORKFLOW.md](MCP_AGENT_WORKFLOW.md) - MCP usage guide
+- [MCP_AGENT_WORKFLOW.md](guides/MCP_AGENT_WORKFLOW.md) - MCP usage guide
 - [LOCAL_RAG_PLAN.md](LOCAL_RAG_PLAN.md) - RAG architecture
 - [PII_SCRUBBER_DESIGN.md](PII_SCRUBBER_DESIGN.md) - Privacy scrubbing
-- [VM_ISOLATION_PLAN.md](VM_ISOLATION_PLAN.md) - VM isolation design
+- [VM_ISOLATED_EXECUTION_PLAN.md](VM_ISOLATED_EXECUTION_PLAN.md) - VM isolation design
+- [VM_YOLO_AGENT_PLAN.md](VM_YOLO_AGENT_PLAN.md) - VM agent execution
+- [FIRESTORE_SWARM_DESIGN.md](FIRESTORE_SWARM_DESIGN.md) - Distributed swarm
 - [Archive/CLOSED_ISSUES.md](Archive/CLOSED_ISSUES.md) - Completed work
 
 ---
 
-**Last Updated**: January 25, 2026
+**Last Updated**: February 26, 2026

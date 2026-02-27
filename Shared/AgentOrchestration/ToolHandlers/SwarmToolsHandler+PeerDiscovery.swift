@@ -305,6 +305,26 @@ extension SwarmToolsHandler {
       "staleReason": localRag?.staleReason as Any
     ]
 
+    // NAT traversal / STUN state
+    let natPayload: [String: Any]
+    if let natManager = coordinator.natTraversal {
+      var info: [String: Any] = [
+        "state": "\(natManager.state)",
+        "localPort": Int(natManager.localPort),
+      ]
+      if let ep = natManager.stunEndpoint {
+        info["stunEndpoint"] = [
+          "address": ep.address,
+          "port": Int(ep.port),
+          "server": ep.serverUsed,
+          "latencyMs": ep.latencyMs,
+        ]
+      }
+      natPayload = info
+    } else {
+      natPayload = ["state": "not started"]
+    }
+
     return (200, makeResult(id: id, result: [
       "active": coordinator.isActive,
       "role": coordinator.role.rawValue,
@@ -317,6 +337,7 @@ extension SwarmToolsHandler {
       "discovered": discovered,
       "ragTransfers": transfers,
       "localRagArtifacts": localRagPayload,
+      "natTraversal": natPayload,
       "messageListeners": FirebaseService.shared.messageListenerDiagnostics()
     ]))
   }
@@ -519,7 +540,7 @@ extension SwarmToolsHandler {
       ("stun.l.google.com", 19302),
       ("stun1.l.google.com", 19302),
       ("stun.cloudflare.com", 3478),
-      ("stun.services.mozilla.com", 3478),
+      ("stun2.l.google.com", 19302),
     ]
 
     var results: [[String: Any]] = []
@@ -616,6 +637,79 @@ extension SwarmToolsHandler {
         ? ["NAT type supports hole punching. Ensure both peers have STUN endpoints in Firestore and both are online simultaneously."]
         : ["Symmetric NAT detected — STUN hole punching will NOT work. Use Firestore relay (forceRelay: true) or configure port forwarding on your router."],
     ]))
+  }
+
+  // MARK: - swarm.rag-versions (on-demand P2P)
+
+  func handleRagVersions(id: Any?) -> (Int, Data) {
+    let syncCoordinator = RAGSyncCoordinator.shared
+    let remoteRepos = syncCoordinator.listRemoteRepos()
+
+    if remoteRepos.isEmpty {
+      return (200, makeResult(id: id, result: [
+        "available": false,
+        "message": "No remote RAG index versions found. Ensure swarm peers have published their indexes (run rag.index on a peer).",
+        "repos": [] as [[String: Any]],
+      ]))
+    }
+
+    let repoEntries: [[String: Any]] = remoteRepos.map { repo in
+      var entry: [String: Any] = [
+        "repoIdentifier": repo.repoIdentifier,
+        "repoName": repo.repoName,
+        "version": repo.bestVersion.version,
+        "chunkCount": repo.bestVersion.chunkCount,
+        "embeddingModel": repo.bestVersion.embeddingModel,
+        "workerId": repo.bestVersion.workerId,
+        "workerName": repo.bestVersion.workerName,
+        "sourceCount": repo.sourceCount,
+        "isUpdateAvailable": repo.isUpdateAvailable,
+      ]
+      entry["updatedAt"] = ISO8601DateFormatter().string(from: repo.bestVersion.lastIndexedAt)
+      return entry
+    }
+
+    return (200, makeResult(id: id, result: [
+      "available": true,
+      "count": repoEntries.count,
+      "repos": repoEntries,
+    ]))
+  }
+
+  // MARK: - swarm.rag-sync-index (on-demand P2P)
+
+  func handleRagSyncIndex(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let repoIdentifier = arguments["repoIdentifier"] as? String else {
+      return missingParamError(id: id, param: "repoIdentifier")
+    }
+
+    let fromWorkerId = arguments["workerId"] as? String
+    let swarmId = arguments["swarmId"] as? String
+    let syncCoordinator = RAGSyncCoordinator.shared
+
+    do {
+      if let workerId = fromWorkerId {
+        try await syncCoordinator.syncIndex(
+          repoIdentifier: repoIdentifier,
+          fromWorkerId: workerId,
+          swarmId: swarmId ?? ""
+        )
+      } else {
+        try await syncCoordinator.syncIndex(repoIdentifier: repoIdentifier)
+      }
+
+      return (200, makeResult(id: id, result: [
+        "success": true,
+        "repoIdentifier": repoIdentifier,
+        "message": "RAG index synced successfully via P2P transfer.",
+      ]))
+    } catch {
+      return (200, makeResult(id: id, result: [
+        "success": false,
+        "repoIdentifier": repoIdentifier,
+        "error": String(describing: error),
+      ]))
+    }
   }
 
 }

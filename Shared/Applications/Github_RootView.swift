@@ -317,8 +317,12 @@ struct Github_RootView: View {
   }
 
   private var favoriteItems: [FavoriteRepository] {
-    favoriteRecords.map { record in
-      FavoriteRepository(
+    // Deduplicate by githubRepoId — CloudKit sync can create duplicate rows
+    // since SwiftData @Model can't use @Attribute(.unique) with iCloud
+    var seen = Set<Int>()
+    return favoriteRecords.compactMap { record in
+      guard seen.insert(record.githubRepoId).inserted else { return nil }
+      return FavoriteRepository(
         id: record.githubRepoId,
         fullName: record.fullName,
         ownerLogin: record.ownerLogin,

@@ -842,6 +842,7 @@ public final class MCPServerService {
     localChatToolsHandler?.mcpServer = self
     #endif
     SwarmCoordinator.shared.ragSyncDelegate = self
+    RAGSyncCoordinator.shared.ragSyncDelegate = self
   }
 
   public var toolCategories: [ToolCategory] {

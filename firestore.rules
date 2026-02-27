@@ -132,6 +132,22 @@ service cloud.firestore {
         }
       }
 
+      // RAG index versions — lightweight metadata for on-demand P2P sync signaling.
+      // Workers publish their index versions here; peers subscribe to detect newer versions.
+      match /ragIndexes/{repoIdentifier} {
+        allow read: if isReader(swarmId);
+        allow create, update: if isContributor(swarmId);
+        allow delete: if isAdmin(swarmId);
+      }
+
+      // STUN signaling — ephemeral offers/answers for on-demand NAT traversal.
+      // Peers write their STUN endpoint here when requesting a P2P connection.
+      match /stunSignaling/{signalingId} {
+        allow read: if isReader(swarmId);
+        allow create, update: if isContributor(swarmId);
+        allow delete: if isContributor(swarmId);
+      }
+
       // Messages subcollection (broadcast & direct messages)
       match /messages/{messageId} {
         allow read: if isReader(swarmId);

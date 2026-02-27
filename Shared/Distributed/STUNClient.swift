@@ -37,7 +37,7 @@ public enum STUNClient {
     ("stun.l.google.com", 19302),
     ("stun1.l.google.com", 19302),
     ("stun.cloudflare.com", 3478),
-    ("stun.services.mozilla.com", 3478),
+    ("stun2.l.google.com", 19302),
   ]
 
   // MARK: - STUN Message Constants (RFC 5389)
@@ -65,6 +65,7 @@ public enum STUNClient {
     localPort: UInt16 = 0,
     timeout: TimeInterval = 3
   ) async -> STUNResult? {
+    // First pass: try with the requested local port
     for server in stunServers {
       if let result = await queryServer(
         host: server.host,
@@ -74,8 +75,28 @@ public enum STUNClient {
       ) {
         return result
       }
+      logger.warning("STUN: \(server.host):\(server.port) failed (localPort=\(localPort)), trying next")
     }
-    logger.warning("STUN: all servers failed to respond")
+
+    // Second pass: if we were binding to a specific port, retry without binding.
+    // This works around environments where binding UDP to a port already held
+    // by a TCP listener (same process) is blocked by endpoint security software.
+    if localPort > 0 {
+      logger.warning("STUN: all servers failed with localPort=\(localPort), retrying with ephemeral port")
+      for server in stunServers {
+        if let result = await queryServer(
+          host: server.host,
+          port: server.port,
+          localPort: 0,
+          timeout: timeout
+        ) {
+          logger.info("STUN: discovered endpoint via ephemeral port (port binding to \(localPort) was blocked)")
+          return result
+        }
+      }
+    }
+
+    logger.error("STUN: all \(stunServers.count) servers failed to respond (timeout=\(timeout)s, localPort=\(localPort))")
     return nil
   }
 
@@ -99,6 +120,7 @@ public enum STUNClient {
     )
 
     let params = NWParameters.udp
+    params.allowLocalEndpointReuse = true
     // Bind to specific local port if requested (so the STUN response
     // tells us the mapping for the port we'll actually use)
     if localPort > 0, let nwPort = NWEndpoint.Port(rawValue: localPort) {
@@ -123,18 +145,34 @@ public enum STUNClient {
 
       connection.stateUpdateHandler = { [box] state in
         switch state {
+        case .setup:
+          break
+
+        case .preparing:
+          logger.debug("STUN: connection preparing to \(host):\(port)")
+
+        case .waiting(let error):
+          logger.warning("STUN: connection waiting for \(host):\(port): \(error)")
+          // .waiting means Network.framework can't find a usable path —
+          // often caused by endpoint security or content filters blocking UDP.
+          box.resume(with: nil)
+
         case .ready:
           // Send STUN Binding Request
           connection.send(
             content: request,
             completion: .contentProcessed { [box] error in
-              if error != nil {
+              if let error {
+                logger.debug("STUN send failed to \(host): \(error)")
                 box.resume(with: nil)
                 return
               }
 
               // Receive response
               connection.receiveMessage { [box] data, _, _, error in
+                if let error {
+                  logger.debug("STUN receive failed from \(host): \(error)")
+                }
                 guard let data, error == nil else {
                   box.resume(with: nil)
                   return
@@ -162,10 +200,14 @@ public enum STUNClient {
             }
           )
 
-        case .failed, .cancelled:
+        case .failed(let error):
+          logger.warning("STUN: connection failed to \(host):\(port): \(error)")
           box.resume(with: nil)
 
-        default:
+        case .cancelled:
+          box.resume(with: nil)
+
+        @unknown default:
           break
         }
       }

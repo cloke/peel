@@ -82,7 +82,10 @@ extension RAGToolsHandler {
       )
       
       await delegate.refreshRagSummary()
-      
+
+      // Publish index version to Firestore for P2P sharing
+      await publishIndexVersionAfterIndex(report: report, delegate: delegate)
+
       var result: [String: Any] = [
         "repoId": report.repoId,
         "repoPath": report.repoPath,
@@ -236,6 +239,43 @@ extension RAGToolsHandler {
       ]))
     } catch {
       return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
+    }
+  }
+
+  // MARK: - Index Version Publishing
+
+  /// Publish index version to Firestore after a successful rag.index.
+  /// This enables other swarm members to discover and request the index via P2P.
+  private func publishIndexVersionAfterIndex(
+    report: RAGToolIndexReport,
+    delegate: RAGToolsHandlerDelegate
+  ) async {
+    // Only publish if there's something meaningful
+    guard report.chunksIndexed > 0 || report.embeddingCount > 0 else { return }
+
+    do {
+      // Look up the repo to get its identifier (git remote URL)
+      let repos = try await delegate.listRagRepos()
+      guard let repo = repos.first(where: { $0.rootPath == report.repoPath || $0.id == report.repoId }),
+            let repoIdentifier = repo.repoIdentifier else {
+        return
+      }
+
+      // Get current RAG status for embedding model info
+      let status = await delegate.ragStatus()
+
+      await RAGSyncCoordinator.shared.publishVersion(
+        repoIdentifier: repoIdentifier,
+        repoName: repo.name,
+        headSHA: nil,  // TODO: resolve from git
+        fileCount: repo.fileCount,
+        chunkCount: repo.chunkCount,
+        embeddingModel: status.embeddingModelName,
+        embeddingDimensions: status.embeddingDimensions,
+        sizeEstimateBytes: report.bytesScanned
+      )
+    } catch {
+      // Non-critical — don't fail the index operation
     }
   }
 

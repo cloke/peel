@@ -283,7 +283,10 @@ public final class SwarmCoordinator {
     guard !isActive else { return }
     
     self.role = role
-    self.capabilities = WorkerCapabilities.current()
+    self.capabilities = WorkerCapabilities.current(
+      lanAddress: Self.getLocalLANAddress(),
+      lanPort: port
+    )
     self.startedAt = Date()
     
     // Create connection manager
@@ -315,18 +318,20 @@ public final class SwarmCoordinator {
     // Monitor network for sleep/wake reconnection
     startNetworkMonitor()
     
-    // Start NAT traversal (STUN discovery + UDP hole punching)
-    natTraversalManager = NATTraversalManager(localPort: port, deviceId: capabilities.deviceId)
-    natTraversalManager?.delegate = self
-    
     // Start auto-connecting to WAN peers discovered via Firestore
+    // NOTE: Always-on STUN removed — STUN is now on-demand via OnDemandPeerTransfer
     startWANAutoConnect()
+
+    // Start the RAG sync coordinator for on-demand P2P index sharing
+    RAGSyncCoordinator.shared.ragSyncDelegate = ragSyncDelegate
+    RAGSyncCoordinator.shared.start()
   }
 
   /// Stop the swarm coordinator
   public func stop() {
     isActive = false
 
+    RAGSyncCoordinator.shared.stop()
     stopNetworkMonitor()
     stopWANAutoConnect()
     natTraversalManager?.stop()
@@ -408,13 +413,8 @@ public final class SwarmCoordinator {
     let firebaseService = FirebaseService.shared
     if firebaseService.isSignedIn {
       Task {
-        // Re-discover STUN endpoint (network may have changed)
-        let stunResult = await natTraversalManager?.refreshEndpoint()
-        
-        let workerCaps = WorkerCapabilities.current(
-          stunAddress: stunResult?.address,
-          stunPort: stunResult?.port
-        )
+        // NOTE: STUN re-discovery removed from reconnect — now on-demand
+        let workerCaps = WorkerCapabilities.current()
         for swarm in firebaseService.memberSwarms where swarm.role.canRegisterWorkers {
           _ = try? await firebaseService.registerWorker(swarmId: swarm.id, capabilities: workerCaps)
           // Stop then restart to force fresh listeners
@@ -543,43 +543,14 @@ public final class SwarmCoordinator {
         continue
       }
 
-      // Must have at least a WAN or STUN endpoint
-      guard worker.hasWANEndpoint || worker.hasSTUNEndpoint else { continue }
+      // Must have a WAN endpoint (STUN auto-connect removed — now on-demand)
+      guard worker.hasWANEndpoint else { continue }
 
       wanConnectAttempted.insert(worker.id)
 
       Task {
-        // Strategy 1: STUN hole punch (works through most NATs, no router config)
-        if worker.hasSTUNEndpoint,
-           let stunAddr = worker.stunAddress,
-           let stunPort = worker.stunPort,
-           let natManager = natTraversalManager {
-
-          let peerEndpoint = PeerEndpoint(
-            deviceId: worker.id,
-            address: stunAddr,
-            port: stunPort,
-            stunServer: "peer-reported"
-          )
-
-          logger.info("WAN auto-connect: attempting STUN hole punch to \(worker.displayName) at \(stunAddr):\(stunPort)")
-          let punched = await natManager.punchThrough(to: peerEndpoint)
-
-          if punched {
-            // Hole punch succeeded — now try TCP through the opened NAT binding
-            do {
-              try await connectionManager?.connect(to: stunAddr, port: stunPort)
-              logger.info("WAN auto-connect: TCP connected to \(worker.displayName) via hole punch")
-              return
-            } catch {
-              logger.warning("WAN auto-connect: TCP after hole punch failed to \(worker.displayName): \(error.localizedDescription)")
-            }
-          }
-        }
-
-        // Strategy 2: Direct TCP to WAN address (requires port forwarding)
-        if worker.hasWANEndpoint,
-           let address = worker.wanAddress,
+        // Direct TCP to WAN address (requires port forwarding / UPnP)
+        if let address = worker.wanAddress,
            let port = worker.wanPort {
           logger.info("WAN auto-connect: attempting direct TCP to \(worker.displayName) at \(address):\(port)")
           do {
@@ -602,12 +573,8 @@ public final class SwarmCoordinator {
     wanAutoConnectTask = Task { [weak self] in
       guard let self else { return }
 
-      // Discover our STUN endpoint for hole punching
-      if let stunResult = await self.natTraversalManager?.start() {
-        logger.info("STUN endpoint discovered: \(stunResult)")
-        // Update Firestore registrations with our STUN endpoint
-        await self.updateFirestoreWithSTUNEndpoint(stunResult)
-      }
+      // NOTE: STUN discovery removed from startup — now on-demand via OnDemandPeerTransfer
+      // We still auto-connect to WAN peers that have direct addresses (port forwarding/UPnP)
 
       // Initial attempt after a short delay (let listeners populate)
       try? await Task.sleep(for: .seconds(3))
@@ -1921,5 +1888,29 @@ extension SwarmCoordinator: NATTraversalDelegate {
 
   public func natTraversalShouldFallbackToRelay(_ manager: NATTraversalManager, peerId: String) {
     logger.info("NAT traversal: hole punch failed for peer \(peerId) — no fallback available")
+  }
+
+  // MARK: - LAN Address Discovery
+
+  /// Get the local LAN IP address (en0) for peer-to-peer connections.
+  static func getLocalLANAddress() -> String? {
+    #if os(macOS)
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/sbin/ipconfig")
+    process.arguments = ["getifaddr", "en0"]
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    do {
+      try process.run()
+      process.waitUntilExit()
+      let data = pipe.fileHandleForReading.readDataToEndOfFile()
+      let address = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+      return (address?.isEmpty == false) ? address : nil
+    } catch {
+      return nil
+    }
+    #else
+    return nil  // iOS doesn't support Process
+    #endif
   }
 }

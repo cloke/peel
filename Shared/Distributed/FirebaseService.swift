@@ -1212,6 +1212,8 @@ public final class FirebaseService {
               status: FirestoreWorkerStatus(rawValue: data["status"] as? String ?? "offline") ?? .offline,
               lastHeartbeat: (data["lastHeartbeat"] as? Timestamp)?.dateValue() ?? Date.distantPast,
               version: data["version"] as? String,
+              lanAddress: data["lanAddress"] as? String,
+              lanPort: (data["lanPort"] as? Int).map { UInt16($0) },
               wanAddress: data["wanAddress"] as? String,
               wanPort: (data["wanPort"] as? Int).map { UInt16($0) },
               stunAddress: data["stunAddress"] as? String,

@@ -57,6 +57,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
     "swarm.setup-labels",
     "swarm.register-repo",
     "swarm.repos",
+    "swarm.stun-test",
     // Firestore swarm tools
     "swarm.firestore.auth",
     "swarm.firestore.swarms",
@@ -81,7 +82,10 @@ public final class SwarmToolsHandler: MCPToolHandler {
     "firebase.emulator.install",
     "firebase.emulator.start",
     "firebase.emulator.stop",
-    "firebase.emulator.configure"
+    "firebase.emulator.configure",
+    // On-demand P2P RAG index sharing
+    "swarm.rag-versions",
+    "swarm.rag-sync-index"
   ]
   
   public init(chainRunner: AgentChainRunner? = nil, agentManager: AgentManager? = nil) {
@@ -170,6 +174,11 @@ public final class SwarmToolsHandler: MCPToolHandler {
       return await handleEmulatorStop(id: id)
     case "firebase.emulator.configure":
       return handleEmulatorConfigure(id: id, arguments: arguments)
+    // On-demand P2P RAG index sharing
+    case "swarm.rag-versions":
+      return handleRagVersions(id: id)
+    case "swarm.rag-sync-index":
+      return await handleRagSyncIndex(id: id, arguments: arguments)
     default:
       return (404, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.methodNotFound, message: "Unknown tool"))
     }

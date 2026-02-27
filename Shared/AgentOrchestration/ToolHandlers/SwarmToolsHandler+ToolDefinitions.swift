@@ -639,7 +639,43 @@ extension SwarmToolsHandler {
         category: .swarm,
         isMutating: true
       ),
+
+      // On-demand P2P RAG index sharing
+      MCPToolDefinition(
+        name: "swarm.rag-versions",
+        description: "List RAG index versions available from remote swarm peers. Shows repos, versions, and which peers have them. Requires swarm to be started and listening.",
+        inputSchema: [
+          "type": "object",
+          "properties": [:],
+          "required": []
+        ],
+        category: .swarm,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "swarm.rag-sync-index",
+        description: "Sync a RAG index from a remote peer via on-demand P2P transfer (LAN → WAN → STUN fallback). Specify a repoIdentifier and optionally a source workerId. If no workerId given, uses the best available source.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoIdentifier": [
+              "type": "string",
+              "description": "The repo identifier (git remote URL) to sync"
+            ],
+            "workerId": [
+              "type": "string",
+              "description": "Optional: specific worker ID to sync from. If omitted, uses the best available source."
+            ],
+            "swarmId": [
+              "type": "string",
+              "description": "Optional: specific swarm ID. If omitted, uses the first swarm with the repo available."
+            ]
+          ],
+          "required": ["repoIdentifier"]
+        ],
+        category: .swarm,
+        isMutating: true
+      ),
     ]
   }
 }
-
