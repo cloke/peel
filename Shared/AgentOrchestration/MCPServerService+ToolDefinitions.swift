@@ -33,6 +33,7 @@ extension MCPServerService {
     defs += worktreeToolsHandler.toolDefinitions
     defs += terminalToolsHandler.toolDefinitions
     defs += gitToolsHandler.toolDefinitions
+    defs += codeQualityToolsHandler.toolDefinitions
     if let rag = ragToolsHandler { defs += rag.toolDefinitions }
     if let codeEdit = codeEditToolsHandler { defs += codeEdit.toolDefinitions }
     if let chain = chainToolsHandler { defs += chain.toolDefinitions }

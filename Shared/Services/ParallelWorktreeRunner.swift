@@ -73,7 +73,7 @@ enum ParallelWorktreeStatus: Sendable, Equatable {
 
   var isTerminal: Bool {
     switch self {
-    case .merged, .failed, .cancelled, .rejected, .reviewed: return true
+    case .merged, .failed, .cancelled, .rejected: return true
     default: return false
     }
   }
@@ -1391,9 +1391,9 @@ final class ParallelWorktreeRunner {
   
   // MARK: - Review Gate
   
-  /// Approve an execution
+  /// Approve an execution (from awaitingReview or reviewed state)
   func approveExecution(_ execution: ParallelWorktreeExecution, in run: ParallelWorktreeRun) {
-    guard execution.status == .awaitingReview else { return }
+    guard execution.status == .awaitingReview || execution.status == .reviewed else { return }
     execution.status = .approved
     
     // Check if auto-merge is enabled

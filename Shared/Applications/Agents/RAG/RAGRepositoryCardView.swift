@@ -59,6 +59,7 @@ struct RAGRepositoryCardView: View {
   @State private var syncDirection: RAGArtifactSyncDirection?
   @State private var activeTransferId: UUID?
   @State private var syncResultMessage: String?
+  @State private var onDemandProgress: String?
   @State private var selectedPeerId: String?
   
   /// Adaptive batch size based on available RAM.
@@ -614,6 +615,15 @@ struct RAGRepositoryCardView: View {
       } else if let incomingTransfer = incomingTransferForThisRepo {
         // Incoming transfer (peer is pulling from us or pushing to us)
         syncTransferStatus(incomingTransfer)
+      } else if let onDemandProgress {
+        // On-demand (WAN relay) progress
+        HStack(spacing: 6) {
+          ProgressView()
+            .scaleEffect(0.5)
+          Text(onDemandProgress)
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
       } else if let syncResultMessage {
         Text(syncResultMessage)
           .font(.caption)
@@ -694,27 +704,94 @@ struct RAGRepositoryCardView: View {
     syncDirection = .pull
     syncResultMessage = nil
     activeTransferId = nil
+    onDemandProgress = "Connecting…"
     errorMessage = nil
 
+    // Track completion from the child task
+    var syncFinished = false
+    var syncError: Error?
+
+    // Start the sync in a child task so we can poll progress
+    let syncTask = Task { @MainActor in
+      do {
+        try await SwarmCoordinator.shared.requestRagSyncOnDemand(
+          repoIdentifier: repoIdentifier,
+          fromWorkerId: fromWorkerId
+        )
+      } catch {
+        syncError = error
+        throw error
+      }
+    }
+
+    // Poll RAGSyncCoordinator.activeTransfers for progress updates
+    let coordinator = RAGSyncCoordinator.shared
+    while !syncFinished && !Task.isCancelled {
+      // Find the transfer state for our repo
+      if let transfer = coordinator.activeTransfers.values.first(where: {
+        $0.repoIdentifier == repoIdentifier && $0.targetWorkerId == fromWorkerId
+      }) {
+        let method = transfer.connectionMethod?.rawValue ?? "connecting"
+        switch transfer.status {
+        case .connecting:
+          onDemandProgress = "Connecting (\(method))…"
+        case .handshaking:
+          onDemandProgress = "Handshaking via \(method)…"
+        case .transferring:
+          if transfer.totalBytes > 0 {
+            let pct = Int(transfer.progressFraction * 100)
+            onDemandProgress = "Transferring via \(method): \(pct)% (\(formatBytes(transfer.transferredBytes))/\(formatBytes(transfer.totalBytes)))"
+          } else if transfer.totalChunks > 0 {
+            onDemandProgress = "Transferring via \(method): chunk \(transfer.chunksReceived)/\(transfer.totalChunks)"
+          } else {
+            onDemandProgress = "Transferring via \(method)…"
+          }
+        case .importing:
+          onDemandProgress = "Importing \(formatBytes(transfer.transferredBytes))…"
+        case .complete:
+          syncFinished = true
+        case .failed:
+          syncFinished = true
+        }
+      }
+
+      try? await Task.sleep(for: .seconds(0.5))
+
+      // Also check if the task itself finished (covers cases where transfer state was cleaned up)
+      if syncTask.isCancelled { break }
+    }
+
+    // Await the actual result
     do {
-      try await SwarmCoordinator.shared.requestRagSyncOnDemand(
-        repoIdentifier: repoIdentifier,
-        fromWorkerId: fromWorkerId
-      )
+      try await syncTask.value
       let workerName = FirebaseService.shared.swarmWorkers.first(where: { $0.id == fromWorkerId })?.displayName ?? fromWorkerId
-      syncResultMessage = "Pulled from \(workerName) via on-demand P2P"
+      let method = coordinator.activeTransfers.values.first(where: {
+        $0.repoIdentifier == repoIdentifier && $0.targetWorkerId == fromWorkerId
+      })?.connectionMethod?.rawValue ?? "relay"
+      syncResultMessage = "Pulled from \(workerName) via \(method)"
       await mcpServer.refreshRagSummary()
       await refreshAnalysisStatus()
-      // Auto-dismiss success message
       Task { @MainActor in
         try? await Task.sleep(for: .seconds(6))
         if syncResultMessage != nil { syncResultMessage = nil }
       }
     } catch {
-      errorMessage = "On-demand sync failed: \(error.localizedDescription)"
+      if syncError != nil {
+        errorMessage = "On-demand sync failed: \(error.localizedDescription)"
+      }
     }
+    onDemandProgress = nil
     isSyncing = false
     syncDirection = nil
+  }
+
+  private func formatBytes(_ bytes: Int) -> String {
+    if bytes >= 1_048_576 {
+      return String(format: "%.1f MB", Double(bytes) / 1_048_576)
+    } else if bytes >= 1024 {
+      return String(format: "%.0f KB", Double(bytes) / 1024)
+    }
+    return "\(bytes) B"
   }
 
   /// Menu for selecting which Firestore worker to pull from (on-demand WAN)

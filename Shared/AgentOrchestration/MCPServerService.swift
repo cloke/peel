@@ -635,6 +635,7 @@ public final class MCPServerService {
   var githubToolsHandler: GitHubToolsHandler?
   var terminalToolsHandler: TerminalToolsHandler
   var gitToolsHandler: GitToolsHandler
+  var codeQualityToolsHandler: CodeQualityToolsHandler
   #if os(macOS)
   var localChatToolsHandler: LocalChatToolsHandler?
   var chatSession = SharedChatSession()
@@ -707,6 +708,7 @@ public final class MCPServerService {
     self.githubToolsHandler = GitHubToolsHandler()
     self.terminalToolsHandler = TerminalToolsHandler()
     self.gitToolsHandler = GitToolsHandler()
+    self.codeQualityToolsHandler = CodeQualityToolsHandler()
     #if os(macOS)
     self.localChatToolsHandler = LocalChatToolsHandler()
     #endif
@@ -837,6 +839,7 @@ public final class MCPServerService {
     worktreeToolsHandler.delegate = self
     githubToolsHandler?.delegate = self
     terminalToolsHandler.delegate = self
+    codeQualityToolsHandler.delegate = self
     #if os(macOS)
     localChatToolsHandler?.delegate = self
     localChatToolsHandler?.mcpServer = self

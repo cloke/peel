@@ -1045,6 +1045,9 @@ extension MCPServerService {
     if gitToolsHandler.supportedTools.contains(resolvedName) {
       return await gitToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
     }
+    if codeQualityToolsHandler.supportedTools.contains(resolvedName) {
+      return await codeQualityToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
+    }
     #if os(macOS)
     if localChatToolsHandler?.supportedTools.contains(resolvedName) == true {
       return await localChatToolsHandler!.handle(name: resolvedName, id: id, arguments: arguments)

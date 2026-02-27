@@ -24,6 +24,7 @@ public struct SwarmStatusView: View {
          sort: \TrackedWorktree.createdAt, order: .reverse)
   private var swarmWorktrees: [TrackedWorktree]
   @State private var diskSizes: [String: Int64] = [:]
+  @State private var firestoreWorkersListening = false
   
   public init() {}
   
@@ -46,7 +47,9 @@ public struct SwarmStatusView: View {
       coordinator.delegate = delegateWrapper
       displayName = WorkerCapabilities.configuredDisplayName() ?? ""
       // Start Firestore worker listeners so we see WAN workers
-      if coordinator.isActive {
+      // Guard: only start if active AND listeners not already running
+      if coordinator.isActive && !firestoreWorkersListening {
+        firestoreWorkersListening = true
         startFirestoreWorkerListeners()
       }
     }
@@ -579,6 +582,7 @@ public struct SwarmStatusView: View {
       }
     }
     coordinator.stop()
+    firestoreWorkersListening = false
     log("Swarm stopped")
   }
   

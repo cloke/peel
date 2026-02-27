@@ -320,7 +320,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
       ChainTemplate(
         id: fullImplementationId,
         name: "Full Implementation",
-        description: "Complete workflow with planning, implementation, build verification, and review (Cost: Standard)",
+        description: "Complete workflow with planning, implementation, build verification, lint fix, and review (Cost: Standard)",
         steps: [
           AgentStepTemplate(role: .planner, model: .bestStandard, name: "Planner"),
           AgentStepTemplate(role: .implementer, model: .bestStandard, name: "Implementer"),
@@ -331,13 +331,28 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
             stepType: .gate,
             command: "swift build 2>&1 || xcodebuild -scheme \"$(xcodebuild -list -json 2>/dev/null | python3 -c \"import sys,json; print(json.load(sys.stdin)['project']['schemes'][0])\" 2>/dev/null || echo 'default')\" build 2>&1"
           ),
+          AgentStepTemplate(
+            role: .implementer,
+            model: .bestFree,
+            name: "Lint Fix",
+            stepType: .deterministic,
+            command: """
+              if [ -f package.json ]; then \
+                if grep -q '"lint:fix"' package.json; then \
+                  if [ -f pnpm-lock.yaml ]; then pnpm run lint:fix 2>&1 || true; \
+                  elif [ -f yarn.lock ]; then yarn lint:fix 2>&1 || true; \
+                  else npm run lint:fix 2>&1 || true; fi; \
+                fi; \
+              fi
+              """
+          ),
           AgentStepTemplate(role: .reviewer, model: .bestFree, name: "Reviewer")
         ],
         isBuiltIn: true,
         category: .core
       ),
       
-      // 4. Parallel Implementation: Planner + 2-3 Implementers for multi-file work
+      // 4. Parallel Implementation: Planner + 2-3 Implementers + Lint Fix for multi-file work
       ChainTemplate(
         id: parallelImplementationId,
         name: "Parallel Implementation",
@@ -345,7 +360,28 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         steps: [
           AgentStepTemplate(role: .planner, model: .bestStandard, name: "Planner"),
           AgentStepTemplate(role: .implementer, model: .bestStandard, name: "Implementer A"),
-          AgentStepTemplate(role: .implementer, model: .gpt51Codex, name: "Implementer B")
+          AgentStepTemplate(role: .implementer, model: .gpt51Codex, name: "Implementer B"),
+          AgentStepTemplate(
+            role: .implementer,
+            model: .bestFree,
+            name: "Lint Fix",
+            stepType: .deterministic,
+            command: """
+              if [ -f package.json ]; then \
+                if grep -q '"lint:fix"' package.json; then \
+                  if [ -f pnpm-lock.yaml ]; then pnpm run lint:fix 2>&1 || true; \
+                  elif [ -f yarn.lock ]; then yarn lint:fix 2>&1 || true; \
+                  else npm run lint:fix 2>&1 || true; fi; \
+                elif grep -q '"lint"' package.json; then \
+                  if [ -f pnpm-lock.yaml ]; then pnpm run lint 2>&1 || true; \
+                  elif [ -f yarn.lock ]; then yarn lint 2>&1 || true; \
+                  else npm run lint 2>&1 || true; fi; \
+                fi; \
+              elif [ -f Cargo.toml ]; then cargo clippy --fix --allow-staged 2>&1 || true; \
+              elif [ -f Package.swift ]; then swift build 2>&1 || true; \
+              fi
+              """
+          )
         ],
         isBuiltIn: true,
         category: .core
