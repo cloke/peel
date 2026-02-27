@@ -1291,30 +1291,30 @@ private extension RAGRepositoryCardView {
       if !repoTechTags.isEmpty {
         if !skillTags.isEmpty,
            !skillTags.isDisjoint(with: repoTechTags) {
-          repoSkillsLogger.notice("Skill matched by wildcard tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
+          repoSkillsLogger.debug("Skill matched by wildcard tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
           return true
         }
-        repoSkillsLogger.notice("Skill rejected by wildcard tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
+        repoSkillsLogger.debug("Skill rejected by wildcard tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
         return false
       }
-      repoSkillsLogger.notice("Skill matched by wildcard path. skill=\(skill.title, privacy: .public)")
+      repoSkillsLogger.debug("Skill matched by wildcard path. skill=\(skill.title, privacy: .public)")
       return true
     }
     if skill.repoPath == repo.rootPath {
-      repoSkillsLogger.notice("Skill matched by repo path. skill=\(skill.title, privacy: .public) repo=\(repo.rootPath, privacy: .public)")
+      repoSkillsLogger.debug("Skill matched by repo path. skill=\(skill.title, privacy: .public) repo=\(repo.rootPath, privacy: .public)")
       return true
     }
     if let repoRemoteURL,
        !repoRemoteURL.isEmpty,
        !skill.repoRemoteURL.isEmpty,
        RepoRegistry.shared.normalizeRemoteURL(skill.repoRemoteURL) == RepoRegistry.shared.normalizeRemoteURL(repoRemoteURL) {
-      repoSkillsLogger.notice("Skill matched by repo remote. skill=\(skill.title, privacy: .public)")
+      repoSkillsLogger.debug("Skill matched by repo remote. skill=\(skill.title, privacy: .public)")
       return true
     }
     if !skill.repoName.isEmpty {
       let repoName = URL(fileURLWithPath: repo.rootPath).lastPathComponent
       if repoName == skill.repoName {
-        repoSkillsLogger.notice("Skill matched by repo name. skill=\(skill.title, privacy: .public) repoName=\(repoName, privacy: .public)")
+        repoSkillsLogger.debug("Skill matched by repo name. skill=\(skill.title, privacy: .public) repoName=\(repoName, privacy: .public)")
         return true
       }
     }
@@ -1324,15 +1324,15 @@ private extension RAGRepositoryCardView {
       if !repoTechTags.isEmpty {
         if !skillTags.isEmpty,
            !skillTags.isDisjoint(with: repoTechTags) {
-          repoSkillsLogger.notice("Skill matched by tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
+          repoSkillsLogger.debug("Skill matched by tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
           return true
         }
-        repoSkillsLogger.notice("Skill rejected by tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
+        repoSkillsLogger.debug("Skill rejected by tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
         return false
       }
       if !skillTags.isEmpty,
          !skillTags.isDisjoint(with: repoTechTags) {
-        repoSkillsLogger.notice("Skill matched by tags (no repo tags). skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public)")
+        repoSkillsLogger.debug("Skill matched by tags (no repo tags). skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public)")
         return true
       }
     }
@@ -1369,30 +1369,30 @@ struct RAGRepoSkillsSheet: View {
       if !repoTechTags.isEmpty {
         if !skillTags.isEmpty,
            !skillTags.isDisjoint(with: repoTechTags) {
-          repoSkillsLogger.notice("Sheet skill matched by wildcard tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
+          repoSkillsLogger.debug("Sheet skill matched by wildcard tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
           return true
         }
-        repoSkillsLogger.notice("Sheet skill rejected by wildcard tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
+        repoSkillsLogger.debug("Sheet skill rejected by wildcard tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
         return false
       }
-      repoSkillsLogger.notice("Sheet skill matched by wildcard path. skill=\(skill.title, privacy: .public)")
+      repoSkillsLogger.debug("Sheet skill matched by wildcard path. skill=\(skill.title, privacy: .public)")
       return true
     }
     if skill.repoPath == repo.rootPath {
-      repoSkillsLogger.notice("Sheet skill matched by repo path. skill=\(skill.title, privacy: .public) repo=\(repo.rootPath, privacy: .public)")
+      repoSkillsLogger.debug("Sheet skill matched by repo path. skill=\(skill.title, privacy: .public) repo=\(repo.rootPath, privacy: .public)")
       return true
     }
     if let repoRemoteURL,
        !repoRemoteURL.isEmpty,
        !skill.repoRemoteURL.isEmpty,
        RepoRegistry.shared.normalizeRemoteURL(skill.repoRemoteURL) == RepoRegistry.shared.normalizeRemoteURL(repoRemoteURL) {
-      repoSkillsLogger.notice("Sheet skill matched by repo remote. skill=\(skill.title, privacy: .public)")
+      repoSkillsLogger.debug("Sheet skill matched by repo remote. skill=\(skill.title, privacy: .public)")
       return true
     }
     if !skill.repoName.isEmpty {
       let repoName = URL(fileURLWithPath: repo.rootPath).lastPathComponent
       if repoName == skill.repoName {
-        repoSkillsLogger.notice("Sheet skill matched by repo name. skill=\(skill.title, privacy: .public) repoName=\(repoName, privacy: .public)")
+        repoSkillsLogger.debug("Sheet skill matched by repo name. skill=\(skill.title, privacy: .public) repoName=\(repoName, privacy: .public)")
         return true
       }
     }
@@ -1401,15 +1401,15 @@ struct RAGRepoSkillsSheet: View {
       if !repoTechTags.isEmpty {
         if !skillTags.isEmpty,
            !skillTags.isDisjoint(with: repoTechTags) {
-          repoSkillsLogger.notice("Sheet skill matched by tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
+          repoSkillsLogger.debug("Sheet skill matched by tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
           return true
         }
-        repoSkillsLogger.notice("Sheet skill rejected by tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
+        repoSkillsLogger.debug("Sheet skill rejected by tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
         return false
       }
       if !skillTags.isEmpty,
          !skillTags.isDisjoint(with: repoTechTags) {
-        repoSkillsLogger.notice("Sheet skill matched by tags (no repo tags). skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public)")
+        repoSkillsLogger.debug("Sheet skill matched by tags (no repo tags). skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public)")
         return true
       }
     }

@@ -720,18 +720,18 @@ final class DataService {
       if !repoTechTags.isEmpty {
         if !skillTags.isEmpty,
            !skillTags.isDisjoint(with: repoTechTags) {
-          logger.notice("Skill matched by wildcard tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
+          logger.debug("Skill matched by wildcard tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
           return true
         }
-        logger.notice("Skill rejected by wildcard tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
+        logger.debug("Skill rejected by wildcard tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
         return false
       }
-      logger.notice("Skill matched by wildcard path. skill=\(skill.title, privacy: .public)")
+      logger.debug("Skill matched by wildcard path. skill=\(skill.title, privacy: .public)")
       return true
     }
 
     if let repoPath, !repoPath.isEmpty, skill.repoPath == repoPath {
-      logger.notice("Skill matched by repo path. skill=\(skill.title, privacy: .public) repo=\(repoPath, privacy: .public)")
+      logger.debug("Skill matched by repo path. skill=\(skill.title, privacy: .public) repo=\(repoPath, privacy: .public)")
       return true
     }
 
@@ -739,14 +739,14 @@ final class DataService {
        !repoRemoteURL.isEmpty,
        !skill.repoRemoteURL.isEmpty,
        RepoRegistry.shared.normalizeRemoteURL(skill.repoRemoteURL) == RepoRegistry.shared.normalizeRemoteURL(repoRemoteURL) {
-      logger.notice("Skill matched by repo remote. skill=\(skill.title, privacy: .public)")
+      logger.debug("Skill matched by repo remote. skill=\(skill.title, privacy: .public)")
       return true
     }
 
     if let repoPath, !repoPath.isEmpty, !skill.repoName.isEmpty {
       let repoName = URL(fileURLWithPath: repoPath).lastPathComponent
       if repoName == skill.repoName {
-        logger.notice("Skill matched by repo name. skill=\(skill.title, privacy: .public) repoName=\(repoName, privacy: .public)")
+        logger.debug("Skill matched by repo name. skill=\(skill.title, privacy: .public) repoName=\(repoName, privacy: .public)")
         return true
       }
     }
@@ -756,15 +756,15 @@ final class DataService {
       if !repoTechTags.isEmpty {
         if !skillTags.isEmpty,
            !skillTags.isDisjoint(with: repoTechTags) {
-          logger.notice("Skill matched by tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
+          logger.debug("Skill matched by tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
           return true
         }
-        logger.notice("Skill rejected by tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
+        logger.debug("Skill rejected by tags. skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public) repoTags=\(String(describing: repoTechTags), privacy: .public)")
         return false
       }
       if !skillTags.isEmpty,
          !skillTags.isDisjoint(with: repoTechTags) {
-        logger.notice("Skill matched by tags (no repo tags). skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public)")
+        logger.debug("Skill matched by tags (no repo tags). skill=\(skill.title, privacy: .public) tags=\(skill.tags, privacy: .public)")
         return true
       }
     }
