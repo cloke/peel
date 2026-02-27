@@ -11,6 +11,7 @@ import os.log
 /// View showing distributed swarm status
 public struct SwarmStatusView: View {
   @Environment(MCPServerService.self) private var mcpServer
+  @Environment(\.modelContext) private var modelContext
   @State private var coordinator = SwarmCoordinator.shared
   @State private var firebaseService = FirebaseService.shared
   @State private var delegateWrapper = SwarmStatusCoordinatorWrapper()
@@ -494,10 +495,20 @@ public struct SwarmStatusView: View {
     
     do {
       try coordinator.start(role: role)
+      // Persist the chosen role so auto-start uses it next launch
+      persistSwarmRole(role)
       startFirestoreWorkerListeners()
       log("Swarm started as \(roleDisplayName)")
     } catch {
       errorMessage = error.localizedDescription
+    }
+  }
+
+  private func persistSwarmRole(_ role: SwarmRole) {
+    let descriptor = FetchDescriptor<DeviceSettings>()
+    if let settings = try? modelContext.fetch(descriptor).first {
+      settings.swarmRole = role.rawValue
+      try? modelContext.save()
     }
   }
 

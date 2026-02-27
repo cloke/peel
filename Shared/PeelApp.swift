@@ -52,8 +52,9 @@ struct PeelApp: App {
         let settings = dataService.getDeviceSettings()
         // Respect explicit worker-mode flag
         if settings.swarmAutoStart && !WorkerMode.shared.shouldRunInWorkerMode {
+          let role = SwarmRole(rawValue: settings.swarmRole) ?? .hybrid
           do {
-            try SwarmCoordinator.shared.start(role: .hybrid, port: 8766)
+            try SwarmCoordinator.shared.start(role: role, port: 8766)
 
             // If signed into Firebase, register worker and start listeners so WAN peers are visible
             if FirebaseService.shared.isSignedIn {

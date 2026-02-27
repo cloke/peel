@@ -29,6 +29,9 @@ final class DeviceSettings {
 
   // Swarm auto-start: whether this device should automatically join the swarm on launch
   var swarmAutoStart: Bool = true
+
+  // Swarm role to use on auto-start (persisted as SwarmRole.rawValue: "brain", "worker", "hybrid")
+  var swarmRole: String = "hybrid"
   
   // Whether the swarm onboarding hint (first-run) has been shown to the user
   var swarmOnboardingShown: Bool = false
