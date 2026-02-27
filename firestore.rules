@@ -148,6 +148,21 @@ service cloud.firestore {
         allow delete: if isContributor(swarmId);
       }
 
+      // Relay requests — Firestore-mediated RAG index transfer when direct P2P fails.
+      // A consumer creates a request; the provider writes chunks back through it.
+      match /relayRequests/{requestId} {
+        allow read: if isReader(swarmId);
+        allow create, update: if isContributor(swarmId);
+        allow delete: if isContributor(swarmId);
+
+        // Chunks subcollection (provider writes base64-encoded chunks for the consumer)
+        match /chunks/{chunkId} {
+          allow read: if isReader(swarmId);
+          allow create, update: if isContributor(swarmId);
+          allow delete: if isContributor(swarmId);
+        }
+      }
+
       // Messages subcollection (broadcast & direct messages)
       match /messages/{messageId} {
         allow read: if isReader(swarmId);
