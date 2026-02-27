@@ -307,6 +307,7 @@ final class SharedChatSession {
       let hardCap = maxToolRounds + 2 // safety: absolute max iterations
       var toolRound = 0
       var iteration = 0
+      var forcedTextOnly = false // true after synthesis prompt sent
 
       toolLoop: while iteration < hardCap {
         iteration += 1
@@ -326,8 +327,13 @@ final class SharedChatSession {
               }
             }
           case .toolCall(let call):
-            detectedToolCall = call
-            print("[SharedChat] Tool call detected (round \(toolRound + 1)): \(call.name)(\(call.arguments))")
+            if forcedTextOnly {
+              // Model hallucinated a tool call after synthesis prompt — ignore it
+              print("[SharedChat] Ignoring hallucinated tool call after synthesis: \(call.name)")
+            } else {
+              detectedToolCall = call
+              print("[SharedChat] Tool call detected (round \(toolRound + 1)): \(call.name)(\(call.arguments))")
+            }
           }
         }
 
@@ -366,11 +372,15 @@ final class SharedChatSession {
         currentStreamText = ""
 
         if toolRound >= maxToolRounds {
-          // Max tool rounds reached — final generation WITHOUT tools
-          // Disable tool instructions in system prompt so model stops calling tools
+          // Max tool rounds reached — final generation with synthesis instruction
+          // Disable tool instructions in system prompt so model focuses on answering
           await service.setToolsEnabled(false)
+          forcedTextOnly = true
           print("[SharedChat] Tool round \(toolRound)/\(maxToolRounds) — forcing final text-only response")
-          events = try await service.continueAfterTool(tools: nil)
+          events = try await service.continueWithInstruction(
+            "You have completed your tool calls. Now synthesize the information from the results above into a clear, concise answer to the original question. Do not call any more tools — just provide your analysis and answer directly.",
+            tools: nil
+          )
           // Loop back to consume the final no-tools generation
         } else {
           events = try await service.continueAfterTool(tools: toolSpecs)
@@ -538,7 +548,7 @@ final class SharedChatSession {
 
   /// Strip any <tool_call>...</tool_call> and <think>...</think> XML from a response string.
   /// The model may hallucinate tool calls even when tools are disabled,
-  /// and thinking blocks should not appear in the final response.
+  /// and thinking blocks should not appear in the final visible response.
   private static func stripToolCallXML(_ text: String) -> String {
     var result = text
     // Remove complete tool call blocks
