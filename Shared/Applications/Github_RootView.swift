@@ -317,11 +317,15 @@ struct Github_RootView: View {
   }
 
   private var favoriteItems: [FavoriteRepository] {
-    // Deduplicate by githubRepoId — CloudKit sync can create duplicate rows
-    // since SwiftData @Model can't use @Attribute(.unique) with iCloud
-    var seen = Set<Int>()
+    // Deduplicate by githubRepoId AND by ownerLogin+repoName.
+    // CloudKit sync can create duplicate rows (no @Attribute(.unique) with iCloud),
+    // and repos recreated on GitHub get new IDs but keep the same name.
+    var seenIds = Set<Int>()
+    var seenNames = Set<String>()
     return favoriteRecords.compactMap { record in
-      guard seen.insert(record.githubRepoId).inserted else { return nil }
+      guard seenIds.insert(record.githubRepoId).inserted else { return nil }
+      let nameKey = "\(record.ownerLogin)/\(record.repoName)".lowercased()
+      guard seenNames.insert(nameKey).inserted else { return nil }
       return FavoriteRepository(
         id: record.githubRepoId,
         fullName: record.fullName,
@@ -606,12 +610,25 @@ final class GitHubDataProvider: GitHubFavoritesProvider, RecentPRsProvider, Loca
     if (try? modelContext.fetch(descriptor).first) != nil {
       return
     }
-    
+
+    // Also check by owner+name — the repo may have been recreated with a new ID.
+    // Remove stale records for the same owner/name before inserting.
+    let ownerLogin = repo.owner?.login ?? "unknown"
+    let repoName = repo.name
+    let nameDescriptor = FetchDescriptor<GitHubFavorite>(
+      predicate: #Predicate { $0.ownerLogin == ownerLogin && $0.repoName == repoName }
+    )
+    if let staleRecords = try? modelContext.fetch(nameDescriptor), !staleRecords.isEmpty {
+      for stale in staleRecords {
+        modelContext.delete(stale)
+      }
+    }
+
     let favorite = GitHubFavorite(
       githubRepoId: repo.id,
       fullName: repo.full_name ?? repo.name,
-      ownerLogin: repo.owner?.login ?? "unknown",
-      repoName: repo.name,
+      ownerLogin: ownerLogin,
+      repoName: repoName,
       htmlURL: repo.html_url
     )
     modelContext.insert(favorite)
@@ -622,10 +639,22 @@ final class GitHubDataProvider: GitHubFavoritesProvider, RecentPRsProvider, Loca
     let descriptor = FetchDescriptor<GitHubFavorite>(
       predicate: #Predicate { $0.githubRepoId == repoId }
     )
-    if let favorite = try? modelContext.fetch(descriptor).first {
+    guard let favorite = try? modelContext.fetch(descriptor).first else { return }
+
+    // Also remove any stale duplicates with the same owner+name but different IDs
+    let ownerLogin = favorite.ownerLogin
+    let repoName = favorite.repoName
+    let nameDescriptor = FetchDescriptor<GitHubFavorite>(
+      predicate: #Predicate { $0.ownerLogin == ownerLogin && $0.repoName == repoName }
+    )
+    if let allMatches = try? modelContext.fetch(nameDescriptor) {
+      for match in allMatches {
+        modelContext.delete(match)
+      }
+    } else {
       modelContext.delete(favorite)
-      try? modelContext.save()
     }
+    try? modelContext.save()
   }
   
   func getFavorites() -> [FavoriteRepository] {

@@ -212,6 +212,12 @@ public final class SwarmCoordinator {
   /// Public read-only access to NAT traversal manager (for STUN diagnostics)
   public var natTraversal: NATTraversalManager? { natTraversalManager }
 
+  /// STUN signaling responder (answers incoming hole-punch offers via Firestore)
+  private var stunSignalingResponder: STUNSignalingResponder?
+
+  /// Firestore relay provider (serves RAG data through Firestore when direct P2P fails)
+  private var firestoreRelayProvider: FirestoreRelayProvider?
+
   /// Delegate
   public weak var delegate: SwarmCoordinatorDelegate?
 
@@ -325,6 +331,14 @@ public final class SwarmCoordinator {
     // Start the RAG sync coordinator for on-demand P2P index sharing
     RAGSyncCoordinator.shared.ragSyncDelegate = ragSyncDelegate
     RAGSyncCoordinator.shared.start()
+
+    // Start STUN signaling responder — watches Firestore for incoming
+    // hole-punch offers and writes answers so bilateral exchange works
+    startSTUNSignalingResponder(port: port)
+
+    // Start Firestore relay provider — serves RAG data through Firestore
+    // when direct P2P connections (LAN/WAN/STUN) all fail
+    startFirestoreRelayProvider()
   }
 
   /// Stop the swarm coordinator
@@ -332,6 +346,10 @@ public final class SwarmCoordinator {
     isActive = false
 
     RAGSyncCoordinator.shared.stop()
+    stunSignalingResponder?.stop()
+    stunSignalingResponder = nil
+    firestoreRelayProvider?.stop()
+    firestoreRelayProvider = nil
     stopNetworkMonitor()
     stopWANAutoConnect()
     natTraversalManager?.stop()
@@ -616,7 +634,60 @@ public final class SwarmCoordinator {
     wanAutoConnectTask = nil
     wanConnectAttempted.removeAll()
   }
-  
+
+  // MARK: - STUN Signaling Responder
+
+  /// Start the STUN signaling responder for all member swarms.
+  /// This watches Firestore for incoming STUN offers and writes answers,
+  /// completing the bilateral exchange needed for NAT hole-punching.
+  private func startSTUNSignalingResponder(port: UInt16) {
+    let firebaseService = FirebaseService.shared
+    guard firebaseService.isSignedIn else {
+      logger.info("Not signed in — skipping STUN signaling responder")
+      return
+    }
+
+    let swarmIds = firebaseService.memberSwarms
+      .filter { $0.role.canRegisterWorkers }
+      .map(\.id)
+
+    guard !swarmIds.isEmpty else {
+      logger.info("No swarms to listen for STUN offers")
+      return
+    }
+
+    let responder = STUNSignalingResponder(listeningPort: port)
+    responder.start(swarmIds: swarmIds, myDeviceId: capabilities.deviceId)
+    stunSignalingResponder = responder
+  }
+
+  // MARK: - Firestore Relay Provider
+
+  /// Start the Firestore relay provider for all member swarms.
+  /// This watches for relay requests and serves RAG data through Firestore
+  /// when direct P2P connections are impossible.
+  private func startFirestoreRelayProvider() {
+    let firebaseService = FirebaseService.shared
+    guard firebaseService.isSignedIn else {
+      logger.info("Not signed in — skipping Firestore relay provider")
+      return
+    }
+
+    let swarmIds = firebaseService.memberSwarms
+      .filter { $0.role.canRegisterWorkers }
+      .map(\.id)
+
+    guard !swarmIds.isEmpty else {
+      logger.info("No swarms to listen for relay requests")
+      return
+    }
+
+    let provider = FirestoreRelayProvider()
+    provider.ragSyncDelegate = ragSyncDelegate
+    provider.start(swarmIds: swarmIds, myDeviceId: capabilities.deviceId)
+    firestoreRelayProvider = provider
+  }
+
   /// Dispatch a chain to the best available worker (brain mode)
   public func dispatchChain(_ request: ChainRequest) async throws -> ChainResult {
     guard role == .brain || role == .hybrid else {
@@ -775,6 +846,42 @@ public final class SwarmCoordinator {
 
   public func updateLocalRagArtifactStatus(_ status: RAGArtifactStatus?) {
     localRagArtifactStatus = status
+  }
+
+  /// Request an on-demand RAG index pull from a Firestore worker via OnDemandPeerTransfer.
+  /// This is used when no TCP-connected peers are available (WAN scenario).
+  /// Only supports pull direction — push requires an established TCP connection.
+  public func requestRagSyncOnDemand(
+    repoIdentifier: String,
+    fromWorkerId: String
+  ) async throws {
+    guard isActive else {
+      throw DistributedError.actorSystemNotReady
+    }
+
+    let firebaseService = FirebaseService.shared
+    guard let swarmId = firebaseService.memberSwarms.first?.id else {
+      throw DistributedError.connectionFailed(deviceId: fromWorkerId, reason: "No swarm membership found")
+    }
+
+    try await RAGSyncCoordinator.shared.syncIndex(
+      repoIdentifier: repoIdentifier,
+      fromWorkerId: fromWorkerId,
+      swarmId: swarmId
+    )
+  }
+
+  /// Firestore workers that are online but not TCP-connected (available for on-demand pull).
+  public var onDemandWorkers: [FirestoreWorker] {
+    guard isActive else { return [] }
+    let myDeviceId = capabilities.deviceId
+    let connectedIds = Set(connectedWorkers.map(\.id))
+    return FirebaseService.shared.swarmWorkers.filter { worker in
+      worker.id != myDeviceId
+        && !connectedIds.contains(worker.id)
+        && worker.status == .online
+        && !worker.isStale
+    }
   }
 
   public func requestRagArtifactSync(

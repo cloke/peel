@@ -229,6 +229,30 @@ struct RAGRepositoryCardView: View {
             Label("Pull from Peer", systemImage: "arrow.down.circle")
           }
           .disabled(isSyncing)
+        } else if SwarmCoordinator.shared.isActive && !SwarmCoordinator.shared.onDemandWorkers.isEmpty {
+          // On-demand pull from Firestore workers (WAN)
+          let workers = SwarmCoordinator.shared.onDemandWorkers
+          if workers.count == 1 {
+            Button {
+              Task { await syncRepoOnDemand(repoIdentifier: repoIdentifier, fromWorkerId: workers[0].id) }
+            } label: {
+              Label("Pull from \(workers[0].displayName) (WAN)", systemImage: "arrow.down.circle")
+            }
+            .disabled(isSyncing)
+          } else {
+            Menu {
+              ForEach(workers, id: \.id) { worker in
+                Button {
+                  Task { await syncRepoOnDemand(repoIdentifier: repoIdentifier, fromWorkerId: worker.id) }
+                } label: {
+                  Label(worker.displayName, systemImage: "desktopcomputer")
+                }
+              }
+            } label: {
+              Label("Pull (WAN)", systemImage: "arrow.down.circle")
+            }
+            .disabled(isSyncing)
+          }
         }
 
         if !SwarmCoordinator.shared.isActive {
@@ -501,12 +525,14 @@ struct RAGRepositoryCardView: View {
       if let repoIdentifier = repo.repoIdentifier {
         let peers = SwarmCoordinator.shared.connectedWorkers
         let hasPeers = !peers.isEmpty && SwarmCoordinator.shared.isActive
+        let onDemandWorkers = SwarmCoordinator.shared.onDemandWorkers
+        let hasOnDemand = !onDemandWorkers.isEmpty && SwarmCoordinator.shared.isActive
         if SwarmCoordinator.shared.isActive && peers.count > 1 {
-          // Multiple peers: show menus to pick which peer
+          // Multiple TCP peers: show menus to pick which peer
           syncPeerMenu(peers: peers, repoIdentifier: repoIdentifier, direction: .push)
           syncPeerMenu(peers: peers, repoIdentifier: repoIdentifier, direction: .pull)
         } else if hasPeers {
-          // Single peer: direct P2P buttons
+          // Single TCP peer: direct P2P buttons
           Button {
             Task { await syncRepoWithPeers(repoIdentifier: repoIdentifier, direction: .push) }
           } label: {
@@ -542,14 +568,37 @@ struct RAGRepositoryCardView: View {
           .controlSize(.small)
           .disabled(isSyncing)
           .help("Pull from \(peers.first?.displayName ?? "peer")")
+        } else if hasOnDemand {
+          // No TCP peers but Firestore workers available — on-demand pull via WAN/STUN
+          if onDemandWorkers.count > 1 {
+            onDemandPullMenu(workers: onDemandWorkers, repoIdentifier: repoIdentifier)
+          } else {
+            Button {
+              Task { await syncRepoOnDemand(repoIdentifier: repoIdentifier, fromWorkerId: onDemandWorkers[0].id) }
+            } label: {
+              if isSyncing && syncDirection == .pull {
+                HStack(spacing: 4) {
+                  ProgressView()
+                    .scaleEffect(0.5)
+                  Text("Pulling…")
+                }
+              } else {
+                Label("Pull (WAN)", systemImage: "arrow.down.circle")
+              }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(isSyncing)
+            .help("Pull from \(onDemandWorkers[0].displayName) via on-demand P2P")
+          }
         } else {
-          // No peers connected
+          // No peers at all
           if !SwarmCoordinator.shared.isActive {
             Text("Start Swarm to sync")
               .font(.caption2)
               .foregroundStyle(.secondary)
           } else {
-            Text("No peers connected")
+            Text("No peers available")
               .font(.caption2)
               .foregroundStyle(.secondary)
           }
@@ -636,6 +685,64 @@ struct RAGRepositoryCardView: View {
     }
     isSyncing = false
     syncDirection = nil
+  }
+
+  /// Pull a repo index via on-demand P2P connection (WAN/STUN fallback).
+  /// Used when no TCP-connected peers exist but Firestore workers are online.
+  private func syncRepoOnDemand(repoIdentifier: String, fromWorkerId: String) async {
+    isSyncing = true
+    syncDirection = .pull
+    syncResultMessage = nil
+    activeTransferId = nil
+    errorMessage = nil
+
+    do {
+      try await SwarmCoordinator.shared.requestRagSyncOnDemand(
+        repoIdentifier: repoIdentifier,
+        fromWorkerId: fromWorkerId
+      )
+      let workerName = FirebaseService.shared.swarmWorkers.first(where: { $0.id == fromWorkerId })?.displayName ?? fromWorkerId
+      syncResultMessage = "Pulled from \(workerName) via on-demand P2P"
+      await mcpServer.refreshRagSummary()
+      await refreshAnalysisStatus()
+      // Auto-dismiss success message
+      Task { @MainActor in
+        try? await Task.sleep(for: .seconds(6))
+        if syncResultMessage != nil { syncResultMessage = nil }
+      }
+    } catch {
+      errorMessage = "On-demand sync failed: \(error.localizedDescription)"
+    }
+    isSyncing = false
+    syncDirection = nil
+  }
+
+  /// Menu for selecting which Firestore worker to pull from (on-demand WAN)
+  private func onDemandPullMenu(workers: [FirestoreWorker], repoIdentifier: String) -> some View {
+    let isActive = isSyncing && syncDirection == .pull
+
+    return Menu {
+      ForEach(workers, id: \.id) { worker in
+        Button {
+          Task { await syncRepoOnDemand(repoIdentifier: repoIdentifier, fromWorkerId: worker.id) }
+        } label: {
+          Label(worker.displayName, systemImage: "desktopcomputer")
+        }
+      }
+    } label: {
+      if isActive {
+        HStack(spacing: 4) {
+          ProgressView()
+            .scaleEffect(0.5)
+          Text("Pulling…")
+        }
+      } else {
+        Label("Pull (WAN)", systemImage: "arrow.down.circle")
+      }
+    }
+    .buttonStyle(.bordered)
+    .controlSize(.small)
+    .disabled(isSyncing)
   }
 
   /// Transfer progress display
@@ -758,6 +865,12 @@ struct RAGRepositoryCardView: View {
 
   private var hasConnectedPeers: Bool {
     SwarmCoordinator.shared.isActive && !SwarmCoordinator.shared.connectedWorkers.isEmpty
+  }
+
+  /// Whether there are any peers available (TCP-connected or Firestore on-demand)
+  private var hasAnyPeers: Bool {
+    SwarmCoordinator.shared.isActive
+      && (!SwarmCoordinator.shared.connectedWorkers.isEmpty || !SwarmCoordinator.shared.onDemandWorkers.isEmpty)
   }
   
   // MARK: - Card Background

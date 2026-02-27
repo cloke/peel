@@ -50,13 +50,18 @@ public final class OnDemandTransferState {
     case lan
     case wanDirect
     case stunHolePunch
+    case firestoreRelay
   }
 
-  init(id: UUID, targetWorkerId: String, targetWorkerName: String, repoIdentifier: String) {
+  /// The Firestore swarm ID (needed for STUN signaling and relay paths)
+  public let swarmId: String
+
+  init(id: UUID, targetWorkerId: String, targetWorkerName: String, repoIdentifier: String, swarmId: String) {
     self.id = id
     self.targetWorkerId = targetWorkerId
     self.targetWorkerName = targetWorkerName
     self.repoIdentifier = repoIdentifier
+    self.swarmId = swarmId
   }
 
   public var progressFraction: Double {
@@ -91,7 +96,12 @@ public final class OnDemandPeerTransfer {
 
   // MARK: - Public API
 
+  /// Firestore relay consumer (shared across transfers)
+  private let relayConsumer = FirestoreRelayConsumer()
+
   /// Connect to a peer, request a repo's RAG index, and import it.
+  /// Tries direct connection first (LAN → WAN → STUN), then falls back
+  /// to Firestore relay if all direct methods fail.
   /// Returns the transfer state when complete.
   func requestIndex(
     from worker: FirestoreWorker,
@@ -104,7 +114,8 @@ public final class OnDemandPeerTransfer {
       id: transferId,
       targetWorkerId: worker.workerId,
       targetWorkerName: worker.displayName,
-      repoIdentifier: repoIdentifier
+      repoIdentifier: repoIdentifier,
+      swarmId: swarmId
     )
     tracker.activeTransfers[transferId] = state
 
@@ -119,17 +130,52 @@ public final class OnDemandPeerTransfer {
       }
     }
 
-    // Step 1: Establish connection
-    let connection: NWConnection
+    // Try direct P2P connection (LAN → WAN → STUN)
+    if let connection = try? await connectToPeer(worker: worker, state: state) {
+      // Direct path: handshake → transfer → disconnect
+      try await directTransfer(
+        connection: connection,
+        worker: worker,
+        transferId: transferId,
+        repoIdentifier: repoIdentifier,
+        ragSyncDelegate: ragSyncDelegate,
+        state: state
+      )
+      return state
+    }
+
+    // All direct connections failed — fall back to Firestore relay
+    logger.info("All direct connections failed to \(worker.displayName), using Firestore relay")
+    state.connectionMethod = .firestoreRelay
+    state.status = .connecting
+
     do {
-      connection = try await connectToPeer(worker: worker, state: state)
+      try await relayConsumer.requestIndex(
+        from: worker,
+        repoIdentifier: repoIdentifier,
+        swarmId: swarmId,
+        ragSyncDelegate: ragSyncDelegate,
+        state: state
+      )
     } catch {
-      state.error = "Connection failed: \(error.localizedDescription)"
-      logger.error("Failed to connect to \(worker.displayName): \(error)")
+      state.error = "Relay failed: \(error.localizedDescription)"
+      logger.error("Firestore relay failed from \(worker.displayName): \(error)")
       throw error
     }
 
-    // Step 2: Handshake
+    return state
+  }
+
+  /// Perform a direct transfer over an established NWConnection.
+  private func directTransfer(
+    connection: NWConnection,
+    worker: FirestoreWorker,
+    transferId: UUID,
+    repoIdentifier: String,
+    ragSyncDelegate: RAGArtifactSyncDelegate,
+    state: OnDemandTransferState
+  ) async throws {
+    // Handshake
     state.status = .handshaking
     let peerConn = PeerConnectionActor(connection: connection, peerId: worker.workerId)
     do {
@@ -141,7 +187,7 @@ public final class OnDemandPeerTransfer {
       throw error
     }
 
-    // Step 3: Request the RAG repo data
+    // Request the RAG repo data
     state.status = .transferring
     do {
       try await peerConn.send(
@@ -151,7 +197,7 @@ public final class OnDemandPeerTransfer {
       // Receive the chunked data
       let bundleData = try await receiveTransfer(peerConn: peerConn, transferId: transferId, state: state)
 
-      // Step 4: Import
+      // Import
       state.status = .importing
       try await importRepoBundle(data: bundleData, ragSyncDelegate: ragSyncDelegate)
 
@@ -165,20 +211,19 @@ public final class OnDemandPeerTransfer {
       throw error
     }
 
-    // Step 5: Disconnect
+    // Disconnect
     try? await peerConn.send(.goodbye)
     await peerConn.close()
-
-    return state
   }
 
   // MARK: - Connection Strategy
 
   /// Try LAN → WAN direct → STUN, returning the first working connection.
+  /// Returns nil if all methods fail (caller should fall back to relay).
   private func connectToPeer(
     worker: FirestoreWorker,
     state: OnDemandTransferState
-  ) async throws -> NWConnection {
+  ) async throws -> NWConnection? {
     // Attempt 1: LAN (fastest, most reliable)
     if let lanAddress = worker.lanAddress, let lanPort = worker.lanPort {
       logger.info("Trying LAN connection to \(worker.displayName) at \(lanAddress):\(lanPort)")
@@ -203,13 +248,15 @@ public final class OnDemandPeerTransfer {
 
     // Attempt 3: STUN + hole punch
     logger.info("Trying STUN hole-punch to \(worker.displayName)")
-    if let conn = try? await attemptSTUNConnection(worker: worker, swarmId: state.repoIdentifier) {
+    if let conn = try? await attemptSTUNConnection(worker: worker, swarmId: state.swarmId) {
       state.connectionMethod = .stunHolePunch
       logger.info("Connected via STUN hole-punch to \(worker.displayName)")
       return conn
     }
 
-    throw OnDemandTransferError.allConnectionMethodsFailed(worker: worker.displayName)
+    // All direct methods failed — return nil to trigger relay fallback
+    logger.info("All direct connection methods failed to \(worker.displayName)")
+    return nil
   }
 
   /// Open a TCP connection with a timeout.
