@@ -19,7 +19,11 @@ final class RepoToolsHandler: MCPToolHandler {
   let supportedTools: Set<String> = [
     "repos.list",
     "repos.resolve",
-    "repos.delete"
+    "repos.delete",
+    "repos.track",
+    "repos.untrack",
+    "repos.tracked",
+    "repos.pull-now"
   ]
 
   private struct RepoToolRepository {
@@ -76,6 +80,14 @@ final class RepoToolsHandler: MCPToolHandler {
       return handleResolve(id: id, arguments: arguments, delegate: repoDelegate)
     case "repos.delete":
       return await handleDelete(id: id, arguments: arguments, delegate: repoDelegate)
+    case "repos.track":
+      return handleTrack(id: id, arguments: arguments, delegate: repoDelegate)
+    case "repos.untrack":
+      return handleUntrack(id: id, arguments: arguments, delegate: repoDelegate)
+    case "repos.tracked":
+      return handleTracked(id: id, arguments: arguments, delegate: repoDelegate)
+    case "repos.pull-now":
+      return await handlePullNow(id: id, arguments: arguments, delegate: repoDelegate)
     default:
       return (404, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.methodNotFound, message: "Unknown repo tool: \(name)"))
     }
@@ -222,6 +234,158 @@ final class RepoToolsHandler: MCPToolHandler {
 
     return (200, makeResult(id: id, result: result))
   }
+
+  // MARK: - Tracked Remote Repo Handlers
+
+  private func handleTrack(id: Any?, arguments: [String: Any], delegate: RepoToolsHandlerDelegate) -> (Int, Data) {
+    guard case .success(let localPath) = requireString("localPath", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "localPath")
+    }
+
+    guard let dataService = delegate.repoDataService else {
+      return notConfiguredError(id: id)
+    }
+
+    guard FileManager.default.fileExists(atPath: localPath) else {
+      return internalError(id: id, message: "Path does not exist: \(localPath)")
+    }
+
+    // Try to get remote URL from arguments or discover it
+    let remoteURL: String
+    if let explicit = optionalString("remoteURL", from: arguments) {
+      remoteURL = explicit
+    } else if let cached = RepoRegistry.shared.getCachedRemoteURL(for: localPath) {
+      remoteURL = cached
+    } else {
+      return internalError(id: id, message: "Could not determine remote URL. Provide remoteURL explicitly or ensure the path is a git repo with a remote.")
+    }
+
+    let name = optionalString("name", from: arguments) ?? URL(fileURLWithPath: localPath).lastPathComponent
+    let branch = optionalString("branch", from: arguments, default: "main") ?? "main"
+    let remoteName = optionalString("remoteName", from: arguments, default: "origin") ?? "origin"
+    let intervalSeconds = optionalInt("pullIntervalSeconds", from: arguments) ?? 3600
+    let reindexAfterPull = optionalBool("reindexAfterPull", from: arguments, default: true)
+
+    let tracked = dataService.trackRemoteRepo(
+      remoteURL: remoteURL,
+      name: name,
+      localPath: localPath,
+      branch: branch,
+      remoteName: remoteName,
+      pullIntervalSeconds: intervalSeconds,
+      reindexAfterPull: reindexAfterPull
+    )
+
+    let formatter = Formatter.iso8601
+    return (200, makeResult(id: id, result: [
+      "success": true,
+      "id": tracked.id.uuidString,
+      "name": tracked.name,
+      "remoteURL": tracked.remoteURL,
+      "localPath": tracked.localPath,
+      "branch": tracked.branch,
+      "remoteName": tracked.remoteName,
+      "pullIntervalSeconds": tracked.pullIntervalSeconds,
+      "reindexAfterPull": tracked.reindexAfterPull,
+      "isEnabled": tracked.isEnabled,
+      "createdAt": formatter.string(from: tracked.createdAt)
+    ]))
+  }
+
+  private func handleUntrack(id: Any?, arguments: [String: Any], delegate: RepoToolsHandlerDelegate) -> (Int, Data) {
+    guard let dataService = delegate.repoDataService else {
+      return notConfiguredError(id: id)
+    }
+
+    if let remoteURL = optionalString("remoteURL", from: arguments) {
+      let deleted = dataService.untrackRemoteRepo(remoteURL: remoteURL)
+      return (200, makeResult(id: id, result: ["deleted": deleted, "remoteURL": remoteURL]))
+    }
+
+    if let idString = optionalString("id", from: arguments), let repoId = UUID(uuidString: idString) {
+      let deleted = dataService.untrackRemoteRepo(id: repoId)
+      return (200, makeResult(id: id, result: ["deleted": deleted, "id": idString]))
+    }
+
+    return missingParamError(id: id, param: "remoteURL or id")
+  }
+
+  private func handleTracked(id: Any?, arguments: [String: Any], delegate: RepoToolsHandlerDelegate) -> (Int, Data) {
+    guard let dataService = delegate.repoDataService else {
+      return notConfiguredError(id: id)
+    }
+
+    let tracked = dataService.getTrackedRemoteRepos()
+    let formatter = Formatter.iso8601
+
+    let encoded: [[String: Any]] = tracked.map { repo in
+      var entry: [String: Any] = [
+        "id": repo.id.uuidString,
+        "name": repo.name,
+        "remoteURL": repo.remoteURL,
+        "localPath": repo.localPath,
+        "branch": repo.branch,
+        "remoteName": repo.remoteName,
+        "pullIntervalSeconds": repo.pullIntervalSeconds,
+        "isEnabled": repo.isEnabled,
+        "reindexAfterPull": repo.reindexAfterPull,
+        "isPullDue": repo.isPullDue,
+        "createdAt": formatter.string(from: repo.createdAt),
+        "modifiedAt": formatter.string(from: repo.modifiedAt)
+      ]
+      if let lastPull = repo.lastPullAt {
+        entry["lastPullAt"] = formatter.string(from: lastPull)
+      }
+      if let result = repo.lastPullResult {
+        entry["lastPullResult"] = result
+      }
+      if let error = repo.lastPullError {
+        entry["lastPullError"] = error
+      }
+      return entry
+    }
+
+    let scheduler = RepoPullScheduler.shared
+    return (200, makeResult(id: id, result: [
+      "count": encoded.count,
+      "schedulerActive": scheduler.isActive,
+      "repos": encoded
+    ]))
+  }
+
+  private func handlePullNow(id: Any?, arguments: [String: Any], delegate: RepoToolsHandlerDelegate) async -> (Int, Data) {
+    let scheduler = RepoPullScheduler.shared
+
+    // If a specific repo is specified, pull just that one
+    if let remoteURL = optionalString("remoteURL", from: arguments) {
+      guard let result = await scheduler.pullRepoNow(remoteURL: remoteURL) else {
+        return internalError(id: id, message: "Repo not found in tracked list: \(remoteURL)")
+      }
+      return (200, makeResult(id: id, result: [
+        "remoteURL": remoteURL,
+        "result": result.description,
+        "success": !result.isError
+      ]))
+    }
+
+    // Otherwise, pull all due repos
+    await scheduler.pullDueRepos()
+    let history = scheduler.pullHistory.prefix(10)
+    let formatter = Formatter.iso8601
+    let entries: [[String: Any]] = history.map {
+      [
+        "repoName": $0.repoName,
+        "result": $0.result,
+        "success": $0.success,
+        "timestamp": formatter.string(from: $0.timestamp)
+      ]
+    }
+
+    return (200, makeResult(id: id, result: [
+      "pulled": true,
+      "recentHistory": entries
+    ]))
+  }
 }
 
 // MARK: - Tool Definitions
@@ -264,6 +428,60 @@ extension RepoToolsHandler {
           "properties": [
             "repoId": ["type": "string", "description": "Repository UUID to delete"],
             "localPath": ["type": "string", "description": "Local path of repository to delete"]
+          ]
+        ],
+        category: .state,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "repos.track",
+        description: "Mark a repo as primary/tracked for automatic periodic git pull. The scheduler will pull the latest changes on the specified branch at the given interval (default: hourly) and optionally re-index the RAG.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "localPath": ["type": "string", "description": "Local path to the git repository"],
+            "remoteURL": ["type": "string", "description": "Git remote URL (auto-detected if omitted)"],
+            "name": ["type": "string", "description": "Display name (defaults to directory name)"],
+            "branch": ["type": "string", "default": "main", "description": "Branch to track"],
+            "remoteName": ["type": "string", "default": "origin", "description": "Git remote name"],
+            "pullIntervalSeconds": ["type": "integer", "default": 3600, "description": "Pull interval in seconds (default: 3600 = 1 hour)"],
+            "reindexAfterPull": ["type": "boolean", "default": true, "description": "Re-index RAG after pulling new changes"]
+          ],
+          "required": ["localPath"]
+        ],
+        category: .state,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "repos.untrack",
+        description: "Remove a repo from the tracked/primary list, stopping automatic pulls",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "remoteURL": ["type": "string", "description": "Remote URL of the repo to untrack"],
+            "id": ["type": "string", "description": "UUID of the tracked repo to remove"]
+          ]
+        ],
+        category: .state,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "repos.tracked",
+        description: "List all repos marked as primary/tracked for automatic pulls, including their status and schedule",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .state,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "repos.pull-now",
+        description: "Immediately pull a tracked repo (or all due repos if no remoteURL specified)",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "remoteURL": ["type": "string", "description": "Pull a specific tracked repo by remote URL. If omitted, pulls all due repos."]
           ]
         ],
         category: .state,

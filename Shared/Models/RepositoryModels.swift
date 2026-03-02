@@ -116,3 +116,84 @@ final class LocalRepositoryPath {
     }
   }
 }
+
+/// A remote repo marked as "primary" for automatic periodic pulling.
+/// When a user wants to always have the latest version of a repo
+/// (e.g., tio-api from a specific remote), they mark it as tracked.
+/// The RepoPullScheduler checks these periodically and runs `git pull`.
+@Model
+final class TrackedRemoteRepo {
+  var id: UUID = UUID()
+
+  /// Normalized remote URL (e.g., "github.com/org/repo")
+  var remoteURL: String = ""
+
+  /// Display name for this tracked repo
+  var name: String = ""
+
+  /// Local path on this device where the repo is cloned
+  var localPath: String = ""
+
+  /// The git remote name to pull from (default: "origin")
+  var remoteName: String = "origin"
+
+  /// The branch to track (default: "main")
+  var branch: String = "main"
+
+  /// Pull interval in seconds (default: 3600 = 1 hour)
+  var pullIntervalSeconds: Int = 3600
+
+  /// Whether auto-pull is enabled for this repo
+  var isEnabled: Bool = true
+
+  /// Whether to re-index the RAG after pulling
+  var reindexAfterPull: Bool = true
+
+  /// Last time a pull was attempted
+  var lastPullAt: Date?
+
+  /// Last successful pull result ("up-to-date", "updated", etc.)
+  var lastPullResult: String?
+
+  /// Last error message if pull failed
+  var lastPullError: String?
+
+  /// When this tracking was created
+  var createdAt: Date = Date()
+
+  /// When this tracking was last modified
+  var modifiedAt: Date = Date()
+
+  init(
+    remoteURL: String,
+    name: String,
+    localPath: String,
+    branch: String = "main",
+    remoteName: String = "origin",
+    pullIntervalSeconds: Int = 3600,
+    reindexAfterPull: Bool = true
+  ) {
+    self.id = UUID()
+    self.remoteURL = remoteURL
+    self.name = name
+    self.localPath = localPath
+    self.branch = branch
+    self.remoteName = remoteName
+    self.pullIntervalSeconds = pullIntervalSeconds
+    self.reindexAfterPull = reindexAfterPull
+    self.isEnabled = true
+    self.createdAt = Date()
+    self.modifiedAt = Date()
+  }
+
+  func touch() {
+    modifiedAt = Date()
+  }
+
+  /// Whether a pull is due based on the interval
+  var isPullDue: Bool {
+    guard isEnabled else { return false }
+    guard let lastPull = lastPullAt else { return true }
+    return Date().timeIntervalSince(lastPull) >= Double(pullIntervalSeconds)
+  }
+}

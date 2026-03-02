@@ -41,6 +41,7 @@
 		0C2A4B662D000005000E55A8 /* DoclingValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C2A4B652D000005000E55A8 /* DoclingValidationTests.swift */; };
 		0CVM000001000001000E55A8 /* VMIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CVM000001000002000E55A8 /* VMIntegrationTests.swift */; };
 		AA299ROUTE2F5A000100000001 /* ParallelRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA299ROUTE2F5A000100000002 /* ParallelRoutingTests.swift */; };
+		BB1TRACK2F6B000100000001 /* TrackedRemoteRepoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB1TRACK2F6B000100000002 /* TrackedRemoteRepoTests.swift */; };
 		DD3900B27EF856FDCE71847E /* ValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1EDC3CED1C274FD0649E03C /* ValidationTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -105,6 +106,7 @@
 		0C2A4B652D000005000E55A8 /* DoclingValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoclingValidationTests.swift; sourceTree = "<group>"; };
 		0CVM000001000002000E55A8 /* VMIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VMIntegrationTests.swift; sourceTree = "<group>"; };
 		AA299ROUTE2F5A000100000002 /* ParallelRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParallelRoutingTests.swift; sourceTree = "<group>"; };
+		BB1TRACK2F6B000100000002 /* TrackedRemoteRepoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackedRemoteRepoTests.swift; sourceTree = "<group>"; };
 		D1EDC3CED1C274FD0649E03C /* ValidationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ValidationTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -305,6 +307,7 @@
 				0C2A4B612D000003000E55A8 /* UtilitiesTests.swift */,
 				0C2A4B652D000005000E55A8 /* DoclingValidationTests.swift */,
 				AA299ROUTE2F5A000100000002 /* ParallelRoutingTests.swift */,
+				BB1TRACK2F6B000100000002 /* TrackedRemoteRepoTests.swift */,
 				04A7BD8B258E77D8000E55A8 /* Info.plist */,
 				D1EDC3CED1C274FD0649E03C /* ValidationTests.swift */,
 			);
@@ -570,6 +573,7 @@
 				0C2A4B622D000003000E55A8 /* UtilitiesTests.swift in Sources */,
 				0C2A4B662D000005000E55A8 /* DoclingValidationTests.swift in Sources */,
 				AA299ROUTE2F5A000100000001 /* ParallelRoutingTests.swift in Sources */,
+				BB1TRACK2F6B000100000001 /* TrackedRemoteRepoTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

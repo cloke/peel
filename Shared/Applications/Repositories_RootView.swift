@@ -15,6 +15,7 @@ struct Repositories_RootView: View {
   enum Scope: String, CaseIterable, Identifiable {
     case local
     case remote
+    case tracked
 
     var id: String { rawValue }
 
@@ -22,6 +23,7 @@ struct Repositories_RootView: View {
       switch self {
       case .local: "Local"
       case .remote: "Remote"
+      case .tracked: "Tracked"
       }
     }
 
@@ -29,6 +31,7 @@ struct Repositories_RootView: View {
       switch self {
       case .local: "folder"
       case .remote: "globe"
+      case .tracked: "arrow.triangle.2.circlepath"
       }
     }
   }
@@ -38,6 +41,7 @@ struct Repositories_RootView: View {
   @State private var hasAppliedInitialScope = false
   @State private var localRootResetToken = UUID()
   @State private var remoteRootResetToken = UUID()
+  @State private var trackedRootResetToken = UUID()
 
   init(initialScope: Scope? = nil) {
     self.initialScope = initialScope
@@ -78,6 +82,9 @@ struct Repositories_RootView: View {
         mcpServer.recordUIActionHandled(action.controlId)
       case "repositories.openRemote":
         selectScope(.remote)
+        mcpServer.recordUIActionHandled(action.controlId)
+      case "repositories.openTracked":
+        selectScope(.tracked)
         mcpServer.recordUIActionHandled(action.controlId)
       default:
         break
@@ -146,6 +153,9 @@ struct Repositories_RootView: View {
     case .remote:
       Github_RootView(showToolSelectionToolbar: false)
         .id(remoteRootResetToken)
+    case .tracked:
+      TrackedReposView()
+        .id(trackedRootResetToken)
     }
   }
 
@@ -165,6 +175,8 @@ struct Repositories_RootView: View {
     case .remote:
       clearRemoteDetailSelection()
       remoteRootResetToken = UUID()
+    case .tracked:
+      trackedRootResetToken = UUID()
     }
   }
 

@@ -32,7 +32,8 @@ struct PeelApp: App {
     
     let vmService = VMIsolationService()
     _vmIsolationService = State(initialValue: vmService)
-    _mcpServer = State(initialValue: MCPServerService(vmIsolationService: vmService))
+    let mcpServerInstance = MCPServerService(vmIsolationService: vmService)
+    _mcpServer = State(initialValue: mcpServerInstance)
     
     // Create DataService with model context and seed default skills
     let container = Self.sharedModelContainer
@@ -45,6 +46,9 @@ struct PeelApp: App {
     }
     // Wire SwiftData context into swarm coordinator for worktree persistence (#282)
     SwarmCoordinator.shared.modelContext = context
+
+    // Wire RepoPullScheduler with DataService so tracked repos auto-pull
+    RepoPullScheduler.shared.dataService = dataService
 
     // Auto-start swarm on launch when device setting enables it (defaults to true for new installs)
     if !Self.isRunningTests {
@@ -76,6 +80,14 @@ struct PeelApp: App {
       }
     }
     
+    // Start the tracked-repo pull scheduler (auto-pulls primary repos hourly)
+    if !Self.isRunningTests {
+      Task { @MainActor in
+        RepoPullScheduler.shared.delegate = mcpServerInstance
+        RepoPullScheduler.shared.start()
+      }
+    }
+
     // Note: Ember skills update check is performed in ContentView.task (Issue #263)
     
     // Check for worker mode (--worker flag)
@@ -110,6 +122,7 @@ struct PeelApp: App {
       RepoGuidanceSkill.self,
       CIFailureRecord.self,
       FeatureDiscoveryChecklist.self,
+      TrackedRemoteRepo.self,
     ])
     
     let modelConfiguration = ModelConfiguration(

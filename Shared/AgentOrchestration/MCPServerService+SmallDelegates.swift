@@ -67,3 +67,26 @@ extension MCPServerService: RepoToolsHandlerDelegate {
 #if os(macOS)
 extension MCPServerService: CodeEditToolsHandlerDelegate {}
 #endif
+
+// MARK: - RepoPullSchedulerDelegate
+
+extension MCPServerService: RepoPullSchedulerDelegate {
+  public func repoPullScheduler(_ scheduler: RepoPullScheduler, shouldReindex repoPath: String) {
+    Task { @MainActor in
+      logger.info("Auto-reindexing \(repoPath) after pull")
+      do {
+        let report = try await indexRepository(
+          path: repoPath,
+          forceReindex: false,
+          allowWorkspace: false,
+          excludeSubrepos: true,
+          progressHandler: nil
+        )
+        await refreshRagSummary()
+        logger.info("Auto-reindex complete for \(repoPath): \(report.filesIndexed) files, \(report.chunksIndexed) chunks")
+      } catch {
+        logger.error("Auto-reindex failed for \(repoPath): \(error.localizedDescription)")
+      }
+    }
+  }
+}

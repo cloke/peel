@@ -911,6 +911,90 @@ final class DataService {
     return (try? modelContext.fetch(descriptor)) ?? []
   }
 
+  // MARK: - Tracked Remote Repos
+
+  func getTrackedRemoteRepos() -> [TrackedRemoteRepo] {
+    let descriptor = FetchDescriptor<TrackedRemoteRepo>(sortBy: [SortDescriptor(\.name)])
+    return (try? modelContext.fetch(descriptor)) ?? []
+  }
+
+  func getTrackedRemoteRepo(remoteURL: String) -> TrackedRemoteRepo? {
+    // Normalize for lookup
+    let normalized = RepoRegistry.shared.normalizeRemoteURL(remoteURL)
+    let all = getTrackedRemoteRepos()
+    return all.first { RepoRegistry.shared.normalizeRemoteURL($0.remoteURL) == normalized }
+  }
+
+  func getTrackedRemoteRepo(id: UUID) -> TrackedRemoteRepo? {
+    let descriptor = FetchDescriptor<TrackedRemoteRepo>(
+      predicate: #Predicate { $0.id == id }
+    )
+    return try? modelContext.fetch(descriptor).first
+  }
+
+  @discardableResult
+  func trackRemoteRepo(
+    remoteURL: String,
+    name: String,
+    localPath: String,
+    branch: String = "main",
+    remoteName: String = "origin",
+    pullIntervalSeconds: Int = 3600,
+    reindexAfterPull: Bool = true
+  ) -> TrackedRemoteRepo {
+    // Check if already tracked
+    if let existing = getTrackedRemoteRepo(remoteURL: remoteURL) {
+      existing.localPath = localPath
+      existing.branch = branch
+      existing.remoteName = remoteName
+      existing.pullIntervalSeconds = pullIntervalSeconds
+      existing.reindexAfterPull = reindexAfterPull
+      existing.isEnabled = true
+      existing.touch()
+      try? modelContext.save()
+      return existing
+    }
+
+    let tracked = TrackedRemoteRepo(
+      remoteURL: remoteURL,
+      name: name,
+      localPath: localPath,
+      branch: branch,
+      remoteName: remoteName,
+      pullIntervalSeconds: pullIntervalSeconds,
+      reindexAfterPull: reindexAfterPull
+    )
+    modelContext.insert(tracked)
+    try? modelContext.save()
+    return tracked
+  }
+
+  func untrackRemoteRepo(remoteURL: String) -> Bool {
+    guard let existing = getTrackedRemoteRepo(remoteURL: remoteURL) else { return false }
+    modelContext.delete(existing)
+    try? modelContext.save()
+    return true
+  }
+
+  func untrackRemoteRepo(id: UUID) -> Bool {
+    guard let existing = getTrackedRemoteRepo(id: id) else { return false }
+    modelContext.delete(existing)
+    try? modelContext.save()
+    return true
+  }
+
+  func getDueTrackedRepos() -> [TrackedRemoteRepo] {
+    return getTrackedRemoteRepos().filter { $0.isPullDue }
+  }
+
+  func updateTrackedRepoPullResult(_ repo: TrackedRemoteRepo, result: String?, error: String?) {
+    repo.lastPullAt = Date()
+    repo.lastPullResult = result
+    repo.lastPullError = error
+    repo.touch()
+    try? modelContext.save()
+  }
+
   /// Remove duplicate TrackedWorktree entries (keep newest by createdAt for each localPath)
   func deduplicateTrackedWorktrees() {
     let all = getTrackedWorktrees() // Already sorted by createdAt descending (newest first)
