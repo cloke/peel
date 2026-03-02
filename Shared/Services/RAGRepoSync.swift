@@ -251,12 +251,55 @@ enum RAGRepoExporter {
     if hasEmbeddingModel { columns += ", embedding_model" }
     if hasEmbeddingDimensions { columns += ", embedding_dimensions" }
 
-    let sql = "SELECT \(columns) FROM repos WHERE repo_identifier = ?"
+    // Strategy 1: Match by exact repo_identifier
+    if let result = execQueryRepo(db: db, columns: columns,
+        whereClause: "repo_identifier = ?", bindValue: repoIdentifier,
+        hasParentRepoId: hasParentRepoId, hasEmbeddingModel: hasEmbeddingModel,
+        hasEmbeddingDimensions: hasEmbeddingDimensions) {
+      return result
+    }
+
+    // Strategy 2: Extract the last path component (repo name) from the identifier
+    // e.g., "github.com/cloke/peel" → "peel", "/Users/me/code/kitchen-sink" → "kitchen-sink"
+    let repoName = repoIdentifier.split(separator: "/").last.map(String.init) ?? repoIdentifier
+    if !repoName.isEmpty && repoName != repoIdentifier {
+      if let result = execQueryRepo(db: db, columns: columns,
+          whereClause: "name = ?", bindValue: repoName,
+          hasParentRepoId: hasParentRepoId, hasEmbeddingModel: hasEmbeddingModel,
+          hasEmbeddingDimensions: hasEmbeddingDimensions) {
+        return result
+      }
+    }
+
+    // Strategy 3: Match root_path ending with the repo name (handles NULL repo_identifier)
+    if !repoName.isEmpty {
+      if let result = execQueryRepo(db: db, columns: columns,
+          whereClause: "root_path LIKE ?", bindValue: "%/\(repoName)",
+          hasParentRepoId: hasParentRepoId, hasEmbeddingModel: hasEmbeddingModel,
+          hasEmbeddingDimensions: hasEmbeddingDimensions) {
+        return result
+      }
+    }
+
+    return nil
+  }
+
+  /// Execute a single repo query with the given WHERE clause and bind value.
+  private static func execQueryRepo(
+    db: OpaquePointer,
+    columns: String,
+    whereClause: String,
+    bindValue: String,
+    hasParentRepoId: Bool,
+    hasEmbeddingModel: Bool,
+    hasEmbeddingDimensions: Bool
+  ) -> ExportedRepo? {
+    let sql = "SELECT \(columns) FROM repos WHERE \(whereClause) LIMIT 1"
     var stmt: OpaquePointer?
     guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return nil }
     defer { sqlite3_finalize(stmt) }
 
-    sqlite3_bind_text(stmt, 1, repoIdentifier, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+    sqlite3_bind_text(stmt, 1, bindValue, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
 
     guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
 
