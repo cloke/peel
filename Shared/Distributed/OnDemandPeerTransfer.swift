@@ -145,7 +145,8 @@ public final class OnDemandPeerTransfer {
     }
 
     // All direct connections failed — fall back to Firestore relay
-    logger.info("All direct connections failed to \(worker.displayName), using Firestore relay")
+    logger.info("[transfer] All direct connections failed to \(worker.displayName) (\(worker.workerId)), using Firestore relay")
+    logger.info("[transfer] Relay context: swarmId=\(state.swarmId), repo=\(repoIdentifier)")
     state.connectionMethod = .firestoreRelay
     state.status = .connecting
 
@@ -159,7 +160,7 @@ public final class OnDemandPeerTransfer {
       )
     } catch {
       state.error = "Relay failed: \(error.localizedDescription)"
-      logger.error("Firestore relay failed from \(worker.displayName): \(error)")
+      logger.error("[transfer] Firestore relay failed from \(worker.displayName): \(error)")
       throw error
     }
 

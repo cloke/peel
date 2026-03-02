@@ -738,13 +738,14 @@ struct RAGRepositoryCardView: View {
         case .handshaking:
           onDemandProgress = "Handshaking via \(method)…"
         case .transferring:
-          if transfer.totalBytes > 0 {
+          let elapsed = Int(transfer.elapsedSeconds)
+          if transfer.totalBytes > 0 && transfer.transferredBytes > 0 {
             let pct = Int(transfer.progressFraction * 100)
-            onDemandProgress = "Transferring via \(method): \(pct)% (\(formatBytes(transfer.transferredBytes))/\(formatBytes(transfer.totalBytes)))"
+            onDemandProgress = "Downloading via \(method): \(pct)% (\(formatBytes(transfer.transferredBytes))/\(formatBytes(transfer.totalBytes))) [\(elapsed)s]"
           } else if transfer.totalChunks > 0 {
-            onDemandProgress = "Transferring via \(method): chunk \(transfer.chunksReceived)/\(transfer.totalChunks)"
+            onDemandProgress = "Remote uploading via \(method): \(transfer.chunksReceived)/\(transfer.totalChunks) chunks [\(elapsed)s]"
           } else {
-            onDemandProgress = "Transferring via \(method)…"
+            onDemandProgress = "Waiting for remote export via \(method)… [\(elapsed)s]"
           }
         case .importing:
           onDemandProgress = "Importing \(formatBytes(transfer.transferredBytes))…"

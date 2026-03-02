@@ -123,32 +123,39 @@ public final class FirestoreRelayProvider {
       return
     }
 
+    let startTime = Date()
+
     do {
       // Mark as exporting
+      logger.info("[relay-provider] Setting status=exporting for transfer \(transferId)")
       try await requestRef.updateData(["status": "exporting"])
 
       // Export the RAG bundle
+      logger.info("[relay-provider] Creating sync bundle for \(repoIdentifier)...")
       guard let bundle = try await delegate.createRepoSyncBundle(
         repoIdentifier: repoIdentifier,
         excludeFileHashes: []
       ) else {
+        logger.error("[relay-provider] Repo not found: \(repoIdentifier)")
         try await requestRef.updateData(["status": "error", "error": "Repo not found: \(repoIdentifier)"])
         return
       }
 
       let data = try JSONEncoder().encode(bundle)
       let totalChunks = (data.count + Self.chunkSize - 1) / Self.chunkSize
+      let exportElapsed = Date().timeIntervalSince(startTime)
 
-      logger.info("Exporting \(data.count) bytes (\(totalChunks) chunks) via Firestore relay")
+      logger.info("[relay-provider] Bundle exported: \(data.count) bytes (\(totalChunks) chunks) in \(String(format: "%.1f", exportElapsed))s")
 
       // Update status with metadata
       try await requestRef.updateData([
         "status": "uploading",
         "totalBytes": data.count,
         "totalChunks": totalChunks,
+        "chunksUploaded": 0,
       ])
 
-      // Write chunks
+      // Write chunks — update progress counter every chunk so consumer can track
       let chunksRef = requestRef.collection("chunks")
       for i in 0..<totalChunks {
         let start = i * Self.chunkSize
@@ -156,20 +163,33 @@ public final class FirestoreRelayProvider {
         let chunkData = data[start..<end]
         let base64 = chunkData.base64EncodedString()
 
-        try await chunksRef.document(String(format: "%06d", i)).setData([
-          "index": i,
-          "data": base64,
-          "size": chunkData.count,
-        ])
+        let chunkStart = Date()
+        do {
+          try await chunksRef.document(String(format: "%06d", i)).setData([
+            "index": i,
+            "data": base64,
+            "size": chunkData.count,
+          ])
+          let chunkElapsed = Date().timeIntervalSince(chunkStart)
 
-        if i % 10 == 0 || i == totalChunks - 1 {
-          logger.debug("Relay upload progress: \(i + 1)/\(totalChunks)")
+          // Update progress counter on the request doc
+          try await requestRef.updateData(["chunksUploaded": i + 1])
+
+          if i % 5 == 0 || i == totalChunks - 1 {
+            let totalElapsed = Date().timeIntervalSince(startTime)
+            logger.info("[relay-provider] Uploaded chunk \(i + 1)/\(totalChunks) (\(chunkData.count) bytes, \(String(format: "%.2f", chunkElapsed))s this chunk, \(String(format: "%.1f", totalElapsed))s total)")
+          }
+        } catch {
+          logger.error("[relay-provider] FAILED to upload chunk \(i)/\(totalChunks): \(error)")
+          try? await requestRef.updateData(["status": "error", "error": "Chunk upload failed at \(i)/\(totalChunks): \(error.localizedDescription)"])
+          return
         }
       }
 
       // Mark complete
+      let totalElapsed = Date().timeIntervalSince(startTime)
       try await requestRef.updateData(["status": "complete"])
-      logger.info("Relay upload complete: \(totalChunks) chunks, \(data.count) bytes")
+      logger.info("[relay-provider] Upload complete: \(totalChunks) chunks, \(data.count) bytes in \(String(format: "%.1f", totalElapsed))s")
 
       // Clean up after 5 minutes
       Task {
@@ -178,7 +198,8 @@ public final class FirestoreRelayProvider {
       }
 
     } catch {
-      logger.error("Relay export failed: \(error)")
+      let elapsed = Date().timeIntervalSince(startTime)
+      logger.error("[relay-provider] Export failed after \(String(format: "%.1f", elapsed))s: \(error)")
       try? await requestRef.updateData(["status": "error", "error": error.localizedDescription])
     }
   }
@@ -241,27 +262,68 @@ public final class FirestoreRelayConsumer {
     state.status = .transferring
 
     // 2. Poll for the provider to finish uploading
-    let deadline = Date().addingTimeInterval(timeout)
+    let deadline = Date().addingTimeInterval(self.timeout)
+    let pollStart = Date()
+    var pollCount = 0
+
+    logger.info("[relay-consumer] Polling for provider response (timeout: \(Int(self.timeout))s)...")
 
     while Date() < deadline {
       try? await Task.sleep(for: .seconds(2))
+      pollCount += 1
+      let elapsed = Date().timeIntervalSince(pollStart)
 
-      let doc = try await requestRef.getDocument()
-      guard let data = doc.data() else { continue }
-      let status = data["status"] as? String ?? ""
+      let doc: DocumentSnapshot
+      do {
+        doc = try await requestRef.getDocument()
+      } catch {
+        logger.error("[relay-consumer] Poll \(pollCount): Firestore read error after \(String(format: "%.0f", elapsed))s: \(error)")
+        continue
+      }
+
+      guard let data = doc.data() else {
+        logger.warning("[relay-consumer] Poll \(pollCount): document has no data (\(String(format: "%.0f", elapsed))s elapsed)")
+        continue
+      }
+
+      let status = data["status"] as? String ?? "<nil>"
+      let chunksUploaded = data["chunksUploaded"] as? Int ?? 0
+      let totalChunks = data["totalChunks"] as? Int ?? 0
+      let totalBytes = data["totalBytes"] as? Int ?? 0
+
+      // Update state for UI progress during upload phase
+      if totalChunks > 0 {
+        state.totalChunks = totalChunks
+        state.totalBytes = totalBytes
+        state.chunksReceived = chunksUploaded
+      }
+
+      // Log every poll at info level while debugging
+      logger.info("[relay-consumer] Poll \(pollCount) (\(String(format: "%.0f", elapsed))s): status=\(status) chunks=\(chunksUploaded)/\(totalChunks) totalBytes=\(totalBytes)")
 
       switch status {
       case "complete":
         // 3. Download all chunks
-        let totalBytes = data["totalBytes"] as? Int ?? 0
-        let totalChunks = data["totalChunks"] as? Int ?? 0
         state.totalBytes = totalBytes
         state.totalChunks = totalChunks
 
-        logger.info("Relay transfer ready: \(totalChunks) chunks, \(totalBytes) bytes")
+        logger.info("[relay-consumer] Provider upload complete: \(totalChunks) chunks, \(totalBytes) bytes. Starting download...")
 
         let chunksRef = requestRef.collection("chunks")
-        let chunkDocs = try await chunksRef.order(by: "index").getDocuments()
+        let downloadStart = Date()
+        let chunkDocs: QuerySnapshot
+        do {
+          chunkDocs = try await chunksRef.order(by: "index").getDocuments()
+        } catch {
+          logger.error("[relay-consumer] Failed to fetch chunks collection: \(error)")
+          throw OnDemandTransferError.remoteError(message: "Failed to fetch chunks: \(error.localizedDescription)")
+        }
+
+        logger.info("[relay-consumer] Fetched \(chunkDocs.documents.count) chunk documents in \(String(format: "%.1f", Date().timeIntervalSince(downloadStart)))s")
+
+        if chunkDocs.documents.count != totalChunks {
+          logger.error("[relay-consumer] Chunk count mismatch: expected \(totalChunks), got \(chunkDocs.documents.count)")
+        }
 
         var assembled = Data()
         assembled.reserveCapacity(totalBytes)
@@ -269,23 +331,47 @@ public final class FirestoreRelayConsumer {
           guard let base64 = doc.data()["data"] as? String,
             let chunkData = Data(base64Encoded: base64)
           else {
+            logger.error("[relay-consumer] Invalid chunk data at index \(i) — doc fields: \(doc.data().keys.sorted())")
             throw OnDemandTransferError.invalidChunkData(index: i)
           }
           assembled.append(chunkData)
           state.chunksReceived = i + 1
           state.transferredBytes = assembled.count
+
+          if i % 10 == 0 || i == chunkDocs.documents.count - 1 {
+            logger.info("[relay-consumer] Downloaded chunk \(i + 1)/\(chunkDocs.documents.count) (\(assembled.count) bytes so far)")
+          }
         }
+
+        let downloadElapsed = Date().timeIntervalSince(downloadStart)
+        logger.info("[relay-consumer] All chunks downloaded: \(assembled.count) bytes in \(String(format: "%.1f", downloadElapsed))s")
 
         // 4. Import
         state.status = .importing
-        let bundle = try JSONDecoder().decode(RAGRepoExportBundle.self, from: assembled)
-        _ = try await ragSyncDelegate.applyRepoSyncBundle(
-          bundle, localRepoPath: nil, forceImportEmbeddings: true
-        )
+        logger.info("[relay-consumer] Decoding bundle (\(assembled.count) bytes)...")
+        let bundle: RAGRepoExportBundle
+        do {
+          bundle = try JSONDecoder().decode(RAGRepoExportBundle.self, from: assembled)
+          logger.info("[relay-consumer] Bundle decoded successfully")
+        } catch {
+          logger.error("[relay-consumer] Bundle decode failed: \(error)")
+          throw error
+        }
+
+        logger.info("[relay-consumer] Importing bundle...")
+        do {
+          _ = try await ragSyncDelegate.applyRepoSyncBundle(
+            bundle, localRepoPath: nil, forceImportEmbeddings: true
+          )
+        } catch {
+          logger.error("[relay-consumer] Import failed: \(error)")
+          throw error
+        }
 
         state.status = .complete
         state.completedAt = Date()
-        logger.info("Relay import complete: \(assembled.count) bytes")
+        let totalElapsed = Date().timeIntervalSince(pollStart)
+        logger.info("[relay-consumer] Import complete: \(assembled.count) bytes, total time \(String(format: "%.1f", totalElapsed))s")
 
         // Clean up our request (provider will clean up chunks)
         Task {
@@ -296,23 +382,27 @@ public final class FirestoreRelayConsumer {
 
       case "error":
         let errorMsg = data["error"] as? String ?? "Unknown relay error"
+        logger.error("[relay-consumer] Provider reported error: \(errorMsg)")
         throw OnDemandTransferError.remoteError(message: errorMsg)
 
       case "exporting":
-        logger.debug("Relay: provider is exporting data...")
+        logger.info("[relay-consumer] Provider is exporting data... (\(String(format: "%.0f", elapsed))s elapsed)")
 
       case "uploading":
-        if let uploaded = data["totalChunks"] as? Int {
-          state.totalChunks = uploaded
-        }
-        logger.debug("Relay: provider is uploading chunks...")
+        logger.info("[relay-consumer] Provider uploading: \(chunksUploaded)/\(totalChunks) chunks (\(String(format: "%.0f", elapsed))s elapsed)")
+
+      case "pending":
+        logger.info("[relay-consumer] Waiting for provider to pick up request... (\(String(format: "%.0f", elapsed))s elapsed)")
 
       default:
+        logger.warning("[relay-consumer] Unknown status: '\(status)' (\(String(format: "%.0f", elapsed))s elapsed)")
         continue
       }
     }
 
     // Timed out waiting for provider
+    let totalElapsed = Date().timeIntervalSince(pollStart)
+    logger.error("[relay-consumer] Timed out after \(String(format: "%.0f", totalElapsed))s (\(pollCount) polls)")
     try? await requestRef.updateData(["status": "timeout"])
     throw OnDemandTransferError.connectionTimeout(host: "firestore-relay", port: 0)
   }
