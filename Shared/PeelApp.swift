@@ -54,6 +54,14 @@ struct PeelApp: App {
     if !Self.isRunningTests {
       Task { @MainActor in
         let settings = dataService.getDeviceSettings()
+
+        // Migrate stale "worker" role to "hybrid" — worker-only was never the intended default
+        // and earlier manual starts may have persisted it.
+        if settings.swarmRole == "worker" {
+          settings.swarmRole = "hybrid"
+          try? context.save()
+        }
+
         // Respect explicit worker-mode flag
         if settings.swarmAutoStart && !WorkerMode.shared.shouldRunInWorkerMode {
           let role = SwarmRole(rawValue: settings.swarmRole) ?? .hybrid

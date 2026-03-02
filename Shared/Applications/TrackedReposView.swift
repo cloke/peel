@@ -18,6 +18,7 @@ struct TrackedReposView: View {
   @State private var showAddSheet = false
   @State private var pullInProgressIds: Set<UUID> = []
   @State private var errorMessage: String?
+  @State private var pullAlertItem: PullAlertItem?
 
   private let scheduler = RepoPullScheduler.shared
 
@@ -57,6 +58,17 @@ struct TrackedReposView: View {
       #endif
       .sheet(isPresented: $showAddSheet) {
         AddTrackedRepoSheet()
+      }
+      .alert(
+        pullAlertItem?.title ?? "Pull Complete",
+        isPresented: Binding(
+          get: { pullAlertItem != nil },
+          set: { if !$0 { pullAlertItem = nil } }
+        )
+      ) {
+        Button("OK", role: .cancel) { pullAlertItem = nil }
+      } message: {
+        Text(pullAlertItem?.message ?? "")
       }
     }
   }
@@ -116,8 +128,30 @@ struct TrackedReposView: View {
     guard !pullInProgressIds.contains(repo.id) else { return }
     pullInProgressIds.insert(repo.id)
     Task {
-      _ = await scheduler.pullRepoNow(remoteURL: repo.remoteURL)
+      let result = await scheduler.pullRepoNow(remoteURL: repo.remoteURL)
       pullInProgressIds.remove(repo.id)
+      switch result {
+      case .upToDate:
+        pullAlertItem = PullAlertItem(
+          title: repo.name,
+          message: "Already up to date."
+        )
+      case .updated(let sha):
+        pullAlertItem = PullAlertItem(
+          title: repo.name,
+          message: "Updated to \(String(sha.prefix(8)))."
+        )
+      case .error(let msg):
+        pullAlertItem = PullAlertItem(
+          title: "Pull Failed",
+          message: msg
+        )
+      case .none:
+        pullAlertItem = PullAlertItem(
+          title: "Pull Failed",
+          message: "Repo not found or scheduler unavailable."
+        )
+      }
     }
   }
 
@@ -553,6 +587,13 @@ private struct PullHistoryRow: View {
         .foregroundStyle(.tertiary)
     }
   }
+}
+
+// MARK: - Pull Alert Item
+
+private struct PullAlertItem {
+  let title: String
+  let message: String
 }
 
 #Preview {
