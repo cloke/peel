@@ -61,6 +61,10 @@ struct RAGRepositoryCardView: View {
   @State private var syncResultMessage: String?
   @State private var onDemandProgress: String?
   @State private var selectedPeerId: String?
+
+  /// Progress text for externally-triggered (MCP) on-demand transfers.
+  /// Populated by a background polling task so the card reflects MCP-initiated syncs.
+  @State private var externalOnDemandProgress: String?
   
   /// Adaptive batch size based on available RAM.
   /// Smaller batches = more frequent UI progress updates (important on laptops).
@@ -90,6 +94,11 @@ struct RAGRepositoryCardView: View {
       return .fullyAnalyzed
     }
     return .partiallyAnalyzed(progress: analysisState.progress)
+  }
+
+  /// Whether sync buttons should be disabled (UI-initiated or MCP-initiated sync in progress)
+  private var isSyncDisabled: Bool {
+    isSyncing || externalOnDemandProgress != nil
   }
   
   var body: some View {
@@ -127,6 +136,12 @@ struct RAGRepositoryCardView: View {
         print("[RAG Resume] Auto-resuming analysis for \(repo.rootPath)")
         startAnalyzeAll()
       }
+    }
+    .task {
+      // Poll for MCP-initiated (external) on-demand transfers for this repo.
+      // The OnDemandTransferState lives in RAGSyncCoordinator.activeTransfers
+      // regardless of whether the sync was started from the UI or from MCP.
+      await pollExternalTransfers()
     }
     .sheet(isPresented: $showSkillsSheet) {
       RAGRepoSkillsSheet(repo: repo, mcpServer: mcpServer)
@@ -197,6 +212,11 @@ struct RAGRepositoryCardView: View {
           if let incomingTransfer = incomingTransferForThisRepo {
             incomingTransferBadge(incomingTransfer)
           }
+
+          // External (MCP-initiated) on-demand transfer indicator
+          if externalOnDemandProgress != nil {
+            externalTransferBadge()
+          }
         }
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -222,14 +242,14 @@ struct RAGRepositoryCardView: View {
           } label: {
             Label("Push to Peer", systemImage: "arrow.up.circle")
           }
-          .disabled(isSyncing)
+          .disabled(isSyncDisabled)
 
           Button {
             Task { await syncRepoWithPeers(repoIdentifier: repoIdentifier, direction: .pull) }
           } label: {
             Label("Pull from Peer", systemImage: "arrow.down.circle")
           }
-          .disabled(isSyncing)
+          .disabled(isSyncDisabled)
         } else if SwarmCoordinator.shared.isActive && !SwarmCoordinator.shared.onDemandWorkers.isEmpty {
           // On-demand pull from Firestore workers (WAN)
           let workers = SwarmCoordinator.shared.onDemandWorkers
@@ -239,7 +259,7 @@ struct RAGRepositoryCardView: View {
             } label: {
               Label("Pull from \(workers[0].displayName) (WAN)", systemImage: "arrow.down.circle")
             }
-            .disabled(isSyncing)
+            .disabled(isSyncDisabled)
           } else {
             Menu {
               ForEach(workers, id: \.id) { worker in
@@ -252,7 +272,7 @@ struct RAGRepositoryCardView: View {
             } label: {
               Label("Pull (WAN)", systemImage: "arrow.down.circle")
             }
-            .disabled(isSyncing)
+            .disabled(isSyncDisabled)
           }
         }
 
@@ -549,7 +569,7 @@ struct RAGRepositoryCardView: View {
           }
           .buttonStyle(.bordered)
           .controlSize(.small)
-          .disabled(isSyncing)
+          .disabled(isSyncDisabled)
           .help("Push to \(peers.first?.displayName ?? "peer")")
 
           Button {
@@ -567,7 +587,7 @@ struct RAGRepositoryCardView: View {
           }
           .buttonStyle(.bordered)
           .controlSize(.small)
-          .disabled(isSyncing)
+          .disabled(isSyncDisabled)
           .help("Pull from \(peers.first?.displayName ?? "peer")")
         } else if hasOnDemand {
           // No TCP peers but Firestore workers available — on-demand pull via WAN/STUN
@@ -589,7 +609,7 @@ struct RAGRepositoryCardView: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
-            .disabled(isSyncing)
+            .disabled(isSyncDisabled)
             .help("Pull from \(onDemandWorkers[0].displayName) via on-demand P2P")
           }
         } else {
@@ -616,11 +636,20 @@ struct RAGRepositoryCardView: View {
         // Incoming transfer (peer is pulling from us or pushing to us)
         syncTransferStatus(incomingTransfer)
       } else if let onDemandProgress {
-        // On-demand (WAN relay) progress
+        // On-demand (WAN relay) progress — UI-initiated
         HStack(spacing: 6) {
           ProgressView()
             .scaleEffect(0.5)
           Text(onDemandProgress)
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+      } else if let externalOnDemandProgress {
+        // On-demand progress — MCP-initiated (external)
+        HStack(spacing: 6) {
+          ProgressView()
+            .scaleEffect(0.5)
+          Text(externalOnDemandProgress)
             .font(.caption2)
             .foregroundStyle(.secondary)
         }
@@ -820,7 +849,7 @@ struct RAGRepositoryCardView: View {
     }
     .buttonStyle(.bordered)
     .controlSize(.small)
-    .disabled(isSyncing)
+    .disabled(isSyncDisabled)
   }
 
   /// Transfer progress display
@@ -908,6 +937,88 @@ struct RAGRepositoryCardView: View {
     .help(transferStatusLabel(transfer))
   }
 
+  // MARK: - External (MCP-Initiated) Transfer Detection
+
+  /// Check whether an on-demand transfer matches this repo card.
+  /// Handles both exact identifier match and name-based fallback,
+  /// since MCP callers may use short names (e.g., "tio-api") while
+  /// the card has a normalized git remote URL.
+  private func isTransferForThisRepo(_ transfer: OnDemandTransferState) -> Bool {
+    guard let repoId = repo.repoIdentifier else { return false }
+    let repoName = repo.name
+    if transfer.repoIdentifier == repoId { return true }
+    if transfer.repoIdentifier == repoName { return true }
+    if repoId.hasSuffix("/\(transfer.repoIdentifier)") { return true }
+    if transfer.repoIdentifier.hasSuffix("/\(repoName)") { return true }
+    return false
+  }
+
+  /// Find an active on-demand transfer for this repo that was NOT started by this card's UI.
+  private func findExternalTransfer() -> OnDemandTransferState? {
+    RAGSyncCoordinator.shared.activeTransfers.values.first { transfer in
+      let isTerminal = transfer.status == .complete || transfer.status == .failed
+      guard !isTerminal else { return false }
+      return isTransferForThisRepo(transfer)
+    }
+  }
+
+  /// Background poll for MCP-initiated on-demand transfers.
+  /// Updates `externalOnDemandProgress` so the card shows sync status
+  /// and disables buttons to prevent duplicate pulls.
+  private func pollExternalTransfers() async {
+    while !Task.isCancelled {
+      if !isSyncing, let transfer = findExternalTransfer() {
+        let method = transfer.connectionMethod?.rawValue ?? "connecting"
+        let worker = transfer.targetWorkerName
+        switch transfer.status {
+        case .connecting:
+          externalOnDemandProgress = "MCP pull from \(worker): Connecting (\(method))…"
+        case .handshaking:
+          externalOnDemandProgress = "MCP pull from \(worker): Handshaking via \(method)…"
+        case .transferring:
+          let elapsed = Int(transfer.elapsedSeconds)
+          if transfer.totalBytes > 0 && transfer.transferredBytes > 0 {
+            let pct = Int(transfer.progressFraction * 100)
+            externalOnDemandProgress = "MCP pull from \(worker): \(pct)% via \(method) (\(formatBytes(transfer.transferredBytes))/\(formatBytes(transfer.totalBytes))) [\(elapsed)s]"
+          } else if transfer.totalChunks > 0 {
+            externalOnDemandProgress = "MCP pull from \(worker): \(transfer.chunksReceived)/\(transfer.totalChunks) chunks via \(method) [\(elapsed)s]"
+          } else {
+            externalOnDemandProgress = "MCP pull from \(worker): Waiting for export via \(method)… [\(elapsed)s]"
+          }
+        case .importing:
+          externalOnDemandProgress = "MCP pull from \(worker): Importing \(formatBytes(transfer.transferredBytes))…"
+        case .complete, .failed:
+          externalOnDemandProgress = nil
+        }
+      } else if !isSyncing {
+        // No external transfer found (or it completed) — clear the progress
+        if externalOnDemandProgress != nil {
+          externalOnDemandProgress = nil
+          // Refresh repo data since an MCP sync just completed
+          await mcpServer.refreshRagSummary()
+          await refreshAnalysisStatus()
+        }
+      }
+      try? await Task.sleep(for: .seconds(0.5))
+    }
+  }
+
+  /// Compact badge for the card header showing an MCP-initiated transfer
+  @ViewBuilder
+  private func externalTransferBadge() -> some View {
+    HStack(spacing: 3) {
+      ProgressView()
+        .scaleEffect(0.4)
+      Image(systemName: "arrow.down.circle.fill")
+        .font(.caption2)
+      Text("MCP sync")
+        .lineLimit(1)
+    }
+    .font(.caption2)
+    .foregroundStyle(.orange)
+    .help(externalOnDemandProgress ?? "MCP-initiated sync in progress")
+  }
+
   // MARK: - Peer Picker Menu
 
   @ViewBuilder
@@ -938,7 +1049,7 @@ struct RAGRepositoryCardView: View {
     }
     .buttonStyle(.bordered)
     .controlSize(.small)
-    .disabled(isSyncing)
+    .disabled(isSyncDisabled)
   }
 
   private var hasConnectedPeers: Bool {
