@@ -987,15 +987,19 @@ public final class MCPServerService {
       let embeddingCounts = await localRagStore.embeddingCountsByRepo()
       let embeddingDims = await localRagStore.embeddingDimensionsByRepo()
       ragRepos = repos.map { repo in
-        // Look up synced embedding model by repoIdentifier or repo id
+        // Prefer the embedding model stored in the DB (written during indexing or sync import).
+        // Fall back to in-memory ragSyncedEmbeddingModels dict for backwards compatibility
+        // (populated during this session's sync operations, lost on restart).
+        let dbModel = repo.embeddingModel
         let syncedModelFallback: String? = {
+          if dbModel != nil { return nil } // DB has it, no need for fallback
           if let identifier = repo.repoIdentifier, let model = ragSyncedEmbeddingModels[identifier] {
             return model
           }
           return ragSyncedEmbeddingModels[repo.id]
         }()
-        let effectiveModel = syncedModelFallback
-        let effectiveDims = embeddingDims[repo.id]
+        let effectiveModel = dbModel ?? syncedModelFallback
+        let effectiveDims = repo.embeddingDimensions ?? embeddingDims[repo.id]
         return RAGRepoInfo(
           id: repo.id,
           name: repo.name,
