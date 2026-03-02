@@ -1177,6 +1177,28 @@ public final class FirebaseService {
     heartbeatTask = nil
   }
   
+  /// Fetch a single worker document directly from Firestore (no listener required).
+  /// Useful when worker listeners aren't active but we need worker connection info.
+  public func fetchWorker(swarmId: String, workerId: String) async throws -> FirestoreWorker? {
+    let doc = try await workersCollection(swarmId: swarmId).document(workerId).getDocument()
+    guard let data = doc.data() else { return nil }
+    return FirestoreWorker(
+      id: doc.documentID,
+      ownerId: data["ownerId"] as? String ?? "",
+      displayName: data["displayName"] as? String ?? "Unknown",
+      deviceName: data["deviceName"] as? String ?? "",
+      status: FirestoreWorkerStatus(rawValue: data["status"] as? String ?? "offline") ?? .offline,
+      lastHeartbeat: (data["lastHeartbeat"] as? Timestamp)?.dateValue() ?? Date.distantPast,
+      version: data["version"] as? String,
+      lanAddress: data["lanAddress"] as? String,
+      lanPort: (data["lanPort"] as? Int).map { UInt16($0) },
+      wanAddress: data["wanAddress"] as? String,
+      wanPort: (data["wanPort"] as? Int).map { UInt16($0) },
+      stunAddress: data["stunAddress"] as? String,
+      stunPort: (data["stunPort"] as? Int).map { UInt16($0) }
+    )
+  }
+
   /// Start listening for workers in a swarm (for brain/dashboard)
   public func startWorkerListener(swarmId: String) {
     // Deduplicate — skip if already listening for this swarm

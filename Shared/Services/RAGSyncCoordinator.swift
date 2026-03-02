@@ -143,9 +143,14 @@ public final class RAGSyncCoordinator {
       throw RAGSyncError.noDelegateConfigured
     }
 
-    // Find the worker
+    // Find the worker — try cached list first, then fetch directly from Firestore
     let firebase = FirebaseService.shared
-    guard let worker = firebase.swarmWorkers.first(where: { $0.id == fromWorkerId }) else {
+    var worker = firebase.swarmWorkers.first(where: { $0.id == fromWorkerId })
+    if worker == nil {
+      logger.info("Worker \(fromWorkerId) not in cached list (\(firebase.swarmWorkers.count) workers cached), fetching from Firestore...")
+      worker = try await firebase.fetchWorker(swarmId: swarmId, workerId: fromWorkerId)
+    }
+    guard let worker else {
       throw RAGSyncError.workerNotFound(workerId: fromWorkerId)
     }
 
