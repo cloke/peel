@@ -36,11 +36,14 @@ public final class WorkerMode {
   }
   
   /// Start worker mode
-  public func start(chainExecutor: ChainExecutorProtocol? = nil) throws {
+  /// - Parameters:
+  ///   - role: Swarm role to use (defaults to persisted DeviceSettings value, falls back to .hybrid)
+  ///   - chainExecutor: Optional chain executor for task execution
+  public func start(role: SwarmRole = .hybrid, chainExecutor: ChainExecutorProtocol? = nil) throws {
     guard !isRunning else { return }
     
     let capabilities = WorkerCapabilities.current()
-    logger.info("Starting peel mode on \(capabilities.deviceName)")
+    logger.info("Starting headless mode as \(role.rawValue) on \(capabilities.deviceName)")
     
     // Use the shared coordinator
     let coordinator = SwarmCoordinator.shared
@@ -53,34 +56,31 @@ public final class WorkerMode {
     coordinator.delegate = self
     
     let port = customPort ?? 8766
-    try coordinator.start(role: .worker, port: port)
+    try coordinator.start(role: role, port: port)
     self.coordinator = coordinator
     
     isRunning = true
     
+    let roleLabel = role == .hybrid ? "Crown + Peel" : role == .brain ? "Crown" : "Peel"
     logger.info("""
-      Peel started:
+      Headless mode started (\(roleLabel)):
         Device: \(capabilities.deviceName)
         Port: \(port)
         GPU Cores: \(capabilities.gpuCores)
         Neural Engine: \(capabilities.neuralEngineCores)
         Memory: \(capabilities.memoryGB)GB
-      
-      Waiting for Crown connection...
       """)
     
     // Print to stdout for visibility
     print("""
       ┌─────────────────────────────────────────────┐
-      │  🍌 Peel Node Started                       │
+      │  🍌 Peel Node Started (\(roleLabel.padding(toLength: 16, withPad: " ", startingAt: 0)))  │
       ├─────────────────────────────────────────────┤
       │  Device: \(capabilities.deviceName.padding(toLength: 28, withPad: " ", startingAt: 0)) │
       │  Port: \(String(port).padding(toLength: 30, withPad: " ", startingAt: 0)) │
       │  GPU: \(String(capabilities.gpuCores).padding(toLength: 31, withPad: " ", startingAt: 0)) │
       │  Neural: \(String(capabilities.neuralEngineCores).padding(toLength: 28, withPad: " ", startingAt: 0)) │
       │  RAM: \(String(format: "%d", capabilities.memoryGB).padding(toLength: 31, withPad: " ", startingAt: 0)) │
-      ├─────────────────────────────────────────────┤
-      │  Status: Waiting for Crown...              │
       └─────────────────────────────────────────────┘
       """)
   }

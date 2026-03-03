@@ -99,11 +99,15 @@ struct PeelApp: App {
     // Note: Ember skills update check is performed in ContentView.task (Issue #263)
     
     // Check for worker mode (--worker flag)
+    // Headless mode uses the persisted swarm role from DeviceSettings (not hardcoded to .worker)
+    // so that machines configured as hybrid or brain keep their role when launched via self-update.sh
     if WorkerMode.shared.shouldRunInWorkerMode && !Self.isRunningTests {
       _workerModeActive = State(initialValue: true)
       Task { @MainActor in
+        let settings = dataService.getDeviceSettings()
+        let role = SwarmRole(rawValue: settings.swarmRole) ?? .hybrid
         do {
-          try WorkerMode.shared.start()
+          try WorkerMode.shared.start(role: role)
         } catch {
           print("Failed to start worker mode: \(error)")
         }

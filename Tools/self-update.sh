@@ -39,7 +39,7 @@ echo "Directory: $REPO_DIR"
 echo "Host: $(hostname)"
 echo "Branch: $(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'unknown')"
 echo "Commit: $(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
-echo "Self-update script version: 4"
+echo "Self-update script version: 5"
 echo ""
 
 # Check for uncommitted changes
@@ -175,7 +175,7 @@ if [ -n "$APP_PATH" ]; then
   # Verify the new process is running
   NEW_PID=$(pgrep -x Peel 2>/dev/null || true)
   if [ -n "$NEW_PID" ]; then
-    echo "✅ Peel restarted in worker mode (PID: $NEW_PID)"
+    echo "✅ Peel restarted in headless mode — using persisted swarm role (PID: $NEW_PID)"
     
     # Log the git hash for verification
     GIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
