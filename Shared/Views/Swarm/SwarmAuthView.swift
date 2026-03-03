@@ -39,8 +39,24 @@ struct SwarmAuthView: View {
       
       Spacer()
       
-      // Sign in button
-      SignInWithAppleButton(
+      if !firebaseService.isFirebaseAvailable {
+        // Firebase credentials not available — sign-in is not possible
+        VStack(spacing: 8) {
+          Image(systemName: "exclamationmark.triangle")
+            .font(.title2)
+            .foregroundStyle(.orange)
+          Text("Firebase not configured")
+            .font(.subheadline)
+            .fontWeight(.medium)
+          Text("GoogleService-Info.plist is missing or contains placeholder credentials. Sign-in requires a real Firebase configuration.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal)
+        }
+      } else {
+        // Sign in button
+        SignInWithAppleButton(
         onRequest: { request in
           let (appleRequest, _) = FirebaseService.shared.prepareAppleSignIn()
           request.requestedScopes = appleRequest.requestedScopes
@@ -67,6 +83,7 @@ struct SwarmAuthView: View {
           .multilineTextAlignment(.center)
           .padding(.horizontal)
       }
+      } // end else (Firebase available)
       
       Spacer()
       

@@ -351,6 +351,9 @@ public final class FirebaseService {
   
   /// Complete Apple Sign-In with the authorization result
   public func completeAppleSignIn(authorization: ASAuthorization) async throws {
+    guard isFirebaseAvailable else {
+      throw FirebaseError.notConfigured
+    }
     guard let appleIDCredential = authorization.credential as? ASAuthorizationAppleIDCredential,
           let nonce = currentNonce,
           let appleIDToken = appleIDCredential.identityToken,
@@ -382,6 +385,15 @@ public final class FirebaseService {
   
   /// Sign out
   public func signOut() throws {
+    guard isFirebaseAvailable else {
+      logger.warning("Firebase not available — clearing local auth state only")
+      currentUserId = nil
+      currentUserEmail = nil
+      currentUserDisplayName = nil
+      memberSwarms = []
+      activeSwarm = nil
+      return
+    }
     logger.info("Signing out")
     try Auth.auth().signOut()
     currentUserId = nil
