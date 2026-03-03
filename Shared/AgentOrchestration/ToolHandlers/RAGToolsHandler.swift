@@ -200,6 +200,8 @@ final class RAGToolsHandler: MCPToolHandler {
       #else
       return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "rag.hotspots is only available on macOS"))
       #endif
+    case "rag.cache.clear":
+      return handleCacheClear(id: id, arguments: arguments)
     case "rag.scratch":
       return handleScratch(id: id, arguments: arguments)
     case "rag.branch.index":
@@ -213,6 +215,65 @@ final class RAGToolsHandler: MCPToolHandler {
     }
   }
   
+  // MARK: - rag.cache.clear
+
+  /// Clear cached HuggingFace model downloads to recover from corrupt/interrupted downloads
+  private func handleCacheClear(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    let modelId = optionalString("modelId", from: arguments)
+
+    if let modelId {
+      // Validate the model exists in our known list
+      let knownIds = MLXEmbeddingModelConfig.availableModels.map(\.huggingFaceId)
+      guard knownIds.contains(modelId) else {
+        let list = knownIds.joined(separator: ", ")
+        return (400, makeError(
+          id: id,
+          code: JSONRPCResponseBuilder.ErrorCode.invalidParams,
+          message: "Unknown model '\(modelId)'. Known models: \(list)"
+        ))
+      }
+
+      // Check for corruption first
+      let validationIssue = MLXEmbeddingProvider.validateModelCache(huggingFaceId: modelId)
+      let deleted = MLXEmbeddingProvider.clearModelCache(huggingFaceId: modelId)
+
+      return (200, makeResult(id: id, result: [
+        "action": "clearOne",
+        "modelId": modelId,
+        "deleted": deleted,
+        "hadCorruption": validationIssue != nil,
+        "corruptionDetail": validationIssue ?? "none",
+        "note": deleted
+          ? "Cache cleared. The model will re-download on next use."
+          : "No cache found for this model."
+      ]))
+    } else {
+      // Clear all embedding model caches
+      var results: [[String: Any]] = []
+      for model in MLXEmbeddingModelConfig.availableModels {
+        let issue = MLXEmbeddingProvider.validateModelCache(huggingFaceId: model.huggingFaceId)
+        let existed = MLXEmbeddingProvider.clearModelCache(huggingFaceId: model.huggingFaceId)
+        if existed || issue != nil {
+          results.append([
+            "modelId": model.huggingFaceId,
+            "deleted": existed,
+            "hadCorruption": issue != nil,
+            "corruptionDetail": issue ?? "none"
+          ])
+        }
+      }
+
+      return (200, makeResult(id: id, result: [
+        "action": "clearAll",
+        "cleared": results,
+        "count": results.count,
+        "note": results.isEmpty
+          ? "No cached models found."
+          : "Cleared \(results.count) model cache(s). Models will re-download on next use."
+      ]))
+    }
+  }
+
   // MARK: - rag.scratch (Issue #111)
   
   /// Get or manage per-repo scratch directory for artifacts

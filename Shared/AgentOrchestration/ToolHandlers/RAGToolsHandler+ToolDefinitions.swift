@@ -390,6 +390,18 @@ extension RAGToolsHandler {
         isMutating: true
       ),
       MCPToolDefinition(
+        name: "rag.cache.clear",
+        description: "Clear the cached HuggingFace model download for a specific embedding model (or all). Use when a model download was interrupted/corrupted, causing crashes on load.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "modelId": ["type": "string", "description": "HuggingFace model ID to clear (e.g. 'mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ'). Omit to clear all embedding model caches."]
+          ]
+        ],
+        category: .rag,
+        isMutating: true
+      ),
+      MCPToolDefinition(
         name: "rag.embedding.test",
         description: "Test embedding generation with sample texts. Returns embeddings and timing info.",
         inputSchema: [

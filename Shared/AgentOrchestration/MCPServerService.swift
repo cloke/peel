@@ -548,6 +548,9 @@ public final class MCPServerService {
           try await indexRagRepo(path: path)
         } catch {
           print("[RAG Resume] Indexing failed for \(path): \(error)")
+          // Clear the interrupted marker so we don't retry on every launch
+          // (prevents crash loops if the embedding model can't load)
+          markIndexingStopped(path: path)
         }
       }
     }

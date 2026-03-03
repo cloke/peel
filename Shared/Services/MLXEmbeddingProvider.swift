@@ -123,6 +123,8 @@ actor MLXEmbeddingProvider: LocalRAGEmbeddingProvider, BatchAwareEmbeddingProvid
   private var container: MLXEmbedders.ModelContainer?
   private let config: MLXEmbeddingModelConfig
   private var isLoaded = false
+  /// Cached load error — prevents retrying a failed/corrupt model on every embed call.
+  private var loadError: Error?
   
   nonisolated let dimensions: Int
   nonisolated let modelName: String
@@ -146,6 +148,12 @@ actor MLXEmbeddingProvider: LocalRAGEmbeddingProvider, BatchAwareEmbeddingProvid
   /// Load the model (lazy - called on first embed)
   private func ensureLoaded() async throws {
     guard !isLoaded else { return }
+
+    // If a previous load already failed, fast-fail so we don't retry
+    // a corrupt download on every embed call in a batch.
+    if let previousError = loadError {
+      throw previousError
+    }
     
     if let limitMB = LocalRAGEmbeddingProviderFactory.mlxCacheLimitMB {
       let limitBytes = limitMB * 1_048_576
@@ -159,28 +167,44 @@ actor MLXEmbeddingProvider: LocalRAGEmbeddingProvider, BatchAwareEmbeddingProvid
       print("[MLX] Cache limit defaulted to 75% RAM (\(label))")
     }
 
+    // Pre-flight: verify model cache isn't corrupt before handing to MLX
+    // (MLX C++ can SIGABRT on truncated safetensors, which isn't catchable)
+    if let cacheIssue = Self.validateModelCache(huggingFaceId: config.huggingFaceId) {
+      let err = MLXEmbeddingError.embeddingFailed("Model cache validation failed for \(config.name): \(cacheIssue). Delete ~/Documents/huggingface/models/\(config.huggingFaceId) and re-run.")
+      loadError = err
+      print("[MLX] \(err.localizedDescription)")
+      throw err
+    }
+
     print("[MLX] Loading model: \(config.name) (\(config.huggingFaceId))")
     let startTime = CFAbsoluteTimeGetCurrent()
     
-    // Use MLXEmbedders to load from HuggingFace
-    // The model is downloaded and cached automatically
-    let modelConfig = MLXEmbedders.ModelConfiguration(id: config.huggingFaceId)
-    let loadedContainer = try await MLXEmbedders.loadModelContainer(
-      hub: HubApi(),
-      configuration: modelConfig,
-      progressHandler: { progress in
-        if progress.fractionCompleted > 0 {
-          print("[MLX] Download progress: \(Int(progress.fractionCompleted * 100))%")
+    do {
+      // Use MLXEmbedders to load from HuggingFace
+      // The model is downloaded and cached automatically
+      let modelConfig = MLXEmbedders.ModelConfiguration(id: config.huggingFaceId)
+      let loadedContainer = try await MLXEmbedders.loadModelContainer(
+        hub: HubApi(),
+        configuration: modelConfig,
+        progressHandler: { progress in
+          if progress.fractionCompleted > 0 {
+            print("[MLX] Download progress: \(Int(progress.fractionCompleted * 100))%")
+          }
         }
-      }
-    )
-    
-    self.container = loadedContainer
-    self.isLoaded = true
-    LocalRAGEmbeddingProviderFactory.recordDownloadedMLXModel(config.huggingFaceId)
-    
-    let elapsed = CFAbsoluteTimeGetCurrent() - startTime
-    print("[MLX] Model loaded in \(String(format: "%.2f", elapsed))s")
+      )
+      
+      self.container = loadedContainer
+      self.isLoaded = true
+      LocalRAGEmbeddingProviderFactory.recordDownloadedMLXModel(config.huggingFaceId)
+      
+      let elapsed = CFAbsoluteTimeGetCurrent() - startTime
+      print("[MLX] Model loaded in \(String(format: "%.2f", elapsed))s")
+    } catch {
+      // Cache the error so subsequent calls fail fast instead of retrying
+      loadError = error
+      print("[MLX] Model load FAILED for \(config.name): \(error.localizedDescription)")
+      throw error
+    }
   }
 
   private func defaultCacheLimitBytes() -> Int {
@@ -295,6 +319,7 @@ enum MLXEmbeddingError: LocalizedError {
   case embeddingFailed(String)
   case modelNotSupported(String)
   case evaluationFailed(String)
+  case modelCacheCorrupt(String)
   
   var errorDescription: String? {
     switch self {
@@ -306,6 +331,103 @@ enum MLXEmbeddingError: LocalizedError {
       return "Model not supported: \(model)"
     case .evaluationFailed(let reason):
       return "MLX evaluation failed: \(reason)"
+    case .modelCacheCorrupt(let reason):
+      return "Model cache corrupt: \(reason)"
+    }
+  }
+}
+
+// MARK: - Model Cache Validation & Recovery
+
+extension MLXEmbeddingProvider {
+  /// The HuggingFace Hub caches models under ~/Documents/huggingface/models/<org>/<repo>/
+  /// If a download was interrupted (e.g. WAN sync), safetensor files may be truncated.
+  /// MLX C++ will SIGABRT on corrupt safetensors, which isn't catchable.
+  /// This validates the cache pre-flight to provide a graceful error instead.
+  static func modelCacheURL(huggingFaceId: String) -> URL {
+    let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+    return documents
+      .appendingPathComponent("huggingface")
+      .appendingPathComponent("models")
+      .appendingPathComponent(huggingFaceId)
+  }
+
+  /// Validate that cached model files are complete. Returns nil if OK, or a description of the issue.
+  static func validateModelCache(huggingFaceId: String) -> String? {
+    let modelDir = modelCacheURL(huggingFaceId: huggingFaceId)
+    let fm = FileManager.default
+
+    // No cache dir = model hasn't been downloaded yet, Hub will handle download
+    guard fm.fileExists(atPath: modelDir.path) else { return nil }
+
+    // Check for .incomplete files — indicates an interrupted download
+    let cacheDir = modelDir.appendingPathComponent(".cache")
+    if fm.fileExists(atPath: cacheDir.path) {
+      if let cacheContents = try? fm.contentsOfDirectory(atPath: cacheDir.path) {
+        // Recursively check for .incomplete files
+        if hasIncompleteFiles(in: cacheDir, fm: fm) {
+          return "Found .incomplete download marker files — download was interrupted"
+        }
+        _ = cacheContents  // suppress unused warning
+      }
+    }
+
+    // Check that config.json exists (basic sanity — if this is missing, nothing works)
+    let configPath = modelDir.appendingPathComponent("config.json")
+    guard fm.fileExists(atPath: configPath.path) else {
+      return "Missing config.json — partial download"
+    }
+
+    // Check safetensor files aren't empty/tiny (a truncated download)
+    let safetensorFiles = (try? fm.contentsOfDirectory(atPath: modelDir.path))?
+      .filter { $0.hasSuffix(".safetensors") } ?? []
+    for file in safetensorFiles {
+      let filePath = modelDir.appendingPathComponent(file)
+      if let attrs = try? fm.attributesOfItem(atPath: filePath.path),
+         let size = attrs[.size] as? Int64 {
+        // A valid safetensors file has at minimum a JSON header + some weights.
+        // Anything under 1KB is clearly truncated/corrupt.
+        if size < 1024 {
+          return "Safetensors file '\(file)' is only \(size) bytes — likely truncated"
+        }
+      }
+    }
+
+    return nil
+  }
+
+  /// Recursively check for .incomplete files in the cache directory
+  private static func hasIncompleteFiles(in dir: URL, fm: FileManager) -> Bool {
+    guard let enumerator = fm.enumerator(at: dir, includingPropertiesForKeys: nil) else { return false }
+    while let url = enumerator.nextObject() as? URL {
+      if url.lastPathComponent.hasSuffix(".incomplete") {
+        return true
+      }
+    }
+    return false
+  }
+
+  /// Remove the cached model directory so it can be re-downloaded cleanly.
+  /// Call this when the user wants to recover from a corrupt download.
+  @discardableResult
+  static func clearModelCache(huggingFaceId: String) -> Bool {
+    let modelDir = modelCacheURL(huggingFaceId: huggingFaceId)
+    let fm = FileManager.default
+    guard fm.fileExists(atPath: modelDir.path) else { return true }
+    do {
+      try fm.removeItem(at: modelDir)
+      print("[MLX] Cleared model cache for \(huggingFaceId)")
+      return true
+    } catch {
+      print("[MLX] Failed to clear model cache for \(huggingFaceId): \(error)")
+      return false
+    }
+  }
+
+  /// Clear caches for all known embedding models.
+  static func clearAllModelCaches() {
+    for model in MLXEmbeddingModelConfig.availableModels {
+      clearModelCache(huggingFaceId: model.huggingFaceId)
     }
   }
 }
