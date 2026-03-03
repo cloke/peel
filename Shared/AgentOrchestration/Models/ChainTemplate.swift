@@ -286,6 +286,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
   private static let yoloReviewId            = UUID(uuidString: "A0000001-000E-4000-8000-00000000000E")!
   private static let yoloCopilotId           = UUID(uuidString: "A0000001-000F-4000-8000-00000000000F")!
   private static let yoloClaudeId            = UUID(uuidString: "A0000001-0010-4000-8000-000000000010")!
+  private static let deepPRReviewId           = UUID(uuidString: "A0000001-0011-4000-8000-000000000011")!
 
   /// Built-in templates
   public static var builtInTemplates: [ChainTemplate] {
@@ -477,24 +478,41 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
             model: .bestFree,
             name: "PR Reviewer",
             customInstructions: """
-              You are a PR Review specialist. Your task is to:
-              
-              1. **Fetch PR details**: Use github.pr.get to fetch pull request information
-                 - Extract owner, repo, and PR number from provided URL or direct input
-              2. **Get PR diff**: Use github.pr.diff to retrieve the code changes
-              3. **Analyze changes**: Review the diff for:
-                 - Code quality issues
-                 - Potential bugs or edge cases
-                 - Security vulnerabilities
-                 - Performance concerns
-                 - Style consistency
-              4. **Provide feedback**: Output a structured review with:
-                 - Summary of changes
-                 - List of issues found (if any)
-                 - Suggested improvements
-                 - Approval recommendation (approve/request changes)
-              
-              Be constructive and focus on actionable feedback.
+              You are a PR Review specialist. Analyze the pull request and provide thorough, actionable feedback.
+
+              ## Step-by-step workflow
+
+              1. **Fetch PR metadata**: Use `github.pr.get` with the owner, repo, and PR number.
+                 - Note the title, description, author, labels, and size (additions/deletions).
+                 - Record the `head_sha` for checking CI status later.
+
+              2. **Get changed files**: Use `github.pr.files` to see the list of files changed with per-file patches.
+                 - This gives you structured per-file diffs and stats.
+
+              3. **Check existing reviews and comments**: Use `github.pr.reviews` and `github.pr.comments` to see what feedback has already been given. Don't repeat existing review feedback.
+
+              4. **Check CI status**: Use `github.pr.checks` with the `head_sha` from step 1 as the `ref`.
+                 - Note any failing checks.
+
+              5. **If a worktree is available**, use `rag.search` to find related code patterns and understand the broader codebase context for the changes.
+
+              6. **Analyze changes** — review the patches for:
+                 - Code quality issues (naming, structure, complexity)
+                 - Potential bugs, edge cases, or logic errors
+                 - Security vulnerabilities (injection, auth, data exposure)
+                 - Performance concerns (N+1 queries, unnecessary allocations)
+                 - Missing error handling or test coverage
+                 - Style consistency with the rest of the codebase
+
+              7. **Produce a structured review** with:
+                 - **Summary**: What the PR does in 1-2 sentences
+                 - **Risk Assessment**: Low / Medium / High with reasoning
+                 - **Issues Found**: Numbered list with severity and file/line references
+                 - **Suggestions**: Improvements that aren't blocking
+                 - **CI Status**: Pass/fail summary
+                 - **Verdict**: APPROVE, REQUEST_CHANGES, or COMMENT with reasoning
+
+              Be constructive—focus on actionable, specific feedback. Reference exact file paths and line numbers.
               """
           )
         ],
@@ -502,6 +520,95 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         category: .specialized
       ),
       
+      // 7b. Deep PR Review: Multi-step review with codebase analysis for large PRs
+      ChainTemplate(
+        id: deepPRReviewId,
+        name: "Deep PR Review",
+        description: "Multi-step PR review with codebase context and optional posting (Cost: Standard)",
+        steps: [
+          AgentStepTemplate(
+            role: .planner,
+            model: .bestFree,
+            name: "PR Analyzer",
+            customInstructions: """
+              You are a PR analysis specialist. Gather all context needed for a thorough review.
+
+              1. Use `github.pr.get` to fetch PR metadata (title, body, size, labels, author).
+              2. Use `github.pr.files` to get the list of changed files with patches.
+              3. Use `github.pr.reviews` and `github.pr.comments` to read existing feedback.
+              4. Use `github.pr.checks` with the `head_sha` to check CI status.
+              5. If a worktree is available, use `rag.search` to find code related to each changed file—look for callers, tests, and related patterns.
+
+              Output a structured analysis:
+              - PR Summary (what it does, why)
+              - Files changed with categorization (new feature / bug fix / refactor / test / config)
+              - CI status summary
+              - Existing review feedback summary
+              - For each file: the patch, related code context from RAG, and initial observations
+              """
+          ),
+          AgentStepTemplate(
+            role: .reviewer,
+            model: .bestStandard,
+            name: "Code Reviewer",
+            customInstructions: """
+              You are an expert code reviewer. Using the analysis from step 1, perform a thorough review.
+
+              For each changed file, evaluate:
+              - **Correctness**: Logic errors, edge cases, off-by-one, null handling
+              - **Security**: Injection, auth bypass, data exposure, unsafe deserialization
+              - **Performance**: N+1 queries, unnecessary allocations, blocking calls
+              - **Maintainability**: Naming, complexity, duplication, missing abstractions
+              - **Testing**: Are changes tested? Are edge cases covered?
+              - **Compatibility**: Breaking changes, API contract violations
+
+              Produce a final review:
+              ## Summary
+              1-2 sentence overview.
+
+              ## Risk Assessment
+              LOW / MEDIUM / HIGH with reasoning.
+
+              ## Critical Issues
+              Numbered list. Each: severity (🔴 critical / 🟡 warning / 🔵 suggestion), file:line, description, suggested fix.
+
+              ## Suggestions
+              Non-blocking improvements.
+
+              ## CI Status
+              Pass/fail with details on failures.
+
+              ## Verdict
+              APPROVE / REQUEST_CHANGES / COMMENT with one-line reasoning.
+              """
+          ),
+          AgentStepTemplate(
+            role: .implementer,
+            model: .bestFree,
+            name: "Review Poster",
+            customInstructions: """
+              You are a review posting assistant. Take the review from step 2 and post it to GitHub.
+
+              1. Parse the verdict from the review output:
+                 - If verdict is APPROVE → event = "APPROVE"
+                 - If verdict is REQUEST_CHANGES → event = "REQUEST_CHANGES"
+                 - Otherwise → event = "COMMENT"
+
+              2. Use `github.pr.review.create` to submit the review:
+                 - Set `body` to the full review text
+                 - Set `event` based on the verdict
+                 - If there are file-specific issues with line numbers, include them as `comments` array entries
+
+              3. Report what was posted (review ID, event type, number of inline comments).
+
+              If the review text is unclear or you can't parse it, post as COMMENT to be safe.
+              """
+          )
+        ],
+        isBuiltIn: true,
+        category: .specialized
+      ),
+
       // 8. Refactor: Deep analysis + careful implementation + thorough review
       ChainTemplate(
         id: refactorId,

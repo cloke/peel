@@ -24,12 +24,18 @@ struct Github_RootView: View {
   @Environment(\.modelContext) private var modelContext
   @Query(sort: \GitHubFavorite.addedAt, order: .reverse) private var favoriteRecords: [GitHubFavorite]
   @Query(sort: \RecentPullRequest.viewedAt, order: .reverse) private var recentPRRecords: [RecentPullRequest]
+  @Query(sort: \TrackedRemoteRepo.name) private var trackedRepos: [TrackedRemoteRepo]
   @State public var viewModel = Github.ViewModel()
   @State private var dataProvider: GitHubDataProvider?
   #if os(macOS)
   @State private var reviewAgentCoordinator = PRReviewAgentCoordinator()
   @State private var reviewAgentTarget: PRReviewAgentTarget?
   #endif
+
+  private let scheduler = RepoPullScheduler.shared
+  @State private var pullInProgressIds: Set<UUID> = []
+  @State private var pullAlertItem: PullAlertItem?
+  @State private var showAddTrackedSheet = false
   
   @State private var organizations = [Github.User]()
   @State private var columnVisibility = NavigationSplitViewVisibility.all
@@ -152,7 +158,58 @@ struct Github_RootView: View {
             Label("Recent PRs", systemImage: "clock")
           }
         }
-        
+
+        // Tracked repos section
+        if !trackedRepos.isEmpty {
+          Section {
+            if scheduler.isPulling {
+              HStack(spacing: 6) {
+                ProgressView()
+                  .controlSize(.small)
+                Text("Pulling…")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+            }
+
+            ForEach(trackedRepos) { repo in
+              TrackedRepoRow(
+                repo: repo,
+                isPulling: pullInProgressIds.contains(repo.id),
+                onPullNow: { pullNow(repo) },
+                onToggleEnabled: { toggleEnabled(repo) },
+                onDelete: { deleteTrackedRepo(repo) }
+              )
+            }
+
+            if !scheduler.pullHistory.isEmpty {
+              DisclosureGroup {
+                ForEach(scheduler.pullHistory.prefix(5)) { entry in
+                  PullHistoryRow(entry: entry)
+                }
+              } label: {
+                Label("Recent Activity", systemImage: "clock.arrow.circlepath")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+            }
+          } header: {
+            HStack {
+              Label("Tracked", systemImage: "arrow.triangle.2.circlepath")
+              Spacer()
+              Button {
+                Task { await scheduler.pullDueRepos() }
+              } label: {
+                Image(systemName: "arrow.clockwise")
+                  .font(.caption)
+              }
+              .buttonStyle(.plain)
+              .disabled(scheduler.isPulling)
+              .help("Pull all due repos")
+            }
+          }
+        }
+
         if isLoading {
           HStack {
             Spacer()
@@ -288,6 +345,20 @@ struct Github_RootView: View {
       syncAutomationSelection()
     }
     .frame(idealHeight: 400)
+    .sheet(isPresented: $showAddTrackedSheet) {
+      AddTrackedRepoSheet()
+    }
+    .alert(
+      pullAlertItem?.title ?? "Pull Complete",
+      isPresented: Binding(
+        get: { pullAlertItem != nil },
+        set: { if !$0 { pullAlertItem = nil } }
+      )
+    ) {
+      Button("OK", role: .cancel) { pullAlertItem = nil }
+    } message: {
+      Text(pullAlertItem?.message ?? "")
+    }
     .toolbar {
       #if os(macOS)
       if showToolSelectionToolbar {
@@ -297,6 +368,14 @@ struct Github_RootView: View {
       ToolbarItem(placement: .navigation) {
         Menu {
           Toggle("Show Archived Repos", isOn: $showArchivedRepos)
+          Divider()
+          Button("Track Repository…") { showAddTrackedSheet = true }
+          if !trackedRepos.isEmpty {
+            Button("Pull All Due Now") {
+              Task { await scheduler.pullDueRepos() }
+            }
+            .disabled(scheduler.isPulling)
+          }
           Divider()
           Button {
             Task {
@@ -314,6 +393,38 @@ struct Github_RootView: View {
         }
       }
     }
+  }
+
+  // MARK: - Tracked Repo Actions
+
+  private func pullNow(_ repo: TrackedRemoteRepo) {
+    guard !pullInProgressIds.contains(repo.id) else { return }
+    pullInProgressIds.insert(repo.id)
+    Task {
+      let result = await scheduler.pullRepoNow(remoteURL: repo.remoteURL)
+      pullInProgressIds.remove(repo.id)
+      switch result {
+      case .upToDate:
+        pullAlertItem = PullAlertItem(title: repo.name, message: "Already up to date.")
+      case .updated(let sha):
+        pullAlertItem = PullAlertItem(title: repo.name, message: "Updated to \(String(sha.prefix(8))).")
+      case .error(let msg):
+        pullAlertItem = PullAlertItem(title: "Pull Failed", message: msg)
+      case .none:
+        pullAlertItem = PullAlertItem(title: "Pull Failed", message: "Repo not found or scheduler unavailable.")
+      }
+    }
+  }
+
+  private func toggleEnabled(_ repo: TrackedRemoteRepo) {
+    repo.isEnabled.toggle()
+    repo.touch()
+    try? modelContext.save()
+  }
+
+  private func deleteTrackedRepo(_ repo: TrackedRemoteRepo) {
+    modelContext.delete(repo)
+    try? modelContext.save()
   }
 
   private var favoriteItems: [FavoriteRepository] {

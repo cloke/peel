@@ -28,7 +28,7 @@ struct PRReviewAgentTarget: Identifiable {
 struct GithubReviewAgentSheet: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(MCPServerService.self) private var mcpServer
-
+  @Environment(\.localRepoResolver) private var localRepoResolver
   let target: PRReviewAgentTarget
 
   @State private var service = ReviewLocallyService.shared
@@ -44,6 +44,9 @@ struct GithubReviewAgentSheet: View {
   @State private var isQueuing = false
   @State private var didQueue = false
   @State private var lastSummary: AgentChainRunner.RunSummary?
+  @State private var repoAutoResolved = false
+  @State private var showRepoPicker = false
+  @State private var isSearchingRepo = false
 
   var body: some View {
     VStack(spacing: 0) {
@@ -55,13 +58,23 @@ struct GithubReviewAgentSheet: View {
     }
     .frame(width: 520, height: 520)
     .task {
-      if selectedRepoPath.isEmpty, let lastPath = service.lastSelectedRepoPath {
-        selectedRepoPath = lastPath
-      }
       // Register RAG-indexed repos with RepoRegistry (they have direct remote URLs)
       await registerRAGRepos()
       await loadPRIfNeeded()
+      // Try repo-specific auto-select: sync strategies first, then async filesystem scan
       autoSelectRepository()
+      #if os(macOS)
+      if selectedRepoPath.isEmpty {
+        // Async fallback: deeper filesystem scan
+        await asyncFindRepository()
+      }
+      #endif
+      if selectedRepoPath.isEmpty, let lastPath = service.lastSelectedRepoPath {
+        selectedRepoPath = lastPath
+      }
+      if !selectedRepoPath.isEmpty {
+        repoAutoResolved = true
+      }
     }
   }
 
@@ -109,58 +122,7 @@ struct GithubReviewAgentSheet: View {
     } else {
       ScrollView {
         VStack(alignment: .leading, spacing: 16) {
-          SectionCard("Local Repository") {
-            TextField("Path to local repository", text: $selectedRepoPath)
-              .textFieldStyle(.roundedBorder)
-              .accessibilityIdentifier("github.reviewAgent.repoPath")
-
-            HStack(spacing: 8) {
-              Button("Browse…") {
-                if let path = service.browseForRepository() {
-                  selectedRepoPath = path
-                  service.lastSelectedRepoPath = path
-                }
-              }
-              .buttonStyle(.bordered)
-              .accessibilityIdentifier("github.reviewAgent.repoBrowse")
-
-              Toggle("Open in VS Code", isOn: $openInVSCode)
-                .accessibilityIdentifier("github.reviewAgent.openInVSCode")
-            }
-
-            if !service.recentRepositories.isEmpty {
-              VStack(alignment: .leading, spacing: 6) {
-                Text("Recent Repositories")
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
-
-                ForEach(service.recentRepositories.prefix(6)) { repo in
-                  Button {
-                    selectedRepoPath = repo.path
-                  } label: {
-                    HStack {
-                      Image(systemName: "folder")
-                        .foregroundStyle(.secondary)
-                      VStack(alignment: .leading, spacing: 2) {
-                        Text(repo.name)
-                          .font(.callout)
-                        Text(repo.path)
-                          .font(.caption)
-                          .foregroundStyle(.secondary)
-                          .lineLimit(1)
-                      }
-                      Spacer()
-                      if let repository, service.repositoryMatches(local: repo, githubRepo: repository) {
-                        Image(systemName: "checkmark.circle.fill")
-                          .foregroundStyle(.green)
-                      }
-                    }
-                  }
-                  .buttonStyle(.plain)
-                }
-              }
-            }
-          }
+          localRepoSection
 
           SectionCard("Agent Template") {
             Picker("Template", selection: selectedTemplateBinding) {
@@ -212,6 +174,103 @@ struct GithubReviewAgentSheet: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+      }
+    }
+  }
+
+  // MARK: - Local Repository Section
+
+  @ViewBuilder
+  private var localRepoSection: some View {
+    if isSearchingRepo {
+      SectionCard("Local Repository") {
+        HStack(spacing: 8) {
+          ProgressView()
+            .controlSize(.small)
+          Text("Searching for local clone\u{2026}")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        }
+      }
+    } else if !selectedRepoPath.isEmpty && repoAutoResolved && !showRepoPicker {
+      // Compact resolved view — repo was auto-detected
+      SectionCard("Local Repository") {
+        HStack(spacing: 8) {
+          Image(systemName: "checkmark.circle.fill")
+            .foregroundStyle(.green)
+          VStack(alignment: .leading, spacing: 2) {
+            Text((selectedRepoPath as NSString).lastPathComponent)
+              .font(.callout.weight(.medium))
+            Text(selectedRepoPath)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
+              .truncationMode(.middle)
+          }
+          Spacer()
+          Button("Change") {
+            showRepoPicker = true
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
+        }
+
+        Toggle("Open in VS Code", isOn: $openInVSCode)
+          .accessibilityIdentifier("github.reviewAgent.openInVSCode")
+      }
+    } else {
+      // Full picker — no auto-match or user chose to change
+      SectionCard("Local Repository") {
+        TextField("Path to local repository", text: $selectedRepoPath)
+          .textFieldStyle(.roundedBorder)
+          .accessibilityIdentifier("github.reviewAgent.repoPath")
+
+        HStack(spacing: 8) {
+          Button("Browse\u{2026}") {
+            if let path = service.browseForRepository() {
+              selectedRepoPath = path
+              service.lastSelectedRepoPath = path
+            }
+          }
+          .buttonStyle(.bordered)
+          .accessibilityIdentifier("github.reviewAgent.repoBrowse")
+
+          Toggle("Open in VS Code", isOn: $openInVSCode)
+            .accessibilityIdentifier("github.reviewAgent.openInVSCode")
+        }
+
+        if !service.recentRepositories.isEmpty {
+          VStack(alignment: .leading, spacing: 6) {
+            Text("Recent Repositories")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+
+            ForEach(service.recentRepositories.prefix(6)) { repo in
+              Button {
+                selectedRepoPath = repo.path
+              } label: {
+                HStack {
+                  Image(systemName: "folder")
+                    .foregroundStyle(.secondary)
+                  VStack(alignment: .leading, spacing: 2) {
+                    Text(repo.name)
+                      .font(.callout)
+                    Text(repo.path)
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                      .lineLimit(1)
+                  }
+                  Spacer()
+                  if let repository, service.repositoryMatches(local: repo, githubRepo: repository) {
+                    Image(systemName: "checkmark.circle.fill")
+                      .foregroundStyle(.green)
+                  }
+                }
+              }
+              .buttonStyle(.plain)
+            }
+          }
+        }
       }
     }
   }
@@ -269,7 +328,8 @@ struct GithubReviewAgentSheet: View {
 
   /// Auto-select the best review template based on PR size.
   /// Small PRs (<200 lines) → PR Review (free single-agent).
-  /// Larger PRs → Refactor template (planner + implementer + reviewer).
+  /// Medium PRs (200-800 lines) → Deep PR Review (multi-step with codebase context).
+  /// Large PRs (>800 lines) → Deep PR Review.
   /// Falls back to first available template.
   private func recommendedTemplate(for pr: Github.PullRequest?) -> ChainTemplate? {
     let templates = mcpServer.agentManager.allTemplates
@@ -279,8 +339,7 @@ struct GithubReviewAgentSheet: View {
       return templates.first { $0.name == "PR Review" }
         ?? templates.first { $0.name == "Quick Task" }
     } else {
-      return templates.first { $0.name == "Refactor" }
-        ?? templates.first { $0.name == "Full Implementation" }
+      return templates.first { $0.name == "Deep PR Review" }
         ?? templates.first { $0.name == "PR Review" }
     }
   }
@@ -364,8 +423,15 @@ Task:
       }
     }
 
+    // 2. LocalRepoResolver — SwiftData-backed lookup (SyncedRepository + LocalRepositoryPath)
+    if let localPath = localRepoResolver?.localPath(for: repository) {
+      selectedRepoPath = localPath
+      service.lastSelectedRepoPath = localPath
+      return
+    }
+
     #if os(macOS)
-    // 2. Name-based scan of sibling directories (handles repos not yet registered)
+    // 3. Name-based scan of sibling directories (handles repos not yet registered)
     if let found = findRepoInSiblingDirectories(named: repository.name) {
       selectedRepoPath = found
       service.lastSelectedRepoPath = found
@@ -373,7 +439,7 @@ Task:
     }
     #endif
 
-    // 3. Fall back to matching from ReviewLocally recents
+    // 4. Fall back to matching from ReviewLocally recents
     if let match = service.recentRepositories.first(where: { service.repositoryMatches(local: $0, githubRepo: repository) }) {
       selectedRepoPath = match.path
     }
@@ -391,11 +457,9 @@ Task:
   }
 
   #if os(macOS)
-  /// Look for the repo in sibling directories of known repos.
-  /// E.g. if we know ~/code/kitchen-sink, check ~/code/<repoName>.
-  private func findRepoInSiblingDirectories(named repoName: String) -> String? {
+  /// Gather directories to scan for local clones.
+  private func gatherSearchDirs() -> Set<String> {
     let fm = FileManager.default
-    // Gather unique parent directories from all known repo sources
     var parentDirs = Set<String>()
     for repo in Git.ViewModel.shared.repositories where !repo.path.isEmpty {
       let parent = (repo.path as NSString).deletingLastPathComponent
@@ -405,7 +469,11 @@ Task:
       let parent = (repo.path as NSString).deletingLastPathComponent
       parentDirs.insert(parent)
     }
-    // Also check ~/code, ~/Developer, ~/src, ~/projects, ~/repos
+    // Also add RAG repo parent dirs
+    for repo in mcpServer.ragRepos {
+      let parent = (repo.rootPath as NSString).deletingLastPathComponent
+      parentDirs.insert(parent)
+    }
     let home = NSHomeDirectory()
     for dir in ["code", "Developer", "src", "projects", "repos"] {
       let path = (home as NSString).appendingPathComponent(dir)
@@ -413,15 +481,84 @@ Task:
         parentDirs.insert(path)
       }
     }
+    return parentDirs
+  }
+
+  /// Look for the repo in sibling directories of known repos.
+  /// Checks both direct children and one level of subdirectories.
+  /// E.g. if we know ~/code, checks ~/code/<repoName> AND ~/code/*/<repoName>.
+  private func findRepoInSiblingDirectories(named repoName: String) -> String? {
+    let fm = FileManager.default
+    let parentDirs = gatherSearchDirs()
 
     for parentDir in parentDirs {
+      // Direct child: parentDir/repoName
       let candidate = (parentDir as NSString).appendingPathComponent(repoName)
       let gitDir = (candidate as NSString).appendingPathComponent(".git")
       if fm.fileExists(atPath: gitDir) {
         return candidate
       }
+
+      // One level deeper: parentDir/*/repoName (e.g. ~/code/workspace/repoName)
+      if let subdirs = try? fm.contentsOfDirectory(atPath: parentDir) {
+        for subdir in subdirs where !subdir.hasPrefix(".") {
+          let subdirPath = (parentDir as NSString).appendingPathComponent(subdir)
+          var isDir: ObjCBool = false
+          guard fm.fileExists(atPath: subdirPath, isDirectory: &isDir), isDir.boolValue else { continue }
+          let deepCandidate = (subdirPath as NSString).appendingPathComponent(repoName)
+          let deepGitDir = (deepCandidate as NSString).appendingPathComponent(".git")
+          if fm.fileExists(atPath: deepGitDir) {
+            return deepCandidate
+          }
+        }
+      }
     }
     return nil
+  }
+
+  /// Async filesystem scan using `find` for broader repo discovery.
+  /// Called when synchronous strategies fail.
+  private func asyncFindRepository() async {
+    guard let repository else { return }
+    isSearchingRepo = true
+    defer { isSearchingRepo = false }
+
+    let repoName = repository.name
+    let home = NSHomeDirectory()
+    let searchRoots = gatherSearchDirs().union([
+      (home as NSString).appendingPathComponent("code"),
+      (home as NSString).appendingPathComponent("Developer"),
+    ]).filter { FileManager.default.fileExists(atPath: $0) }
+
+    // Use find to search up to 3 levels deep for a .git dir inside a matching folder
+    for root in searchRoots {
+      let process = Process()
+      process.executableURL = URL(fileURLWithPath: "/usr/bin/find")
+      process.arguments = [root, "-maxdepth", "4", "-type", "d", "-name", ".git", "-path", "*/\(repoName)/.git"]
+      let pipe = Pipe()
+      process.standardOutput = pipe
+      process.standardError = FileHandle.nullDevice
+
+      do {
+        try process.run()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { continue }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        guard let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !output.isEmpty else { continue }
+        // Take the first match, strip /.git suffix
+        if let firstLine = output.components(separatedBy: "\n").first {
+          let repoPath = (firstLine as NSString).deletingLastPathComponent
+          selectedRepoPath = repoPath
+          service.lastSelectedRepoPath = repoPath
+          // Register for future lookups
+          await RepoRegistry.shared.registerRepo(at: repoPath)
+          return
+        }
+      } catch {
+        continue
+      }
+    }
   }
   #endif
 

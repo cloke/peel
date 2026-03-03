@@ -159,6 +159,14 @@ extension Github {
     try await loadMany(url: "https://api.github.com/repos/\(owner)/\(repository)/pulls/\(number)/files?per_page=100")
   }
 
+  /// Fetch the full unified diff for a pull request as raw text
+  public static func pullRequestDiff(owner: String, repository: String, number: Int) async throws -> String {
+    try await loadRawText(
+      url: "https://api.github.com/repos/\(owner)/\(repository)/pulls/\(number)",
+      accept: "application/vnd.github.v3.diff"
+    )
+  }
+
   /// Fetch general conversation comments on a PR (issue comments endpoint)
   public static func issueComments(owner: String, repository: String, number: Int) async throws -> [Github.IssueComment] {
     try await loadMany(url: "https://api.github.com/repos/\(owner)/\(repository)/issues/\(number)/comments?per_page=100")
@@ -172,6 +180,64 @@ extension Github {
   /// Fetch a user by login
   public static func user(login: String) async throws -> Github.User {
     try await load(url: "https://api.github.com/users/\(login)")
+  }
+
+  // MARK: - Pull Request Write Operations
+
+  /// Submit a review on a pull request
+  /// - Parameters:
+  ///   - owner: Repository owner
+  ///   - repository: Repository name
+  ///   - number: PR number
+  ///   - event: APPROVE, REQUEST_CHANGES, or COMMENT
+  ///   - body: Review body text
+  ///   - comments: Optional inline comments (path, line, body)
+  public static func createPullRequestReview(
+    owner: String,
+    repository: String,
+    number: Int,
+    event: String,
+    body: String,
+    commentsJSON: Data? = nil
+  ) async throws -> Github.Review {
+    let url = "https://api.github.com/repos/\(owner)/\(repository)/pulls/\(number)/reviews"
+    var json: [String: Any] = [
+      "event": event,
+      "body": body
+    ]
+    if let commentsJSON,
+       let comments = try? JSONSerialization.jsonObject(with: commentsJSON) as? [[String: Any]],
+       !comments.isEmpty {
+      json["comments"] = comments
+    }
+    let bodyData = try JSONSerialization.data(withJSONObject: json, options: [])
+    return try await load(url: URL(string: url)!, method: "POST", body: bodyData)
+  }
+
+  /// Post a general comment on a PR (uses the issues comment endpoint)
+  public static func createPRComment(
+    owner: String,
+    repository: String,
+    number: Int,
+    body: String
+  ) async throws -> Github.IssueComment {
+    let url = "https://api.github.com/repos/\(owner)/\(repository)/issues/\(number)/comments"
+    let json: [String: String] = ["body": body]
+    let bodyData = try JSONSerialization.data(withJSONObject: json, options: [])
+    return try await load(url: URL(string: url)!, method: "POST", body: bodyData)
+  }
+
+  /// Add labels to a PR/issue
+  public static func addLabels(
+    owner: String,
+    repository: String,
+    number: Int,
+    labels: [String]
+  ) async throws -> [Github.Label] {
+    let url = "https://api.github.com/repos/\(owner)/\(repository)/issues/\(number)/labels"
+    let json: [String: [String]] = ["labels": labels]
+    let bodyData = try JSONSerialization.data(withJSONObject: json, options: [])
+    return try await load(url: URL(string: url)!, method: "POST", body: bodyData)
   }
   
   public static func members(from organization: User) async throws -> [Github.User]  {
@@ -291,6 +357,36 @@ extension Github {
       throw GithubError.invalidURL(url)
     }
     return try await load(url: requestUrl)
+  }
+
+  /// Fetch a raw text response (e.g. diff, patch) with a custom Accept header.
+  private static func loadRawText(url: String, accept: String) async throws -> String {
+    guard let requestUrl = URL(string: url) else {
+      throw GithubError.invalidURL(url)
+    }
+
+    var request = URLRequest(url: requestUrl)
+    request.httpMethod = "GET"
+    request.cachePolicy = .reloadIgnoringLocalCacheData
+    let headerValues = await headers
+    for (key, value) in headerValues {
+      request.setValue(value, forHTTPHeaderField: key)
+    }
+    // Override Accept header for raw format
+    request.setValue(accept, forHTTPHeaderField: "Accept")
+
+    let (data, response) = try await URLSession.shared.data(for: request)
+    guard let http = response as? HTTPURLResponse else {
+      throw GithubError.badResponse(-1)
+    }
+    guard (200...299).contains(http.statusCode) else {
+      throw GithubError.badResponse(http.statusCode)
+    }
+
+    guard let text = String(data: data, encoding: .utf8) else {
+      throw GithubError.couldNotDecode
+    }
+    return text
   }
 
   private static func load<T: Codable>(url: URL, method: String = "GET", body: Data? = nil) async throws -> T {
