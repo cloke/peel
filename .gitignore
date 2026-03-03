@@ -1,5 +1,9 @@
 .DS_Store
 RunningLinuxInAVirtualMachine/
+
+# Firebase credentials (use GoogleService-Info.template.plist as starting point)
+GoogleService-Info.plist
+
 # Xcode
 #
 # gitignore contributors: remember to update Global/Xcode.gitignore, Objective-C.gitignore & Swift.gitignore

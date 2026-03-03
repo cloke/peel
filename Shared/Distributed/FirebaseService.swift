@@ -158,6 +158,9 @@ public final class FirebaseService {
   
   // MARK: - Firestore References
   
+  /// Whether Firebase SDK was actually initialized (plist found)
+  public private(set) var isFirebaseAvailable = false
+  
   /// Lazily initialized Firestore instance - only access after isConfigured is true
   private var _db: Firestore?
   private var db: Firestore {
@@ -239,7 +242,22 @@ public final class FirebaseService {
       return
     }
     
+    // Skip Firebase if GoogleService-Info.plist is missing or contains placeholder credentials.
+    // The template plist (committed to repo) has API_KEY="PLACEHOLDER" — real credentials
+    // are gitignored and injected via the "Copy Firebase Config" build phase.
+    if let plistPath = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist"),
+       let plistDict = NSDictionary(contentsOfFile: plistPath),
+       let apiKey = plistDict["API_KEY"] as? String,
+       apiKey != "PLACEHOLDER", !apiKey.isEmpty {
+      // Real credentials found — configure Firebase
+    } else {
+      logger.warning("GoogleService-Info.plist missing or contains placeholder credentials — Firebase disabled")
+      isConfigured = true
+      return
+    }
+    
     FirebaseApp.configure()
+    isFirebaseAvailable = true
     logger.info("Firebase configured successfully")
     
     // Configure Firestore settings before first use
