@@ -511,12 +511,15 @@
 /* Begin PBXShellScriptBuildPhase section */
 		04FBPLIST2F4A000100000001 /* Copy Firebase Config */ = {
 			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			inputFileListPaths = (
 			);
 			inputPaths = (
+				"$(PROJECT_DIR)/GoogleService-Info.plist",
+				"$(PROJECT_DIR)/GoogleService-Info.template.plist",
 			);
 			name = "Copy Firebase Config";
 			outputFileListPaths = (
