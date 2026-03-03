@@ -22,6 +22,9 @@ struct ChainHistoryView: View {
         } description: {
           Text("Chain runs will appear here once you start one.")
         }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 40)
+        Spacer()
       } else {
         List {
           ForEach(agentManager.chains.sorted(by: { left, right in
