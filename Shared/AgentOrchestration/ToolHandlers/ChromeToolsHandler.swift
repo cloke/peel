@@ -60,10 +60,16 @@ public final class ChromeToolsHandler: MCPToolHandler {
 
   // MARK: - chrome.launch
 
-  /// Launch a new UX test session: allocate ports, start FE dev server, launch headless Chrome.
-  /// All FE dev servers share the same local Rails backend — only frontend is per-worktree.
+  /// Launch a new UX test session: allocate ports, optionally start FE dev server, launch headless Chrome.
   private func handleLaunch(id: Any?, arguments: [String: Any], orchestrator: UXTestOrchestrator) async -> (Int, Data) {
-    guard case .success(let worktreePath) = requireString("worktreePath", from: arguments, id: id) else {
+    // worktreePath is optional when skipDevServer is true — use a temp path
+    let skipDevServer = arguments["skipDevServer"] as? Bool ?? false
+    let worktreePath: String
+    if let wp = optionalString("worktreePath", from: arguments), !wp.isEmpty {
+      worktreePath = wp
+    } else if skipDevServer {
+      worktreePath = NSTemporaryDirectory()
+    } else {
       return missingParamError(id: id, param: "worktreePath")
     }
 
@@ -75,28 +81,36 @@ public final class ChromeToolsHandler: MCPToolHandler {
       sessionId = UUID()
     }
 
-    // Optional: API base URL for the shared Rails backend
+    // Optional: API base URL for the shared backend
     let apiBaseURL = optionalString("apiBaseURL", from: arguments) ?? "http://localhost:3000"
 
     do {
       let session = try await orchestrator.createSession(
         sessionId: sessionId,
-        worktreePath: worktreePath
+        worktreePath: worktreePath,
+        skipDevServer: skipDevServer
       )
 
-      logger.info("Launched UX session \(session.id.uuidString) for \(worktreePath)")
+      logger.info("Launched UX session \(session.id.uuidString) for \(worktreePath) skipDevServer:\(skipDevServer)")
 
-      return (200, makeResult(id: id, result: [
+      var result: [String: Any] = [
         "sessionId": session.id.uuidString,
-        "devServerURL": session.devServerURL,
-        "devServerPort": session.devServerPort,
         "chromeDebugPort": session.chromeDebugPort,
         "apiBaseURL": apiBaseURL,
         "status": session.statusDescription,
-        "message": "UX session launched. Dev server at \(session.devServerURL), Chrome ready. "
-          + "All FE instances share the Rails backend at \(apiBaseURL). "
+      ]
+
+      if !skipDevServer {
+        result["devServerURL"] = session.devServerURL
+        result["devServerPort"] = session.devServerPort
+        result["message"] = "UX session launched. Dev server at \(session.devServerURL), Chrome ready. "
           + "Use chrome.navigate to load a page, then chrome.screenshot to verify."
-      ]))
+      } else {
+        result["message"] = "UX session launched (browser only, no dev server). Chrome ready. "
+          + "Use chrome.navigate with a full URL, then chrome.screenshot to verify."
+      }
+
+      return (200, makeResult(id: id, result: result))
     } catch {
       logger.error("Failed to launch UX session: \(error.localizedDescription)")
       return internalError(id: id, message: "Failed to launch UX session: \(error.localizedDescription)")
@@ -223,19 +237,19 @@ public final class ChromeToolsHandler: MCPToolHandler {
       MCPToolDefinition(
         name: "chrome.launch",
         description: """
-          Launch a UX test session: starts a frontend dev server in the given worktree on a unique port \
-          and launches a headless Chrome instance. All FE dev servers share the same local Rails backend. \
-          Returns the session ID, dev server URL, and Chrome debug port. \
+          Launch a UX test session: optionally starts a frontend dev server in the given worktree on a unique port \
+          and launches a headless Chrome instance. Use skipDevServer=true for browser-only mode (no dev server). \
+          Returns the session ID, dev server URL (if applicable), and Chrome debug port. \
           Use chrome.navigate to load pages, chrome.screenshot to capture, chrome.snapshot for DOM tree.
           """,
         inputSchema: [
           "type": "object",
           "properties": [
-            "worktreePath": ["type": "string", "description": "Path to the git worktree containing the frontend project"],
+            "worktreePath": ["type": "string", "description": "Path to the git worktree containing the frontend project (optional when skipDevServer is true)"],
             "sessionId": ["type": "string", "description": "Optional UUID for the session (auto-generated if omitted)"],
-            "apiBaseURL": ["type": "string", "description": "URL of the shared Rails backend (default: http://localhost:3000)"]
-          ],
-          "required": ["worktreePath"]
+            "apiBaseURL": ["type": "string", "description": "URL of the shared backend API (default: http://localhost:3000)"],
+            "skipDevServer": ["type": "boolean", "description": "When true, only launches Chrome without starting a dev server. Useful for testing with existing servers or public URLs."]
+          ]
         ],
         category: .ui,
         isMutating: true

@@ -24,7 +24,7 @@ struct WorktreeTask: Identifiable, Sendable {
   /// When true, the runner will create a UX test session (dev server + headless Chrome)
   /// for this task and inject browser tool instructions into the prompt.
   var useUXTesting: Bool
-  /// Base URL for the shared backend API (e.g., "http://localhost:3000" for Rails).
+  /// Base URL for the shared backend API (e.g., "http://localhost:3000").
   /// Only used when useUXTesting is true.
   var apiBaseURL: String?
 

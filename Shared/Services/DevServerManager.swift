@@ -43,7 +43,7 @@ final class DevServerManager {
       case .pnpm:
         return ("pnpm", ["dev", "--port", "\(port)"])
       case .npm:
-        return ("npx", ["next", "dev", "--port", "\(port)"])
+        return ("npm", ["run", "dev", "--", "--port", "\(port)"])
       case .yarn:
         return ("yarn", ["dev", "--port", "\(port)"])
       case .bun:

@@ -61,17 +61,19 @@ final class UXTestOrchestrator {
 
   // MARK: - Session Lifecycle
 
-  /// Create a full UX test session: allocate ports, start dev server, launch Chrome.
+  /// Create a full UX test session: allocate ports, optionally start dev server, launch Chrome.
   /// - Parameters:
   ///   - sessionId: Unique session ID (use execution ID from parallel runner)
   ///   - worktreePath: Path to the git worktree
   ///   - devServerCommand: Optional override for dev server start command
+  ///   - skipDevServer: When true, only launches Chrome without a dev server (useful for testing or static sites)
   /// - Returns: The created UX session
   @discardableResult
   func createSession(
     sessionId: UUID,
     worktreePath: String,
-    devServerCommand: String? = nil
+    devServerCommand: String? = nil,
+    skipDevServer: Bool = false
   ) async throws -> UXSession {
     // 1. Allocate ports
     let ports = try await portAllocator.allocate(for: sessionId)
@@ -83,21 +85,25 @@ final class UXTestOrchestrator {
       chromeDebugPort: ports.chromePort
     )
 
-    logger.info("Creating UX session \(sessionId.uuidString) — dev:\(ports.devPort) chrome:\(ports.chromePort)")
+    logger.info("Creating UX session \(sessionId.uuidString) — dev:\(ports.devPort) chrome:\(ports.chromePort) skipDevServer:\(skipDevServer)")
 
-    // 2. Start dev server
-    do {
-      let serverInstance = try await devServerManager.start(
-        sessionId: sessionId,
-        worktreePath: worktreePath,
-        port: ports.devPort,
-        command: devServerCommand
-      )
-      session.devServerReady = serverInstance.isReady
-    } catch {
-      logger.error("Failed to start dev server: \(error.localizedDescription)")
-      await teardownSession(sessionId: sessionId)
-      throw error
+    // 2. Start dev server (unless skipped)
+    if !skipDevServer {
+      do {
+        let serverInstance = try await devServerManager.start(
+          sessionId: sessionId,
+          worktreePath: worktreePath,
+          port: ports.devPort,
+          command: devServerCommand
+        )
+        session.devServerReady = serverInstance.isReady
+      } catch {
+        logger.error("Failed to start dev server: \(error.localizedDescription)")
+        await teardownSession(sessionId: sessionId)
+        throw error
+      }
+    } else {
+      session.devServerReady = true // Mark as ready since we're skipping
     }
 
     // 3. Launch headless Chrome
