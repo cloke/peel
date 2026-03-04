@@ -65,6 +65,21 @@ extension Github {
       url: "https://api.github.com/repos/\(organization)/\(repository.name)/pulls?state=\(encodedState)&per_page=100"
     )
   }
+
+  /// Convenience: fetch pull requests by owner/repo strings.
+  /// - parameter owner: The GitHub owner or organization login
+  /// - parameter repository: The repository name
+  /// - parameter state: open, closed, or all
+  public static func pullRequests(
+    owner: String,
+    repository: String,
+    state: String = "open"
+  ) async throws -> [Github.PullRequest] {
+    let encodedState = state.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? state
+    return try await loadMany(
+      url: "https://api.github.com/repos/\(owner)/\(repository)/pulls?state=\(encodedState)&per_page=100"
+    )
+  }
   
   public static func loadRepositories(organization: String) async throws -> [Github.Repository] {
     return try await loadMany(url: "https://api.github.com/orgs/\(organization)/repos?per_page=100")

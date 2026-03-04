@@ -7,6 +7,7 @@
 //
 
 import Git
+import Github
 import SwiftData
 import SwiftUI
 
@@ -184,6 +185,8 @@ struct BranchesTabView: View {
   @Environment(MCPServerService.self) private var mcpServer
   @State private var gitRepository: Git.Model.Repository?
   @State private var showRemoteBranches = false
+  @State private var fetchedPRs: [UnifiedRepository.PRSummary] = []
+  @State private var isLoadingPRs = false
 
   /// Parallel worktree runs associated with this repo that have pending reviews or active work.
   private var repoRuns: [ParallelWorktreeRun] {
@@ -234,6 +237,9 @@ struct BranchesTabView: View {
     .task(id: repo.localPath) {
       await loadGitRepo()
     }
+    .task(id: repo.ownerSlashRepo) {
+      await fetchOpenPRs()
+    }
   }
 
   #if os(macOS)
@@ -262,13 +268,11 @@ struct BranchesTabView: View {
       activeRunsSection(runner: runner)
     }
 
+    // Pull Requests
+    prsSection
+
     // Branches
     branchesSection(gitRepo)
-
-    // Pull Requests
-    if !repo.recentPRs.isEmpty {
-      prsSection
-    }
 
     // Worktrees
     if !repo.activeWorktrees.isEmpty {
@@ -413,21 +417,40 @@ struct BranchesTabView: View {
     }
   }
 
+  /// PRs to display: prefer live-fetched open PRs, fall back to aggregator's recent PRs.
+  private var displayPRs: [UnifiedRepository.PRSummary] {
+    fetchedPRs.isEmpty ? repo.recentPRs : fetchedPRs
+  }
+
   private var prsSection: some View {
     VStack(alignment: .leading, spacing: 8) {
-      SectionHeader("Pull Requests")
-
-      LazyVStack(spacing: 1) {
-        ForEach(repo.recentPRs) { pr in
-          PRRowWithReview(
-            pr: pr,
-            ownerRepo: repo.ownerSlashRepo,
-            repoPath: repo.localPath
-          )
+      HStack {
+        SectionHeader("Pull Requests")
+        Spacer()
+        if isLoadingPRs {
+          ProgressView()
+            .controlSize(.small)
         }
       }
-      .background(Color(nsColor: .controlBackgroundColor))
-      .clipShape(RoundedRectangle(cornerRadius: 8))
+
+      if displayPRs.isEmpty && !isLoadingPRs {
+        Text("No open pull requests")
+          .font(.callout)
+          .foregroundStyle(.secondary)
+          .padding(.vertical, 8)
+      } else {
+        LazyVStack(spacing: 1) {
+          ForEach(displayPRs) { pr in
+            PRRowWithReview(
+              pr: pr,
+              ownerRepo: repo.ownerSlashRepo,
+              repoPath: repo.localPath
+            )
+          }
+        }
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+      }
     }
   }
 
@@ -520,17 +543,17 @@ struct BranchesTabView: View {
 
   private var remoteRepoContent: some View {
     VStack(spacing: 16) {
-      if !repo.activeWorktrees.isEmpty || !repo.recentPRs.isEmpty || !repo.activeChains.isEmpty {
-        if !repo.recentPRs.isEmpty {
-          prsSection
-        }
-        if !repo.activeWorktrees.isEmpty {
-          worktreesSection
-        }
-        if !repo.activeChains.isEmpty {
-          chainsSection
-        }
-      } else {
+      // Always show PRs section for remote repos (will fetch from API)
+      prsSection
+
+      if !repo.activeWorktrees.isEmpty {
+        worktreesSection
+      }
+      if !repo.activeChains.isEmpty {
+        chainsSection
+      }
+
+      if displayPRs.isEmpty && !isLoadingPRs && repo.activeWorktrees.isEmpty && repo.activeChains.isEmpty {
         ContentUnavailableView {
           Label("Not Cloned", systemImage: "arrow.down.to.line")
         } description: {
@@ -569,6 +592,34 @@ struct BranchesTabView: View {
       await gitRepo.load(includeRemote: true)
     }
     #endif
+  }
+
+  /// Fetch open PRs from the GitHub API for this repo.
+  private func fetchOpenPRs() async {
+    guard let ownerRepo = repo.ownerSlashRepo else { return }
+    let parts = ownerRepo.split(separator: "/")
+    guard parts.count == 2 else { return }
+    let owner = String(parts[0])
+    let repoName = String(parts[1])
+
+    isLoadingPRs = true
+    defer { isLoadingPRs = false }
+
+    do {
+      let prs = try await Github.pullRequests(owner: owner, repository: repoName, state: "open")
+      fetchedPRs = prs.map { pr in
+        UnifiedRepository.PRSummary(
+          id: UUID(),
+          number: pr.number,
+          title: pr.title ?? "Untitled",
+          state: pr.state ?? "open",
+          htmlURL: pr.html_url
+        )
+      }
+    } catch {
+      // Fall back to aggregator's recent PRs on failure
+      fetchedPRs = []
+    }
   }
 }
 
