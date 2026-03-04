@@ -38,6 +38,7 @@ extension MCPServerService {
     if let codeEdit = codeEditToolsHandler { defs += codeEdit.toolDefinitions }
     if let chain = chainToolsHandler { defs += chain.toolDefinitions }
     if let github = githubToolsHandler { defs += github.toolDefinitions }
+    defs += chromeToolsHandler.toolDefinitions
     #if os(macOS)
     if let chat = localChatToolsHandler { defs += chat.toolDefinitions }
     #endif

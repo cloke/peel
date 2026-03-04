@@ -1042,6 +1042,9 @@ extension MCPServerService {
     if terminalToolsHandler.supportedTools.contains(resolvedName) {
       return await terminalToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
     }
+    if chromeToolsHandler.supportedTools.contains(resolvedName) {
+      return await chromeToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
+    }
     if gitToolsHandler.supportedTools.contains(resolvedName) {
       return await gitToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
     }

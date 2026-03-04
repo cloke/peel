@@ -639,6 +639,8 @@ public final class MCPServerService {
   var terminalToolsHandler: TerminalToolsHandler
   var gitToolsHandler: GitToolsHandler
   var codeQualityToolsHandler: CodeQualityToolsHandler
+  var chromeToolsHandler: ChromeToolsHandler
+  var uxTestOrchestrator: UXTestOrchestrator?
   #if os(macOS)
   var localChatToolsHandler: LocalChatToolsHandler?
   var chatSession = SharedChatSession()
@@ -712,6 +714,7 @@ public final class MCPServerService {
     self.terminalToolsHandler = TerminalToolsHandler()
     self.gitToolsHandler = GitToolsHandler()
     self.codeQualityToolsHandler = CodeQualityToolsHandler()
+    self.chromeToolsHandler = ChromeToolsHandler()
     #if os(macOS)
     self.localChatToolsHandler = LocalChatToolsHandler()
     #endif
@@ -798,6 +801,11 @@ public final class MCPServerService {
     )
     self.parallelWorktreeRunner?.setRAGStore(localRagStore)
 
+    // Initialize UX test orchestrator for Chrome-based parallel UX testing
+    let orchestrator = UXTestOrchestrator()
+    self.uxTestOrchestrator = orchestrator
+    self.chromeToolsHandler.orchestrator = orchestrator
+
     wireToolHandlerDelegates()
 
     #if os(macOS)
@@ -843,6 +851,7 @@ public final class MCPServerService {
     githubToolsHandler?.delegate = self
     terminalToolsHandler.delegate = self
     codeQualityToolsHandler.delegate = self
+    chromeToolsHandler.delegate = self
     #if os(macOS)
     localChatToolsHandler?.delegate = self
     localChatToolsHandler?.mcpServer = self
