@@ -208,6 +208,7 @@ struct InlineExecutionCard: View {
   let onToggleExpand: () -> Void
   @State private var rejectReason = ""
   @State private var showingRejectDialog = false
+  @State private var expandedSteps: Set<UUID> = []
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -280,26 +281,70 @@ struct InlineExecutionCard: View {
                 .foregroundStyle(.secondary)
 
               ForEach(execution.chainStepResults) { step in
-                HStack(spacing: 6) {
-                  Image(systemName: stepIcon(step))
-                    .font(.caption2)
-                    .foregroundStyle(stepColor(step))
-                  Text(step.stepName)
-                    .font(.caption)
-                  if let verdict = step.reviewVerdict {
-                    Text(verdict)
-                      .font(.caption2)
-                      .fontWeight(.medium)
-                      .padding(.horizontal, 4)
-                      .padding(.vertical, 1)
-                      .background(Capsule().fill(verdictColor(verdict).opacity(0.15)))
-                      .foregroundStyle(verdictColor(verdict))
+                VStack(alignment: .leading, spacing: 4) {
+                  Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                      if expandedSteps.contains(step.id) {
+                        expandedSteps.remove(step.id)
+                      } else {
+                        expandedSteps.insert(step.id)
+                      }
+                    }
+                  } label: {
+                    HStack(spacing: 6) {
+                      Image(systemName: stepIcon(step))
+                        .font(.caption2)
+                        .foregroundStyle(stepColor(step))
+                      Text(step.stepName)
+                        .font(.caption)
+                      if let verdict = step.reviewVerdict {
+                        Text(verdict)
+                          .font(.caption2)
+                          .fontWeight(.medium)
+                          .padding(.horizontal, 4)
+                          .padding(.vertical, 1)
+                          .background(Capsule().fill(verdictColor(verdict).opacity(0.15)))
+                          .foregroundStyle(verdictColor(verdict))
+                      }
+                      if let gate = step.gateResult {
+                        Text(gate)
+                          .font(.caption2)
+                          .fontWeight(.medium)
+                          .padding(.horizontal, 4)
+                          .padding(.vertical, 1)
+                          .background(Capsule().fill(verdictColor(gate).opacity(0.15)))
+                          .foregroundStyle(verdictColor(gate))
+                      }
+                      Spacer()
+                      Text(step.model)
+                        .font(.caption2)
+                        .foregroundStyle(.quaternary)
+                      if let duration = step.durationSeconds {
+                        Text(String(format: "%.1fs", duration))
+                          .font(.caption2)
+                          .foregroundStyle(.tertiary)
+                      }
+                      Image(systemName: expandedSteps.contains(step.id) ? "chevron.up" : "chevron.down")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    }
+                    .contentShape(Rectangle())
                   }
-                  Spacer()
-                  if let duration = step.durationSeconds {
-                    Text(String(format: "%.1fs", duration))
-                      .font(.caption2)
-                      .foregroundStyle(.tertiary)
+                  .buttonStyle(.plain)
+
+                  if expandedSteps.contains(step.id) && !step.outputPreview.isEmpty {
+                    Text(step.outputPreview)
+                      .font(.caption2.monospaced())
+                      .foregroundStyle(.secondary)
+                      .textSelection(.enabled)
+                      .padding(8)
+                      .frame(maxWidth: .infinity, alignment: .leading)
+                      #if os(macOS)
+                      .background(Color(nsColor: .textBackgroundColor).opacity(0.5))
+                      #else
+                      .background(Color(.secondarySystemBackground))
+                      #endif
+                      .clipShape(RoundedRectangle(cornerRadius: 4))
                   }
                 }
               }
@@ -336,6 +381,28 @@ struct InlineExecutionCard: View {
                   Text(snippet.filePath)
                     .font(.caption2.monospaced())
                     .lineLimit(1)
+                }
+              }
+            }
+          }
+
+          // Operator guidance
+          if !execution.operatorGuidance.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Operator Guidance")
+                .font(.caption2)
+                .fontWeight(.medium)
+                .foregroundStyle(.secondary)
+
+              ForEach(Array(execution.operatorGuidance.enumerated()), id: \.offset) { _, guidance in
+                HStack(alignment: .top, spacing: 4) {
+                  Image(systemName: "info.circle")
+                    .font(.caption2)
+                    .foregroundStyle(.blue)
+                  Text(guidance)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
                 }
               }
             }
