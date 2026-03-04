@@ -10,29 +10,23 @@ import SwiftUI
 import PeelUI
 
 struct ToolSelectionToolbar: ToolbarContent {
-  @AppStorage(wrappedValue: .brew, "current-tool") private var currentTool: CurrentTool
+  @AppStorage(wrappedValue: .repositories, "current-tool") private var currentTool: CurrentTool
   @AppStorage("feature.showBrew") private var showBrew = false
 
   var body: some ToolbarContent {
     ToolbarItem(placement: .principal) {
       Picker("Tool", selection: $currentTool) {
-        Label("Agents", systemImage: "cpu")
+        Label("Repositories", systemImage: "tray.full")
           .labelStyle(.titleAndIcon)
-          .tag(CurrentTool.agents)
-        Label("Workspaces", systemImage: "arrow.triangle.branch")
+          .tag(CurrentTool.repositories)
+        Label("Activity", systemImage: "bolt.fill")
           .labelStyle(.titleAndIcon)
-          .tag(CurrentTool.workspaces)
+          .tag(CurrentTool.activity)
         if showBrew {
           Label("Brew", systemImage: "mug")
             .labelStyle(.titleAndIcon)
             .tag(CurrentTool.brew)
         }
-        Label("Repositories", systemImage: "tray.full")
-          .labelStyle(.titleAndIcon)
-          .tag(CurrentTool.repositories)
-        Label("Swarm", systemImage: "network")
-          .labelStyle(.titleAndIcon)
-          .tag(CurrentTool.swarm)
       }
       .pickerStyle(.segmented)
       .help("Switch between tools")
@@ -125,7 +119,7 @@ struct ChainActivityToolbar: ToolbarContent {
 
   private func navigateToChain(_ chain: AgentChain) {
     agentManager.selectedChain = chain
-    currentTool = .agents
+    currentTool = .activity
   }
 }
 

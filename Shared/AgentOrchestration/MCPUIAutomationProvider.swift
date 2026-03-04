@@ -126,17 +126,17 @@ public final class MCPUIAutomationStore: MCPUIAutomationProviding {
   }
 
   public func availableViewIds() -> [String] {
-    ["agents", "workspaces", "brew", "repositories", "git", "github"]
+    ["repositories", "activity"]
   }
 
   public func viewTitle(for viewId: String) -> String {
     switch viewId {
-    case "agents": return "Agents"
-    case "workspaces": return "Workspaces"
-    case "brew": return "Homebrew"
     case "repositories": return "Repositories"
-    case "git": return "Git"
-    case "github": return "GitHub"
+    case "activity": return "Activity"
+    // Legacy view IDs — map to new equivalents
+    case "agents", "workspaces", "swarm": return "Activity"
+    case "brew": return "Homebrew"
+    case "git", "github": return "Repositories"
     default: return viewId.capitalized
     }
   }
@@ -147,84 +147,42 @@ public final class MCPUIAutomationStore: MCPUIAutomationProviding {
 
   public func availableControlIds(for viewId: String?) -> [String] {
     switch viewId {
-    case "agents":
-      return [
-        "agents.newAgent",
-        "agents.newChain",
-        "agents.mcpDashboard",
-        "agents.cliSetup",
-        "agents.sessionSummary",
-        "agents.vmIsolation",
-        "agents.translationValidation",
-        "agents.localRag",
-        "agents.piiScrubber",
-        "agents.localRag.refresh",
-        "agents.localRag.repoPath",
-        "agents.localRag.init",
-        "agents.localRag.index",
-        "agents.localRag.query",
-        "agents.localRag.mode",
-        "agents.localRag.limit",
-        "agents.localRag.search",
-        "agents.localRag.useCoreML",
-        "agents.localRag.skills.filterPath",
-        "agents.localRag.skills.showInactive",
-        "agents.localRag.skills.new",
-        "agents.localRag.skills.save",
-        "agents.localRag.skills.delete",
-        "agents.localRag.skills.repoPath",
-        "agents.localRag.skills.title",
-        "agents.localRag.skills.source",
-        "agents.localRag.skills.tags",
-        "agents.localRag.skills.priority",
-        "agents.localRag.skills.active",
-        "agents.localRag.skills.body",
-        "agents.localRag.sync.worker",
-        "agents.localRag.sync.pull",
-        "agents.localRag.sync.push"
-      ]
-    case "github":
-      return [
-        "github.login",
-        "github.refresh",
-        "github.showArchived",
-        "github.logout",
-        "github.selectFavorite",
-        "github.selectRecentPR"
-      ]
     case "repositories":
       return [
-        "repositories.selectScope",
-        "repositories.openLocal",
-        "repositories.openRemote",
-        "repositories.resetScope"
+        "repositories.search",
+        "repositories.add",
+        "repositories.refresh",
+        "repositories.selectRepo",
+        "repositories.selectTab",
+        // Git controls (available when repo is cloned)
+        "repositories.git.openRepository",
+        "repositories.git.selectBranch",
+        "repositories.git.selectCommit",
+        // RAG controls
+        "repositories.rag.index",
+        "repositories.rag.search",
+        "repositories.rag.analyze",
+        "repositories.rag.enrich"
       ]
-    case "brew":
-      return ["brew.source", "brew.search"]
-    case "workspaces":
+    case "activity":
       return [
-        "workspaces.refresh",
-        "workspaces.addWorkspace",
-        "workspaces.createWorktree",
-        "workspaces.openInVSCode",
-        "workspaces.selectWorkspace",
-        "workspaces.selectRepo",
-        "workspaces.selectWorktree",
-        "workspaces.selectWorktreeName",
-        "workspaces.openSelectedWorktree",
-        "workspaces.removeSelectedWorktree"
+        "activity.filterMode",
+        "activity.filterRepo",
+        "activity.runTask",
+        "activity.selectChain",
+        "activity.startSwarm",
+        // Legacy agent controls (kept for backward compat)
+        "activity.agents.newChain",
+        "activity.rag.refresh",
+        "activity.rag.repoPath",
+        "activity.rag.index",
+        "activity.rag.search"
       ]
-    case "git":
-      return [
-        "git.openRepository",
-        "git.cloneRepository",
-        "git.openInVSCode",
-        "git.selectSidebarItem",
-        "git.selectRepo",
-        "git.selectStatusPath",
-        "git.selectBranch",
-        "git.selectCommit"
-      ]
+    // Legacy view IDs — return mapped controls
+    case "agents":
+      return availableControlIds(for: "activity")
+    case "git", "github":
+      return availableControlIds(for: "repositories")
     default:
       return []
     }
@@ -232,52 +190,26 @@ public final class MCPUIAutomationStore: MCPUIAutomationProviding {
 
   public func controlValues(for viewId: String?) -> [String: Any] {
     switch viewId {
-    case "github":
-      let favoriteKeys = UserDefaults.standard.stringArray(forKey: "github.availableFavoriteKeys") ?? []
-      let recentPRKeys = UserDefaults.standard.stringArray(forKey: "github.availableRecentPRKeys") ?? []
-      return [
-        "github.selectFavorite": favoriteKeys,
-        "github.selectRecentPR": recentPRKeys
-      ]
-    case "brew":
-      return [
-        "brew.source": ["Installed", "Available"]
-      ]
     case "repositories":
-      return [
-        "repositories.selectScope": ["local", "remote"]
-      ]
-    case "workspaces":
-      let workspaceNames = UserDefaults.standard.stringArray(forKey: "workspaces.availableNames") ?? []
-      let repoNames = UserDefaults.standard.stringArray(forKey: "workspaces.availableRepoNames") ?? []
-      let worktreePaths = UserDefaults.standard.stringArray(forKey: "workspaces.availableWorktreePaths") ?? []
-      let worktreeNames = UserDefaults.standard.stringArray(forKey: "workspaces.availableWorktreeNames") ?? []
-      return [
-        "workspaces.selectWorkspace": workspaceNames,
-        "workspaces.selectRepo": repoNames,
-        "workspaces.selectWorktree": worktreePaths,
-        "workspaces.selectWorktreeName": worktreeNames
-      ]
-    case "agents":
-      let limits = (1...25).map { String($0) }
-      return [
-        "agents.localRag.mode": ["text", "vector"],
-        "agents.localRag.limit": limits
-      ]
-    case "git":
-      let repoPaths = UserDefaults.standard.stringArray(forKey: "git.availableRepoPaths") ?? []
-      let repoNames = UserDefaults.standard.stringArray(forKey: "git.availableRepoNames") ?? []
-      let statusPaths = UserDefaults.standard.stringArray(forKey: "git.availableStatusPaths") ?? []
       let branchNames = UserDefaults.standard.stringArray(forKey: "git.availableLocalBranchNames") ?? []
       let commitShas = UserDefaults.standard.stringArray(forKey: "git.availableCommitShas") ?? []
       return [
-        "git.selectSidebarItem": ["localChanges", "history"],
-        "git.selectRepo": repoPaths,
-        "git.selectRepoNames": repoNames,
-        "git.selectStatusPath": statusPaths,
-        "git.selectBranch": branchNames,
-        "git.selectCommit": commitShas
+        "repositories.selectTab": ["branches", "activity", "rag", "skills"],
+        "repositories.git.selectBranch": branchNames,
+        "repositories.git.selectCommit": commitShas
       ]
+    case "activity":
+      let limits = (1...25).map { String($0) }
+      return [
+        "activity.filterMode": ["all", "running", "completed", "failed"],
+        "activity.rag.search.mode": ["text", "vector"],
+        "activity.rag.search.limit": limits
+      ]
+    // Legacy view IDs — return mapped values
+    case "agents":
+      return controlValues(for: "activity")
+    case "git", "github":
+      return controlValues(for: "repositories")
     default:
       return [:]
     }

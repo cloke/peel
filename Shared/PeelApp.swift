@@ -13,12 +13,20 @@ import OAuthSwift
 import AppKit
 import OSLog
 
+// MARK: - Notification Names
+
+extension Notification.Name {
+  static let openCommandPalette = Notification.Name("openCommandPalette")
+}
+
 @main
 struct PeelApp: App {
   @Environment(\.openURL) var openURL
   @State private var vmIsolationService = VMIsolationService()
   @State private var mcpServer: MCPServerService
   @State private var dataService: DataService
+  @State private var repositoryAggregator = RepositoryAggregator()
+  @State private var activityFeed = ActivityFeed()
   @State private var workerModeActive = false
   @State private var skillUpdateAvailable = false
 
@@ -49,6 +57,17 @@ struct PeelApp: App {
 
     // Wire RepoPullScheduler with DataService so tracked repos auto-pull
     RepoPullScheduler.shared.dataService = dataService
+
+    // Wire RepositoryAggregator dependencies
+    _repositoryAggregator.wrappedValue.dataService = dataService
+    _repositoryAggregator.wrappedValue.mcpServerService = mcpServerInstance
+    _repositoryAggregator.wrappedValue.agentManager = mcpServerInstance.agentManager
+    _repositoryAggregator.wrappedValue.pullScheduler = RepoPullScheduler.shared
+
+    // Wire ActivityFeed dependencies
+    _activityFeed.wrappedValue.dataService = dataService
+    _activityFeed.wrappedValue.agentManager = mcpServerInstance.agentManager
+    _activityFeed.wrappedValue.pullScheduler = RepoPullScheduler.shared
 
     // Auto-start swarm on launch when device setting enables it (defaults to true for new installs)
     if !Self.isRunningTests {
@@ -193,6 +212,9 @@ struct PeelApp: App {
           }
           // Resume any RAG indexing or analysis that was interrupted by the previous app quit
           await mcpServer.resumeInterruptedRAGOperations()
+          // Initial rebuild of unified repository data and activity feed
+          repositoryAggregator.rebuild()
+          activityFeed.rebuild()
         }
         .alert("Ember Best Practices Updated", isPresented: $skillUpdateAvailable) {
           Button("Update Skills") {
@@ -209,6 +231,8 @@ struct PeelApp: App {
         .environment(mcpServer)
         .environment(vmIsolationService)
         .environment(dataService)
+        .environment(repositoryAggregator)
+        .environment(activityFeed)
     }
     .modelContainer(Self.sharedModelContainer)
     .commands {
@@ -223,6 +247,24 @@ struct PeelApp: App {
         }
         .keyboardShortcut("?", modifiers: .command)
       }
+      CommandGroup(after: .sidebar) {
+        Button("Repositories") {
+          UserDefaults.standard.set("repositories", forKey: "current-tool")
+        }
+        .keyboardShortcut("1", modifiers: .command)
+
+        Button("Activity") {
+          UserDefaults.standard.set("activity", forKey: "current-tool")
+        }
+        .keyboardShortcut("2", modifiers: .command)
+
+        Divider()
+
+        Button("Search Code…") {
+          NotificationCenter.default.post(name: .openCommandPalette, object: nil)
+        }
+        .keyboardShortcut("k", modifiers: .command)
+      }
     }
 
     Settings {
@@ -230,6 +272,8 @@ struct PeelApp: App {
         .environment(mcpServer)
         .environment(vmIsolationService)
         .environment(dataService)
+        .environment(repositoryAggregator)
+        .environment(activityFeed)
     }
     .modelContainer(Self.sharedModelContainer)
   }

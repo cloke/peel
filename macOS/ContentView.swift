@@ -6,11 +6,20 @@
 //
 
 import SwiftUI
+import Combine
 import Git
 import Github
 
 enum CurrentTool: String, Identifiable, CaseIterable {
-  case agents = "agents", workspaces = "workspaces", brew = "brew", repositories = "repositories", git = "git", github = "github", swarm = "swarm"
+  case repositories = "repositories"
+  case activity = "activity"
+  // Legacy cases — kept for AppStorage migration, auto-redirect on appear
+  case agents = "agents"
+  case workspaces = "workspaces"
+  case brew = "brew"
+  case git = "git"
+  case github = "github"
+  case swarm = "swarm"
   var id: String { rawValue }
 }
 
@@ -22,28 +31,25 @@ struct ContentView: View {
   @State private var firebaseService = FirebaseService.shared
   @State private var showingInvitePreview = false
   @State private var showChecklist = false
+  @State private var showCommandPalette = false
   
   var body: some View {
     Group {
       switch currentTool {
-      case .agents: Agents_RootView()
-      case .workspaces: Workspaces_RootView()
+      case .repositories: UnifiedRepositoriesView()
+      case .activity: ActivityDashboardView()
+      // Legacy routes — redirect on appear, show new view immediately
+      case .agents, .workspaces, .swarm: ActivityDashboardView()
       case .brew:
         if showBrew {
           Brew_RootView()
         } else {
-          Agents_RootView()
+          UnifiedRepositoriesView()
         }
-      case .repositories: Repositories_RootView()
-      case .git: Repositories_RootView(initialScope: .local)
-      case .github: Repositories_RootView(initialScope: .remote)
-      case .swarm: SwarmStatusView()
+      case .git, .github: UnifiedRepositoriesView()
       }
     }
     .onAppear {
-      if currentTool == .brew && !showBrew {
-        currentTool = .agents
-      }
       migrateLegacyToolSelectionIfNeeded(currentTool)
       if !checklistDismissed {
         showChecklist = true
@@ -51,7 +57,7 @@ struct ContentView: View {
     }
     .onChange(of: showBrew) { _, newValue in
       if !newValue && currentTool == .brew {
-        currentTool = .agents
+        currentTool = .repositories
       }
     }
     .onChange(of: currentTool) { _, newValue in
@@ -70,6 +76,21 @@ struct ContentView: View {
     .sheet(isPresented: $showChecklist) {
       FeatureDiscoveryChecklistView()
     }
+    .overlay {
+      if showCommandPalette {
+        ZStack {
+          Color.black.opacity(0.3)
+            .ignoresSafeArea()
+            .onTapGesture { showCommandPalette = false }
+
+          CommandPaletteView(isPresented: $showCommandPalette)
+            .padding(.top, 60)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
+        .animation(.spring(response: 0.25), value: showCommandPalette)
+      }
+    }
     .toolbar {
       if !checklistDismissed {
         ToolbarItem(placement: .automatic) {
@@ -82,6 +103,9 @@ struct ContentView: View {
         }
       }
     }
+    .onReceive(NotificationCenter.default.publisher(for: .openCommandPalette)) { _ in
+      showCommandPalette.toggle()
+    }
     .task {
       // Populate RepoRegistry from all known local paths on launch
       // so URL-based lookups work everywhere (Review with Agent, etc.)
@@ -91,13 +115,13 @@ struct ContentView: View {
 
   private func migrateLegacyToolSelectionIfNeeded(_ tool: CurrentTool) {
     switch tool {
-    case .git:
-      UserDefaults.standard.set(Repositories_RootView.Scope.local.rawValue, forKey: "repositories.selectedScope")
+    case .agents, .workspaces, .swarm:
+      currentTool = .activity
+    case .git, .github:
       currentTool = .repositories
-    case .github:
-      UserDefaults.standard.set(Repositories_RootView.Scope.remote.rawValue, forKey: "repositories.selectedScope")
-      currentTool = .repositories
-    default:
+    case .brew:
+      if !showBrew { currentTool = .repositories }
+    case .repositories, .activity:
       break
     }
   }
