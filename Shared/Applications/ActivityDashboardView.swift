@@ -18,7 +18,7 @@ struct ActivityDashboardView: View {
   @State private var filterMode: ActivityFilterMode = .all
   @State private var filterRepo: String? = nil  // nil = all repos
   @State private var selectedChain: AgentChain?
-  @State private var selectedActivityItem: ActivityItem?
+  @State private var expandedItems: Set<UUID> = []
   @State private var showingTemplateBrowser = false
 
   private var swarm: SwarmCoordinator { SwarmCoordinator.shared }
@@ -76,9 +76,6 @@ struct ActivityDashboardView: View {
     }
     .sheet(isPresented: $showingTemplateBrowser) {
       TemplateBrowserSheet()
-    }
-    .sheet(item: $selectedActivityItem) { item in
-      ActivityItemDetailSheet(item: item)
     }
     #endif
   }
@@ -285,7 +282,10 @@ struct ActivityDashboardView: View {
       } else {
         LazyVStack(spacing: 1) {
           ForEach(items.prefix(100)) { item in
-            DashboardActivityRow(item: item) {
+            DashboardActivityRow(
+              item: item,
+              isExpanded: expandedItems.contains(item.id)
+            ) {
               navigateToItem(item)
             }
           }
@@ -371,15 +371,25 @@ struct ActivityDashboardView: View {
   private func navigateToItem(_ item: ActivityItem) {
     switch item.kind {
     case .chainStarted(let id), .chainCompleted(let id, _):
-      // Chain items open the full ChainDetailView
+      // Chain items open the full ChainDetailView (too complex for inline)
       if let chain = mcpServer.agentManager.chains.first(where: { $0.id == id }) {
         selectedChain = chain
       } else {
-        selectedActivityItem = item
+        toggleExpanded(item)
       }
     default:
-      // All other items open the ActivityItemDetailSheet
-      selectedActivityItem = item
+      // All other items expand inline
+      toggleExpanded(item)
+    }
+  }
+
+  private func toggleExpanded(_ item: ActivityItem) {
+    withAnimation(.easeInOut(duration: 0.2)) {
+      if expandedItems.contains(item.id) {
+        expandedItems.remove(item.id)
+      } else {
+        expandedItems.insert(item.id)
+      }
     }
   }
 }
@@ -518,51 +528,210 @@ struct WorkerCard: View {
 
 struct DashboardActivityRow: View {
   let item: ActivityItem
+  var isExpanded: Bool = false
   var onTap: (() -> Void)? = nil
 
+  @Environment(MCPServerService.self) private var mcpServer
+  @Environment(RepositoryAggregator.self) private var aggregator
+  @Environment(\.openURL) private var openURL
+
   var body: some View {
-    HStack(spacing: 12) {
-      Image(systemName: item.kind.systemImage)
-        .font(.callout)
-        .foregroundStyle(colorForTint(item.kind.tintColorName))
-        .frame(width: 24)
+    VStack(alignment: .leading, spacing: 0) {
+      // Main row
+      HStack(spacing: 12) {
+        Image(systemName: item.kind.systemImage)
+          .font(.callout)
+          .foregroundStyle(colorForTint(item.kind.tintColorName))
+          .frame(width: 24)
 
-      VStack(alignment: .leading, spacing: 2) {
-        HStack(spacing: 6) {
-          Text(item.title)
-            .font(.callout)
-            .lineLimit(1)
+        VStack(alignment: .leading, spacing: 2) {
+          HStack(spacing: 6) {
+            Text(item.title)
+              .font(.callout)
+              .lineLimit(1)
 
-          if let repoName = item.repoDisplayName {
-            Text("on \(repoName)")
+            if let repoName = item.repoDisplayName {
+              Text("on \(repoName)")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+            }
+          }
+
+          if let subtitle = item.subtitle {
+            Text(subtitle)
               .font(.caption)
-              .foregroundStyle(.tertiary)
+              .foregroundStyle(.secondary)
+              .lineLimit(isExpanded ? nil : 2)
           }
         }
 
-        if let subtitle = item.subtitle {
-          Text(subtitle)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .lineLimit(2)
+        Spacer()
+
+        Image(systemName: "chevron.right")
+          .font(.caption2)
+          .foregroundStyle(.tertiary)
+          .rotationEffect(.degrees(isExpanded ? 90 : 0))
+
+        Text(item.relativeTime)
+          .font(.caption)
+          .foregroundStyle(.tertiary)
+          .monospacedDigit()
+      }
+      .padding(.horizontal, 12)
+      .padding(.vertical, 8)
+      .contentShape(Rectangle())
+      .onTapGesture { onTap?() }
+
+      // Inline detail (expanded)
+      if isExpanded {
+        Divider()
+          .padding(.horizontal, 12)
+
+        inlineDetail
+          .padding(.horizontal, 12)
+          .padding(.vertical, 8)
+          .transition(.opacity.combined(with: .move(edge: .top)))
+      }
+    }
+  }
+
+  // MARK: - Inline Detail Content
+
+  @ViewBuilder
+  private var inlineDetail: some View {
+    switch item.kind {
+    case .chainStarted(let chainId), .chainCompleted(let chainId, _):
+      chainInlineDetail(chainId: chainId)
+
+    case .pullCompleted(let success):
+      pullInlineDetail(success: success)
+
+    case .ragIndexed:
+      ragInlineDetail(type: "Index")
+
+    case .ragAnalyzed:
+      ragInlineDetail(type: "Analysis")
+
+    case .worktreeCreated(let worktreeId):
+      worktreeInlineDetail(worktreeId: worktreeId, created: true)
+
+    case .worktreeCleaned(let worktreeId):
+      worktreeInlineDetail(worktreeId: worktreeId, created: false)
+
+    case .prActivity(let prNumber):
+      prInlineDetail(prNumber: prNumber)
+
+    case .swarmDispatched(let taskId):
+      swarmInlineDetail(taskId: taskId)
+
+    case .info:
+      if let subtitle = item.subtitle {
+        inlineRow("Details", subtitle)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func chainInlineDetail(chainId: UUID) -> some View {
+    if let chain = mcpServer.agentManager.chains.first(where: { $0.id == chainId }) {
+      VStack(alignment: .leading, spacing: 4) {
+        inlineRow("Status", chain.state.displayName)
+        if let prompt = chain.initialPrompt {
+          inlineRow("Prompt", prompt)
+        }
+        inlineRow("Agents", "\(chain.agents.count)")
+        if let workDir = chain.workingDirectory {
+          inlineRow("Dir", workDir)
         }
       }
-
-      Spacer()
-
-      Image(systemName: "chevron.right")
-        .font(.caption2)
-        .foregroundStyle(.tertiary)
-
-      Text(item.relativeTime)
+    } else {
+      Text("Chain no longer available")
         .font(.caption)
-        .foregroundStyle(.tertiary)
-        .monospacedDigit()
+        .foregroundStyle(.secondary)
     }
-    .padding(.horizontal, 12)
-    .padding(.vertical, 8)
-    .contentShape(Rectangle())
-    .onTapGesture { onTap?() }
+  }
+
+  private func pullInlineDetail(success: Bool) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      inlineRow("Outcome", success ? "Pulled successfully" : "Pull failed")
+      if let repoName = item.repoDisplayName,
+         let repo = aggregator.repositories.first(where: { $0.displayName == repoName }) {
+        if let branch = repo.trackedBranch {
+          inlineRow("Branch", branch)
+        }
+      }
+    }
+  }
+
+  private func ragInlineDetail(type: String) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      inlineRow("Operation", "RAG \(type) Complete")
+      if let repoName = item.repoDisplayName {
+        inlineRow("Repository", repoName)
+      }
+    }
+  }
+
+  private func worktreeInlineDetail(worktreeId: UUID, created: Bool) -> some View {
+    let workspace = mcpServer.agentManager.workspaceManager.workspaces
+      .first(where: { $0.id == worktreeId })
+
+    return VStack(alignment: .leading, spacing: 4) {
+      inlineRow("Action", created ? "Worktree Created" : "Worktree Cleaned Up")
+      if let workspace {
+        inlineRow("Branch", workspace.branch)
+        inlineRow("Status", workspace.status.displayName)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func prInlineDetail(prNumber: Int) -> some View {
+    let matchingRepo = item.repoDisplayName.flatMap { name in
+      aggregator.repositories.first(where: { $0.displayName == name })
+    }
+    let pr = matchingRepo?.recentPRs.first(where: { $0.number == prNumber })
+
+    VStack(alignment: .leading, spacing: 4) {
+      inlineRow("PR", "#\(prNumber)")
+      if let pr {
+        inlineRow("State", pr.state.capitalized)
+      }
+      if let pr, let urlString = pr.htmlURL, let url = URL(string: urlString) {
+        Button {
+          openURL(url)
+        } label: {
+          Label("Open in Browser", systemImage: "safari")
+            .font(.caption)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .padding(.top, 2)
+      }
+    }
+  }
+
+  private func swarmInlineDetail(taskId: String) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      inlineRow("Task", taskId)
+      inlineRow("Workers", "\(SwarmCoordinator.shared.connectedWorkers.count) connected")
+    }
+  }
+
+  // MARK: - Helpers
+
+  private func inlineRow(_ label: String, _ value: String) -> some View {
+    HStack(alignment: .top, spacing: 8) {
+      Text(label)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .frame(width: 70, alignment: .trailing)
+      Text(value)
+        .font(.caption)
+        .foregroundStyle(.primary)
+        .textSelection(.enabled)
+      Spacer()
+    }
   }
 
   private func colorForTint(_ name: String) -> Color {
