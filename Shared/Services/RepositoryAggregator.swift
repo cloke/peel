@@ -136,17 +136,22 @@ final class RepositoryAggregator {
     )
 
     // normalized URL → [MCPServerService.RAGRepoInfo]
-    // When multiple RAG repos share the same repoIdentifier (e.g. sub-packages of a monorepo),
-    // aggregate their counts so the parent repo shows combined RAG data.
+    // Sub-packages (parentRepoId != nil) get their own sidebar entries so the user
+    // can see every indexed package individually. Top-level repos without a parent
+    // use the normalized remote URL so they merge with SyncedRepository entries.
     var ragByURL: [String: MCPServerService.RAGRepoInfo] = [:]
     for info in ragRepos {
       let norm: String
-      if let ident = info.repoIdentifier, !ident.isEmpty {
+      if info.parentRepoId != nil {
+        // Sub-package: unique key so it's not aggregated into the parent
+        norm = "rag://\(info.rootPath)"
+      } else if let ident = info.repoIdentifier, !ident.isEmpty {
         norm = RepoRegistry.shared.normalizeRemoteURL(ident)
       } else if let cachedURL = RepoRegistry.shared.getCachedRemoteURL(for: info.rootPath) {
         norm = cachedURL
       } else {
-        continue
+        // Fallback: path-based key so RAG-only repos still appear
+        norm = "rag://\(info.rootPath)"
       }
 
       if let existing = ragByURL[norm] {
@@ -313,6 +318,7 @@ final class RepositoryAggregator {
         localPath: localPath,
         isFavorite: favorite != nil || (synced?.repo.isFavorite ?? false),
         isTracked: tracked != nil && (tracked?.isEnabled ?? false),
+        isSubPackage: rag?.parentRepoId != nil,
         ownerSlashRepo: ownerSlashRepo,
         htmlURL: favorite?.htmlURL ?? synced?.repo.remoteURL,
         ragStatus: ragStatus,

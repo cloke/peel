@@ -26,6 +26,7 @@ struct UnifiedRepositoriesView: View {
   enum FilterMode: String, CaseIterable {
     case all = "All"
     case cloned = "Cloned"
+    case indexed = "Indexed"
     case tracked = "Tracked"
     case active = "Active"
     case favorites = "Favorites"
@@ -127,6 +128,7 @@ struct UnifiedRepositoriesView: View {
     switch filterMode {
     case .all: break
     case .cloned: repos = repos.filter(\.isClonedLocally)
+    case .indexed: repos = repos.filter(\.isRAGIndexed)
     case .tracked: repos = repos.filter(\.isTracked)
     case .active: repos = repos.filter(\.hasActiveWork)
     case .favorites: repos = repos.filter(\.isFavorite)
@@ -149,6 +151,7 @@ struct UnifiedRepositoriesView: View {
     switch mode {
     case .all: return aggregator.repositories.count
     case .cloned: return aggregator.repositories.filter(\.isClonedLocally).count
+    case .indexed: return aggregator.repositories.filter(\.isRAGIndexed).count
     case .tracked: return aggregator.repositories.filter(\.isTracked).count
     case .active: return aggregator.repositories.filter(\.hasActiveWork).count
     case .favorites: return aggregator.repositories.filter(\.isFavorite).count
@@ -174,6 +177,11 @@ struct RepoSidebarRow: View {
             Image(systemName: "star.fill")
               .font(.caption2)
               .foregroundStyle(.yellow)
+          }
+          if repo.isSubPackage {
+            Image(systemName: "shippingbox")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
           }
           Text(repo.displayName)
             .fontWeight(.medium)

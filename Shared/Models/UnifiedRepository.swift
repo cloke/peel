@@ -48,6 +48,9 @@ struct UnifiedRepository: Identifiable, Hashable, Sendable {
   /// Whether this repo has auto-pull tracking enabled.
   let isTracked: Bool
 
+  /// Whether this is a sub-package of a larger repo (e.g. a Local Package within a monorepo).
+  let isSubPackage: Bool
+
   // MARK: - GitHub Metadata
 
   /// Owner and repo segments, e.g. "cloke/peel".
@@ -246,11 +249,19 @@ extension UnifiedRepository {
 
 extension UnifiedRepository {
 
+  /// Whether this repo has RAG indexing data.
+  var isRAGIndexed: Bool {
+    if let rag = ragStatus, rag != .notIndexed { return true }
+    return false
+  }
+
   /// A single-line status summary for the repo card.
   var statusSummary: String {
     var parts: [String] = []
 
-    if isClonedLocally {
+    if isSubPackage {
+      parts.append("Package")
+    } else if isClonedLocally {
       parts.append("Local")
     }
 
