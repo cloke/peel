@@ -84,9 +84,39 @@ extension MCPServerService: RepoPullSchedulerDelegate {
         )
         await refreshRagSummary()
         logger.info("Auto-reindex complete for \(repoPath): \(report.filesIndexed) files, \(report.chunksIndexed) chunks")
+
+        // After local reindex, request overlay sync from swarm if active.
+        // This pulls pre-computed embeddings + AI analysis from a more powerful peer.
+        await requestOverlaySyncFromSwarm(repoPath: repoPath)
       } catch {
         logger.error("Auto-reindex failed for \(repoPath): \(error.localizedDescription)")
       }
+    }
+  }
+
+  /// After local reindex, pull overlay data (embeddings + analysis) from a connected swarm peer.
+  /// This allows a less powerful machine to benefit from a more powerful peer's Qwen 3 embeddings + analysis.
+  private func requestOverlaySyncFromSwarm(repoPath: String) async {
+    let coordinator = SwarmCoordinator.shared
+    guard coordinator.isActive, !coordinator.connectedWorkers.isEmpty else { return }
+
+    // Resolve the repo identifier from the local RAG store
+    let repos = (try? await localRagStore.listRepos()) ?? []
+    guard let repo = repos.first(where: { $0.rootPath == repoPath }),
+          let repoIdentifier = repo.repoIdentifier, !repoIdentifier.isEmpty else {
+      logger.debug("Skipping overlay sync for \(repoPath): no repo identifier found")
+      return
+    }
+
+    do {
+      let transferId = try await coordinator.requestRagArtifactSync(
+        direction: .pull,
+        repoIdentifier: repoIdentifier,
+        transferMode: .overlay
+      )
+      logger.info("Post-reindex overlay sync requested for \(repoIdentifier): transfer \(transferId)")
+    } catch {
+      logger.warning("Post-reindex overlay sync failed for \(repoIdentifier): \(error.localizedDescription)")
     }
   }
 }

@@ -204,17 +204,46 @@ curl -X POST http://127.0.0.1:8765/rpc \
 
 ## RAG Artifact Sync
 
-Share RAG indices between swarm members:
+Share RAG indices between swarm members. Two transfer modes are available:
+
+### Full Sync (default)
+Transfers complete repo data (chunks + embeddings + analysis). Use for first-time sync or when the receiver hasn't indexed the repo locally.
 
 ```bash
 # Push local RAG to swarm
 curl -X POST http://127.0.0.1:8765/rpc \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"swarm.firestore.rag.push","arguments":{}}}'
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"swarm.rag.sync","arguments":{"direction":"push","mode":"full"}}}'
 
 # Pull RAG from swarm
 curl -X POST http://127.0.0.1:8765/rpc \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"swarm.firestore.rag.pull","arguments":{}}}'
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"swarm.rag.sync","arguments":{"direction":"pull","mode":"full"}}}'
+```
 
+### Overlay Sync
+Transfers only embeddings + AI analysis (no chunk text), matched against locally-indexed chunks by file content hash + line range. ~100x smaller than full sync.
+
+Use when both machines have the same code indexed locally and you want to pull pre-computed embeddings and analysis from a more powerful peer.
+
+```bash
+# Pull overlay from swarm
+curl -X POST http://127.0.0.1:8765/rpc \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"swarm.rag.sync","arguments":{"repoIdentifier":"github.com/org/repo","direction":"pull","mode":"overlay"}}}'
+```
+
+### Auto-Sync After Pull
+When a tracked remote repo completes a scheduled pull + reindex, Peel automatically requests an overlay sync from connected swarm peers. This keeps analysis data fresh without re-running expensive LLM analysis locally.
+
+### Model Mismatch Guard
+When the local repo already has embeddings from a different model (e.g. Qwen3 1024d from the Mac Studio), overlay sync **skips embedding writes** and only applies analysis data. This prevents downgrading higher-quality embeddings.
+
+The mismatch is logged as a warning and surfaced in the transfer summary. To force local embeddings instead:
+1. Disconnect from swarm: `swarm.stop`
+2. Reindex locally: `rag.index` with `forceReindex: true`
+3. Reconnect: `swarm.start`
+
+### Legacy Firestore Sync
+
+```bash
 # List shared artifacts
 curl -X POST http://127.0.0.1:8765/rpc \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"swarm.firestore.rag.artifacts","arguments":{}}}'

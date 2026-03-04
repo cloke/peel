@@ -887,7 +887,8 @@ public final class SwarmCoordinator {
   public func requestRagArtifactSync(
     direction: RAGArtifactSyncDirection,
     workerId: String? = nil,
-    repoIdentifier: String? = nil
+    repoIdentifier: String? = nil,
+    transferMode: RAGTransferMode = .full
   ) async throws -> UUID {
     guard isActive else {
       throw DistributedError.actorSystemNotReady
@@ -907,7 +908,7 @@ public final class SwarmCoordinator {
     }
 
     let transferId = UUID()
-    logger.info("RAG sync requested: \(direction.rawValue) to \(targetWorker.name) (\(targetWorker.id))")
+    logger.info("RAG sync requested: \(direction.rawValue) mode=\(transferMode.rawValue) to \(targetWorker.name) (\(targetWorker.id))")
     let role: RAGArtifactTransferRole = direction == .push ? .sender : .receiver
     recordRagTransfer(
       RAGArtifactTransferState(
@@ -928,23 +929,23 @@ public final class SwarmCoordinator {
     )
 
     try await connectionManager?.send(
-      .ragArtifactsRequest(id: transferId, direction: direction, repoIdentifier: repoIdentifier),
+      .ragArtifactsRequest(id: transferId, direction: direction, repoIdentifier: repoIdentifier, transferMode: transferMode),
       to: targetWorker.id
     )
 
     if direction == .push {
-      Task { await sendRagArtifactBundle(transferId: transferId, to: targetWorker, repoIdentifier: repoIdentifier) }
+      Task { await sendRagArtifactBundle(transferId: transferId, to: targetWorker, repoIdentifier: repoIdentifier, transferMode: transferMode) }
     }
 
     return transferId
   }
 
-  private func sendRagArtifactBundle(transferId: UUID, to peer: ConnectedPeer, repoIdentifier: String? = nil) async {
+  private func sendRagArtifactBundle(transferId: UUID, to peer: ConnectedPeer, repoIdentifier: String? = nil, transferMode: RAGTransferMode = .full) async {
     updateRagTransfer(transferId) { state in
       state.status = .preparing
     }
 
-    logger.info("RAG sync preparing bundle for \(peer.name) (\(peer.id))\(repoIdentifier.map { ", repo: \($0)" } ?? "")")
+    logger.info("RAG sync preparing bundle for \(peer.name) (\(peer.id))\(repoIdentifier.map { ", repo: \($0)" } ?? ""), mode: \(transferMode.rawValue)")
 
     guard let ragSyncDelegate else {
       await sendRagArtifactError(transferId: transferId, to: peer.id, message: "RAG sync delegate not configured")
@@ -952,6 +953,64 @@ public final class SwarmCoordinator {
     }
 
     do {
+      // Overlay sync: embeddings + analysis only, no chunk text
+      if let repoIdentifier, transferMode == .overlay {
+        let overlayBundle = try await ragSyncDelegate.createRepoOverlayBundle(repoIdentifier: repoIdentifier, excludeFileHashes: [])
+        guard let overlayBundle else {
+          await sendRagArtifactError(transferId: transferId, to: peer.id, message: "Repo '\(repoIdentifier)' not found in RAG store for overlay sync")
+          return
+        }
+        let jsonData = try JSONEncoder().encode(overlayBundle)
+        let chunkSize = 256 * 1024
+        let totalChunks = max(1, Int(ceil(Double(max(1, jsonData.count)) / Double(chunkSize))))
+
+        logger.info("RAG overlay sync bundle: \(overlayBundle.manifest.repoIdentifier), \(jsonData.count) bytes (\(overlayBundle.totalEntries) entries, \(overlayBundle.totalEmbeddings) embeddings, \(overlayBundle.totalAnalysis) analysis), \(totalChunks) chunks")
+
+        updateRagTransfer(transferId) { state in
+          state.status = .transferring
+          state.totalBytes = jsonData.count
+          state.manifestVersion = "overlay-v\(overlayBundle.manifest.schemaVersion)"
+        }
+
+        let manifest = RAGArtifactManifest(
+          formatVersion: 1,
+          version: "repo-overlay-\(overlayBundle.manifest.repoIdentifier)",
+          createdAt: Date(),
+          schemaVersion: overlayBundle.manifest.schemaVersion,
+          totalBytes: jsonData.count,
+          embeddingCacheCount: overlayBundle.totalEmbeddings,
+          lastIndexedAt: nil,
+          files: [RAGArtifactFileInfo(relativePath: "repo-overlay.json", sizeBytes: jsonData.count, sha256: "", modifiedAt: Date())],
+          repos: []
+        )
+        try await connectionManager?.send(.ragArtifactsManifest(id: transferId, manifest: manifest), to: peer.id)
+
+        var offset = 0
+        var chunkIndex = 0
+        while offset < jsonData.count {
+          let end = min(offset + chunkSize, jsonData.count)
+          let chunkData = jsonData[offset..<end]
+          let base64 = chunkData.base64EncodedString()
+          try await connectionManager?.send(
+            .ragArtifactsChunk(id: transferId, index: chunkIndex, total: totalChunks, data: base64),
+            to: peer.id
+          )
+          updateRagTransfer(transferId) { state in
+            state.transferredBytes += chunkData.count
+          }
+          offset = end
+          chunkIndex += 1
+        }
+
+        try await connectionManager?.send(.ragArtifactsComplete(id: transferId), to: peer.id)
+        updateRagTransfer(transferId) { state in
+          state.status = .complete
+          state.completedAt = Date()
+        }
+        logger.info("RAG overlay sync completed: \(transferId) to \(peer.name)")
+        return
+      }
+
       // Per-repo sync: export only the requested repo as JSON
       if let repoIdentifier {
         let repoBundle = try await ragSyncDelegate.createRepoSyncBundle(repoIdentifier: repoIdentifier, excludeFileHashes: [])
@@ -1183,6 +1242,35 @@ public final class SwarmCoordinator {
           state.completedAt = Date()
           state.resultSummary = summary
           state.remoteEmbeddingModel = result.remoteEmbeddingModel
+        }
+      } else if manifest.version.hasPrefix("repo-overlay-") {
+        // Overlay sync: embeddings + analysis only, matched against locally-indexed chunks
+        let jsonData = try Data(contentsOf: transfer.tempURL)
+        let overlayBundle = try JSONDecoder().decode(RAGRepoOverlayBundle.self, from: jsonData)
+        let result = try await ragSyncDelegate.applyRepoOverlayBundle(overlayBundle)
+
+        logger.info("RAG overlay sync applied \(id): \(result.filesMatched) files matched (\(result.filesUnmatched) unmatched), \(result.embeddingsApplied) embeddings applied (\(result.embeddingsReplaced) replaced), \(result.analysisApplied) analysis applied, \(result.chunksUnmatched) chunks unmatched, \(result.embeddingsSkippedModelMismatch) embeddings skipped (model mismatch)")
+
+        if result.hadModelMismatch {
+          let localDesc = result.localEmbeddingModel ?? "unknown"
+          let remoteDesc = result.remoteEmbeddingModel ?? "unknown"
+          logger.warning("Overlay model mismatch: local=\(localDesc), remote=\(remoteDesc) — \(result.embeddingsSkippedModelMismatch) embeddings skipped, only analysis data applied. To force local embeddings, disable swarm sync and reindex locally.")
+        }
+
+        var summaryParts: [String] = []
+        if result.embeddingsApplied > 0 { summaryParts.append("\(result.embeddingsApplied) embeddings") }
+        if result.analysisApplied > 0 { summaryParts.append("\(result.analysisApplied) analysis") }
+        if result.filesMatched > 0 { summaryParts.append("\(result.filesMatched) files matched") }
+        if result.filesUnmatched > 0 { summaryParts.append("\(result.filesUnmatched) files unmatched") }
+        if result.chunksUnmatched > 0 { summaryParts.append("\(result.chunksUnmatched) chunks unmatched") }
+        if result.hadModelMismatch { summaryParts.append("\(result.embeddingsSkippedModelMismatch) embeddings skipped (model mismatch)") }
+        let summary = summaryParts.isEmpty ? "Up to date" : summaryParts.joined(separator: ", ")
+
+        updateRagTransfer(id) { state in
+          state.status = .complete
+          state.completedAt = Date()
+          state.resultSummary = summary
+          state.remoteEmbeddingModel = overlayBundle.manifest.embeddingModel
         }
       } else {
         // Full DB sync (legacy path)
@@ -1675,7 +1763,7 @@ extension SwarmCoordinator: PeerConnectionDelegate {
         continuation.resume(returning: DirectCommandResult(exitCode: exitCode, output: output, error: error))
       }
 
-    case .ragArtifactsRequest(let id, let direction, let repoIdentifier):
+    case .ragArtifactsRequest(let id, let direction, let repoIdentifier, let transferMode):
       let peer = connectedWorkers.first(where: { $0.id == peerId })
       let peerName = peer?.name ?? "Peer"
       if direction == .pull {
@@ -1696,7 +1784,7 @@ extension SwarmCoordinator: PeerConnectionDelegate {
         )
         recordRagTransfer(transfer)
         if let peer {
-          Task { await sendRagArtifactBundle(transferId: id, to: peer, repoIdentifier: repoIdentifier) }
+          Task { await sendRagArtifactBundle(transferId: id, to: peer, repoIdentifier: repoIdentifier, transferMode: transferMode ?? .full) }
         } else {
           Task { await sendRagArtifactError(transferId: id, to: peerId, message: "Peer not found") }
         }

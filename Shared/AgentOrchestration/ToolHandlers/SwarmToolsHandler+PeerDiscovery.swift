@@ -440,13 +440,16 @@ extension SwarmToolsHandler {
 
     let workerId = optionalString("workerId", from: arguments)
     let repoIdentifier = optionalString("repoIdentifier", from: arguments)
+    let modeRaw = optionalString("mode", from: arguments) ?? "full"
+    let transferMode = RAGTransferMode(rawValue: modeRaw) ?? .full
 
     do {
-      let transferId = try await coordinator.requestRagArtifactSync(direction: direction, workerId: workerId, repoIdentifier: repoIdentifier)
+      let transferId = try await coordinator.requestRagArtifactSync(direction: direction, workerId: workerId, repoIdentifier: repoIdentifier, transferMode: transferMode)
       return (200, makeResult(id: id, result: [
         "success": true,
         "transferId": transferId.uuidString,
         "direction": direction.rawValue,
+        "mode": transferMode.rawValue,
         "workerId": workerId as Any,
         "repoIdentifier": repoIdentifier as Any
       ]))

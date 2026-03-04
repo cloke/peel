@@ -152,4 +152,35 @@ extension MCPServerService: RAGArtifactSyncDelegate {
   func localRepoFileHashes(repoIdentifier: String) async throws -> Set<String> {
     try await localRagStore.localFileHashes(identifier: repoIdentifier)
   }
+
+  // MARK: - Overlay sync
+
+  func createRepoOverlayBundle(repoIdentifier: String, excludeFileHashes: Set<String>) async throws -> RAGRepoOverlayBundle? {
+    logger.info("RAG overlay export: '\(repoIdentifier)', excluding \(excludeFileHashes.count) hashes")
+    let bundle = try await localRagStore.exportRepoOverlay(identifier: repoIdentifier, excludeFileHashes: excludeFileHashes)
+    if let bundle {
+      logger.info("RAG overlay export: \(bundle.files.count) files, \(bundle.totalEmbeddings) embeddings, \(bundle.totalAnalysis) analysis entries")
+    } else {
+      logger.warning("RAG overlay export: repo '\(repoIdentifier)' not found")
+    }
+    return bundle
+  }
+
+  func applyRepoOverlayBundle(_ bundle: RAGRepoOverlayBundle) async throws -> RAGRepoImporter.OverlayImportResult {
+    logger.info("RAG overlay import: '\(bundle.manifest.repoIdentifier)', \(bundle.files.count) files, model: \(bundle.manifest.embeddingModel) (\(bundle.manifest.embeddingDimensions)d)")
+    let result = try await localRagStore.importRepoOverlay(bundle)
+
+    if result.isSuccess {
+      // Record the overlay embedding model for UX display
+      if result.embeddingsApplied > 0, let remoteModel = result.remoteEmbeddingModel {
+        self.ragSyncedEmbeddingModels[bundle.manifest.repoIdentifier] = remoteModel
+      }
+      logger.info("RAG overlay import: matched \(result.filesMatched) files, \(result.embeddingsApplied) embeddings (\(result.embeddingsReplaced) replaced), \(result.analysisApplied) analysis updates, \(result.chunksUnmatched) chunks unmatched")
+    } else {
+      logger.error("RAG overlay import failed: \(result.error ?? "unknown")")
+    }
+
+    await refreshRagSummary()
+    return result
+  }
 }

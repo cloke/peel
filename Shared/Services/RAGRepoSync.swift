@@ -94,6 +94,62 @@ struct ExportedChunk: Codable, Sendable {
   let embeddingBase64: String?
 }
 
+// MARK: - Overlay Sync Types
+
+/// Lightweight overlay bundle: embeddings + analysis only, no chunk text.
+/// Used when the receiver already has the repo indexed locally (same source code)
+/// and just needs pre-computed embeddings and AI analysis from a more powerful peer.
+/// Typically ~100x smaller than a full export bundle.
+struct RAGRepoOverlayBundle: Codable, Sendable {
+  let manifest: RAGRepoOverlayManifest
+  let files: [OverlayFileData]
+
+  var totalEntries: Int { files.reduce(0) { $0 + $1.chunks.count } }
+  var totalEmbeddings: Int { files.reduce(0) { $0 + $1.chunks.filter { $0.embeddingBase64 != nil }.count } }
+  var totalAnalysis: Int { files.reduce(0) { $0 + $1.chunks.filter { $0.aiSummary != nil }.count } }
+}
+
+/// Manifest for an overlay sync — describes what the sender has and the embedding model used.
+struct RAGRepoOverlayManifest: Codable, Sendable {
+  let repoIdentifier: String
+  let repoName: String
+  let schemaVersion: Int
+  let embeddingModel: String
+  let embeddingDimensions: Int
+  let createdAt: Date
+  let headSHA: String?
+  let fileCount: Int
+  let chunkCount: Int
+  /// File hashes for matching — receiver uses these to find locally-indexed files.
+  let fileHashes: [RAGRepoSyncManifest.FileHashEntry]
+}
+
+/// Per-file overlay data: just the file hash (matching key) and chunk overlays.
+struct OverlayFileData: Codable, Sendable {
+  /// File content hash — used to match against the receiver's locally-indexed file.
+  let hash: String
+  /// Relative path (for logging/diagnostics only, not used for matching).
+  let path: String
+  let chunks: [OverlayChunkData]
+}
+
+/// Per-chunk overlay: matching key (line range) + embeddings + analysis. No source text.
+struct OverlayChunkData: Codable, Sendable {
+  // Matching key: file hash (from parent) + line range identifies the chunk
+  let startLine: Int
+  let endLine: Int
+
+  // Embedding (the expensive part from the powerful machine)
+  let embeddingBase64: String?
+
+  // AI analysis (expensive LLM-generated enrichment)
+  let aiSummary: String?
+  let aiTags: String?
+  let analyzedAt: String?
+  let analyzerModel: String?
+  let enrichedAt: String?
+}
+
 // MARK: - RAGRepoExporter
 
 /// Reads a RAG SQLite database and exports one repo's data.
@@ -527,6 +583,152 @@ enum RAGRepoExporter {
       return nil
     }
   }
+
+  // MARK: - Overlay Export
+
+  /// Export only embeddings + analysis for a repo (no chunk text, no file content).
+  /// Used when the receiver already has the repo indexed locally and just needs
+  /// pre-computed data from a more powerful peer.
+  ///
+  /// - Parameters:
+  ///   - dbPath: Path to rag.sqlite
+  ///   - repoIdentifier: Normalized git remote URL
+  ///   - schemaVersion: Current schema version
+  ///   - embeddingModel: Embedding model name
+  ///   - embeddingDimensions: Embedding vector dimensions
+  ///   - excludeFileHashes: Set of file hashes the receiver already has overlay data for
+  /// - Returns: RAGRepoOverlayBundle or nil if repo not found
+  static func exportRepoOverlay(
+    dbPath: String,
+    repoIdentifier: String,
+    schemaVersion: Int,
+    embeddingModel: String,
+    embeddingDimensions: Int,
+    excludeFileHashes: Set<String> = []
+  ) throws -> RAGRepoOverlayBundle? {
+    var db: OpaquePointer?
+    let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX
+    let result = sqlite3_open_v2(dbPath, &db, flags, nil)
+    guard result == SQLITE_OK, let db else {
+      throw RAGStore.RAGError.sqlite("Cannot open database for overlay export: \(result)")
+    }
+    defer { sqlite3_close(db) }
+
+    guard let repo = queryRepo(db: db, repoIdentifier: repoIdentifier) else {
+      return nil
+    }
+
+    let allFileHashes = queryFileHashes(db: db, repoId: repo.id)
+    let headSHA = gitHeadSHA(for: repo.rootPath)
+
+    let effectiveEmbeddingModel = repo.embeddingModel ?? embeddingModel
+    let effectiveEmbeddingDimensions = repo.embeddingDimensions ?? embeddingDimensions
+
+    let manifest = RAGRepoOverlayManifest(
+      repoIdentifier: repoIdentifier,
+      repoName: repo.name,
+      schemaVersion: schemaVersion,
+      embeddingModel: effectiveEmbeddingModel,
+      embeddingDimensions: effectiveEmbeddingDimensions,
+      createdAt: Date(),
+      headSHA: headSHA,
+      fileCount: allFileHashes.count,
+      chunkCount: allFileHashes.reduce(0) { $0 + $1.chunkCount },
+      fileHashes: allFileHashes
+    )
+
+    // Export overlay data per file (skipping those the receiver already has)
+    var overlayFiles: [OverlayFileData] = []
+    for fileHash in allFileHashes {
+      if excludeFileHashes.contains(fileHash.hash) {
+        continue
+      }
+      let chunks = queryOverlayChunks(db: db, fileId: fileHash.fileId)
+      // Only include files that have at least one embedding or analysis entry
+      let hasData = chunks.contains { $0.embeddingBase64 != nil || $0.aiSummary != nil }
+      if hasData {
+        overlayFiles.append(OverlayFileData(
+          hash: fileHash.hash,
+          path: fileHash.path,
+          chunks: chunks
+        ))
+      }
+    }
+
+    return RAGRepoOverlayBundle(
+      manifest: manifest,
+      files: overlayFiles
+    )
+  }
+
+  /// Query only the overlay-relevant data for chunks: line range + embedding + analysis.
+  /// Omits chunk text, token count, construct metadata.
+  private static func queryOverlayChunks(db: OpaquePointer, fileId: String) -> [OverlayChunkData] {
+    let hasAnalysis = columnExists(db, table: "chunks", column: "ai_summary")
+    let hasEnrichedAt = columnExists(db, table: "chunks", column: "enriched_at")
+
+    var columns = "c.start_line, c.end_line"
+    var idx: Int32 = 2
+    let aiSummaryIdx: Int32?
+    let aiTagsIdx: Int32?
+    let analyzedAtIdx: Int32?
+    let analyzerModelIdx: Int32?
+    let enrichedAtIdx: Int32?
+    let embeddingIdx: Int32
+
+    if hasAnalysis {
+      columns += ", c.ai_summary, c.ai_tags, c.analyzed_at, c.analyzer_model"
+      aiSummaryIdx = idx; idx += 1
+      aiTagsIdx = idx; idx += 1
+      analyzedAtIdx = idx; idx += 1
+      analyzerModelIdx = idx; idx += 1
+    } else {
+      aiSummaryIdx = nil; aiTagsIdx = nil; analyzedAtIdx = nil; analyzerModelIdx = nil
+    }
+    if hasEnrichedAt {
+      columns += ", c.enriched_at"
+      enrichedAtIdx = idx; idx += 1
+    } else {
+      enrichedAtIdx = nil
+    }
+    columns += ", e.embedding"
+    embeddingIdx = idx
+
+    let sql = """
+      SELECT \(columns)
+      FROM chunks c
+      LEFT JOIN embeddings e ON e.chunk_id = c.id
+      WHERE c.file_id = ?
+      ORDER BY c.start_line
+      """
+    var stmt: OpaquePointer?
+    guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return [] }
+    defer { sqlite3_finalize(stmt) }
+
+    sqlite3_bind_text(stmt, 1, fileId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+
+    var chunks: [OverlayChunkData] = []
+    while sqlite3_step(stmt) == SQLITE_ROW {
+      var embeddingBase64: String?
+      if let blob = sqlite3_column_blob(stmt, embeddingIdx) {
+        let blobSize = Int(sqlite3_column_bytes(stmt, embeddingIdx))
+        let data = Data(bytes: blob, count: blobSize)
+        embeddingBase64 = data.base64EncodedString()
+      }
+
+      chunks.append(OverlayChunkData(
+        startLine: Int(sqlite3_column_int(stmt, 0)),
+        endLine: Int(sqlite3_column_int(stmt, 1)),
+        embeddingBase64: embeddingBase64,
+        aiSummary: aiSummaryIdx.flatMap { columnOptionalString(stmt, $0) },
+        aiTags: aiTagsIdx.flatMap { columnOptionalString(stmt, $0) },
+        analyzedAt: analyzedAtIdx.flatMap { columnOptionalString(stmt, $0) },
+        analyzerModel: analyzerModelIdx.flatMap { columnOptionalString(stmt, $0) },
+        enrichedAt: enrichedAtIdx.flatMap { columnOptionalString(stmt, $0) }
+      ))
+    }
+    return chunks
+  }
 }
 
 // MARK: - RAGRepoImporter
@@ -782,6 +984,274 @@ enum RAGRepoImporter {
       }
     }
     return hashes
+  }
+
+  // MARK: - Overlay Import
+
+  /// Import an overlay bundle onto locally-indexed chunks.
+  /// Matches by file hash + chunk line range, then writes embeddings and analysis.
+  /// The receiver must have already indexed the repo locally (chunks exist with matching hashes/lines).
+  ///
+  /// - Parameters:
+  ///   - bundle: The overlay data (embeddings + analysis, no chunk text)
+  ///   - dbPath: Path to the local rag.sqlite
+  /// - Returns: Overlay import summary
+  @discardableResult
+  static func importRepoOverlay(
+    bundle: RAGRepoOverlayBundle,
+    dbPath: String
+  ) throws -> OverlayImportResult {
+    var db: OpaquePointer?
+    let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX
+    let result = sqlite3_open_v2(dbPath, &db, flags, nil)
+    guard result == SQLITE_OK, let db else {
+      throw RAGStore.RAGError.sqlite("Cannot open database for overlay import: \(result)")
+    }
+    defer { sqlite3_close(db) }
+
+    execSQL(db, "PRAGMA journal_mode=WAL")
+    execSQL(db, "PRAGMA busy_timeout=5000")
+    ensureSyncSchema(db)
+
+    guard let repoId = findRepoByIdentifier(db: db, identifier: bundle.manifest.repoIdentifier) else {
+      return OverlayImportResult(
+        repoIdentifier: bundle.manifest.repoIdentifier,
+        repoName: bundle.manifest.repoName,
+        filesMatched: 0, filesUnmatched: 0,
+        embeddingsApplied: 0, embeddingsReplaced: 0,
+        embeddingsSkippedModelMismatch: 0,
+        analysisApplied: 0, chunksUnmatched: 0,
+        remoteEmbeddingModel: bundle.manifest.embeddingModel,
+        remoteEmbeddingDimensions: bundle.manifest.embeddingDimensions,
+        localEmbeddingModel: nil,
+        localEmbeddingDimensions: nil,
+        error: "Repo not locally indexed — run local index first"
+      )
+    }
+
+    // Read the local repo's current embedding model to detect mismatches.
+    // If the local repo already has embeddings from a different model (e.g. Qwen3 from swarm),
+    // we skip embedding replacement and only apply analysis data.
+    var localModel: String?
+    var localDims: Int?
+    let readModelSql = "SELECT embedding_model, embedding_dimensions FROM repos WHERE id = ?"
+    var readStmt: OpaquePointer?
+    if sqlite3_prepare_v2(db, readModelSql, -1, &readStmt, nil) == SQLITE_OK, let readStmt {
+      sqlite3_bind_text(readStmt, 1, repoId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+      if sqlite3_step(readStmt) == SQLITE_ROW {
+        if let text = sqlite3_column_text(readStmt, 0) {
+          localModel = String(cString: text)
+        }
+        let dims = sqlite3_column_int(readStmt, 1)
+        if dims > 0 { localDims = Int(dims) }
+      }
+      sqlite3_finalize(readStmt)
+    }
+
+    let remoteModel = bundle.manifest.embeddingModel
+    let remoteDims = bundle.manifest.embeddingDimensions
+
+    // Embeddings are compatible if: (a) local has no model yet (first overlay), or
+    // (b) models and dimensions match. Mismatch → analysis-only overlay.
+    let embeddingsCompatible: Bool
+    if let localModel, let localDims {
+      embeddingsCompatible = (localModel == remoteModel && localDims == remoteDims)
+    } else {
+      // No local model recorded → accept the remote embeddings (first time)
+      embeddingsCompatible = true
+    }
+
+    // Only update repo model/dimensions if we'll actually write embeddings
+    if embeddingsCompatible {
+      let updateRepoSql = "UPDATE repos SET embedding_model = ?, embedding_dimensions = ? WHERE id = ?"
+      try execBind(db, updateRepoSql) { stmt in
+        bindText(stmt, 1, remoteModel)
+        sqlite3_bind_int(stmt, 2, Int32(remoteDims))
+        bindText(stmt, 3, repoId)
+      }
+    }
+
+    var filesMatched = 0
+    var filesUnmatched = 0
+    var embeddingsApplied = 0
+    var embeddingsReplaced = 0
+    var embeddingsSkippedModelMismatch = 0
+    var analysisApplied = 0
+    var chunksUnmatched = 0
+
+    execSQL(db, "BEGIN TRANSACTION")
+
+    do {
+      for file in bundle.files {
+        // Find the local file by repo + hash
+        let localFileId = findFileByHash(db: db, repoId: repoId, hash: file.hash)
+        guard let fileId = localFileId else {
+          filesUnmatched += 1
+          continue
+        }
+        filesMatched += 1
+
+        for chunk in file.chunks {
+          // Match local chunk by file ID + line range
+          let chunkId = findChunkByLineRange(
+            db: db, fileId: fileId,
+            startLine: chunk.startLine, endLine: chunk.endLine
+          )
+          guard let chunkId else {
+            chunksUnmatched += 1
+            continue
+          }
+
+          // Apply embedding only if models are compatible.
+          // When models differ (e.g. local has Qwen3 1024d from swarm, overlay has nomic 768d),
+          // we skip embedding writes to avoid downgrading vector quality.
+          if let embeddingBase64 = chunk.embeddingBase64,
+             let embeddingData = Data(base64Encoded: embeddingBase64) {
+            if embeddingsCompatible {
+              // Check if embedding already exists
+              let existsSQL = "SELECT COUNT(*) FROM embeddings WHERE chunk_id = ?"
+              var existsStmt: OpaquePointer?
+              var existed = false
+              if sqlite3_prepare_v2(db, existsSQL, -1, &existsStmt, nil) == SQLITE_OK,
+                 let existsStmt {
+                sqlite3_bind_text(existsStmt, 1, chunkId, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+                if sqlite3_step(existsStmt) == SQLITE_ROW {
+                  existed = sqlite3_column_int(existsStmt, 0) > 0
+                }
+                sqlite3_finalize(existsStmt)
+              }
+
+              let embSql = "INSERT OR REPLACE INTO embeddings (chunk_id, embedding) VALUES (?, ?)"
+              try execBind(db, embSql) { stmt in
+                bindText(stmt, 1, chunkId)
+                sqlite3_bind_blob(stmt, 2, (embeddingData as NSData).bytes, Int32(embeddingData.count),
+                                  unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+              }
+              if existed {
+                embeddingsReplaced += 1
+              }
+              embeddingsApplied += 1
+            } else {
+              embeddingsSkippedModelMismatch += 1
+            }
+          }
+
+          // Apply analysis (only if incoming has analysis and it's newer or local lacks it)
+          if chunk.analyzedAt != nil {
+            let updateSql = """
+              UPDATE chunks SET
+                ai_summary = ?, ai_tags = ?, analyzed_at = ?, analyzer_model = ?, enriched_at = ?
+              WHERE id = ? AND (analyzed_at IS NULL OR analyzed_at < ?)
+              """
+            try execBind(db, updateSql) { stmt in
+              bindTextOrNull(stmt, 1, chunk.aiSummary)
+              bindTextOrNull(stmt, 2, chunk.aiTags)
+              bindTextOrNull(stmt, 3, chunk.analyzedAt)
+              bindTextOrNull(stmt, 4, chunk.analyzerModel)
+              bindTextOrNull(stmt, 5, chunk.enrichedAt)
+              bindText(stmt, 6, chunkId)
+              bindTextOrNull(stmt, 7, chunk.analyzedAt)
+            }
+            if sqlite3_changes(db) > 0 {
+              analysisApplied += 1
+            }
+          }
+        }
+      }
+
+      execSQL(db, "COMMIT")
+    } catch {
+      execSQL(db, "ROLLBACK")
+      throw error
+    }
+
+    return OverlayImportResult(
+      repoIdentifier: bundle.manifest.repoIdentifier,
+      repoName: bundle.manifest.repoName,
+      filesMatched: filesMatched,
+      filesUnmatched: filesUnmatched,
+      embeddingsApplied: embeddingsApplied,
+      embeddingsReplaced: embeddingsReplaced,
+      embeddingsSkippedModelMismatch: embeddingsSkippedModelMismatch,
+      analysisApplied: analysisApplied,
+      chunksUnmatched: chunksUnmatched,
+      remoteEmbeddingModel: bundle.manifest.embeddingModel,
+      remoteEmbeddingDimensions: bundle.manifest.embeddingDimensions,
+      localEmbeddingModel: localModel,
+      localEmbeddingDimensions: localDims,
+      error: nil
+    )
+  }
+
+  /// Find a file in the local DB by repo ID and content hash.
+  private static func findFileByHash(db: OpaquePointer, repoId: String, hash: String) -> String? {
+    let sql = "SELECT id FROM files WHERE repo_id = ? AND hash = ? LIMIT 1"
+    var stmt: OpaquePointer?
+    guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return nil }
+    defer { sqlite3_finalize(stmt) }
+
+    let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+    sqlite3_bind_text(stmt, 1, repoId, -1, transient)
+    sqlite3_bind_text(stmt, 2, hash, -1, transient)
+
+    guard sqlite3_step(stmt) == SQLITE_ROW,
+          let text = sqlite3_column_text(stmt, 0) else { return nil }
+    return String(cString: text)
+  }
+
+  /// Find a chunk by file ID and line range.
+  private static func findChunkByLineRange(
+    db: OpaquePointer, fileId: String,
+    startLine: Int, endLine: Int
+  ) -> String? {
+    let sql = "SELECT id FROM chunks WHERE file_id = ? AND start_line = ? AND end_line = ? LIMIT 1"
+    var stmt: OpaquePointer?
+    guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return nil }
+    defer { sqlite3_finalize(stmt) }
+
+    let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+    sqlite3_bind_text(stmt, 1, fileId, -1, transient)
+    sqlite3_bind_int(stmt, 2, Int32(startLine))
+    sqlite3_bind_int(stmt, 3, Int32(endLine))
+
+    guard sqlite3_step(stmt) == SQLITE_ROW,
+          let text = sqlite3_column_text(stmt, 0) else { return nil }
+    return String(cString: text)
+  }
+
+  // MARK: - Overlay Result Type
+
+  public struct OverlayImportResult: Sendable {
+    let repoIdentifier: String
+    let repoName: String
+    /// Files from the overlay that matched locally-indexed files by hash.
+    let filesMatched: Int
+    /// Files from the overlay with no matching local file (file changed or not indexed).
+    let filesUnmatched: Int
+    /// Embeddings written (new or replaced).
+    let embeddingsApplied: Int
+    /// Of embeddingsApplied, how many replaced existing local embeddings.
+    let embeddingsReplaced: Int
+    /// Embeddings skipped because the local repo already has a different model's embeddings.
+    let embeddingsSkippedModelMismatch: Int
+    /// Analysis fields updated on locally-indexed chunks.
+    let analysisApplied: Int
+    /// Chunks from the overlay with no matching local chunk (different chunking).
+    let chunksUnmatched: Int
+    /// The embedding model used by the sender.
+    let remoteEmbeddingModel: String?
+    /// The embedding dimensions used by the sender.
+    let remoteEmbeddingDimensions: Int?
+    /// The local repo's current embedding model (for mismatch diagnostics).
+    let localEmbeddingModel: String?
+    /// The local repo's current embedding dimensions.
+    let localEmbeddingDimensions: Int?
+    /// Error if the repo is not locally indexed.
+    let error: String?
+
+    var isSuccess: Bool { error == nil }
+    var totalOverlayEntries: Int { embeddingsApplied + analysisApplied }
+    var hadModelMismatch: Bool { embeddingsSkippedModelMismatch > 0 }
   }
 
   // MARK: - Result Type
@@ -1111,6 +1581,48 @@ extension RAGStore {
     }
 
     // Re-open db
+    _ = try initialize()
+    return result
+  }
+
+  // MARK: - Overlay Sync
+
+  /// Export an overlay bundle (embeddings + analysis only, no chunk text).
+  func exportRepoOverlay(
+    identifier: String,
+    excludeFileHashes: Set<String> = []
+  ) async throws -> RAGRepoOverlayBundle? {
+    let currentStatus = status()
+    return try RAGRepoExporter.exportRepoOverlay(
+      dbPath: currentStatus.dbPath,
+      repoIdentifier: identifier,
+      schemaVersion: currentStatus.schemaVersion,
+      embeddingModel: currentStatus.embeddingModelName,
+      embeddingDimensions: currentStatus.embeddingDimensions,
+      excludeFileHashes: excludeFileHashes
+    )
+  }
+
+  /// Import an overlay bundle onto locally-indexed chunks.
+  /// Call this when the DB is open — it opens a separate connection for the import.
+  @discardableResult
+  func importRepoOverlay(
+    _ bundle: RAGRepoOverlayBundle
+  ) async throws -> RAGRepoImporter.OverlayImportResult {
+    let dbPath = status().dbPath
+    closeDatabase()
+
+    let result: RAGRepoImporter.OverlayImportResult
+    do {
+      result = try RAGRepoImporter.importRepoOverlay(
+        bundle: bundle,
+        dbPath: dbPath
+      )
+    } catch {
+      _ = try? initialize()
+      throw error
+    }
+
     _ = try initialize()
     return result
   }

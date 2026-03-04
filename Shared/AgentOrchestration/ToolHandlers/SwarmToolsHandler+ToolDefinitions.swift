@@ -87,7 +87,7 @@ extension SwarmToolsHandler {
       ),
       MCPToolDefinition(
         name: "swarm.rag.sync",
-        description: "Request a Local RAG artifact sync to or from a peel. Direction is 'push' or 'pull'. Optionally scope to a single repo by repoIdentifier.",
+        description: "Request a Local RAG artifact sync to or from a peel. Direction is 'push' or 'pull'. Optionally scope to a single repo by repoIdentifier. Mode 'overlay' transfers only embeddings + analysis (no chunk text) — ideal when both peers have the repo indexed locally.",
         inputSchema: [
           "type": "object",
           "properties": [
@@ -103,6 +103,11 @@ extension SwarmToolsHandler {
             "repoIdentifier": [
               "type": "string",
               "description": "Optional normalized git remote URL (e.g. 'github.com/org/repo') to sync only one repo. If omitted, syncs all repos."
+            ],
+            "mode": [
+              "type": "string",
+              "enum": ["full", "overlay"],
+              "description": "Sync mode: 'full' transfers all data (default), 'overlay' transfers only embeddings + analysis (requires receiver has repo indexed locally). Overlay is ~100x smaller."
             ]
           ],
           "required": ["direction"]

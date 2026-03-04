@@ -502,6 +502,14 @@ public enum RAGArtifactSyncDirection: String, Codable, Sendable {
   case pull
 }
 
+/// Transfer mode for per-repo RAG sync.
+/// - full: Transfers all data (files, chunks, embeddings, analysis). Used for initial sync.
+/// - overlay: Transfers only embeddings + analysis. Receiver must already have the repo indexed locally.
+public enum RAGTransferMode: String, Codable, Sendable {
+  case full
+  case overlay
+}
+
 public enum RAGArtifactTransferRole: String, Sendable {
   case sender
   case receiver
@@ -718,7 +726,7 @@ public enum PeerMessage: Codable, Sendable {
   case taskCancel(taskId: UUID)
   case directCommand(id: UUID, command: String, args: [String], workingDirectory: String?)
   case directCommandResult(id: UUID, exitCode: Int32, output: String, error: String?)
-  case ragArtifactsRequest(id: UUID, direction: RAGArtifactSyncDirection, repoIdentifier: String? = nil)
+  case ragArtifactsRequest(id: UUID, direction: RAGArtifactSyncDirection, repoIdentifier: String? = nil, transferMode: RAGTransferMode? = nil)
   case ragRepoManifest(id: UUID, manifest: RAGRepoSyncManifest)
   case ragRepoDeltaRequest(id: UUID, excludeFileHashes: [String])
   case ragArtifactsManifest(id: UUID, manifest: RAGArtifactManifest)

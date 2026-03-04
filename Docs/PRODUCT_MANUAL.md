@@ -421,6 +421,8 @@ The default model is `nomic-embed-text-v1.5` (768 dims). Auto-selects model tier
 - 8GB: MiniLM (smaller, faster)
 - 16GB+: nomic (better quality)
 
+> **Note:** When repos are synced from swarm peers running different models (e.g. Qwen3-Embedding on a Mac Studio), the repo retains the remote model's embeddings. Overlay sync will not overwrite them with local model embeddings — see [RAG Artifact Sync](#rag-artifact-sync).
+
 ```bash
 # List available models
 curl -X POST http://127.0.0.1:8765/rpc \
@@ -791,16 +793,30 @@ The Swarm Management view (Firestore mode) provides:
 
 #### RAG Artifact Sync
 
-Push/pull RAG indices between swarm members:
-```bash
-# Push local RAG to swarm
-curl -X POST http://127.0.0.1:8765/rpc \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"swarm.firestore.rag.push","arguments":{}}}'
+Push/pull RAG indices between swarm members. Two transfer modes are available:
 
-# Pull RAG from swarm
+| Mode | What's Transferred | Size | Use Case |
+|------|--------------------|------|----------|
+| `full` | Chunks + embeddings + analysis | Large | First sync, new repos, full DB migration |
+| `overlay` | Embeddings + analysis only (no chunk text) | ~100x smaller | Both machines have the same code indexed locally |
+
+**Overlay mode** matches incoming data against locally-indexed chunks by file content hash + line range. This is the default for auto-sync after tracked repo pulls.
+
+```bash
+# Full sync (default) — push/pull entire repo data
 curl -X POST http://127.0.0.1:8765/rpc \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"swarm.firestore.rag.pull","arguments":{}}}'
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"swarm.rag.sync","arguments":{"repoIdentifier":"github.com/org/repo","direction":"pull","mode":"full"}}}'
+
+# Overlay sync — pull only embeddings + analysis from a more powerful peer
+curl -X POST http://127.0.0.1:8765/rpc \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"swarm.rag.sync","arguments":{"repoIdentifier":"github.com/org/repo","direction":"pull","mode":"overlay"}}}'
 ```
+
+**Model mismatch guard:** When the local repo already has embeddings from a different model (e.g. Qwen3 1024d from a swarm peer), overlay sync will **skip embedding writes** and only apply analysis data (summaries, tags). This prevents accidentally downgrading higher-quality embeddings from a more powerful machine. The mismatch is logged as a warning and surfaced in the transfer summary.
+
+To force local embeddings instead, disable swarm sync for the repo and run a local reindex with `forceReindex: true`.
+
+**Auto-sync after pull:** When a tracked remote repo completes a scheduled pull + reindex, Peel automatically requests an overlay sync from connected swarm peers. This keeps analysis data fresh without re-running expensive LLM analysis locally.
 
 #### Worktree Tracking
 
@@ -1217,7 +1233,7 @@ The MCP server exposes 120+ tools via JSON-RPC at `http://127.0.0.1:8765/rpc`.
 | `swarm.connect` | Manually connect to a peer |
 | `swarm.repos` | List registered repositories |
 | `swarm.diagnostics` | Get swarm diagnostics info |
-| `swarm.rag.sync` | Sync RAG data across swarm |
+| `swarm.rag.sync` | Sync RAG data across swarm (mode: `full` or `overlay`) |
 | `swarm.register-repo` | Register a repo for swarm task execution |
 | `swarm.setup-labels` | Set up swarm labels |
 | `swarm.direct-command` | Send a command to a specific worker |
@@ -1457,6 +1473,17 @@ iOS uses a **TabView** with four tabs: Repositories, Brew (placeholder), Agents 
 3. For Firestore: verify both devices are signed in and in the same swarm
 4. Check `swarm.diagnostics` output
 
+### RAG Overlay Sync Skipped Embeddings
+
+If the transfer summary shows "embeddings skipped (model mismatch)", it means the local repo already has embeddings from a different model than the overlay source. This is expected when a more powerful swarm peer (e.g. Mac Studio with Qwen3) previously synced embeddings, and your local machine runs a different model (e.g. nomic).
+
+**This is a safety guard** — the overlay only applies analysis data (summaries, tags) and preserves the existing higher-quality embeddings.
+
+To switch to local embeddings instead:
+1. Stop or disconnect from the swarm (`swarm.stop`)
+2. Re-index with `forceReindex: true` — this regenerates embeddings with your local model
+3. Note: analysis data from the swarm will still be preserved if it's newer
+
 ### Build Issues
 
 ```bash
@@ -1501,4 +1528,4 @@ xcodebuild -scheme "Peel (macOS)" -destination 'platform=macOS' build
 
 ---
 
-*Last Updated: February 19, 2026*
+*Last Updated: March 3, 2026*
