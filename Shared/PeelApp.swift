@@ -12,11 +12,14 @@ import SwiftData
 import OAuthSwift
 import AppKit
 import OSLog
+import Git
+import Github
 
 // MARK: - Notification Names
 
 extension Notification.Name {
   static let openCommandPalette = Notification.Name("openCommandPalette")
+  static let navigateToTool = Notification.Name("navigateToTool")
 }
 
 @main
@@ -210,8 +213,17 @@ struct PeelApp: App {
             skillUpdateAvailable = true
             print("[PeelApp] Ember skills update available")
           }
+          // Populate RepoRegistry from all known local paths BEFORE rebuild
+          // so Git tab repos (AppStorage) appear in the unified view.
+          let registry = RepoRegistry.shared
+          let gitPaths = Git.ViewModel.shared.repositories.map(\.path)
+          await registry.registerAllPaths(gitPaths)
+          let recentPaths = ReviewLocallyService.shared.recentRepositories.map(\.path)
+          await registry.registerAllPaths(recentPaths)
           // Resume any RAG indexing or analysis that was interrupted by the previous app quit
           await mcpServer.resumeInterruptedRAGOperations()
+          // Refresh RAG repo list so rebuild() has current data
+          await mcpServer.refreshRagSummary()
           // Initial rebuild of unified repository data and activity feed
           repositoryAggregator.rebuild()
           activityFeed.rebuild()

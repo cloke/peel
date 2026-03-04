@@ -181,71 +181,354 @@ struct RepoStatusPill: View {
 struct BranchesTabView: View {
   let repo: UnifiedRepository
 
+  @Environment(MCPServerService.self) private var mcpServer
   @State private var gitRepository: Git.Model.Repository?
+  @State private var showRemoteBranches = false
 
-  var body: some View {
-    Group {
-      #if os(macOS)
-      if let localPath = repo.localPath, repo.isClonedLocally {
-        if let gitRepo = gitRepository {
-          GitRootView(repository: gitRepo)
-        } else {
-          ProgressView("Loading repository…")
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-      } else {
-        notClonedView
-      }
-      #else
-      notClonedPlaceholder
-      #endif
-    }
-    .task(id: repo.localPath) {
-      if let localPath = repo.localPath, repo.isClonedLocally {
-        gitRepository = Git.Model.Repository(name: repo.displayName, path: localPath)
-      } else {
-        gitRepository = nil
+  /// Parallel worktree runs associated with this repo that have pending reviews or active work.
+  private var repoRuns: [ParallelWorktreeRun] {
+    guard let runner = mcpServer.parallelWorktreeRunner,
+          let localPath = repo.localPath else { return [] }
+    return runner.runs.filter { run in
+      // Match by project path, exclude terminal runs
+      guard run.projectPath == localPath else { return false }
+      switch run.status {
+      case .completed, .failed, .cancelled: return false
+      default: return true
       }
     }
   }
 
-  private var notClonedView: some View {
-    VStack(spacing: 16) {
-      // Show worktrees / PRs / chains as before for remote repos
-      if !repo.activeWorktrees.isEmpty || !repo.recentPRs.isEmpty || !repo.activeChains.isEmpty {
-        ScrollView {
-          VStack(alignment: .leading, spacing: 16) {
-            if !repo.activeWorktrees.isEmpty {
-              Section {
-                ForEach(repo.activeWorktrees) { wt in
-                  RepoWorktreeRow(worktree: wt)
-                }
-              } header: {
-                SectionHeader("Active Worktrees")
-              }
-            }
+  /// Runs that have at least one execution needing approval.
+  private var pendingApprovalRuns: [ParallelWorktreeRun] {
+    repoRuns.filter { $0.pendingReviewCount > 0 || $0.readyToMergeCount > 0 }
+  }
 
-            if !repo.recentPRs.isEmpty {
-              Section {
-                ForEach(repo.recentPRs) { pr in
-                  RepoPRRow(pr: pr)
-                }
-              } header: {
-                SectionHeader("Pull Requests")
-              }
-            }
+  /// Runs that are active but don't have pending reviews (running or completed).
+  private var activeRuns: [ParallelWorktreeRun] {
+    repoRuns.filter { run in
+      !pendingApprovalRuns.contains(where: { $0.id == run.id })
+    }
+  }
 
-            if !repo.activeChains.isEmpty {
-              Section {
-                ForEach(repo.activeChains) { chain in
-                  RepoChainRow(chain: chain)
-                }
-              } header: {
-                SectionHeader("Agent Chains")
-              }
+  var body: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 16) {
+        #if os(macOS)
+        if repo.isClonedLocally {
+          if let gitRepo = gitRepository {
+            clonedRepoContent(gitRepo)
+          } else {
+            ProgressView("Loading repository…")
+              .frame(maxWidth: .infinity, maxHeight: .infinity)
+          }
+        } else {
+          remoteRepoContent
+        }
+        #else
+        notClonedPlaceholder
+        #endif
+      }
+      .padding(16)
+    }
+    .task(id: repo.localPath) {
+      await loadGitRepo()
+    }
+  }
+
+  #if os(macOS)
+  // MARK: Cloned Repo Content
+
+  @ViewBuilder
+  private func clonedRepoContent(_ gitRepo: Git.Model.Repository) -> some View {
+    // Active branch hero card
+    activeBranchCard(gitRepo)
+
+    // Local changes
+    if !gitRepo.status.isEmpty {
+      localChangesCard(gitRepo)
+    }
+
+    // Pending approvals (from parallel worktree runner)
+    if !pendingApprovalRuns.isEmpty, let runner = mcpServer.parallelWorktreeRunner {
+      WorktreeApprovalsSection(
+        runs: pendingApprovalRuns,
+        runner: runner
+      )
+    }
+
+    // Active runs (non-review)
+    if !activeRuns.isEmpty, let runner = mcpServer.parallelWorktreeRunner {
+      activeRunsSection(runner: runner)
+    }
+
+    // Branches
+    branchesSection(gitRepo)
+
+    // Pull Requests
+    if !repo.recentPRs.isEmpty {
+      prsSection
+    }
+
+    // Worktrees
+    if !repo.activeWorktrees.isEmpty {
+      worktreesSection
+    }
+
+    // Agent chains
+    if !repo.activeChains.isEmpty {
+      chainsSection
+    }
+  }
+
+  private func activeBranchCard(_ gitRepo: Git.Model.Repository) -> some View {
+    let activeBranch = gitRepo.localBranches.first(where: \.isActive)
+
+    return GroupBox {
+      HStack(spacing: 12) {
+        Image(systemName: "arrow.triangle.branch")
+          .font(.title2)
+          .foregroundStyle(.green)
+          .frame(width: 32)
+
+        VStack(alignment: .leading, spacing: 4) {
+          HStack(spacing: 6) {
+            Text(activeBranch?.name ?? "detached HEAD")
+              .font(.headline)
+
+            if activeBranch != nil {
+              Text("active")
+                .font(.caption2)
+                .fontWeight(.semibold)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Capsule().fill(.green.opacity(0.15)))
+                .foregroundStyle(.green)
             }
           }
-          .padding(16)
+
+          HStack(spacing: 12) {
+            Label("\(gitRepo.localBranches.count) local", systemImage: "arrow.triangle.branch")
+            Label("\(gitRepo.remoteBranches.count) remote", systemImage: "cloud")
+            if !gitRepo.status.isEmpty {
+              Label("\(gitRepo.status.count) changed", systemImage: "doc.badge.ellipsis")
+                .foregroundStyle(.orange)
+            }
+          }
+          .font(.caption)
+          .foregroundStyle(.secondary)
+        }
+
+        Spacer()
+
+        Button {
+          Task { await refreshGitRepo() }
+        } label: {
+          Image(systemName: "arrow.clockwise")
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+      }
+      .padding(4)
+    }
+  }
+
+  private func localChangesCard(_ gitRepo: Git.Model.Repository) -> some View {
+    GroupBox {
+      VStack(alignment: .leading, spacing: 8) {
+        HStack {
+          Label("Local Changes", systemImage: "doc.badge.ellipsis")
+            .font(.subheadline)
+            .fontWeight(.medium)
+
+          Spacer()
+
+          Text("\(gitRepo.status.count) file\(gitRepo.status.count == 1 ? "" : "s")")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+
+        Divider()
+
+        ForEach(gitRepo.status.prefix(10), id: \.id) { file in
+          HStack(spacing: 8) {
+            fileStatusBadge(file.status)
+
+            Text(file.path)
+              .font(.callout)
+              .monospaced()
+              .lineLimit(1)
+              .truncationMode(.middle)
+
+            Spacer()
+          }
+        }
+
+        if gitRepo.status.count > 10 {
+          Text("+ \(gitRepo.status.count - 10) more files")
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+        }
+      }
+      .padding(4)
+    }
+  }
+
+  @ViewBuilder
+  private func branchesSection(_ gitRepo: Git.Model.Repository) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SectionHeader("Branches")
+
+      // Local branches
+      LazyVStack(spacing: 1) {
+        ForEach(gitRepo.localBranches, id: \.name) { branch in
+          BranchRow(branch: branch)
+        }
+      }
+      .background(Color(nsColor: .controlBackgroundColor))
+      .clipShape(RoundedRectangle(cornerRadius: 8))
+
+      // Remote branches (collapsible)
+      if !gitRepo.remoteBranches.isEmpty {
+        DisclosureGroup(isExpanded: $showRemoteBranches) {
+          LazyVStack(spacing: 1) {
+            ForEach(gitRepo.remoteBranches, id: \.name) { branch in
+              BranchRow(branch: branch, isRemote: true)
+            }
+          }
+          .background(Color(nsColor: .controlBackgroundColor))
+          .clipShape(RoundedRectangle(cornerRadius: 8))
+        } label: {
+          HStack(spacing: 6) {
+            Image(systemName: "cloud")
+              .foregroundStyle(.secondary)
+            Text("Remote Branches")
+              .fontWeight(.medium)
+            Text("(\(gitRepo.remoteBranches.count))")
+              .foregroundStyle(.secondary)
+          }
+          .font(.subheadline)
+        }
+      }
+    }
+  }
+
+  private var prsSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SectionHeader("Pull Requests")
+
+      LazyVStack(spacing: 1) {
+        ForEach(repo.recentPRs) { pr in
+          PRRowWithReview(
+            pr: pr,
+            ownerRepo: repo.ownerSlashRepo,
+            repoPath: repo.localPath
+          )
+        }
+      }
+      .background(Color(nsColor: .controlBackgroundColor))
+      .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+  }
+
+  private func activeRunsSection(runner: ParallelWorktreeRunner) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SectionHeader("Active Runs")
+
+      ForEach(activeRuns) { run in
+        GroupBox {
+          HStack(spacing: 10) {
+            if run.status == .running {
+              ProgressView()
+                .controlSize(.small)
+                .frame(width: 28)
+            } else {
+              Image(systemName: "bolt.circle.fill")
+                .font(.title3)
+                .foregroundStyle(.blue)
+                .frame(width: 28)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+              Text(run.name)
+                .fontWeight(.semibold)
+              HStack(spacing: 8) {
+                Text(run.status.displayName)
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+                if run.executions.count > 0 {
+                  Text("\(run.executions.count) task\(run.executions.count == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                }
+              }
+            }
+
+            Spacer()
+
+            // Progress bar
+            ProgressView(value: run.progress)
+              .frame(width: 60)
+          }
+          .padding(4)
+        }
+      }
+    }
+  }
+
+  private var worktreesSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SectionHeader("Worktrees")
+
+      ForEach(repo.activeWorktrees) { wt in
+        RepoWorktreeRow(worktree: wt)
+      }
+    }
+  }
+
+  private var chainsSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SectionHeader("Agent Chains")
+
+      ForEach(repo.activeChains) { chain in
+        RepoChainRow(chain: chain)
+      }
+    }
+  }
+
+  private func fileStatusBadge(_ status: Git.FileStatus) -> some View {
+    let (label, color): (String, Color) = {
+      switch status {
+      case .staged: return ("S", .blue)
+      case .modifiedMe: return ("M", .yellow)
+      case .new: return ("A", .green)
+      case .deleted: return ("D", .red)
+      case .untracked: return ("?", .purple)
+      case .renamedMe: return ("R", .teal)
+      case .ignored: return ("I", .gray)
+      case .unknown: return ("?", .secondary)
+      }
+    }()
+
+    return Text(label)
+      .font(.caption2.monospaced().weight(.bold))
+      .foregroundStyle(color)
+      .frame(width: 20)
+  }
+
+  // MARK: Remote-Only Repo Content
+
+  private var remoteRepoContent: some View {
+    VStack(spacing: 16) {
+      if !repo.activeWorktrees.isEmpty || !repo.recentPRs.isEmpty || !repo.activeChains.isEmpty {
+        if !repo.recentPRs.isEmpty {
+          prsSection
+        }
+        if !repo.activeWorktrees.isEmpty {
+          worktreesSection
+        }
+        if !repo.activeChains.isEmpty {
+          chainsSection
         }
       } else {
         ContentUnavailableView {
@@ -256,6 +539,7 @@ struct BranchesTabView: View {
       }
     }
   }
+  #endif
 
   private var notClonedPlaceholder: some View {
     ContentUnavailableView {
@@ -264,6 +548,65 @@ struct BranchesTabView: View {
       Text("Branch and commit viewing is available on macOS.")
     }
   }
+
+  // MARK: Data Loading
+
+  private func loadGitRepo() async {
+    #if os(macOS)
+    if let localPath = repo.localPath, repo.isClonedLocally {
+      let repository = Git.Model.Repository(name: repo.displayName, path: localPath)
+      await repository.load(includeRemote: true)
+      gitRepository = repository
+    } else {
+      gitRepository = nil
+    }
+    #endif
+  }
+
+  private func refreshGitRepo() async {
+    #if os(macOS)
+    if let gitRepo = gitRepository {
+      await gitRepo.load(includeRemote: true)
+    }
+    #endif
+  }
+}
+
+// MARK: - Branch Row
+
+private struct BranchRow: View {
+  let branch: Git.Model.Branch
+  var isRemote: Bool = false
+
+  var body: some View {
+    HStack(spacing: 10) {
+      if branch.isActive {
+        Image(systemName: "checkmark.circle.fill")
+          .font(.caption)
+          .foregroundStyle(.green)
+      } else {
+        Image(systemName: isRemote ? "cloud" : "arrow.triangle.branch")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+
+      Text(branch.name)
+        .font(.callout)
+        .fontWeight(branch.isActive ? .semibold : .regular)
+        .lineLimit(1)
+        .truncationMode(.middle)
+
+      Spacer()
+
+      if branch.isActive {
+        Text("current")
+          .font(.caption2)
+          .foregroundStyle(.green)
+      }
+    }
+    .padding(.horizontal, 12)
+    .padding(.vertical, 6)
+  }
 }
 
 // MARK: - Activity Tab
@@ -271,23 +614,132 @@ struct BranchesTabView: View {
 struct ActivityTabView: View {
   let repo: UnifiedRepository
   @Environment(ActivityFeed.self) private var activityFeed
+  @State private var selectedItem: ActivityItem?
+  @State private var filterMode: RepoActivityFilter = .all
 
   var body: some View {
-    let repoItems = activityFeed.items(for: repo.normalizedRemoteURL)
+    let repoItems = filteredItems
 
-    if repoItems.isEmpty {
+    if activityFeed.items(for: repo.normalizedRemoteURL).isEmpty {
       ContentUnavailableView {
         Label("No Activity", systemImage: "clock")
       } description: {
         Text("No recent activity for this repository.")
       }
     } else {
-      List(repoItems) { item in
-        RepoActivityItemRow(item: item)
+      ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+          // Filter bar
+          HStack {
+            SectionHeader("Activity")
+            Spacer()
+            Picker("Filter", selection: $filterMode) {
+              ForEach(RepoActivityFilter.allCases, id: \.self) { mode in
+                Text(mode.rawValue).tag(mode)
+              }
+            }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: 280)
+          }
+
+          if repoItems.isEmpty {
+            ContentUnavailableView {
+              Label("No Matching Activity", systemImage: "line.3.horizontal.decrease.circle")
+            } description: {
+              Text("No \(filterMode.rawValue.lowercased()) activity for this repository.")
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 40)
+          } else {
+            // Grouped by day
+            let grouped = groupedByDay(repoItems)
+            ForEach(grouped, id: \.date) { group in
+              VStack(alignment: .leading, spacing: 4) {
+                Text(group.label)
+                  .font(.caption)
+                  .fontWeight(.medium)
+                  .foregroundStyle(.secondary)
+                  .padding(.top, 4)
+
+                LazyVStack(spacing: 1) {
+                  ForEach(group.items) { item in
+                    RepoActivityItemRow(item: item)
+                      .contentShape(Rectangle())
+                      .onTapGesture { selectedItem = item }
+                  }
+                }
+                #if os(macOS)
+                .background(Color(nsColor: .controlBackgroundColor))
+                #else
+                .background(Color(.systemGroupedBackground))
+                #endif
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+              }
+            }
+          }
+        }
+        .padding(16)
       }
-      .listStyle(.plain)
+      #if os(macOS)
+      .sheet(item: $selectedItem) { item in
+        ActivityItemDetailSheet(item: item)
+      }
+      #endif
     }
   }
+
+  private var filteredItems: [ActivityItem] {
+    let all = activityFeed.items(for: repo.normalizedRemoteURL)
+    switch filterMode {
+    case .all: return all
+    case .chains:
+      return all.filter { item in
+        switch item.kind {
+        case .chainStarted, .chainCompleted: return true
+        default: return false
+        }
+      }
+    case .pulls:
+      return all.filter { item in
+        if case .pullCompleted = item.kind { return true }
+        return false
+      }
+    case .errors:
+      return all.filter(\.isError)
+    }
+  }
+
+  private struct DayGroup {
+    let date: Date
+    let label: String
+    let items: [ActivityItem]
+  }
+
+  private func groupedByDay(_ items: [ActivityItem]) -> [DayGroup] {
+    let calendar = Calendar.current
+    let grouped = Dictionary(grouping: items) { item in
+      calendar.startOfDay(for: item.timestamp)
+    }
+
+    return grouped.keys.sorted(by: >).map { date in
+      let label: String
+      if calendar.isDateInToday(date) {
+        label = "Today"
+      } else if calendar.isDateInYesterday(date) {
+        label = "Yesterday"
+      } else {
+        label = date.formatted(.dateTime.month(.wide).day().year())
+      }
+      return DayGroup(date: date, label: label, items: grouped[date]!.sorted { $0.timestamp > $1.timestamp })
+    }
+  }
+}
+
+enum RepoActivityFilter: String, CaseIterable {
+  case all = "All"
+  case chains = "Chains"
+  case pulls = "Pulls"
+  case errors = "Errors"
 }
 
 // MARK: - RAG Tab
@@ -317,7 +769,6 @@ struct RAGTabView: View {
 
   private var analysisState: MCPServerService.RAGRepoAnalysisState? {
     guard let path = repo.localPath else { return nil }
-    // Find matching RAG repo to get its ID
     if let ragRepo = mcpServer.ragRepos.first(where: { $0.rootPath == path }) {
       return mcpServer.analysisState(for: ragRepo.id, repoPath: path)
     }
@@ -327,309 +778,22 @@ struct RAGTabView: View {
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 16) {
-        // RAG Status Card
-        GroupBox {
-          VStack(alignment: .leading, spacing: 8) {
-            HStack {
-              if isCurrentlyIndexing {
-                Label("Indexing…", systemImage: "arrow.triangle.2.circlepath")
-                  .font(.headline)
-                  .foregroundStyle(.orange)
-              } else if let rag = repo.ragStatus {
-                Label(rag.displayName, systemImage: rag.systemImage)
-                  .font(.headline)
-              } else {
-                Label("Not Indexed", systemImage: "magnifyingglass.circle")
-                  .font(.headline)
-                  .foregroundStyle(.secondary)
-              }
-
-              Spacer()
-
-              if isCurrentlyIndexing {
-                ProgressView()
-                  .controlSize(.small)
-              } else if repo.ragStatus == nil || repo.ragStatus == .notIndexed {
-                Button("Index Now") {
-                  Task { await indexRepo(force: false) }
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-                .disabled(repo.localPath == nil)
-              } else {
-                Button("Re-Index") {
-                  Task { await indexRepo(force: false) }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-
-                Button("Force Re-Index") {
-                  Task { await indexRepo(force: true) }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-              }
-            }
-
-            if let fileCount = repo.ragFileCount {
-              LabeledContent("Files Indexed", value: "\(fileCount)")
-            }
-            if let chunkCount = repo.ragChunkCount {
-              LabeledContent("Chunks", value: "\(chunkCount)")
-            }
-            if let model = repo.ragEmbeddingModel {
-              LabeledContent("Embedding Model", value: model)
-            }
-            if let lastIndexed = repo.ragLastIndexedAt {
-              LabeledContent("Last Indexed") {
-                Text(lastIndexed, style: .relative)
-              }
-            }
-
-            if let error = indexError {
-              Label(error, systemImage: "xmark.circle")
-                .font(.caption)
-                .foregroundStyle(.red)
-            }
-          }
-          .padding(4)
-        } label: {
-          Label("RAG Index", systemImage: "magnifyingglass")
+        // Prominent search bar (when indexed)
+        if repo.ragStatus != nil && repo.ragStatus != .notIndexed, repo.localPath != nil {
+          searchCard
         }
 
-        // Code Search — only show when indexed
+        // RAG status hero card
+        ragStatusCard
+
+        // Pipeline steps
         if repo.ragStatus != nil && repo.ragStatus != .notIndexed, repo.localPath != nil {
-          GroupBox {
-            VStack(alignment: .leading, spacing: 10) {
-              // Search bar
-              HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                  .foregroundStyle(.secondary)
-
-                TextField("Search this repo…", text: $searchQuery)
-                  .textFieldStyle(.plain)
-                  .onSubmit {
-                    Task { await runSearch() }
-                  }
-
-                Picker("", selection: $searchMode) {
-                  Text("Vector").tag(MCPServerService.RAGSearchMode.vector)
-                  Text("Text").tag(MCPServerService.RAGSearchMode.text)
-                  Text("Hybrid").tag(MCPServerService.RAGSearchMode.hybrid)
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 180)
-
-                if isSearching {
-                  ProgressView()
-                    .controlSize(.small)
-                } else {
-                  Button {
-                    Task { await runSearch() }
-                  } label: {
-                    Image(systemName: "arrow.right.circle.fill")
-                      .font(.title3)
-                  }
-                  .buttonStyle(.plain)
-                  .foregroundStyle(.blue)
-                  .disabled(searchQuery.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-              }
-
-              if let error = searchError {
-                Label(error, systemImage: "exclamationmark.triangle")
-                  .font(.caption)
-                  .foregroundStyle(.red)
-              }
-
-              // Results
-              if !searchResults.isEmpty {
-                Divider()
-                Text("\(searchResults.count) results")
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
-
-                ForEach(searchResults.prefix(20), id: \.filePath) { result in
-                  RepoSearchResultRow(result: result)
-                }
-              }
-            }
-            .padding(4)
-          } label: {
-            Label("Code Search", systemImage: "text.magnifyingglass")
-          }
-        }
-
-        // AI Analysis & Enrich Pipeline
-        if repo.ragStatus != nil && repo.ragStatus != .notIndexed, repo.localPath != nil {
-          GroupBox {
-            VStack(alignment: .leading, spacing: 10) {
-              // Status display
-              if let state = analysisState, state.totalChunks > 0 {
-                HStack {
-                  if state.isComplete {
-                    Label("Analysis Complete", systemImage: "checkmark.seal.fill")
-                      .foregroundStyle(.green)
-                  } else if state.isAnalyzing || isAnalyzing {
-                    HStack(spacing: 6) {
-                      ProgressView()
-                        .controlSize(.small)
-                      Text("Analyzing…")
-                    }
-                  } else if state.isPaused {
-                    Label("Paused", systemImage: "pause.circle")
-                      .foregroundStyle(.orange)
-                  } else {
-                    Label("\(state.analyzedCount) / \(state.totalChunks) chunks analyzed", systemImage: "cpu")
-                      .foregroundStyle(.secondary)
-                  }
-
-                  Spacer()
-
-                  Text("\(Int(state.progress * 100))%")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-
-                ProgressView(value: state.progress)
-                  .tint(state.isComplete ? .green : .purple)
-
-                if (state.isAnalyzing || isAnalyzing), state.chunksPerSecond > 0 {
-                  Text("\(String(format: "%.1f", state.chunksPerSecond)) chunks/sec")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                }
-
-                if let error = state.analyzeError {
-                  Label(error, systemImage: "xmark.circle")
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                }
-              }
-
-              // Pipeline description
-              Text("Pipeline: Index → Analyze (AI summaries) → Enrich (better embeddings)")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-
-              // Action buttons
-              HStack(spacing: 8) {
-                #if os(macOS)
-                Button {
-                  Task { await analyzeChunks() }
-                } label: {
-                  HStack(spacing: 4) {
-                    if isAnalyzing {
-                      ProgressView()
-                        .controlSize(.mini)
-                    } else {
-                      Image(systemName: "cpu")
-                    }
-                    Text(isAnalyzing ? "Analyzing…" : "Analyze")
-                  }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(isAnalyzing || repo.localPath == nil)
-
-                Button {
-                  Task { await enrichEmbeddings() }
-                } label: {
-                  HStack(spacing: 4) {
-                    if isEnriching {
-                      ProgressView()
-                        .controlSize(.mini)
-                    } else {
-                      Image(systemName: "sparkles")
-                    }
-                    Text(isEnriching ? "Enriching…" : "Enrich")
-                  }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(isEnriching || repo.localPath == nil)
-                #else
-                Text("AI Analysis requires macOS")
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
-                #endif
-
-                Spacer()
-
-                if analyzedChunks > 0 {
-                  Text("Last run: \(analyzedChunks) chunks analyzed")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                }
-                if enrichedChunks > 0 {
-                  Text("Last run: \(enrichedChunks) chunks enriched")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                }
-              }
-
-              if let error = analyzeError {
-                Label(error, systemImage: "xmark.circle")
-                  .font(.caption)
-                  .foregroundStyle(.red)
-              }
-              if let error = enrichError {
-                Label(error, systemImage: "xmark.circle")
-                  .font(.caption)
-                  .foregroundStyle(.red)
-              }
-            }
-            .padding(4)
-          } label: {
-            Label("AI Analysis & Enrichment", systemImage: "cpu")
-          }
+          pipelineCard
         }
 
         // Lessons
         if !lessons.isEmpty {
-          GroupBox {
-            VStack(alignment: .leading, spacing: 8) {
-              ForEach(lessons.prefix(10), id: \.id) { lesson in
-                HStack(spacing: 8) {
-                  Circle()
-                    .fill(lesson.confidence >= 0.7 ? .green : lesson.confidence >= 0.4 ? .orange : .red)
-                    .frame(width: 8, height: 8)
-
-                  VStack(alignment: .leading, spacing: 2) {
-                    Text(lesson.fixDescription)
-                      .font(.callout)
-                      .lineLimit(2)
-
-                    HStack(spacing: 8) {
-                      Text("Confidence: \(Int(lesson.confidence * 100))%")
-                      if lesson.applyCount > 0 {
-                        Text("Applied: \(lesson.applyCount)×")
-                      }
-                      if !lesson.source.isEmpty {
-                        Text(lesson.source)
-                      }
-                    }
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                  }
-
-                  Spacer()
-                }
-                if lesson.id != lessons.prefix(10).last?.id {
-                  Divider()
-                }
-              }
-
-              if lessons.count > 10 {
-                Text("+ \(lessons.count - 10) more lessons")
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
-              }
-            }
-            .padding(4)
-          } label: {
-            Label("Learned Lessons (\(lessons.count))", systemImage: "brain")
-          }
+          lessonsSection
         }
       }
       .padding(16)
@@ -638,6 +802,415 @@ struct RAGTabView: View {
       await loadLessons()
     }
   }
+
+  // MARK: - Search Card
+
+  private var searchCard: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      // Search bar
+      HStack(spacing: 8) {
+        Image(systemName: "magnifyingglass")
+          .foregroundStyle(.secondary)
+
+        TextField("Search this repo…", text: $searchQuery)
+          .textFieldStyle(.plain)
+          .onSubmit {
+            Task { await runSearch() }
+          }
+
+        Picker("", selection: $searchMode) {
+          Text("Vector").tag(MCPServerService.RAGSearchMode.vector)
+          Text("Text").tag(MCPServerService.RAGSearchMode.text)
+          Text("Hybrid").tag(MCPServerService.RAGSearchMode.hybrid)
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 180)
+
+        if isSearching {
+          ProgressView()
+            .controlSize(.small)
+        } else {
+          Button {
+            Task { await runSearch() }
+          } label: {
+            Image(systemName: "arrow.right.circle.fill")
+              .font(.title3)
+          }
+          .buttonStyle(.plain)
+          .foregroundStyle(.blue)
+          .disabled(searchQuery.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+      }
+      .padding(10)
+      .background(
+        RoundedRectangle(cornerRadius: 8)
+          #if os(macOS)
+          .fill(Color(nsColor: .controlBackgroundColor))
+          #else
+          .fill(Color(.systemGroupedBackground))
+          #endif
+      )
+
+      if let error = searchError {
+        Label(error, systemImage: "exclamationmark.triangle")
+          .font(.caption)
+          .foregroundStyle(.red)
+      }
+
+      // Results
+      if !searchResults.isEmpty {
+        HStack {
+          Text("\(searchResults.count) results")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          Spacer()
+        }
+
+        LazyVStack(spacing: 1) {
+          ForEach(searchResults.prefix(20), id: \.filePath) { result in
+            RepoSearchResultRow(result: result)
+          }
+        }
+        #if os(macOS)
+        .background(Color(nsColor: .controlBackgroundColor))
+        #else
+        .background(Color(.systemGroupedBackground))
+        #endif
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+      }
+    }
+  }
+
+  // MARK: - RAG Status Card
+
+  private var ragStatusCard: some View {
+    GroupBox {
+      VStack(alignment: .leading, spacing: 10) {
+        HStack(spacing: 12) {
+          // Status icon
+          ZStack {
+            Circle()
+              .fill(ragStatusColor.opacity(0.15))
+              .frame(width: 40, height: 40)
+
+            if isCurrentlyIndexing {
+              ProgressView()
+                .controlSize(.small)
+            } else {
+              Image(systemName: ragStatusIcon)
+                .font(.title3)
+                .foregroundStyle(ragStatusColor)
+            }
+          }
+
+          VStack(alignment: .leading, spacing: 2) {
+            Text(ragStatusTitle)
+              .font(.headline)
+
+            if let model = repo.ragEmbeddingModel {
+              Text(model)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+          }
+
+          Spacer()
+
+          // Action buttons
+          if isCurrentlyIndexing {
+            // No action while indexing
+          } else if repo.ragStatus == nil || repo.ragStatus == .notIndexed {
+            Button("Index Now") {
+              Task { await indexRepo(force: false) }
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .disabled(repo.localPath == nil)
+          } else {
+            HStack(spacing: 6) {
+              Button("Re-Index") {
+                Task { await indexRepo(force: false) }
+              }
+              .buttonStyle(.bordered)
+              .controlSize(.small)
+
+              Button {
+                Task { await indexRepo(force: true) }
+              } label: {
+                Image(systemName: "arrow.clockwise")
+              }
+              .buttonStyle(.bordered)
+              .controlSize(.small)
+              .help("Force full re-index")
+            }
+          }
+        }
+
+        // Stats row
+        if repo.ragFileCount != nil || repo.ragChunkCount != nil || repo.ragLastIndexedAt != nil {
+          Divider()
+
+          HStack(spacing: 16) {
+            if let fileCount = repo.ragFileCount {
+              VStack(spacing: 2) {
+                Text("\(fileCount)")
+                  .font(.headline)
+                Text("Files")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              }
+            }
+
+            if let chunkCount = repo.ragChunkCount {
+              VStack(spacing: 2) {
+                Text("\(chunkCount)")
+                  .font(.headline)
+                Text("Chunks")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              }
+            }
+
+            if let lastIndexed = repo.ragLastIndexedAt {
+              VStack(spacing: 2) {
+                Text(lastIndexed, style: .relative)
+                  .font(.callout)
+                Text("Last Indexed")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              }
+            }
+          }
+        }
+
+        if let error = indexError {
+          Label(error, systemImage: "xmark.circle")
+            .font(.caption)
+            .foregroundStyle(.red)
+        }
+      }
+      .padding(4)
+    }
+  }
+
+  private var ragStatusColor: Color {
+    if isCurrentlyIndexing { return .orange }
+    switch repo.ragStatus {
+    case .indexed, .analyzed: return .green
+    case .indexing: return .orange
+    case .analyzing: return .purple
+    case .stale: return .yellow
+    case .notIndexed, .none: return .secondary
+    }
+  }
+
+  private var ragStatusIcon: String {
+    switch repo.ragStatus {
+    case .indexed: return "checkmark.circle.fill"
+    case .analyzed: return "checkmark.seal.fill"
+    case .indexing: return "arrow.triangle.2.circlepath"
+    case .analyzing: return "cpu.fill"
+    case .stale: return "exclamationmark.triangle"
+    case .notIndexed, .none: return "magnifyingglass.circle"
+    }
+  }
+
+  private var ragStatusTitle: String {
+    if isCurrentlyIndexing { return "Indexing…" }
+    return repo.ragStatus?.displayName ?? "Not Indexed"
+  }
+
+  // MARK: - Pipeline Card
+
+  private var pipelineCard: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      SectionHeader("AI Pipeline")
+
+      // Visual pipeline steps
+      HStack(spacing: 0) {
+        PipelineStep(
+          title: "Index",
+          icon: "tray.full.fill",
+          isComplete: repo.ragStatus != nil && repo.ragStatus != .notIndexed,
+          isActive: isCurrentlyIndexing
+        )
+
+        PipelineArrow()
+
+        PipelineStep(
+          title: "Analyze",
+          icon: "cpu",
+          isComplete: analysisState?.isComplete ?? false,
+          isActive: isAnalyzing || (analysisState?.isAnalyzing ?? false)
+        )
+
+        PipelineArrow()
+
+        PipelineStep(
+          title: "Enrich",
+          icon: "sparkles",
+          isComplete: enrichedChunks > 0,
+          isActive: isEnriching
+        )
+      }
+
+      // Progress bar (when analyzing)
+      if let state = analysisState, state.totalChunks > 0, !state.isComplete {
+        VStack(alignment: .leading, spacing: 4) {
+          ProgressView(value: state.progress)
+            .tint(.purple)
+
+          HStack(spacing: 8) {
+            Text("\(state.analyzedCount) / \(state.totalChunks) chunks")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+
+            if (state.isAnalyzing || isAnalyzing), state.chunksPerSecond > 0 {
+              Text("·")
+                .foregroundStyle(.tertiary)
+              Text("\(String(format: "%.1f", state.chunksPerSecond)) chunks/sec")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            }
+
+            Spacer()
+
+            Text("\(Int(state.progress * 100))%")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+        }
+      }
+
+      // Action buttons
+      HStack(spacing: 8) {
+        #if os(macOS)
+        Button {
+          Task { await analyzeChunks() }
+        } label: {
+          HStack(spacing: 4) {
+            if isAnalyzing {
+              ProgressView()
+                .controlSize(.mini)
+            } else {
+              Image(systemName: "cpu")
+            }
+            Text(isAnalyzing ? "Analyzing…" : "Analyze")
+          }
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .disabled(isAnalyzing || repo.localPath == nil)
+
+        Button {
+          Task { await enrichEmbeddings() }
+        } label: {
+          HStack(spacing: 4) {
+            if isEnriching {
+              ProgressView()
+                .controlSize(.mini)
+            } else {
+              Image(systemName: "sparkles")
+            }
+            Text(isEnriching ? "Enriching…" : "Enrich")
+          }
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .disabled(isEnriching || repo.localPath == nil)
+        #else
+        Text("AI Analysis requires macOS")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+        #endif
+
+        Spacer()
+
+        if analyzedChunks > 0 {
+          Text("\(analyzedChunks) analyzed")
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+        }
+        if enrichedChunks > 0 {
+          Text("\(enrichedChunks) enriched")
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+        }
+      }
+
+      // Errors
+      if let error = analyzeError {
+        Label(error, systemImage: "xmark.circle")
+          .font(.caption)
+          .foregroundStyle(.red)
+      }
+      if let error = enrichError {
+        Label(error, systemImage: "xmark.circle")
+          .font(.caption)
+          .foregroundStyle(.red)
+      }
+    }
+  }
+
+  // MARK: - Lessons Section
+
+  private var lessonsSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack {
+        SectionHeader("Learned Lessons")
+        Spacer()
+        Text("\(lessons.count)")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+
+      LazyVStack(spacing: 1) {
+        ForEach(lessons.prefix(10), id: \.id) { lesson in
+          HStack(spacing: 10) {
+            Circle()
+              .fill(lesson.confidence >= 0.7 ? .green : lesson.confidence >= 0.4 ? .orange : .red)
+              .frame(width: 8, height: 8)
+
+            VStack(alignment: .leading, spacing: 2) {
+              Text(lesson.fixDescription)
+                .font(.callout)
+                .lineLimit(2)
+
+              HStack(spacing: 8) {
+                Text("\(Int(lesson.confidence * 100))% confidence")
+                if lesson.applyCount > 0 {
+                  Text("· Applied \(lesson.applyCount)×")
+                }
+                if !lesson.source.isEmpty {
+                  Text("· \(lesson.source)")
+                }
+              }
+              .font(.caption2)
+              .foregroundStyle(.tertiary)
+            }
+
+            Spacer()
+          }
+          .padding(.horizontal, 12)
+          .padding(.vertical, 8)
+        }
+      }
+      #if os(macOS)
+      .background(Color(nsColor: .controlBackgroundColor))
+      #else
+      .background(Color(.systemGroupedBackground))
+      #endif
+      .clipShape(RoundedRectangle(cornerRadius: 8))
+
+      if lessons.count > 10 {
+        Text("+ \(lessons.count - 10) more lessons")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+    }
+  }
+
+  // MARK: - Actions
 
   private func indexRepo(force: Bool) async {
     guard let path = repo.localPath else { return }
@@ -718,6 +1291,55 @@ struct RAGTabView: View {
   }
 }
 
+// MARK: - Pipeline Step
+
+private struct PipelineStep: View {
+  let title: String
+  let icon: String
+  let isComplete: Bool
+  let isActive: Bool
+
+  var body: some View {
+    VStack(spacing: 6) {
+      ZStack {
+        Circle()
+          .fill(stepColor.opacity(0.15))
+          .frame(width: 36, height: 36)
+
+        if isActive {
+          ProgressView()
+            .controlSize(.small)
+        } else {
+          Image(systemName: isComplete ? "checkmark" : icon)
+            .font(.callout)
+            .foregroundStyle(stepColor)
+        }
+      }
+
+      Text(title)
+        .font(.caption2)
+        .fontWeight(.medium)
+        .foregroundStyle(isComplete || isActive ? .primary : .secondary)
+    }
+    .frame(maxWidth: .infinity)
+  }
+
+  private var stepColor: Color {
+    if isActive { return .blue }
+    if isComplete { return .green }
+    return .secondary
+  }
+}
+
+private struct PipelineArrow: View {
+  var body: some View {
+    Image(systemName: "chevron.right")
+      .font(.caption2)
+      .foregroundStyle(.tertiary)
+      .frame(width: 20)
+  }
+}
+
 // MARK: - Repo Search Result Row
 
 private struct RepoSearchResultRow: View {
@@ -780,8 +1402,7 @@ struct SkillsTabView: View {
       VStack(alignment: .leading, spacing: 16) {
         // Header
         HStack {
-          Label("Guidance Skills", systemImage: "lightbulb")
-            .font(.headline)
+          SectionHeader("Guidance Skills")
 
           Spacer()
 
@@ -789,25 +1410,31 @@ struct SkillsTabView: View {
             .toggleStyle(.switch)
             .controlSize(.small)
 
-          Text("\(skills.count) skills")
+          Text("\(skills.count)")
             .font(.caption)
             .foregroundStyle(.secondary)
         }
 
         if skills.isEmpty {
-          GroupBox {
-            ContentUnavailableView {
-              Label("No Skills", systemImage: "lightbulb.slash")
-            } description: {
-              Text("No guidance skills configured for this repository. Skills help agents understand your codebase conventions, patterns, and best practices.")
-            }
+          ContentUnavailableView {
+            Label("No Skills", systemImage: "lightbulb.slash")
+          } description: {
+            Text("No guidance skills configured for this repository. Skills help agents understand your codebase conventions, patterns, and best practices.")
           }
+          .frame(maxWidth: .infinity)
+          .padding(.vertical, 40)
         } else {
-          LazyVStack(spacing: 6) {
+          LazyVStack(spacing: 1) {
             ForEach(skills, id: \.id) { skill in
               SkillRow(skill: skill)
             }
           }
+          #if os(macOS)
+          .background(Color(nsColor: .controlBackgroundColor))
+          #else
+          .background(Color(.systemGroupedBackground))
+          #endif
+          .clipShape(RoundedRectangle(cornerRadius: 8))
         }
       }
       .padding(16)
@@ -834,70 +1461,69 @@ private struct SkillRow: View {
   @State private var isExpanded = false
 
   var body: some View {
-    GroupBox {
-      VStack(alignment: .leading, spacing: 6) {
-        HStack(spacing: 8) {
-          Image(systemName: skill.isActive ? "lightbulb.fill" : "lightbulb.slash")
-            .foregroundStyle(skill.isActive ? .green : .gray)
+    VStack(alignment: .leading, spacing: 6) {
+      HStack(spacing: 8) {
+        Image(systemName: skill.isActive ? "lightbulb.fill" : "lightbulb.slash")
+          .foregroundStyle(skill.isActive ? .green : .gray)
 
-          Text(skill.title.isEmpty ? "Untitled Skill" : skill.title)
-            .fontWeight(.medium)
+        Text(skill.title.isEmpty ? "Untitled Skill" : skill.title)
+          .fontWeight(.medium)
 
-          Spacer()
+        Spacer()
 
-          if !skill.tags.isEmpty {
-            HStack(spacing: 4) {
-              ForEach(skill.tags.components(separatedBy: ",").prefix(3), id: \.self) { tag in
-                Text(tag.trimmingCharacters(in: .whitespaces))
-                  .font(.caption2)
-                  .padding(.horizontal, 6)
-                  .padding(.vertical, 2)
-                  .background(Capsule().fill(.blue.opacity(0.1)))
-                  .foregroundStyle(.blue)
-              }
+        if !skill.tags.isEmpty {
+          HStack(spacing: 4) {
+            ForEach(skill.tags.components(separatedBy: ",").prefix(3), id: \.self) { tag in
+              Text(tag.trimmingCharacters(in: .whitespaces))
+                .font(.caption2)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Capsule().fill(.blue.opacity(0.1)))
+                .foregroundStyle(.blue)
             }
           }
-
-          Text("P\(skill.priority)")
-            .font(.caption)
-            .foregroundStyle(priorityColor)
-            .fontWeight(.semibold)
-
-          if skill.appliedCount > 0 {
-            Label("\(skill.appliedCount)×", systemImage: "checkmark.circle")
-              .font(.caption2)
-              .foregroundStyle(.green)
-          }
-
-          Button {
-            withAnimation(.spring(response: 0.25)) { isExpanded.toggle() }
-          } label: {
-            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-              .font(.caption2)
-          }
-          .buttonStyle(.borderless)
         }
 
-        HStack(spacing: 12) {
-          Text(skill.source.isEmpty ? "manual" : skill.source)
-            .font(.caption)
-            .foregroundStyle(.secondary)
+        Text("P\(skill.priority)")
+          .font(.caption)
+          .foregroundStyle(priorityColor)
+          .fontWeight(.semibold)
 
-          Text(skill.updatedAt, style: .relative)
+        if skill.appliedCount > 0 {
+          Label("\(skill.appliedCount)×", systemImage: "checkmark.circle")
             .font(.caption2)
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(.green)
         }
 
-        if isExpanded, !skill.body.isEmpty {
-          Divider()
-          Text(skill.body)
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .textSelection(.enabled)
+        Button {
+          withAnimation(.spring(response: 0.25)) { isExpanded.toggle() }
+        } label: {
+          Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+            .font(.caption2)
         }
+        .buttonStyle(.borderless)
       }
-      .padding(4)
+
+      HStack(spacing: 12) {
+        Text(skill.source.isEmpty ? "manual" : skill.source)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+
+        Text(skill.updatedAt, style: .relative)
+          .font(.caption2)
+          .foregroundStyle(.tertiary)
+      }
+
+      if isExpanded, !skill.body.isEmpty {
+        Divider()
+        Text(skill.body)
+          .font(.callout)
+          .foregroundStyle(.secondary)
+          .textSelection(.enabled)
+      }
     }
+    .padding(.horizontal, 12)
+    .padding(.vertical, 8)
   }
 
   private var priorityColor: Color {
@@ -913,39 +1539,48 @@ struct RepoWorktreeRow: View {
   let worktree: UnifiedRepository.WorktreeSummary
 
   var body: some View {
-    HStack {
-      VStack(alignment: .leading, spacing: 2) {
-        Text(worktree.branch)
-          .fontWeight(.medium)
-        HStack(spacing: 6) {
-          Text(worktree.source)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-          if let purpose = worktree.purpose {
-            Text("·")
-              .foregroundStyle(.secondary)
-            Text(purpose)
+    GroupBox {
+      HStack(spacing: 12) {
+        Image(systemName: "arrow.triangle.branch")
+          .font(.title3)
+          .foregroundStyle(.blue)
+          .frame(width: 28)
+
+        VStack(alignment: .leading, spacing: 4) {
+          Text(worktree.branch)
+            .fontWeight(.semibold)
+
+          HStack(spacing: 8) {
+            Text(worktree.source)
               .font(.caption)
               .foregroundStyle(.secondary)
-              .lineLimit(1)
+
+            if let purpose = worktree.purpose {
+              Text("·")
+                .foregroundStyle(.tertiary)
+              Text(purpose)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            }
           }
         }
+
+        Spacer()
+
+        Text(worktree.taskStatus)
+          .font(.caption)
+          .fontWeight(.medium)
+          .padding(.horizontal, 8)
+          .padding(.vertical, 3)
+          .background(
+            Capsule()
+              .fill(worktreeStatusColor.opacity(0.1))
+          )
+          .foregroundStyle(worktreeStatusColor)
       }
-
-      Spacer()
-
-      Text(worktree.taskStatus)
-        .font(.caption)
-        .fontWeight(.medium)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(
-          Capsule()
-            .fill(worktreeStatusColor.opacity(0.1))
-        )
-        .foregroundStyle(worktreeStatusColor)
+      .padding(4)
     }
-    .padding(.vertical, 4)
   }
 
   private var worktreeStatusColor: Color {
@@ -965,32 +1600,67 @@ struct RepoPRRow: View {
   let pr: UnifiedRepository.PRSummary
 
   var body: some View {
-    HStack {
+    HStack(spacing: 10) {
+      // State icon
+      Image(systemName: prIcon)
+        .font(.callout)
+        .foregroundStyle(prColor)
+        .frame(width: 24)
+
       VStack(alignment: .leading, spacing: 2) {
-        Text("#\(pr.number) \(pr.title)")
+        Text(pr.title)
+          .font(.callout)
+          .fontWeight(.medium)
           .lineLimit(1)
-        Text(pr.state)
-          .font(.caption)
-          .foregroundStyle(.secondary)
+
+        HStack(spacing: 6) {
+          Text("#\(pr.number)")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+          Text(pr.state.capitalized)
+            .font(.caption2)
+            .fontWeight(.medium)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(prColor.opacity(0.1)))
+            .foregroundStyle(prColor)
+        }
       }
 
       Spacer()
 
-      if pr.state == "open" {
-        Image(systemName: "circle.fill")
-          .font(.caption2)
-          .foregroundStyle(.green)
-      } else if pr.state == "closed" {
-        Image(systemName: "xmark.circle.fill")
-          .font(.caption2)
-          .foregroundStyle(.red)
-      } else if pr.state == "merged" {
-        Image(systemName: "arrow.triangle.merge")
-          .font(.caption2)
-          .foregroundStyle(.purple)
+      if let url = pr.htmlURL, let _ = URL(string: url) {
+        Image(systemName: "arrow.up.right.square")
+          .font(.caption)
+          .foregroundStyle(.secondary)
       }
+
+      Image(systemName: "chevron.right")
+        .font(.caption2)
+        .foregroundStyle(.tertiary)
     }
-    .padding(.vertical, 4)
+    .padding(.horizontal, 12)
+    .padding(.vertical, 8)
+    .contentShape(Rectangle())
+  }
+
+  private var prIcon: String {
+    switch pr.state {
+    case "open": return "arrow.triangle.pull"
+    case "closed": return "xmark.circle.fill"
+    case "merged": return "arrow.triangle.merge"
+    default: return "arrow.triangle.pull"
+    }
+  }
+
+  private var prColor: Color {
+    switch pr.state {
+    case "open": return .green
+    case "closed": return .red
+    case "merged": return .purple
+    default: return .secondary
+    }
   }
 }
 
@@ -1000,26 +1670,41 @@ struct RepoChainRow: View {
   let chain: UnifiedRepository.ChainSummary
 
   var body: some View {
-    HStack {
-      VStack(alignment: .leading, spacing: 2) {
-        Text(chain.name)
-          .fontWeight(.medium)
-        Text(chain.stateDisplay)
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      }
+    GroupBox {
+      HStack(spacing: 12) {
+        if !chain.isTerminal {
+          ProgressView()
+            .controlSize(.small)
+            .frame(width: 28)
+        } else {
+          Image(systemName: "checkmark.circle.fill")
+            .font(.title3)
+            .foregroundStyle(.green)
+            .frame(width: 28)
+        }
 
-      Spacer()
+        VStack(alignment: .leading, spacing: 2) {
+          Text(chain.name)
+            .fontWeight(.semibold)
+          Text(chain.stateDisplay)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
 
-      if !chain.isTerminal {
-        ProgressView()
-          .controlSize(.small)
-      } else {
-        Image(systemName: chain.isTerminal ? "checkmark.circle" : "play.circle")
-          .foregroundStyle(chain.isTerminal ? .green : .blue)
+        Spacer()
+
+        if !chain.isTerminal {
+          Text("Running")
+            .font(.caption)
+            .fontWeight(.medium)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(.blue.opacity(0.1)))
+            .foregroundStyle(.blue)
+        }
       }
+      .padding(4)
     }
-    .padding(.vertical, 4)
   }
 }
 
@@ -1049,11 +1734,16 @@ struct RepoActivityItemRow: View {
 
       Spacer()
 
+      Image(systemName: "chevron.right")
+        .font(.caption2)
+        .foregroundStyle(.tertiary)
+
       Text(item.relativeTime)
         .font(.caption)
         .foregroundStyle(.tertiary)
     }
-    .padding(.vertical, 2)
+    .padding(.horizontal, 12)
+    .padding(.vertical, 6)
   }
 
   private func colorForTint(_ name: String) -> Color {

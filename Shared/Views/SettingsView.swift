@@ -223,8 +223,8 @@ struct SettingsView: View {
       #endif
 
       SettingsPage {
-        SettingsSection("Feature Visibility") {
-          VStack(alignment: .leading, spacing: 8) {
+        SettingsSection("Experimental Features") {
+          VStack(alignment: .leading, spacing: 12) {
             HStack {
               Button("Enable all") {
                 showBrew = true
@@ -237,18 +237,18 @@ struct SettingsView: View {
               .controlSize(.small)
               Spacer()
             }
-            Toggle("Show Brew tool", isOn: $showBrew)
-            Toggle("Show PII Scrubber", isOn: $showPIIScrubber)
-            Toggle("Show Docling Import", isOn: $showDoclingImport)
-            Toggle("Show Translation Validation", isOn: $showTranslationValidation)
-            Toggle("Show VM Isolation", isOn: $showVMIsolation)
-            Text("Hidden tools can be enabled here during the beta.")
+
+            ForEach(LabFeature.all) { feature in
+              LabsToggleRow(feature: feature, isOn: bindingForFeature(feature))
+            }
+
+            Text("Enabled features appear in the toolbar beaker menu and Cmd+K palette.")
               .font(.caption)
               .foregroundStyle(.secondary)
           }
         }
       }
-      .tabItem { Label("Beta", systemImage: "flask") }
+      .tabItem { Label("Labs", systemImage: "flask") }
 
       // MARK: - Notifications Tab (Peon Ping)
       PeonPingSettingsTab()
@@ -371,6 +371,17 @@ struct SettingsView: View {
     }
   }
   #endif
+
+  private func bindingForFeature(_ feature: LabFeature) -> Binding<Bool> {
+    switch feature.id {
+    case "brew": return $showBrew
+    case "pii": return $showPIIScrubber
+    case "docling": return $showDoclingImport
+    case "translation": return $showTranslationValidation
+    case "vm": return $showVMIsolation
+    default: return .constant(false)
+    }
+  }
 }
 
 private struct SettingsPage<Content: View>: View {

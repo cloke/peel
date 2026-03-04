@@ -69,7 +69,7 @@ extension Model {
     
     @available(macOS 12, *)
     @MainActor
-    func load(includeRemote: Bool = false) async {
+    public func load(includeRemote: Bool = false) async {
       // TODO: Use a task group
       await loadBranches(branchType: .local)
       if includeRemote {
@@ -79,7 +79,7 @@ extension Model {
     }
     
     @MainActor
-    func refreshStatus() async {
+    public func refreshStatus() async {
       #if canImport(AppKit)
       if let status = try? await Commands.status(on: self) {
         self.status = status

@@ -136,16 +136,36 @@ final class RepositoryAggregator {
     )
 
     // normalized URL → [MCPServerService.RAGRepoInfo]
+    // When multiple RAG repos share the same repoIdentifier (e.g. sub-packages of a monorepo),
+    // aggregate their counts so the parent repo shows combined RAG data.
     var ragByURL: [String: MCPServerService.RAGRepoInfo] = [:]
     for info in ragRepos {
+      let norm: String
       if let ident = info.repoIdentifier, !ident.isEmpty {
-        let norm = RepoRegistry.shared.normalizeRemoteURL(ident)
-        ragByURL[norm] = info
+        norm = RepoRegistry.shared.normalizeRemoteURL(ident)
+      } else if let cachedURL = RepoRegistry.shared.getCachedRemoteURL(for: info.rootPath) {
+        norm = cachedURL
       } else {
-        // Fall back: see if RepoRegistry knows a URL for this path
-        if let cachedURL = RepoRegistry.shared.getCachedRemoteURL(for: info.rootPath) {
-          ragByURL[cachedURL] = info
-        }
+        continue
+      }
+
+      if let existing = ragByURL[norm] {
+        // Aggregate: sum counts, pick latest indexed date, prefer shorter rootPath (parent)
+        ragByURL[norm] = MCPServerService.RAGRepoInfo(
+          id: existing.id,
+          name: existing.name,
+          rootPath: existing.rootPath.count <= info.rootPath.count ? existing.rootPath : info.rootPath,
+          lastIndexedAt: [existing.lastIndexedAt, info.lastIndexedAt].compactMap { $0 }.max(),
+          fileCount: existing.fileCount + info.fileCount,
+          chunkCount: existing.chunkCount + info.chunkCount,
+          embeddingCount: existing.embeddingCount + info.embeddingCount,
+          repoIdentifier: existing.repoIdentifier,
+          parentRepoId: nil,
+          embeddingModel: existing.embeddingModel ?? info.embeddingModel,
+          embeddingDimensions: existing.embeddingDimensions ?? info.embeddingDimensions
+        )
+      } else {
+        ragByURL[norm] = info
       }
     }
 
@@ -195,6 +215,14 @@ final class RepositoryAggregator {
     }
 
     // ---- 3. Collect all unique normalized URLs ----
+    //  Include RepoRegistry (Git tab repos, ReviewLocally repos) as a data source
+    //  so repos registered via populateRepoRegistry() appear even without SwiftData records.
+
+    let registeredRepos = RepoRegistry.shared.registeredRepos
+    var registeredPathByURL: [String: String] = [:]
+    for (remoteURL, localPath) in registeredRepos {
+      registeredPathByURL[remoteURL] = localPath
+    }
 
     var allURLs = Set<String>()
     allURLs.formUnion(syncedByURL.keys)
@@ -203,6 +231,7 @@ final class RepositoryAggregator {
     allURLs.formUnion(ragByURL.keys)
     allURLs.formUnion(chainsByURL.keys)
     allURLs.formUnion(worktreesByURL.keys)
+    allURLs.formUnion(registeredPathByURL.keys)
 
     // ---- 4. Build UnifiedRepository for each URL ----
 
@@ -240,6 +269,7 @@ final class RepositoryAggregator {
       let localPath = synced?.path?.localPath
         ?? tracked?.localPath.nilIfEmpty
         ?? rag?.rootPath.nilIfEmpty
+        ?? registeredPathByURL[url]
 
       // Remote URL (original format)
       let originalRemoteURL = synced?.repo.remoteURL
@@ -357,7 +387,7 @@ final class RepositoryAggregator {
       uniquingKeysWith: { first, _ in first }
     )
 
-    logger.info("Rebuilt unified repos: \(result.count) entries from \(syncedRepos.count) synced, \(favorites.count) favorites, \(trackedRepos.count) tracked, \(ragRepos.count) RAG, \(chains.count) chains, \(worktrees.count) worktrees")
+    logger.info("Rebuilt unified repos: \(result.count) entries from \(syncedRepos.count) synced, \(favorites.count) favorites, \(trackedRepos.count) tracked, \(ragRepos.count) RAG, \(chains.count) chains, \(worktrees.count) worktrees, \(registeredRepos.count) registered")
   }
 
   // MARK: - Convenience

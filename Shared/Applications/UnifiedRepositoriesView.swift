@@ -204,6 +204,13 @@ struct RepoSidebarRow: View {
             color: .purple
           )
         }
+        if !repo.recentPRs.isEmpty {
+          BadgePill(
+            text: "\(repo.recentPRs.count)",
+            systemImage: "arrow.triangle.pull",
+            color: .green
+          )
+        }
         if let rag = repo.ragStatus, rag != .notIndexed {
           Image(systemName: rag.systemImage)
             .font(.caption2)

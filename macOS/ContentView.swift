@@ -32,6 +32,7 @@ struct ContentView: View {
   @State private var showingInvitePreview = false
   @State private var showChecklist = false
   @State private var showCommandPalette = false
+  @State private var activeLabFeature: LabFeature?
   
   var body: some View {
     Group {
@@ -76,6 +77,9 @@ struct ContentView: View {
     .sheet(isPresented: $showChecklist) {
       FeatureDiscoveryChecklistView()
     }
+    .sheet(item: $activeLabFeature) { feature in
+      LabFeatureSheetContent(feature: feature)
+    }
     .overlay {
       if showCommandPalette {
         ZStack {
@@ -102,9 +106,15 @@ struct ContentView: View {
           .help("Feature Discovery Checklist")
         }
       }
+      LabsToolbarItem(activeLabFeature: $activeLabFeature)
     }
     .onReceive(NotificationCenter.default.publisher(for: .openCommandPalette)) { _ in
       showCommandPalette.toggle()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .navigateToTool)) { notification in
+      if let tool = notification.object as? CurrentTool {
+        currentTool = tool
+      }
     }
     .task {
       // Populate RepoRegistry from all known local paths on launch

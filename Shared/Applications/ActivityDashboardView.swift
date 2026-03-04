@@ -18,6 +18,8 @@ struct ActivityDashboardView: View {
   @State private var filterMode: ActivityFilterMode = .all
   @State private var filterRepo: String? = nil  // nil = all repos
   @State private var selectedChain: AgentChain?
+  @State private var selectedActivityItem: ActivityItem?
+  @State private var showingTemplateBrowser = false
 
   private var swarm: SwarmCoordinator { SwarmCoordinator.shared }
 
@@ -26,6 +28,9 @@ struct ActivityDashboardView: View {
       VStack(alignment: .leading, spacing: 20) {
         // Running Now
         runningNowSection
+
+        // Quick Templates
+        quickTemplatesSection
 
         // Workers panel — always visible
         workersSection
@@ -45,7 +50,7 @@ struct ActivityDashboardView: View {
       ChainActivityToolbar()
       ToolbarItem(placement: .primaryAction) {
         Button {
-          // TODO: Open NewChainSheet
+          showingTemplateBrowser = true
         } label: {
           Label("Run Task", systemImage: "play.fill")
         }
@@ -69,6 +74,12 @@ struct ActivityDashboardView: View {
       }
       .frame(minWidth: 700, minHeight: 500)
     }
+    .sheet(isPresented: $showingTemplateBrowser) {
+      TemplateBrowserSheet()
+    }
+    .sheet(item: $selectedActivityItem) { item in
+      ActivityItemDetailSheet(item: item)
+    }
     #endif
   }
 
@@ -80,8 +91,10 @@ struct ActivityDashboardView: View {
     let pullsInProgress = aggregator.repositories.filter {
       $0.pullStatus == .pulling
     }
+    let activeWorktrees = mcpServer.agentManager.workspaceManager.workspaces
+      .filter { $0.status == .active || $0.status == .ready }
 
-    if !runningChains.isEmpty || !pullsInProgress.isEmpty {
+    if !runningChains.isEmpty || !pullsInProgress.isEmpty || !activeWorktrees.isEmpty {
       VStack(alignment: .leading, spacing: 12) {
         SectionHeader("Running Now")
 
@@ -91,8 +104,46 @@ struct ActivityDashboardView: View {
             .onTapGesture { selectedChain = chain }
         }
 
+        ForEach(activeWorktrees) { workspace in
+          RunningWorktreeCard(workspace: workspace)
+        }
+
         ForEach(pullsInProgress) { repo in
           RunningPullCard(repo: repo)
+        }
+      }
+    }
+  }
+
+  // MARK: - Quick Templates
+
+  private var quickTemplatesSection: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      HStack {
+        SectionHeader("Templates")
+        Spacer()
+        Button {
+          showingTemplateBrowser = true
+        } label: {
+          HStack(spacing: 4) {
+            Text("Browse All")
+            Image(systemName: "chevron.right")
+          }
+          .font(.caption)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Color.accentColor)
+      }
+
+      let coreTemplates = mcpServer.agentManager.allTemplates
+        .filter { $0.category == .core }
+        .prefix(4)
+
+      HStack(spacing: 10) {
+        ForEach(Array(coreTemplates)) { template in
+          QuickTemplateCard(template: template) {
+            showingTemplateBrowser = true
+          }
         }
       }
     }
@@ -235,7 +286,7 @@ struct ActivityDashboardView: View {
         LazyVStack(spacing: 1) {
           ForEach(items.prefix(100)) { item in
             DashboardActivityRow(item: item) {
-              navigateToChain(for: item)
+              navigateToItem(item)
             }
           }
         }
@@ -315,18 +366,20 @@ struct ActivityDashboardView: View {
     return items
   }
 
-  // MARK: - Chain Navigation
+  // MARK: - Item Navigation
 
-  private func navigateToChain(for item: ActivityItem) {
-    var chainId: UUID?
+  private func navigateToItem(_ item: ActivityItem) {
     switch item.kind {
-    case .chainStarted(let id): chainId = id
-    case .chainCompleted(let id, _): chainId = id
-    default: break
-    }
-    guard let chainId else { return }
-    if let chain = mcpServer.agentManager.chains.first(where: { $0.id == chainId }) {
-      selectedChain = chain
+    case .chainStarted(let id), .chainCompleted(let id, _):
+      // Chain items open the full ChainDetailView
+      if let chain = mcpServer.agentManager.chains.first(where: { $0.id == id }) {
+        selectedChain = chain
+      } else {
+        selectedActivityItem = item
+      }
+    default:
+      // All other items open the ActivityItemDetailSheet
+      selectedActivityItem = item
     }
   }
 }
@@ -467,13 +520,6 @@ struct DashboardActivityRow: View {
   let item: ActivityItem
   var onTap: (() -> Void)? = nil
 
-  private var isChainItem: Bool {
-    switch item.kind {
-    case .chainStarted, .chainCompleted: return true
-    default: return false
-    }
-  }
-
   var body: some View {
     HStack(spacing: 12) {
       Image(systemName: item.kind.systemImage)
@@ -504,11 +550,9 @@ struct DashboardActivityRow: View {
 
       Spacer()
 
-      if isChainItem {
-        Image(systemName: "chevron.right")
-          .font(.caption2)
-          .foregroundStyle(.tertiary)
-      }
+      Image(systemName: "chevron.right")
+        .font(.caption2)
+        .foregroundStyle(.tertiary)
 
       Text(item.relativeTime)
         .font(.caption)
@@ -518,9 +562,7 @@ struct DashboardActivityRow: View {
     .padding(.horizontal, 12)
     .padding(.vertical, 8)
     .contentShape(Rectangle())
-    .onTapGesture {
-      if isChainItem { onTap?() }
-    }
+    .onTapGesture { onTap?() }
   }
 
   private func colorForTint(_ name: String) -> Color {
@@ -533,6 +575,98 @@ struct DashboardActivityRow: View {
     case "teal": return .teal
     case "gray": return .gray
     default: return .secondary
+    }
+  }
+}
+
+// MARK: - Running Worktree Card
+
+struct RunningWorktreeCard: View {
+  let workspace: AgentWorkspace
+
+  var body: some View {
+    GroupBox {
+      HStack(spacing: 12) {
+        Image(systemName: "arrow.triangle.branch")
+          .font(.title3)
+          .foregroundStyle(.blue)
+          .frame(width: 28)
+
+        VStack(alignment: .leading, spacing: 4) {
+          Text(workspace.name)
+            .fontWeight(.semibold)
+
+          HStack(spacing: 8) {
+            Label(workspace.branch, systemImage: "arrow.triangle.branch")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
+
+            Text("·")
+              .foregroundStyle(.tertiary)
+
+            Text(workspace.status.displayName)
+              .font(.caption)
+              .foregroundStyle(workspace.status == .active ? .green : .secondary)
+          }
+
+          Text(workspace.path.lastPathComponent)
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+        }
+
+        Spacer()
+
+        if workspace.status == .active || workspace.status == .creating {
+          ProgressView()
+            .controlSize(.small)
+        }
+
+        Text(workspace.createdAt, style: .relative)
+          .font(.caption)
+          .foregroundStyle(.tertiary)
+      }
+      .padding(4)
+    }
+  }
+}
+
+// MARK: - Quick Template Card
+
+struct QuickTemplateCard: View {
+  let template: ChainTemplate
+  let onTap: () -> Void
+
+  var body: some View {
+    GroupBox {
+      VStack(alignment: .leading, spacing: 6) {
+        Image(systemName: iconForCategory)
+          .font(.title3)
+          .foregroundStyle(Color.accentColor)
+
+        Text(template.name)
+          .font(.caption)
+          .fontWeight(.medium)
+          .lineLimit(1)
+
+        Text("\(template.steps.count) step\(template.steps.count == 1 ? "" : "s")")
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+      }
+      .padding(4)
+      .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .contentShape(Rectangle())
+    .onTapGesture { onTap() }
+  }
+
+  private var iconForCategory: String {
+    switch template.category {
+    case .core: return "bolt.fill"
+    case .specialized: return "slider.horizontal.3"
+    case .yolo: return "shield.checkmark.fill"
     }
   }
 }

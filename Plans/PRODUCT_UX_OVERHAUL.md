@@ -21,6 +21,8 @@ audience:
 **Updated:** March 4, 2026  
 **Goal:** Transform Peel from a developer tool collection into a cohesive product that new users immediately understand.
 
+> **Quick Status (March 4, 2026):** Phases 0–5b complete. Phase 6 (repo detail modernization) partially done — Branches tab reworked with inline layout, worktree approval chain, and agent PR review. RAG/Activity/Skills tabs still need card-based modernization. Phase 7 (worktree approvals + PR review) complete and building. Several old features still unreachable — see "Feature Accessibility Audit" below.
+
 ---
 
 ## Executive Summary
@@ -466,7 +468,7 @@ TabView(selection: $selectedTab) {
 
 1. ✅ Build `UnifiedRepositoriesView` with sidebar + detail — `Shared/Applications/UnifiedRepositoriesView.swift`
 2. ✅ Build repository detail with sub-tabs (Branches, Activity, RAG, Skills) — `Shared/Applications/RepoDetailView.swift`
-3. ✅ Port `Git_RootView` branch/commit UI into Branches sub-tab — Embeds real `GitRootView` for cloned repos
+3. ✅ Port `Git_RootView` branch/commit UI into Branches sub-tab — Embeds real `GitRootView` (to be reworked in Phase 6A)
 4. ⬜ Port `Github_RootView` favorites/PRs into the sidebar as attributes
 5. ✅ RAG sub-tab: real Index/Search/Analyze/Enrich actions wired to MCPServerService
 6. ✅ RAG sub-tab: AI Analysis & Enrichment pipeline buttons (Analyze → Enrich)
@@ -579,45 +581,183 @@ Add a "System" or "Tools" section at the bottom of the Activity dashboard that s
 **Recommended approach:** **A + C combined** — Settings > Labs for enable/disable + Cmd+K actions for quick access. This keeps the primary UI clean while making everything findable.
 
 **Tasks:**
-1. ⬜ Add "Labs" tab to Settings window with feature toggles
-2. ⬜ Extend CommandPaletteView to support action results (not just RAG search)
-3. ⬜ Wire enabled lab features into appropriate surfaces (repo context menus, Activity sections)
-4. ⬜ Move MCP Dashboard into Settings > MCP Server tab
-5. ⬜ Move VM Isolation into Settings > VM Isolation tab
-6. ⬜ Add Local Chat as floating panel (Cmd+Shift+C)
+1. ✅ Add "Labs" tab to Settings window with feature toggles — `LabsToggleRow` rich descriptions
+2. ✅ Extend CommandPaletteView to support action results — `CommandAction` model with nav + lab actions
+3. ✅ Labs toolbar item (beaker menu) for quick access — `Shared/Views/LabsToolbarItem.swift`
+4. ⬜ Wire enabled lab features into appropriate surfaces (repo context menus, Activity sections)
+5. ⬜ Move MCP Dashboard into Settings > MCP Server tab
+6. ⬜ Move VM Isolation into Settings > VM Isolation tab
+7. ⬜ Add Local Chat as floating panel (Cmd+Shift+C)
+
+**Partially Complete:** March 4, 2026
+
+### Phase 5b: Activity Dashboard Polish ✅ COMPLETE
+**Goal:** Make the Activity dashboard fully functional with templates, worktrees, and detail views.
+
+1. ✅ Template browser sheet — `Shared/Views/TemplateBrowserSheet.swift`
+   - Category picker (core/specialized/yolo), search, template cards with step pills
+   - Run panel with prompt field, kicks off chains via `handleChainRun`
+2. ✅ Activity item detail sheet — `Shared/Views/ActivityItemDetailSheet.swift`
+   - Universal detail for any ActivityItem kind (chain, pull, RAG, worktree, PR, swarm, info)
+   - Per-kind content with relevant data and actions
+3. ✅ Running worktrees visible in Running Now section — `RunningWorktreeCard`
+4. ✅ Quick templates section on dashboard — `QuickTemplateCard`
+5. ✅ "Run Task" toolbar button wired to template browser
+6. ✅ All activity rows tappable with universal navigation (not just chains)
+
+**Completed:** March 4, 2026
+
+### Phase 6: Repo Detail Tab Rework 🔄 IN PROGRESS
+**Goal:** Modernize the repo detail sub-tabs to match the new dashboard design language. Currently these embed old views or use outdated layouts that create a jarring contrast.
+
+**The Problem:**
+When you select a repo, the detail pane should feel like a natural extension of the polished dashboard. Instead:
+- **Branches tab** embeds the entire old `GitRootView` — a `NavigationSplitView` with its own sidebar, repo selector dropdown (redundant!), and old pre-overhaul design. It's navigation-inside-navigation.
+- **RAG tab** uses dense `GroupBox` containers that don't match the card-based dashboard style
+- **PRs** are scattered as minimal rows in the not-cloned fallback view — there's no proper PR sub-tab
+- **Activity tab** is a flat list with no detail navigation or grouping
+- **Skills tab** works but uses the same dense GroupBox pattern
+
+#### 6A: Branches & PRs Tab Rework ✅ COMPLETE
+**Current:** Inline card-based layout, no nested navigation.
+**Completed:** March 4, 2026
+
+**What was built:**
+1. ✅ Removed embedded `GitRootView` — BranchesTabView now renders inline content directly
+2. ✅ Local changes summary card (uncommitted changes count + status)  
+3. ✅ Branch rows with tracking status, ahead/behind, current indicator, remote branches toggle
+4. ✅ PR cards in dedicated `prsSection` with status badges, labels, CI checks
+5. ✅ Worktree rows with branch, path, quick actions (Open in VS Code, Show in Finder)
+6. ✅ Chain rows with status, steps, timing
+7. ✅ For not-cloned repos: PR list + "Clone" CTA + tracking info
+8. ✅ Quick actions: Open in Terminal, Open in VS Code, Open in Finder
+
+**Files:** [RepoDetailView.swift](Shared/Applications/RepoDetailView.swift) (`BranchesTabView` struct, ~400 lines)
+
+### Phase 7: Worktree Approval Chain + Agent PR Review ✅ COMPLETE
+**Goal:** Surface worktree execution approval/reject/merge inline in the Branches tab, and add agent-powered PR review with structured assessment + GitHub actions.
+
+**Completed:** March 4, 2026
+
+**What was built:**
+
+#### 7A: Worktree Approval Chain (inline in Branches tab)
+- ✅ `WorktreeApprovalsSection` — appears when runs have pending approvals/merges
+- ✅ `WorktreeRunApprovalCard` — progress bar, execution count, bulk Approve All / Merge All
+- ✅ `InlineExecutionCard` — expandable per-execution card with:
+  - Status icon, diff stats (files/insertions/deletions) inline in header
+  - Expanded: description, chain step results (role/model/duration/cost), diff summary, RAG snippets
+  - Action buttons: Approve / Reviewed / Reject (with reason) / Merge / Resolve Conflicts / Open Folder
+- ✅ Active (non-review) runs section in Branches tab with progress bars
+
+**Files:** [WorktreeApprovalViews.swift](Shared/Applications/WorktreeApprovalViews.swift) (~420 lines)
+
+#### 7B: Agent PR Review
+- ✅ `PRRowWithReview` — replaces old `RepoPRRow` with sparkles "Review" button on open PRs
+- ✅ `PRReviewSheet` — template picker (Standard PR Review / Deep PR Review)
+  - Dispatches chain via `handleChainRun`, polls for results (up to 120s)
+  - Structured result display: verdict banner, risk level, summary, issues list, suggestions, CI status
+  - Action buttons: Approve on GitHub, Post Review, Request Changes, Fix with Agent
+  - Raw output disclosure, error state with retry
+- ✅ `PRReviewState` — @Observable state machine managing loading/polling/result lifecycle
+
+**Files:** [PRReviewViews.swift](Shared/Applications/PRReviewViews.swift) (~530 lines)
+
+#### 7C: BranchesTabView Integration
+- ✅ `MCPServerService` environment wired into BranchesTabView
+- ✅ Computed `repoRuns`, `pendingApprovalRuns`, `activeRuns` filtered by repo path
+- ✅ Approval section + active runs section inserted between local changes and branches
+- ✅ PRs section uses `PRRowWithReview` for all repos (cloned + remote-only)
+
+#### 6B: RAG Tab Modernization ⬜ NEXT
+**Current:** Dense `GroupBox` containers (`RAGTabView`) — functional but visually inconsistent with dashboard
+**New:** Card-based layout matching dashboard style.
+
+Layout:
+```
+┌─────────────────────────────────────────────────────┐
+│ ┌── INDEX STATUS ──────────────────────────────┐    │
+│ │ ✅ Indexed · 4,200 chunks · nomic-embed      │    │
+│ │ Last indexed: 2 hours ago                    │    │
+│ │ [Re-Index] [Force Re-Index]                  │    │
+│ └──────────────────────────────────────────────┘    │
+│                                                     │
+│ 🔍 Search this repo...          [Vector ▾] [→]     │
+│ ┌── Results ───────────────────────────────────┐    │
+│ │ 92% src/auth/handler.swift L42-L67           │    │
+│ │ 85% src/models/user.swift L12-L30            │    │
+│ └──────────────────────────────────────────────┘    │
+│                                                     │
+│ ── PIPELINE ──────────────────────────────────────  │
+│ [Index ✅] ──→ [Analyze 67%] ──→ [Enrich ⬜]       │
+│                                                     │
+│ ── LESSONS (12) ──────────────────────────────────  │
+│ 🟢 95% "Use async/await over Combine"              │
+│ 🟢 87% "Prefer @Observable over ObservableObject"  │
+│ 🟡 45% "Consider extracting to extension"          │
+└─────────────────────────────────────────────────────┘
+```
+
+Tasks:
+1. ⬜ Hero status card (indexed state, chunks, model, freshness)
+2. ⬜ Prominent inline search bar (not buried in GroupBox)
+3. ⬜ Visual pipeline indicator: Index → Analyze → Enrich with step states
+4. ⬜ Lesson cards with confidence indicators
+5. ⬜ Match card styling from `ActivityDashboardView`
+
+#### 6C: Activity Tab Enhancement ⬜
+**Current:** Flat list of `RepoActivityItemRow`
+**New:** Grouped timeline with detail navigation.
+
+Tasks:
+1. ⬜ Group by day (Today, Yesterday, This Week, Older)
+2. ⬜ Tappable items open `ActivityItemDetailSheet`
+3. ⬜ Filter by activity type
+4. ⬜ Visual timeline connector between items
+
+#### 6D: Skills Tab Polish ⬜
+**Current:** `SkillsTabView` with GroupBox rows
+**New:** Card-based skill cards with better visual hierarchy.
+
+Tasks:
+1. ⬜ Skill cards matching dashboard style
+2. ⬜ Add/Edit skill capability (not just view)
+3. ⬜ Visual priority indicator (heat bar or colored badge)
 
 ---
 
 ## What Happens to Each Current Feature
 
-| Current Feature | New Home | Notes |
-|----------------|----------|-------|
-| Git branch/commit view | Repositories > Repo > Branches | Core of the repo detail |
-| GitHub favorites | Repositories sidebar (★ indicator) | Attribute, not separate section |
-| GitHub PRs | Repositories > Repo > Branches (linked to branches) | PRs are branch metadata |
-| Recent PRs | Activity (recent section) | Activity is time-based |
-| Tracked repos (auto-pull) | Repositories > Repo settings | Per-repo configuration |
-| Agent chains | Activity (running/recent) | Chains are work happening |
-| Chain templates | "Run New Task" dialog | Templates = ways to start work |
-| Chain history | Activity (recent, filterable) | Past work |
-| Parallel worktrees | Activity (running work) | Worktree = where agent works |
-| Worktree management | Repositories > Repo > Branches | Worktrees are branches |
-| Local RAG | Repositories > Repo > RAG | Per-repo feature |
-| RAG search | Cmd+K global overlay | Cross-repo search |
-| Dependency graph | Repositories > Repo > RAG > Analysis | Per-repo analysis |
-| Skills | Repositories > Repo > Skills | Per-repo configuration |
-| Local chat | Floating panel (Cmd+Shift+C) | Conversation, not a "tab" |
-| MCP Activity | Settings > MCP Server | Infrastructure monitoring |
-| Copilot/Claude status | Settings > Connections | Infrastructure setup |
-| VM Isolation | Settings > VM Isolation | Advanced infrastructure |
-| PII Scrubber | Settings > Feature Flags | Niche utility |
-| Docling Import | Settings > Feature Flags | Niche utility |
-| Translation Validation | Settings > Feature Flags | Niche utility |
-| Swarm workers | Activity > Workers panel | Who's doing the work |
-| Swarm config | Settings > Swarm | Infrastructure setup |
-| Brew | Settings > Feature Flags (if enabled, own tab) | Separate concern |
-| Workspaces | Eliminated | Concept absorbed into repos |
-| Feature Discovery | Updated for new layout | Onboarding |
+| Current Feature | New Home | Status | Notes |
+|----------------|----------|--------|-------|
+| Git branch/commit view | Repositories > Repo > Branches | ✅ Done | Inline card-based, no nested nav |
+| GitHub favorites | Repositories sidebar (★ indicator) | ✅ Done | Filter chip, star badge in sidebar |
+| GitHub PRs | Repositories > Repo > Branches (PRs section) | ✅ Done | Enhanced with agent review button |
+| PR review by agent | Repositories > Repo > Branches > PR "Review" | ✅ Done | NEW: Chain-powered assessment + GitHub actions |
+| Recent PRs | Activity (recent section) | ✅ Done | Mixed into activity items |
+| Tracked repos (auto-pull) | Repositories > Repo settings | ⬜ Partial | Visible in sidebar but no settings sheet |
+| Agent chains | Activity (running/recent) | ✅ Done | Cards with drill-down to ChainDetailView |
+| Chain templates | "Run New Task" dialog | ✅ Done | TemplateBrowserSheet + quick templates |
+| Chain history | Activity (recent, filterable) | ✅ Done | Part of recent activity section |
+| Parallel worktrees | Repo > Branches (approval section) + Activity | ✅ Done | Inline approval chain + active runs |
+| Worktree management | ~~Repositories > Repo > Branches~~ | ⚠️ Partial | Per-repo worktrees shown, global list missing |
+| Local RAG | Repositories > Repo > RAG | ✅ Done | Functional but needs visual modernization (6B) |
+| RAG search | Cmd+K global overlay | ✅ Done | Cross-repo vector+text search |
+| Dependency graph | ~~Repositories > Repo > RAG > Analysis~~ | ❌ Hidden | No path in new UX |
+| Skills | Repositories > Repo > Skills | ✅ Done | View + show inactive toggle |
+| Local chat | ~~Floating panel (Cmd+Shift+C)~~ | ❌ Hidden | Never built |
+| MCP Activity | ~~Settings > MCP Server~~ | ❌ Hidden | Only enable/port/tools in Settings |
+| Copilot/Claude status | ~~Settings > Connections~~ | ❌ Hidden | No connections tab in Settings |
+| VM Isolation | Labs toolbar / Cmd+K | ✅ Done | Feature-flagged, opens as sheet |
+| PII Scrubber | Labs toolbar / Cmd+K | ✅ Done | Feature-flagged, opens as sheet |
+| Docling Import | Labs toolbar / Cmd+K | ✅ Done | Feature-flagged, opens as sheet |
+| Translation Validation | Labs toolbar / Cmd+K | ✅ Done | Feature-flagged, opens as sheet |
+| Swarm workers | Activity > Workers panel | ✅ Done | Always-visible section |
+| Swarm config | ~~Settings > Swarm~~ | ⬜ Not done | No Swarm settings tab yet |
+| Brew | Labs toolbar (if enabled, own tab) | ✅ Done | Feature-flagged |
+| Workspaces tab | Eliminated | ✅ Done | Concept absorbed into repos |
+| Feature Discovery | ~~Updated for new layout~~ | ⬜ Stale | Still references old 5-tab layout |
+| Session Summary | ~~Agents header~~ | ❌ Hidden | No trigger in new UX |
 
 ---
 
@@ -670,13 +810,319 @@ A new user who:
 
 ---
 
-## Open Questions
+## Feature Accessibility Audit (March 4, 2026)
 
-1. **Local Chat:** Floating panel vs. integrated into repo detail? Floating feels more flexible (chat about repo X while looking at repo Y).
-2. **Brew:** Keep as hidden feature flag tab, or move entirely to Settings? It's orthogonal to the repo/agent story.
-3. **Template Gallery:** Should "Run New Task" pre-filter templates by the selected repo's framework? (Yes, probably.)
-4. **iOS parity:** How much of the Activity view makes sense on iOS where agents can't run locally? (Monitor-only is still valuable.)
-5. **Experimental features surface:** PII scrubber, VMs, Docling, translations, dependency graph, local chat are all hidden after the 2-tab overhaul. Need a "Labs" or overflow mechanism — see Phase 5 proposal.
+This tracks where every old feature lives in the new UX and whether it's actually reachable.
+
+### ✅ Fully Accessible Features
+| Feature | Old Location | New Location | How to Reach |
+|---------|-------------|-------------|--------------|
+| Git branches / commits | Repositories > Local > GitRootView | Repositories > Repo > Branches tab | Select repo → Branches (default tab) |
+| GitHub PRs | Repositories > Remote > Recent PRs | Repositories > Repo > Branches tab (PRs section) | Select repo → scroll to PRs |
+| PR review by agent | N/A (new) | Repositories > Repo > Branches > PR row → "Review" button | Click sparkles icon on any open PR |
+| Worktree approval chain | Agents > Parallel Worktrees | Repositories > Repo > Branches tab (top section) | Auto-appears when runs have pending approvals |
+| RAG index / search / analyze | Agents > Local RAG | Repositories > Repo > RAG tab | Select repo → RAG tab |
+| RAG overview (cross-repo) | Agents > Local RAG | Repositories > (no repo selected) → RAG Overview | Default detail when no repo selected |
+| Skills management | N/A (was hidden) | Repositories > Repo > Skills tab | Select repo → Skills tab |
+| Per-repo activity | N/A | Repositories > Repo > Activity tab | Select repo → Activity tab |
+| Running chains | Agents sidebar | Activity > Running Now | Switch to Activity tab |
+| Chain history | Agents > Chain History | Activity > Recent | Switch to Activity tab, scroll down |
+| Worktree operations | Agents > Parallel Worktrees | Activity > Running Now + Repo > Branches | Both surfaces show active worktrees |
+| Swarm workers | Swarm tab | Activity > Swarm section | Always visible in Activity |
+| Run new task / templates | Agents sidebar | Activity > Templates section + "Run Task" toolbar | Click "Run Task" or browse templates |
+| Chain detail view | Agents > Chain detail | Activity > tap chain card → sheet | Tap any chain in Activity |
+| Brew | Brew tab | Labs toolbar → Homebrew | Enable in Settings, access via beaker menu |
+| PII Scrubber | Agents sidebar (feature-flagged) | Labs toolbar / Cmd+K | Enable in Settings, access via beaker or Cmd+K |
+| Docling Import | Agents sidebar (feature-flagged) | Labs toolbar / Cmd+K | Enable in Settings, access via beaker or Cmd+K |
+| Translation Validation | Agents sidebar (feature-flagged) | Labs toolbar / Cmd+K | Enable in Settings, access via beaker or Cmd+K |
+| VM Isolation | Agents sidebar (feature-flagged) | Labs toolbar / Cmd+K | Enable in Settings, access via beaker or Cmd+K |
+| Global RAG search | Buried in Agents sidebar | Cmd+K overlay | Keyboard shortcut from anywhere |
+| Keyboard shortcuts | N/A | Cmd+1 (Repos), Cmd+2 (Activity), Cmd+K (Search) | Always available |
+| Repo favorites | GitHub tab | Sidebar ★ indicators + "Favorites" filter | Filter chips in repo sidebar |
+| Tracked repos (auto-pull) | Repositories > Remote > Tracked | Sidebar "Tracked" filter | Filter chip, per-repo badge |
+| Add repo (clone / track) | Multiple places | Repositories > "+" button → Add sheet | Unified flow: Open Local / Track Remote |
+
+### ⚠️ Reduced / Degraded Features
+| Feature | Old Capability | Current State | Gap |
+|---------|---------------|---------------|-----|
+| **MCP Dashboard** | Full dashboard (active requests, tool list, connection log) | MCP settings tab has enable/port/tools | Lost: real-time request activity view, connection log |
+| **Chain History** | Dedicated list view with filtering | Activity "Recent" section shows chains mixed with other items | Less focused; no chain-specific filtering yet |
+| **Parallel Worktrees Dashboard** | Full dashboard with filtering, bulk ops, detailed execution view | Inline in Branches tab + Activity Running Now | Lost: global cross-repo worktree dashboard, filtering by worker/status |
+| **Dependency Graph** | Full D3-powered visualization | Not surfaced anywhere | Completely hidden — was niche but useful for analysis |
+| **Local Chat** | Sidebar item → chat view | Not surfaced anywhere | Completely hidden — no floating panel built yet |
+| **Worktree Management** | Dedicated worktree list, create/delete | Branches tab shows repo worktrees, Activity shows running | Lost: global worktree list across all repos, cleanup tools |
+
+### ❌ Features With No Path
+| Feature | Old Location | Issue | Priority |
+|---------|-------------|-------|----------|
+| **MCP Activity Dashboard** | Agents > MCP Dashboard | No way to see live MCP request traffic | Medium — useful for debugging |
+| **Dependency Graph** | Agents > Dependency Graph | D3 visualization completely unreachable | Low — niche feature |
+| **Local Chat** | Agents > Local Chat | Floating panel never built | Medium — planned as Cmd+Shift+C |
+| **CLI Setup / Connections** | Agents > Connections | Copilot/Claude status not visible in new UX | Low — one-time setup |
+| **Template Gallery** (full) | Agents > Template Gallery | TemplateBrowserSheet exists but full gallery with categories not easily browsable | Low — templates in Activity are sufficient |
+| **Session Summary** | Agents header | No way to trigger in new UX | Low — rarely used |
+| **Global Worktree List** | Agents > Worktrees | No cross-repo worktree management view | Medium — useful for cleanup |
+
+---
+
+## Next Steps (Session Handoff — March 4, 2026)
+
+### Immediate Priority: Don't Lose Features
+
+The new UX is significantly cleaner but some functional features are harder to reach or completely hidden. The priority order:
+
+#### Priority 1: Surface Hidden Functional Features
+These features work but have no navigation path in the 2-tab layout.
+
+1. **MCP Dashboard → Settings or Activity**
+   - Option A: Add MCP status section to Activity (request count, connection status)
+   - Option B: Full MCP Dashboard as Settings tab (like it was before but in Settings window)
+   - Lean toward: **Both** — summary in Activity, full in Settings
+
+2. **Local Chat → Floating Panel**
+   - Build as Cmd+Shift+C floating panel (already planned)
+   - Can scope to selected repo or be global
+   - Alternative: Add as 5th repo detail tab ("Chat") scoped to that repo
+
+3. **Connections (Copilot/Claude) → Settings**
+   - Add "Connections" tab to Settings with Copilot/Claude status + setup
+   - Or: status indicators in Activity tab header (green/red dots)
+
+4. **Global Worktree Management**
+   - Option A: Add "Worktrees" filter/section to Activity tab
+   - Option B: Surface in Cmd+K as "Manage Worktrees" action
+   - Lean toward: **Activity > filter by worktrees** since worktrees are activity
+
+#### Priority 2: Visual Consistency (Phase 6B-6D)
+The remaining repo detail tabs still use old GroupBox layouts that feel jarring next to the polished Branches tab.
+
+5. **RAG Tab Modernization** (6B)
+   - Hero status card, prominent search bar, visual pipeline (Index → Analyze → Enrich)
+   - Lesson cards with confidence indicators
+   - Match card styling from ActivityDashboardView
+
+6. **Activity Tab Enhancement** (6C)
+   - Group by day (Today, Yesterday, This Week)
+   - Tappable items → ActivityItemDetailSheet
+   - Filter by type
+   
+7. **Skills Tab Polish** (6D)
+   - Card-based skill display
+   - Add/edit capability (currently view-only)
+
+#### Priority 3: Polish & Completeness
+
+8. **Settings Consolidation**
+   - Build proper Settings window with tabs: General, Connections, MCP, RAG, Swarm, VM, Labs
+   - Currently SettingsView only has MCP tab
+   - Move remaining Agents sidebar items here
+
+9. **Onboarding Update**
+   - `FeatureDiscoveryChecklistView` still references old 5-tab layout
+   - Update for 2-tab layout + explain Labs toolbar + Cmd+K
+
+10. **Port GitHub Favorites/PRs into sidebar** (Phase 1 item 4, Phase 4 item 9)
+    - Show star count, open PR count, last activity as sidebar attributes
+    - Add "Track Remote" config into repo settings sheet
+
+11. **Dependency Graph**
+    - Either add to RAG tab as "Analysis > Dependencies" section
+    - Or add as Labs feature (since it's niche)
+    - Or surface via Cmd+K action
+
+### Implementation Notes for Next Session
+
+**Files to know:**
+- [macOS/ContentView.swift](macOS/ContentView.swift) — Top-level 2-tab routing
+- [Shared/Applications/UnifiedRepositoriesView.swift](Shared/Applications/UnifiedRepositoriesView.swift) — Repo sidebar + detail routing
+- [Shared/Applications/RepoDetailView.swift](Shared/Applications/RepoDetailView.swift) — 4 sub-tabs (Branches, Activity, RAG, Skills)
+- [Shared/Applications/ActivityDashboardView.swift](Shared/Applications/ActivityDashboardView.swift) — Activity dashboard
+- [Shared/Applications/WorktreeApprovalViews.swift](Shared/Applications/WorktreeApprovalViews.swift) — NEW: Worktree approval chain views
+- [Shared/Applications/PRReviewViews.swift](Shared/Applications/PRReviewViews.swift) — NEW: Agent PR review views
+- [Shared/Views/LabsToolbarItem.swift](Shared/Views/LabsToolbarItem.swift) — Labs beaker menu
+- [Shared/Views/CommandPaletteView.swift](Shared/Views/CommandPaletteView.swift) — Cmd+K overlay
+- [Shared/Views/SettingsView.swift](Shared/Views/SettingsView.swift) — Settings (currently MCP only)
+- [Shared/Applications/Agents_RootView.swift](Shared/Applications/Agents_RootView.swift) — OLD: Reference for features that need migration
+
+**Build verified:** ✅ All current code compiles (March 4, 2026)
+**Xcode project:** Uses `PBXFileSystemSynchronizedRootGroup` for `Shared/` — new files auto-discovered, no manual project file edits needed
+
+**Suggested session approach:**
+1. Start with Priority 1 items — surface hidden features so nothing is lost
+2. Then tackle 6B (RAG tab) as the most visually jarring remaining tab
+3. Settings consolidation can happen in parallel since it's a separate window
+
+---
+
+## Continuation Plan: Multi-Agent Execution + Enterprise PR Review (March 4, 2026)
+
+The UX foundation is now good enough to start the next product layer: **enterprise-scale execution and review orchestration**.
+
+### Phase 8: Multi-Agent Job Orchestration at Scale ⬜ NEXT
+**Goal:** Send one Peel job and have it fan out to many agents/workers safely, with predictable throughput and explicit human approval gates.
+
+#### 8A: Unified Job Spec + Routing
+Define a normalized `PeelJob` envelope that can be dispatched to local parallel runners, LAN swarm workers, and WAN workers with the same lifecycle states.
+
+Required fields:
+- `jobId`, `repoIdentifier`, `repoPath` (when local), `taskType`, `templateId`
+- `priority`, `deadline`, `maxConcurrency`, `requiredCapabilities`
+- `reviewPolicy` (auto-merge disabled/enabled, human gate required, reviewer set)
+
+Reuse/align:
+- [Plans/DISTRIBUTED_TASK_TYPES_SPEC.md](Plans/DISTRIBUTED_TASK_TYPES_SPEC.md)
+- [Shared/Distributed/BranchQueue.swift](Shared/Distributed/BranchQueue.swift)
+- [Shared/Distributed/SwarmWorktreeManager.swift](Shared/Distributed/SwarmWorktreeManager.swift)
+
+#### 8B: Worker Leasing + Backpressure
+Add leasing semantics so tasks cannot be double-consumed and stale workers are reclaimed automatically.
+
+Behavior:
+- Lease timeout + heartbeat updates
+- Requeue on timeout with retry budget
+- Per-repo and global concurrency caps
+- Worker capability matching (`swift`, `node`, `ios-sim`, `large-context`)
+
+#### 8C: Execution Modes (Single, Batch, Map-Reduce)
+Support three job modes from the same UI/API:
+1. **Single** — one job, one execution
+2. **Batch** — one prompt, N repos
+3. **Map-Reduce** — fan-out edits + fan-in synthesis/review step
+
+Surface in UI:
+- Activity shows parent job and child executions
+- Branches tab shows execution lineage and gate state
+
+#### 8D: Approval and Merge Gates
+Promote current inline approval chain into policy-driven gates:
+- Auto-approve only when policy + checks pass
+- Human review required for high-risk changes
+- Merge blocked when conflict/failed-check labels exist
+
+Acceptance criteria:
+- Dispatch one job to `N` workers with no branch collisions
+- Restart Peel during execution and recover queue/worktrees
+- Show deterministic status transitions from queued → running → review → merged/closed
+
+### Phase 9: Enterprise PR Review Hub ⬜ NEXT
+**Goal:** A single place to see all enterprise PRs, assign agent reviewers, and decide approve/request changes/fix.
+
+#### 9A: Enterprise PR Ingestion
+Create an enterprise PR index that aggregates open PRs across orgs/repos into one list with paging + freshness timestamps.
+
+Core columns:
+- Repo, PR, author, age, size, CI status, risk, required reviewers
+- Labels: `peel:needs-review`, `peel:needs-help`, `peel:approved`, `peel:conflict`
+
+#### 9B: Agent Assignment Workflow
+Allow per-PR or bulk assignment of review agents/templates:
+- Assign one or many agents per PR
+- Pick review depth: Standard / Deep / Security / Performance
+- Queue limits to prevent review storms
+
+#### 9C: Decision Console
+For each PR, show:
+- Agent review summaries + disagreements
+- Final decision controls: Approve, Comment, Request Changes, Fix with Agent
+- Explicit human sign-off marker before merge when policy requires
+
+#### 9D: Auditability & Governance
+Record every decision path:
+- Who assigned which agent
+- Which model/template produced each recommendation
+- What action was taken in GitHub and when
+
+Acceptance criteria:
+- Can view open PRs across configured enterprise scope in one screen
+- Can assign agent review for selected PRs and monitor progress
+- Can complete approve/fix/re-request cycle without leaving Peel
+
+---
+
+## Code Optimization Highlights (Targeted)
+
+These are high-impact optimizations directly tied to the scale/review goals above.
+
+### 1) Make review completion event-driven (remove poll loop)
+**File:** [Shared/Applications/PRReviewViews.swift](Shared/Applications/PRReviewViews.swift)
+
+Current:
+- `pollForResult` loops up to 120 times with 1s sleeps and repeatedly scans run collections.
+
+Optimize:
+- Add a run-status async stream/callback from `MCPServerService` and update `PRReviewState` on events.
+- Keep polling only as fallback timeout path.
+
+Impact:
+- Lower CPU/wakeups, faster UI updates, fewer race conditions when runs transition.
+
+### 2) Replace unstructured text parsing with structured review payloads
+**File:** [Shared/Applications/PRReviewViews.swift](Shared/Applications/PRReviewViews.swift)
+
+Current:
+- `parseReviewOutput` infers verdict/risk/issues from free-form text.
+
+Optimize:
+- Require chain templates to return strict JSON schema for review results.
+- Decode with `Codable`; fallback to raw-text parser only for legacy templates.
+
+Impact:
+- Higher reliability for approve/request-changes automation; fewer false parses.
+
+### 3) Move blocking git/process work off main-actor queues
+**Files:** [Shared/Distributed/PRQueue.swift](Shared/Distributed/PRQueue.swift), [Shared/Distributed/BranchQueue.swift](Shared/Distributed/BranchQueue.swift)
+
+Current:
+- `PRQueue` is `@MainActor` and uses blocking `Process.waitUntilExit()` for `git push`.
+- Queue internals may serialize UI and network/process work on the same actor.
+
+Optimize:
+- Convert queue execution to dedicated actor/service for process + network operations.
+- Keep only UI-observable state updates on `@MainActor`.
+
+Impact:
+- Better UI responsiveness and improved throughput under high PR volume.
+
+### 4) Improve queue data structure and retry strategy
+**File:** [Shared/Distributed/PRQueue.swift](Shared/Distributed/PRQueue.swift)
+
+Current:
+- `pendingOperations.removeFirst()` is O(n).
+- No explicit retry/backoff policy for transient GitHub/git failures.
+
+Optimize:
+- Use deque/ring-buffer semantics for O(1) dequeue.
+- Add bounded retries with exponential backoff + jitter for transient failures.
+
+Impact:
+- More stable queue performance at enterprise scale; fewer manual retries.
+
+### 5) Correct upstream commit detection and reduce noisy logging
+**File:** [Shared/Distributed/SwarmWorktreeManager.swift](Shared/Distributed/SwarmWorktreeManager.swift)
+
+Current:
+- Unpushed commit check uses `origin/main..branchName`, which is wrong if base branch differs.
+- Very verbose `info` logs in hot paths (active key dumps each call).
+
+Optimize:
+- Compare against branch upstream (`@{upstream}`) when available, fallback to configured base branch.
+- Demote high-volume logs to debug and keep structured summary logs only.
+
+Impact:
+- Fewer false positives/negatives on push decisions; cleaner logs during multi-agent runs.
+
+### 6) Add persistence for PR queue operation state
+**File:** [Shared/Distributed/PRQueue.swift](Shared/Distributed/PRQueue.swift)
+
+Current:
+- `pendingOperations` and `createdPRs` are in-memory only.
+
+Optimize:
+- Persist queued operations and PR metadata in SwiftData similar to worktree/branch recovery.
+- Resume gracefully after app restart.
+
+Impact:
+- Required for reliable long-running enterprise review workflows.
 
 ---
 

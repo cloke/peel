@@ -41,7 +41,7 @@ extension Commands {
         _ = durationMs
         return Model.Branch(
           name: $0.replacingOccurrences(of: "*", with: "").trimmingCharacters(in: .whitespacesAndNewlines),
-          isActive: false
+          isActive: $0.contains("*")
         )
       }
     }
