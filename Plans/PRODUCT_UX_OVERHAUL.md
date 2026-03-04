@@ -18,7 +18,7 @@ audience:
 
 **Status:** Active  
 **Created:** March 4, 2026  
-**Updated:** March 5, 2026  
+**Updated:** March 4, 2026  
 **Goal:** Transform Peel from a developer tool collection into a cohesive product that new users immediately understand.
 
 ---
@@ -466,29 +466,29 @@ TabView(selection: $selectedTab) {
 
 1. ✅ Build `UnifiedRepositoriesView` with sidebar + detail — `Shared/Applications/UnifiedRepositoriesView.swift`
 2. ✅ Build repository detail with sub-tabs (Branches, Activity, RAG, Skills) — `Shared/Applications/RepoDetailView.swift`
-3. ⬜ Port `Git_RootView` branch/commit UI into Branches sub-tab (placeholder in place)
+3. ✅ Port `Git_RootView` branch/commit UI into Branches sub-tab — Embeds real `GitRootView` for cloned repos
 4. ⬜ Port `Github_RootView` favorites/PRs into the sidebar as attributes
 5. ✅ RAG sub-tab: real Index/Search/Analyze/Enrich actions wired to MCPServerService
 6. ✅ RAG sub-tab: AI Analysis & Enrichment pipeline buttons (Analyze → Enrich)
 7. ✅ RAG sub-tab: Lessons display from MCPServerService
 8. ⬜ Port `TrackedReposView` auto-pull config into repository settings sheet
-9. ⬜ Wire "Add Repository" unified flow
+9. ✅ Wire "Add Repository" unified flow — Open Local (NSOpenPanel) + Track Remote (URL input)
 10. ✅ Skills sub-tab wired to DataService with expandable rows, Show Inactive toggle
 11. ✅ Default detail pane shows cross-repo RAG overview — `Shared/Applications/RAGOverviewDetailView.swift`
     - Expandable repo cards with analysis progress, skills, lessons
     - Analyze/Enrich action buttons per repo
     - Global RAG search
 
-**Completed:** March 5, 2026
+**Completed:** March 4, 2026
 
 ### Phase 2: Activity View ✅ COMPLETE
 **Goal:** Replace the Agents tab's chain/worktree views with a unified Activity view.
 
 1. ✅ Build `ActivityDashboardView` with running/recent sections — `Shared/Applications/ActivityDashboardView.swift`
 2. ✅ Build workers panel (Swarm section always visible with start button)
-3. ⬜ Port `ChainDetailView` for drill-down
+3. ✅ Chain drill-down — Tappable chain cards open `ChainDetailView` sheet (macOS)
 4. ⬜ Port `ParallelWorktreeDashboardView` into activity items
-5. ⬜ Add filtering by repo/status/worker
+5. ✅ Filtering by repo — Repo filter menu in toolbar
 6. ✅ "Run New Task" button visible
 7. ✅ RAG Indexing progress section
 
@@ -505,30 +505,86 @@ TabView(selection: $selectedTab) {
    - Template Gallery → "Run New Task" dialog
    - Local Chat → Floating panel accessible from anywhere (Cmd+Shift+C)
    - CLI Setup → Settings > Connections
-4. ⬜ Update `CurrentTool` enum (keep old cases for migration)
-5. ⬜ Update MCP UI automation controls
+4. ✅ `CurrentTool` enum reduced to 2 cases + optional Brew
+5. ✅ MCP UI automation controls consolidated — `MCPUIAutomationProvider` updated with `repositories` + `activity` view IDs, backward-compatible legacy mappings
 
 **Note:** Old tabs removed; some sidebar items still need migration to Settings.
 
 **Completed:** March 4, 2026
 
-### Phase 4: Polish
+### Phase 4: Polish ✅ MOSTLY COMPLETE
 **Goal:** Make it feel finished.
 
 1. ⬜ Onboarding flow update (new FeatureDiscoveryView for 2-tab layout)
-2. ⬜ Empty states for all views
-3. ⬜ Keyboard navigation throughout
-4. ⬜ MCP tool updates for new view IDs
-5. ⬜ iOS layout optimization
+2. ✅ Empty states for key views (activity, RAG, repos)
+3. ✅ Keyboard shortcuts — Cmd+1 (Repos), Cmd+2 (Activity), Cmd+K (Search)
+4. ✅ MCP tool updates for new view IDs — `MCPUIAutomationProvider` fully updated
+5. ✅ iOS layout — Rewritten to 2-tab (Repositories + Activity) in `iOS/ContentView.swift`
 6. ⬜ Accessibility audit
-7. ⬜ Cmd+K global RAG search overlay
-8. ⬜ Port branch/commit views into Branches sub-tab
+7. ✅ Cmd+K global RAG search overlay — `Shared/Views/CommandPaletteView.swift`
+8. ✅ Port branch/commit views into Branches sub-tab — Embeds `GitRootView` for cloned repos
 9. ⬜ Port GitHub favorites/PRs into sidebar attributes
-10. ⬜ Activity filtering by repo/status/worker
-11. ⬜ Chain drill-down from Activity dashboard
+10. ✅ Activity filtering by repo
+11. ✅ Chain drill-down from Activity dashboard — Tappable cards → `ChainDetailView` sheet
 12. ⬜ Settings consolidation window (Cmd+,)
 
-**Estimated effort:** 2-3 days
+**Completed:** March 4, 2026
+
+### Phase 5: Experimental Features Surface
+**Goal:** Provide discoverability for features not yet surfaced in the 2-tab layout.
+
+**Problem:** The UX overhaul simplified navigation from 5 tabs to 2, which is great for focus. But several features are now completely hidden with no way to reach them:
+- **PII Scrubber** — Was in Agents sidebar
+- **VM Isolation** (Linux/macOS VMs, Pools) — Was in Agents sidebar
+- **Docling Import** — Was in Agents sidebar
+- **Translation Validation** — Was in Agents sidebar
+- **Local Chat** — Was in Agents sidebar
+- **MCP Dashboard / Template Gallery** — Was in Agents sidebar
+- **Dependency Graph** — Was in Agents sidebar
+
+**Options (pick one or combine):**
+
+#### Option A: Settings > Labs Tab
+Move all experimental features into a "Labs" or "Feature Flags" tab in the Settings window (Cmd+,). Features enabled here could surface as:
+- A "Labs" section in the Activity sidebar
+- Additional sub-tabs in the repo detail
+- Menu bar items
+
+```
+Settings > Labs
+  ├── PII Scrubber         [Enable] → Adds tool to repo context menu
+  ├── VM Isolation          [Enable] → Adds VM tab to Activity
+  ├── Docling Import        [Enable] → Adds import action
+  ├── Translation Checker   [Enable] → Adds check action
+  └── Local Chat            [Enable] → Adds Cmd+Shift+C panel
+```
+
+#### Option B: "More Tools" Overflow in Toolbar
+Add a `...` menu in the toolbar that lists all available tools/features not in the main tabs. Discoverable but not cluttering the primary UI.
+
+#### Option C: Command Palette Integration
+Extend the Cmd+K palette to include actions (not just RAG search):
+- Type "pii" → "Run PII Scrubber on tio-api"
+- Type "vm" → "Open VM Isolation"
+- Type "chat" → "Open Local Chat"
+
+This makes every feature discoverable via keyboard without adding UI chrome.
+
+#### Option D: Activity > System Section
+Add a "System" or "Tools" section at the bottom of the Activity dashboard that shows:
+- MCP server status + dashboard link
+- VM status (if enabled)
+- Active background tools
+
+**Recommended approach:** **A + C combined** — Settings > Labs for enable/disable + Cmd+K actions for quick access. This keeps the primary UI clean while making everything findable.
+
+**Tasks:**
+1. ⬜ Add "Labs" tab to Settings window with feature toggles
+2. ⬜ Extend CommandPaletteView to support action results (not just RAG search)
+3. ⬜ Wire enabled lab features into appropriate surfaces (repo context menus, Activity sections)
+4. ⬜ Move MCP Dashboard into Settings > MCP Server tab
+5. ⬜ Move VM Isolation into Settings > VM Isolation tab
+6. ⬜ Add Local Chat as floating panel (Cmd+Shift+C)
 
 ---
 
@@ -620,6 +676,7 @@ A new user who:
 2. **Brew:** Keep as hidden feature flag tab, or move entirely to Settings? It's orthogonal to the repo/agent story.
 3. **Template Gallery:** Should "Run New Task" pre-filter templates by the selected repo's framework? (Yes, probably.)
 4. **iOS parity:** How much of the Activity view makes sense on iOS where agents can't run locally? (Monitor-only is still valuable.)
+5. **Experimental features surface:** PII scrubber, VMs, Docling, translations, dependency graph, local chat are all hidden after the 2-tab overhaul. Need a "Labs" or overflow mechanism — see Phase 5 proposal.
 
 ---
 
