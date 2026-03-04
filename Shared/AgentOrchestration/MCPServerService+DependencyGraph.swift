@@ -1,6 +1,25 @@
 import Foundation
 import MCPCore
 
+// MARK: - Reindex Errors
+
+enum RAGReindexError: LocalizedError {
+  /// The repo uses a swarm embedding model but no swarm workers are connected.
+  case swarmModelNoWorkers(repoModel: String, localModel: String)
+  /// The swarm worker failed to reindex.
+  case swarmReindexFailed(worker: String, output: String)
+
+  var errorDescription: String? {
+    switch self {
+    case .swarmModelNoWorkers(let repoModel, let localModel):
+      return "This repo uses \(repoModel) embeddings (from swarm). "
+        + "Connect to swarm to reindex, or delete and re-create to use local \(localModel)."
+    case .swarmReindexFailed(let worker, let output):
+      return "Swarm reindex failed on \(worker): \(output)"
+    }
+  }
+}
+
 // MARK: - Dependency Graph
 // Extracted from MCPServerService.swift for maintainability
 
@@ -234,7 +253,12 @@ extension MCPServerService {
     return deleted
   }
   
-  /// Index a repository (called from UI)
+  /// Index a repository (called from UI).
+  ///
+  /// When the repo already has embeddings from a different model (e.g. Qwen from swarm)
+  /// and a swarm worker is connected, the reindex is dispatched to the swarm so the
+  /// higher-quality model is preserved. A full artifact sync pull then brings the
+  /// results back locally.
   func indexRagRepo(
     path: String,
     forceReindex: Bool = false,
@@ -244,7 +268,42 @@ extension MCPServerService {
     ragIndexingPath = path
     ragIndexProgress = nil
     markIndexingStarted(path: path)
-    
+
+    // Check if this repo uses a different embedding model (e.g. Qwen from swarm).
+    let localModelName = ragStatus?.embeddingModelName
+    let existingRepo = ragRepos.first(where: { $0.rootPath == path })
+    let repoModel = existingRepo?.embeddingModel
+    let isSwarmModel = repoModel != nil && localModelName != nil && repoModel != localModelName
+
+    if isSwarmModel {
+      let coordinator = SwarmCoordinator.shared
+      if coordinator.isActive, !coordinator.connectedWorkers.isEmpty {
+        do {
+          try await dispatchReindexToSwarm(
+            path: path, forceReindex: forceReindex,
+            allowWorkspace: allowWorkspace, excludeSubrepos: excludeSubrepos,
+            coordinator: coordinator
+          )
+          return
+        } catch {
+          ragIndexingPath = nil
+          markIndexingStopped(path: path)
+          ragIndexProgress = nil
+          throw error
+        }
+      } else {
+        // No swarm connected — can't regenerate with the swarm model.
+        ragIndexingPath = nil
+        markIndexingStopped(path: path)
+        ragIndexProgress = nil
+        throw RAGReindexError.swarmModelNoWorkers(
+          repoModel: repoModel ?? "unknown",
+          localModel: localModelName ?? "unknown"
+        )
+      }
+    }
+
+    // Models match (or repo is new) — local reindex.
     let task = Task {
       let report = try await localRagStore.indexRepository(
         path: path,
@@ -259,7 +318,7 @@ extension MCPServerService {
       return report
     }
     ragIndexingTask = task
-    
+
     do {
       let report = try await task.value
       ragIndexingTask = nil
@@ -282,6 +341,91 @@ extension MCPServerService {
       ragIndexProgress = nil
       throw error
     }
+  }
+
+  // MARK: - Swarm-Dispatched Reindex
+
+  /// Dispatch reindex to a swarm worker that uses the repo's embedding model,
+  /// then pull the results back via full artifact sync.
+  private func dispatchReindexToSwarm(
+    path: String,
+    forceReindex: Bool,
+    allowWorkspace: Bool,
+    excludeSubrepos: Bool,
+    coordinator: SwarmCoordinator
+  ) async throws {
+    guard let worker = coordinator.connectedWorkers.first else {
+      throw RAGReindexError.swarmModelNoWorkers(repoModel: "unknown", localModel: "unknown")
+    }
+
+    logger.info("Dispatching reindex to swarm worker \(worker.name) for \(path)")
+
+    // Build JSON-RPC payload to call rag.index on the remote worker's MCP server.
+    let payload: [String: Any] = [
+      "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+      "params": [
+        "name": "rag.index",
+        "arguments": [
+          "repoPath": path,
+          "forceReindex": forceReindex,
+          "allowWorkspace": allowWorkspace,
+          "excludeSubrepos": excludeSubrepos,
+        ] as [String: Any],
+      ] as [String: Any],
+    ]
+    let payloadData = (try? JSONSerialization.data(withJSONObject: payload)) ?? Data()
+    let payloadJSON = String(data: payloadData, encoding: .utf8) ?? "{}"
+    let escapedJSON = payloadJSON.replacingOccurrences(of: "'", with: "'\\''")
+
+    let script = [
+      "set -e",
+      "echo '[swarm-reindex] Pulling latest'",
+      "git -C '\(path.replacingOccurrences(of: "'", with: "'\\''"))' pull --ff-only || git -C '\(path.replacingOccurrences(of: "'", with: "'\\''"))' pull || true",
+      "echo '[swarm-reindex] Calling rag.index'",
+      "RESPONSE=$(curl -sS -X POST http://127.0.0.1:8765/rpc -H 'Content-Type: application/json' -d '\(escapedJSON)')",
+      "echo \"$RESPONSE\"",
+      "if echo \"$RESPONSE\" | grep -q '\"error\"'; then",
+      "  echo '[swarm-reindex] rag.index returned error' >&2; exit 2",
+      "fi",
+    ].joined(separator: "\n")
+
+    let result = try await coordinator.sendDirectCommandAndWait(
+      "/bin/zsh", args: ["-lc", script],
+      workingDirectory: nil, to: worker.id,
+      timeout: .seconds(420)
+    )
+
+    guard result.exitCode == 0 else {
+      throw RAGReindexError.swarmReindexFailed(
+        worker: worker.name,
+        output: String(result.output.suffix(800))
+      )
+    }
+
+    logger.info("Swarm reindex succeeded on \(worker.name), pulling artifacts back")
+
+    // Pull the freshly-generated artifacts (embeddings + analysis) back via full sync.
+    let repos = (try? await localRagStore.listRepos()) ?? []
+    guard let repo = repos.first(where: { $0.rootPath == path }),
+          let repoIdentifier = repo.repoIdentifier, !repoIdentifier.isEmpty else {
+      logger.warning("Could not resolve repo identifier for \(path) after swarm reindex")
+      ragIndexingPath = nil
+      markIndexingStopped(path: path)
+      await refreshRagSummary()
+      return
+    }
+
+    let transferId = try await coordinator.requestRagArtifactSync(
+      direction: .pull,
+      repoIdentifier: repoIdentifier,
+      transferMode: .full
+    )
+    logger.info("Post-swarm-reindex full sync requested for \(repoIdentifier): \(transferId)")
+
+    ragIndexingPath = nil
+    markIndexingStopped(path: path)
+    lastRagIndexAt = Date()
+    await refreshRagSummary()
   }
   
   /// Cancel any in-progress indexing

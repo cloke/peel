@@ -25,9 +25,9 @@ struct TrackedRepoRow: View {
   @State private var showDeleteConfirm = false
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 6) {
+    VStack(alignment: .leading, spacing: 4) {
       // Header row
-      HStack {
+      HStack(spacing: 8) {
         Image(systemName: repo.isEnabled ? "arrow.triangle.2.circlepath.circle.fill" : "arrow.triangle.2.circlepath.circle")
           .foregroundStyle(repo.isEnabled ? .green : .secondary)
           .font(.title3)
@@ -39,9 +39,11 @@ struct TrackedRepoRow: View {
             .font(.caption)
             .foregroundStyle(.secondary)
             .lineLimit(1)
+            .truncationMode(.middle)
         }
+        .layoutPriority(1)
 
-        Spacer()
+        Spacer(minLength: 4)
 
         if isPulling {
           ProgressView()
@@ -52,28 +54,46 @@ struct TrackedRepoRow: View {
       }
 
       // Detail row
-      HStack(spacing: 12) {
+      HStack(spacing: 8) {
         Label(repo.branch, systemImage: "arrow.branch")
           .font(.caption)
           .foregroundStyle(.secondary)
+          .lineLimit(1)
 
         Label(pullIntervalText, systemImage: "clock")
           .font(.caption)
           .foregroundStyle(.secondary)
 
         if repo.reindexAfterPull {
-          Label("Re-index", systemImage: "magnifyingglass")
+          Image(systemName: "magnifyingglass")
             .font(.caption)
             .foregroundStyle(.secondary)
         }
 
-        Spacer()
+        Spacer(minLength: 4)
 
         if let lastPull = repo.lastPullAt {
           Text(lastPull, style: .relative)
             .font(.caption2)
             .foregroundStyle(.tertiary)
         }
+      }
+
+      // Error banner (visible inline instead of tooltip-only)
+      if let error = repo.lastPullError, !error.isEmpty {
+        HStack(spacing: 4) {
+          Image(systemName: "exclamationmark.triangle.fill")
+            .font(.caption2)
+            .foregroundStyle(.red)
+          Text(error)
+            .font(.caption2)
+            .foregroundStyle(.red)
+            .lineLimit(2)
+            .truncationMode(.tail)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
       }
     }
     .padding(.vertical, 4)
@@ -91,6 +111,17 @@ struct TrackedRepoRow: View {
       }
 
       Divider()
+
+      if repo.lastPullError != nil {
+        Button {
+          repo.lastPullError = nil
+          repo.lastPullResult = nil
+        } label: {
+          Label("Clear Error", systemImage: "xmark.circle")
+        }
+
+        Divider()
+      }
 
       Button(role: .destructive) { showDeleteConfirm = true } label: {
         Label("Remove Tracking", systemImage: "trash")
@@ -133,23 +164,26 @@ struct TrackedRepoRow: View {
 
   @ViewBuilder
   private var statusBadge: some View {
-    if let error = repo.lastPullError, !error.isEmpty {
+    if repo.lastPullError != nil && !(repo.lastPullError?.isEmpty ?? true) {
       Image(systemName: "exclamationmark.triangle.fill")
         .foregroundStyle(.red)
-        .help(error)
+        .font(.caption)
     } else if let result = repo.lastPullResult {
       if result.starts(with: "updated") {
         Image(systemName: "checkmark.circle.fill")
           .foregroundStyle(.green)
+          .font(.caption)
           .help(result)
       } else {
         Image(systemName: "checkmark.circle")
           .foregroundStyle(.secondary)
+          .font(.caption)
           .help(result)
       }
     } else if !repo.isEnabled {
       Image(systemName: "pause.circle")
         .foregroundStyle(.secondary)
+        .font(.caption)
     }
   }
 }

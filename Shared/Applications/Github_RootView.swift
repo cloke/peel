@@ -180,6 +180,7 @@ struct Github_RootView: View {
                 onToggleEnabled: { toggleEnabled(repo) },
                 onDelete: { deleteTrackedRepo(repo) }
               )
+              .listRowInsets(EdgeInsets(top: 4, leading: 10, bottom: 4, trailing: 10))
             }
 
             if !scheduler.pullHistory.isEmpty {
