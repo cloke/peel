@@ -253,6 +253,43 @@ final class ChromeSessionManager {
     return extractStringResult(from: result) ?? "(empty snapshot)"
   }
 
+  /// Evaluate a JavaScript expression in a Chrome session.
+  /// - Parameters:
+  ///   - sessionId: The session to evaluate in
+  ///   - expression: JavaScript code to execute
+  ///   - awaitPromise: Whether to await the result if it's a Promise
+  /// - Returns: The result as a JSON-compatible dictionary
+  func evaluate(sessionId: UUID, expression: String, awaitPromise: Bool = false) async throws -> [String: Any] {
+    guard let session = sessions[sessionId] else {
+      throw ChromeSessionError.sessionNotFound(sessionId)
+    }
+
+    let target = try await getPageTarget(port: session.debugPort)
+
+    var params: [String: Any] = [
+      "expression": expression,
+      "returnByValue": true
+    ]
+    if awaitPromise {
+      params["awaitPromise"] = true
+    }
+
+    let result = try await sendCDPCommand(
+      port: session.debugPort,
+      targetId: target.id,
+      method: "Runtime.evaluate",
+      params: params
+    )
+
+    // Check for CDP-level exceptions
+    if let exceptionDetails = (result["result"] as? [String: Any])?["exceptionDetails"] as? [String: Any],
+       let exceptionText = exceptionDetails["text"] as? String {
+      throw ChromeSessionError.cdpError("JS exception: \(exceptionText)")
+    }
+
+    return result
+  }
+
   /// Close a Chrome session and clean up.
   func close(sessionId: UUID) async {
     guard let session = sessions[sessionId] else { return }

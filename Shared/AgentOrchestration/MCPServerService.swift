@@ -640,6 +640,8 @@ public final class MCPServerService {
   var gitToolsHandler: GitToolsHandler
   var codeQualityToolsHandler: CodeQualityToolsHandler
   var chromeToolsHandler: ChromeToolsHandler
+  var repoProfileToolsHandler: RepoProfileToolsHandler
+  var repoProfileService: RepoProfileService
   var uxTestOrchestrator: UXTestOrchestrator?
   #if os(macOS)
   var localChatToolsHandler: LocalChatToolsHandler?
@@ -715,6 +717,8 @@ public final class MCPServerService {
     self.gitToolsHandler = GitToolsHandler()
     self.codeQualityToolsHandler = CodeQualityToolsHandler()
     self.chromeToolsHandler = ChromeToolsHandler()
+    self.repoProfileToolsHandler = RepoProfileToolsHandler()
+    self.repoProfileService = RepoProfileService()
     #if os(macOS)
     self.localChatToolsHandler = LocalChatToolsHandler()
     #endif
@@ -806,6 +810,7 @@ public final class MCPServerService {
     self.uxTestOrchestrator = orchestrator
     self.chromeToolsHandler.orchestrator = orchestrator
     self.parallelWorktreeRunner?.setUXTestOrchestrator(orchestrator)
+    self.parallelWorktreeRunner?.setRepoProfileService(repoProfileService)
 
     wireToolHandlerDelegates()
 
@@ -853,6 +858,8 @@ public final class MCPServerService {
     terminalToolsHandler.delegate = self
     codeQualityToolsHandler.delegate = self
     chromeToolsHandler.delegate = self
+    repoProfileToolsHandler.delegate = self
+    repoProfileToolsHandler.profileService = repoProfileService
     #if os(macOS)
     localChatToolsHandler?.delegate = self
     localChatToolsHandler?.mcpServer = self

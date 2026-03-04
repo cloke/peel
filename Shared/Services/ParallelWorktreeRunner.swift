@@ -397,6 +397,9 @@ final class ParallelWorktreeRunner {
   /// UX test orchestrator for Chrome-based parallel testing
   private var uxTestOrchestrator: UXTestOrchestrator?
 
+  /// Repo profile service for structured repo metadata
+  private var repoProfileService: RepoProfileService?
+
   private let mcpLog = MCPLogService.shared
   
   /// Max concurrent worktrees
@@ -430,6 +433,11 @@ final class ParallelWorktreeRunner {
   /// Set the UX test orchestrator for Chrome-based parallel testing
   func setUXTestOrchestrator(_ orchestrator: UXTestOrchestrator) {
     self.uxTestOrchestrator = orchestrator
+  }
+
+  /// Set the repo profile service for structured repo metadata
+  func setRepoProfileService(_ service: RepoProfileService) {
+    self.repoProfileService = service
   }
 
   func setDataService(_ service: DataService) {
@@ -889,7 +897,8 @@ final class ParallelWorktreeRunner {
         do {
           let uxSession = try await orchestrator.createSession(
             sessionId: execution.id,
-            worktreePath: worktreePath
+            worktreePath: worktreePath,
+            apiBaseURL: execution.task.apiBaseURL
           )
           await mcpLog.info("UX session created for worktree", metadata: [
             "executionId": execution.id.uuidString,
@@ -1012,6 +1021,12 @@ final class ParallelWorktreeRunner {
     if execution.task.useUXTesting, let orchestrator = uxTestOrchestrator,
        let uxContext = orchestrator.buildPromptContext(for: execution.id) {
       prompt += "\n\n" + uxContext + "\n"
+    }
+
+    // Inject repo profile context (structured metadata about apps, auth, conventions, etc.)
+    if let profileService = repoProfileService,
+       let profileContext = profileService.buildPromptContext(repoPath: run.projectPath) {
+      prompt += "\n\n" + profileContext + "\n"
     }
 
     return prompt

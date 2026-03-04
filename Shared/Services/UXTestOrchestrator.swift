@@ -26,15 +26,21 @@ final class UXTestOrchestrator {
     let worktreePath: String
     let devServerPort: UInt16
     let chromeDebugPort: UInt16
+    /// External app URL (e.g., "http://localhost:4250") — overrides the allocated port URL.
+    var externalURL: String?
     var devServerReady: Bool = false
     var chromeReady: Bool = false
-    var devServerURL: String { "http://localhost:\(devServerPort)" }
+    var devServerURL: String { externalURL ?? "http://localhost:\(devServerPort)" }
 
     var isFullyReady: Bool { devServerReady && chromeReady }
 
     var statusDescription: String {
       var parts: [String] = []
-      parts.append("devServer: \(devServerReady ? "ready" : "starting") (:\(devServerPort))")
+      if let ext = externalURL {
+        parts.append("devServer: external (\(ext))")
+      } else {
+        parts.append("devServer: \(devServerReady ? "ready" : "starting") (:\(devServerPort))")
+      }
       parts.append("chrome: \(chromeReady ? "ready" : "starting") (debug:\(chromeDebugPort))")
       return parts.joined(separator: ", ")
     }
@@ -67,14 +73,18 @@ final class UXTestOrchestrator {
   ///   - worktreePath: Path to the git worktree
   ///   - devServerCommand: Optional override for dev server start command
   ///   - skipDevServer: When true, only launches Chrome without a dev server (useful for testing or static sites)
+  ///   - apiBaseURL: External app URL (e.g., "http://localhost:4250"). When set, skipDevServer is implicitly true.
   /// - Returns: The created UX session
   @discardableResult
   func createSession(
     sessionId: UUID,
     worktreePath: String,
     devServerCommand: String? = nil,
-    skipDevServer: Bool = false
+    skipDevServer: Bool = false,
+    apiBaseURL: String? = nil
   ) async throws -> UXSession {
+    let effectiveSkipDevServer = skipDevServer || (apiBaseURL != nil)
+
     // 1. Allocate ports
     let ports = try await portAllocator.allocate(for: sessionId)
 
@@ -82,13 +92,14 @@ final class UXTestOrchestrator {
       id: sessionId,
       worktreePath: worktreePath,
       devServerPort: ports.devPort,
-      chromeDebugPort: ports.chromePort
+      chromeDebugPort: ports.chromePort,
+      externalURL: apiBaseURL
     )
 
-    logger.info("Creating UX session \(sessionId.uuidString) — dev:\(ports.devPort) chrome:\(ports.chromePort) skipDevServer:\(skipDevServer)")
+    logger.info("Creating UX session \(sessionId.uuidString) — dev:\(ports.devPort) chrome:\(ports.chromePort) skipDevServer:\(effectiveSkipDevServer) apiBaseURL:\(apiBaseURL ?? "none")")
 
-    // 2. Start dev server (unless skipped)
-    if !skipDevServer {
+    // 2. Start dev server (unless skipped or using external URL)
+    if !effectiveSkipDevServer {
       do {
         let serverInstance = try await devServerManager.start(
           sessionId: sessionId,
@@ -188,39 +199,87 @@ final class UXTestOrchestrator {
 
   /// Build the UX context block to inject into an agent's prompt.
   /// This tells the agent about its dev server URL and available Chrome tools.
+  /// Tools are invoked via curl to the MCP server since the agent runs in a Copilot CLI session.
   func buildPromptContext(for sessionId: UUID) -> String? {
     guard let session = sessions[sessionId] else { return nil }
+
+    let sid = session.id.uuidString
+    let mcpURL = "http://127.0.0.1:8765/rpc"
 
     return """
     ## UX Testing Environment
 
-    You have a dedicated dev server and headless Chrome browser for this task.
+    You have a dedicated headless Chrome browser for this task.
+    The app under test is already running externally.
 
-    - **Dev Server URL:** \(session.devServerURL)
-    - **Chrome Session ID:** \(session.id.uuidString)
+    - **App URL:** \(session.devServerURL)
+    - **Chrome Session ID:** \(sid)
+    - **MCP Server:** \(mcpURL)
 
-    ### Available Browser Tools
+    ### How to Use Browser Tools
 
-    Use these MCP tools to interact with the browser:
+    Browser tools are accessed via `curl` to the MCP server. Each call is a JSON-RPC request.
 
-    1. `chrome.navigate` — Navigate to a URL
-       - `sessionId`: "\(session.id.uuidString)"
-       - `url`: The URL to load (e.g., "\(session.devServerURL)/dashboard")
+    **Helper function** — Run this FIRST to set up a reusable shell function:
 
-    2. `chrome.screenshot` — Capture a screenshot of the current page
-       - `sessionId`: "\(session.id.uuidString)"
-       - Returns: path to the saved screenshot file
+    ```bash
+    mcp_call() {
+      local tool="$1"
+      local args="$2"
+      curl -s \(mcpURL) -H 'Content-Type: application/json' \\
+        -d "{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":1,\\\"method\\\":\\\"tools/call\\\",\\\"params\\\":{\\\"name\\\":\\\"$tool\\\",\\\"arguments\\\":$args}}"
+    }
+    ```
 
-    3. `chrome.snapshot` — Get a simplified DOM tree of the current page
-       - `sessionId`: "\(session.id.uuidString)"
-       - Returns: text representation of the page structure
+    ### Available Tools & Examples
+
+    **1. Navigate to a URL:**
+    ```bash
+    mcp_call "chrome.navigate" '{"sessionId":"\(sid)","url":"\(session.devServerURL)"}'
+    ```
+
+    **2. Get page DOM structure (use this to find CSS selectors):**
+    ```bash
+    mcp_call "chrome.snapshot" '{"sessionId":"\(sid)"}'
+    ```
+
+    **3. Fill a form field by CSS selector:**
+    ```bash
+    mcp_call "chrome.fill" '{"sessionId":"\(sid)","selector":"input[type=email]","value":"user@example.com"}'
+    ```
+
+    **4. Click an element by CSS selector:**
+    ```bash
+    mcp_call "chrome.click" '{"sessionId":"\(sid)","selector":"button[type=submit]"}'
+    ```
+
+    **5. Take a screenshot (returns base64 PNG):**
+    ```bash
+    mcp_call "chrome.screenshot" '{"sessionId":"\(sid)"}'
+    ```
+
+    **6. Run JavaScript in the page:**
+    ```bash
+    mcp_call "chrome.evaluate" '{"sessionId":"\(sid)","expression":"document.title"}'
+    ```
 
     ### Workflow
-    1. Make your code changes in the worktree
-    2. Navigate to the relevant page: `chrome.navigate` with url "\(session.devServerURL)/your-page"
-    3. Take a screenshot to verify: `chrome.screenshot`
-    4. If needed, get DOM structure: `chrome.snapshot`
-    5. Fix any visual issues and re-verify
+
+    1. Define the `mcp_call` helper function
+    2. Navigate to the app: `mcp_call "chrome.navigate" '{"sessionId":"\(sid)","url":"\(session.devServerURL)"}'`
+    3. Get the page structure: `mcp_call "chrome.snapshot" '{"sessionId":"\(sid)"}'`
+    4. If login is required: use `chrome.fill` for each field + `chrome.click` for submit
+    5. After actions, wait briefly: `sleep 2`
+    6. Take a screenshot to verify: `mcp_call "chrome.screenshot" '{"sessionId":"\(sid)"}'`
+    7. Use `chrome.snapshot` to inspect results if screenshot is unclear
+
+    ### Important Notes
+
+    - Always use the session ID `\(sid)` — this is YOUR dedicated Chrome instance
+    - After clicking/submitting, add `sleep 2` before screenshots to let the page load
+    - The `chrome.snapshot` result shows a simplified DOM — use it to find CSS selectors
+    - Screenshots return base64 data in the response — you can describe what you see
+    - If a selector doesn't match, use `chrome.snapshot` first to find the correct selector
     """
   }
 }

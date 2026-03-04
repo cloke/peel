@@ -28,6 +28,9 @@ public final class ChromeToolsHandler: MCPToolHandler {
     "chrome.navigate",
     "chrome.screenshot",
     "chrome.snapshot",
+    "chrome.evaluate",
+    "chrome.fill",
+    "chrome.click",
     "chrome.close",
     "chrome.status"
   ]
@@ -49,6 +52,12 @@ public final class ChromeToolsHandler: MCPToolHandler {
       return await handleScreenshot(id: id, arguments: arguments, orchestrator: orchestrator)
     case "chrome.snapshot":
       return await handleSnapshot(id: id, arguments: arguments, orchestrator: orchestrator)
+    case "chrome.evaluate":
+      return await handleEvaluate(id: id, arguments: arguments, orchestrator: orchestrator)
+    case "chrome.fill":
+      return await handleFill(id: id, arguments: arguments, orchestrator: orchestrator)
+    case "chrome.click":
+      return await handleClick(id: id, arguments: arguments, orchestrator: orchestrator)
     case "chrome.close":
       return await handleClose(id: id, arguments: arguments, orchestrator: orchestrator)
     case "chrome.status":
@@ -198,6 +207,155 @@ public final class ChromeToolsHandler: MCPToolHandler {
     }
   }
 
+  // MARK: - chrome.evaluate
+
+  private func handleEvaluate(id: Any?, arguments: [String: Any], orchestrator: UXTestOrchestrator) async -> (Int, Data) {
+    guard case .success(let sessionIdStr) = requireString("sessionId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "sessionId")
+    }
+    guard let sessionId = UUID(uuidString: sessionIdStr) else {
+      return invalidParamError(id: id, param: "sessionId", reason: "Invalid UUID format")
+    }
+    guard case .success(let expression) = requireString("expression", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "expression")
+    }
+
+    let awaitPromise = arguments["awaitPromise"] as? Bool ?? false
+
+    do {
+      let result = try await orchestrator.chromeManager.evaluate(
+        sessionId: sessionId,
+        expression: expression,
+        awaitPromise: awaitPromise
+      )
+
+      // Extract the value from the CDP response
+      let innerResult = (result["result"] as? [String: Any])?["result"] as? [String: Any]
+      let resultValue = innerResult?["value"]
+      let resultType = innerResult?["type"] as? String ?? "undefined"
+
+      var response: [String: Any] = [
+        "type": resultType,
+        "message": "Expression evaluated successfully"
+      ]
+      if let resultValue {
+        response["value"] = resultValue
+      }
+
+      return (200, makeResult(id: id, result: response))
+    } catch {
+      return internalError(id: id, message: "Evaluate failed: \(error.localizedDescription)")
+    }
+  }
+
+  // MARK: - chrome.fill
+
+  private func handleFill(id: Any?, arguments: [String: Any], orchestrator: UXTestOrchestrator) async -> (Int, Data) {
+    guard case .success(let sessionIdStr) = requireString("sessionId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "sessionId")
+    }
+    guard let sessionId = UUID(uuidString: sessionIdStr) else {
+      return invalidParamError(id: id, param: "sessionId", reason: "Invalid UUID format")
+    }
+    guard case .success(let selector) = requireString("selector", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "selector")
+    }
+    guard case .success(let value) = requireString("value", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "value")
+    }
+
+    // Escape quotes in selector and value for JS injection
+    let escapedSelector = selector.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
+    let escapedValue = value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
+
+    let js = """
+      (function() {
+        const el = document.querySelector('\(escapedSelector)');
+        if (!el) return { success: false, error: 'Element not found: \(escapedSelector)' };
+        // Focus, clear, set value, and dispatch events to trigger framework bindings
+        el.focus();
+        el.value = '\(escapedValue)';
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        return { success: true, tagName: el.tagName, type: el.type || null };
+      })()
+      """
+
+    do {
+      let result = try await orchestrator.chromeManager.evaluate(sessionId: sessionId, expression: js)
+      let innerResult = (result["result"] as? [String: Any])?["result"] as? [String: Any]
+      let resultValue = innerResult?["value"] as? [String: Any] ?? [:]
+
+      if resultValue["success"] as? Bool == true {
+        return (200, makeResult(id: id, result: [
+          "filled": true,
+          "selector": selector,
+          "tagName": resultValue["tagName"] ?? "unknown",
+          "message": "Filled '\(selector)' with value"
+        ]))
+      } else {
+        let error = resultValue["error"] as? String ?? "Unknown error"
+        return (200, makeResult(id: id, result: [
+          "filled": false,
+          "error": error,
+          "message": "Failed to fill: \(error)"
+        ]))
+      }
+    } catch {
+      return internalError(id: id, message: "Fill failed: \(error.localizedDescription)")
+    }
+  }
+
+  // MARK: - chrome.click
+
+  private func handleClick(id: Any?, arguments: [String: Any], orchestrator: UXTestOrchestrator) async -> (Int, Data) {
+    guard case .success(let sessionIdStr) = requireString("sessionId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "sessionId")
+    }
+    guard let sessionId = UUID(uuidString: sessionIdStr) else {
+      return invalidParamError(id: id, param: "sessionId", reason: "Invalid UUID format")
+    }
+    guard case .success(let selector) = requireString("selector", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "selector")
+    }
+
+    let escapedSelector = selector.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
+
+    let js = """
+      (function() {
+        const el = document.querySelector('\(escapedSelector)');
+        if (!el) return { success: false, error: 'Element not found: \(escapedSelector)' };
+        el.click();
+        return { success: true, tagName: el.tagName, text: (el.textContent || '').trim().substring(0, 100) };
+      })()
+      """
+
+    do {
+      let result = try await orchestrator.chromeManager.evaluate(sessionId: sessionId, expression: js)
+      let innerResult = (result["result"] as? [String: Any])?["result"] as? [String: Any]
+      let resultValue = innerResult?["value"] as? [String: Any] ?? [:]
+
+      if resultValue["success"] as? Bool == true {
+        return (200, makeResult(id: id, result: [
+          "clicked": true,
+          "selector": selector,
+          "tagName": resultValue["tagName"] ?? "unknown",
+          "text": resultValue["text"] ?? "",
+          "message": "Clicked '\(selector)'"
+        ]))
+      } else {
+        let error = resultValue["error"] as? String ?? "Unknown error"
+        return (200, makeResult(id: id, result: [
+          "clicked": false,
+          "error": error,
+          "message": "Failed to click: \(error)"
+        ]))
+      }
+    } catch {
+      return internalError(id: id, message: "Click failed: \(error.localizedDescription)")
+    }
+  }
+
   // MARK: - chrome.close
 
   private func handleClose(id: Any?, arguments: [String: Any], orchestrator: UXTestOrchestrator) async -> (Int, Data) {
@@ -306,6 +464,61 @@ public final class ChromeToolsHandler: MCPToolHandler {
         ],
         category: .ui,
         isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "chrome.evaluate",
+        description: """
+          Execute arbitrary JavaScript in a Chrome session and return the result. \
+          Use this for complex page interactions that chrome.fill and chrome.click don't cover. \
+          The expression is evaluated via Runtime.evaluate in the page context.
+          """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "sessionId": ["type": "string", "description": "UUID of the Chrome session"],
+            "expression": ["type": "string", "description": "JavaScript expression to evaluate in the page context"],
+            "awaitPromise": ["type": "boolean", "description": "If true, await the result if it is a Promise (default: false)"]
+          ],
+          "required": ["sessionId", "expression"]
+        ],
+        category: .ui,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "chrome.fill",
+        description: """
+          Fill in a form field by CSS selector. Sets the value and dispatches input/change events \
+          to trigger framework data binding (Ember, React, Vue, etc.). \
+          Example selectors: 'input[type=email]', '#password', 'input[name=username]'
+          """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "sessionId": ["type": "string", "description": "UUID of the Chrome session"],
+            "selector": ["type": "string", "description": "CSS selector for the input element"],
+            "value": ["type": "string", "description": "The value to fill into the field"]
+          ],
+          "required": ["sessionId", "selector", "value"]
+        ],
+        category: .ui,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "chrome.click",
+        description: """
+          Click an element by CSS selector. Finds the first matching element and calls .click(). \
+          Example selectors: 'button[type=submit]', '.login-btn', '#sign-in', 'a[href=\"/dashboard\"]'
+          """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "sessionId": ["type": "string", "description": "UUID of the Chrome session"],
+            "selector": ["type": "string", "description": "CSS selector for the element to click"]
+          ],
+          "required": ["sessionId", "selector"]
+        ],
+        category: .ui,
+        isMutating: true
       ),
       MCPToolDefinition(
         name: "chrome.close",
