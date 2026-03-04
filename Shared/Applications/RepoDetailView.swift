@@ -214,6 +214,19 @@ struct BranchesTabView: View {
     }
   }
 
+  /// Recent historical runs for this repo (completed/terminal, from snapshots).
+  private var repoHistoricalSnapshots: [ParallelRunSnapshot] {
+    guard let runner = mcpServer.parallelWorktreeRunner,
+          let localPath = repo.localPath else { return [] }
+    let activeIds = Set(runner.runs.map { $0.id.uuidString })
+    var seen = Set<String>()
+    return runner.historicalRuns.filter { snapshot in
+      guard snapshot.projectPath == localPath else { return false }
+      guard !activeIds.contains(snapshot.runId) else { return false }
+      return seen.insert(snapshot.runId).inserted
+    }
+  }
+
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 16) {
@@ -266,6 +279,11 @@ struct BranchesTabView: View {
     // Active runs (non-review)
     if !activeRuns.isEmpty, let runner = mcpServer.parallelWorktreeRunner {
       activeRunsSection(runner: runner)
+    }
+
+    // Recent completed runs (from snapshots — survive app restart)
+    if !repoHistoricalSnapshots.isEmpty, let runner = mcpServer.parallelWorktreeRunner {
+      recentRunsSection(runner: runner)
     }
 
     // Pull Requests
@@ -496,6 +514,110 @@ struct BranchesTabView: View {
           .padding(4)
         }
       }
+    }
+  }
+
+  @State private var showRecentRuns = false
+
+  private func recentRunsSection(runner: ParallelWorktreeRunner) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Button {
+        withAnimation(.easeInOut(duration: 0.2)) {
+          showRecentRuns.toggle()
+        }
+      } label: {
+        HStack(spacing: 6) {
+          Image(systemName: showRecentRuns ? "chevron.down" : "chevron.right")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .frame(width: 12)
+          SectionHeader("Recent Runs (\(repoHistoricalSnapshots.count))")
+          Spacer()
+        }
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+
+      if showRecentRuns {
+        ForEach(repoHistoricalSnapshots.prefix(5)) { snapshot in
+          recentRunRow(snapshot: snapshot, runner: runner)
+        }
+      }
+    }
+  }
+
+  private func recentRunRow(snapshot: ParallelRunSnapshot, runner: ParallelWorktreeRunner) -> some View {
+    let statusIcon: String = {
+      switch snapshot.status {
+      case "Completed": return "checkmark.circle.fill"
+      case "Awaiting Review": return "eye.circle.fill"
+      case "Failed": return "xmark.circle.fill"
+      case "Cancelled": return "slash.circle.fill"
+      default: return "clock.arrow.circlepath"
+      }
+    }()
+    let statusColor: Color = {
+      switch snapshot.status {
+      case "Completed": return .green
+      case "Awaiting Review": return .orange
+      case "Failed": return .red
+      case "Cancelled": return .gray
+      default: return .secondary
+      }
+    }()
+    let hasActionable = {
+      guard let data = snapshot.executionsJSON.data(using: .utf8),
+            let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return false }
+      return array.contains { dict in
+        let s = dict["status"] as? String ?? ""
+        return s == "Awaiting Review" || s == "Reviewed" || s == "Approved"
+      }
+    }()
+
+    return GroupBox {
+      HStack(spacing: 10) {
+        Image(systemName: statusIcon)
+          .font(.title3)
+          .foregroundStyle(statusColor)
+          .frame(width: 28)
+
+        VStack(alignment: .leading, spacing: 2) {
+          Text(snapshot.name)
+            .fontWeight(.medium)
+          HStack(spacing: 8) {
+            Text(snapshot.status)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Text("\(snapshot.executionCount) task\(snapshot.executionCount == 1 ? "" : "s")")
+              .font(.caption)
+              .foregroundStyle(.tertiary)
+            if snapshot.mergedCount > 0 {
+              Label("\(snapshot.mergedCount) merged", systemImage: "checkmark.circle")
+                .font(.caption)
+                .foregroundStyle(.green)
+            }
+          }
+          Text(snapshot.updatedAt, style: .relative)
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+        }
+
+        Spacer()
+
+        if hasActionable {
+          Button {
+            let run = runner.restoreFromSnapshot(snapshot)
+            _ = run // triggers UI refresh since runner.runs is @Observable
+          } label: {
+            Label("Restore", systemImage: "arrow.uturn.backward.circle")
+              .font(.caption)
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
+          .help("Re-load this run with full approve/reject/merge controls")
+        }
+      }
+      .padding(4)
     }
   }
 

@@ -434,8 +434,9 @@ final class ParallelWorktreeRunner {
 
   func setDataService(_ service: DataService) {
     dataService = service
-    // Load historical runs when data service is set
+    // Load historical runs and auto-restore actionable ones
     loadHistoricalRuns()
+    autoRestoreActionableRuns()
   }
 
   /// Load historical runs from persistence
@@ -445,6 +446,45 @@ final class ParallelWorktreeRunner {
     let activeRunIds = Set(runs.map { $0.id.uuidString })
     historicalRuns = dataService.getRecentParallelRunSnapshots(limit: 50)
       .filter { !activeRunIds.contains($0.runId) }
+  }
+
+  /// Auto-restore runs from snapshots that still have actionable executions
+  /// (awaiting review, reviewed, approved but not yet merged).
+  /// This ensures work survives app restarts without manual "Restore to Active" clicks.
+  private func autoRestoreActionableRuns() {
+    let actionableStatuses: Set<String> = [
+      "Awaiting Review", "Reviewed", "Approved", "Running"
+    ]
+    // Deduplicate by runId (most recent snapshot first since historicalRuns is sorted by updatedAt desc)
+    var seen = Set<String>()
+    let candidates = historicalRuns.filter { snapshot in
+      guard seen.insert(snapshot.runId).inserted else { return false }
+      // Only restore if the project exists on this machine
+      guard FileManager.default.fileExists(atPath: snapshot.projectPath) else { return false }
+      // Check if snapshot has actionable executions
+      guard let data = snapshot.executionsJSON.data(using: .utf8),
+            let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+        return false
+      }
+      return array.contains { dict in
+        guard let status = dict["status"] as? String else { return false }
+        if status == "Running" {
+          // Only count running tasks with a branch (they were in progress)
+          return dict["branchName"] != nil
+        }
+        return actionableStatuses.contains(status)
+      }
+    }
+
+    for snapshot in candidates {
+      restoreFromSnapshot(snapshot)
+    }
+
+    // Refresh historical runs to exclude newly restored ones
+    if !candidates.isEmpty {
+      let activeRunIds = Set(runs.map { $0.id.uuidString })
+      historicalRuns = historicalRuns.filter { !activeRunIds.contains($0.runId) }
+    }
   }
   
   // MARK: - Run Management
@@ -1973,6 +2013,34 @@ final class ParallelWorktreeRunner {
         execution.insertions   = dict["insertions"] as? Int ?? 0
         execution.deletions    = dict["deletions"] as? Int ?? 0
         execution.branchName   = dict["branchName"] as? String
+        execution.worktreePath = dict["worktreePath"] as? String
+        execution.chainId      = (dict["chainId"] as? String).flatMap { UUID(uuidString: $0) }
+        execution.diffSummary  = dict["diffSummary"] as? String
+        execution.output       = dict["outputPreview"] as? String ?? ""
+        execution.operatorGuidance = dict["operatorGuidance"] as? [String] ?? []
+
+        // Restore chain step results (analyzer reasoning, review verdicts, etc.)
+        if let steps = dict["chainSteps"] as? [[String: Any]] {
+          execution.chainStepResults = steps.map { s in
+            ParallelWorktreeExecution.ChainStepSummary(
+              stepName: s["stepName"] as? String ?? "",
+              role: s["role"] as? String ?? "",
+              model: s["model"] as? String ?? "",
+              durationSeconds: s["durationSeconds"] as? Double,
+              premiumCost: s["premiumCost"] as? Double ?? 0,
+              reviewVerdict: s["reviewVerdict"] as? String,
+              plannerDecision: s["plannerDecision"] as? String,
+              gateResult: s["gateResult"] as? String,
+              outputPreview: s["outputPreview"] as? String ?? ""
+            )
+          }
+        }
+
+        let formatter = Formatter.iso8601
+        execution.startedAt = (dict["startedAt"] as? String).flatMap { formatter.date(from: $0) }
+        execution.completedAt = (dict["completedAt"] as? String).flatMap { formatter.date(from: $0) }
+        execution.lastStatusChangeAt = (dict["lastStatusChangeAt"] as? String).flatMap { formatter.date(from: $0) } ?? Date()
+
         execution.status = restoredExecutionStatus(
           from: dict["status"] as? String ?? "",
           hasBranch: execution.branchName != nil

@@ -349,6 +349,18 @@ final class DataService {
       if !execution.conflictFiles.isEmpty {
         result["mergeConflicts"] = execution.conflictFiles.map { $0.filePath }
       }
+      // Include operator guidance strings (not just count)
+      if !execution.operatorGuidance.isEmpty {
+        result["operatorGuidance"] = execution.operatorGuidance
+      }
+      // Include diff summary and output preview for post-restart visibility
+      if let diffSummary = execution.diffSummary {
+        result["diffSummary"] = diffSummary
+      }
+      if !execution.output.isEmpty {
+        // Truncate to 2000 chars to keep snapshot size reasonable
+        result["outputPreview"] = String(execution.output.prefix(2000))
+      }
       // Include per-step chain results in snapshot
       if !execution.chainStepResults.isEmpty {
         result["chainSteps"] = execution.chainStepResults.map { step -> [String: Any] in
@@ -356,7 +368,8 @@ final class DataService {
             "stepName": step.stepName,
             "role": step.role,
             "model": step.model,
-            "premiumCost": step.premiumCost
+            "premiumCost": step.premiumCost,
+            "outputPreview": step.outputPreview
           ]
           if let dur = step.durationSeconds { s["durationSeconds"] = dur }
           if let verdict = step.reviewVerdict { s["reviewVerdict"] = verdict }
