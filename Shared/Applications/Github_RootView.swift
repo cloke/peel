@@ -149,6 +149,10 @@ struct Github_RootView: View {
                       .foregroundStyle(.tertiary)
                       .monospacedDigit()
                   }
+                  Spacer()
+                  #if os(macOS)
+                  reviewStatusBadge(for: recent)
+                  #endif
                 }
                 .contentShape(Rectangle())
               }
@@ -364,6 +368,7 @@ struct Github_RootView: View {
       #if os(macOS)
       if showToolSelectionToolbar {
         ToolSelectionToolbar()
+        ChainActivityToolbar()
       }
       #endif
       ToolbarItem(placement: .navigation) {
@@ -507,6 +512,58 @@ struct Github_RootView: View {
   private func recentPRAutomationKey(for recent: RecentPRInfo) -> String {
     "\(recent.repoFullName)#\(recent.prNumber)"
   }
+
+  /// Find the most relevant chain for a PR (running > complete > failed), if any.
+  #if os(macOS)
+  private func reviewChain(for recent: RecentPRInfo) -> AgentChain? {
+    let ref = recentPRAutomationKey(for: recent)
+    let matching = mcpServer.agentManager.chains.filter { $0.pullRequestReference == ref }
+    // Prefer running chain, then most recent completed, then failed
+    if let running = matching.first(where: {
+      if case .running = $0.state { return true }
+      if case .reviewing = $0.state { return true }
+      return false
+    }) {
+      return running
+    }
+    return matching.last { $0.state.isTerminal }
+  }
+
+  @ViewBuilder
+  private func reviewStatusBadge(for recent: RecentPRInfo) -> some View {
+    if let chain = reviewChain(for: recent) {
+      switch chain.state {
+      case .running, .reviewing:
+        HStack(spacing: 3) {
+          ProgressView()
+            .controlSize(.mini)
+          Text("Reviewing")
+            .font(.caption2)
+        }
+        .foregroundStyle(.blue)
+      case .complete:
+        let verdict = chain.results.last?.reviewVerdict
+        HStack(spacing: 3) {
+          Image(systemName: verdict?.iconName ?? "checkmark.circle.fill")
+            .font(.caption2)
+          Text(verdict?.displayName ?? "Reviewed")
+            .font(.caption2)
+        }
+        .foregroundStyle(verdict?.swiftUIColor ?? .green)
+      case .failed:
+        HStack(spacing: 3) {
+          Image(systemName: "xmark.circle.fill")
+            .font(.caption2)
+          Text("Failed")
+            .font(.caption2)
+        }
+        .foregroundStyle(.red)
+      default:
+        EmptyView()
+      }
+    }
+  }
+  #endif
 
   private func persistAutomationTargets() {
     let favoriteKeys = favoriteItems.map { favoriteAutomationKey(for: $0) }

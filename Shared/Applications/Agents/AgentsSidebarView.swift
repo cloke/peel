@@ -29,50 +29,6 @@ struct AgentsSidebarView: View {
   var body: some View {
     VStack(spacing: 0) {
       List(selection: $selection) {
-        // Running chains - show prominently at top
-        let runningChains = agentManager.chains.filter {
-          if case .running = $0.state { return true }
-          if case .reviewing = $0.state { return true }
-          return false
-        }
-        // Saved chain templates / recent chains
-        let idleChains = agentManager.chains.filter {
-          if case .idle = $0.state { return true }
-          if case .complete = $0.state { return true }
-          if case .failed = $0.state { return true }
-          return false
-        }
-        if !runningChains.isEmpty {
-          Section {
-            ForEach(runningChains) { chain in
-              RunningChainRowView(chain: chain)
-                .tag("chain:\(chain.id.uuidString)")
-            }
-          } header: {
-            Label("Running Now", systemImage: "bolt.fill")
-              .foregroundStyle(.blue)
-          }
-        }
-
-
-        if !agentManager.activeAgents.isEmpty {
-          Section("Active") {
-            ForEach(agentManager.activeAgents) { agent in
-              AgentRowView(agent: agent)
-                .tag("agent:\(agent.id.uuidString)")
-            }
-          }
-        }
-
-        if !agentManager.activeAgents.isEmpty || !agentManager.idleAgents.isEmpty {
-          Section("Agents") {
-            ForEach(agentManager.idleAgents) { agent in
-              AgentRowView(agent: agent)
-                .tag("agent:\(agent.id.uuidString)")
-            }
-          }
-        }
-
         Section("Connections") {
           Button {
             showingSetupSheet = true
@@ -265,18 +221,9 @@ struct AgentsSidebarView: View {
       Divider()
       HStack(spacing: 12) {
         Button {
-          showingNewAgentSheet = true
-        } label: {
-          Label("Agent", systemImage: "cpu")
-            .font(.caption)
-        }
-        .buttonStyle(.bordered)
-        .accessibilityIdentifier("agents.newAgent")
-
-        Button {
           showingNewChainSheet = true
         } label: {
-          Label("Chain", systemImage: "link")
+          Label("New Chain", systemImage: "link")
             .font(.caption)
         }
         .buttonStyle(.bordered)

@@ -273,8 +273,8 @@ struct ChainDetailView: View {
               Spacer()
             }
           }
-        } else {
-          // Prompt input
+        } else if case .idle = chain.state {
+          // Prompt input (only when idle — hidden during execution)
           VStack(alignment: .leading, spacing: 8) {
             Label("Task Prompt", systemImage: "text.alignleft").font(.headline)
             TextEditor(text: $prompt)
@@ -382,6 +382,24 @@ struct ChainDetailView: View {
             if !chain.results.isEmpty {
               Text("Total: \(chain.results.reduce(0) { $0 + $1.premiumCost }.premiumCostDisplay)")
                 .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+          }
+        } else {
+          // Non-MCP chain that is running/complete/failed — show status instead of prompt
+          if case .running = chain.state {
+            HStack(spacing: 8) {
+              ProgressView().scaleEffect(0.8)
+              Text("Chain is running…")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+            }
+          } else if case .failed(let message) = chain.state {
+            HStack(spacing: 8) {
+              Image(systemName: "xmark.circle.fill")
+                .foregroundStyle(.red)
+              Text("Chain failed: \(message)")
+                .font(.callout)
                 .foregroundStyle(.secondary)
             }
           }

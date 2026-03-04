@@ -528,7 +528,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         steps: [
           AgentStepTemplate(
             role: .planner,
-            model: .bestFree,
+            model: .bestStandard,
             name: "PR Analyzer",
             customInstructions: """
               You are a PR analysis specialist. Gather all context needed for a thorough review.

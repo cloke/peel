@@ -58,6 +58,7 @@ public struct SwarmStatusView: View {
     #if os(macOS)
     .toolbar {
       ToolSelectionToolbar()
+      ChainActivityToolbar()
     }
     #endif
   }

@@ -32,6 +32,7 @@ struct Git_RootView: View {
       .toolbar {
         if showToolSelectionToolbar {
           ToolSelectionToolbar()
+          ChainActivityToolbar()
         }
         RepositoriesMenuToolbarItem(
           repositories: viewModel.repositories,

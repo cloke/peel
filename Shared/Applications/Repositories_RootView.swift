@@ -57,6 +57,7 @@ struct Repositories_RootView: View {
     #if os(macOS)
     .toolbar {
       ToolSelectionToolbar()
+      ChainActivityToolbar()
     }
     #endif
     .onAppear {

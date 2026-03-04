@@ -44,9 +44,11 @@ struct GithubReviewAgentSheet: View {
   @State private var isQueuing = false
   @State private var didQueue = false
   @State private var lastSummary: AgentChainRunner.RunSummary?
+  @State private var launchedChain: AgentChain?
   @State private var repoAutoResolved = false
   @State private var showRepoPicker = false
   @State private var isSearchingRepo = false
+  @AppStorage("current-tool") private var currentTool: CurrentTool = .agents
 
   var body: some View {
     VStack(spacing: 0) {
@@ -56,7 +58,7 @@ struct GithubReviewAgentSheet: View {
       Divider()
       footerView
     }
-    .frame(width: 520, height: 520)
+    .frame(width: 560, height: chainIsFinished ? 640 : 520)
     .task {
       // Register RAG-indexed repos with RepoRegistry (they have direct remote URLs)
       await registerRAGRepos()
@@ -150,7 +152,9 @@ struct GithubReviewAgentSheet: View {
               .accessibilityIdentifier("github.reviewAgent.prompt")
           }
 
-          if let summary = lastSummary {
+          if let chain = launchedChain {
+            chainStatusCard(chain)
+          } else if let summary = lastSummary {
             SectionCard {
               Text("Agents: \(summary.results.count) · Conflicts: \(summary.mergeConflicts.count)")
                 .font(.caption)
@@ -275,9 +279,17 @@ struct GithubReviewAgentSheet: View {
     }
   }
 
+  private var chainIsFinished: Bool {
+    guard let chain = launchedChain else { return false }
+    switch chain.state {
+    case .complete, .failed: return true
+    default: return false
+    }
+  }
+
   private var footerView: some View {
     HStack {
-      Button("Cancel") {
+      Button(launchedChain != nil ? "Close" : "Cancel") {
         dismiss()
       }
       .keyboardShortcut(.cancelAction)
@@ -285,29 +297,142 @@ struct GithubReviewAgentSheet: View {
 
       Spacer()
 
-      if didQueue {
-        Label("Queued — check Agents tab", systemImage: "checkmark.circle.fill")
-          .foregroundStyle(.green)
-          .font(.callout)
+      if let chain = launchedChain {
+        switch chain.state {
+        case .complete, .failed:
+          Button {
+            mcpServer.agentManager.selectedChain = chain
+            currentTool = .agents
+            dismiss()
+          } label: {
+            Label("View in Agents", systemImage: "cpu")
+          }
+          .buttonStyle(.borderedProminent)
+          .keyboardShortcut(.defaultAction)
+          .accessibilityIdentifier("github.reviewAgent.viewInAgents")
+        default:
+          Label("Running \u{2014} you can close and check Agents tab", systemImage: "arrow.triangle.2.circlepath")
+            .foregroundStyle(.secondary)
+            .font(.caption)
+        }
+      } else {
+        Button("Run Review") {
+          Task { await runReview() }
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(isQueuing || didQueue || selectedRepoPath.isEmpty || pullRequest == nil || repository == nil)
+        .keyboardShortcut(.defaultAction)
+        .accessibilityIdentifier("github.reviewAgent.run")
       }
-
-      Button(isQueuing ? "Queuing\u{2026}" : "Queue & Close") {
-        Task { await queueReviewInBackground() }
-      }
-      .buttonStyle(.bordered)
-      .disabled(isRunning || isQueuing || didQueue || selectedRepoPath.isEmpty || pullRequest == nil || repository == nil)
-      .help("Start the review in a worktree and close this window. Check progress in the Agents tab.")
-      .accessibilityIdentifier("github.reviewAgent.queueAndClose")
-
-      Button(isRunning ? "Running\u{2026}" : "Run Review") {
-        Task { await runReview() }
-      }
-      .buttonStyle(.borderedProminent)
-      .disabled(isRunning || isQueuing || didQueue || selectedRepoPath.isEmpty || pullRequest == nil || repository == nil)
-      .keyboardShortcut(.defaultAction)
-      .accessibilityIdentifier("github.reviewAgent.run")
     }
     .padding()
+  }
+
+  @ViewBuilder
+  private func chainStatusCard(_ chain: AgentChain) -> some View {
+    SectionCard {
+      HStack(spacing: 10) {
+        switch chain.state {
+        case .idle:
+          ProgressView().controlSize(.small)
+          Text("Preparing\u{2026}")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        case .running(let idx):
+          ProgressView().controlSize(.small)
+          VStack(alignment: .leading, spacing: 2) {
+            Text("Running agent \(idx + 1) of \(chain.agents.count)")
+              .font(.callout)
+            if idx < chain.agents.count {
+              Text(chain.agents[idx].name)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+          }
+        case .reviewing(let iter):
+          ProgressView().controlSize(.small)
+          Text("Review loop \(iter + 1)")
+            .font(.callout)
+        case .complete:
+          Image(systemName: "checkmark.circle.fill")
+            .foregroundStyle(.green)
+          Text("Review Complete")
+            .font(.callout.weight(.medium))
+        case .failed(let msg):
+          Image(systemName: "xmark.circle.fill")
+            .foregroundStyle(.red)
+          VStack(alignment: .leading, spacing: 2) {
+            Text("Review Failed")
+              .font(.callout.weight(.medium))
+            Text(msg)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .lineLimit(2)
+          }
+        }
+        Spacer()
+      }
+
+      if !chain.results.isEmpty {
+        let cost = chain.results.reduce(0) { $0 + $1.premiumCost }
+        Text("\(chain.results.count) step\(chain.results.count == 1 ? "" : "s") completed \u{00b7} \(cost.premiumMultiplierString()) used")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+    } header: {
+      HStack {
+        Text("Review Progress")
+        Spacer()
+        if case .complete = chain.state {
+          StatusPill(text: "Success", style: .success)
+        } else if case .failed = chain.state {
+          StatusPill(text: "Failed", style: .error)
+        }
+      }
+    }
+
+    // Show review output when chain finishes
+    if case .complete = chain.state, let lastOutput = chain.results.last {
+      SectionCard {
+        ScrollView {
+          Text(lastOutput.output)
+            .font(.system(.caption, design: .monospaced))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .textSelection(.enabled)
+        }
+        .frame(maxHeight: 180)
+
+        if let verdict = lastOutput.reviewVerdict {
+          HStack(spacing: 6) {
+            Image(systemName: verdict.iconName)
+              .foregroundStyle(verdict.swiftUIColor)
+            Text(verdict.displayName)
+              .font(.caption.weight(.medium))
+              .foregroundStyle(verdict.swiftUIColor)
+          }
+        }
+      } header: {
+        HStack {
+          Text("Review Output")
+          Spacer()
+          Text(lastOutput.agentName)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+    } else if case .failed = chain.state, let lastOutput = chain.results.last {
+      SectionCard {
+        ScrollView {
+          Text(lastOutput.output)
+            .font(.system(.caption, design: .monospaced))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .textSelection(.enabled)
+        }
+        .frame(maxHeight: 120)
+      } header: {
+        Text("Last Output")
+      }
+    }
   }
 
   private var selectedTemplateBinding: Binding<UUID> {
@@ -589,34 +714,16 @@ Task:
     }
 
     let chain = mcpServer.agentManager.createChainFromTemplate(template, workingDirectory: worktreePath)
+    // Associate chain with this PR so the GitHub sidebar can show review status.
+    if let repository {
+      chain.pullRequestReference = "\(repository.full_name ?? repository.name)#\(pullRequest.number)"
+    }
     mcpServer.agentManager.selectedChain = chain
     return (chain, prompt)
   }
 
-  /// Queue the review to run in the background, then dismiss the sheet.
-  private func queueReviewInBackground() async {
-    isQueuing = true
-    defer { isQueuing = false }
-
-    guard let (chain, reviewPrompt) = await prepareChainForReview() else { return }
-
-    // Fire off the chain run in a task that lives on AgentManager,
-    // so it survives sheet dismissal. The chain is already tracked
-    // in agentManager.chains and will appear in the sidebar.
-    mcpServer.agentManager.runChainInBackground(
-      chain,
-      prompt: reviewPrompt,
-      cliService: mcpServer.cliService,
-      sessionTracker: mcpServer.sessionTracker
-    )
-
-    didQueue = true
-    // Brief delay so the user sees the "Queued" confirmation
-    try? await Task.sleep(for: .milliseconds(600))
-    dismiss()
-  }
-
-  /// Run the review inline (keeps the sheet open to show results).
+  /// Run the review in the background on AgentManager so it survives sheet dismissal.
+  /// The sheet stays open to show live progress, but the user can close it any time.
   private func runReview() async {
     isRunning = true
     lastSummary = nil
@@ -624,12 +731,14 @@ Task:
 
     guard let (chain, reviewPrompt) = await prepareChainForReview() else { return }
 
-    let runner = AgentChainRunner(
-      agentManager: mcpServer.agentManager,
+    launchedChain = chain
+
+    // Fire off the chain run on AgentManager so it survives sheet dismissal.
+    mcpServer.agentManager.runChainInBackground(
+      chain,
+      prompt: reviewPrompt,
       cliService: mcpServer.cliService,
-      telemetryProvider: MCPTelemetryAdapter(sessionTracker: mcpServer.sessionTracker)
+      sessionTracker: mcpServer.sessionTracker
     )
-    let summary = await runner.runChain(chain, prompt: reviewPrompt)
-    lastSummary = summary
   }
 }

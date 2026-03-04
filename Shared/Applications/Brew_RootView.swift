@@ -14,6 +14,7 @@ struct Brew_RootView: View {
       SidebarNavigationView()
         .toolbar {
           ToolSelectionToolbar()
+          ChainActivityToolbar()
         }
     }
   }

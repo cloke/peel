@@ -125,6 +125,13 @@ struct Agents_RootView: View {
         UserDefaults.standard.removeObject(forKey: "agents.selectedInfrastructure")
       }
     }
+    // When selectedChain is set externally (e.g. from "View in Agents" button),
+    // clear infrastructure selection so the chain detail view takes priority.
+    .onChange(of: agentManager.selectedChain?.id) { _, newValue in
+      if newValue != nil {
+        selectedInfrastructure = nil
+      }
+    }
     .toolbar {
       ToolbarItem(placement: .automatic) {
         Button {
@@ -141,6 +148,7 @@ struct Agents_RootView: View {
         .help("Session Usage: \(sessionTracker.totalPremiumUsed.premiumMultiplierString()) premium requests")
       }
       ToolSelectionToolbar()
+      ChainActivityToolbar()
     }
     .sheet(isPresented: $showingNewAgentSheet) {
       NewAgentSheet(agentManager: agentManager, cliService: cliService)

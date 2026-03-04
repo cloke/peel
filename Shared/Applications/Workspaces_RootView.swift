@@ -138,6 +138,7 @@ struct WorkspacesDashboardView: View {
     }
     .toolbar {
       ToolSelectionToolbar()
+      ChainActivityToolbar()
     }
   }
   

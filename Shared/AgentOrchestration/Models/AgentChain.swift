@@ -28,7 +28,11 @@ public final class AgentChain: Identifiable {
   
   /// The initial prompt used to start the chain (for MCP chains)
   public var initialPrompt: String?
-  
+
+  /// Optional reference to a pull request this chain reviews (e.g. "owner/repo#123").
+  /// Set by the review sheet so the GitHub sidebar can show review status on PR rows.
+  public var pullRequestReference: String?
+
   /// Shared working directory for all agents in the chain
   public var workingDirectory: String?
   
@@ -115,7 +119,19 @@ public final class AgentChain: Identifiable {
     case reviewing(iteration: Int)
     case complete
     case failed(message: String)
-    
+
+    public var isComplete: Bool {
+      if case .complete = self { return true }
+      return false
+    }
+
+    public var isTerminal: Bool {
+      switch self {
+      case .complete, .failed: return true
+      default: return false
+      }
+    }
+
     public var displayName: String {
       switch self {
       case .idle: return "Idle"
