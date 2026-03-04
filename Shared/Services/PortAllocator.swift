@@ -23,9 +23,9 @@ actor PortAllocator {
     }
   }
 
-  /// Default port ranges
-  static let defaultDevServerRange = PortRange(start: 3001, end: 3020)
-  static let defaultChromeDebugRange = PortRange(start: 9222, end: 9240)
+  /// Default port ranges (supports up to 50 parallel sessions)
+  static let defaultDevServerRange = PortRange(start: 3001, end: 3050)
+  static let defaultChromeDebugRange = PortRange(start: 9222, end: 9271)
 
   private let devServerRange: PortRange
   private let chromeDebugRange: PortRange

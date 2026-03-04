@@ -287,6 +287,42 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
   private static let yoloCopilotId           = UUID(uuidString: "A0000001-000F-4000-8000-00000000000F")!
   private static let yoloClaudeId            = UUID(uuidString: "A0000001-0010-4000-8000-000000000010")!
   private static let deepPRReviewId           = UUID(uuidString: "A0000001-0011-4000-8000-000000000011")!
+  private static let uxAuditId                = UUID(uuidString: "A0000001-0012-4000-8000-000000000012")!
+
+  // MARK: - Auto-detect Shell Commands
+  // Fallback commands used when no .peel/profile.json buildCommand is configured.
+
+  /// Auto-detect build system and run the appropriate build command.
+  /// Checks: package.json → Package.swift → *.xcodeproj → Makefile → skip.
+  static let autoDetectBuildCommand = #"if [ -f package.json ]; then if grep -q '"build"' package.json; then if [ -f pnpm-lock.yaml ]; then pnpm run build 2>&1; elif [ -f yarn.lock ]; then yarn build 2>&1; elif [ -f bun.lockb ]; then bun run build 2>&1; else npm run build 2>&1; fi; else echo 'package.json found but no build script — skipping' >&2; exit 0; fi; elif [ -f Package.swift ]; then swift build 2>&1; elif ls *.xcodeproj 1>/dev/null 2>&1; then SCHEME=$(xcodebuild -list -json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['schemes'][0])" 2>/dev/null || echo 'default'); xcodebuild -quiet -scheme "$SCHEME" -destination 'platform=macOS' -derivedDataPath "$PWD/.build-gate-dd" build 2>&1; EXIT=$?; rm -rf "$PWD/.build-gate-dd" 2>/dev/null; exit $EXIT; elif [ -f Makefile ] || [ -f makefile ]; then make 2>&1; else echo 'No build system detected — skipping build gate' >&2; exit 0; fi"#
+
+  /// Auto-detect lint:fix (simple — Full Implementation template).
+  static let autoDetectLintFixCommand = """
+    if [ -f package.json ]; then \
+      if grep -q '"lint:fix"' package.json; then \
+        if [ -f pnpm-lock.yaml ]; then pnpm run lint:fix 2>&1 || true; \
+        elif [ -f yarn.lock ]; then yarn lint:fix 2>&1 || true; \
+        else npm run lint:fix 2>&1 || true; fi; \
+      fi; \
+    fi
+    """
+
+  /// Auto-detect lint with fallback and multi-ecosystem support (Parallel Implementation template).
+  static let autoDetectLintFullCommand = """
+    if [ -f package.json ]; then \
+      if grep -q '"lint:fix"' package.json; then \
+        if [ -f pnpm-lock.yaml ]; then pnpm run lint:fix 2>&1 || true; \
+        elif [ -f yarn.lock ]; then yarn lint:fix 2>&1 || true; \
+        else npm run lint:fix 2>&1 || true; fi; \
+      elif grep -q '"lint"' package.json; then \
+        if [ -f pnpm-lock.yaml ]; then pnpm run lint 2>&1 || true; \
+        elif [ -f yarn.lock ]; then yarn lint 2>&1 || true; \
+        else npm run lint 2>&1 || true; fi; \
+      fi; \
+    elif [ -f Cargo.toml ]; then cargo clippy --fix --allow-staged 2>&1 || true; \
+    elif [ -f Package.swift ]; then swift build 2>&1 || true; \
+    fi
+    """
 
   /// Built-in templates
   public static var builtInTemplates: [ChainTemplate] {
@@ -330,22 +366,14 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
             model: .bestFree,
             name: "Build Check",
             stepType: .gate,
-            command: "swift build 2>&1 || xcodebuild -scheme \"$(xcodebuild -list -json 2>/dev/null | python3 -c \"import sys,json; print(json.load(sys.stdin)['project']['schemes'][0])\" 2>/dev/null || echo 'default')\" build 2>&1"
+            command: autoDetectBuildCommand
           ),
           AgentStepTemplate(
             role: .implementer,
             model: .bestFree,
             name: "Lint Fix",
             stepType: .deterministic,
-            command: """
-              if [ -f package.json ]; then \
-                if grep -q '"lint:fix"' package.json; then \
-                  if [ -f pnpm-lock.yaml ]; then pnpm run lint:fix 2>&1 || true; \
-                  elif [ -f yarn.lock ]; then yarn lint:fix 2>&1 || true; \
-                  else npm run lint:fix 2>&1 || true; fi; \
-                fi; \
-              fi
-              """
+            command: autoDetectLintFixCommand
           ),
           AgentStepTemplate(role: .reviewer, model: .bestFree, name: "Reviewer")
         ],
@@ -367,21 +395,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
             model: .bestFree,
             name: "Lint Fix",
             stepType: .deterministic,
-            command: """
-              if [ -f package.json ]; then \
-                if grep -q '"lint:fix"' package.json; then \
-                  if [ -f pnpm-lock.yaml ]; then pnpm run lint:fix 2>&1 || true; \
-                  elif [ -f yarn.lock ]; then yarn lint:fix 2>&1 || true; \
-                  else npm run lint:fix 2>&1 || true; fi; \
-                elif grep -q '"lint"' package.json; then \
-                  if [ -f pnpm-lock.yaml ]; then pnpm run lint 2>&1 || true; \
-                  elif [ -f yarn.lock ]; then yarn lint 2>&1 || true; \
-                  else npm run lint 2>&1 || true; fi; \
-                fi; \
-              elif [ -f Cargo.toml ]; then cargo clippy --fix --allow-staged 2>&1 || true; \
-              elif [ -f Package.swift ]; then swift build 2>&1 || true; \
-              fi
-              """
+            command: autoDetectLintFullCommand
           )
         ],
         isBuiltIn: true,
@@ -643,7 +657,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
             model: .bestFree,
             name: "Build Gate",
             stepType: .gate,
-            command: #"if [ -f Package.swift ]; then swift build 2>&1; elif ls *.xcodeproj 1>/dev/null 2>&1; then SCHEME=$(xcodebuild -list 2>/dev/null | grep -m1 'macOS' | xargs); DD="$PWD/.build-gate-dd"; xcodebuild -quiet -scheme "$SCHEME" -destination 'platform=macOS' -derivedDataPath "$DD" build 2>&1; EXIT=$?; rm -rf "$DD" 2>/dev/null; exit $EXIT; elif [ -f Makefile ] || [ -f makefile ]; then make 2>&1; else echo 'No build system found' >&2; exit 1; fi"#
+            command: autoDetectBuildCommand
           ),
           AgentStepTemplate(
             role: .implementer,
@@ -852,6 +866,98 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         category: .yolo,
         executionEnvironment: .linux,
         toolchain: .node
+      ),
+
+      // SPECIALIZED: UX TESTING
+
+      // 17. UX Audit: Parallel per-page visual audit using Chrome tools
+      ChainTemplate(
+        id: uxAuditId,
+        name: "UX Audit",
+        description: "Parallel per-page visual audit — discovers routes, screenshots each page, flags UI issues (Cost: Standard)",
+        steps: [
+          AgentStepTemplate(
+            role: .planner,
+            model: .bestStandard,
+            name: "Route Discovery & Task Creation",
+            customInstructions: """
+              You are a UX audit planner. Your job is to discover the app's pages/routes and create parallel audit tasks.
+
+              **Inputs** (from the user prompt):
+              - `repoPath`: path to the repository
+              - `appURL`: base URL of the running app (e.g. http://localhost:4200)
+              - Optionally a list of specific routes to audit
+
+              **Steps:**
+              1. If specific routes were provided, use those. Otherwise, discover routes by:
+                 - Search the codebase for route definitions (e.g. `router.js`, `Routes.swift`, `urls.py`, Next.js `pages/`)
+                 - Look for navigation components, sidebar menus, or route configs
+                 - List all unique user-facing pages/routes
+
+              2. For each discovered route, create a parallel audit task using `parallel.create`:
+                 - Set `useUXTesting: true` on every task
+                 - Set `installDependencies: true` on every task (each worktree gets its own dev server)
+                 - Do NOT set `apiBaseURL` — each task runs its own isolated app instance
+                 - Each task prompt should instruct the agent to:
+                   a. Navigate to its assigned route using `chrome.navigate`
+                   b. Wait for the page to load using `chrome.wait`
+                   c. Take a full-page screenshot using `chrome.screenshot` with a descriptive `savePath`
+                   d. Take a DOM snapshot using `chrome.snapshot`
+                   e. Evaluate the page against UX criteria (see below)
+                   f. Report findings in structured Markdown
+
+              3. Use `parallel.start` to begin execution.
+
+              **UX Criteria for each task prompt:**
+              - Layout: alignment, spacing, overflow, responsive issues
+              - Typography: readability, hierarchy, contrast
+              - Interactive elements: buttons, links, forms — are they accessible and labeled?
+              - Error states: what happens with empty data? Missing content?
+              - Accessibility: color contrast, alt text, ARIA labels, keyboard focus indicators
+              - Performance: large images, excessive DOM nodes
+              - Consistency: does the page match the style of the rest of the app?
+
+              **Output:** A summary of how many routes were discovered and tasks created.
+              """
+          ),
+          AgentStepTemplate(
+            role: .reviewer,
+            model: .bestStandard,
+            name: "UX Audit Aggregator",
+            customInstructions: """
+              You are a UX audit reviewer. Aggregate the results from parallel page audits into a single report.
+
+              **Steps:**
+              1. Use `parallel.status` to check that all tasks completed.
+              2. Collect the output from each completed task.
+              3. Produce a unified UX Audit Report in Markdown:
+
+              ## UX Audit Report
+
+              ### Summary
+              - Total pages audited: N
+              - Issues found: N (critical: N, warning: N, info: N)
+              - Screenshots collected: N
+
+              ### Per-Page Findings
+              For each page, summarize:
+              - **Route**: /path
+              - **Screenshot**: file path
+              - **Issues**: numbered list with severity (🔴 critical / 🟡 warning / 🔵 info)
+              - **Notes**: any positive observations
+
+              ### Cross-Cutting Issues
+              Issues that appear on multiple pages (e.g. inconsistent spacing, missing nav labels).
+
+              ### Recommendations
+              Prioritized list of fixes, grouped by effort (quick wins vs. larger changes).
+
+              If any tasks failed, note them and explain what went wrong.
+              """
+          )
+        ],
+        isBuiltIn: true,
+        category: .specialized
       )
     ]
 

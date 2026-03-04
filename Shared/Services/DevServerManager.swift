@@ -52,6 +52,22 @@ final class DevServerManager {
         return ("npm", ["run", "dev", "--", "--port", "\(port)"])
       }
     }
+
+    /// The command to install dependencies
+    func installCommand() -> (executable: String, arguments: [String]) {
+      switch self {
+      case .pnpm:
+        return ("pnpm", ["install", "--frozen-lockfile"])
+      case .npm:
+        return ("npm", ["ci"])
+      case .yarn:
+        return ("yarn", ["install", "--frozen-lockfile"])
+      case .bun:
+        return ("bun", ["install", "--frozen-lockfile"])
+      case .unknown:
+        return ("npm", ["install"])
+      }
+    }
   }
 
   // MARK: - Properties
@@ -63,6 +79,92 @@ final class DevServerManager {
   private var processes: [UUID: Process] = [:]
 
   // MARK: - Server Management
+
+  /// Install dependencies in a worktree before starting the dev server.
+  /// Tries to symlink node_modules from the main repo first (fast path),
+  /// falls back to a full install if no source node_modules exists.
+  func installDependencies(
+    worktreePath: String,
+    mainRepoPath: String? = nil
+  ) async throws {
+    let fm = FileManager.default
+    let nodeModulesPath = "\(worktreePath)/node_modules"
+
+    // If node_modules already exists, skip
+    if fm.fileExists(atPath: nodeModulesPath) {
+      logger.info("node_modules already present at \(worktreePath), skipping install")
+      return
+    }
+
+    // Fast path: symlink from main repo
+    if let mainRepo = mainRepoPath ?? deriveMainRepoPath(from: worktreePath) {
+      let sourceModules = "\(mainRepo)/node_modules"
+      if fm.fileExists(atPath: sourceModules) {
+        do {
+          try fm.createSymbolicLink(atPath: nodeModulesPath, withDestinationPath: sourceModules)
+          logger.info("Symlinked node_modules from \(mainRepo) → \(worktreePath)")
+          return
+        } catch {
+          logger.warning("Symlink failed, falling back to full install: \(error.localizedDescription)")
+        }
+      }
+    }
+
+    // Full install
+    let runtime = detectRuntime(at: worktreePath)
+    let (executable, installArgs) = runtime.installCommand()
+
+    guard let execPath = findExecutable(executable) else {
+      throw DevServerError.runtimeNotFound(executable)
+    }
+
+    logger.info("Installing dependencies in \(worktreePath) with \(executable) install")
+
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: execPath)
+    process.arguments = installArgs
+    process.currentDirectoryURL = URL(fileURLWithPath: worktreePath)
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+
+    var env = ProcessInfo.processInfo.environment
+    let additionalPaths = [
+      "/opt/homebrew/bin",
+      "/usr/local/bin",
+      "/usr/bin",
+      "\(env["HOME"] ?? "")/.bun/bin"
+    ]
+    let currentPath = env["PATH"] ?? ""
+    env["PATH"] = (additionalPaths + [currentPath]).joined(separator: ":")
+    process.environment = env
+
+    try process.run()
+    process.waitUntilExit()
+
+    guard process.terminationStatus == 0 else {
+      throw DevServerError.startFailed("\(executable) install exited with status \(process.terminationStatus)")
+    }
+
+    logger.info("Dependencies installed in \(worktreePath)")
+  }
+
+  /// Derive the main repo path from a worktree path.
+  /// Worktrees live at `<repo>/.agent-workspaces/workspace-<UUID>/`, so go up 2 levels.
+  private func deriveMainRepoPath(from worktreePath: String) -> String? {
+    let url = URL(fileURLWithPath: worktreePath)
+    let parent = url.deletingLastPathComponent() // .agent-workspaces/
+    let grandparent = parent.deletingLastPathComponent() // repo root
+    let candidate = grandparent.path
+
+    // Sanity check: parent dir should be ".agent-workspaces"
+    guard parent.lastPathComponent == ".agent-workspaces" else { return nil }
+    guard FileManager.default.fileExists(atPath: "\(candidate)/package.json")
+       || FileManager.default.fileExists(atPath: "\(candidate)/pnpm-lock.yaml")
+       || FileManager.default.fileExists(atPath: "\(candidate)/package-lock.json") else {
+      return nil
+    }
+    return candidate
+  }
 
   /// Start a dev server in a worktree directory.
   /// - Parameters:

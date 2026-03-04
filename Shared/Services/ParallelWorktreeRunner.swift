@@ -27,6 +27,12 @@ struct WorktreeTask: Identifiable, Sendable {
   /// Base URL for the shared backend API (e.g., "http://localhost:3000").
   /// Only used when useUXTesting is true.
   var apiBaseURL: String?
+  /// When true, install dependencies (npm/pnpm/yarn/bun) in the worktree before starting
+  /// the dev server. Required for per-worktree isolation where each task runs its own app.
+  var installDependencies: Bool
+  /// Sub-directory within the worktree where the dev server should start (for monorepos).
+  /// e.g., "tio-admin" for a pnpm workspace where the app is at `<worktree>/tio-admin/`.
+  var devServerPath: String?
 
   init(
     id: UUID = UUID(),
@@ -36,7 +42,9 @@ struct WorktreeTask: Identifiable, Sendable {
     focusPaths: [String] = [],
     dependsOn: [UUID] = [],
     useUXTesting: Bool = false,
-    apiBaseURL: String? = nil
+    apiBaseURL: String? = nil,
+    installDependencies: Bool = false,
+    devServerPath: String? = nil
   ) {
     self.id = id
     self.title = title
@@ -46,6 +54,8 @@ struct WorktreeTask: Identifiable, Sendable {
     self.dependsOn = dependsOn
     self.useUXTesting = useUXTesting
     self.apiBaseURL = apiBaseURL
+    self.installDependencies = installDependencies
+    self.devServerPath = devServerPath
   }
 }
 
@@ -135,8 +145,20 @@ final class ParallelWorktreeExecution: Identifiable, @unchecked Sendable {
   /// Overrides task.prompt for this execution (set via parallel.retry amendedPrompt)
   var amendedPrompt: String?
   
+  /// Collected artifacts (screenshots, test results, etc.) from this execution
+  var artifacts: [Artifact] = []
+
   /// Per-step results from the agent chain (planner decisions, review verdicts, gate results)
   var chainStepResults: [ChainStepSummary] = []
+
+  /// An artifact produced during execution (screenshot, report, etc.)
+  struct Artifact: Identifiable, Sendable {
+    let id = UUID()
+    let type: String        // e.g. "screenshot", "report"
+    let filePath: String
+    let label: String?      // optional description
+    let createdAt: Date = Date()
+  }
 
   /// Compact per-step summary for logging and status exposure
   struct ChainStepSummary: Identifiable, Sendable {
@@ -898,7 +920,9 @@ final class ParallelWorktreeRunner {
           let uxSession = try await orchestrator.createSession(
             sessionId: execution.id,
             worktreePath: worktreePath,
-            apiBaseURL: execution.task.apiBaseURL
+            apiBaseURL: execution.task.apiBaseURL,
+            installDependencies: execution.task.installDependencies,
+            devServerPath: execution.task.devServerPath
           )
           await mcpLog.info("UX session created for worktree", metadata: [
             "executionId": execution.id.uuidString,
@@ -1152,6 +1176,7 @@ final class ParallelWorktreeRunner {
 
     while attempt <= maxAttempts {
       let chain = makeChain(from: template, workingDirectory: worktreePath, taskTitle: task.title)
+      resolveGateCommands(chain: chain, repoPath: run.projectPath, task: task)
       if let gate = runGates[run.id] {
         await gate.waitIfPaused()
       }
@@ -1398,6 +1423,49 @@ final class ParallelWorktreeRunner {
     )
     chain.addAgent(agent)
     return chain
+  }
+
+  /// Replace gate/lint commands in a chain with profile-driven commands when available.
+  ///
+  /// Resolution order for build commands:
+  /// 1. `AppDefinition.buildCommand` for the task's target app (matched via `devServerPath`)
+  /// 2. `TestingConfig.buildCommand` (repo-level fallback)
+  /// 3. Template default (auto-detect, kept as-is)
+  ///
+  /// Resolution order for lint commands:
+  /// 1. `TestingConfig.lintCommand`
+  /// 2. Template default (auto-detect, kept as-is)
+  private func resolveGateCommands(
+    chain: AgentChain,
+    repoPath: String,
+    task: WorktreeTask
+  ) {
+    guard let profile = repoProfileService?.profile(for: repoPath) else { return }
+
+    // Match the target app by devServerPath (relative path like "tio-admin")
+    let targetApp: AppDefinition? = {
+      if let devPath = task.devServerPath {
+        return profile.apps?.first(where: { $0.path == devPath })
+      }
+      return profile.primaryApp
+    }()
+
+    let profileBuildCommand = targetApp?.buildCommand ?? profile.testing?.buildCommand
+    let profileLintCommand = profile.testing?.lintCommand
+
+    for agent in chain.agents {
+      let nameLower = agent.name.lowercased()
+
+      if agent.stepType == .gate && nameLower.contains("build") {
+        if let cmd = profileBuildCommand {
+          agent.command = cmd
+        }
+      } else if agent.stepType == .deterministic && nameLower.contains("lint") {
+        if let cmd = profileLintCommand {
+          agent.command = cmd
+        }
+      }
+    }
   }
 
   private func summarizeOutputs(_ results: [AgentChainResult], errorMessage: String?) -> String {

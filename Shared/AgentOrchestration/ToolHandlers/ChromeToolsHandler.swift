@@ -31,6 +31,9 @@ public final class ChromeToolsHandler: MCPToolHandler {
     "chrome.evaluate",
     "chrome.fill",
     "chrome.click",
+    "chrome.wait",
+    "chrome.select",
+    "chrome.check",
     "chrome.close",
     "chrome.status"
   ]
@@ -58,6 +61,12 @@ public final class ChromeToolsHandler: MCPToolHandler {
       return await handleFill(id: id, arguments: arguments, orchestrator: orchestrator)
     case "chrome.click":
       return await handleClick(id: id, arguments: arguments, orchestrator: orchestrator)
+    case "chrome.wait":
+      return await handleWait(id: id, arguments: arguments, orchestrator: orchestrator)
+    case "chrome.select":
+      return await handleSelect(id: id, arguments: arguments, orchestrator: orchestrator)
+    case "chrome.check":
+      return await handleCheck(id: id, arguments: arguments, orchestrator: orchestrator)
     case "chrome.close":
       return await handleClose(id: id, arguments: arguments, orchestrator: orchestrator)
     case "chrome.status":
@@ -173,13 +182,24 @@ public final class ChromeToolsHandler: MCPToolHandler {
     }
 
     let format = optionalString("format", from: arguments) ?? "png"
+    let savePath = optionalString("savePath", from: arguments)
 
     do {
       let filePath = try await orchestrator.screenshot(sessionId: sessionId)
+
+      // If savePath specified, copy to that location
+      var effectivePath = filePath
+      if let savePath, !savePath.isEmpty {
+        let saveDir = (savePath as NSString).deletingLastPathComponent
+        try FileManager.default.createDirectory(atPath: saveDir, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(atPath: filePath, toPath: savePath)
+        effectivePath = savePath
+      }
+
       return (200, makeResult(id: id, result: [
-        "filePath": filePath,
+        "filePath": effectivePath,
         "format": format,
-        "message": "Screenshot saved to \(filePath)"
+        "message": "Screenshot saved to \(effectivePath)"
       ]))
     } catch {
       return internalError(id: id, message: "Screenshot failed: \(error.localizedDescription)")
@@ -271,7 +291,7 @@ public final class ChromeToolsHandler: MCPToolHandler {
     let js = """
       (function() {
         const el = document.querySelector('\(escapedSelector)');
-        if (!el) return { success: false, error: 'Element not found: \(escapedSelector)' };
+        if (!el) return { success: false, error: 'No element found matching selector: \(escapedSelector)', url: window.location.href };
         // Focus, clear, set value, and dispatch events to trigger framework bindings
         el.focus();
         el.value = '\(escapedValue)';
@@ -295,10 +315,13 @@ public final class ChromeToolsHandler: MCPToolHandler {
         ]))
       } else {
         let error = resultValue["error"] as? String ?? "Unknown error"
+        let url = resultValue["url"] as? String ?? "unknown"
         return (200, makeResult(id: id, result: [
           "filled": false,
           "error": error,
-          "message": "Failed to fill: \(error)"
+          "currentURL": url,
+          "hint": "Use chrome.snapshot to inspect the current DOM and find the correct CSS selector.",
+          "message": "Failed to fill: \(error) (page: \(url))"
         ]))
       }
     } catch {
@@ -324,7 +347,7 @@ public final class ChromeToolsHandler: MCPToolHandler {
     let js = """
       (function() {
         const el = document.querySelector('\(escapedSelector)');
-        if (!el) return { success: false, error: 'Element not found: \(escapedSelector)' };
+        if (!el) return { success: false, error: 'No element found matching selector: \(escapedSelector)', url: window.location.href };
         el.click();
         return { success: true, tagName: el.tagName, text: (el.textContent || '').trim().substring(0, 100) };
       })()
@@ -345,14 +368,202 @@ public final class ChromeToolsHandler: MCPToolHandler {
         ]))
       } else {
         let error = resultValue["error"] as? String ?? "Unknown error"
+        let url = resultValue["url"] as? String ?? "unknown"
         return (200, makeResult(id: id, result: [
           "clicked": false,
           "error": error,
-          "message": "Failed to click: \(error)"
+          "currentURL": url,
+          "hint": "Use chrome.snapshot to inspect the current DOM and find the correct CSS selector.",
+          "message": "Failed to click: \(error) (page: \(url))"
         ]))
       }
     } catch {
       return internalError(id: id, message: "Click failed: \(error.localizedDescription)")
+    }
+  }
+
+  // MARK: - chrome.wait
+
+  private func handleWait(id: Any?, arguments: [String: Any], orchestrator: UXTestOrchestrator) async -> (Int, Data) {
+    guard case .success(let sessionIdStr) = requireString("sessionId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "sessionId")
+    }
+    guard let sessionId = UUID(uuidString: sessionIdStr) else {
+      return invalidParamError(id: id, param: "sessionId", reason: "Invalid UUID format")
+    }
+    guard case .success(let selector) = requireString("selector", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "selector")
+    }
+
+    let timeoutMs = arguments["timeout"] as? Int ?? 5000
+    let pollIntervalMs = 250
+    let maxAttempts = max(1, timeoutMs / pollIntervalMs)
+
+    let escapedSelector = selector.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
+    let js = "(function() { const el = document.querySelector('\(escapedSelector)'); return el ? { found: true, tagName: el.tagName, visible: el.offsetParent !== null || el.tagName === 'BODY' } : { found: false }; })()"
+
+    for attempt in 1...maxAttempts {
+      do {
+        let result = try await orchestrator.chromeManager.evaluate(sessionId: sessionId, expression: js)
+        let innerResult = (result["result"] as? [String: Any])?["result"] as? [String: Any]
+        let resultValue = innerResult?["value"] as? [String: Any] ?? [:]
+
+        if resultValue["found"] as? Bool == true {
+          return (200, makeResult(id: id, result: [
+            "found": true,
+            "selector": selector,
+            "tagName": resultValue["tagName"] ?? "unknown",
+            "visible": resultValue["visible"] ?? false,
+            "attempts": attempt,
+            "message": "Element '\(selector)' found after \(attempt) poll(s)"
+          ]))
+        }
+      } catch {
+        // Evaluation error — continue polling unless it's the last attempt
+        if attempt == maxAttempts {
+          return internalError(id: id, message: "Wait failed: \(error.localizedDescription)")
+        }
+      }
+
+      if attempt < maxAttempts {
+        try? await Task.sleep(for: .milliseconds(pollIntervalMs))
+      }
+    }
+
+    // Timed out — get current URL for debugging context
+    var currentURL = "unknown"
+    if let urlResult = try? await orchestrator.chromeManager.evaluate(sessionId: sessionId, expression: "window.location.href"),
+       let urlInner = (urlResult["result"] as? [String: Any])?["result"] as? [String: Any],
+       let urlValue = urlInner["value"] as? String {
+      currentURL = urlValue
+    }
+
+    return (200, makeResult(id: id, result: [
+      "found": false,
+      "selector": selector,
+      "timeout": timeoutMs,
+      "currentURL": currentURL,
+      "message": "Timed out after \(timeoutMs)ms waiting for '\(selector)'. Current URL: \(currentURL). Try chrome.snapshot to inspect the current DOM."
+    ]))
+  }
+
+  // MARK: - chrome.select
+
+  private func handleSelect(id: Any?, arguments: [String: Any], orchestrator: UXTestOrchestrator) async -> (Int, Data) {
+    guard case .success(let sessionIdStr) = requireString("sessionId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "sessionId")
+    }
+    guard let sessionId = UUID(uuidString: sessionIdStr) else {
+      return invalidParamError(id: id, param: "sessionId", reason: "Invalid UUID format")
+    }
+    guard case .success(let selector) = requireString("selector", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "selector")
+    }
+    guard case .success(let value) = requireString("value", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "value")
+    }
+
+    let escapedSelector = selector.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
+    let escapedValue = value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
+
+    let js = """
+      (function() {
+        const el = document.querySelector('\(escapedSelector)');
+        if (!el) return { success: false, error: 'Element not found: \(escapedSelector)' };
+        if (el.tagName !== 'SELECT') return { success: false, error: 'Element is not a <select> (found <' + el.tagName.toLowerCase() + '>)' };
+        const option = Array.from(el.options).find(o => o.value === '\(escapedValue)' || o.textContent.trim() === '\(escapedValue)');
+        if (!option) {
+          const available = Array.from(el.options).map(o => o.value + ' (' + o.textContent.trim() + ')').join(', ');
+          return { success: false, error: 'Option not found: \(escapedValue). Available: ' + available };
+        }
+        el.value = option.value;
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        return { success: true, selectedValue: option.value, selectedText: option.textContent.trim() };
+      })()
+      """
+
+    do {
+      let result = try await orchestrator.chromeManager.evaluate(sessionId: sessionId, expression: js)
+      let innerResult = (result["result"] as? [String: Any])?["result"] as? [String: Any]
+      let resultValue = innerResult?["value"] as? [String: Any] ?? [:]
+
+      if resultValue["success"] as? Bool == true {
+        return (200, makeResult(id: id, result: [
+          "selected": true,
+          "selector": selector,
+          "selectedValue": resultValue["selectedValue"] ?? "",
+          "selectedText": resultValue["selectedText"] ?? "",
+          "message": "Selected '\(resultValue["selectedText"] ?? value)' in '\(selector)'"
+        ]))
+      } else {
+        let error = resultValue["error"] as? String ?? "Unknown error"
+        return (200, makeResult(id: id, result: [
+          "selected": false,
+          "error": error,
+          "message": "Failed to select: \(error)"
+        ]))
+      }
+    } catch {
+      return internalError(id: id, message: "Select failed: \(error.localizedDescription)")
+    }
+  }
+
+  // MARK: - chrome.check
+
+  private func handleCheck(id: Any?, arguments: [String: Any], orchestrator: UXTestOrchestrator) async -> (Int, Data) {
+    guard case .success(let sessionIdStr) = requireString("sessionId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "sessionId")
+    }
+    guard let sessionId = UUID(uuidString: sessionIdStr) else {
+      return invalidParamError(id: id, param: "sessionId", reason: "Invalid UUID format")
+    }
+    guard case .success(let selector) = requireString("selector", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "selector")
+    }
+
+    let checked = arguments["checked"] as? Bool ?? true
+
+    let escapedSelector = selector.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
+
+    let js = """
+      (function() {
+        const el = document.querySelector('\(escapedSelector)');
+        if (!el) return { success: false, error: 'Element not found: \(escapedSelector)' };
+        if (el.type !== 'checkbox' && el.type !== 'radio') return { success: false, error: 'Element is not a checkbox or radio (type: ' + (el.type || el.tagName.toLowerCase()) + ')' };
+        if (el.checked !== \(checked)) {
+          el.checked = \(checked);
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('click', { bubbles: true }));
+        }
+        return { success: true, checked: el.checked, type: el.type, name: el.name || null };
+      })()
+      """
+
+    do {
+      let result = try await orchestrator.chromeManager.evaluate(sessionId: sessionId, expression: js)
+      let innerResult = (result["result"] as? [String: Any])?["result"] as? [String: Any]
+      let resultValue = innerResult?["value"] as? [String: Any] ?? [:]
+
+      if resultValue["success"] as? Bool == true {
+        return (200, makeResult(id: id, result: [
+          "checked": resultValue["checked"] ?? checked,
+          "selector": selector,
+          "type": resultValue["type"] ?? "unknown",
+          "name": resultValue["name"] ?? NSNull(),
+          "message": "\(checked ? "Checked" : "Unchecked") '\(selector)'"
+        ]))
+      } else {
+        let error = resultValue["error"] as? String ?? "Unknown error"
+        return (200, makeResult(id: id, result: [
+          "success": false,
+          "error": error,
+          "message": "Failed to \(checked ? "check" : "uncheck"): \(error)"
+        ]))
+      }
+    } catch {
+      return internalError(id: id, message: "Check failed: \(error.localizedDescription)")
     }
   }
 
@@ -435,13 +646,15 @@ public final class ChromeToolsHandler: MCPToolHandler {
         description: """
           Capture a screenshot of the current page in a Chrome session. \
           Saves to Application Support/Peel/Screenshots/ and returns the file path. \
+          Optionally specify savePath to copy the screenshot to a custom location (e.g., in a worktree). \
           Use this to visually verify UI changes after making code modifications.
           """,
         inputSchema: [
           "type": "object",
           "properties": [
             "sessionId": ["type": "string", "description": "UUID of the Chrome session"],
-            "format": ["type": "string", "description": "Image format: 'png' or 'jpeg' (default: png)"]
+            "format": ["type": "string", "description": "Image format: 'png' or 'jpeg' (default: png)"],
+            "savePath": ["type": "string", "description": "Optional absolute file path to save a copy of the screenshot (e.g., in the agent's worktree)"]
           ],
           "required": ["sessionId"]
         ],
@@ -514,6 +727,63 @@ public final class ChromeToolsHandler: MCPToolHandler {
           "properties": [
             "sessionId": ["type": "string", "description": "UUID of the Chrome session"],
             "selector": ["type": "string", "description": "CSS selector for the element to click"]
+          ],
+          "required": ["sessionId", "selector"]
+        ],
+        category: .ui,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "chrome.wait",
+        description: """
+          Wait for a CSS selector to appear in the DOM. Polls at 250ms intervals up to the timeout. \
+          Use this after chrome.click on form submits or navigation to wait for the new page content \
+          instead of using 'sleep'. Returns whether the element was found and how many poll attempts it took.
+          """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "sessionId": ["type": "string", "description": "UUID of the Chrome session"],
+            "selector": ["type": "string", "description": "CSS selector to wait for (e.g., '.dashboard', '#success-message')"],
+            "timeout": ["type": "integer", "description": "Maximum wait time in milliseconds (default: 5000)"]
+          ],
+          "required": ["sessionId", "selector"]
+        ],
+        category: .ui,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "chrome.select",
+        description: """
+          Select an option in a <select> dropdown by value or visible text. \
+          Dispatches change/input events to trigger framework data binding. \
+          If the option isn't found, returns the list of available options for debugging.
+          """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "sessionId": ["type": "string", "description": "UUID of the Chrome session"],
+            "selector": ["type": "string", "description": "CSS selector for the <select> element"],
+            "value": ["type": "string", "description": "The option value or visible text to select"]
+          ],
+          "required": ["sessionId", "selector", "value"]
+        ],
+        category: .ui,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "chrome.check",
+        description: """
+          Check or uncheck a checkbox or radio button by CSS selector. \
+          Dispatches change/input/click events. \
+          Example: chrome.check with selector='#agree-terms' checked=true
+          """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "sessionId": ["type": "string", "description": "UUID of the Chrome session"],
+            "selector": ["type": "string", "description": "CSS selector for the checkbox or radio input"],
+            "checked": ["type": "boolean", "description": "Target checked state (default: true)"]
           ],
           "required": ["sessionId", "selector"]
         ],

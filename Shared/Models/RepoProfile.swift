@@ -117,6 +117,11 @@ struct AppDefinition: Codable, Sendable, Identifiable {
   /// Estimated cold-boot time in seconds (agents wait this long)
   var bootTimeSeconds: Int?
 
+  /// Build command for this app (e.g., "cd tio-admin && pnpm build").
+  /// Used by gate steps to verify the build passes after agent changes.
+  /// Supports placeholders: {{APP_PATH}}
+  var buildCommand: String?
+
   /// Whether this is the primary/default app
   var isPrimary: Bool?
 
@@ -248,6 +253,9 @@ struct TestingConfig: Codable, Sendable {
 
   /// Type check command
   var typeCheckCommand: String?
+
+  /// Build command (root-level fallback when no per-app buildCommand is set)
+  var buildCommand: String?
 }
 
 // MARK: - Conventions Config

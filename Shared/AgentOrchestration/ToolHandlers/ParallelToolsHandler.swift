@@ -267,7 +267,9 @@ final class ParallelToolsHandler {
       let focusPaths = taskDict["focusPaths"] as? [String] ?? []
       let useUXTesting = taskDict["useUXTesting"] as? Bool ?? false
       let apiBaseURL = taskDict["apiBaseURL"] as? String
-      return WorktreeTask(title: title, description: description, prompt: prompt, focusPaths: focusPaths, useUXTesting: useUXTesting, apiBaseURL: apiBaseURL)
+      let installDependencies = taskDict["installDependencies"] as? Bool ?? false
+      let devServerPath = taskDict["devServerPath"] as? String
+      return WorktreeTask(title: title, description: description, prompt: prompt, focusPaths: focusPaths, useUXTesting: useUXTesting, apiBaseURL: apiBaseURL, installDependencies: installDependencies, devServerPath: devServerPath)
     }
 
     guard tasks.count == tasksArray.count else {
@@ -825,7 +827,7 @@ final class ParallelToolsHandler {
     let newTasks: [WorktreeTask] = tasksArray.compactMap { taskDict in
       guard let title = (taskDict["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty,
             let prompt = (taskDict["prompt"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !prompt.isEmpty else { return nil }
-      return WorktreeTask(title: title, description: taskDict["description"] as? String ?? "", prompt: prompt, focusPaths: taskDict["focusPaths"] as? [String] ?? [], useUXTesting: taskDict["useUXTesting"] as? Bool ?? false, apiBaseURL: taskDict["apiBaseURL"] as? String)
+      return WorktreeTask(title: title, description: taskDict["description"] as? String ?? "", prompt: prompt, focusPaths: taskDict["focusPaths"] as? [String] ?? [], useUXTesting: taskDict["useUXTesting"] as? Bool ?? false, apiBaseURL: taskDict["apiBaseURL"] as? String, installDependencies: taskDict["installDependencies"] as? Bool ?? false, devServerPath: taskDict["devServerPath"] as? String)
     }
     guard newTasks.count == tasksArray.count else {
       return invalidParamError(id: id, param: "tasks", reason: "Invalid task format — each task needs title and prompt")
@@ -981,6 +983,19 @@ final class ParallelToolsHandler {
       break
     }
 
+    // Surface collected artifacts (screenshots, etc.)
+    if !execution.artifacts.isEmpty {
+      result["artifacts"] = execution.artifacts.map { artifact -> [String: Any] in
+        var a: [String: Any] = [
+          "type": artifact.type,
+          "filePath": artifact.filePath
+        ]
+        if let label = artifact.label { a["label"] = label }
+        a["createdAt"] = Formatter.iso8601.string(from: artifact.createdAt)
+        return a
+      }
+    }
+
     // Surface per-step chain results for post-mortem analysis
     if !execution.chainStepResults.isEmpty {
       result["chainSteps"] = execution.chainStepResults.map { step -> [String: Any] in
@@ -1054,7 +1069,15 @@ extension ParallelToolsHandler {
                   ],
                   "apiBaseURL": [
                     "type": "string",
-                    "description": "Base URL of the shared backend API (default: http://localhost:3000). Only used when useUXTesting is true."
+                    "description": "Base URL of an externally running app (e.g., http://localhost:4200). Skips per-worktree dev server. Only used when useUXTesting is true."
+                  ],
+                  "installDependencies": [
+                    "type": "boolean",
+                    "description": "When true, install node dependencies (pnpm/npm/yarn/bun) in the worktree before starting the dev server. Symlinks node_modules from the main repo when possible for speed. Required for per-worktree app isolation."
+                  ],
+                  "devServerPath": [
+                    "type": "string",
+                    "description": "Sub-directory within the worktree where the dev server should start. For monorepos like pnpm workspaces, e.g. 'tio-admin' when the app is at <worktree>/tio-admin/."
                   ]
                 ],
                 "required": ["title", "prompt"]

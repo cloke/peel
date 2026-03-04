@@ -74,6 +74,8 @@ final class UXTestOrchestrator {
   ///   - devServerCommand: Optional override for dev server start command
   ///   - skipDevServer: When true, only launches Chrome without a dev server (useful for testing or static sites)
   ///   - apiBaseURL: External app URL (e.g., "http://localhost:4250"). When set, skipDevServer is implicitly true.
+  ///   - installDependencies: When true, install node_modules before starting the dev server (symlinks from main repo if possible).
+  ///   - devServerPath: Sub-directory within the worktree where the dev server should start (for monorepos).
   /// - Returns: The created UX session
   @discardableResult
   func createSession(
@@ -81,9 +83,19 @@ final class UXTestOrchestrator {
     worktreePath: String,
     devServerCommand: String? = nil,
     skipDevServer: Bool = false,
-    apiBaseURL: String? = nil
+    apiBaseURL: String? = nil,
+    installDependencies: Bool = false,
+    devServerPath: String? = nil
   ) async throws -> UXSession {
     let effectiveSkipDevServer = skipDevServer || (apiBaseURL != nil)
+
+    // Resolve the actual directory where the dev server runs
+    let serverDir: String
+    if let subDir = devServerPath {
+      serverDir = "\(worktreePath)/\(subDir)"
+    } else {
+      serverDir = worktreePath
+    }
 
     // 1. Allocate ports
     let ports = try await portAllocator.allocate(for: sessionId)
@@ -96,14 +108,26 @@ final class UXTestOrchestrator {
       externalURL: apiBaseURL
     )
 
-    logger.info("Creating UX session \(sessionId.uuidString) — dev:\(ports.devPort) chrome:\(ports.chromePort) skipDevServer:\(effectiveSkipDevServer) apiBaseURL:\(apiBaseURL ?? "none")")
+    logger.info("Creating UX session \(sessionId.uuidString) — dev:\(ports.devPort) chrome:\(ports.chromePort) skipDevServer:\(effectiveSkipDevServer) apiBaseURL:\(apiBaseURL ?? "none") installDeps:\(installDependencies) serverDir:\(serverDir)")
 
-    // 2. Start dev server (unless skipped or using external URL)
+    // 2. Install dependencies if requested (before starting dev server)
+    if installDependencies && !effectiveSkipDevServer {
+      // For monorepos, install at the worktree root (pnpm install) which sets up all packages
+      do {
+        try await devServerManager.installDependencies(worktreePath: worktreePath)
+      } catch {
+        logger.error("Failed to install dependencies: \(error.localizedDescription)")
+        await teardownSession(sessionId: sessionId)
+        throw error
+      }
+    }
+
+    // 3. Start dev server (unless skipped or using external URL)
     if !effectiveSkipDevServer {
       do {
         let serverInstance = try await devServerManager.start(
           sessionId: sessionId,
-          worktreePath: worktreePath,
+          worktreePath: serverDir,
           port: ports.devPort,
           command: devServerCommand
         )
@@ -253,12 +277,27 @@ final class UXTestOrchestrator {
     mcp_call "chrome.click" '{"sessionId":"\(sid)","selector":"button[type=submit]"}'
     ```
 
-    **5. Take a screenshot (returns base64 PNG):**
+    **5. Wait for an element to appear (use instead of sleep!):**
+    ```bash
+    mcp_call "chrome.wait" '{"sessionId":"\(sid)","selector":".dashboard","timeout":5000}'
+    ```
+
+    **6. Select a dropdown option:**
+    ```bash
+    mcp_call "chrome.select" '{"sessionId":"\(sid)","selector":"select[name=country]","value":"US"}'
+    ```
+
+    **7. Check/uncheck a checkbox:**
+    ```bash
+    mcp_call "chrome.check" '{"sessionId":"\(sid)","selector":"#agree-terms","checked":true}'
+    ```
+
+    **8. Take a screenshot (returns file path):**
     ```bash
     mcp_call "chrome.screenshot" '{"sessionId":"\(sid)"}'
     ```
 
-    **6. Run JavaScript in the page:**
+    **9. Run JavaScript in the page:**
     ```bash
     mcp_call "chrome.evaluate" '{"sessionId":"\(sid)","expression":"document.title"}'
     ```
@@ -269,17 +308,18 @@ final class UXTestOrchestrator {
     2. Navigate to the app: `mcp_call "chrome.navigate" '{"sessionId":"\(sid)","url":"\(session.devServerURL)"}'`
     3. Get the page structure: `mcp_call "chrome.snapshot" '{"sessionId":"\(sid)"}'`
     4. If login is required: use `chrome.fill` for each field + `chrome.click` for submit
-    5. After actions, wait briefly: `sleep 2`
+    5. Wait for navigation: `mcp_call "chrome.wait" '{"sessionId":"\(sid)","selector":".dashboard"}'`
     6. Take a screenshot to verify: `mcp_call "chrome.screenshot" '{"sessionId":"\(sid)"}'`
     7. Use `chrome.snapshot` to inspect results if screenshot is unclear
 
     ### Important Notes
 
     - Always use the session ID `\(sid)` — this is YOUR dedicated Chrome instance
-    - After clicking/submitting, add `sleep 2` before screenshots to let the page load
+    - **Use `chrome.wait` instead of `sleep`** after clicks/navigation — it's more reliable
     - The `chrome.snapshot` result shows a simplified DOM — use it to find CSS selectors
-    - Screenshots return base64 data in the response — you can describe what you see
-    - If a selector doesn't match, use `chrome.snapshot` first to find the correct selector
+    - Screenshots return the saved file path in the response
+    - If a selector doesn't match, the error includes the current URL — use `chrome.snapshot` to find the correct selector
+    - Use `chrome.select` for `<select>` dropdowns and `chrome.check` for checkboxes/radios
     """
   }
 }
