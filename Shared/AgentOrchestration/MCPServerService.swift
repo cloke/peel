@@ -805,6 +805,7 @@ public final class MCPServerService {
     let orchestrator = UXTestOrchestrator()
     self.uxTestOrchestrator = orchestrator
     self.chromeToolsHandler.orchestrator = orchestrator
+    self.parallelWorktreeRunner?.setUXTestOrchestrator(orchestrator)
 
     wireToolHandlerDelegates()
 

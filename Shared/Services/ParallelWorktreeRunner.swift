@@ -21,6 +21,12 @@ struct WorktreeTask: Identifiable, Sendable {
   var focusPaths: [String]
   /// UUIDs of other tasks in the same run that must be .merged before this one starts
   var dependsOn: [UUID]
+  /// When true, the runner will create a UX test session (dev server + headless Chrome)
+  /// for this task and inject browser tool instructions into the prompt.
+  var useUXTesting: Bool
+  /// Base URL for the shared backend API (e.g., "http://localhost:3000" for Rails).
+  /// Only used when useUXTesting is true.
+  var apiBaseURL: String?
 
   init(
     id: UUID = UUID(),
@@ -28,7 +34,9 @@ struct WorktreeTask: Identifiable, Sendable {
     description: String,
     prompt: String,
     focusPaths: [String] = [],
-    dependsOn: [UUID] = []
+    dependsOn: [UUID] = [],
+    useUXTesting: Bool = false,
+    apiBaseURL: String? = nil
   ) {
     self.id = id
     self.title = title
@@ -36,6 +44,8 @@ struct WorktreeTask: Identifiable, Sendable {
     self.prompt = prompt
     self.focusPaths = focusPaths
     self.dependsOn = dependsOn
+    self.useUXTesting = useUXTesting
+    self.apiBaseURL = apiBaseURL
   }
 }
 
@@ -384,6 +394,9 @@ final class ParallelWorktreeRunner {
   /// Local RAG store for grounding
   private var ragStore: LocalRAGStore?
 
+  /// UX test orchestrator for Chrome-based parallel testing
+  private var uxTestOrchestrator: UXTestOrchestrator?
+
   private let mcpLog = MCPLogService.shared
   
   /// Max concurrent worktrees
@@ -412,6 +425,11 @@ final class ParallelWorktreeRunner {
   /// Set the RAG store for grounding
   func setRAGStore(_ store: LocalRAGStore) {
     self.ragStore = store
+  }
+
+  /// Set the UX test orchestrator for Chrome-based parallel testing
+  func setUXTestOrchestrator(_ orchestrator: UXTestOrchestrator) {
+    self.uxTestOrchestrator = orchestrator
   }
 
   func setDataService(_ service: DataService) {
@@ -825,7 +843,27 @@ final class ParallelWorktreeRunner {
       execution.status = .running
       PeonPingService.shared.agentStarted(name: execution.task.title)
       recordSnapshot(for: run)
-      
+
+      // Create UX test session if this task needs browser access
+      if execution.task.useUXTesting, let orchestrator = uxTestOrchestrator {
+        do {
+          let uxSession = try await orchestrator.createSession(
+            sessionId: execution.id,
+            worktreePath: worktreePath
+          )
+          await mcpLog.info("UX session created for worktree", metadata: [
+            "executionId": execution.id.uuidString,
+            "devServerPort": "\(uxSession.devServerPort)",
+            "chromeDebugPort": "\(uxSession.chromeDebugPort)",
+            "devServerURL": uxSession.devServerURL
+          ])
+        } catch {
+          await mcpLog.warning("UX session creation failed, continuing without browser: \(error.localizedDescription)", metadata: [
+            "executionId": execution.id.uuidString
+          ])
+        }
+      }
+
       // Build the grounded prompt
       let includeRAG = run.templateName != "Free Review"
       let groundedPrompt = buildGroundedPrompt(for: execution, run: run, includeRAG: includeRAG)
@@ -870,6 +908,11 @@ final class ParallelWorktreeRunner {
       execution.completedAt = Date()
       recordSnapshot(for: run)
 
+      // Tear down UX session if one was created
+      if execution.task.useUXTesting, let orchestrator = uxTestOrchestrator {
+        await orchestrator.teardownSession(sessionId: execution.id)
+      }
+
       await mcpLog.info("Parallel worktree completed", metadata: [
         "runId": run.id.uuidString,
         "executionId": execution.id.uuidString,
@@ -883,6 +926,10 @@ final class ParallelWorktreeRunner {
       execution.status = .failed(error.localizedDescription)
       execution.completedAt = Date()
       recordSnapshot(for: run)
+      // Tear down UX session on failure too
+      if execution.task.useUXTesting, let orchestrator = uxTestOrchestrator {
+        await orchestrator.teardownSession(sessionId: execution.id)
+      }
       PeonPingService.shared.worktreeFailed(taskTitle: execution.task.title, error: error.localizedDescription)
       await mcpLog.error(error, context: "Parallel worktree failed", metadata: [
         "runId": run.id.uuidString,
@@ -919,6 +966,12 @@ final class ParallelWorktreeRunner {
         .map { index, entry in "\(index + 1). \(entry)" }
         .joined(separator: "\n")
       prompt += "\n\n## Operator Guidance\n\n" + guidanceBlock + "\n"
+    }
+
+    // Inject UX testing context if a browser session exists for this execution
+    if execution.task.useUXTesting, let orchestrator = uxTestOrchestrator,
+       let uxContext = orchestrator.buildPromptContext(for: execution.id) {
+      prompt += "\n\n" + uxContext + "\n"
     }
 
     return prompt

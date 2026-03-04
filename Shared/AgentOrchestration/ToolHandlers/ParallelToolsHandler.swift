@@ -265,7 +265,9 @@ final class ParallelToolsHandler {
       }
       let description = taskDict["description"] as? String ?? ""
       let focusPaths = taskDict["focusPaths"] as? [String] ?? []
-      return WorktreeTask(title: title, description: description, prompt: prompt, focusPaths: focusPaths)
+      let useUXTesting = taskDict["useUXTesting"] as? Bool ?? false
+      let apiBaseURL = taskDict["apiBaseURL"] as? String
+      return WorktreeTask(title: title, description: description, prompt: prompt, focusPaths: focusPaths, useUXTesting: useUXTesting, apiBaseURL: apiBaseURL)
     }
 
     guard tasks.count == tasksArray.count else {
@@ -823,7 +825,7 @@ final class ParallelToolsHandler {
     let newTasks: [WorktreeTask] = tasksArray.compactMap { taskDict in
       guard let title = (taskDict["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty,
             let prompt = (taskDict["prompt"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !prompt.isEmpty else { return nil }
-      return WorktreeTask(title: title, description: taskDict["description"] as? String ?? "", prompt: prompt, focusPaths: taskDict["focusPaths"] as? [String] ?? [])
+      return WorktreeTask(title: title, description: taskDict["description"] as? String ?? "", prompt: prompt, focusPaths: taskDict["focusPaths"] as? [String] ?? [], useUXTesting: taskDict["useUXTesting"] as? Bool ?? false, apiBaseURL: taskDict["apiBaseURL"] as? String)
     }
     guard newTasks.count == tasksArray.count else {
       return invalidParamError(id: id, param: "tasks", reason: "Invalid task format — each task needs title and prompt")
@@ -1045,6 +1047,14 @@ extension ParallelToolsHandler {
                     "type": "array",
                     "items": ["type": "integer"],
                     "description": "0-based indices of other tasks in this batch that must be merged before this task starts"
+                  ],
+                  "useUXTesting": [
+                    "type": "boolean",
+                    "description": "When true, creates a dev server and headless Chrome for this task's worktree. The agent prompt will include browser tool instructions."
+                  ],
+                  "apiBaseURL": [
+                    "type": "string",
+                    "description": "Base URL of the shared backend API (default: http://localhost:3000). Only used when useUXTesting is true."
                   ]
                 ],
                 "required": ["title", "prompt"]
