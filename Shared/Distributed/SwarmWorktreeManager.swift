@@ -175,9 +175,7 @@ public final class SwarmWorktreeManager {
     taskId: UUID,
     commitMessage: String
   ) async throws -> Bool {
-    logger.info("commitAndPushChanges called for task \(taskId)")
-    logger.info("Active worktrees count: \(self.activeWorktrees.count)")
-    logger.info("Active worktree keys: \(self.activeWorktrees.keys.map { $0.uuidString })")
+    logger.info("commitAndPushChanges called for task \(taskId); activeWorktrees=\(self.activeWorktrees.count)")
     
     // Try in-memory first; fall back to SwiftData for post-restart recovery
     var info = activeWorktrees[taskId]
@@ -242,13 +240,12 @@ public final class SwarmWorktreeManager {
       logger.info("No uncommitted changes for task \(taskId), checking for unpushed commits")
     }
     
-    // Always check if the branch has commits ahead of origin — the agent may have
-    // committed inside the chain execution, leaving a clean working dir but unpushed commits.
-    let logResult = try await runGitCommand(
-      args: ["log", "origin/main..\(branchName)", "--oneline"],
+    // Always check if branch has commits ahead of its upstream.
+    // Fallback to origin/main when upstream is unavailable.
+    let hasUnpushedCommits = try await branchHasUnpushedCommits(
+      branchName: branchName,
       in: worktreePath
     )
-    let hasUnpushedCommits = !logResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     
     guard hasDirtyChanges || hasUnpushedCommits else {
       logger.info("No changes to commit or push in worktree for task \(taskId)")
@@ -268,6 +265,28 @@ public final class SwarmWorktreeManager {
     logger.info("Successfully committed and pushed changes for task \(taskId) on branch \(branchName)")
     updateWorktreeStatus(taskId: taskId, status: TrackedWorktree.Status.committed)
     return true
+  }
+
+  private func branchHasUnpushedCommits(branchName: String, in worktreePath: String) async throws -> Bool {
+    let upstreamRefResult = try await runGitCommand(
+      args: ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
+      in: worktreePath
+    )
+
+    let upstreamRef: String
+    if upstreamRefResult.exitCode == 0 {
+      upstreamRef = upstreamRefResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+    } else {
+      upstreamRef = "origin/main"
+      logger.debug("No upstream found for \(branchName); using fallback \(upstreamRef)")
+    }
+
+    let logResult = try await runGitCommand(
+      args: ["log", "\(upstreamRef)..\(branchName)", "--oneline"],
+      in: worktreePath
+    )
+
+    return !logResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
   
   /// Remove a worktree for a completed/failed task

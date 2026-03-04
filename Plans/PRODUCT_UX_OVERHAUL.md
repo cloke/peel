@@ -21,7 +21,7 @@ audience:
 **Updated:** March 4, 2026  
 **Goal:** Transform Peel from a developer tool collection into a cohesive product that new users immediately understand.
 
-> **Quick Status (March 4, 2026):** Phases 0–5b complete. Phase 6 (repo detail modernization) partially done — Branches tab reworked with inline layout, worktree approval chain, and agent PR review. RAG/Activity/Skills tabs still need card-based modernization. Phase 7 (worktree approvals + PR review) complete and building. Several old features still unreachable — see "Feature Accessibility Audit" below.
+> **Quick Status (March 4, 2026):** Phases 0–5b complete. Phase 6 (repo detail modernization) partially done — Branches tab reworked with inline layout, worktree approval chain, and agent PR review. RAG/Activity/Skills tabs still need card-based modernization. Phase 7 (worktree approvals + PR review) complete and building. **Phase 8 started** — P8-06 (PR Queue Reliability) fully implemented: O(1) dequeue, retry/backoff, async git push, SwiftData persistence. OPT-01/02/03 also done. GitHub issues #347–#356 created for full Phase 8/9 execution pack. Several old features still unreachable — see "Feature Accessibility Audit" below.
 
 ---
 
@@ -958,7 +958,7 @@ The remaining repo detail tabs still use old GroupBox layouts that feel jarring 
 
 The UX foundation is now good enough to start the next product layer: **enterprise-scale execution and review orchestration**.
 
-### Phase 8: Multi-Agent Job Orchestration at Scale ⬜ NEXT
+### Phase 8: Multi-Agent Job Orchestration at Scale 🔄 IN PROGRESS
 **Goal:** Send one Peel job and have it fan out to many agents/workers safely, with predictable throughput and explicit human approval gates.
 
 #### 8A: Unified Job Spec + Routing
@@ -1123,6 +1123,278 @@ Optimize:
 
 Impact:
 - Required for reliable long-running enterprise review workflows.
+
+---
+
+## GitHub Issue Set (Phase 8/9 Execution Pack)
+
+Use these in order. Each item is intentionally small enough to ship independently while still composing into the full multi-agent + enterprise PR review workflow.
+
+### Dependency Order
+
+1. P8-01 `PeelJob` envelope + lifecycle states
+2. P8-02 Worker leasing + heartbeat + requeue
+3. P8-03 Queue backpressure + concurrency caps
+4. P8-04 Parent/child execution mode support (single/batch/map-reduce)
+5. P8-05 Approval-gate policy engine
+6. P8-06 PR queue persistence + retry/backoff optimizations
+7. P9-01 Enterprise PR ingestion service + index
+8. P9-02 Enterprise PR list UI + filters
+9. P9-03 Agent assignment orchestration (single + bulk)
+10. P9-04 PR decision console + governance audit trail
+
+### P8-01 — Introduce `PeelJob` Envelope and Lifecycle
+
+## Summary
+Create a unified `PeelJob` model and lifecycle state machine that routes jobs consistently across local parallel runs, LAN swarm workers, and WAN workers.
+
+## Proposed Charts / Work
+- Define `PeelJob` envelope and `JobState` transitions (`queued`, `leased`, `running`, `awaiting_review`, `approved`, `merged`, `failed`, `cancelled`)
+- Normalize payload mapping from current chain/task inputs into `PeelJob`
+- Add serialization/deserialization tests for backward compatibility
+- Add migration adapters for existing chain run path to avoid breaking current UI
+
+## Data Source
+- `MCPRunRecord`
+- Distributed task payloads from [Plans/DISTRIBUTED_TASK_TYPES_SPEC.md](Plans/DISTRIBUTED_TASK_TYPES_SPEC.md)
+
+## UI Placement
+- Activity tab cards (state and progress)
+- Repo Branches tab (job lineage ribbon)
+
+## Acceptance Criteria
+- [ ] One API path can dispatch the same job envelope to local and swarm execution backends
+- [ ] Lifecycle transitions are deterministic and logged
+- [ ] Existing single-run flow still works without regression
+
+### P8-02 — Worker Leasing + Heartbeat + Requeue
+
+## Summary
+Prevent double-consumption and stuck jobs by adding lease ownership, heartbeat renewal, timeout reclaim, and bounded retry.
+
+## Proposed Charts / Work
+- Add lease record (`jobId`, `workerId`, `leaseExpiresAt`, `retryCount`)
+- Add heartbeat updates with timeout reclaim
+- Requeue timed-out jobs with max retry budget and failure reason
+- Add worker capability matching (`swift`, `node`, `ios-sim`, `large-context`)
+
+## Data Source
+- Swarm coordinator worker registry
+- Distributed task queue store
+
+## UI Placement
+- Activity > Workers panel (lease + heartbeat badges)
+- Activity > Running now (retry indicators)
+
+## Acceptance Criteria
+- [ ] A timed-out lease automatically requeues eligible jobs
+- [ ] Jobs are not executed by two workers concurrently
+- [ ] Capability mismatches are visible and actionable
+
+### P8-03 — Backpressure and Concurrency Guardrails
+
+## Summary
+Add global and per-repo concurrency controls so large fan-out jobs remain stable and fair.
+
+## Proposed Charts / Work
+- Implement global max in-flight jobs + per-repo max in-flight jobs
+- Add queue priority handling (`high`, `normal`, `low`) with starvation prevention
+- Add queue telemetry (`queued`, `running`, `retrying`, `blocked`)
+- Add safe defaults in settings
+
+## Data Source
+- Job queue metrics
+- Repo identity from unified repository model
+
+## UI Placement
+- Activity filters and summary chips
+- Settings > Swarm / execution policy
+
+## Acceptance Criteria
+- [ ] Dispatching 100+ jobs does not freeze UI or starve low-volume repos
+- [ ] Per-repo caps are enforced consistently
+- [ ] Operators can observe queue pressure in real time
+
+### P8-04 — Execution Modes: Single, Batch, Map-Reduce
+
+## Summary
+Support one prompt across one repo, many repos, or fan-out/fan-in workflows with explicit parent-child artifacts.
+
+## Proposed Charts / Work
+- Add `ExecutionMode` to job envelope (`single`, `batch`, `mapReduce`)
+- Model parent job + child execution graph
+- Add fan-in synthesis step for map-reduce mode
+- Persist child output references for downstream review
+
+## Data Source
+- Job/execution records
+- Existing parallel worktree run data
+
+## UI Placement
+- Activity timeline (expand parent to children)
+- Branches tab (child status summary)
+
+## Acceptance Criteria
+- [ ] Batch mode can run one prompt against N repos with independent branch isolation
+- [ ] Map-reduce mode produces a deterministic fan-in summary artifact
+- [ ] Failed children don’t corrupt successful siblings
+
+### P8-05 — Approval Gate Policy Engine
+
+## Summary
+Turn current inline approvals into policy evaluation with explicit merge gates and human sign-off requirements.
+
+## Proposed Charts / Work
+- Define policy rules for risk thresholds, CI requirements, and mandatory human approval
+- Evaluate gate status per execution and per PR
+- Add machine-generated gate explanation payload
+- Block merge actions when policy fails
+
+## Data Source
+- PR labels (`peel:*`)
+- CI/check status
+- Agent review verdict payloads
+
+## UI Placement
+- Branches tab approval cards
+- Enterprise PR decision console
+
+## Acceptance Criteria
+- [ ] High-risk PRs require explicit human gate approval
+- [ ] Merge action is disabled with clear reason when policy fails
+- [ ] Gate outcomes are auditable after restart
+
+### P8-06 — PR Queue Reliability + Performance Optimizations ✅ DONE
+
+## Summary
+Harden PR queue throughput and recovery by persisting queue state, adding retries/backoff, and removing main-actor blocking process work.
+
+## Proposed Charts / Work
+- Persist pending PR operations + created PR metadata in SwiftData
+- Replace O(n) dequeue with deque-style O(1) pop
+- Add transient failure retry with exponential backoff + jitter
+- Move `git push` process execution off main actor
+
+## Data Source
+- PR queue operation records
+- GitHub response status codes
+
+## UI Placement
+- Activity diagnostics (queue health)
+- PR status badges in repo detail and enterprise view
+
+## Acceptance Criteria
+- [x] PR queue resumes after app restart without operator intervention
+- [x] Queue throughput remains stable at high operation volume
+- [x] UI does not block during push/retry operations
+
+**Implementation (March 4, 2026):**
+- `PRQueue.swift`: Head-index O(1) dequeue, `retryDelayNanos()` with exponential backoff + jitter, async `git push` via `terminationHandler`
+- `WorktreeModels.swift`: `PRQueueOperationRecord` + `PRQueueCreatedPRRecord` SwiftData models
+- `PeelApp.swift`: Schema registration for new models
+- `SwarmCoordinator.swift`: `modelContext` injection into PRQueue
+- GitHub issue: #352
+
+### P9-01 — Enterprise PR Ingestion and Index
+
+## Summary
+Build a federated PR ingestion service that aggregates open PRs across configured orgs/repos into one indexed source.
+
+## Proposed Charts / Work
+- Add org/repo discovery + PR polling with incremental sync cursors
+- Store normalized PR entities (repo, author, labels, CI status, risk)
+- Add freshness timestamps and stale-data handling
+- Add pagination and scoped sync controls
+
+## Data Source
+- GitHub API (enterprise/org/repo PR endpoints)
+- Existing repo registry mappings
+
+## UI Placement
+- Activity > enterprise PR surface
+- Repositories side filter chips (has open PRs, needs review)
+
+## Acceptance Criteria
+- [ ] One list can show open PRs across configured enterprise scope
+- [ ] Sync can resume without full re-fetch
+- [ ] Stale data is visibly marked
+
+### P9-02 — Enterprise PR List UI + Filters
+
+## Summary
+Create the UI surface to browse all enterprise PRs with operationally useful filters and sorting.
+
+## Proposed Charts / Work
+- Build table/list with columns: repo, PR, author, age, size, CI, risk, labels
+- Add filters: org, repo, risk, CI state, label, assigned-review-agent state
+- Add bulk selection model for assignment/review actions
+- Add keyboard shortcuts and saved filter sets
+
+## Data Source
+- Enterprise PR index store
+
+## UI Placement
+- Activity tab primary section (enterprise PR queue)
+
+## Acceptance Criteria
+- [ ] Operators can isolate high-risk, failing-CI PRs in under 3 clicks
+- [ ] List supports bulk selection without losing filter context
+- [ ] Sorting/filtering is performant for large enterprise datasets
+
+### P9-03 — Agent Assignment Orchestration (Single + Bulk)
+
+## Summary
+Allow assigning one or many review agents/templates to selected PRs, including bulk dispatch controls and safeguards.
+
+## Proposed Charts / Work
+- Add assignment model (`reviewTemplate`, `agentProfile`, `priority`, `deadline`)
+- Add per-PR and bulk assignment actions
+- Enforce assignment queue limits and duplicate-assignment prevention
+- Add assignment event timeline per PR
+
+## Data Source
+- Enterprise PR index
+- Job queue and chain dispatch services
+
+## UI Placement
+- Enterprise PR list row actions and bulk toolbar
+- PR detail pane assignment history
+
+## Acceptance Criteria
+- [ ] Bulk assignment of selected PRs dispatches expected review jobs
+- [ ] Duplicate assignment attempts are prevented with clear feedback
+- [ ] Assignment progress is visible end-to-end
+
+### P9-04 — PR Decision Console + Governance Audit Trail
+
+## Summary
+Provide a single PR decision surface for approve/comment/request-changes/fix that captures all agent recommendations and human decisions.
+
+## Proposed Charts / Work
+- Build decision console with agent result comparison and disagreement highlight
+- Wire GitHub actions (approve/comment/request changes/fix with agent)
+- Capture immutable audit events: assigner, model/template, verdict, final human action
+- Add exportable review timeline for compliance/reporting
+
+## Data Source
+- Agent review results
+- PR decision events
+- GitHub review/comment actions
+
+## UI Placement
+- Enterprise PR detail panel
+- Repo Branches PR card (condensed decision state)
+
+## Acceptance Criteria
+- [ ] User can complete review-to-decision flow without leaving Peel
+- [ ] All actions are attributable (who/what/when)
+- [ ] Governance audit trail survives restarts and is queryable
+
+### Optional Follow-Up: Immediate Optimization Tickets ✅ ALL DONE
+
+- ~~OPT-01 Event-driven PR review completion~~ ✅ `pollForResult()` rewritten: direct run discovery via `findRunBySourceChainRunId` + `waitForRunCompletion` with adaptive backoff
+- ~~OPT-02 Structured JSON review payload + `Codable` parsing~~ ✅ Added `ReviewJSONPayload` Decodable struct, `parseStructuredReviewOutput()` pipeline, strict JSON prompt schema
+- ~~OPT-03 Upstream-aware commit detection + log noise reduction~~ ✅ `branchHasUnpushedCommits()` uses `@{upstream}` with `origin/main` fallback; consolidated verbose logging
 
 ---
 

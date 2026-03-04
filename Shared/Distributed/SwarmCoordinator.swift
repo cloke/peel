@@ -241,6 +241,7 @@ public final class SwarmCoordinator {
     didSet {
       _worktreeManager?.modelContext = modelContext
       branchQueue.modelContext = modelContext
+      prQueue.modelContext = modelContext
     }
   }
 

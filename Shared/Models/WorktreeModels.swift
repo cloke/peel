@@ -111,3 +111,70 @@ final class SwarmBranchReservation {
     self.createdAt = Date()
   }
 }
+
+/// Persisted PR queue operation record so PRQueue can recover pending work after restart.
+/// Device-local — not synced to iCloud.
+@Model
+final class PRQueueOperationRecord {
+  var id: UUID = UUID()
+  var operationType: String = ""
+  var attempt: Int = 0
+  var taskId: String = ""
+  var prNumber: Int = 0
+  var labelRaw: String = ""
+  var commentText: String = ""
+  var branchName: String = ""
+  var repoPath: String = ""
+  var baseBranch: String = ""
+  var title: String = ""
+  var body: String = ""
+  /// Comma-separated Peel label raw values.
+  var labelsCSV: String = ""
+  var isDraft: Bool = false
+  var createdAt: Date = Date()
+
+  init(id: UUID = UUID(), operationType: String, attempt: Int) {
+    self.id = id
+    self.operationType = operationType
+    self.attempt = attempt
+    self.createdAt = Date()
+  }
+}
+
+/// Persisted created PR metadata for PRQueue recovery and UI continuity.
+/// Device-local — not synced to iCloud.
+@Model
+final class PRQueueCreatedPRRecord {
+  var id: UUID = UUID()
+  var taskId: String = ""
+  var prNumber: Int = 0
+  var prURL: String = ""
+  var branchName: String = ""
+  var repoPath: String = ""
+  var createdAt: Date = Date()
+  /// Comma-separated Peel label raw values.
+  var labelsCSV: String = ""
+  var status: String = "open"
+
+  init(
+    id: UUID = UUID(),
+    taskId: String,
+    prNumber: Int,
+    prURL: String,
+    branchName: String,
+    repoPath: String,
+    createdAt: Date,
+    labelsCSV: String,
+    status: String
+  ) {
+    self.id = id
+    self.taskId = taskId
+    self.prNumber = prNumber
+    self.prURL = prURL
+    self.branchName = branchName
+    self.repoPath = repoPath
+    self.createdAt = createdAt
+    self.labelsCSV = labelsCSV
+    self.status = status
+  }
+}

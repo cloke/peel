@@ -149,6 +149,8 @@ struct PeelApp: App {
       LocalRepositoryPath.self,
       TrackedWorktree.self,
       SwarmBranchReservation.self,
+      PRQueueOperationRecord.self,
+      PRQueueCreatedPRRecord.self,
       DeviceSettings.self,
       MCPRunRecord.self,
       MCPRunResultRecord.self,

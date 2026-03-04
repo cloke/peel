@@ -6,6 +6,7 @@
 
 import Foundation
 import os.log
+import SwiftData
 
 /// Labels applied to swarm-created PRs
 public enum PeelPRLabel: String, Sendable, CaseIterable {
@@ -46,8 +47,22 @@ public final class PRQueue {
   
   private let logger = Logger(subsystem: "com.peel.distributed", category: "PRQueue")
   
-  /// Queue of pending PR operations
-  private var pendingOperations: [PROperation] = []
+  /// Queue of pending PR operations.
+  /// Uses a head index to avoid O(n) `removeFirst()` churn under load.
+  private var pendingOperations: [QueuedOperation] = []
+  private var queueHeadIndex = 0
+
+  /// Retry policy for transient failures.
+  private let maxRetryAttempts = 3
+
+  /// SwiftData context for persisting queue state across app restarts.
+  public var modelContext: ModelContext? {
+    didSet {
+      if modelContext != nil {
+        recoverFromPersistence()
+      }
+    }
+  }
   
   /// Currently processing
   private var isProcessing = false
@@ -63,6 +78,24 @@ public final class PRQueue {
     case createPR(CreatePRRequest)
     case updateLabel(taskId: UUID, prNumber: Int, label: PeelPRLabel)
     case addComment(taskId: UUID, prNumber: Int, comment: String)
+  }
+
+  private enum OperationType: String {
+    case createPR
+    case updateLabel
+    case addComment
+  }
+
+  private struct QueuedOperation: Sendable {
+    let id: UUID
+    let operation: PROperation
+    let attempt: Int
+
+    init(id: UUID = UUID(), operation: PROperation, attempt: Int = 0) {
+      self.id = id
+      self.operation = operation
+      self.attempt = attempt
+    }
   }
   
   /// Request to create a PR
@@ -122,20 +155,20 @@ public final class PRQueue {
   /// Enqueue a PR creation request
   public func enqueueCreatePR(_ request: CreatePRRequest) {
     logger.info("Enqueuing PR creation for branch '\(request.branchName)'")
-    pendingOperations.append(.createPR(request))
+    enqueueOperation(.createPR(request))
     processNextIfIdle()
   }
   
   /// Enqueue a label update
   public func enqueueUpdateLabel(taskId: UUID, prNumber: Int, label: PeelPRLabel) {
     logger.info("Enqueuing label update: PR #\(prNumber) -> \(label.rawValue)")
-    pendingOperations.append(.updateLabel(taskId: taskId, prNumber: prNumber, label: label))
+    enqueueOperation(.updateLabel(taskId: taskId, prNumber: prNumber, label: label))
     processNextIfIdle()
   }
   
   /// Enqueue a comment
   public func enqueueComment(taskId: UUID, prNumber: Int, comment: String) {
-    pendingOperations.append(.addComment(taskId: taskId, prNumber: prNumber, comment: comment))
+    enqueueOperation(.addComment(taskId: taskId, prNumber: prNumber, comment: comment))
     processNextIfIdle()
   }
   
@@ -174,6 +207,7 @@ public final class PRQueue {
     )
     
     createdPRs[request.taskId] = prInfo
+    upsertCreatedPRRecord(prInfo)
     logger.info("Created PR #\(prNumber): \(prURL)")
     
     return prInfo
@@ -182,10 +216,9 @@ public final class PRQueue {
   // MARK: - Queue Processing
   
   private func processNextIfIdle() {
-    guard !isProcessing, !pendingOperations.isEmpty else { return }
+    guard !isProcessing, pendingCount > 0, let next = dequeueOperation() else { return }
     
     isProcessing = true
-    let operation = pendingOperations.removeFirst()
     
     Task {
       defer {
@@ -194,7 +227,7 @@ public final class PRQueue {
       }
       
       do {
-        switch operation {
+        switch next.operation {
         case .createPR(let request):
           _ = try await createPRNow(request)
           
@@ -204,10 +237,77 @@ public final class PRQueue {
         case .addComment(let taskId, let prNumber, let comment):
           try await addPRComment(taskId: taskId, prNumber: prNumber, comment: comment)
         }
+        markOperationCompleted(next.id)
       } catch {
-        logger.error("PR operation failed: \(error.localizedDescription)")
+        if shouldRetry(error: error, attempt: next.attempt) {
+          scheduleRetry(for: next)
+        } else {
+          logger.error("PR operation failed permanently after \(next.attempt + 1) attempt(s): \(error.localizedDescription)")
+          markOperationCompleted(next.id)
+        }
       }
     }
+  }
+
+  private func enqueueOperation(
+    _ operation: PROperation,
+    attempt: Int = 0,
+    id: UUID = UUID(),
+    persist: Bool = true
+  ) {
+    let queued = QueuedOperation(id: id, operation: operation, attempt: attempt)
+    pendingOperations.append(queued)
+    if persist {
+      persistQueuedOperation(queued)
+    }
+  }
+
+  private func dequeueOperation() -> QueuedOperation? {
+    guard queueHeadIndex < pendingOperations.count else {
+      pendingOperations.removeAll(keepingCapacity: true)
+      queueHeadIndex = 0
+      return nil
+    }
+
+    let item = pendingOperations[queueHeadIndex]
+    queueHeadIndex += 1
+
+    if queueHeadIndex > 64 && queueHeadIndex * 2 > pendingOperations.count {
+      pendingOperations.removeFirst(queueHeadIndex)
+      queueHeadIndex = 0
+    }
+
+    return item
+  }
+
+  private func scheduleRetry(for queued: QueuedOperation) {
+    let nextAttempt = queued.attempt + 1
+    let delayNanos = retryDelayNanos(for: nextAttempt)
+    logger.warning("PR operation failed (attempt \(nextAttempt)); retrying in \(delayNanos / 1_000_000_000)s")
+    updateQueuedOperationAttempt(id: queued.id, attempt: nextAttempt)
+
+    Task {
+      try? await Task.sleep(nanoseconds: delayNanos)
+      enqueueOperation(queued.operation, attempt: nextAttempt, id: queued.id, persist: false)
+      processNextIfIdle()
+    }
+  }
+
+  private func shouldRetry(error: Error, attempt: Int) -> Bool {
+    guard attempt < maxRetryAttempts else { return false }
+
+    if case PRQueueError.noDelegateConfigured = error {
+      return false
+    }
+
+    // Assume transient unless explicitly non-retryable.
+    return true
+  }
+
+  private func retryDelayNanos(for attempt: Int) -> UInt64 {
+    let exponentialSeconds = min(30.0, pow(2.0, Double(attempt)))
+    let jitterSeconds = Double(Int.random(in: 0...750)) / 1000.0
+    return UInt64((exponentialSeconds + jitterSeconds) * 1_000_000_000)
   }
   
   private func updatePRLabel(taskId: UUID, prNumber: Int, label: PeelPRLabel) async throws {
@@ -219,6 +319,7 @@ public final class PRQueue {
     if !prInfo.labels.contains(label) {
       prInfo.labels.append(label)
       createdPRs[taskId] = prInfo
+      upsertCreatedPRRecord(prInfo)
     }
   }
   
@@ -230,25 +331,245 @@ public final class PRQueue {
   }
   
   private func pushBranch(_ branchName: String, in repoPath: String) async throws {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-    process.arguments = ["push", "-u", "origin", branchName]
-    process.currentDirectoryURL = URL(fileURLWithPath: repoPath)
-    
-    let stderr = Pipe()
-    process.standardError = stderr
-    process.standardOutput = FileHandle.nullDevice
-    
-    try process.run()
-    process.waitUntilExit()
-    
-    if process.terminationStatus != 0 {
-      let errorData = stderr.fileHandleForReading.readDataToEndOfFile()
-      let errorMessage = String(data: errorData, encoding: .utf8) ?? "Unknown error"
+    let result = try await runGitCommand(["push", "-u", "origin", branchName], in: repoPath)
+
+    if result.exitCode != 0 {
+      let errorMessage = result.stderr.isEmpty ? "Unknown error" : result.stderr
       throw PRQueueError.pushFailed(errorMessage)
     }
     
     logger.info("Pushed branch '\(branchName)' to origin")
+  }
+
+  private struct GitCommandResult {
+    let exitCode: Int32
+    let stderr: String
+  }
+
+  private func runGitCommand(_ arguments: [String], in repoPath: String) async throws -> GitCommandResult {
+    try await withCheckedThrowingContinuation { continuation in
+      let process = Process()
+      process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+      process.arguments = arguments
+      process.currentDirectoryURL = URL(fileURLWithPath: repoPath)
+
+      let stderr = Pipe()
+      process.standardError = stderr
+      process.standardOutput = FileHandle.nullDevice
+
+      process.terminationHandler = { process in
+        let errorData = stderr.fileHandleForReading.readDataToEndOfFile()
+        let errorMessage = String(data: errorData, encoding: .utf8) ?? ""
+        continuation.resume(returning: GitCommandResult(exitCode: process.terminationStatus, stderr: errorMessage))
+      }
+
+      do {
+        try process.run()
+      } catch {
+        continuation.resume(throwing: error)
+      }
+    }
+  }
+
+  // MARK: - Persistence
+
+  private func recoverFromPersistence() {
+    guard let ctx = modelContext else { return }
+    guard pendingOperations.isEmpty, createdPRs.isEmpty else { return }
+
+    let pendingDescriptor = FetchDescriptor<PRQueueOperationRecord>(
+      sortBy: [SortDescriptor(\PRQueueOperationRecord.createdAt, order: .forward)]
+    )
+    if let pendingRecords = try? ctx.fetch(pendingDescriptor) {
+      for record in pendingRecords {
+        guard let queued = queuedOperation(from: record) else { continue }
+        enqueueOperation(
+          queued.operation,
+          attempt: queued.attempt,
+          id: queued.id,
+          persist: false
+        )
+      }
+      if !pendingRecords.isEmpty {
+        logger.info("Recovered \(pendingRecords.count) pending PR operation(s) from SwiftData")
+      }
+    }
+
+    let createdDescriptor = FetchDescriptor<PRQueueCreatedPRRecord>(
+      sortBy: [SortDescriptor(\PRQueueCreatedPRRecord.createdAt, order: .reverse)]
+    )
+    if let createdRecords = try? ctx.fetch(createdDescriptor) {
+      for record in createdRecords {
+        guard let taskId = UUID(uuidString: record.taskId) else { continue }
+        let labels = parseLabelsCSV(record.labelsCSV)
+        let status = PRInfo.PRStatus(rawValue: record.status) ?? .open
+        createdPRs[taskId] = PRInfo(
+          taskId: taskId,
+          prNumber: record.prNumber,
+          prURL: record.prURL,
+          branchName: record.branchName,
+          repoPath: record.repoPath,
+          createdAt: record.createdAt,
+          labels: labels,
+          status: status
+        )
+      }
+      if !createdRecords.isEmpty {
+        logger.info("Recovered \(createdRecords.count) created PR record(s) from SwiftData")
+      }
+    }
+  }
+
+  private func persistQueuedOperation(_ queued: QueuedOperation) {
+    guard let ctx = modelContext,
+          let record = operationRecord(from: queued)
+    else { return }
+    ctx.insert(record)
+    try? ctx.save()
+  }
+
+  private func markOperationCompleted(_ id: UUID) {
+    guard let ctx = modelContext else { return }
+    let targetId = id
+    let descriptor = FetchDescriptor<PRQueueOperationRecord>(
+      predicate: #Predicate { $0.id == targetId }
+    )
+    if let record = try? ctx.fetch(descriptor).first {
+      ctx.delete(record)
+      try? ctx.save()
+    }
+  }
+
+  private func updateQueuedOperationAttempt(id: UUID, attempt: Int) {
+    guard let ctx = modelContext else { return }
+    let targetId = id
+    let descriptor = FetchDescriptor<PRQueueOperationRecord>(
+      predicate: #Predicate { $0.id == targetId }
+    )
+    if let record = try? ctx.fetch(descriptor).first {
+      record.attempt = attempt
+      try? ctx.save()
+    }
+  }
+
+  private func upsertCreatedPRRecord(_ prInfo: PRInfo) {
+    guard let ctx = modelContext else { return }
+    let taskId = prInfo.taskId.uuidString
+    let descriptor = FetchDescriptor<PRQueueCreatedPRRecord>(
+      predicate: #Predicate { $0.taskId == taskId }
+    )
+    if let record = try? ctx.fetch(descriptor).first {
+      record.prNumber = prInfo.prNumber
+      record.prURL = prInfo.prURL
+      record.branchName = prInfo.branchName
+      record.repoPath = prInfo.repoPath
+      record.createdAt = prInfo.createdAt
+      record.labelsCSV = labelsCSV(from: prInfo.labels)
+      record.status = prInfo.status.rawValue
+      try? ctx.save()
+      return
+    }
+
+    let newRecord = PRQueueCreatedPRRecord(
+      taskId: prInfo.taskId.uuidString,
+      prNumber: prInfo.prNumber,
+      prURL: prInfo.prURL,
+      branchName: prInfo.branchName,
+      repoPath: prInfo.repoPath,
+      createdAt: prInfo.createdAt,
+      labelsCSV: labelsCSV(from: prInfo.labels),
+      status: prInfo.status.rawValue
+    )
+    ctx.insert(newRecord)
+    try? ctx.save()
+  }
+
+  private func operationRecord(from queued: QueuedOperation) -> PRQueueOperationRecord? {
+    let record: PRQueueOperationRecord
+
+    switch queued.operation {
+    case .createPR(let request):
+      record = PRQueueOperationRecord(id: queued.id, operationType: OperationType.createPR.rawValue, attempt: queued.attempt)
+      record.taskId = request.taskId.uuidString
+      record.branchName = request.branchName
+      record.repoPath = request.repoPath
+      record.baseBranch = request.baseBranch
+      record.title = request.title
+      record.body = request.body
+      record.labelsCSV = labelsCSV(from: request.labels)
+      record.isDraft = request.isDraft
+
+    case .updateLabel(let taskId, let prNumber, let label):
+      record = PRQueueOperationRecord(id: queued.id, operationType: OperationType.updateLabel.rawValue, attempt: queued.attempt)
+      record.taskId = taskId.uuidString
+      record.prNumber = prNumber
+      record.labelRaw = label.rawValue
+
+    case .addComment(let taskId, let prNumber, let comment):
+      record = PRQueueOperationRecord(id: queued.id, operationType: OperationType.addComment.rawValue, attempt: queued.attempt)
+      record.taskId = taskId.uuidString
+      record.prNumber = prNumber
+      record.commentText = comment
+    }
+
+    return record
+  }
+
+  private func queuedOperation(from record: PRQueueOperationRecord) -> QueuedOperation? {
+    guard let type = OperationType(rawValue: record.operationType) else { return nil }
+
+    switch type {
+    case .createPR:
+      guard let taskId = UUID(uuidString: record.taskId),
+            !record.branchName.isEmpty,
+            !record.repoPath.isEmpty,
+            !record.title.isEmpty
+      else { return nil }
+
+      let request = CreatePRRequest(
+        taskId: taskId,
+        branchName: record.branchName,
+        repoPath: record.repoPath,
+        baseBranch: record.baseBranch.isEmpty ? "main" : record.baseBranch,
+        title: record.title,
+        body: record.body,
+        labels: parseLabelsCSV(record.labelsCSV),
+        isDraft: record.isDraft
+      )
+      return QueuedOperation(id: record.id, operation: .createPR(request), attempt: record.attempt)
+
+    case .updateLabel:
+      guard let taskId = UUID(uuidString: record.taskId),
+            let label = PeelPRLabel(rawValue: record.labelRaw),
+            record.prNumber > 0
+      else { return nil }
+      return QueuedOperation(
+        id: record.id,
+        operation: .updateLabel(taskId: taskId, prNumber: record.prNumber, label: label),
+        attempt: record.attempt
+      )
+
+    case .addComment:
+      guard let taskId = UUID(uuidString: record.taskId),
+            record.prNumber > 0,
+            !record.commentText.isEmpty
+      else { return nil }
+      return QueuedOperation(
+        id: record.id,
+        operation: .addComment(taskId: taskId, prNumber: record.prNumber, comment: record.commentText),
+        attempt: record.attempt
+      )
+    }
+  }
+
+  private func labelsCSV(from labels: [PeelPRLabel]) -> String {
+    labels.map(\.rawValue).joined(separator: ",")
+  }
+
+  private func parseLabelsCSV(_ csv: String) -> [PeelPRLabel] {
+    csv
+      .split(separator: ",")
+      .compactMap { PeelPRLabel(rawValue: String($0)) }
   }
   
   // MARK: - Query Methods
@@ -270,7 +591,7 @@ public final class PRQueue {
   
   /// Get pending operations count
   public var pendingCount: Int {
-    pendingOperations.count
+    max(0, pendingOperations.count - queueHeadIndex)
   }
   
   // MARK: - Convenience Methods

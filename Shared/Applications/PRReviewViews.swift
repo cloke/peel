@@ -591,13 +591,20 @@ struct PRReviewSheet: View {
     Use the github.pr.get, github.pr.diff, github.pr.files, github.pr.reviews, \
     github.pr.comments, and github.pr.checks tools to gather information.
     
-    Produce a structured review with:
-    - Summary of changes
-    - Risk level (low/medium/high)
-    - Issues found (if any)
-    - Suggestions for improvement
-    - CI/check status
-    - Final verdict: APPROVE, REQUEST_CHANGES, or COMMENT
+    Return ONLY valid JSON (no markdown, no code fences) with this schema:
+    {
+      "summary": "string",
+      "riskLevel": "low|medium|high",
+      "issues": ["string"],
+      "suggestions": ["string"],
+      "ciStatus": "string",
+      "verdict": "APPROVE|REQUEST_CHANGES|COMMENT"
+    }
+
+    Rules:
+    - Include all keys, even if arrays are empty.
+    - Keep summary concise (<= 4 sentences).
+    - Base verdict on code risk + CI/check status.
     """
 
     let arguments: [String: Any] = [
@@ -636,63 +643,82 @@ struct PRReviewSheet: View {
   }
 
   private func pollForResult(chainId: String) async {
-    // Poll the chain status until it completes
-    let maxAttempts = 120 // 2 minutes at 1s intervals
-    for _ in 0..<maxAttempts {
-      try? await Task.sleep(for: .seconds(1))
+    guard let runId = UUID(uuidString: chainId) else {
+      reviewState.isLoading = false
+      reviewState.error = "Invalid review run ID"
+      return
+    }
 
-      guard let runId = UUID(uuidString: chainId) else { break }
+    // First, wait briefly for the parallel run record to appear.
+    // This avoids scanning all runs for the full polling duration.
+    let discoveryDeadline = Date().addingTimeInterval(30)
+    var locatedRun = mcpServer.parallelWorktreeRunner?.findRunBySourceChainRunId(runId)
+    var discoverySleepMs = 250
 
-      // Check if the run completed via the parallel worktree runner
-      if let runner = mcpServer.parallelWorktreeRunner {
-        let matchingRun = runner.runs.first { $0.sourceChainRunId == runId }
-        if let run = matchingRun {
-          // Check if all executions have terminal status
-          let isComplete = run.executions.allSatisfy { exec in
-            exec.status.isTerminal || exec.status == .awaitingReview || exec.status == .approved || exec.status == .reviewed
-          }
-          if isComplete && !run.executions.isEmpty {
-            let lastOutput = run.executions.last?.output ?? ""
-            reviewState.reviewResult = parseReviewOutput(lastOutput)
-            reviewState.isLoading = false
-            return
-          }
-        }
-      }
+    while locatedRun == nil && Date() < discoveryDeadline {
+      try? await Task.sleep(for: .milliseconds(discoverySleepMs))
+      locatedRun = mcpServer.parallelWorktreeRunner?.findRunBySourceChainRunId(runId)
+      discoverySleepMs = min(2_000, discoverySleepMs + 250)
 
-      // Also check via the active runs tracking
-      if mcpServer.activeRunsById[runId] != nil {
-        continue // still running
-      } else if reviewState.chainId != nil {
-        // Run may have finished — check via parallel runner
-        if let runner = mcpServer.parallelWorktreeRunner {
-          let matchingRun = runner.runs.first { $0.sourceChainRunId == runId }
-          if let run = matchingRun {
-            let lastOutput = run.executions.last?.output ?? ""
-            reviewState.reviewResult = parseReviewOutput(lastOutput)
-            reviewState.isLoading = false
-            return
-          }
-        }
-        // No parallel run found and not in active runs — chain likely completed
-        // Wait a few more cycles in case it's transitioning
-        try? await Task.sleep(for: .seconds(2))
-        if mcpServer.activeRunsById[runId] == nil {
-          // Still gone — assume completed without output capture
-          reviewState.isLoading = false
-          reviewState.error = "Chain completed but review output was not captured. Check the Parallel Worktrees dashboard for results."
-          return
-        }
+      // If run is gone from active map and still not discoverable, stop early.
+      if locatedRun == nil, mcpServer.activeRunsById[runId] == nil {
+        reviewState.isLoading = false
+        reviewState.error = "Chain completed but review output was not captured. Check the Parallel Worktrees dashboard for results."
+        return
       }
     }
 
+    guard let runner = mcpServer.parallelWorktreeRunner, let run = locatedRun else {
+      reviewState.isLoading = false
+      reviewState.error = "Review run did not become available in time"
+      return
+    }
+
+    // Wait directly on the discovered run object.
+    _ = await runner.waitForRunCompletion(run, timeoutSeconds: 120)
+
+    let lastOutput = extractReviewOutput(from: run)
+    if lastOutput.isEmpty {
+      reviewState.isLoading = false
+      reviewState.error = "Review completed but produced no output"
+      return
+    }
+
+    reviewState.reviewResult = parseReviewOutput(lastOutput)
     reviewState.isLoading = false
-    if reviewState.reviewResult == nil {
-      reviewState.error = "Review timed out after 2 minutes"
+  }
+
+  private func extractReviewOutput(from run: ParallelWorktreeRun) -> String {
+    for execution in run.executions.reversed() {
+      let trimmed = execution.output.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !trimmed.isEmpty { return trimmed }
+    }
+    return ""
+  }
+
+  private struct ReviewJSONPayload: Decodable {
+    let summary: String?
+    let riskLevel: String?
+    let issues: [String]?
+    let suggestions: [String]?
+    let ciStatus: String?
+    let verdict: String?
+
+    enum CodingKeys: String, CodingKey {
+      case summary
+      case riskLevel
+      case issues
+      case suggestions
+      case ciStatus
+      case verdict
     }
   }
 
   private func parseReviewOutput(_ output: String) -> PRReviewState.PRReviewResult {
+    if let structured = parseStructuredReviewOutput(output) {
+      return structured
+    }
+
     // Try to parse structured output
     var summary = ""
     var riskLevel = "unknown"
@@ -782,6 +808,67 @@ struct PRReviewSheet: View {
       verdict: verdict,
       rawOutput: output
     )
+  }
+
+  private func parseStructuredReviewOutput(_ output: String) -> PRReviewState.PRReviewResult? {
+    let candidates = jsonCandidates(from: output)
+    let decoder = JSONDecoder()
+
+    for candidate in candidates {
+      guard let data = candidate.data(using: .utf8),
+            let payload = try? decoder.decode(ReviewJSONPayload.self, from: data)
+      else { continue }
+
+      let verdict: PRReviewState.PRReviewResult.Verdict = {
+        switch payload.verdict?.uppercased() {
+        case "APPROVE": return .approve
+        case "REQUEST_CHANGES": return .requestChanges
+        case "COMMENT": return .comment
+        default: return .unknown
+        }
+      }()
+
+      return PRReviewState.PRReviewResult(
+        summary: {
+          let value = payload.summary?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+          return value.isEmpty ? String(output.prefix(500)) : value
+        }(),
+        riskLevel: {
+          let value = payload.riskLevel?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+          return value.isEmpty ? "unknown" : value
+        }(),
+        issues: payload.issues ?? [],
+        suggestions: payload.suggestions ?? [],
+        ciStatus: payload.ciStatus,
+        verdict: verdict,
+        rawOutput: output
+      )
+    }
+
+    return nil
+  }
+
+  private func jsonCandidates(from output: String) -> [String] {
+    var candidates: [String] = []
+
+    let fencedPattern = "```(?:json)?\\s*([\\s\\S]*?)\\s*```"
+    if let regex = try? NSRegularExpression(pattern: fencedPattern) {
+      let nsRange = NSRange(output.startIndex..<output.endIndex, in: output)
+      let matches = regex.matches(in: output, options: [], range: nsRange)
+      for match in matches {
+        guard match.numberOfRanges > 1,
+              let range = Range(match.range(at: 1), in: output)
+        else { continue }
+        candidates.append(String(output[range]))
+      }
+    }
+
+    let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.hasPrefix("{") && trimmed.hasSuffix("}") {
+      candidates.append(trimmed)
+    }
+
+    return candidates
   }
 
   private func postGitHubReview(event: String, body: String) async {
