@@ -471,11 +471,11 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
       ChainTemplate(
         id: prReviewId,
         name: "PR Review",
-        description: "Review pull request and provide feedback (Cost: Free)",
+        description: "Review pull request and provide feedback (Cost: Standard)",
         steps: [
           AgentStepTemplate(
             role: .planner,
-            model: .bestFree,
+            model: .bestStandard,
             name: "PR Reviewer",
             customInstructions: """
               You are a PR Review specialist. Analyze the pull request and provide thorough, actionable feedback.
