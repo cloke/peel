@@ -10,6 +10,9 @@
 import SwiftUI
 import SwiftData
 import Git
+#if canImport(Github)
+import Github
+#endif
 
 // MARK: - Unified Repositories Root
 
@@ -505,6 +508,10 @@ struct RepositoriesCommandCenter: View {
   @Environment(MCPServerService.self) private var mcpServer
   @Environment(ActivityFeed.self) private var activityFeed
 
+  @State private var fetchedOpenPRs: [(ownerRepo: String, pr: UnifiedRepository.PRSummary)] = []
+  @State private var isLoadingPRs = false
+  @State private var selectedPRDetail: PRDetailIdentifier?
+
   /// All non-terminal parallel runs across the workspace.
   private var allActiveRuns: [ParallelWorktreeRun] {
     guard let runner = mcpServer.parallelWorktreeRunner else { return [] }
@@ -521,9 +528,17 @@ struct RepositoriesCommandCenter: View {
     allActiveRuns.filter { $0.pendingReviewCount > 0 || $0.readyToMergeCount > 0 }
   }
 
-  /// All open PRs aggregated across repos.
+  /// All open PRs — uses live GitHub API data when available,
+  /// falls back to aggregator cache otherwise.
   private var allOpenPRs: [(repo: UnifiedRepository, pr: UnifiedRepository.PRSummary)] {
-    aggregator.repositories.flatMap { repo in
+    if !fetchedOpenPRs.isEmpty {
+      return fetchedOpenPRs.compactMap { item in
+        guard let repo = aggregator.repositories.first(where: { $0.ownerSlashRepo == item.ownerRepo })
+        else { return nil }
+        return (repo, item.pr)
+      }
+    }
+    return aggregator.repositories.flatMap { repo in
       repo.recentPRs.filter { $0.state == "open" }.map { (repo, $0) }
     }
   }
@@ -573,6 +588,10 @@ struct RepositoriesCommandCenter: View {
         ragCompactSection
       }
       .padding(20)
+    }
+    .task { await fetchAllOpenPRs() }
+    .sheet(item: $selectedPRDetail) { detail in
+      PRDetailSheet(ownerRepo: detail.ownerRepo, prNumber: detail.prNumber)
     }
   }
 
@@ -684,7 +703,18 @@ struct RepositoriesCommandCenter: View {
         }
       }
 
-      // Open PRs across repos
+      // Open PRs across repos — tap to view full detail
+      if isLoadingPRs && fetchedOpenPRs.isEmpty {
+        HStack(spacing: 8) {
+          ProgressView()
+            .controlSize(.small)
+          Text("Loading open PRs…")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.leading, 4)
+      }
+
       ForEach(allOpenPRs.prefix(5), id: \.pr.id) { item in
         GroupBox {
           HStack(spacing: 12) {
@@ -712,20 +742,25 @@ struct RepositoriesCommandCenter: View {
 
             Spacer()
 
-            if let url = item.pr.htmlURL, let nsurl = URL(string: url) {
-              Button {
-                #if os(macOS)
-                NSWorkspace.shared.open(nsurl)
-                #endif
-              } label: {
-                Image(systemName: "arrow.up.right.square")
-                  .font(.caption)
-              }
-              .buttonStyle(.plain)
-              .foregroundStyle(.secondary)
-            }
+            Text("Open")
+              .font(.caption2)
+              .fontWeight(.bold)
+              .padding(.horizontal, 8)
+              .padding(.vertical, 3)
+              .background(Capsule().fill(.green.opacity(0.15)))
+              .foregroundStyle(.green)
+
+            Image(systemName: "chevron.right")
+              .font(.caption2)
+              .foregroundStyle(.tertiary)
           }
           .padding(2)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+          if let ownerRepo = item.repo.ownerSlashRepo {
+            selectedPRDetail = PRDetailIdentifier(ownerRepo: ownerRepo, prNumber: item.pr.number)
+          }
         }
       }
 
@@ -941,5 +976,120 @@ struct RepositoriesCommandCenter: View {
         .foregroundStyle(.secondary)
       }
     )
+  }
+
+  // MARK: - Data Loading
+
+  private func fetchAllOpenPRs() async {
+    isLoadingPRs = true
+    defer { isLoadingPRs = false }
+
+    let repos = aggregator.repositories.compactMap { repo -> (String, String, String)? in
+      guard let ownerRepo = repo.ownerSlashRepo else { return nil }
+      let parts = ownerRepo.split(separator: "/")
+      guard parts.count == 2 else { return nil }
+      return (ownerRepo, String(parts[0]), String(parts[1]))
+    }
+
+    var results: [(ownerRepo: String, pr: UnifiedRepository.PRSummary)] = []
+
+    await withTaskGroup(of: [(String, UnifiedRepository.PRSummary)].self) { group in
+      for (ownerRepo, owner, repoName) in repos {
+        group.addTask {
+          do {
+            let prs = try await Github.pullRequests(owner: owner, repository: repoName, state: "open")
+            return prs.map { pr in
+              (ownerRepo, UnifiedRepository.PRSummary(
+                id: UUID(),
+                number: pr.number,
+                title: pr.title ?? "Untitled",
+                state: pr.state ?? "open",
+                htmlURL: pr.html_url,
+                headRef: pr.head.ref
+              ))
+            }
+          } catch {
+            return []
+          }
+        }
+      }
+
+      for await batch in group {
+        results.append(contentsOf: batch)
+      }
+    }
+
+    fetchedOpenPRs = results
+  }
+}
+
+// MARK: - PR Detail Support
+
+struct PRDetailIdentifier: Identifiable {
+  let id = UUID()
+  let ownerRepo: String
+  let prNumber: Int
+}
+
+/// Sheet that loads full PR data from GitHub and shows PullRequestDetailView.
+struct PRDetailSheet: View {
+  let ownerRepo: String
+  let prNumber: Int
+  @Environment(\.dismiss) private var dismiss
+
+  private enum LoadState {
+    case loading
+    case loaded(pr: Github.PullRequest, repo: Github.Repository)
+    case error(String)
+  }
+
+  @State private var state: LoadState = .loading
+
+  var body: some View {
+    Group {
+      switch state {
+      case .loading:
+        VStack(spacing: 12) {
+          ProgressView()
+          Text("Loading PR #\(prNumber)…")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      case .error(let message):
+        ContentUnavailableView(
+          "Failed to Load PR",
+          systemImage: "exclamationmark.triangle",
+          description: Text(message)
+        )
+      case .loaded(let pr, let repo):
+        PullRequestDetailView(organization: nil, repository: repo, pullRequest: pr)
+      }
+    }
+    #if os(macOS)
+    .frame(minWidth: 700, minHeight: 500)
+    #endif
+    .task { await loadData() }
+  }
+
+  private func loadData() async {
+    let parts = ownerRepo.split(separator: "/")
+    guard parts.count == 2 else {
+      state = .error("Invalid repository: \(ownerRepo)")
+      return
+    }
+    let owner = String(parts[0])
+    let repoName = String(parts[1])
+
+    do {
+      async let repoTask = Github.repository(owner: owner, name: repoName)
+      async let prTask = Github.pullRequest(owner: owner, repository: repoName, number: prNumber)
+      let (repo, pr) = try await (repoTask, prTask)
+      state = .loaded(pr: pr, repo: repo)
+    } catch is CancellationError {
+      return
+    } catch {
+      state = .error(error.localizedDescription)
+    }
   }
 }

@@ -192,6 +192,7 @@ struct OverviewTabView: View {
   @Environment(ActivityFeed.self) private var activityFeed
   @State private var fetchedPRs: [UnifiedRepository.PRSummary] = []
   @State private var isLoadingPRs = false
+  @State private var selectedPRDetail: PRDetailIdentifier?
 
   private var repoRuns: [ParallelWorktreeRun] {
     guard let runner = mcpServer.parallelWorktreeRunner,
@@ -241,6 +242,9 @@ struct OverviewTabView: View {
     .task(id: repo.ownerSlashRepo) {
       await fetchOpenPRs()
     }
+    .sheet(item: $selectedPRDetail) { detail in
+      PRDetailSheet(ownerRepo: detail.ownerRepo, prNumber: detail.prNumber)
+    }
   }
 
   // MARK: - Needs Attention
@@ -269,8 +273,14 @@ struct OverviewTabView: View {
           color: .green,
           title: "#\(pr.number) \(pr.title)",
           subtitle: pr.headRef ?? "open",
-          badge: "PR"
+          badge: "Open"
         )
+        .contentShape(Rectangle())
+        .onTapGesture {
+          if let ownerRepo = repo.ownerSlashRepo {
+            selectedPRDetail = PRDetailIdentifier(ownerRepo: ownerRepo, prNumber: pr.number)
+          }
+        }
       }
     }
   }
