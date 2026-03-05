@@ -224,7 +224,7 @@ enum BranchIndexService {
     guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return SQLITE_ERROR }
     defer { sqlite3_finalize(stmt) }
     sqlite3_bind_text(stmt, 1, (textArg as NSString).utf8String, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
-    blobArg.withUnsafeBytes { ptr in
+    _ = blobArg.withUnsafeBytes { ptr in
       sqlite3_bind_blob(stmt, 2, ptr.baseAddress, Int32(blobArg.count), unsafeBitCast(-1, to: sqlite3_destructor_type.self))
     }
     return sqlite3_step(stmt)
@@ -301,7 +301,7 @@ enum BranchIndexService {
       case let d as Double:
         sqlite3_bind_double(stmt, idx, d)
       case let data as Data:
-        data.withUnsafeBytes { ptr in
+        _ = data.withUnsafeBytes { ptr in
           sqlite3_bind_blob(stmt, idx, ptr.baseAddress, Int32(data.count), unsafeBitCast(-1, to: sqlite3_destructor_type.self))
         }
       case is NSNull, nil:

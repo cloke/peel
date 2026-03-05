@@ -172,7 +172,7 @@ public struct BranchListView: View {
         hasLoadedBranches = true  // Set immediately to prevent re-entry
         var transaction = Transaction()
         transaction.disablesAnimations = true
-        _ = withTransaction(transaction) {
+        withTransaction(transaction) {
           // Synchronous state update happens here if needed
         }
         // Perform async load outside transaction

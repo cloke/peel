@@ -149,7 +149,7 @@ final class GitHubToolsHandler: MCPToolHandler {
         "labels": issue.labels.map { $0.name },
         "comments": issue.comments,
         "created_at": issue.created_at,
-        "updated_at": issue.updated_at ?? "",
+        "updated_at": issue.updated_at,
         "html_url": issue.html_url
       ]
       
@@ -198,7 +198,7 @@ final class GitHubToolsHandler: MCPToolHandler {
           "labels": issue.labels.map { $0.name },
           "comments": issue.comments,
           "created_at": issue.created_at,
-          "updated_at": issue.updated_at ?? ""
+          "updated_at": issue.updated_at
         ]
       }
       

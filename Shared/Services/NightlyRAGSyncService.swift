@@ -217,7 +217,6 @@ final class NightlyRAGSyncService {
       if shouldRemove {
         try? FileManager.default.removeItem(at: entry.url)
         // Remove paired manifest if present
-        let manifestURL = entry.url.deletingPathExtension().appendingPathExtension("").appendingPathComponent("")
         let manifestCandidate = entry.url.deletingLastPathComponent()
           .appendingPathComponent(entry.url.deletingPathExtension().lastPathComponent + "-manifest.json")
         try? FileManager.default.removeItem(at: manifestCandidate)

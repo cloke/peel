@@ -97,16 +97,6 @@ struct PolicyDiffView: View {
     let diff = linesB.difference(from: linesA)
 
     var result: [DiffLine] = []
-    var indexA = 0
-    var moves: [Int: Int] = [:]
-    for change in diff {
-      switch change {
-      case .insert(let offset, _, _):
-        moves[offset] = offset
-      case .remove(let offset, _, _):
-        moves[offset] = offset
-      }
-    }
 
     // Build a simple unified-style diff
     var aIdx = 0

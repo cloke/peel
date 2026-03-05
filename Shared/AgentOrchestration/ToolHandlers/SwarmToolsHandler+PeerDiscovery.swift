@@ -67,8 +67,13 @@ extension SwarmToolsHandler {
       let lanAddress = coordinator.capabilities.lanAddress
       let lanPort = coordinator.capabilities.lanPort
       
-      // Resolve WAN address for P2P connections across networks
-      let wanAddress = await WANAddressResolver.resolve()
+      // Resolve WAN address for P2P connections across networks (explicit override wins)
+      let wanAddress: String?
+      if let explicitWANAddress {
+        wanAddress = explicitWANAddress
+      } else {
+        wanAddress = await WANAddressResolver.resolve()
+      }
       
       if firebaseService.isSignedIn {
         let capabilities = WorkerCapabilities.current(
@@ -108,7 +113,7 @@ extension SwarmToolsHandler {
         
         // Auto-connect to WAN peers after registration
         if enableWAN {
-          await coordinator.startWANAutoConnect()
+          coordinator.startWANAutoConnect()
         }
       }
       

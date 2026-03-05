@@ -285,7 +285,7 @@ extension SwarmToolsHandler {
     var repoRemoteURL = arguments["repoRemoteURL"] as? String
     if repoRemoteURL == nil {
       // First try cache (fast, no subprocess)
-      repoRemoteURL = await RepoRegistry.shared.getCachedRemoteURL(for: workingDirectory)
+      repoRemoteURL = RepoRegistry.shared.getCachedRemoteURL(for: workingDirectory)
       // If not cached, discover via git
       if repoRemoteURL == nil {
         repoRemoteURL = await RepoRegistry.shared.registerRepo(at: workingDirectory)

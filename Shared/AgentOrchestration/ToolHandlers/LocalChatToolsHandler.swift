@@ -98,7 +98,7 @@ final class LocalChatToolsHandler: MCPToolHandler {
         source: .mcp
       )
 
-      let service = await session.chatService
+      let service = session.chatService
       let modelName = service?.modelName ?? "unknown"
       let tierValue = service?.tier.rawValue ?? requestedTier.rawValue
       let historyCount = await service?.getHistoryCount() ?? 0
@@ -130,8 +130,8 @@ final class LocalChatToolsHandler: MCPToolHandler {
     let recommendedConfig = MLXEditorModelConfig.recommendedModel()
 
     let session = chatSession
-    let currentTier = await session?.selectedTier ?? .auto
-    let isLoaded = await session?.isModelLoaded ?? false
+    let currentTier = session?.selectedTier ?? .auto
+    let isLoaded = session?.isModelLoaded ?? false
 
     var result: [String: Any] = [
       "machineRamGB": Int(memGB),
@@ -150,7 +150,7 @@ final class LocalChatToolsHandler: MCPToolHandler {
       },
     ]
 
-    if let service = await session?.chatService {
+    if let service = session?.chatService {
       result["loadedModel"] = service.modelName
       result["loadedTier"] = service.tier.rawValue
     }
@@ -168,8 +168,8 @@ final class LocalChatToolsHandler: MCPToolHandler {
       ]))
     }
 
-    let wasLoaded = await session.isModelLoaded
-    await session.unloadModel()
+    let wasLoaded = session.isModelLoaded
+    session.unloadModel()
 
     return (200, makeResult(id: id, result: [
       "message": wasLoaded ? "Chat model unloaded — memory freed" : "No chat model was loaded",
@@ -240,7 +240,7 @@ final class LocalChatToolsHandler: MCPToolHandler {
     guard let repoPath, let dataService else { return nil }
 
     // Auto-seed Ember skills for this repo
-    let seeded = await DefaultSkillsService.autoSeedEmberSkillsIfNeeded(
+    let seeded = DefaultSkillsService.autoSeedEmberSkillsIfNeeded(
       context: dataService.modelContext,
       repoPath: repoPath
     )
@@ -250,7 +250,7 @@ final class LocalChatToolsHandler: MCPToolHandler {
 
     // Fetch skills block
     let remoteURL = RepoRegistry.shared.getCachedRemoteURL(for: repoPath)
-    let skillsBlock = await dataService.repoGuidanceSkillsBlock(
+    let skillsBlock = dataService.repoGuidanceSkillsBlock(
       repoPath: repoPath,
       repoRemoteURL: remoteURL,
       limit: 8
