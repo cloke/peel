@@ -1647,6 +1647,27 @@ final class ParallelWorktreeRunner {
   /// Resolve the actual branch name to merge into.
   /// If `targetBranch` is set, use that. Otherwise fall back to `baseBranch`.
   /// When baseBranch is "HEAD", resolve it to the concrete branch name so we
+  /// Push an execution's worktree branch to a remote ref (e.g. push fix commits to a PR's head branch).
+  /// - Parameters:
+  ///   - execution: The execution whose branch to push.
+  ///   - remoteRef: The remote branch name to push to (e.g. "feature/my-pr-branch").
+  ///   - run: The parent run (used for projectPath fallback).
+  /// - Returns: `(output, exitCode)` from git push.
+  func pushExecutionBranch(
+    _ execution: ParallelWorktreeExecution,
+    toRemoteRef remoteRef: String,
+    in run: ParallelWorktreeRun
+  ) async -> (String, Int32) {
+    guard let branchName = execution.branchName else {
+      return ("No branch name on execution", -1)
+    }
+    let workDir = execution.worktreePath ?? run.projectPath
+    return await runGit(
+      ["push", "origin", "\(branchName):\(remoteRef)", "--force-with-lease"],
+      in: workDir
+    )
+  }
+
   /// don't accidentally merge into a detached HEAD state (which loses all work).
   private func resolveTargetBranch(for run: ParallelWorktreeRun) async throws -> String {
     let candidate = run.targetBranch ?? run.baseBranch

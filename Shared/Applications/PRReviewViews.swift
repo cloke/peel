@@ -188,6 +188,9 @@ struct PRReviewSheet: View {
   @State private var isFixing = false
   @State private var fixChainId: String?
   @State private var fixModel: CopilotModel = .claudeSonnet46
+  @State private var isPushingFix = false
+  @State private var pushFixResult: String?
+  @State private var pushFixError: String?
 
   enum ReviewTemplate: String, CaseIterable {
     case standard = "PR Review"
@@ -226,6 +229,14 @@ struct PRReviewSheet: View {
           let chainId = run.executions.first?.chainId
     else { return nil }
     return mcpServer.agentManager.chains.first { $0.id == chainId }
+  }
+
+  /// Look up the worktree run for the fix chain.
+  private var fixWorktreeRun: ParallelWorktreeRun? {
+    guard let chainIdStr = fixChainId,
+          let runId = UUID(uuidString: chainIdStr)
+    else { return nil }
+    return mcpServer.parallelWorktreeRunner?.findRunBySourceChainRunId(runId)
   }
 
   var body: some View {
@@ -632,60 +643,12 @@ struct PRReviewSheet: View {
   private var fixChainStatusView: some View {
     if let chain = activeFixChain {
       VStack(alignment: .leading, spacing: 8) {
-        HStack {
-          Label("Fix in progress", systemImage: "hammer")
-            .font(.caption)
-            .fontWeight(.medium)
-
-          Spacer()
-
-          if let startTime = chain.runStartTime {
-            ElapsedTimeView(startTime: startTime)
-          }
-        }
-
-        ScrollViewReader { proxy in
-          ScrollView {
-            LazyVStack(alignment: .leading, spacing: 4) {
-              ForEach(chain.liveStatusMessages) { message in
-                HStack(alignment: .top, spacing: 6) {
-                  Image(systemName: message.type.icon)
-                    .font(.caption2)
-                    .foregroundStyle(message.type.color)
-                    .frame(width: 12)
-
-                  Text(message.message)
-                    .font(.caption)
-                    .foregroundStyle(message.type == .error ? .red : .primary)
-
-                  Spacer()
-
-                  Text(message.timestamp, style: .time)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                }
-                .id(message.id)
-              }
-            }
-          }
-          .frame(maxHeight: 120)
-          .onChange(of: chain.liveStatusMessages.count) { _, _ in
-            if let lastMessage = chain.liveStatusMessages.last {
-              withAnimation {
-                proxy.scrollTo(lastMessage.id, anchor: .bottom)
-              }
-            }
-          }
-        }
-
-        if case .running(let agentIdx) = chain.state, agentIdx < chain.agents.count {
-          HStack {
-            ProgressView()
-              .scaleEffect(0.6)
-            Text("Running: \(chain.agents[agentIdx].name)")
-              .font(.caption)
-              .foregroundStyle(.secondary)
-          }
+        if chain.state.isTerminal {
+          // Fix chain completed — show result and push action
+          fixChainCompletedView(chain: chain)
+        } else {
+          // Fix chain still running — show progress
+          fixChainProgressView(chain: chain)
         }
       }
     } else {
@@ -695,6 +658,151 @@ struct PRReviewSheet: View {
         Text("Starting fix chain…")
           .font(.caption)
           .foregroundStyle(.secondary)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func fixChainProgressView(chain: AgentChain) -> some View {
+    HStack {
+      Label("Fix in progress", systemImage: "hammer")
+        .font(.caption)
+        .fontWeight(.medium)
+
+      Spacer()
+
+      if let startTime = chain.runStartTime {
+        ElapsedTimeView(startTime: startTime)
+      }
+    }
+
+    ScrollViewReader { proxy in
+      ScrollView {
+        LazyVStack(alignment: .leading, spacing: 4) {
+          ForEach(chain.liveStatusMessages) { message in
+            HStack(alignment: .top, spacing: 6) {
+              Image(systemName: message.type.icon)
+                .font(.caption2)
+                .foregroundStyle(message.type.color)
+                .frame(width: 12)
+
+              Text(message.message)
+                .font(.caption)
+                .foregroundStyle(message.type == .error ? .red : .primary)
+
+              Spacer()
+
+              Text(message.timestamp, style: .time)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            }
+            .id(message.id)
+          }
+        }
+      }
+      .frame(maxHeight: 120)
+      .onChange(of: chain.liveStatusMessages.count) { _, _ in
+        if let lastMessage = chain.liveStatusMessages.last {
+          withAnimation {
+            proxy.scrollTo(lastMessage.id, anchor: .bottom)
+          }
+        }
+      }
+    }
+
+    if case .running(let agentIdx) = chain.state, agentIdx < chain.agents.count {
+      HStack {
+        ProgressView()
+          .scaleEffect(0.6)
+        Text("Running: \(chain.agents[agentIdx].name)")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func fixChainCompletedView(chain: AgentChain) -> some View {
+    let succeeded = chain.state.isComplete
+
+    HStack {
+      Label(
+        succeeded ? "Fix complete" : "Fix failed",
+        systemImage: succeeded ? "checkmark.circle.fill" : "xmark.circle.fill"
+      )
+      .font(.caption)
+      .fontWeight(.medium)
+      .foregroundStyle(succeeded ? .green : .red)
+
+      Spacer()
+
+      if let startTime = chain.runStartTime {
+        ElapsedTimeView(startTime: startTime)
+      }
+    }
+
+    // Show last few status messages as context
+    if !chain.liveStatusMessages.isEmpty {
+      let lastMessages = chain.liveStatusMessages.suffix(3)
+      ForEach(Array(lastMessages)) { message in
+        HStack(alignment: .top, spacing: 6) {
+          Image(systemName: message.type.icon)
+            .font(.caption2)
+            .foregroundStyle(message.type.color)
+            .frame(width: 12)
+
+          Text(message.message)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+    }
+
+    if succeeded {
+      Divider()
+
+      // Push actions
+      HStack(spacing: 8) {
+        if let headRef = pr.headRef {
+          Button {
+            Task { await pushFixToPR() }
+          } label: {
+            Label("Push Fix to PR", systemImage: "arrow.up.circle")
+          }
+          .buttonStyle(.borderedProminent)
+          .tint(.blue)
+          .disabled(isPushingFix || pushFixResult != nil)
+
+          Text("→ origin/\(headRef)")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        } else {
+          Text("Cannot push — PR head ref unknown")
+            .font(.caption)
+            .foregroundStyle(.orange)
+        }
+      }
+
+      if isPushingFix {
+        HStack(spacing: 6) {
+          ProgressView()
+            .controlSize(.small)
+          Text("Pushing to PR branch…")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+
+      if let result = pushFixResult {
+        Label(result, systemImage: "checkmark.circle")
+          .font(.caption)
+          .foregroundStyle(.green)
+      }
+
+      if let error = pushFixError {
+        Label(error, systemImage: "xmark.circle")
+          .font(.caption)
+          .foregroundStyle(.red)
       }
     }
   }
@@ -1180,5 +1288,35 @@ struct PRReviewSheet: View {
     // Keep isFixing true — the fix chain status view handles the UI.
     // It will appear unfinished until the chain completes, which is appropriate
     // since the user dispatched with returnImmediately.
+  }
+
+  private func pushFixToPR() async {
+    guard let headRef = pr.headRef,
+          let runner = mcpServer.parallelWorktreeRunner,
+          let run = fixWorktreeRun,
+          let execution = run.executions.first
+    else {
+      pushFixError = "Cannot push — missing worktree run or PR head ref"
+      return
+    }
+
+    isPushingFix = true
+    pushFixError = nil
+    pushFixResult = nil
+
+    let (output, exitCode) = await runner.pushExecutionBranch(
+      execution,
+      toRemoteRef: headRef,
+      in: run
+    )
+
+    if exitCode == 0 {
+      pushFixResult = "Pushed fix to origin/\(headRef)"
+      isFixing = false
+    } else {
+      pushFixError = "Push failed: \(output.trimmingCharacters(in: .whitespacesAndNewlines))"
+    }
+
+    isPushingFix = false
   }
 }
