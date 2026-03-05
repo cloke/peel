@@ -354,7 +354,8 @@ final class RepositoryAggregator {
             number: pr.prNumber,
             title: pr.title,
             state: pr.state,
-            htmlURL: pr.htmlURL
+            htmlURL: pr.htmlURL,
+            headRef: nil
           )
         },
         addedAt: addedAt,

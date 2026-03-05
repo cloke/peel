@@ -248,7 +248,7 @@ final class ParallelToolsHandler {
     let targetBranch = arguments["targetBranch"] as? String
     let requireReviewGate = optionalBool("requireReviewGate", from: arguments, default: true)
     let autoMergeOnApproval = optionalBool("autoMergeOnApproval", from: arguments, default: false)
-    let templateName = optionalString("templateName", from: arguments)
+    let requestedTemplateName = optionalString("templateName", from: arguments)
     let allowPlannerModelSelection = arguments["allowPlannerModelSelection"] as? Bool
     let allowImplementerModelOverride = arguments["allowImplementerModelOverride"] as? Bool
     let allowPlannerImplementerScaling = arguments["allowPlannerImplementerScaling"] as? Bool
@@ -317,6 +317,13 @@ final class ParallelToolsHandler {
       )
       : nil
 
+    let isAllUXTasks = !tasks.isEmpty && tasks.allSatisfy(\.useUXTesting)
+    let resolvedTemplateName: String? = {
+      if let requestedTemplateName { return requestedTemplateName }
+      if isAllUXTasks { return "Quick Task" }
+      return nil
+    }()
+
     let run = runner.createRun(
       name: name,
       projectPath: projectPath,
@@ -325,17 +332,36 @@ final class ParallelToolsHandler {
       targetBranch: targetBranch,
       requireReviewGate: requireReviewGate,
       autoMergeOnApproval: autoMergeOnApproval,
-      templateName: templateName,
+      templateName: resolvedTemplateName,
       runOptions: runOptions
     )
 
     await delegate?.parallelTelemetryProvider.info("Parallel run created", metadata: [
       "runId": run.id.uuidString,
       "name": name,
-      "taskCount": "\(tasks.count)"
+      "taskCount": "\(tasks.count)",
+      "requestedTemplateName": requestedTemplateName ?? "",
+      "resolvedTemplateName": resolvedTemplateName ?? ""
     ])
 
-    return (200, toolResult(id: id, result: encodeParallelRun(run)))
+    if requestedTemplateName == nil, resolvedTemplateName == "Quick Task" {
+      await delegate?.parallelTelemetryProvider.info("Auto-selected Quick Task template for UX-only run", metadata: [
+        "runId": run.id.uuidString,
+        "taskCount": "\(tasks.count)"
+      ])
+    }
+
+    var encoded = encodeParallelRun(run)
+    if requestedTemplateName == nil,
+       let resolvedTemplateName {
+      encoded["resolvedTemplateName"] = resolvedTemplateName
+      encoded["templateResolutionReason"] =
+        isAllUXTasks
+        ? "No templateName was provided and all tasks use UX testing; defaulted to Quick Task to avoid build gates."
+        : "No templateName was provided; using runner defaults."
+    }
+
+    return (200, toolResult(id: id, result: encoded))
   }
 
   private func handleStart(id: Any?, arguments: [String: Any]) async -> (Int, Data) {

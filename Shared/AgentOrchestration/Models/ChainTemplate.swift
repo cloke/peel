@@ -288,6 +288,8 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
   private static let yoloClaudeId            = UUID(uuidString: "A0000001-0010-4000-8000-000000000010")!
   private static let deepPRReviewId           = UUID(uuidString: "A0000001-0011-4000-8000-000000000011")!
   private static let uxAuditId                = UUID(uuidString: "A0000001-0012-4000-8000-000000000012")!
+  private static let uxRegressionId           = UUID(uuidString: "A0000001-0013-4000-8000-000000000013")!
+  private static let uxFlowTestId             = UUID(uuidString: "A0000001-0014-4000-8000-000000000014")!
 
   // MARK: - Auto-detect Shell Commands
   // Fallback commands used when no .peel/profile.json buildCommand is configured.
@@ -603,17 +605,28 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
             customInstructions: """
               You are a review posting assistant. Take the review from step 2 and post it to GitHub.
 
+              IMPORTANT: You MUST use the `github.pr.review.create` MCP tool to post the review. \
+              Do NOT use `gh` CLI, shell commands, or any other method — they will fail with \
+              permission errors. The MCP tool is the only authorized way to post reviews.
+
               1. Parse the verdict from the review output:
                  - If verdict is APPROVE → event = "APPROVE"
                  - If verdict is REQUEST_CHANGES → event = "REQUEST_CHANGES"
                  - Otherwise → event = "COMMENT"
 
-              2. Use `github.pr.review.create` to submit the review:
-                 - Set `body` to the full review text
-                 - Set `event` based on the verdict
-                 - If there are file-specific issues with line numbers, include them as `comments` array entries
+              2. Extract the owner, repo, and pull_number from the original prompt or \
+                 prior step output.
 
-              3. Report what was posted (review ID, event type, number of inline comments).
+              3. Use `github.pr.review.create` with these arguments:
+                 - `owner`: the repository owner
+                 - `repo`: the repository name
+                 - `pull_number`: the PR number
+                 - `body`: the full review text
+                 - `event`: based on the verdict
+                 - If there are file-specific issues with line numbers, include them as \
+                   `comments` array entries
+
+              4. Report what was posted (review ID, event type, number of inline comments).
 
               If the review text is unclear or you can't parse it, post as COMMENT to be safe.
               """
@@ -895,6 +908,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
                  - List all unique user-facing pages/routes
 
               2. For each discovered route, create a parallel audit task using `parallel.create`:
+                 - Set run-level `templateName: "Quick Task"` in the `parallel.create` call (avoids Build Check gates during UX audits)
                  - Set `useUXTesting: true` on every task
                  - Set `installDependencies: true` on every task (each worktree gets its own dev server)
                  - Do NOT set `apiBaseURL` — each task runs its own isolated app instance
@@ -953,6 +967,111 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
               Prioritized list of fixes, grouped by effort (quick wins vs. larger changes).
 
               If any tasks failed, note them and explain what went wrong.
+              """
+          )
+        ],
+        isBuiltIn: true,
+        category: .specialized
+      ),
+
+      // 18. UX Regression: Before/after visual regression using screenshot diffing
+      ChainTemplate(
+        id: uxRegressionId,
+        name: "UX Regression",
+        description: "Parallel before/after visual regression checks with screenshot diffs (Cost: Standard)",
+        steps: [
+          AgentStepTemplate(
+            role: .planner,
+            model: .bestStandard,
+            name: "Regression Task Planner",
+            customInstructions: """
+              You are a UX regression planner. Build parallel visual comparison tasks.
+
+              Inputs expected in prompt:
+              - `beforeBaseURL` (baseline app) and `afterBaseURL` (candidate app)
+              - Optional `routes` list
+
+              Steps:
+              1. If routes are not provided, discover user-facing routes from router/navigation files.
+              2. Create one parallel task per route using `parallel.create` with:
+                 - run-level `templateName: "Quick Task"`
+                 - task `useUXTesting: true`
+                 - task `installDependencies: false` (external URLs)
+              3. Each task must:
+                 - `chrome.launch` in browser-only mode (`skipDevServer: true`)
+                 - Navigate to `beforeBaseURL + route`, wait for stable selector, screenshot to `beforePath`
+                 - Navigate to `afterBaseURL + route`, wait for same selector, screenshot to `afterPath`
+                 - Run `chrome.diff` with `beforePath` and `afterPath`
+                 - Return a structured result with diff metrics and artifact paths
+              4. Start execution with `parallel.start`.
+
+              Output: number of routes and created tasks.
+              """
+          ),
+          AgentStepTemplate(
+            role: .reviewer,
+            model: .bestStandard,
+            name: "Regression Report Aggregator",
+            customInstructions: """
+              Aggregate results from `parallel.status` into a UX Regression Report.
+
+              Report sections:
+              - Summary (pages compared, diffs over threshold)
+              - Top regressions ranked by percent changed
+              - Per-route details (before path, after path, diff path, metrics)
+              - Recommended fixes and release risk
+              """
+          )
+        ],
+        isBuiltIn: true,
+        category: .specialized
+      ),
+
+      // 19. UX Flow Test: Multi-step UX validation for critical user journeys
+      ChainTemplate(
+        id: uxFlowTestId,
+        name: "UX Flow Test",
+        description: "Parallel flow validation for multi-step UX journeys (Cost: Standard)",
+        steps: [
+          AgentStepTemplate(
+            role: .planner,
+            model: .bestStandard,
+            name: "Flow Decomposition Planner",
+            customInstructions: """
+              You are a UX flow planner. Convert high-level journeys into executable flow tasks.
+
+              Inputs expected in prompt:
+              - One or more named flows (example: login -> dashboard -> create record -> verify)
+              - Base URL and optional credentials from repo profile
+
+              Steps:
+              1. Split each flow into deterministic UI checkpoints.
+              2. Create one parallel task per flow using `parallel.create` with:
+                 - run-level `templateName: "Quick Task"`
+                 - task `useUXTesting: true`
+                 - per-task prompt with exact steps, expected selectors, and success criteria
+              3. Task prompt should require:
+                 - `chrome.launch`
+                 - `chrome.navigate`/`chrome.fill`/`chrome.click`/`chrome.wait` per checkpoint
+                 - screenshot + DOM snapshot at key checkpoints
+                 - immediate failure report at first broken checkpoint
+              4. Start tasks via `parallel.start`.
+
+              Output: created flow tasks and expected checkpoints per flow.
+              """
+          ),
+          AgentStepTemplate(
+            role: .reviewer,
+            model: .bestStandard,
+            name: "Flow Results Aggregator",
+            customInstructions: """
+              Build a UX Flow Test report from `parallel.status` results.
+
+              Include:
+              - Pass/fail per flow
+              - First failing checkpoint and evidence artifacts
+              - Common breakpoints across flows
+              - Prioritized remediation list
               """
           )
         ],

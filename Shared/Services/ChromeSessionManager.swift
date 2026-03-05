@@ -290,6 +290,46 @@ final class ChromeSessionManager {
     return result
   }
 
+  /// Emulate viewport/device metrics for a Chrome session.
+  /// - Parameters:
+  ///   - sessionId: Target session
+  ///   - width: CSS viewport width in pixels
+  ///   - height: CSS viewport height in pixels
+  ///   - deviceScaleFactor: Device pixel ratio (e.g. 2 for retina)
+  ///   - mobile: Enable mobile emulation behaviors
+  func emulate(
+    sessionId: UUID,
+    width: Int,
+    height: Int,
+    deviceScaleFactor: Double = 1,
+    mobile: Bool = false
+  ) async throws {
+    guard let session = sessions[sessionId] else {
+      throw ChromeSessionError.sessionNotFound(sessionId)
+    }
+    guard width > 0, height > 0 else {
+      throw ChromeSessionError.cdpError("Viewport width/height must be greater than zero")
+    }
+
+    let target = try await getPageTarget(port: session.debugPort)
+
+    _ = try await sendCDPCommand(
+      port: session.debugPort,
+      targetId: target.id,
+      method: "Emulation.setDeviceMetricsOverride",
+      params: [
+        "width": width,
+        "height": height,
+        "deviceScaleFactor": deviceScaleFactor,
+        "mobile": mobile
+      ]
+    )
+
+    logger.info(
+      "Applied viewport emulation to \(sessionId.uuidString): \(width)x\(height) dpr:\(deviceScaleFactor) mobile:\(mobile)"
+    )
+  }
+
   /// Close a Chrome session and clean up.
   func close(sessionId: UUID) async {
     guard let session = sessions[sessionId] else { return }

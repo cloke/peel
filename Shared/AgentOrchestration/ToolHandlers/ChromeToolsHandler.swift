@@ -3,13 +3,15 @@
 //  Peel
 //
 //  MCP tool handler for Chrome browser automation in parallel UX testing.
-//  Provides chrome.launch, chrome.navigate, chrome.screenshot, chrome.snapshot,
-//  chrome.close, and chrome.status tools.
+//  Provides chrome.launch, chrome.navigate, chrome.screenshot, chrome.diff,
+//  chrome.snapshot, chrome.close, and chrome.status tools.
 //
 //  Each parallel agent gets its own Chrome instance + dev server via UXTestOrchestrator.
 //
 
 import Foundation
+import CoreGraphics
+import ImageIO
 import MCPCore
 import os
 
@@ -27,6 +29,8 @@ public final class ChromeToolsHandler: MCPToolHandler {
     "chrome.launch",
     "chrome.navigate",
     "chrome.screenshot",
+    "chrome.diff",
+    "chrome.emulate",
     "chrome.snapshot",
     "chrome.evaluate",
     "chrome.fill",
@@ -34,6 +38,8 @@ public final class ChromeToolsHandler: MCPToolHandler {
     "chrome.wait",
     "chrome.select",
     "chrome.check",
+    "chrome.interceptRequest",
+    "chrome.getNetworkLog",
     "chrome.close",
     "chrome.status"
   ]
@@ -53,6 +59,10 @@ public final class ChromeToolsHandler: MCPToolHandler {
       return await handleNavigate(id: id, arguments: arguments, orchestrator: orchestrator)
     case "chrome.screenshot":
       return await handleScreenshot(id: id, arguments: arguments, orchestrator: orchestrator)
+    case "chrome.diff":
+      return handleDiff(id: id, arguments: arguments)
+    case "chrome.emulate":
+      return await handleEmulate(id: id, arguments: arguments, orchestrator: orchestrator)
     case "chrome.snapshot":
       return await handleSnapshot(id: id, arguments: arguments, orchestrator: orchestrator)
     case "chrome.evaluate":
@@ -67,6 +77,10 @@ public final class ChromeToolsHandler: MCPToolHandler {
       return await handleSelect(id: id, arguments: arguments, orchestrator: orchestrator)
     case "chrome.check":
       return await handleCheck(id: id, arguments: arguments, orchestrator: orchestrator)
+    case "chrome.interceptRequest":
+      return await handleInterceptRequest(id: id, arguments: arguments, orchestrator: orchestrator)
+    case "chrome.getNetworkLog":
+      return await handleGetNetworkLog(id: id, arguments: arguments, orchestrator: orchestrator)
     case "chrome.close":
       return await handleClose(id: id, arguments: arguments, orchestrator: orchestrator)
     case "chrome.status":
@@ -207,6 +221,251 @@ public final class ChromeToolsHandler: MCPToolHandler {
   }
 
   // MARK: - chrome.snapshot
+
+  // MARK: - chrome.diff
+
+  private func handleDiff(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    guard case .success(let beforePath) = requireString("beforePath", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "beforePath")
+    }
+    guard case .success(let afterPath) = requireString("afterPath", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "afterPath")
+    }
+
+    let threshold = max(0, min(255, arguments["threshold"] as? Int ?? 16))
+
+    do {
+      guard FileManager.default.fileExists(atPath: beforePath) else {
+        return notFoundError(id: id, what: "Before image not found at \(beforePath)")
+      }
+      guard FileManager.default.fileExists(atPath: afterPath) else {
+        return notFoundError(id: id, what: "After image not found at \(afterPath)")
+      }
+
+      let beforeRaster = try loadRasterImage(atPath: beforePath)
+      let afterRaster = try loadRasterImage(atPath: afterPath)
+
+      guard beforeRaster.width == afterRaster.width,
+            beforeRaster.height == afterRaster.height else {
+        return invalidParamError(
+          id: id,
+          param: "beforePath/afterPath",
+          reason: "Image dimensions must match for diffing (before: \(beforeRaster.width)x\(beforeRaster.height), after: \(afterRaster.width)x\(afterRaster.height))"
+        )
+      }
+
+      var diffPixels = [UInt8](repeating: 0, count: beforeRaster.pixels.count)
+      var changedPixels = 0
+
+      for index in stride(from: 0, to: beforeRaster.pixels.count, by: 4) {
+        let bR = beforeRaster.pixels[index]
+        let bG = beforeRaster.pixels[index + 1]
+        let bB = beforeRaster.pixels[index + 2]
+        let bA = beforeRaster.pixels[index + 3]
+
+        let aR = afterRaster.pixels[index]
+        let aG = afterRaster.pixels[index + 1]
+        let aB = afterRaster.pixels[index + 2]
+        let aA = afterRaster.pixels[index + 3]
+
+        let maxDelta = max(
+          abs(Int(bR) - Int(aR)),
+          max(
+            abs(Int(bG) - Int(aG)),
+            max(abs(Int(bB) - Int(aB)), abs(Int(bA) - Int(aA)))
+          )
+        )
+
+        if maxDelta > threshold {
+          changedPixels += 1
+          diffPixels[index] = 255
+          diffPixels[index + 1] = 0
+          diffPixels[index + 2] = 0
+          diffPixels[index + 3] = 255
+        } else {
+          let luminance = UInt8((Int(bR) * 30 + Int(bG) * 59 + Int(bB) * 11) / 100)
+          diffPixels[index] = luminance
+          diffPixels[index + 1] = luminance
+          diffPixels[index + 2] = luminance
+          diffPixels[index + 3] = 180
+        }
+      }
+
+      let totalPixels = beforeRaster.width * beforeRaster.height
+      let percentChanged = totalPixels > 0
+      ? (Double(changedPixels) / Double(totalPixels)) * 100
+      : 0
+
+      let outputPath = try resolveDiffPath(from: arguments, beforePath: beforePath, afterPath: afterPath)
+      try writePNG(path: outputPath, width: beforeRaster.width, height: beforeRaster.height, rgbaPixels: diffPixels)
+
+      return (200, makeResult(id: id, result: [
+        "beforePath": beforePath,
+        "afterPath": afterPath,
+        "diffPath": outputPath,
+        "threshold": threshold,
+        "width": beforeRaster.width,
+        "height": beforeRaster.height,
+        "pixelsChanged": changedPixels,
+        "totalPixels": totalPixels,
+        "percentChanged": percentChanged,
+        "message": "Diff created at \(outputPath) (\(changedPixels)/\(totalPixels) pixels changed)"
+      ]))
+    } catch {
+      return internalError(id: id, message: "Diff failed: \(error.localizedDescription)")
+    }
+  }
+
+  // MARK: - chrome.emulate
+
+  private func handleEmulate(id: Any?, arguments: [String: Any], orchestrator: UXTestOrchestrator) async -> (Int, Data) {
+    guard case .success(let sessionIdStr) = requireString("sessionId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "sessionId")
+    }
+    guard let sessionId = UUID(uuidString: sessionIdStr) else {
+      return invalidParamError(id: id, param: "sessionId", reason: "Invalid UUID format")
+    }
+
+    let presetName = optionalString("preset", from: arguments)?.lowercased()
+    let preset = presetName.flatMap { viewportPresets[$0] }
+
+    let width = (arguments["width"] as? Int) ?? preset?.width
+    let height = (arguments["height"] as? Int) ?? preset?.height
+    let deviceScaleFactor = (arguments["deviceScaleFactor"] as? Double) ?? preset?.deviceScaleFactor ?? 1
+    let mobile = (arguments["mobile"] as? Bool) ?? preset?.mobile ?? false
+
+    guard let width, let height else {
+      return invalidParamError(
+        id: id,
+        param: "width/height",
+        reason: "Provide width and height, or choose a preset (iphone-se, iphone-14-pro, ipad, desktop)"
+      )
+    }
+
+    do {
+      try await orchestrator.chromeManager.emulate(
+        sessionId: sessionId,
+        width: width,
+        height: height,
+        deviceScaleFactor: deviceScaleFactor,
+        mobile: mobile
+      )
+
+      return (200, makeResult(id: id, result: [
+        "sessionId": sessionIdStr,
+        "preset": presetName as Any,
+        "width": width,
+        "height": height,
+        "deviceScaleFactor": deviceScaleFactor,
+        "mobile": mobile,
+        "message": "Applied viewport emulation \(width)x\(height) dpr:\(deviceScaleFactor) mobile:\(mobile)"
+      ]))
+    } catch {
+      return internalError(id: id, message: "Viewport emulation failed: \(error.localizedDescription)")
+    }
+  }
+
+  private struct ViewportPreset {
+    let width: Int
+    let height: Int
+    let deviceScaleFactor: Double
+    let mobile: Bool
+  }
+
+  private let viewportPresets: [String: ViewportPreset] = [
+    "iphone-se": ViewportPreset(width: 375, height: 667, deviceScaleFactor: 2, mobile: true),
+    "iphone-14-pro": ViewportPreset(width: 393, height: 852, deviceScaleFactor: 3, mobile: true),
+    "ipad": ViewportPreset(width: 810, height: 1080, deviceScaleFactor: 2, mobile: true),
+    "desktop": ViewportPreset(width: 1440, height: 900, deviceScaleFactor: 1, mobile: false)
+  ]
+
+  private struct RasterImage {
+    let width: Int
+    let height: Int
+    let pixels: [UInt8]
+  }
+
+  private func loadRasterImage(atPath path: String) throws -> RasterImage {
+    let url = URL(fileURLWithPath: path)
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+          let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+      throw NSError(domain: "ChromeToolsHandler", code: 1, userInfo: [
+        NSLocalizedDescriptionKey: "Unable to read image at \(path)"
+      ])
+    }
+
+    let width = image.width
+    let height = image.height
+    var pixels = [UInt8](repeating: 0, count: width * height * 4)
+
+    guard let context = CGContext(
+      data: &pixels,
+      width: width,
+      height: height,
+      bitsPerComponent: 8,
+      bytesPerRow: width * 4,
+      space: CGColorSpaceCreateDeviceRGB(),
+      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ) else {
+      throw NSError(domain: "ChromeToolsHandler", code: 2, userInfo: [
+        NSLocalizedDescriptionKey: "Unable to create bitmap context for \(path)"
+      ])
+    }
+
+    context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+    return RasterImage(width: width, height: height, pixels: pixels)
+  }
+
+  private func resolveDiffPath(from arguments: [String: Any], beforePath: String, afterPath: String) throws -> String {
+    if let explicit = optionalString("diffPath", from: arguments), !explicit.isEmpty {
+      let dir = (explicit as NSString).deletingLastPathComponent
+      try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+      return explicit
+    }
+
+    let baseDir = (afterPath as NSString).deletingLastPathComponent
+    let beforeName = URL(fileURLWithPath: beforePath).deletingPathExtension().lastPathComponent
+    let afterName = URL(fileURLWithPath: afterPath).deletingPathExtension().lastPathComponent
+    let filename = "diff-\(beforeName)-vs-\(afterName)-\(UUID().uuidString.prefix(8)).png"
+    let resolved = (baseDir as NSString).appendingPathComponent(filename)
+    try FileManager.default.createDirectory(atPath: baseDir, withIntermediateDirectories: true)
+    return resolved
+  }
+
+  private func writePNG(path: String, width: Int, height: Int, rgbaPixels: [UInt8]) throws {
+    guard let provider = CGDataProvider(data: Data(rgbaPixels) as CFData),
+          let image = CGImage(
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: false,
+            intent: .defaultIntent
+          ) else {
+      throw NSError(domain: "ChromeToolsHandler", code: 3, userInfo: [
+        NSLocalizedDescriptionKey: "Unable to create diff image buffer"
+      ])
+    }
+
+    let url = URL(fileURLWithPath: path)
+    guard let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else {
+      throw NSError(domain: "ChromeToolsHandler", code: 4, userInfo: [
+        NSLocalizedDescriptionKey: "Unable to create PNG destination at \(path)"
+      ])
+    }
+
+    CGImageDestinationAddImage(destination, image, nil)
+    if !CGImageDestinationFinalize(destination) {
+      throw NSError(domain: "ChromeToolsHandler", code: 5, userInfo: [
+        NSLocalizedDescriptionKey: "Failed to write diff PNG at \(path)"
+      ])
+    }
+  }
 
   private func handleSnapshot(id: Any?, arguments: [String: Any], orchestrator: UXTestOrchestrator) async -> (Int, Data) {
     guard case .success(let sessionIdStr) = requireString("sessionId", from: arguments, id: id) else {
@@ -569,6 +828,191 @@ public final class ChromeToolsHandler: MCPToolHandler {
 
   // MARK: - chrome.close
 
+  // MARK: - chrome.interceptRequest
+
+  private func handleInterceptRequest(id: Any?, arguments: [String: Any], orchestrator: UXTestOrchestrator) async -> (Int, Data) {
+    guard case .success(let sessionIdStr) = requireString("sessionId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "sessionId")
+    }
+    guard let sessionId = UUID(uuidString: sessionIdStr) else {
+      return invalidParamError(id: id, param: "sessionId", reason: "Invalid UUID format")
+    }
+    guard case .success(let urlPattern) = requireString("urlPattern", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "urlPattern")
+    }
+
+    let action = (optionalString("action", from: arguments) ?? "block").lowercased()
+    guard action == "block" || action == "mock" else {
+      return invalidParamError(id: id, param: "action", reason: "action must be 'block' or 'mock'")
+    }
+
+    let method = optionalString("method", from: arguments)?.uppercased()
+    let once = arguments["once"] as? Bool ?? false
+    let status = arguments["status"] as? Int ?? 503
+    let body = optionalString("body", from: arguments) ?? "{\"error\":\"mocked by Peel intercept\"}"
+    let headers = arguments["headers"] as? [String: String] ?? ["content-type": "application/json"]
+
+    let config: [String: Any] = [
+      "urlPattern": urlPattern,
+      "action": action,
+      "method": method as Any,
+      "once": once,
+      "status": status,
+      "body": body,
+      "headers": headers
+    ]
+
+    guard let configLiteral = encodeJSONLiteral(config) else {
+      return internalError(id: id, message: "Failed to encode interception config")
+    }
+
+    let js = """
+      (function(config) {
+        if (!window.__peelInterceptors) {
+          window.__peelInterceptors = [];
+        }
+
+        if (!window.__peelFetchWrapped) {
+          const originalFetch = window.fetch.bind(window);
+          window.__peelOriginalFetch = originalFetch;
+          window.fetch = async function(input, init) {
+            const url = typeof input === 'string' ? input : (input && input.url ? input.url : String(input));
+            const method = ((init && init.method) || (input && input.method) || 'GET').toUpperCase();
+
+            const interceptors = window.__peelInterceptors || [];
+            for (let i = 0; i < interceptors.length; i++) {
+              const it = interceptors[i];
+              const methodMatch = !it.method || it.method === method;
+              const urlMatch = url.includes(it.urlPattern);
+              if (!methodMatch || !urlMatch) continue;
+
+              if (it.once) {
+                window.__peelInterceptors.splice(i, 1);
+                i -= 1;
+              }
+
+              if (it.action === 'block') {
+                return Promise.reject(new Error('Request blocked by Peel interceptor: ' + it.urlPattern));
+              }
+
+              if (it.action === 'mock') {
+                return new Response(it.body || '', {
+                  status: it.status || 200,
+                  headers: it.headers || { 'content-type': 'application/json' }
+                });
+              }
+            }
+
+            return originalFetch(input, init);
+          };
+          window.__peelFetchWrapped = true;
+        }
+
+        window.__peelInterceptors.push(config);
+        return {
+          success: true,
+          action: config.action,
+          urlPattern: config.urlPattern,
+          method: config.method || null,
+          once: !!config.once,
+          activeInterceptorCount: window.__peelInterceptors.length,
+          note: 'Fetch interception applies to requests made after this call on the current page context.'
+        };
+      })(\(configLiteral))
+      """
+
+    do {
+      let result = try await orchestrator.chromeManager.evaluate(sessionId: sessionId, expression: js)
+      let innerResult = (result["result"] as? [String: Any])?["result"] as? [String: Any]
+      let value = innerResult?["value"] as? [String: Any] ?? [:]
+
+      return (200, makeResult(id: id, result: [
+        "sessionId": sessionIdStr,
+        "action": action,
+        "urlPattern": urlPattern,
+        "method": method as Any,
+        "once": once,
+        "status": status,
+        "activeInterceptorCount": value["activeInterceptorCount"] ?? NSNull(),
+        "message": value["note"] ?? "Interception configured"
+      ]))
+    } catch {
+      return internalError(id: id, message: "Request interception setup failed: \(error.localizedDescription)")
+    }
+  }
+
+  private func encodeJSONLiteral(_ value: Any) -> String? {
+    guard JSONSerialization.isValidJSONObject(value),
+          let data = try? JSONSerialization.data(withJSONObject: value, options: []),
+          let result = String(data: data, encoding: .utf8) else {
+      return nil
+    }
+    return result
+  }
+
+  // MARK: - chrome.getNetworkLog
+
+  private func handleGetNetworkLog(id: Any?, arguments: [String: Any], orchestrator: UXTestOrchestrator) async -> (Int, Data) {
+    guard case .success(let sessionIdStr) = requireString("sessionId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "sessionId")
+    }
+    guard let sessionId = UUID(uuidString: sessionIdStr) else {
+      return invalidParamError(id: id, param: "sessionId", reason: "Invalid UUID format")
+    }
+
+    let limit = max(1, min(500, arguments["limit"] as? Int ?? 100))
+
+    let js = """
+      (function() {
+        const resources = performance.getEntriesByType('resource').map((e) => ({
+          name: e.name,
+          initiatorType: e.initiatorType || null,
+          startTime: Math.round(e.startTime),
+          durationMs: Math.round(e.duration),
+          transferSize: e.transferSize || 0,
+          encodedBodySize: e.encodedBodySize || 0,
+          decodedBodySize: e.decodedBodySize || 0,
+          nextHopProtocol: e.nextHopProtocol || null,
+          renderBlockingStatus: e.renderBlockingStatus || null
+        }));
+
+        const navigation = performance.getEntriesByType('navigation')[0] || null;
+        const nav = navigation ? {
+          type: navigation.type || null,
+          domContentLoadedMs: Math.round(navigation.domContentLoadedEventEnd || 0),
+          loadEventMs: Math.round(navigation.loadEventEnd || 0),
+          responseEndMs: Math.round(navigation.responseEnd || 0),
+          transferSize: navigation.transferSize || 0
+        } : null;
+
+        const tail = resources.slice(Math.max(0, resources.length - \(limit)));
+        return {
+          totalResources: resources.length,
+          resources: tail,
+          navigation: nav,
+          sampledLimit: \(limit)
+        };
+      })()
+      """
+
+    do {
+      let result = try await orchestrator.chromeManager.evaluate(sessionId: sessionId, expression: js)
+      let innerResult = (result["result"] as? [String: Any])?["result"] as? [String: Any]
+      let value = innerResult?["value"] as? [String: Any] ?? [:]
+
+      return (200, makeResult(id: id, result: [
+        "sessionId": sessionIdStr,
+        "totalResources": value["totalResources"] ?? 0,
+        "sampledLimit": value["sampledLimit"] ?? limit,
+        "navigation": value["navigation"] ?? NSNull(),
+        "resources": value["resources"] ?? [],
+        "message": "Captured network timing snapshot from Performance API"
+      ]))
+    } catch {
+      return internalError(id: id, message: "Network log capture failed: \(error.localizedDescription)")
+    }
+  }
+
   private func handleClose(id: Any?, arguments: [String: Any], orchestrator: UXTestOrchestrator) async -> (Int, Data) {
     guard case .success(let sessionIdStr) = requireString("sessionId", from: arguments, id: id) else {
       return missingParamError(id: id, param: "sessionId")
@@ -660,6 +1104,48 @@ public final class ChromeToolsHandler: MCPToolHandler {
         ],
         category: .ui,
         isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "chrome.diff",
+        description: """
+          Compare two screenshot files and generate a visual diff image. \
+          Changed pixels are highlighted in red, unchanged regions are dimmed grayscale. \
+          Returns diff file path plus change metrics (pixel count and percent).
+          """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "beforePath": ["type": "string", "description": "Absolute file path to baseline screenshot"],
+            "afterPath": ["type": "string", "description": "Absolute file path to candidate screenshot"],
+            "diffPath": ["type": "string", "description": "Optional absolute output path for diff image (defaults next to afterPath)"],
+            "threshold": ["type": "integer", "description": "Per-channel delta threshold 0-255 for marking a pixel as changed (default: 16)"]
+          ],
+          "required": ["beforePath", "afterPath"]
+        ],
+        category: .ui,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "chrome.emulate",
+        description: """
+          Emulate viewport/device dimensions for an active Chrome session. \
+          Accepts either a named preset or explicit width/height values. \
+          Use before navigation/screenshot to validate mobile and tablet layouts.
+          """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "sessionId": ["type": "string", "description": "UUID of the Chrome session"],
+            "preset": ["type": "string", "description": "Optional device preset: iphone-se, iphone-14-pro, ipad, desktop"],
+            "width": ["type": "integer", "description": "Viewport width in CSS pixels (required if preset omitted)"],
+            "height": ["type": "integer", "description": "Viewport height in CSS pixels (required if preset omitted)"],
+            "deviceScaleFactor": ["type": "number", "description": "Optional DPR override (defaults from preset or 1)"],
+            "mobile": ["type": "boolean", "description": "Optional mobile behavior override (defaults from preset or false)"]
+          ],
+          "required": ["sessionId"]
+        ],
+        category: .ui,
+        isMutating: true
       ),
       MCPToolDefinition(
         name: "chrome.snapshot",
@@ -789,6 +1275,48 @@ public final class ChromeToolsHandler: MCPToolHandler {
         ],
         category: .ui,
         isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "chrome.interceptRequest",
+        description: """
+          Configure page-level fetch interception for matching requests. \
+          Use action='block' to reject matching fetch calls, or action='mock' to return a synthetic response. \
+          Best for testing error states and fallback UI behavior.
+          """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "sessionId": ["type": "string", "description": "UUID of the Chrome session"],
+            "urlPattern": ["type": "string", "description": "Substring match pattern applied to request URL"],
+            "action": ["type": "string", "description": "Interception mode: block or mock"],
+            "method": ["type": "string", "description": "Optional HTTP method filter (GET, POST, etc.)"],
+            "once": ["type": "boolean", "description": "If true, interceptor removes itself after first match"],
+            "status": ["type": "integer", "description": "Mock response status (only for action=mock, default 503)"],
+            "body": ["type": "string", "description": "Mock response body (only for action=mock)"],
+            "headers": ["type": "object", "description": "Mock response headers map (only for action=mock)"]
+          ],
+          "required": ["sessionId", "urlPattern"]
+        ],
+        category: .ui,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "chrome.getNetworkLog",
+        description: """
+          Capture a network timing snapshot from the browser Performance API for the current page. \
+          Returns recent resource entries plus navigation timing details. \
+          Useful for auditing heavy assets, slow requests, and render-blocking resources.
+          """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "sessionId": ["type": "string", "description": "UUID of the Chrome session"],
+            "limit": ["type": "integer", "description": "Maximum number of recent resource entries to return (default: 100, max: 500)"]
+          ],
+          "required": ["sessionId"]
+        ],
+        category: .ui,
+        isMutating: false
       ),
       MCPToolDefinition(
         name: "chrome.close",

@@ -6,6 +6,7 @@
 //  displays the structured assessment, and offers approve/fix/comment actions.
 //
 
+import MCPCore
 import SwiftUI
 
 // MARK: - PR Review State
@@ -185,6 +186,8 @@ struct PRReviewSheet: View {
   @State private var isPostingReview = false
   @State private var postResult: String?
   @State private var isFixing = false
+  @State private var fixChainId: String?
+  @State private var fixModel: CopilotModel = .claudeSonnet46
 
   enum ReviewTemplate: String, CaseIterable {
     case standard = "PR Review"
@@ -203,6 +206,26 @@ struct PRReviewSheet: View {
       case .deep: return "Multi-step deep analysis"
       }
     }
+  }
+
+  /// Look up the active AgentChain for the review run.
+  private var activeChain: AgentChain? {
+    guard let chainIdStr = reviewState.chainId,
+          let runId = UUID(uuidString: chainIdStr),
+          let run = mcpServer.parallelWorktreeRunner?.findRunBySourceChainRunId(runId),
+          let chainId = run.executions.first?.chainId
+    else { return nil }
+    return mcpServer.agentManager.chains.first { $0.id == chainId }
+  }
+
+  /// Look up the active AgentChain for the fix run.
+  private var activeFixChain: AgentChain? {
+    guard let chainIdStr = fixChainId,
+          let runId = UUID(uuidString: chainIdStr),
+          let run = mcpServer.parallelWorktreeRunner?.findRunBySourceChainRunId(runId),
+          let chainId = run.executions.first?.chainId
+    else { return nil }
+    return mcpServer.agentManager.chains.first { $0.id == chainId }
   }
 
   var body: some View {
@@ -249,27 +272,111 @@ struct PRReviewSheet: View {
   }
 
   private var loadingView: some View {
-    VStack(spacing: 16) {
-      ProgressView()
-        .controlSize(.large)
-      Text("Agent is reviewing PR #\(pr.number)…")
-        .font(.subheadline)
-        .foregroundStyle(.secondary)
+    VStack(alignment: .leading, spacing: 16) {
+      // Header with elapsed time
+      HStack {
+        Label("Reviewing PR #\(pr.number)", systemImage: "sparkles")
+          .font(.subheadline)
+          .fontWeight(.medium)
+
+        Spacer()
+
+        if let chain = activeChain, let startTime = chain.runStartTime {
+          ElapsedTimeView(startTime: startTime)
+        }
+      }
+
+      if let chain = activeChain {
+        // Agent progress bar
+        if !chain.agents.isEmpty {
+          HStack(spacing: 2) {
+            ForEach(Array(chain.agents.enumerated()), id: \.element.id) { index, agent in
+              let currentIdx = { if case .running(let idx) = chain.state { return idx }; return -1 }()
+              VStack(spacing: 4) {
+                RoundedRectangle(cornerRadius: 3)
+                  .fill(index < currentIdx ? Color.green : index == currentIdx ? Color.blue : Color.secondary.opacity(0.3))
+                  .frame(height: 6)
+                Text(agent.role.displayName)
+                  .font(.caption2)
+                  .foregroundStyle(index == currentIdx ? .primary : .secondary)
+              }
+            }
+          }
+        }
+
+        Divider()
+
+        // Streaming status messages
+        ScrollViewReader { proxy in
+          ScrollView {
+            LazyVStack(alignment: .leading, spacing: 4) {
+              ForEach(chain.liveStatusMessages) { message in
+                HStack(alignment: .top, spacing: 6) {
+                  Image(systemName: message.type.icon)
+                    .font(.caption2)
+                    .foregroundStyle(message.type.color)
+                    .frame(width: 12)
+
+                  Text(message.message)
+                    .font(.caption)
+                    .foregroundStyle(message.type == .error ? .red : .primary)
+
+                  Spacer()
+
+                  Text(message.timestamp, style: .time)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                }
+                .id(message.id)
+              }
+            }
+          }
+          .frame(maxHeight: 200)
+          .onChange(of: chain.liveStatusMessages.count) { _, _ in
+            if let lastMessage = chain.liveStatusMessages.last {
+              withAnimation {
+                proxy.scrollTo(lastMessage.id, anchor: .bottom)
+              }
+            }
+          }
+        }
+
+        // Current agent indicator
+        if case .running(let agentIdx) = chain.state, agentIdx < chain.agents.count {
+          HStack {
+            ProgressView()
+              .scaleEffect(0.6)
+            Text("Running: \(chain.agents[agentIdx].name)")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+
+            if let agentStart = chain.currentAgentStartTime {
+              Text("·")
+                .foregroundStyle(.tertiary)
+              ElapsedTimeView(startTime: agentStart)
+                .font(.caption)
+            }
+          }
+        }
+      } else {
+        // Chain not yet discovered — show minimal spinner
+        HStack(spacing: 8) {
+          ProgressView()
+            .controlSize(.small)
+          Text("Starting review…")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
 
       if let chainId = reviewState.chainId {
         Text("Chain: \(chainId)")
-          .font(.caption.monospaced())
+          .font(.caption2.monospaced())
           .foregroundStyle(.tertiary)
       }
-
-      Text("The agent will analyze the diff, check CI status, and produce a structured review.")
-        .font(.caption)
-        .foregroundStyle(.tertiary)
-        .multilineTextAlignment(.center)
-        .frame(maxWidth: 400)
     }
-    .frame(maxWidth: .infinity)
-    .padding(.vertical, 40)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .padding(.vertical, 12)
   }
 
   private var startReviewView: some View {
@@ -465,6 +572,17 @@ struct PRReviewSheet: View {
 
           // Fix with agent
           if !result.issues.isEmpty {
+            Picker("Model", selection: $fixModel) {
+              ForEach(CopilotModel.ModelFamily.allCases) { family in
+                Section(family.displayName) {
+                  ForEach(CopilotModel.allCases.filter { $0.modelFamily == family }) { model in
+                    Text(model.displayNameWithCost).tag(model)
+                  }
+                }
+              }
+            }
+            .frame(width: 200)
+
             Button {
               Task { await dispatchFixChain(issues: result.issues) }
             } label: {
@@ -492,13 +610,7 @@ struct PRReviewSheet: View {
         }
 
         if isFixing {
-          HStack(spacing: 6) {
-            ProgressView()
-              .controlSize(.small)
-            Text("Dispatching fix chain…")
-              .font(.caption)
-              .foregroundStyle(.secondary)
-          }
+          fixChainStatusView
         }
       }
       .padding(4)
@@ -513,6 +625,77 @@ struct PRReviewSheet: View {
           .textSelection(.enabled)
       }
       .frame(maxHeight: 200)
+    }
+  }
+
+  @ViewBuilder
+  private var fixChainStatusView: some View {
+    if let chain = activeFixChain {
+      VStack(alignment: .leading, spacing: 8) {
+        HStack {
+          Label("Fix in progress", systemImage: "hammer")
+            .font(.caption)
+            .fontWeight(.medium)
+
+          Spacer()
+
+          if let startTime = chain.runStartTime {
+            ElapsedTimeView(startTime: startTime)
+          }
+        }
+
+        ScrollViewReader { proxy in
+          ScrollView {
+            LazyVStack(alignment: .leading, spacing: 4) {
+              ForEach(chain.liveStatusMessages) { message in
+                HStack(alignment: .top, spacing: 6) {
+                  Image(systemName: message.type.icon)
+                    .font(.caption2)
+                    .foregroundStyle(message.type.color)
+                    .frame(width: 12)
+
+                  Text(message.message)
+                    .font(.caption)
+                    .foregroundStyle(message.type == .error ? .red : .primary)
+
+                  Spacer()
+
+                  Text(message.timestamp, style: .time)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                }
+                .id(message.id)
+              }
+            }
+          }
+          .frame(maxHeight: 120)
+          .onChange(of: chain.liveStatusMessages.count) { _, _ in
+            if let lastMessage = chain.liveStatusMessages.last {
+              withAnimation {
+                proxy.scrollTo(lastMessage.id, anchor: .bottom)
+              }
+            }
+          }
+        }
+
+        if case .running(let agentIdx) = chain.state, agentIdx < chain.agents.count {
+          HStack {
+            ProgressView()
+              .scaleEffect(0.6)
+            Text("Running: \(chain.agents[agentIdx].name)")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
+      }
+    } else {
+      HStack(spacing: 6) {
+        ProgressView()
+          .controlSize(.small)
+        Text("Starting fix chain…")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
     }
   }
 
@@ -595,7 +778,7 @@ struct PRReviewSheet: View {
     {
       "summary": "string",
       "riskLevel": "low|medium|high",
-      "issues": ["string"],
+      "issues": ["{ file: string, description: string }"],
       "suggestions": ["string"],
       "ciStatus": "string",
       "verdict": "APPROVE|REQUEST_CHANGES|COMMENT"
@@ -604,16 +787,20 @@ struct PRReviewSheet: View {
     Rules:
     - Include all keys, even if arrays are empty.
     - Keep summary concise (<= 4 sentences).
+    - Each issue MUST include the file path where it was found.
     - Base verdict on code risk + CI/check status.
     """
 
-    let arguments: [String: Any] = [
+    var arguments: [String: Any] = [
       "prompt": prompt,
       "workingDirectory": repoPath,
       "templateId": selectedTemplate.templateId,
       "returnImmediately": true,
       "requireRagUsage": false,
     ]
+    if let headRef = pr.headRef {
+      arguments["baseBranch"] = headRef
+    }
 
     let (_, data) = await mcpServer.handleChainRun(id: nil, arguments: arguments)
 
@@ -650,7 +837,8 @@ struct PRReviewSheet: View {
     }
 
     // First, wait briefly for the parallel run record to appear.
-    // This avoids scanning all runs for the full polling duration.
+    // The run is created synchronously on MainActor before handleChainRun returns,
+    // so it should be discoverable immediately. The loop is a safety net.
     let discoveryDeadline = Date().addingTimeInterval(30)
     var locatedRun = mcpServer.parallelWorktreeRunner?.findRunBySourceChainRunId(runId)
     var discoverySleepMs = 250
@@ -659,13 +847,6 @@ struct PRReviewSheet: View {
       try? await Task.sleep(for: .milliseconds(discoverySleepMs))
       locatedRun = mcpServer.parallelWorktreeRunner?.findRunBySourceChainRunId(runId)
       discoverySleepMs = min(2_000, discoverySleepMs + 250)
-
-      // If run is gone from active map and still not discoverable, stop early.
-      if locatedRun == nil, mcpServer.activeRunsById[runId] == nil {
-        reviewState.isLoading = false
-        reviewState.error = "Chain completed but review output was not captured. Check the Parallel Worktrees dashboard for results."
-        return
-      }
     }
 
     guard let runner = mcpServer.parallelWorktreeRunner, let run = locatedRun else {
@@ -674,13 +855,24 @@ struct PRReviewSheet: View {
       return
     }
 
-    // Wait directly on the discovered run object.
-    _ = await runner.waitForRunCompletion(run, timeoutSeconds: 120)
+    // Wait for the chain to finish. PR reviews on large diffs can take several minutes
+    // (multiple MCP tool calls + analysis), so use a generous timeout.
+    let status = await runner.waitForRunCompletion(run, timeoutSeconds: 300)
+
+    // If the run is still in progress, the output hasn't been populated yet.
+    switch status {
+    case .completed, .failed, .cancelled, .awaitingReview:
+      break
+    default:
+      reviewState.isLoading = false
+      reviewState.error = "Review is still running. Check the Parallel Worktrees dashboard for results when it finishes."
+      return
+    }
 
     let lastOutput = extractReviewOutput(from: run)
     if lastOutput.isEmpty {
       reviewState.isLoading = false
-      reviewState.error = "Review completed but produced no output"
+      reviewState.error = "Review completed but produced no output. Check chain logs for details."
       return
     }
 
@@ -907,27 +1099,86 @@ struct PRReviewSheet: View {
     guard let ownerRepo, let repoPath else { return }
 
     isFixing = true
+    fixChainId = nil
+
+    let parts = ownerRepo.split(separator: "/")
+    let owner = parts.count >= 2 ? String(parts[0]) : ownerRepo
+    let repoName = parts.count >= 2 ? String(parts[1]) : ownerRepo
 
     let issuesList = issues.enumerated()
       .map { "\($0.offset + 1). \($0.element)" }
       .joined(separator: "\n")
 
+    // Include raw review output for full context (file paths, line numbers)
+    let rawContext = reviewState.reviewResult?.rawOutput ?? ""
+
     let prompt = """
-    Fix the issues found in PR #\(pr.number) for \(ownerRepo):
-    
+    Fix the issues found in PR #\(pr.number) for \(ownerRepo).
+
+    Repository owner: \(owner)
+    Repository name: \(repoName)
+    PR number: \(pr.number)
+
+    IMPORTANT: Before making any changes, use `github.pr.files` with \
+    owner="\(owner)", repo="\(repoName)", pull_number=\(pr.number) to get \
+    the actual list of changed files and their patches from the PR. Only \
+    modify files that are part of the PR — do NOT grep for similar code \
+    elsewhere.
+
+    Issues to fix:
     \(issuesList)
-    
-    Create a new commit that addresses these issues. Focus on code quality \
-    and correctness.
+
+    Full review context:
+    \(rawContext)
+
+    Instructions:
+    - Fix each issue in the file where it was found.
+    - Create a new commit that addresses these issues.
+    - Focus on code quality and correctness.
     """
 
-    let arguments: [String: Any] = [
+    var arguments: [String: Any] = [
       "prompt": prompt,
       "workingDirectory": repoPath,
       "returnImmediately": true,
+      "chainSpec": [
+        "name": "Fix PR Issues",
+        "description": "Fix issues found during PR review",
+        "steps": [
+          [
+            "role": "implementer",
+            "model": fixModel.rawValue,
+            "name": "Fix Issues",
+          ] as [String: Any]
+        ],
+      ] as [String: Any],
     ]
+    if let headRef = pr.headRef {
+      arguments["baseBranch"] = headRef
+    }
 
-    let _ = await mcpServer.handleChainRun(id: nil, arguments: arguments)
-    isFixing = false
+    let (_, data) = await mcpServer.handleChainRun(id: nil, arguments: arguments)
+
+    // Extract the runId so we can show streaming status
+    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+       let result = json["result"] as? [String: Any] {
+      let chainData: [String: Any]?
+      if let content = result["content"] as? [[String: Any]],
+         let text = content.first?["text"] as? String,
+         let parsed = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] {
+        chainData = parsed
+      } else {
+        chainData = result
+      }
+      if let chainData,
+         let runId = chainData["runId"] as? String
+          ?? (chainData["queue"] as? [String: Any])?["runId"] as? String {
+        fixChainId = runId
+      }
+    }
+
+    // Keep isFixing true — the fix chain status view handles the UI.
+    // It will appear unfinished until the chain completes, which is appropriate
+    // since the user dispatched with returnImmediately.
   }
 }

@@ -170,6 +170,7 @@ extension UnifiedRepository {
     let title: String
     let state: String
     let htmlURL: String?
+    let headRef: String?
   }
 }
 

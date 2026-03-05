@@ -206,6 +206,7 @@ extension MCPServerService {
     let templateName = arguments["templateName"] as? String
     let chainSpec = arguments["chainSpec"] as? [String: Any]
     let workingDirectory = arguments["workingDirectory"] as? String
+    let baseBranch = arguments["baseBranch"] as? String
     let enableReviewLoop = arguments["enableReviewLoop"] as? Bool
     let pauseOnReview = arguments["pauseOnReview"] as? Bool
     let enablePrePlanner = arguments["enablePrePlanner"] as? Bool  // Issue #133
@@ -287,6 +288,7 @@ extension MCPServerService {
         prompt: prompt,
         projectPath: projectPath,
         templateName: template.name,
+        baseBranch: baseBranch ?? "HEAD",
         requireReviewGate: true,
         runOptions: runOptions,
         sourceChainRunId: runId,

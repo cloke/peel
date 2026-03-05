@@ -735,7 +735,8 @@ struct BranchesTabView: View {
           number: pr.number,
           title: pr.title ?? "Untitled",
           state: pr.state ?? "open",
-          htmlURL: pr.html_url
+          htmlURL: pr.html_url,
+          headRef: pr.head.ref
         )
       }
     } catch {

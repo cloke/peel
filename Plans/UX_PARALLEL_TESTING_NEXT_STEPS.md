@@ -1,13 +1,27 @@
 # Parallel UX Testing — Next Steps
 
-**Status:** Phase 1 COMPLETE, Phase 2.1 + 2.2 DONE, live test completed — as of March 4, 2026  
+**Status:** Phase 1 COMPLETE, Phase 2.1 DONE, Phase 2.2 DONE, Phase 2.3 core MVP DONE, Phase 3.4 core DONE, Phase 3.5 MVP DONE — verified March 4, 2026  
 **Goal:** Unleash Peel to do massive parallel UX work across web apps
+
+---
+
+## Verification Snapshot (March 4, 2026)
+
+- Done: `UX Audit` built-in template exists (`A0000001-0012`) with planner + reviewer steps.
+- Done: `parallel.create` / `parallel.append` parse `useUXTesting`, `apiBaseURL`, `installDependencies`, and `devServerPath`.
+- Done: Chrome UX tools include `chrome.wait`, `chrome.select`, `chrome.check`, and `chrome.screenshot` (`savePath` supported).
+- Done: Execution artifacts are captured and returned in `parallel.status`.
+- Partial: Multi-page route discovery exists via UX Audit planner instructions (LLM-driven), but no deterministic framework-specific route parser.
+- Done: built-in templates now include `UX Regression` and `UX Flow Test`.
+- Done: `chrome.diff` is implemented (pixel diff + output artifact + change metrics).
+- Done: network tooling MVP includes `chrome.interceptRequest` (fetch block/mock) and `chrome.getNetworkLog`.
+- Done: for UX-only `parallel.create` runs with no `templateName`, template now auto-resolves to `Quick Task`.
 
 ---
 
 ## What Works Today
 
-- **12 Chrome MCP tools:** `navigate`, `snapshot`, `screenshot`, `evaluate`, `fill`, `click`, `wait`, `select`, `check`, `launch`, `close`, `status`
+- **16 Chrome MCP tools:** `navigate`, `snapshot`, `screenshot`, `diff`, `emulate`, `evaluate`, `fill`, `click`, `wait`, `select`, `check`, `interceptRequest`, `getNetworkLog`, `launch`, `close`, `status`
 - **Curl-based agent bridge:** Agents running via Copilot CLI can call Chrome tools through `curl` to the MCP server (`http://127.0.0.1:8765/rpc`) using an `mcp_call` shell helper injected into their prompt
 - **`apiBaseURL` mode:** Tasks can point at an externally running app (e.g., `http://localhost:4250`) — skips dev server startup in worktrees
 - **Parallel isolation:** Each task gets its own Chrome session (unique debug port + user data dir) via `UXTestOrchestrator`
@@ -78,7 +92,7 @@
 - Added `installDependencies` to `parallel.create` / `parallel.append` task parsing + tool definition
 - Expanded port ranges from 20 to 50 slots (3001-3050 dev, 9222-9271 Chrome) for bigger parallel runs
 
-### 2.2 — Parallel UX task templates
+### 2.2 — Parallel UX task templates ✅ DONE
 **Problem:** Creating parallel UX tasks requires manually writing JSON with `useUXTesting`, `apiBaseURL`, tool instructions, etc.
 
 **Fix:**
@@ -87,27 +101,33 @@
   2. Each task navigates to its route, screenshots, snapshots DOM, evaluates against UX criteria
   3. Reviewer step aggregates all findings into a unified UX Audit Report
   4. Covers: layout, typography, accessibility, error states, consistency, performance
-- Add a `UX Regression` template that:
+- ✅ Added a `UX Regression` template that:
   1. Takes before/after URLs (or a branch)
   2. Screenshots each page on both versions
   3. Diffs the screenshots and reports visual regressions
-- Add a `UX Flow Test` template for multi-step flows (login → dashboard → create record → verify)
+- ✅ Added a `UX Flow Test` template for multi-step flows (login → dashboard → create record → verify)
+- ✅ UX runs now auto-resolve to `Quick Task` when `parallel.create` omits `templateName` and all tasks have `useUXTesting: true`.
 
-### 2.3 — Screenshot diffing
+### 2.3 — Screenshot diffing ✅ MVP DONE
 **Problem:** Agents describe what they see in text, which is useful but not visual.
 
-**Fix:**
-- Add `chrome.diff` tool that takes two screenshot paths and produces a visual diff (highlight changed pixels)
-- Or use a simpler approach: agents take before/after screenshots, and a reviewer step compares them
-- Consider integrating with an image comparison library (pixel diff or perceptual hash)
+**Implemented:**
+- Added `chrome.diff` tool that compares two screenshots, writes a visual diff image, and returns metrics (`pixelsChanged`, `percentChanged`)
+- Supports optional `diffPath` and `threshold` arguments
+- Validates matching dimensions and returns clear errors when inputs are invalid
 
-### 2.4 — Multi-page routing support
-**Problem:** Single-page apps may need the agent to know the full route map to audit all pages.
+**Next improvement options:**
+- Add perceptual diff mode (SSIM/pHash) for anti-aliasing tolerance
+- Add route-level aggregation helper for large regression suites
+
+### 2.4 — Multi-page routing support (PARTIAL)
+**Current:** UX Audit planner is already instructed to discover routes from code (router files/navigation configs) before creating tasks.
+**Gap:** Discovery is still prompt-driven; no deterministic route extractor by framework.
 
 **Fix:**
-- Add route discovery: agent runs `chrome.evaluate` with a script that extracts all `<a href>` and `react-router` routes
-- Or parse the app's router config file (e.g., `src/router.tsx`) and inject known routes into the prompt
-- `RepoProfile` could detect the framework (React Router, Next.js, Vue Router) and extract routes
+- Keep prompt-driven discovery as fallback.
+- Add deterministic route discovery per framework (React Router, Next.js, Vue Router, Ember) and inject discovered routes into planner context.
+- Optionally validate discovered routes by probing with `chrome.navigate` + `chrome.wait` to filter dead routes.
 
 ---
 
@@ -135,15 +155,21 @@ Option C is pragmatic and already works. A/B are bigger lifts.
 - Auto-fail tasks that introduce visual regressions beyond a threshold
 - Store baseline screenshots in `.peel/screenshots/baseline/`
 
-### 3.4 — Mobile viewport testing
-- Add `chrome.emulate` tool to set device viewport (iPhone, iPad, etc.)
-- Or pass `--window-size` to Chrome launch args per session
-- Each task could specify a viewport, enabling parallel desktop + mobile testing of the same page
+### 3.4 — Mobile viewport testing ✅ CORE DONE
+- Added `chrome.emulate` tool to set viewport/device metrics by preset or explicit dimensions.
+- Presets currently include: `iphone-se`, `iphone-14-pro`, `ipad`, `desktop`.
+- Supports overrides for `deviceScaleFactor` and `mobile` behavior.
 
-### 3.5 — Network interception
-- `chrome.interceptRequest` — block/mock API calls for testing error states
-- `chrome.getNetworkLog` — return all network requests made during the session
+**Next improvement options:**
+- Add orientation helpers (portrait/landscape aliases).
+- Add template-level viewport matrices (run same route across desktop/mobile presets automatically).
+
+### 3.5 — Network interception ✅ MVP DONE
+- ✅ `chrome.interceptRequest` — page-level fetch interception for block/mock error-state testing
+- ✅ `chrome.getNetworkLog` — returns network timing/resource entries from the browser Performance API
 - Useful for testing loading states, error boundaries, and API failure handling
+
+**MVP limitation:** interception currently targets `fetch` in page context; it does not yet provide full CDP-level interception for all request types.
 
 ---
 
@@ -157,6 +183,7 @@ Option C is pragmatic and already works. A/B are bigger lifts.
 | 4 | Better error messages from fill/click (selector not found) | Small | Reduces agent confusion | ✅ Done |
 | 5 | Create `UX Audit` chain template | Medium | Enables one-command full-app audit | ✅ Done |
 | 6 | Test with 5-10 parallel tasks on a real app | Small | Validate scaling | ✅ Done (see results below) |
+| 7 | Ensure UX planner sets `templateName` for `parallel.create` (no-gate template) | Small | Prevents avoidable gate failures | ✅ Done (and runtime auto-resolution added) |
 
 ---
 
@@ -203,6 +230,8 @@ Option C is pragmatic and already works. A/B are bigger lifts.
 2. The worktrees don't have `node_modules` installed (we used `apiBaseURL` mode, not `installDependencies`)
 
 **Evidence:** All 10 chain logs show: `"Gate 'Build Check' failed (exit 66)"`
+
+**Current relevance (verified):** This is now mitigated for UX-only runs. If all tasks use `useUXTesting: true` and `templateName` is omitted, `parallel.create` auto-resolves to `Quick Task`.
 
 **Fixes needed:**
 - UX Audit template should use a chain template **without a build gate** (or with a skip-build option)
