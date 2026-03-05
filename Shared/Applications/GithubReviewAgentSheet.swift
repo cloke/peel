@@ -48,6 +48,12 @@ struct GithubReviewAgentSheet: View {
   @State private var repoAutoResolved = false
   @State private var showRepoPicker = false
   @State private var isSearchingRepo = false
+  @State private var fixChain: AgentChain?
+  @State private var isFixing = false
+  @State private var isPushing = false
+  @State private var pushResult: String?
+  @State private var pushError: String?
+  @State private var fixModel: CopilotModel = .claudeSonnet46
   @AppStorage("current-tool") private var currentTool: CurrentTool = .agents
 
   var body: some View {
@@ -58,7 +64,7 @@ struct GithubReviewAgentSheet: View {
       Divider()
       footerView
     }
-    .frame(width: 560, height: chainIsFinished ? 640 : 520)
+    .frame(width: 560, height: (chainIsFinished || fixChain != nil) ? 700 : 520)
     .task {
       // Register RAG-indexed repos with RepoRegistry (they have direct remote URLs)
       await registerRAGRepos()
@@ -289,7 +295,7 @@ struct GithubReviewAgentSheet: View {
 
   private var footerView: some View {
     HStack {
-      Button(launchedChain != nil ? "Close" : "Cancel") {
+      Button((launchedChain != nil || fixChain != nil) ? "Close" : "Cancel") {
         dismiss()
       }
       .keyboardShortcut(.cancelAction)
@@ -297,7 +303,25 @@ struct GithubReviewAgentSheet: View {
 
       Spacer()
 
-      if let chain = launchedChain {
+      if let chain = fixChain {
+        // Fix chain is active — show its state in footer
+        switch chain.state {
+        case .complete, .failed:
+          Button {
+            mcpServer.agentManager.selectedChain = chain
+            currentTool = .agents
+            dismiss()
+          } label: {
+            Label("View Fix in Agents", systemImage: "cpu")
+          }
+          .buttonStyle(.borderedProminent)
+          .keyboardShortcut(.defaultAction)
+        default:
+          Label("Fixing \u{2014} you can close and check Agents tab", systemImage: "hammer")
+            .foregroundStyle(.secondary)
+            .font(.caption)
+        }
+      } else if let chain = launchedChain {
         switch chain.state {
         case .complete, .failed:
           Button {
@@ -420,6 +444,9 @@ struct GithubReviewAgentSheet: View {
             .foregroundStyle(.secondary)
         }
       }
+
+      // Fix + Push actions
+      reviewActionsSection(reviewOutput: lastOutput.output)
     } else if case .failed = chain.state, let lastOutput = chain.results.last {
       SectionCard {
         ScrollView {
@@ -740,5 +767,266 @@ Task:
       cliService: mcpServer.cliService,
       sessionTracker: mcpServer.sessionTracker
     )
+  }
+
+  // MARK: - Fix + Push Actions
+
+  @ViewBuilder
+  private func reviewActionsSection(reviewOutput: String) -> some View {
+    SectionCard {
+      VStack(alignment: .leading, spacing: 10) {
+        if let fix = fixChain {
+          // Fix chain status
+          fixChainStatusView(fix)
+        } else {
+          // Offer to fix
+          HStack(spacing: 8) {
+            Picker("Model", selection: $fixModel) {
+              ForEach(CopilotModel.ModelFamily.allCases) { family in
+                Section(family.displayName) {
+                  ForEach(CopilotModel.allCases.filter { $0.modelFamily == family }) { model in
+                    Text(model.displayNameWithCost).tag(model)
+                  }
+                }
+              }
+            }
+            .frame(width: 200)
+
+            Button {
+              Task { await dispatchFix(reviewOutput: reviewOutput) }
+            } label: {
+              Label("Fix with Agent", systemImage: "hammer")
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.orange)
+            .disabled(isFixing)
+          }
+        }
+
+        // Push to PR
+        if fixChain?.state.isComplete == true {
+          Divider()
+          pushToPRSection
+        }
+      }
+    } header: {
+      Text("Actions")
+    }
+  }
+
+  @ViewBuilder
+  private func fixChainStatusView(_ chain: AgentChain) -> some View {
+    HStack(spacing: 10) {
+      switch chain.state {
+      case .idle, .running:
+        ProgressView().controlSize(.small)
+        VStack(alignment: .leading, spacing: 2) {
+          Text("Fixing issues\u{2026}")
+            .font(.callout)
+          if case .running(let idx) = chain.state, idx < chain.agents.count {
+            Text(chain.agents[idx].name)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
+      case .reviewing(let iter):
+        ProgressView().controlSize(.small)
+        Text("Review loop \(iter + 1)")
+          .font(.callout)
+      case .complete:
+        Image(systemName: "checkmark.circle.fill")
+          .foregroundStyle(.green)
+        Text("Fix Complete")
+          .font(.callout.weight(.medium))
+      case .failed(let msg):
+        Image(systemName: "xmark.circle.fill")
+          .foregroundStyle(.red)
+        VStack(alignment: .leading, spacing: 2) {
+          Text("Fix Failed")
+            .font(.callout.weight(.medium))
+          Text(msg)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+        }
+      }
+      Spacer()
+    }
+
+    // Show fix output when complete
+    if chain.state.isTerminal, let lastOutput = chain.results.last {
+      ScrollView {
+        Text(lastOutput.output)
+          .font(.system(.caption, design: .monospaced))
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .textSelection(.enabled)
+      }
+      .frame(maxHeight: 120)
+    }
+  }
+
+  @ViewBuilder
+  private var pushToPRSection: some View {
+    if let headRef = pullRequest?.head.ref {
+      HStack(spacing: 8) {
+        Button {
+          Task { await pushFixToPR() }
+        } label: {
+          Label("Push Fix to PR", systemImage: "arrow.up.circle")
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(.blue)
+        .disabled(isPushing || pushResult != nil)
+
+        Text("\u{2192} origin/\(headRef)")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+
+      if isPushing {
+        HStack(spacing: 6) {
+          ProgressView().controlSize(.small)
+          Text("Pushing to PR branch\u{2026}")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+
+      if let result = pushResult {
+        Label(result, systemImage: "checkmark.circle")
+          .font(.caption)
+          .foregroundStyle(.green)
+      }
+
+      if let error = pushError {
+        Label(error, systemImage: "xmark.circle")
+          .font(.caption)
+          .foregroundStyle(.red)
+      }
+    } else {
+      Text("Cannot push \u{2014} PR head ref unknown")
+        .font(.caption)
+        .foregroundStyle(.orange)
+    }
+  }
+
+  private func dispatchFix(reviewOutput: String) async {
+    guard let pr = pullRequest, let repo = repository else { return }
+    let worktreePath = launchedChain?.workingDirectory ?? selectedRepoPath
+    guard !worktreePath.isEmpty else { return }
+
+    isFixing = true
+
+    let fullName = repo.full_name ?? repo.name
+    let fixPrompt = """
+    Fix the issues found during the review of PR #\(pr.number) in \(fullName).
+
+    Repository: \(fullName)
+    PR number: \(pr.number)
+    Branch: \(pr.head.ref)
+
+    IMPORTANT: Before making any changes, use `github.pr.files` with \
+    the PR details to get the actual list of changed files and their patches. \
+    Only modify files that are part of the PR.
+
+    Full review output:
+    \(reviewOutput)
+
+    Instructions:
+    - Fix each issue identified in the review.
+    - Create a commit that addresses these issues.
+    - Focus on code quality and correctness.
+    """
+
+    // Use Quick Task template for single-step fix
+    let template = mcpServer.agentManager.allTemplates.first { $0.name == "Quick Task" }
+      ?? mcpServer.agentManager.allTemplates.first
+    guard let template else {
+      isFixing = false
+      return
+    }
+
+    let chain = mcpServer.agentManager.createChainFromTemplate(template, workingDirectory: worktreePath)
+    // Override model to user's selection
+    for agent in chain.agents {
+      agent.model = fixModel
+    }
+    if let repo = repository {
+      chain.pullRequestReference = "\(repo.full_name ?? repo.name)#\(pr.number)"
+    }
+
+    fixChain = chain
+
+    mcpServer.agentManager.runChainInBackground(
+      chain,
+      prompt: fixPrompt,
+      cliService: mcpServer.cliService,
+      sessionTracker: mcpServer.sessionTracker
+    )
+  }
+
+  private func pushFixToPR() async {
+    guard let pr = pullRequest else { return }
+    let headRef = pr.head.ref
+    let worktreePath = fixChain?.workingDirectory ?? launchedChain?.workingDirectory ?? selectedRepoPath
+    guard !worktreePath.isEmpty else {
+      pushError = "Cannot push \u{2014} no working directory"
+      return
+    }
+
+    isPushing = true
+    pushError = nil
+    pushResult = nil
+
+    // Get the current branch in the worktree
+    let (branchOutput, branchExit) = await runGitInWorktree(
+      ["rev-parse", "--abbrev-ref", "HEAD"],
+      in: worktreePath
+    )
+    let currentBranch = branchOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+
+    guard branchExit == 0, !currentBranch.isEmpty, currentBranch != "HEAD" else {
+      pushError = "Cannot determine current branch in worktree"
+      isPushing = false
+      return
+    }
+
+    let (output, exitCode) = await runGitInWorktree(
+      ["push", "origin", "\(currentBranch):\(headRef)", "--force-with-lease"],
+      in: worktreePath
+    )
+
+    if exitCode == 0 {
+      pushResult = "Pushed fix to origin/\(headRef)"
+    } else {
+      pushError = "Push failed: \(output.trimmingCharacters(in: .whitespacesAndNewlines))"
+    }
+
+    isPushing = false
+  }
+
+  private func runGitInWorktree(_ arguments: [String], in directoryPath: String) async -> (String, Int32) {
+    await withCheckedContinuation { continuation in
+      DispatchQueue.global(qos: .userInitiated).async {
+        let process = Process()
+        process.currentDirectoryURL = URL(fileURLWithPath: directoryPath)
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = arguments
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+
+        do {
+          try process.run()
+          process.waitUntilExit()
+          let data = pipe.fileHandleForReading.readDataToEndOfFile()
+          let output = String(data: data, encoding: .utf8) ?? ""
+          continuation.resume(returning: (output, process.terminationStatus))
+        } catch {
+          continuation.resume(returning: (error.localizedDescription, -1))
+        }
+      }
+    }
   }
 }
