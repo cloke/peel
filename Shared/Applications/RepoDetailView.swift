@@ -3,7 +3,7 @@
 //  Peel
 //
 //  Detail pane for a single UnifiedRepository. Shows sub-tabs:
-//  Branches, Activity, RAG, and Skills.
+//  Overview (default), Branches, Activity, RAG, and Skills.
 //
 
 import Git
@@ -14,6 +14,7 @@ import SwiftUI
 // MARK: - Detail Tab
 
 enum RepoDetailTab: String, CaseIterable {
+  case overview = "Overview"
   case branches = "Branches"
   case activity = "Activity"
   case rag = "RAG"
@@ -21,6 +22,7 @@ enum RepoDetailTab: String, CaseIterable {
 
   var systemImage: String {
     switch self {
+    case .overview: return "square.grid.2x2"
     case .branches: return "arrow.triangle.branch"
     case .activity: return "clock"
     case .rag: return "magnifyingglass"
@@ -35,7 +37,7 @@ struct RepoDetailView: View {
   let repo: UnifiedRepository
 
   @Environment(ActivityFeed.self) private var activityFeed
-  @State private var selectedTab: RepoDetailTab = .branches
+  @State private var selectedTab: RepoDetailTab = .overview
 
   var body: some View {
     VStack(spacing: 0) {
@@ -133,6 +135,8 @@ struct RepoDetailView: View {
   @ViewBuilder
   private var tabContent: some View {
     switch selectedTab {
+    case .overview:
+      OverviewTabView(repo: repo)
     case .branches:
       BranchesTabView(repo: repo)
     case .activity:
@@ -174,6 +178,367 @@ struct RepoStatusPill: View {
           .fill(color.opacity(0.1))
       )
       .foregroundStyle(color)
+  }
+}
+
+// MARK: - Overview Tab
+
+/// The default landing view for a repository. Surfaces actionable items:
+/// PRs, pending approvals, agent work, and a compact health summary.
+struct OverviewTabView: View {
+  let repo: UnifiedRepository
+
+  @Environment(MCPServerService.self) private var mcpServer
+  @Environment(ActivityFeed.self) private var activityFeed
+  @State private var fetchedPRs: [UnifiedRepository.PRSummary] = []
+  @State private var isLoadingPRs = false
+
+  private var repoRuns: [ParallelWorktreeRun] {
+    guard let runner = mcpServer.parallelWorktreeRunner,
+          let localPath = repo.localPath else { return [] }
+    return runner.runs.filter { run in
+      guard run.projectPath == localPath else { return false }
+      switch run.status {
+      case .completed, .failed, .cancelled: return false
+      default: return true
+      }
+    }
+  }
+
+  private var pendingApprovalRuns: [ParallelWorktreeRun] {
+    repoRuns.filter { $0.pendingReviewCount > 0 || $0.readyToMergeCount > 0 }
+  }
+
+  private var displayPRs: [UnifiedRepository.PRSummary] {
+    fetchedPRs.isEmpty ? repo.recentPRs : fetchedPRs
+  }
+
+  private var openPRs: [UnifiedRepository.PRSummary] {
+    displayPRs.filter { $0.state == "open" }
+  }
+
+  var body: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 16) {
+        // 1. Needs Attention — action items that need human input
+        if !pendingApprovalRuns.isEmpty || !openPRs.isEmpty {
+          needsAttentionSection
+        }
+
+        // 2. Open Pull Requests — always visible and prominent
+        pullRequestsSection
+
+        // 3. Agent Work — active chains and worktrees
+        if !repo.activeChains.isEmpty || !repo.activeWorktrees.isEmpty || !repoRuns.isEmpty {
+          agentWorkSection
+        }
+
+        // 4. Repository Health — compact at-a-glance stats
+        repoHealthSection
+      }
+      .padding(16)
+    }
+    .task(id: repo.ownerSlashRepo) {
+      await fetchOpenPRs()
+    }
+  }
+
+  // MARK: - Needs Attention
+
+  private var needsAttentionSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Label("Needs Your Attention", systemImage: "bell.badge.fill")
+        .font(.headline)
+        .foregroundStyle(.orange)
+
+      if !pendingApprovalRuns.isEmpty, let _ = mcpServer.parallelWorktreeRunner {
+        ForEach(pendingApprovalRuns) { run in
+          attentionCard(
+            icon: "checkmark.shield",
+            color: .purple,
+            title: run.name,
+            subtitle: "\(run.pendingReviewCount) task\(run.pendingReviewCount == 1 ? "" : "s") awaiting review",
+            badge: "Review"
+          )
+        }
+      }
+
+      ForEach(openPRs.prefix(3)) { pr in
+        attentionCard(
+          icon: "arrow.triangle.pull",
+          color: .green,
+          title: "#\(pr.number) \(pr.title)",
+          subtitle: pr.headRef ?? "open",
+          badge: "PR"
+        )
+      }
+    }
+  }
+
+  private func attentionCard(icon: String, color: Color, title: String, subtitle: String, badge: String) -> some View {
+    GroupBox {
+      HStack(spacing: 12) {
+        Image(systemName: icon)
+          .font(.title3)
+          .foregroundStyle(color)
+          .frame(width: 28)
+
+        VStack(alignment: .leading, spacing: 2) {
+          Text(title)
+            .fontWeight(.medium)
+            .lineLimit(1)
+          Text(subtitle)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
+
+        Spacer()
+
+        Text(badge)
+          .font(.caption2)
+          .fontWeight(.bold)
+          .padding(.horizontal, 8)
+          .padding(.vertical, 3)
+          .background(Capsule().fill(color.opacity(0.15)))
+          .foregroundStyle(color)
+      }
+      .padding(2)
+    }
+  }
+
+  // MARK: - Pull Requests
+
+  private var pullRequestsSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack {
+        SectionHeader("Pull Requests")
+        Spacer()
+        if isLoadingPRs {
+          ProgressView()
+            .controlSize(.small)
+        }
+        if !displayPRs.isEmpty {
+          Text("\(displayPRs.count)")
+            .font(.caption)
+            .fontWeight(.semibold)
+            .foregroundStyle(.secondary)
+        }
+      }
+
+      if displayPRs.isEmpty && !isLoadingPRs {
+        GroupBox {
+          HStack {
+            Image(systemName: "arrow.triangle.pull")
+              .foregroundStyle(.secondary)
+            Text("No open pull requests")
+              .foregroundStyle(.secondary)
+            Spacer()
+          }
+          .padding(4)
+        }
+      } else {
+        LazyVStack(spacing: 1) {
+          ForEach(displayPRs) { pr in
+            PRRowWithReview(
+              pr: pr,
+              ownerRepo: repo.ownerSlashRepo,
+              repoPath: repo.localPath
+            )
+          }
+        }
+        #if os(macOS)
+        .background(Color(nsColor: .controlBackgroundColor))
+        #else
+        .background(Color(.systemGroupedBackground))
+        #endif
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+      }
+    }
+  }
+
+  // MARK: - Agent Work
+
+  private var agentWorkSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SectionHeader("Agent Work")
+
+      // Active chains
+      ForEach(repo.activeChains) { chain in
+        RepoChainRow(chain: chain)
+      }
+
+      // Active worktrees (non-approval ones)
+      let nonApprovalRuns = repoRuns.filter { run in
+        !pendingApprovalRuns.contains(where: { $0.id == run.id })
+      }
+      ForEach(nonApprovalRuns) { run in
+        GroupBox {
+          HStack(spacing: 10) {
+            if run.status == .running {
+              ProgressView()
+                .controlSize(.small)
+                .frame(width: 28)
+            } else {
+              Image(systemName: "bolt.circle.fill")
+                .font(.title3)
+                .foregroundStyle(.blue)
+                .frame(width: 28)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+              Text(run.name)
+                .fontWeight(.medium)
+              HStack(spacing: 8) {
+                Text(run.status.displayName)
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+                if run.executions.count > 0 {
+                  Text("\(run.executions.count) task\(run.executions.count == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                }
+              }
+            }
+            Spacer()
+            ProgressView(value: run.progress)
+              .frame(width: 60)
+          }
+          .padding(4)
+        }
+      }
+
+      // Standalone worktrees
+      ForEach(repo.activeWorktrees) { wt in
+        RepoWorktreeRow(worktree: wt)
+      }
+    }
+  }
+
+  // MARK: - Repository Health
+
+  private var repoHealthSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SectionHeader("Repository Health")
+
+      GroupBox {
+        LazyVGrid(columns: [
+          GridItem(.flexible(), spacing: 12),
+          GridItem(.flexible(), spacing: 12),
+        ], spacing: 10) {
+          healthItem(
+            icon: "arrow.triangle.branch",
+            color: .green,
+            label: "Status",
+            value: repo.isClonedLocally ? "Cloned" : "Remote"
+          )
+
+          if let pull = repo.pullStatus {
+            healthItem(
+              icon: pull.systemImage,
+              color: pullIsHealthy(pull) ? .green : .secondary,
+              label: "Auto-Pull",
+              value: pull.displayName
+            )
+          } else {
+            healthItem(
+              icon: "arrow.down.circle",
+              color: .secondary,
+              label: "Auto-Pull",
+              value: "Disabled"
+            )
+          }
+
+          if let rag = repo.ragStatus, rag != .notIndexed {
+            healthItem(
+              icon: rag.systemImage,
+              color: .purple,
+              label: "RAG Index",
+              value: rag.displayName
+            )
+          } else {
+            healthItem(
+              icon: "magnifyingglass",
+              color: .secondary,
+              label: "RAG Index",
+              value: "Not Indexed"
+            )
+          }
+
+          healthItem(
+            icon: "clock",
+            color: .secondary,
+            label: "Recent Activity",
+            value: recentActivitySummary
+          )
+        }
+        .padding(6)
+      }
+    }
+  }
+
+  private func healthItem(icon: String, color: Color, label: String, value: String) -> some View {
+    HStack(spacing: 8) {
+      Image(systemName: icon)
+        .font(.callout)
+        .foregroundStyle(color)
+        .frame(width: 24)
+
+      VStack(alignment: .leading, spacing: 1) {
+        Text(label)
+          .font(.caption2)
+          .foregroundStyle(.tertiary)
+        Text(value)
+          .font(.caption)
+          .fontWeight(.medium)
+      }
+
+      Spacer()
+    }
+  }
+
+  private var recentActivitySummary: String {
+    let items = activityFeed.items(for: repo.normalizedRemoteURL)
+    if items.isEmpty { return "None" }
+    let today = items.filter { Calendar.current.isDateInToday($0.timestamp) }
+    if !today.isEmpty { return "\(today.count) today" }
+    return items.first?.relativeTime ?? "None"
+  }
+
+  private func pullIsHealthy(_ status: UnifiedRepository.PullStatus) -> Bool {
+    switch status {
+    case .upToDate, .updated: return true
+    default: return false
+    }
+  }
+
+  // MARK: - Data Loading
+
+  private func fetchOpenPRs() async {
+    guard let ownerRepo = repo.ownerSlashRepo else { return }
+    let parts = ownerRepo.split(separator: "/")
+    guard parts.count == 2 else { return }
+    let owner = String(parts[0])
+    let repoName = String(parts[1])
+
+    isLoadingPRs = true
+    defer { isLoadingPRs = false }
+
+    do {
+      let prs = try await Github.pullRequests(owner: owner, repository: repoName, state: "open")
+      fetchedPRs = prs.map { pr in
+        UnifiedRepository.PRSummary(
+          id: UUID(),
+          number: pr.number,
+          title: pr.title ?? "Untitled",
+          state: pr.state ?? "open",
+          htmlURL: pr.html_url,
+          headRef: pr.head.ref
+        )
+      }
+    } catch {
+      fetchedPRs = []
+    }
   }
 }
 

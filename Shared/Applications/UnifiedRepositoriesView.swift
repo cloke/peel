@@ -115,7 +115,7 @@ struct UnifiedRepositoriesView: View {
        let repo = aggregator.repositoryById[repoId] {
       RepoDetailView(repo: repo)
     } else {
-      RAGOverviewDetailView()
+      RepositoriesCommandCenter()
     }
   }
 
@@ -492,6 +492,454 @@ struct AddOptionCard: View {
       RoundedRectangle(cornerRadius: 10)
         .fill(Color.secondary.opacity(0.05))
         .stroke(Color.secondary.opacity(0.15))
+    )
+  }
+}
+
+// MARK: - Command Center (No-Selection View)
+
+/// Cross-repo dashboard shown when no repository is selected.
+/// Surfaces actionable items across all repos instead of RAG stats.
+struct RepositoriesCommandCenter: View {
+  @Environment(RepositoryAggregator.self) private var aggregator
+  @Environment(MCPServerService.self) private var mcpServer
+  @Environment(ActivityFeed.self) private var activityFeed
+
+  /// All non-terminal parallel runs across the workspace.
+  private var allActiveRuns: [ParallelWorktreeRun] {
+    guard let runner = mcpServer.parallelWorktreeRunner else { return [] }
+    return runner.runs.filter { run in
+      switch run.status {
+      case .completed, .failed, .cancelled: return false
+      default: return true
+      }
+    }
+  }
+
+  /// Runs with pending reviews across all repos.
+  private var pendingApprovalRuns: [ParallelWorktreeRun] {
+    allActiveRuns.filter { $0.pendingReviewCount > 0 || $0.readyToMergeCount > 0 }
+  }
+
+  /// All open PRs aggregated across repos.
+  private var allOpenPRs: [(repo: UnifiedRepository, pr: UnifiedRepository.PRSummary)] {
+    aggregator.repositories.flatMap { repo in
+      repo.recentPRs.filter { $0.state == "open" }.map { (repo, $0) }
+    }
+  }
+
+  /// All active chains across repos.
+  private var allActiveChains: [(repo: UnifiedRepository, chain: UnifiedRepository.ChainSummary)] {
+    aggregator.repositories.flatMap { repo in
+      repo.activeChains.map { (repo, $0) }
+    }
+  }
+
+  /// All active worktrees across repos.
+  private var allWorktrees: [(repo: UnifiedRepository, wt: UnifiedRepository.WorktreeSummary)] {
+    aggregator.repositories.flatMap { repo in
+      repo.activeWorktrees.map { (repo, $0) }
+    }
+  }
+
+  private var hasActionItems: Bool {
+    !pendingApprovalRuns.isEmpty || !allOpenPRs.isEmpty
+  }
+
+  private var hasAgentWork: Bool {
+    !allActiveChains.isEmpty || !allActiveRuns.isEmpty || !allWorktrees.isEmpty
+  }
+
+  var body: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 20) {
+        // Header
+        headerSection
+
+        // Needs Attention
+        if hasActionItems {
+          needsAttentionSection
+        }
+
+        // Agent Work
+        if hasAgentWork {
+          agentWorkSection
+        }
+
+        // Repository Cards
+        repositoryCardsSection
+
+        // RAG Status (compact, collapsed)
+        ragCompactSection
+      }
+      .padding(20)
+    }
+  }
+
+  // MARK: - Header
+
+  private var headerSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text("Command Center")
+        .font(.title2)
+        .fontWeight(.bold)
+
+      HStack(spacing: 16) {
+        quickStat(
+          value: "\(aggregator.repositories.count)",
+          label: "repos",
+          icon: "folder",
+          color: .blue
+        )
+        quickStat(
+          value: "\(allOpenPRs.count)",
+          label: "open PRs",
+          icon: "arrow.triangle.pull",
+          color: .green
+        )
+        quickStat(
+          value: "\(allActiveChains.count)",
+          label: "chains",
+          icon: "bolt.fill",
+          color: .orange
+        )
+        quickStat(
+          value: "\(allWorktrees.count)",
+          label: "worktrees",
+          icon: "arrow.triangle.branch",
+          color: .purple
+        )
+        if pendingApprovalRuns.count > 0 {
+          quickStat(
+            value: "\(pendingApprovalRuns.count)",
+            label: "pending",
+            icon: "bell.badge.fill",
+            color: .red
+          )
+        }
+      }
+      .font(.caption)
+    }
+  }
+
+  private func quickStat(value: String, label: String, icon: String, color: Color) -> some View {
+    HStack(spacing: 4) {
+      Image(systemName: icon)
+        .foregroundStyle(color)
+      Text(value)
+        .fontWeight(.semibold)
+      Text(label)
+        .foregroundStyle(.secondary)
+    }
+    .padding(.horizontal, 10)
+    .padding(.vertical, 5)
+    .background(
+      RoundedRectangle(cornerRadius: 8)
+        .fill(color.opacity(0.06))
+    )
+  }
+
+  // MARK: - Needs Attention
+
+  private var needsAttentionSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Label("Needs Your Attention", systemImage: "bell.badge.fill")
+        .font(.headline)
+        .foregroundStyle(.orange)
+
+      // Pending approvals
+      ForEach(pendingApprovalRuns) { run in
+        GroupBox {
+          HStack(spacing: 12) {
+            Image(systemName: "checkmark.shield")
+              .font(.title3)
+              .foregroundStyle(.purple)
+              .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 2) {
+              Text(run.name)
+                .fontWeight(.medium)
+                .lineLimit(1)
+              HStack(spacing: 6) {
+                Text("\(run.pendingReviewCount) pending review")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+                if run.readyToMergeCount > 0 {
+                  Text("· \(run.readyToMergeCount) ready to merge")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+                }
+              }
+            }
+            Spacer()
+            Text("Review")
+              .font(.caption2)
+              .fontWeight(.bold)
+              .padding(.horizontal, 8)
+              .padding(.vertical, 3)
+              .background(Capsule().fill(.purple.opacity(0.15)))
+              .foregroundStyle(.purple)
+          }
+          .padding(2)
+        }
+      }
+
+      // Open PRs across repos
+      ForEach(allOpenPRs.prefix(5), id: \.pr.id) { item in
+        GroupBox {
+          HStack(spacing: 12) {
+            Image(systemName: "arrow.triangle.pull")
+              .font(.title3)
+              .foregroundStyle(.green)
+              .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 2) {
+              Text("#\(item.pr.number) \(item.pr.title)")
+                .fontWeight(.medium)
+                .lineLimit(1)
+              HStack(spacing: 6) {
+                Text(item.repo.displayName)
+                  .font(.caption)
+                  .foregroundStyle(.blue)
+                if let ref = item.pr.headRef {
+                  Text("· \(ref)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                }
+              }
+            }
+
+            Spacer()
+
+            if let url = item.pr.htmlURL, let nsurl = URL(string: url) {
+              Button {
+                #if os(macOS)
+                NSWorkspace.shared.open(nsurl)
+                #endif
+              } label: {
+                Image(systemName: "arrow.up.right.square")
+                  .font(.caption)
+              }
+              .buttonStyle(.plain)
+              .foregroundStyle(.secondary)
+            }
+          }
+          .padding(2)
+        }
+      }
+
+      if allOpenPRs.count > 5 {
+        Text("+ \(allOpenPRs.count - 5) more open PRs")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .padding(.leading, 4)
+      }
+    }
+  }
+
+  // MARK: - Agent Work
+
+  private var agentWorkSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SectionHeader("Agent Work")
+
+      ForEach(allActiveChains, id: \.chain.id) { item in
+        GroupBox {
+          HStack(spacing: 10) {
+            if !item.chain.isTerminal {
+              ProgressView()
+                .controlSize(.small)
+                .frame(width: 28)
+            } else {
+              Image(systemName: "checkmark.circle.fill")
+                .font(.title3)
+                .foregroundStyle(.green)
+                .frame(width: 28)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+              Text(item.chain.name)
+                .fontWeight(.medium)
+              HStack(spacing: 6) {
+                Text(item.repo.displayName)
+                  .font(.caption)
+                  .foregroundStyle(.blue)
+                Text("· \(item.chain.stateDisplay)")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+            }
+            Spacer()
+          }
+          .padding(2)
+        }
+      }
+
+      // Active runs that aren't in the approval section
+      let nonApprovalRuns = allActiveRuns.filter { run in
+        !pendingApprovalRuns.contains(where: { $0.id == run.id })
+      }
+      ForEach(nonApprovalRuns) { run in
+        GroupBox {
+          HStack(spacing: 10) {
+            if run.status == .running {
+              ProgressView()
+                .controlSize(.small)
+                .frame(width: 28)
+            } else {
+              Image(systemName: "bolt.circle.fill")
+                .font(.title3)
+                .foregroundStyle(.blue)
+                .frame(width: 28)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+              Text(run.name)
+                .fontWeight(.medium)
+              Text(run.status.displayName)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if run.executions.count > 0 {
+              Text("\(run.executions.count) tasks")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+            }
+            ProgressView(value: run.progress)
+              .frame(width: 60)
+          }
+          .padding(2)
+        }
+      }
+
+      if !allWorktrees.isEmpty {
+        ForEach(allWorktrees.prefix(5), id: \.wt.id) { item in
+          GroupBox {
+            HStack(spacing: 10) {
+              Image(systemName: "arrow.triangle.branch")
+                .font(.title3)
+                .foregroundStyle(.blue)
+                .frame(width: 28)
+
+              VStack(alignment: .leading, spacing: 2) {
+                Text(item.wt.branch)
+                  .fontWeight(.medium)
+                  .lineLimit(1)
+                HStack(spacing: 6) {
+                  Text(item.repo.displayName)
+                    .font(.caption)
+                    .foregroundStyle(.blue)
+                  Text("· \(item.wt.taskStatus)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+              }
+              Spacer()
+            }
+            .padding(2)
+          }
+        }
+      }
+    }
+  }
+
+  // MARK: - Repository Cards
+
+  private var repositoryCardsSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SectionHeader("Repositories")
+
+      let repos = aggregator.repositories.sorted { $0.sortPriority > $1.sortPriority }
+
+      LazyVStack(spacing: 1) {
+        ForEach(repos) { repo in
+          HStack(spacing: 10) {
+            // Status dot
+            Circle()
+              .fill(repo.hasActiveWork ? Color.green : Color.secondary.opacity(0.3))
+              .frame(width: 8, height: 8)
+
+            VStack(alignment: .leading, spacing: 2) {
+              HStack(spacing: 4) {
+                if repo.isFavorite {
+                  Image(systemName: "star.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.yellow)
+                }
+                Text(repo.displayName)
+                  .fontWeight(.medium)
+              }
+
+              HStack(spacing: 8) {
+                if !repo.recentPRs.isEmpty {
+                  let openCount = repo.recentPRs.filter { $0.state == "open" }.count
+                  if openCount > 0 {
+                    Label("\(openCount) PR\(openCount == 1 ? "" : "s")", systemImage: "arrow.triangle.pull")
+                      .foregroundStyle(.green)
+                  }
+                }
+                if repo.activeChainCount > 0 {
+                  Label("\(repo.activeChainCount) chain\(repo.activeChainCount == 1 ? "" : "s")", systemImage: "bolt.fill")
+                    .foregroundStyle(.orange)
+                }
+                if repo.worktreeCount > 0 {
+                  Label("\(repo.worktreeCount) worktree\(repo.worktreeCount == 1 ? "" : "s")", systemImage: "arrow.triangle.branch")
+                    .foregroundStyle(.purple)
+                }
+                if let rag = repo.ragStatus, rag != .notIndexed {
+                  Label(rag.displayName, systemImage: rag.systemImage)
+                    .foregroundStyle(.secondary)
+                }
+              }
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+              .font(.caption2)
+              .foregroundStyle(.tertiary)
+          }
+          .padding(.horizontal, 12)
+          .padding(.vertical, 8)
+        }
+      }
+      #if os(macOS)
+      .background(Color(nsColor: .controlBackgroundColor))
+      #else
+      .background(Color(.systemGroupedBackground))
+      #endif
+      .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+  }
+
+  // MARK: - RAG Compact
+
+  private var ragCompactSection: some View {
+    let repos = mcpServer.ragRepos
+    guard !repos.isEmpty else { return AnyView(EmptyView()) }
+
+    let totalFiles = repos.reduce(0) { $0 + $1.fileCount }
+    let totalChunks = repos.reduce(0) { $0 + $1.chunkCount }
+
+    return AnyView(
+      VStack(alignment: .leading, spacing: 8) {
+        SectionHeader("RAG Index", style: .secondary)
+
+        HStack(spacing: 12) {
+          Label("\(repos.count) repos", systemImage: "folder")
+          Label("\(totalFiles) files", systemImage: "doc")
+          Label("\(totalChunks) chunks", systemImage: "text.alignleft")
+          if let model = mcpServer.ragStatus?.embeddingModelName {
+            Label(model, systemImage: "cpu")
+          }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+      }
     )
   }
 }
