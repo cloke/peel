@@ -41,32 +41,32 @@ struct FeatureDiscoveryChecklistView: View {
       // Checklist items
       VStack(alignment: .leading, spacing: 0) {
         checklistItem(
-          title: "Browse GitHub Repositories",
-          description: "Explore and manage your GitHub repos.",
+          title: "Add a Repository",
+          description: "Open a local repo or track a remote one.",
           systemImage: "tray.full.fill",
           isDiscovered: $discoveredGitHub
         )
         Divider().padding(.leading, 48)
 
         checklistItem(
-          title: "Add a Local Git Repo",
-          description: "Open a project on your Mac.",
-          systemImage: "folder.fill",
+          title: "Explore RAG & Skills",
+          description: "Index a repo and see AI-generated insights.",
+          systemImage: "sparkle.magnifyingglass",
           isDiscovered: $discoveredGitRepo
         )
         Divider().padding(.leading, 48)
 
         checklistItem(
-          title: "Run an AI Agent",
-          description: "Automate tasks with an AI chain.",
+          title: "Run an Agent Task",
+          description: "Use Activity > Run Task to start an AI chain.",
           systemImage: "cpu.fill",
           isDiscovered: $discoveredAgents
         )
         Divider().padding(.leading, 48)
 
         checklistItem(
-          title: "Try the Swarm",
-          description: "Distribute work across machines.",
+          title: "Open the Swarm Console",
+          description: "Activity > Swarm > Open Console to manage workers.",
           systemImage: "network",
           isDiscovered: $discoveredSwarm
         )

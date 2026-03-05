@@ -18,10 +18,10 @@ audience:
 
 **Status:** Active  
 **Created:** March 4, 2026  
-**Updated:** March 4, 2026  
+**Updated:** March 5, 2026  
 **Goal:** Transform Peel from a developer tool collection into a cohesive product that new users immediately understand.
 
-> **Quick Status (March 4, 2026):** Phases 0–5b complete. Phase 6 (repo detail modernization) partially done — Branches tab reworked with inline layout, worktree approval chain, and agent PR review. RAG/Activity/Skills tabs still need card-based modernization. Phase 7 (worktree approvals + PR review) complete and building. **Phase 8 started** — P8-06 (PR Queue Reliability) fully implemented: O(1) dequeue, retry/backoff, async git push, SwiftData persistence. OPT-01/02/03 also done. GitHub issues #347–#356 created for full Phase 8/9 execution pack. Several old features still unreachable — see "Feature Accessibility Audit" below.
+> **Quick Status (March 5, 2026):** Phases 0–5b complete. Phase 6 (repo detail modernization) partially done — Branches tab reworked with inline layout, worktree approval chain, and agent PR review. RAG/Activity/Skills tabs still need card-based modernization. Phase 7 (worktree approvals + PR review) complete and building. **Phase 8 started** — P8-06 (PR Queue Reliability) fully implemented: O(1) dequeue, retry/backoff, async git push, SwiftData persistence. OPT-01/02/03 also done. GitHub issues #347–#356 created for full Phase 8/9 execution pack. **Swarm Console is now an inline detail view** in the Activity tab (not a modal/sheet). Chat tab added with Firebase messaging. Recent Activity paginated (50/page). Feature Discovery checklist updated for 2-tab layout. Several old features still unreachable — see "Feature Accessibility Audit" below.
 
 ---
 
@@ -263,7 +263,8 @@ What's happening right now, across all repos and workers. This replaces the scat
 | RAG indexing progress | Agents > Local RAG | Background activity |
 | Repo pull status | Repositories > Remote | Background activity |
 | Swarm workers | Swarm tab | Workers doing the activity |
-| Worker messages | Swarm tab | Communication about activity |
+| Worker messages | Swarm Console > Chat tab | Communication about activity |
+| Swarm Console | Activity > inline detail view | Full swarm management without leaving Activity |
 
 ### Workers Panel (Right Side)
 
@@ -517,7 +518,7 @@ TabView(selection: $selectedTab) {
 ### Phase 4: Polish ✅ MOSTLY COMPLETE
 **Goal:** Make it feel finished.
 
-1. ⬜ Onboarding flow update (new FeatureDiscoveryView for 2-tab layout)
+1. ⬜ Onboarding flow update (new FeatureDiscoveryView for 2-tab layout) ✅ DONE (March 5)
 2. ✅ Empty states for key views (activity, RAG, repos)
 3. ✅ Keyboard shortcuts — Cmd+1 (Repos), Cmd+2 (Activity), Cmd+K (Search)
 4. ✅ MCP tool updates for new view IDs — `MCPUIAutomationProvider` fully updated
@@ -606,6 +607,21 @@ Add a "System" or "Tools" section at the bottom of the Activity dashboard that s
 6. ✅ All activity rows tappable with universal navigation (not just chains)
 
 **Completed:** March 4, 2026
+
+### Phase 5c: Swarm Console + Activity Polish ✅ COMPLETE
+**Goal:** Make swarm management accessible from Activity without leaving the tab, and handle long activity lists.
+
+1. ✅ Swarm Console as inline detail view (not modal/sheet) — "Open Console" in Swarm section swaps dashboard to `SwarmManagementView` inline
+2. ✅ Back button in toolbar to return from Swarm Console to dashboard
+3. ✅ Animated transition between dashboard and console views
+4. ✅ Chat tab in SwarmDetailView with Firebase messaging (SwarmMessagesView)
+5. ✅ Broadcast composer and message timeline with sender/time/broadcast indicators
+6. ✅ Recent Activity pagination (50 items/page with prev/next controls, page counter)
+7. ✅ Auto-select first swarm and message listener lifecycle fixes
+8. ✅ Feature Discovery checklist updated for 2-tab layout (Repositories + Activity)
+9. ✅ Settings About description updated to match product positioning
+
+**Completed:** March 5, 2026
 
 ### Phase 6: Repo Detail Tab Rework 🔄 IN PROGRESS
 **Goal:** Modernize the repo detail sub-tabs to match the new dashboard design language. Currently these embed old views or use outdated layouts that create a jarring contrast.
@@ -753,10 +769,12 @@ Tasks:
 | Docling Import | Labs toolbar / Cmd+K | ✅ Done | Feature-flagged, opens as sheet |
 | Translation Validation | Labs toolbar / Cmd+K | ✅ Done | Feature-flagged, opens as sheet |
 | Swarm workers | Activity > Workers panel | ✅ Done | Always-visible section |
+| Swarm management | Activity > Swarm > Open Console (inline) | ✅ Done | Full console with sidebar + detail |
+| Swarm chat / messaging | Activity > Swarm > Open Console > Chat tab | ✅ Done | Firebase-backed messaging |
 | Swarm config | ~~Settings > Swarm~~ | ⬜ Not done | No Swarm settings tab yet |
 | Brew | Labs toolbar (if enabled, own tab) | ✅ Done | Feature-flagged |
 | Workspaces tab | Eliminated | ✅ Done | Concept absorbed into repos |
-| Feature Discovery | ~~Updated for new layout~~ | ⬜ Stale | Still references old 5-tab layout |
+| Feature Discovery | ~~Updated for new layout~~ | ✅ Updated | Reflects 2-tab layout, new feature locations |
 | Session Summary | ~~Agents header~~ | ❌ Hidden | No trigger in new UX |
 
 ---

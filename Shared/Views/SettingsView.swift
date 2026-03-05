@@ -257,7 +257,7 @@ struct SettingsView: View {
       SettingsPage {
         SettingsSection("About") {
           VStack(alignment: .leading, spacing: 8) {
-            Text("Peel keeps GitHub, git, and Homebrew close at hand so you can stay in flow.")
+            Text("Peel is where you manage your repositories and the AI agents that work on them.")
               .font(.callout)
             Text("If this app saves you time, please consider supporting development.")
               .font(.caption)

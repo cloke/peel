@@ -6,8 +6,8 @@ tags:
   - peel
   - agent-orchestration
   - mcp
-updated: 2026-02-26
-last_health_check: 2026-02-26
+updated: 2026-03-05
+last_health_check: 2026-03-05
 audience:
   - ai-agent
   - developer
@@ -21,19 +21,20 @@ audience:
 
 ---
 
-## Quick Stats (Feb 26, 2026)
+## Quick Stats (Mar 5, 2026)
 
 | Metric | Count |
 |--------|-------|
 | **Closed** | 304 ✅ |
-| **Open** | 27 |
+| **Open** | 38 |
 | **Build** | ✅ Clean (0 warnings) |
-| **Tests** | ✅ 77/77 passing |
+| **Tests** | ✅ 99 passing |
 
 ### Open by Category
 
 | Category | Count | Issues |
 |----------|-------|--------|
+| **Enterprise PR / Scale** | 10 | #346, #347, #348, #349, #350, #351, #352, #353, #354, #355, #356 |
 | **VM Isolation** | 6 | #310, #312, #313, #314, #315, #317 |
 | **RAG Enhancements** | 5 | #249, #274, #275, #276, #277 |
 | **Skills & Intelligence** | 3 | #205, #335, #336 |
@@ -44,6 +45,9 @@ audience:
 | **MCP & Tooling** | 1 | #91 |
 
 ### Recent Completions (since Jan 25)
+- ✅ **Swarm Console inline** — Activity > Open Console replaces modal, Chat tab with Firebase messaging
+- ✅ **Activity pagination** — Recent section paginated (50/page) with prev/next controls
+- ✅ **Onboarding refresh** — Feature Discovery checklist updated for 2-tab layout
 - ✅ **Phase 1C** — All tracks complete (RAG, MCP, UX polish)
 - ✅ **Phase 2** — MLX, HF reranking, pre-planner, MCP packaging all done
 - ✅ **Phase 3 Layers 1-2** — RAG + Code Intelligence Graph complete
