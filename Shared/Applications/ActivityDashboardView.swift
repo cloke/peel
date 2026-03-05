@@ -20,39 +20,56 @@ struct ActivityDashboardView: View {
   @State private var selectedChain: AgentChain?
   @State private var expandedItems: Set<UUID> = []
   @State private var showingTemplateBrowser = false
+  @State private var showingSwarmConsole = false
+  @State private var recentPage = 0
+
+  private let recentPageSize = 50
 
   private var swarm: SwarmCoordinator { SwarmCoordinator.shared }
 
   var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 20) {
-        // Running Now
-        runningNowSection
-
-        // Quick Templates
-        quickTemplatesSection
-
-        // Workers panel — always visible
-        workersSection
-
-        // RAG Indexing status
-        ragIndexingSection
-
-        // Recent Activity
-        recentActivitySection
+    Group {
+      if showingSwarmConsole {
+        SwarmManagementView()
+      } else {
+        dashboardContent
       }
-      .padding(20)
     }
-    .navigationTitle("Activity")
+    .navigationTitle(showingSwarmConsole ? "Swarm Console" : "Activity")
+    .onChange(of: filterMode) { _, _ in
+      recentPage = 0
+    }
+    .onChange(of: filterRepo) { _, _ in
+      recentPage = 0
+    }
+    .onChange(of: filteredItems.count) { _, count in
+      if count == 0 {
+        recentPage = 0
+      } else {
+        recentPage = min(recentPage, totalRecentPages - 1)
+      }
+    }
     #if os(macOS)
     .toolbar {
       ToolSelectionToolbar()
       ChainActivityToolbar()
-      ToolbarItem(placement: .primaryAction) {
-        Button {
-          showingTemplateBrowser = true
-        } label: {
-          Label("Run Task", systemImage: "play.fill")
+      if showingSwarmConsole {
+        ToolbarItem(placement: .navigation) {
+          Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+              showingSwarmConsole = false
+            }
+          } label: {
+            Label("Back to Activity", systemImage: "chevron.left")
+          }
+        }
+      } else {
+        ToolbarItem(placement: .primaryAction) {
+          Button {
+            showingTemplateBrowser = true
+          } label: {
+            Label("Run Task", systemImage: "play.fill")
+          }
         }
       }
     }
@@ -78,6 +95,21 @@ struct ActivityDashboardView: View {
       TemplateBrowserSheet()
     }
     #endif
+  }
+
+  // MARK: - Dashboard Content
+
+  private var dashboardContent: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 20) {
+        runningNowSection
+        quickTemplatesSection
+        workersSection
+        ragIndexingSection
+        recentActivitySection
+      }
+      .padding(20)
+    }
   }
 
   // MARK: - Running Now
@@ -150,7 +182,21 @@ struct ActivityDashboardView: View {
 
   private var workersSection: some View {
     VStack(alignment: .leading, spacing: 12) {
-      SectionHeader("Swarm")
+      HStack {
+        SectionHeader("Swarm")
+        Spacer()
+        #if os(macOS)
+        Button {
+          withAnimation(.easeInOut(duration: 0.2)) {
+            showingSwarmConsole = true
+          }
+        } label: {
+          Label("Open Console", systemImage: "slider.horizontal.3")
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        #endif
+      }
 
       if swarm.isActive {
         // Active swarm — show workers
@@ -272,16 +318,42 @@ struct ActivityDashboardView: View {
         filterPicker
       }
 
-      let items = filteredItems
-      if items.isEmpty {
+      let pageItems = pagedRecentItems
+      if pageItems.isEmpty {
         ContentUnavailableView {
           Label("No Activity", systemImage: "clock")
         } description: {
           Text("Agent runs, pulls, and other activity will appear here.")
         }
       } else {
+        HStack {
+          Text("Showing \(recentRange.start)-\(recentRange.end) of \(recentRange.total)")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          Spacer()
+          Button {
+            recentPage = max(0, recentPage - 1)
+          } label: {
+            Label("Previous", systemImage: "chevron.left")
+          }
+          .buttonStyle(.borderless)
+          .disabled(recentPage == 0)
+
+          Text("Page \(recentPage + 1) of \(totalRecentPages)")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+          Button {
+            recentPage = min(totalRecentPages - 1, recentPage + 1)
+          } label: {
+            Label("Next", systemImage: "chevron.right")
+          }
+          .buttonStyle(.borderless)
+          .disabled(recentPage >= totalRecentPages - 1)
+        }
+
         LazyVStack(spacing: 1) {
-          ForEach(items.prefix(100)) { item in
+          ForEach(pageItems) { item in
             DashboardActivityRow(
               item: item,
               isExpanded: expandedItems.contains(item.id)
@@ -298,6 +370,30 @@ struct ActivityDashboardView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
       }
     }
+  }
+
+  private var totalRecentPages: Int {
+    max(1, Int(ceil(Double(filteredItems.count) / Double(recentPageSize))))
+  }
+
+  private var pagedRecentItems: [ActivityItem] {
+    let items = filteredItems
+    guard !items.isEmpty else { return [] }
+
+    let safePage = min(max(recentPage, 0), totalRecentPages - 1)
+    let start = safePage * recentPageSize
+    let end = min(start + recentPageSize, items.count)
+    return Array(items[start..<end])
+  }
+
+  private var recentRange: (start: Int, end: Int, total: Int) {
+    let total = filteredItems.count
+    guard total > 0 else { return (0, 0, 0) }
+
+    let safePage = min(max(recentPage, 0), totalRecentPages - 1)
+    let start = (safePage * recentPageSize) + 1
+    let end = min((safePage + 1) * recentPageSize, total)
+    return (start, end, total)
   }
 
   // MARK: - Repo Filter

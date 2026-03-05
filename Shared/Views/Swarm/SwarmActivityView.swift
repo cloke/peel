@@ -7,6 +7,158 @@
 
 import SwiftUI
 
+// MARK: - Swarm Messages View
+
+@MainActor
+struct SwarmMessagesView: View {
+  let swarmId: String
+  let myRole: SwarmPermissionRole
+  @Binding var selectedWorker: FirestoreWorker?
+
+  @State private var firebaseService = FirebaseService.shared
+  @State private var messageText = ""
+  @State private var isSending = false
+  @State private var errorMessage: String?
+
+  var body: some View {
+    VStack(spacing: 0) {
+      HStack {
+        Text("\(firebaseService.swarmMessages.count) messages")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+
+        Spacer()
+
+        if myRole.canSubmitTasks {
+          Button {
+            selectedWorker = nil
+            if !messageText.isEmpty {
+              messageText = ""
+            }
+          } label: {
+            Label("Broadcast", systemImage: "megaphone")
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
+          .help("Compose a broadcast message to all workers")
+        }
+      }
+      .padding(.horizontal)
+      .padding(.vertical, 8)
+
+      Divider()
+
+      if firebaseService.swarmMessages.isEmpty {
+        ContentUnavailableView(
+          "No Messages Yet",
+          systemImage: "message",
+          description: Text("Worker messages and broadcasts will appear here.")
+        )
+      } else {
+        List(firebaseService.swarmMessages) { message in
+          SwarmMessageRow(
+            message: message,
+            isMe: message.senderId == firebaseService.currentUserId
+          )
+        }
+        .listStyle(.plain)
+      }
+
+      if myRole.canSubmitTasks {
+        Divider()
+        HStack(alignment: .bottom, spacing: 8) {
+          VStack(alignment: .leading, spacing: 4) {
+            Text(selectedWorker == nil ? "Broadcast to all workers" : "Message to \(selectedWorker?.displayName ?? "worker")")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+
+            TextField("Type a message...", text: $messageText, axis: .vertical)
+              .textFieldStyle(.roundedBorder)
+              .lineLimit(1...3)
+          }
+
+          Button {
+            Task {
+              await sendMessage()
+            }
+          } label: {
+            Label("Send", systemImage: "paperplane.fill")
+          }
+          .buttonStyle(.borderedProminent)
+          .disabled(isSending || messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        .padding()
+      }
+    }
+    .alert("Message Error", isPresented: Binding(
+      get: { errorMessage != nil },
+      set: { if !$0 { errorMessage = nil } }
+    )) {
+      Button("OK") { errorMessage = nil }
+    } message: {
+      Text(errorMessage ?? "")
+    }
+  }
+
+  private func sendMessage() async {
+    let trimmed = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return }
+
+    isSending = true
+    do {
+      try await firebaseService.sendMessage(
+        swarmId: swarmId,
+        text: trimmed,
+        targetWorkerId: selectedWorker?.id
+      )
+      messageText = ""
+      selectedWorker = nil
+    } catch {
+      errorMessage = error.localizedDescription
+    }
+    isSending = false
+  }
+}
+
+private struct SwarmMessageRow: View {
+  let message: SwarmMessage
+  let isMe: Bool
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      HStack(spacing: 8) {
+        Text(message.isBroadcast ? "📢" : "💬")
+          .font(.caption)
+
+        Text(message.senderName)
+          .font(.caption)
+          .fontWeight(.semibold)
+
+        if isMe {
+          Text("You")
+            .font(.caption2)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(.blue.opacity(0.15))
+            .foregroundStyle(.blue)
+            .clipShape(Capsule())
+        }
+
+        Spacer()
+
+        Text(message.createdAt, style: .time)
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+      }
+
+      Text(message.text)
+        .font(.body)
+        .textSelection(.enabled)
+    }
+    .padding(.vertical, 4)
+  }
+}
+
 // MARK: - Activity Log View
 
 struct ActivityLogView: View {

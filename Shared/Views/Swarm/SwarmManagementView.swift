@@ -81,8 +81,20 @@ struct SwarmManagementView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
       }
     }
+    .background {
+      #if os(macOS)
+      Color(nsColor: .windowBackgroundColor)
+      #else
+      Color(.systemBackground)
+      #endif
+    }
     .sheet(isPresented: $showingCreateSwarm) {
       createSwarmSheet
+    }
+    .onAppear {
+      if selectedSwarm == nil {
+        selectedSwarm = firebaseService.memberSwarms.first
+      }
     }
     .onChange(of: firebaseService.lastJoinedSwarmId) { _, swarmId in
       handleLastJoinedSwarmChange(swarmId)

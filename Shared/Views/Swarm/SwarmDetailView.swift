@@ -18,6 +18,7 @@ struct SwarmDetailView: View {
   @State private var inviteURL: URL?
   @State private var isLoading = false
   @State private var errorMessage: String?
+  @State private var selectedWorkerForMessage: FirestoreWorker?
 
   var body: some View {
     VStack(spacing: 0) {
@@ -77,9 +78,14 @@ struct SwarmDetailView: View {
     .task {
       // Start worker listener for this swarm so the Workers tab count is accurate immediately
       firebaseService.startWorkerListener(swarmId: swarm.id)
+      firebaseService.startMessageListener(swarmId: swarm.id)
       if swarm.role.canApproveMembers {
         try? await firebaseService.loadPendingMembers(swarmId: swarm.id)
       }
+    }
+    .onDisappear {
+      firebaseService.stopWorkerListener(swarmId: swarm.id)
+      firebaseService.stopMessageListener(swarmId: swarm.id)
     }
   }
 
@@ -140,6 +146,7 @@ struct SwarmDetailView: View {
     Picker("View", selection: $selectedTab) {
       Text("Members").tag(0)
       Text("Workers (\(firebaseService.swarmWorkers.count))").tag(3)
+      Text("Chat (\(firebaseService.swarmMessages.count))").tag(5)
       if swarm.role.canApproveMembers {
         Text("Pending (\(firebaseService.pendingMembers.count))").tag(1)
       }
@@ -160,6 +167,12 @@ struct SwarmDetailView: View {
         InvitesListView(swarmId: swarm.id)
       case 3:
         WorkersListView(swarmId: swarm.id, myRole: swarm.role)
+      case 5:
+        SwarmMessagesView(
+          swarmId: swarm.id,
+          myRole: swarm.role,
+          selectedWorker: $selectedWorkerForMessage
+        )
       case 4:
         ActivityLogView()
       default:
