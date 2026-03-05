@@ -1051,6 +1051,10 @@ struct PRDetailInlineView: View {
   }
 
   @State private var state: LoadState = .loading
+  #if os(macOS)
+  @State private var reviewAgentCoordinator = PRReviewAgentCoordinator()
+  @State private var reviewAgentTarget: PRReviewAgentTarget?
+  #endif
 
   var body: some View {
     VStack(spacing: 0) {
@@ -1112,6 +1116,17 @@ struct PRDetailInlineView: View {
         PullRequestDetailView(organization: nil, repository: repo, pullRequest: pr)
       }
     }
+    #if os(macOS)
+    .reviewWithAgentProvider(reviewAgentCoordinator)
+    .sheet(item: $reviewAgentTarget) { target in
+      GithubReviewAgentSheet(target: target)
+    }
+    .onAppear {
+      reviewAgentCoordinator.onReview = { pr, repo in
+        reviewAgentTarget = PRReviewAgentTarget.from(pullRequest: pr, repository: repo)
+      }
+    }
+    #endif
     .task { await loadData() }
   }
 
