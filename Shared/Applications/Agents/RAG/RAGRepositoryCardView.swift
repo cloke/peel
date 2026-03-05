@@ -873,7 +873,6 @@ struct RAGRepositoryCardView: View {
   }
 
   private func transferStatusLabel(_ transfer: RAGArtifactTransferState) -> String {
-    let isIncoming = transfer.id != activeTransferId
     let peer = transfer.peerName
     switch (transfer.direction, transfer.role) {
     case (.push, .sender):

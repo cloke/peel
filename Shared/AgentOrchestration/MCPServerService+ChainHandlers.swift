@@ -253,7 +253,7 @@ extension MCPServerService {
     // chain appears in the Parallel Worktrees panel with review/approve/merge.
     // Skip this path for VM-based templates (parallel runner doesn't support VM).
     if let runner = parallelWorktreeRunner, !template.requiresVM {
-      var resolvedWorkingDir = workingDirectory ?? agentManager.lastUsedWorkingDirectory
+      let resolvedWorkingDir = workingDirectory ?? agentManager.lastUsedWorkingDirectory
       guard let projectPath = resolvedWorkingDir else {
         await telemetryProvider.warning("chains.run missing workingDirectory", metadata: ["runId": runId.uuidString])
         return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Missing workingDirectory"))

@@ -112,7 +112,7 @@ extension MCPServerService: RAGArtifactSyncDelegate {
     } else if !bundle.manifest.repoIdentifier.isEmpty {
       let identifier = bundle.manifest.repoIdentifier
       // Try RepoRegistry first
-      if let registryPath = await RepoRegistry.shared.getLocalPath(for: identifier),
+      if let registryPath = RepoRegistry.shared.getLocalPath(for: identifier),
          FileManager.default.fileExists(atPath: registryPath) {
         resolvedPath = registryPath
         logger.info("RAG repo sync: resolved '\(identifier)' to '\(registryPath)' via RepoRegistry")

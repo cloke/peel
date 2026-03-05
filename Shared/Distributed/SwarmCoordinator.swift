@@ -168,7 +168,7 @@ public final class SwarmCoordinator {
     }
     
     // Strategy 2: Look for DerivedData and search common code locations
-    if let derivedIndex = components.firstIndex(of: "DerivedData"),
+     if components.contains("DerivedData"),
        let userIndex = components.firstIndex(of: "Users"),
        userIndex + 1 < components.count {
       let username = components[userIndex + 1]
@@ -2016,7 +2016,7 @@ extension SwarmCoordinator: FirestoreTaskExecutionDelegate {
     let startTime = Date()
     
     // Resolve working directory for this machine via RepoRegistry
-    let resolvedDir = await RepoRegistry.shared.resolveWorkingDirectory(for: request)
+    let resolvedDir = RepoRegistry.shared.resolveWorkingDirectory(for: request)
     let resolvedRequest = ChainRequest(
       id: request.id,
       templateName: request.templateName,

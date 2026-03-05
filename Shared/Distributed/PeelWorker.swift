@@ -204,7 +204,7 @@ public final class DefaultChainExecutor: ChainExecutorProtocol, Sendable {
   
   public func execute(request: ChainRequest) async throws -> [ChainOutput] {
     // Resolve working directory via RepoRegistry (maps remote URLs to local paths)
-    let resolvedDir = await RepoRegistry.shared.resolveWorkingDirectory(for: request)
+    let resolvedDir = RepoRegistry.shared.resolveWorkingDirectory(for: request)
     
     // Validate working directory exists
     guard FileManager.default.fileExists(atPath: resolvedDir) else {

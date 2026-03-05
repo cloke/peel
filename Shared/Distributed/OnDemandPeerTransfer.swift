@@ -440,7 +440,7 @@ public final class OnDemandPeerTransfer {
       case .ragArtifactsError(let id, let message) where id == transferId:
         throw OnDemandTransferError.remoteError(message: message)
 
-      case .ragRepoManifest(let id, let manifest):
+      case .ragRepoManifest(let id, _):
         // Delta sync path: peer sends manifest first, we respond with what we need
         if id == transferId {
           // We want everything — send empty exclude list

@@ -329,7 +329,6 @@ private struct TemplateCard: View {
     case .planner: return .blue.opacity(0.15)
     case .implementer: return .green.opacity(0.15)
     case .reviewer: return .orange.opacity(0.15)
-    default: return .gray.opacity(0.15)
     }
   }
 }

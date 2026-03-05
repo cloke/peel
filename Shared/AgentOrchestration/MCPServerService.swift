@@ -223,8 +223,8 @@ public final class MCPServerService {
     }
     /// True when stored embeddings have different dimensions than the local model.
     public var hasDimensionMismatch: Bool {
-      guard let dims = embeddingDimensions, embeddingCount > 0 else { return false }
-      // Can't compare without knowing local dims — caller should check against ragStatus
+      // Can't compare without knowing current local dims in this model.
+      // Caller performs mismatch checks against live ragStatus instead.
       return false // placeholder, checked externally
     }
   }

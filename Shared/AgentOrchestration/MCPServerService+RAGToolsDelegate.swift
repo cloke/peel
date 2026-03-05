@@ -476,7 +476,7 @@ extension MCPServerService: RAGToolsHandlerDelegate {
     }
     
     // Try RepoRegistry in case repoPath is a remote URL or identifier
-    if let resolved = await RepoRegistry.shared.getLocalPath(for: repoPath),
+    if let resolved = RepoRegistry.shared.getLocalPath(for: repoPath),
        FileManager.default.fileExists(atPath: resolved) {
       return resolved
     }
