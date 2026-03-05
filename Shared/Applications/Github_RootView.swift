@@ -30,6 +30,7 @@ struct Github_RootView: View {
   #if os(macOS)
   @State private var reviewAgentCoordinator = PRReviewAgentCoordinator()
   @State private var reviewAgentTarget: PRReviewAgentTarget?
+  @State private var reviewStatusBridge = PRReviewStatusBridge()
   #endif
 
   private let scheduler = RepoPullScheduler.shared
@@ -319,6 +320,7 @@ struct Github_RootView: View {
     .localRepoResolver(dataProvider)
     #if os(macOS)
     .reviewWithAgentProvider(reviewAgentCoordinator)
+    .prReviewStatusProvider(reviewStatusBridge)
     .sheet(item: $reviewAgentTarget) { target in
       GithubReviewAgentSheet(target: target)
     }
@@ -330,6 +332,7 @@ struct Github_RootView: View {
       persistAutomationTargets()
       syncAutomationSelection()
       #if os(macOS)
+      reviewStatusBridge.queue = mcpServer.prReviewQueue
       reviewAgentCoordinator.onReview = { pr, repo in
         reviewAgentTarget = PRReviewAgentTarget.from(pullRequest: pr, repository: repo)
       }
@@ -703,6 +706,26 @@ final class PRReviewAgentCoordinator: PRReviewAgentProvider {
 
   func reviewWithAgent(pr: Github.PullRequest, repo: Github.Repository) {
     onReview?(pr, repo)
+  }
+}
+
+/// Bridges PRReviewQueue to the Github package’s PRReviewStatusProvider protocol.
+@MainActor
+final class PRReviewStatusBridge: PRReviewStatusProvider {
+  weak var queue: PRReviewQueue?
+
+  func reviewStatus(owner: String, repo: String, prNumber: Int) -> PRAgentReviewStatus? {
+    guard let item = queue?.find(repoOwner: owner, repoName: repo, prNumber: prNumber) else {
+      return nil
+    }
+    let phase = item.phase
+    let activePh: Set<String> = [PRReviewPhase.reviewing, PRReviewPhase.fixing, PRReviewPhase.pushing]
+    return PRAgentReviewStatus(
+      phase: phase,
+      displayName: PRReviewPhase.displayName[phase] ?? phase,
+      systemImage: PRReviewPhase.systemImage[phase] ?? "questionmark.circle",
+      isActive: activePh.contains(phase)
+    )
   }
 }
 

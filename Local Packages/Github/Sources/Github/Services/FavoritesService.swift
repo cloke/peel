@@ -29,6 +29,38 @@ public protocol PRReviewAgentProvider {
   func reviewWithAgent(pr: Github.PullRequest, repo: Github.Repository)
 }
 
+/// Lightweight agent review status for display in PR views.
+public struct PRAgentReviewStatus: Sendable {
+  public let phase: String
+  public let displayName: String
+  public let systemImage: String
+  public let isActive: Bool
+
+  public init(phase: String, displayName: String, systemImage: String, isActive: Bool) {
+    self.phase = phase
+    self.displayName = displayName
+    self.systemImage = systemImage
+    self.isActive = isActive
+  }
+
+  public var badgeColor: Color {
+    switch phase {
+    case "reviewing", "fixing", "pushing": return .purple
+    case "reviewed", "needsFix": return .orange
+    case "fixed", "readyToPush": return .blue
+    case "pushed", "approved": return .green
+    case "failed": return .red
+    default: return .secondary
+    }
+  }
+}
+
+/// Protocol for querying agent review status — implemented by main app
+@MainActor
+public protocol PRReviewStatusProvider {
+  func reviewStatus(owner: String, repo: String, prNumber: Int) -> PRAgentReviewStatus?
+}
+
 /// Protocol for resolving a GitHub repository to its local clone path - implemented by main app
 @MainActor
 public protocol LocalRepoResolver {
@@ -90,6 +122,10 @@ private struct PRReviewAgentProviderKey: EnvironmentKey {
   static let defaultValue: PRReviewAgentProvider? = nil
 }
 
+private struct PRReviewStatusProviderKey: EnvironmentKey {
+  static let defaultValue: PRReviewStatusProvider? = nil
+}
+
 private struct LocalRepoResolverKey: EnvironmentKey {
   static let defaultValue: LocalRepoResolver? = nil
 }
@@ -108,6 +144,11 @@ public extension EnvironmentValues {
   var reviewWithAgentProvider: PRReviewAgentProvider? {
     get { self[PRReviewAgentProviderKey.self] }
     set { self[PRReviewAgentProviderKey.self] = newValue }
+  }
+
+  var prReviewStatusProvider: PRReviewStatusProvider? {
+    get { self[PRReviewStatusProviderKey.self] }
+    set { self[PRReviewStatusProviderKey.self] = newValue }
   }
   
   var localRepoResolver: LocalRepoResolver? {
@@ -129,6 +170,10 @@ public extension View {
 
   func reviewWithAgentProvider(_ provider: PRReviewAgentProvider?) -> some View {
     environment(\.reviewWithAgentProvider, provider)
+  }
+
+  func prReviewStatusProvider(_ provider: PRReviewStatusProvider?) -> some View {
+    environment(\.prReviewStatusProvider, provider)
   }
 
   func localRepoResolver(_ resolver: LocalRepoResolver?) -> some View {

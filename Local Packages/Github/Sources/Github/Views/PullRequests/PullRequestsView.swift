@@ -12,6 +12,7 @@ import PeelUI
 public struct PullRequestDetailView: View {
   @Environment(\.recentPRsProvider) private var recentPRsProvider
   @Environment(\.reviewWithAgentProvider) private var reviewWithAgentProvider
+  @Environment(\.prReviewStatusProvider) private var prReviewStatusProvider
 
   public let organization: Github.User?
   public let repository: Github.Repository
@@ -198,6 +199,26 @@ public struct PullRequestDetailView: View {
 
       Spacer()
 
+      // Agent review status pill
+      if let status = agentReviewStatus {
+        HStack(spacing: 4) {
+          if status.isActive {
+            ProgressView()
+              .controlSize(.mini)
+          } else {
+            Image(systemName: status.systemImage)
+          }
+          Text(status.displayName)
+            .fontWeight(.medium)
+        }
+        .font(.caption)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(status.badgeColor.opacity(0.15))
+        .foregroundStyle(status.badgeColor)
+        .clipShape(Capsule())
+      }
+
       // Author
       if let author = pullRequest.user {
         HStack(spacing: 6) {
@@ -379,6 +400,15 @@ public struct PullRequestDetailView: View {
           .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 10))
       }
     }
+  }
+
+  // MARK: - Agent Review Status
+
+  private var agentReviewStatus: PRAgentReviewStatus? {
+    guard let owner = organization?.login ?? repository.owner?.login else { return nil }
+    return prReviewStatusProvider?.reviewStatus(
+      owner: owner, repo: repository.name, prNumber: pullRequest.number
+    )
   }
 
   // MARK: - Helpers

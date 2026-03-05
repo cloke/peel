@@ -1052,8 +1052,10 @@ struct PRDetailInlineView: View {
 
   @State private var state: LoadState = .loading
   #if os(macOS)
+  @Environment(MCPServerService.self) private var mcpServer
   @State private var reviewAgentCoordinator = PRReviewAgentCoordinator()
   @State private var reviewAgentTarget: PRReviewAgentTarget?
+  @State private var reviewStatusBridge = PRReviewStatusBridge()
   #endif
 
   var body: some View {
@@ -1118,10 +1120,12 @@ struct PRDetailInlineView: View {
     }
     #if os(macOS)
     .reviewWithAgentProvider(reviewAgentCoordinator)
+    .prReviewStatusProvider(reviewStatusBridge)
     .sheet(item: $reviewAgentTarget) { target in
       GithubReviewAgentSheet(target: target)
     }
     .onAppear {
+      reviewStatusBridge.queue = mcpServer.prReviewQueue
       reviewAgentCoordinator.onReview = { pr, repo in
         reviewAgentTarget = PRReviewAgentTarget.from(pullRequest: pr, repository: repo)
       }

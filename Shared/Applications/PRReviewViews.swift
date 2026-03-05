@@ -9,6 +9,55 @@
 import MCPCore
 import SwiftUI
 
+// MARK: - Agent Review Badge
+
+/// Compact status pill showing the current agent review phase for a PR.
+struct AgentReviewBadge: View {
+  let phase: String
+
+  private var isActive: Bool {
+    [PRReviewPhase.reviewing, PRReviewPhase.fixing, PRReviewPhase.pushing].contains(phase)
+  }
+
+  private var icon: String {
+    PRReviewPhase.systemImage[phase] ?? "questionmark.circle"
+  }
+
+  private var label: String {
+    PRReviewPhase.displayName[phase] ?? phase
+  }
+
+  private var color: Color {
+    switch phase {
+    case PRReviewPhase.reviewing, PRReviewPhase.fixing, PRReviewPhase.pushing: return .purple
+    case PRReviewPhase.reviewed, PRReviewPhase.needsFix: return .orange
+    case PRReviewPhase.fixed, PRReviewPhase.readyToPush: return .blue
+    case PRReviewPhase.pushed, PRReviewPhase.approved: return .green
+    case PRReviewPhase.failed: return .red
+    default: return .secondary
+    }
+  }
+
+  var body: some View {
+    HStack(spacing: 3) {
+      if isActive {
+        ProgressView()
+          .controlSize(.mini)
+      } else {
+        Image(systemName: icon)
+      }
+      Text(label)
+        .fontWeight(.medium)
+    }
+    .font(.caption2)
+    .padding(.horizontal, 7)
+    .padding(.vertical, 3)
+    .background(color.opacity(0.15))
+    .foregroundStyle(color)
+    .clipShape(Capsule())
+  }
+}
+
 // MARK: - PR Review State
 
 /// Tracks the state of an agent-initiated PR review.
@@ -80,8 +129,19 @@ struct PRRowWithReview: View {
   let pr: UnifiedRepository.PRSummary
   let ownerRepo: String?
   let repoPath: String?
+  @Environment(MCPServerService.self) private var mcpServer
   @State private var showingReview = false
   @State private var reviewState = PRReviewState()
+
+  /// Active queue item for this PR, if any.
+  private var queueItem: PRReviewQueueItem? {
+    guard let ownerRepo else { return nil }
+    let parts = ownerRepo.split(separator: "/")
+    guard parts.count == 2 else { return nil }
+    return mcpServer.prReviewQueue.find(
+      repoOwner: String(parts[0]), repoName: String(parts[1]), prNumber: pr.number
+    )
+  }
 
   var body: some View {
     HStack(spacing: 10) {
@@ -113,6 +173,11 @@ struct PRRowWithReview: View {
       }
 
       Spacer()
+
+      // Agent review phase badge
+      if let item = queueItem {
+        AgentReviewBadge(phase: item.phase)
+      }
 
       // Agent review button (only for open PRs)
       if pr.state == "open" {
