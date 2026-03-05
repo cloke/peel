@@ -219,31 +219,37 @@ struct OverviewTabView: View {
   }
 
   var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 16) {
-        // 1. Needs Attention — action items that need human input
-        if !pendingApprovalRuns.isEmpty || !openPRs.isEmpty {
-          needsAttentionSection
-        }
-
-        // 2. Open Pull Requests — always visible and prominent
-        pullRequestsSection
-
-        // 3. Agent Work — active chains and worktrees
-        if !repo.activeChains.isEmpty || !repo.activeWorktrees.isEmpty || !repoRuns.isEmpty {
-          agentWorkSection
-        }
-
-        // 4. Repository Health — compact at-a-glance stats
-        repoHealthSection
+    if let detail = selectedPRDetail {
+      PRDetailInlineView(
+        ownerRepo: detail.ownerRepo,
+        prNumber: detail.prNumber
+      ) {
+        selectedPRDetail = nil
       }
-      .padding(16)
-    }
-    .task(id: repo.ownerSlashRepo) {
-      await fetchOpenPRs()
-    }
-    .sheet(item: $selectedPRDetail) { detail in
-      PRDetailSheet(ownerRepo: detail.ownerRepo, prNumber: detail.prNumber)
+    } else {
+      ScrollView {
+        VStack(alignment: .leading, spacing: 16) {
+          // 1. Needs Attention — action items that need human input
+          if !pendingApprovalRuns.isEmpty || !openPRs.isEmpty {
+            needsAttentionSection
+          }
+
+          // 2. Open Pull Requests — always visible and prominent
+          pullRequestsSection
+
+          // 3. Agent Work — active chains and worktrees
+          if !repo.activeChains.isEmpty || !repo.activeWorktrees.isEmpty || !repoRuns.isEmpty {
+            agentWorkSection
+          }
+
+          // 4. Repository Health — compact at-a-glance stats
+          repoHealthSection
+        }
+        .padding(16)
+      }
+      .task(id: repo.ownerSlashRepo) {
+        await fetchOpenPRs()
+      }
     }
   }
 

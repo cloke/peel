@@ -566,32 +566,38 @@ struct RepositoriesCommandCenter: View {
   }
 
   var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 20) {
-        // Header
-        headerSection
-
-        // Needs Attention
-        if hasActionItems {
-          needsAttentionSection
-        }
-
-        // Agent Work
-        if hasAgentWork {
-          agentWorkSection
-        }
-
-        // Repository Cards
-        repositoryCardsSection
-
-        // RAG Status (compact, collapsed)
-        ragCompactSection
+    if let detail = selectedPRDetail {
+      PRDetailInlineView(
+        ownerRepo: detail.ownerRepo,
+        prNumber: detail.prNumber
+      ) {
+        selectedPRDetail = nil
       }
-      .padding(20)
-    }
-    .task { await fetchAllOpenPRs() }
-    .sheet(item: $selectedPRDetail) { detail in
-      PRDetailSheet(ownerRepo: detail.ownerRepo, prNumber: detail.prNumber)
+    } else {
+      ScrollView {
+        VStack(alignment: .leading, spacing: 20) {
+          // Header
+          headerSection
+
+          // Needs Attention
+          if hasActionItems {
+            needsAttentionSection
+          }
+
+          // Agent Work
+          if hasAgentWork {
+            agentWorkSection
+          }
+
+          // Repository Cards
+          repositoryCardsSection
+
+          // RAG Status (compact, collapsed)
+          ragCompactSection
+        }
+        .padding(20)
+      }
+      .task { await fetchAllOpenPRs() }
     }
   }
 
@@ -1031,11 +1037,12 @@ struct PRDetailIdentifier: Identifiable {
   let prNumber: Int
 }
 
-/// Sheet that loads full PR data from GitHub and shows PullRequestDetailView.
-struct PRDetailSheet: View {
+/// Inline PR detail view that loads full PR data and shows PullRequestDetailView
+/// with a back button to return to the previous view.
+struct PRDetailInlineView: View {
   let ownerRepo: String
   let prNumber: Int
-  @Environment(\.dismiss) private var dismiss
+  let onBack: () -> Void
 
   private enum LoadState {
     case loading
@@ -1046,12 +1053,51 @@ struct PRDetailSheet: View {
   @State private var state: LoadState = .loading
 
   var body: some View {
-    Group {
+    VStack(spacing: 0) {
+      // Back bar
+      HStack(spacing: 6) {
+        Button {
+          onBack()
+        } label: {
+          HStack(spacing: 4) {
+            Image(systemName: "chevron.left")
+            Text("Back")
+          }
+          .font(.callout)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.blue)
+
+        Text("PR #\(prNumber)")
+          .font(.callout)
+          .foregroundStyle(.secondary)
+
+        Spacer()
+
+        if let url = prURL {
+          Button {
+            #if os(macOS)
+            NSWorkspace.shared.open(url)
+            #endif
+          } label: {
+            Label("Open in GitHub", systemImage: "arrow.up.right.square")
+              .font(.caption)
+          }
+          .buttonStyle(.plain)
+          .foregroundStyle(.secondary)
+        }
+      }
+      .padding(.horizontal, 16)
+      .padding(.vertical, 10)
+
+      Divider()
+
+      // Content
       switch state {
       case .loading:
         VStack(spacing: 12) {
           ProgressView()
-          Text("Loading PR #\(prNumber)…")
+          Text("Loading PR #\(prNumber)\u{2026}")
             .font(.caption)
             .foregroundStyle(.secondary)
         }
@@ -1066,10 +1112,14 @@ struct PRDetailSheet: View {
         PullRequestDetailView(organization: nil, repository: repo, pullRequest: pr)
       }
     }
-    #if os(macOS)
-    .frame(minWidth: 700, minHeight: 500)
-    #endif
     .task { await loadData() }
+  }
+
+  private var prURL: URL? {
+    if case .loaded(let pr, _) = state, let urlStr = pr.html_url {
+      return URL(string: urlStr)
+    }
+    return nil
   }
 
   private func loadData() async {
