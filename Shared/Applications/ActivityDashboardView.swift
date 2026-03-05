@@ -103,6 +103,7 @@ struct ActivityDashboardView: View {
     ScrollView {
       VStack(alignment: .leading, spacing: 20) {
         runningNowSection
+        PRReviewQueueSection()
         quickTemplatesSection
         workersSection
         ragIndexingSection

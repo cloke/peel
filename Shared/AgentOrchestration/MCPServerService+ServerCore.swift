@@ -1054,6 +1054,9 @@ extension MCPServerService {
     if codeQualityToolsHandler.supportedTools.contains(resolvedName) {
       return await codeQualityToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
     }
+    if prReviewToolsHandler.supportedTools.contains(resolvedName) {
+      return await prReviewToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
+    }
     #if os(macOS)
     if localChatToolsHandler?.supportedTools.contains(resolvedName) == true {
       return await localChatToolsHandler!.handle(name: resolvedName, id: id, arguments: arguments)

@@ -642,6 +642,8 @@ public final class MCPServerService {
   var chromeToolsHandler: ChromeToolsHandler
   var repoProfileToolsHandler: RepoProfileToolsHandler
   var repoProfileService: RepoProfileService
+  var prReviewQueue = PRReviewQueue()
+  var prReviewToolsHandler: PRReviewToolsHandler
   var uxTestOrchestrator: UXTestOrchestrator?
   #if os(macOS)
   var localChatToolsHandler: LocalChatToolsHandler?
@@ -719,6 +721,7 @@ public final class MCPServerService {
     self.chromeToolsHandler = ChromeToolsHandler()
     self.repoProfileToolsHandler = RepoProfileToolsHandler()
     self.repoProfileService = RepoProfileService()
+    self.prReviewToolsHandler = PRReviewToolsHandler()
     #if os(macOS)
     self.localChatToolsHandler = LocalChatToolsHandler()
     #endif
@@ -860,6 +863,8 @@ public final class MCPServerService {
     chromeToolsHandler.delegate = self
     repoProfileToolsHandler.delegate = self
     repoProfileToolsHandler.profileService = repoProfileService
+    prReviewToolsHandler.delegate = self
+    prReviewToolsHandler.prReviewQueue = prReviewQueue
     #if os(macOS)
     localChatToolsHandler?.delegate = self
     localChatToolsHandler?.mcpServer = self
@@ -994,6 +999,9 @@ public final class MCPServerService {
     if let dataService {
       parallelWorktreeRunner?.setDataService(dataService)
       localChatToolsHandler?.dataService = dataService
+    }
+    if prReviewQueue.modelContext == nil {
+      prReviewQueue.modelContext = modelContext
     }
   }
 

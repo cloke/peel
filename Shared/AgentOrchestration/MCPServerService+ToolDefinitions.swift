@@ -40,6 +40,7 @@ extension MCPServerService {
     if let github = githubToolsHandler { defs += github.toolDefinitions }
     defs += chromeToolsHandler.toolDefinitions
     defs += repoProfileToolsHandler.toolDefinitions
+    defs += prReviewToolsHandler.toolDefinitions
     #if os(macOS)
     if let chat = localChatToolsHandler { defs += chat.toolDefinitions }
     #endif

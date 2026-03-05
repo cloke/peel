@@ -871,6 +871,22 @@ struct PRReviewSheet: View {
     reviewState.error = nil
     reviewState.reviewResult = nil
 
+    // Enqueue into persistent queue
+    let queueItem = mcpServer.prReviewQueue.enqueue(
+      repoOwner: owner,
+      repoName: repoName,
+      prNumber: pr.number,
+      prTitle: pr.title,
+      headRef: pr.headRef ?? "",
+      htmlURL: ""
+    )
+    mcpServer.prReviewQueue.markReviewing(
+      queueItem,
+      chainId: "",
+      worktreePath: repoPath,
+      model: selectedTemplate.rawValue
+    )
+
     let prompt = """
     Review PR #\(pr.number) in \(ownerRepo).
     
@@ -981,11 +997,23 @@ struct PRReviewSheet: View {
     if lastOutput.isEmpty {
       reviewState.isLoading = false
       reviewState.error = "Review completed but produced no output. Check chain logs for details."
+      if let qi = findQueueItem() {
+        mcpServer.prReviewQueue.markFailed(qi, error: "No output from review chain")
+      }
       return
     }
 
-    reviewState.reviewResult = parseReviewOutput(lastOutput)
+    let parsed = parseReviewOutput(lastOutput)
+    reviewState.reviewResult = parsed
     reviewState.isLoading = false
+
+    if let qi = findQueueItem() {
+      mcpServer.prReviewQueue.markReviewed(
+        qi,
+        output: lastOutput,
+        verdict: parsed.verdict.rawValue
+      )
+    }
   }
 
   private func extractReviewOutput(from run: ParallelWorktreeRun) -> String {
@@ -1282,6 +1310,9 @@ struct PRReviewSheet: View {
          let runId = chainData["runId"] as? String
           ?? (chainData["queue"] as? [String: Any])?["runId"] as? String {
         fixChainId = runId
+        if let qi = findQueueItem() {
+          mcpServer.prReviewQueue.markFixing(qi, chainId: runId, model: fixModel.rawValue)
+        }
       }
     }
 
@@ -1304,6 +1335,10 @@ struct PRReviewSheet: View {
     pushFixError = nil
     pushFixResult = nil
 
+    if let qi = findQueueItem() {
+      mcpServer.prReviewQueue.markPushing(qi)
+    }
+
     let (output, exitCode) = await runner.pushExecutionBranch(
       execution,
       toRemoteRef: headRef,
@@ -1313,10 +1348,26 @@ struct PRReviewSheet: View {
     if exitCode == 0 {
       pushFixResult = "Pushed fix to origin/\(headRef)"
       isFixing = false
+      if let qi = findQueueItem() {
+        mcpServer.prReviewQueue.markPushed(qi, result: "Pushed to origin/\(headRef)")
+      }
     } else {
-      pushFixError = "Push failed: \(output.trimmingCharacters(in: .whitespacesAndNewlines))"
+      let errMsg = "Push failed: \(output.trimmingCharacters(in: .whitespacesAndNewlines))"
+      pushFixError = errMsg
+      if let qi = findQueueItem() {
+        mcpServer.prReviewQueue.markFailed(qi, error: errMsg)
+      }
     }
 
     isPushingFix = false
+  }
+
+  /// Find the queue item for the current PR.
+  private func findQueueItem() -> PRReviewQueueItem? {
+    guard let ownerRepo else { return nil }
+    let parts = ownerRepo.split(separator: "/")
+    let owner = parts.count >= 2 ? String(parts[0]) : ownerRepo
+    let name = parts.count >= 2 ? String(parts[1]) : ownerRepo
+    return mcpServer.prReviewQueue.find(repoOwner: owner, repoName: name, prNumber: pr.number)
   }
 }

@@ -159,6 +159,7 @@ struct PeelApp: App {
       CIFailureRecord.self,
       FeatureDiscoveryChecklist.self,
       TrackedRemoteRepo.self,
+      PRReviewQueueItem.self,
     ])
     
     let modelConfiguration = ModelConfiguration(
@@ -222,13 +223,19 @@ struct PeelApp: App {
           await registry.registerAllPaths(gitPaths)
           let recentPaths = ReviewLocallyService.shared.recentRepositories.map(\.path)
           await registry.registerAllPaths(recentPaths)
-          // Resume any RAG indexing or analysis that was interrupted by the previous app quit
+          // Initial rebuild of unified repository data and activity feed.
+          // Do this BEFORE RAG operations so the UI is usable quickly.
+          repositoryAggregator.rebuild()
+          await Task.yield()
+          activityFeed.rebuild()
+          await Task.yield()
+          // Resume any RAG indexing or analysis that was interrupted by the previous app quit.
+          // These can be slow (MLX model loading) so run after initial UI is ready.
           await mcpServer.resumeInterruptedRAGOperations()
           // Refresh RAG repo list so rebuild() has current data
           await mcpServer.refreshRagSummary()
-          // Initial rebuild of unified repository data and activity feed
+          // Re-rebuild with RAG data now available
           repositoryAggregator.rebuild()
-          activityFeed.rebuild()
         }
         .alert("Ember Best Practices Updated", isPresented: $skillUpdateAvailable) {
           Button("Update Skills") {

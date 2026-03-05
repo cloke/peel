@@ -760,6 +760,32 @@ Task:
 
     launchedChain = chain
 
+    // Persist to review queue so state survives window close
+    if let pr = pullRequest, let repo = repository {
+      let parts = (repo.full_name ?? repo.name).split(separator: "/")
+      let owner = parts.count >= 2 ? String(parts[0]) : ""
+      let name = parts.count >= 2 ? String(parts[1]) : repo.name
+      let queueItem = mcpServer.prReviewQueue.enqueue(
+        repoOwner: owner,
+        repoName: name,
+        prNumber: pr.number,
+        prTitle: pr.title ?? "Untitled",
+        headRef: pr.head.ref,
+        htmlURL: pr.html_url ?? ""
+      )
+      mcpServer.prReviewQueue.markReviewing(
+        queueItem,
+        chainId: chain.id.uuidString,
+        worktreePath: chain.workingDirectory ?? selectedRepoPath,
+        model: ""
+      )
+
+      // Monitor chain completion to update queue
+      Task {
+        await monitorReviewChain(chain, queueItem: queueItem)
+      }
+    }
+
     // Fire off the chain run on AgentManager so it survives sheet dismissal.
     mcpServer.agentManager.runChainInBackground(
       chain,
@@ -767,6 +793,24 @@ Task:
       cliService: mcpServer.cliService,
       sessionTracker: mcpServer.sessionTracker
     )
+  }
+
+  /// Watch a review chain and update the queue item when it completes.
+  private func monitorReviewChain(_ chain: AgentChain, queueItem: PRReviewQueueItem) async {
+    while !chain.state.isTerminal {
+      try? await Task.sleep(for: .seconds(2))
+    }
+    if chain.state.isComplete {
+      let output = chain.results.last?.output ?? ""
+      let verdict = chain.results.last?.reviewVerdict?.rawValue ?? ""
+      mcpServer.prReviewQueue.markReviewed(queueItem, output: output, verdict: verdict)
+    } else {
+      let errorMsg: String = {
+        if case .failed(let msg) = chain.state { return msg }
+        return "Review chain did not complete"
+      }()
+      mcpServer.prReviewQueue.markFailed(queueItem, error: errorMsg)
+    }
   }
 
   // MARK: - Fix + Push Actions
@@ -957,12 +1001,46 @@ Task:
 
     fixChain = chain
 
+    // Update queue item
+    if let queueItem = findQueueItem() {
+      mcpServer.prReviewQueue.markFixing(queueItem, chainId: chain.id.uuidString, model: fixModel.rawValue)
+      // Monitor fix chain completion
+      Task {
+        await monitorFixChain(chain, queueItem: queueItem)
+      }
+    }
+
     mcpServer.agentManager.runChainInBackground(
       chain,
       prompt: fixPrompt,
       cliService: mcpServer.cliService,
       sessionTracker: mcpServer.sessionTracker
     )
+  }
+
+  /// Watch a fix chain and update the queue item when it completes.
+  private func monitorFixChain(_ chain: AgentChain, queueItem: PRReviewQueueItem) async {
+    while !chain.state.isTerminal {
+      try? await Task.sleep(for: .seconds(2))
+    }
+    if chain.state.isComplete {
+      mcpServer.prReviewQueue.markFixed(queueItem)
+    } else {
+      let errorMsg: String = {
+        if case .failed(let msg) = chain.state { return msg }
+        return "Fix chain did not complete"
+      }()
+      mcpServer.prReviewQueue.markFailed(queueItem, error: errorMsg)
+    }
+  }
+
+  /// Find the queue item for the current PR.
+  private func findQueueItem() -> PRReviewQueueItem? {
+    guard let pr = pullRequest, let repo = repository else { return nil }
+    let parts = (repo.full_name ?? repo.name).split(separator: "/")
+    let owner = parts.count >= 2 ? String(parts[0]) : ""
+    let name = parts.count >= 2 ? String(parts[1]) : repo.name
+    return mcpServer.prReviewQueue.find(repoOwner: owner, repoName: name, prNumber: pr.number)
   }
 
   private func pushFixToPR() async {
@@ -978,6 +1056,10 @@ Task:
     pushError = nil
     pushResult = nil
 
+    if let queueItem = findQueueItem() {
+      mcpServer.prReviewQueue.markPushing(queueItem)
+    }
+
     // Get the current branch in the worktree
     let (branchOutput, branchExit) = await runGitInWorktree(
       ["rev-parse", "--abbrev-ref", "HEAD"],
@@ -987,6 +1069,9 @@ Task:
 
     guard branchExit == 0, !currentBranch.isEmpty, currentBranch != "HEAD" else {
       pushError = "Cannot determine current branch in worktree"
+      if let queueItem = findQueueItem() {
+        mcpServer.prReviewQueue.markFailed(queueItem, error: "Cannot determine current branch")
+      }
       isPushing = false
       return
     }
@@ -998,8 +1083,15 @@ Task:
 
     if exitCode == 0 {
       pushResult = "Pushed fix to origin/\(headRef)"
+      if let queueItem = findQueueItem() {
+        mcpServer.prReviewQueue.markPushed(queueItem, result: "Pushed to origin/\(headRef)")
+      }
     } else {
-      pushError = "Push failed: \(output.trimmingCharacters(in: .whitespacesAndNewlines))"
+      let errMsg = "Push failed: \(output.trimmingCharacters(in: .whitespacesAndNewlines))"
+      pushError = errMsg
+      if let queueItem = findQueueItem() {
+        mcpServer.prReviewQueue.markFailed(queueItem, error: errMsg)
+      }
     }
 
     isPushing = false
