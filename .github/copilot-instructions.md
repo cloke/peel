@@ -42,6 +42,11 @@ Peel is a macOS/iOS SwiftUI application for managing GitHub, Git repositories, a
 | SwiftData models | `Shared/SwiftDataModels.swift` |
 | Views by feature | `Shared/Applications/` (Git_RootView, Github_RootView, etc.) |
 
+### Repository UX Source of Truth (IMPORTANT)
+- Primary repository UX is `Shared/Applications/UnifiedRepositoriesView.swift` + `Shared/Applications/RepoDetailView.swift`.
+- Treat `Shared/Applications/Repositories_RootView.swift`, `Shared/Applications/Git_RootView.swift`, and `Shared/Applications/Github_RootView.swift` as legacy/compatibility surfaces.
+- When implementing/fixing repository features, update the unified surfaces first unless the user explicitly asks for legacy-route behavior.
+
 ### Documentation vs Plans
 | Type | Location | Purpose |
 |------|----------|---------|

@@ -9,6 +9,9 @@ import SwiftUI
 import SwiftData
 import Git
 
+// LEGACY REPOSITORIES SURFACE:
+// This local Git root view is kept for compatibility routes.
+// For new repository UX changes, prefer UnifiedRepositoriesView + RepoDetailView.
 struct Git_RootView: View {
   @Environment(MCPServerService.self) private var mcpServer
   @Environment(\.modelContext) private var modelContext

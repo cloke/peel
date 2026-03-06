@@ -15,6 +15,9 @@ import Github
 #endif
 
 #if canImport(Github)
+// LEGACY REPOSITORIES SURFACE:
+// Retained for iOS/compatibility paths. For new repository UX work, prefer
+// UnifiedRepositoriesView + RepoDetailView as the source-of-truth flow.
 struct Github_RootView: View {
   #if os(macOS)
   @Environment(MCPServerService.self) private var mcpServer
@@ -42,6 +45,7 @@ struct Github_RootView: View {
   @State private var isLoading = false
   @State private var errorMessage: String?
   @AppStorage("github-show-archived") private var showArchivedRepos = false
+  @AppStorage("github-hidden-org-logins") private var hiddenOrganizationLoginsJSON: String = "[]"
   @AppStorage("github.automationSelectedFavoriteKey") private var automationSelectedFavoriteKey: String = ""
   @AppStorage("github.automationSelectedRecentPRKey") private var automationSelectedRecentPRKey: String = ""
   @State private var selectedAutomationDestination: GitHubAutomationDestination?
@@ -49,6 +53,52 @@ struct Github_RootView: View {
   private enum GitHubAutomationDestination: Hashable {
     case favorite(String)
     case recentPR(String)
+  }
+
+  private var hiddenOrganizationLogins: Set<String> {
+    guard let data = hiddenOrganizationLoginsJSON.data(using: .utf8),
+          let logins = try? JSONDecoder().decode([String].self, from: data) else { return [] }
+    return Set(logins.map { $0.lowercased() })
+  }
+
+  private var visibleOrganizations: [Github.User] {
+    let hidden = hiddenOrganizationLogins
+    guard !hidden.isEmpty else { return organizations }
+    return organizations.filter { org in
+      guard let login = org.login?.lowercased() else { return true }
+      return !hidden.contains(login)
+    }
+  }
+
+  private var hiddenOrganizations: [Github.User] {
+    let hidden = hiddenOrganizationLogins
+    guard !hidden.isEmpty else { return [] }
+    return organizations.filter { org in
+      guard let login = org.login?.lowercased() else { return false }
+      return hidden.contains(login)
+    }
+  }
+
+  private func setHiddenOrganizationLogins(_ logins: Set<String>) {
+    let sorted = Array(logins).sorted()
+    if let data = try? JSONEncoder().encode(sorted),
+       let json = String(data: data, encoding: .utf8) {
+      hiddenOrganizationLoginsJSON = json
+    }
+  }
+
+  private func hideOrganization(_ organization: Github.User) {
+    guard let login = organization.login?.lowercased() else { return }
+    var hidden = hiddenOrganizationLogins
+    hidden.insert(login)
+    setHiddenOrganizationLogins(hidden)
+  }
+
+  private func unhideOrganization(_ organization: Github.User) {
+    guard let login = organization.login?.lowercased() else { return }
+    var hidden = hiddenOrganizationLogins
+    hidden.remove(login)
+    setHiddenOrganizationLogins(hidden)
   }
 
   private func loadProfile() async {
@@ -244,11 +294,38 @@ struct Github_RootView: View {
           .listRowBackground(Color.clear)
         } else if hasToken && viewModel.me != nil {
           Section {
-            ForEach(organizations) { organization in
+            ForEach(visibleOrganizations) { organization in
               OrganizationRepositoryView(organization: organization)
+                .contextMenu {
+                  Button {
+                    hideOrganization(organization)
+                  } label: {
+                    Label("Hide Organization", systemImage: "eye.slash")
+                  }
+                }
             }
           } header: {
             Label("Organizations", systemImage: "building.2")
+          }
+
+          if !hiddenOrganizations.isEmpty {
+            Section {
+              ForEach(hiddenOrganizations) { organization in
+                HStack(spacing: 8) {
+                  Image(systemName: "building.2")
+                    .foregroundStyle(.secondary)
+                  Text(organization.login ?? "Unknown")
+                    .foregroundStyle(.secondary)
+                  Spacer()
+                  Button("Restore") {
+                    unhideOrganization(organization)
+                  }
+                  .buttonStyle(.borderless)
+                }
+              }
+            } header: {
+              Label("Hidden Organizations", systemImage: "eye.slash")
+            }
           }
         } else if hasToken {
           // Token exists but user data not loaded yet - show loading

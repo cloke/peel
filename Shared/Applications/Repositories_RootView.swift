@@ -7,6 +7,9 @@
 
 import SwiftUI
 
+// LEGACY REPOSITORIES SHELL:
+// This split local/remote root is retained for compatibility (not the primary macOS UX).
+// For new repository UX work, prefer UnifiedRepositoriesView + RepoDetailView.
 struct Repositories_RootView: View {
   #if os(macOS)
   @Environment(MCPServerService.self) private var mcpServer
