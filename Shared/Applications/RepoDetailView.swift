@@ -195,6 +195,7 @@ struct OverviewTabView: View {
   @Environment(MCPServerService.self) private var mcpServer
   @Environment(ActivityFeed.self) private var activityFeed
   @Environment(DataService.self) private var dataService
+  @Environment(RepositoryAggregator.self) private var aggregator
   @State private var fetchedPRs: [UnifiedRepository.PRSummary] = []
   @State private var isLoadingPRs = false
   @State private var selectedPRDetail: PRDetailIdentifier?
@@ -253,6 +254,8 @@ struct OverviewTabView: View {
           // 5. Tracking Configuration — sync mode for tracked repos
           if repo.isTracked, let trackedId = repo.trackedRemoteRepoId {
             trackingConfigSection(trackedId: trackedId)
+          } else if !repo.isTracked, repo.localPath != nil, repo.remoteURL != nil {
+            startTrackingSection
           }
         }
         .padding(16)
@@ -604,6 +607,46 @@ struct OverviewTabView: View {
     tracked.reindexAfterPull = (mode == .pullAndRebuild)
     tracked.touch()
     try? dataService.modelContext.save()
+    aggregator.rebuild()
+  }
+
+  // MARK: - Start Tracking
+
+  private var startTrackingSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SectionHeader("Tracking")
+
+      GroupBox {
+        VStack(alignment: .leading, spacing: 8) {
+          Text("This repository is not tracked for automatic pulling.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+          Button {
+            startTracking()
+          } label: {
+            HStack(spacing: 4) {
+              Image(systemName: "arrow.down.circle")
+              Text("Enable Auto-Pull")
+            }
+          }
+          .buttonStyle(.borderedProminent)
+          .controlSize(.small)
+        }
+        .padding(4)
+      }
+    }
+  }
+
+  private func startTracking() {
+    guard let localPath = repo.localPath,
+          let remoteURL = repo.remoteURL else { return }
+    let _ = dataService.trackRemoteRepo(
+      remoteURL: remoteURL,
+      name: repo.displayName,
+      localPath: localPath
+    )
+    aggregator.rebuild()
   }
 
   // MARK: - Data Loading
