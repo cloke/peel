@@ -191,7 +191,7 @@ struct MCPDashboardView: View {
 
       ForEach(mcpServer.queuedRuns) { queued in
         HStack(spacing: 12) {
-          Text("#\(queued.position)")
+          Text(verbatim: "#\(queued.position)")
             .font(.caption.monospaced())
             .foregroundStyle(.tertiary)
             .frame(width: 24)

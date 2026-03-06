@@ -95,9 +95,13 @@ extension MCPServerService: RepoPullSchedulerDelegate {
   }
 
   /// After local reindex, pull overlay data (embeddings + analysis) from a connected swarm peer.
-  /// This allows a less powerful machine to benefit from a more powerful peer's Qwen 3 embeddings + analysis.
+  /// This allows a less powerful machine (worker) to benefit from a more powerful peer's embeddings + analysis.
+  /// Brain/hybrid roles skip this — they are the source of truth and should not pull from workers.
   private func requestOverlaySyncFromSwarm(repoPath: String) async {
     let coordinator = SwarmCoordinator.shared
+    // Brain/hybrid machines ARE the source — don't pull overlays from workers.
+    let role = coordinator.role
+    guard role == .worker else { return }
     guard coordinator.isActive, !coordinator.connectedWorkers.isEmpty else { return }
 
     // Resolve the repo identifier from the local RAG store
@@ -117,6 +121,33 @@ extension MCPServerService: RepoPullSchedulerDelegate {
       logger.info("Post-reindex overlay sync requested for \(repoIdentifier): transfer \(transferId)")
     } catch {
       logger.warning("Post-reindex overlay sync failed for \(repoIdentifier): \(error.localizedDescription)")
+    }
+  }
+
+  public func repoPullScheduler(_ scheduler: RepoPullScheduler, shouldSyncIndexFor repoPath: String) {
+    Task { @MainActor in
+      logger.info("Syncing RAG index from crown for \(repoPath) after pull")
+
+      // Resolve repo identifier from local RAG store
+      let repos = (try? await localRagStore.listRepos()) ?? []
+      guard let repo = repos.first(where: { $0.rootPath == repoPath }),
+            let repoIdentifier = repo.repoIdentifier, !repoIdentifier.isEmpty else {
+        logger.warning("Cannot sync index for \(repoPath): no repo identifier found in RAG store")
+        return
+      }
+
+      let syncCoordinator = RAGSyncCoordinator.shared
+      guard syncCoordinator.isActive else {
+        logger.warning("Cannot sync index for \(repoIdentifier): RAG sync coordinator is not active")
+        return
+      }
+
+      do {
+        try await syncCoordinator.syncIndex(repoIdentifier: repoIdentifier)
+        logger.info("RAG index sync from crown complete for \(repoIdentifier)")
+      } catch {
+        logger.error("RAG index sync from crown failed for \(repoIdentifier): \(error.localizedDescription)")
+      }
     }
   }
 }

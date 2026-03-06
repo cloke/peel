@@ -64,11 +64,9 @@ struct TrackedRepoRow: View {
           .font(.caption)
           .foregroundStyle(.secondary)
 
-        if repo.reindexAfterPull {
-          Image(systemName: "magnifyingglass")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
+        Label(repo.syncMode.displayName, systemImage: repo.syncMode.systemImage)
+          .font(.caption)
+          .foregroundStyle(repo.syncMode == .pullAndSyncIndex ? .blue : .secondary)
 
         Spacer(minLength: 4)
 
@@ -200,6 +198,7 @@ struct TrackedRepoDetailSheet: View {
   @State private var pullIntervalHours: Int = 1
   @State private var pullIntervalMinutes: Int = 0
   @State private var reindexAfterPull: Bool = true
+  @State private var syncMode: TrackedRepoSyncMode = .pullAndRebuild
 
   var body: some View {
     NavigationStack {
@@ -218,8 +217,22 @@ struct TrackedRepoDetailSheet: View {
             Stepper("Hours: \(pullIntervalHours)", value: $pullIntervalHours, in: 0...168)
             Stepper("Minutes: \(pullIntervalMinutes)", value: $pullIntervalMinutes, in: 0...59, step: 5)
           }
+        }
 
-          Toggle("Re-index RAG after pull", isOn: $reindexAfterPull)
+        Section {
+          Picker("Sync Mode", selection: $syncMode) {
+            ForEach(TrackedRepoSyncMode.allCases, id: \.self) { mode in
+              Label(mode.displayName, systemImage: mode.systemImage)
+                .tag(mode)
+            }
+          }
+          .pickerStyle(.inline)
+
+          Text(syncMode.description)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        } header: {
+          Text("RAG Index Strategy")
         }
 
         Section("Status") {
@@ -263,6 +276,7 @@ struct TrackedRepoDetailSheet: View {
         pullIntervalHours = total / 3600
         pullIntervalMinutes = (total % 3600) / 60
         reindexAfterPull = repo.reindexAfterPull
+        syncMode = repo.syncMode
       }
     }
   }
@@ -271,7 +285,8 @@ struct TrackedRepoDetailSheet: View {
     repo.branch = branch
     repo.remoteName = remoteName
     repo.pullIntervalSeconds = (pullIntervalHours * 3600) + (pullIntervalMinutes * 60)
-    repo.reindexAfterPull = reindexAfterPull
+    repo.reindexAfterPull = syncMode == .pullAndRebuild
+    repo.syncMode = syncMode
     repo.touch()
     try? modelContext.save()
     dismiss()
@@ -294,6 +309,7 @@ struct AddTrackedRepoSheet: View {
   @State private var pullIntervalHours = 1
   @State private var pullIntervalMinutes = 0
   @State private var reindexAfterPull = true
+  @State private var syncMode: TrackedRepoSyncMode = .pullAndRebuild
   @State private var errorMessage: String?
   @State private var isDetectingRemote = false
   @State private var showManualEntry = false
@@ -479,16 +495,32 @@ struct AddTrackedRepoSheet: View {
   }
 
   private var pullSettingsSection: some View {
-    Section("Pull Settings") {
-      TextField("Branch", text: $branch)
-      TextField("Remote Name", text: $remoteName)
+    Group {
+      Section("Pull Settings") {
+        TextField("Branch", text: $branch)
+        TextField("Remote Name", text: $remoteName)
 
-      HStack {
-        Stepper("Hours: \(pullIntervalHours)", value: $pullIntervalHours, in: 0...168)
-        Stepper("Mins: \(pullIntervalMinutes)", value: $pullIntervalMinutes, in: 0...59, step: 5)
+        HStack {
+          Stepper("Hours: \(pullIntervalHours)", value: $pullIntervalHours, in: 0...168)
+          Stepper("Mins: \(pullIntervalMinutes)", value: $pullIntervalMinutes, in: 0...59, step: 5)
+        }
       }
 
-      Toggle("Re-index RAG after pull", isOn: $reindexAfterPull)
+      Section {
+        Picker("Sync Mode", selection: $syncMode) {
+          ForEach(TrackedRepoSyncMode.allCases, id: \.self) { mode in
+            Label(mode.displayName, systemImage: mode.systemImage)
+              .tag(mode)
+          }
+        }
+        .pickerStyle(.inline)
+
+        Text(syncMode.description)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      } header: {
+        Text("RAG Index Strategy")
+      }
     }
   }
 
@@ -571,7 +603,8 @@ struct AddTrackedRepoSheet: View {
       branch: branch,
       remoteName: remoteName,
       pullIntervalSeconds: max(60, intervalSeconds),
-      reindexAfterPull: reindexAfterPull
+      reindexAfterPull: syncMode == .pullAndRebuild,
+      syncMode: syncMode
     )
     modelContext.insert(tracked)
     try? modelContext.save()

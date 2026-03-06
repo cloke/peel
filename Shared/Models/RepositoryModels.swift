@@ -117,6 +117,35 @@ final class LocalRepositoryPath {
   }
 }
 
+/// How a tracked repo handles RAG indexing after a pull.
+enum TrackedRepoSyncMode: String, Codable, CaseIterable {
+  /// Pull code and rebuild the RAG index locally.
+  case pullAndRebuild = "pull_and_rebuild"
+  /// Pull code and sync the RAG index from a swarm crown/brain node.
+  case pullAndSyncIndex = "pull_and_sync_index"
+
+  var displayName: String {
+    switch self {
+    case .pullAndRebuild: return "Pull & Rebuild"
+    case .pullAndSyncIndex: return "Pull & Sync Index"
+    }
+  }
+
+  var description: String {
+    switch self {
+    case .pullAndRebuild: return "Pulls code and rebuilds the RAG index locally"
+    case .pullAndSyncIndex: return "Pulls code and syncs the RAG index from a crown node"
+    }
+  }
+
+  var systemImage: String {
+    switch self {
+    case .pullAndRebuild: return "hammer.circle"
+    case .pullAndSyncIndex: return "arrow.triangle.swap"
+    }
+  }
+}
+
 /// A remote repo marked as "primary" for automatic periodic pulling.
 /// When a user wants to always have the latest version of a repo
 /// (e.g., tio-api from a specific remote), they mark it as tracked.
@@ -149,6 +178,16 @@ final class TrackedRemoteRepo {
   /// Whether to re-index the RAG after pulling
   var reindexAfterPull: Bool = true
 
+  /// How this repo handles RAG indexing: rebuild locally or sync from crown.
+  /// Stored as raw string for CloudKit compatibility.
+  var syncModeRaw: String = TrackedRepoSyncMode.pullAndRebuild.rawValue
+
+  /// Typed accessor for syncMode.
+  var syncMode: TrackedRepoSyncMode {
+    get { TrackedRepoSyncMode(rawValue: syncModeRaw) ?? .pullAndRebuild }
+    set { syncModeRaw = newValue.rawValue }
+  }
+
   /// Last time a pull was attempted
   var lastPullAt: Date?
 
@@ -171,7 +210,8 @@ final class TrackedRemoteRepo {
     branch: String = "main",
     remoteName: String = "origin",
     pullIntervalSeconds: Int = 3600,
-    reindexAfterPull: Bool = true
+    reindexAfterPull: Bool = true,
+    syncMode: TrackedRepoSyncMode = .pullAndRebuild
   ) {
     self.id = UUID()
     self.remoteURL = remoteURL
@@ -181,6 +221,7 @@ final class TrackedRemoteRepo {
     self.remoteName = remoteName
     self.pullIntervalSeconds = pullIntervalSeconds
     self.reindexAfterPull = reindexAfterPull
+    self.syncModeRaw = syncMode.rawValue
     self.isEnabled = true
     self.createdAt = Date()
     self.modifiedAt = Date()

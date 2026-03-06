@@ -141,7 +141,7 @@ struct Github_RootView: View {
                     Text(recent.title)
                       .font(.callout)
                       .lineLimit(1)
-                    Text("\(recent.repoFullName)  #\(recent.prNumber)")
+                    Text(verbatim: "\(recent.repoFullName)  #\(recent.prNumber)")
                       .font(.caption)
                       .foregroundStyle(.secondary)
                       .lineLimit(1)

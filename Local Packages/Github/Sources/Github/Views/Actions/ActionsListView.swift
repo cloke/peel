@@ -190,7 +190,7 @@ struct ActionsListItemView: View {
         } else {
           ActionConclusionView(conclusion: action.conclusion ?? "")
         }
-        Text("#\(action.run_number)")
+        Text(verbatim: "#\(action.run_number)")
         Text(action.updatedAtFormatted).font(.subheadline)
       }
       Text(action.head_commit.message.components(separatedBy: "\n\n").first ?? "")

@@ -247,7 +247,19 @@ final class PRReviewQueue {
       sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
     )
     do {
-      items = try ctx.fetch(descriptor)
+      let persisted = try ctx.fetch(descriptor)
+      // Merge: keep any in-memory items that aren't yet persisted (created before
+      // modelContext was set) and persist them now, then combine with DB results.
+      let persistedIDs = Set(persisted.map(\.id))
+      let orphaned = items.filter { !persistedIDs.contains($0.id) }
+      for item in orphaned {
+        ctx.insert(item)
+      }
+      if !orphaned.isEmpty {
+        try ctx.save()
+        logger.info("Persisted \(orphaned.count) orphaned in-memory items")
+      }
+      items = persisted + orphaned
       logger.info("Loaded \(self.items.count) PR review queue items from persistence")
     } catch {
       logger.error("Failed to load PR review queue: \(error.localizedDescription)")

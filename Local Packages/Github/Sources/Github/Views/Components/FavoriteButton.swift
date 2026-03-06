@@ -98,7 +98,7 @@ public struct RecentPRRow: View {
           .foregroundStyle(prStateColor)
         
         VStack(alignment: .leading, spacing: 2) {
-          Text("#\(recentPR.prNumber) \(recentPR.title)")
+          Text(verbatim: "#\(recentPR.prNumber) \(recentPR.title)")
             .font(.callout)
             .lineLimit(1)
           Text(recentPR.repoFullName)

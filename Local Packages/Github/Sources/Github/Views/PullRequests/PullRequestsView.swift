@@ -134,7 +134,7 @@ public struct PullRequestDetailView: View {
       }
 
       HStack(spacing: 8) {
-        Text("#\(pullRequest.number)")
+        Text(verbatim: "#\(pullRequest.number)")
           .fontDesign(.monospaced)
 
         Text("·")

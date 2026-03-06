@@ -255,10 +255,11 @@ extension MCPServerService {
   
   /// Index a repository (called from UI).
   ///
-  /// When the repo already has embeddings from a different model (e.g. Qwen from swarm)
-  /// and a swarm worker is connected, the reindex is dispatched to the swarm so the
-  /// higher-quality model is preserved. A full artifact sync pull then brings the
-  /// results back locally.
+  /// When a **worker** node has embeddings from a different model (e.g. Qwen pushed
+  /// from the brain) and a swarm worker is connected, the reindex is dispatched to
+  /// the swarm so the higher-quality model is preserved.
+  ///
+  /// Brain and hybrid roles always index locally — they are the source of truth.
   func indexRagRepo(
     path: String,
     forceReindex: Bool = false,
@@ -269,13 +270,17 @@ extension MCPServerService {
     ragIndexProgress = nil
     markIndexingStarted(path: path)
 
+    // Brain/hybrid roles always index locally — they ARE the powerful machine.
+    let swarmRole = SwarmCoordinator.shared.role
+    let isBrainOrHybrid = swarmRole == .brain || swarmRole == .hybrid
+
     // Check if this repo uses a different embedding model (e.g. Qwen from swarm).
     let localModelName = ragStatus?.embeddingModelName
     let existingRepo = ragRepos.first(where: { $0.rootPath == path })
     let repoModel = existingRepo?.embeddingModel
     let isSwarmModel = repoModel != nil && localModelName != nil && repoModel != localModelName
 
-    if isSwarmModel {
+    if isSwarmModel, !isBrainOrHybrid {
       let coordinator = SwarmCoordinator.shared
       if coordinator.isActive, !coordinator.connectedWorkers.isEmpty {
         do {

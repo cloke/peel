@@ -297,6 +297,28 @@ extension MCPServerService {
 
   // MARK: - Tool List Helpers
 
+  /// Page size for tools/list pagination. Keeps each page well under
+  /// client limits (VS Code / Copilot may silently drop tools when the
+  /// full list exceeds ~128 entries).
+  private static let toolPageSize = 64
+
+  /// Build a paginated tools/list response dictionary.
+  /// If `cursor` is nil the first page is returned.
+  /// The cursor is a simple base-10 offset string.
+  func paginatedToolList(cursor: String? = nil) -> [String: Any] {
+    let allTools = toolList()
+    let offset = cursor.flatMap { Int($0) } ?? 0
+    let safeOffset = min(max(offset, 0), allTools.count)
+    let end = min(safeOffset + Self.toolPageSize, allTools.count)
+    let page = Array(allTools[safeOffset..<end])
+
+    var result: [String: Any] = ["tools": page]
+    if end < allTools.count {
+      result["nextCursor"] = String(end)
+    }
+    return result
+  }
+
   func toolList() -> [[String: Any]] {
     activeToolDefinitions.map { tool in
       [

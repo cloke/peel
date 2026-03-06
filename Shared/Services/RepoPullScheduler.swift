@@ -38,6 +38,8 @@ public enum RepoPullResult: Sendable {
 public protocol RepoPullSchedulerDelegate: AnyObject {
   /// Called after a successful pull that changed the repo, so the delegate can trigger re-indexing.
   func repoPullScheduler(_ scheduler: RepoPullScheduler, shouldReindex repoPath: String)
+  /// Called after a successful pull when the repo uses pullAndSyncIndex mode (sync from crown).
+  func repoPullScheduler(_ scheduler: RepoPullScheduler, shouldSyncIndexFor repoPath: String)
 }
 
 // MARK: - Scheduler
@@ -156,9 +158,16 @@ public final class RepoPullScheduler {
         error: result.isError ? result.description : nil
       )
 
-      // Trigger re-index if the pull changed something and reindexing is enabled
-      if case .updated = result, repo.reindexAfterPull {
-        delegate?.repoPullScheduler(self, shouldReindex: repo.localPath)
+      // Trigger re-index or sync based on the repo's sync mode
+      if case .updated = result {
+        switch repo.syncMode {
+        case .pullAndRebuild where repo.reindexAfterPull:
+          delegate?.repoPullScheduler(self, shouldReindex: repo.localPath)
+        case .pullAndSyncIndex:
+          delegate?.repoPullScheduler(self, shouldSyncIndexFor: repo.localPath)
+        default:
+          break
+        }
       }
     }
   }
@@ -175,8 +184,15 @@ public final class RepoPullScheduler {
       error: result.isError ? result.description : nil
     )
 
-    if case .updated = result, repo.reindexAfterPull {
-      delegate?.repoPullScheduler(self, shouldReindex: repo.localPath)
+    if case .updated = result {
+      switch repo.syncMode {
+      case .pullAndRebuild where repo.reindexAfterPull:
+        delegate?.repoPullScheduler(self, shouldReindex: repo.localPath)
+      case .pullAndSyncIndex:
+        delegate?.repoPullScheduler(self, shouldSyncIndexFor: repo.localPath)
+      default:
+        break
+      }
     }
 
     return result

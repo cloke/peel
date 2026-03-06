@@ -808,7 +808,7 @@ struct WorktreeCard: View {
             }
 
             if let prNumber = trackedWorktree.linkedPRNumber {
-              Text("PR #\(prNumber)")
+              Text(verbatim: "PR #\(prNumber)")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             }

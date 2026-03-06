@@ -58,6 +58,11 @@ struct PeelApp: App {
     // Wire SwiftData context into swarm coordinator for worktree persistence (#282)
     SwarmCoordinator.shared.modelContext = context
 
+    // Eagerly configure MCP server with model context so PRReviewQueue (and other
+    // SwiftData-backed services) have persistence from launch — not only after the
+    // user navigates to the Agents or Workspaces tab.
+    mcpServerInstance.configure(modelContext: context)
+
     // Wire RepoPullScheduler with DataService so tracked repos auto-pull
     RepoPullScheduler.shared.dataService = dataService
 

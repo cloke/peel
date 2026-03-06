@@ -928,7 +928,7 @@ extension MCPServerService {
         let result: [String: Any] = [
           "protocolVersion": "2024-11-05",
           "serverInfo": ["name": "Peel MCP Server", "version": "0.1"],
-          "capabilities": ["tools": [:]]
+          "capabilities": ["tools": ["listChanged": true]]
         ]
         statusCode = 200
         return (200, JSONRPCResponseBuilder.makeResult(id: id, result: result))
@@ -948,7 +948,8 @@ extension MCPServerService {
 
       case "tools/list":
         statusCode = 200
-        return (200, JSONRPCResponseBuilder.makeResult(id: id, result: ["tools": toolList()]))
+        let cursor = params?["cursor"] as? String
+        return (200, JSONRPCResponseBuilder.makeResult(id: id, result: paginatedToolList(cursor: cursor)))
 
       case "tools/call":
         let result = await handleToolCall(id: id, params: params)

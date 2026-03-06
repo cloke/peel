@@ -97,7 +97,11 @@ struct RepoDetailView: View {
           }
 
           if repo.isTracked {
-            RepoStatusPill(text: "Auto-Pull", systemImage: "arrow.down.circle", color: .blue)
+            if let mode = repo.syncMode {
+              RepoStatusPill(text: mode.displayName, systemImage: mode.systemImage, color: mode == .pullAndSyncIndex ? .cyan : .blue)
+            } else {
+              RepoStatusPill(text: "Auto-Pull", systemImage: "arrow.down.circle", color: .blue)
+            }
           }
 
           if let rag = repo.ragStatus, rag != .notIndexed {
@@ -190,6 +194,7 @@ struct OverviewTabView: View {
 
   @Environment(MCPServerService.self) private var mcpServer
   @Environment(ActivityFeed.self) private var activityFeed
+  @Environment(DataService.self) private var dataService
   @State private var fetchedPRs: [UnifiedRepository.PRSummary] = []
   @State private var isLoadingPRs = false
   @State private var selectedPRDetail: PRDetailIdentifier?
@@ -244,6 +249,11 @@ struct OverviewTabView: View {
 
           // 4. Repository Health — compact at-a-glance stats
           repoHealthSection
+
+          // 5. Tracking Configuration — sync mode for tracked repos
+          if repo.isTracked, let trackedId = repo.trackedRemoteRepoId {
+            trackingConfigSection(trackedId: trackedId)
+          }
         }
         .padding(16)
       }
@@ -465,6 +475,15 @@ struct OverviewTabView: View {
             )
           }
 
+          if let mode = repo.syncMode {
+            healthItem(
+              icon: mode.systemImage,
+              color: mode == .pullAndSyncIndex ? .cyan : .blue,
+              label: "RAG Strategy",
+              value: mode.displayName
+            )
+          }
+
           if let rag = repo.ragStatus, rag != .notIndexed {
             healthItem(
               icon: rag.systemImage,
@@ -526,6 +545,65 @@ struct OverviewTabView: View {
     case .upToDate, .updated: return true
     default: return false
     }
+  }
+
+  // MARK: - Tracking Configuration
+
+  private func trackingConfigSection(trackedId: UUID) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SectionHeader("Tracking")
+
+      GroupBox {
+        VStack(alignment: .leading, spacing: 10) {
+          Text("RAG Index Strategy")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+          HStack(spacing: 8) {
+            ForEach(TrackedRepoSyncMode.allCases, id: \.self) { mode in
+              let isSelected = repo.syncMode == mode
+              Button {
+                updateSyncMode(trackedId: trackedId, mode: mode)
+              } label: {
+                HStack(spacing: 4) {
+                  Image(systemName: mode.systemImage)
+                    .font(.caption)
+                  Text(mode.displayName)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                  isSelected
+                    ? (mode == .pullAndSyncIndex ? Color.cyan.opacity(0.2) : Color.blue.opacity(0.2))
+                    : Color.clear,
+                  in: RoundedRectangle(cornerRadius: 6)
+                )
+                .overlay(
+                  RoundedRectangle(cornerRadius: 6)
+                    .stroke(isSelected ? .clear : Color.secondary.opacity(0.3), lineWidth: 1)
+                )
+              }
+              .buttonStyle(.plain)
+            }
+          }
+
+          Text((repo.syncMode ?? .pullAndRebuild).description)
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+        }
+        .padding(4)
+      }
+    }
+  }
+
+  private func updateSyncMode(trackedId: UUID, mode: TrackedRepoSyncMode) {
+    guard let tracked = dataService.getTrackedRemoteRepo(id: trackedId) else { return }
+    tracked.syncMode = mode
+    tracked.reindexAfterPull = (mode == .pullAndRebuild)
+    tracked.touch()
+    try? dataService.modelContext.save()
   }
 
   // MARK: - Data Loading
@@ -1317,6 +1395,8 @@ struct RAGTabView: View {
   @State private var isEnriching = false
   @State private var enrichError: String?
   @State private var enrichedChunks = 0
+  @State private var enrichResult: String?
+  @State private var enrichBatchProgress: (current: Int, total: Int)?
 
   private var isCurrentlyIndexing: Bool {
     mcpServer.ragIndexingPath == repo.localPath
@@ -1355,6 +1435,7 @@ struct RAGTabView: View {
     }
     .task {
       await loadLessons()
+      await refreshAnalysisStatus()
     }
   }
 
@@ -1595,7 +1676,7 @@ struct RAGTabView: View {
         PipelineStep(
           title: "Analyze",
           icon: "cpu",
-          isComplete: analysisState?.isComplete ?? false,
+          isComplete: (analysisState?.analyzedCount ?? 0) > 0 && !(analysisState?.isAnalyzing ?? false) && !isAnalyzing,
           isActive: isAnalyzing || (analysisState?.isAnalyzing ?? false)
         )
 
@@ -1609,14 +1690,14 @@ struct RAGTabView: View {
         )
       }
 
-      // Progress bar (when analyzing)
-      if let state = analysisState, state.totalChunks > 0, !state.isComplete {
+      // Progress bar (when actively analyzing)
+      if let state = analysisState, state.totalChunks > 0, (state.isAnalyzing || isAnalyzing) {
         VStack(alignment: .leading, spacing: 4) {
           ProgressView(value: state.progress)
             .tint(.purple)
 
           HStack(spacing: 8) {
-            Text("\(state.analyzedCount) / \(state.totalChunks) chunks")
+            Text(verbatim: "\(state.analyzedCount) / \(state.totalChunks) chunks")
               .font(.caption2)
               .foregroundStyle(.secondary)
 
@@ -1630,11 +1711,18 @@ struct RAGTabView: View {
 
             Spacer()
 
-            Text("\(Int(state.progress * 100))%")
+            Text(verbatim: "\(Int(state.progress * 100))%")
               .font(.caption2)
               .foregroundStyle(.secondary)
           }
         }
+      }
+
+      // Info about chunks that couldn't be analyzed
+      if let state = analysisState, !state.isComplete, !(state.isAnalyzing || isAnalyzing), state.analyzedCount > 0 {
+        Text(verbatim: "\(state.analyzedCount) of \(state.totalChunks) chunks analyzed (\(state.unanalyzedCount) could not be processed)")
+          .font(.caption2)
+          .foregroundStyle(.secondary)
       }
 
       // Action buttons
@@ -1644,12 +1732,7 @@ struct RAGTabView: View {
           Task { await analyzeChunks() }
         } label: {
           HStack(spacing: 4) {
-            if isAnalyzing {
-              ProgressView()
-                .controlSize(.mini)
-            } else {
-              Image(systemName: "cpu")
-            }
+            Image(systemName: "cpu")
             Text(isAnalyzing ? "Analyzing…" : "Analyze")
           }
         }
@@ -1661,12 +1744,7 @@ struct RAGTabView: View {
           Task { await enrichEmbeddings() }
         } label: {
           HStack(spacing: 4) {
-            if isEnriching {
-              ProgressView()
-                .controlSize(.mini)
-            } else {
-              Image(systemName: "sparkles")
-            }
+            Image(systemName: "sparkles")
             Text(isEnriching ? "Enriching…" : "Enrich")
           }
         }
@@ -1693,6 +1771,41 @@ struct RAGTabView: View {
         }
       }
 
+      // Batch progress bar (when actively analyzing)
+      if isAnalyzing, let state = analysisState, let batch = state.batchProgress {
+        VStack(alignment: .leading, spacing: 2) {
+          ProgressView(value: Double(batch.current), total: Double(batch.total))
+            .tint(.purple)
+          HStack {
+            Text("Chunk \(batch.current) of \(batch.total)")
+              .font(.caption2)
+              .monospacedDigit()
+              .foregroundStyle(.secondary)
+            Spacer()
+            if state.chunksPerSecond > 0 {
+              Text("\(String(format: "%.1f", state.chunksPerSecond)) chunks/sec")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            }
+          }
+        }
+      }
+
+      // Batch progress bar (when actively enriching)
+      if isEnriching, let batch = enrichBatchProgress {
+        VStack(alignment: .leading, spacing: 2) {
+          ProgressView(value: Double(batch.current), total: Double(batch.total))
+            .tint(.orange)
+          HStack {
+            Text("Enriching \(batch.current) of \(batch.total)")
+              .font(.caption2)
+              .monospacedDigit()
+              .foregroundStyle(.secondary)
+            Spacer()
+          }
+        }
+      }
+
       // Errors
       if let error = analyzeError {
         Label(error, systemImage: "xmark.circle")
@@ -1703,6 +1816,11 @@ struct RAGTabView: View {
         Label(error, systemImage: "xmark.circle")
           .font(.caption)
           .foregroundStyle(.red)
+      }
+      if let result = enrichResult {
+        Label(result, systemImage: result.contains("No ") ? "info.circle" : "checkmark.circle")
+          .font(.caption)
+          .foregroundColor(result.contains("No ") ? .secondary : .green)
       }
     }
   }
@@ -1798,38 +1916,92 @@ struct RAGTabView: View {
     isSearching = false
   }
 
+  private func refreshAnalysisStatus() async {
+    guard let path = repo.localPath else { return }
+    do {
+      let unanalyzed = try await mcpServer.getUnanalyzedChunkCount(repoPath: path)
+      let analyzed = try await mcpServer.getAnalyzedChunkCount(repoPath: path)
+      let enriched = try await mcpServer.getEnrichedChunkCount(repoPath: path)
+      if let state = analysisState {
+        state.unanalyzedCount = unanalyzed
+        state.analyzedCount = analyzed
+      }
+      enrichedChunks = enriched
+    } catch {
+      // Non-critical
+    }
+  }
+
   private func analyzeChunks() async {
     guard let path = repo.localPath else { return }
     isAnalyzing = true
     analyzeError = nil
+    let state = analysisState
+    state?.isAnalyzing = true
+    state?.analyzeError = nil
+    state?.analysisStartTime = Date()
+    let batchStart = Date()
     do {
       let count = try await mcpServer.analyzeRagChunks(
         repoPath: path,
-        limit: 500,
-        progress: nil
-      )
+        limit: 500
+      ) { current, total in
+        Task { @MainActor in
+          state?.batchProgress = (current, total)
+        }
+      }
       analyzedChunks = count
+      if let state {
+        state.analyzedCount += count
+        state.unanalyzedCount = max(0, state.unanalyzedCount - count)
+        let elapsed = Date().timeIntervalSince(batchStart)
+        if elapsed > 0, count > 0 {
+          state.chunksPerSecond = Double(count) / elapsed
+        }
+      }
     } catch {
       analyzeError = error.localizedDescription
+      state?.analyzeError = error.localizedDescription
     }
     isAnalyzing = false
+    state?.isAnalyzing = false
+    state?.batchProgress = nil
+    state?.analysisStartTime = nil
+    await refreshAnalysisStatus()
   }
 
   private func enrichEmbeddings() async {
     guard let path = repo.localPath else { return }
     isEnriching = true
     enrichError = nil
+    enrichResult = nil
+    enrichBatchProgress = nil
     do {
       let count = try await mcpServer.enrichRagEmbeddings(
         repoPath: path,
-        limit: 500,
-        progress: nil
-      )
+        limit: 500
+      ) { current, total in
+        Task { @MainActor in
+          enrichBatchProgress = (current: current, total: total)
+        }
+      }
       enrichedChunks = count
+      if count == 0 {
+        let analyzedCount = (try? await mcpServer.getAnalyzedChunkCount(repoPath: path)) ?? 0
+        if analyzedCount > 0 {
+          enrichResult = "All \(analyzedCount) analyzed chunks already enriched"
+        } else {
+          enrichResult = "No analyzed chunks found — run Analyze first"
+        }
+      } else {
+        enrichResult = "Enriched \(count) chunks"
+      }
+      await refreshAnalysisStatus()
     } catch {
       enrichError = error.localizedDescription
     }
     isEnriching = false
+    enrichBatchProgress = nil
   }
 
   private func loadLessons() async {
@@ -2169,7 +2341,7 @@ struct RepoPRRow: View {
           .lineLimit(1)
 
         HStack(spacing: 6) {
-          Text("#\(pr.number)")
+          Text(verbatim: "#\(pr.number)")
             .font(.caption)
             .foregroundStyle(.secondary)
 

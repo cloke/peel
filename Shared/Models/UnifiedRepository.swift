@@ -87,6 +87,9 @@ struct UnifiedRepository: Identifiable, Hashable, Sendable {
   /// Pull interval in seconds.
   let pullIntervalSeconds: Int?
 
+  /// How RAG indexing is handled after pulls: rebuild locally or sync from crown.
+  let syncMode: TrackedRepoSyncMode?
+
   // MARK: - Active Work
 
   /// Number of agent chains currently operating on this repo.

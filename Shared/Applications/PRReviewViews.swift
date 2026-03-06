@@ -158,7 +158,7 @@ struct PRRowWithReview: View {
           .lineLimit(1)
 
         HStack(spacing: 6) {
-          Text("#\(pr.number)")
+          Text(verbatim: "#\(pr.number)")
             .font(.caption)
             .foregroundStyle(.secondary)
 
@@ -335,7 +335,7 @@ struct PRReviewSheet: View {
       VStack(alignment: .leading, spacing: 2) {
         Text("Agent PR Review")
           .font(.headline)
-        Text("#\(pr.number) — \(pr.title)")
+        Text(verbatim: "#\(pr.number) — \(pr.title)")
           .font(.subheadline)
           .foregroundStyle(.secondary)
           .lineLimit(1)

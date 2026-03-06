@@ -329,6 +329,7 @@ final class RepositoryAggregator {
         pullStatus: pullStatus,
         trackedBranch: tracked?.branch,
         pullIntervalSeconds: tracked?.pullIntervalSeconds,
+        syncMode: tracked?.syncMode,
         activeChainCount: chainsForRepo.filter { !$0.state.isTerminal }.count,
         activeChains: chainsForRepo.map { chain in
           UnifiedRepository.ChainSummary(

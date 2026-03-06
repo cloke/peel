@@ -82,7 +82,7 @@ struct PRReviewQueueRow: View {
             .lineLimit(1)
 
           HStack(spacing: 6) {
-            Text("\(item.repoOwner)/\(item.repoName) #\(item.prNumber)")
+            Text(verbatim: "\(item.repoOwner)/\(item.repoName) #\(item.prNumber)")
               .font(.caption)
               .foregroundStyle(.secondary)
 

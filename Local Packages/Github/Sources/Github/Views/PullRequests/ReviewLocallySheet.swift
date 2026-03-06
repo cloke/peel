@@ -64,7 +64,7 @@ public struct ReviewLocallySheet: View {
         VStack(alignment: .leading, spacing: 2) {
           Text("Review Locally")
             .font(.headline)
-          Text("PR #\(pullRequest.number): \(pullRequest.title ?? "Untitled")")
+          Text(verbatim: "PR #\(pullRequest.number): \(pullRequest.title ?? "Untitled")")
             .font(.subheadline)
             .foregroundStyle(.secondary)
             .lineLimit(1)

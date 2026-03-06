@@ -140,36 +140,76 @@ public final class ReviewLocallyService {
     
     // Fetch the remote to get the PR branch
     state = .fetchingRemote
+    let isMerged = pullRequest.merged_at != nil
+    var branchAvailable = true
     do {
       // First, fetch the PR branch from origin
       try await Commands.fetch(refspec: branchName, on: repository)
     } catch {
-      // Fetch may fail if branch doesn't exist remotely yet, try to continue
-      print("Note: fetch failed (may be expected): \(error)")
+      // Fetch may fail if branch was deleted after merge
+      branchAvailable = false
+      if isMerged {
+        // For merged PRs, fetch the merge commit or base branch instead
+        if let mergeSha = pullRequest.merge_commit_sha {
+          do {
+            try await Commands.fetch(refspec: mergeSha, on: repository)
+          } catch {
+            // The commit may already be local via the base branch
+            print("Note: fetch of merge commit failed (may be local already): \(error)")
+          }
+        }
+        // Also fetch the base branch (e.g. main/develop) to ensure it's up-to-date
+        do {
+          try await Commands.fetch(refspec: pullRequest.base.ref, on: repository)
+        } catch {
+          print("Note: fetch of base branch failed: \(error)")
+        }
+      } else {
+        print("Note: fetch failed (may be expected): \(error)")
+      }
     }
     
     // Create the worktree
     state = .creatingWorktree
     do {
-      // Try to create worktree from the remote branch
-      try await Commands.Worktree.add(
-        path: worktreePath,
-        branch: "origin/\(branchName)",
-        on: repository
-      )
-    } catch {
-      // If that fails, try creating a new branch tracking the remote
-      do {
+      if branchAvailable {
+        // Try to create worktree from the remote branch
+        try await Commands.Worktree.add(
+          path: worktreePath,
+          branch: "origin/\(branchName)",
+          on: repository
+        )
+      } else if isMerged, let mergeSha = pullRequest.merge_commit_sha {
+        // Branch was deleted after merge — use the merge commit SHA
+        try await Commands.Worktree.addWithNewBranch(
+          path: worktreePath,
+          newBranch: "review/pr-\(prNumber)",
+          startPoint: mergeSha,
+          on: repository
+        )
+      } else if isMerged {
+        // No merge SHA available — fall back to the base branch
+        try await Commands.Worktree.addWithNewBranch(
+          path: worktreePath,
+          newBranch: "review/pr-\(prNumber)",
+          startPoint: "origin/\(pullRequest.base.ref)",
+          on: repository
+        )
+      } else {
+        // Not merged, branch just not available — original fallback
         try await Commands.Worktree.addWithNewBranch(
           path: worktreePath,
           newBranch: branchName,
           startPoint: "origin/\(branchName)",
           on: repository
         )
-      } catch {
-        state = .error("Failed to create worktree: \(error.localizedDescription)")
-        return
       }
+    } catch {
+      let hint = isMerged
+        ? " The PR branch may have been deleted after merge."
+        : ""
+      state = .error("Failed to create worktree: \(error.localizedDescription)\(hint)")
+      return
     }
     
     // Save this repository to recents

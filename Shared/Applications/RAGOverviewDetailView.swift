@@ -154,6 +154,8 @@ private struct RAGOverviewRepoCard: View {
   @State private var analyzeError: String?
   @State private var isEnriching = false
   @State private var enrichError: String?
+  @State private var enrichResult: String?
+  @State private var enrichBatchProgress: (current: Int, total: Int)?
 
   private var isCurrentlyIndexing: Bool {
     mcpServer.ragIndexingPath == repo.rootPath
@@ -182,6 +184,7 @@ private struct RAGOverviewRepoCard: View {
     }
     .task {
       await loadLessons()
+      await refreshAnalysisStatus()
     }
   }
 
@@ -214,7 +217,7 @@ private struct RAGOverviewRepoCard: View {
             if analysisState.totalChunks > 0 {
               Label("\(Int(analysisState.progress * 100))%", systemImage: "cpu")
                 .font(.caption2)
-                .foregroundStyle(analysisState.isComplete ? .green : .orange)
+                .foregroundStyle((analysisState.isComplete || (analysisState.analyzedCount > 0 && !analysisState.isAnalyzing)) ? .green : .orange)
             }
           }
 
@@ -321,14 +324,22 @@ private struct RAGOverviewRepoCard: View {
             .foregroundStyle(.green)
         } else if analysisState.isAnalyzing || isAnalyzing {
           HStack(spacing: 4) {
-            ProgressView()
-              .controlSize(.mini)
+            if let batch = analysisState.batchProgress {
+              Text("\(batch.current)/\(batch.total)")
+                .font(.caption2)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+            }
             if analysisState.chunksPerSecond > 0 {
               Text("\(String(format: "%.1f", analysisState.chunksPerSecond)) chunks/sec")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             }
           }
+        } else if analysisState.analyzedCount > 0 {
+          Text(verbatim: "\(analysisState.unanalyzedCount) chunks could not be processed")
+            .font(.caption2)
+            .foregroundStyle(.orange)
         } else {
           Text("\(Int(analysisState.progress * 100))%")
             .font(.caption2)
@@ -337,11 +348,19 @@ private struct RAGOverviewRepoCard: View {
       }
 
       ProgressView(value: analysisState.progress)
-        .tint(analysisState.isComplete ? .green : .purple)
+        .tint((analysisState.isComplete || (analysisState.analyzedCount > 0 && !analysisState.isAnalyzing)) ? .green : .purple)
 
-      Text("\(analysisState.analyzedCount) / \(analysisState.totalChunks) chunks analyzed")
-        .font(.caption2)
-        .foregroundStyle(.tertiary)
+      HStack {
+        Text("\(analysisState.analyzedCount) / \(analysisState.totalChunks) chunks analyzed")
+          .font(.caption2)
+          .foregroundStyle(.tertiary)
+        if analysisState.isAnalyzing || isAnalyzing, analysisState.unanalyzedCount > 0 {
+          Spacer()
+          Text("\(analysisState.unanalyzedCount) remaining")
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+        }
+      }
     }
     .padding(8)
     .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 8))
@@ -361,11 +380,7 @@ private struct RAGOverviewRepoCard: View {
           Task { await analyzeChunks() }
         } label: {
           HStack(spacing: 4) {
-            if isAnalyzing {
-              ProgressView().controlSize(.mini)
-            } else {
-              Image(systemName: "cpu")
-            }
+            Image(systemName: "cpu")
             Text(isAnalyzing ? "Analyzing\u{2026}" : "Analyze")
           }
         }
@@ -377,17 +392,46 @@ private struct RAGOverviewRepoCard: View {
           Task { await enrichEmbeddings() }
         } label: {
           HStack(spacing: 4) {
-            if isEnriching {
-              ProgressView().controlSize(.mini)
-            } else {
-              Image(systemName: "sparkles")
-            }
+            Image(systemName: "sparkles")
             Text(isEnriching ? "Enriching\u{2026}" : "Enrich")
           }
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
         .disabled(isEnriching)
+      }
+
+      if isAnalyzing, let batch = analysisState.batchProgress {
+        VStack(alignment: .leading, spacing: 2) {
+          ProgressView(value: Double(batch.current), total: Double(batch.total))
+            .tint(.purple)
+          HStack {
+            Text("Chunk \(batch.current) of \(batch.total)")
+              .font(.caption2)
+              .monospacedDigit()
+              .foregroundStyle(.secondary)
+            Spacer()
+            if analysisState.chunksPerSecond > 0 {
+              Text("\(String(format: "%.1f", analysisState.chunksPerSecond)) chunks/sec")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            }
+          }
+        }
+      }
+
+      if isEnriching, let batch = enrichBatchProgress {
+        VStack(alignment: .leading, spacing: 2) {
+          ProgressView(value: Double(batch.current), total: Double(batch.total))
+            .tint(.orange)
+          HStack {
+            Text("Enriching \(batch.current) of \(batch.total)")
+              .font(.caption2)
+              .monospacedDigit()
+              .foregroundStyle(.secondary)
+            Spacer()
+          }
+        }
       }
 
       if let error = analyzeError {
@@ -399,6 +443,11 @@ private struct RAGOverviewRepoCard: View {
         Label(error, systemImage: "xmark.circle")
           .font(.caption)
           .foregroundStyle(.red)
+      }
+      if let result = enrichResult {
+        Label(result, systemImage: result.contains("No ") ? "info.circle" : "checkmark.circle")
+          .font(.caption)
+          .foregroundColor(result.contains("No ") ? .secondary : .green)
       }
     }
     .padding(8)
@@ -547,36 +596,82 @@ private struct RAGOverviewRepoCard: View {
     }
   }
 
+  private func refreshAnalysisStatus() async {
+    do {
+      let unanalyzed = try await mcpServer.getUnanalyzedChunkCount(repoPath: repo.rootPath)
+      let analyzed = try await mcpServer.getAnalyzedChunkCount(repoPath: repo.rootPath)
+      analysisState.unanalyzedCount = unanalyzed
+      analysisState.analyzedCount = analyzed
+    } catch {
+      analysisState.analyzeError = error.localizedDescription
+    }
+  }
+
   #if os(macOS)
   private func analyzeChunks() async {
     isAnalyzing = true
     analyzeError = nil
+    analysisState.isAnalyzing = true
+    analysisState.analyzeError = nil
+    analysisState.analysisStartTime = Date()
+    let batchStart = Date()
     do {
-      _ = try await mcpServer.analyzeRagChunks(
+      let count = try await mcpServer.analyzeRagChunks(
         repoPath: repo.rootPath,
-        limit: 500,
-        progress: nil
-      )
+        limit: 500
+      ) { current, total in
+        Task { @MainActor in
+          analysisState.batchProgress = (current, total)
+        }
+      }
+      analysisState.analyzedCount += count
+      analysisState.unanalyzedCount = max(0, analysisState.unanalyzedCount - count)
+      let elapsed = Date().timeIntervalSince(batchStart)
+      if elapsed > 0, count > 0 {
+        analysisState.chunksPerSecond = Double(count) / elapsed
+      }
     } catch {
       analyzeError = error.localizedDescription
+      analysisState.analyzeError = error.localizedDescription
     }
     isAnalyzing = false
+    analysisState.isAnalyzing = false
+    analysisState.batchProgress = nil
+    analysisState.analysisStartTime = nil
+    await refreshAnalysisStatus()
   }
 
   private func enrichEmbeddings() async {
     isEnriching = true
     enrichError = nil
+    enrichResult = nil
+    enrichBatchProgress = nil
     do {
-      _ = try await mcpServer.enrichRagEmbeddings(
+      let count = try await mcpServer.enrichRagEmbeddings(
         repoPath: repo.rootPath,
-        limit: 500,
-        progress: nil
-      )
+        limit: 500
+      ) { current, total in
+        Task { @MainActor in
+          enrichBatchProgress = (current: current, total: total)
+        }
+      }
+      if count == 0 {
+        let analyzedCount = (try? await mcpServer.getAnalyzedChunkCount(repoPath: repo.rootPath)) ?? 0
+        if analyzedCount > 0 {
+          enrichResult = "All \(analyzedCount) analyzed chunks already enriched"
+        } else {
+          enrichResult = "No analyzed chunks found \u{2014} run Analyze first"
+        }
+      } else {
+        enrichResult = "Enriched \(count) chunks"
+      }
       await mcpServer.refreshRagSummary()
+      await refreshAnalysisStatus()
     } catch {
       enrichError = error.localizedDescription
     }
     isEnriching = false
+    enrichBatchProgress = nil
   }
   #endif
 }

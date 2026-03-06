@@ -511,6 +511,8 @@ struct RepositoriesCommandCenter: View {
   @State private var fetchedOpenPRs: [(ownerRepo: String, pr: UnifiedRepository.PRSummary)] = []
   @State private var isLoadingPRs = false
   @State private var selectedPRDetail: PRDetailIdentifier?
+  @State private var selectedRunForReview: ParallelWorktreeRun?
+  @State private var expandedExecutions: Set<UUID> = []
 
   /// All non-terminal parallel runs across the workspace.
   private var allActiveRuns: [ParallelWorktreeRun] {
@@ -572,6 +574,25 @@ struct RepositoriesCommandCenter: View {
         prNumber: detail.prNumber
       ) {
         selectedPRDetail = nil
+      }
+    } else if let run = selectedRunForReview,
+              let runner = mcpServer.parallelWorktreeRunner {
+      ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+          Button {
+            selectedRunForReview = nil
+          } label: {
+            Label("Back to Command Center", systemImage: "chevron.left")
+          }
+          .buttonStyle(.plain)
+
+          WorktreeRunApprovalCard(
+            run: run,
+            runner: runner,
+            expandedExecutions: $expandedExecutions
+          )
+        }
+        .padding(20)
       }
     } else {
       ScrollView {
@@ -707,6 +728,10 @@ struct RepositoriesCommandCenter: View {
           }
           .padding(2)
         }
+        .contentShape(Rectangle())
+        .onTapGesture {
+          selectedRunForReview = run
+        }
       }
 
       // Open PRs across repos — tap to view full detail
@@ -730,7 +755,7 @@ struct RepositoriesCommandCenter: View {
               .frame(width: 28)
 
             VStack(alignment: .leading, spacing: 2) {
-              Text("#\(item.pr.number) \(item.pr.title)")
+              Text(verbatim: "#\(item.pr.number) \(item.pr.title)")
                 .fontWeight(.medium)
                 .lineLimit(1)
               HStack(spacing: 6) {
@@ -1074,7 +1099,7 @@ struct PRDetailInlineView: View {
         .buttonStyle(.plain)
         .foregroundStyle(.blue)
 
-        Text("PR #\(prNumber)")
+        Text(verbatim: "PR #\(prNumber)")
           .font(.callout)
           .foregroundStyle(.secondary)
 
@@ -1103,7 +1128,7 @@ struct PRDetailInlineView: View {
       case .loading:
         VStack(spacing: 12) {
           ProgressView()
-          Text("Loading PR #\(prNumber)\u{2026}")
+          Text(verbatim: "Loading PR #\(prNumber)\u{2026}")
             .font(.caption)
             .foregroundStyle(.secondary)
         }

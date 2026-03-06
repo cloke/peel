@@ -53,7 +53,7 @@ struct OrganizationDetailView: View {
                 } else {
                   ActionConclusionView(conclusion: action.conclusion ?? "")
                 }
-                Text("#\(action.run_number)")
+                Text(verbatim: "#\(action.run_number)")
                 Text(action.head_commit.message.components(separatedBy: "\n\n").first ?? "")
                 Spacer()
                 Text(action.updatedAtFormatted)
