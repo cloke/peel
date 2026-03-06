@@ -334,3 +334,219 @@ private struct DetailRow: View {
     }
   }
 }
+
+// MARK: - Inline Detail View (for sidebar detail pane)
+
+/// Non-sheet version of ActivityItemDetailSheet for use as a NavigationSplitView detail.
+struct ActivityItemDetailView: View {
+  let item: ActivityItem
+
+  @Environment(MCPServerService.self) private var mcpServer
+  @Environment(RepositoryAggregator.self) private var aggregator
+  @Environment(\.openURL) private var openURL
+
+  var body: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 20) {
+        headerSection
+        Divider()
+        detailContent
+      }
+      .padding(20)
+    }
+    .navigationTitle("Activity Detail")
+  }
+
+  // Reuse the same layout as the sheet
+
+  private var headerSection: some View {
+    HStack(spacing: 14) {
+      ZStack {
+        Circle()
+          .fill(tintColor.opacity(0.15))
+          .frame(width: 48, height: 48)
+        Image(systemName: item.kind.systemImage)
+          .font(.title2)
+          .foregroundStyle(tintColor)
+      }
+
+      VStack(alignment: .leading, spacing: 4) {
+        Text(item.title)
+          .font(.title3)
+          .fontWeight(.semibold)
+
+        HStack(spacing: 8) {
+          if let repoName = item.repoDisplayName {
+            Label(repoName, systemImage: "folder")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          Text(item.relativeTime)
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+        }
+      }
+
+      Spacer()
+    }
+  }
+
+  @ViewBuilder
+  private var detailContent: some View {
+    switch item.kind {
+    case .chainStarted(let chainId), .chainCompleted(let chainId, _):
+      chainDetail(chainId: chainId)
+    case .pullCompleted(let success):
+      pullDetail(success: success)
+    case .ragIndexed:
+      ragDetail(type: "Index")
+    case .ragAnalyzed:
+      ragDetail(type: "Analysis")
+    case .worktreeCreated(let worktreeId):
+      worktreeDetail(worktreeId: worktreeId, created: true)
+    case .worktreeCleaned(let worktreeId):
+      worktreeDetail(worktreeId: worktreeId, created: false)
+    case .prActivity(let prNumber):
+      prDetail(prNumber: prNumber)
+    case .swarmDispatched(let taskId):
+      swarmDetail(taskId: taskId)
+    case .info:
+      infoDetail
+    }
+  }
+
+  @ViewBuilder
+  private func chainDetail(chainId: UUID) -> some View {
+    if let chain = mcpServer.agentManager.chains.first(where: { $0.id == chainId }) {
+      GroupBox {
+        VStack(alignment: .leading, spacing: 10) {
+          DetailRow(label: "Chain", value: chain.name)
+          DetailRow(label: "Status", value: chain.state.displayName)
+          if let prompt = chain.initialPrompt {
+            DetailRow(label: "Prompt", value: prompt)
+          }
+          DetailRow(label: "Agents", value: "\(chain.agents.count)")
+          if let workDir = chain.workingDirectory {
+            DetailRow(label: "Working Directory", value: workDir)
+          }
+        }
+        .padding(4)
+      }
+    } else {
+      ContentUnavailableView("Chain Not Found", systemImage: "questionmark.circle")
+    }
+  }
+
+  private func pullDetail(success: Bool) -> some View {
+    GroupBox {
+      VStack(alignment: .leading, spacing: 10) {
+        DetailRow(label: "Outcome", value: success ? "Pulled successfully" : "Pull failed")
+        if let subtitle = item.subtitle {
+          DetailRow(label: "Details", value: subtitle)
+        }
+      }
+      .padding(4)
+    }
+  }
+
+  private func ragDetail(type: String) -> some View {
+    GroupBox {
+      VStack(alignment: .leading, spacing: 10) {
+        DetailRow(label: "Operation", value: "RAG \(type) Complete")
+        if let repoName = item.repoDisplayName {
+          DetailRow(label: "Repository", value: repoName)
+        }
+      }
+      .padding(4)
+    }
+  }
+
+  private func worktreeDetail(worktreeId: UUID, created: Bool) -> some View {
+    let workspace = mcpServer.agentManager.workspaceManager.workspaces
+      .first(where: { $0.id == worktreeId })
+    return GroupBox {
+      VStack(alignment: .leading, spacing: 10) {
+        DetailRow(label: "Action", value: created ? "Worktree Created" : "Worktree Cleaned Up")
+        if let workspace {
+          DetailRow(label: "Branch", value: workspace.branch)
+          DetailRow(label: "Status", value: workspace.status.displayName)
+        }
+        if let subtitle = item.subtitle {
+          DetailRow(label: "Details", value: subtitle)
+        }
+      }
+      .padding(4)
+    }
+  }
+
+  @ViewBuilder
+  private func prDetail(prNumber: Int) -> some View {
+    let matchingRepo = item.repoDisplayName.flatMap { name in
+      aggregator.repositories.first(where: { $0.displayName == name })
+    }
+    let pr = matchingRepo?.recentPRs.first(where: { $0.number == prNumber })
+    GroupBox {
+      VStack(alignment: .leading, spacing: 10) {
+        DetailRow(label: "PR", value: "#\(prNumber)")
+        if let pr {
+          DetailRow(label: "Title", value: pr.title)
+          DetailRow(label: "State", value: pr.state.capitalized)
+        }
+        if let subtitle = item.subtitle {
+          DetailRow(label: "Details", value: subtitle)
+        }
+      }
+      .padding(4)
+    }
+    if let pr, let urlString = pr.htmlURL, let url = URL(string: urlString) {
+      Button {
+        openURL(url)
+      } label: {
+        Label("Open in Browser", systemImage: "safari")
+      }
+      .buttonStyle(.borderedProminent)
+      .controlSize(.small)
+    }
+  }
+
+  private func swarmDetail(taskId: String) -> some View {
+    GroupBox {
+      VStack(alignment: .leading, spacing: 10) {
+        DetailRow(label: "Task ID", value: taskId)
+        DetailRow(label: "Action", value: "Dispatched to swarm worker")
+        if let subtitle = item.subtitle {
+          DetailRow(label: "Details", value: subtitle)
+        }
+      }
+      .padding(4)
+    }
+  }
+
+  private var infoDetail: some View {
+    GroupBox {
+      VStack(alignment: .leading, spacing: 10) {
+        if let subtitle = item.subtitle {
+          DetailRow(label: "Details", value: subtitle)
+        } else {
+          Text("No additional details available.")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+        }
+      }
+      .padding(4)
+    }
+  }
+
+  private var tintColor: Color {
+    switch item.kind.tintColorName {
+    case "green": return .green
+    case "red": return .red
+    case "blue": return .blue
+    case "orange": return .orange
+    case "purple": return .purple
+    case "teal": return .teal
+    case "gray": return .gray
+    default: return .secondary
+    }
+  }
+}

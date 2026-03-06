@@ -392,8 +392,12 @@ struct ContentView: View {
         ContentUnavailableView("Chain Not Found", systemImage: "bolt.slash")
       }
 
-    case .activityItem:
-      ActivityDashboardView()
+    case .activityItem(let id):
+      if let item = activityFeed.items.first(where: { $0.id == id }) {
+        ActivityItemDetailView(item: item)
+      } else {
+        ActivityDashboardView()
+      }
 
     case .prReviews:
       PRReviewQueueDetailView()
