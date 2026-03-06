@@ -10,8 +10,6 @@ import SwiftData
 import Git
 
 struct Git_RootView: View {
-  var showToolSelectionToolbar = true
-
   @Environment(MCPServerService.self) private var mcpServer
   @Environment(\.modelContext) private var modelContext
   @Query(sort: \SyncedRepository.name) private var syncedRepos: [SyncedRepository]
@@ -30,10 +28,6 @@ struct Git_RootView: View {
   private var contentView: some View {
     mainContent
       .toolbar {
-        if showToolSelectionToolbar {
-          ToolSelectionToolbar()
-          ChainActivityToolbar()
-        }
         RepositoriesMenuToolbarItem(
           repositories: viewModel.repositories,
           selectedRepository: $viewModel.selectedRepository,

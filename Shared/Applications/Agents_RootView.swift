@@ -147,8 +147,6 @@ struct Agents_RootView: View {
         .accessibilityIdentifier("agents.sessionSummary")
         .help("Session Usage: \(sessionTracker.totalPremiumUsed.premiumMultiplierString()) premium requests")
       }
-      ToolSelectionToolbar()
-      ChainActivityToolbar()
     }
     .sheet(isPresented: $showingNewAgentSheet) {
       NewAgentSheet(agentManager: agentManager, cliService: cliService)

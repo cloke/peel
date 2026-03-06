@@ -54,12 +54,7 @@ struct Repositories_RootView: View {
       scopeContent
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    #if os(macOS)
-    .toolbar {
-      ToolSelectionToolbar()
-      ChainActivityToolbar()
-    }
-    #endif
+
     .onAppear {
       guard !hasAppliedInitialScope else { return }
       hasAppliedInitialScope = true
@@ -140,13 +135,13 @@ struct Repositories_RootView: View {
     switch currentScope {
     case .local:
       #if os(macOS)
-      Git_RootView(showToolSelectionToolbar: false)
+      Git_RootView()
         .id(localRootResetToken)
       #else
       RepositoriesLocalUnavailableView()
       #endif
     case .remote:
-      Github_RootView(showToolSelectionToolbar: false)
+      Github_RootView()
         .id(remoteRootResetToken)
 
     }

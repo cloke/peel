@@ -16,8 +16,6 @@ import Github
 
 #if canImport(Github)
 struct Github_RootView: View {
-  var showToolSelectionToolbar = true
-
   #if os(macOS)
   @Environment(MCPServerService.self) private var mcpServer
   #endif
@@ -368,12 +366,6 @@ struct Github_RootView: View {
       Text(pullAlertItem?.message ?? "")
     }
     .toolbar {
-      #if os(macOS)
-      if showToolSelectionToolbar {
-        ToolSelectionToolbar()
-        ChainActivityToolbar()
-      }
-      #endif
       ToolbarItem(placement: .navigation) {
         Menu {
           Toggle("Show Archived Repos", isOn: $showArchivedRepos)

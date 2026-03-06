@@ -19,8 +19,6 @@ struct ActivityDashboardView: View {
   @State private var filterRepo: String? = nil  // nil = all repos
   @State private var selectedChain: AgentChain?
   @State private var expandedItems: Set<UUID> = []
-  @State private var showingTemplateBrowser = false
-  @State private var showingSwarmConsole = false
   @State private var recentPage = 0
 
   private let recentPageSize = 50
@@ -38,18 +36,8 @@ struct ActivityDashboardView: View {
   }
 
   var body: some View {
-    Group {
-      if showingSwarmConsole {
-        SwarmManagementView()
-      } else {
-        dashboardContent
-      }
-    }
-    .navigationTitle(showingSwarmConsole ? "Swarm Console" : "Activity")
+    dashboardContent
     .task {
-      // Ensure Firestore worker listeners are running so WAN peers show up.
-      // PeelApp.swift may race with Firebase auth; this catches the case where
-      // the swarm is active but listeners weren't started yet.
       await ensureFirestoreListeners()
     }
     .onChange(of: firebaseService.isSignedIn) { _, signedIn in
@@ -71,31 +59,6 @@ struct ActivityDashboardView: View {
       }
     }
     #if os(macOS)
-    .toolbar {
-      ToolSelectionToolbar()
-      ChainActivityToolbar()
-      if showingSwarmConsole {
-        ToolbarItem(placement: .navigation) {
-          Button {
-            withAnimation(.easeInOut(duration: 0.2)) {
-              showingSwarmConsole = false
-            }
-          } label: {
-            Label("Back to Activity", systemImage: "chevron.left")
-          }
-        }
-      } else {
-        ToolbarItem(placement: .primaryAction) {
-          Button {
-            showingTemplateBrowser = true
-          } label: {
-            Label("Run Task", systemImage: "play.fill")
-          }
-        }
-      }
-    }
-    #endif
-    #if os(macOS)
     .sheet(item: $selectedChain) { chain in
       NavigationStack {
         ChainDetailView(
@@ -111,9 +74,6 @@ struct ActivityDashboardView: View {
         }
       }
       .frame(minWidth: 700, minHeight: 500)
-    }
-    .sheet(isPresented: $showingTemplateBrowser) {
-      TemplateBrowserSheet()
     }
     #endif
   }
@@ -138,8 +98,6 @@ struct ActivityDashboardView: View {
       VStack(alignment: .leading, spacing: 20) {
         runningNowSection
         PRReviewQueueSection()
-        quickTemplatesSection
-        workersSection
         ragIndexingSection
         recentActivitySection
       }
@@ -174,152 +132,6 @@ struct ActivityDashboardView: View {
 
         ForEach(pullsInProgress) { repo in
           RunningPullCard(repo: repo)
-        }
-      }
-    }
-  }
-
-  // MARK: - Quick Templates
-
-  private var quickTemplatesSection: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      HStack {
-        SectionHeader("Templates")
-        Spacer()
-        Button {
-          showingTemplateBrowser = true
-        } label: {
-          HStack(spacing: 4) {
-            Text("Browse All")
-            Image(systemName: "chevron.right")
-          }
-          .font(.caption)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(Color.accentColor)
-      }
-
-      let coreTemplates = mcpServer.agentManager.allTemplates
-        .filter { $0.category == .core }
-        .prefix(4)
-
-      HStack(spacing: 10) {
-        ForEach(Array(coreTemplates)) { template in
-          QuickTemplateCard(template: template) {
-            showingTemplateBrowser = true
-          }
-        }
-      }
-    }
-  }
-
-  // MARK: - Workers
-
-  private var workersSection: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      HStack {
-        SectionHeader("Swarm")
-        Spacer()
-        #if os(macOS)
-        Button {
-          withAnimation(.easeInOut(duration: 0.2)) {
-            showingSwarmConsole = true
-          }
-        } label: {
-          Label("Open Console", systemImage: "slider.horizontal.3")
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-        #endif
-      }
-
-      if swarm.isActive {
-        // Active swarm — show workers
-        ScrollView(.horizontal, showsIndicators: false) {
-          HStack(spacing: 16) {
-            // This machine
-            WorkerCard(
-              name: Host.current().localizedName ?? "This Mac",
-              role: swarm.role.rawValue,
-              isOnline: true,
-              statusText: swarm.currentTask != nil ? swarm.currentTask!.prompt : nil
-            )
-
-            // Connected peers
-            ForEach(swarm.connectedWorkers) { peer in
-              let status = swarm.workerStatuses[peer.id]
-              WorkerCard(
-                name: peer.displayName,
-                role: "worker",
-                isOnline: true,
-                statusText: status?.state.rawValue ?? "connected"
-              )
-            }
-
-            // Discovered but not connected (filter ghosts: entries stored under
-            // service name before TXT arrived that duplicate a connected peer)
-            ForEach(swarm.discoveredPeers.filter { peer in
-              !swarm.connectedWorkers.contains(where: { $0.id == peer.id })
-              && !swarm.connectedWorkers.contains(where: { $0.name == peer.name })
-            }) { peer in
-              WorkerCard(
-                name: peer.displayName,
-                role: "discovered",
-                isOnline: false,
-                statusText: "Not connected"
-              )
-            }
-
-            // WAN peers (Firestore-registered, not LAN-connected)
-            ForEach(wanWorkers, id: \.id) { worker in
-              WorkerCard(
-                name: worker.displayName,
-                role: "wan",
-                isOnline: worker.status == .online,
-                statusText: worker.hasWANEndpoint ? "WAN" : "Cloud"
-              )
-            }
-          }
-        }
-
-        // Cluster stats
-        let onlineWAN = wanWorkers.filter { $0.status == .online }.count
-        HStack(spacing: 20) {
-          Label("\(swarm.connectedWorkers.count + 1 + onlineWAN) online", systemImage: "checkmark.circle.fill")
-            .foregroundStyle(.green)
-          Label("\(swarm.tasksCompleted) completed", systemImage: "checkmark")
-            .foregroundStyle(.secondary)
-          if swarm.tasksFailed > 0 {
-            Label("\(swarm.tasksFailed) failed", systemImage: "xmark.circle")
-              .foregroundStyle(.red)
-          }
-        }
-        .font(.caption)
-      } else {
-        // Inactive swarm — show prompt to start
-        GroupBox {
-          HStack(spacing: 12) {
-            Image(systemName: "network.slash")
-              .font(.title2)
-              .foregroundStyle(.secondary)
-
-            VStack(alignment: .leading, spacing: 4) {
-              Text("Swarm Not Active")
-                .fontWeight(.medium)
-              Text("Start the swarm to distribute work across machines and see connected workers.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            Button("Start Swarm") {
-              try? swarm.start(role: .hybrid)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-          }
-          .padding(4)
         }
       }
     }

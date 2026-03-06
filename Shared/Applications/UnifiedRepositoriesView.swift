@@ -44,10 +44,6 @@ struct UnifiedRepositoriesView: View {
     .navigationTitle("Repositories")
     .searchable(text: $searchText, prompt: "Search repositories…")
     .toolbar {
-      #if os(macOS)
-      ToolSelectionToolbar()
-      ChainActivityToolbar()
-      #endif
       ToolbarItem(placement: .primaryAction) {
         Button {
           showAddSheet = true

@@ -55,12 +55,7 @@ public struct SwarmStatusView: View {
       }
     }
     .frame(minWidth: 400, minHeight: 300)
-    #if os(macOS)
-    .toolbar {
-      ToolSelectionToolbar()
-      ChainActivityToolbar()
-    }
-    #endif
+
   }
   
   // MARK: - Header

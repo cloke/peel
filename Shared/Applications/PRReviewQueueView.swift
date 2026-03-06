@@ -450,3 +450,29 @@ struct PRReviewQueueRow: View {
     }
   }
 }
+
+// MARK: - Detail View (for sidebar navigation)
+
+struct PRReviewQueueDetailView: View {
+  @Environment(MCPServerService.self) private var mcpServer
+
+  private var queue: PRReviewQueue { mcpServer.prReviewQueue }
+
+  var body: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 20) {
+        PRReviewQueueSection()
+
+        if queue.activeItems.isEmpty && queue.completedItems.isEmpty {
+          ContentUnavailableView {
+            Label("No PR Reviews", systemImage: "text.badge.checkmark")
+          } description: {
+            Text("Enqueue PRs for automated review via MCP or the template browser.")
+          }
+        }
+      }
+      .padding(20)
+    }
+    .navigationTitle("PR Reviews")
+  }
+}
