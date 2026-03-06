@@ -25,7 +25,7 @@ struct ActivityDashboardView: View {
 
   private let recentPageSize = 50
 
-  private var swarm: SwarmCoordinator { SwarmCoordinator.shared }
+  @State private var swarm = SwarmCoordinator.shared
   @State private var firebaseService = FirebaseService.shared
 
   /// WAN workers from Firestore, excluding self and LAN-connected peers.
@@ -46,6 +46,17 @@ struct ActivityDashboardView: View {
       }
     }
     .navigationTitle(showingSwarmConsole ? "Swarm Console" : "Activity")
+    .task {
+      // Ensure Firestore worker listeners are running so WAN peers show up.
+      // PeelApp.swift may race with Firebase auth; this catches the case where
+      // the swarm is active but listeners weren't started yet.
+      await ensureFirestoreListeners()
+    }
+    .onChange(of: firebaseService.isSignedIn) { _, signedIn in
+      if signedIn && swarm.isActive {
+        Task { await ensureFirestoreListeners() }
+      }
+    }
     .onChange(of: filterMode) { _, _ in
       recentPage = 0
     }
@@ -105,6 +116,18 @@ struct ActivityDashboardView: View {
       TemplateBrowserSheet()
     }
     #endif
+  }
+
+  // MARK: - Firestore Listener Bootstrap
+
+  /// Start Firestore worker + message listeners for every swarm we belong to.
+  /// Safe to call repeatedly — listeners deduplicate internally.
+  private func ensureFirestoreListeners() async {
+    guard swarm.isActive, firebaseService.isSignedIn else { return }
+    for membership in firebaseService.memberSwarms where membership.role.canRegisterWorkers {
+      firebaseService.startWorkerListener(swarmId: membership.id)
+      firebaseService.startMessageListener(swarmId: membership.id)
+    }
   }
 
   // MARK: - Dashboard Content
@@ -211,48 +234,50 @@ struct ActivityDashboardView: View {
 
       if swarm.isActive {
         // Active swarm — show workers
-        HStack(spacing: 16) {
-          // This machine
-          WorkerCard(
-            name: Host.current().localizedName ?? "This Mac",
-            role: swarm.role.rawValue,
-            isOnline: true,
-            statusText: swarm.currentTask != nil ? swarm.currentTask!.prompt : nil
-          )
-
-          // Connected peers
-          ForEach(swarm.connectedWorkers) { peer in
-            let status = swarm.workerStatuses[peer.id]
+        ScrollView(.horizontal, showsIndicators: false) {
+          HStack(spacing: 16) {
+            // This machine
             WorkerCard(
-              name: peer.displayName,
-              role: "worker",
+              name: Host.current().localizedName ?? "This Mac",
+              role: swarm.role.rawValue,
               isOnline: true,
-              statusText: status?.state.rawValue ?? "connected"
+              statusText: swarm.currentTask != nil ? swarm.currentTask!.prompt : nil
             )
-          }
 
-          // Discovered but not connected (filter ghosts: entries stored under
-          // service name before TXT arrived that duplicate a connected peer)
-          ForEach(swarm.discoveredPeers.filter { peer in
-            !swarm.connectedWorkers.contains(where: { $0.id == peer.id })
-            && !swarm.connectedWorkers.contains(where: { $0.name == peer.name })
-          }) { peer in
-            WorkerCard(
-              name: peer.displayName,
-              role: "discovered",
-              isOnline: false,
-              statusText: "Not connected"
-            )
-          }
+            // Connected peers
+            ForEach(swarm.connectedWorkers) { peer in
+              let status = swarm.workerStatuses[peer.id]
+              WorkerCard(
+                name: peer.displayName,
+                role: "worker",
+                isOnline: true,
+                statusText: status?.state.rawValue ?? "connected"
+              )
+            }
 
-          // WAN peers (Firestore-registered, not LAN-connected)
-          ForEach(wanWorkers, id: \.id) { worker in
-            WorkerCard(
-              name: worker.displayName,
-              role: "wan",
-              isOnline: worker.status == .online,
-              statusText: worker.hasWANEndpoint ? "WAN" : "Cloud"
-            )
+            // Discovered but not connected (filter ghosts: entries stored under
+            // service name before TXT arrived that duplicate a connected peer)
+            ForEach(swarm.discoveredPeers.filter { peer in
+              !swarm.connectedWorkers.contains(where: { $0.id == peer.id })
+              && !swarm.connectedWorkers.contains(where: { $0.name == peer.name })
+            }) { peer in
+              WorkerCard(
+                name: peer.displayName,
+                role: "discovered",
+                isOnline: false,
+                statusText: "Not connected"
+              )
+            }
+
+            // WAN peers (Firestore-registered, not LAN-connected)
+            ForEach(wanWorkers, id: \.id) { worker in
+              WorkerCard(
+                name: worker.displayName,
+                role: "wan",
+                isOnline: worker.status == .online,
+                statusText: worker.hasWANEndpoint ? "WAN" : "Cloud"
+              )
+            }
           }
         }
 
