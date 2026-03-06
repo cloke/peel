@@ -340,6 +340,20 @@ extension SwarmToolsHandler {
       ],
       "peers": peers,
       "discovered": discovered,
+      "firestoreWorkers": FirebaseService.shared.swarmWorkers.map { w in
+        [
+          "id": w.id,
+          "displayName": w.displayName,
+          "deviceName": w.deviceName,
+          "status": w.status.rawValue,
+          "isStale": w.isStale,
+          "lastHeartbeat": formatter.string(from: w.lastHeartbeat),
+          "wanAddress": w.wanAddress as Any,
+          "wanPort": w.wanPort.map { Int($0) } as Any,
+          "lanAddress": w.lanAddress as Any,
+          "lanPort": w.lanPort.map { Int($0) } as Any
+        ] as [String: Any]
+      },
       "ragTransfers": transfers,
       "localRagArtifacts": localRagPayload,
       "natTraversal": natPayload,

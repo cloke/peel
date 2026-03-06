@@ -318,7 +318,7 @@ public struct SwarmStatusView: View {
     let localDeviceId = coordinator.capabilities.deviceId
     let lanPeerIds = Set(coordinator.connectedWorkers.map { $0.id })
     return firebaseService.swarmWorkers.filter { worker in
-      worker.id != localDeviceId && !lanPeerIds.contains(worker.id) && !worker.isStale
+      worker.id != localDeviceId && !lanPeerIds.contains(worker.id)
     }
   }
   

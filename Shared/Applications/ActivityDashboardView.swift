@@ -26,6 +26,16 @@ struct ActivityDashboardView: View {
   private let recentPageSize = 50
 
   private var swarm: SwarmCoordinator { SwarmCoordinator.shared }
+  @State private var firebaseService = FirebaseService.shared
+
+  /// WAN workers from Firestore, excluding self and LAN-connected peers.
+  private var wanWorkers: [FirestoreWorker] {
+    let localDeviceId = swarm.capabilities.deviceId
+    let lanPeerIds = Set(swarm.connectedWorkers.map(\.id))
+    return firebaseService.swarmWorkers.filter { worker in
+      worker.id != localDeviceId && !lanPeerIds.contains(worker.id)
+    }
+  }
 
   var body: some View {
     Group {
@@ -234,11 +244,22 @@ struct ActivityDashboardView: View {
               statusText: "Not connected"
             )
           }
+
+          // WAN peers (Firestore-registered, not LAN-connected)
+          ForEach(wanWorkers, id: \.id) { worker in
+            WorkerCard(
+              name: worker.displayName,
+              role: "wan",
+              isOnline: worker.status == .online,
+              statusText: worker.hasWANEndpoint ? "WAN" : "Cloud"
+            )
+          }
         }
 
         // Cluster stats
+        let onlineWAN = wanWorkers.filter { $0.status == .online }.count
         HStack(spacing: 20) {
-          Label("\(swarm.connectedWorkers.count + 1) online", systemImage: "checkmark.circle.fill")
+          Label("\(swarm.connectedWorkers.count + 1 + onlineWAN) online", systemImage: "checkmark.circle.fill")
             .foregroundStyle(.green)
           Label("\(swarm.tasksCompleted) completed", systemImage: "checkmark")
             .foregroundStyle(.secondary)
