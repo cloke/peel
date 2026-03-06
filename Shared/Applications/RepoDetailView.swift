@@ -615,10 +615,13 @@ struct OverviewTabView: View {
     let repoIdentifierCandidates = Set([
       repo.normalizedRemoteURL,
       repo.ownerSlashRepo.map { "github.com/\($0)".lowercased() },
-      repo.ownerSlashRepo?.lowercased()
-    ].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
+      repo.ownerSlashRepo?.lowercased(),
+      repo.remoteURL
+    ].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+      .map { RepoRegistry.shared.normalizeRemoteURL($0) })
     let matchingSource = coordinator.availableUpdates.first(where: {
-      repoIdentifierCandidates.contains($0.source.repoIdentifier.lowercased())
+      repoIdentifierCandidates.contains(RepoRegistry.shared.normalizeRemoteURL($0.source.repoIdentifier))
         || $0.source.repoName == repo.displayName
     })
 
@@ -2588,4 +2591,3 @@ struct RepoActivityItemRow: View {
     }
   }
 }
-

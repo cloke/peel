@@ -193,15 +193,16 @@ public final class RAGSyncCoordinator {
 
   /// Sync from the best available source for a repo.
   func syncIndex(repoIdentifier: String) async throws {
+    let canonicalRepoIdentifier = RepoRegistry.shared.normalizeRemoteURL(repoIdentifier)
     // Find the best source: prefer the one with the highest version
     guard let availability = versionService.availableUpdates.first(
-      where: { $0.source.repoIdentifier == repoIdentifier })
+      where: { RepoRegistry.shared.normalizeRemoteURL($0.source.repoIdentifier) == canonicalRepoIdentifier })
     else {
       throw RAGSyncError.noSourceAvailable(repoIdentifier: repoIdentifier)
     }
 
     try await syncIndex(
-      repoIdentifier: repoIdentifier,
+      repoIdentifier: canonicalRepoIdentifier,
       fromWorkerId: availability.source.workerId,
       swarmId: availability.swarmId
     )

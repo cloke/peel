@@ -104,15 +104,17 @@ public final class RAGIndexVersionService {
     let deviceId = WorkerCapabilities.current().deviceId
     let deviceName = WorkerCapabilities.current().deviceName
 
+    let canonicalRepoIdentifier = normalizeRepoIdentifier(repoIdentifier)
+
     // Increment version (or start at 1)
-    let currentVersion = publishedVersions[repoIdentifier] ?? 0
+    let currentVersion = publishedVersions[canonicalRepoIdentifier] ?? 0
     let newVersion = currentVersion + 1
 
     let indexVersion = RAGIndexVersion(
-      id: "\(deviceId):\(repoIdentifier)",
+      id: "\(deviceId):\(canonicalRepoIdentifier)",
       workerId: deviceId,
       workerName: deviceName,
-      repoIdentifier: repoIdentifier,
+      repoIdentifier: canonicalRepoIdentifier,
       repoName: repoName,
       version: newVersion,
       headSHA: headSHA,
@@ -151,7 +153,7 @@ public final class RAGIndexVersionService {
       }
     }
 
-    publishedVersions[repoIdentifier] = newVersion
+    publishedVersions[canonicalRepoIdentifier] = newVersion
   }
 
   // MARK: - Subscribing
@@ -217,30 +219,52 @@ public final class RAGIndexVersionService {
 
   /// Process an incoming remote index version update.
   private func handleRemoteVersionUpdate(swarmId: String, version: RAGIndexVersion) {
+    let canonicalRepoIdentifier = normalizeRepoIdentifier(version.repoIdentifier)
+    let normalizedVersion = RAGIndexVersion(
+      id: "\(version.workerId):\(canonicalRepoIdentifier)",
+      workerId: version.workerId,
+      workerName: version.workerName,
+      repoIdentifier: canonicalRepoIdentifier,
+      repoName: version.repoName,
+      version: version.version,
+      headSHA: version.headSHA,
+      fileCount: version.fileCount,
+      chunkCount: version.chunkCount,
+      embeddingModel: version.embeddingModel,
+      embeddingDimensions: version.embeddingDimensions,
+      sizeEstimateBytes: version.sizeEstimateBytes,
+      lastIndexedAt: version.lastIndexedAt
+    )
+
     // Update our cache
-    if remoteVersions[version.repoIdentifier] == nil {
-      remoteVersions[version.repoIdentifier] = [:]
+    if remoteVersions[canonicalRepoIdentifier] == nil {
+      remoteVersions[canonicalRepoIdentifier] = [:]
     }
-    remoteVersions[version.repoIdentifier]?[version.workerId] = version
+    remoteVersions[canonicalRepoIdentifier]?[version.workerId] = normalizedVersion
 
     // Check if this is newer than what we have locally
     Task {
-      await checkForAvailableUpdate(swarmId: swarmId, remote: version)
+      await checkForAvailableUpdate(swarmId: swarmId, remote: normalizedVersion)
     }
   }
 
   /// Compare remote version against our local index and emit availability if newer.
   private func checkForAvailableUpdate(swarmId: String, remote: RAGIndexVersion) async {
+    let canonicalRepoIdentifier = normalizeRepoIdentifier(remote.repoIdentifier)
+
     // Don't re-check if we're already syncing this repo
-    guard !syncInProgress.contains(remote.repoIdentifier) else { return }
+    guard !syncInProgress.contains(canonicalRepoIdentifier) else { return }
 
     let store = RAGStore.shared
     do {
       let repos = try await store.listRepos()
-      let localRepo = repos.first(where: { $0.repoIdentifier == remote.repoIdentifier })
+      let localRepo = repos.first(where: { repo in
+        guard let identifier = repo.repoIdentifier else { return false }
+        return normalizeRepoIdentifier(identifier) == canonicalRepoIdentifier
+      })
 
       let localChunkCount = localRepo?.chunkCount
-      let localVersion = publishedVersions[remote.repoIdentifier]
+      let localVersion = publishedVersions[canonicalRepoIdentifier]
 
       // Emit availability if:
       // 1. We don't have this repo at all, OR
@@ -250,6 +274,10 @@ public final class RAGIndexVersionService {
       if localRepo == nil {
         shouldSync = true
       } else if let lv = localVersion, remote.version > lv {
+        shouldSync = true
+      } else if localVersion == nil {
+        // Versions are in-memory and reset on app launch; treat unknown local version
+        // as sync-eligible so remote sources remain discoverable in UI and auto-sync paths.
         shouldSync = true
       } else if let lc = localChunkCount, remote.chunkCount > lc + max(10, lc / 10) {
         shouldSync = true
@@ -266,7 +294,9 @@ public final class RAGIndexVersionService {
         )
 
         // Replace any existing availability for this repo
-        availableUpdates.removeAll { $0.source.repoIdentifier == remote.repoIdentifier }
+        availableUpdates.removeAll {
+          normalizeRepoIdentifier($0.source.repoIdentifier) == canonicalRepoIdentifier
+        }
         availableUpdates.append(availability)
 
         logger.info("Index available: \(remote.repoName) v\(remote.version) from \(remote.workerName) (\(remote.chunkCount) chunks)")
@@ -279,18 +309,24 @@ public final class RAGIndexVersionService {
 
   /// Mark a repo as currently syncing (prevents duplicate triggers).
   func markSyncStarted(repoIdentifier: String) {
-    syncInProgress.insert(repoIdentifier)
+    syncInProgress.insert(normalizeRepoIdentifier(repoIdentifier))
   }
 
   /// Mark a repo sync as complete.
   func markSyncCompleted(repoIdentifier: String) {
-    syncInProgress.remove(repoIdentifier)
-    availableUpdates.removeAll { $0.source.repoIdentifier == repoIdentifier }
+    let canonicalRepoIdentifier = normalizeRepoIdentifier(repoIdentifier)
+    syncInProgress.remove(canonicalRepoIdentifier)
+    availableUpdates.removeAll {
+      normalizeRepoIdentifier($0.source.repoIdentifier) == canonicalRepoIdentifier
+    }
   }
 
   /// Dismiss an available update without syncing.
   func dismissUpdate(repoIdentifier: String) {
-    availableUpdates.removeAll { $0.source.repoIdentifier == repoIdentifier }
+    let canonicalRepoIdentifier = normalizeRepoIdentifier(repoIdentifier)
+    availableUpdates.removeAll {
+      normalizeRepoIdentifier($0.source.repoIdentifier) == canonicalRepoIdentifier
+    }
   }
 
   // MARK: - Helpers
@@ -321,11 +357,13 @@ public final class RAGIndexVersionService {
       lastIndexedAt = Date()
     }
 
+    let canonicalRepoIdentifier = normalizeRepoIdentifier(repoIdentifier)
+
     return RAGIndexVersion(
-      id: "\(workerId):\(repoIdentifier)",
+      id: "\(workerId):\(canonicalRepoIdentifier)",
       workerId: workerId,
       workerName: workerName,
-      repoIdentifier: repoIdentifier,
+      repoIdentifier: canonicalRepoIdentifier,
       repoName: repoName,
       version: version,
       headSHA: headSHA,
@@ -336,5 +374,9 @@ public final class RAGIndexVersionService {
       sizeEstimateBytes: sizeEstimateBytes,
       lastIndexedAt: lastIndexedAt
     )
+  }
+
+  private func normalizeRepoIdentifier(_ value: String) -> String {
+    RepoRegistry.shared.normalizeRemoteURL(value)
   }
 }
