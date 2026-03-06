@@ -660,9 +660,20 @@ public final class SwarmCoordinator {
         guard let self, self.isActive else { return }
 
         let connectedIds = Set(self.connectedWorkers.map(\.id))
+        // Also collect connected hostnames to detect ghost entries that
+        // were stored under the service name before TXT record arrived
+        let connectedNames = Set(self.connectedWorkers.map(\.name))
         let discovered = self.discoveryService?.discoveredPeers ?? [:]
 
-        for (peerId, peer) in discovered where !connectedIds.contains(peerId) {
+        for (peerId, peer) in discovered {
+          // Skip if already connected by ID
+          guard !connectedIds.contains(peerId) else { continue }
+          // Skip ghost entries: the peer name matches a connected worker's
+          // hostname but the discoveredPeers key is the service name, not the
+          // hardware UUID. These get cleaned up when the next .changed event
+          // delivers the TXT record.
+          if connectedNames.contains(peer.name) { continue }
+
           self.logger.info("LAN reconnect: retrying \(peer.name) (\(peerId))")
           Task {
             do {

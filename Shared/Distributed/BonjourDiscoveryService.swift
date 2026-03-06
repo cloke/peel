@@ -347,6 +347,15 @@ public final class BonjourDiscoveryService: @unchecked Sendable {
       // Use deviceId from TXT record if present
       if let recordedDeviceId = txtDict["deviceId"], !recordedDeviceId.isEmpty {
         deviceId = recordedDeviceId
+        // Clean up any stale entry stored under the service name —
+        // initial browse results often lack TXT records, so we store
+        // under the service name first. Once the real deviceId arrives
+        // (via a .changed event), remove the old entry to prevent ghosts.
+        if serviceName != deviceId {
+          if discoveredPeers.removeValue(forKey: serviceName) != nil {
+            logger.debug("Cleaned up stale discovery entry for \(serviceName) (now keyed by \(deviceId))")
+          }
+        }
       }
     }
     

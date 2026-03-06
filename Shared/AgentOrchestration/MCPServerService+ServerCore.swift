@@ -643,8 +643,10 @@ extension MCPServerService {
     var arguments: [String: Any] = [
       "templateName": record.templateName,
       "prompt": record.prompt,
-      "workingDirectory": record.workingDirectory ?? ""
     ]
+    if let workingDir = record.workingDirectory, !workingDir.isEmpty {
+      arguments["workingDirectory"] = workingDir
+    }
     if let enableReviewLoop = overrides.enableReviewLoop {
       arguments["enableReviewLoop"] = enableReviewLoop
     }

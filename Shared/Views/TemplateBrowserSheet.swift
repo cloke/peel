@@ -12,7 +12,11 @@ import SwiftUI
 
 struct TemplateBrowserSheet: View {
   @Environment(MCPServerService.self) private var mcpServer
+  @Environment(RepositoryAggregator.self) private var aggregator
   @Environment(\.dismiss) private var dismiss
+
+  /// Optional explicit repo path; falls back to lastUsedWorkingDirectory.
+  var repoPath: String? = nil
 
   @State private var selectedCategory: TemplateCategory = .core
   @State private var searchText = ""
@@ -20,8 +24,18 @@ struct TemplateBrowserSheet: View {
   @State private var promptText = ""
   @State private var isRunning = false
   @State private var errorMessage: String?
+  @State private var selectedRepoPath: String?
 
   private var agentManager: AgentManager { mcpServer.agentManager }
+
+  /// Repos that have a local clone — usable as working directories.
+  private var localRepos: [UnifiedRepository] {
+    aggregator.repositories.filter { $0.isClonedLocally && $0.localPath != nil }
+  }
+
+  private var resolvedWorkingDirectory: String? {
+    selectedRepoPath ?? repoPath ?? agentManager.lastUsedWorkingDirectory
+  }
 
   private var allTemplates: [ChainTemplate] { agentManager.allTemplates }
 
@@ -91,6 +105,12 @@ struct TemplateBrowserSheet: View {
     #if os(macOS)
     .frame(minWidth: 600, idealWidth: 700, minHeight: 500, idealHeight: 600)
     #endif
+    .onAppear {
+      // Pre-select the last-used repo if we have one
+      if selectedRepoPath == nil {
+        selectedRepoPath = repoPath ?? agentManager.lastUsedWorkingDirectory
+      }
+    }
   }
 
   // MARK: - Category Picker
@@ -133,6 +153,9 @@ struct TemplateBrowserSheet: View {
   @ViewBuilder
   private var runPanel: some View {
     VStack(spacing: 12) {
+      // Repository selector
+      repoPicker
+
       if let template = selectedTemplate {
         HStack(spacing: 8) {
           Image(systemName: template.category.iconName)
@@ -162,7 +185,10 @@ struct TemplateBrowserSheet: View {
             }
           }
           .buttonStyle(.borderedProminent)
-          .disabled(promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isRunning)
+          .disabled(
+            promptText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+              || resolvedWorkingDirectory == nil || isRunning
+          )
         }
 
         if let errorMessage {
@@ -184,6 +210,45 @@ struct TemplateBrowserSheet: View {
     }
   }
 
+  // MARK: - Repo Picker
+
+  @ViewBuilder
+  private var repoPicker: some View {
+    HStack(spacing: 8) {
+      Image(systemName: "folder.fill")
+        .foregroundStyle(.secondary)
+        .frame(width: 20)
+
+      if localRepos.isEmpty {
+        Text("No local repositories")
+          .foregroundStyle(.secondary)
+          .font(.callout)
+      } else {
+        Picker("Repository", selection: $selectedRepoPath) {
+          Text("Select a repo…")
+            .tag(String?.none)
+          Divider()
+          ForEach(localRepos) { repo in
+            Text(repo.displayName)
+              .tag(Optional(repo.localPath!))
+          }
+        }
+        .labelsHidden()
+      }
+
+      Spacer()
+
+      #if os(macOS)
+      Button("Other…") {
+        if let path = FolderPicker.selectFolder(message: "Select a project folder") {
+          selectedRepoPath = path
+        }
+      }
+      .controlSize(.small)
+      #endif
+    }
+  }
+
   // MARK: - Actions
 
   private func runSelectedTemplate() {
@@ -195,9 +260,15 @@ struct TemplateBrowserSheet: View {
     errorMessage = nil
 
     Task {
+      guard let workingDir = resolvedWorkingDirectory, !workingDir.isEmpty else {
+        errorMessage = "No repository selected. Open a repo first or set a working directory."
+        isRunning = false
+        return
+      }
       let arguments: [String: Any] = [
         "prompt": prompt,
         "templateId": template.id.uuidString,
+        "workingDirectory": workingDir,
         "returnImmediately": true,
       ]
       let (status, _) = await mcpServer.handleChainRun(id: nil, arguments: arguments)

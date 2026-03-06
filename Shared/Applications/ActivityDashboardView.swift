@@ -221,9 +221,11 @@ struct ActivityDashboardView: View {
             )
           }
 
-          // Discovered but not connected
+          // Discovered but not connected (filter ghosts: entries stored under
+          // service name before TXT arrived that duplicate a connected peer)
           ForEach(swarm.discoveredPeers.filter { peer in
             !swarm.connectedWorkers.contains(where: { $0.id == peer.id })
+            && !swarm.connectedWorkers.contains(where: { $0.name == peer.name })
           }) { peer in
             WorkerCard(
               name: peer.displayName,
