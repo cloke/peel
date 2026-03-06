@@ -140,7 +140,26 @@ final class DataService {
       try? modelContext.save()
     }
   }
-  
+
+  func removeGitHubFavorite(id: UUID) {
+    let descriptor = FetchDescriptor<GitHubFavorite>(
+      predicate: #Predicate { $0.id == id }
+    )
+    if let favorite = try? modelContext.fetch(descriptor).first {
+      modelContext.delete(favorite)
+      try? modelContext.save()
+    }
+  }
+
+  func deleteRepository(id: UUID) {
+    let descriptor = FetchDescriptor<SyncedRepository>(
+      predicate: #Predicate { $0.id == id }
+    )
+    if let repo = try? modelContext.fetch(descriptor).first {
+      deleteRepository(repo)
+    }
+  }
+
   // MARK: - Recent PRs
   
   @discardableResult

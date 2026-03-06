@@ -57,6 +57,7 @@ struct ContentView: View {
   @Environment(RepositoryAggregator.self) private var aggregator
   @Environment(MCPServerService.self) private var mcpServer
   @Environment(ActivityFeed.self) private var activityFeed
+  @Environment(DataService.self) private var dataService
 
   @State private var firebaseService = FirebaseService.shared
   @State private var swarm = SwarmCoordinator.shared
@@ -243,6 +244,9 @@ struct ContentView: View {
       ForEach(filteredRepositories) { repo in
         RepoSidebarRow(repo: repo)
           .tag(SidebarSelection.repo(repo.id))
+          .contextMenu {
+            repoContextMenu(for: repo)
+          }
       }
     }
   }
@@ -553,6 +557,42 @@ struct ContentView: View {
     case .tracked: return aggregator.repositories.filter(\.isTracked).count
     case .active: return aggregator.repositories.filter(\.hasActiveWork).count
     case .favorites: return aggregator.repositories.filter(\.isFavorite).count
+    }
+  }
+
+  // MARK: - Repo Context Menu
+
+  @ViewBuilder
+  private func repoContextMenu(for repo: UnifiedRepository) -> some View {
+    if repo.isClonedLocally, let path = repo.localPath {
+      Button("Reveal in Finder") {
+        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
+      }
+    }
+
+    if repo.isFavorite, let favoriteId = repo.githubFavoriteId {
+      Button("Remove from Favorites") {
+        dataService.removeGitHubFavorite(id: favoriteId)
+        aggregator.rebuild()
+      }
+    }
+
+    if repo.isTracked, let trackedId = repo.trackedRemoteRepoId {
+      Button("Stop Tracking") {
+        _ = dataService.untrackRemoteRepo(id: trackedId)
+        aggregator.rebuild()
+      }
+    }
+
+    if let syncedId = repo.syncedRepositoryId {
+      Divider()
+      Button("Remove from Peel", role: .destructive) {
+        dataService.deleteRepository(id: syncedId)
+        if sidebarSelection == .repo(repo.id) {
+          sidebarSelection = .repoCommandCenter
+        }
+        aggregator.rebuild()
+      }
     }
   }
 
