@@ -128,11 +128,29 @@ extension MCPServerService: RepoPullSchedulerDelegate {
     Task { @MainActor in
       logger.info("Syncing RAG index from crown for \(repoPath) after pull")
 
-      // Resolve repo identifier from local RAG store
+      // Resolve repo identifier from local RAG store, then fall back to registry/tracked repo metadata.
+      let standardizedRepoPath = (repoPath as NSString).standardizingPath
       let repos = (try? await localRagStore.listRepos()) ?? []
-      guard let repo = repos.first(where: { $0.rootPath == repoPath }),
-            let repoIdentifier = repo.repoIdentifier, !repoIdentifier.isEmpty else {
-        logger.warning("Cannot sync index for \(repoPath): no repo identifier found in RAG store")
+      let repoIdentifierFromStore = repos.first(where: {
+        ($0.rootPath as NSString).standardizingPath == standardizedRepoPath
+      })?.repoIdentifier
+
+      let repoIdentifierFromRegistry = RepoRegistry.shared.getCachedRemoteURL(for: standardizedRepoPath)
+
+      let repoIdentifierFromTrackedRepo: String? = {
+        guard let dataService else { return nil }
+        let tracked = dataService.getTrackedRemoteRepos().first(where: {
+          ($0.localPath as NSString).standardizingPath == standardizedRepoPath
+        })
+        guard let tracked else { return nil }
+        return RepoRegistry.shared.normalizeRemoteURL(tracked.remoteURL)
+      }()
+
+      guard let repoIdentifier = repoIdentifierFromStore
+        ?? repoIdentifierFromRegistry
+        ?? repoIdentifierFromTrackedRepo,
+        !repoIdentifier.isEmpty else {
+        logger.warning("Cannot sync index for \(repoPath): no repo identifier found")
         return
       }
 

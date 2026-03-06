@@ -158,16 +158,30 @@ public final class RepoPullScheduler {
         error: result.isError ? result.description : nil
       )
 
-      // Trigger re-index or sync based on the repo's sync mode
-      if case .updated = result {
-        switch repo.syncMode {
-        case .pullAndRebuild where repo.reindexAfterPull:
-          delegate?.repoPullScheduler(self, shouldReindex: repo.localPath)
-        case .pullAndSyncIndex:
-          delegate?.repoPullScheduler(self, shouldSyncIndexFor: repo.localPath)
-        default:
-          break
-        }
+      // Trigger re-index or sync based on the repo's sync mode.
+      // pullAndSyncIndex should run even when git is up-to-date so peers can provide newer artifacts.
+      let pullChangedCode: Bool
+      switch result {
+      case .updated:
+        pullChangedCode = true
+      default:
+        pullChangedCode = false
+      }
+      let pullSucceeded: Bool
+      switch result {
+      case .upToDate, .updated:
+        pullSucceeded = true
+      default:
+        pullSucceeded = false
+      }
+
+      switch repo.syncMode {
+      case .pullAndRebuild where repo.reindexAfterPull && pullChangedCode:
+        delegate?.repoPullScheduler(self, shouldReindex: repo.localPath)
+      case .pullAndSyncIndex where pullSucceeded:
+        delegate?.repoPullScheduler(self, shouldSyncIndexFor: repo.localPath)
+      default:
+        break
       }
     }
   }
@@ -184,15 +198,28 @@ public final class RepoPullScheduler {
       error: result.isError ? result.description : nil
     )
 
-    if case .updated = result {
-      switch repo.syncMode {
-      case .pullAndRebuild where repo.reindexAfterPull:
-        delegate?.repoPullScheduler(self, shouldReindex: repo.localPath)
-      case .pullAndSyncIndex:
-        delegate?.repoPullScheduler(self, shouldSyncIndexFor: repo.localPath)
-      default:
-        break
-      }
+    let pullChangedCode: Bool
+    switch result {
+    case .updated:
+      pullChangedCode = true
+    default:
+      pullChangedCode = false
+    }
+    let pullSucceeded: Bool
+    switch result {
+    case .upToDate, .updated:
+      pullSucceeded = true
+    default:
+      pullSucceeded = false
+    }
+
+    switch repo.syncMode {
+    case .pullAndRebuild where repo.reindexAfterPull && pullChangedCode:
+      delegate?.repoPullScheduler(self, shouldReindex: repo.localPath)
+    case .pullAndSyncIndex where pullSucceeded:
+      delegate?.repoPullScheduler(self, shouldSyncIndexFor: repo.localPath)
+    default:
+      break
     }
 
     return result

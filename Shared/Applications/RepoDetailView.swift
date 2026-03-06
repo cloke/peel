@@ -612,9 +612,14 @@ struct OverviewTabView: View {
   @ViewBuilder
   private var syncSourceInfo: some View {
     let coordinator = RAGSyncCoordinator.shared
-    let repoId = repo.ownerSlashRepo ?? repo.displayName
+    let repoIdentifierCandidates = Set([
+      repo.normalizedRemoteURL,
+      repo.ownerSlashRepo.map { "github.com/\($0)".lowercased() },
+      repo.ownerSlashRepo?.lowercased()
+    ].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
     let matchingSource = coordinator.availableUpdates.first(where: {
-      $0.source.repoIdentifier == repoId || $0.source.repoName == repo.displayName
+      repoIdentifierCandidates.contains($0.source.repoIdentifier.lowercased())
+        || $0.source.repoName == repo.displayName
     })
 
     Divider()
@@ -2583,5 +2588,4 @@ struct RepoActivityItemRow: View {
     }
   }
 }
-
 
