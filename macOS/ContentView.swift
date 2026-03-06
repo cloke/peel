@@ -29,6 +29,7 @@ struct ContentView: View {
   @AppStorage("feature.showBrew") private var showBrew = false
   @AppStorage("onboarding.checklistDismissed") private var checklistDismissed = false
   @State private var firebaseService = FirebaseService.shared
+  @State private var swarm = SwarmCoordinator.shared
   @State private var showingInvitePreview = false
   @State private var showChecklist = false
   @State private var showCommandPalette = false
@@ -67,6 +68,17 @@ struct ContentView: View {
     .onChange(of: firebaseService.pendingInvitePreview) { _, newValue in
       if newValue != nil {
         showingInvitePreview = true
+      }
+    }
+    .onChange(of: firebaseService.memberSwarms) {
+      // Bootstrap Firestore worker listeners once swarms are loaded.
+      // PeelApp.init races with Firebase auth — by the time init's Task runs,
+      // memberSwarms may still be empty. This fires when auth completes and
+      // swarm memberships load, ensuring listeners start regardless of which tab is active.
+      guard swarm.isActive, firebaseService.isSignedIn else { return }
+      for membership in firebaseService.memberSwarms where membership.role.canRegisterWorkers {
+        firebaseService.startWorkerListener(swarmId: membership.id)
+        firebaseService.startMessageListener(swarmId: membership.id)
       }
     }
     .sheet(isPresented: $showingInvitePreview) {

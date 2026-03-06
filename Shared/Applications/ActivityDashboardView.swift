@@ -122,6 +122,7 @@ struct ActivityDashboardView: View {
 
   /// Start Firestore worker + message listeners for every swarm we belong to.
   /// Safe to call repeatedly — listeners deduplicate internally.
+  /// Primary bootstrap is in ContentView.onChange(of: memberSwarms); this is a safety net.
   private func ensureFirestoreListeners() async {
     guard swarm.isActive, firebaseService.isSignedIn else { return }
     for membership in firebaseService.memberSwarms where membership.role.canRegisterWorkers {

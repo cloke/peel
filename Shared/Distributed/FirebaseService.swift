@@ -152,6 +152,16 @@ public final class FirebaseService {
   private var swarmListeners: [ListenerRegistration] = []
   private var workerListeners: [String: ListenerRegistration] = [:]  // keyed by swarmId
   private var messageListeners: [String: ListenerRegistration] = [:]  // keyed by swarmId
+
+  /// Diagnostic info about worker listener state (for debugging)
+  public var workerListenerDiagnostics: (activeSwarmIds: [String], workerCounts: [String: Int], totalWorkers: Int) {
+    let swarmIds = Array(workerListeners.keys)
+    var counts: [String: Int] = [:]
+    for (swarmId, workers) in swarmWorkersBySwarmId {
+      counts[swarmId] = workers.count
+    }
+    return (swarmIds, counts, swarmWorkers.count)
+  }
   private var taskListener: ListenerRegistration?
   private var heartbeatTask: Task<Void, Never>?
   private var currentNonce: String?

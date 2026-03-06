@@ -357,7 +357,18 @@ extension SwarmToolsHandler {
       "ragTransfers": transfers,
       "localRagArtifacts": localRagPayload,
       "natTraversal": natPayload,
-      "messageListeners": FirebaseService.shared.messageListenerDiagnostics()
+      "messageListeners": FirebaseService.shared.messageListenerDiagnostics(),
+      "workerListeners": {
+        let diag = FirebaseService.shared.workerListenerDiagnostics
+        return [
+          "activeSwarmIds": diag.activeSwarmIds,
+          "workerCountsBySwarm": diag.workerCounts,
+          "totalWorkers": diag.totalWorkers,
+          "isSignedIn": FirebaseService.shared.isSignedIn,
+          "memberSwarmCount": FirebaseService.shared.memberSwarms.count,
+          "memberSwarms": FirebaseService.shared.memberSwarms.map { ["id": $0.id, "name": $0.swarmName, "role": $0.role.rawValue] }
+        ] as [String: Any]
+      }()
     ]))
   }
   
