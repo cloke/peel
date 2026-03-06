@@ -156,6 +156,10 @@ public final class PeerConnectionManager: @unchecked Sendable {
   /// Connected peers by ID
   private var connections: [String: PeerConnectionActor] = [:]
   private var connectedPeers: [String: ConnectedPeer] = [:]
+  /// Monotonic generation counter — each new connection gets a unique ID so
+  /// the receive-loop can detect if it was replaced (dual-connect race).
+  private var connectionGeneration: [String: UInt64] = [:]
+  private var nextGeneration: UInt64 = 1
   
   /// Whether we're running
   public private(set) var isRunning = false
@@ -215,11 +219,29 @@ public final class PeerConnectionManager: @unchecked Sendable {
     }
     connections.removeAll()
     connectedPeers.removeAll()
+    connectionGeneration.removeAll()
     
     logger.info("PeerConnectionManager stopped")
   }
   
   // MARK: - Connection Management
+  
+  /// Store a new connection for a peer, closing any previous connection.
+  /// Returns a generation token the receive loop uses to detect replacement.
+  private func storeConnection(_ conn: PeerConnectionActor, peer: ConnectedPeer) -> UInt64 {
+    let peerId = peer.id
+    // Close previous connection for this peer (dual-connect race protection)
+    if let old = connections.removeValue(forKey: peerId) {
+      logger.info("Replacing existing connection for peer \(peerId)")
+      Task { await old.close() }
+    }
+    connections[peerId] = conn
+    connectedPeers[peerId] = peer
+    let gen = nextGeneration
+    nextGeneration += 1
+    connectionGeneration[peerId] = gen
+    return gen
+  }
   
   /// Connect to a peer at the given address
   public func connect(to address: String, port: UInt16) async throws {
@@ -277,26 +299,93 @@ public final class PeerConnectionManager: @unchecked Sendable {
     let peerId = peerCapabilities.deviceId
     await peerConn.setCapabilities(peerCapabilities)
     
-    connections[peerId] = peerConn
     let peer = ConnectedPeer(
       id: peerId,
       name: peerCapabilities.deviceName,
       capabilities: peerCapabilities,
       isIncoming: false
     )
-    connectedPeers[peerId] = peer
+    let gen = storeConnection(peerConn, peer: peer)
     
     // Start receive loop
     Task {
-      await receiveLoop(for: peerConn, peerId: peerId)
+      await receiveLoop(for: peerConn, peerId: peerId, generation: gen)
     }
     
     delegate?.connectionManager(self, didConnect: peer)
     logger.info("Connected to peer: \(peerCapabilities.deviceName) (\(peerId))")
   }
   
+  /// Connect to a peer via an NWEndpoint (e.g. Bonjour service endpoint).
+  /// Skips the address string → host conversion, letting Network.framework
+  /// resolve the endpoint directly (avoids IPv6 scope-ID issues).
+  public func connect(to endpoint: NWEndpoint) async throws {
+    let parameters = NWParameters.tcp
+    parameters.includePeerToPeer = true
+
+    let connection = NWConnection(to: endpoint, using: parameters)
+
+    // Wait for connection to be ready
+    let box = ContinuationBox()
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+      connection.stateUpdateHandler = { [weak connection] state in
+        switch state {
+        case .ready:
+          if box.tryResume() {
+            connection?.stateUpdateHandler = nil
+            continuation.resume()
+          }
+        case .failed(let error):
+          if box.tryResume() {
+            connection?.stateUpdateHandler = nil
+            continuation.resume(throwing: error)
+          }
+        case .cancelled:
+          if box.tryResume() {
+            connection?.stateUpdateHandler = nil
+            continuation.resume(throwing: DistributedError.connectionFailed(deviceId: "unknown", reason: "Cancelled"))
+          }
+        default:
+          break
+        }
+      }
+      connection.start(queue: .main)
+    }
+
+    // Perform handshake (same as address-based connect)
+    let tempId = UUID().uuidString
+    let peerConn = PeerConnectionActor(connection: connection, peerId: tempId)
+
+    try await peerConn.send(.hello(capabilities: capabilities))
+
+    let response = try await peerConn.receiveMessage()
+    guard case let .helloAck(peerCapabilities) = response else {
+      await peerConn.close()
+      throw DistributedError.invalidMessage(reason: "Expected helloAck, got \(response.messageType)")
+    }
+
+    let peerId = peerCapabilities.deviceId
+    await peerConn.setCapabilities(peerCapabilities)
+
+    let peer = ConnectedPeer(
+      id: peerId,
+      name: peerCapabilities.deviceName,
+      capabilities: peerCapabilities,
+      isIncoming: false
+    )
+    let gen = storeConnection(peerConn, peer: peer)
+
+    Task {
+      await receiveLoop(for: peerConn, peerId: peerId, generation: gen)
+    }
+
+    delegate?.connectionManager(self, didConnect: peer)
+    logger.info("Connected to peer via endpoint: \(peerCapabilities.deviceName) (\(peerId))")
+  }
+  
   /// Disconnect from a peer
   public func disconnect(from peerId: String) async {
+    connectionGeneration.removeValue(forKey: peerId)
     if let conn = connections.removeValue(forKey: peerId) {
       await conn.close()
     }
@@ -400,18 +489,17 @@ public final class PeerConnectionManager: @unchecked Sendable {
       let peerId = peerCapabilities.deviceId
       await peerConn.setCapabilities(peerCapabilities)
       
-      connections[peerId] = peerConn
       let peer = ConnectedPeer(
         id: peerId,
         name: peerCapabilities.deviceName,
         capabilities: peerCapabilities,
         isIncoming: true
       )
-      connectedPeers[peerId] = peer
+      let gen = storeConnection(peerConn, peer: peer)
       
       // Start receive loop
       Task {
-        await receiveLoop(for: peerConn, peerId: peerId)
+        await receiveLoop(for: peerConn, peerId: peerId, generation: gen)
       }
       
       delegate?.connectionManager(self, didConnect: peer)
@@ -423,7 +511,7 @@ public final class PeerConnectionManager: @unchecked Sendable {
     }
   }
   
-  private func receiveLoop(for conn: PeerConnectionActor, peerId: String) async {
+  private func receiveLoop(for conn: PeerConnectionActor, peerId: String, generation: UInt64) async {
     while isRunning {
       do {
         let message = try await conn.receiveMessage()
@@ -433,6 +521,13 @@ public final class PeerConnectionManager: @unchecked Sendable {
       } catch {
         logger.error("Receive error from \(peerId): \(error)")
         await MainActor.run {
+          // Only tear down if we're still the active connection for this peer.
+          // A newer connection may have replaced us (dual-connect race).
+          guard connectionGeneration[peerId] == generation else {
+            logger.info("Receive loop for \(peerId) gen \(generation) exiting (superseded by gen \(self.connectionGeneration[peerId] ?? 0))")
+            return
+          }
+          connectionGeneration.removeValue(forKey: peerId)
           connections.removeValue(forKey: peerId)
           if connectedPeers.removeValue(forKey: peerId) != nil {
             delegate?.connectionManager(self, didDisconnect: peerId)

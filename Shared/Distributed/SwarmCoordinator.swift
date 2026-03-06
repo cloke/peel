@@ -108,6 +108,9 @@ public final class SwarmCoordinator {
   /// WAN auto-connect task
   private var wanAutoConnectTask: Task<Void, Never>?
 
+  /// LAN reconnect task — retries discovered-but-not-connected Bonjour peers
+  private var lanReconnectTask: Task<Void, Never>?
+
   /// Device IDs we've already attempted WAN connection to (avoid retrying failures)
   private var wanConnectAttempted: Set<String> = []
 
@@ -329,6 +332,9 @@ public final class SwarmCoordinator {
     // NOTE: Always-on STUN removed — STUN is now on-demand via OnDemandPeerTransfer
     startWANAutoConnect()
 
+    // Periodically retry LAN peers that were discovered but not connected
+    startLANReconnect()
+
     // Start the RAG sync coordinator for on-demand P2P index sharing
     RAGSyncCoordinator.shared.ragSyncDelegate = ragSyncDelegate
     RAGSyncCoordinator.shared.start()
@@ -353,6 +359,7 @@ public final class SwarmCoordinator {
     firestoreRelayProvider = nil
     stopNetworkMonitor()
     stopWANAutoConnect()
+    stopLANReconnect()
     natTraversalManager?.stop()
     natTraversalManager = nil
     connectedWorkers.removeAll()
@@ -446,6 +453,8 @@ public final class SwarmCoordinator {
         
         // 5. Restart WAN auto-connect (clears previous attempts so we retry)
         startWANAutoConnect()
+        // 6. Restart LAN reconnect for discovered-but-not-connected peers
+        startLANReconnect()
       }
     }
 
@@ -634,6 +643,44 @@ public final class SwarmCoordinator {
     wanAutoConnectTask?.cancel()
     wanAutoConnectTask = nil
     wanConnectAttempted.removeAll()
+  }
+
+  // MARK: - LAN Reconnect
+
+  /// Periodically check for Bonjour-discovered peers that aren't connected
+  /// and retry the TCP connection. This handles the case where the initial
+  /// connect failed (timeout, race, etc.) but the peer is still advertising.
+  private func startLANReconnect() {
+    stopLANReconnect()
+    lanReconnectTask = Task { [weak self] in
+      // Wait before first check to let initial connections settle
+      try? await Task.sleep(for: .seconds(10))
+
+      while !Task.isCancelled {
+        guard let self, self.isActive else { return }
+
+        let connectedIds = Set(self.connectedWorkers.map(\.id))
+        let discovered = self.discoveryService?.discoveredPeers ?? [:]
+
+        for (peerId, peer) in discovered where !connectedIds.contains(peerId) {
+          self.logger.info("LAN reconnect: retrying \(peer.name) (\(peerId))")
+          Task {
+            do {
+              try await self.connectionManager?.connect(to: peer.endpoint)
+            } catch {
+              self.logger.warning("LAN reconnect failed for \(peer.name): \(error.localizedDescription)")
+            }
+          }
+        }
+
+        try? await Task.sleep(for: .seconds(15))
+      }
+    }
+  }
+
+  private func stopLANReconnect() {
+    lanReconnectTask?.cancel()
+    lanReconnectTask = nil
   }
 
   // MARK: - STUN Signaling Responder
@@ -1860,16 +1907,16 @@ extension SwarmCoordinator: BonjourDiscoveryDelegate {
       }
     }
     
-    logger.info("Discovered peer: \(peer.name), resolving...")
+    logger.info("Discovered peer: \(peer.name), connecting via endpoint...")
     
+    // Connect directly via the Bonjour endpoint — avoids the old resolvePeer()
+    // which created throwaway TCP connections (spurious handshake failures on
+    // the remote) and could leak continuations or lose IPv6 scope IDs.
     Task {
       do {
-        let resolved = try await service.resolvePeer(peer.id)
-        if let address = resolved.resolvedAddress, let port = resolved.resolvedPort {
-          try await connectionManager?.connect(to: address, port: port)
-        }
+        try await connectionManager?.connect(to: peer.endpoint)
       } catch {
-        logger.error("Failed to connect to discovered peer: \(error)")
+        logger.error("Failed to connect to discovered peer \(peer.name): \(error)")
       }
     }
   }

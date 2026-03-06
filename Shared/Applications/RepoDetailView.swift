@@ -199,6 +199,7 @@ struct OverviewTabView: View {
   @State private var fetchedPRs: [UnifiedRepository.PRSummary] = []
   @State private var isLoadingPRs = false
   @State private var selectedPRDetail: PRDetailIdentifier?
+  @State private var justTrackedId: UUID?
 
   private var repoRuns: [ParallelWorktreeRun] {
     guard let runner = mcpServer.parallelWorktreeRunner,
@@ -253,6 +254,8 @@ struct OverviewTabView: View {
 
           // 5. Tracking Configuration — sync mode for tracked repos
           if repo.isTracked, let trackedId = repo.trackedRemoteRepoId {
+            trackingConfigSection(trackedId: trackedId)
+          } else if let trackedId = justTrackedId {
             trackingConfigSection(trackedId: trackedId)
           } else if !repo.isTracked, repo.localPath != nil, repo.remoteURL != nil {
             startTrackingSection
@@ -595,8 +598,58 @@ struct OverviewTabView: View {
           Text((repo.syncMode ?? .pullAndRebuild).description)
             .font(.caption2)
             .foregroundStyle(.tertiary)
+
+          // Show sync source info when Pull & Sync Index is selected
+          if (repo.syncMode ?? .pullAndRebuild) == .pullAndSyncIndex {
+            syncSourceInfo
+          }
         }
         .padding(4)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var syncSourceInfo: some View {
+    let coordinator = RAGSyncCoordinator.shared
+    let repoId = repo.ownerSlashRepo ?? repo.displayName
+    let matchingSource = coordinator.availableUpdates.first(where: {
+      $0.source.repoIdentifier == repoId || $0.source.repoName == repo.displayName
+    })
+
+    Divider()
+
+    if let source = matchingSource {
+      HStack(spacing: 6) {
+        Image(systemName: "antenna.radiowaves.left.and.right")
+          .font(.caption)
+          .foregroundStyle(.green)
+        VStack(alignment: .leading, spacing: 1) {
+          Text("Source: \(source.source.workerName)")
+            .font(.caption)
+            .fontWeight(.medium)
+          Text("v\(source.source.version) · \(source.source.chunkCount) chunks · \(source.source.embeddingModel)")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+      }
+    } else if coordinator.isActive {
+      HStack(spacing: 6) {
+        Image(systemName: "antenna.radiowaves.left.and.right")
+          .font(.caption)
+          .foregroundStyle(.orange)
+        Text("No crown/brain peer has this index yet")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+    } else {
+      HStack(spacing: 6) {
+        Image(systemName: "antenna.radiowaves.left.and.right")
+          .font(.caption)
+          .foregroundStyle(.tertiary)
+        Text("Swarm not active — start swarm to discover sync sources")
+          .font(.caption)
+          .foregroundStyle(.secondary)
       }
     }
   }
@@ -641,11 +694,12 @@ struct OverviewTabView: View {
   private func startTracking() {
     guard let localPath = repo.localPath,
           let remoteURL = repo.remoteURL else { return }
-    let _ = dataService.trackRemoteRepo(
+    let tracked = dataService.trackRemoteRepo(
       remoteURL: remoteURL,
       name: repo.displayName,
       localPath: localPath
     )
+    justTrackedId = tracked.id
     aggregator.rebuild()
   }
 
