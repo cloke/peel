@@ -17,7 +17,8 @@ import Github
 enum CurrentTool: String, Identifiable, CaseIterable {
   case repositories = "repositories"
   case activity = "activity"
-  // Legacy cases — kept for AppStorage migration, auto-redirect on appear
+  // Legacy cases — kept for AppStorage migration only (old stored values must deserialize).
+  // Do NOT remove. These are excluded from visibleCases so they don't appear in UI.
   case agents = "agents"
   case workspaces = "workspaces"
   case brew = "brew"
@@ -25,6 +26,9 @@ enum CurrentTool: String, Identifiable, CaseIterable {
   case github = "github"
   case swarm = "swarm"
   var id: String { rawValue }
+
+  /// Active sidebar sections shown in UI. Legacy migration cases are intentionally excluded.
+  static var visibleCases: [CurrentTool] { [.repositories, .activity] }
 }
 
 /// What the user selected in the sidebar. The detail pane renders based on this.
@@ -281,6 +285,18 @@ struct ContentView: View {
           .contextMenu {
             repoContextMenu(for: repo)
           }
+      }
+
+      if filteredRepositories.isEmpty {
+        if repoSearchText.isEmpty {
+          ContentUnavailableView(
+            "No Repositories",
+            systemImage: "folder",
+            description: Text("No repositories match this filter.")
+          )
+        } else {
+          ContentUnavailableView.search(text: repoSearchText)
+        }
       }
     }
   }

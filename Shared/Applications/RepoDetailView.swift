@@ -48,8 +48,14 @@ struct RepoDetailView: View {
   let repo: UnifiedRepository
 
   @Environment(ActivityFeed.self) private var activityFeed
-  @AppStorage("repositories.selectedTab") private var automationSelectedTab = RepoDetailTab.overview.automationValue
-  @State private var selectedTab: RepoDetailTab = .overview
+  @AppStorage("repositories.selectedTab") private var selectedTabValue = RepoDetailTab.overview.automationValue
+
+  private var selectedTab: Binding<RepoDetailTab> {
+    Binding(
+      get: { RepoDetailTab(automationValue: selectedTabValue) ?? .overview },
+      set: { selectedTabValue = $0.automationValue }
+    )
+  }
 
   var body: some View {
     VStack(spacing: 0) {
@@ -59,7 +65,7 @@ struct RepoDetailView: View {
       Divider()
 
       // Tab picker
-      Picker("", selection: $selectedTab) {
+      Picker("", selection: selectedTab) {
         ForEach(RepoDetailTab.allCases, id: \.self) { tab in
           Label(tab.rawValue, systemImage: tab.systemImage)
             .tag(tab)
@@ -73,39 +79,6 @@ struct RepoDetailView: View {
       tabContent
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-    .onAppear {
-      syncSelectedTabFromAutomation()
-      persistSelectedTabAutomationState(selectedTab)
-    }
-    .onChange(of: automationSelectedTab) { _, _ in
-      syncSelectedTabFromAutomation()
-    }
-    .onChange(of: selectedTab) { _, newValue in
-      persistSelectedTabAutomationState(newValue)
-    }
-    .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
-      syncSelectedTabFromAutomation()
-    }
-    .onReceive(NotificationCenter.default.publisher(for: Notification.Name("RepositoryAutomationTabSelected"))) { notification in
-      guard let value = notification.object as? String,
-            let tab = RepoDetailTab(automationValue: value),
-            selectedTab != tab else { return }
-      selectedTab = tab
-      persistSelectedTabAutomationState(tab)
-    }
-  }
-
-  private func syncSelectedTabFromAutomation() {
-    guard let tab = RepoDetailTab(automationValue: automationSelectedTab) else { return }
-    if selectedTab != tab {
-      selectedTab = tab
-    }
-  }
-
-  private func persistSelectedTabAutomationState(_ tab: RepoDetailTab) {
-    if automationSelectedTab != tab.automationValue {
-      automationSelectedTab = tab.automationValue
-    }
   }
 
   // MARK: - Header
@@ -183,7 +156,7 @@ struct RepoDetailView: View {
 
   @ViewBuilder
   private var tabContent: some View {
-    switch selectedTab {
+    switch selectedTab.wrappedValue {
     case .overview:
       OverviewTabView(repo: repo)
     case .branches:

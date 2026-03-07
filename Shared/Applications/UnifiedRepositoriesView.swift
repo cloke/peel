@@ -47,6 +47,18 @@ struct RepoSidebarRow: View {
           .font(.caption)
           .foregroundStyle(.secondary)
           .lineLimit(1)
+          .contextMenu {
+            if repo.statusSummary.contains("Pull error") {
+              Button {
+                NotificationCenter.default.post(
+                  name: Notification.Name("retryPull"),
+                  object: repo.normalizedRemoteURL
+                )
+              } label: {
+                Label("Retry Pull", systemImage: "arrow.clockwise")
+              }
+            }
+          }
       }
 
       Spacer()
@@ -73,11 +85,13 @@ struct RepoSidebarRow: View {
             systemImage: "arrow.triangle.pull",
             color: .green
           )
+          .help("\(repo.recentPRs.count) open pull requests")
         }
         if let rag = repo.ragStatus, rag != .notIndexed {
           Image(systemName: rag.systemImage)
             .font(.caption2)
             .foregroundStyle(ragStatusColor(rag))
+            .help(ragStatusHelp(rag))
         }
       }
     }
@@ -99,6 +113,17 @@ struct RepoSidebarRow: View {
     case .analyzing: return .blue
     case .analyzed: return .green
     case .stale: return .orange
+    }
+  }
+
+  private func ragStatusHelp(_ status: UnifiedRepository.RAGStatus) -> String {
+    switch status {
+    case .notIndexed: return "Not indexed"
+    case .indexing: return "Indexing in progress…"
+    case .indexed: return "RAG index up to date"
+    case .analyzing: return "Analyzing repository…"
+    case .analyzed: return "Analysis complete"
+    case .stale: return "RAG index is outdated — re-index to update"
     }
   }
 }
@@ -365,6 +390,7 @@ struct RepositoriesCommandCenter: View {
   @State private var selectedPRDetail: PRDetailIdentifier?
   @State private var selectedRunForReview: ParallelWorktreeRun?
   @State private var expandedExecutions: Set<UUID> = []
+  @State private var showAllPRs = false
 
   /// All non-terminal parallel runs across the workspace.
   private var allActiveRuns: [ParallelWorktreeRun] {
@@ -598,7 +624,12 @@ struct RepositoriesCommandCenter: View {
         .padding(.leading, 4)
       }
 
-      ForEach(allOpenPRs.prefix(5), id: \.pr.id) { item in
+      if allOpenPRs.isEmpty && !isLoadingPRs {
+        ContentUnavailableView("No Open Pull Requests", systemImage: "arrow.triangle.pull")
+          .frame(maxWidth: .infinity)
+      }
+
+      ForEach(showAllPRs ? allOpenPRs : Array(allOpenPRs.prefix(5)), id: \.pr.id) { item in
         GroupBox {
           HStack(spacing: 12) {
             Image(systemName: "arrow.triangle.pull")
@@ -648,10 +679,15 @@ struct RepositoriesCommandCenter: View {
       }
 
       if allOpenPRs.count > 5 {
-        Text("+ \(allOpenPRs.count - 5) more open PRs")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .padding(.leading, 4)
+        Button {
+          showAllPRs.toggle()
+        } label: {
+          Text(showAllPRs ? "Show fewer" : "Show all \(allOpenPRs.count) open PRs")
+            .font(.caption)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Color.accentColor)
+        .padding(.leading, 4)
       }
     }
   }
