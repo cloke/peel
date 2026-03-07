@@ -30,7 +30,7 @@ public final class UIToolsHandler: MCPToolHandler {
   public func handle(name: String, id: Any?, arguments: [String: Any]) async -> (Int, Data) {
     switch name {
     case "ui.tap":
-      return handleTap(id: id, arguments: arguments)
+      return await handleTap(id: id, arguments: arguments)
     case "ui.setText":
       return handleSetText(id: id, arguments: arguments)
     case "ui.toggle":
@@ -69,7 +69,7 @@ public final class UIToolsHandler: MCPToolHandler {
 
   // MARK: - ui.tap
 
-  private func handleTap(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+  private func handleTap(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
     guard let delegate else { return notConfiguredError(id: id) }
 
     guard case .success(let controlId) = requireString("controlId", from: arguments, id: id) else {
@@ -94,24 +94,13 @@ public final class UIToolsHandler: MCPToolHandler {
       UserDefaults.standard.set(controlId, forKey: "agents.selectedInfrastructure")
     }
 
-    switch controlId {
-    case "repositories.rag.sync.push", "repositories.rag.sync.pull":
-      if SwarmCoordinator.shared.connectedWorkers.isEmpty {
-        UserDefaults.standard.set("no-lan-peer", forKey: "repositories.rag.sync.status")
-        delegate.recordUIActionHandled(controlId)
-        return (200, makeResult(id: id, result: ["controlId": controlId, "status": "no-lan-peer"]))
-      }
-    case "repositories.rag.sync.pullWan":
-      if SwarmCoordinator.shared.onDemandWorkers.isEmpty {
-        UserDefaults.standard.set("no-wan-worker", forKey: "repositories.rag.sync.status")
-        delegate.recordUIActionHandled(controlId)
-        return (200, makeResult(id: id, result: ["controlId": controlId, "status": "no-wan-worker"]))
-      }
-    default:
-      break
-    }
-
     if controlId.hasPrefix("repositories.overview.sync.") || controlId.hasPrefix("repositories.rag.sync.") {
+      if let service = delegate as? MCPServerService {
+        let result = await service.handleRepositoryAutomationTap(controlId: controlId)
+        delegate.recordUIActionHandled(controlId)
+        return (200, makeResult(id: id, result: result))
+      }
+
       NotificationCenter.default.post(
         name: Notification.Name("RepositoryAutomationActionRequested"),
         object: controlId

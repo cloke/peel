@@ -38,6 +38,200 @@ extension MCPServerService: MCPToolHandlerDelegate {
   public func worktreeNameMapFromDefaults() -> [String: String] {
     uiAutomationProvider.worktreeNameMapFromDefaults()
   }
+
+  func handleRepositoryAutomationTap(controlId: String) async -> [String: Any] {
+    persistRepositoryAutomationWorkerState()
+
+    switch controlId {
+    case "repositories.overview.sync.pullNow":
+      return await handleRepositoryOverviewPullNowAutomationTap(controlId: controlId)
+    case "repositories.rag.sync.push":
+      return await handleRepositoryRAGAutomationTap(controlId: controlId, direction: .push)
+    case "repositories.rag.sync.pull":
+      return await handleRepositoryRAGAutomationTap(controlId: controlId, direction: .pull)
+    case "repositories.rag.sync.pullWan":
+      return await handleRepositoryRAGWANTap(controlId: controlId)
+    default:
+      return ["controlId": controlId, "status": "unsupported"]
+    }
+  }
+
+  private func persistRepositoryAutomationWorkerState() {
+    UserDefaults.standard.set(
+      SwarmCoordinator.shared.connectedWorkers.map(\.displayName),
+      forKey: "repositories.rag.sync.peers"
+    )
+    UserDefaults.standard.set(
+      SwarmCoordinator.shared.onDemandWorkers.map(\.displayName),
+      forKey: "repositories.rag.sync.wanWorkers"
+    )
+  }
+
+  private func selectedRepositoryAutomationIdentifier() -> String? {
+    let selected = UserDefaults.standard.string(forKey: "repositories.selectedRepoKey")?.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let selected, !selected.isEmpty else { return nil }
+    return RepoRegistry.shared.normalizeRemoteURL(selected)
+  }
+
+  private func selectedRepositoryAutomationName() -> String {
+    let name = UserDefaults.standard.string(forKey: "repositories.selectedRepoName")?.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let name, !name.isEmpty {
+      return name
+    }
+    return selectedRepositoryAutomationIdentifier() ?? "unknown-repo"
+  }
+
+  private func handleRepositoryOverviewPullNowAutomationTap(controlId: String) async -> [String: Any] {
+    guard let repoIdentifier = selectedRepositoryAutomationIdentifier() else {
+      UserDefaults.standard.set("no-repo", forKey: "repositories.overview.sync.status")
+      UserDefaults.standard.set("", forKey: "repositories.overview.sync.source")
+      return ["controlId": controlId, "status": "no-repo"]
+    }
+
+    let normalized = RepoRegistry.shared.normalizeRemoteURL(repoIdentifier)
+    guard let availability = RAGSyncCoordinator.shared.availableUpdates.first(where: {
+      RepoRegistry.shared.normalizeRemoteURL($0.source.repoIdentifier) == normalized
+    }) else {
+      UserDefaults.standard.set("no-source", forKey: "repositories.overview.sync.status")
+      UserDefaults.standard.set("", forKey: "repositories.overview.sync.source")
+      return ["controlId": controlId, "status": "no-source", "repoIdentifier": normalized]
+    }
+
+    UserDefaults.standard.set("pulling", forKey: "repositories.overview.sync.status")
+    UserDefaults.standard.set(availability.source.workerName, forKey: "repositories.overview.sync.source")
+
+    Task { @MainActor in
+      do {
+        try await RAGSyncCoordinator.shared.syncIndex(repoIdentifier: normalized)
+        UserDefaults.standard.set("pulled", forKey: "repositories.overview.sync.status")
+        await refreshRagSummary()
+      } catch {
+        logger.error("Overview automation pull failed for \(normalized): \(error.localizedDescription)")
+        UserDefaults.standard.set("failed", forKey: "repositories.overview.sync.status")
+      }
+    }
+
+    return [
+      "controlId": controlId,
+      "status": "pulling",
+      "repoIdentifier": normalized,
+      "source": availability.source.workerName
+    ]
+  }
+
+  private func handleRepositoryRAGAutomationTap(
+    controlId: String,
+    direction: RAGArtifactSyncDirection
+  ) async -> [String: Any] {
+    guard let repoIdentifier = selectedRepositoryAutomationIdentifier() else {
+      UserDefaults.standard.set("no-repo", forKey: "repositories.rag.sync.status")
+      return ["controlId": controlId, "status": "no-repo"]
+    }
+
+    guard let peer = SwarmCoordinator.shared.connectedWorkers.first else {
+      UserDefaults.standard.set("no-lan-peer", forKey: "repositories.rag.sync.status")
+      persistRepositoryAutomationWorkerState()
+      return ["controlId": controlId, "status": "no-lan-peer", "repoIdentifier": repoIdentifier]
+    }
+
+    let displayName = selectedRepositoryAutomationName()
+    UserDefaults.standard.set("syncing", forKey: "repositories.rag.sync.status")
+    persistRepositoryAutomationWorkerState()
+
+    Task { @MainActor in
+      do {
+        let transferId = try await SwarmCoordinator.shared.requestRagArtifactSync(
+          direction: direction,
+          workerId: peer.id,
+          repoIdentifier: repoIdentifier
+        )
+
+        while !Task.isCancelled {
+          try? await Task.sleep(for: .seconds(0.5))
+          guard let transfer = SwarmCoordinator.shared.ragTransfers.first(where: { $0.id == transferId }) else {
+            continue
+          }
+
+          switch transfer.status {
+          case .queued:
+            UserDefaults.standard.set("queued", forKey: "repositories.rag.sync.status")
+          case .preparing:
+            UserDefaults.standard.set("preparing", forKey: "repositories.rag.sync.status")
+          case .transferring:
+            if transfer.totalBytes > 0 {
+              let pct = Int(Double(transfer.transferredBytes) / Double(transfer.totalBytes) * 100)
+              UserDefaults.standard.set("transferring-\(pct)%", forKey: "repositories.rag.sync.status")
+            } else {
+              UserDefaults.standard.set("transferring", forKey: "repositories.rag.sync.status")
+            }
+          case .applying:
+            UserDefaults.standard.set("applying", forKey: "repositories.rag.sync.status")
+          case .complete:
+            if direction == .pull, let summary = transfer.resultSummary, !summary.isEmpty {
+              UserDefaults.standard.set("pulled: \(summary)", forKey: "repositories.rag.sync.status")
+            } else {
+              UserDefaults.standard.set(direction == .push ? "pushed" : "pulled", forKey: "repositories.rag.sync.status")
+            }
+            if direction == .pull {
+              await refreshRagSummary()
+            }
+            return
+          case .failed:
+            UserDefaults.standard.set(transfer.errorMessage ?? "failed", forKey: "repositories.rag.sync.status")
+            return
+          }
+        }
+      } catch {
+        logger.error("RAG automation sync failed for \(displayName): \(error.localizedDescription)")
+        UserDefaults.standard.set("failed: \(error.localizedDescription)", forKey: "repositories.rag.sync.status")
+      }
+    }
+
+    return [
+      "controlId": controlId,
+      "status": "syncing",
+      "repoIdentifier": repoIdentifier,
+      "peer": peer.displayName,
+      "direction": direction.rawValue
+    ]
+  }
+
+  private func handleRepositoryRAGWANTap(controlId: String) async -> [String: Any] {
+    guard let repoIdentifier = selectedRepositoryAutomationIdentifier() else {
+      UserDefaults.standard.set("no-repo", forKey: "repositories.rag.sync.status")
+      return ["controlId": controlId, "status": "no-repo"]
+    }
+
+    guard let worker = SwarmCoordinator.shared.onDemandWorkers.first else {
+      UserDefaults.standard.set("no-wan-worker", forKey: "repositories.rag.sync.status")
+      persistRepositoryAutomationWorkerState()
+      return ["controlId": controlId, "status": "no-wan-worker", "repoIdentifier": repoIdentifier]
+    }
+
+    UserDefaults.standard.set("requesting-wan", forKey: "repositories.rag.sync.status")
+    persistRepositoryAutomationWorkerState()
+
+    Task { @MainActor in
+      do {
+        try await SwarmCoordinator.shared.requestRagSyncOnDemand(
+          repoIdentifier: repoIdentifier,
+          fromWorkerId: worker.id
+        )
+        UserDefaults.standard.set("pulled-wan", forKey: "repositories.rag.sync.status")
+        await refreshRagSummary()
+      } catch {
+        logger.error("RAG WAN automation sync failed for \(repoIdentifier): \(error.localizedDescription)")
+        UserDefaults.standard.set("failed: \(error.localizedDescription)", forKey: "repositories.rag.sync.status")
+      }
+    }
+
+    return [
+      "controlId": controlId,
+      "status": "requesting-wan",
+      "repoIdentifier": repoIdentifier,
+      "worker": worker.displayName
+    ]
+  }
 }
 
 // MARK: - ParallelToolsHandlerDelegate
