@@ -1997,11 +1997,19 @@ struct RAGTabView: View {
   }
 
   /// Live embedding model from mcpServer.ragRepos (refreshed after sync).
+  /// Searches all matching repos (parent + sub-packages) and prefers the one
+  /// with actual data (most chunks) since the parent entry may be stale.
   private var liveEmbeddingModel: String? {
     let identifier = repo.normalizedRemoteURL
-    return mcpServer.ragRepos.first(where: {
+    let matching = mcpServer.ragRepos.filter {
       $0.repoIdentifier == identifier || $0.rootPath == repo.localPath
-    })?.embeddingModel
+    }
+    // Prefer the repo with a non-nil model AND the most chunks
+    let withModel = matching.filter { $0.embeddingModel != nil }
+    if let best = withModel.max(by: { $0.chunkCount < $1.chunkCount }) {
+      return best.embeddingModel
+    }
+    return matching.first?.embeddingModel
   }
 
   // MARK: - Pipeline Card

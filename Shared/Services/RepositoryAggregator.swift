@@ -156,6 +156,37 @@ final class RepositoryAggregator {
 
       if let existing = ragByURL[norm] {
         // Aggregate: sum counts, pick latest indexed date, prefer shorter rootPath (parent)
+        // For embedding model & dims: prefer the entry with actual data (chunks > 0).
+        // A repo entry with 0 chunks but a model name is stale (e.g., re-indexed locally then
+        // data cleared but repo row remains). We want the model from entries that have real content.
+        let bestModel: String? = {
+          if let em = existing.embeddingModel, let im = info.embeddingModel {
+            // Both have models: prefer the one with more chunks
+            return existing.chunkCount >= info.chunkCount ? em : im
+          }
+          if existing.embeddingModel != nil && info.embeddingModel == nil {
+            // Only existing has model: use it if it has data, otherwise defer
+            return existing.chunkCount > 0 ? existing.embeddingModel : nil
+          }
+          if info.embeddingModel != nil && existing.embeddingModel == nil {
+            return info.chunkCount > 0 ? info.embeddingModel : nil
+          }
+          return nil
+        }()
+        let bestDims: Int? = {
+          if existing.embeddingDimensions != nil && info.embeddingDimensions != nil {
+            return existing.chunkCount >= info.chunkCount
+              ? existing.embeddingDimensions : info.embeddingDimensions
+          }
+          // Prefer dims from the entry with data
+          if existing.chunkCount > 0 && existing.embeddingDimensions != nil {
+            return existing.embeddingDimensions
+          }
+          if info.chunkCount > 0 && info.embeddingDimensions != nil {
+            return info.embeddingDimensions
+          }
+          return existing.embeddingDimensions ?? info.embeddingDimensions
+        }()
         ragByURL[norm] = MCPServerService.RAGRepoInfo(
           id: existing.id,
           name: existing.name,
@@ -166,13 +197,14 @@ final class RepositoryAggregator {
           embeddingCount: existing.embeddingCount + info.embeddingCount,
           repoIdentifier: existing.repoIdentifier,
           parentRepoId: nil,
-          embeddingModel: existing.embeddingModel ?? info.embeddingModel,
-          embeddingDimensions: existing.embeddingDimensions ?? info.embeddingDimensions
+          embeddingModel: bestModel,
+          embeddingDimensions: bestDims
         )
       } else {
         ragByURL[norm] = info
       }
     }
+
 
     // normalized URL → [AgentChain] (chains that have a known workingDirectory)
     var chainsByURL: [String: [AgentChain]] = [:]

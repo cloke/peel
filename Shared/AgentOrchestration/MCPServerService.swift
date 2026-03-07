@@ -1014,10 +1014,23 @@ public final class MCPServerService {
       ragStats = stats
       let embeddingCounts = await localRagStore.embeddingCountsByRepo()
       let embeddingDims = await localRagStore.embeddingDimensionsByRepo()
+
+      // Build a lookup: embedding dimensions → known model name.
+      // This lets us infer the model for repos where embedding_model is NULL
+      // but we have sibling repos with the same dimensions and a known model.
+      var modelByDims: [Int: String] = [:]
+      for repo in repos {
+        if let model = repo.embeddingModel, !model.isEmpty,
+           let dims = repo.embeddingDimensions ?? embeddingDims[repo.id] {
+          modelByDims[dims] = model
+        }
+      }
+
       ragRepos = repos.map { repo in
         // Prefer the embedding model stored in the DB (written during indexing or sync import).
         // Fall back to in-memory ragSyncedEmbeddingModels dict for backwards compatibility
         // (populated during this session's sync operations, lost on restart).
+        // Final fallback: infer model from embedding dimensions using sibling repos.
         let dbModel = repo.embeddingModel
         let syncedModelFallback: String? = {
           if dbModel != nil { return nil } // DB has it, no need for fallback
@@ -1026,8 +1039,13 @@ public final class MCPServerService {
           }
           return ragSyncedEmbeddingModels[repo.id]
         }()
-        let effectiveModel = dbModel ?? syncedModelFallback
         let effectiveDims = repo.embeddingDimensions ?? embeddingDims[repo.id]
+        let dimsInferredModel: String? = {
+          if dbModel != nil || syncedModelFallback != nil { return nil }
+          guard let dims = effectiveDims else { return nil }
+          return modelByDims[dims]
+        }()
+        let effectiveModel = dbModel ?? syncedModelFallback ?? dimsInferredModel
         return RAGRepoInfo(
           id: repo.id,
           name: repo.name,
