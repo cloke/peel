@@ -38,6 +38,7 @@ enum SidebarSelection: Hashable {
   case activityItem(UUID)  // Non-chain activity item → shows dashboard
   case chain(UUID)
   case prReviews
+  case templates
 
   // Swarm
   case swarmConsole
@@ -66,7 +67,6 @@ struct ContentView: View {
   @State private var repoSearchText = ""
   @State private var repoFilterMode: RepoFilterMode = .all
   @State private var showAddRepoSheet = false
-  @State private var showingTemplateBrowser = false
   @State private var showingInvitePreview = false
   @State private var showChecklist = false
   @State private var showCommandPalette = false
@@ -114,7 +114,7 @@ struct ContentView: View {
       if let sel = newValue {
         switch sel {
         case .repo, .repoCommandCenter: currentSection = .repositories
-        case .activityDashboard, .activityItem, .chain, .prReviews: currentSection = .activity
+        case .activityDashboard, .activityItem, .chain, .prReviews, .templates: currentSection = .activity
         case .swarmConsole: currentSection = .activity
         case .brew: currentSection = .brew
         }
@@ -143,9 +143,6 @@ struct ContentView: View {
     }
     .sheet(item: $activeLabFeature) { feature in
       LabFeatureSheetContent(feature: feature)
-    }
-    .sheet(isPresented: $showingTemplateBrowser) {
-      TemplateBrowserSheet()
     }
     .sheet(isPresented: $showAddRepoSheet) {
       AddRepositorySheet()
@@ -286,12 +283,8 @@ struct ContentView: View {
         Label("PR Reviews", systemImage: "text.badge.checkmark")
           .badge(prReviewCount)
           .tag(SidebarSelection.prReviews)
-        Button {
-          showingTemplateBrowser = true
-        } label: {
-          Label("Templates", systemImage: "rectangle.stack")
-        }
-        .buttonStyle(.plain)
+        Label("Templates", systemImage: "rectangle.stack")
+          .tag(SidebarSelection.templates)
       }
 
       // Recent activity feed in sidebar
@@ -406,6 +399,11 @@ struct ContentView: View {
     case .prReviews:
       PRReviewQueueDetailView()
 
+    case .templates:
+      TemplateBrowserDetailView { chainId in
+        sidebarSelection = .chain(chainId)
+      }
+
     case .swarmConsole:
       SwarmManagementView()
 
@@ -434,7 +432,7 @@ struct ContentView: View {
         .help("Refresh")
       }
     case .activity, .agents, .workspaces, .swarm:
-      Button { showingTemplateBrowser = true } label: {
+      Button { sidebarSelection = .templates } label: {
         Label("Run Task", systemImage: "play.fill")
       }
     case .brew:
