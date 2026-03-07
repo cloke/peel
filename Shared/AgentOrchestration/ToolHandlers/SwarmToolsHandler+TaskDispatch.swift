@@ -168,35 +168,27 @@ extension SwarmToolsHandler {
     
     let force = (arguments["force"] as? Bool) ?? false
     
-    // Use direct command execution - no LLM involved
-    // Run the self-update script on each worker
-    // Workers need to find their own repo path - we send the command, they detect their local path
-    
-    // Dispatch direct command to each worker
+    // Self-update intentionally kills and restarts the Peel worker process, so waiting
+    // for a final direct-command result will always race the restart and report a timeout.
     var dispatched: [[String: Any]] = []
     
     for worker in workers {
       do {
-        // Build the command - use absolute path style since workers auto-detect repo
-        let scriptArgs = force ? [] : ["--skip-build-if-current"]
-        
-        // Run self-update script - worker will detect its own repo working dir
-        // Using sendDirectCommandAndWait with longer timeout since build takes time
-        let result = try await coordinator.sendDirectCommandAndWait(
+        let scriptArgs = force ? [] : ["--skip-build"]
+
+        try await coordinator.sendDirectCommand(
           "./Tools/self-update.sh",
           args: scriptArgs,
-          workingDirectory: nil,  // Worker auto-detects
-          to: worker.id,
-          timeout: .seconds(300)  // 5 min timeout for pull + build
+          workingDirectory: nil,
+          to: worker.id
         )
-        
+
         dispatched.append([
           "workerId": worker.id,
           "workerName": worker.displayName,
-          "status": result.exitCode == 0 ? "success" : "failed",
-          "exitCode": result.exitCode,
-          "output": String(result.output.suffix(500)),  // Last 500 chars
-          "error": result.error as Any
+          "status": "dispatched",
+          "message": "Update command sent. Worker should disconnect briefly while restarting.",
+          "args": scriptArgs
         ])
       } catch {
         dispatched.append([
@@ -208,16 +200,17 @@ extension SwarmToolsHandler {
       }
     }
     
-    let succeeded = dispatched.filter { ($0["status"] as? String) == "success" }.count
-    let failed = dispatched.count - succeeded
+    let dispatchedCount = dispatched.filter { ($0["status"] as? String) == "dispatched" }.count
+    let failed = dispatched.count - dispatchedCount
     
     return (200, makeResult(id: id, result: [
       "success": failed == 0,
       "message": failed == 0 
-        ? "All workers updated successfully. They will restart shortly."
-        : "\(succeeded) workers updated, \(failed) failed. Check 'workers' for details.",
-      "workersUpdated": succeeded,
+        ? "Update commands dispatched to all workers. They should disconnect briefly while restarting."
+        : "Dispatched to \(dispatchedCount) workers, \(failed) failed before dispatch. Check 'workers' for details.",
+      "workersUpdated": dispatchedCount,
       "workersFailed": failed,
+      "awaitedResults": false,
       "workers": dispatched
     ]))
   }
@@ -436,6 +429,7 @@ extension SwarmToolsHandler {
     let args = arguments["args"] as? [String] ?? []
     let workingDirectory = arguments["workingDirectory"] as? String
     let workerId = arguments["workerId"] as? String
+    let awaitResult = (arguments["awaitResult"] as? Bool) ?? true
     
     // If no specific worker, send to first available
     let targetWorker: ConnectedPeer
@@ -452,9 +446,24 @@ extension SwarmToolsHandler {
     }
     
     do {
+      if !awaitResult {
+        try await coordinator.sendDirectCommand(command, args: args, workingDirectory: workingDirectory, to: targetWorker.id)
+        return (200, makeResult(id: id, result: [
+          "success": true,
+          "dispatched": true,
+          "awaitedResult": false,
+          "workerId": targetWorker.id,
+          "workerName": targetWorker.displayName,
+          "command": command,
+          "args": args
+        ]))
+      }
+
       let result = try await coordinator.sendDirectCommandAndWait(command, args: args, workingDirectory: workingDirectory, to: targetWorker.id)
       return (200, makeResult(id: id, result: [
         "success": result.exitCode == 0,
+        "dispatched": true,
+        "awaitedResult": true,
         "exitCode": result.exitCode,
         "output": result.output.trimmingCharacters(in: .whitespacesAndNewlines),
         "error": result.error as Any,

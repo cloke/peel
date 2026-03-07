@@ -208,7 +208,7 @@ extension SwarmToolsHandler {
       ),
       MCPToolDefinition(
         name: "swarm.update-workers",
-        description: "Trigger all connected workers to pull latest code, rebuild, and restart. Workers will disconnect briefly during restart.",
+        description: "Trigger all connected workers to pull latest code, rebuild, and restart. This dispatches the update command without waiting for a final result because workers intentionally disconnect during restart.",
         inputSchema: [
           "type": "object",
           "properties": [
@@ -280,7 +280,7 @@ extension SwarmToolsHandler {
       ),
       MCPToolDefinition(
         name: "swarm.direct-command",
-        description: "Execute a shell command directly on a worker without LLM involvement. Useful for debugging and administrative tasks.",
+        description: "Execute a shell command directly on a worker without LLM involvement. Useful for debugging and administrative tasks. Set awaitResult=false for restart-style commands that intentionally disconnect the worker before replying.",
         inputSchema: [
           "type": "object",
           "properties": [
@@ -300,6 +300,10 @@ extension SwarmToolsHandler {
             "workerId": [
               "type": "string",
               "description": "Specific worker ID to target (optional, defaults to first available)"
+            ],
+            "awaitResult": [
+              "type": "boolean",
+              "description": "Wait for command completion and stdout/stderr (default: true). Set false for commands that restart the worker or sever the connection before replying."
             ]
           ],
           "required": ["command"]
