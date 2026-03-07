@@ -307,7 +307,10 @@ final class RepositoryAggregator {
         prsForRepo.map(\.viewedAt).max(),
       ].compactMap { $0 }.max()
 
-      let activeWTs = wtForRepo.filter { $0.taskStatus != TrackedWorktree.Status.cleaned }
+      let activeWTs = wtForRepo.filter {
+        $0.taskStatus != TrackedWorktree.Status.cleaned
+          && $0.taskStatus != TrackedWorktree.Status.orphaned
+      }
 
       let unified = UnifiedRepository(
         id: stableId,

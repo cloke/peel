@@ -444,7 +444,9 @@ struct OverviewTabView: View {
 
       // Standalone worktrees
       ForEach(repo.activeWorktrees) { wt in
-        RepoWorktreeRow(worktree: wt)
+        RepoWorktreeRow(worktree: wt) {
+          dismissWorktree(wt)
+        }
       }
     }
   }
@@ -803,6 +805,11 @@ struct OverviewTabView: View {
     } catch {
       fetchedPRs = []
     }
+  }
+
+  private func dismissWorktree(_ wt: UnifiedRepository.WorktreeSummary) {
+    dataService.markWorktreeCleaned(id: wt.id)
+    aggregator.rebuild()
   }
 }
 
@@ -2805,6 +2812,7 @@ private struct SkillRow: View {
 
 struct RepoWorktreeRow: View {
   let worktree: UnifiedRepository.WorktreeSummary
+  var onDismiss: (() -> Void)?
 
   var body: some View {
     GroupBox {
@@ -2848,6 +2856,15 @@ struct RepoWorktreeRow: View {
           .foregroundStyle(worktreeStatusColor)
       }
       .padding(4)
+    }
+    .contextMenu {
+      if let onDismiss {
+        Button(role: .destructive) {
+          onDismiss()
+        } label: {
+          Label("Remove from List", systemImage: "trash")
+        }
+      }
     }
   }
 

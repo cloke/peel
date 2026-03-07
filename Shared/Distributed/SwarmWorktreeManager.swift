@@ -522,20 +522,20 @@ public final class SwarmWorktreeManager {
       }
     }
 
-    // 2. Find DB records whose path no longer exists on disk
-    let swarmSource = TrackedWorktree.Source.swarm
+    // 2. Find DB records whose path no longer exists on disk (all sources, not just swarm)
     let notCleaned = TrackedWorktree.Status.cleaned
     let descriptor = FetchDescriptor<TrackedWorktree>(
-      predicate: #Predicate { $0.source == swarmSource && $0.taskStatus != notCleaned }
+      predicate: #Predicate { $0.taskStatus != notCleaned }
     )
     let records = (try? context.fetch(descriptor)) ?? []
     var changed = false
     for record in records {
       guard !record.localPath.isEmpty,
             !FileManager.default.fileExists(atPath: record.localPath) else { continue }
-      if record.taskStatus == TrackedWorktree.Status.active {
-        logger.warning("Marking task \(record.taskId) orphaned: path missing \(record.localPath)")
-        record.taskStatus = TrackedWorktree.Status.orphaned
+      if record.taskStatus == TrackedWorktree.Status.active
+        || record.taskStatus == TrackedWorktree.Status.orphaned {
+        logger.warning("Marking task \(record.taskId) cleaned: path missing \(record.localPath)")
+        record.taskStatus = TrackedWorktree.Status.cleaned
         record.completedAt = record.completedAt ?? Date()
         changed = true
         // Attempt git worktree prune for the parent repo

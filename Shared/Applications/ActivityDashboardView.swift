@@ -174,8 +174,8 @@ struct ActivityDashboardView: View {
 
   private var swarmSection: some View {
     let lanWorkers = swarm.connectedWorkers
-    let onlineWANWorkers = wanWorkers.filter { $0.status == .online }
-    let totalOnline = (swarm.isActive ? 1 : 0) + lanWorkers.count + onlineWANWorkers.count
+    let activeWANWorkers = wanWorkers.filter { !$0.isStale && $0.status != .offline }
+    let totalOnline = (swarm.isActive ? 1 : 0) + lanWorkers.count + activeWANWorkers.count
 
     return VStack(alignment: .leading, spacing: 12) {
       HStack {
@@ -195,32 +195,36 @@ struct ActivityDashboardView: View {
         #endif
       }
 
-      if swarm.isActive || !lanWorkers.isEmpty || !onlineWANWorkers.isEmpty {
+      if swarm.isActive || !lanWorkers.isEmpty || !activeWANWorkers.isEmpty {
         ScrollView(.horizontal, showsIndicators: false) {
           HStack(spacing: 10) {
             WorkerCard(
               name: "This Mac",
               role: swarm.role.rawValue,
               isOnline: swarm.isActive,
+              statusColor: swarm.isActive ? .green : .secondary,
               statusText: swarm.isActive ? "Ready for swarm tasks" : "Swarm inactive"
             )
 
             ForEach(lanWorkers) { worker in
-              let statusText = swarm.workerStatuses[worker.id]?.state.rawValue.capitalized
+              let status = swarm.workerStatuses[worker.id]
+              let statusText = status?.state.rawValue.capitalized
               WorkerCard(
                 name: worker.displayName,
                 role: "LAN",
-                isOnline: true,
+                isOnline: status?.state != .offline && status?.state != .error,
+                statusColor: lanWorkerStatusColor(status),
                 statusText: statusText
               )
             }
 
-            ForEach(onlineWANWorkers) { worker in
+            ForEach(activeWANWorkers) { worker in
               WorkerCard(
                 name: worker.displayName,
                 role: "WAN",
-                isOnline: worker.status == .online,
-                statusText: worker.status.rawValue.capitalized
+                isOnline: !worker.isStale && worker.status != .offline,
+                statusColor: wanWorkerStatusColor(worker),
+                statusText: wanWorkerStatusText(worker)
               )
             }
           }
@@ -240,6 +244,42 @@ struct ActivityDashboardView: View {
         }
       }
     }
+  }
+
+  private func lanWorkerStatusColor(_ status: WorkerStatus?) -> Color {
+    switch status?.state {
+    case .idle:
+      return .green
+    case .busy:
+      return .blue
+    case .offline:
+      return .orange
+    case .error:
+      return .red
+    case nil:
+      return .secondary
+    }
+  }
+
+  private func wanWorkerStatusColor(_ worker: FirestoreWorker) -> Color {
+    if worker.isStale {
+      return .orange
+    }
+    switch worker.status {
+    case .online:
+      return .green
+    case .busy:
+      return .blue
+    case .offline:
+      return .orange
+    }
+  }
+
+  private func wanWorkerStatusText(_ worker: FirestoreWorker) -> String {
+    if worker.isStale {
+      return "Stale heartbeat"
+    }
+    return worker.status.rawValue.capitalized
   }
 
   // MARK: - Recent Activity
@@ -520,6 +560,7 @@ struct WorkerCard: View {
   let name: String
   let role: String
   let isOnline: Bool
+  let statusColor: Color
   let statusText: String?
 
   var body: some View {
@@ -527,7 +568,7 @@ struct WorkerCard: View {
       VStack(alignment: .leading, spacing: 6) {
         HStack(spacing: 6) {
           Circle()
-            .fill(isOnline ? .green : .red)
+            .fill(isOnline ? statusColor : .red)
             .frame(width: 8, height: 8)
 
           Text(name)

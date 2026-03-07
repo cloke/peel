@@ -127,11 +127,9 @@
 				AgentOrchestration/VMIsolationSetupView.swift,
 				AgentOrchestration/VMIsolationView.swift,
 				AgentOrchestration/WorkspaceManager.swift,
-				Applications/Agents_RootView.swift,
 				Applications/Agents/AgentDetailView.swift,
 				Applications/Agents/AgentRowView.swift,
 				Applications/Agents/AgentSheets.swift,
-				Applications/Agents/AgentsSidebarView.swift,
 				Applications/Agents/LiveStatusPanel.swift,
 				Applications/Agents/PIIScrubberView.swift,
 				Applications/Agents/SessionSummarySheet.swift,
@@ -508,6 +506,25 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		04ASTBLD2F3B000100000004 /* Build ast-chunker-cli */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build ast-chunker-cli";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/Tools/Binaries/ast-chunker-cli",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/zsh;
+			shellScript = "set -e\nBINARY=\"${PROJECT_DIR}/Tools/Binaries/ast-chunker-cli\"\nCACHE_DIR=\"${PROJECT_DIR}/.build/ast-chunker-checkout\"\nREPO_URL=\"https://github.com/crunchybananas/ast-chunker.git\"\n\nmkdir -p \"${PROJECT_DIR}/Tools/Binaries\"\n\n# Clone or update the repo\nif [ ! -d \"$CACHE_DIR/.git\" ]; then\n    echo \"Cloning ast-chunker...\"\n    git clone --depth 1 \"$REPO_URL\" \"$CACHE_DIR\"\nelse\n    echo \"Updating ast-chunker...\"\n    cd \"$CACHE_DIR\" && git pull --ff-only 2>/dev/null || true\nfi\n\ncd \"$CACHE_DIR\"\n\n# Check if rebuild needed\nif [ ! -f \"$BINARY\" ] || [ -n \"$(find Sources -newer \"$BINARY\" -type f -name '*.swift' 2>/dev/null)\" ]; then\n    echo \"Building ast-chunker-cli...\"\n    swift build -c release --product ast-chunker-cli\n    cp \".build/release/ast-chunker-cli\" \"$BINARY\"\n    echo \"ast-chunker-cli built successfully\"\nelse\n    echo \"ast-chunker-cli is up to date\"\nfi\n";
+		};
 		04FBPLIST2F4A000100000001 /* Copy Firebase Config */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -529,25 +546,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/zsh;
 			shellScript = "REAL=\"${PROJECT_DIR}/GoogleService-Info.plist\"\nTEMPLATE=\"${PROJECT_DIR}/GoogleService-Info.template.plist\"\nDEST=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/GoogleService-Info.plist\"\n\nif [ -f \"$REAL\" ]; then\n  echo \"Copying real GoogleService-Info.plist\"\n  cp \"$REAL\" \"$DEST\"\nelif [ -f \"$TEMPLATE\" ]; then\n  echo \"Copying template GoogleService-Info.plist (Firebase will run in placeholder mode)\"\n  cp \"$TEMPLATE\" \"$DEST\"\nelse\n  echo \"warning: No GoogleService-Info.plist or template found — Firebase disabled\"\nfi\n";
-		};
-		04ASTBLD2F3B000100000004 /* Build ast-chunker-cli */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Build ast-chunker-cli";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(SRCROOT)/Tools/Binaries/ast-chunker-cli",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/zsh;
-			shellScript = "set -e\nBINARY=\"${PROJECT_DIR}/Tools/Binaries/ast-chunker-cli\"\nCACHE_DIR=\"${PROJECT_DIR}/.build/ast-chunker-checkout\"\nREPO_URL=\"https://github.com/crunchybananas/ast-chunker.git\"\n\nmkdir -p \"${PROJECT_DIR}/Tools/Binaries\"\n\n# Clone or update the repo\nif [ ! -d \"$CACHE_DIR/.git\" ]; then\n    echo \"Cloning ast-chunker...\"\n    git clone --depth 1 \"$REPO_URL\" \"$CACHE_DIR\"\nelse\n    echo \"Updating ast-chunker...\"\n    cd \"$CACHE_DIR\" && git pull --ff-only 2>/dev/null || true\nfi\n\ncd \"$CACHE_DIR\"\n\n# Check if rebuild needed\nif [ ! -f \"$BINARY\" ] || [ -n \"$(find Sources -newer \"$BINARY\" -type f -name '*.swift' 2>/dev/null)\" ]; then\n    echo \"Building ast-chunker-cli...\"\n    swift build -c release --product ast-chunker-cli\n    cp \".build/release/ast-chunker-cli\" \"$BINARY\"\n    echo \"ast-chunker-cli built successfully\"\nelse\n    echo \"ast-chunker-cli is up to date\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

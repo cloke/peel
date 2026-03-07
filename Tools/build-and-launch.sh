@@ -22,6 +22,8 @@ set -e
 # Shared build configuration (single source of truth for paths)
 source "$(dirname "$0")/build-config.sh"
 
+BUILD_SCRIPT="${PROJECT_DIR}/Tools/build.sh"
+
 # Runtime options
 MCP_PORT=8765
 WAIT_FOR_SERVER=false
@@ -159,24 +161,15 @@ fi
 if [[ "$SKIP_BUILD" == "false" ]]; then
   cd "$PROJECT_DIR"
 
-  BUILD_LOG=$(mktemp)
-  set +e
-  peel_build Debug > "$BUILD_LOG" 2>&1
-  BUILD_STATUS=$?
-  set -e
-
-  grep -E '(Building|Build succeeded|error:|warning:|\*\*)' "$BUILD_LOG" || true
-
-  if [[ $BUILD_STATUS -ne 0 ]]; then
-    echo "❌ Build failed"
-    echo "---- Build log (last 200 lines) ----"
-    tail -n 200 "$BUILD_LOG"
-    echo "------------------------------------"
-    rm -f "$BUILD_LOG"
+  if [[ ! -x "$BUILD_SCRIPT" ]]; then
+    echo "❌ Missing build entry point: ${BUILD_SCRIPT}"
     exit 1
   fi
-  rm -f "$BUILD_LOG"
-  echo "✅ Build succeeded"
+
+  echo "🔨 Building via Tools/build.sh..."
+  if ! "$BUILD_SCRIPT" Debug; then
+    exit 1
+  fi
 else
   echo "⏭️  Skipping build (--skip-build)"
 fi

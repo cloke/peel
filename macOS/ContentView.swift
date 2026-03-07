@@ -30,7 +30,7 @@ enum CurrentTool: String, Identifiable, CaseIterable {
 /// What the user selected in the sidebar. The detail pane renders based on this.
 enum SidebarSelection: Hashable {
   // Repositories
-  case repo(UUID)
+  case repo(String)
   case repoCommandCenter  // No repo selected → overview
 
   // Activity
@@ -108,6 +108,9 @@ struct ContentView: View {
     .onChange(of: currentSection) { _, newValue in
       migrateLegacySection(newValue)
       syncSelectionToSection()
+    }
+    .onChange(of: aggregator.repositories.map(\ .normalizedRemoteURL)) { _, _ in
+      reconcileRepoSelection()
     }
     .onChange(of: sidebarSelection) { _, newValue in
       // Keep currentSection in sync so Cmd+1/2 and MCP still work
@@ -244,7 +247,7 @@ struct ContentView: View {
 
       ForEach(filteredRepositories) { repo in
         RepoSidebarRow(repo: repo)
-          .tag(SidebarSelection.repo(repo.id))
+          .tag(SidebarSelection.repo(repo.normalizedRemoteURL))
           .contextMenu {
             repoContextMenu(for: repo)
           }
@@ -311,17 +314,20 @@ struct ContentView: View {
         let onlineWAN = wanWorkers.filter { $0.status == .online }.count
         let totalOnline = swarm.connectedWorkers.count + 1 + onlineWAN
 
-        HStack(spacing: 6) {
+        Label {
+          HStack(spacing: 4) {
+            Text("\(totalOnline) online")
+              .font(.caption)
+            if swarm.tasksCompleted > 0 {
+              Text("· \(swarm.tasksCompleted) done")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+          }
+        } icon: {
           Circle()
             .fill(.green)
             .frame(width: 8, height: 8)
-          Text("\(totalOnline) online")
-            .font(.caption)
-          if swarm.tasksCompleted > 0 {
-            Text("· \(swarm.tasksCompleted) done")
-              .font(.caption)
-              .foregroundStyle(.secondary)
-          }
         }
         .tag(SidebarSelection.swarmConsole)
 
@@ -336,7 +342,11 @@ struct ContentView: View {
               .lineLimit(1)
           }
           .padding(.leading, 4)
-          .tag(SidebarSelection.swarmConsole)
+          .foregroundStyle(.secondary)
+          .contentShape(Rectangle())
+          .onTapGesture {
+            sidebarSelection = .swarmConsole
+          }
         }
 
         ForEach(wanWorkers.filter { $0.status == .online }, id: \.id) { worker in
@@ -352,7 +362,11 @@ struct ContentView: View {
               .foregroundStyle(.tertiary)
           }
           .padding(.leading, 4)
-          .tag(SidebarSelection.swarmConsole)
+          .foregroundStyle(.secondary)
+          .contentShape(Rectangle())
+          .onTapGesture {
+            sidebarSelection = .swarmConsole
+          }
         }
       } else {
         Label("Start Swarm", systemImage: "network.slash")
@@ -368,8 +382,8 @@ struct ContentView: View {
   @ViewBuilder
   private var detailContent: some View {
     switch sidebarSelection {
-    case .repo(let id):
-      if let repo = aggregator.repositoryById[id] {
+    case .repo(let normalizedRemoteURL):
+      if let repo = aggregator.repositoryByURL[normalizedRemoteURL] {
         RepoDetailView(repo: repo)
       } else {
         ContentUnavailableView("Repository Not Found", systemImage: "questionmark.folder")
@@ -520,6 +534,12 @@ struct ContentView: View {
     }
   }
 
+  private func reconcileRepoSelection() {
+    guard case .repo(let normalizedRemoteURL) = sidebarSelection else { return }
+    guard aggregator.repositoryByURL[normalizedRemoteURL] == nil else { return }
+    sidebarSelection = .repoCommandCenter
+  }
+
   private func migrateLegacySection(_ tool: CurrentTool) {
     switch tool {
     case .agents, .workspaces, .swarm: currentSection = .activity
@@ -591,7 +611,7 @@ struct ContentView: View {
       Divider()
       Button("Remove from Peel", role: .destructive) {
         dataService.deleteRepository(id: syncedId)
-        if sidebarSelection == .repo(repo.id) {
+        if sidebarSelection == .repo(repo.normalizedRemoteURL) {
           sidebarSelection = .repoCommandCenter
         }
         aggregator.rebuild()

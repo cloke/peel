@@ -63,9 +63,9 @@ Peel is a macOS/iOS SwiftUI application for managing GitHub, Git repositories, a
 ### Tools
 | Tool | Path | Purpose |
 |------|------|---------|
-| Build config | `Tools/build-config.sh` | Shared build paths (source this, don't duplicate) |
-| Build only | `Tools/build.sh` | Build app to repo-local derivedData |
-| Build & launch | `Tools/build-and-launch.sh` | Build app, enable MCP, launch |
+| Build config | `Tools/build-config.sh` | Shared build paths and shell build helpers |
+| Build only | `Tools/build.sh` | Canonical shell build entry point for the app |
+| Build & launch | `Tools/build-and-launch.sh` | MCP launcher wrapper that delegates builds to `Tools/build.sh` |
 | MCP CLI | `Tools/PeelCLI/` | CLI wrapper for MCP commands |
 | gh-issue-sync | `Tools/PeelSkills/` | Sync GitHub issues with plan files |
 | roadmap-audit | `Tools/PeelSkills/` | Verify roadmap claims against code |
@@ -960,7 +960,7 @@ Use `Tools/build-and-launch.sh --wait-for-server` (or `--skip-build` if a build 
 The script now **refuses to relaunch** if MCP chains are running or if Peel is running but MCP is unresponsive, unless you pass `--allow-while-chains-running`.
 
 Normal dev flow:
-1. Build the project: `./Tools/build.sh`
+1. Build the project with the canonical builder: `./Tools/build.sh`
 2. Tell the user the build succeeded
 3. Let the user run from Xcode with ⌘R
 

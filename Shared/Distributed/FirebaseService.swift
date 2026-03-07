@@ -1359,11 +1359,26 @@ public final class FirebaseService {
       data["targetWorkerId"] = targetWorkerId
     }
 
-    try await messagesCollection(swarmId: swarmId).addDocument(data: data)
+    let document = try await messagesCollection(swarmId: swarmId).addDocument(data: data)
+    let message = SwarmMessage(
+      id: document.documentID,
+      senderId: userId,
+      senderDeviceId: deviceId,
+      senderName: displayName,
+      text: text,
+      createdAt: Date(),
+      isBroadcast: targetWorkerId == nil,
+      targetWorkerId: targetWorkerId
+    )
+
+    seenMessageIds.insert(document.documentID)
+    swarmMessages.append(message)
+    trimSwarmMessagesIfNeeded()
 
     logActivity(.messageSent, message: targetWorkerId == nil ? "Broadcast: \(text)" : "Message to \(targetWorkerId!.prefix(8)): \(text)", details: [
       "swarmId": swarmId,
-      "isBroadcast": String(targetWorkerId == nil)
+      "isBroadcast": String(targetWorkerId == nil),
+      "docId": document.documentID
     ])
   }
 
@@ -1451,11 +1466,7 @@ public final class FirebaseService {
 
             self.seenMessageIds.insert(docId)
             self.swarmMessages.append(message)
-            // Keep only last 50 messages (also prune seen set)
-            while self.swarmMessages.count > 50 {
-              let old = self.swarmMessages.removeFirst()
-              self.seenMessageIds.remove(old.id)
-            }
+            self.trimSwarmMessagesIfNeeded()
 
             self.logger.info("Message received from \(message.senderName) (device: \(senderDeviceId.prefix(8))): \(message.text.prefix(50))")
             self.logActivity(.messageReceived, message: "\(message.isBroadcast ? "📢" : "💬") \(message.senderName): \(message.text)", details: [
@@ -1503,6 +1514,13 @@ public final class FirebaseService {
     messageListeners.removeAll()
     swarmMessages.removeAll()
     seenMessageIds.removeAll()
+  }
+
+  private func trimSwarmMessagesIfNeeded() {
+    while swarmMessages.count > 50 {
+      let old = swarmMessages.removeFirst()
+      seenMessageIds.remove(old.id)
+    }
   }
 
   // MARK: - Membership Listener (Real-time swarm list updates)
@@ -2108,4 +2126,3 @@ public final class FirebaseService {
     }
   }
 }
-

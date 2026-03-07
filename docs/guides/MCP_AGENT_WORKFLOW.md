@@ -589,11 +589,12 @@ requests.post("http://127.0.0.1:8765/rpc", json={
 │                    External Agent                            │
 │  (Claude Code, GitHub Copilot, custom script)               │
 └─────────────────┬───────────────────────────────────────────┘
-                  │ 1. Build & Launch
+                  │ 1. Build, then Launch MCP
                   ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                 build-and-launch.sh                          │
-│  - xcodebuild -scheme "Peel (macOS)"                        │
+│ build.sh + build-and-launch.sh                               │
+│  - build.sh is the canonical shell build entry point         │
+│  - build-and-launch.sh delegates builds to build.sh          │
 │  - defaults write ... mcp.server.enabled true               │
 │  - open Peel.app                                            │
 │  - Wait for MCP server (optional)                           │
@@ -653,7 +654,8 @@ requests.post("http://127.0.0.1:8765/rpc", json={
 
 ## Related Files
 
-- [Tools/build-and-launch.sh](../../Tools/build-and-launch.sh) - Build and launch script
+- [Tools/build.sh](../../Tools/build.sh) - Canonical shell build entry point
+- [Tools/build-and-launch.sh](../../Tools/build-and-launch.sh) - MCP launch wrapper
 - [Tools/PeelCLI/](../../Tools/PeelCLI/) - CLI wrapper for MCP
 - [Shared/AgentOrchestration/MCPServerService.swift](../../Shared/AgentOrchestration/MCPServerService.swift) - MCP server implementation
 - [Shared/AgentOrchestration/AgentChainRunner.swift](../../Shared/AgentOrchestration/AgentChainRunner.swift) - Chain execution engine

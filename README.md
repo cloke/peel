@@ -40,7 +40,10 @@ A macOS/iOS developer tools app for managing AI coding agents, git repositories,
 # Open in Xcode and press Cmd+R
 open Peel.xcodeproj
 
-# Or build + launch with MCP server
+# Or use the canonical build script, then launch with MCP if needed
+./Tools/build.sh
+
+# Build + launch with MCP server (delegates to Tools/build.sh)
 ./Tools/build-and-launch.sh --wait-for-server
 ```
 

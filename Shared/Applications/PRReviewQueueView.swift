@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import Github
 
 // MARK: - Queue Section (for ActivityDashboardView)
 
@@ -455,24 +456,183 @@ struct PRReviewQueueRow: View {
 
 struct PRReviewQueueDetailView: View {
   @Environment(MCPServerService.self) private var mcpServer
+  @Environment(RepositoryAggregator.self) private var aggregator
 
   private var queue: PRReviewQueue { mcpServer.prReviewQueue }
 
+  @State private var fetchedOpenPRs: [(ownerRepo: String, pr: UnifiedRepository.PRSummary)] = []
+  @State private var isLoadingPRs = false
+  @State private var selectedPRDetail: PRDetailIdentifier?
+
+  private var allOpenPRs: [(repo: UnifiedRepository, pr: UnifiedRepository.PRSummary)] {
+    if !fetchedOpenPRs.isEmpty {
+      return fetchedOpenPRs.compactMap { item in
+        guard let repo = aggregator.repositories.first(where: { $0.ownerSlashRepo == item.ownerRepo })
+        else { return nil }
+        return (repo, item.pr)
+      }
+    }
+    return aggregator.repositories.flatMap { repo in
+      repo.recentPRs.filter { $0.state == "open" }.map { (repo, $0) }
+    }
+  }
+
   var body: some View {
+    Group {
+      if let detail = selectedPRDetail {
+        PRDetailInlineView(ownerRepo: detail.ownerRepo, prNumber: detail.prNumber) {
+          selectedPRDetail = nil
+        }
+      } else {
+        mainContent
+      }
+    }
+    .navigationTitle("PR Reviews")
+  }
+
+  private var mainContent: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 20) {
+        // MCP review queue
         PRReviewQueueSection()
 
-        if queue.activeItems.isEmpty && queue.completedItems.isEmpty {
+        // Open PRs from tracked repos
+        openPRsSection
+
+        if queue.activeItems.isEmpty && queue.completedItems.isEmpty && allOpenPRs.isEmpty && !isLoadingPRs {
           ContentUnavailableView {
-            Label("No PR Reviews", systemImage: "text.badge.checkmark")
+            Label("No Pull Requests", systemImage: "arrow.triangle.pull")
           } description: {
-            Text("Enqueue PRs for automated review via MCP or the template browser.")
+            Text("Open PRs from your tracked repositories will appear here.\nEnqueue PRs for automated review via MCP or the template browser.")
           }
         }
       }
       .padding(20)
     }
-    .navigationTitle("PR Reviews")
+    .task { await fetchAllOpenPRs() }
+  }
+
+  @ViewBuilder
+  private var openPRsSection: some View {
+    if isLoadingPRs && allOpenPRs.isEmpty {
+      VStack(alignment: .leading, spacing: 12) {
+        SectionHeader("Open Pull Requests")
+        HStack(spacing: 8) {
+          ProgressView()
+            .controlSize(.small)
+          Text("Loading open PRs…")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.leading, 4)
+      }
+    } else if !allOpenPRs.isEmpty {
+      VStack(alignment: .leading, spacing: 12) {
+        SectionHeader("Open Pull Requests (\(allOpenPRs.count))")
+
+        LazyVStack(spacing: 1) {
+          ForEach(allOpenPRs, id: \.pr.id) { item in
+            openPRRow(item)
+          }
+        }
+        #if os(macOS)
+        .background(Color(nsColor: .controlBackgroundColor))
+        #else
+        .background(Color(.systemGroupedBackground))
+        #endif
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+      }
+    }
+  }
+
+  private func openPRRow(_ item: (repo: UnifiedRepository, pr: UnifiedRepository.PRSummary)) -> some View {
+    HStack(spacing: 12) {
+      Image(systemName: "arrow.triangle.pull")
+        .font(.callout)
+        .foregroundStyle(.green)
+        .frame(width: 24)
+
+      VStack(alignment: .leading, spacing: 2) {
+        Text(verbatim: "#\(item.pr.number) \(item.pr.title)")
+          .font(.callout)
+          .fontWeight(.medium)
+          .lineLimit(1)
+        HStack(spacing: 6) {
+          Text(item.repo.displayName)
+            .font(.caption)
+            .foregroundStyle(.blue)
+          if let ref = item.pr.headRef {
+            Text("· \(ref)")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
+          }
+        }
+      }
+
+      Spacer()
+
+      Text("Open")
+        .font(.caption2)
+        .fontWeight(.bold)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(.green.opacity(0.15)))
+        .foregroundStyle(.green)
+
+      Image(systemName: "chevron.right")
+        .font(.caption2)
+        .foregroundStyle(.tertiary)
+    }
+    .padding(.horizontal, 12)
+    .padding(.vertical, 8)
+    .contentShape(Rectangle())
+    .onTapGesture {
+      if let ownerRepo = item.repo.ownerSlashRepo {
+        selectedPRDetail = PRDetailIdentifier(ownerRepo: ownerRepo, prNumber: item.pr.number)
+      }
+    }
+  }
+
+  private func fetchAllOpenPRs() async {
+    isLoadingPRs = true
+    defer { isLoadingPRs = false }
+
+    let repos = aggregator.repositories.compactMap { repo -> (String, String, String)? in
+      guard let ownerRepo = repo.ownerSlashRepo else { return nil }
+      let parts = ownerRepo.split(separator: "/")
+      guard parts.count == 2 else { return nil }
+      return (ownerRepo, String(parts[0]), String(parts[1]))
+    }
+
+    var results: [(ownerRepo: String, pr: UnifiedRepository.PRSummary)] = []
+
+    await withTaskGroup(of: [(String, UnifiedRepository.PRSummary)].self) { group in
+      for (ownerRepo, owner, repoName) in repos {
+        group.addTask {
+          do {
+            let prs = try await Github.pullRequests(owner: owner, repository: repoName, state: "open")
+            return prs.map { pr in
+              (ownerRepo, UnifiedRepository.PRSummary(
+                id: UUID(),
+                number: pr.number,
+                title: pr.title ?? "Untitled",
+                state: pr.state ?? "open",
+                htmlURL: pr.html_url,
+                headRef: pr.head.ref
+              ))
+            }
+          } catch {
+            return []
+          }
+        }
+      }
+
+      for await batch in group {
+        results.append(contentsOf: batch)
+      }
+    }
+
+    fetchedOpenPRs = results
   }
 }

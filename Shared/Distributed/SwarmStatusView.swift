@@ -20,7 +20,7 @@ public struct SwarmStatusView: View {
   @State private var displayName: String = ""
   @State private var messageText: String = ""
   @State private var isSendingMessage = false
-  @State private var lastSeenMessageCount: Int = 0
+  @State private var loggedMessageIds = Set<String>()
   @Query(filter: #Predicate<TrackedWorktree> { $0.source == "swarm" },
          sort: \TrackedWorktree.createdAt, order: .reverse)
   private var swarmWorktrees: [TrackedWorktree]
@@ -550,15 +550,12 @@ public struct SwarmStatusView: View {
     .padding(.horizontal, 12)
     .padding(.vertical, 8)
     .onChange(of: firebaseService.swarmMessages) { _, messages in
-      // Show ALL new incoming messages in the task log (not just the last one)
-      let newCount = messages.count
-      if newCount > lastSeenMessageCount {
-        for message in messages.suffix(newCount - lastSeenMessageCount) {
-          let prefix = message.isBroadcast ? "\u{1F4E2}" : "\u{1F4AC}"
-          log("\(prefix) \(message.senderName): \(message.text)")
-        }
+      loggedMessageIds.formIntersection(Set(messages.map(\.id)))
+      for message in messages where !loggedMessageIds.contains(message.id) {
+        let prefix = message.isBroadcast ? "\u{1F4E2}" : "\u{1F4AC}"
+        log("\(prefix) \(message.senderName): \(message.text)")
+        loggedMessageIds.insert(message.id)
       }
-      lastSeenMessageCount = newCount
     }
   }
 
@@ -684,7 +681,7 @@ struct PeerRow: View {
       Spacer()
       
       Circle()
-        .fill(Color.green)
+        .fill(statusColor)
         .frame(width: 6, height: 6)
     }
     .padding(.vertical, 4)
@@ -702,6 +699,21 @@ struct PeerRow: View {
   
   private var iconColor: Color {
     role == .worker ? .blue : .secondary
+  }
+
+  private var statusColor: Color {
+    switch status?.state {
+    case .idle:
+      return .green
+    case .busy:
+      return .blue
+    case .offline:
+      return .orange
+    case .error:
+      return .red
+    case nil:
+      return .secondary
+    }
   }
 }
 
@@ -769,10 +781,24 @@ struct FirestoreWorkerRow: View {
       Spacer()
 
       Circle()
-        .fill(worker.status == .online ? Color.green : Color.orange)
+        .fill(statusColor)
         .frame(width: 6, height: 6)
     }
     .padding(.vertical, 4)
+  }
+
+  private var statusColor: Color {
+    if worker.isStale {
+      return .orange
+    }
+    switch worker.status {
+    case .online:
+      return .green
+    case .busy:
+      return .blue
+    case .offline:
+      return .orange
+    }
   }
 }
 

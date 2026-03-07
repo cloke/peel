@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "type": "command",
+        "command": "./Tools/vscode-build-serialization-hook.rb",
+        "timeout": 10
+      }
+    ]
+  }
+}

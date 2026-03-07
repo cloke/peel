@@ -44,6 +44,11 @@ Technical reference material.
 
 ## Quick Reference for Agents
 
+### Canonical Build
+```bash
+./Tools/build.sh
+```
+
 ### Build & Launch
 ```bash
 ./Tools/build-and-launch.sh --wait-for-server
@@ -80,7 +85,8 @@ Options:
 | RAG Store | `Shared/AgentOrchestration/RAGStore.swift` |
 | Swarm Coordinator | `Shared/AgentOrchestration/SwarmCoordinator.swift` |
 | CLI wrapper | `Tools/PeelCLI/` |
-| Build script | `Tools/build-and-launch.sh` |
+| Build script | `Tools/build.sh` |
+| MCP launcher | `Tools/build-and-launch.sh` |
 
 ### Packages
 | Package | Purpose |

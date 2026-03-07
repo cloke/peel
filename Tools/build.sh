@@ -1,13 +1,13 @@
 #!/bin/zsh
 #
-# build.sh - Build Peel without launching
+# build.sh - Canonical Peel build entry point
 #
 # Usage:
 #   ./Tools/build.sh              # Build Debug
 #   ./Tools/build.sh Release      # Build Release
 #
-# Uses the same local derivedDataPath as build-and-launch.sh so both
-# scripts always operate on the same binary.
+# Uses the shared build helpers in build-config.sh and is the single
+# source of truth for shell-based Peel builds.
 #
 
 set -e
@@ -15,20 +15,16 @@ source "$(dirname "$0")/build-config.sh"
 
 CONFIG="${1:-Debug}"
 
-BUILD_LOG=$(mktemp)
-set +e
-peel_build "$CONFIG" > "$BUILD_LOG" 2>&1
-BUILD_STATUS=$?
-set -e
+peel_acquire_build_lock --wait
+trap peel_release_build_lock EXIT
 
-grep -E '(Building|Build succeeded|error:|warning:|\*\*)' "$BUILD_LOG" || true
-
-if [[ $BUILD_STATUS -ne 0 ]]; then
-  echo "❌ Build failed"
-  tail -n 100 "$BUILD_LOG"
-  rm -f "$BUILD_LOG"
+if ! peel_run_build_with_retry "$CONFIG"; then
+  peel_print_build_summary
+  peel_print_failed_build_log 100
+  peel_cleanup_build_log
   exit 1
 fi
 
-rm -f "$BUILD_LOG"
+peel_print_build_summary
+peel_cleanup_build_log
 echo "✅ Build succeeded: ${APP_PATH}"

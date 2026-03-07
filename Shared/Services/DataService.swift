@@ -938,6 +938,16 @@ final class DataService {
     }
   }
 
+  func markWorktreeCleaned(id: UUID) {
+    let descriptor = FetchDescriptor<TrackedWorktree>(
+      predicate: #Predicate { $0.id == id }
+    )
+    if let existing = try? modelContext.fetch(descriptor).first {
+      existing.taskStatus = TrackedWorktree.Status.cleaned
+      try? modelContext.save()
+    }
+  }
+
   func getTrackedWorktrees() -> [TrackedWorktree] {
     let descriptor = FetchDescriptor<TrackedWorktree>(sortBy: [SortDescriptor(\.createdAt, order: .reverse)])
     return (try? modelContext.fetch(descriptor)) ?? []
