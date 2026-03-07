@@ -2,6 +2,28 @@ import Foundation
 import AppKit
 import ScreenCaptureKit
 
+// ┌─────────────────────────────────────────────────────────────────────┐
+// │ IMPORTANT: DO NOT add SCStream-based capture as a fallback.        │
+// │                                                                     │
+// │ This file has been regressed multiple times by agents adding back   │
+// │ old SCStream/startCapture() code. That approach:                    │
+// │   - Fails on macOS 26 with "audio/video capture failure"           │
+// │   - Requires the app to be frontmost                               │
+// │   - Adds ~170 lines of unnecessary helper classes                  │
+// │                                                                     │
+// │ SCScreenshotManager.captureImage() (macOS 14+) is the correct API. │
+// │ It works in the background and captures individual windows cleanly. │
+// │                                                                     │
+// │ If screenshots fail, the likely causes are:                         │
+// │   1. Screen Recording permission not granted in System Settings     │
+// │   2. Stage Manager hiding the window (thumbnail ~130px) — the      │
+// │      user needs to bring Peel into the active stage                 │
+// │   3. findAppWindow returning nil — check bundle ID matching        │
+// │                                                                     │
+// │ DO NOT "fix" by adding SCStream, CMSampleBuffer, CIContext,        │
+// │ ScreenshotStreamOutput, StreamBox, or CaptureCancellationState.    │
+// └─────────────────────────────────────────────────────────────────────┘
+
 actor ScreenshotService {
   private var permissionRequested = false
 
@@ -71,6 +93,9 @@ actor ScreenshotService {
     return fileURL
   }
 
+  // Stage Manager can hide the main window, leaving only a ~130px thumbnail
+  // visible. Filter for on-screen windows above a minimum size to avoid
+  // capturing menu bar items or Stage Manager thumbnails.
   private func findAppWindow(in content: SCShareableContent) -> SCWindow? {
     guard let bundleId = Bundle.main.bundleIdentifier else { return nil }
     let candidates = content.windows.filter { window in
