@@ -61,6 +61,7 @@ struct RAGRepositoryCardView: View {
   @State private var syncResultMessage: String?
   @State private var onDemandProgress: String?
   @State private var selectedPeerId: String?
+  @Environment(RepositoryAggregator.self) private var aggregator
 
   /// Progress text for externally-triggered (MCP) on-demand transfers.
   /// Populated by a background polling task so the card reflects MCP-initiated syncs.
@@ -664,6 +665,7 @@ struct RAGRepositoryCardView: View {
             syncDirection = nil
             if direction == .pull {
               await mcpServer.refreshRagSummary()
+              aggregator.rebuild()
               await refreshAnalysisStatus()
             }
             // Auto-dismiss success message
@@ -767,6 +769,7 @@ struct RAGRepositoryCardView: View {
       })?.connectionMethod?.rawValue ?? "relay"
       syncResultMessage = "Pulled from \(workerName) via \(method)"
       await mcpServer.refreshRagSummary()
+      aggregator.rebuild()
       await refreshAnalysisStatus()
       Task { @MainActor in
         try? await Task.sleep(for: .seconds(6))

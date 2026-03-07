@@ -1875,7 +1875,7 @@ struct RAGTabView: View {
             Text(ragStatusTitle)
               .font(.headline)
 
-            if let model = repo.ragEmbeddingModel {
+            if let model = liveEmbeddingModel ?? repo.ragEmbeddingModel {
               Text(model)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -1986,6 +1986,14 @@ struct RAGTabView: View {
   private var ragStatusTitle: String {
     if isCurrentlyIndexing { return "Indexing…" }
     return repo.ragStatus?.displayName ?? "Not Indexed"
+  }
+
+  /// Live embedding model from mcpServer.ragRepos (refreshed after sync).
+  private var liveEmbeddingModel: String? {
+    let identifier = repo.normalizedRemoteURL
+    return mcpServer.ragRepos.first(where: {
+      $0.repoIdentifier == identifier || $0.rootPath == repo.localPath
+    })?.embeddingModel
   }
 
   // MARK: - Pipeline Card
