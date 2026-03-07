@@ -3,9 +3,30 @@ import Foundation
 struct RepoTechDetector {
   static func detectTags(repoPath: String) -> Set<String> {
     var tags: Set<String> = []
+    let fm = FileManager.default
+    func exists(_ name: String) -> Bool {
+      fm.fileExists(atPath: (repoPath as NSString).appendingPathComponent(name))
+    }
     if isEmberRepo(repoPath: repoPath) {
       tags.insert("ember")
+      tags.insert("javascript")
     }
+    let entries = (try? fm.contentsOfDirectory(atPath: repoPath)) ?? []
+    if exists("Package.swift") || entries.contains(where: { $0.hasSuffix(".xcodeproj") || $0.hasSuffix(".xcworkspace") }) {
+      tags.insert("swift")
+    }
+    if exists("tsconfig.json") {
+      tags.insert("typescript")
+      tags.insert("javascript")
+    } else if exists("package.json") {
+      tags.insert("javascript")
+    }
+    if exists("Cargo.toml") { tags.insert("rust") }
+    if exists("go.mod") { tags.insert("go") }
+    if exists("requirements.txt") || exists("pyproject.toml") || exists("setup.py") {
+      tags.insert("python")
+    }
+    if exists("Gemfile") { tags.insert("ruby") }
     return tags
   }
 

@@ -1530,34 +1530,35 @@ struct ActivityTabView: View {
   var body: some View {
     let repoItems = filteredItems
 
-    if activityFeed.items(for: repo.normalizedRemoteURL).isEmpty {
-      ContentUnavailableView {
-        Label("No Activity", systemImage: "clock")
-      } description: {
-        Text("No recent activity for this repository.")
-      }
-    } else {
-      ScrollView {
-        VStack(alignment: .leading, spacing: 12) {
-          // Filter bar
-          HStack {
-            SectionHeader("Activity")
-            Spacer()
-            Picker("Filter", selection: $filterMode) {
-              ForEach(RepoActivityFilter.allCases, id: \.self) { mode in
-                Text(mode.rawValue).tag(mode)
+    Group {
+      if activityFeed.items(for: repo.normalizedRemoteURL).isEmpty {
+        ContentUnavailableView {
+          Label("No Activity", systemImage: "clock")
+        } description: {
+          Text("No recent activity for this repository.")
+        }
+      } else {
+        ScrollView {
+          VStack(alignment: .leading, spacing: 12) {
+            // Filter bar
+            HStack {
+              SectionHeader("Activity")
+              Spacer()
+              Picker("Filter", selection: $filterMode) {
+                ForEach(RepoActivityFilter.allCases, id: \.self) { mode in
+                  Text(mode.rawValue).tag(mode)
+                }
               }
+              .pickerStyle(.segmented)
+              .frame(maxWidth: 280)
             }
-            .pickerStyle(.segmented)
-            .frame(maxWidth: 280)
-          }
 
-          if repoItems.isEmpty {
-            ContentUnavailableView {
-              Label("No Matching Activity", systemImage: "line.3.horizontal.decrease.circle")
-            } description: {
-              Text("No \(filterMode.rawValue.lowercased()) activity for this repository.")
-            }
+            if repoItems.isEmpty {
+              ContentUnavailableView {
+                Label("No Matching Activity", systemImage: "line.3.horizontal.decrease.circle")
+              } description: {
+                Text("No \(filterMode.rawValue.lowercased()) activity for this repository.")
+              }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 40)
           } else {
@@ -1595,6 +1596,10 @@ struct ActivityTabView: View {
         ActivityItemDetailSheet(item: item)
       }
       #endif
+    }
+    }
+    .task(id: repo.normalizedRemoteURL) {
+      activityFeed.rebuild()
     }
   }
 
@@ -3008,7 +3013,7 @@ struct SkillsTabView: View {
       }
       .padding(16)
     }
-    .task(id: showInactive) {
+    .task(id: "\(repo.normalizedRemoteURL)-\(showInactive)") {
       loadSkills()
     }
   }
