@@ -320,12 +320,22 @@ curl -X POST http://127.0.0.1:8765/rpc \
 | `rag.largefiles` | Large files (refactor candidates) |
 | `rag.hotspots` | Change hotspots |
 | `rag.duplicates` | Duplicate code detection |
-| `rag.orphans` | Potentially unused files |
+| `rag.orphans` | Potentially unused files, baseline-aware by default |
 | `rag.facets` | Language/type distribution |
 | `rag.patterns` | Known code patterns |
 | `rag.constructtypes` | Construct type breakdown |
 | `rag.similar` | Find similar code chunks |
 | `rag.structural` | Query by structural characteristics |
+
+```bash
+# Orphan audit with default signal-improving filters
+curl -X POST http://127.0.0.1:8765/rpc \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rag.orphans","arguments":{"repoPath":"/path/to/repo","excludeTests":true,"excludeEntryPoints":true,"limit":50}}}'
+
+# Include docs/config files and ignore the baseline if you want the rawer report
+curl -X POST http://127.0.0.1:8765/rpc \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"rag.orphans","arguments":{"repoPath":"/path/to/repo","includeNonCode":true,"respectBaseline":false,"limit":50}}}'
+```
 
 ---
 

@@ -379,23 +379,43 @@ extension RAGToolsHandler {
     
     let excludeTests = optionalBool("excludeTests", from: arguments, default: true)
     let excludeEntryPoints = optionalBool("excludeEntryPoints", from: arguments, default: true)
+    let includeNonCode = optionalBool("includeNonCode", from: arguments, default: false)
+    let respectBaseline = optionalBool("respectBaseline", from: arguments, default: true)
+    let baselinePath = optionalString("baselinePath", from: arguments)
     let limit = optionalInt("limit", from: arguments) ?? 50
+    let fetchLimit = max(limit * 4, 100)
     
     do {
-      let orphans = try await delegate.findOrphans(
+      let rawOrphans = try await delegate.findOrphans(
         repoPath: repoPath,
         excludeTests: excludeTests,
         excludeEntryPoints: excludeEntryPoints,
-        limit: limit
+        limit: fetchLimit
+      )
+      let filtered = RAGOrphanAuditSupport.filter(
+        rawOrphans,
+        repoPath: repoPath,
+        requestedLimit: limit,
+        includeNonCode: includeNonCode,
+        respectBaseline: respectBaseline,
+        baselinePathOverride: baselinePath
       )
       
       let result: [String: Any] = [
         "repoPath": repoPath,
-        "orphans": orphans.map { $0.toDict() },
-        "count": orphans.count,
+        "orphans": filtered.orphans.map { $0.toDict() },
+        "count": filtered.orphans.count,
         "excludeTests": excludeTests,
         "excludeEntryPoints": excludeEntryPoints,
-        "note": "Files with no imports/requires pointing to them AND no type references from other files. May still be used via dynamic loading, reflection, or as entry points."
+        "includeNonCode": includeNonCode,
+        "respectBaseline": respectBaseline,
+        "baselinePath": filtered.baselinePath as Any,
+        "suppressedNonCodeCount": filtered.suppressedNonCodePaths.count,
+        "suppressedBaselineCount": filtered.suppressedBaselinePaths.count,
+        "suppressedNonCodePaths": filtered.suppressedNonCodePaths,
+        "suppressedBaselinePaths": filtered.suppressedBaselinePaths,
+        "preFilterFetchedCount": filtered.preFilterFetchedCount,
+        "note": "Files with no imports/requires pointing to them AND no type references from other files. Results are post-filtered to suppress known false positives from non-code files and the orphan baseline unless disabled. May still show dynamic loading, reflection, or framework-discovered usage."
       ]
       return (200, makeResult(id: id, result: result))
     } catch {
@@ -546,4 +566,161 @@ extension RAGToolsHandler {
     }
   }
   
+}
+
+struct RAGOrphanAuditFilterResult {
+  let orphans: [RAGToolOrphanResult]
+  let baselinePath: String?
+  let suppressedBaselinePaths: [String]
+  let suppressedNonCodePaths: [String]
+  let preFilterFetchedCount: Int
+}
+
+enum RAGOrphanAuditSupport {
+  private static let defaultBaselineRelativePath = "Docs/reference/RAG_ORPHAN_BASELINE.md"
+  private static let nonCodeLanguages: Set<String> = [
+    "css",
+    "csv",
+    "html",
+    "json",
+    "markdown",
+    "plist",
+    "property list",
+    "text",
+    "xml",
+    "yaml"
+  ]
+  private static let nonCodeExtensions: Set<String> = [
+    "csv",
+    "entitlements",
+    "htm",
+    "html",
+    "json",
+    "md",
+    "markdown",
+    "plist",
+    "txt",
+    "xcconfig",
+    "xml",
+    "yaml",
+    "yml"
+  ]
+
+  static func filter(
+    _ orphans: [RAGToolOrphanResult],
+    repoPath: String,
+    requestedLimit: Int,
+    includeNonCode: Bool,
+    respectBaseline: Bool,
+    baselinePathOverride: String?
+  ) -> RAGOrphanAuditFilterResult {
+    let baseline = loadBaseline(repoPath: repoPath, baselinePathOverride: baselinePathOverride, respectBaseline: respectBaseline)
+
+    var filtered = orphans
+    var suppressedNonCodePaths: [String] = []
+    var suppressedBaselinePaths: [String] = []
+
+    if !includeNonCode {
+      let partitions = filtered.stablePartition { isNonCode($0) }
+      suppressedNonCodePaths = partitions.matched.map(\.filePath)
+      filtered = partitions.unmatched
+    }
+
+    if !baseline.paths.isEmpty {
+      let partitions = filtered.stablePartition { baseline.paths.contains(normalizePath($0.filePath)) }
+      suppressedBaselinePaths = partitions.matched.map(\.filePath)
+      filtered = partitions.unmatched
+    }
+
+    return RAGOrphanAuditFilterResult(
+      orphans: Array(filtered.prefix(requestedLimit)),
+      baselinePath: baseline.resolvedPath,
+      suppressedBaselinePaths: suppressedBaselinePaths,
+      suppressedNonCodePaths: suppressedNonCodePaths,
+      preFilterFetchedCount: orphans.count
+    )
+  }
+
+  static func parseBaselinePaths(from markdown: String) -> Set<String> {
+    let pattern = #"^\|\s*`([^`]+)`\s*\|"#
+    guard let regex = try? NSRegularExpression(pattern: pattern) else {
+      return []
+    }
+
+    return markdown
+      .split(separator: "\n")
+      .reduce(into: Set<String>()) { paths, rawLine in
+        let line = String(rawLine)
+        let range = NSRange(line.startIndex..., in: line)
+        guard let match = regex.firstMatch(in: line, options: [], range: range),
+              let pathRange = Range(match.range(at: 1), in: line) else {
+          return
+        }
+        paths.insert(normalizePath(String(line[pathRange])))
+      }
+  }
+
+  private static func loadBaseline(
+    repoPath: String,
+    baselinePathOverride: String?,
+    respectBaseline: Bool
+  ) -> (paths: Set<String>, resolvedPath: String?) {
+    guard respectBaseline else {
+      return ([], nil)
+    }
+
+    let fileManager = FileManager.default
+    let baselineURL: URL
+    if let baselinePathOverride, !baselinePathOverride.isEmpty {
+      baselineURL = resolveBaselineURL(path: baselinePathOverride, repoPath: repoPath)
+    } else {
+      baselineURL = URL(fileURLWithPath: repoPath).appendingPathComponent(defaultBaselineRelativePath)
+    }
+
+    guard fileManager.fileExists(atPath: baselineURL.path),
+          let markdown = try? String(contentsOf: baselineURL, encoding: .utf8) else {
+      return ([], nil)
+    }
+
+    return (parseBaselinePaths(from: markdown), baselineURL.path)
+  }
+
+  private static func resolveBaselineURL(path: String, repoPath: String) -> URL {
+    if path.hasPrefix("/") {
+      return URL(fileURLWithPath: path)
+    }
+    return URL(fileURLWithPath: repoPath).appendingPathComponent(path)
+  }
+
+  private static func isNonCode(_ orphan: RAGToolOrphanResult) -> Bool {
+    let language = orphan.language.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if nonCodeLanguages.contains(language) {
+      return true
+    }
+
+    let pathExtension = URL(fileURLWithPath: orphan.filePath).pathExtension.lowercased()
+    return nonCodeExtensions.contains(pathExtension)
+  }
+
+  private static func normalizePath(_ path: String) -> String {
+    path.trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "\\", with: "/")
+  }
+}
+
+private extension Array {
+  func stablePartition(_ predicate: (Element) -> Bool) -> (matched: [Element], unmatched: [Element]) {
+    var matched: [Element] = []
+    var unmatched: [Element] = []
+
+    for element in self {
+      if predicate(element) {
+        matched.append(element)
+      } else {
+        unmatched.append(element)
+      }
+    }
+
+    return (matched, unmatched)
+  }
 }

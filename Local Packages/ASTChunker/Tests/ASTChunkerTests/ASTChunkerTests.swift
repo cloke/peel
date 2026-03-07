@@ -211,4 +211,37 @@ final class ASTChunkerTests: XCTestCase {
     XCTAssertGreaterThan(chunks.count, 1)
     XCTAssertEqual(chunks.first?.constructType, .file)
   }
+
+  // MARK: - Symbol Metadata Tests
+
+  func testChunkInitializerNormalizesDefinitionAndReferenceSymbols() {
+    let chunk = ASTChunk(
+      constructType: .classDecl,
+      constructName: "UserService",
+      startLine: 1,
+      endLine: 10,
+      text: "class UserService { let repository: UserRepository }",
+      language: "swift",
+      metadata: ASTChunkMetadata(typeReferences: ["UserRepository", "User"])
+    )
+
+    XCTAssertEqual(chunk.metadata.symbolDefinitions, [
+      ASTSymbol(name: "UserService", kind: .type, language: "swift")
+    ])
+    XCTAssertEqual(chunk.metadata.symbolReferences, [
+      ASTSymbol(name: "UserRepository", kind: .unknown, language: "swift"),
+      ASTSymbol(name: "User", kind: .unknown, language: "swift")
+    ])
+  }
+
+  func testChunkMetadataDecodesLegacyJSONWithoutSymbolFields() throws {
+    let json = #"{"decorators":["@MainActor"],"typeReferences":["Repository"]}"#
+
+    let metadata = try XCTUnwrap(ASTChunkMetadata.fromJSON(json))
+
+    XCTAssertEqual(metadata.decorators, ["@MainActor"])
+    XCTAssertEqual(metadata.typeReferences, ["Repository"])
+    XCTAssertTrue(metadata.symbolDefinitions.isEmpty)
+    XCTAssertTrue(metadata.symbolReferences.isEmpty)
+  }
 }

@@ -176,4 +176,80 @@ final class UtilitiesTests: XCTestCase {
     let result = BranchNameSanitizer.sanitize(input)
     XCTAssertEqual(result, "")
   }
+
+  // MARK: - RAG Orphan Audit Support Tests
+
+  func testRAGOrphanAuditSupportParsesBaselineTablePaths() {
+    let markdown = """
+    | File | Category | Reason |
+    |------|----------|--------|
+    | `Shared/PeelApp.swift` | Entry | App entry |
+    | `Shared/AgentOrchestration/MCPServerService+ServerCore.swift` | Extension | Same-module extension |
+    """
+
+    let paths = RAGOrphanAuditSupport.parseBaselinePaths(from: markdown)
+
+    XCTAssertTrue(paths.contains("Shared/PeelApp.swift"))
+    XCTAssertTrue(paths.contains("Shared/AgentOrchestration/MCPServerService+ServerCore.swift"))
+    XCTAssertEqual(paths.count, 2)
+  }
+
+  func testRAGOrphanAuditSupportFiltersNonCodeAndBaselineEntries() {
+    let repoRoot = URL(fileURLWithPath: NSTemporaryDirectory())
+      .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let docsDir = repoRoot.appendingPathComponent("Docs/reference", isDirectory: true)
+
+    do {
+      try FileManager.default.createDirectory(at: docsDir, withIntermediateDirectories: true)
+      let baseline = "| File | Category | Reason |\n|------|----------|--------|\n| `Shared/PeelApp.swift` | Entry | App entry |\n"
+      try baseline.write(
+        to: docsDir.appendingPathComponent("RAG_ORPHAN_BASELINE.md"),
+        atomically: true,
+        encoding: .utf8
+      )
+
+      let results = [
+        RAGToolOrphanResult(
+          filePath: "Shared/PeelApp.swift",
+          language: "Swift",
+          lineCount: 10,
+          symbolsDefinedCount: 1,
+          symbolsDefined: ["PeelApp"],
+          reason: "Entry point"
+        ),
+        RAGToolOrphanResult(
+          filePath: "Docs/PRODUCT_MANUAL.md",
+          language: "Markdown",
+          lineCount: 10,
+          symbolsDefinedCount: 0,
+          symbolsDefined: [],
+          reason: "Doc"
+        ),
+        RAGToolOrphanResult(
+          filePath: "Shared/Services/Useful.swift",
+          language: "Swift",
+          lineCount: 10,
+          symbolsDefinedCount: 1,
+          symbolsDefined: ["Useful"],
+          reason: "Candidate"
+        )
+      ]
+
+      let filtered = RAGOrphanAuditSupport.filter(
+        results,
+        repoPath: repoRoot.path,
+        requestedLimit: 10,
+        includeNonCode: false,
+        respectBaseline: true,
+        baselinePathOverride: nil
+      )
+
+      XCTAssertEqual(filtered.orphans.map(\.filePath), ["Shared/Services/Useful.swift"])
+      XCTAssertEqual(filtered.suppressedBaselinePaths, ["Shared/PeelApp.swift"])
+      XCTAssertEqual(filtered.suppressedNonCodePaths, ["Docs/PRODUCT_MANUAL.md"])
+      XCTAssertEqual(filtered.baselinePath, docsDir.appendingPathComponent("RAG_ORPHAN_BASELINE.md").path)
+    } catch {
+      XCTFail("Unexpected file-system error: \(error)")
+    }
+  }
 }

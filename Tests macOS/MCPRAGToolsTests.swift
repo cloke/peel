@@ -132,6 +132,24 @@ final class MCPRAGToolsTests: XCTestCase {
     XCTAssertNotNil(properties["mode"], "Should have mode parameter")
   }
 
+  /// Test that rag.orphans exposes filtering parameters for actionable audits
+  func testRAGOrphansParameterSchema() {
+    let orphansTool = server().allToolDefinitions.first { $0.name == "rag.orphans" }
+
+    guard let tool = orphansTool,
+      let schema = tool.inputSchema as? [String: Any],
+      let properties = schema["properties"] as? [String: Any]
+    else {
+      XCTFail("rag.orphans should have valid schema with properties")
+      return
+    }
+
+    XCTAssertNotNil(properties["repoPath"], "Should have repoPath parameter")
+    XCTAssertNotNil(properties["includeNonCode"], "Should have includeNonCode parameter")
+    XCTAssertNotNil(properties["respectBaseline"], "Should have respectBaseline parameter")
+    XCTAssertNotNil(properties["baselinePath"], "Should have baselinePath parameter")
+  }
+
   /// Test repos.delete parameter schema
   func testReposDeleteParameterSchema() {
     let deleteTool = server().allToolDefinitions.first { $0.name == "repos.delete" }

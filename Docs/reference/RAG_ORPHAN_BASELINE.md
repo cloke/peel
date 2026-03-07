@@ -10,7 +10,7 @@
 
 ```bash
 # Run rag.orphans via PeelCLI
-echo '{"repoPath":"/path/to/kitchen-sink","excludeTests":true,"excludeEntryPoints":false,"limit":50}' > tmp/peel-mcp-args.json
+echo '{"repoPath":"/path/to/repo","excludeTests":true,"excludeEntryPoints":true,"limit":50}' > tmp/peel-mcp-args.json
 Tools/PeelCLI/.build/debug/peel-mcp tools-call --tool-name rag.orphans --arguments-json tmp/peel-mcp-args.json
 ```
 
