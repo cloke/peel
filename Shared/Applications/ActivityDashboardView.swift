@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import Github
 
 // MARK: - Activity Dashboard
 
@@ -18,6 +19,7 @@ struct ActivityDashboardView: View {
   @State private var filterMode: ActivityFilterMode = .all
   @State private var filterRepo: String? = nil  // nil = all repos
   @State private var selectedChain: AgentChain?
+  @State private var selectedPRDetail: PRDetailIdentifier?
   @State private var expandedItems: Set<UUID> = []
   @State private var recentPage = 0
 
@@ -74,6 +76,9 @@ struct ActivityDashboardView: View {
         }
       }
       .frame(minWidth: 700, minHeight: 500)
+    }
+    .sheet(item: $selectedPRDetail) { detail in
+      ActivityPRSheet(ownerRepo: detail.ownerRepo, prNumber: detail.prNumber)
     }
     #endif
   }
@@ -442,14 +447,22 @@ struct ActivityDashboardView: View {
   private func navigateToItem(_ item: ActivityItem) {
     switch item.kind {
     case .chainStarted(let id), .chainCompleted(let id, _):
-      // Chain items open the full ChainDetailView (too complex for inline)
       if let chain = mcpServer.agentManager.chains.first(where: { $0.id == id }) {
         selectedChain = chain
       } else {
         toggleExpanded(item)
       }
+
+    case .prActivity(let prNumber):
+      if let repoName = item.repoDisplayName,
+         let repo = aggregator.repositories.first(where: { $0.displayName == repoName }),
+         let ownerRepo = repo.ownerSlashRepo {
+        selectedPRDetail = PRDetailIdentifier(ownerRepo: ownerRepo, prNumber: prNumber)
+      } else {
+        toggleExpanded(item)
+      }
+
     default:
-      // All other items expand inline
       toggleExpanded(item)
     }
   }
@@ -908,6 +921,106 @@ struct QuickTemplateCard: View {
     case .core: return "bolt.fill"
     case .specialized: return "slider.horizontal.3"
     case .yolo: return "shield.checkmark.fill"
+    }
+  }
+}
+
+// MARK: - Activity PR Sheet
+
+/// Full PR detail presented as a sheet from the Activity dashboard.
+/// Mirrors the experience of selecting a PR in the Repositories section.
+struct ActivityPRSheet: View {
+  let ownerRepo: String
+  let prNumber: Int
+
+  private enum LoadState {
+    case loading
+    case loaded(pr: Github.PullRequest, repo: Github.Repository)
+    case error(String)
+  }
+
+  @State private var state: LoadState = .loading
+  @Environment(\.dismiss) private var dismiss
+
+  #if os(macOS)
+  @Environment(MCPServerService.self) private var mcpServer
+  @State private var reviewAgentCoordinator = PRReviewAgentCoordinator()
+  @State private var reviewAgentTarget: PRReviewAgentTarget?
+  @State private var reviewStatusBridge = PRReviewStatusBridge()
+  #endif
+
+  var body: some View {
+    NavigationStack {
+      content
+        .navigationTitle("PR #\(prNumber)")
+        #if os(macOS)
+        .navigationSubtitle(ownerRepo)
+        #endif
+        .toolbar {
+          ToolbarItem(placement: .cancellationAction) {
+            Button("Done") { dismiss() }
+          }
+        }
+    }
+    #if os(macOS)
+    .reviewWithAgentProvider(reviewAgentCoordinator)
+    .prReviewStatusProvider(reviewStatusBridge)
+    .sheet(item: $reviewAgentTarget) { target in
+      GithubReviewAgentSheet(target: target)
+    }
+    .onAppear {
+      reviewStatusBridge.queue = mcpServer.prReviewQueue
+      reviewAgentCoordinator.onReview = { pr, repo in
+        reviewAgentTarget = PRReviewAgentTarget.from(pullRequest: pr, repository: repo)
+      }
+    }
+    #endif
+    .task { await loadData() }
+    .frame(minWidth: 700, minHeight: 500)
+  }
+
+  @ViewBuilder
+  private var content: some View {
+    switch state {
+    case .loading:
+      VStack(spacing: 12) {
+        ProgressView()
+        Text("Loading PR #\(prNumber)\u{2026}")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+    case .error(let message):
+      ContentUnavailableView(
+        "Failed to Load PR",
+        systemImage: "exclamationmark.triangle",
+        description: Text(message)
+      )
+    case .loaded(let pr, let repo):
+      PullRequestDetailView(organization: nil, repository: repo, pullRequest: pr)
+    }
+  }
+
+  private func loadData() async {
+    let parts = ownerRepo.split(separator: "/")
+    guard parts.count == 2 else {
+      state = .error("Invalid repository: \(ownerRepo)")
+      return
+    }
+    let owner = String(parts[0])
+    let repoName = String(parts[1])
+
+    do {
+      async let repoTask = Github.repository(owner: owner, name: repoName)
+      async let prTask = Github.pullRequest(
+        owner: owner, repository: repoName, number: prNumber
+      )
+      let (repo, pr) = try await (repoTask, prTask)
+      state = .loaded(pr: pr, repo: repo)
+    } catch is CancellationError {
+      return
+    } catch {
+      state = .error(error.localizedDescription)
     }
   }
 }

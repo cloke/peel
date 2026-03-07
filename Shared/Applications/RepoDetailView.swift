@@ -8,8 +8,11 @@
 
 import Git
 import Github
+import OSLog
 import SwiftData
 import SwiftUI
+
+private let repoDetailAutomationLogger = Logger(subsystem: "com.peel.repositories", category: "RepoDetailAutomation")
 
 // MARK: - Detail Tab
 
@@ -29,6 +32,14 @@ enum RepoDetailTab: String, CaseIterable {
     case .skills: return "hammer"
     }
   }
+
+  var automationValue: String {
+    rawValue.lowercased()
+  }
+
+  init?(automationValue: String) {
+    self.init(rawValue: automationValue.capitalized)
+  }
 }
 
 // MARK: - Repo Detail View
@@ -37,6 +48,7 @@ struct RepoDetailView: View {
   let repo: UnifiedRepository
 
   @Environment(ActivityFeed.self) private var activityFeed
+  @AppStorage("repositories.selectedTab") private var automationSelectedTab = RepoDetailTab.overview.automationValue
   @State private var selectedTab: RepoDetailTab = .overview
 
   var body: some View {
@@ -61,6 +73,39 @@ struct RepoDetailView: View {
       tabContent
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    .onAppear {
+      syncSelectedTabFromAutomation()
+      persistSelectedTabAutomationState(selectedTab)
+    }
+    .onChange(of: automationSelectedTab) { _, _ in
+      syncSelectedTabFromAutomation()
+    }
+    .onChange(of: selectedTab) { _, newValue in
+      persistSelectedTabAutomationState(newValue)
+    }
+    .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+      syncSelectedTabFromAutomation()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: Notification.Name("RepositoryAutomationTabSelected"))) { notification in
+      guard let value = notification.object as? String,
+            let tab = RepoDetailTab(automationValue: value),
+            selectedTab != tab else { return }
+      selectedTab = tab
+      persistSelectedTabAutomationState(tab)
+    }
+  }
+
+  private func syncSelectedTabFromAutomation() {
+    guard let tab = RepoDetailTab(automationValue: automationSelectedTab) else { return }
+    if selectedTab != tab {
+      selectedTab = tab
+    }
+  }
+
+  private func persistSelectedTabAutomationState(_ tab: RepoDetailTab) {
+    if automationSelectedTab != tab.automationValue {
+      automationSelectedTab = tab.automationValue
+    }
   }
 
   // MARK: - Header
@@ -202,6 +247,8 @@ struct OverviewTabView: View {
   @State private var justTrackedId: UUID?
   @State private var isPullingSyncIndex = false
   @State private var syncPullResult: String?
+  @AppStorage("repositories.overview.sync.status") private var automationOverviewSyncStatus = ""
+  @AppStorage("repositories.overview.sync.source") private var automationOverviewSyncSource = ""
 
   private var repoRuns: [ParallelWorktreeRun] {
     guard let runner = mcpServer.parallelWorktreeRunner,
@@ -266,7 +313,26 @@ struct OverviewTabView: View {
         .padding(16)
       }
       .task(id: repo.ownerSlashRepo) {
+        persistOverviewSyncAutomationState()
+        handlePendingOverviewUIActionIfNeeded()
         await fetchOpenPRs()
+      }
+      .onReceive(NotificationCenter.default.publisher(for: Notification.Name("RepositoryAutomationActionRequested"))) { notification in
+        guard let controlId = notification.object as? String,
+              controlId.hasPrefix("repositories.overview.sync.") else { return }
+        handlePendingOverviewUIActionIfNeeded(controlId: controlId)
+      }
+      .onChange(of: mcpServer.lastUIAction?.id) { _, _ in
+        handlePendingOverviewUIActionIfNeeded()
+      }
+      .onChange(of: isPullingSyncIndex) { _, _ in
+        persistOverviewSyncAutomationState()
+      }
+      .onChange(of: syncPullResult) { _, _ in
+        persistOverviewSyncAutomationState()
+      }
+      .onAppear {
+        persistOverviewSyncAutomationState()
       }
     }
   }
@@ -681,6 +747,63 @@ struct OverviewTabView: View {
           .foregroundStyle(.secondary)
       }
     }
+  }
+
+  private var matchingOverviewSyncSource: RAGIndexVersion? {
+    let coordinator = RAGSyncCoordinator.shared
+    let repoIdentifierCandidates = Set([
+      repo.normalizedRemoteURL,
+      repo.ownerSlashRepo.map { "github.com/\($0)".lowercased() },
+      repo.ownerSlashRepo?.lowercased(),
+      repo.remoteURL
+    ].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+      .map { RepoRegistry.shared.normalizeRemoteURL($0) })
+
+    return coordinator.availableUpdates.first(where: {
+      repoIdentifierCandidates.contains(RepoRegistry.shared.normalizeRemoteURL($0.source.repoIdentifier))
+        || $0.source.repoName == repo.displayName
+    })?.source
+  }
+
+  private func persistOverviewSyncAutomationState() {
+    if isPullingSyncIndex {
+      automationOverviewSyncStatus = "pulling"
+    } else if let result = syncPullResult, !result.isEmpty {
+      automationOverviewSyncStatus = result
+    } else if let source = matchingOverviewSyncSource {
+      automationOverviewSyncStatus = "ready"
+      automationOverviewSyncSource = source.workerName
+      return
+    } else if RAGSyncCoordinator.shared.isActive {
+      automationOverviewSyncStatus = "no-source"
+    } else {
+      automationOverviewSyncStatus = "swarm-inactive"
+    }
+
+    automationOverviewSyncSource = matchingOverviewSyncSource?.workerName ?? ""
+  }
+
+  private func handlePendingOverviewUIActionIfNeeded(controlId: String? = nil) {
+    guard let controlId = controlId ?? mcpServer.lastUIAction?.controlId,
+          controlId == "repositories.overview.sync.pullNow" else { return }
+
+    guard let source = matchingOverviewSyncSource else {
+      automationOverviewSyncStatus = "no-source"
+      repoDetailAutomationLogger.warning("Overview sync tap ignored: no matching sync source for \(self.repo.displayName, privacy: .public)")
+      if mcpServer.lastUIAction?.controlId == controlId {
+        mcpServer.recordUIActionHandled(controlId)
+        mcpServer.lastUIAction = nil
+      }
+      return
+    }
+
+    repoDetailAutomationLogger.info("Overview sync tap starting pull for \(self.repo.displayName, privacy: .public) from \(source.workerName, privacy: .public)")
+    if mcpServer.lastUIAction?.controlId == controlId {
+      mcpServer.recordUIActionHandled(controlId)
+      mcpServer.lastUIAction = nil
+    }
+    Task { await pullFromSyncSource(source) }
   }
 
   private func pullFromSyncSource(_ source: RAGIndexVersion) async {
@@ -1583,6 +1706,10 @@ struct RAGTabView: View {
   @State private var syncError: String?
   @State private var activeTransferId: UUID?
   @State private var onDemandProgress: String?
+  @State private var externalOnDemandProgress: String?
+  @AppStorage("repositories.rag.sync.status") private var automationRAGSyncStatus = ""
+  @AppStorage("repositories.rag.sync.peers") private var automationRAGSyncPeersData: Data = Data()
+  @AppStorage("repositories.rag.sync.wanWorkers") private var automationRAGSyncWANWorkersData: Data = Data()
 
   private var isCurrentlyIndexing: Bool {
     mcpServer.ragIndexingPath == repo.localPath
@@ -1627,6 +1754,38 @@ struct RAGTabView: View {
     .task {
       await loadLessons()
       await refreshAnalysisStatus()
+      persistRAGSyncAutomationState()
+      handlePendingRAGUIActionIfNeeded()
+    }
+    .task {
+      await pollExternalTransfers()
+    }
+    .onAppear {
+      persistRAGSyncAutomationState()
+      handlePendingRAGUIActionIfNeeded()
+    }
+    .onReceive(NotificationCenter.default.publisher(for: Notification.Name("RepositoryAutomationActionRequested"))) { notification in
+      guard let controlId = notification.object as? String,
+            controlId.hasPrefix("repositories.rag.sync.") else { return }
+      handlePendingRAGUIActionIfNeeded(controlId: controlId)
+    }
+    .onChange(of: mcpServer.lastUIAction?.id) { _, _ in
+      handlePendingRAGUIActionIfNeeded()
+    }
+    .onChange(of: isSyncing) { _, _ in
+      persistRAGSyncAutomationState()
+    }
+    .onChange(of: syncResultMessage) { _, _ in
+      persistRAGSyncAutomationState()
+    }
+    .onChange(of: syncError) { _, _ in
+      persistRAGSyncAutomationState()
+    }
+    .onChange(of: onDemandProgress) { _, _ in
+      persistRAGSyncAutomationState()
+    }
+    .onChange(of: externalOnDemandProgress) { _, _ in
+      persistRAGSyncAutomationState()
     }
   }
 
@@ -2102,6 +2261,14 @@ struct RAGTabView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
+          } else if let externalOnDemandProgress {
+            HStack(spacing: 6) {
+              ProgressView()
+                .controlSize(.small)
+              Text(externalOnDemandProgress)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
           } else if let transferId = activeTransferId,
                     let transfer = SwarmCoordinator.shared.ragTransfers.first(where: { $0.id == transferId }) {
             HStack(spacing: 6) {
@@ -2272,12 +2439,16 @@ struct RAGTabView: View {
   // MARK: - Sync Actions
 
   private func syncWithPeers(repoIdentifier: String, direction: RAGArtifactSyncDirection, workerId: String? = nil) async {
+    let targetWorker = workerId ?? SwarmCoordinator.shared.connectedWorkers.first?.id ?? "auto"
+    repoDetailAutomationLogger.info("RAG sync start repo=\(repo.displayName, privacy: .public) direction=\(direction.rawValue, privacy: .public) worker=\(targetWorker, privacy: .public)")
     isSyncing = true
     syncDirection = direction
     syncResultMessage = nil
     syncError = nil
     activeTransferId = nil
     onDemandProgress = nil
+    externalOnDemandProgress = nil
+    persistRAGSyncAutomationState()
 
     do {
       let transferId = try await SwarmCoordinator.shared.requestRagArtifactSync(
@@ -2298,9 +2469,11 @@ struct RAGTabView: View {
             } else {
               syncResultMessage = direction == .push ? "Pushed to \(transfer.peerName)" : "Pulled from \(transfer.peerName)"
             }
+            repoDetailAutomationLogger.info("RAG sync completed repo=\(self.repo.displayName, privacy: .public) direction=\(direction.rawValue, privacy: .public) peer=\(transfer.peerName, privacy: .public)")
             activeTransferId = nil
             isSyncing = false
             syncDirection = nil
+            persistRAGSyncAutomationState()
             if direction == .pull {
               await mcpServer.refreshRagSummary()
               await refreshAnalysisStatus()
@@ -2312,9 +2485,11 @@ struct RAGTabView: View {
             return
           case .failed:
             syncError = transfer.errorMessage ?? "Transfer failed"
+            repoDetailAutomationLogger.error("RAG sync failed repo=\(self.repo.displayName, privacy: .public) direction=\(direction.rawValue, privacy: .public) error=\(self.syncError ?? "unknown", privacy: .public)")
             activeTransferId = nil
             isSyncing = false
             syncDirection = nil
+            persistRAGSyncAutomationState()
             return
           default:
             continue
@@ -2323,9 +2498,11 @@ struct RAGTabView: View {
       }
     } catch {
       syncError = "Sync failed: \(error.localizedDescription)"
+      repoDetailAutomationLogger.error("RAG sync threw repo=\(self.repo.displayName, privacy: .public) direction=\(direction.rawValue, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
     }
     isSyncing = false
     syncDirection = nil
+    persistRAGSyncAutomationState()
   }
 
   private func syncOnDemand(repoIdentifier: String, fromWorkerId: String) async {
@@ -2338,6 +2515,9 @@ struct RAGTabView: View {
     syncError = nil
     activeTransferId = nil
     onDemandProgress = "Requesting pull from \(workerName)…"
+    externalOnDemandProgress = nil
+    repoDetailAutomationLogger.info("RAG on-demand sync start repo=\(self.repo.displayName, privacy: .public) worker=\(workerName, privacy: .public) id=\(fromWorkerId, privacy: .public)")
+    persistRAGSyncAutomationState()
 
     var syncFinished = false
 
@@ -2377,6 +2557,7 @@ struct RAGTabView: View {
         case .failed:
           syncFinished = true
         }
+        persistRAGSyncAutomationState()
       }
 
       try? await Task.sleep(for: .seconds(0.3))
@@ -2390,6 +2571,7 @@ struct RAGTabView: View {
       case .complete:
         let byteStr = formatBytes(transfer.transferredBytes)
         syncResultMessage = "Pulled from \(workerName): \(byteStr)"
+        repoDetailAutomationLogger.info("RAG on-demand sync completed repo=\(self.repo.displayName, privacy: .public) worker=\(workerName, privacy: .public) bytes=\(byteStr, privacy: .public)")
         await mcpServer.refreshRagSummary()
         await refreshAnalysisStatus()
         Task { @MainActor in
@@ -2398,6 +2580,7 @@ struct RAGTabView: View {
         }
       case .failed:
         syncError = transfer.error ?? "On-demand sync failed"
+        repoDetailAutomationLogger.error("RAG on-demand sync failed repo=\(self.repo.displayName, privacy: .public) worker=\(workerName, privacy: .public) error=\(self.syncError ?? "unknown", privacy: .public)")
       default:
         break
       }
@@ -2406,6 +2589,7 @@ struct RAGTabView: View {
       do {
         try await syncTask.value
         syncResultMessage = "Pulled from \(workerName)"
+        repoDetailAutomationLogger.info("RAG on-demand sync finished without retained transfer state repo=\(self.repo.displayName, privacy: .public) worker=\(workerName, privacy: .public)")
         await mcpServer.refreshRagSummary()
         await refreshAnalysisStatus()
         Task { @MainActor in
@@ -2414,12 +2598,145 @@ struct RAGTabView: View {
         }
       } catch {
         syncError = "On-demand sync failed: \(error.localizedDescription)"
+        repoDetailAutomationLogger.error("RAG on-demand sync threw repo=\(self.repo.displayName, privacy: .public) worker=\(workerName, privacy: .public) error=\(error.localizedDescription, privacy: .public)")
       }
     }
 
     onDemandProgress = nil
     isSyncing = false
     syncDirection = nil
+    persistRAGSyncAutomationState()
+  }
+
+  private func persistRAGSyncAutomationState() {
+    let peers = swarm.connectedWorkers.map(\ .displayName)
+    let wanWorkers = swarm.onDemandWorkers.map(\ .displayName)
+    if let peersData = try? JSONEncoder().encode(peers) {
+      automationRAGSyncPeersData = peersData
+    }
+    if let wanData = try? JSONEncoder().encode(wanWorkers) {
+      automationRAGSyncWANWorkersData = wanData
+    }
+
+    if let progress = onDemandProgress, !progress.isEmpty {
+      automationRAGSyncStatus = progress
+    } else if let progress = externalOnDemandProgress, !progress.isEmpty {
+      automationRAGSyncStatus = progress
+    } else if let result = syncResultMessage, !result.isEmpty {
+      automationRAGSyncStatus = result
+    } else if let error = syncError, !error.isEmpty {
+      automationRAGSyncStatus = error
+    } else if isSyncing {
+      automationRAGSyncStatus = "syncing"
+    } else if !peers.isEmpty {
+      automationRAGSyncStatus = "ready-lan"
+    } else if !wanWorkers.isEmpty {
+      automationRAGSyncStatus = "ready-wan"
+    } else if swarm.isActive {
+      automationRAGSyncStatus = "no-peers"
+    } else {
+      automationRAGSyncStatus = "swarm-inactive"
+    }
+  }
+
+  private func handlePendingRAGUIActionIfNeeded(controlId: String? = nil) {
+    let controlId = controlId ?? mcpServer.lastUIAction?.controlId
+    guard let controlId else { return }
+
+    let repoId = ragRepoIdentifier
+    switch controlId {
+    case "repositories.rag.sync.push":
+      guard let repoId,
+            let peer = swarm.connectedWorkers.first else {
+        automationRAGSyncStatus = "no-lan-peer"
+        if mcpServer.lastUIAction?.controlId == controlId {
+          mcpServer.recordUIActionHandled(controlId)
+          mcpServer.lastUIAction = nil
+        }
+        return
+      }
+      repoDetailAutomationLogger.info("Handling UI push tap for repo=\(self.repo.displayName, privacy: .public) peer=\(peer.displayName, privacy: .public)")
+      if mcpServer.lastUIAction?.controlId == controlId {
+        mcpServer.recordUIActionHandled(controlId)
+        mcpServer.lastUIAction = nil
+      }
+      Task { await syncWithPeers(repoIdentifier: repoId, direction: .push, workerId: peer.id) }
+
+    case "repositories.rag.sync.pull":
+      guard let repoId,
+            let peer = swarm.connectedWorkers.first else {
+        automationRAGSyncStatus = "no-lan-peer"
+        if mcpServer.lastUIAction?.controlId == controlId {
+          mcpServer.recordUIActionHandled(controlId)
+          mcpServer.lastUIAction = nil
+        }
+        return
+      }
+      repoDetailAutomationLogger.info("Handling UI pull tap for repo=\(self.repo.displayName, privacy: .public) peer=\(peer.displayName, privacy: .public)")
+      if mcpServer.lastUIAction?.controlId == controlId {
+        mcpServer.recordUIActionHandled(controlId)
+        mcpServer.lastUIAction = nil
+      }
+      Task { await syncWithPeers(repoIdentifier: repoId, direction: .pull, workerId: peer.id) }
+
+    case "repositories.rag.sync.pullWan":
+      guard let repoId,
+            let worker = swarm.onDemandWorkers.first else {
+        automationRAGSyncStatus = "no-wan-worker"
+        if mcpServer.lastUIAction?.controlId == controlId {
+          mcpServer.recordUIActionHandled(controlId)
+          mcpServer.lastUIAction = nil
+        }
+        return
+      }
+      repoDetailAutomationLogger.info("Handling UI WAN pull tap for repo=\(self.repo.displayName, privacy: .public) worker=\(worker.displayName, privacy: .public)")
+      if mcpServer.lastUIAction?.controlId == controlId {
+        mcpServer.recordUIActionHandled(controlId)
+        mcpServer.lastUIAction = nil
+      }
+      Task { await syncOnDemand(repoIdentifier: repoId, fromWorkerId: worker.id) }
+
+    default:
+      break
+    }
+  }
+
+  private func pollExternalTransfers() async {
+    let coordinator = RAGSyncCoordinator.shared
+    while !Task.isCancelled {
+      if !isSyncing,
+         let repoId = ragRepoIdentifier,
+         let transfer = coordinator.activeTransfers.values.first(where: {
+           $0.repoIdentifier == repoId && $0.status != .complete && $0.status != .failed
+         }) {
+        let method = transfer.connectionMethod?.rawValue ?? "connecting"
+        let worker = transfer.targetWorkerName
+        switch transfer.status {
+        case .connecting:
+          externalOnDemandProgress = "MCP pull from \(worker): Connecting (\(method))…"
+        case .handshaking:
+          externalOnDemandProgress = "MCP pull from \(worker): Handshaking via \(method)…"
+        case .transferring:
+          let elapsed = Int(transfer.elapsedSeconds)
+          if transfer.totalBytes > 0 && transfer.transferredBytes > 0 {
+            let pct = Int(transfer.progressFraction * 100)
+            externalOnDemandProgress = "MCP pull from \(worker): \(pct)% via \(method) [\(elapsed)s]"
+          } else if transfer.totalChunks > 0 {
+            externalOnDemandProgress = "MCP pull from \(worker): \(transfer.chunksReceived)/\(transfer.totalChunks) chunks via \(method) [\(elapsed)s]"
+          } else {
+            externalOnDemandProgress = "MCP pull from \(worker): Waiting for export via \(method)… [\(elapsed)s]"
+          }
+        case .importing:
+          externalOnDemandProgress = "MCP pull from \(worker): Importing \(formatBytes(transfer.transferredBytes))…"
+        case .complete, .failed:
+          externalOnDemandProgress = nil
+        }
+      } else if externalOnDemandProgress != nil {
+        externalOnDemandProgress = nil
+      }
+      persistRAGSyncAutomationState()
+      try? await Task.sleep(for: .seconds(0.5))
+    }
   }
 
   private func formatBytes(_ bytes: Int) -> String {

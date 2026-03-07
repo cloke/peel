@@ -54,6 +54,8 @@ struct ContentView: View {
   @AppStorage(wrappedValue: .repositories, "current-tool") private var currentSection: CurrentTool
   @AppStorage("feature.showBrew") private var showBrew = false
   @AppStorage("onboarding.checklistDismissed") private var checklistDismissed = false
+  @AppStorage("repositories.selectedRepoKey") private var automationSelectedRepoKey = ""
+  @AppStorage("repositories.searchText") private var automationRepoSearchText = ""
 
   @Environment(RepositoryAggregator.self) private var aggregator
   @Environment(MCPServerService.self) private var mcpServer
@@ -102,6 +104,8 @@ struct ContentView: View {
     )
     .onAppear {
       migrateLegacySection(currentSection)
+      persistRepositoryAutomationState()
+      syncRepoSelectionFromAutomation()
       syncSelectionToSection()
       if !checklistDismissed { showChecklist = true }
     }
@@ -110,7 +114,23 @@ struct ContentView: View {
       syncSelectionToSection()
     }
     .onChange(of: aggregator.repositories.map(\ .normalizedRemoteURL)) { _, _ in
+      persistRepositoryAutomationState()
+      syncRepoSelectionFromAutomation()
       reconcileRepoSelection()
+    }
+    .onChange(of: automationSelectedRepoKey) { _, _ in
+      syncRepoSelectionFromAutomation()
+    }
+    .onChange(of: automationRepoSearchText) { _, newValue in
+      if repoSearchText != newValue {
+        repoSearchText = newValue
+      }
+    }
+    .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+      syncRepoSelectionFromAutomation()
+      if repoSearchText != automationRepoSearchText {
+        repoSearchText = automationRepoSearchText
+      }
     }
     .onChange(of: sidebarSelection) { _, newValue in
       // Keep currentSection in sync so Cmd+1/2 and MCP still work
@@ -122,6 +142,7 @@ struct ContentView: View {
         case .brew: currentSection = .brew
         }
       }
+      persistSelectedRepoAutomationState()
     }
     .onChange(of: showBrew) { _, newValue in
       if !newValue && currentSection == .brew { currentSection = .repositories }
@@ -175,6 +196,15 @@ struct ContentView: View {
     .onReceive(NotificationCenter.default.publisher(for: .navigateToSwarmConsole)) { _ in
       currentSection = .activity
       sidebarSelection = .swarmConsole
+    }
+    .onReceive(NotificationCenter.default.publisher(for: Notification.Name("RepositoryAutomationRepoSelected"))) { notification in
+      guard let repoKey = notification.object as? String else { return }
+      currentSection = .repositories
+      if aggregator.repositoryByURL[repoKey] != nil {
+        sidebarSelection = .repo(repoKey)
+      } else {
+        syncRepoSelectionFromAutomation()
+      }
     }
     .task {
       await populateRepoRegistry()
@@ -538,6 +568,42 @@ struct ContentView: View {
     guard case .repo(let normalizedRemoteURL) = sidebarSelection else { return }
     guard aggregator.repositoryByURL[normalizedRemoteURL] == nil else { return }
     sidebarSelection = .repoCommandCenter
+    persistSelectedRepoAutomationState()
+  }
+
+  private func syncRepoSelectionFromAutomation() {
+    guard !automationSelectedRepoKey.isEmpty,
+          aggregator.repositoryByURL[automationSelectedRepoKey] != nil else { return }
+    if sidebarSelection != .repo(automationSelectedRepoKey) {
+      currentSection = .repositories
+      sidebarSelection = .repo(automationSelectedRepoKey)
+    }
+  }
+
+  private func persistRepositoryAutomationState() {
+    let repos = aggregator.repositories
+    let keys = repos.map(\ .normalizedRemoteURL)
+    let names = repos.map(\ .displayName)
+    let nameMap = Dictionary(uniqueKeysWithValues: zip(names, keys))
+
+    UserDefaults.standard.set(keys, forKey: "repositories.availableRepoKeys")
+    UserDefaults.standard.set(names, forKey: "repositories.availableRepoNames")
+    if let data = try? JSONEncoder().encode(nameMap) {
+      UserDefaults.standard.set(data, forKey: "repositories.repoKeyByName")
+    }
+    persistSelectedRepoAutomationState()
+  }
+
+  private func persistSelectedRepoAutomationState() {
+    guard case .repo(let normalizedRemoteURL) = sidebarSelection,
+          let repo = aggregator.repositoryByURL[normalizedRemoteURL] else {
+      UserDefaults.standard.set("", forKey: "repositories.selectedRepoKey")
+      UserDefaults.standard.set("", forKey: "repositories.selectedRepoName")
+      return
+    }
+
+    UserDefaults.standard.set(repo.normalizedRemoteURL, forKey: "repositories.selectedRepoKey")
+    UserDefaults.standard.set(repo.displayName, forKey: "repositories.selectedRepoName")
   }
 
   private func migrateLegacySection(_ tool: CurrentTool) {

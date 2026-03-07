@@ -94,6 +94,30 @@ public final class UIToolsHandler: MCPToolHandler {
       UserDefaults.standard.set(controlId, forKey: "agents.selectedInfrastructure")
     }
 
+    switch controlId {
+    case "repositories.rag.sync.push", "repositories.rag.sync.pull":
+      if SwarmCoordinator.shared.connectedWorkers.isEmpty {
+        UserDefaults.standard.set("no-lan-peer", forKey: "repositories.rag.sync.status")
+        delegate.recordUIActionHandled(controlId)
+        return (200, makeResult(id: id, result: ["controlId": controlId, "status": "no-lan-peer"]))
+      }
+    case "repositories.rag.sync.pullWan":
+      if SwarmCoordinator.shared.onDemandWorkers.isEmpty {
+        UserDefaults.standard.set("no-wan-worker", forKey: "repositories.rag.sync.status")
+        delegate.recordUIActionHandled(controlId)
+        return (200, makeResult(id: id, result: ["controlId": controlId, "status": "no-wan-worker"]))
+      }
+    default:
+      break
+    }
+
+    if controlId.hasPrefix("repositories.overview.sync.") || controlId.hasPrefix("repositories.rag.sync.") {
+      NotificationCenter.default.post(
+        name: Notification.Name("RepositoryAutomationActionRequested"),
+        object: controlId
+      )
+    }
+
     delegate.lastUIAction = UIAction(controlId: controlId)
     return (200, makeResult(id: id, result: ["controlId": controlId, "status": "queued"]))
   }
@@ -109,6 +133,11 @@ public final class UIToolsHandler: MCPToolHandler {
     let value = arguments["value"] as? String ?? ""
 
     switch controlId {
+    case "repositories.search":
+      UserDefaults.standard.set(value, forKey: "repositories.searchText")
+      delegate.recordUIActionRequested(controlId)
+      delegate.recordUIActionHandled(controlId)
+      return (200, makeResult(id: id, result: ["controlId": controlId, "value": value]))
     case "brew.search":
       UserDefaults.standard.set(value, forKey: "brew.searchText")
       delegate.recordUIActionRequested(controlId)
@@ -164,6 +193,43 @@ public final class UIToolsHandler: MCPToolHandler {
     let value = optionalString("value", from: arguments) ?? ""
 
     switch controlId {
+    case "repositories.selectRepo":
+      let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !trimmed.isEmpty else {
+        return invalidParamError(id: id, param: "value", reason: "Repository value cannot be empty")
+      }
+
+      let resolvedRepoKey = resolveRepositorySelectionKey(trimmed)
+      guard !resolvedRepoKey.isEmpty else {
+        return invalidParamError(id: id, param: "value", reason: "Unknown repository")
+      }
+
+      UserDefaults.standard.set(resolvedRepoKey, forKey: "repositories.selectedRepoKey")
+      NotificationCenter.default.post(
+        name: Notification.Name("RepositoryAutomationRepoSelected"),
+        object: resolvedRepoKey
+      )
+      UserDefaults.standard.set("repositories", forKey: "current-tool")
+      delegate.recordUIActionRequested(controlId)
+      delegate.recordUIActionHandled(controlId)
+      return (200, makeResult(id: id, result: ["controlId": controlId, "value": resolvedRepoKey]))
+
+    case "repositories.selectTab":
+      let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+      guard ["overview", "branches", "activity", "rag", "skills"].contains(normalized) else {
+        return invalidParamError(id: id, param: "value", reason: "Must be overview/branches/activity/rag/skills")
+      }
+
+      UserDefaults.standard.set(normalized, forKey: "repositories.selectedTab")
+      NotificationCenter.default.post(
+        name: Notification.Name("RepositoryAutomationTabSelected"),
+        object: normalized
+      )
+      UserDefaults.standard.set("repositories", forKey: "current-tool")
+      delegate.recordUIActionRequested(controlId)
+      delegate.recordUIActionHandled(controlId)
+      return (200, makeResult(id: id, result: ["controlId": controlId, "value": normalized]))
+
     case "repositories.selectScope":
       let normalized = value.lowercased()
       guard ["local", "remote"].contains(normalized) else {
@@ -320,6 +386,30 @@ public final class UIToolsHandler: MCPToolHandler {
       "controlValues": controlValues
     ]
     return (200, makeResult(id: id, result: snapshot))
+  }
+
+  private func resolveRepositorySelectionKey(_ value: String) -> String {
+    let defaults = UserDefaults.standard
+    let availableKeys = defaults.stringArray(forKey: "repositories.availableRepoKeys") ?? []
+    if availableKeys.contains(value) {
+      return value
+    }
+
+    guard let data = defaults.data(forKey: "repositories.repoKeyByName"),
+          let nameMap = try? JSONDecoder().decode([String: String].self, from: data) else {
+      return ""
+    }
+
+    if let exact = nameMap[value] {
+      return exact
+    }
+
+    let lowercase = value.lowercased()
+    if let matched = nameMap.first(where: { $0.key.lowercased() == lowercase }) {
+      return matched.value
+    }
+
+    return ""
   }
 }
 

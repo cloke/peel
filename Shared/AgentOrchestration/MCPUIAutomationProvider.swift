@@ -154,6 +154,7 @@ public final class MCPUIAutomationStore: MCPUIAutomationProviding {
         "repositories.refresh",
         "repositories.selectRepo",
         "repositories.selectTab",
+        "repositories.overview.sync.pullNow",
         // Git controls (available when repo is cloned)
         "repositories.git.openRepository",
         "repositories.git.selectBranch",
@@ -162,7 +163,10 @@ public final class MCPUIAutomationStore: MCPUIAutomationProviding {
         "repositories.rag.index",
         "repositories.rag.search",
         "repositories.rag.analyze",
-        "repositories.rag.enrich"
+        "repositories.rag.enrich",
+        "repositories.rag.sync.push",
+        "repositories.rag.sync.pull",
+        "repositories.rag.sync.pullWan"
       ]
     case "activity":
       return [
@@ -191,10 +195,30 @@ public final class MCPUIAutomationStore: MCPUIAutomationProviding {
   public func controlValues(for viewId: String?) -> [String: Any] {
     switch viewId {
     case "repositories":
+      let repoKeys = UserDefaults.standard.stringArray(forKey: "repositories.availableRepoKeys") ?? []
+      let repoNames = UserDefaults.standard.stringArray(forKey: "repositories.availableRepoNames") ?? []
+      let selectedRepoKey = UserDefaults.standard.string(forKey: "repositories.selectedRepoKey") ?? ""
+      let selectedRepoName = UserDefaults.standard.string(forKey: "repositories.selectedRepoName") ?? ""
+      let selectedTab = UserDefaults.standard.string(forKey: "repositories.selectedTab") ?? "overview"
+      let overviewSyncStatus = UserDefaults.standard.string(forKey: "repositories.overview.sync.status") ?? ""
+      let overviewSyncSource = UserDefaults.standard.string(forKey: "repositories.overview.sync.source") ?? ""
+      let ragSyncStatus = UserDefaults.standard.string(forKey: "repositories.rag.sync.status") ?? ""
+      let ragSyncPeers = UserDefaults.standard.stringArray(forKey: "repositories.rag.sync.peers") ?? []
+      let ragSyncWANWorkers = UserDefaults.standard.stringArray(forKey: "repositories.rag.sync.wanWorkers") ?? []
       let branchNames = UserDefaults.standard.stringArray(forKey: "git.availableLocalBranchNames") ?? []
       let commitShas = UserDefaults.standard.stringArray(forKey: "git.availableCommitShas") ?? []
       return [
-        "repositories.selectTab": ["branches", "activity", "rag", "skills"],
+        "repositories.selectRepo": repoKeys,
+        "repositories.availableRepoNames": repoNames,
+        "repositories.selectedRepoKey": selectedRepoKey,
+        "repositories.selectedRepoName": selectedRepoName,
+        "repositories.selectTab": ["overview", "branches", "activity", "rag", "skills"],
+        "repositories.selectedTab": selectedTab,
+        "repositories.overview.sync.status": overviewSyncStatus,
+        "repositories.overview.sync.source": overviewSyncSource,
+        "repositories.rag.sync.status": ragSyncStatus,
+        "repositories.rag.sync.peers": ragSyncPeers,
+        "repositories.rag.sync.wanWorkers": ragSyncWANWorkers,
         "repositories.git.selectBranch": branchNames,
         "repositories.git.selectCommit": commitShas
       ]
