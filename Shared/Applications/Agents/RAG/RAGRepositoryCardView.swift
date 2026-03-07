@@ -669,6 +669,7 @@ struct RAGRepositoryCardView: View {
 
   /// Sync per-repo artifacts with connected swarm peers
   private func syncRepoWithPeers(repoIdentifier: String, direction: RAGArtifactSyncDirection, workerId: String? = nil) async {
+    isExpanded = true
     isSyncing = true
     syncDirection = direction
     syncResultMessage = nil
@@ -729,11 +730,14 @@ struct RAGRepositoryCardView: View {
   /// Pull a repo index via on-demand P2P connection (WAN/STUN fallback).
   /// Used when no TCP-connected peers exist but Firestore workers are online.
   private func syncRepoOnDemand(repoIdentifier: String, fromWorkerId: String) async {
+    let workerName = FirebaseService.shared.swarmWorkers.first(where: { $0.id == fromWorkerId })?.displayName ?? fromWorkerId
+
+    isExpanded = true
     isSyncing = true
     syncDirection = .pull
     syncResultMessage = nil
     activeTransferId = nil
-    onDemandProgress = "Connecting…"
+    onDemandProgress = "Requesting pull from \(workerName)…"
     errorMessage = nil
 
     // Track completion from the child task

@@ -99,6 +99,7 @@ struct ActivityDashboardView: View {
         runningNowSection
         PRReviewQueueSection()
         ragIndexingSection
+        swarmSection
         recentActivitySection
       }
       .padding(20)
@@ -161,6 +162,78 @@ struct ActivityDashboardView: View {
                 .truncationMode(.middle)
             }
 
+            Spacer()
+          }
+          .padding(4)
+        }
+      }
+    }
+  }
+
+  // MARK: - Swarm
+
+  private var swarmSection: some View {
+    let lanWorkers = swarm.connectedWorkers
+    let onlineWANWorkers = wanWorkers.filter { $0.status == .online }
+    let totalOnline = (swarm.isActive ? 1 : 0) + lanWorkers.count + onlineWANWorkers.count
+
+    return VStack(alignment: .leading, spacing: 12) {
+      HStack {
+        SectionHeader("Swarm")
+        Spacer()
+        Text(totalOnline > 0 ? "\(totalOnline) online" : "Inactive")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+        #if os(macOS)
+        Button {
+          NotificationCenter.default.post(name: .navigateToSwarmConsole, object: nil)
+        } label: {
+          Label("Open Console", systemImage: "terminal")
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        #endif
+      }
+
+      if swarm.isActive || !lanWorkers.isEmpty || !onlineWANWorkers.isEmpty {
+        ScrollView(.horizontal, showsIndicators: false) {
+          HStack(spacing: 10) {
+            WorkerCard(
+              name: "This Mac",
+              role: swarm.role.rawValue,
+              isOnline: swarm.isActive,
+              statusText: swarm.isActive ? "Ready for swarm tasks" : "Swarm inactive"
+            )
+
+            ForEach(lanWorkers) { worker in
+              let statusText = swarm.workerStatuses[worker.id]?.state.rawValue.capitalized
+              WorkerCard(
+                name: worker.displayName,
+                role: "LAN",
+                isOnline: true,
+                statusText: statusText
+              )
+            }
+
+            ForEach(onlineWANWorkers) { worker in
+              WorkerCard(
+                name: worker.displayName,
+                role: "WAN",
+                isOnline: worker.status == .online,
+                statusText: worker.status.rawValue.capitalized
+              )
+            }
+          }
+          .padding(.vertical, 2)
+        }
+      } else {
+        GroupBox {
+          HStack(spacing: 8) {
+            Image(systemName: "network.slash")
+              .foregroundStyle(.secondary)
+            Text("Swarm is inactive — open console to start or reconnect workers.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
             Spacer()
           }
           .padding(4)

@@ -20,6 +20,7 @@ import Github
 extension Notification.Name {
   static let openCommandPalette = Notification.Name("openCommandPalette")
   static let navigateToTool = Notification.Name("navigateToTool")
+  static let navigateToSwarmConsole = Notification.Name("navigateToSwarmConsole")
 }
 
 @main
@@ -363,4 +364,3 @@ struct PeelApp: App {
     NSApp.activate(ignoringOtherApps: true)
   }
 }
-

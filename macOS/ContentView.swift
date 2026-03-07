@@ -169,6 +169,10 @@ struct ContentView: View {
         currentSection = tool
       }
     }
+    .onReceive(NotificationCenter.default.publisher(for: .navigateToSwarmConsole)) { _ in
+      currentSection = .activity
+      sidebarSelection = .swarmConsole
+    }
     .task {
       await populateRepoRegistry()
       aggregator.rebuild()
@@ -509,6 +513,7 @@ struct ContentView: View {
       if case .chain = sidebarSelection { return }
       if case .prReviews = sidebarSelection { return }
       if case .activityItem = sidebarSelection { return }
+      if case .swarmConsole = sidebarSelection { return }
       sidebarSelection = .activityDashboard
     case .brew:
       sidebarSelection = .brew
