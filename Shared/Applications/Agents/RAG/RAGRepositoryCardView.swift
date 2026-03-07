@@ -548,47 +548,10 @@ struct RAGRepositoryCardView: View {
         let hasPeers = !peers.isEmpty && SwarmCoordinator.shared.isActive
         let onDemandWorkers = SwarmCoordinator.shared.onDemandWorkers
         let hasOnDemand = !onDemandWorkers.isEmpty && SwarmCoordinator.shared.isActive
-        if SwarmCoordinator.shared.isActive && peers.count > 1 {
-          // Multiple TCP peers: show menus to pick which peer
+        if hasPeers {
+          // TCP peers available: show menus to pick which peer
           syncPeerMenu(peers: peers, repoIdentifier: repoIdentifier, direction: .push)
           syncPeerMenu(peers: peers, repoIdentifier: repoIdentifier, direction: .pull)
-        } else if hasPeers {
-          // Single TCP peer: direct P2P buttons
-          Button {
-            Task { await syncRepoWithPeers(repoIdentifier: repoIdentifier, direction: .push) }
-          } label: {
-            if isSyncing && syncDirection == .push {
-              HStack(spacing: 4) {
-                ProgressView()
-                  .scaleEffect(0.5)
-                Text("Pushing…")
-              }
-            } else {
-              Label("Push", systemImage: "arrow.up.circle")
-            }
-          }
-          .buttonStyle(.bordered)
-          .controlSize(.small)
-          .disabled(isSyncDisabled)
-          .help("Push to \(peers.first?.displayName ?? "peer")")
-
-          Button {
-            Task { await syncRepoWithPeers(repoIdentifier: repoIdentifier, direction: .pull) }
-          } label: {
-            if isSyncing && syncDirection == .pull {
-              HStack(spacing: 4) {
-                ProgressView()
-                  .scaleEffect(0.5)
-                Text("Pulling…")
-              }
-            } else {
-              Label("Pull", systemImage: "arrow.down.circle")
-            }
-          }
-          .buttonStyle(.bordered)
-          .controlSize(.small)
-          .disabled(isSyncDisabled)
-          .help("Pull from \(peers.first?.displayName ?? "peer")")
         } else if hasOnDemand {
           // No TCP peers but Firestore workers available — on-demand pull via WAN/STUN
           if onDemandWorkers.count > 1 {
