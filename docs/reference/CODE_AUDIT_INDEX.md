@@ -98,7 +98,6 @@ grep -r "PreviewProvider" --include="*.swift" .
 
 | File | Status | Last Reviewed | Issues |
 |------|--------|---------------|--------|
-| [Agents_RootView.swift](../Shared/Applications/Agents_RootView.swift) | ✅ Modern | 2026-01-16 | Fixed force unwrap, Uses NavigationSplitView |
 | [Brew_RootView.swift](../Shared/Applications/Brew_RootView.swift) | ✅ Modern | 2026-01-16 | Uses NavigationStack |
 | [Git_RootView.swift](../Shared/Applications/Git_RootView.swift) | ✅ Modern | 2026-01-16 | Uses NavigationStack |
 | [Github_RootView.swift](../Shared/Applications/Github_RootView.swift) | ✅ Modern | 2026-01-16 | Updated to #Preview macro |

@@ -477,10 +477,7 @@ TabView(selection: $selectedTab) {
 8. ⬜ Port `TrackedReposView` auto-pull config into repository settings sheet
 9. ✅ Wire "Add Repository" unified flow — Open Local (NSOpenPanel) + Track Remote (URL input)
 10. ✅ Skills sub-tab wired to DataService with expandable rows, Show Inactive toggle
-11. ✅ Default detail pane shows cross-repo RAG overview — `Shared/Applications/RAGOverviewDetailView.swift`
-    - Expandable repo cards with analysis progress, skills, lessons
-    - Analyze/Enrich action buttons per repo
-    - Global RAG search
+11. ✅ Default detail pane now uses `RepositoriesCommandCenter` for cross-repo action items and compact RAG status
 
 **Completed:** March 4, 2026
 
@@ -960,7 +957,7 @@ The remaining repo detail tabs still use old GroupBox layouts that feel jarring 
 - [Shared/Views/LabsToolbarItem.swift](Shared/Views/LabsToolbarItem.swift) — Labs beaker menu
 - [Shared/Views/CommandPaletteView.swift](Shared/Views/CommandPaletteView.swift) — Cmd+K overlay
 - [Shared/Views/SettingsView.swift](Shared/Views/SettingsView.swift) — Settings (currently MCP only)
-- [Shared/Applications/Agents_RootView.swift](Shared/Applications/Agents_RootView.swift) — OLD: Reference for features that need migration
+- `Agents_RootView.swift` was removed after the Activity-tab migration; hidden agent/detail features should now be tracked directly from their surviving views instead of the retired shell.
 
 **Build verified:** ✅ All current code compiles (March 4, 2026)
 **Xcode project:** Uses `PBXFileSystemSynchronizedRootGroup` for `Shared/` — new files auto-discovered, no manual project file edits needed

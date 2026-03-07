@@ -2,9 +2,9 @@
 //  UnifiedRepositoriesView.swift
 //  Peel
 //
-//  The new unified Repositories tab. Every repository the app knows about appears
-//  here as a single identity — no local/remote split. Sidebar lists repos with
-//  status badges; detail pane shows branches, activity, RAG, and skills.
+//  Shared repository sidebar/detail surfaces used by the current repositories UX.
+//  The original UnifiedRepositoriesView root has been retired; these components
+//  are still reused by the active macOS repositories flow.
 //
 
 import SwiftUI
@@ -13,150 +13,6 @@ import Git
 #if canImport(Github)
 import Github
 #endif
-
-// MARK: - Unified Repositories Root
-
-struct UnifiedRepositoriesView: View {
-  @Environment(RepositoryAggregator.self) private var aggregator
-  @Environment(MCPServerService.self) private var mcpServer
-  @Environment(DataService.self) private var dataService
-
-  @State private var selectedRepoId: UUID?
-  @State private var searchText = ""
-  @State private var showAddSheet = false
-  @State private var filterMode: FilterMode = .all
-
-  enum FilterMode: String, CaseIterable {
-    case all = "All"
-    case cloned = "Cloned"
-    case indexed = "Indexed"
-    case tracked = "Tracked"
-    case active = "Active"
-    case favorites = "Favorites"
-  }
-
-  var body: some View {
-    NavigationSplitView {
-      sidebar
-    } detail: {
-      detail
-    }
-    .navigationTitle("Repositories")
-    .searchable(text: $searchText, prompt: "Search repositories…")
-    .toolbar {
-      ToolbarItem(placement: .primaryAction) {
-        Button {
-          showAddSheet = true
-        } label: {
-          Image(systemName: "plus")
-        }
-        .help("Add Repository")
-      }
-      ToolbarItem(placement: .automatic) {
-        Button {
-          aggregator.rebuild()
-        } label: {
-          Image(systemName: "arrow.clockwise")
-        }
-        .help("Refresh")
-      }
-    }
-    .sheet(isPresented: $showAddSheet) {
-      AddRepositorySheet()
-    }
-    .task {
-      // Rebuild when this view appears
-      aggregator.rebuild()
-    }
-  }
-
-  // MARK: - Sidebar
-
-  private var sidebar: some View {
-    VStack(spacing: 0) {
-      // Filter chips
-      ScrollView(.horizontal, showsIndicators: false) {
-        HStack(spacing: 6) {
-          ForEach(FilterMode.allCases, id: \.self) { mode in
-            FilterChip(
-              title: mode.rawValue,
-              count: countForFilter(mode),
-              isSelected: filterMode == mode
-            ) {
-              withAnimation(.easeInOut(duration: 0.15)) {
-                filterMode = mode
-              }
-            }
-          }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-      }
-
-      Divider()
-
-      // Repository list
-      List(selection: $selectedRepoId) {
-        ForEach(filteredRepositories) { repo in
-          RepoSidebarRow(repo: repo)
-            .tag(repo.id)
-        }
-      }
-      .listStyle(.sidebar)
-    }
-  }
-
-  // MARK: - Detail
-
-  @ViewBuilder
-  private var detail: some View {
-    if let repoId = selectedRepoId,
-       let repo = aggregator.repositoryById[repoId] {
-      RepoDetailView(repo: repo)
-    } else {
-      RepositoriesCommandCenter()
-    }
-  }
-
-  // MARK: - Filtering
-
-  private var filteredRepositories: [UnifiedRepository] {
-    var repos = aggregator.repositories
-
-    // Apply filter mode
-    switch filterMode {
-    case .all: break
-    case .cloned: repos = repos.filter(\.isClonedLocally)
-    case .indexed: repos = repos.filter(\.isRAGIndexed)
-    case .tracked: repos = repos.filter(\.isTracked)
-    case .active: repos = repos.filter(\.hasActiveWork)
-    case .favorites: repos = repos.filter(\.isFavorite)
-    }
-
-    // Apply search
-    if !searchText.isEmpty {
-      let query = searchText.lowercased()
-      repos = repos.filter { repo in
-        repo.displayName.lowercased().contains(query)
-          || repo.normalizedRemoteURL.lowercased().contains(query)
-          || (repo.ownerSlashRepo?.lowercased().contains(query) ?? false)
-      }
-    }
-
-    return repos
-  }
-
-  private func countForFilter(_ mode: FilterMode) -> Int {
-    switch mode {
-    case .all: return aggregator.repositories.count
-    case .cloned: return aggregator.repositories.filter(\.isClonedLocally).count
-    case .indexed: return aggregator.repositories.filter(\.isRAGIndexed).count
-    case .tracked: return aggregator.repositories.filter(\.isTracked).count
-    case .active: return aggregator.repositories.filter(\.hasActiveWork).count
-    case .favorites: return aggregator.repositories.filter(\.isFavorite).count
-    }
-  }
-}
 
 // MARK: - Sidebar Row
 
@@ -498,7 +354,7 @@ struct AddOptionCard: View {
 // MARK: - Command Center (No-Selection View)
 
 /// Cross-repo dashboard shown when no repository is selected.
-/// Surfaces actionable items across all repos instead of RAG stats.
+/// Surfaces actionable items across all repos instead of the retired RAG overview.
 struct RepositoriesCommandCenter: View {
   @Environment(RepositoryAggregator.self) private var aggregator
   @Environment(MCPServerService.self) private var mcpServer
