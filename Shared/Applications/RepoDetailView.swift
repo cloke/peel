@@ -38,7 +38,11 @@ enum RepoDetailTab: String, CaseIterable {
   }
 
   init?(automationValue: String) {
-    self.init(rawValue: automationValue.capitalized)
+    if let match = Self.allCases.first(where: { $0.automationValue == automationValue.lowercased() }) {
+      self = match
+    } else {
+      return nil
+    }
   }
 }
 

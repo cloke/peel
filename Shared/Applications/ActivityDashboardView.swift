@@ -18,6 +18,8 @@ struct ActivityDashboardView: View {
 
   @State private var filterMode: ActivityFilterMode = .all
   @State private var filterRepo: String? = nil  // nil = all repos
+  @AppStorage("activity.automationFilterMode") private var automationFilterMode = ""
+  @AppStorage("activity.automationFilterRepo") private var automationFilterRepo = ""
   @State private var selectedChain: AgentChain?
   @State private var selectedPRDetail: PRDetailIdentifier?
   @State private var expandedItems: Set<UUID> = []
@@ -52,6 +54,24 @@ struct ActivityDashboardView: View {
     }
     .onChange(of: filterRepo) { _, _ in
       recentPage = 0
+    }
+    .onChange(of: automationFilterMode) { _, newValue in
+      guard !newValue.isEmpty else { return }
+      let match = ActivityFilterMode.allCases.first {
+        $0.rawValue.lowercased() == newValue.lowercased()
+      }
+      if let mode = match, mode != filterMode {
+        filterMode = mode
+      }
+      automationFilterMode = ""
+    }
+    .onChange(of: automationFilterRepo) { _, newValue in
+      guard !newValue.isEmpty else { return }
+      let resolved = newValue == "all" ? nil : newValue
+      if resolved != filterRepo {
+        filterRepo = resolved
+      }
+      automationFilterRepo = ""
     }
     .onChange(of: filteredItems.count) { _, count in
       if count == 0 {

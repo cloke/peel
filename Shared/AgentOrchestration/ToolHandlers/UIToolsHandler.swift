@@ -305,13 +305,13 @@ public final class UIToolsHandler: MCPToolHandler {
       delegate.recordUIActionHandled(controlId)
       return (200, makeResult(id: id, result: ["controlId": controlId, "value": value]))
 
-    case "git.selectBranch":
+    case "git.selectBranch", "repositories.git.selectBranch":
       UserDefaults.standard.set(value, forKey: "git.selectedBranchName")
       delegate.recordUIActionRequested(controlId)
       delegate.recordUIActionHandled(controlId)
       return (200, makeResult(id: id, result: ["controlId": controlId, "value": value]))
 
-    case "git.selectCommit":
+    case "git.selectCommit", "repositories.git.selectCommit":
       UserDefaults.standard.set(value, forKey: "git.selectedCommitSha")
       delegate.recordUIActionRequested(controlId)
       delegate.recordUIActionHandled(controlId)
@@ -333,6 +333,31 @@ public final class UIToolsHandler: MCPToolHandler {
       // Backward compatibility with legacy keys
       UserDefaults.standard.set(value, forKey: "github.selectedRecentPRKey")
       UserDefaults.standard.set("", forKey: "github.selectedFavoriteKey")
+      delegate.recordUIActionRequested(controlId)
+      delegate.recordUIActionHandled(controlId)
+      return (200, makeResult(id: id, result: ["controlId": controlId, "value": value]))
+
+    case "activity.filterMode":
+      let normalized = value.lowercased()
+      guard ["all", "running", "completed", "failed"].contains(normalized) else {
+        return invalidParamError(id: id, param: "value", reason: "Must be all/running/completed/failed")
+      }
+      UserDefaults.standard.set(normalized, forKey: "activity.automationFilterMode")
+      UserDefaults.standard.set("activity", forKey: "current-tool")
+      delegate.recordUIActionRequested(controlId)
+      delegate.recordUIActionHandled(controlId)
+      return (200, makeResult(id: id, result: ["controlId": controlId, "value": normalized]))
+
+    case "activity.filterRepo":
+      UserDefaults.standard.set(value, forKey: "activity.automationFilterRepo")
+      UserDefaults.standard.set("activity", forKey: "current-tool")
+      delegate.recordUIActionRequested(controlId)
+      delegate.recordUIActionHandled(controlId)
+      return (200, makeResult(id: id, result: ["controlId": controlId, "value": value]))
+
+    case "activity.selectChain":
+      UserDefaults.standard.set(value, forKey: "activity.automationSelectedChain")
+      UserDefaults.standard.set("activity", forKey: "current-tool")
       delegate.recordUIActionRequested(controlId)
       delegate.recordUIActionHandled(controlId)
       return (200, makeResult(id: id, result: ["controlId": controlId, "value": value]))

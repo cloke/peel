@@ -131,7 +131,18 @@ struct ContentView: View {
       }
     }
     .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
-      syncRepoSelectionFromAutomation()
+      // Sync navigation first — MCP writes current-tool via UserDefaults.
+      // Must run before syncRepoSelectionFromAutomation which can override it.
+      if let raw = UserDefaults.standard.string(forKey: "current-tool"),
+         let tool = CurrentTool(rawValue: raw),
+         tool != currentSection {
+        currentSection = tool
+      }
+      // Only sync repo selection when on repositories view to avoid
+      // overriding MCP navigation to other views.
+      if currentSection == .repositories {
+        syncRepoSelectionFromAutomation()
+      }
       if repoSearchText != automationRepoSearchText {
         repoSearchText = automationRepoSearchText
       }
