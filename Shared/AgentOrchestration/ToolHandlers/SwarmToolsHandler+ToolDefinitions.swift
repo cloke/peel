@@ -658,6 +658,22 @@ extension SwarmToolsHandler {
         isMutating: false
       ),
       MCPToolDefinition(
+        name: "swarm.rag-availability",
+        description: "Show the full RAG availability picture for swarm debugging: connected peers, Firestore workers, raw remote version publications, and the current availableUpdates set. Optionally filter to one repoIdentifier.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoIdentifier": [
+              "type": "string",
+              "description": "Optional normalized repo identifier to filter diagnostics to one repository"
+            ]
+          ],
+          "required": []
+        ],
+        category: .swarm,
+        isMutating: false
+      ),
+      MCPToolDefinition(
         name: "swarm.rag-sync-index",
         description: "Sync a RAG index from a remote peer via on-demand P2P transfer (LAN → WAN → STUN fallback). Specify a repoIdentifier and optionally a source workerId. If no workerId given, uses the best available source.",
         inputSchema: [

@@ -709,6 +709,90 @@ extension SwarmToolsHandler {
     ]))
   }
 
+  // MARK: - swarm.rag-availability
+
+  func handleRagAvailability(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    let syncCoordinator = RAGSyncCoordinator.shared
+    let repoFilter = (arguments["repoIdentifier"] as? String)
+      .map { RepoRegistry.shared.normalizeRemoteURL($0) }
+
+    let connectedPeers: [[String: Any]] = coordinator.connectedWorkers.map { peer in
+      let status = coordinator.workerStatuses[peer.id]
+      return [
+        "workerId": peer.id,
+        "workerName": peer.displayName,
+        "gitCommitHash": peer.capabilities.gitCommitHash as Any,
+        "state": status?.state.rawValue as Any,
+        "lastHeartbeat": status.map { Formatter.iso8601.string(from: $0.lastHeartbeat) } as Any,
+      ]
+    }
+
+    let remoteVersions: [[String: Any]] = syncCoordinator.remoteVersions
+      .sorted { $0.key < $1.key }
+      .flatMap { repoIdentifier, workers in
+        workers.values
+          .sorted { lhs, rhs in
+            if lhs.repoIdentifier == rhs.repoIdentifier {
+              return lhs.workerName < rhs.workerName
+            }
+            return lhs.repoIdentifier < rhs.repoIdentifier
+          }
+          .filter { repoFilter == nil || $0.repoIdentifier == repoFilter }
+          .map { version in
+            [
+              "repoIdentifier": version.repoIdentifier,
+              "repoName": version.repoName,
+              "workerId": version.workerId,
+              "workerName": version.workerName,
+              "version": version.version,
+              "chunkCount": version.chunkCount,
+              "embeddingModel": version.embeddingModel,
+              "updatedAt": Formatter.iso8601.string(from: version.lastIndexedAt),
+            ]
+          }
+      }
+
+    let availableUpdates: [[String: Any]] = syncCoordinator.availableUpdates
+      .filter { repoFilter == nil || RepoRegistry.shared.normalizeRemoteURL($0.source.repoIdentifier) == repoFilter }
+      .map { availability in
+        [
+          "swarmId": availability.swarmId,
+          "repoIdentifier": availability.source.repoIdentifier,
+          "repoName": availability.source.repoName,
+          "workerId": availability.source.workerId,
+          "workerName": availability.source.workerName,
+          "remoteVersion": availability.source.version,
+          "localVersion": availability.localVersion as Any,
+          "localChunkCount": availability.localChunkCount as Any,
+          "remoteChunkCount": availability.source.chunkCount,
+          "updatedAt": Formatter.iso8601.string(from: availability.source.lastIndexedAt),
+        ]
+      }
+
+    let firestoreWorkers: [[String: Any]] = FirebaseService.shared.swarmWorkers
+      .sorted { $0.displayName < $1.displayName }
+      .map { worker in
+        [
+          "workerId": worker.id,
+          "workerName": worker.displayName,
+          "status": worker.status.rawValue,
+          "isStale": worker.isStale,
+          "lastHeartbeat": Formatter.iso8601.string(from: worker.lastHeartbeat),
+        ]
+      }
+
+    return (200, makeResult(id: id, result: [
+      "repoIdentifierFilter": repoFilter as Any,
+      "connectedPeerCount": connectedPeers.count,
+      "remoteVersionCount": remoteVersions.count,
+      "availableUpdateCount": availableUpdates.count,
+      "connectedPeers": connectedPeers,
+      "remoteVersions": remoteVersions,
+      "availableUpdates": availableUpdates,
+      "firestoreWorkers": firestoreWorkers,
+    ]))
+  }
+
   // MARK: - swarm.rag-sync-index (on-demand P2P)
 
   func handleRagSyncIndex(id: Any?, arguments: [String: Any]) async -> (Int, Data) {

@@ -85,6 +85,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
     "firebase.emulator.configure",
     // On-demand P2P RAG index sharing
     "swarm.rag-versions",
+    "swarm.rag-availability",
     "swarm.rag-sync-index"
   ]
   
@@ -177,6 +178,8 @@ public final class SwarmToolsHandler: MCPToolHandler {
     // On-demand P2P RAG index sharing
     case "swarm.rag-versions":
       return handleRagVersions(id: id)
+    case "swarm.rag-availability":
+      return handleRagAvailability(id: id, arguments: arguments)
     case "swarm.rag-sync-index":
       return await handleRagSyncIndex(id: id, arguments: arguments)
     default:
