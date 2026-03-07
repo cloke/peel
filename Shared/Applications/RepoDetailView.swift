@@ -1665,6 +1665,7 @@ struct RAGTabView: View {
 
   @State private var isIndexing = false
   @State private var indexError: String?
+  @State private var indexSuccess: String?
   @State private var searchQuery = ""
   @State private var searchMode: MCPServerService.RAGSearchMode = .vector
   @State private var searchResults: [LocalRAGSearchResult] = []
@@ -1673,6 +1674,7 @@ struct RAGTabView: View {
   @State private var lessons: [LocalRAGLesson] = []
   @State private var isAnalyzing = false
   @State private var analyzeError: String?
+  @State private var analyzeSuccess: String?
   @State private var analyzedChunks = 0
   @State private var isEnriching = false
   @State private var enrichError: String?
@@ -1956,6 +1958,12 @@ struct RAGTabView: View {
             .font(.caption)
             .foregroundStyle(.red)
         }
+
+        if let success = indexSuccess {
+          Label(success, systemImage: "checkmark.circle")
+            .font(.caption)
+            .foregroundStyle(.green)
+        }
       }
       .padding(4)
     }
@@ -2146,11 +2154,16 @@ struct RAGTabView: View {
         }
       }
 
-      // Errors
+      // Errors & success
       if let error = analyzeError {
         Label(error, systemImage: "xmark.circle")
           .font(.caption)
           .foregroundStyle(.red)
+      }
+      if let success = analyzeSuccess {
+        Label(success, systemImage: success.contains("No ") ? "info.circle" : "checkmark.circle")
+          .font(.caption)
+          .foregroundColor(success.contains("No ") ? .secondary : .green)
       }
       if let error = enrichError {
         Label(error, systemImage: "xmark.circle")
@@ -2744,9 +2757,21 @@ struct RAGTabView: View {
     guard let path = repo.localPath else { return }
     isIndexing = true
     indexError = nil
+    indexSuccess = nil
     do {
       try await mcpServer.indexRagRepo(path: path, forceReindex: force)
       await mcpServer.refreshRagSummary()
+      if let report = mcpServer.lastRagIndexReport {
+        let newChunks = report.chunksIndexed
+        let totalFiles = report.filesIndexed + report.filesSkipped
+        if newChunks == 0 {
+          indexSuccess = "Already up to date (\(totalFiles) files checked)"
+        } else {
+          indexSuccess = "Indexed \(newChunks) new chunks from \(report.filesIndexed) files"
+        }
+      } else {
+        indexSuccess = "Indexing complete"
+      }
     } catch {
       indexError = error.localizedDescription
     }
@@ -2791,6 +2816,7 @@ struct RAGTabView: View {
     guard let path = repo.localPath else { return }
     isAnalyzing = true
     analyzeError = nil
+    analyzeSuccess = nil
     let state = analysisState
     state?.isAnalyzing = true
     state?.analyzeError = nil
@@ -2806,6 +2832,16 @@ struct RAGTabView: View {
         }
       }
       analyzedChunks = count
+      if count == 0 {
+        let totalAnalyzed = state?.analyzedCount ?? 0
+        if totalAnalyzed > 0 {
+          analyzeSuccess = "All \(totalAnalyzed) chunks already analyzed"
+        } else {
+          analyzeSuccess = "No chunks to analyze — index first"
+        }
+      } else {
+        analyzeSuccess = "Analyzed \(count) chunks"
+      }
       if let state {
         state.analyzedCount += count
         state.unanalyzedCount = max(0, state.unanalyzedCount - count)
