@@ -200,6 +200,8 @@ struct OverviewTabView: View {
   @State private var isLoadingPRs = false
   @State private var selectedPRDetail: PRDetailIdentifier?
   @State private var justTrackedId: UUID?
+  @State private var isPullingSyncIndex = false
+  @State private var syncPullResult: String?
 
   private var repoRuns: [ParallelWorktreeRun] {
     guard let runner = mcpServer.parallelWorktreeRunner,
@@ -640,6 +642,23 @@ struct OverviewTabView: View {
             .font(.caption2)
             .foregroundStyle(.secondary)
         }
+        Spacer()
+        if isPullingSyncIndex {
+          ProgressView()
+            .controlSize(.mini)
+        } else if let result = syncPullResult {
+          Text(result)
+            .font(.caption2)
+            .foregroundStyle(.green)
+        } else {
+          Button {
+            Task { await pullFromSyncSource(source.source) }
+          } label: {
+            Label("Pull Now", systemImage: "arrow.down.circle")
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.mini)
+        }
       }
     } else if coordinator.isActive {
       HStack(spacing: 6) {
@@ -659,6 +678,52 @@ struct OverviewTabView: View {
           .font(.caption)
           .foregroundStyle(.secondary)
       }
+    }
+  }
+
+  private func pullFromSyncSource(_ source: RAGIndexVersion) async {
+    isPullingSyncIndex = true
+    syncPullResult = nil
+    do {
+      let repoIdentifier = source.repoIdentifier
+      let workerId = source.workerId
+      // Try TCP peer first, fall back to on-demand
+      let peers = SwarmCoordinator.shared.connectedWorkers
+      if peers.contains(where: { $0.id == workerId }) {
+        let transferId = try await SwarmCoordinator.shared.requestRagArtifactSync(
+          direction: .pull,
+          workerId: workerId,
+          repoIdentifier: repoIdentifier
+        )
+        // Wait for completion
+        while !Task.isCancelled {
+          try? await Task.sleep(for: .seconds(0.5))
+          if let transfer = SwarmCoordinator.shared.ragTransfers.first(where: { $0.id == transferId }) {
+            if transfer.status == .complete {
+              syncPullResult = "✓ Pulled"
+              break
+            } else if transfer.status == .failed {
+              syncPullResult = "Failed"
+              break
+            }
+          }
+        }
+      } else {
+        try await SwarmCoordinator.shared.requestRagSyncOnDemand(
+          repoIdentifier: repoIdentifier,
+          fromWorkerId: workerId
+        )
+        syncPullResult = "✓ Pulled"
+      }
+      await mcpServer.refreshRagSummary()
+    } catch {
+      syncPullResult = "Failed"
+    }
+    isPullingSyncIndex = false
+    // Auto-dismiss result
+    Task { @MainActor in
+      try? await Task.sleep(for: .seconds(6))
+      syncPullResult = nil
     }
   }
 
@@ -1503,6 +1568,15 @@ struct RAGTabView: View {
   @State private var enrichResult: String?
   @State private var enrichBatchProgress: (current: Int, total: Int)?
 
+  // Swarm sync state
+  @State private var swarm = SwarmCoordinator.shared
+  @State private var isSyncing = false
+  @State private var syncDirection: RAGArtifactSyncDirection?
+  @State private var syncResultMessage: String?
+  @State private var syncError: String?
+  @State private var activeTransferId: UUID?
+  @State private var onDemandProgress: String?
+
   private var isCurrentlyIndexing: Bool {
     mcpServer.ragIndexingPath == repo.localPath
   }
@@ -1529,6 +1603,11 @@ struct RAGTabView: View {
         // Pipeline steps
         if repo.ragStatus != nil && repo.ragStatus != .notIndexed, repo.localPath != nil {
           pipelineCard
+        }
+
+        // Swarm sync
+        if swarm.isActive {
+          swarmSyncSection
         }
 
         // Lessons
@@ -1986,6 +2065,363 @@ struct RAGTabView: View {
           .foregroundStyle(.secondary)
       }
     }
+  }
+
+  // MARK: - Swarm Sync
+
+  /// Derives the repo identifier used by the swarm sync protocol.
+  private var ragRepoIdentifier: String? {
+    if let ragRepo = mcpServer.ragRepos.first(where: { $0.rootPath == repo.localPath }) {
+      return ragRepo.repoIdentifier
+    }
+    return repo.normalizedRemoteURL.isEmpty ? nil : repo.normalizedRemoteURL
+  }
+
+  private var swarmSyncSection: some View {
+    let peers = swarm.connectedWorkers
+    let onDemandWorkers = swarm.onDemandWorkers
+
+    return VStack(alignment: .leading, spacing: 8) {
+      SectionHeader("Swarm Sync")
+
+      GroupBox {
+        VStack(alignment: .leading, spacing: 10) {
+          // Status / progress area
+          if let progress = onDemandProgress {
+            HStack(spacing: 6) {
+              ProgressView()
+                .controlSize(.small)
+              Text(progress)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+          } else if let transferId = activeTransferId,
+                    let transfer = SwarmCoordinator.shared.ragTransfers.first(where: { $0.id == transferId }) {
+            HStack(spacing: 6) {
+              ProgressView()
+                .controlSize(.small)
+              Text(syncTransferLabel(transfer))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+          } else if let result = syncResultMessage {
+            HStack(spacing: 6) {
+              Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+                .font(.caption)
+              Text(result)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+          } else if let error = syncError {
+            HStack(spacing: 6) {
+              Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.red)
+                .font(.caption)
+              Text(error)
+                .font(.caption)
+                .foregroundStyle(.red)
+            }
+          }
+
+          // Action buttons
+          if let repoId = ragRepoIdentifier {
+            HStack(spacing: 8) {
+              if !peers.isEmpty {
+                if peers.count > 1 {
+                  syncPeerMenu(peers: peers, repoIdentifier: repoId, direction: .push)
+                  syncPeerMenu(peers: peers, repoIdentifier: repoId, direction: .pull)
+                } else {
+                  Button {
+                    Task { await syncWithPeers(repoIdentifier: repoId, direction: .push) }
+                  } label: {
+                    syncButtonLabel("Push", icon: "arrow.up.circle", active: isSyncing && syncDirection == .push)
+                  }
+                  .buttonStyle(.bordered)
+                  .controlSize(.small)
+                  .disabled(isSyncing)
+
+                  Button {
+                    Task { await syncWithPeers(repoIdentifier: repoId, direction: .pull) }
+                  } label: {
+                    syncButtonLabel("Pull", icon: "arrow.down.circle", active: isSyncing && syncDirection == .pull)
+                  }
+                  .buttonStyle(.bordered)
+                  .controlSize(.small)
+                  .disabled(isSyncing)
+                }
+              } else if !onDemandWorkers.isEmpty {
+                if onDemandWorkers.count > 1 {
+                  onDemandMenu(workers: onDemandWorkers, repoIdentifier: repoId)
+                } else {
+                  Button {
+                    Task { await syncOnDemand(repoIdentifier: repoId, fromWorkerId: onDemandWorkers[0].id) }
+                  } label: {
+                    syncButtonLabel("Pull (WAN)", icon: "arrow.down.circle", active: isSyncing && syncDirection == .pull)
+                  }
+                  .buttonStyle(.bordered)
+                  .controlSize(.small)
+                  .disabled(isSyncing)
+                }
+              } else {
+                HStack(spacing: 6) {
+                  Image(systemName: "network.slash")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                  Text("No peers or WAN workers available")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+              }
+
+              Spacer()
+            }
+          } else {
+            HStack(spacing: 6) {
+              Image(systemName: "info.circle")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+              Text("Index this repo first to enable swarm sync")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+          }
+        }
+        .padding(4)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func syncButtonLabel(_ title: String, icon: String, active: Bool) -> some View {
+    if active {
+      HStack(spacing: 4) {
+        ProgressView()
+          .controlSize(.mini)
+        Text("\(title)…")
+      }
+    } else {
+      Label(title, systemImage: icon)
+    }
+  }
+
+  private func syncPeerMenu(peers: [ConnectedPeer], repoIdentifier: String, direction: RAGArtifactSyncDirection) -> some View {
+    let isPush = direction == .push
+    let label = isPush ? "Push" : "Pull"
+    let icon = isPush ? "arrow.up.circle" : "arrow.down.circle"
+    let isActive = isSyncing && syncDirection == direction
+
+    return Menu {
+      ForEach(peers) { peer in
+        Button {
+          Task { await syncWithPeers(repoIdentifier: repoIdentifier, direction: direction, workerId: peer.id) }
+        } label: {
+          Label(peer.displayName, systemImage: "desktopcomputer")
+        }
+      }
+    } label: {
+      syncButtonLabel(label, icon: icon, active: isActive)
+    }
+    .buttonStyle(.bordered)
+    .controlSize(.small)
+    .disabled(isSyncing)
+  }
+
+  private func onDemandMenu(workers: [FirestoreWorker], repoIdentifier: String) -> some View {
+    let isActive = isSyncing && syncDirection == .pull
+
+    return Menu {
+      ForEach(workers, id: \.id) { worker in
+        Button {
+          Task { await syncOnDemand(repoIdentifier: repoIdentifier, fromWorkerId: worker.id) }
+        } label: {
+          Label(worker.displayName, systemImage: "desktopcomputer")
+        }
+      }
+    } label: {
+      syncButtonLabel("Pull (WAN)", icon: "arrow.down.circle", active: isActive)
+    }
+    .buttonStyle(.bordered)
+    .controlSize(.small)
+    .disabled(isSyncing)
+  }
+
+  private func syncTransferLabel(_ transfer: RAGArtifactTransferState) -> String {
+    switch transfer.status {
+    case .queued: return "Queued…"
+    case .preparing: return "Preparing…"
+    case .transferring:
+      if transfer.totalBytes > 0 {
+        let pct = Int(Double(transfer.transferredBytes) / Double(transfer.totalBytes) * 100)
+        return "Transferring: \(pct)%"
+      }
+      return "Transferring…"
+    case .applying: return "Applying…"
+    case .complete: return "Complete"
+    case .failed: return transfer.errorMessage ?? "Failed"
+    }
+  }
+
+  // MARK: - Sync Actions
+
+  private func syncWithPeers(repoIdentifier: String, direction: RAGArtifactSyncDirection, workerId: String? = nil) async {
+    isSyncing = true
+    syncDirection = direction
+    syncResultMessage = nil
+    syncError = nil
+    activeTransferId = nil
+    onDemandProgress = nil
+
+    do {
+      let transferId = try await SwarmCoordinator.shared.requestRagArtifactSync(
+        direction: direction,
+        workerId: workerId,
+        repoIdentifier: repoIdentifier
+      )
+      activeTransferId = transferId
+
+      while !Task.isCancelled {
+        try? await Task.sleep(for: .seconds(0.5))
+        if let transfer = SwarmCoordinator.shared.ragTransfers.first(where: { $0.id == transferId }) {
+          switch transfer.status {
+          case .complete:
+            if direction == .pull, let summary = transfer.resultSummary {
+              let modelNote = transfer.remoteEmbeddingModel.map { " (model: \($0))" } ?? ""
+              syncResultMessage = "Pulled from \(transfer.peerName): \(summary)\(modelNote)"
+            } else {
+              syncResultMessage = direction == .push ? "Pushed to \(transfer.peerName)" : "Pulled from \(transfer.peerName)"
+            }
+            activeTransferId = nil
+            isSyncing = false
+            syncDirection = nil
+            if direction == .pull {
+              await mcpServer.refreshRagSummary()
+              await refreshAnalysisStatus()
+            }
+            Task { @MainActor in
+              try? await Task.sleep(for: .seconds(8))
+              if syncResultMessage != nil { syncResultMessage = nil }
+            }
+            return
+          case .failed:
+            syncError = transfer.errorMessage ?? "Transfer failed"
+            activeTransferId = nil
+            isSyncing = false
+            syncDirection = nil
+            return
+          default:
+            continue
+          }
+        }
+      }
+    } catch {
+      syncError = "Sync failed: \(error.localizedDescription)"
+    }
+    isSyncing = false
+    syncDirection = nil
+  }
+
+  private func syncOnDemand(repoIdentifier: String, fromWorkerId: String) async {
+    let workerName = FirebaseService.shared.swarmWorkers
+      .first(where: { $0.id == fromWorkerId })?.displayName ?? fromWorkerId
+
+    isSyncing = true
+    syncDirection = .pull
+    syncResultMessage = nil
+    syncError = nil
+    activeTransferId = nil
+    onDemandProgress = "Requesting pull from \(workerName)…"
+
+    var syncFinished = false
+
+    let syncTask = Task { @MainActor in
+      try await SwarmCoordinator.shared.requestRagSyncOnDemand(
+        repoIdentifier: repoIdentifier,
+        fromWorkerId: fromWorkerId
+      )
+    }
+
+    let coordinator = RAGSyncCoordinator.shared
+    while !syncFinished && !Task.isCancelled {
+      if let transfer = coordinator.activeTransfers.values.first(where: {
+        $0.repoIdentifier == repoIdentifier && $0.targetWorkerId == fromWorkerId
+      }) {
+        let method = transfer.connectionMethod?.rawValue ?? "connecting"
+        switch transfer.status {
+        case .connecting:
+          onDemandProgress = "Connecting (\(method))…"
+        case .handshaking:
+          onDemandProgress = "Handshaking via \(method)…"
+        case .transferring:
+          let elapsed = Int(transfer.elapsedSeconds)
+          if transfer.totalBytes > 0 && transfer.transferredBytes > 0 {
+            let pct = Int(transfer.progressFraction * 100)
+            onDemandProgress = "Downloading via \(method): \(pct)% [\(elapsed)s]"
+          } else if transfer.totalChunks > 0 {
+            onDemandProgress = "Uploading via \(method): \(transfer.chunksReceived)/\(transfer.totalChunks) chunks [\(elapsed)s]"
+          } else {
+            onDemandProgress = "Waiting for remote export via \(method)… [\(elapsed)s]"
+          }
+        case .importing:
+          let byteStr = formatBytes(transfer.transferredBytes)
+          onDemandProgress = "Importing \(byteStr)…"
+        case .complete:
+          syncFinished = true
+        case .failed:
+          syncFinished = true
+        }
+      }
+
+      try? await Task.sleep(for: .seconds(0.3))
+    }
+
+    // Read final state
+    if let transfer = coordinator.activeTransfers.values.first(where: {
+      $0.repoIdentifier == repoIdentifier && $0.targetWorkerId == fromWorkerId
+    }) {
+      switch transfer.status {
+      case .complete:
+        let byteStr = formatBytes(transfer.transferredBytes)
+        syncResultMessage = "Pulled from \(workerName): \(byteStr)"
+        await mcpServer.refreshRagSummary()
+        await refreshAnalysisStatus()
+        Task { @MainActor in
+          try? await Task.sleep(for: .seconds(8))
+          if syncResultMessage != nil { syncResultMessage = nil }
+        }
+      case .failed:
+        syncError = transfer.error ?? "On-demand sync failed"
+      default:
+        break
+      }
+    } else {
+      // If we can't find the transfer, check the task result
+      do {
+        try await syncTask.value
+        syncResultMessage = "Pulled from \(workerName)"
+        await mcpServer.refreshRagSummary()
+        await refreshAnalysisStatus()
+        Task { @MainActor in
+          try? await Task.sleep(for: .seconds(8))
+          if syncResultMessage != nil { syncResultMessage = nil }
+        }
+      } catch {
+        syncError = "On-demand sync failed: \(error.localizedDescription)"
+      }
+    }
+
+    onDemandProgress = nil
+    isSyncing = false
+    syncDirection = nil
+  }
+
+  private func formatBytes(_ bytes: Int) -> String {
+    if bytes >= 1_048_576 {
+      return String(format: "%.1f MB", Double(bytes) / 1_048_576)
+    } else if bytes >= 1024 {
+      return String(format: "%.0f KB", Double(bytes) / 1024)
+    }
+    return "\(bytes) B"
   }
 
   // MARK: - Actions
