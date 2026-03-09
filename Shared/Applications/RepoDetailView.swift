@@ -16,7 +16,6 @@ import SwiftUI
 enum RepoDetailTab: String, CaseIterable {
   case overview = "Overview"
   case branches = "Branches"
-  case activity = "Activity"
   case rag = "RAG"
   case skills = "Skills"
 
@@ -24,7 +23,6 @@ enum RepoDetailTab: String, CaseIterable {
     switch self {
     case .overview: return "square.grid.2x2"
     case .branches: return "arrow.triangle.branch"
-    case .activity: return "clock"
     case .rag: return "magnifyingglass"
     case .skills: return "hammer"
     }
@@ -48,7 +46,6 @@ enum RepoDetailTab: String, CaseIterable {
 struct RepoDetailView: View {
   let repo: UnifiedRepository
 
-  @Environment(ActivityFeed.self) private var activityFeed
   @AppStorage("repositories.selectedTab") private var selectedTabValue = RepoDetailTab.overview.automationValue
 
   private var selectedTab: Binding<RepoDetailTab> {
@@ -162,8 +159,6 @@ struct RepoDetailView: View {
       OverviewTabView(repo: repo)
     case .branches:
       BranchesTabView(repo: repo)
-    case .activity:
-      ActivityTabView(repo: repo)
     case .rag:
       RAGTabView(repo: repo)
     case .skills:
