@@ -417,6 +417,16 @@ public final class CLIService {
     }
     
     let result: ExecutionResult
+    let executionMode = onOutput != nil ? "streaming" : "non-streaming"
+    await telemetryProvider.info("Copilot session launching", metadata: [
+      "model": model.displayName,
+      "role": role.displayName,
+      "mode": executionMode,
+      "workingDirectory": workingDirectory ?? "",
+      "argCount": "\(arguments.count)"
+    ])
+    let sessionStart = Date()
+
     if let onOutput {
       // Use streaming execution
       result = try await executeWithStreaming(
@@ -437,11 +447,33 @@ public final class CLIService {
         environment: environment
       )
     }
-    
+
+    let sessionDuration = String(format: "%.1fs", Date().timeIntervalSince(sessionStart))
     if result.exitCode != 0 {
       let errorMsg = result.stderrString.isEmpty ? result.stdoutString : result.stderrString
+      let stderrTail = String(result.stderrString.suffix(300))
+      await telemetryProvider.error(
+        CLIError.executionFailed("exit \(result.exitCode)"),
+        context: "Copilot session failed",
+        metadata: [
+          "model": model.displayName,
+          "role": role.displayName,
+          "exitCode": "\(result.exitCode)",
+          "duration": sessionDuration,
+          "stderrTail": stderrTail
+        ]
+      )
       throw CLIError.executionFailed("Copilot failed: \(errorMsg)")
     }
+    
+    await telemetryProvider.info("Copilot session completed", metadata: [
+      "model": model.displayName,
+      "role": role.displayName,
+      "exitCode": "\(result.exitCode)",
+      "duration": sessionDuration,
+      "stdoutLen": "\(result.stdoutString.count)",
+      "stderrLen": "\(result.stderrString.count)"
+    ])
     
     // Content is in stdout, stats are in stderr - combine for parsing
     let combinedOutput = result.stdoutString + "\n" + result.stderrString
@@ -601,6 +633,13 @@ public final class CLIService {
       await completionSignal.waitForCompletion()
       try? await Task.sleep(for: .seconds(1))
       if process.isRunning {
+        Task { @MainActor in
+          await telemetryProvider.warning("Copilot process hanging after completion marker — terminating", metadata: [
+            "pid": "\(process.processIdentifier)",
+            "model": modelName,
+            "role": roleName
+          ])
+        }
         process.terminate()
       }
     }
@@ -615,7 +654,10 @@ public final class CLIService {
         let runtimeExceeded = Date().timeIntervalSince(startTime) > maxRuntime
         if idleExceeded || runtimeExceeded {
           Task { @MainActor in
-            await telemetryProvider.warning("Copilot stream timeout", metadata: [
+            let reason = idleExceeded ? "idle_timeout" : "max_runtime"
+            await telemetryProvider.warning("Copilot stream timeout — terminating process", metadata: [
+              "pid": "\(process.processIdentifier)",
+              "reason": reason,
               "model": modelName,
               "role": roleName,
               "workingDirectory": workingDirectory ?? "",
@@ -652,14 +694,47 @@ public final class CLIService {
     
     return try await withTaskCancellationHandler {
       // Start the process
-      try process.run()
+      do {
+        try process.run()
+        Task { @MainActor in
+          await telemetryProvider.info("Copilot process launched", metadata: [
+            "pid": "\(process.processIdentifier)",
+            "model": modelName,
+            "role": roleName,
+            "workingDirectory": workingDirectory ?? ""
+          ])
+        }
+      } catch {
+        Task { @MainActor in
+          await telemetryProvider.error(error, context: "Copilot process launch failed", metadata: [
+            "executable": executable,
+            "model": modelName,
+            "role": roleName,
+            "workingDirectory": workingDirectory ?? ""
+          ])
+        }
+        throw error
+      }
       
       // Wait for process to complete
       await withCheckedContinuation { continuation in
-        process.terminationHandler = { _ in
+        process.terminationHandler = { terminatedProcess in
           // Clean up handlers
           stdoutPipe.fileHandleForReading.readabilityHandler = nil
           stderrPipe.fileHandleForReading.readabilityHandler = nil
+          Task { @MainActor [weak self] in
+            let exitCode = terminatedProcess.terminationStatus
+            let reason = terminatedProcess.terminationReason == .exit ? "exit" : "signal"
+            let runtime = String(format: "%.1fs", Date().timeIntervalSince(startTime))
+            await self?.telemetryProvider.info("Copilot process exited", metadata: [
+              "pid": "\(terminatedProcess.processIdentifier)",
+              "exitCode": "\(exitCode)",
+              "reason": reason,
+              "runtime": runtime,
+              "model": modelName,
+              "role": roleName
+            ])
+          }
           continuation.resume()
         }
       }
@@ -678,6 +753,14 @@ public final class CLIService {
           "model": modelName,
           "role": roleName,
           "workingDirectory": workingDirectory ?? "",
+          "exitCode": "\(process.terminationStatus)",
+          "stderrTail": diagnostics.stderrTail
+        ])
+      }
+      if diagnostics.completionDetected && process.terminationStatus != 0 {
+        await telemetryProvider.warning("Copilot exited with error despite completion marker", metadata: [
+          "model": modelName,
+          "role": roleName,
           "exitCode": "\(process.terminationStatus)",
           "stderrTail": diagnostics.stderrTail
         ])

@@ -8,10 +8,22 @@
 import OAuthSwift
 import SwiftUI
 
-enum GithubError: Error {
+enum GithubError: Error, LocalizedError {
   case couldNotDecode
   case invalidURL(String)
-  case badResponse(Int)
+  case badResponse(Int, String? = nil)
+
+  var errorDescription: String? {
+    switch self {
+    case .couldNotDecode:
+      return "Could not decode response"
+    case .invalidURL(let detail):
+      return "Invalid URL: \(detail)"
+    case .badResponse(let code, let message):
+      if let message { return "HTTP \(code): \(message)" }
+      return "HTTP \(code)"
+    }
+  }
 }
 
 extension Github {
@@ -395,7 +407,7 @@ extension Github {
       throw GithubError.badResponse(-1)
     }
     guard (200...299).contains(http.statusCode) else {
-      throw GithubError.badResponse(http.statusCode)
+      throw GithubError.badResponse(http.statusCode, Self.extractErrorMessage(from: data))
     }
 
     guard let text = String(data: data, encoding: .utf8) else {
@@ -419,7 +431,7 @@ extension Github {
       throw GithubError.badResponse(-1)
     }
     guard (200...299).contains(http.statusCode) else {
-      throw GithubError.badResponse(http.statusCode)
+      throw GithubError.badResponse(http.statusCode, Self.extractErrorMessage(from: data))
     }
     
     do {
@@ -428,7 +440,25 @@ extension Github {
       throw GithubError.couldNotDecode
     }
   }
-  
+
+  /// Extract a human-readable error message from a GitHub API error response body.
+  private static func extractErrorMessage(from data: Data) -> String? {
+    guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+      return String(data: data, encoding: .utf8)?.prefix(500).description
+    }
+    let message = json["message"] as? String
+    if let errors = json["errors"] as? [[String: Any]] {
+      let details = errors.compactMap { e -> String? in
+        let parts = [e["resource"], e["field"], e["code"], e["message"]].compactMap { $0 as? String }
+        return parts.isEmpty ? nil : parts.joined(separator: ".")
+      }
+      if !details.isEmpty {
+        return [message, details.joined(separator: "; ")].compactMap { $0 }.joined(separator: " — ")
+      }
+    }
+    return message
+  }
+
   /// Authorizes with the github api or returns success if token exists. To reset token and access call reauthorize.
   public static func authorize() async throws -> Void {
     let currentToken = await getToken()

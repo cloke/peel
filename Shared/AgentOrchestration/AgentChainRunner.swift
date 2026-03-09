@@ -240,6 +240,14 @@ public final class AgentChainRunner {
         }
       }
       
+      await telemetryProvider.info("Chain dispatch starting", metadata: [
+        "chainId": chain.id.uuidString,
+        "chainName": chain.name,
+        "agentCount": "\(chain.agents.count)",
+        "steps": chain.agents.map { "\($0.name)(\($0.stepType))" }.joined(separator: ", "),
+        "workingDirectory": chain.workingDirectory ?? ""
+      ])
+
       try await runAgentsWithParallelImplementers(
         chain: chain,
         prompt: enrichedPrompt,
@@ -271,6 +279,13 @@ public final class AgentChainRunner {
         chain.state = .failed(message: error.localizedDescription)
         chain.addStatusMessage("Error: \(error.localizedDescription)", type: .error)
         PeonPingService.shared.chainFailed(name: chain.name, error: error.localizedDescription)
+        await telemetryProvider.error(error, context: "Chain execution failed", metadata: [
+          "chainId": chain.id.uuidString,
+          "chainName": chain.name,
+          "completedSteps": "\(chain.results.count)",
+          "totalSteps": "\(chain.agents.count)",
+          "lastAgent": chain.results.last?.agentName ?? "none"
+        ])
       }
     }
 
@@ -508,6 +523,10 @@ public final class AgentChainRunner {
     }
 
     if firstImplementer > 0 {
+      await telemetryProvider.info("Chain phase: pre-implementer steps", metadata: [
+        "chainId": chain.id.uuidString,
+        "stepCount": "\(firstImplementer)"
+      ])
       for index in 0..<firstImplementer {
         try checkCancellation(chain: chain)
         await waitForGate(chain: chain)
@@ -515,9 +534,22 @@ public final class AgentChainRunner {
         chain.state = .running(agentIndex: index)
         chain.currentAgentStartTime = Date()
         chain.addStatusMessage("Starting \(agent.name) (\(agent.model.shortName))...", type: .progress)
+        await telemetryProvider.info("Step starting", metadata: [
+          "chainId": chain.id.uuidString,
+          "step": "\(index + 1)/\(chain.agents.count)",
+          "agentName": agent.name,
+          "stepType": "\(agent.stepType)",
+          "role": agent.role.displayName
+        ])
         let result = try await runSingleAgent(agent, at: index, chain: chain, prompt: prompt)
         chain.results.append(result)
         chain.addStatusMessage("\(agent.name) completed", type: .complete)
+        await telemetryProvider.info("Step completed", metadata: [
+          "chainId": chain.id.uuidString,
+          "step": "\(index + 1)/\(chain.agents.count)",
+          "agentName": agent.name,
+          "duration": result.duration ?? ""
+        ])
         if agent.role == .planner,
            let decision = result.plannerDecision,
            decision.shouldSkipWork {
@@ -540,6 +572,10 @@ public final class AgentChainRunner {
     }
 
     guard implementerIndices.count > 1 else {
+      await telemetryProvider.info("Chain phase: sequential execution (single implementer path)", metadata: [
+        "chainId": chain.id.uuidString,
+        "stepsRemaining": "\(chain.agents.count - updatedFirst)"
+      ])
       for index in updatedFirst..<chain.agents.count {
         try checkCancellation(chain: chain)
         await waitForGate(chain: chain)
@@ -547,9 +583,22 @@ public final class AgentChainRunner {
         chain.state = .running(agentIndex: index)
         chain.currentAgentStartTime = Date()
         chain.addStatusMessage("Starting \(agent.name) (\(agent.model.shortName))...", type: .progress)
+        await telemetryProvider.info("Step starting", metadata: [
+          "chainId": chain.id.uuidString,
+          "step": "\(index + 1)/\(chain.agents.count)",
+          "agentName": agent.name,
+          "stepType": "\(agent.stepType)",
+          "role": agent.role.displayName
+        ])
         let result = try await runSingleAgent(agent, at: index, chain: chain, prompt: prompt)
         chain.results.append(result)
         chain.addStatusMessage("\(agent.name) completed", type: .complete)
+        await telemetryProvider.info("Step completed", metadata: [
+          "chainId": chain.id.uuidString,
+          "step": "\(index + 1)/\(chain.agents.count)",
+          "agentName": agent.name,
+          "duration": result.duration ?? ""
+        ])
       }
       return
     }
@@ -596,6 +645,11 @@ public final class AgentChainRunner {
     chain.addStatusMessage("Merge completed", type: .complete)
 
     if updatedLast + 1 < chain.agents.count {
+      let postStepCount = chain.agents.count - (updatedLast + 1)
+      await telemetryProvider.info("Chain phase: post-implementer steps", metadata: [
+        "chainId": chain.id.uuidString,
+        "stepCount": "\(postStepCount)"
+      ])
       for index in (updatedLast + 1)..<chain.agents.count {
         try checkCancellation(chain: chain)
         await waitForGate(chain: chain)
@@ -603,9 +657,22 @@ public final class AgentChainRunner {
         chain.state = .running(agentIndex: index)
         chain.currentAgentStartTime = Date()
         chain.addStatusMessage("Starting \(agent.name) (\(agent.model.shortName))...", type: .progress)
+        await telemetryProvider.info("Step starting", metadata: [
+          "chainId": chain.id.uuidString,
+          "step": "\(index + 1)/\(chain.agents.count)",
+          "agentName": agent.name,
+          "stepType": "\(agent.stepType)",
+          "role": agent.role.displayName
+        ])
         let result = try await runSingleAgent(agent, at: index, chain: chain, prompt: prompt)
         chain.results.append(result)
         chain.addStatusMessage("\(agent.name) completed", type: .complete)
+        await telemetryProvider.info("Step completed", metadata: [
+          "chainId": chain.id.uuidString,
+          "step": "\(index + 1)/\(chain.agents.count)",
+          "agentName": agent.name,
+          "duration": result.duration ?? ""
+        ])
       }
     }
   }
@@ -982,9 +1049,16 @@ public final class AgentChainRunner {
         "agentName": agent.name,
         "command": String(command.prefix(80))
       ])
+      let buildStart = Date()
       (exitCode, stdout, stderr) = await XcodeBuildQueue.shared.withSlot {
         await self.runShellCommand(command, in: workingDirectory)
       }
+      let buildDuration = String(format: "%.1fs", Date().timeIntervalSince(buildStart))
+      await telemetryProvider.info("chain.shell.build_completed", metadata: [
+        "agentName": agent.name,
+        "exitCode": "\(exitCode)",
+        "duration": buildDuration
+      ])
     } else {
       (exitCode, stdout, stderr) = await runShellCommand(command, in: workingDirectory)
     }
@@ -1454,10 +1528,13 @@ public final class AgentChainRunner {
         throw error
       }
       await telemetryProvider.error(error, context: "Agent run failed", metadata: [
+        "chainId": chain.id.uuidString,
         "agent": agent.name,
         "role": agent.role.displayName,
-        "model": agent.model.displayName
+        "model": agent.model.displayName,
+        "workingDirectory": agent.workingDirectory ?? chain.workingDirectory ?? ""
       ])
+      chain.addStatusMessage("❌ \(agent.name) failed: \(error.localizedDescription)", type: .error)
       agent.updateState(.failed(message: error.localizedDescription))
       throw error
     }

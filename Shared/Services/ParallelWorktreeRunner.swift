@@ -1233,6 +1233,14 @@ final class ParallelWorktreeRunner {
     var lastSummary: AgentChainRunner.RunSummary?
     var lastOutput = ""
 
+    await mcpLog.info("executeTask starting", metadata: [
+      "executionId": execution.id.uuidString,
+      "taskTitle": task.title,
+      "template": template?.name ?? "none",
+      "worktreePath": worktreePath,
+      "maxAttempts": "\(maxAttempts)"
+    ])
+
     while attempt <= maxAttempts {
       let chain = makeChain(from: template, workingDirectory: worktreePath, taskTitle: task.title)
       resolveGateCommands(chain: chain, repoPath: run.projectPath, task: task)
@@ -1244,12 +1252,29 @@ final class ParallelWorktreeRunner {
 
       let validationConfig = template?.validationConfig
 
+      await mcpLog.info("Chain created for task", metadata: [
+        "executionId": execution.id.uuidString,
+        "chainId": chain.id.uuidString,
+        "chainName": chain.name,
+        "agentCount": "\(chain.agents.count)",
+        "attempt": "\(attempt)/\(maxAttempts)"
+      ])
+
       let runSummary = await chainRunner.runChain(
         chain,
         prompt: prompt,
         validationConfig: validationConfig,
         runOptions: run.runOptions
       )
+
+      await mcpLog.info("Chain run finished", metadata: [
+        "executionId": execution.id.uuidString,
+        "chainId": chain.id.uuidString,
+        "state": runSummary.stateDescription,
+        "resultCount": "\(runSummary.results.count)",
+        "errorMessage": runSummary.errorMessage ?? "none",
+        "noWorkReason": runSummary.noWorkReason ?? "none"
+      ])
 
       lastSummary = runSummary
       lastOutput = summarizeOutputs(runSummary.results, errorMessage: runSummary.errorMessage)
@@ -1992,9 +2017,22 @@ final class ParallelWorktreeRunner {
     let anyFailed = run.executions.contains { if case .failed = $0.status { return true }; return false }
     let anyAwaitingReview = run.executions.contains { $0.status == .awaitingReview }
 
+    let previousStatus = run.status
+    let statusSummary = run.executions.map { "\($0.task.title.prefix(20))=\($0.status.displayName)" }.joined(separator: ", ")
+
     if anyFailed && run.executions.filter({ if case .failed = $0.status { return true }; return false }).count == run.executions.count {
       run.status = .failed("All tasks failed")
       PeonPingService.shared.chainFailed(name: run.name, error: "All tasks failed")
+      Task {
+        await mcpLog.error(
+          NSError(domain: "ParallelRun", code: 1, userInfo: [NSLocalizedDescriptionKey: "All tasks failed"]),
+          context: "Run failed — all executions failed",
+          metadata: [
+            "runId": run.id.uuidString,
+            "executionStatuses": statusSummary
+          ]
+        )
+      }
     } else if anyAwaitingReview {
       run.status = .awaitingReview
       PeonPingService.shared.needsReview(name: run.name)
@@ -2002,9 +2040,26 @@ final class ParallelWorktreeRunner {
       run.completedAt = Date()
       run.status = .completed
       PeonPingService.shared.chainCompleted(name: run.name)
+      Task {
+        await mcpLog.info("Run completed — all executions terminal", metadata: [
+          "runId": run.id.uuidString,
+          "executionStatuses": statusSummary
+        ])
+      }
       // Run integration build check in the background after all merges land
       Task { [weak self] in
         await self?.runPostMergeBuildCheck(for: run)
+      }
+    }
+
+    if "\(run.status)" != "\(previousStatus)" {
+      Task {
+        await mcpLog.info("Run status transition", metadata: [
+          "runId": run.id.uuidString,
+          "from": "\(previousStatus)",
+          "to": "\(run.status)",
+          "executionStatuses": statusSummary
+        ])
       }
     }
 
