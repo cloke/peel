@@ -716,7 +716,11 @@ struct ContentView: View {
 
   private func migrateLegacySection(_ tool: CurrentTool) {
     switch tool {
-    case .agents, .workspaces, .swarm: currentSection = .activity
+    case .agents, .workspaces: currentSection = .activity
+    case .swarm:
+      // MCP navigates here — route to swarm console, then normalize to .activity
+      sidebarSelection = .swarmConsole
+      currentSection = .activity
     case .git, .github: currentSection = .repositories
     case .brew: if !showBrew { currentSection = .repositories }
     case .repositories, .activity: break

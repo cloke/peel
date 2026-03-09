@@ -126,15 +126,16 @@ public final class MCPUIAutomationStore: MCPUIAutomationProviding {
   }
 
   public func availableViewIds() -> [String] {
-    ["repositories", "activity"]
+    ["repositories", "activity", "swarm"]
   }
 
   public func viewTitle(for viewId: String) -> String {
     switch viewId {
     case "repositories": return "Repositories"
     case "activity": return "Activity"
+    case "swarm": return "Swarm Console"
     // Legacy view IDs — map to new equivalents
-    case "agents", "workspaces", "swarm": return "Activity"
+    case "agents", "workspaces": return "Activity"
     case "brew": return "Homebrew"
     case "git", "github": return "Repositories"
     default: return viewId.capitalized

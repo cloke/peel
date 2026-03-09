@@ -14,6 +14,7 @@ struct WorkersListView: View {
   let swarmId: String
   let myRole: SwarmPermissionRole
   @State private var firebaseService = FirebaseService.shared
+  @State private var swarm = SwarmCoordinator.shared
   @State private var showingMessageSheet = false
   @State private var selectedWorker: FirestoreWorker?
   @State private var messageText = ""
@@ -28,7 +29,7 @@ struct WorkersListView: View {
 
       // Quick action bar
       HStack {
-        Text("\(firebaseService.swarmWorkers.filter { !$0.isStale }.count) workers online")
+        Text("\(onlineWorkerCount) workers online")
           .font(.caption)
           .foregroundStyle(.secondary)
 
@@ -60,6 +61,7 @@ struct WorkersListView: View {
         List(firebaseService.swarmWorkers, id: \.id) { worker in
           WorkerRow(
             worker: worker,
+            tcpHeartbeat: tcpHeartbeat(for: worker),
             canMessage: myRole.canSubmitTasks,
             onMessage: {
               selectedWorker = worker
@@ -113,6 +115,24 @@ struct WorkersListView: View {
     .background(.blue.opacity(0.05))
   }
 
+  /// If this Firestore worker is also TCP-connected, return the TCP heartbeat date.
+  private func tcpHeartbeat(for worker: FirestoreWorker) -> Date? {
+    if let status = swarm.workerStatuses[worker.id] {
+      return status.lastHeartbeat
+    }
+    if swarm.connectedWorkers.contains(where: { $0.id == worker.id }) {
+      return Date() // TCP connected but no status yet — treat as now
+    }
+    return nil
+  }
+
+  /// Count workers that are online: non-stale via Firestore OR TCP-connected.
+  private var onlineWorkerCount: Int {
+    firebaseService.swarmWorkers.filter { worker in
+      !worker.isStale || tcpHeartbeat(for: worker) != nil
+    }.count
+  }
+
   private func sendMessage() {
     guard !messageText.trimmingCharacters(in: .whitespaces).isEmpty else { return }
 
@@ -137,19 +157,37 @@ struct WorkersListView: View {
 
 struct WorkerRow: View {
   let worker: FirestoreWorker
+  /// TCP heartbeat override — when non-nil, this worker is LAN-connected
+  /// and the TCP heartbeat is more current than the Firestore one.
+  var tcpHeartbeat: Date? = nil
   let canMessage: Bool
   let onMessage: () -> Void
+
+  private var isLANConnected: Bool { tcpHeartbeat != nil }
+  private var effectiveStale: Bool { isLANConnected ? false : worker.isStale }
+  private var effectiveLastSeen: Date { tcpHeartbeat ?? worker.lastHeartbeat }
 
   var body: some View {
     HStack {
       // Status indicator
       Circle()
-        .fill(worker.isStale ? .orange : .green)
+        .fill(effectiveStale ? .orange : .green)
         .frame(width: 8, height: 8)
 
       VStack(alignment: .leading, spacing: 2) {
-        Text(worker.displayName)
-          .fontWeight(.medium)
+        HStack(spacing: 6) {
+          Text(worker.displayName)
+            .fontWeight(.medium)
+          if isLANConnected {
+            Text("LAN")
+              .font(.caption2.bold())
+              .padding(.horizontal, 5)
+              .padding(.vertical, 1)
+              .background(Color.green.opacity(0.15))
+              .foregroundStyle(.green)
+              .clipShape(Capsule())
+          }
+        }
 
         HStack(spacing: 8) {
           Text(worker.deviceName)
@@ -163,21 +201,21 @@ struct WorkerRow: View {
           }
         }
 
-        Text("Last seen \(worker.lastHeartbeat.formatted(.relative(presentation: .named)))")
+        Text("Last seen \(effectiveLastSeen.formatted(.relative(presentation: .named)))")
           .font(.caption2)
-          .foregroundStyle(worker.isStale ? Color.orange : Color.secondary)
+          .foregroundStyle(effectiveStale ? Color.orange : Color.secondary)
       }
 
       Spacer()
 
       // Status badge
-      Text(worker.status.rawValue.capitalized)
+      Text(isLANConnected ? "Connected" : worker.status.rawValue.capitalized)
         .font(.caption2)
         .fontWeight(.medium)
         .padding(.horizontal, 8)
         .padding(.vertical, 2)
-        .background(worker.isStale ? Color.orange.opacity(0.15) : Color.green.opacity(0.15))
-        .foregroundStyle(worker.isStale ? .orange : .green)
+        .background(effectiveStale ? Color.orange.opacity(0.15) : Color.green.opacity(0.15))
+        .foregroundStyle(effectiveStale ? .orange : .green)
         .clipShape(Capsule())
 
       if canMessage {
