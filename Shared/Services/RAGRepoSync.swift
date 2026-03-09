@@ -1022,28 +1022,32 @@ enum RAGRepoImporter {
       // Step 3: Prune local files not present in the sender's manifest.
       // The manifest lists ALL files the sender has for this repo. Any local file
       // not in the manifest was deleted on the sender and should be removed here.
+      // Safety: skip pruning if the manifest has no file hashes (empty manifest
+      // likely indicates a bug or partial export, not "all files deleted").
       let manifestPaths = Set(bundle.manifest.fileHashes.map(\.path))
 
-      let queryPathsSql = "SELECT path FROM files WHERE repo_id = ?"
-      var pathsStmt: OpaquePointer?
-      if sqlite3_prepare_v2(db, queryPathsSql, -1, &pathsStmt, nil) == SQLITE_OK,
-         let pathsStmt {
-        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-        sqlite3_bind_text(pathsStmt, 1, targetRepoId, -1, transient)
-        var stalePaths: [String] = []
-        while sqlite3_step(pathsStmt) == SQLITE_ROW {
-          if let text = sqlite3_column_text(pathsStmt, 0) {
-            let path = String(cString: text)
-            if !manifestPaths.contains(path) {
-              stalePaths.append(path)
+      if !manifestPaths.isEmpty {
+        let queryPathsSql = "SELECT path FROM files WHERE repo_id = ?"
+        var pathsStmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, queryPathsSql, -1, &pathsStmt, nil) == SQLITE_OK,
+           let pathsStmt {
+          let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+          sqlite3_bind_text(pathsStmt, 1, targetRepoId, -1, transient)
+          var stalePaths: [String] = []
+          while sqlite3_step(pathsStmt) == SQLITE_ROW {
+            if let text = sqlite3_column_text(pathsStmt, 0) {
+              let path = String(cString: text)
+              if !manifestPaths.contains(path) {
+                stalePaths.append(path)
+              }
             }
           }
-        }
-        sqlite3_finalize(pathsStmt)
+          sqlite3_finalize(pathsStmt)
 
-        for stalePath in stalePaths {
-          deleteFileData(db: db, repoId: targetRepoId, path: stalePath)
-          filesPruned += 1
+          for stalePath in stalePaths {
+            deleteFileData(db: db, repoId: targetRepoId, path: stalePath)
+            filesPruned += 1
+          }
         }
       }
 
