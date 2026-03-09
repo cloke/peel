@@ -714,8 +714,8 @@ struct ContentView: View {
 
   private func populateRepoRegistry() async {
     let registry = RepoRegistry.shared
-    let gitPaths = Git.ViewModel.shared.repositories.map(\.path)
-    await registry.registerAllPaths(gitPaths)
+    let localRepoPaths = Array(Set(dataService.getAllLocalRepositoryPaths(validOnly: true).map(\.localPath)))
+    await registry.registerAllPaths(localRepoPaths)
     let recentPaths = ReviewLocallyService.shared.recentRepositories.map(\.path)
     await registry.registerAllPaths(recentPaths)
   }

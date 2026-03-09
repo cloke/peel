@@ -93,6 +93,7 @@ public final class OnDemandPeerTransfer {
 
   /// Timeout for each connection attempt (LAN, WAN, STUN)
   private let connectionTimeout: TimeInterval = 10
+  private let transferReceiveTimeout: Duration = .seconds(30)
 
   // MARK: - Public API
 
@@ -386,7 +387,11 @@ public final class OnDemandPeerTransfer {
     let caps = WorkerCapabilities.current()
     try await peerConn.send(.hello(capabilities: caps))
 
-    let response = try await peerConn.receiveMessage()
+    let response = try await receiveMessage(
+      from: peerConn,
+      timeout: transferReceiveTimeout,
+      timeoutError: .handshakeFailed(reason: "Timed out waiting for helloAck")
+    )
     guard case .helloAck = response else {
       throw OnDemandTransferError.handshakeFailed(reason: "Expected helloAck, got \(response.messageType)")
     }
@@ -405,7 +410,11 @@ public final class OnDemandPeerTransfer {
     var receivedManifest = false
 
     while true {
-      let message = try await peerConn.receiveMessage()
+      let message = try await receiveMessage(
+        from: peerConn,
+        timeout: transferReceiveTimeout,
+        timeoutError: .transferTimedOut(seconds: 30)
+      )
 
       switch message {
       case .ragArtifactsManifest(let id, let manifest) where id == transferId:
@@ -451,6 +460,28 @@ public final class OnDemandPeerTransfer {
       default:
         logger.debug("Ignoring unexpected message during transfer: \(message.messageType)")
       }
+    }
+  }
+
+  private func receiveMessage(
+    from peerConn: PeerConnectionActor,
+    timeout: Duration,
+    timeoutError: OnDemandTransferError
+  ) async throws -> PeerMessage {
+    try await withThrowingTaskGroup(of: PeerMessage.self) { group in
+      group.addTask {
+        try await peerConn.receiveMessage()
+      }
+      group.addTask {
+        try await Task.sleep(for: timeout)
+        throw timeoutError
+      }
+
+      defer { group.cancelAll() }
+      guard let message = try await group.next() else {
+        throw timeoutError
+      }
+      return message
     }
   }
 
@@ -544,7 +575,7 @@ import FirebaseFirestore
 
 // MARK: - Errors
 
-public enum OnDemandTransferError: LocalizedError {
+public enum OnDemandTransferError: LocalizedError, Sendable {
   case allConnectionMethodsFailed(worker: String)
   case connectionTimeout(host: String, port: UInt16)
   case connectionCancelled
@@ -552,6 +583,7 @@ public enum OnDemandTransferError: LocalizedError {
   case stunSignalingTimeout
   case stunHolePunchFailed
   case handshakeFailed(reason: String)
+  case transferTimedOut(seconds: Int)
   case invalidChunkData(index: Int)
   case missingManifest
   case missingChunk(index: Int, total: Int)
@@ -573,6 +605,8 @@ public enum OnDemandTransferError: LocalizedError {
       return "UDP hole-punching failed — peer may be behind symmetric NAT"
     case .handshakeFailed(let reason):
       return "Handshake failed: \(reason)"
+    case .transferTimedOut(let seconds):
+      return "Timed out waiting for transfer data after \(seconds) seconds"
     case .invalidChunkData(let index):
       return "Invalid base64 data in chunk \(index)"
     case .missingManifest:
