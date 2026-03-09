@@ -110,7 +110,22 @@ public final class FirebaseService {
         }
       }
     }
-    return Array(seen.values)
+    return seen.values.sorted { lhs, rhs in
+      let leftName = lhs.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+      let rightName = rhs.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+
+      let nameComparison = leftName.localizedCaseInsensitiveCompare(rightName)
+      if nameComparison != .orderedSame {
+        return nameComparison == .orderedAscending
+      }
+
+      let deviceComparison = lhs.deviceName.localizedCaseInsensitiveCompare(rhs.deviceName)
+      if deviceComparison != .orderedSame {
+        return deviceComparison == .orderedAscending
+      }
+
+      return lhs.id < rhs.id
+    }
   }
 
   /// Workers keyed by swarm ID (backing store for swarmWorkers)
