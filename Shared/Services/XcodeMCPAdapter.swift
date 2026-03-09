@@ -29,41 +29,11 @@ enum XcodeMCPError: LocalizedError {
 }
 
 /// Represents an MCP tool discovered from Xcode
-struct MCPTool: Codable {
-    let name: String
-    let description: String
-    let inputSchema: [String: AnyCodable]?
+struct XcodeMCPTool: Codable {
+  let name: String
+  let description: String
 }
 
-/// Helper for encoding/decoding untyped JSON
-struct AnyCodable: Codable {
-    let value: Any
-    
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if let boolValue = try? container.decode(Bool.self) {
-            value = boolValue
-        } else if let intValue = try? container.decode(Int.self) {
-            value = intValue
-        } else if let stringValue = try? container.decode(String.self) {
-            value = stringValue
-        } else if let arrayValue = try? container.decode([AnyCodable].self) {
-            value = arrayValue
-        } else if let dictValue = try? container.decode([String: AnyCodable].self) {
-            value = dictValue
-        } else {
-            throw DecodingError.dataCorruptedError(
-                in: container,
-                debugDescription: "Unable to decode AnyCodable"
-            )
-        }
-    }
-    
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
-        // Implementation would convert value back to Codable form
-    }
-}
 
 /// Manages communication with Xcode's mcpbridge via STDIO
 /// This actor handles the entire lifecycle of mcpbridge subprocess and JSON-RPC communication
@@ -120,65 +90,60 @@ actor XcodeMCPAdapter {
         }
     }
     
-    /// List all available Xcode MCP tools
-    /// - Returns: Array of MCPTool structures
-    nonisolated func listTools() async throws -> [MCPTool] {
-        let request: [String: Any] = [
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/list",
-            "params": [:]
-        ]
-        
-        let response = try await callMCP(request: request)
-        
-        // Parse tools from response
-        if let result = response["result"] as? [String: Any],
-           let toolArray = result["tools"] as? [[String: Any]] {
-            return toolArray.compactMap { toolDict in
-                guard let name = toolDict["name"] as? String,
-                      let description = toolDict["description"] as? String else {
-                    return nil
-                }
-                return MCPTool(
-                    name: name,
-                    description: description,
-                    inputSchema: toolDict["inputSchema"] as? [String: AnyCodable]
-                )
-            }
-        }
-        
-        throw XcodeMCPError.invalidResponse("Missing tools in response")
-    }
+  /// List all available Xcode MCP tools
+  /// - Returns: Array of XcodeMCPTool structures
+  func listTools() async throws -> [XcodeMCPTool] {
+      let request: [String: Any] = [
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "tools/list",
+          "params": [:]
+      ]
+      
+      let response = try await callMCP(request: request)
+      
+      // Parse tools from response
+      if let result = response["result"] as? [String: Any],
+         let toolArray = result["tools"] as? [[String: Any]] {
+          return toolArray.compactMap { toolDict in
+              guard let name = toolDict["name"] as? String,
+                    let description = toolDict["description"] as? String else {
+                  return nil
+              }
+              return XcodeMCPTool(
+                  name: name,
+                  description: description
+              )
+          }
+      }
+      
+      throw XcodeMCPError.invalidResponse("Missing tools in response")
+  }
     
-    /// Call a specific Xcode MCP tool
-    /// - Parameters:
-    ///   - method: The tool method name (e.g., "tools/call")
-    ///   - toolName: The specific tool name (e.g., "xcode.symbols.lookup")
-    ///   - arguments: Arguments to pass to the tool
-    /// - Returns: The response from the tool
-    nonisolated func callTool(
-        method: String = "tools/call",
-        toolName: String,
-        arguments: [String: Any]
-    ) async throws -> [String: Any] {
-        var params: [String: Any] = [
-            "name": toolName
-        ]
-        
-        if !arguments.isEmpty {
-            params["arguments"] = arguments
-        }
-        
-        let request: [String: Any] = [
-            "jsonrpc": "2.0",
-            "id": requestID,
-            "method": method,
-            "params": params
-        ]
-        
-        return try await callMCP(request: request)
-    }
+  /// Call a specific Xcode MCP tool
+  func callTool(
+      method: String = "tools/call",
+      toolName: String,
+      arguments: [String: Any]
+  ) async throws -> [String: Any] {
+      var params: [String: Any] = [
+          "name": toolName
+      ]
+      
+      if !arguments.isEmpty {
+          params["arguments"] = arguments
+      }
+      
+      let currentId = requestID
+      let request: [String: Any] = [
+          "jsonrpc": "2.0",
+          "id": currentId,
+          "method": method,
+          "params": params
+      ]
+      
+      return try await callMCP(request: request)
+  }
     
     /// Check if Xcode is currently running and accessible
     /// - Returns: true if Xcode is running, false otherwise
@@ -203,15 +168,15 @@ actor XcodeMCPAdapter {
         }
     }
     
-    /// Gracefully shutdown the mcpbridge subprocess
-    nonisolated func shutdown() {
-        Self.logger.info("Shutting down XcodeMCPAdapter")
-        
-        if let process = mcpProcess, process.isRunning {
-            process.terminate()
-            process.waitUntilExit()
-        }
-    }
+  /// Gracefully shutdown the mcpbridge subprocess
+  func shutdown() {
+      Self.logger.info("Shutting down XcodeMCPAdapter")
+      
+      if let process = mcpProcess, process.isRunning {
+          process.terminate()
+          process.waitUntilExit()
+      }
+  }
     
     // MARK: - Private Methods
     
