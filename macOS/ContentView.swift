@@ -751,7 +751,7 @@ struct ContentView: View {
       }
     }
 
-    if repo.syncedRepositoryId != nil || repo.trackedRemoteRepoId != nil {
+    if repo.syncedRepositoryId != nil || repo.trackedRemoteRepoId != nil || repo.isClonedLocally {
       Divider()
       Button("Remove from Peel", role: .destructive) {
         // Remove tracked repo record
@@ -762,6 +762,12 @@ struct ContentView: View {
         if let syncedId = repo.syncedRepositoryId {
           dataService.deleteRepository(id: syncedId)
         }
+        // Unregister from in-memory RepoRegistry
+        if let path = repo.localPath {
+          RepoRegistry.shared.unregister(localPath: path)
+          dataService.removeLocalRepositoryPath(path: path)
+        }
+        RepoRegistry.shared.unregister(remoteURL: repo.normalizedRemoteURL)
         if sidebarSelection == .repo(repo.normalizedRemoteURL) {
           sidebarSelection = .repoCommandCenter
         }

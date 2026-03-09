@@ -74,6 +74,23 @@ public final class RepoRegistry: Sendable {
   public var registeredRepos: [(remoteURL: String, localPath: String)] {
     urlToPath.map { ($0.key, $0.value) }
   }
+
+  /// Unregister a repo by its local path
+  public func unregister(localPath: String) {
+    if let url = pathToURL.removeValue(forKey: localPath) {
+      urlToPath.removeValue(forKey: url)
+      logger.info("Unregistered repo: \(url) -> \(localPath)")
+    }
+  }
+
+  /// Unregister a repo by its normalized remote URL
+  public func unregister(remoteURL: String) {
+    let normalized = normalizeRemoteURL(remoteURL)
+    if let path = urlToPath.removeValue(forKey: normalized) {
+      pathToURL.removeValue(forKey: path)
+      logger.info("Unregistered repo: \(normalized) -> \(path)")
+    }
+  }
   
   // MARK: - Git Operations
   

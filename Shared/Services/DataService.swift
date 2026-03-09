@@ -935,6 +935,16 @@ final class DataService {
     return try? modelContext.fetch(descriptor).first?.repositoryId
   }
 
+  func removeLocalRepositoryPath(path: String) {
+    let descriptor = FetchDescriptor<LocalRepositoryPath>(
+      predicate: #Predicate { $0.localPath == path }
+    )
+    if let record = try? modelContext.fetch(descriptor).first {
+      modelContext.delete(record)
+      try? modelContext.save()
+    }
+  }
+
   func getTrackedWorktree(localPath: String) -> TrackedWorktree? {
     let descriptor = FetchDescriptor<TrackedWorktree>(
       predicate: #Predicate { $0.localPath == localPath }
