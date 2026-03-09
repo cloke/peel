@@ -548,10 +548,14 @@ struct ContentView: View {
   }
 
   private func syncRepoSelectionFromAutomation() {
-    guard !automationSelectedRepoKey.isEmpty,
-          aggregator.repositoryByURL[automationSelectedRepoKey] != nil else { return }
-    if sidebarSelection != .repo(automationSelectedRepoKey) {
-      sidebarSelection = .repo(automationSelectedRepoKey)
+    // Read directly from UserDefaults to avoid @AppStorage staleness —
+    // our own persistSelectedRepoAutomationState writes trigger
+    // UserDefaults.didChangeNotification before @AppStorage updates.
+    let repoKey = UserDefaults.standard.string(forKey: "repositories.selectedRepoKey") ?? ""
+    guard !repoKey.isEmpty,
+          aggregator.repositoryByURL[repoKey] != nil else { return }
+    if sidebarSelection != .repo(repoKey) {
+      sidebarSelection = .repo(repoKey)
     }
   }
 
