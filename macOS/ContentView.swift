@@ -43,7 +43,7 @@ enum SidebarSelection: Hashable {
   case chain(UUID)
   case prReviews
   case templates
-  case parallelRuns
+  case agentRuns
   case worktrees
 
   // Chat
@@ -163,7 +163,7 @@ struct ContentView: View {
         switch sel {
         case .repo, .repoCommandCenter: currentSection = .repositories
         case .activityDashboard, .activityItem, .chain, .prReviews, .templates,
-             .parallelRuns, .worktrees: currentSection = .activity
+             .agentRuns, .worktrees: currentSection = .activity
         case .chat: currentSection = .activity
         case .swarmConsole: currentSection = .activity
         case .brew: currentSection = .brew
@@ -268,8 +268,8 @@ struct ContentView: View {
           .tag(SidebarSelection.prReviews)
         Label("Templates", systemImage: "rectangle.stack")
           .tag(SidebarSelection.templates)
-        Label("Parallel Runs", systemImage: "arrow.triangle.branch")
-          .tag(SidebarSelection.parallelRuns)
+        Label("Agent Runs", systemImage: "arrow.triangle.branch")
+          .tag(SidebarSelection.agentRuns)
         Label("Worktrees", systemImage: "externaldrive")
           .tag(SidebarSelection.worktrees)
         Label("Local Chat", systemImage: "bubble.left.and.bubble.right")
@@ -476,7 +476,7 @@ struct ContentView: View {
         sidebarSelection = .chain(chainId)
       }
 
-    case .parallelRuns:
+    case .agentRuns:
       ParallelWorktreeDashboardView(mcpServer: mcpServer)
 
     case .worktrees:

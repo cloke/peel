@@ -49,7 +49,7 @@ struct ParallelWorktreeDashboardView: View {
         .frame(minWidth: 400, maxWidth: .infinity)
     }
     .frame(minWidth: 700, idealWidth: 900)
-    .navigationTitle("Parallel Worktrees")
+    .navigationTitle("Agent Runs")
     .sheet(isPresented: $showingNewRunSheet) {
       NewParallelRunSheet(runner: runner) { run in
         selectedRunId = run.id

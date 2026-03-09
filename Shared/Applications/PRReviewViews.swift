@@ -1054,7 +1054,7 @@ struct PRReviewSheet: View {
       break
     default:
       reviewState.isLoading = false
-      reviewState.error = "Review is still running. Check the Parallel Worktrees dashboard for results when it finishes."
+      reviewState.error = "Review is still running. Check the Agent Runs dashboard for results when it finishes."
       return
     }
 

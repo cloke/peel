@@ -291,7 +291,7 @@ extension MCPServerService: ChainToolsHandlerDelegate {
   }
 
   func chainRunResults(runId: String?, chainId: String?, includeOutputs: Bool) -> [[String: Any]] {
-    guard let dataService else { return [] }
+    let dataService = self.dataService
 
     func splitLines(_ value: String) -> [String] {
       value
@@ -304,20 +304,36 @@ extension MCPServerService: ChainToolsHandlerDelegate {
 
     var runs: [MCPRunRecord] = []
 
-    if let runId {
-      if let uuid = UUID(uuidString: runId) {
-        let recent = dataService.getRecentMCPRuns(limit: 5_000)
-        if let found = recent.first(where: { $0.id == uuid }) {
+    if let dataService {
+      if let runId {
+        if let uuid = UUID(uuidString: runId) {
+          let recent = dataService.getRecentMCPRuns(limit: 5_000)
+          if let found = recent.first(where: { $0.id == uuid }) {
+            runs = [found]
+          }
+        }
+
+        if runs.isEmpty, let found = dataService.getMCPRun(forChainId: runId) {
+          runs = [found]
+        }
+      } else if let chainId, !chainId.isEmpty {
+        if let found = dataService.getMCPRun(forChainId: chainId) {
           runs = [found]
         }
       }
+    }
 
-      if runs.isEmpty, let found = dataService.getMCPRun(forChainId: runId) {
-        runs = [found]
-      }
-    } else if let chainId, !chainId.isEmpty {
-      if let found = dataService.getMCPRun(forChainId: chainId) {
-        runs = [found]
+    // If no persisted MCPRunRecord found, check parallel-routed runs
+    if runs.isEmpty, let runner = parallelWorktreeRunner {
+      let lookupId: UUID? = {
+        if let runId { return UUID(uuidString: runId) }
+        if let chainId { return UUID(uuidString: chainId) }
+        return nil
+      }()
+      if let lookupId,
+         let parallelRun = runner.findRunBySourceChainRunId(lookupId) ?? runner.runs.first(where: { $0.id == lookupId }) {
+        let payload = parallelRunToResultPayload(parallelRun, sourceRunId: lookupId, includeOutputs: includeOutputs, formatter: formatter)
+        return [payload]
       }
     }
 
@@ -342,7 +358,7 @@ extension MCPServerService: ChainToolsHandlerDelegate {
         "createdAt": formatter.string(from: run.createdAt)
       ]
 
-      if !run.chainId.isEmpty {
+      if let dataService, !run.chainId.isEmpty {
         let results = dataService.getMCPRunResults(chainId: run.chainId)
         runPayload["results"] = results.map { result in
           var resultPayload: [String: Any] = [
@@ -363,6 +379,71 @@ extension MCPServerService: ChainToolsHandlerDelegate {
 
       return runPayload
     }
+  }
+
+  /// Synthesize a results payload from a parallel-routed run (no MCPRunRecord persisted).
+  private func parallelRunToResultPayload(
+    _ run: ParallelWorktreeRun,
+    sourceRunId: UUID,
+    includeOutputs: Bool,
+    formatter: ISO8601DateFormatter
+  ) -> [String: Any] {
+    let execution = run.executions.first
+    let isSuccess: Bool = {
+      switch run.status {
+      case .completed, .awaitingReview: return true
+      default: return false
+      }
+    }()
+
+    var payload: [String: Any] = [
+      "runId": sourceRunId.uuidString,
+      "chainId": run.id.uuidString,
+      "templateName": run.templateName ?? "Unknown",
+      "prompt": execution?.task.prompt ?? "",
+      "workingDirectory": run.projectPath,
+      "implementerBranches": [execution?.branchName].compactMap { $0 },
+      "implementerWorkspacePaths": [execution?.worktreePath].compactMap { $0 },
+      "success": isSuccess,
+      "errorMessage": {
+        if case .failed(let msg) = run.status { return msg as Any }
+        return NSNull()
+      }(),
+      "status": run.status.displayName,
+      "filesChanged": execution?.filesChanged ?? 0,
+      "insertions": execution?.insertions ?? 0,
+      "deletions": execution?.deletions ?? 0,
+      "diffSummary": execution?.diffSummary as Any,
+      "createdAt": formatter.string(from: run.createdAt)
+    ]
+
+    // Synthesize step results from chain step summaries
+    if let execution {
+      payload["results"] = execution.chainStepResults.map { step in
+        var resultPayload: [String: Any] = [
+          "agentId": step.id.uuidString,
+          "agentName": step.stepName,
+          "model": step.model,
+          "prompt": "",
+          "premiumCost": step.premiumCost,
+          "reviewVerdict": step.reviewVerdict as Any
+        ]
+        if includeOutputs {
+          resultPayload["output"] = step.outputPreview
+        }
+        return resultPayload
+      }
+      if execution.chainStepResults.isEmpty, includeOutputs, !execution.output.isEmpty {
+        payload["results"] = [[
+          "agentName": "Implementer",
+          "model": "unknown",
+          "output": execution.output,
+          "premiumCost": 0
+        ] as [String: Any]]
+      }
+    }
+
+    return payload
   }
 
   func aggregateAuditFindings(limit: Int, top: Int, promptContains: String?) -> [String: Any] {

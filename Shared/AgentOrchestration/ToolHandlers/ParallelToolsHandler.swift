@@ -1246,7 +1246,7 @@ extension ParallelToolsHandler {
           ],
           "required": ["name", "projectPath", "tasks"]
         ],
-        category: .parallelWorktrees,
+        category: .agentRuns,
         isMutating: true
       ),
       MCPToolDefinition(
@@ -1259,7 +1259,7 @@ extension ParallelToolsHandler {
           ],
           "required": ["runId"]
         ],
-        category: .parallelWorktrees,
+        category: .agentRuns,
         isMutating: true
       ),
       MCPToolDefinition(
@@ -1272,7 +1272,7 @@ extension ParallelToolsHandler {
           ],
           "required": ["runId"]
         ],
-        category: .parallelWorktrees,
+        category: .agentRuns,
         isMutating: false
       ),
       MCPToolDefinition(
@@ -1284,7 +1284,7 @@ extension ParallelToolsHandler {
             "includeCompleted": ["type": "boolean"]
           ]
         ],
-        category: .parallelWorktrees,
+        category: .agentRuns,
         isMutating: false
       ),
       MCPToolDefinition(
@@ -1301,7 +1301,7 @@ extension ParallelToolsHandler {
           ],
           "required": ["runId", "executionId"]
         ],
-        category: .parallelWorktrees,
+        category: .agentRuns,
         isMutating: true
       ),
       MCPToolDefinition(
@@ -1319,7 +1319,7 @@ extension ParallelToolsHandler {
           ],
           "required": ["runId"]
         ],
-        category: .parallelWorktrees,
+        category: .agentRuns,
         isMutating: true
       ),
       MCPToolDefinition(
@@ -1337,7 +1337,7 @@ extension ParallelToolsHandler {
           ],
           "required": ["runId", "executionId"]
         ],
-        category: .parallelWorktrees,
+        category: .agentRuns,
         isMutating: true
       ),
       MCPToolDefinition(
@@ -1355,7 +1355,7 @@ extension ParallelToolsHandler {
           ],
           "required": ["runId"]
         ],
-        category: .parallelWorktrees,
+        category: .agentRuns,
         isMutating: true
       ),
       MCPToolDefinition(
@@ -1370,7 +1370,7 @@ extension ParallelToolsHandler {
           ],
           "required": ["runId"]
         ],
-        category: .parallelWorktrees,
+        category: .agentRuns,
         isMutating: true
       ),
       MCPToolDefinition(
@@ -1383,7 +1383,7 @@ extension ParallelToolsHandler {
           ],
           "required": ["runId"]
         ],
-        category: .parallelWorktrees,
+        category: .agentRuns,
         isMutating: true
       ),
       MCPToolDefinition(
@@ -1396,7 +1396,7 @@ extension ParallelToolsHandler {
           ],
           "required": ["runId"]
         ],
-        category: .parallelWorktrees,
+        category: .agentRuns,
         isMutating: true
       ),
       MCPToolDefinition(
@@ -1411,7 +1411,7 @@ extension ParallelToolsHandler {
           ],
           "required": ["runId", "guidance"]
         ],
-        category: .parallelWorktrees,
+        category: .agentRuns,
         isMutating: true
       ),
       MCPToolDefinition(
@@ -1424,7 +1424,7 @@ extension ParallelToolsHandler {
           ],
           "required": ["runId"]
         ],
-        category: .parallelWorktrees,
+        category: .agentRuns,
         isMutating: true
       ),
       MCPToolDefinition(
@@ -1439,7 +1439,7 @@ extension ParallelToolsHandler {
           ],
           "required": ["runId", "executionId"]
         ],
-        category: .parallelWorktrees,
+        category: .agentRuns,
         isMutating: false
       ),
       MCPToolDefinition(
@@ -1455,7 +1455,7 @@ extension ParallelToolsHandler {
           ],
           "required": ["runId", "executionId"]
         ],
-        category: .parallelWorktrees,
+        category: .agentRuns,
         isMutating: true
       ),
       MCPToolDefinition(
@@ -1486,7 +1486,7 @@ extension ParallelToolsHandler {
           ],
           "required": ["runId", "tasks"]
         ],
-        category: .parallelWorktrees,
+        category: .agentRuns,
         isMutating: true
       ),
     ]

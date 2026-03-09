@@ -377,6 +377,11 @@ extension MCPServerService {
     if toolDefinition(named: dotted) != nil {
       return dotted
     }
+    // agentRuns.* → parallel.* alias (user-facing rename, tools keep parallel.* internally)
+    if name.hasPrefix("agentRuns.") {
+      let canonical = "parallel." + name.dropFirst("agentRuns.".count)
+      return resolveToolName(canonical)
+    }
     return nil
   }
 

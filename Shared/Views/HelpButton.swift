@@ -16,7 +16,7 @@ enum HelpTopic: String, CaseIterable {
   case swarmSetup
   case swarmInvites
   case swarmWorkers
-  case parallelWorktrees
+  case agentRuns
   case chainTemplates
   case promptRules
   case mcpServer
@@ -29,7 +29,7 @@ enum HelpTopic: String, CaseIterable {
     case .swarmSetup: "Swarm Setup"
     case .swarmInvites: "Swarm Invites"
     case .swarmWorkers: "Swarm Workers"
-    case .parallelWorktrees: "Parallel Worktrees"
+    case .agentRuns: "Agent Runs"
     case .chainTemplates: "Chain Templates"
     case .promptRules: "Prompt Rules"
     case .mcpServer: "MCP Server"
@@ -49,8 +49,8 @@ enum HelpTopic: String, CaseIterable {
       "Invite collaborators to your swarm via link. They'll join as pending members until you approve them. Invites can have expiration dates and usage limits."
     case .swarmWorkers:
       "Workers are machines that execute tasks in the swarm. They register with a heartbeat and can be assigned work by the coordinator."
-    case .parallelWorktrees:
-      "Run multiple agents in parallel using git worktrees. Each agent works in isolation, then changes are merged. Requires review approval before merge."
+    case .agentRuns:
+      "Run agents in isolated git worktrees. Each agent works independently, then changes are reviewed and merged. Supports single and parallel execution."
     case .chainTemplates:
       "Pre-configured agent workflows for common tasks like code review, refactoring, and documentation. Templates define the model, system prompt, and review gates."
     case .promptRules:
@@ -67,7 +67,7 @@ enum HelpTopic: String, CaseIterable {
     switch self {
     case .ragIndexing, .ragSearch: "#local-rag"
     case .swarmSetup, .swarmInvites, .swarmWorkers: "#distributed-swarm"
-    case .parallelWorktrees: "#parallel-worktrees"
+    case .agentRuns: "#parallel-worktrees"
     case .chainTemplates: "#template-gallery"
     case .promptRules: "#prompt-rules-guardrails"
     case .mcpServer: "#mcp-server"
@@ -181,9 +181,9 @@ extension View {
     }
     
     // Using the extension
-    Text("Parallel Worktrees")
+    Text("Agent Runs")
       .font(.headline)
-      .helpButton(.parallelWorktrees)
+      .helpButton(.agentRuns)
   }
   .padding()
 }

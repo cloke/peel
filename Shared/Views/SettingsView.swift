@@ -135,7 +135,7 @@ struct SettingsView: View {
         } header: {
           HStack(spacing: 4) {
             Text("Worktree Cleanup")
-            HelpButton(topic: .parallelWorktrees)
+            HelpButton(topic: .agentRuns)
           }
         }
 
