@@ -721,7 +721,10 @@ struct LocalRAGDashboardView: View {
       workspaceRootPath = trimmed
       workspaceRepos = workspaceCandidates
       selectedWorkspaceRepos = Set(workspaceCandidates)
+      // Dismiss the add sheet first, then present workspace sheet after
+      // SwiftUI cannot transition between two sheets in the same update cycle
       isAddRepoPresented = false
+      try? await Task.sleep(for: .milliseconds(350))
       showWorkspaceSheet = true
       return
     }
