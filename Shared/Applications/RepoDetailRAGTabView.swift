@@ -22,6 +22,7 @@ struct RAGTabView: View {
   @State private var searchResults: [LocalRAGSearchResult] = []
   @State private var isSearching = false
   @State private var searchError: String?
+  @State private var isSearchExpanded = false
   @State private var lessons: [LocalRAGLesson] = []
   @State private var isAnalyzing = false
   @State private var analyzeError: String?
@@ -62,25 +63,12 @@ struct RAGTabView: View {
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 16) {
-        // Prominent search bar (when indexed)
+        heroCard
+
         if repo.ragStatus != nil && repo.ragStatus != .notIndexed, repo.localPath != nil {
-          searchCard
+          searchSection
         }
 
-        // RAG status hero card
-        ragStatusCard
-
-        // Pipeline steps
-        if repo.ragStatus != nil && repo.ragStatus != .notIndexed, repo.localPath != nil {
-          pipelineCard
-        }
-
-        // Swarm sync
-        if swarm.isActive {
-          swarmSyncSection
-        }
-
-        // Lessons
         if !lessons.isEmpty {
           lessonsSection
         }
@@ -125,97 +113,98 @@ struct RAGTabView: View {
     }
   }
 
-  // MARK: - Search Card
+  // MARK: - Search Section
 
-  private var searchCard: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      // Search bar
-      HStack(spacing: 8) {
-        Image(systemName: "magnifyingglass")
-          .foregroundStyle(.secondary)
+  private var searchSection: some View {
+    DisclosureGroup(isExpanded: $isSearchExpanded) {
+      VStack(alignment: .leading, spacing: 10) {
+        HStack(spacing: 8) {
+          TextField("Search this repo…", text: $searchQuery)
+            .textFieldStyle(.plain)
+            .onSubmit {
+              Task { await runSearch() }
+            }
 
-        TextField("Search this repo…", text: $searchQuery)
-          .textFieldStyle(.plain)
-          .onSubmit {
-            Task { await runSearch() }
+          Picker("", selection: $searchMode) {
+            Text("Vector").tag(MCPServerService.RAGSearchMode.vector)
+            Text("Text").tag(MCPServerService.RAGSearchMode.text)
+            Text("Hybrid").tag(MCPServerService.RAGSearchMode.hybrid)
           }
+          .pickerStyle(.segmented)
+          .frame(width: 180)
 
-        Picker("", selection: $searchMode) {
-          Text("Vector").tag(MCPServerService.RAGSearchMode.vector)
-          Text("Text").tag(MCPServerService.RAGSearchMode.text)
-          Text("Hybrid").tag(MCPServerService.RAGSearchMode.hybrid)
-        }
-        .pickerStyle(.segmented)
-        .frame(width: 180)
-
-        if isSearching {
-          ProgressView()
-            .controlSize(.small)
-        } else {
-          Button {
-            Task { await runSearch() }
-          } label: {
-            Image(systemName: "arrow.right.circle.fill")
-              .font(.title3)
+          if isSearching {
+            ProgressView()
+              .controlSize(.small)
+          } else {
+            Button {
+              Task { await runSearch() }
+            } label: {
+              Image(systemName: "arrow.right.circle.fill")
+                .font(.title3)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.blue)
+            .disabled(searchQuery.trimmingCharacters(in: .whitespaces).isEmpty)
           }
-          .buttonStyle(.plain)
-          .foregroundStyle(.blue)
-          .disabled(searchQuery.trimmingCharacters(in: .whitespaces).isEmpty)
         }
-      }
-      .padding(10)
-      .background(
-        RoundedRectangle(cornerRadius: 8)
-          #if os(macOS)
-          .fill(Color(nsColor: .controlBackgroundColor))
-          #else
-          .fill(Color(.systemGroupedBackground))
-          #endif
-      )
+        .padding(10)
+        .background(
+          RoundedRectangle(cornerRadius: 8)
+            #if os(macOS)
+            .fill(Color(nsColor: .controlBackgroundColor))
+            #else
+            .fill(Color(.systemGroupedBackground))
+            #endif
+        )
 
-      if let error = searchError {
-        Label(error, systemImage: "exclamationmark.triangle")
-          .font(.caption)
-          .foregroundStyle(.red)
-      }
-
-      // Results
-      if !searchResults.isEmpty {
-        HStack {
-          Text("\(searchResults.count) results")
+        if let error = searchError {
+          Label(error, systemImage: "exclamationmark.triangle")
             .font(.caption)
-            .foregroundStyle(.secondary)
-          Spacer()
+            .foregroundStyle(.red)
         }
 
-        LazyVStack(spacing: 1) {
-          ForEach(searchResults.prefix(20), id: \.filePath) { result in
-            RepoSearchResultRow(result: result)
+        if !searchResults.isEmpty {
+          HStack {
+            Text("\(searchResults.count) results")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Spacer()
           }
+
+          LazyVStack(spacing: 1) {
+            ForEach(searchResults.prefix(20), id: \.filePath) { result in
+              RepoSearchResultRow(result: result)
+            }
+          }
+          #if os(macOS)
+          .background(Color(nsColor: .controlBackgroundColor))
+          #else
+          .background(Color(.systemGroupedBackground))
+          #endif
+          .clipShape(RoundedRectangle(cornerRadius: 8))
         }
-        #if os(macOS)
-        .background(Color(nsColor: .controlBackgroundColor))
-        #else
-        .background(Color(.systemGroupedBackground))
-        #endif
-        .clipShape(RoundedRectangle(cornerRadius: 8))
       }
+      .padding(.top, 8)
+    } label: {
+      Label("Search", systemImage: "magnifyingglass")
+        .font(.headline)
     }
   }
 
-  // MARK: - RAG Status Card
+  // MARK: - Hero Card
 
-  private var ragStatusCard: some View {
+  private var heroCard: some View {
     GroupBox {
       VStack(alignment: .leading, spacing: 10) {
+        // Status header
         HStack(spacing: 12) {
-          // Status icon
           ZStack {
             Circle()
               .fill(ragStatusColor.opacity(0.15))
               .frame(width: 40, height: 40)
 
-            if isCurrentlyIndexing {
+            if isCurrentlyIndexing || isAnalyzing || isEnriching {
               ProgressView()
                 .controlSize(.small)
             } else {
@@ -238,9 +227,8 @@ struct RAGTabView: View {
 
           Spacer()
 
-          // Action buttons
-          if isCurrentlyIndexing {
-            // No action while indexing
+          if isCurrentlyIndexing || isAnalyzing || isEnriching {
+            // Progress shown below
           } else if repo.ragStatus == nil || repo.ragStatus == .notIndexed {
             Button("Index Now") {
               Task { await indexRepo(force: false) }
@@ -249,75 +237,155 @@ struct RAGTabView: View {
             .controlSize(.small)
             .disabled(repo.localPath == nil)
           } else {
-            HStack(spacing: 6) {
+            Menu {
               Button("Re-Index") {
                 Task { await indexRepo(force: false) }
               }
-              .buttonStyle(.bordered)
-              .controlSize(.small)
-
-              Button {
+              Button("Force Full Re-Index") {
                 Task { await indexRepo(force: true) }
-              } label: {
-                Image(systemName: "arrow.clockwise")
               }
-              .buttonStyle(.bordered)
-              .controlSize(.small)
-              .help("Force full re-index")
+              #if os(macOS)
+              Divider()
+              Button(isAnalyzing ? "Analyzing…" : "Analyze Chunks") {
+                Task { await analyzeChunks() }
+              }
+              .disabled(isAnalyzing)
+              Button(isEnriching ? "Enriching…" : "Enrich Embeddings") {
+                Task { await enrichEmbeddings() }
+              }
+              .disabled(isEnriching)
+              #endif
+            } label: {
+              Image(systemName: "ellipsis.circle")
+                .font(.title3)
             }
+            .buttonStyle(.plain)
           }
         }
 
-        // Stats row
+        // Compact stats line
         if repo.ragFileCount != nil || repo.ragChunkCount != nil || repo.ragLastIndexedAt != nil {
           Divider()
 
-          HStack(spacing: 16) {
-            if let fileCount = repo.ragFileCount {
-              VStack(spacing: 2) {
-                Text("\(fileCount)")
-                  .font(.headline)
-                Text("Files")
-                  .font(.caption2)
-                  .foregroundStyle(.secondary)
-              }
+          HStack(spacing: 4) {
+            if let fc = repo.ragFileCount {
+              Text("\(fc) files")
             }
-
-            if let chunkCount = repo.ragChunkCount {
-              VStack(spacing: 2) {
-                Text("\(chunkCount)")
-                  .font(.headline)
-                Text("Chunks")
-                  .font(.caption2)
-                  .foregroundStyle(.secondary)
-              }
+            if repo.ragFileCount != nil, repo.ragChunkCount != nil {
+              Text("\u{00B7}").foregroundStyle(.tertiary)
             }
-
+            if let cc = repo.ragChunkCount {
+              Text("\(cc) chunks")
+            }
+            if enrichedChunks > 0 {
+              Text("\u{00B7}").foregroundStyle(.tertiary)
+              Text("\(enrichedChunks) enriched")
+            }
             if let lastIndexed = repo.ragLastIndexedAt {
-              VStack(spacing: 2) {
-                Text(lastIndexed, style: .relative)
-                  .font(.callout)
-                Text("Last Indexed")
+              Text("\u{00B7}").foregroundStyle(.tertiary)
+              Text(lastIndexed, style: .relative)
+            }
+          }
+          .font(.callout)
+          .foregroundStyle(.secondary)
+        }
+
+        // Active progress
+        if let state = analysisState, state.totalChunks > 0, (state.isAnalyzing || isAnalyzing) {
+          VStack(alignment: .leading, spacing: 4) {
+            ProgressView(value: state.progress)
+              .tint(.purple)
+            HStack {
+              Text("\(state.analyzedCount) / \(state.totalChunks) chunks analyzed")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+              if state.chunksPerSecond > 0 {
+                Text("\u{00B7} \(String(format: "%.1f", state.chunksPerSecond))/sec")
                   .font(.caption2)
-                  .foregroundStyle(.secondary)
+                  .foregroundStyle(.tertiary)
+              }
+              Spacer()
+              Text("\(Int(state.progress * 100))%")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+          }
+        }
+
+        if isAnalyzing, let state = analysisState, let batch = state.batchProgress {
+          VStack(alignment: .leading, spacing: 2) {
+            ProgressView(value: Double(batch.current), total: Double(batch.total))
+              .tint(.purple)
+            HStack {
+              Text("Chunk \(batch.current) of \(batch.total)")
+                .font(.caption2)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+              Spacer()
+              if state.chunksPerSecond > 0 {
+                Text("\(String(format: "%.1f", state.chunksPerSecond)) chunks/sec")
+                  .font(.caption2)
+                  .foregroundStyle(.tertiary)
               }
             }
           }
         }
 
-        if let error = indexError {
-          Label(error, systemImage: "xmark.circle")
-            .font(.caption)
-            .foregroundStyle(.red)
+        if isEnriching, let batch = enrichBatchProgress {
+          VStack(alignment: .leading, spacing: 2) {
+            ProgressView(value: Double(batch.current), total: Double(batch.total))
+              .tint(.orange)
+            Text("Enriching \(batch.current) of \(batch.total)")
+              .font(.caption2)
+              .monospacedDigit()
+              .foregroundStyle(.secondary)
+          }
         }
 
-        if let success = indexSuccess {
-          Label(success, systemImage: "checkmark.circle")
-            .font(.caption)
-            .foregroundStyle(.green)
+        // Swarm sync (inline)
+        if swarm.isActive {
+          Divider()
+          swarmContent
         }
+
+        // Status messages
+        statusMessages
       }
       .padding(4)
+    }
+  }
+
+  @ViewBuilder
+  private var statusMessages: some View {
+    if let error = indexError {
+      Label(error, systemImage: "xmark.circle")
+        .font(.caption)
+        .foregroundStyle(.red)
+    }
+    if let success = indexSuccess {
+      Label(success, systemImage: "checkmark.circle")
+        .font(.caption)
+        .foregroundStyle(.green)
+    }
+    if let error = analyzeError {
+      Label(error, systemImage: "xmark.circle")
+        .font(.caption)
+        .foregroundStyle(.red)
+    }
+    if let success = analyzeSuccess {
+      Label(success, systemImage: success.contains("No ") ? "info.circle" : "checkmark.circle")
+        .font(.caption)
+        .foregroundColor(success.contains("No ") ? .secondary : .green)
+    }
+    if let error = enrichError {
+      Label(error, systemImage: "xmark.circle")
+        .font(.caption)
+        .foregroundStyle(.red)
+    }
+    if let result = enrichResult {
+      Label(result, systemImage: result.contains("No ") ? "info.circle" : "checkmark.circle")
+        .font(.caption)
+        .foregroundColor(result.contains("No ") ? .secondary : .green)
     }
   }
 
@@ -362,180 +430,6 @@ struct RAGTabView: View {
       return best.embeddingModel
     }
     return matching.first?.embeddingModel
-  }
-
-  // MARK: - Pipeline Card
-
-  private var pipelineCard: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      SectionHeader("AI Pipeline")
-
-      // Visual pipeline steps
-      HStack(spacing: 0) {
-        PipelineStep(
-          title: "Index",
-          icon: "tray.full.fill",
-          isComplete: repo.ragStatus != nil && repo.ragStatus != .notIndexed,
-          isActive: isCurrentlyIndexing
-        )
-
-        PipelineArrow()
-
-        PipelineStep(
-          title: "Analyze",
-          icon: "cpu",
-          isComplete: (analysisState?.analyzedCount ?? 0) > 0 && !(analysisState?.isAnalyzing ?? false) && !isAnalyzing,
-          isActive: isAnalyzing || (analysisState?.isAnalyzing ?? false)
-        )
-
-        PipelineArrow()
-
-        PipelineStep(
-          title: "Enrich",
-          icon: "sparkles",
-          isComplete: enrichedChunks > 0,
-          isActive: isEnriching
-        )
-      }
-
-      // Progress bar (when actively analyzing)
-      if let state = analysisState, state.totalChunks > 0, (state.isAnalyzing || isAnalyzing) {
-        VStack(alignment: .leading, spacing: 4) {
-          ProgressView(value: state.progress)
-            .tint(.purple)
-
-          HStack(spacing: 8) {
-            Text(verbatim: "\(state.analyzedCount) / \(state.totalChunks) chunks")
-              .font(.caption2)
-              .foregroundStyle(.secondary)
-
-            if (state.isAnalyzing || isAnalyzing), state.chunksPerSecond > 0 {
-              Text("·")
-                .foregroundStyle(.tertiary)
-              Text("\(String(format: "%.1f", state.chunksPerSecond)) chunks/sec")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-            }
-
-            Spacer()
-
-            Text(verbatim: "\(Int(state.progress * 100))%")
-              .font(.caption2)
-              .foregroundStyle(.secondary)
-          }
-        }
-      }
-
-      // Info about chunks that couldn't be analyzed
-      if let state = analysisState, !state.isComplete, !(state.isAnalyzing || isAnalyzing), state.analyzedCount > 0 {
-        Text(verbatim: "\(state.analyzedCount) of \(state.totalChunks) chunks analyzed (\(state.unanalyzedCount) could not be processed)")
-          .font(.caption2)
-          .foregroundStyle(.secondary)
-      }
-
-      // Action buttons
-      HStack(spacing: 8) {
-        #if os(macOS)
-        Button {
-          Task { await analyzeChunks() }
-        } label: {
-          HStack(spacing: 4) {
-            Image(systemName: "cpu")
-            Text(isAnalyzing ? "Analyzing…" : "Analyze")
-          }
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-        .disabled(isAnalyzing || repo.localPath == nil)
-
-        Button {
-          Task { await enrichEmbeddings() }
-        } label: {
-          HStack(spacing: 4) {
-            Image(systemName: "sparkles")
-            Text(isEnriching ? "Enriching…" : "Enrich")
-          }
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-        .disabled(isEnriching || repo.localPath == nil)
-        #else
-        Text("AI Analysis requires macOS")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-        #endif
-
-        Spacer()
-
-        if analyzedChunks > 0 {
-          Text("\(analyzedChunks) analyzed")
-            .font(.caption2)
-            .foregroundStyle(.tertiary)
-        }
-        if enrichedChunks > 0 {
-          Text("\(enrichedChunks) enriched")
-            .font(.caption2)
-            .foregroundStyle(.tertiary)
-        }
-      }
-
-      // Batch progress bar (when actively analyzing)
-      if isAnalyzing, let state = analysisState, let batch = state.batchProgress {
-        VStack(alignment: .leading, spacing: 2) {
-          ProgressView(value: Double(batch.current), total: Double(batch.total))
-            .tint(.purple)
-          HStack {
-            Text("Chunk \(batch.current) of \(batch.total)")
-              .font(.caption2)
-              .monospacedDigit()
-              .foregroundStyle(.secondary)
-            Spacer()
-            if state.chunksPerSecond > 0 {
-              Text("\(String(format: "%.1f", state.chunksPerSecond)) chunks/sec")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-            }
-          }
-        }
-      }
-
-      // Batch progress bar (when actively enriching)
-      if isEnriching, let batch = enrichBatchProgress {
-        VStack(alignment: .leading, spacing: 2) {
-          ProgressView(value: Double(batch.current), total: Double(batch.total))
-            .tint(.orange)
-          HStack {
-            Text("Enriching \(batch.current) of \(batch.total)")
-              .font(.caption2)
-              .monospacedDigit()
-              .foregroundStyle(.secondary)
-            Spacer()
-          }
-        }
-      }
-
-      // Errors & success
-      if let error = analyzeError {
-        Label(error, systemImage: "xmark.circle")
-          .font(.caption)
-          .foregroundStyle(.red)
-      }
-      if let success = analyzeSuccess {
-        Label(success, systemImage: success.contains("No ") ? "info.circle" : "checkmark.circle")
-          .font(.caption)
-          .foregroundColor(success.contains("No ") ? .secondary : .green)
-      }
-      if let error = enrichError {
-        Label(error, systemImage: "xmark.circle")
-          .font(.caption)
-          .foregroundStyle(.red)
-      }
-      if let result = enrichResult {
-        Label(result, systemImage: result.contains("No ") ? "info.circle" : "checkmark.circle")
-          .font(.caption)
-          .foregroundColor(result.contains("No ") ? .secondary : .green)
-      }
-    }
   }
 
   // MARK: - Lessons Section
@@ -606,145 +500,144 @@ struct RAGTabView: View {
     return repo.normalizedRemoteURL.isEmpty ? nil : repo.normalizedRemoteURL
   }
 
-  private var swarmSyncSection: some View {
+  private var swarmContent: some View {
     let peers = SwarmPeerPreferences.ordered(peers: swarm.connectedWorkers)
     let onDemandWorkers = SwarmPeerPreferences.ordered(workers: swarm.allOnDemandWorkers)
 
     return VStack(alignment: .leading, spacing: 8) {
-      SectionHeader("Swarm Sync")
+      // Sync progress / status
+      if let progress = onDemandProgress {
+        HStack(spacing: 6) {
+          ProgressView()
+            .controlSize(.small)
+          Text(progress)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      } else if let externalOnDemandProgress {
+        HStack(spacing: 6) {
+          ProgressView()
+            .controlSize(.small)
+          Text(externalOnDemandProgress)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      } else if let transferId = activeTransferId,
+                let transfer = SwarmCoordinator.shared.ragTransfers.first(where: { $0.id == transferId }) {
+        HStack(spacing: 6) {
+          ProgressView()
+            .controlSize(.small)
+          Text(syncTransferLabel(transfer))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      } else if let result = syncResultMessage {
+        HStack(spacing: 6) {
+          Image(systemName: "checkmark.circle.fill")
+            .foregroundStyle(.green)
+            .font(.caption)
+          Text(result)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      } else if let error = syncError {
+        HStack(spacing: 6) {
+          Image(systemName: "exclamationmark.triangle.fill")
+            .foregroundStyle(.red)
+            .font(.caption)
+          Text(error)
+            .font(.caption)
+            .foregroundStyle(.red)
+        }
+      }
 
-      GroupBox {
-        VStack(alignment: .leading, spacing: 10) {
-          // Status / progress area
-          if let progress = onDemandProgress {
-            HStack(spacing: 6) {
-              ProgressView()
-                .controlSize(.small)
-              Text(progress)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-          } else if let externalOnDemandProgress {
-            HStack(spacing: 6) {
-              ProgressView()
-                .controlSize(.small)
-              Text(externalOnDemandProgress)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-          } else if let transferId = activeTransferId,
-                    let transfer = SwarmCoordinator.shared.ragTransfers.first(where: { $0.id == transferId }) {
-            HStack(spacing: 6) {
-              ProgressView()
-                .controlSize(.small)
-              Text(syncTransferLabel(transfer))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-          } else if let result = syncResultMessage {
-            HStack(spacing: 6) {
-              Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(.green)
-                .font(.caption)
-              Text(result)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-          } else if let error = syncError {
-            HStack(spacing: 6) {
-              Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.red)
-                .font(.caption)
-              Text(error)
-                .font(.caption)
-                .foregroundStyle(.red)
-            }
+      // Peer action buttons
+      if let repoId = ragRepoIdentifier {
+        let allPeers = peers
+        let allWAN = onDemandWorkers
+        let totalCount = allPeers.count + allWAN.count
+
+        if totalCount == 0 {
+          HStack(spacing: 6) {
+            Label("Swarm", systemImage: "point.3.connected.trianglepath.dotted")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Text("\u{00B7} No peers available")
+              .font(.caption)
+              .foregroundStyle(.tertiary)
+            Spacer()
           }
-
-          // Action buttons — show LAN (TCP) peers and WAN (Firestore) peers together
-          if let repoId = ragRepoIdentifier {
-            let allPeers = peers
-            let allWAN = onDemandWorkers
-            let totalCount = allPeers.count + allWAN.count
-
-            if totalCount == 0 {
-              HStack(spacing: 6) {
-                Image(systemName: "network.slash")
-                  .font(.caption)
-                  .foregroundStyle(.tertiary)
-                Text("No peers or WAN workers available")
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
-                Spacer()
-              }
-            } else if totalCount == 1, let peer = allPeers.first {
-              // Single LAN peer — inline buttons
-              HStack(spacing: 8) {
-                Button {
-                  Task { await syncWithPeers(repoIdentifier: repoId, direction: .push, workerId: peer.id) }
-                } label: {
-                  syncButtonLabel("Push to \(peer.displayName)", icon: "arrow.up.circle", active: isSyncing && syncDirection == .push)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(isSyncing)
-
-                Button {
-                  Task { await syncWithPeers(repoIdentifier: repoId, direction: .pull, workerId: peer.id) }
-                } label: {
-                  syncButtonLabel("Pull from \(peer.displayName)", icon: "arrow.down.circle", active: isSyncing && syncDirection == .pull)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(isSyncing)
-                Spacer()
-              }
-            } else if totalCount == 1, let worker = allWAN.first {
-              // Single WAN worker — inline buttons
-              let staleLabel = worker.isStale ? " (stale)" : ""
-              HStack(spacing: 8) {
-                Button {
-                  Task { await syncOnDemand(repoIdentifier: repoId, fromWorkerId: worker.id) }
-                } label: {
-                  syncButtonLabel("Pull from \(worker.displayName)\(staleLabel)", icon: "arrow.down.circle", active: isSyncing && syncDirection == .pull)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(isSyncing)
-
-                Button {
-                  Task { await connectWANPeer(worker) }
-                } label: {
-                  syncButtonLabel("Connect \(worker.displayName)", icon: "point.3.connected.trianglepath.dotted", active: isConnectingWAN)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(isSyncing || isConnectingWAN)
-                Spacer()
-              }
-            } else {
-              // Multiple peers — unified dropdown menus
-              HStack(spacing: 8) {
-                unifiedPushMenu(peers: allPeers, workers: allWAN, repoIdentifier: repoId)
-                unifiedPullMenu(peers: allPeers, workers: allWAN, repoIdentifier: repoId)
-                if !allWAN.isEmpty {
-                  unifiedConnectMenu(workers: allWAN)
-                }
-                Spacer()
-              }
+        } else if totalCount == 1, let peer = allPeers.first {
+          HStack(spacing: 8) {
+            Label("Swarm", systemImage: "point.3.connected.trianglepath.dotted")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Spacer()
+            Button {
+              Task { await syncWithPeers(repoIdentifier: repoId, direction: .push, workerId: peer.id) }
+            } label: {
+              syncButtonLabel("Push", icon: "arrow.up.circle", active: isSyncing && syncDirection == .push)
             }
-          } else {
-            HStack(spacing: 6) {
-              Image(systemName: "info.circle")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-              Text("Index this repo first to enable swarm sync")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            .buttonStyle(.bordered)
+            .controlSize(.mini)
+            .disabled(isSyncing)
+
+            Button {
+              Task { await syncWithPeers(repoIdentifier: repoId, direction: .pull, workerId: peer.id) }
+            } label: {
+              syncButtonLabel("Pull", icon: "arrow.down.circle", active: isSyncing && syncDirection == .pull)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.mini)
+            .disabled(isSyncing)
+          }
+        } else if totalCount == 1, let worker = allWAN.first {
+          let staleLabel = worker.isStale ? " (stale)" : ""
+          HStack(spacing: 8) {
+            Label("Swarm", systemImage: "point.3.connected.trianglepath.dotted")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Spacer()
+            Button {
+              Task { await syncOnDemand(repoIdentifier: repoId, fromWorkerId: worker.id) }
+            } label: {
+              syncButtonLabel("Pull\(staleLabel)", icon: "arrow.down.circle", active: isSyncing && syncDirection == .pull)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.mini)
+            .disabled(isSyncing)
+
+            Button {
+              Task { await connectWANPeer(worker) }
+            } label: {
+              syncButtonLabel("Connect", icon: "point.3.connected.trianglepath.dotted", active: isConnectingWAN)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.mini)
+            .disabled(isSyncing || isConnectingWAN)
+          }
+        } else {
+          HStack(spacing: 8) {
+            Label("Swarm", systemImage: "point.3.connected.trianglepath.dotted")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Spacer()
+            unifiedPushMenu(peers: allPeers, workers: allWAN, repoIdentifier: repoId)
+            unifiedPullMenu(peers: allPeers, workers: allWAN, repoIdentifier: repoId)
+            if !allWAN.isEmpty {
+              unifiedConnectMenu(workers: allWAN)
             }
           }
         }
-        .padding(4)
+      } else {
+        HStack(spacing: 6) {
+          Label("Swarm", systemImage: "point.3.connected.trianglepath.dotted")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          Text("\u{00B7} Index first to enable sync")
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+        }
       }
     }
   }
@@ -759,83 +652,6 @@ struct RAGTabView: View {
       }
     } else {
       Label(title, systemImage: icon)
-    }
-  }
-
-  private func syncPeerMenu(peers: [ConnectedPeer], repoIdentifier: String, direction: RAGArtifactSyncDirection) -> some View {
-    let isPush = direction == .push
-    let label = defaultPeerLabel(for: peers, direction: direction)
-    let icon = isPush ? "arrow.up.circle" : "arrow.down.circle"
-    let isActive = isSyncing && syncDirection == direction
-
-    return Menu {
-      ForEach(peers) { peer in
-        Button {
-          Task { await syncWithPeers(repoIdentifier: repoIdentifier, direction: direction, workerId: peer.id) }
-        } label: {
-          Label(peerMenuDisplayName(peer), systemImage: "desktopcomputer")
-        }
-      }
-    } label: {
-      syncButtonLabel(label, icon: icon, active: isActive)
-    }
-    .buttonStyle(.bordered)
-    .controlSize(.small)
-    .disabled(isSyncing)
-  }
-
-  private func onDemandMenu(workers: [FirestoreWorker], repoIdentifier: String) -> some View {
-    let isActive = isSyncing && syncDirection == .pull
-
-    return Menu {
-      ForEach(workers, id: \.id) { worker in
-        Button {
-          Task { await syncOnDemand(repoIdentifier: repoIdentifier, fromWorkerId: worker.id) }
-        } label: {
-          Label(workerMenuDisplayName(worker), systemImage: "desktopcomputer")
-        }
-      }
-    } label: {
-      syncButtonLabel(defaultWorkerLabel(for: workers), icon: "arrow.down.circle", active: isActive)
-    }
-    .buttonStyle(.bordered)
-    .controlSize(.small)
-    .disabled(isSyncing)
-  }
-
-  private func wanPeerMenu(workers: [FirestoreWorker], repoIdentifier: String) -> some View {
-    let isActive = isSyncing && syncDirection == .pull
-
-    return HStack(spacing: 8) {
-      Menu {
-        ForEach(workers, id: \.id) { worker in
-          Button {
-            Task { await syncOnDemand(repoIdentifier: repoIdentifier, fromWorkerId: worker.id) }
-          } label: {
-            Label(workerMenuDisplayName(worker), systemImage: "desktopcomputer")
-          }
-        }
-      } label: {
-        syncButtonLabel(defaultWorkerLabel(for: workers), icon: "arrow.down.circle", active: isActive)
-      }
-      .buttonStyle(.bordered)
-      .controlSize(.small)
-      .disabled(isSyncing)
-
-      Menu {
-        ForEach(workers, id: \.id) { worker in
-          Button {
-            Task { await connectWANPeer(worker) }
-          } label: {
-            Label(workerMenuDisplayName(worker), systemImage: "desktopcomputer")
-          }
-        }
-      } label: {
-        syncButtonLabel("Connect", icon: "point.3.connected.trianglepath.dotted", active: isConnectingWAN)
-      }
-      .buttonStyle(.bordered)
-      .controlSize(.small)
-      .disabled(isSyncing || isConnectingWAN)
     }
   }
 
@@ -1443,55 +1259,6 @@ struct RAGTabView: View {
     } catch {
       // Lessons are optional — silently fail
     }
-  }
-}
-
-// MARK: - Pipeline Step
-
-private struct PipelineStep: View {
-  let title: String
-  let icon: String
-  let isComplete: Bool
-  let isActive: Bool
-
-  var body: some View {
-    VStack(spacing: 6) {
-      ZStack {
-        Circle()
-          .fill(stepColor.opacity(0.15))
-          .frame(width: 36, height: 36)
-
-        if isActive {
-          ProgressView()
-            .controlSize(.small)
-        } else {
-          Image(systemName: isComplete ? "checkmark" : icon)
-            .font(.callout)
-            .foregroundStyle(stepColor)
-        }
-      }
-
-      Text(title)
-        .font(.caption2)
-        .fontWeight(.medium)
-        .foregroundStyle(isComplete || isActive ? .primary : .secondary)
-    }
-    .frame(maxWidth: .infinity)
-  }
-
-  private var stepColor: Color {
-    if isActive { return .blue }
-    if isComplete { return .green }
-    return .secondary
-  }
-}
-
-private struct PipelineArrow: View {
-  var body: some View {
-    Image(systemName: "chevron.right")
-      .font(.caption2)
-      .foregroundStyle(.tertiary)
-      .frame(width: 20)
   }
 }
 

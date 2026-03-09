@@ -8,11 +8,8 @@
 
 import Git
 import Github
-import OSLog
 import SwiftData
 import SwiftUI
-
-private let repoDetailAutomationLogger = Logger(subsystem: "com.peel.repositories", category: "RepoDetailAutomation")
 
 // MARK: - Detail Tab
 
@@ -215,17 +212,12 @@ struct OverviewTabView: View {
   let repo: UnifiedRepository
 
   @Environment(MCPServerService.self) private var mcpServer
-  @Environment(ActivityFeed.self) private var activityFeed
   @Environment(DataService.self) private var dataService
   @Environment(RepositoryAggregator.self) private var aggregator
   @State private var fetchedPRs: [UnifiedRepository.PRSummary] = []
   @State private var isLoadingPRs = false
   @State private var selectedPRDetail: PRDetailIdentifier?
   @State private var justTrackedId: UUID?
-  @State private var isPullingSyncIndex = false
-  @State private var syncPullResult: String?
-  @AppStorage("repositories.overview.sync.status") private var automationOverviewSyncStatus = ""
-  @AppStorage("repositories.overview.sync.source") private var automationOverviewSyncSource = ""
 
   private var repoRuns: [ParallelWorktreeRun] {
     guard let runner = mcpServer.parallelWorktreeRunner,
@@ -275,41 +267,15 @@ struct OverviewTabView: View {
             agentWorkSection
           }
 
-          // 4. Repository Health — compact at-a-glance stats
-          repoHealthSection
-
-          // 5. Tracking Configuration — sync mode for tracked repos
-          if repo.isTracked, let trackedId = repo.trackedRemoteRepoId {
-            trackingConfigSection(trackedId: trackedId)
-          } else if let trackedId = justTrackedId {
-            trackingConfigSection(trackedId: trackedId)
-          } else if !repo.isTracked, repo.localPath != nil, repo.remoteURL != nil {
+          // 4. Start Tracking — for repos not yet tracked
+          if !repo.isTracked, justTrackedId == nil, repo.localPath != nil, repo.remoteURL != nil {
             startTrackingSection
           }
         }
         .padding(16)
       }
       .task(id: repo.ownerSlashRepo) {
-        persistOverviewSyncAutomationState()
-        handlePendingOverviewUIActionIfNeeded()
         await fetchOpenPRs()
-      }
-      .onReceive(NotificationCenter.default.publisher(for: Notification.Name("RepositoryAutomationActionRequested"))) { notification in
-        guard let controlId = notification.object as? String,
-              controlId.hasPrefix("repositories.overview.sync.") else { return }
-        handlePendingOverviewUIActionIfNeeded(controlId: controlId)
-      }
-      .onChange(of: mcpServer.lastUIAction?.id) { _, _ in
-        handlePendingOverviewUIActionIfNeeded()
-      }
-      .onChange(of: isPullingSyncIndex) { _, _ in
-        persistOverviewSyncAutomationState()
-      }
-      .onChange(of: syncPullResult) { _, _ in
-        persistOverviewSyncAutomationState()
-      }
-      .onAppear {
-        persistOverviewSyncAutomationState()
       }
     }
   }
@@ -492,350 +458,6 @@ struct OverviewTabView: View {
         }
       }
     }
-  }
-
-  // MARK: - Repository Health
-
-  private var repoHealthSection: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      SectionHeader("Repository Health")
-
-      GroupBox {
-        LazyVGrid(columns: [
-          GridItem(.flexible(), spacing: 12),
-          GridItem(.flexible(), spacing: 12),
-        ], spacing: 10) {
-          healthItem(
-            icon: "arrow.triangle.branch",
-            color: .green,
-            label: "Status",
-            value: repo.isClonedLocally ? "Cloned" : "Remote"
-          )
-
-          if let pull = repo.pullStatus {
-            healthItem(
-              icon: pull.systemImage,
-              color: pullIsHealthy(pull) ? .green : .secondary,
-              label: "Auto-Pull",
-              value: pull.displayName
-            )
-          } else {
-            healthItem(
-              icon: "arrow.down.circle",
-              color: .secondary,
-              label: "Auto-Pull",
-              value: "Disabled"
-            )
-          }
-
-          if let mode = repo.syncMode {
-            healthItem(
-              icon: mode.systemImage,
-              color: mode == .pullAndSyncIndex ? .cyan : .blue,
-              label: "RAG Strategy",
-              value: mode.displayName
-            )
-          }
-
-          if let rag = repo.ragStatus, rag != .notIndexed {
-            healthItem(
-              icon: rag.systemImage,
-              color: .purple,
-              label: "RAG Index",
-              value: rag.displayName
-            )
-          } else {
-            healthItem(
-              icon: "magnifyingglass",
-              color: .secondary,
-              label: "RAG Index",
-              value: "Not Indexed"
-            )
-          }
-
-          healthItem(
-            icon: "clock",
-            color: .secondary,
-            label: "Recent Activity",
-            value: recentActivitySummary
-          )
-        }
-        .padding(6)
-      }
-    }
-  }
-
-  private func healthItem(icon: String, color: Color, label: String, value: String) -> some View {
-    HStack(spacing: 8) {
-      Image(systemName: icon)
-        .font(.callout)
-        .foregroundStyle(color)
-        .frame(width: 24)
-
-      VStack(alignment: .leading, spacing: 1) {
-        Text(label)
-          .font(.caption2)
-          .foregroundStyle(.tertiary)
-        Text(value)
-          .font(.caption)
-          .fontWeight(.medium)
-      }
-
-      Spacer()
-    }
-  }
-
-  private var recentActivitySummary: String {
-    let items = activityFeed.items(for: repo.normalizedRemoteURL)
-    if items.isEmpty { return "None" }
-    let today = items.filter { Calendar.current.isDateInToday($0.timestamp) }
-    if !today.isEmpty { return "\(today.count) today" }
-    return items.first?.relativeTime ?? "None"
-  }
-
-  private func pullIsHealthy(_ status: UnifiedRepository.PullStatus) -> Bool {
-    switch status {
-    case .upToDate, .updated: return true
-    default: return false
-    }
-  }
-
-  // MARK: - Tracking Configuration
-
-  private func trackingConfigSection(trackedId: UUID) -> some View {
-    VStack(alignment: .leading, spacing: 8) {
-      SectionHeader("Tracking")
-
-      GroupBox {
-        VStack(alignment: .leading, spacing: 10) {
-          Text("RAG Index Strategy")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-
-          HStack(spacing: 8) {
-            ForEach(TrackedRepoSyncMode.allCases, id: \.self) { mode in
-              let isSelected = repo.syncMode == mode
-              Button {
-                updateSyncMode(trackedId: trackedId, mode: mode)
-              } label: {
-                HStack(spacing: 4) {
-                  Image(systemName: mode.systemImage)
-                    .font(.caption)
-                  Text(mode.displayName)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                  isSelected
-                    ? (mode == .pullAndSyncIndex ? Color.cyan.opacity(0.2) : Color.blue.opacity(0.2))
-                    : Color.clear,
-                  in: RoundedRectangle(cornerRadius: 6)
-                )
-                .overlay(
-                  RoundedRectangle(cornerRadius: 6)
-                    .stroke(isSelected ? .clear : Color.secondary.opacity(0.3), lineWidth: 1)
-                )
-              }
-              .buttonStyle(.plain)
-            }
-          }
-
-          Text((repo.syncMode ?? .pullAndRebuild).description)
-            .font(.caption2)
-            .foregroundStyle(.tertiary)
-
-          // Show sync source info when Pull & Sync Index is selected
-          if (repo.syncMode ?? .pullAndRebuild) == .pullAndSyncIndex {
-            syncSourceInfo
-          }
-        }
-        .padding(4)
-      }
-    }
-  }
-
-  @ViewBuilder
-  private var syncSourceInfo: some View {
-    let coordinator = RAGSyncCoordinator.shared
-    let repoIdentifierCandidates = Set([
-      repo.normalizedRemoteURL,
-      repo.ownerSlashRepo.map { "github.com/\($0)".lowercased() },
-      repo.ownerSlashRepo?.lowercased(),
-      repo.remoteURL
-    ].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-      .filter { !$0.isEmpty }
-      .map { RepoRegistry.shared.normalizeRemoteURL($0) })
-    let matchingSource = coordinator.availableUpdates.first(where: {
-      repoIdentifierCandidates.contains(RepoRegistry.shared.normalizeRemoteURL($0.source.repoIdentifier))
-        || $0.source.repoName == repo.displayName
-    })
-
-    Divider()
-
-    if let source = matchingSource {
-      HStack(spacing: 6) {
-        Image(systemName: "antenna.radiowaves.left.and.right")
-          .font(.caption)
-          .foregroundStyle(.green)
-        VStack(alignment: .leading, spacing: 1) {
-          Text("Source: \(source.source.workerName)")
-            .font(.caption)
-            .fontWeight(.medium)
-          Text("v\(source.source.version) · \(source.source.chunkCount) chunks · \(source.source.embeddingModel)")
-            .font(.caption2)
-            .foregroundStyle(.secondary)
-        }
-        Spacer()
-        if isPullingSyncIndex {
-          ProgressView()
-            .controlSize(.mini)
-        } else if let result = syncPullResult {
-          Text(result)
-            .font(.caption2)
-            .foregroundStyle(.green)
-        } else {
-          Button {
-            Task { await pullFromSyncSource(source.source) }
-          } label: {
-            Label("Pull Now", systemImage: "arrow.down.circle")
-          }
-          .buttonStyle(.bordered)
-          .controlSize(.mini)
-        }
-      }
-    } else if coordinator.isActive {
-      HStack(spacing: 6) {
-        Image(systemName: "antenna.radiowaves.left.and.right")
-          .font(.caption)
-          .foregroundStyle(.orange)
-        Text("No crown/brain peer has this index yet")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      }
-    } else {
-      HStack(spacing: 6) {
-        Image(systemName: "antenna.radiowaves.left.and.right")
-          .font(.caption)
-          .foregroundStyle(.tertiary)
-        Text("Swarm not active — start swarm to discover sync sources")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      }
-    }
-  }
-
-  private var matchingOverviewSyncSource: RAGIndexVersion? {
-    let coordinator = RAGSyncCoordinator.shared
-    let repoIdentifierCandidates = Set([
-      repo.normalizedRemoteURL,
-      repo.ownerSlashRepo.map { "github.com/\($0)".lowercased() },
-      repo.ownerSlashRepo?.lowercased(),
-      repo.remoteURL
-    ].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-      .filter { !$0.isEmpty }
-      .map { RepoRegistry.shared.normalizeRemoteURL($0) })
-
-    return coordinator.availableUpdates.first(where: {
-      repoIdentifierCandidates.contains(RepoRegistry.shared.normalizeRemoteURL($0.source.repoIdentifier))
-        || $0.source.repoName == repo.displayName
-    })?.source
-  }
-
-  private func persistOverviewSyncAutomationState() {
-    if isPullingSyncIndex {
-      automationOverviewSyncStatus = "pulling"
-    } else if let result = syncPullResult, !result.isEmpty {
-      automationOverviewSyncStatus = result
-    } else if let source = matchingOverviewSyncSource {
-      automationOverviewSyncStatus = "ready"
-      automationOverviewSyncSource = source.workerName
-      return
-    } else if RAGSyncCoordinator.shared.isActive {
-      automationOverviewSyncStatus = "no-source"
-    } else {
-      automationOverviewSyncStatus = "swarm-inactive"
-    }
-
-    automationOverviewSyncSource = matchingOverviewSyncSource?.workerName ?? ""
-  }
-
-  private func handlePendingOverviewUIActionIfNeeded(controlId: String? = nil) {
-    guard let controlId = controlId ?? mcpServer.lastUIAction?.controlId,
-          controlId == "repositories.overview.sync.pullNow" else { return }
-
-    guard let source = matchingOverviewSyncSource else {
-      automationOverviewSyncStatus = "no-source"
-      repoDetailAutomationLogger.warning("Overview sync tap ignored: no matching sync source for \(self.repo.displayName, privacy: .public)")
-      if mcpServer.lastUIAction?.controlId == controlId {
-        mcpServer.recordUIActionHandled(controlId)
-        mcpServer.lastUIAction = nil
-      }
-      return
-    }
-
-    repoDetailAutomationLogger.info("Overview sync tap starting pull for \(self.repo.displayName, privacy: .public) from \(source.workerName, privacy: .public)")
-    if mcpServer.lastUIAction?.controlId == controlId {
-      mcpServer.recordUIActionHandled(controlId)
-      mcpServer.lastUIAction = nil
-    }
-    Task { await pullFromSyncSource(source) }
-  }
-
-  private func pullFromSyncSource(_ source: RAGIndexVersion) async {
-    isPullingSyncIndex = true
-    syncPullResult = nil
-    do {
-      let repoIdentifier = source.repoIdentifier
-      let workerId = source.workerId
-      // Try TCP peer first, fall back to on-demand
-      let peers = SwarmCoordinator.shared.connectedWorkers
-      if peers.contains(where: { $0.id == workerId }) {
-        let transferId = try await SwarmCoordinator.shared.requestRagArtifactSync(
-          direction: .pull,
-          workerId: workerId,
-          repoIdentifier: repoIdentifier
-        )
-        // Wait for completion
-        while !Task.isCancelled {
-          try? await Task.sleep(for: .seconds(0.5))
-          if let transfer = SwarmCoordinator.shared.ragTransfers.first(where: { $0.id == transferId }) {
-            if transfer.status == .complete {
-              syncPullResult = "✓ Pulled"
-              break
-            } else if transfer.status == .failed {
-              syncPullResult = "Failed"
-              break
-            }
-          }
-        }
-      } else {
-        try await SwarmCoordinator.shared.requestRagSyncOnDemand(
-          repoIdentifier: repoIdentifier,
-          fromWorkerId: workerId
-        )
-        syncPullResult = "✓ Pulled"
-      }
-      await mcpServer.refreshRagSummary()
-    } catch {
-      syncPullResult = "Failed"
-    }
-    isPullingSyncIndex = false
-    // Auto-dismiss result
-    Task { @MainActor in
-      try? await Task.sleep(for: .seconds(6))
-      syncPullResult = nil
-    }
-  }
-
-  private func updateSyncMode(trackedId: UUID, mode: TrackedRepoSyncMode) {
-    guard let tracked = dataService.getTrackedRemoteRepo(id: trackedId) else { return }
-    tracked.syncMode = mode
-    tracked.reindexAfterPull = (mode == .pullAndRebuild)
-    tracked.touch()
-    try? dataService.modelContext.save()
-    aggregator.rebuild()
   }
 
   // MARK: - Start Tracking
