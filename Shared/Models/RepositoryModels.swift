@@ -147,9 +147,8 @@ enum TrackedRepoSyncMode: String, Codable, CaseIterable {
 }
 
 /// A remote repo marked as "primary" for automatic periodic pulling.
-/// When a user wants to always have the latest version of a repo
-/// (e.g., tio-api from a specific remote), they mark it as tracked.
-/// The RepoPullScheduler checks these periodically and runs `git pull`.
+/// Synced via CloudKit so all devices share the same tracking configuration.
+/// Device-specific state (localPath, pull results) is in TrackedRepoDeviceState.
 @Model
 final class TrackedRemoteRepo {
   var id: UUID = UUID()
@@ -159,9 +158,6 @@ final class TrackedRemoteRepo {
 
   /// Display name for this tracked repo
   var name: String = ""
-
-  /// Local path on this device where the repo is cloned
-  var localPath: String = ""
 
   /// The git remote name to pull from (default: "origin")
   var remoteName: String = "origin"
@@ -188,15 +184,6 @@ final class TrackedRemoteRepo {
     set { syncModeRaw = newValue.rawValue }
   }
 
-  /// Last time a pull was attempted
-  var lastPullAt: Date?
-
-  /// Last successful pull result ("up-to-date", "updated", etc.)
-  var lastPullResult: String?
-
-  /// Last error message if pull failed
-  var lastPullError: String?
-
   /// When this tracking was created
   var createdAt: Date = Date()
 
@@ -206,7 +193,6 @@ final class TrackedRemoteRepo {
   init(
     remoteURL: String,
     name: String,
-    localPath: String,
     branch: String = "main",
     remoteName: String = "origin",
     pullIntervalSeconds: Int = 3600,
@@ -216,7 +202,6 @@ final class TrackedRemoteRepo {
     self.id = UUID()
     self.remoteURL = remoteURL
     self.name = name
-    self.localPath = localPath
     self.branch = branch
     self.remoteName = remoteName
     self.pullIntervalSeconds = pullIntervalSeconds
@@ -230,11 +215,38 @@ final class TrackedRemoteRepo {
   func touch() {
     modifiedAt = Date()
   }
+}
+
+/// Device-local state for a tracked repo. Not synced via CloudKit.
+/// Each machine maintains its own local path, pull history, and error state.
+@Model
+final class TrackedRepoDeviceState {
+  var id: UUID = UUID()
+
+  /// The TrackedRemoteRepo.id this state belongs to
+  var trackedRepoId: UUID = UUID()
+
+  /// Local path on this device where the repo is cloned
+  var localPath: String = ""
+
+  /// Last time a pull was attempted on this device
+  var lastPullAt: Date?
+
+  /// Last successful pull result ("up-to-date", "updated", etc.)
+  var lastPullResult: String?
+
+  /// Last error message if pull failed
+  var lastPullError: String?
+
+  init(trackedRepoId: UUID, localPath: String) {
+    self.id = UUID()
+    self.trackedRepoId = trackedRepoId
+    self.localPath = localPath
+  }
 
   /// Whether a pull is due based on the interval
-  var isPullDue: Bool {
-    guard isEnabled else { return false }
+  func isPullDue(interval: Int) -> Bool {
     guard let lastPull = lastPullAt else { return true }
-    return Date().timeIntervalSince(lastPull) >= Double(pullIntervalSeconds)
+    return Date().timeIntervalSince(lastPull) >= Double(interval)
   }
 }

@@ -228,6 +228,7 @@ struct Github_RootView: View {
             ForEach(trackedRepos) { repo in
               TrackedRepoRow(
                 repo: repo,
+                deviceState: deviceStateFor(repo),
                 isPulling: pullInProgressIds.contains(repo.id),
                 onPullNow: { pullNow(repo) },
                 onToggleEnabled: { toggleEnabled(repo) },
@@ -475,6 +476,14 @@ struct Github_RootView: View {
 
   // MARK: - Tracked Repo Actions
 
+  private func deviceStateFor(_ repo: TrackedRemoteRepo) -> TrackedRepoDeviceState? {
+    let repoId = repo.id
+    let descriptor = FetchDescriptor<TrackedRepoDeviceState>(
+      predicate: #Predicate { $0.trackedRepoId == repoId }
+    )
+    return try? modelContext.fetch(descriptor).first
+  }
+
   private func pullNow(_ repo: TrackedRemoteRepo) {
     guard !pullInProgressIds.contains(repo.id) else { return }
     pullInProgressIds.insert(repo.id)
@@ -501,6 +510,9 @@ struct Github_RootView: View {
   }
 
   private func deleteTrackedRepo(_ repo: TrackedRemoteRepo) {
+    if let state = deviceStateFor(repo) {
+      modelContext.delete(state)
+    }
     modelContext.delete(repo)
     try? modelContext.save()
   }

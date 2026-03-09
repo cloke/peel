@@ -16,6 +16,7 @@ import SwiftUI
 
 struct TrackedRepoRow: View {
   @Bindable var repo: TrackedRemoteRepo
+  var deviceState: TrackedRepoDeviceState?
   let isPulling: Bool
   let onPullNow: () -> Void
   let onToggleEnabled: () -> Void
@@ -70,7 +71,7 @@ struct TrackedRepoRow: View {
 
         Spacer(minLength: 4)
 
-        if let lastPull = repo.lastPullAt {
+        if let lastPull = deviceState?.lastPullAt {
           Text(lastPull, style: .relative)
             .font(.caption2)
             .foregroundStyle(.tertiary)
@@ -78,7 +79,7 @@ struct TrackedRepoRow: View {
       }
 
       // Error banner (visible inline instead of tooltip-only)
-      if let error = repo.lastPullError, !error.isEmpty {
+      if let error = deviceState?.lastPullError, !error.isEmpty {
         HStack(spacing: 4) {
           Image(systemName: "exclamationmark.triangle.fill")
             .font(.caption2)
@@ -110,10 +111,10 @@ struct TrackedRepoRow: View {
 
       Divider()
 
-      if repo.lastPullError != nil {
+      if deviceState?.lastPullError != nil {
         Button {
-          repo.lastPullError = nil
-          repo.lastPullResult = nil
+          deviceState?.lastPullError = nil
+          deviceState?.lastPullResult = nil
         } label: {
           Label("Clear Error", systemImage: "xmark.circle")
         }
@@ -142,7 +143,7 @@ struct TrackedRepoRow: View {
       Text("Stop tracking \(repo.name)? The local clone will not be deleted.")
     }
     .sheet(isPresented: $showDetail) {
-      TrackedRepoDetailSheet(repo: repo)
+      TrackedRepoDetailSheet(repo: repo, deviceState: deviceState)
     }
   }
 
@@ -162,11 +163,11 @@ struct TrackedRepoRow: View {
 
   @ViewBuilder
   private var statusBadge: some View {
-    if repo.lastPullError != nil && !(repo.lastPullError?.isEmpty ?? true) {
+    if deviceState?.lastPullError != nil && !(deviceState?.lastPullError?.isEmpty ?? true) {
       Image(systemName: "exclamationmark.triangle.fill")
         .foregroundStyle(.red)
         .font(.caption)
-    } else if let result = repo.lastPullResult {
+    } else if let result = deviceState?.lastPullResult {
       if result.starts(with: "updated") {
         Image(systemName: "checkmark.circle.fill")
           .foregroundStyle(.green)
@@ -190,6 +191,7 @@ struct TrackedRepoRow: View {
 
 struct TrackedRepoDetailSheet: View {
   @Bindable var repo: TrackedRemoteRepo
+  var deviceState: TrackedRepoDeviceState?
   @Environment(\.dismiss) private var dismiss
   @Environment(\.modelContext) private var modelContext
 
@@ -206,7 +208,9 @@ struct TrackedRepoDetailSheet: View {
         Section("Repository") {
           LabeledContent("Name", value: repo.name)
           LabeledContent("Remote URL", value: repo.remoteURL)
-          LabeledContent("Local Path", value: repo.localPath)
+          if let path = deviceState?.localPath, !path.isEmpty {
+            LabeledContent("Local Path", value: path)
+          }
         }
 
         Section("Pull Settings") {
@@ -237,15 +241,15 @@ struct TrackedRepoDetailSheet: View {
 
         Section("Status") {
           LabeledContent("Enabled", value: repo.isEnabled ? "Yes" : "No")
-          if let lastPull = repo.lastPullAt {
+          if let lastPull = deviceState?.lastPullAt {
             LabeledContent("Last Pull") {
               Text(lastPull, style: .relative)
             }
           }
-          if let result = repo.lastPullResult {
+          if let result = deviceState?.lastPullResult {
             LabeledContent("Last Result", value: result)
           }
-          if let error = repo.lastPullError {
+          if let error = deviceState?.lastPullError {
             LabeledContent("Last Error") {
               Text(error)
                 .foregroundStyle(.red)
@@ -329,7 +333,17 @@ struct AddTrackedRepoSheet: View {
   /// Repos from all app data sources that aren't already tracked.
   private func loadAvailableRepos() async {
     isLoadingRepos = true
-    let trackedPaths = Set(trackedRepos.compactMap { $0.localPath })
+    // Collect all paths tracked on this device (from device-local state)
+    var trackedPaths = Set<String>()
+    for repo in trackedRepos {
+      let repoId = repo.id
+      let descriptor = FetchDescriptor<TrackedRepoDeviceState>(
+        predicate: #Predicate { $0.trackedRepoId == repoId }
+      )
+      if let state = try? modelContext.fetch(descriptor).first, !state.localPath.isEmpty {
+        trackedPaths.insert(state.localPath)
+      }
+    }
     var seen = Set<String>()
     var repos = [KnownRepo]()
 
@@ -599,7 +613,6 @@ struct AddTrackedRepoSheet: View {
     let tracked = TrackedRemoteRepo(
       remoteURL: remoteURL.isEmpty ? "local://\(localPath)" : remoteURL,
       name: resolvedName,
-      localPath: localPath,
       branch: branch,
       remoteName: remoteName,
       pullIntervalSeconds: max(60, intervalSeconds),
@@ -607,6 +620,9 @@ struct AddTrackedRepoSheet: View {
       syncMode: syncMode
     )
     modelContext.insert(tracked)
+    // Create device-local state with the local path
+    let state = TrackedRepoDeviceState(trackedRepoId: tracked.id, localPath: localPath)
+    modelContext.insert(state)
     try? modelContext.save()
     dismiss()
   }
@@ -654,7 +670,6 @@ struct PullAlertItem {
     repo: TrackedRemoteRepo(
       remoteURL: "https://github.com/example/repo.git",
       name: "example-repo",
-      localPath: "/tmp/repo",
       branch: "main",
       remoteName: "origin"
     ),

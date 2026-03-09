@@ -282,7 +282,6 @@ final class RepoToolsHandler: MCPToolHandler {
       "id": tracked.id.uuidString,
       "name": tracked.name,
       "remoteURL": tracked.remoteURL,
-      "localPath": tracked.localPath,
       "branch": tracked.branch,
       "remoteName": tracked.remoteName,
       "pullIntervalSeconds": tracked.pullIntervalSeconds,
@@ -319,27 +318,30 @@ final class RepoToolsHandler: MCPToolHandler {
     let formatter = Formatter.iso8601
 
     let encoded: [[String: Any]] = tracked.map { repo in
+      let state = dataService.getDeviceState(for: repo)
       var entry: [String: Any] = [
         "id": repo.id.uuidString,
         "name": repo.name,
         "remoteURL": repo.remoteURL,
-        "localPath": repo.localPath,
         "branch": repo.branch,
         "remoteName": repo.remoteName,
         "pullIntervalSeconds": repo.pullIntervalSeconds,
         "isEnabled": repo.isEnabled,
         "reindexAfterPull": repo.reindexAfterPull,
-        "isPullDue": repo.isPullDue,
+        "isPullDue": repo.isEnabled && (state?.isPullDue(interval: repo.pullIntervalSeconds) ?? true),
         "createdAt": formatter.string(from: repo.createdAt),
         "modifiedAt": formatter.string(from: repo.modifiedAt)
       ]
-      if let lastPull = repo.lastPullAt {
+      if let path = state?.localPath, !path.isEmpty {
+        entry["localPath"] = path
+      }
+      if let lastPull = state?.lastPullAt {
         entry["lastPullAt"] = formatter.string(from: lastPull)
       }
-      if let result = repo.lastPullResult {
+      if let result = state?.lastPullResult {
         entry["lastPullResult"] = result
       }
-      if let error = repo.lastPullError {
+      if let error = state?.lastPullError {
         entry["lastPullError"] = error
       }
       return entry

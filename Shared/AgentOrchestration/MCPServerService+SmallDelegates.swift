@@ -333,11 +333,14 @@ extension MCPServerService: RepoPullSchedulerDelegate {
 
       let repoIdentifierFromTrackedRepo: String? = {
         guard let dataService else { return nil }
-        let tracked = dataService.getTrackedRemoteRepos().first(where: {
-          ($0.localPath as NSString).standardizingPath == standardizedRepoPath
-        })
-        guard let tracked else { return nil }
-        return RepoRegistry.shared.normalizeRemoteURL(tracked.remoteURL)
+        // Find tracked repo by matching device-local path
+        for repo in dataService.getTrackedRemoteRepos() {
+          if let state = dataService.getDeviceState(for: repo),
+             (state.localPath as NSString).standardizingPath == standardizedRepoPath {
+            return RepoRegistry.shared.normalizeRemoteURL(repo.remoteURL)
+          }
+        }
+        return nil
       }()
 
       guard let repoIdentifier = repoIdentifierFromStore

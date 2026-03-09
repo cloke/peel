@@ -986,13 +986,15 @@ final class DataService {
   ) -> TrackedRemoteRepo {
     // Check if already tracked
     if let existing = getTrackedRemoteRepo(remoteURL: remoteURL) {
-      existing.localPath = localPath
       existing.branch = branch
       existing.remoteName = remoteName
       existing.pullIntervalSeconds = pullIntervalSeconds
       existing.reindexAfterPull = reindexAfterPull
       existing.isEnabled = true
       existing.touch()
+      // Update device-local state with current path
+      let state = getOrCreateDeviceState(for: existing)
+      state.localPath = localPath
       try? modelContext.save()
       return existing
     }
@@ -1000,19 +1002,25 @@ final class DataService {
     let tracked = TrackedRemoteRepo(
       remoteURL: remoteURL,
       name: name,
-      localPath: localPath,
       branch: branch,
       remoteName: remoteName,
       pullIntervalSeconds: pullIntervalSeconds,
       reindexAfterPull: reindexAfterPull
     )
     modelContext.insert(tracked)
+    // Create device-local state
+    let state = TrackedRepoDeviceState(trackedRepoId: tracked.id, localPath: localPath)
+    modelContext.insert(state)
     try? modelContext.save()
     return tracked
   }
 
   func untrackRemoteRepo(remoteURL: String) -> Bool {
     guard let existing = getTrackedRemoteRepo(remoteURL: remoteURL) else { return false }
+    // Clean up device-local state
+    if let state = getDeviceState(for: existing) {
+      modelContext.delete(state)
+    }
     modelContext.delete(existing)
     try? modelContext.save()
     return true
@@ -1020,21 +1028,49 @@ final class DataService {
 
   func untrackRemoteRepo(id: UUID) -> Bool {
     guard let existing = getTrackedRemoteRepo(id: id) else { return false }
+    if let state = getDeviceState(for: existing) {
+      modelContext.delete(state)
+    }
     modelContext.delete(existing)
     try? modelContext.save()
     return true
   }
 
-  func getDueTrackedRepos() -> [TrackedRemoteRepo] {
-    return getTrackedRemoteRepos().filter { $0.isPullDue }
+  func getDueTrackedRepos() -> [(TrackedRemoteRepo, TrackedRepoDeviceState)] {
+    return getTrackedRemoteRepos()
+      .filter { $0.isEnabled }
+      .compactMap { repo -> (TrackedRemoteRepo, TrackedRepoDeviceState)? in
+        let state = getOrCreateDeviceState(for: repo)
+        guard state.isPullDue(interval: repo.pullIntervalSeconds) else { return nil }
+        return (repo, state)
+      }
   }
 
-  func updateTrackedRepoPullResult(_ repo: TrackedRemoteRepo, result: String?, error: String?) {
-    repo.lastPullAt = Date()
-    repo.lastPullResult = result
-    repo.lastPullError = error
-    repo.touch()
+  func updateTrackedRepoPullResult(_ state: TrackedRepoDeviceState, result: String?, error: String?) {
+    state.lastPullAt = Date()
+    state.lastPullResult = result
+    state.lastPullError = error
     try? modelContext.save()
+  }
+
+  // MARK: - Tracked Repo Device State
+
+  func getDeviceState(for repo: TrackedRemoteRepo) -> TrackedRepoDeviceState? {
+    let repoId = repo.id
+    let descriptor = FetchDescriptor<TrackedRepoDeviceState>(
+      predicate: #Predicate { $0.trackedRepoId == repoId }
+    )
+    return try? modelContext.fetch(descriptor).first
+  }
+
+  func getOrCreateDeviceState(for repo: TrackedRemoteRepo) -> TrackedRepoDeviceState {
+    if let existing = getDeviceState(for: repo) {
+      return existing
+    }
+    let state = TrackedRepoDeviceState(trackedRepoId: repo.id, localPath: "")
+    modelContext.insert(state)
+    try? modelContext.save()
+    return state
   }
 
   /// Remove duplicate TrackedWorktree entries (keep newest by createdAt for each localPath)

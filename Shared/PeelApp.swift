@@ -143,15 +143,17 @@ struct PeelApp: App {
     }
   }
   
-  /// SwiftData model container
-  /// To enable iCloud later, change cloudKitDatabase to .automatic
+  /// SwiftData model container with two stores:
+  /// 1. CloudKit-synced store for shared tracking config (repos, favorites, PRs)
+  /// 2. Device-local store for machine-specific state (pull results, local paths)
   static var sharedModelContainer: ModelContainer = {
-    let schema = Schema([
-      // Synced to iCloud (when enabled)
+    let syncedSchema = Schema([
+      // Synced to iCloud — shared across devices
       SyncedRepository.self,
       GitHubFavorite.self,
       RecentPullRequest.self,
-      // Device-local only
+      TrackedRemoteRepo.self,
+      // Other models (kept in synced store for backward compat with existing data)
       LocalRepositoryPath.self,
       TrackedWorktree.self,
       SwarmBranchReservation.self,
@@ -164,31 +166,71 @@ struct PeelApp: App {
       RepoGuidanceSkill.self,
       CIFailureRecord.self,
       FeatureDiscoveryChecklist.self,
-      TrackedRemoteRepo.self,
       PRReviewQueueItem.self,
     ])
-    
-    let modelConfiguration = ModelConfiguration(
-      schema: schema,
+
+    let localSchema = Schema([
+      // Device-local only — never synced via CloudKit
+      TrackedRepoDeviceState.self,
+    ])
+
+    let fullSchema = Schema([
+      SyncedRepository.self,
+      GitHubFavorite.self,
+      RecentPullRequest.self,
+      TrackedRemoteRepo.self,
+      LocalRepositoryPath.self,
+      TrackedWorktree.self,
+      SwarmBranchReservation.self,
+      PRQueueOperationRecord.self,
+      PRQueueCreatedPRRecord.self,
+      DeviceSettings.self,
+      MCPRunRecord.self,
+      MCPRunResultRecord.self,
+      ParallelRunSnapshot.self,
+      RepoGuidanceSkill.self,
+      CIFailureRecord.self,
+      FeatureDiscoveryChecklist.self,
+      PRReviewQueueItem.self,
+      TrackedRepoDeviceState.self,
+    ])
+
+    // Existing synced store (unnamed → "default.store", preserves existing data)
+    let syncedConfig = ModelConfiguration(
+      schema: syncedSchema,
       isStoredInMemoryOnly: false,
-      cloudKitDatabase: .automatic  // Change to .automatic when ready for iCloud
+      cloudKitDatabase: .automatic
     )
-    
+
+    // New device-local store for machine-specific pull state
+    let localConfig = ModelConfiguration(
+      "device-local",
+      schema: localSchema,
+      isStoredInMemoryOnly: false,
+      cloudKitDatabase: .none
+    )
+
     do {
-      return try ModelContainer(for: schema, configurations: [modelConfiguration])
+      return try ModelContainer(for: fullSchema, configurations: [syncedConfig, localConfig])
     } catch {
       // Log error and attempt recovery with in-memory fallback
       print("⚠️ Failed to create persistent ModelContainer: \(error)")
       print("⚠️ Falling back to in-memory storage. Data will not persist.")
-      
-      let fallbackConfig = ModelConfiguration(
-        schema: schema,
+
+      let fallbackSynced = ModelConfiguration(
+        schema: syncedSchema,
         isStoredInMemoryOnly: true,
         cloudKitDatabase: .none
       )
-      
+      let fallbackLocal = ModelConfiguration(
+        "device-local",
+        schema: localSchema,
+        isStoredInMemoryOnly: true,
+        cloudKitDatabase: .none
+      )
+
       do {
-        return try ModelContainer(for: schema, configurations: [fallbackConfig])
+        return try ModelContainer(for: fullSchema, configurations: [fallbackSynced, fallbackLocal])
       } catch {
         // If even in-memory fails, we have a schema problem - this is a programming error
         fatalError("Could not create ModelContainer even with in-memory fallback: \(error)")

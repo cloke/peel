@@ -12,6 +12,7 @@ final class TrackedRemoteRepoTests: XCTestCase {
   override func setUp() async throws {
     let schema = Schema([
       TrackedRemoteRepo.self,
+      TrackedRepoDeviceState.self,
       // DataService may touch these during init
       MCPRunRecord.self,
       DeviceSettings.self
@@ -31,65 +32,36 @@ final class TrackedRemoteRepoTests: XCTestCase {
   func testTrackedRemoteRepoDefaults() {
     let repo = TrackedRemoteRepo(
       remoteURL: "https://github.com/org/repo.git",
-      name: "repo",
-      localPath: "/Users/test/code/repo"
+      name: "repo"
     )
     XCTAssertEqual(repo.branch, "main")
     XCTAssertEqual(repo.remoteName, "origin")
     XCTAssertEqual(repo.pullIntervalSeconds, 3600)
     XCTAssertTrue(repo.isEnabled)
     XCTAssertTrue(repo.reindexAfterPull)
-    XCTAssertNil(repo.lastPullAt)
-    XCTAssertNil(repo.lastPullResult)
-    XCTAssertNil(repo.lastPullError)
   }
 
-  func testIsPullDue_neverPulled() {
-    let repo = TrackedRemoteRepo(
-      remoteURL: "https://github.com/org/repo.git",
-      name: "repo",
-      localPath: "/tmp/repo"
-    )
-    XCTAssertTrue(repo.isPullDue, "Repo that has never been pulled should be due")
+  func testDeviceStateIsPullDue_neverPulled() {
+    let state = TrackedRepoDeviceState(trackedRepoId: UUID(), localPath: "/tmp/repo")
+    XCTAssertTrue(state.isPullDue(interval: 3600), "State that has never been pulled should be due")
   }
 
-  func testIsPullDue_recentlyPulled() {
-    let repo = TrackedRemoteRepo(
-      remoteURL: "https://github.com/org/repo.git",
-      name: "repo",
-      localPath: "/tmp/repo",
-      pullIntervalSeconds: 3600
-    )
-    repo.lastPullAt = Date()
-    XCTAssertFalse(repo.isPullDue, "Repo pulled just now should not be due")
+  func testDeviceStateIsPullDue_recentlyPulled() {
+    let state = TrackedRepoDeviceState(trackedRepoId: UUID(), localPath: "/tmp/repo")
+    state.lastPullAt = Date()
+    XCTAssertFalse(state.isPullDue(interval: 3600), "State pulled just now should not be due")
   }
 
-  func testIsPullDue_overdue() {
-    let repo = TrackedRemoteRepo(
-      remoteURL: "https://github.com/org/repo.git",
-      name: "repo",
-      localPath: "/tmp/repo",
-      pullIntervalSeconds: 3600
-    )
-    repo.lastPullAt = Date(timeIntervalSinceNow: -7200) // 2 hours ago
-    XCTAssertTrue(repo.isPullDue, "Repo pulled 2h ago with 1h interval should be due")
-  }
-
-  func testIsPullDue_disabled() {
-    let repo = TrackedRemoteRepo(
-      remoteURL: "https://github.com/org/repo.git",
-      name: "repo",
-      localPath: "/tmp/repo"
-    )
-    repo.isEnabled = false
-    XCTAssertFalse(repo.isPullDue, "Disabled repo should never be due")
+  func testDeviceStateIsPullDue_overdue() {
+    let state = TrackedRepoDeviceState(trackedRepoId: UUID(), localPath: "/tmp/repo")
+    state.lastPullAt = Date(timeIntervalSinceNow: -7200) // 2 hours ago
+    XCTAssertTrue(state.isPullDue(interval: 3600), "State pulled 2h ago with 1h interval should be due")
   }
 
   func testTouch() {
     let repo = TrackedRemoteRepo(
       remoteURL: "https://github.com/org/repo.git",
-      name: "repo",
-      localPath: "/tmp/repo"
+      name: "repo"
     )
     let before = repo.modifiedAt
     // Small delay to ensure time difference
@@ -109,7 +81,11 @@ final class TrackedRemoteRepoTests: XCTestCase {
 
     XCTAssertEqual(repo.remoteURL, "https://github.com/org/repo.git")
     XCTAssertEqual(repo.name, "repo")
-    XCTAssertEqual(repo.localPath, "/Users/test/code/repo")
+
+    // Verify device state was created with localPath
+    let state = dataService.getDeviceState(for: repo)
+    XCTAssertNotNil(state)
+    XCTAssertEqual(state?.localPath, "/Users/test/code/repo")
 
     let all = dataService.getTrackedRemoteRepos()
     XCTAssertEqual(all.count, 1)
@@ -133,7 +109,8 @@ final class TrackedRemoteRepoTests: XCTestCase {
       branch: "develop"
     )
 
-    XCTAssertEqual(updated.localPath, "/Users/test/code/repo-v2")
+    let state = dataService.getDeviceState(for: updated)
+    XCTAssertEqual(state?.localPath, "/Users/test/code/repo-v2")
     XCTAssertEqual(updated.branch, "develop")
 
     // Should still be just one record

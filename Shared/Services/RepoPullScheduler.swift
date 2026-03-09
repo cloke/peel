@@ -136,13 +136,13 @@ public final class RepoPullScheduler {
 
     logger.info("Pulling \(dueRepos.count) due repo(s)")
 
-    for repo in dueRepos {
-      let result = await pullRepo(repo)
+    for (repo, state) in dueRepos {
+      let result = await pullRepo(repo, state: state)
 
       let entry = PullHistoryEntry(
         repoName: repo.name,
         remoteURL: repo.remoteURL,
-        localPath: repo.localPath,
+        localPath: state.localPath,
         result: result.description,
         success: !result.isError
       )
@@ -151,15 +151,14 @@ public final class RepoPullScheduler {
         pullHistory = Array(pullHistory.prefix(50))
       }
 
-      // Update the SwiftData record
+      // Update the device-local state record
       dataService.updateTrackedRepoPullResult(
-        repo,
+        state,
         result: result.isError ? nil : result.description,
         error: result.isError ? result.description : nil
       )
 
       // Trigger re-index or sync based on the repo's sync mode.
-      // pullAndSyncIndex should run even when git is up-to-date so peers can provide newer artifacts.
       let pullChangedCode: Bool
       switch result {
       case .updated:
@@ -177,9 +176,9 @@ public final class RepoPullScheduler {
 
       switch repo.syncMode {
       case .pullAndRebuild where repo.reindexAfterPull && pullChangedCode:
-        delegate?.repoPullScheduler(self, shouldReindex: repo.localPath)
+        delegate?.repoPullScheduler(self, shouldReindex: state.localPath)
       case .pullAndSyncIndex where pullSucceeded:
-        delegate?.repoPullScheduler(self, shouldSyncIndexFor: repo.localPath)
+        delegate?.repoPullScheduler(self, shouldSyncIndexFor: state.localPath)
       default:
         break
       }
@@ -190,10 +189,11 @@ public final class RepoPullScheduler {
   func pullRepoNow(remoteURL: String) async -> RepoPullResult? {
     guard let dataService else { return nil }
     guard let repo = dataService.getTrackedRemoteRepo(remoteURL: remoteURL) else { return nil }
-    let result = await pullRepo(repo)
+    let state = dataService.getOrCreateDeviceState(for: repo)
+    let result = await pullRepo(repo, state: state)
 
     dataService.updateTrackedRepoPullResult(
-      repo,
+      state,
       result: result.isError ? nil : result.description,
       error: result.isError ? result.description : nil
     )
@@ -215,9 +215,9 @@ public final class RepoPullScheduler {
 
     switch repo.syncMode {
     case .pullAndRebuild where repo.reindexAfterPull && pullChangedCode:
-      delegate?.repoPullScheduler(self, shouldReindex: repo.localPath)
+      delegate?.repoPullScheduler(self, shouldReindex: state.localPath)
     case .pullAndSyncIndex where pullSucceeded:
-      delegate?.repoPullScheduler(self, shouldSyncIndexFor: repo.localPath)
+      delegate?.repoPullScheduler(self, shouldSyncIndexFor: state.localPath)
     default:
       break
     }
@@ -227,8 +227,8 @@ public final class RepoPullScheduler {
 
   // MARK: - Git Operations
 
-  private func pullRepo(_ repo: TrackedRemoteRepo) async -> RepoPullResult {
-    let path = repo.localPath
+  private func pullRepo(_ repo: TrackedRemoteRepo, state: TrackedRepoDeviceState) async -> RepoPullResult {
+    let path = state.localPath
 
     guard FileManager.default.fileExists(atPath: path) else {
       logger.error("Tracked repo path does not exist: \(path)")

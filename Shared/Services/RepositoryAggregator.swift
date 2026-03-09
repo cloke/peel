@@ -135,6 +135,15 @@ final class RepositoryAggregator {
       uniquingKeysWith: { first, _ in first }
     )
 
+    // TrackedRemoteRepo.id → device-local state
+    let deviceStateByTrackedId: [UUID: TrackedRepoDeviceState] = Dictionary(
+      trackedRepos.compactMap { repo -> (UUID, TrackedRepoDeviceState)? in
+        guard let state = dataService.getDeviceState(for: repo) else { return nil }
+        return (repo.id, state)
+      },
+      uniquingKeysWith: { first, _ in first }
+    )
+
     // normalized URL → [MCPServerService.RAGRepoInfo]
     // Sub-packages (parentRepoId != nil) get their own sidebar entries so the user
     // can see every indexed package individually. Top-level repos without a parent
@@ -303,8 +312,9 @@ final class RepositoryAggregator {
         ?? url
 
       // Local path
+      let deviceState = tracked.flatMap { deviceStateByTrackedId[$0.id] }
       let localPath = synced?.path?.localPath
-        ?? tracked?.localPath.nilIfEmpty
+        ?? deviceState?.localPath.nilIfEmpty
         ?? rag?.rootPath.nilIfEmpty
         ?? registeredPathByURL[url]
 
@@ -319,6 +329,7 @@ final class RepositoryAggregator {
       // Pull status mapping
       let pullStatus = mapPullStatus(
         tracked: tracked,
+        deviceState: deviceState,
         isPulling: isPulling,
         lastPull: lastPull
       )
@@ -333,7 +344,7 @@ final class RepositoryAggregator {
       // Latest activity
       let lastActivity: Date? = [
         synced?.repo.modifiedAt,
-        tracked?.lastPullAt,
+        deviceState?.lastPullAt,
         chainsForRepo.compactMap(\.runStartTime).max(),
         wtForRepo.map(\.createdAt).max(),
         prsForRepo.map(\.viewedAt).max(),
@@ -503,6 +514,7 @@ final class RepositoryAggregator {
   /// Map TrackedRemoteRepo + pull state → UnifiedRepository.PullStatus
   private func mapPullStatus(
     tracked: TrackedRemoteRepo?,
+    deviceState: TrackedRepoDeviceState?,
     isPulling: Bool,
     lastPull: PullHistoryEntry?
   ) -> UnifiedRepository.PullStatus? {
@@ -513,11 +525,11 @@ final class RepositoryAggregator {
       return .pulling
     }
 
-    if let lastErr = tracked.lastPullError, !lastErr.isEmpty {
+    if let lastErr = deviceState?.lastPullError, !lastErr.isEmpty {
       return .error(message: lastErr)
     }
 
-    if let result = tracked.lastPullResult {
+    if let result = deviceState?.lastPullResult {
       if result.contains("up-to-date") {
         return .upToDate
       }
@@ -526,7 +538,7 @@ final class RepositoryAggregator {
       }
     }
 
-    return .idle(lastPull: tracked.lastPullAt)
+    return .idle(lastPull: deviceState?.lastPullAt)
   }
 
   /// Produce a stable UUID from a string (for repos that have no SwiftData id).
