@@ -33,6 +33,19 @@ Create an always-on, local vector index for repository context that powers fast 
 - Metadata extraction (imports, protocols, decorators, frameworks)
 - Module path and feature tag facets
 
+### March 2026 Follow-up Progress
+- Seeded language-agnostic symbol metadata in `ASTChunkMetadata` via `symbolDefinitions` and `symbolReferences`
+- Kept metadata backward-compatible with older stored JSON that lacks symbol fields
+- Enabled production `ASTChunkerService` routing for TypeScript-family files through `JSCoreTypeScriptChunker`
+- Preserved `GlimmerChunker` as the preferred parser for `gts`/`gjs`, with JSCore fallback when Glimmer parsing is unavailable
+
+### Return-Later Next Steps
+1. Persist normalized symbols into the RAG store schema instead of keeping them chunk-local only
+2. Add MCP/RAG queries for symbol definitions, symbol references, and unused-symbol candidates
+3. Add confidence scoring by parser path so SwiftSyntax, Glimmer tree-sitter, JSCore TypeScript, and line fallback are not treated equally
+4. Extend dead-code analysis from file-level orphans to symbol-level candidates (types, methods, properties, components)
+5. Add framework-aware symbol edges for runtime discovery patterns, especially SwiftUI, SwiftData, and Ember/Glimmer template wiring
+
 ## Goals
 - Local-only semantic search for repos in Peel workspaces.
 - Single-file, embedded storage with fast reads.

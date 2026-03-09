@@ -17,8 +17,7 @@ public struct ASTChunkerService: Sendable {
   private let swiftTreeSitterChunker: SwiftTreeSitterChunker?
   private let rubyChunker: RubyChunker?
   private let glimmerChunker: GlimmerChunker?
-  // TypeScript chunker disabled due to performance issues (hangs on large files)
-  // private let typescriptChunker: TypeScriptChunker?
+  private let jsCoreTypeScriptChunker: JSCoreTypeScriptChunker?
 
   public init(
     treeSitterLibPath: String? = nil,
@@ -49,9 +48,14 @@ public struct ASTChunkerService: Sendable {
     )
     self.swiftTreeSitterChunker = candidate.isAvailable ? candidate : nil
 
-    // TypeScript chunker disabled due to performance issues
-    // let typescriptChunker = TypeScriptChunker()
-    // self.typescriptChunker = typescriptChunker.isAvailable ? typescriptChunker : nil
+    // Use the JavaScriptCore parser for TypeScript-family files. If a custom bundle path
+    // is provided, construct a dedicated instance; otherwise use the shared singleton.
+    let jsCoreTypeScriptChunker: JSCoreTypeScriptChunker = if let typescriptLibPath {
+      JSCoreTypeScriptChunker(bundlePath: typescriptLibPath)
+    } else {
+      JSCoreTypeScriptChunker.shared
+    }
+    self.jsCoreTypeScriptChunker = jsCoreTypeScriptChunker.isAvailable ? jsCoreTypeScriptChunker : nil
   }
 
   /// Chunk source code with automatic language detection
@@ -82,9 +86,14 @@ public struct ASTChunkerService: Sendable {
       if let glimmerChunker = glimmerChunker {
         return glimmerChunker.chunk(source: source, maxChunkLines: maxChunkLines)
       }
+      if let jsCoreTypeScriptChunker {
+        return jsCoreTypeScriptChunker.chunk(source: source, language: language, maxChunkLines: maxChunkLines)
+      }
       return fallbackChunk(source: source, language: language, maxChunkLines: maxChunkLines)
     case "typescript":
-      // TypeScript AST chunker disabled - use fallback line-based chunking
+      if let jsCoreTypeScriptChunker {
+        return jsCoreTypeScriptChunker.chunk(source: source, language: language, maxChunkLines: maxChunkLines)
+      }
       return fallbackChunk(source: source, language: language, maxChunkLines: maxChunkLines)
     default:
       return fallbackChunk(source: source, language: language, maxChunkLines: maxChunkLines)
