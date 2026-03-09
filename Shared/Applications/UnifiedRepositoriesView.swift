@@ -192,12 +192,19 @@ struct AddRepositorySheet: View {
   enum Mode: Hashable {
     case picker
     case trackRemote
+    case workspace
   }
 
   @State private var mode: Mode = .picker
   @State private var remoteURL = ""
   @State private var repoName = ""
   @State private var errorMessage: String?
+
+  // Workspace detection state
+  @State private var workspaceRootPath = ""
+  @State private var detectedRepos: [String] = []
+  @State private var selectedRepos: Set<String> = []
+  @State private var rootIsRepo = false
 
   var body: some View {
     VStack(spacing: 20) {
@@ -206,6 +213,8 @@ struct AddRepositorySheet: View {
         pickerView
       case .trackRemote:
         trackRemoteView
+      case .workspace:
+        workspaceView
       }
     }
     .padding(24)
@@ -286,37 +295,136 @@ struct AddRepositorySheet: View {
     }
   }
 
+  // MARK: - Workspace View
+
+  private var workspaceView: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      Text("Workspace Detected")
+        .font(.headline)
+
+      Text("This folder contains multiple repositories. Select which ones to add:")
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+
+      Text(workspaceRootPath)
+        .font(.caption)
+        .foregroundStyle(.tertiary)
+
+      Divider()
+
+      HStack {
+        Text("Repositories (\(detectedRepos.count))")
+          .font(.subheadline)
+          .fontWeight(.medium)
+        Spacer()
+        Button("All") { selectedRepos = Set(detectedRepos) }
+          .buttonStyle(.borderless)
+        Button("None") { selectedRepos = [] }
+          .buttonStyle(.borderless)
+      }
+
+      ScrollView {
+        VStack(spacing: 4) {
+          if rootIsRepo {
+            Toggle(isOn: Binding(
+              get: { selectedRepos.contains(workspaceRootPath) },
+              set: { on in
+                if on { selectedRepos.insert(workspaceRootPath) }
+                else { selectedRepos.remove(workspaceRootPath) }
+              }
+            )) {
+              VStack(alignment: .leading) {
+                Text(URL(fileURLWithPath: workspaceRootPath).lastPathComponent + " (root)")
+                  .font(.callout)
+                  .fontWeight(.medium)
+                Text(workspaceRootPath)
+                  .font(.caption2)
+                  .foregroundStyle(.tertiary)
+              }
+            }
+            Divider()
+          }
+          ForEach(detectedRepos.filter { $0 != workspaceRootPath }, id: \.self) { repo in
+            Toggle(isOn: Binding(
+              get: { selectedRepos.contains(repo) },
+              set: { on in
+                if on { selectedRepos.insert(repo) }
+                else { selectedRepos.remove(repo) }
+              }
+            )) {
+              VStack(alignment: .leading) {
+                Text(URL(fileURLWithPath: repo).lastPathComponent)
+                  .font(.callout)
+                Text(repo)
+                  .font(.caption2)
+                  .foregroundStyle(.tertiary)
+              }
+            }
+          }
+        }
+      }
+      .frame(maxHeight: 250)
+
+      if let errorMessage {
+        Text(errorMessage)
+          .font(.caption)
+          .foregroundStyle(.red)
+      }
+
+      HStack {
+        Button("Back") { mode = .picker }
+        Spacer()
+        Button("Add Selected") { addSelectedRepos() }
+          .keyboardShortcut(.defaultAction)
+          .disabled(selectedRepos.isEmpty)
+      }
+    }
+  }
+
   // MARK: - Actions
 
   #if os(macOS)
   private func openLocalRepository() {
     let panel = NSOpenPanel()
-    panel.title = "Choose a git repository"
+    panel.title = "Choose a git repository or workspace"
     panel.canChooseFiles = false
     panel.canChooseDirectories = true
     panel.allowsMultipleSelection = false
 
     guard panel.runModal() == .OK, let url = panel.url else { return }
 
+    let path = url.path
     let gitDir = url.appendingPathComponent(".git")
-    guard FileManager.default.fileExists(atPath: gitDir.path) else {
-      errorMessage = "Not a git repository (no .git directory)."
+    let isRepo = FileManager.default.fileExists(atPath: gitDir.path)
+
+    // Scan for sub-repos
+    let subRepos = scanForSubRepos(rootPath: path)
+
+    if subRepos.count >= 2 || (isRepo && !subRepos.isEmpty) {
+      // Workspace with multiple repos — show picker
+      workspaceRootPath = path
+      rootIsRepo = isRepo
+      var allRepos = subRepos
+      if isRepo { allRepos.insert(path, at: 0) }
+      detectedRepos = allRepos
+      selectedRepos = Set(allRepos)
+      mode = .workspace
       return
     }
 
-    let name = url.lastPathComponent
-    let path = url.path
+    if isRepo {
+      // Single repo — add directly
+      trackLocalRepo(path: path)
+      return
+    }
 
-    // Track as local repo in DataService so aggregator picks it up
-    dataService.trackRemoteRepo(
-      remoteURL: path,
-      name: name,
-      localPath: path,
-      branch: "main"
-    )
+    if subRepos.count == 1 {
+      // Single sub-repo found
+      trackLocalRepo(path: subRepos[0])
+      return
+    }
 
-    aggregator.rebuild()
-    dismiss()
+    errorMessage = "No git repositories found in this folder."
   }
   #endif
 
@@ -329,6 +437,64 @@ struct AddRepositorySheet: View {
     if let last = cleaned.split(separator: "/").last {
       repoName = String(last)
     }
+  }
+
+  private func trackLocalRepo(path: String) {
+    let name = URL(fileURLWithPath: path).lastPathComponent
+    dataService.trackRemoteRepo(
+      remoteURL: path,
+      name: name,
+      localPath: path,
+      branch: "main"
+    )
+    aggregator.rebuild()
+    dismiss()
+  }
+
+  private func addSelectedRepos() {
+    for path in selectedRepos {
+      let name = URL(fileURLWithPath: path).lastPathComponent
+      dataService.trackRemoteRepo(
+        remoteURL: path,
+        name: name,
+        localPath: path,
+        branch: "main"
+      )
+    }
+    aggregator.rebuild()
+    dismiss()
+  }
+
+  private func scanForSubRepos(rootPath: String) -> [String] {
+    let rootURL = URL(fileURLWithPath: rootPath).resolvingSymlinksInPath()
+    let excluded: Set<String> = [".git", ".build", ".swiftpm", "build", "dist",
+      "DerivedData", "node_modules", "coverage", "tmp", "Carthage",
+      ".turbo", "__snapshots__", "vendor", ".agent-workspaces"]
+    let maxDepth = 4
+    var repos: [String] = []
+    var queue: [(url: URL, depth: Int)] = [(rootURL, 0)]
+
+    while !queue.isEmpty {
+      let current = queue.removeFirst()
+      if current.depth > maxDepth { continue }
+      guard let children = try? FileManager.default.contentsOfDirectory(
+        at: current.url,
+        includingPropertiesForKeys: [.isDirectoryKey],
+        options: [.skipsHiddenFiles]
+      ) else { continue }
+
+      for child in children {
+        guard (try? child.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
+        if excluded.contains(child.lastPathComponent) { continue }
+        let gitMarker = child.appendingPathComponent(".git")
+        if FileManager.default.fileExists(atPath: gitMarker.path) {
+          repos.append(child.path)
+        } else {
+          queue.append((child, current.depth + 1))
+        }
+      }
+    }
+    return repos.sorted()
   }
 
   private func trackRemote() {
