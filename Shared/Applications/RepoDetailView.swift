@@ -226,13 +226,16 @@ struct OverviewTabView: View {
       guard run.projectPath == localPath else { return false }
       switch run.status {
       case .completed, .failed, .cancelled: return false
-      default: return true
+      default:
+        // Exclude stale runs with no actionable executions
+        let hasWork = run.activeCount > 0 || run.pendingReviewCount > 0 || run.readyToMergeCount > 0
+        return hasWork
       }
     }
   }
 
   private var pendingApprovalRuns: [ParallelWorktreeRun] {
-    repoRuns.filter { $0.pendingReviewCount > 0 || $0.readyToMergeCount > 0 }
+    repoRuns.filter { $0.pendingReviewCount > 0 }
   }
 
   private var displayPRs: [UnifiedRepository.PRSummary] {
@@ -297,6 +300,7 @@ struct OverviewTabView: View {
             subtitle: "\(run.pendingReviewCount) task\(run.pendingReviewCount == 1 ? "" : "s") awaiting review",
             badge: "Review"
           )
+          .accessibilityIdentifier("parallel.run.\(run.id.uuidString).review")
         }
       }
 
