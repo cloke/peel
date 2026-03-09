@@ -973,7 +973,21 @@ public final class AgentChainRunner {
       chain.addStatusMessage("Gate check: \(command)", type: .tool)
     }
 
-    let (exitCode, stdout, stderr) = await runShellCommand(command, in: workingDirectory)
+    // Serialize build commands through the global build queue to prevent
+    // CPU/memory pressure when multiple parallel worktrees build simultaneously.
+    let isBuild = XcodeBuildQueue.isBuildCommand(command)
+    let (exitCode, stdout, stderr): (Int32, String, String)
+    if isBuild {
+      await telemetryProvider.info("chain.shell.build_queued", metadata: [
+        "agentName": agent.name,
+        "command": String(command.prefix(80))
+      ])
+      (exitCode, stdout, stderr) = await XcodeBuildQueue.shared.withSlot {
+        await self.runShellCommand(command, in: workingDirectory)
+      }
+    } else {
+      (exitCode, stdout, stderr) = await runShellCommand(command, in: workingDirectory)
+    }
     let duration = Date().timeIntervalSince(startTime)
     let durationStr = String(format: "%.1fs", duration)
     let output = [
