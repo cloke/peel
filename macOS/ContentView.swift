@@ -754,31 +754,30 @@ struct ContentView: View {
     if repo.syncedRepositoryId != nil || repo.trackedRemoteRepoId != nil || repo.isClonedLocally {
       Divider()
       Button("Remove from Peel", role: .destructive) {
-        // Remove tracked repo record
-        if let trackedId = repo.trackedRemoteRepoId {
-          _ = dataService.untrackRemoteRepo(id: trackedId)
-        }
-        // Remove synced repo record
-        if let syncedId = repo.syncedRepositoryId {
-          dataService.deleteRepository(id: syncedId)
-        }
-        // Unregister from in-memory RepoRegistry
-        if let path = repo.localPath {
-          RepoRegistry.shared.unregister(localPath: path)
-          dataService.removeLocalRepositoryPath(path: path)
-        }
-        RepoRegistry.shared.unregister(remoteURL: repo.normalizedRemoteURL)
-        // Remove from RAG index if indexed
-        if repo.isRAGIndexed, let path = repo.localPath {
-          Task {
-            _ = try? await mcpServer.deleteRagRepo(repoId: nil, repoPath: path)
-            aggregator.rebuild()
+        Task {
+          // Remove tracked repo record
+          if let trackedId = repo.trackedRemoteRepoId {
+            _ = dataService.untrackRemoteRepo(id: trackedId)
           }
+          // Remove synced repo record
+          if let syncedId = repo.syncedRepositoryId {
+            dataService.deleteRepository(id: syncedId)
+          }
+          // Unregister from in-memory RepoRegistry
+          if let path = repo.localPath {
+            RepoRegistry.shared.unregister(localPath: path)
+            dataService.removeLocalRepositoryPath(path: path)
+          }
+          RepoRegistry.shared.unregister(remoteURL: repo.normalizedRemoteURL)
+          // Remove from RAG index if indexed — must complete before rebuild
+          if repo.isRAGIndexed, let path = repo.localPath {
+            _ = try? await mcpServer.deleteRagRepo(repoId: nil, repoPath: path)
+          }
+          if sidebarSelection == .repo(repo.normalizedRemoteURL) {
+            sidebarSelection = .repoCommandCenter
+          }
+          aggregator.rebuild()
         }
-        if sidebarSelection == .repo(repo.normalizedRemoteURL) {
-          sidebarSelection = .repoCommandCenter
-        }
-        aggregator.rebuild()
       }
     }
   }

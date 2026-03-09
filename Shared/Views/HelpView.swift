@@ -238,7 +238,7 @@ struct MarkdownWebView: NSViewRepresentable {
     
     for line in lines {
       let trimmed = line.trimmingCharacters(in: .whitespaces)
-      if trimmed.hasPrefix(\"|\") && trimmed.hasSuffix(\"|\") {
+      if trimmed.hasPrefix("|") && trimmed.hasSuffix("|") {
         if !inTable {
           inTable = true
         }
