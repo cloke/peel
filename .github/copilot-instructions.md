@@ -105,6 +105,50 @@ Tools/PeelSkills/.build/debug/file-rewrite path/to/file.md --stdin
 Tools/PeelSkills/.build/debug/file-rewrite Plans/NEW_PLAN.md --template plan --var title="My Plan"
 ```
 
+### MCP Tool Discovery (CRITICAL — READ FIRST)
+
+Peel exposes 200+ MCP tools via HTTP JSON-RPC on port 8765. **Never use macOS screencapture, osascript, or Quartz for screenshots. Never fall back to system tools. Use Peel's MCP tools or stop.**
+
+**Quick discovery (use these FIRST):**
+```bash
+# Search tools by keyword (finds across all pages, no pagination needed)
+curl -s -X POST 'http://127.0.0.1:8765/rpc' -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"tools.search","arguments":{"query":"screenshot"}}}'
+
+# List tool categories with counts
+curl -s -X POST 'http://127.0.0.1:8765/rpc' -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"tools.categories","arguments":{}}}' 
+```
+
+**Key tools you'll use constantly:**
+| Tool | Name (MCP) | Purpose |
+|------|------------|---------|
+| Screenshot | `screenshot.capture` | Capture Peel window as PNG. Args: `label`, `outputDir` |
+| Navigate | `ui.navigate` | Go to a view: `{"viewId":"repositories"}` |
+| Select | `ui.select` | Pick repo/tab: `{"controlId":"repositories.selectRepo","value":"tio-api"}` |
+| Snapshot | `ui.snapshot` | Get current view state tree (controls, values) |
+| Tap | `ui.tap` | Tap a control by ID |
+| Set text | `ui.setText` | Set value of a text control |
+
+**Screenshot workflow (non-negotiable):**
+```bash
+# 1. Navigate
+curl -s -X POST 'http://127.0.0.1:8765/rpc' -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ui.navigate","arguments":{"viewId":"repositories"}}}'
+
+# 2. Select repo + tab
+curl -s -X POST 'http://127.0.0.1:8765/rpc' -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ui.select","arguments":{"controlId":"repositories.selectRepo","value":"tio-api"}}}'
+
+# 3. Capture screenshot (saves PNG, returns path)
+curl -s -X POST 'http://127.0.0.1:8765/rpc' -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"screenshot.capture","arguments":{"label":"my-screenshot","outputDir":"/path/to/repo/tmp"}}}'
+```
+
+**Tool names use dots in MCP calls but underscores in tools/list** (sanitized). Always use dot notation when calling: `screenshot.capture`, not `screenshot_capture`.
+
+**Pagination warning:** `tools/list` returns 64 tools per page. Many clients (including VS Code) may not follow `nextCursor`. Use `tools.search` instead — it searches all tools in one call.
+
 ### MCP CLI First (IMPORTANT)
 When the user asks to **start a chain**, **use the MCP CLI** instead of manually creating worktrees.
 

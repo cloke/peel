@@ -83,6 +83,29 @@ extension MCPServerService {
         isMutating: false
       ),
       MCPToolDefinition(
+        name: "tools.search",
+        description: "Search all available MCP tools by keyword. Returns matching tools across all pages. Use this to discover tools instead of paginating through tools/list.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "query": ["type": "string", "description": "Keyword to search for in tool names and descriptions (case-insensitive)"],
+            "category": ["type": "string", "description": "Optional: filter by category (ui, state, diagnostics, swarm, rag, chains, parallel, git, etc.)"]
+          ]
+        ],
+        category: .state,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "tools.categories",
+        description: "List all tool categories with tool counts and example tool names. Use for orientation before searching.",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .state,
+        isMutating: false
+      ),
+      MCPToolDefinition(
         name: "logs.mcp.path",
         description: "Get MCP log file path",
         inputSchema: [

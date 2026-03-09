@@ -1079,6 +1079,12 @@ extension MCPServerService {
     case "state.list":
       return handleStateList(id: id)
 
+    case "tools.search":
+      return handleToolsSearch(id: id, arguments: arguments)
+
+    case "tools.categories":
+      return handleToolsCategories(id: id)
+
     // RAG tools are now handled by RAGToolsHandler above
     // Chain tools are now handled by ChainToolsHandler above
 
@@ -1267,6 +1273,59 @@ extension MCPServerService {
       "currentViewId": currentViewId as Any
     ]
     return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: state))
+  }
+
+  private func handleToolsSearch(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    let query = (arguments["query"] as? String)?.lowercased() ?? ""
+    let categoryFilter = (arguments["category"] as? String)?.lowercased()
+
+    let matches = allToolDefinitions.filter { tool in
+      if let categoryFilter, tool.category.rawValue.lowercased() != categoryFilter {
+        return false
+      }
+      if query.isEmpty { return categoryFilter != nil }
+      return tool.name.lowercased().contains(query)
+        || tool.description.lowercased().contains(query)
+    }
+
+    let results: [[String: Any]] = matches.map { tool in
+      [
+        "name": sanitizedToolName(tool.name),
+        "originalName": tool.name,
+        "description": tool.description,
+        "category": tool.category.rawValue,
+        "enabled": isToolEnabled(tool.name),
+        "requiresForeground": tool.requiresForeground
+      ]
+    }
+
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
+      "matches": results,
+      "count": results.count,
+      "totalTools": allToolDefinitions.count
+    ]))
+  }
+
+  private func handleToolsCategories(id: Any?) -> (Int, Data) {
+    var byCategory = [String: [String]]()
+    for tool in allToolDefinitions {
+      let cat = tool.category.rawValue
+      byCategory[cat, default: []].append(sanitizedToolName(tool.name))
+    }
+
+    let categories: [[String: Any]] = byCategory.sorted(by: { $0.key < $1.key }).map { cat, tools in
+      [
+        "category": cat,
+        "count": tools.count,
+        "tools": Array(tools.prefix(5)),
+        "hasMore": tools.count > 5
+      ]
+    }
+
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
+      "categories": categories,
+      "totalTools": allToolDefinitions.count
+    ]))
   }
 
   private func handleTranslationsValidate(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
