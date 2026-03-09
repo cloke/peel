@@ -179,6 +179,8 @@ extension MCPServerService: MCPToolHandlerDelegate {
           case .failed:
             UserDefaults.standard.set(transfer.errorMessage ?? "failed", forKey: "repositories.rag.sync.status")
             return
+          case .stalled:
+            UserDefaults.standard.set("stalled — waiting for reconnect", forKey: "repositories.rag.sync.status")
           }
         }
       } catch {

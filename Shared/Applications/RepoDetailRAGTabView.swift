@@ -764,6 +764,7 @@ struct RAGTabView: View {
     case .applying: return "Applying…"
     case .complete: return "Complete"
     case .failed: return transfer.errorMessage ?? "Failed"
+    case .stalled: return "Stalled — waiting for reconnect"
     }
   }
 

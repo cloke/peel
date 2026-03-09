@@ -94,6 +94,9 @@ public final class OnDemandPeerTransfer {
   /// Timeout for each connection attempt (LAN, WAN, STUN)
   private let connectionTimeout: TimeInterval = 10
   private let transferReceiveTimeout: Duration = .seconds(30)
+  /// Total transfer timeout — if the entire transfer hasn't completed after
+  /// this many seconds, cancel it. Prevents indefinite hangs.
+  private let totalTransferTimeout: Duration = .seconds(600)  // 10 minutes
 
   // MARK: - Public API
 
@@ -196,8 +199,22 @@ public final class OnDemandPeerTransfer {
         .ragArtifactsRequest(id: transferId, direction: .pull, repoIdentifier: repoIdentifier)
       )
 
-      // Receive the chunked data
-      let bundleData = try await receiveTransfer(peerConn: peerConn, transferId: transferId, state: state)
+      // Receive with a total transfer timeout to prevent indefinite hangs
+      let totalTimeout = totalTransferTimeout
+      let bundleData = try await withThrowingTaskGroup(of: Data.self) { group in
+        group.addTask {
+          try await self.receiveTransfer(peerConn: peerConn, transferId: transferId, state: state)
+        }
+        group.addTask {
+          try await Task.sleep(for: totalTimeout)
+          throw OnDemandTransferError.transferTimedOut(seconds: Int(totalTimeout.components.seconds))
+        }
+        defer { group.cancelAll() }
+        guard let result = try await group.next() else {
+          throw OnDemandTransferError.transferTimedOut(seconds: Int(totalTimeout.components.seconds))
+        }
+        return result
+      }
 
       // Import
       state.status = .importing

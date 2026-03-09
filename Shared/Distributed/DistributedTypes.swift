@@ -522,6 +522,8 @@ public enum RAGArtifactTransferStatus: String, Sendable {
   case applying
   case complete
   case failed
+  /// Transfer stalled — no chunks received for the watchdog threshold
+  case stalled
 }
 
 public struct RAGArtifactFileInfo: Codable, Sendable {
@@ -626,6 +628,29 @@ public struct RAGArtifactTransferState: Identifiable, Sendable {
     guard totalBytes > 0 else { return status == .complete ? 1.0 : 0 }
     return min(1, Double(transferredBytes) / Double(totalBytes))
   }
+}
+
+/// Persisted checkpoint for resuming a partially-completed RAG transfer after disconnection or restart.
+public struct RAGTransferCheckpoint: Codable, Sendable {
+  public let transferId: UUID
+  public let peerId: String
+  public let peerName: String
+  public let direction: RAGArtifactSyncDirection
+  public let repoIdentifier: String?
+  public let transferMode: RAGTransferMode?
+  public let manifest: RAGArtifactManifest?
+  public let receivedChunkIndices: Set<Int>
+  public let receivedBytes: Int
+  public let totalBytes: Int
+  public let totalChunks: Int
+  public let tempFilePath: String
+  public let createdAt: Date
+  public let lastChunkReceivedAt: Date
+  /// Maximum age before this checkpoint is discarded on launch (seconds)
+  public static let maxAge: TimeInterval = 3600  // 1 hour
+
+  public var age: TimeInterval { Date().timeIntervalSince(createdAt) }
+  public var isExpired: Bool { age > Self.maxAge }
 }
 
 /// Current status of a worker node
@@ -733,6 +758,10 @@ public enum PeerMessage: Codable, Sendable {
   case ragArtifactsChunk(id: UUID, index: Int, total: Int, data: String)
   case ragArtifactsComplete(id: UUID)
   case ragArtifactsError(id: UUID, message: String)
+  /// Receiver acknowledges progress, enabling sender-side tracking
+  case ragArtifactsAck(id: UUID, receivedChunks: Int, receivedBytes: Int)
+  /// Receiver requests resume of a partially-completed transfer, providing chunk indices already received
+  case ragArtifactsResumeRequest(id: UUID, receivedChunkIndices: Set<Int>, repoIdentifier: String?, transferMode: RAGTransferMode?)
   case goodbye
   
   /// Unique identifier for message type (for logging)
@@ -757,6 +786,8 @@ public enum PeerMessage: Codable, Sendable {
     case .ragArtifactsChunk: return "ragArtifactsChunk"
     case .ragArtifactsComplete: return "ragArtifactsComplete"
     case .ragArtifactsError: return "ragArtifactsError"
+    case .ragArtifactsAck: return "ragArtifactsAck"
+    case .ragArtifactsResumeRequest: return "ragArtifactsResumeRequest"
     case .goodbye: return "goodbye"
     }
   }
