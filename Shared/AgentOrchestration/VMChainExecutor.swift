@@ -104,7 +104,7 @@ public final class VMChainExecutor {
     }
 
     // 1. Build directory shares
-    var shares = [VMDirectoryShare.workspace(workspacePath)] + extraShares
+    let shares = [VMDirectoryShare.workspace(workspacePath)] + extraShares
     log("Preparing \(shares.count) directory share(s) for \(environment.displayName)")
 
     // 2. Boot VM

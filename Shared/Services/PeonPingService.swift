@@ -54,7 +54,7 @@ final class PeonPingService {
   /// Shared instance for use in non-view contexts (chain runner, worktree runner).
   static let shared = PeonPingService()
 
-  private static let logger = Logger(
+  private nonisolated static let logger = Logger(
     subsystem: Bundle.main.bundleIdentifier ?? "com.peel",
     category: "PeonPing"
   )

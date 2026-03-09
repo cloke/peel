@@ -77,10 +77,12 @@ actor SkillUpdateService {
       let appliedCommitHash = UserDefaults.standard.string(forKey: appliedCommitHashKey)
       let hasUpdate = storedHash != nil && appliedCommitHash != latestSHA
       
-      // Store results
-      UserDefaults.standard.set(Date(), forKey: lastUpdateCheckKey)
-      UserDefaults.standard.set(latestSHA, forKey: remoteCommitHashKey)
-      UserDefaults.standard.set(hasUpdate, forKey: updateAvailableKey)
+      // Store results (must be on main thread for SwiftUI @AppStorage)
+      await MainActor.run {
+        UserDefaults.standard.set(Date(), forKey: lastUpdateCheckKey)
+        UserDefaults.standard.set(latestSHA, forKey: remoteCommitHashKey)
+        UserDefaults.standard.set(hasUpdate, forKey: updateAvailableKey)
+      }
       
       return UpdateCheckResult(
         hasUpdate: hasUpdate,

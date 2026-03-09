@@ -83,7 +83,7 @@ struct PolicyExportService {
       updatedAt: company.updatedAt
     )
 
-    let packageDocuments: [PolicyPackageDocument] = try documents.map { doc in
+    let packageDocuments: [PolicyPackageDocument] = documents.map { doc in
       let content: String
       if doc.markdownPath.isEmpty {
         content = ""

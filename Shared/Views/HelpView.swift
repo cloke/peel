@@ -235,14 +235,12 @@ struct MarkdownWebView: NSViewRepresentable {
     let lines = text.components(separatedBy: "\n")
     var tableLines: [String] = []
     var inTable = false
-    var tableStart = 0
     
-    for (index, line) in lines.enumerated() {
+    for line in lines {
       let trimmed = line.trimmingCharacters(in: .whitespaces)
-      if trimmed.hasPrefix("|") && trimmed.hasSuffix("|") {
+      if trimmed.hasPrefix(\"|\") && trimmed.hasSuffix(\"|\") {
         if !inTable {
           inTable = true
-          tableStart = index
         }
         tableLines.append(line)
       } else if inTable {

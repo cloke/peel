@@ -146,7 +146,7 @@ public final class SwarmToolsHandler: MCPToolHandler {
     case "swarm.firestore.create":
       return await handleFirestoreCreate(id: id, arguments: arguments)
     case "swarm.firestore.debug":
-      return await handleFirestoreDebug(id: id)
+      return handleFirestoreDebug(id: id)
     case "swarm.firestore.activity":
       return handleFirestoreActivity(id: id, arguments: arguments)
     case "swarm.firestore.migrate":

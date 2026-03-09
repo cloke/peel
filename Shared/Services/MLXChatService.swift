@@ -379,9 +379,9 @@ actor MLXChatService {
         }
 
         // Add assistant response to history on the actor
-        await self.appendAssistantMessage(fullResponse)
+        self.appendAssistantMessage(fullResponse)
         // Restore system prompt without per-turn RAG context
-        await self.restoreBaseSystemPrompt()
+        self.restoreBaseSystemPrompt()
         continuation.finish()
       }
     }

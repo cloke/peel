@@ -623,12 +623,10 @@ extension RAGStore {
 
   /// Apply remap updates within a transaction.
   private func applyRemaps(_ remaps: [(id: String, newPath: String)]) throws {
-    // We need to call internal SQLite methods. Since remapRepoPaths
-    // uses the actor's db, we need internal access. For now, re-use
-    // the public API by deleting and re-adding repos (or use raw SQL via extension).
-    // This is a simplified version that updates via exec statements.
+    // resolveRepo(for:) auto-updates root_path when it finds a match by repo_identifier,
+    // so simply calling it for each new path handles the remap transparently.
     for remap in remaps {
-      try remapRepoPath(oldId: remap.id, newPath: remap.newPath)
+      _ = try resolveRepo(for: remap.newPath)
     }
   }
 
