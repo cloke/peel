@@ -179,84 +179,58 @@ struct VMResourceLimits: Sendable {
   )
 }
 
-// MARK: - Console State (Thread-Safe)
+// MARK: - Console State
 
-final class VMConsoleState: @unchecked Sendable {
-  let queue = DispatchQueue(label: "vm.console.reader", attributes: .concurrent)
+actor VMConsoleState {
   private var buffer: String = ""
-  private let lock = NSLock()
   let maxBufferBytes = 64 * 1024
   private var shouldStop = false
   private var bytesRead: Int64 = 0
   private var lastOutputAt: Date?
 
   func append(_ text: String) {
-    lock.lock()
     buffer.append(text)
     lastOutputAt = Date()
     if buffer.utf8.count > maxBufferBytes {
       let tail = buffer.suffix(maxBufferBytes)
       buffer = String(tail)
     }
-    lock.unlock()
   }
 
   func recordBytes(_ count: Int) {
-    lock.lock()
     bytesRead += Int64(count)
-    lock.unlock()
   }
 
   func totalBytesRead() -> Int64 {
-    lock.lock()
-    let value = bytesRead
-    lock.unlock()
-    return value
+    bytesRead
   }
 
   func drain() -> String? {
-    lock.lock()
-    if buffer.isEmpty {
-      lock.unlock()
-      return nil
-    }
+    guard !buffer.isEmpty else { return nil }
     let chunk = buffer
     buffer = ""
-    lock.unlock()
     return chunk
   }
 
   func clear() {
-    lock.lock()
     buffer = ""
     lastOutputAt = nil
-    lock.unlock()
   }
 
   func lastOutputTimestamp() -> Date? {
-    lock.lock()
-    let value = lastOutputAt
-    lock.unlock()
-    return value
+    lastOutputAt
   }
 
   func markStart() {
-    lock.lock()
     shouldStop = false
-    lock.unlock()
   }
 
   func markStop() {
-    lock.lock()
     shouldStop = true
-    lock.unlock()
   }
 
   func isStopping() -> Bool {
-    lock.lock()
-    let value = shouldStop
-    lock.unlock()
-    return value
+    shouldStop
   }
 }
 
@@ -276,33 +250,33 @@ enum VMConsoleReader {
     return regex.stringByReplacingMatches(in: text, options: [], range: range, withTemplate: "")
   }
   
-  static func start(state: VMConsoleState, fd: Int32) {
-    state.markStart()
+  static func start(state: VMConsoleState, fd: Int32, clearBuffer: Bool = false) {
     let flags = fcntl(fd, F_GETFL)
     _ = fcntl(fd, F_SETFL, flags | O_NONBLOCK)
-    
-    state.queue.async {
-      // vmLog("Starting read loop on fd \(fd)")
+
+    Task.detached(priority: .utility) {
+      if clearBuffer {
+        await state.clear()
+      }
+      await state.markStart()
       var buffer = [UInt8](repeating: 0, count: 4096)
-      
-      while !state.isStopping() {
+
+      while !(await state.isStopping()) {
         let count = read(fd, &buffer, buffer.count)
-        
+
         if count > 0 {
           let data = Data(bytes: buffer, count: count)
           if let text = String(data: data, encoding: .utf8), !text.isEmpty {
-            // Strip ANSI escape codes before appending
             let cleanText = stripANSIEscapeCodes(text)
-            state.append(cleanText)
+            await state.append(cleanText)
           }
-          state.recordBytes(count)
+          await state.recordBytes(count)
         } else if count == 0 {
-          // EOF
           break
         } else {
           let err = errno
           if err == EAGAIN || err == EWOULDBLOCK {
-            usleep(10_000)
+            try? await Task.sleep(for: .milliseconds(10))
             continue
           }
           print("[ConsoleReader] Error reading fd \(fd): \(err)")
@@ -313,8 +287,10 @@ enum VMConsoleReader {
   }
 
   static func stop(state: VMConsoleState) {
-    state.markStop()
-    state.clear()
+    Task {
+      await state.markStop()
+      await state.clear()
+    }
   }
 }
 

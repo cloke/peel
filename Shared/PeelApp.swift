@@ -264,11 +264,11 @@ struct PeelApp: App {
             skillUpdateAvailable = true
             print("[PeelApp] Ember skills update available")
           }
-          // Populate RepoRegistry from all known local paths BEFORE rebuild
-          // so Git tab repos (AppStorage) appear in the unified view.
+          // Populate RepoRegistry from SwiftData-backed local paths BEFORE rebuild
+          // so unified repository aggregation has the local repo mappings it needs.
           let registry = RepoRegistry.shared
-          let gitPaths = Git.ViewModel.shared.repositories.map(\.path)
-          await registry.registerAllPaths(gitPaths)
+          let localRepoPaths = Array(Set(dataService.getAllLocalRepositoryPaths(validOnly: true).map(\.localPath)))
+          await registry.registerAllPaths(localRepoPaths)
           let recentPaths = ReviewLocallyService.shared.recentRepositories.map(\.path)
           await registry.registerAllPaths(recentPaths)
           // Initial rebuild of unified repository data and activity feed.

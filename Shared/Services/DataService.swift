@@ -52,6 +52,13 @@ final class DataService {
     let descriptor = FetchDescriptor<SyncedRepository>(sortBy: [SortDescriptor(\.name)])
     return (try? modelContext.fetch(descriptor)) ?? []
   }
+
+  func getAllLocalRepositoryPaths(validOnly: Bool = false) -> [LocalRepositoryPath] {
+    let descriptor = FetchDescriptor<LocalRepositoryPath>(sortBy: [SortDescriptor(\.localPath)])
+    let paths = (try? modelContext.fetch(descriptor)) ?? []
+    guard validOnly else { return paths }
+    return paths.filter(\.isValid)
+  }
   
   @discardableResult
   func addRepository(name: String, localPath: String, remoteURL: String? = nil) -> SyncedRepository {
@@ -1001,10 +1008,9 @@ final class DataService {
   }
 
   func getTrackedRemoteRepo(remoteURL: String) -> TrackedRemoteRepo? {
-    // Normalize for lookup
-    let normalized = RepoRegistry.shared.normalizeRemoteURL(remoteURL)
+    let candidates = trackedRemoteLookupCandidates(remoteURL: remoteURL)
     let all = getTrackedRemoteRepos()
-    return all.first { RepoRegistry.shared.normalizeRemoteURL($0.remoteURL) == normalized }
+    return all.first { candidates.contains(RepoRegistry.shared.normalizeRemoteURL($0.remoteURL)) }
   }
 
   func getTrackedRemoteRepo(id: UUID) -> TrackedRemoteRepo? {
@@ -1022,17 +1028,24 @@ final class DataService {
     branch: String = "main",
     remoteName: String = "origin",
     pullIntervalSeconds: Int = 3600,
-    reindexAfterPull: Bool = true
+    reindexAfterPull: Bool = true,
+    syncMode: TrackedRepoSyncMode? = nil
   ) -> TrackedRemoteRepo {
-    // Check if already tracked
-    if let existing = getTrackedRemoteRepo(remoteURL: remoteURL) {
+    let canonicalRemoteURL = canonicalTrackedRemoteURL(remoteURL: remoteURL, localPath: localPath)
+    let resolvedSyncMode = syncMode ?? (reindexAfterPull ? .pullAndRebuild : .pullAndSyncIndex)
+    let effectiveInterval = max(60, pullIntervalSeconds)
+
+    if let existing = getTrackedRemoteRepo(remoteURL: canonicalRemoteURL)
+      ?? getTrackedRemoteRepo(remoteURL: localPath) {
+      existing.remoteURL = canonicalRemoteURL
+      existing.name = name
       existing.branch = branch
       existing.remoteName = remoteName
-      existing.pullIntervalSeconds = pullIntervalSeconds
-      existing.reindexAfterPull = reindexAfterPull
+      existing.pullIntervalSeconds = effectiveInterval
+      existing.syncMode = resolvedSyncMode
+      existing.reindexAfterPull = resolvedSyncMode == .pullAndRebuild
       existing.isEnabled = true
       existing.touch()
-      // Update device-local state with current path
       let state = getOrCreateDeviceState(for: existing)
       state.localPath = localPath
       try? modelContext.save()
@@ -1040,15 +1053,15 @@ final class DataService {
     }
 
     let tracked = TrackedRemoteRepo(
-      remoteURL: remoteURL,
+      remoteURL: canonicalRemoteURL,
       name: name,
       branch: branch,
       remoteName: remoteName,
-      pullIntervalSeconds: pullIntervalSeconds,
-      reindexAfterPull: reindexAfterPull
+      pullIntervalSeconds: effectiveInterval,
+      reindexAfterPull: resolvedSyncMode == .pullAndRebuild,
+      syncMode: resolvedSyncMode
     )
     modelContext.insert(tracked)
-    // Create device-local state
     let state = TrackedRepoDeviceState(trackedRepoId: tracked.id, localPath: localPath)
     modelContext.insert(state)
     try? modelContext.save()
@@ -1113,6 +1126,43 @@ final class DataService {
     modelContext.insert(state)
     try? modelContext.save()
     return state
+  }
+
+  private func trackedRemoteLookupCandidates(remoteURL: String, localPath: String = "") -> Set<String> {
+    let trimmedRemoteURL = remoteURL.trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmedLocalPath = localPath.trimmingCharacters(in: .whitespacesAndNewlines)
+    var candidates = Set<String>()
+
+    for value in [trimmedRemoteURL, trimmedLocalPath] where !value.isEmpty {
+      candidates.insert(RepoRegistry.shared.normalizeRemoteURL(value))
+    }
+
+    if !trimmedLocalPath.isEmpty {
+      candidates.insert(RepoRegistry.shared.normalizeRemoteURL("local://\(trimmedLocalPath)"))
+    } else if trimmedRemoteURL.hasPrefix("/") {
+      candidates.insert(RepoRegistry.shared.normalizeRemoteURL("local://\(trimmedRemoteURL)"))
+    }
+
+    return candidates
+  }
+
+  private func canonicalTrackedRemoteURL(remoteURL: String, localPath: String) -> String {
+    let trimmedRemoteURL = remoteURL.trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmedLocalPath = localPath.trimmingCharacters(in: .whitespacesAndNewlines)
+
+    if !trimmedRemoteURL.isEmpty,
+       !trimmedRemoteURL.hasPrefix("/"),
+       trimmedRemoteURL != trimmedLocalPath {
+      return trimmedRemoteURL
+    }
+
+    if !trimmedLocalPath.isEmpty,
+       let cachedRemoteURL = RepoRegistry.shared.getCachedRemoteURL(for: trimmedLocalPath) {
+      return cachedRemoteURL
+    }
+
+    guard !trimmedLocalPath.isEmpty else { return trimmedRemoteURL }
+    return "local://\(trimmedLocalPath)"
   }
 
   /// Remove duplicate TrackedWorktree entries (keep newest by createdAt for each localPath)

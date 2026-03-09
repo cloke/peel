@@ -1910,11 +1910,10 @@ public final class VMIsolationService {
     let handle = outputPipe.fileHandleForReading
     let fd = handle.fileDescriptor
     let state = consoleState
-    state.clear()
 
     vmLog("Console output FD: \(fd)")
 
-    VMConsoleReader.start(state: state, fd: fd)
+    VMConsoleReader.start(state: state, fd: fd, clearBuffer: true)
 
     if let serialPipe = serialOutputPipe {
       let serialFd = serialPipe.fileHandleForReading.fileDescriptor
@@ -1927,7 +1926,7 @@ public final class VMIsolationService {
     Task { @MainActor [weak self] in
       try? await Task.sleep(for: .seconds(2))
       guard let self else { return }
-      let bytes = self.consoleState.totalBytesRead()
+      let bytes = await self.consoleState.totalBytesRead()
       if bytes == 0 {
         self.vmLog("Console: no output received after 2s")
       } else {
@@ -1937,26 +1936,28 @@ public final class VMIsolationService {
 
     Task { @MainActor [weak self] in
       try? await Task.sleep(for: .seconds(10))
-      self?.logConsoleInactivity(thresholdSeconds: 10)
+      await self?.logConsoleInactivity(thresholdSeconds: 10)
     }
     Task { @MainActor [weak self] in
       try? await Task.sleep(for: .seconds(30))
-      self?.logConsoleInactivity(thresholdSeconds: 30)
+      await self?.logConsoleInactivity(thresholdSeconds: 30)
     }
 
     consoleFlushTimer?.cancel()
     let timer = DispatchSource.makeTimerSource(queue: .main)
     timer.schedule(deadline: .now() + consoleFlushInterval, repeating: consoleFlushInterval)
     timer.setEventHandler { [weak self] in
-      guard let self else { return }
-      if let chunk = self.consoleState.drain() {
-        self.consoleOutput += chunk
-        if self.consoleOutput.count > self.consoleMaxOutputChars {
-          let tail = self.consoleOutput.suffix(self.consoleMaxOutputChars)
-          self.consoleOutput = String(tail)
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        if let chunk = await self.consoleState.drain() {
+          self.consoleOutput += chunk
+          if self.consoleOutput.count > self.consoleMaxOutputChars {
+            let tail = self.consoleOutput.suffix(self.consoleMaxOutputChars)
+            self.consoleOutput = String(tail)
+          }
+        } else {
+          await self.logConsoleInactivity(thresholdSeconds: 10)
         }
-      } else {
-        self.logConsoleInactivity(thresholdSeconds: 10)
       }
     }
     consoleFlushTimer = timer
@@ -1973,8 +1974,8 @@ public final class VMIsolationService {
     consoleReadTask = nil
   }
 
-  private func logConsoleInactivity(thresholdSeconds: TimeInterval) {
-    guard let lastOutput = consoleState.lastOutputTimestamp() else { return }
+  private func logConsoleInactivity(thresholdSeconds: TimeInterval) async {
+    guard let lastOutput = await consoleState.lastOutputTimestamp() else { return }
     let sinceLastOutput = Date().timeIntervalSince(lastOutput)
     guard sinceLastOutput >= thresholdSeconds else { return }
     if let lastLog = lastConsoleInactivityLogAt, Date().timeIntervalSince(lastLog) < thresholdSeconds {
@@ -2004,11 +2005,14 @@ public final class VMIsolationService {
     consoleOutput = ""
   }
 
-  func consoleReaderDiagnostics() -> [String: Any] {
+  func consoleReaderDiagnostics() async -> [String: Any] {
+    let totalBytesRead = await consoleState.totalBytesRead()
+    let isStopping = await consoleState.isStopping()
+    let lastOutputAt = await consoleState.lastOutputTimestamp()?.description ?? "nil"
     return [
-      "totalBytesRead": consoleState.totalBytesRead(),
-      "isStopping": consoleState.isStopping(),
-      "lastOutputAt": consoleState.lastOutputTimestamp()?.description ?? "nil",
+      "totalBytesRead": totalBytesRead,
+      "isStopping": isStopping,
+      "lastOutputAt": lastOutputAt,
       "consoleOutputLength": consoleOutput.count,
       "hasInputPipe": consoleInputPipe != nil,
       "hasOutputPipe": consoleOutputPipe != nil,
@@ -2044,4 +2048,3 @@ public final class VMIsolationService {
     }
   }
 }
-

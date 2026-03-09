@@ -104,14 +104,18 @@ final class TrackedRemoteRepoTests: XCTestCase {
     // Update with same URL but different settings
     let updated = dataService.trackRemoteRepo(
       remoteURL: "https://github.com/org/repo.git",
-      name: "repo",
+      name: "renamed-repo",
       localPath: "/Users/test/code/repo-v2",
-      branch: "develop"
+      branch: "develop",
+      syncMode: .pullAndSyncIndex
     )
 
     let state = dataService.getDeviceState(for: updated)
     XCTAssertEqual(state?.localPath, "/Users/test/code/repo-v2")
+    XCTAssertEqual(updated.name, "renamed-repo")
     XCTAssertEqual(updated.branch, "develop")
+    XCTAssertEqual(updated.syncMode, .pullAndSyncIndex)
+    XCTAssertFalse(updated.reindexAfterPull)
 
     // Should still be just one record
     let all = dataService.getTrackedRemoteRepos()
@@ -126,16 +130,32 @@ final class TrackedRemoteRepoTests: XCTestCase {
       branch: "develop",
       remoteName: "upstream",
       pullIntervalSeconds: 1800,
-      reindexAfterPull: false
+      reindexAfterPull: false,
+      syncMode: .pullAndSyncIndex
     )
 
     XCTAssertEqual(repo.branch, "develop")
     XCTAssertEqual(repo.remoteName, "upstream")
     XCTAssertEqual(repo.pullIntervalSeconds, 1800)
     XCTAssertFalse(repo.reindexAfterPull)
+    XCTAssertEqual(repo.syncMode, .pullAndSyncIndex)
 
     let state = dataService.getDeviceState(for: repo)
     XCTAssertEqual(state?.localPath, "/Users/test/code/repo")
+  }
+
+  func testTrackRemoteRepo_localPathUsesStableLocalIdentifier() {
+    let repo = dataService.trackRemoteRepo(
+      remoteURL: "",
+      name: "local-only",
+      localPath: "/Users/test/code/local-only"
+    )
+
+    XCTAssertEqual(repo.remoteURL, "local:///Users/test/code/local-only")
+    XCTAssertEqual(
+      RepoRegistry.shared.normalizeRemoteURL(repo.remoteURL),
+      RepoRegistry.shared.normalizeRemoteURL("local:///Users/test/code/local-only")
+    )
   }
 
   func testGetTrackedRemoteRepo_byURL() {

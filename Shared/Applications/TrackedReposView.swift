@@ -6,7 +6,6 @@
 //  Users can track a remote repo so Peel keeps the local clone fresh.
 //
 
-import Git
 import OSLog
 import RAGCore
 import SwiftData
@@ -300,6 +299,7 @@ struct TrackedRepoDetailSheet: View {
 // MARK: - Add Tracked Repo Sheet
 
 struct AddTrackedRepoSheet: View {
+  @Environment(DataService.self) private var dataService
   @Environment(\.dismiss) private var dismiss
   @Environment(\.modelContext) private var modelContext
   @Environment(MCPServerService.self) private var mcpServer
@@ -312,7 +312,6 @@ struct AddTrackedRepoSheet: View {
   @State private var remoteName = "origin"
   @State private var pullIntervalHours = 1
   @State private var pullIntervalMinutes = 0
-  @State private var reindexAfterPull = true
   @State private var syncMode: TrackedRepoSyncMode = .pullAndRebuild
   @State private var errorMessage: String?
   @State private var isDetectingRemote = false
@@ -373,13 +372,17 @@ struct AddTrackedRepoSheet: View {
       }
     }
 
-    // 2. Git tab repos
-    for repo in Git.ViewModel.shared.repositories where !repo.path.isEmpty {
-      let normalized = (repo.path as NSString).standardizingPath
-      guard !trackedPaths.contains(repo.path), !trackedPaths.contains(normalized),
+    // 2. SwiftData local repos
+    let syncedRepos = (try? modelContext.fetch(FetchDescriptor<SyncedRepository>())) ?? []
+    let syncedNamesById = Dictionary(uniqueKeysWithValues: syncedRepos.map { ($0.id, $0.name) })
+    let localRepoPaths = dataService.getAllLocalRepositoryPaths(validOnly: true)
+    for localRepo in localRepoPaths where !localRepo.localPath.isEmpty {
+      let normalized = (localRepo.localPath as NSString).standardizingPath
+      guard !trackedPaths.contains(localRepo.localPath), !trackedPaths.contains(normalized),
             !seen.contains(normalized) else { continue }
       seen.insert(normalized)
-      repos.append(KnownRepo(id: normalized, name: repo.name, path: repo.path))
+      let repoName = syncedNamesById[localRepo.repositoryId] ?? URL(fileURLWithPath: normalized).lastPathComponent
+      repos.append(KnownRepo(id: normalized, name: repoName, path: normalized))
     }
 
     // 3. RepoRegistry
@@ -610,20 +613,16 @@ struct AddTrackedRepoSheet: View {
     let resolvedName = name.isEmpty ? URL(fileURLWithPath: localPath).lastPathComponent : name
     let intervalSeconds = (pullIntervalHours * 3600) + (pullIntervalMinutes * 60)
 
-    let tracked = TrackedRemoteRepo(
-      remoteURL: remoteURL.isEmpty ? "local://\(localPath)" : remoteURL,
+    _ = dataService.trackRemoteRepo(
+      remoteURL: remoteURL,
       name: resolvedName,
+      localPath: localPath,
       branch: branch,
       remoteName: remoteName,
       pullIntervalSeconds: max(60, intervalSeconds),
       reindexAfterPull: syncMode == .pullAndRebuild,
       syncMode: syncMode
     )
-    modelContext.insert(tracked)
-    // Create device-local state with the local path
-    let state = TrackedRepoDeviceState(trackedRepoId: tracked.id, localPath: localPath)
-    modelContext.insert(state)
-    try? modelContext.save()
     dismiss()
   }
 }

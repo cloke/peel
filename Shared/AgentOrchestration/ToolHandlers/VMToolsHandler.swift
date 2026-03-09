@@ -157,7 +157,7 @@ public final class VMToolsHandler: MCPToolHandler {
     await vmIsolationService.initialize()
 
     let consoleSnippet = String(vmIsolationService.consoleOutput.suffix(2000))
-    let diag = vmIsolationService.consoleReaderDiagnostics()
+    let diag = await vmIsolationService.consoleReaderDiagnostics()
     let status: [String: Any] = [
       "virtualizationAvailable": vmIsolationService.isVirtualizationAvailable,
       "linuxReady": vmIsolationService.isLinuxReady,

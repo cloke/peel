@@ -7,7 +7,6 @@
 
 import SwiftUI
 import Github
-import Git
 import PeelUI
 
 struct PRReviewAgentTarget: Identifiable {
@@ -610,16 +609,16 @@ Task:
 
   #if os(macOS)
   /// Gather directories to scan for local clones.
-  private func gatherSearchDirs() -> Set<String> {
-    let fm = FileManager.default
-    var parentDirs = Set<String>()
-    for repo in Git.ViewModel.shared.repositories where !repo.path.isEmpty {
-      let parent = (repo.path as NSString).deletingLastPathComponent
-      parentDirs.insert(parent)
-    }
-    for repo in service.recentRepositories {
-      let parent = (repo.path as NSString).deletingLastPathComponent
-      parentDirs.insert(parent)
+    private func gatherSearchDirs() -> Set<String> {
+      let fm = FileManager.default
+      var parentDirs = Set<String>()
+      for entry in RepoRegistry.shared.registeredRepos where !entry.localPath.isEmpty {
+        let parent = (entry.localPath as NSString).deletingLastPathComponent
+        parentDirs.insert(parent)
+      }
+      for repo in service.recentRepositories {
+        let parent = (repo.path as NSString).deletingLastPathComponent
+        parentDirs.insert(parent)
     }
     // Also add RAG repo parent dirs
     for repo in mcpServer.ragRepos {
