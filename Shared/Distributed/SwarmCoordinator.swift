@@ -1385,7 +1385,7 @@ public final class SwarmCoordinator {
         if let remoteModel = result.remoteEmbeddingModel {
           logger.info("RAG repo sync: imported embeddings from remote model '\(remoteModel)' (\(result.remoteEmbeddingDimensions ?? 0)d) — \(result.embeddingsImported) vectors")
         }
-        logger.info("RAG repo sync applied \(id): files \(result.filesImported), chunks \(result.chunksImported), embeddings \(result.embeddingsImported), analysisUpdated \(result.chunksAnalysisUpdated)")
+        logger.info("RAG repo sync applied \(id): files \(result.filesImported), chunks \(result.chunksImported), embeddings \(result.embeddingsImported), analysisUpdated \(result.chunksAnalysisUpdated), pruned \(result.filesPruned)")
 
         // Build a result summary for the UI
         var summaryParts: [String] = []
@@ -1394,6 +1394,7 @@ public final class SwarmCoordinator {
         if result.embeddingsImported > 0 { summaryParts.append("\(result.embeddingsImported) embeddings") }
         if result.chunksAnalysisUpdated > 0 { summaryParts.append("\(result.chunksAnalysisUpdated) analysis synced") }
         if result.embeddingsBackfilled > 0 { summaryParts.append("\(result.embeddingsBackfilled) embeddings backfilled") }
+        if result.filesPruned > 0 { summaryParts.append("\(result.filesPruned) stale files pruned") }
         if result.needsLocalReembedding { summaryParts.append("needs re-embed") }
         let summary = summaryParts.isEmpty ? "Up to date" : summaryParts.joined(separator: ", ")
 

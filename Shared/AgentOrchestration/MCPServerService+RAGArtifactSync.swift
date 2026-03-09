@@ -144,7 +144,7 @@ extension MCPServerService: RAGArtifactSyncDelegate {
       let skipped = result.embeddingsSkippedModelMismatch
       logger.warning("RAG repo sync: imported text/analysis only — embedding model mismatch (remote: \(remoteModel), local model differs). Skipped \(skipped) embeddings. Re-index to generate local embeddings.")
     }
-    logger.info("RAG repo sync: imported — files \(result.filesImported), skipped \(result.filesSkipped), chunks \(result.chunksImported), embeddings \(result.embeddingsImported), analysisUpdated \(result.chunksAnalysisUpdated), embeddingsBackfilled \(result.embeddingsBackfilled)")
+    logger.info("RAG repo sync: imported — files \(result.filesImported), skipped \(result.filesSkipped), chunks \(result.chunksImported), embeddings \(result.embeddingsImported), analysisUpdated \(result.chunksAnalysisUpdated), embeddingsBackfilled \(result.embeddingsBackfilled), pruned \(result.filesPruned)")
     await refreshRagSummary()
     return result
   }

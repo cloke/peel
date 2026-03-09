@@ -865,6 +865,7 @@ enum RAGRepoImporter {
     var embeddingsSkippedModelMismatch = 0
     var chunksAnalysisUpdated = 0
     var embeddingsBackfilled = 0
+    var filesPruned = 0
 
     // Check embedding model compatibility: if the bundle has a different
     // embedding model or dimension than the local DB, skip embedding import
@@ -1018,6 +1019,34 @@ enum RAGRepoImporter {
         filesImported += 1
       }
 
+      // Step 3: Prune local files not present in the sender's manifest.
+      // The manifest lists ALL files the sender has for this repo. Any local file
+      // not in the manifest was deleted on the sender and should be removed here.
+      let manifestPaths = Set(bundle.manifest.fileHashes.map(\.path))
+
+      let queryPathsSql = "SELECT path FROM files WHERE repo_id = ?"
+      var pathsStmt: OpaquePointer?
+      if sqlite3_prepare_v2(db, queryPathsSql, -1, &pathsStmt, nil) == SQLITE_OK,
+         let pathsStmt {
+        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        sqlite3_bind_text(pathsStmt, 1, targetRepoId, -1, transient)
+        var stalePaths: [String] = []
+        while sqlite3_step(pathsStmt) == SQLITE_ROW {
+          if let text = sqlite3_column_text(pathsStmt, 0) {
+            let path = String(cString: text)
+            if !manifestPaths.contains(path) {
+              stalePaths.append(path)
+            }
+          }
+        }
+        sqlite3_finalize(pathsStmt)
+
+        for stalePath in stalePaths {
+          deleteFileData(db: db, repoId: targetRepoId, path: stalePath)
+          filesPruned += 1
+        }
+      }
+
       execSQL(db, "COMMIT")
     } catch {
       execSQL(db, "ROLLBACK")
@@ -1034,6 +1063,7 @@ enum RAGRepoImporter {
       embeddingsSkippedModelMismatch: embeddingsSkippedModelMismatch,
       chunksAnalysisUpdated: chunksAnalysisUpdated,
       embeddingsBackfilled: embeddingsBackfilled,
+      filesPruned: filesPruned,
       remoteEmbeddingModel: bundle.manifest.embeddingModel,
       remoteEmbeddingDimensions: bundle.manifest.embeddingDimensions
     )
@@ -1356,6 +1386,8 @@ enum RAGRepoImporter {
     let chunksAnalysisUpdated: Int
     /// Number of embeddings backfilled on existing (hash-matched) files.
     let embeddingsBackfilled: Int
+    /// Number of local files pruned because they no longer exist on the sender.
+    let filesPruned: Int
     /// The embedding model used by the sender.
     let remoteEmbeddingModel: String?
     /// The embedding dimensions used by the sender.
@@ -1367,6 +1399,8 @@ enum RAGRepoImporter {
     var needsLocalReembedding: Bool { embeddingsSkippedModelMismatch > 0 }
     /// True if analysis data was synced for already-imported files.
     var hadAnalysisUpdates: Bool { chunksAnalysisUpdated > 0 }
+    /// True if stale files were pruned during this sync.
+    var hadPruning: Bool { filesPruned > 0 }
   }
 
   // MARK: - Private Helpers
