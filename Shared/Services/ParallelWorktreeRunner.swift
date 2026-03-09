@@ -979,6 +979,20 @@ final class ParallelWorktreeRunner {
       }
       
       execution.completedAt = Date()
+
+      do {
+        execution.artifacts = try writeExecutionHandoffArtifacts(
+          for: execution,
+          run: run,
+          result: result
+        )
+      } catch {
+        await mcpLog.warning("Failed to write execution handoff artifacts: \(error.localizedDescription)", metadata: [
+          "runId": run.id.uuidString,
+          "executionId": execution.id.uuidString
+        ])
+      }
+
       recordSnapshot(for: run)
 
       // Tear down UX session if one was created
@@ -1315,6 +1329,146 @@ final class ParallelWorktreeRunner {
 
   private func recordSnapshot(for run: ParallelWorktreeRun) {
     dataService?.recordParallelRunSnapshot(run: run)
+  }
+
+  private func writeExecutionHandoffArtifacts(
+    for execution: ParallelWorktreeExecution,
+    run: ParallelWorktreeRun,
+    result: TaskExecutionResult
+  ) throws -> [ParallelWorktreeExecution.Artifact] {
+    let fileManager = FileManager.default
+    let formatter = Formatter.iso8601
+    let scratchRoot = try ScratchAreaService.scratchDirectory(for: run.projectPath)
+    let artifactDirectory = scratchRoot
+      .appendingPathComponent("ParallelRuns", isDirectory: true)
+      .appendingPathComponent(run.id.uuidString, isDirectory: true)
+      .appendingPathComponent(execution.id.uuidString, isDirectory: true)
+
+    try fileManager.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)
+
+    let guidance = (run.operatorGuidance + execution.operatorGuidance)
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+    let reviewVerdict = result.reviewVerdict?.rawValue
+    let manifestPayload: [String: Any] = [
+      "runId": run.id.uuidString,
+      "runName": run.name,
+      "projectPath": run.projectPath,
+      "baseBranch": run.baseBranch,
+      "targetBranch": run.targetBranch as Any,
+      "templateName": run.templateName as Any,
+      "executionId": execution.id.uuidString,
+      "status": execution.status.displayName,
+      "task": [
+        "id": execution.task.id.uuidString,
+        "title": execution.task.title,
+        "description": execution.task.description,
+        "prompt": execution.task.prompt,
+        "focusPaths": execution.task.focusPaths,
+        "dependsOn": execution.task.dependsOn.map(\.uuidString),
+        "useUXTesting": execution.task.useUXTesting,
+        "apiBaseURL": execution.task.apiBaseURL as Any,
+        "installDependencies": execution.task.installDependencies,
+        "devServerPath": execution.task.devServerPath as Any
+      ],
+      "worktreePath": execution.worktreePath as Any,
+      "branchName": execution.branchName as Any,
+      "chainId": execution.chainId?.uuidString as Any,
+      "startedAt": execution.startedAt.map(formatter.string(from:)) as Any,
+      "completedAt": execution.completedAt.map(formatter.string(from:)) as Any,
+      "operatorGuidance": guidance,
+      "diff": [
+        "summary": execution.diffSummary as Any,
+        "filesChanged": execution.filesChanged,
+        "insertions": execution.insertions,
+        "deletions": execution.deletions,
+        "mergeConflicts": execution.conflictFiles.map(\.filePath)
+      ],
+      "reviewVerdict": reviewVerdict as Any,
+      "chainSucceeded": result.chainSucceeded,
+      "chainSteps": execution.chainStepResults.map { step in
+        var dict: [String: Any] = [
+          "stepName": step.stepName,
+          "role": step.role,
+          "model": step.model,
+          "premiumCost": step.premiumCost,
+          "outputPreview": step.outputPreview
+        ]
+        if let duration = step.durationSeconds { dict["durationSeconds"] = duration }
+        if let verdict = step.reviewVerdict { dict["reviewVerdict"] = verdict }
+        if let planner = step.plannerDecision { dict["plannerDecision"] = planner }
+        if let gate = step.gateResult { dict["gateResult"] = gate }
+        return dict
+      }
+    ]
+
+    let manifestURL = artifactDirectory.appendingPathComponent("handoff-manifest.json")
+    let manifestData = try JSONSerialization.data(withJSONObject: manifestPayload, options: [.prettyPrinted, .sortedKeys])
+    try manifestData.write(to: manifestURL, options: .atomic)
+
+    let briefURL = artifactDirectory.appendingPathComponent("handoff-brief.md")
+    let brief = buildExecutionHandoffBrief(for: execution, run: run, reviewVerdict: reviewVerdict)
+    try brief.write(to: briefURL, atomically: true, encoding: .utf8)
+
+    return [
+      ParallelWorktreeExecution.Artifact(type: "handoff-manifest", filePath: manifestURL.path, label: "Execution handoff manifest"),
+      ParallelWorktreeExecution.Artifact(type: "handoff-brief", filePath: briefURL.path, label: "Execution handoff brief")
+    ]
+  }
+
+  private func buildExecutionHandoffBrief(
+    for execution: ParallelWorktreeExecution,
+    run: ParallelWorktreeRun,
+    reviewVerdict: String?
+  ) -> String {
+    let guidance = (run.operatorGuidance + execution.operatorGuidance)
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+    let focusPaths = execution.task.focusPaths.isEmpty ? ["None specified"] : execution.task.focusPaths
+    let stepLines = execution.chainStepResults.isEmpty
+      ? ["- No chain step results recorded"]
+      : execution.chainStepResults.map { step in
+          var line = "- \(step.stepName) [\(step.role)] model=\(step.model)"
+          if let verdict = step.reviewVerdict { line += " verdict=\(verdict)" }
+          if let gate = step.gateResult { line += " gate=\(gate)" }
+          return line
+        }
+
+    let diffSummary = execution.diffSummary?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let preview = execution.output.trimmingCharacters(in: .whitespacesAndNewlines)
+    let outputPreview = preview.isEmpty ? "No output recorded." : String(preview.prefix(1500))
+
+    return """
+    # Execution Handoff Brief
+
+    ## Run
+    - Name: \(run.name)
+    - Execution ID: \(execution.id.uuidString)
+    - Status: \(execution.status.displayName)
+    - Branch: \(execution.branchName ?? "unassigned")
+    - Worktree: \(execution.worktreePath ?? "unavailable")
+
+    ## Task
+    - Title: \(execution.task.title)
+    - Description: \(execution.task.description.isEmpty ? "No description provided" : execution.task.description)
+    - UX testing: \(execution.task.useUXTesting ? "enabled" : "disabled")
+    - Review verdict: \(reviewVerdict ?? "none")
+
+    ## Focus Paths
+    \(focusPaths.map { "- \($0)" }.joined(separator: "\n"))
+
+    ## Guidance
+    \((guidance.isEmpty ? ["- No operator guidance recorded"] : guidance.map { "- \($0)" }).joined(separator: "\n"))
+
+    ## Diff Summary
+    \(diffSummary?.isEmpty == false ? diffSummary! : "No diff summary recorded")
+
+    ## Step Summary
+    \(stepLines.joined(separator: "\n"))
+
+    ## Output Preview
+    \(outputPreview)
+    """
   }
 
   /// Write a structured JSON chain log file to the worktree for post-mortem analysis
@@ -2122,6 +2276,20 @@ final class ParallelWorktreeRunner {
         execution.diffSummary  = dict["diffSummary"] as? String
         execution.output       = dict["outputPreview"] as? String ?? ""
         execution.operatorGuidance = dict["operatorGuidance"] as? [String] ?? []
+
+        if let artifacts = dict["artifacts"] as? [[String: Any]] {
+          execution.artifacts = artifacts.compactMap { artifactDict in
+            guard let type = artifactDict["type"] as? String,
+                  let filePath = artifactDict["filePath"] as? String else {
+              return nil
+            }
+            return ParallelWorktreeExecution.Artifact(
+              type: type,
+              filePath: filePath,
+              label: artifactDict["label"] as? String
+            )
+          }
+        }
 
         // Restore chain step results (analyzer reasoning, review verdicts, etc.)
         if let steps = dict["chainSteps"] as? [[String: Any]] {

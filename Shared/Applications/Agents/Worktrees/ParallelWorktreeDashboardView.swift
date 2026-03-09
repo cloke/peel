@@ -1290,6 +1290,22 @@ struct ParallelRunSnapshotDetailView: View {
                 .foregroundStyle(.tertiary)
                 .fontDesign(.monospaced)
             }
+
+            if !exec.artifacts.isEmpty {
+              HStack(spacing: 8) {
+                Label("\(exec.artifacts.count) artifacts", systemImage: "folder.badge.plus")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+
+                if let firstArtifact = exec.artifacts.first {
+                  Button("Reveal handoff") {
+                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: firstArtifact.filePath)])
+                  }
+                  .buttonStyle(.link)
+                  .font(.caption2)
+                }
+              }
+            }
           }
         }
         .padding(.vertical, 4)
@@ -1323,6 +1339,13 @@ struct ParallelRunSnapshotDetailView: View {
 // MARK: - Snapshot Execution (for decoding executionsJSON)
 
 struct SnapshotExecution: Identifiable {
+  struct Artifact: Identifiable {
+    let id = UUID()
+    let type: String
+    let filePath: String
+    let label: String?
+  }
+
   let id: UUID
   let taskTitle: String
   let status: String
@@ -1330,6 +1353,7 @@ struct SnapshotExecution: Identifiable {
   let insertions: Int
   let deletions: Int
   let branchName: String?
+  let artifacts: [Artifact]
 }
 
 extension ParallelRunSnapshot {
@@ -1351,7 +1375,18 @@ extension ParallelRunSnapshot {
         filesChanged: dict["filesChanged"] as? Int ?? 0,
         insertions: dict["insertions"] as? Int ?? 0,
         deletions: dict["deletions"] as? Int ?? 0,
-        branchName: dict["branchName"] as? String
+        branchName: dict["branchName"] as? String,
+        artifacts: (dict["artifacts"] as? [[String: Any]] ?? []).compactMap { artifactDict in
+          guard let type = artifactDict["type"] as? String,
+                let filePath = artifactDict["filePath"] as? String else {
+            return nil
+          }
+          return SnapshotExecution.Artifact(
+            type: type,
+            filePath: filePath,
+            label: artifactDict["label"] as? String
+          )
+        }
       )
     }
   }

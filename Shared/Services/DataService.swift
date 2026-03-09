@@ -400,6 +400,19 @@ final class DataService {
           result["reviewVerdict"] = lastVerdict
         }
       }
+      if !execution.artifacts.isEmpty {
+        result["artifacts"] = execution.artifacts.map { artifact in
+          var dict: [String: Any] = [
+            "type": artifact.type,
+            "filePath": artifact.filePath,
+            "createdAt": formatter.string(from: artifact.createdAt)
+          ]
+          if let label = artifact.label {
+            dict["label"] = label
+          }
+          return dict
+        }
+      }
       return result
     }
 
