@@ -78,6 +78,11 @@ struct ContentView: View {
   @State private var showCommandPalette = false
   @State private var activeLabFeature: LabFeature?
 
+  private struct RepositoryAutomationEntry {
+    let key: String
+    let name: String
+  }
+
   var body: some View {
     NavigationSplitView {
       sidebarContent
@@ -609,9 +614,15 @@ struct ContentView: View {
 
   private func persistRepositoryAutomationState() {
     let repos = aggregator.repositories
-    let keys = repos.map(\ .normalizedRemoteURL)
-    let names = repos.map(\ .displayName)
-    let nameMap = Dictionary(uniqueKeysWithValues: zip(names, keys))
+    let automationEntries = repositoryAutomationEntries(for: repos)
+    let keys = automationEntries.map(\.key)
+    let names = automationEntries.map(\.name)
+    let nameAliases = automationEntries.map { ($0.name, $0.key) }
+      + repos.map { ($0.displayName, $0.normalizedRemoteURL) }
+    let nameMap = Dictionary(
+      nameAliases,
+      uniquingKeysWith: { first, _ in first }
+    )
 
     UserDefaults.standard.set(keys, forKey: "repositories.availableRepoKeys")
     UserDefaults.standard.set(names, forKey: "repositories.availableRepoNames")
@@ -630,7 +641,47 @@ struct ContentView: View {
     }
 
     UserDefaults.standard.set(repo.normalizedRemoteURL, forKey: "repositories.selectedRepoKey")
-    UserDefaults.standard.set(repo.displayName, forKey: "repositories.selectedRepoName")
+    let selectedName = repositoryAutomationEntries(for: aggregator.repositories)
+      .first(where: { $0.key == repo.normalizedRemoteURL })?.name ?? repo.displayName
+    UserDefaults.standard.set(selectedName, forKey: "repositories.selectedRepoName")
+  }
+
+  private func repositoryAutomationEntries(for repos: [UnifiedRepository]) -> [RepositoryAutomationEntry] {
+    let duplicateCounts = Dictionary(
+      repos.map { ($0.displayName, 1) },
+      uniquingKeysWith: +
+    )
+    var usedNames = Set<String>()
+
+    return repos.map { repo in
+      var name = automationRepositoryName(for: repo, duplicateCounts: duplicateCounts)
+      if usedNames.contains(name) {
+        name = "\(name) — \(repo.normalizedRemoteURL)"
+      }
+      usedNames.insert(name)
+      return RepositoryAutomationEntry(key: repo.normalizedRemoteURL, name: name)
+    }
+  }
+
+  private func automationRepositoryName(
+    for repo: UnifiedRepository,
+    duplicateCounts: [String: Int]
+  ) -> String {
+    guard duplicateCounts[repo.displayName, default: 0] > 1 else {
+      return repo.displayName
+    }
+
+    if let ownerSlashRepo = repo.ownerSlashRepo,
+       !ownerSlashRepo.isEmpty {
+      return "\(repo.displayName) — \(ownerSlashRepo)"
+    }
+
+    if let localPath = repo.localPath,
+       !localPath.isEmpty {
+      return "\(repo.displayName) — \(localPath)"
+    }
+
+    return "\(repo.displayName) — \(repo.normalizedRemoteURL)"
   }
 
   private func migrateLegacySection(_ tool: CurrentTool) {
