@@ -1094,38 +1094,42 @@ public final class AgentChainRunner {
     return try await runShellBackedStep(agent, chain: chain, command: command, mode: .gate)
   }
 
-  /// Execute a shell command via /bin/zsh and return (exitCode, stdout, stderr)
-  private func runShellCommand(_ command: String, in workingDirectory: String?) async -> (Int32, String, String) {
+  /// Execute a shell command via /bin/zsh and return (exitCode, stdout, stderr).
+  /// Runs the blocking Process on a background thread to avoid stalling the
+  /// main actor (which would freeze the MCP server and UI).
+  private nonisolated func runShellCommand(_ command: String, in workingDirectory: String?) async -> (Int32, String, String) {
     await withCheckedContinuation { continuation in
-      let process = Process()
-      process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-      process.arguments = ["-c", command]
-      if let wd = workingDirectory {
-        process.currentDirectoryURL = URL(fileURLWithPath: wd)
-      }
+      DispatchQueue.global(qos: .userInitiated).async {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = ["-c", command]
+        if let wd = workingDirectory {
+          process.currentDirectoryURL = URL(fileURLWithPath: wd)
+        }
 
-      // Inherit the user's shell environment for PATH, etc.
-      var env = ProcessInfo.processInfo.environment
-      // Ensure common tool paths are available
-      let existingPath = env["PATH"] ?? ""
-      env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:\(existingPath)"
-      process.environment = env
+        // Inherit the user's shell environment for PATH, etc.
+        var env = ProcessInfo.processInfo.environment
+        // Ensure common tool paths are available
+        let existingPath = env["PATH"] ?? ""
+        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:\(existingPath)"
+        process.environment = env
 
-      let stdoutPipe = Pipe()
-      let stderrPipe = Pipe()
-      process.standardOutput = stdoutPipe
-      process.standardError = stderrPipe
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
 
-      do {
-        try process.run()
-        process.waitUntilExit()
-        let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-        let stdout = String(data: stdoutData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let stderr = String(data: stderrData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        continuation.resume(returning: (process.terminationStatus, stdout, stderr))
-      } catch {
-        continuation.resume(returning: (1, "", error.localizedDescription))
+        do {
+          try process.run()
+          process.waitUntilExit()
+          let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+          let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+          let stdout = String(data: stdoutData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+          let stderr = String(data: stderrData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+          continuation.resume(returning: (process.terminationStatus, stdout, stderr))
+        } catch {
+          continuation.resume(returning: (1, "", error.localizedDescription))
+        }
       }
     }
   }
