@@ -756,6 +756,8 @@ final class SwarmStatusCoordinatorWrapper: SwarmCoordinatorDelegate {
 
 struct FirestoreWorkerRow: View {
   let worker: FirestoreWorker
+  @State private var isConnecting = false
+  @State private var connectError: String?
 
   var body: some View {
     HStack(spacing: 12) {
@@ -767,18 +769,65 @@ struct FirestoreWorkerRow: View {
           .font(.body)
           .help(worker.deviceName)
 
-        if let version = worker.version {
-          Text("v\(version) • \(worker.lastHeartbeat, format: .relative(presentation: .named))")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        } else {
-          Text(worker.lastHeartbeat, format: .relative(presentation: .named))
-            .font(.caption)
-            .foregroundStyle(.secondary)
+        HStack(spacing: 4) {
+          if let version = worker.version {
+            Text("v\(version) • \(worker.lastHeartbeat, format: .relative(presentation: .named))")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          } else {
+            Text(worker.lastHeartbeat, format: .relative(presentation: .named))
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
+
+        HStack(spacing: 4) {
+          if worker.hasWANEndpoint {
+            Label("WAN", systemImage: "network")
+              .font(.caption2)
+              .foregroundStyle(.blue)
+          }
+          if worker.hasSTUNEndpoint {
+            Label("STUN", systemImage: "arrow.triangle.2.circlepath")
+              .font(.caption2)
+              .foregroundStyle(.cyan)
+          }
+          if !worker.hasWANEndpoint && !worker.hasSTUNEndpoint {
+            Label("Relay only", systemImage: "icloud")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+        }
+
+        if let connectError {
+          Text(connectError)
+            .font(.caption2)
+            .foregroundStyle(.red)
+            .lineLimit(2)
         }
       }
 
       Spacer()
+
+      if isConnecting {
+        ProgressView()
+          .controlSize(.small)
+      } else if worker.status == .online && !worker.isStale {
+        Button("Connect") {
+          isConnecting = true
+          connectError = nil
+          Task {
+            do {
+              try await SwarmCoordinator.shared.connectToWANWorker(worker)
+            } catch {
+              connectError = error.localizedDescription
+            }
+            isConnecting = false
+          }
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+      }
 
       Circle()
         .fill(statusColor)

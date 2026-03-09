@@ -5,6 +5,7 @@
 // Coordinates the distributed swarm - manages workers and task dispatch.
 
 import Foundation
+import FirebaseFirestore
 import Network
 import SwiftData
 import os.log
@@ -548,6 +549,92 @@ public final class SwarmCoordinator {
     }
     
     try await connectionManager?.connect(to: address, port: port)
+  }
+
+  /// Manually connect to a Firestore-discovered WAN worker.
+  /// Tries WAN direct TCP → STUN hole-punch, promoting to a persistent peer connection on success.
+  public func connectToWANWorker(_ worker: FirestoreWorker) async throws {
+    guard isActive else {
+      throw DistributedError.actorSystemNotReady
+    }
+    guard let connectionManager else {
+      throw DistributedError.actorSystemNotReady
+    }
+
+    // Try WAN direct TCP first
+    if let address = worker.wanAddress, let port = worker.wanPort {
+      logger.info("Manual WAN connect: trying direct TCP to \(worker.displayName) at \(address):\(port)")
+      do {
+        try await connectionManager.connect(to: address, port: port)
+        logger.info("Manual WAN connect: TCP connected to \(worker.displayName) via direct WAN")
+        return
+      } catch {
+        logger.warning("Manual WAN connect: direct TCP failed — \(error.localizedDescription)")
+      }
+    }
+
+    // Try STUN hole-punch
+    guard let swarmId = FirebaseService.shared.memberSwarms.first?.id else {
+      throw DistributedError.connectionFailed(deviceId: worker.id, reason: "No swarm membership for STUN signaling")
+    }
+
+    logger.info("Manual WAN connect: trying STUN hole-punch to \(worker.displayName)")
+    guard let myEndpoint = await STUNClient.discoverEndpoint(localPort: 0) else {
+      throw DistributedError.connectionFailed(deviceId: worker.id, reason: "STUN endpoint discovery failed")
+    }
+
+    // Write STUN offer
+    let myDeviceId = capabilities.deviceId
+    let db = Firestore.firestore()
+    let offerRef = db.collection("swarms/\(swarmId)/stunSignaling")
+      .document("\(myDeviceId)_to_\(worker.id)")
+    try await offerRef.setData([
+      "fromWorkerId": myDeviceId,
+      "toWorkerId": worker.id,
+      "stunAddress": myEndpoint.address,
+      "stunPort": Int(myEndpoint.port),
+      "createdAt": FieldValue.serverTimestamp(),
+      "expiresAt": Timestamp(date: Date().addingTimeInterval(60)),
+    ])
+
+    // Wait for STUN answer
+    let answerRef = db.collection("swarms/\(swarmId)/stunSignaling")
+      .document("\(worker.id)_to_\(myDeviceId)")
+    let deadline = Date().addingTimeInterval(30)
+    var peerEndpoint: (address: String, port: UInt16)?
+    while Date() < deadline {
+      let doc = try await answerRef.getDocument()
+      if let data = doc.data(),
+         let address = data["stunAddress"] as? String,
+         let port = data["stunPort"] as? Int {
+        try? await answerRef.delete()
+        peerEndpoint = (address, UInt16(port))
+        break
+      }
+      try await Task.sleep(for: .seconds(1))
+    }
+
+    guard let peer = peerEndpoint else {
+      throw DistributedError.connectionFailed(deviceId: worker.id, reason: "STUN signaling timed out — peer may be offline")
+    }
+
+    // Send UDP hole-punch probes
+    let udpEndpoint = NWEndpoint.hostPort(
+      host: NWEndpoint.Host(peer.address),
+      port: NWEndpoint.Port(rawValue: peer.port)!
+    )
+    let udpConn = NWConnection(to: udpEndpoint, using: .udp)
+    udpConn.start(queue: .global())
+    for i in 0..<5 {
+      try? await Task.sleep(for: .milliseconds(200))
+      let probe = "PEEL_PUNCH_\(i)".data(using: .utf8)!
+      udpConn.send(content: probe, completion: .contentProcessed { _ in })
+    }
+    udpConn.cancel()
+
+    // Connect TCP through the punched hole
+    try await connectionManager.connect(to: peer.address, port: peer.port)
+    logger.info("Manual WAN connect: STUN hole-punch connected to \(worker.displayName)")
   }
 
   // MARK: - WAN Auto-Connect
