@@ -768,6 +768,13 @@ struct ContentView: View {
           dataService.removeLocalRepositoryPath(path: path)
         }
         RepoRegistry.shared.unregister(remoteURL: repo.normalizedRemoteURL)
+        // Remove from RAG index if indexed
+        if repo.isRAGIndexed, let path = repo.localPath {
+          Task {
+            _ = try? await mcpServer.deleteRagRepo(repoId: nil, repoPath: path)
+            aggregator.rebuild()
+          }
+        }
         if sidebarSelection == .repo(repo.normalizedRemoteURL) {
           sidebarSelection = .repoCommandCenter
         }
