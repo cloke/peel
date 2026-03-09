@@ -30,6 +30,9 @@ struct SettingsView: View {
   @State private var showMCPTools = false
   @State private var urlSchemeStatus: String?
   @State private var isRegisteringURLScheme = false
+  @State private var showResetConfirmation = false
+  @State private var isResetting = false
+  @Environment(\.modelContext) private var modelContext
   
   var body: some View {
     TabView {
@@ -272,8 +275,36 @@ struct SettingsView: View {
             .font(.caption)
           }
         }
+
+        SettingsSection("Reset") {
+          VStack(alignment: .leading, spacing: 8) {
+            Text("Erase all app data and start fresh. This removes repositories, settings, RAG indexes, saved tokens, and CloudKit-synced data.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+
+            Button(role: .destructive) {
+              showResetConfirmation = true
+            } label: {
+              Label(isResetting ? "Resetting…" : "Reset App", systemImage: "arrow.counterclockwise.circle")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(isResetting)
+          }
+        }
       }
       .tabItem { Label("About", systemImage: "info.circle") }
+    }
+    .alert("Reset Peel?", isPresented: $showResetConfirmation) {
+      Button("Cancel", role: .cancel) {}
+      Button("Reset Everything", role: .destructive) {
+        isResetting = true
+        Task {
+          await AppResetService.resetAll(modelContext: modelContext)
+        }
+      }
+    } message: {
+      Text("This will delete all repositories, settings, RAG data, saved credentials, and iCloud-synced data. The app will quit. This cannot be undone.")
     }
     .frame(minWidth: 680, idealWidth: 720, maxWidth: 900, minHeight: 560, idealHeight: 680, maxHeight: 900)
     .fileImporter(
