@@ -460,6 +460,7 @@ struct ContentView: View {
     case .repo(let normalizedRemoteURL):
       if let repo = aggregator.repositoryByURL[normalizedRemoteURL] {
         RepoDetailView(repo: repo)
+          .id(normalizedRemoteURL)
       } else {
         ContentUnavailableView("Repository Not Found", systemImage: "questionmark.folder")
       }

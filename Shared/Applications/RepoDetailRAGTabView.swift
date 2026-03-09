@@ -13,6 +13,7 @@ private let repoDetailAutomationLogger = Logger(subsystem: "com.peel.repositorie
 struct RAGTabView: View {
   let repo: UnifiedRepository
   @Environment(MCPServerService.self) private var mcpServer
+  @Environment(RepositoryAggregator.self) private var aggregator
 
   @State private var isIndexing = false
   @State private var indexError: String?
@@ -49,7 +50,8 @@ struct RAGTabView: View {
   @AppStorage("repositories.rag.sync.wanWorkers") private var automationRAGSyncWANWorkersData: Data = Data()
 
   private var isCurrentlyIndexing: Bool {
-    mcpServer.ragIndexingPath == repo.localPath
+    guard let indexingPath = mcpServer.ragIndexingPath, let localPath = repo.localPath else { return false }
+    return indexingPath == localPath
   }
 
   private var analysisState: MCPServerService.RAGRepoAnalysisState? {
@@ -76,6 +78,7 @@ struct RAGTabView: View {
       .padding(16)
     }
     .task {
+      restoreActiveTransferIfNeeded()
       await loadLessons()
       await refreshAnalysisStatus()
       persistRAGSyncAutomationState()
@@ -84,7 +87,11 @@ struct RAGTabView: View {
     .task {
       await pollExternalTransfers()
     }
+    .task(id: activeTransferId) {
+      await pollRestoredLANTransfer()
+    }
     .onAppear {
+      restoreActiveTransferIfNeeded()
       persistRAGSyncAutomationState()
       handlePendingRAGUIActionIfNeeded()
     }
@@ -263,27 +270,30 @@ struct RAGTabView: View {
           }
         }
 
-        // Compact stats line
-        if repo.ragFileCount != nil || repo.ragChunkCount != nil || repo.ragLastIndexedAt != nil {
+        // Compact stats line (live from mcpServer.ragRepos)
+        let fileCount = liveFileCount ?? repo.ragFileCount
+        let chunkCount = liveChunkCount ?? repo.ragChunkCount
+        let lastIndexed = liveLastIndexedAt ?? repo.ragLastIndexedAt
+        if fileCount != nil || chunkCount != nil || lastIndexed != nil {
           Divider()
 
           HStack(spacing: 4) {
-            if let fc = repo.ragFileCount {
+            if let fc = fileCount {
               Text("\(fc) files")
             }
-            if repo.ragFileCount != nil, repo.ragChunkCount != nil {
+            if fileCount != nil, chunkCount != nil {
               Text("\u{00B7}").foregroundStyle(.tertiary)
             }
-            if let cc = repo.ragChunkCount {
+            if let cc = chunkCount {
               Text("\(cc) chunks")
             }
             if enrichedChunks > 0 {
               Text("\u{00B7}").foregroundStyle(.tertiary)
               Text("\(enrichedChunks) enriched")
             }
-            if let lastIndexed = repo.ragLastIndexedAt {
+            if let li = lastIndexed {
               Text("\u{00B7}").foregroundStyle(.tertiary)
-              Text(lastIndexed, style: .relative)
+              Text(li, style: .relative)
             }
           }
           .font(.callout)
@@ -416,20 +426,43 @@ struct RAGTabView: View {
     return repo.ragStatus?.displayName ?? "Not Indexed"
   }
 
-  /// Live embedding model from mcpServer.ragRepos (refreshed after sync).
-  /// Searches all matching repos (parent + sub-packages) and prefers the one
-  /// with actual data (most chunks) since the parent entry may be stale.
-  private var liveEmbeddingModel: String? {
+  /// Live RAG repo entries matching this repository (refreshed after sync).
+  /// Searches all matching repos (parent + sub-packages) by identifier or local path.
+  private var liveRagRepos: [MCPServerService.RAGRepoInfo] {
     let identifier = repo.normalizedRemoteURL
-    let matching = mcpServer.ragRepos.filter {
+    return mcpServer.ragRepos.filter {
       $0.repoIdentifier == identifier || $0.rootPath == repo.localPath
     }
-    // Prefer the repo with a non-nil model AND the most chunks
-    let withModel = matching.filter { $0.embeddingModel != nil }
+  }
+
+  /// Live embedding model — prefers the entry with actual data (most chunks).
+  private var liveEmbeddingModel: String? {
+    let withModel = liveRagRepos.filter { $0.embeddingModel != nil }
     if let best = withModel.max(by: { $0.chunkCount < $1.chunkCount }) {
       return best.embeddingModel
     }
-    return matching.first?.embeddingModel
+    return liveRagRepos.first?.embeddingModel
+  }
+
+  /// Live file count from mcpServer.ragRepos (sum of matching entries).
+  private var liveFileCount: Int? {
+    let repos = liveRagRepos
+    guard !repos.isEmpty else { return nil }
+    let total = repos.reduce(0) { $0 + $1.fileCount }
+    return total > 0 ? total : nil
+  }
+
+  /// Live chunk count from mcpServer.ragRepos (sum of matching entries).
+  private var liveChunkCount: Int? {
+    let repos = liveRagRepos
+    guard !repos.isEmpty else { return nil }
+    let total = repos.reduce(0) { $0 + $1.chunkCount }
+    return total > 0 ? total : nil
+  }
+
+  /// Live last-indexed date from mcpServer.ragRepos (most recent).
+  private var liveLastIndexedAt: Date? {
+    liveRagRepos.compactMap(\.lastIndexedAt).max()
   }
 
   // MARK: - Lessons Section
@@ -768,6 +801,74 @@ struct RAGTabView: View {
     }
   }
 
+  // MARK: - Transfer Restore
+
+  /// On view (re)creation, check if there's an active LAN transfer for this repo and restore tracking state.
+  private func restoreActiveTransferIfNeeded() {
+    guard activeTransferId == nil else { return }  // already tracking
+    guard let repoId = ragRepoIdentifier else { return }
+    let activeStatuses: Set<RAGArtifactTransferStatus> = [.queued, .preparing, .transferring, .applying, .stalled]
+    if let transfer = SwarmCoordinator.shared.ragTransfers.first(where: {
+      $0.repoIdentifier == repoId && activeStatuses.contains($0.status)
+    }) {
+      activeTransferId = transfer.id
+      isSyncing = true
+      syncDirection = transfer.direction
+      repoDetailAutomationLogger.info("Restored active LAN transfer \(transfer.id) for repo=\(self.repo.displayName, privacy: .public) status=\(transfer.status.rawValue, privacy: .public)")
+    }
+  }
+
+  /// Polls a restored LAN transfer to completion. Only runs when activeTransferId is set
+  /// but syncWithPeers isn't running (i.e. the view was recreated mid-transfer).
+  private func pollRestoredLANTransfer() async {
+    guard let transferId = activeTransferId else { return }
+
+    while !Task.isCancelled {
+      try? await Task.sleep(for: .seconds(0.5))
+      guard let transfer = SwarmCoordinator.shared.ragTransfers.first(where: { $0.id == transferId }) else {
+        // Transfer disappeared — clean up
+        activeTransferId = nil
+        isSyncing = false
+        syncDirection = nil
+        persistRAGSyncAutomationState()
+        return
+      }
+      switch transfer.status {
+      case .complete:
+        let direction = transfer.direction
+        if direction == .pull, let summary = transfer.resultSummary {
+          let modelNote = transfer.remoteEmbeddingModel.map { " (model: \($0))" } ?? ""
+          syncResultMessage = "Pulled from \(transfer.peerName): \(summary)\(modelNote)"
+        } else {
+          syncResultMessage = direction == .push ? "Pushed to \(transfer.peerName)" : "Pulled from \(transfer.peerName)"
+        }
+        activeTransferId = nil
+        isSyncing = false
+        syncDirection = nil
+        persistRAGSyncAutomationState()
+        if direction == .pull {
+          await mcpServer.refreshRagSummary()
+          aggregator.rebuild()
+          await refreshAnalysisStatus()
+        }
+        Task { @MainActor in
+          try? await Task.sleep(for: .seconds(8))
+          if syncResultMessage != nil { syncResultMessage = nil }
+        }
+        return
+      case .failed:
+        syncError = transfer.errorMessage ?? "Transfer failed"
+        activeTransferId = nil
+        isSyncing = false
+        syncDirection = nil
+        persistRAGSyncAutomationState()
+        return
+      default:
+        continue
+      }
+    }
+  }
+
   // MARK: - Sync Actions
 
   private func syncWithPeers(repoIdentifier: String, direction: RAGArtifactSyncDirection, workerId: String? = nil) async {
@@ -808,6 +909,7 @@ struct RAGTabView: View {
             persistRAGSyncAutomationState()
             if direction == .pull {
               await mcpServer.refreshRagSummary()
+              aggregator.rebuild()
               await refreshAnalysisStatus()
             }
             Task { @MainActor in
@@ -930,6 +1032,7 @@ struct RAGTabView: View {
         syncResultMessage = "Pulled from \(workerName): \(byteStr)"
         repoDetailAutomationLogger.info("RAG on-demand sync completed repo=\(self.repo.displayName, privacy: .public) worker=\(workerName, privacy: .public) bytes=\(byteStr, privacy: .public)")
         await mcpServer.refreshRagSummary()
+        aggregator.rebuild()
         await refreshAnalysisStatus()
         Task { @MainActor in
           try? await Task.sleep(for: .seconds(8))
@@ -948,6 +1051,7 @@ struct RAGTabView: View {
         syncResultMessage = "Pulled from \(workerName)"
         repoDetailAutomationLogger.info("RAG on-demand sync finished without retained transfer state repo=\(self.repo.displayName, privacy: .public) worker=\(workerName, privacy: .public)")
         await mcpServer.refreshRagSummary()
+        aggregator.rebuild()
         await refreshAnalysisStatus()
         Task { @MainActor in
           try? await Task.sleep(for: .seconds(8))
@@ -1115,6 +1219,7 @@ struct RAGTabView: View {
     do {
       try await mcpServer.indexRagRepo(path: path, forceReindex: force)
       await mcpServer.refreshRagSummary()
+      aggregator.rebuild()
       if let report = mcpServer.lastRagIndexReport {
         let newChunks = report.chunksIndexed
         let totalFiles = report.filesIndexed + report.filesSkipped
