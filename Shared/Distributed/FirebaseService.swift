@@ -1298,9 +1298,10 @@ public final class FirebaseService {
             )
           }
           
-          // Log worker changes
+          // Log worker changes — only log online, non-stale workers as "joined"
+          // to avoid misleading activity on initial snapshot load.
           for worker in newWorkers {
-            if !previousWorkers.contains(worker.id) {
+            if !previousWorkers.contains(worker.id) && worker.status == .online && !worker.isStale {
               self.logActivity(.workerOnline, message: "\(worker.displayName) joined", details: [
                 "workerId": worker.id,
                 "device": worker.deviceName
