@@ -288,22 +288,24 @@ extension MCPServerService: WorktreeToolsHandlerDelegate {
   }
 
   func worktreePoolStatus() async -> WorktreePoolStatus {
-    // TODO: Wire up to WorktreePool service when available
+    // WorktreePool (Services/WorktreePool.swift) exists but needs a per-repo config.
+    // Wire up once MCPServerService owns a WorktreePool instance.
     return WorktreePoolStatus(poolSize: 0, warmCount: 0, claimedCount: 0, baseBranch: "origin/main", recyclePolicy: "on-success")
   }
 
   func configureWorktreePool(size: Int?, baseBranch: String?, recyclePolicy: String?) async throws {
-    // TODO: Wire up to WorktreePool service when available
+    // WorktreePool exists but needs a per-repo config to instantiate.
     logger.info("configureWorktreePool size=\(size ?? -1) baseBranch=\(baseBranch ?? "nil") recyclePolicy=\(recyclePolicy ?? "nil")")
   }
 
   func gateAgentStatus() async -> GateAgentStatus {
-    // TODO: Wire up to GateAgent service when available
+    // GateAgent (Services/GateAgent.swift) exists but needs integration.
+    // Wire up once MCPServerService owns a GateAgent instance.
     return GateAgentStatus(pendingValidations: 0, passCount: 0, failCount: 0, retryCount: 0, isActive: false)
   }
 
   func gateAgentHistory(limit: Int) async -> [GateValidationResult] {
-    // TODO: Wire up to GateAgent service when available
+    // GateAgent exists but needs integration — see Services/GateAgent.swift.
     return []
   }
 }

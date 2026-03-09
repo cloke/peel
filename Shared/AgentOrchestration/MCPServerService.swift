@@ -555,7 +555,7 @@ public final class MCPServerService {
       }
     }
 
-    // Analysis paths are consumed by RAGRepositoryCardView.onAppear — no action needed here,
+    // Analysis paths are auto-resumed when their repo cards appear in the UI.
     // but log so it's visible in the console.
     let analysisPaths = interruptedAnalysisPaths
     if !analysisPaths.isEmpty {

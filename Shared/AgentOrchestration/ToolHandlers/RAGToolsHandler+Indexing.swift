@@ -264,10 +264,13 @@ extension RAGToolsHandler {
       // Get current RAG status for embedding model info
       let status = await delegate.ragStatus()
 
+      // Resolve HEAD SHA from the repo path
+      let headSHA = await resolveHeadSHA(at: report.repoPath)
+
       await RAGSyncCoordinator.shared.publishVersion(
         repoIdentifier: repoIdentifier,
         repoName: repo.name,
-        headSHA: nil,  // TODO: resolve from git
+        headSHA: headSHA,
         fileCount: repo.fileCount,
         chunkCount: repo.chunkCount,
         embeddingModel: status.embeddingModelName,
@@ -276,6 +279,25 @@ extension RAGToolsHandler {
       )
     } catch {
       // Non-critical — don't fail the index operation
+    }
+  }
+
+  private func resolveHeadSHA(at repoPath: String) async -> String? {
+    let process = Process()
+    let pipe = Pipe()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+    process.arguments = ["rev-parse", "HEAD"]
+    process.currentDirectoryURL = URL(fileURLWithPath: repoPath)
+    process.standardOutput = pipe
+    process.standardError = FileHandle.nullDevice
+    do {
+      try process.run()
+      process.waitUntilExit()
+      guard process.terminationStatus == 0 else { return nil }
+      let data = pipe.fileHandleForReading.readDataToEndOfFile()
+      return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+    } catch {
+      return nil
     }
   }
 

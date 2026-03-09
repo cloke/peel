@@ -101,7 +101,6 @@ grep -r "PreviewProvider" --include="*.swift" .
 | [Brew_RootView.swift](../Shared/Applications/Brew_RootView.swift) | ✅ Modern | 2026-01-16 | Uses NavigationStack |
 | [Git_RootView.swift](../Shared/Applications/Git_RootView.swift) | ✅ Modern | 2026-01-16 | Uses NavigationStack |
 | [Github_RootView.swift](../Shared/Applications/Github_RootView.swift) | ✅ Modern | 2026-01-16 | Updated to #Preview macro |
-| [Workspaces_RootView.swift](../Shared/Applications/Workspaces_RootView.swift) | ✅ Modern | 2026-01-18 | Repo selection + detail view |
 
 ### Shared/Services/
 

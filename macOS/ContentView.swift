@@ -43,6 +43,11 @@ enum SidebarSelection: Hashable {
   case chain(UUID)
   case prReviews
   case templates
+  case parallelRuns
+  case worktrees
+
+  // Chat
+  case chat
 
   // Swarm
   case swarmConsole
@@ -157,7 +162,9 @@ struct ContentView: View {
       if let sel = newValue {
         switch sel {
         case .repo, .repoCommandCenter: currentSection = .repositories
-        case .activityDashboard, .activityItem, .chain, .prReviews, .templates: currentSection = .activity
+        case .activityDashboard, .activityItem, .chain, .prReviews, .templates,
+             .parallelRuns, .worktrees: currentSection = .activity
+        case .chat: currentSection = .activity
         case .swarmConsole: currentSection = .activity
         case .brew: currentSection = .brew
         }
@@ -354,6 +361,12 @@ struct ContentView: View {
           .tag(SidebarSelection.prReviews)
         Label("Templates", systemImage: "rectangle.stack")
           .tag(SidebarSelection.templates)
+        Label("Parallel Runs", systemImage: "arrow.triangle.branch")
+          .tag(SidebarSelection.parallelRuns)
+        Label("Worktrees", systemImage: "externaldrive")
+          .tag(SidebarSelection.worktrees)
+        Label("Local Chat", systemImage: "bubble.left.and.bubble.right")
+          .tag(SidebarSelection.chat)
       }
 
       // Recent activity feed in sidebar
@@ -484,6 +497,15 @@ struct ContentView: View {
         sidebarSelection = .chain(chainId)
       }
 
+    case .parallelRuns:
+      ParallelWorktreeDashboardView(mcpServer: mcpServer)
+
+    case .worktrees:
+      WorktreesView()
+
+    case .chat:
+      LocalChatView()
+
     case .swarmConsole:
       SwarmManagementView()
 
@@ -512,8 +534,13 @@ struct ContentView: View {
         .help("Refresh")
       }
     case .activity, .agents, .workspaces, .swarm:
-      Button { sidebarSelection = .templates } label: {
-        Label("Run Task", systemImage: "play.fill")
+      HStack(spacing: 8) {
+        Button { sidebarSelection = .templates } label: {
+          Label("Run Task", systemImage: "play.fill")
+        }
+        Button { sidebarSelection = .chat } label: {
+          Label("Chat", systemImage: "bubble.left.and.bubble.right")
+        }
       }
     case .brew:
       EmptyView()
@@ -590,6 +617,9 @@ struct ContentView: View {
       if case .prReviews = sidebarSelection { return }
       if case .activityItem = sidebarSelection { return }
       if case .swarmConsole = sidebarSelection { return }
+      if case .parallelRuns = sidebarSelection { return }
+      if case .worktrees = sidebarSelection { return }
+      if case .chat = sidebarSelection { return }
       sidebarSelection = .activityDashboard
     case .brew:
       sidebarSelection = .brew
