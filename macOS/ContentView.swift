@@ -386,7 +386,7 @@ struct ContentView: View {
   private var swarmSidebarSection: some View {
     Section("Swarm") {
       if swarm.isActive {
-        let onlineWAN = wanWorkers.filter { $0.status == .online }.count
+        let onlineWAN = wanWorkers.filter { $0.status == .online && !$0.isStale }.count
         let totalOnline = swarm.connectedWorkers.count + 1 + onlineWAN
 
         Label {
@@ -427,12 +427,12 @@ struct ContentView: View {
         ForEach(wanWorkers.filter { $0.status == .online }, id: \.id) { worker in
           HStack(spacing: 6) {
             Circle()
-              .fill(.green)
+              .fill(worker.isStale ? .yellow : .green)
               .frame(width: 6, height: 6)
             Text(worker.displayName)
               .font(.caption)
               .lineLimit(1)
-            Text("WAN")
+            Text(worker.isStale ? "WAN · stale" : "WAN")
               .font(.caption2)
               .foregroundStyle(.tertiary)
           }
