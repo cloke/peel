@@ -235,10 +235,22 @@ public final class RepoPullScheduler {
       return .error("Path does not exist: \(path)")
     }
 
-    // Get current HEAD before pull
+    let currentBranch = await gitCurrentBranch(at: path)
+    let onTrackedBranch = currentBranch == repo.branch
+
+    if onTrackedBranch {
+      // On the tracked branch: fetch + ff-only merge (updates working tree)
+      return await pullOnTrackedBranch(repo, at: path)
+    } else {
+      // On a different branch: fetch and fast-forward the local tracked branch ref directly
+      return await pullOffTrackedBranch(repo, at: path)
+    }
+  }
+
+  /// Pull when HEAD is on the tracked branch — fetch + merge --ff-only.
+  private func pullOnTrackedBranch(_ repo: TrackedRemoteRepo, at path: String) async -> RepoPullResult {
     let beforeSHA = await gitHeadSHA(at: path)
 
-    // Run git fetch + merge (safer than raw pull in case of worktrees)
     let fetchResult = await runGit(["fetch", repo.remoteName, repo.branch], at: path)
     guard fetchResult.exitCode == 0 else {
       let msg = "git fetch failed: \(fetchResult.stderr)"
@@ -252,7 +264,6 @@ public final class RepoPullScheduler {
     )
 
     if mergeResult.exitCode != 0 {
-      // Check if it's just "already up to date"
       let combined = (mergeResult.stdout + mergeResult.stderr).lowercased()
       if combined.contains("already up to date") || combined.contains("already up-to-date") {
         logger.info("Repo \(repo.name) is up to date")
@@ -263,7 +274,6 @@ public final class RepoPullScheduler {
       return .error(msg)
     }
 
-    // Check if HEAD changed
     let afterSHA = await gitHeadSHA(at: path)
     if let before = beforeSHA, let after = afterSHA, before == after {
       logger.info("Repo \(repo.name) is up to date")
@@ -275,8 +285,55 @@ public final class RepoPullScheduler {
     return .updated(newSHA)
   }
 
+  /// Pull when HEAD is on a different branch — use `fetch <remote> <branch>:<branch>`
+  /// to fast-forward the local tracked branch ref without checking it out.
+  private func pullOffTrackedBranch(_ repo: TrackedRemoteRepo, at path: String) async -> RepoPullResult {
+    let beforeSHA = await gitBranchSHA(repo.branch, at: path)
+
+    // `git fetch origin main:main` updates local main ref directly (ff-only by default)
+    let fetchResult = await runGit(
+      ["fetch", repo.remoteName, "\(repo.branch):\(repo.branch)"],
+      at: path
+    )
+
+    if fetchResult.exitCode != 0 {
+      let combined = (fetchResult.stdout + fetchResult.stderr).lowercased()
+      // "non-fast-forward" means local branch diverged — not an error for tracking purposes
+      if combined.contains("non-fast-forward") {
+        logger.info("Repo \(repo.name) local \(repo.branch) has diverged from remote, skipping update")
+        return .upToDate
+      }
+      let msg = "git fetch failed: \(fetchResult.stderr)"
+      logger.error("\(msg)")
+      return .error(msg)
+    }
+
+    let afterSHA = await gitBranchSHA(repo.branch, at: path)
+    if let before = beforeSHA, let after = afterSHA, before == after {
+      logger.info("Repo \(repo.name) \(repo.branch) is up to date (on different branch)")
+      return .upToDate
+    }
+
+    let newSHA = afterSHA ?? "unknown"
+    logger.info("Repo \(repo.name) \(repo.branch) updated to \(newSHA) (on different branch)")
+    return .updated(newSHA)
+  }
+
   private func gitHeadSHA(at path: String) async -> String? {
     let result = await runGit(["rev-parse", "HEAD"], at: path)
+    guard result.exitCode == 0 else { return nil }
+    return result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private func gitCurrentBranch(at path: String) async -> String? {
+    let result = await runGit(["rev-parse", "--abbrev-ref", "HEAD"], at: path)
+    guard result.exitCode == 0 else { return nil }
+    let branch = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+    return branch == "HEAD" ? nil : branch  // detached HEAD → nil
+  }
+
+  private func gitBranchSHA(_ branch: String, at path: String) async -> String? {
+    let result = await runGit(["rev-parse", "refs/heads/\(branch)"], at: path)
     guard result.exitCode == 0 else { return nil }
     return result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
   }

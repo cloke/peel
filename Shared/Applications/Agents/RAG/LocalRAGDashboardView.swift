@@ -303,8 +303,15 @@ struct LocalRAGDashboardView: View {
           StatPill(value: stats.chunkCount, label: "chunks", icon: "text.alignleft", color: .purple)
         }
 
-        if mcpServer.ragUsage.chunksAnalyzedTotal > 0 {
-          StatPill(value: mcpServer.ragUsage.chunksAnalyzedTotal, label: "analyzed", icon: "checkmark.circle", color: .orange)
+        let totalAnalyzed = mcpServer.repoAnalysisStates.values.reduce(0) { $0 + $1.analyzedCount }
+        let totalUnanalyzed = mcpServer.repoAnalysisStates.values.reduce(0) { $0 + $1.unanalyzedCount }
+
+        if totalAnalyzed > 0 {
+          StatPill(value: totalAnalyzed, label: "analyzed", icon: "checkmark.circle", color: .orange)
+        }
+
+        if totalUnanalyzed > 0 {
+          StatPill(value: totalUnanalyzed, label: "unanalyzed", icon: "exclamationmark.triangle", color: .red)
         }
 
         Spacer()
