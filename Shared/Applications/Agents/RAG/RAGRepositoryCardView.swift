@@ -1224,6 +1224,7 @@ struct RAGRepositoryCardView: View {
     }
     #endif
 
+    var consecutiveZeroBatches = 0
     while !Task.isCancelled {
       if await MainActor.run(body: { analysisState.isPaused }) {
         await MainActor.run { analysisState.isAnalyzing = false }
@@ -1282,16 +1283,22 @@ struct RAGRepositoryCardView: View {
           }
         }
 
-        // If the batch returned 0, the chunk analyzer is silently failing for every
-        // chunk in the batch (RAGCore catches individual errors without re-throwing).
-        // Re-query the DB to distinguish "actually done" from "stalled analyzer".
+        // If the batch returned 0, some chunks may have failed analysis.
+        // RAGCore now marks failed chunks so they won't be retried, but we
+        // re-query to see if there are genuinely unprocessed chunks left.
         if count == 0 {
           let dbRemaining = (try? await mcpServer.getUnanalyzedChunkCount(repoPath: repo.rootPath)) ?? 0
           if dbRemaining == 0 {
             // All chunks were actually already analyzed — let the next loop check see 0 and finish cleanly
             await MainActor.run { analysisState.unanalyzedCount = 0 }
           } else {
-            // Analyzer is consistently failing — stop with a message rather than spinning
+            consecutiveZeroBatches += 1
+            if consecutiveZeroBatches < 3 {
+              // Retry — transient MLX hiccups or newly-skipped chunks may free up the next batch
+              await MainActor.run { analysisState.unanalyzedCount = dbRemaining }
+              continue
+            }
+            // After 3 consecutive zero-count batches, declare stall
             await MainActor.run {
               if let startTime = analysisState.analysisStartTime, analysisState.sessionChunksAnalyzed > 0 {
                 let duration = Date().timeIntervalSince(startTime)
@@ -1311,6 +1318,8 @@ struct RAGRepositoryCardView: View {
             }
             return
           }
+        } else {
+          consecutiveZeroBatches = 0
         }
       } catch {
         await MainActor.run {

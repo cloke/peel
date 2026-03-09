@@ -133,6 +133,9 @@ final class TrackedRemoteRepoTests: XCTestCase {
     XCTAssertEqual(repo.remoteName, "upstream")
     XCTAssertEqual(repo.pullIntervalSeconds, 1800)
     XCTAssertFalse(repo.reindexAfterPull)
+
+    let state = dataService.getDeviceState(for: repo)
+    XCTAssertEqual(state?.localPath, "/Users/test/code/repo")
   }
 
   func testGetTrackedRemoteRepo_byURL() {
@@ -160,11 +163,14 @@ final class TrackedRemoteRepoTests: XCTestCase {
   }
 
   func testUntrackRemoteRepo_byURL() {
-    _ = dataService.trackRemoteRepo(
+    let repo = dataService.trackRemoteRepo(
       remoteURL: "https://github.com/org/repo.git",
       name: "repo",
       localPath: "/tmp/repo"
     )
+
+    // Verify device state exists before untracking
+    XCTAssertNotNil(dataService.getDeviceState(for: repo))
 
     let result = dataService.untrackRemoteRepo(remoteURL: "https://github.com/org/repo.git")
     XCTAssertTrue(result)
@@ -179,6 +185,9 @@ final class TrackedRemoteRepoTests: XCTestCase {
       name: "repo",
       localPath: "/tmp/repo"
     )
+
+    // Verify device state exists before untracking
+    XCTAssertNotNil(dataService.getDeviceState(for: created))
 
     let result = dataService.untrackRemoteRepo(id: created.id)
     XCTAssertTrue(result)
@@ -201,12 +210,13 @@ final class TrackedRemoteRepoTests: XCTestCase {
     )
 
     // Create repo that's not due (just pulled)
-    let notDue = dataService.trackRemoteRepo(
+    let notDueRepo = dataService.trackRemoteRepo(
       remoteURL: "https://github.com/org/fresh-repo.git",
       name: "fresh-repo",
       localPath: "/tmp/fresh-repo"
     )
-    notDue.lastPullAt = Date()
+    let notDueState = dataService.getDeviceState(for: notDueRepo)
+    notDueState?.lastPullAt = Date()
     try? modelContainer.mainContext.save()
 
     // Create disabled repo
@@ -220,7 +230,7 @@ final class TrackedRemoteRepoTests: XCTestCase {
 
     let due = dataService.getDueTrackedRepos()
     XCTAssertEqual(due.count, 1)
-    XCTAssertEqual(due.first?.name, "due-repo")
+    XCTAssertEqual(due.first?.0.name, "due-repo")
   }
 
   func testUpdateTrackedRepoPullResult_success() {
@@ -230,11 +240,12 @@ final class TrackedRemoteRepoTests: XCTestCase {
       localPath: "/tmp/repo"
     )
 
-    dataService.updateTrackedRepoPullResult(repo, result: "updated to abc123", error: nil)
+    let state = dataService.getOrCreateDeviceState(for: repo)
+    dataService.updateTrackedRepoPullResult(state, result: "updated to abc123", error: nil)
 
-    XCTAssertNotNil(repo.lastPullAt)
-    XCTAssertEqual(repo.lastPullResult, "updated to abc123")
-    XCTAssertNil(repo.lastPullError)
+    XCTAssertNotNil(state.lastPullAt)
+    XCTAssertEqual(state.lastPullResult, "updated to abc123")
+    XCTAssertNil(state.lastPullError)
   }
 
   func testUpdateTrackedRepoPullResult_error() {
@@ -244,28 +255,29 @@ final class TrackedRemoteRepoTests: XCTestCase {
       localPath: "/tmp/repo"
     )
 
-    dataService.updateTrackedRepoPullResult(repo, result: nil, error: "git fetch failed: timeout")
+    let state = dataService.getOrCreateDeviceState(for: repo)
+    dataService.updateTrackedRepoPullResult(state, result: nil, error: "git fetch failed: timeout")
 
-    XCTAssertNotNil(repo.lastPullAt)
-    XCTAssertNil(repo.lastPullResult)
-    XCTAssertEqual(repo.lastPullError, "git fetch failed: timeout")
+    XCTAssertNotNil(state.lastPullAt)
+    XCTAssertNil(state.lastPullResult)
+    XCTAssertEqual(state.lastPullError, "git fetch failed: timeout")
   }
 
   func testMultipleTrackedRepos() {
     _ = dataService.trackRemoteRepo(
       remoteURL: "https://github.com/org/alpha.git",
       name: "alpha",
-      localPath: "/tmp/alpha"
+      localPath: "/Users/test/alpha"
     )
     _ = dataService.trackRemoteRepo(
       remoteURL: "https://github.com/org/beta.git",
       name: "beta",
-      localPath: "/tmp/beta"
+      localPath: "/Users/test/beta"
     )
     _ = dataService.trackRemoteRepo(
       remoteURL: "https://github.com/org/gamma.git",
       name: "gamma",
-      localPath: "/tmp/gamma"
+      localPath: "/Users/test/gamma"
     )
 
     let all = dataService.getTrackedRemoteRepos()
