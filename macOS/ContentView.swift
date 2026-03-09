@@ -751,10 +751,17 @@ struct ContentView: View {
       }
     }
 
-    if let syncedId = repo.syncedRepositoryId {
+    if repo.syncedRepositoryId != nil || repo.trackedRemoteRepoId != nil {
       Divider()
       Button("Remove from Peel", role: .destructive) {
-        dataService.deleteRepository(id: syncedId)
+        // Remove tracked repo record
+        if let trackedId = repo.trackedRemoteRepoId {
+          _ = dataService.untrackRemoteRepo(id: trackedId)
+        }
+        // Remove synced repo record
+        if let syncedId = repo.syncedRepositoryId {
+          dataService.deleteRepository(id: syncedId)
+        }
         if sidebarSelection == .repo(repo.normalizedRemoteURL) {
           sidebarSelection = .repoCommandCenter
         }
