@@ -602,6 +602,20 @@ struct RepositoriesCommandCenter: View {
   @State private var expandedExecutions: Set<UUID> = []
   @State private var showAllPRs = false
 
+  // Activity feed state (merged from ActivityDashboardView)
+  @State private var activityFilterMode: ActivityFilterMode = .all
+  @State private var activityFilterRepo: String? = nil
+  @AppStorage("activity.automationFilterMode") private var automationFilterMode = ""
+  @AppStorage("activity.automationFilterRepo") private var automationFilterRepo = ""
+  @State private var selectedChain: AgentChain?
+  @State private var expandedActivityItems: Set<UUID> = []
+  @State private var recentPage = 0
+  private let recentPageSize = 50
+
+  // Swarm state (merged from ActivityDashboardView)
+  @State private var swarm = SwarmCoordinator.shared
+  @State private var firebaseService = FirebaseService.shared
+
   /// All non-terminal parallel runs across the workspace.
   private var allActiveRuns: [ParallelWorktreeRun] {
     guard let runner = mcpServer.parallelWorktreeRunner else { return [] }
@@ -655,6 +669,15 @@ struct RepositoriesCommandCenter: View {
     !allActiveChains.isEmpty || !allActiveRuns.isEmpty || !allWorktrees.isEmpty
   }
 
+  /// WAN workers from Firestore, excluding self and LAN-connected peers.
+  private var wanWorkers: [FirestoreWorker] {
+    let localDeviceId = swarm.capabilities.deviceId
+    let lanPeerIds = Set(swarm.connectedWorkers.map(\.id))
+    return firebaseService.swarmWorkers.filter { worker in
+      worker.id != localDeviceId && !lanPeerIds.contains(worker.id)
+    }
+  }
+
   var body: some View {
     if let detail = selectedPRDetail {
       PRDetailInlineView(
@@ -689,12 +712,18 @@ struct RepositoriesCommandCenter: View {
           // Header
           headerSection
 
-          // Needs Attention
+          // Running Now (chains, worktrees, pulls in progress)
+          runningNowSection
+
+          // Needs Attention (PRs + pending approvals)
           if hasActionItems {
             needsAttentionSection
           }
 
-          // Agent Work
+          // PR Review Queue
+          PRReviewQueueSection()
+
+          // Agent Work (non-running items: queued runs, worktrees)
           if hasAgentWork {
             agentWorkSection
           }
@@ -702,12 +731,59 @@ struct RepositoriesCommandCenter: View {
           // Repository Cards
           repositoryCardsSection
 
+          // Swarm status
+          swarmSection
+
           // RAG Status (compact, collapsed)
           ragCompactSection
+
+          // Recent Activity feed
+          recentActivitySection
         }
         .padding(20)
       }
       .task { await fetchAllOpenPRs() }
+      .task { await ensureFirestoreListeners() }
+      .onChange(of: firebaseService.isSignedIn) { _, signedIn in
+        if signedIn && swarm.isActive {
+          Task { await ensureFirestoreListeners() }
+        }
+      }
+      .onChange(of: activityFilterMode) { _, _ in recentPage = 0 }
+      .onChange(of: activityFilterRepo) { _, _ in recentPage = 0 }
+      .onChange(of: automationFilterMode) { _, newValue in
+        guard !newValue.isEmpty else { return }
+        if let mode = ActivityFilterMode.allCases.first(where: {
+          $0.rawValue.lowercased() == newValue.lowercased()
+        }), mode != activityFilterMode {
+          activityFilterMode = mode
+        }
+        automationFilterMode = ""
+      }
+      .onChange(of: automationFilterRepo) { _, newValue in
+        guard !newValue.isEmpty else { return }
+        let resolved = newValue == "all" ? nil : newValue
+        if resolved != activityFilterRepo { activityFilterRepo = resolved }
+        automationFilterRepo = ""
+      }
+      #if os(macOS)
+      .sheet(item: $selectedChain) { chain in
+        NavigationStack {
+          ChainDetailView(
+            chain: chain,
+            agentManager: mcpServer.agentManager,
+            cliService: mcpServer.cliService,
+            sessionTracker: mcpServer.sessionTracker
+          )
+          .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+              Button("Done") { selectedChain = nil }
+            }
+          }
+        }
+        .frame(minWidth: 700, minHeight: 500)
+      }
+      #endif
     }
   }
 
@@ -1150,6 +1226,293 @@ struct RepositoriesCommandCenter: View {
     }
 
     fetchedOpenPRs = results
+  }
+
+  // MARK: - Running Now
+
+  @ViewBuilder
+  private var runningNowSection: some View {
+    let runningChains = aggregator.allActiveChains
+    let pullsInProgress = aggregator.repositories.filter { $0.pullStatus == .pulling }
+    let activeWorktrees = mcpServer.agentManager.workspaceManager.workspaces
+      .filter { $0.status == .active || $0.status == .ready }
+
+    if !runningChains.isEmpty || !pullsInProgress.isEmpty || !activeWorktrees.isEmpty {
+      VStack(alignment: .leading, spacing: 12) {
+        SectionHeader("Running Now")
+
+        ForEach(runningChains) { chain in
+          RunningChainCard(chain: chain)
+            .contentShape(Rectangle())
+            .onTapGesture { selectedChain = chain }
+        }
+
+        ForEach(activeWorktrees) { workspace in
+          RunningWorktreeCard(workspace: workspace)
+        }
+
+        ForEach(pullsInProgress) { repo in
+          RunningPullCard(repo: repo)
+        }
+      }
+    }
+  }
+
+  // MARK: - Swarm
+
+  private var swarmSection: some View {
+    let lanWorkers = swarm.connectedWorkers
+    let activeWANWorkers = wanWorkers.filter { !$0.isStale && $0.status != .offline }
+    let totalOnline = (swarm.isActive ? 1 : 0) + lanWorkers.count + activeWANWorkers.count
+
+    return VStack(alignment: .leading, spacing: 12) {
+      HStack {
+        SectionHeader("Swarm")
+        Spacer()
+        Text(totalOnline > 0 ? "\(totalOnline) online" : "Inactive")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+        #if os(macOS)
+        Button {
+          NotificationCenter.default.post(name: .navigateToSwarmConsole, object: nil)
+        } label: {
+          Label("Open Console", systemImage: "terminal")
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        #endif
+      }
+
+      if swarm.isActive || !lanWorkers.isEmpty || !activeWANWorkers.isEmpty {
+        ScrollView(.horizontal, showsIndicators: false) {
+          HStack(spacing: 10) {
+            WorkerCard(
+              name: "This Mac",
+              role: swarm.role.rawValue,
+              isOnline: swarm.isActive,
+              statusColor: swarm.isActive ? .green : .secondary,
+              statusText: swarm.isActive ? "Ready for swarm tasks" : "Swarm inactive"
+            )
+
+            ForEach(lanWorkers) { worker in
+              let status = swarm.workerStatuses[worker.id]
+              WorkerCard(
+                name: worker.displayName,
+                role: "LAN",
+                isOnline: status?.state != .offline && status?.state != .error,
+                statusColor: swarmWorkerColor(status),
+                statusText: status?.state.rawValue.capitalized
+              )
+            }
+
+            ForEach(activeWANWorkers) { worker in
+              WorkerCard(
+                name: worker.displayName,
+                role: "WAN",
+                isOnline: !worker.isStale && worker.status != .offline,
+                statusColor: wanWorkerColor(worker),
+                statusText: wanWorkerText(worker)
+              )
+            }
+          }
+          .padding(.vertical, 2)
+        }
+      } else {
+        GroupBox {
+          HStack(spacing: 8) {
+            Image(systemName: "network.slash")
+              .foregroundStyle(.secondary)
+            Text("Swarm is inactive — open console to start or reconnect workers.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Spacer()
+          }
+          .padding(4)
+        }
+      }
+    }
+  }
+
+  private func swarmWorkerColor(_ status: WorkerStatus?) -> Color {
+    switch status?.state {
+    case .idle: return .green
+    case .busy: return .blue
+    case .offline: return .orange
+    case .error: return .red
+    case nil: return .secondary
+    }
+  }
+
+  private func wanWorkerColor(_ worker: FirestoreWorker) -> Color {
+    worker.isStale ? .orange : (worker.status == .online ? .green : (worker.status == .busy ? .blue : .orange))
+  }
+
+  private func wanWorkerText(_ worker: FirestoreWorker) -> String {
+    worker.isStale ? "Stale heartbeat" : worker.status.rawValue.capitalized
+  }
+
+  // MARK: - Recent Activity
+
+  private var recentActivitySection: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      HStack {
+        SectionHeader("Recent Activity")
+        Spacer()
+        activityRepoFilterMenu
+        activityFilterPicker
+      }
+
+      let pageItems = pagedRecentItems
+      if pageItems.isEmpty {
+        ContentUnavailableView {
+          Label("No Activity", systemImage: "clock")
+        } description: {
+          Text("Agent runs, pulls, and other activity will appear here.")
+        }
+      } else {
+        HStack {
+          Text("Showing \(recentRange.start)-\(recentRange.end) of \(recentRange.total)")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          Spacer()
+          Button {
+            recentPage = max(0, recentPage - 1)
+          } label: {
+            Label("Previous", systemImage: "chevron.left")
+          }
+          .buttonStyle(.borderless)
+          .disabled(recentPage == 0)
+
+          Text("Page \(recentPage + 1) of \(totalRecentPages)")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+          Button {
+            recentPage = min(totalRecentPages - 1, recentPage + 1)
+          } label: {
+            Label("Next", systemImage: "chevron.right")
+          }
+          .buttonStyle(.borderless)
+          .disabled(recentPage >= totalRecentPages - 1)
+        }
+
+        LazyVStack(spacing: 1) {
+          ForEach(pageItems) { item in
+            DashboardActivityRow(
+              item: item,
+              isExpanded: expandedActivityItems.contains(item.id)
+            ) {
+              toggleActivityExpanded(item)
+            }
+          }
+        }
+        #if os(macOS)
+        .background(Color(nsColor: .controlBackgroundColor))
+        #else
+        .background(Color(.systemGroupedBackground))
+        #endif
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+      }
+    }
+  }
+
+  private var totalRecentPages: Int {
+    max(1, Int(ceil(Double(filteredActivityItems.count) / Double(recentPageSize))))
+  }
+
+  private var pagedRecentItems: [ActivityItem] {
+    let items = filteredActivityItems
+    guard !items.isEmpty else { return [] }
+    let safePage = min(max(recentPage, 0), totalRecentPages - 1)
+    let start = safePage * recentPageSize
+    let end = min(start + recentPageSize, items.count)
+    return Array(items[start..<end])
+  }
+
+  private var recentRange: (start: Int, end: Int, total: Int) {
+    let total = filteredActivityItems.count
+    guard total > 0 else { return (0, 0, 0) }
+    let safePage = min(max(recentPage, 0), totalRecentPages - 1)
+    let start = (safePage * recentPageSize) + 1
+    let end = min((safePage + 1) * recentPageSize, total)
+    return (start, end, total)
+  }
+
+  private var activityRepoFilterMenu: some View {
+    let repoNames = Set(activityFeed.items.compactMap(\.repoDisplayName)).sorted()
+    return Menu {
+      Button("All Repositories") { activityFilterRepo = nil }
+      Divider()
+      ForEach(repoNames, id: \.self) { name in
+        Button(name) { activityFilterRepo = name }
+      }
+    } label: {
+      HStack(spacing: 4) {
+        Image(systemName: "line.3.horizontal.decrease.circle")
+        Text(activityFilterRepo ?? "All Repos")
+          .lineLimit(1)
+      }
+      .font(.caption)
+    }
+    .menuStyle(.borderlessButton)
+    .fixedSize()
+  }
+
+  private var activityFilterPicker: some View {
+    Picker("Filter", selection: $activityFilterMode) {
+      ForEach(ActivityFilterMode.allCases, id: \.self) { mode in
+        Text(mode.rawValue).tag(mode)
+      }
+    }
+    .pickerStyle(.segmented)
+    .frame(maxWidth: 300)
+  }
+
+  private var filteredActivityItems: [ActivityItem] {
+    var items: [ActivityItem]
+    switch activityFilterMode {
+    case .all:
+      items = activityFeed.items
+    case .running:
+      items = activityFeed.items.filter { item in
+        switch item.kind {
+        case .chainStarted: return true
+        case .swarmDispatched: return true
+        default: return false
+        }
+      }
+    case .completed:
+      items = activityFeed.items.filter { item in
+        if case .chainCompleted(_, let success) = item.kind, success { return true }
+        return false
+      }
+    case .failed:
+      items = activityFeed.items.filter { $0.isError }
+    }
+    if let activityFilterRepo {
+      items = items.filter { $0.repoDisplayName == activityFilterRepo }
+    }
+    return items
+  }
+
+  private func toggleActivityExpanded(_ item: ActivityItem) {
+    withAnimation(.easeInOut(duration: 0.2)) {
+      if expandedActivityItems.contains(item.id) {
+        expandedActivityItems.remove(item.id)
+      } else {
+        expandedActivityItems.insert(item.id)
+      }
+    }
+  }
+
+  // MARK: - Firestore Listeners
+
+  private func ensureFirestoreListeners() async {
+    guard swarm.isActive, firebaseService.isSignedIn else { return }
+    for membership in firebaseService.memberSwarms where membership.role.canRegisterWorkers {
+      firebaseService.startWorkerListener(swarmId: membership.id)
+      firebaseService.startMessageListener(swarmId: membership.id)
+    }
   }
 }
 

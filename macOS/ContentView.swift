@@ -221,12 +221,10 @@ struct ContentView: View {
       }
     }
     .onReceive(NotificationCenter.default.publisher(for: .navigateToSwarmConsole)) { _ in
-      currentSection = .activity
       sidebarSelection = .swarmConsole
     }
     .onReceive(NotificationCenter.default.publisher(for: Notification.Name("RepositoryAutomationRepoSelected"))) { notification in
       guard let repoKey = notification.object as? String else { return }
-      currentSection = .repositories
       if aggregator.repositoryByURL[repoKey] != nil {
         sidebarSelection = .repo(repoKey)
       } else {
@@ -240,45 +238,82 @@ struct ContentView: View {
   }
 
   private var navigationTitle: String {
-    switch currentSection {
-    case .repositories: "Repositories"
-    case .activity, .agents, .workspaces, .swarm: "Activity"
-    case .brew: "Homebrew"
-    case .git, .github: "Repositories"
-    }
+    "Peel"
   }
 
   // MARK: - Sidebar
 
   private var sidebarContent: some View {
     List(selection: $sidebarSelection) {
-      // Top-level navigation
+      // Home / Dashboard
       Section {
-        Label("Repositories", systemImage: "tray.full")
+        Label("Home", systemImage: "house")
           .tag(SidebarSelection.repoCommandCenter)
-        Label("Activity", systemImage: "bolt.fill")
-          .badge(runningChainCount)
-          .tag(SidebarSelection.activityDashboard)
         if showBrew {
           Label("Homebrew", systemImage: "mug")
             .tag(SidebarSelection.brew)
         }
       }
 
-      // Contextual content based on active section
-      switch currentSection {
-      case .repositories, .git, .github:
-        repoSidebarSection
-      case .activity, .agents, .workspaces, .swarm:
-        activitySidebarSection
-      case .brew:
-        EmptyView()
+      // Repositories — always visible
+      repoSidebarSection
+
+      // Running chains (inline when present)
+      runningSidebarSection
+
+      // Activity tools — always visible
+      Section("Activity") {
+        Label("PR Reviews", systemImage: "text.badge.checkmark")
+          .badge(prReviewCount)
+          .tag(SidebarSelection.prReviews)
+        Label("Templates", systemImage: "rectangle.stack")
+          .tag(SidebarSelection.templates)
+        Label("Parallel Runs", systemImage: "arrow.triangle.branch")
+          .tag(SidebarSelection.parallelRuns)
+        Label("Worktrees", systemImage: "externaldrive")
+          .tag(SidebarSelection.worktrees)
+        Label("Local Chat", systemImage: "bubble.left.and.bubble.right")
+          .tag(SidebarSelection.chat)
       }
 
       // Swarm status — always visible
       swarmSidebarSection
+
+      // GitHub account — always visible at bottom
+      Section {
+        GitHubAccountView()
+      }
     }
     .listStyle(.sidebar)
+  }
+
+  // MARK: - Running Chains (inline sidebar)
+
+  @ViewBuilder
+  private var runningSidebarSection: some View {
+    let runningChains = aggregator.allActiveChains
+    if !runningChains.isEmpty {
+      Section("Running") {
+        ForEach(runningChains) { chain in
+          HStack(spacing: 8) {
+            ProgressView()
+              .controlSize(.mini)
+            VStack(alignment: .leading, spacing: 2) {
+              Text(chain.name)
+                .font(.callout)
+                .lineLimit(1)
+              if let prompt = chain.initialPrompt {
+                Text(prompt.prefix(60))
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+                  .lineLimit(1)
+              }
+            }
+          }
+          .tag(SidebarSelection.chain(chain.id))
+        }
+      }
+    }
   }
 
   // MARK: - Repo Sidebar Section
@@ -319,63 +354,6 @@ struct ContentView: View {
           )
         } else {
           ContentUnavailableView.search(text: repoSearchText)
-        }
-      }
-    }
-  }
-
-  // MARK: - Activity Sidebar Section
-
-  private var activitySidebarSection: some View {
-    Group {
-      // Running chains
-      let runningChains = aggregator.allActiveChains
-      if !runningChains.isEmpty {
-        Section("Running") {
-          ForEach(runningChains) { chain in
-            HStack(spacing: 8) {
-              ProgressView()
-                .controlSize(.mini)
-              VStack(alignment: .leading, spacing: 2) {
-                Text(chain.name)
-                  .font(.callout)
-                  .lineLimit(1)
-                if let prompt = chain.initialPrompt {
-                  Text(prompt.prefix(60))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                }
-              }
-            }
-            .tag(SidebarSelection.chain(chain.id))
-          }
-        }
-      }
-
-      Section("Activity") {
-        Label("Dashboard", systemImage: "gauge.medium")
-          .tag(SidebarSelection.activityDashboard)
-        Label("PR Reviews", systemImage: "text.badge.checkmark")
-          .badge(prReviewCount)
-          .tag(SidebarSelection.prReviews)
-        Label("Templates", systemImage: "rectangle.stack")
-          .tag(SidebarSelection.templates)
-        Label("Parallel Runs", systemImage: "arrow.triangle.branch")
-          .tag(SidebarSelection.parallelRuns)
-        Label("Worktrees", systemImage: "externaldrive")
-          .tag(SidebarSelection.worktrees)
-        Label("Local Chat", systemImage: "bubble.left.and.bubble.right")
-          .tag(SidebarSelection.chat)
-      }
-
-      // Recent activity feed in sidebar
-      let recentItems = Array(activityFeed.items.prefix(15))
-      if !recentItems.isEmpty {
-        Section("Recent") {
-          ForEach(recentItems) { item in
-            activitySidebarRow(item)
-          }
         }
       }
     }
@@ -469,7 +447,7 @@ struct ContentView: View {
       RepositoriesCommandCenter()
 
     case .activityDashboard:
-      ActivityDashboardView()
+      RepositoriesCommandCenter()
 
     case .chain(let id):
       if let chain = mcpServer.agentManager.chains.first(where: { $0.id == id }) {
@@ -487,7 +465,7 @@ struct ContentView: View {
       if let item = activityFeed.items.first(where: { $0.id == id }) {
         ActivityItemDetailView(item: item)
       } else {
-        ActivityDashboardView()
+        RepositoriesCommandCenter()
       }
 
     case .prReviews:
@@ -522,29 +500,18 @@ struct ContentView: View {
 
   @ViewBuilder
   private var toolbarActions: some View {
-    switch currentSection {
-    case .repositories, .git, .github:
-      HStack(spacing: 8) {
-        Button { showAddRepoSheet = true } label: {
-          Image(systemName: "plus")
-        }
-        .help("Add Repository")
-        Button { aggregator.rebuild() } label: {
-          Image(systemName: "arrow.clockwise")
-        }
-        .help("Refresh")
+    HStack(spacing: 8) {
+      Button { showAddRepoSheet = true } label: {
+        Image(systemName: "plus")
       }
-    case .activity, .agents, .workspaces, .swarm:
-      HStack(spacing: 8) {
-        Button { sidebarSelection = .templates } label: {
-          Label("Run Task", systemImage: "play.fill")
-        }
-        Button { sidebarSelection = .chat } label: {
-          Label("Chat", systemImage: "bubble.left.and.bubble.right")
-        }
+      .help("Add Repository")
+      Button { aggregator.rebuild() } label: {
+        Image(systemName: "arrow.clockwise")
       }
-    case .brew:
-      EmptyView()
+      .help("Refresh")
+      Button { sidebarSelection = .templates } label: {
+        Label("Run Task", systemImage: "play.fill")
+      }
     }
   }
 
@@ -566,64 +533,10 @@ struct ContentView: View {
     }
   }
 
-  private func activityItemTag(_ item: ActivityItem) -> SidebarSelection {
-    if let chainId = activityItemChainId(item) {
-      return .chain(chainId)
-    }
-    return .activityDashboard
-  }
-
-  private func activityItemChainId(_ item: ActivityItem) -> UUID? {
-    switch item.kind {
-    case .chainStarted(let id), .chainCompleted(let id, _):
-      return id
-    default:
-      return nil
-    }
-  }
-
-  /// Sidebar row for a recent activity item. Chain items are tagged for selection;
-  /// non-chain items are display-only to avoid the multi-select highlight bug.
-  @ViewBuilder
-  private func activitySidebarRow(_ item: ActivityItem) -> some View {
-    let row = HStack(spacing: 8) {
-      Image(systemName: item.kind.systemImage)
-        .font(.caption)
-        .foregroundStyle(item.isError ? .red : .secondary)
-        .frame(width: 16)
-      VStack(alignment: .leading, spacing: 1) {
-        Text(item.title)
-          .font(.caption)
-          .lineLimit(1)
-        Text(item.relativeTime)
-          .font(.caption2)
-          .foregroundStyle(.tertiary)
-      }
-    }
-
-    if let chainId = activityItemChainId(item) {
-      row.tag(SidebarSelection.chain(chainId))
-    } else {
-      row.tag(SidebarSelection.activityItem(item.id))
-    }
-  }
-
   private func syncSelectionToSection() {
-    switch currentSection {
-    case .repositories, .git, .github:
-      if case .repo = sidebarSelection { return }
+    // Default to home if nothing is selected
+    if sidebarSelection == nil {
       sidebarSelection = .repoCommandCenter
-    case .activity, .agents, .workspaces, .swarm:
-      if case .chain = sidebarSelection { return }
-      if case .prReviews = sidebarSelection { return }
-      if case .activityItem = sidebarSelection { return }
-      if case .swarmConsole = sidebarSelection { return }
-      if case .parallelRuns = sidebarSelection { return }
-      if case .worktrees = sidebarSelection { return }
-      if case .chat = sidebarSelection { return }
-      sidebarSelection = .activityDashboard
-    case .brew:
-      sidebarSelection = .brew
     }
   }
 
@@ -638,7 +551,6 @@ struct ContentView: View {
     guard !automationSelectedRepoKey.isEmpty,
           aggregator.repositoryByURL[automationSelectedRepoKey] != nil else { return }
     if sidebarSelection != .repo(automationSelectedRepoKey) {
-      currentSection = .repositories
       sidebarSelection = .repo(automationSelectedRepoKey)
     }
   }

@@ -5,6 +5,7 @@
 //  Created by Cory Loken on 12/27/20.
 //
 
+import Github
 import PeelUI
 import SwiftUI
 import UniformTypeIdentifiers
@@ -218,6 +219,10 @@ struct SettingsView: View {
         }
       }
       .tabItem { Label("MCP", systemImage: "bolt.horizontal.circle") }
+
+      // MARK: - GitHub Account Tab
+      GitHubAccountSettingsTab()
+        .tabItem { Label("Account", systemImage: "person.crop.circle") }
       
       // MARK: - Swarm Settings Tab
       SwarmManagementView()

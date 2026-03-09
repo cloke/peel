@@ -9,7 +9,7 @@
 import SwiftUI
 import Github
 
-// MARK: - Queue Section (for ActivityDashboardView)
+// MARK: - Queue Section (for RepositoriesCommandCenter)
 
 struct PRReviewQueueSection: View {
   @Environment(MCPServerService.self) private var mcpServer
