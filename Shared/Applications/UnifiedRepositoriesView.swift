@@ -297,73 +297,67 @@ struct AddRepositorySheet: View {
 
   // MARK: - Workspace View
 
+  /// Sub-repos excluding the root (for display count).
+  private var subRepoList: [String] {
+    detectedRepos.filter { $0 != workspaceRootPath }
+  }
+
+  private func relativePath(for repo: String) -> String {
+    if repo.hasPrefix(workspaceRootPath + "/") {
+      return String(repo.dropFirst(workspaceRootPath.count + 1))
+    }
+    return URL(fileURLWithPath: repo).lastPathComponent
+  }
+
   private var workspaceView: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      Text("Workspace Detected")
-        .font(.headline)
+    VStack(alignment: .leading, spacing: 12) {
+      HStack {
+        Image(systemName: "folder.badge.gearshape")
+          .font(.title2)
+          .foregroundStyle(.blue)
+        VStack(alignment: .leading, spacing: 2) {
+          Text("Workspace Detected")
+            .font(.headline)
+          Text(URL(fileURLWithPath: workspaceRootPath).lastPathComponent)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
 
       Text("This folder contains multiple repositories. Select which ones to add:")
+        .font(.callout)
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
-
-      Text(workspaceRootPath)
-        .font(.caption)
-        .foregroundStyle(.tertiary)
 
       Divider()
 
       HStack {
-        Text("Repositories (\(detectedRepos.count))")
+        Text("\(subRepoList.count) repositories")
           .font(.subheadline)
-          .fontWeight(.medium)
+          .foregroundStyle(.secondary)
         Spacer()
         Button("All") { selectedRepos = Set(detectedRepos) }
           .buttonStyle(.borderless)
+          .font(.caption)
         Button("None") { selectedRepos = [] }
           .buttonStyle(.borderless)
+          .font(.caption)
       }
 
-      ScrollView {
-        VStack(spacing: 4) {
-          if rootIsRepo {
-            Toggle(isOn: Binding(
-              get: { selectedRepos.contains(workspaceRootPath) },
-              set: { on in
-                if on { selectedRepos.insert(workspaceRootPath) }
-                else { selectedRepos.remove(workspaceRootPath) }
-              }
-            )) {
-              VStack(alignment: .leading) {
-                Text(URL(fileURLWithPath: workspaceRootPath).lastPathComponent + " (root)")
-                  .font(.callout)
-                  .fontWeight(.medium)
-                Text(workspaceRootPath)
-                  .font(.caption2)
-                  .foregroundStyle(.tertiary)
-              }
-            }
-            Divider()
+      List {
+        if rootIsRepo {
+          Section {
+            repoToggle(path: workspaceRootPath, label: "Workspace root", isRoot: true)
           }
-          ForEach(detectedRepos.filter { $0 != workspaceRootPath }, id: \.self) { repo in
-            Toggle(isOn: Binding(
-              get: { selectedRepos.contains(repo) },
-              set: { on in
-                if on { selectedRepos.insert(repo) }
-                else { selectedRepos.remove(repo) }
-              }
-            )) {
-              VStack(alignment: .leading) {
-                Text(URL(fileURLWithPath: repo).lastPathComponent)
-                  .font(.callout)
-                Text(repo)
-                  .font(.caption2)
-                  .foregroundStyle(.tertiary)
-              }
-            }
+        }
+        Section {
+          ForEach(subRepoList, id: \.self) { repo in
+            repoToggle(path: repo, label: relativePath(for: repo), isRoot: false)
           }
         }
       }
-      .frame(maxHeight: 250)
+      .listStyle(.bordered(alternatesRowBackgrounds: true))
+      .frame(height: min(CGFloat(detectedRepos.count) * 36 + 40, 300))
 
       if let errorMessage {
         Text(errorMessage)
@@ -374,10 +368,28 @@ struct AddRepositorySheet: View {
       HStack {
         Button("Back") { mode = .picker }
         Spacer()
+        Text("\(selectedRepos.count) selected")
+          .font(.caption)
+          .foregroundStyle(.secondary)
         Button("Add Selected") { addSelectedRepos() }
+          .buttonStyle(.borderedProminent)
           .keyboardShortcut(.defaultAction)
           .disabled(selectedRepos.isEmpty)
       }
+    }
+  }
+
+  private func repoToggle(path: String, label: String, isRoot: Bool) -> some View {
+    Toggle(isOn: Binding(
+      get: { selectedRepos.contains(path) },
+      set: { on in
+        if on { selectedRepos.insert(path) }
+        else { selectedRepos.remove(path) }
+      }
+    )) {
+      Text(label)
+        .font(.callout)
+        .fontWeight(isRoot ? .medium : .regular)
     }
   }
 
@@ -488,7 +500,12 @@ struct AddRepositorySheet: View {
         if excluded.contains(child.lastPathComponent) { continue }
         let gitMarker = child.appendingPathComponent(".git")
         if FileManager.default.fileExists(atPath: gitMarker.path) {
-          repos.append(child.path)
+          // Skip git worktrees — they have a .git file (not directory) containing "gitdir:"
+          var isDir: ObjCBool = false
+          FileManager.default.fileExists(atPath: gitMarker.path, isDirectory: &isDir)
+          if isDir.boolValue {
+            repos.append(child.path)
+          }
         } else {
           queue.append((child, current.depth + 1))
         }
