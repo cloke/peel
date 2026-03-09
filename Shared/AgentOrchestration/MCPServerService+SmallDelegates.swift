@@ -62,7 +62,7 @@ extension MCPServerService: MCPToolHandlerDelegate {
       forKey: "repositories.rag.sync.peers"
     )
     UserDefaults.standard.set(
-      SwarmCoordinator.shared.onDemandWorkers.map(\.displayName),
+      SwarmCoordinator.shared.allOnDemandWorkers.map(\.displayName),
       forKey: "repositories.rag.sync.wanWorkers"
     )
   }
@@ -202,7 +202,7 @@ extension MCPServerService: MCPToolHandlerDelegate {
       return ["controlId": controlId, "status": "no-repo"]
     }
 
-    guard let worker = SwarmPeerPreferences.defaultWorker(from: SwarmCoordinator.shared.onDemandWorkers) else {
+    guard let worker = SwarmPeerPreferences.defaultWorker(from: SwarmCoordinator.shared.allOnDemandWorkers) else {
       UserDefaults.standard.set("no-wan-worker", forKey: "repositories.rag.sync.status")
       persistRepositoryAutomationWorkerState()
       return ["controlId": controlId, "status": "no-wan-worker", "repoIdentifier": repoIdentifier]

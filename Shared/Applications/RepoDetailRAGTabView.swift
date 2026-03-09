@@ -608,7 +608,7 @@ struct RAGTabView: View {
 
   private var swarmSyncSection: some View {
     let peers = SwarmPeerPreferences.ordered(peers: swarm.connectedWorkers)
-    let onDemandWorkers = SwarmPeerPreferences.ordered(workers: swarm.onDemandWorkers)
+    let onDemandWorkers = SwarmPeerPreferences.ordered(workers: swarm.allOnDemandWorkers)
 
     return VStack(alignment: .leading, spacing: 8) {
       SectionHeader("Swarm Sync")
@@ -701,11 +701,12 @@ struct RAGTabView: View {
               }
             } else if totalCount == 1, let worker = allWAN.first {
               // Single WAN worker — inline buttons
+              let staleLabel = worker.isStale ? " (stale)" : ""
               HStack(spacing: 8) {
                 Button {
                   Task { await syncOnDemand(repoIdentifier: repoId, fromWorkerId: worker.id) }
                 } label: {
-                  syncButtonLabel("Pull from \(worker.displayName)", icon: "arrow.down.circle", active: isSyncing && syncDirection == .pull)
+                  syncButtonLabel("Pull from \(worker.displayName)\(staleLabel)", icon: "arrow.down.circle", active: isSyncing && syncDirection == .pull)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -1040,7 +1041,8 @@ struct RAGTabView: View {
 
   private func workerMenuDisplayName(_ worker: FirestoreWorker) -> String {
     let preferredSuffix = SwarmPeerPreferences.isPreferred(worker) ? " (Preferred)" : ""
-    return "\(worker.displayName)\(preferredSuffix)"
+    let staleSuffix = worker.isStale ? " · stale" : ""
+    return "\(worker.displayName)\(preferredSuffix)\(staleSuffix)"
   }
 
   private func syncOnDemand(repoIdentifier: String, fromWorkerId: String) async {
@@ -1148,7 +1150,7 @@ struct RAGTabView: View {
 
   private func persistRAGSyncAutomationState() {
     let peers = swarm.connectedWorkers.map(\ .displayName)
-    let wanWorkers = swarm.onDemandWorkers.map(\ .displayName)
+    let wanWorkers = swarm.allOnDemandWorkers.map(\ .displayName)
     if let peersData = try? JSONEncoder().encode(peers) {
       automationRAGSyncPeersData = peersData
     }
@@ -1219,7 +1221,7 @@ struct RAGTabView: View {
 
     case "repositories.rag.sync.pullWan":
       guard let repoId,
-            let worker = SwarmPeerPreferences.defaultWorker(from: swarm.onDemandWorkers) else {
+            let worker = SwarmPeerPreferences.defaultWorker(from: swarm.allOnDemandWorkers) else {
         automationRAGSyncStatus = "no-wan-worker"
         if mcpServer.lastUIAction?.controlId == controlId {
           mcpServer.recordUIActionHandled(controlId)
