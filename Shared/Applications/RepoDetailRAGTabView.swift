@@ -36,6 +36,7 @@ struct RAGTabView: View {
   // Swarm sync state
   @State private var swarm = SwarmCoordinator.shared
   @State private var isSyncing = false
+  @State private var isConnectingWAN = false
   @State private var syncDirection: RAGArtifactSyncDirection?
   @State private var syncResultMessage: String?
   @State private var syncError: String?
@@ -660,57 +661,80 @@ struct RAGTabView: View {
             }
           }
 
-          // Action buttons
+          // Action buttons — show LAN (TCP) peers and WAN (Firestore) peers together
           if let repoId = ragRepoIdentifier {
-            HStack(spacing: 8) {
-              if !peers.isEmpty {
-                if peers.count > 1 {
-                  syncPeerMenu(peers: peers, repoIdentifier: repoId, direction: .push)
-                  syncPeerMenu(peers: peers, repoIdentifier: repoId, direction: .pull)
-                } else if let peer = peers.first {
-                  Button {
-                    Task { await syncWithPeers(repoIdentifier: repoId, direction: .push, workerId: peer.id) }
-                  } label: {
-                    syncButtonLabel("Push to \(peer.displayName)", icon: "arrow.up.circle", active: isSyncing && syncDirection == .push)
-                  }
-                  .buttonStyle(.bordered)
-                  .controlSize(.small)
-                  .disabled(isSyncing)
+            let allPeers = peers
+            let allWAN = onDemandWorkers
 
-                  Button {
-                    Task { await syncWithPeers(repoIdentifier: repoId, direction: .pull, workerId: peer.id) }
-                  } label: {
-                    syncButtonLabel("Pull from \(peer.displayName)", icon: "arrow.down.circle", active: isSyncing && syncDirection == .pull)
+            if allPeers.isEmpty && allWAN.isEmpty {
+              HStack(spacing: 6) {
+                Image(systemName: "network.slash")
+                  .font(.caption)
+                  .foregroundStyle(.tertiary)
+                Text("No peers or WAN workers available")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+                Spacer()
+              }
+            } else {
+              VStack(alignment: .leading, spacing: 6) {
+                // LAN (TCP-connected) peers — full push + pull
+                if !allPeers.isEmpty {
+                  HStack(spacing: 8) {
+                    if allPeers.count > 1 {
+                      syncPeerMenu(peers: allPeers, repoIdentifier: repoId, direction: .push)
+                      syncPeerMenu(peers: allPeers, repoIdentifier: repoId, direction: .pull)
+                    } else if let peer = allPeers.first {
+                      Button {
+                        Task { await syncWithPeers(repoIdentifier: repoId, direction: .push, workerId: peer.id) }
+                      } label: {
+                        syncButtonLabel("Push to \(peer.displayName)", icon: "arrow.up.circle", active: isSyncing && syncDirection == .push)
+                      }
+                      .buttonStyle(.bordered)
+                      .controlSize(.small)
+                      .disabled(isSyncing)
+
+                      Button {
+                        Task { await syncWithPeers(repoIdentifier: repoId, direction: .pull, workerId: peer.id) }
+                      } label: {
+                        syncButtonLabel("Pull from \(peer.displayName)", icon: "arrow.down.circle", active: isSyncing && syncDirection == .pull)
+                      }
+                      .buttonStyle(.bordered)
+                      .controlSize(.small)
+                      .disabled(isSyncing)
+                    }
+                    Spacer()
                   }
-                  .buttonStyle(.bordered)
-                  .controlSize(.small)
-                  .disabled(isSyncing)
                 }
-              } else if !onDemandWorkers.isEmpty {
-                if onDemandWorkers.count > 1 {
-                  onDemandMenu(workers: onDemandWorkers, repoIdentifier: repoId)
-                } else if let worker = onDemandWorkers.first {
-                  Button {
-                    Task { await syncOnDemand(repoIdentifier: repoId, fromWorkerId: worker.id) }
-                  } label: {
-                    syncButtonLabel("Pull from \(worker.displayName) (WAN)", icon: "arrow.down.circle", active: isSyncing && syncDirection == .pull)
+
+                // WAN (Firestore-discovered) peers — on-demand pull + connect to promote
+                if !allWAN.isEmpty {
+                  HStack(spacing: 8) {
+                    if allWAN.count > 1 {
+                      wanPeerMenu(workers: allWAN, repoIdentifier: repoId)
+                    } else if let worker = allWAN.first {
+                      Button {
+                        Task { await syncOnDemand(repoIdentifier: repoId, fromWorkerId: worker.id) }
+                      } label: {
+                        syncButtonLabel("Pull from \(worker.displayName)", icon: "arrow.down.circle", active: isSyncing && syncDirection == .pull)
+                      }
+                      .buttonStyle(.bordered)
+                      .controlSize(.small)
+                      .disabled(isSyncing)
+
+                      Button {
+                        Task { await connectWANPeer(worker) }
+                      } label: {
+                        syncButtonLabel("Connect \(worker.displayName)", icon: "point.3.connected.trianglepath.dotted", active: isConnectingWAN)
+                      }
+                      .buttonStyle(.bordered)
+                      .controlSize(.small)
+                      .disabled(isSyncing || isConnectingWAN)
+                    }
+                    Spacer()
                   }
-                  .buttonStyle(.bordered)
-                  .controlSize(.small)
-                  .disabled(isSyncing)
-                }
-              } else {
-                HStack(spacing: 6) {
-                  Image(systemName: "network.slash")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-                  Text("No peers or WAN workers available")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
                 }
               }
-
-              Spacer()
             }
           } else {
             HStack(spacing: 6) {
@@ -780,6 +804,53 @@ struct RAGTabView: View {
     .buttonStyle(.bordered)
     .controlSize(.small)
     .disabled(isSyncing)
+  }
+
+  private func wanPeerMenu(workers: [FirestoreWorker], repoIdentifier: String) -> some View {
+    let isActive = isSyncing && syncDirection == .pull
+
+    return HStack(spacing: 8) {
+      Menu {
+        ForEach(workers, id: \.id) { worker in
+          Button {
+            Task { await syncOnDemand(repoIdentifier: repoIdentifier, fromWorkerId: worker.id) }
+          } label: {
+            Label(workerMenuDisplayName(worker), systemImage: "desktopcomputer")
+          }
+        }
+      } label: {
+        syncButtonLabel(defaultWorkerLabel(for: workers), icon: "arrow.down.circle", active: isActive)
+      }
+      .buttonStyle(.bordered)
+      .controlSize(.small)
+      .disabled(isSyncing)
+
+      Menu {
+        ForEach(workers, id: \.id) { worker in
+          Button {
+            Task { await connectWANPeer(worker) }
+          } label: {
+            Label(workerMenuDisplayName(worker), systemImage: "desktopcomputer")
+          }
+        }
+      } label: {
+        syncButtonLabel("Connect", icon: "point.3.connected.trianglepath.dotted", active: isConnectingWAN)
+      }
+      .buttonStyle(.bordered)
+      .controlSize(.small)
+      .disabled(isSyncing || isConnectingWAN)
+    }
+  }
+
+  private func connectWANPeer(_ worker: FirestoreWorker) async {
+    isConnectingWAN = true
+    defer { isConnectingWAN = false }
+    do {
+      try await swarm.connectToWANWorker(worker)
+      syncResultMessage = "Connected to \(worker.displayName) — push/pull now available"
+    } catch {
+      syncError = "WAN connect failed: \(error.localizedDescription)"
+    }
   }
 
   private func syncTransferLabel(_ transfer: RAGArtifactTransferState) -> String {
