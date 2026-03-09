@@ -453,8 +453,9 @@ struct AddRepositorySheet: View {
 
   private func trackLocalRepo(path: String) {
     let name = URL(fileURLWithPath: path).lastPathComponent
+    let remote = discoverRemoteURL(for: path) ?? path
     dataService.trackRemoteRepo(
-      remoteURL: path,
+      remoteURL: remote,
       name: name,
       localPath: path,
       branch: "main"
@@ -466,8 +467,9 @@ struct AddRepositorySheet: View {
   private func addSelectedRepos() {
     for path in selectedRepos {
       let name = URL(fileURLWithPath: path).lastPathComponent
+      let remote = discoverRemoteURL(for: path) ?? path
       dataService.trackRemoteRepo(
-        remoteURL: path,
+        remoteURL: remote,
         name: name,
         localPath: path,
         branch: "main"
@@ -500,11 +502,21 @@ struct AddRepositorySheet: View {
         if excluded.contains(child.lastPathComponent) { continue }
         let gitMarker = child.appendingPathComponent(".git")
         if FileManager.default.fileExists(atPath: gitMarker.path) {
-          // Skip git worktrees — they have a .git file (not directory) containing "gitdir:"
+          // Check if .git is a directory (normal repo) or file (submodule or worktree)
           var isDir: ObjCBool = false
           FileManager.default.fileExists(atPath: gitMarker.path, isDirectory: &isDir)
           if isDir.boolValue {
+            // Normal git repo
             repos.append(child.path)
+          } else if let contents = try? String(contentsOfFile: gitMarker.path, encoding: .utf8),
+                    contents.hasPrefix("gitdir:") {
+            let gitdir = contents.trimmingCharacters(in: .whitespacesAndNewlines)
+              .replacingOccurrences(of: "gitdir: ", with: "")
+            // Submodules point to ../.git/modules/*, worktrees point to ../.git/worktrees/*
+            if gitdir.contains("/modules/") {
+              repos.append(child.path)
+            }
+            // Skip worktrees
           }
         } else {
           queue.append((child, current.depth + 1))
@@ -512,6 +524,21 @@ struct AddRepositorySheet: View {
       }
     }
     return repos.sorted()
+  }
+
+  private func discoverRemoteURL(for path: String) -> String? {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+    process.arguments = ["-C", path, "remote", "get-url", "origin"]
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = FileHandle.nullDevice
+    try? process.run()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 else { return nil }
+    let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return output?.isEmpty == false ? output : nil
   }
 
   private func trackRemote() {
