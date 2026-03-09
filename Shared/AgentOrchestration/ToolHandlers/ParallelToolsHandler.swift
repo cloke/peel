@@ -22,6 +22,7 @@ final class ParallelToolsHandler {
       "parallel.start",
       "parallel.status",
       "parallel.list",
+      "parallel.assignReviewer",
       "parallel.approve",
       "parallel.reject",
       "parallel.reviewed",
@@ -194,6 +195,8 @@ final class ParallelToolsHandler {
       return handleStatus(id: id, arguments: arguments)
     case "parallel.list":
       return handleList(id: id, arguments: arguments)
+    case "parallel.assignReviewer":
+      return handleAssignReviewer(id: id, arguments: arguments)
     case "parallel.approve":
       return handleApprove(id: id, arguments: arguments)
     case "parallel.reject":
@@ -552,9 +555,20 @@ final class ParallelToolsHandler {
     }
 
     let approveAll = optionalBool("approveAll", from: arguments, default: false)
+    let reviewerExecutionId = optionalUUID("reviewerExecutionId", from: arguments)
+    let reviewerLabel = optionalString("reviewerLabel", from: arguments, default: nil)
+    let notes = optionalString("notes", from: arguments, default: nil)
 
     if approveAll {
-      runner.approveAllPending(in: run)
+      for execution in run.executions where execution.status == .awaitingReview {
+        runner.approveExecution(
+          execution,
+          in: run,
+          reviewerExecutionId: reviewerExecutionId,
+          reviewerLabel: reviewerLabel,
+          notes: notes
+        )
+      }
       return (200, toolResult(id: id, result: [
         "runId": runId.uuidString,
         "approved": "all",
@@ -574,11 +588,76 @@ final class ParallelToolsHandler {
       ))
     }
 
-    runner.approveExecution(execution, in: run)
+    runner.approveExecution(
+      execution,
+      in: run,
+      reviewerExecutionId: reviewerExecutionId,
+      reviewerLabel: reviewerLabel,
+      notes: notes
+    )
     return (200, toolResult(id: id, result: [
       "runId": runId.uuidString,
       "executionId": executionId.uuidString,
       "status": execution.status.displayName
+    ]))
+  }
+
+  private func handleAssignReviewer(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    guard case .success(let runner) = getRunner(id: id) else {
+      return runnerNotInitializedError(id: id)
+    }
+
+    guard case .success(let runId) = getUUID("runId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "runId")
+    }
+
+    guard case .success(let run) = getRun(runId: runId, from: runner, id: id) else {
+      return runNotFoundError(id: id, runId: runId.uuidString, runner: runner)
+    }
+
+    guard case .success(let executionId) = getUUID("executionId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "executionId")
+    }
+
+    guard case .success(let execution) = getExecution(executionId: executionId, from: run, id: id) else {
+      return (404, rpcError(
+        id: id,
+        code: JSONRPCResponseBuilder.ErrorCode.notFound,
+        message: "Execution not found"
+      ))
+    }
+
+    let clearAssignment = optionalBool("clearAssignment", from: arguments, default: false)
+    let reviewerLabel = optionalString("reviewerLabel", from: arguments, default: nil)
+
+    if clearAssignment {
+      runner.assignReviewer(nil, to: execution, in: run)
+      return (200, toolResult(id: id, result: [
+        "runId": runId.uuidString,
+        "executionId": executionId.uuidString,
+        "assignedReviewerExecutionId": NSNull(),
+        "assignedReviewerLabel": NSNull()
+      ]))
+    }
+
+    guard case .success(let reviewerExecutionId) = getUUID("reviewerExecutionId", from: arguments, id: id) else {
+      return invalidParamError(id: id, param: "reviewerExecutionId", reason: "Missing reviewerExecutionId (or set clearAssignment=true)")
+    }
+
+    guard case .success(let reviewer) = getExecution(executionId: reviewerExecutionId, from: run, id: id) else {
+      return (404, rpcError(
+        id: id,
+        code: JSONRPCResponseBuilder.ErrorCode.notFound,
+        message: "Reviewer execution not found"
+      ))
+    }
+
+    runner.assignReviewer(reviewer, to: execution, in: run, reviewerLabel: reviewerLabel)
+    return (200, toolResult(id: id, result: [
+      "runId": runId.uuidString,
+      "executionId": executionId.uuidString,
+      "assignedReviewerExecutionId": reviewer.id.uuidString,
+      "assignedReviewerLabel": execution.assignedReviewerLabel as Any
     ]))
   }
 
@@ -608,7 +687,17 @@ final class ParallelToolsHandler {
     }
 
     let reason = optionalString("reason", from: arguments, default: "Rejected via MCP") ?? "Rejected via MCP"
-    runner.rejectExecution(execution, in: run, reason: reason)
+    let reviewerExecutionId = optionalUUID("reviewerExecutionId", from: arguments)
+    let reviewerLabel = optionalString("reviewerLabel", from: arguments, default: nil)
+    let notes = optionalString("notes", from: arguments, default: nil)
+    runner.rejectExecution(
+      execution,
+      in: run,
+      reason: reason,
+      reviewerExecutionId: reviewerExecutionId,
+      reviewerLabel: reviewerLabel,
+      notes: notes
+    )
 
     return (200, toolResult(id: id, result: [
       "runId": runId.uuidString,
@@ -631,9 +720,20 @@ final class ParallelToolsHandler {
     }
 
     let reviewAll = optionalBool("reviewAll", from: arguments, default: false)
+    let reviewerExecutionId = optionalUUID("reviewerExecutionId", from: arguments)
+    let reviewerLabel = optionalString("reviewerLabel", from: arguments, default: nil)
+    let notes = optionalString("notes", from: arguments, default: nil)
 
     if reviewAll {
-      runner.markAllReviewed(in: run)
+      for execution in run.executions where execution.status == .awaitingReview {
+        runner.markReviewed(
+          execution,
+          in: run,
+          reviewerExecutionId: reviewerExecutionId,
+          reviewerLabel: reviewerLabel,
+          notes: notes
+        )
+      }
       return (200, toolResult(id: id, result: [
         "runId": runId.uuidString,
         "reviewed": "all",
@@ -653,7 +753,13 @@ final class ParallelToolsHandler {
       ))
     }
 
-    runner.markReviewed(execution, in: run)
+    runner.markReviewed(
+      execution,
+      in: run,
+      reviewerExecutionId: reviewerExecutionId,
+      reviewerLabel: reviewerLabel,
+      notes: notes
+    )
     return (200, toolResult(id: id, result: [
       "runId": runId.uuidString,
       "executionId": executionId.uuidString,
@@ -982,6 +1088,15 @@ final class ParallelToolsHandler {
     if let branchName = execution.branchName {
       result["branchName"] = branchName
     }
+    if let assignedReviewerExecutionId = execution.assignedReviewerExecutionId {
+      result["assignedReviewerExecutionId"] = assignedReviewerExecutionId.uuidString
+    }
+    if let assignedReviewerLabel = execution.assignedReviewerLabel {
+      result["assignedReviewerLabel"] = assignedReviewerLabel
+    }
+    if let assignedReviewTargetExecutionId = execution.assignedReviewTargetExecutionId {
+      result["assignedReviewTargetExecutionId"] = assignedReviewTargetExecutionId.uuidString
+    }
     if let startedAt = execution.startedAt {
       result["startedAt"] = formatter.string(from: startedAt)
     }
@@ -1019,6 +1134,25 @@ final class ParallelToolsHandler {
         if let label = artifact.label { a["label"] = label }
         a["createdAt"] = Formatter.iso8601.string(from: artifact.createdAt)
         return a
+      }
+    }
+
+    if !execution.reviewRecords.isEmpty {
+      result["reviewRecords"] = execution.reviewRecords.map { review -> [String: Any] in
+        var r: [String: Any] = [
+          "decision": review.decision.rawValue,
+          "createdAt": formatter.string(from: review.createdAt)
+        ]
+        if let reviewerExecutionId = review.reviewerExecutionId {
+          r["reviewerExecutionId"] = reviewerExecutionId.uuidString
+        }
+        if let reviewerLabel = review.reviewerLabel {
+          r["reviewerLabel"] = reviewerLabel
+        }
+        if let notes = review.notes {
+          r["notes"] = notes
+        }
+        return r
       }
     }
 
@@ -1154,6 +1288,23 @@ extension ParallelToolsHandler {
         isMutating: false
       ),
       MCPToolDefinition(
+        name: "parallel.assignReviewer",
+        description: "Assign one execution to review another execution in the same parallel run",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string"],
+            "executionId": ["type": "string"],
+            "reviewerExecutionId": ["type": "string"],
+            "reviewerLabel": ["type": "string"],
+            "clearAssignment": ["type": "boolean"]
+          ],
+          "required": ["runId", "executionId"]
+        ],
+        category: .parallelWorktrees,
+        isMutating: true
+      ),
+      MCPToolDefinition(
         name: "parallel.approve",
         description: "Approve an execution in a parallel run",
         inputSchema: [
@@ -1161,7 +1312,10 @@ extension ParallelToolsHandler {
           "properties": [
             "runId": ["type": "string"],
             "executionId": ["type": "string"],
-            "approveAll": ["type": "boolean"]
+            "approveAll": ["type": "boolean"],
+            "reviewerExecutionId": ["type": "string"],
+            "reviewerLabel": ["type": "string"],
+            "notes": ["type": "string"]
           ],
           "required": ["runId"]
         ],
@@ -1176,7 +1330,10 @@ extension ParallelToolsHandler {
           "properties": [
             "runId": ["type": "string"],
             "executionId": ["type": "string"],
-            "reason": ["type": "string"]
+            "reason": ["type": "string"],
+            "reviewerExecutionId": ["type": "string"],
+            "reviewerLabel": ["type": "string"],
+            "notes": ["type": "string"]
           ],
           "required": ["runId", "executionId"]
         ],
@@ -1191,7 +1348,10 @@ extension ParallelToolsHandler {
           "properties": [
             "runId": ["type": "string"],
             "executionId": ["type": "string"],
-            "reviewAll": ["type": "boolean"]
+            "reviewAll": ["type": "boolean"],
+            "reviewerExecutionId": ["type": "string"],
+            "reviewerLabel": ["type": "string"],
+            "notes": ["type": "string"]
           ],
           "required": ["runId"]
         ],

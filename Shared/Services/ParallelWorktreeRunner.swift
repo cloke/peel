@@ -125,6 +125,9 @@ final class ParallelWorktreeExecution: Identifiable, @unchecked Sendable {
   var worktreePath: String?
   var branchName: String?
   var chainId: UUID?
+  var assignedReviewerExecutionId: UUID?
+  var assignedReviewerLabel: String?
+  var assignedReviewTargetExecutionId: UUID?
   var status: ParallelWorktreeStatus = .pending {
     didSet {
       guard oldValue != status else { return }
@@ -151,6 +154,9 @@ final class ParallelWorktreeExecution: Identifiable, @unchecked Sendable {
   /// Per-step results from the agent chain (planner decisions, review verdicts, gate results)
   var chainStepResults: [ChainStepSummary] = []
 
+  /// Durable review decisions recorded after an execution reaches the review gate.
+  var reviewRecords: [ReviewRecord] = []
+
   /// An artifact produced during execution (screenshot, report, etc.)
   struct Artifact: Identifiable, Sendable {
     let id = UUID()
@@ -172,6 +178,35 @@ final class ParallelWorktreeExecution: Identifiable, @unchecked Sendable {
     let plannerDecision: String?
     let gateResult: String?
     let outputPreview: String
+  }
+
+  struct ReviewRecord: Identifiable, Sendable {
+    enum Decision: String, Sendable {
+      case reviewed
+      case approved
+      case rejected
+    }
+
+    let id = UUID()
+    let decision: Decision
+    let reviewerExecutionId: UUID?
+    let reviewerLabel: String?
+    let notes: String?
+    let createdAt: Date
+
+    init(
+      decision: Decision,
+      reviewerExecutionId: UUID?,
+      reviewerLabel: String?,
+      notes: String?,
+      createdAt: Date = Date()
+    ) {
+      self.decision = decision
+      self.reviewerExecutionId = reviewerExecutionId
+      self.reviewerLabel = reviewerLabel
+      self.notes = notes
+      self.createdAt = createdAt
+    }
   }
 
   /// RAG snippet injected into the prompt
@@ -1331,6 +1366,17 @@ final class ParallelWorktreeRunner {
     dataService?.recordParallelRunSnapshot(run: run)
   }
 
+  private func executionArtifactDirectory(
+    for execution: ParallelWorktreeExecution,
+    run: ParallelWorktreeRun
+  ) throws -> URL {
+    let scratchRoot = try ScratchAreaService.scratchDirectory(for: run.projectPath)
+    return scratchRoot
+      .appendingPathComponent("ParallelRuns", isDirectory: true)
+      .appendingPathComponent(run.id.uuidString, isDirectory: true)
+      .appendingPathComponent(execution.id.uuidString, isDirectory: true)
+  }
+
   private func writeExecutionHandoffArtifacts(
     for execution: ParallelWorktreeExecution,
     run: ParallelWorktreeRun,
@@ -1338,11 +1384,7 @@ final class ParallelWorktreeRunner {
   ) throws -> [ParallelWorktreeExecution.Artifact] {
     let fileManager = FileManager.default
     let formatter = Formatter.iso8601
-    let scratchRoot = try ScratchAreaService.scratchDirectory(for: run.projectPath)
-    let artifactDirectory = scratchRoot
-      .appendingPathComponent("ParallelRuns", isDirectory: true)
-      .appendingPathComponent(run.id.uuidString, isDirectory: true)
-      .appendingPathComponent(execution.id.uuidString, isDirectory: true)
+    let artifactDirectory = try executionArtifactDirectory(for: execution, run: run)
 
     try fileManager.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)
 
@@ -1374,6 +1416,9 @@ final class ParallelWorktreeRunner {
       "worktreePath": execution.worktreePath as Any,
       "branchName": execution.branchName as Any,
       "chainId": execution.chainId?.uuidString as Any,
+      "assignedReviewerExecutionId": execution.assignedReviewerExecutionId?.uuidString as Any,
+      "assignedReviewerLabel": execution.assignedReviewerLabel as Any,
+      "assignedReviewTargetExecutionId": execution.assignedReviewTargetExecutionId?.uuidString as Any,
       "startedAt": execution.startedAt.map(formatter.string(from:)) as Any,
       "completedAt": execution.completedAt.map(formatter.string(from:)) as Any,
       "operatorGuidance": guidance,
@@ -1386,6 +1431,15 @@ final class ParallelWorktreeRunner {
       ],
       "reviewVerdict": reviewVerdict as Any,
       "chainSucceeded": result.chainSucceeded,
+      "reviewRecords": execution.reviewRecords.map { review in
+        [
+          "decision": review.decision.rawValue,
+          "reviewerExecutionId": review.reviewerExecutionId?.uuidString as Any,
+          "reviewerLabel": review.reviewerLabel as Any,
+          "notes": review.notes as Any,
+          "createdAt": formatter.string(from: review.createdAt)
+        ]
+      },
       "chainSteps": execution.chainStepResults.map { step in
         var dict: [String: Any] = [
           "stepName": step.stepName,
@@ -1469,6 +1523,173 @@ final class ParallelWorktreeRunner {
     ## Output Preview
     \(outputPreview)
     """
+  }
+
+  private func normalizedOptionalText(_ value: String?) -> String? {
+    guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !trimmed.isEmpty else {
+      return nil
+    }
+    return trimmed
+  }
+
+  private func localReviewerLabel() -> String {
+    Host.current().localizedName ?? "Operator"
+  }
+
+  private func reviewerDisplayLabel(for execution: ParallelWorktreeExecution) -> String {
+    if let explicit = normalizedOptionalText(execution.assignedReviewerLabel) {
+      return explicit
+    }
+    if let branchName = normalizedOptionalText(execution.branchName) {
+      return branchName
+    }
+    if let taskTitle = normalizedOptionalText(execution.task.title) {
+      return taskTitle
+    }
+    return execution.id.uuidString
+  }
+
+  func eligibleReviewerLabel(for execution: ParallelWorktreeExecution) -> String {
+    reviewerDisplayLabel(for: execution)
+  }
+
+  private func resolveReviewerContext(
+    for execution: ParallelWorktreeExecution,
+    in run: ParallelWorktreeRun,
+    reviewerExecutionId explicitReviewerExecutionId: UUID?,
+    reviewerLabel explicitReviewerLabel: String?
+  ) -> (UUID?, String) {
+    let resolvedExecutionId = explicitReviewerExecutionId ?? execution.assignedReviewerExecutionId
+    if let explicitLabel = normalizedOptionalText(explicitReviewerLabel) {
+      return (resolvedExecutionId, explicitLabel)
+    }
+    if let resolvedExecutionId,
+       let reviewerExecution = run.executions.first(where: { $0.id == resolvedExecutionId }) {
+      return (resolvedExecutionId, reviewerDisplayLabel(for: reviewerExecution))
+    }
+    if let assignedLabel = normalizedOptionalText(execution.assignedReviewerLabel) {
+      return (resolvedExecutionId, assignedLabel)
+    }
+    return (resolvedExecutionId, localReviewerLabel())
+  }
+
+  func assignedReviewTarget(
+    for reviewer: ParallelWorktreeExecution,
+    in run: ParallelWorktreeRun
+  ) -> ParallelWorktreeExecution? {
+    guard let targetId = reviewer.assignedReviewTargetExecutionId else { return nil }
+    return run.executions.first(where: { $0.id == targetId })
+  }
+
+  func eligibleReviewers(
+    for target: ParallelWorktreeExecution,
+    in run: ParallelWorktreeRun
+  ) -> [ParallelWorktreeExecution] {
+    run.executions.filter { execution in
+      guard execution.id != target.id else { return false }
+      switch execution.status {
+      case .awaitingReview, .reviewed, .approved, .merged:
+        return true
+      default:
+        return false
+      }
+    }
+  }
+
+  func assignReviewer(
+    _ reviewer: ParallelWorktreeExecution?,
+    to target: ParallelWorktreeExecution,
+    in run: ParallelWorktreeRun,
+    reviewerLabel: String? = nil
+  ) {
+    for execution in run.executions where execution.assignedReviewTargetExecutionId == target.id {
+      execution.assignedReviewTargetExecutionId = nil
+    }
+
+    guard let reviewer else {
+      target.assignedReviewerExecutionId = nil
+      target.assignedReviewerLabel = nil
+      recordSnapshot(for: run)
+      return
+    }
+
+    target.assignedReviewerExecutionId = reviewer.id
+    target.assignedReviewerLabel = normalizedOptionalText(reviewerLabel) ?? reviewerDisplayLabel(for: reviewer)
+    reviewer.assignedReviewTargetExecutionId = target.id
+    recordSnapshot(for: run)
+  }
+
+  private func appendReviewRecord(
+    decision: ParallelWorktreeExecution.ReviewRecord.Decision,
+    to execution: ParallelWorktreeExecution,
+    reviewerExecutionId: UUID?,
+    reviewerLabel: String?,
+    notes: String?
+  ) {
+    let normalizedNotes = normalizedOptionalText(notes)
+    let normalizedLabel = normalizedOptionalText(reviewerLabel)
+
+    execution.reviewRecords.append(
+      ParallelWorktreeExecution.ReviewRecord(
+        decision: decision,
+        reviewerExecutionId: reviewerExecutionId,
+        reviewerLabel: normalizedLabel,
+        notes: normalizedNotes
+      )
+    )
+  }
+
+  private func writeReviewDecisionArtifact(
+    for execution: ParallelWorktreeExecution,
+    run: ParallelWorktreeRun,
+    decision: ParallelWorktreeExecution.ReviewRecord.Decision,
+    reviewerExecutionId: UUID?,
+    reviewerLabel: String?,
+    notes: String?
+  ) {
+    let fileManager = FileManager.default
+    let formatter = Formatter.iso8601
+
+    do {
+      let artifactDirectory = try executionArtifactDirectory(for: execution, run: run)
+      try fileManager.createDirectory(at: artifactDirectory, withIntermediateDirectories: true)
+
+      let timestamp = formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")
+      let fileURL = artifactDirectory.appendingPathComponent("review-\(decision.rawValue)-\(timestamp).md")
+      let notesText = normalizedOptionalText(notes) ?? "No notes provided."
+      let reviewerName = normalizedOptionalText(reviewerLabel) ?? "unknown"
+
+      let body = """
+      # Review Decision
+
+      - Decision: \(decision.rawValue)
+      - Execution ID: \(execution.id.uuidString)
+      - Reviewer Execution ID: \(reviewerExecutionId?.uuidString ?? "n/a")
+      - Reviewer: \(reviewerName)
+      - Recorded At: \(formatter.string(from: Date()))
+
+      ## Notes
+      \(notesText)
+      """
+
+      try body.write(to: fileURL, atomically: true, encoding: String.Encoding.utf8)
+      execution.artifacts.append(
+        ParallelWorktreeExecution.Artifact(
+          type: "review-decision",
+          filePath: fileURL.path,
+          label: "\(decision.rawValue.capitalized) review decision"
+        )
+      )
+    } catch {
+      Task {
+        await mcpLog.warning("Failed to write review decision artifact: \(error.localizedDescription)", metadata: [
+          "runId": run.id.uuidString,
+          "executionId": execution.id.uuidString,
+          "decision": decision.rawValue
+        ])
+      }
+    }
   }
 
   /// Write a structured JSON chain log file to the worktree for post-mortem analysis
@@ -1722,8 +1943,35 @@ final class ParallelWorktreeRunner {
   // MARK: - Review Gate
   
   /// Approve an execution (from awaitingReview or reviewed state)
-  func approveExecution(_ execution: ParallelWorktreeExecution, in run: ParallelWorktreeRun) {
+  func approveExecution(
+    _ execution: ParallelWorktreeExecution,
+    in run: ParallelWorktreeRun,
+    reviewerExecutionId: UUID? = nil,
+    reviewerLabel: String? = nil,
+    notes: String? = nil
+  ) {
     guard execution.status == .awaitingReview || execution.status == .reviewed else { return }
+    let reviewerContext = resolveReviewerContext(
+      for: execution,
+      in: run,
+      reviewerExecutionId: reviewerExecutionId,
+      reviewerLabel: reviewerLabel
+    )
+    appendReviewRecord(
+      decision: .approved,
+      to: execution,
+      reviewerExecutionId: reviewerContext.0,
+      reviewerLabel: reviewerContext.1,
+      notes: notes
+    )
+    writeReviewDecisionArtifact(
+      for: execution,
+      run: run,
+      decision: .approved,
+      reviewerExecutionId: reviewerContext.0,
+      reviewerLabel: reviewerContext.1,
+      notes: notes
+    )
     execution.status = .approved
     
     // Check if auto-merge is enabled
@@ -1735,15 +1983,73 @@ final class ParallelWorktreeRunner {
   }
   
   /// Reject an execution
-  func rejectExecution(_ execution: ParallelWorktreeExecution, in run: ParallelWorktreeRun, reason: String) {
+  func rejectExecution(
+    _ execution: ParallelWorktreeExecution,
+    in run: ParallelWorktreeRun,
+    reason: String,
+    reviewerExecutionId: UUID? = nil,
+    reviewerLabel: String? = nil,
+    notes: String? = nil
+  ) {
     guard execution.status == .awaitingReview else { return }
+    let reviewerContext = resolveReviewerContext(
+      for: execution,
+      in: run,
+      reviewerExecutionId: reviewerExecutionId,
+      reviewerLabel: reviewerLabel
+    )
+    let combinedNotes = ([reason, notes]
+      .compactMap { normalizedOptionalText($0) })
+      .joined(separator: "\n\n")
+    appendReviewRecord(
+      decision: .rejected,
+      to: execution,
+      reviewerExecutionId: reviewerContext.0,
+      reviewerLabel: reviewerContext.1,
+      notes: combinedNotes
+    )
+    writeReviewDecisionArtifact(
+      for: execution,
+      run: run,
+      decision: .rejected,
+      reviewerExecutionId: reviewerContext.0,
+      reviewerLabel: reviewerContext.1,
+      notes: combinedNotes
+    )
     execution.status = .rejected(reason)
     updateRunStatus(run)
   }
 
   /// Mark an execution as reviewed (without approval)
-  func markReviewed(_ execution: ParallelWorktreeExecution, in run: ParallelWorktreeRun) {
+  func markReviewed(
+    _ execution: ParallelWorktreeExecution,
+    in run: ParallelWorktreeRun,
+    reviewerExecutionId: UUID? = nil,
+    reviewerLabel: String? = nil,
+    notes: String? = nil
+  ) {
     guard execution.status == .awaitingReview else { return }
+    let reviewerContext = resolveReviewerContext(
+      for: execution,
+      in: run,
+      reviewerExecutionId: reviewerExecutionId,
+      reviewerLabel: reviewerLabel
+    )
+    appendReviewRecord(
+      decision: .reviewed,
+      to: execution,
+      reviewerExecutionId: reviewerContext.0,
+      reviewerLabel: reviewerContext.1,
+      notes: notes
+    )
+    writeReviewDecisionArtifact(
+      for: execution,
+      run: run,
+      decision: .reviewed,
+      reviewerExecutionId: reviewerContext.0,
+      reviewerLabel: reviewerContext.1,
+      notes: notes
+    )
     execution.status = .reviewed
     updateRunStatus(run)
   }
@@ -2273,6 +2579,9 @@ final class ParallelWorktreeRunner {
         execution.branchName   = dict["branchName"] as? String
         execution.worktreePath = dict["worktreePath"] as? String
         execution.chainId      = (dict["chainId"] as? String).flatMap { UUID(uuidString: $0) }
+        execution.assignedReviewerExecutionId = (dict["assignedReviewerExecutionId"] as? String).flatMap { UUID(uuidString: $0) }
+        execution.assignedReviewerLabel = dict["assignedReviewerLabel"] as? String
+        execution.assignedReviewTargetExecutionId = (dict["assignedReviewTargetExecutionId"] as? String).flatMap { UUID(uuidString: $0) }
         execution.diffSummary  = dict["diffSummary"] as? String
         execution.output       = dict["outputPreview"] as? String ?? ""
         execution.operatorGuidance = dict["operatorGuidance"] as? [String] ?? []
@@ -2287,6 +2596,22 @@ final class ParallelWorktreeRunner {
               type: type,
               filePath: filePath,
               label: artifactDict["label"] as? String
+            )
+          }
+        }
+
+        if let reviews = dict["reviewRecords"] as? [[String: Any]] {
+          execution.reviewRecords = reviews.compactMap { reviewDict in
+            guard let decisionRaw = reviewDict["decision"] as? String,
+                  let decision = ParallelWorktreeExecution.ReviewRecord.Decision(rawValue: decisionRaw) else {
+              return nil
+            }
+            return ParallelWorktreeExecution.ReviewRecord(
+              decision: decision,
+              reviewerExecutionId: (reviewDict["reviewerExecutionId"] as? String).flatMap { UUID(uuidString: $0) },
+              reviewerLabel: reviewDict["reviewerLabel"] as? String,
+              notes: reviewDict["notes"] as? String,
+              createdAt: (reviewDict["createdAt"] as? String).flatMap { Formatter.iso8601.date(from: $0) } ?? Date()
             )
           }
         }

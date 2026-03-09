@@ -208,6 +208,8 @@ struct InlineExecutionCard: View {
   let onToggleExpand: () -> Void
   @State private var rejectReason = ""
   @State private var showingRejectDialog = false
+  @State private var assignedRejectReason = ""
+  @State private var showingAssignedRejectDialog = false
   @State private var expandedSteps: Set<UUID> = []
 
   var body: some View {
@@ -408,6 +410,10 @@ struct InlineExecutionCard: View {
             }
           }
 
+          reviewRoutingSection
+
+          reviewHistorySection
+
           // Action buttons
           executionActions
         }
@@ -430,6 +436,23 @@ struct InlineExecutionCard: View {
       }
     } message: {
       Text("Provide a reason for rejecting this execution.")
+    }
+    .alert("Reject Assigned Review Target", isPresented: $showingAssignedRejectDialog) {
+      TextField("Reason", text: $assignedRejectReason)
+      Button("Cancel", role: .cancel) {}
+      Button("Reject", role: .destructive) {
+        if let target = runner.assignedReviewTarget(for: execution, in: run) {
+          runner.rejectExecution(
+            target,
+            in: run,
+            reason: assignedRejectReason,
+            reviewerExecutionId: execution.id
+          )
+        }
+        assignedRejectReason = ""
+      }
+    } message: {
+      Text("Provide a reason for rejecting the assigned review target.")
     }
   }
 
@@ -558,6 +581,128 @@ struct InlineExecutionCard: View {
         .controlSize(.mini)
       }
       #endif
+    }
+  }
+
+  @ViewBuilder
+  private var reviewRoutingSection: some View {
+    let eligibleReviewers = runner.eligibleReviewers(for: execution, in: run)
+    let assignedTarget = runner.assignedReviewTarget(for: execution, in: run)
+
+    if execution.status == .awaitingReview || execution.status == .reviewed || assignedTarget != nil {
+      VStack(alignment: .leading, spacing: 6) {
+        Text("Review Routing")
+          .font(.caption2)
+          .fontWeight(.medium)
+          .foregroundStyle(.secondary)
+
+        if execution.status == .awaitingReview || execution.status == .reviewed {
+          HStack(spacing: 8) {
+            Label(execution.assignedReviewerLabel ?? "Unassigned reviewer", systemImage: "person.crop.circle.badge.checkmark")
+              .font(.caption2)
+              .foregroundStyle(execution.assignedReviewerExecutionId == nil ? .tertiary : .secondary)
+
+            if !eligibleReviewers.isEmpty {
+              Menu("Assign") {
+                ForEach(eligibleReviewers) { reviewer in
+                  Button(runner.eligibleReviewerLabel(for: reviewer)) {
+                    runner.assignReviewer(reviewer, to: execution, in: run)
+                  }
+                }
+                if execution.assignedReviewerExecutionId != nil {
+                  Divider()
+                  Button("Clear Assignment", role: .destructive) {
+                    runner.assignReviewer(nil, to: execution, in: run)
+                  }
+                }
+              }
+              .font(.caption2)
+            }
+          }
+        }
+
+        if let assignedTarget {
+          VStack(alignment: .leading, spacing: 4) {
+            Text("Assigned target: \(assignedTarget.task.title)")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+
+            if assignedTarget.status == .awaitingReview || assignedTarget.status == .reviewed {
+              HStack(spacing: 6) {
+                Button("Approve Target") {
+                  runner.approveExecution(assignedTarget, in: run, reviewerExecutionId: execution.id)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.green)
+                .controlSize(.mini)
+
+                Button("Reviewed Target") {
+                  runner.markReviewed(assignedTarget, in: run, reviewerExecutionId: execution.id)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+
+                Button("Reject Target") {
+                  showingAssignedRejectDialog = true
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var reviewHistorySection: some View {
+    if !execution.reviewRecords.isEmpty {
+      VStack(alignment: .leading, spacing: 4) {
+        Text("Review History")
+          .font(.caption2)
+          .fontWeight(.medium)
+          .foregroundStyle(.secondary)
+
+        ForEach(Array(execution.reviewRecords.suffix(3).reversed())) { review in
+          VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+              Image(systemName: reviewIcon(review.decision.rawValue))
+                .font(.caption2)
+                .foregroundStyle(reviewColor(review.decision.rawValue))
+              Text(review.decision.rawValue.capitalized)
+                .font(.caption2)
+              if let reviewerLabel = review.reviewerLabel {
+                Text("by \(reviewerLabel)")
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              }
+            }
+            if let notes = review.notes {
+              Text(notes)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private func reviewIcon(_ decision: String) -> String {
+    switch decision {
+    case "approved": return "checkmark.circle.fill"
+    case "rejected": return "xmark.circle.fill"
+    default: return "checkmark.circle"
+    }
+  }
+
+  private func reviewColor(_ decision: String) -> Color {
+    switch decision {
+    case "approved": return .green
+    case "rejected": return .red
+    default: return .orange
     }
   }
 

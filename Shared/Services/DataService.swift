@@ -352,6 +352,15 @@ final class DataService {
       if let chainId = execution.chainId {
         result["chainId"] = chainId.uuidString
       }
+      if let assignedReviewerExecutionId = execution.assignedReviewerExecutionId {
+        result["assignedReviewerExecutionId"] = assignedReviewerExecutionId.uuidString
+      }
+      if let assignedReviewerLabel = execution.assignedReviewerLabel {
+        result["assignedReviewerLabel"] = assignedReviewerLabel
+      }
+      if let assignedReviewTargetExecutionId = execution.assignedReviewTargetExecutionId {
+        result["assignedReviewTargetExecutionId"] = assignedReviewTargetExecutionId.uuidString
+      }
       if let worktreePath = execution.worktreePath {
         result["worktreePath"] = worktreePath
       }
@@ -398,6 +407,24 @@ final class DataService {
         }
         if let lastVerdict = execution.chainStepResults.last(where: { $0.reviewVerdict != nil })?.reviewVerdict {
           result["reviewVerdict"] = lastVerdict
+        }
+      }
+      if !execution.reviewRecords.isEmpty {
+        result["reviewRecords"] = execution.reviewRecords.map { review in
+          var dict: [String: Any] = [
+            "decision": review.decision.rawValue,
+            "createdAt": formatter.string(from: review.createdAt)
+          ]
+          if let reviewerExecutionId = review.reviewerExecutionId {
+            dict["reviewerExecutionId"] = reviewerExecutionId.uuidString
+          }
+          if let reviewerLabel = review.reviewerLabel {
+            dict["reviewerLabel"] = reviewerLabel
+          }
+          if let notes = review.notes {
+            dict["notes"] = notes
+          }
+          return dict
         }
       }
       if !execution.artifacts.isEmpty {
