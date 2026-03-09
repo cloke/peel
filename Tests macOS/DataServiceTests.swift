@@ -12,6 +12,7 @@ final class DataServiceTests: XCTestCase {
   override func setUp() async throws {
     let schema = Schema([
       MCPRunRecord.self,
+      MCPRunResultRecord.self,
       DeviceSettings.self
     ])
     let config = ModelConfiguration(isStoredInMemoryOnly: true)
@@ -85,5 +86,45 @@ final class DataServiceTests: XCTestCase {
     XCTAssertEqual(recentRuns.count, 100)
     XCTAssertEqual(recentRuns.first?.templateName, "template-105")
     XCTAssertEqual(recentRuns.last?.templateName, "template-6")
+  }
+
+  func testMCPRunPersistenceUsesExplicitRecordID() async throws {
+    let runId = UUID()
+
+    _ = dataService.recordMCPRun(
+      recordId: runId,
+      chainId: "parallel-run-id",
+      templateId: "first-template",
+      templateName: "Quick Task",
+      prompt: "first prompt",
+      workingDirectory: "/tmp/one",
+      success: true,
+      errorMessage: nil,
+      mergeConflictsCount: 0,
+      resultCount: 1
+    )
+
+    _ = dataService.recordMCPRun(
+      recordId: runId,
+      chainId: "parallel-run-id",
+      templateId: "second-template",
+      templateName: "Quick Task",
+      prompt: "updated prompt",
+      workingDirectory: "/tmp/two",
+      success: false,
+      errorMessage: "failed",
+      mergeConflictsCount: 2,
+      resultCount: 3
+    )
+
+    let recentRuns = dataService.getRecentMCPRuns(limit: 10)
+
+    XCTAssertEqual(recentRuns.count, 1)
+    XCTAssertEqual(recentRuns.first?.id, runId)
+    XCTAssertEqual(recentRuns.first?.prompt, "updated prompt")
+    XCTAssertEqual(recentRuns.first?.workingDirectory, "/tmp/two")
+    XCTAssertFalse(recentRuns.first?.success ?? true)
+    XCTAssertEqual(recentRuns.first?.errorMessage, "failed")
+    XCTAssertEqual(recentRuns.first?.resultCount, 3)
   }
 }

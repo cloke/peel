@@ -32,6 +32,7 @@ final class MCPRunRecord {
   var screenshotPaths: String = ""
 
   init(
+    id: UUID = UUID(),
     chainId: String = "",
     templateId: String = "",
     templateName: String,
@@ -50,7 +51,7 @@ final class MCPRunRecord {
     validationReasons: String? = nil,
     createdAt: Date = Date()
   ) {
-    self.id = UUID()
+    self.id = id
     self.chainId = chainId
     self.templateId = templateId
     self.templateName = templateName

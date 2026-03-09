@@ -319,6 +319,11 @@ extension MCPServerService: ChainToolsHandlerDelegate {
       } else if let chainId, !chainId.isEmpty {
         if let found = dataService.getMCPRun(forChainId: chainId) {
           runs = [found]
+        } else if let uuid = UUID(uuidString: chainId) {
+          let recent = dataService.getRecentMCPRuns(limit: 5_000)
+          if let found = recent.first(where: { $0.id == uuid }) {
+            runs = [found]
+          }
         }
       }
     }

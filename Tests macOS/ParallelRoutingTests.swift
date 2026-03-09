@@ -6,6 +6,7 @@
 //
 
 import XCTest
+import SwiftData
 @testable import Peel
 
 @MainActor
@@ -159,6 +160,68 @@ final class ParallelRoutingTests: XCTestCase {
     }
     XCTAssertEqual(dedupedRuns.count, 1, "Should deduplicate runs already in known set")
     XCTAssertEqual(dedupedRuns.first?.sourceChainRunId, chainRunId2)
+  }
+
+  func testChainRunResultsResolvePersistedParallelRunByPublicIdentifiers() throws {
+    let schema = Schema([
+      MCPRunRecord.self,
+      MCPRunResultRecord.self
+    ])
+    let config = ModelConfiguration(isStoredInMemoryOnly: true)
+    let container = try ModelContainer(for: schema, configurations: config)
+    let dataService = DataService(modelContext: container.mainContext)
+    let server = MCPServerService(config: MCPFileConfig())
+
+    server.dataService = dataService
+
+    let publicRunId = UUID()
+    let parallelRunId = UUID()
+    let agentId = UUID()
+
+    _ = dataService.recordMCPRun(
+      recordId: publicRunId,
+      chainId: parallelRunId.uuidString,
+      templateId: nil,
+      templateName: "Quick Task",
+      prompt: "Fix the bug",
+      workingDirectory: "/tmp/repo",
+      success: true,
+      errorMessage: nil,
+      mergeConflictsCount: 0,
+      resultCount: 1
+    )
+    _ = dataService.recordMCPRunResult(
+      chainId: parallelRunId.uuidString,
+      agentId: agentId.uuidString,
+      agentName: "Implementer",
+      model: "gpt-5-mini",
+      prompt: "Fix the bug",
+      output: "done",
+      premiumCost: 0,
+      reviewVerdict: nil
+    )
+
+    let byRunId = server.chainRunResults(
+      runId: publicRunId.uuidString,
+      chainId: nil,
+      includeOutputs: true
+    )
+    XCTAssertEqual(byRunId.count, 1)
+    XCTAssertEqual(byRunId.first?["runId"] as? String, publicRunId.uuidString)
+    XCTAssertEqual(byRunId.first?["chainId"] as? String, parallelRunId.uuidString)
+
+    let runResults = byRunId.first?["results"] as? [[String: Any]]
+    XCTAssertEqual(runResults?.count, 1)
+    XCTAssertEqual(runResults?.first?["agentId"] as? String, agentId.uuidString)
+    XCTAssertEqual(runResults?.first?["output"] as? String, "done")
+
+    let byChainIdField = server.chainRunResults(
+      runId: nil,
+      chainId: publicRunId.uuidString,
+      includeOutputs: false
+    )
+    XCTAssertEqual(byChainIdField.count, 1)
+    XCTAssertEqual(byChainIdField.first?["runId"] as? String, publicRunId.uuidString)
   }
 
   // MARK: - Helpers

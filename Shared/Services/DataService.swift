@@ -199,6 +199,7 @@ final class DataService {
 
   @discardableResult
   func recordMCPRun(
+    recordId: UUID? = nil,
     chainId: String? = nil,
     templateId: String?,
     templateName: String,
@@ -216,29 +217,61 @@ final class DataService {
     validationReasons: [String] = [],
     noWorkReason: String? = nil
   ) -> MCPRunRecord {
-    let record = MCPRunRecord(
-      chainId: chainId ?? "",
-      templateId: templateId ?? "",
-      templateName: templateName,
-      prompt: prompt,
-      workingDirectory: workingDirectory,
-      implementerBranches: implementerBranches.joined(separator: "\n"),
-      implementerWorkspacePaths: implementerWorkspacePaths.joined(separator: "\n"),
-      screenshotPaths: screenshotPaths.joined(separator: "\n"),
-      success: success,
-      errorMessage: errorMessage,
-      noWorkReason: noWorkReason,
-      mergeConflictsCount: mergeConflictsCount,
-      mergeConflicts: mergeConflicts.joined(separator: "\n"),
-      resultCount: resultCount,
-      validationStatus: validationStatus,
-      validationReasons: validationReasons.isEmpty ? nil : validationReasons.joined(separator: "\n"),
-      createdAt: Date()
-    )
-    modelContext.insert(record)
+    let record: MCPRunRecord
+    if let recordId, let existing = getMCPRun(id: recordId) {
+      record = existing
+    } else {
+      let created = MCPRunRecord(
+        id: recordId ?? UUID(),
+        chainId: chainId ?? "",
+        templateId: templateId ?? "",
+        templateName: templateName,
+        prompt: prompt,
+        workingDirectory: workingDirectory,
+        implementerBranches: implementerBranches.joined(separator: "\n"),
+        implementerWorkspacePaths: implementerWorkspacePaths.joined(separator: "\n"),
+        screenshotPaths: screenshotPaths.joined(separator: "\n"),
+        success: success,
+        errorMessage: errorMessage,
+        noWorkReason: noWorkReason,
+        mergeConflictsCount: mergeConflictsCount,
+        mergeConflicts: mergeConflicts.joined(separator: "\n"),
+        resultCount: resultCount,
+        validationStatus: validationStatus,
+        validationReasons: validationReasons.isEmpty ? nil : validationReasons.joined(separator: "\n"),
+        createdAt: Date()
+      )
+      modelContext.insert(created)
+      record = created
+    }
+
+    record.chainId = chainId ?? ""
+    record.templateId = templateId ?? ""
+    record.templateName = templateName
+    record.prompt = prompt
+    record.workingDirectory = workingDirectory
+    record.implementerBranches = implementerBranches.joined(separator: "\n")
+    record.implementerWorkspacePaths = implementerWorkspacePaths.joined(separator: "\n")
+    record.screenshotPaths = screenshotPaths.joined(separator: "\n")
+    record.success = success
+    record.errorMessage = errorMessage
+    record.noWorkReason = noWorkReason
+    record.mergeConflictsCount = mergeConflictsCount
+    record.mergeConflicts = mergeConflicts.joined(separator: "\n")
+    record.resultCount = resultCount
+    record.validationStatus = validationStatus
+    record.validationReasons = validationReasons.isEmpty ? nil : validationReasons.joined(separator: "\n")
+
     cleanupOldMCPRuns()
     try? modelContext.save()
     return record
+  }
+
+  func getMCPRun(id: UUID) -> MCPRunRecord? {
+    let descriptor = FetchDescriptor<MCPRunRecord>(
+      predicate: #Predicate { $0.id == id }
+    )
+    return try? modelContext.fetch(descriptor).first
   }
 
   func getRecentMCPRuns(limit: Int = 20) -> [MCPRunRecord] {
@@ -913,6 +946,20 @@ final class DataService {
       sortBy: [SortDescriptor(\.createdAt, order: .forward)]
     )
     return (try? modelContext.fetch(descriptor)) ?? []
+  }
+
+  func clearMCPRunResults(chainId: String) {
+    guard !chainId.isEmpty else { return }
+    let descriptor = FetchDescriptor<MCPRunResultRecord>(
+      predicate: #Predicate { $0.chainId == chainId }
+    )
+    guard let results = try? modelContext.fetch(descriptor), !results.isEmpty else {
+      return
+    }
+    for result in results {
+      modelContext.delete(result)
+    }
+    try? modelContext.save()
   }
 
   private func cleanupOldMCPRuns(keeping limit: Int = 100) {

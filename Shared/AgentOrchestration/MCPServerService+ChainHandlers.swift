@@ -538,6 +538,7 @@ extension MCPServerService {
         let workspacePaths = [chainWorkingDirectory].compactMap { $0 }
         let workspaceBranches = [chainWorkspace?.branch].compactMap { $0 }
         let _ = ds.recordMCPRun(
+          recordId: runId,
           chainId: chain.id.uuidString,
           templateId: template.id.uuidString,
           templateName: template.name,

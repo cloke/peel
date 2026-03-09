@@ -1029,6 +1029,11 @@ final class ParallelWorktreeRunner {
       }
 
       recordSnapshot(for: run)
+      persistMCPRunIfNeeded(
+        for: execution,
+        in: run,
+        noWorkReason: result.noWorkReason
+      )
 
       // Tear down UX session if one was created
       if execution.task.useUXTesting, let orchestrator = uxTestOrchestrator {
@@ -1048,6 +1053,11 @@ final class ParallelWorktreeRunner {
       execution.status = .failed(error.localizedDescription)
       execution.completedAt = Date()
       recordSnapshot(for: run)
+      persistMCPRunIfNeeded(
+        for: execution,
+        in: run,
+        errorMessage: error.localizedDescription
+      )
       // Tear down UX session on failure too
       if execution.task.useUXTesting, let orchestrator = uxTestOrchestrator {
         await orchestrator.teardownSession(sessionId: execution.id)
@@ -1269,8 +1279,12 @@ final class ParallelWorktreeRunner {
     // Extract per-step summaries from chain results
     var stepSummaries: [ParallelWorktreeExecution.ChainStepSummary] = []
     var reviewVerdict: ReviewVerdict?
+    let persistenceChainId = run.id.uuidString
 
     if let runSummary = lastSummary {
+      if run.sourceChainRunId != nil {
+        dataService?.clearMCPRunResults(chainId: persistenceChainId)
+      }
       for result in runSummary.results {
         let outputPreview = String(result.output.prefix(500))
         let durationSec: Double? = result.duration.flatMap { Double($0) }
@@ -1302,17 +1316,18 @@ final class ParallelWorktreeRunner {
           reviewVerdict = verdict
         }
 
-        // Record per-step result to SwiftData for post-mortem
-        dataService?.recordMCPRunResult(
-          chainId: result.agentId.uuidString,
-          agentId: result.id.uuidString,
-          agentName: result.agentName,
-          model: result.model,
-          prompt: result.prompt,
-          output: result.output,
-          premiumCost: result.premiumCost,
-          reviewVerdict: result.reviewVerdict?.rawValue
-        )
+        if run.sourceChainRunId != nil {
+          dataService?.recordMCPRunResult(
+            chainId: persistenceChainId,
+            agentId: result.id.uuidString,
+            agentName: result.agentName,
+            model: result.model,
+            prompt: result.prompt,
+            output: result.output,
+            premiumCost: result.premiumCost,
+            reviewVerdict: result.reviewVerdict?.rawValue
+          )
+        }
       }
 
       // Write chain log JSON to worktree for post-mortem analysis
@@ -1358,12 +1373,68 @@ final class ParallelWorktreeRunner {
       mergeConflicts: lastSummary?.mergeConflicts ?? [],
       chainSucceeded: lastSummary?.stateDescription.lowercased() != "failed",
       reviewVerdict: reviewVerdict,
-      chainStepResults: stepSummaries
+      chainStepResults: stepSummaries,
+      noWorkReason: lastSummary?.noWorkReason
     )
   }
 
   private func recordSnapshot(for run: ParallelWorktreeRun) {
     dataService?.recordParallelRunSnapshot(run: run)
+  }
+
+  private func persistMCPRunIfNeeded(
+    for execution: ParallelWorktreeExecution,
+    in run: ParallelWorktreeRun,
+    noWorkReason: String? = nil,
+    errorMessage: String? = nil
+  ) {
+    guard let sourceChainRunId = run.sourceChainRunId, let dataService else {
+      return
+    }
+
+    let screenshots = execution.artifacts
+      .filter { $0.type == "screenshot" }
+      .map(\.filePath)
+
+    let persistedError: String? = if let errorMessage {
+      errorMessage
+    } else {
+      switch execution.status {
+      case .failed(let message), .rejected(let message):
+        message
+      case .cancelled:
+        "Execution cancelled"
+      default:
+        nil
+      }
+    }
+
+    let success: Bool = {
+      switch execution.status {
+      case .failed, .cancelled:
+        return false
+      default:
+        return true
+      }
+    }()
+
+    let _ = dataService.recordMCPRun(
+      recordId: sourceChainRunId,
+      chainId: run.id.uuidString,
+      templateId: nil,
+      templateName: run.templateName ?? "Parallel Run",
+      prompt: execution.amendedPrompt ?? execution.task.prompt,
+      workingDirectory: run.projectPath,
+      implementerBranches: [execution.branchName].compactMap { $0 },
+      implementerWorkspacePaths: [execution.worktreePath].compactMap { $0 },
+      screenshotPaths: screenshots,
+      success: success,
+      errorMessage: persistedError,
+      mergeConflictsCount: execution.conflictFiles.count,
+      mergeConflicts: execution.conflictFiles.map(\.filePath),
+      resultCount: execution.chainStepResults.count,
+      noWorkReason: noWorkReason
+    )
   }
 
   private func executionArtifactDirectory(
@@ -1906,6 +1977,7 @@ final class ParallelWorktreeRunner {
     let chainSucceeded: Bool
     let reviewVerdict: ReviewVerdict?
     let chainStepResults: [ParallelWorktreeExecution.ChainStepSummary]
+    let noWorkReason: String?
   }
   
   /// Update run status based on execution results and record a snapshot.
