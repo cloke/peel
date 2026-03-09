@@ -9,6 +9,9 @@ import Foundation
 import Github
 import OSLog
 import SwiftData
+#if os(macOS)
+import AppKit
+#endif
 
 @MainActor
 enum AppResetService {
