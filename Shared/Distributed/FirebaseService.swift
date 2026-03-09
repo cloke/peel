@@ -178,7 +178,8 @@ public final class FirebaseService {
     return (swarmIds, counts, swarmWorkers.count)
   }
   private var taskListener: ListenerRegistration?
-  private var heartbeatTask: Task<Void, Never>?
+  /// Per-swarm heartbeat tasks keyed by swarmId
+  private var heartbeatTasks: [String: Task<Void, Never>] = [:]
   private var currentNonce: String?
   
   // MARK: - Firestore References
@@ -1188,7 +1189,7 @@ public final class FirebaseService {
   public func unregisterWorker(swarmId: String) async throws {
     guard let workerId = registeredWorkerId else { return }
     
-    stopHeartbeatLoop()
+    stopHeartbeatLoop(swarmId: swarmId)
     stopTaskListener()
     
     try await workersCollection(swarmId: swarmId).document(workerId).updateData([
@@ -1218,18 +1219,23 @@ public final class FirebaseService {
   }
   
   private func startHeartbeatLoop(swarmId: String, workerId: String) {
-    stopHeartbeatLoop()
-    heartbeatTask = Task { [weak self] in
+    stopHeartbeatLoop(swarmId: swarmId)
+    heartbeatTasks[swarmId] = Task { [weak self] in
       while !Task.isCancelled {
         await self?.sendHeartbeat(swarmId: swarmId, workerId: workerId)
         try? await Task.sleep(for: .seconds(30))
       }
     }
   }
-  
-  private func stopHeartbeatLoop() {
-    heartbeatTask?.cancel()
-    heartbeatTask = nil
+
+  private func stopHeartbeatLoop(swarmId: String) {
+    heartbeatTasks[swarmId]?.cancel()
+    heartbeatTasks[swarmId] = nil
+  }
+
+  private func stopAllHeartbeatLoops() {
+    for (_, task) in heartbeatTasks { task.cancel() }
+    heartbeatTasks.removeAll()
   }
   
   /// Fetch a single worker document directly from Firestore (no listener required).
@@ -2015,7 +2021,7 @@ public final class FirebaseService {
     stopWorkerListeners()
     stopMessageListeners()
     stopTaskListener()
-    stopHeartbeatLoop()
+    stopAllHeartbeatLoops()
   }
   
   // MARK: - Helper Functions
