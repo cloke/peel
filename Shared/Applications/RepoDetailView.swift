@@ -2255,8 +2255,8 @@ struct RAGTabView: View {
   }
 
   private var swarmSyncSection: some View {
-    let peers = swarm.connectedWorkers
-    let onDemandWorkers = swarm.onDemandWorkers
+    let peers = SwarmPeerPreferences.ordered(peers: swarm.connectedWorkers)
+    let onDemandWorkers = SwarmPeerPreferences.ordered(workers: swarm.onDemandWorkers)
 
     return VStack(alignment: .leading, spacing: 8) {
       SectionHeader("Swarm Sync")
@@ -2316,20 +2316,20 @@ struct RAGTabView: View {
                 if peers.count > 1 {
                   syncPeerMenu(peers: peers, repoIdentifier: repoId, direction: .push)
                   syncPeerMenu(peers: peers, repoIdentifier: repoId, direction: .pull)
-                } else {
+                } else if let peer = peers.first {
                   Button {
-                    Task { await syncWithPeers(repoIdentifier: repoId, direction: .push) }
+                    Task { await syncWithPeers(repoIdentifier: repoId, direction: .push, workerId: peer.id) }
                   } label: {
-                    syncButtonLabel("Push", icon: "arrow.up.circle", active: isSyncing && syncDirection == .push)
+                    syncButtonLabel("Push to \(peer.displayName)", icon: "arrow.up.circle", active: isSyncing && syncDirection == .push)
                   }
                   .buttonStyle(.bordered)
                   .controlSize(.small)
                   .disabled(isSyncing)
 
                   Button {
-                    Task { await syncWithPeers(repoIdentifier: repoId, direction: .pull) }
+                    Task { await syncWithPeers(repoIdentifier: repoId, direction: .pull, workerId: peer.id) }
                   } label: {
-                    syncButtonLabel("Pull", icon: "arrow.down.circle", active: isSyncing && syncDirection == .pull)
+                    syncButtonLabel("Pull from \(peer.displayName)", icon: "arrow.down.circle", active: isSyncing && syncDirection == .pull)
                   }
                   .buttonStyle(.bordered)
                   .controlSize(.small)
@@ -2338,11 +2338,11 @@ struct RAGTabView: View {
               } else if !onDemandWorkers.isEmpty {
                 if onDemandWorkers.count > 1 {
                   onDemandMenu(workers: onDemandWorkers, repoIdentifier: repoId)
-                } else {
+                } else if let worker = onDemandWorkers.first {
                   Button {
-                    Task { await syncOnDemand(repoIdentifier: repoId, fromWorkerId: onDemandWorkers[0].id) }
+                    Task { await syncOnDemand(repoIdentifier: repoId, fromWorkerId: worker.id) }
                   } label: {
-                    syncButtonLabel("Pull (WAN)", icon: "arrow.down.circle", active: isSyncing && syncDirection == .pull)
+                    syncButtonLabel("Pull from \(worker.displayName) (WAN)", icon: "arrow.down.circle", active: isSyncing && syncDirection == .pull)
                   }
                   .buttonStyle(.bordered)
                   .controlSize(.small)
@@ -2392,7 +2392,7 @@ struct RAGTabView: View {
 
   private func syncPeerMenu(peers: [ConnectedPeer], repoIdentifier: String, direction: RAGArtifactSyncDirection) -> some View {
     let isPush = direction == .push
-    let label = isPush ? "Push" : "Pull"
+    let label = defaultPeerLabel(for: peers, direction: direction)
     let icon = isPush ? "arrow.up.circle" : "arrow.down.circle"
     let isActive = isSyncing && syncDirection == direction
 
@@ -2401,7 +2401,7 @@ struct RAGTabView: View {
         Button {
           Task { await syncWithPeers(repoIdentifier: repoIdentifier, direction: direction, workerId: peer.id) }
         } label: {
-          Label(peer.displayName, systemImage: "desktopcomputer")
+          Label(peerMenuDisplayName(peer), systemImage: "desktopcomputer")
         }
       }
     } label: {
@@ -2420,11 +2420,11 @@ struct RAGTabView: View {
         Button {
           Task { await syncOnDemand(repoIdentifier: repoIdentifier, fromWorkerId: worker.id) }
         } label: {
-          Label(worker.displayName, systemImage: "desktopcomputer")
+          Label(workerMenuDisplayName(worker), systemImage: "desktopcomputer")
         }
       }
     } label: {
-      syncButtonLabel("Pull (WAN)", icon: "arrow.down.circle", active: isActive)
+      syncButtonLabel(defaultWorkerLabel(for: workers), icon: "arrow.down.circle", active: isActive)
     }
     .buttonStyle(.bordered)
     .controlSize(.small)
@@ -2450,7 +2450,7 @@ struct RAGTabView: View {
   // MARK: - Sync Actions
 
   private func syncWithPeers(repoIdentifier: String, direction: RAGArtifactSyncDirection, workerId: String? = nil) async {
-    let targetWorker = workerId ?? SwarmCoordinator.shared.connectedWorkers.first?.id ?? "auto"
+    let targetWorker = workerId ?? SwarmPeerPreferences.defaultPeer(from: SwarmCoordinator.shared.connectedWorkers)?.id ?? "auto"
     repoDetailAutomationLogger.info("RAG sync start repo=\(repo.displayName, privacy: .public) direction=\(direction.rawValue, privacy: .public) worker=\(targetWorker, privacy: .public)")
     isSyncing = true
     syncDirection = direction
@@ -2514,6 +2514,30 @@ struct RAGTabView: View {
     isSyncing = false
     syncDirection = nil
     persistRAGSyncAutomationState()
+  }
+
+  private func defaultPeerLabel(for peers: [ConnectedPeer], direction: RAGArtifactSyncDirection) -> String {
+    guard let peer = SwarmPeerPreferences.defaultPeer(from: peers) else {
+      return direction == .push ? "Push" : "Pull"
+    }
+    return direction == .push ? "Push to \(peer.displayName)" : "Pull from \(peer.displayName)"
+  }
+
+  private func defaultWorkerLabel(for workers: [FirestoreWorker]) -> String {
+    guard let worker = SwarmPeerPreferences.defaultWorker(from: workers) else {
+      return "Pull (WAN)"
+    }
+    return "Pull from \(worker.displayName) (WAN)"
+  }
+
+  private func peerMenuDisplayName(_ peer: ConnectedPeer) -> String {
+    let preferredSuffix = SwarmPeerPreferences.isPreferred(peer) ? " (Preferred)" : ""
+    return "\(peer.displayName) · \(peer.capabilities.memoryGB)GB\(preferredSuffix)"
+  }
+
+  private func workerMenuDisplayName(_ worker: FirestoreWorker) -> String {
+    let preferredSuffix = SwarmPeerPreferences.isPreferred(worker) ? " (Preferred)" : ""
+    return "\(worker.displayName)\(preferredSuffix)"
   }
 
   private func syncOnDemand(repoIdentifier: String, fromWorkerId: String) async {
@@ -2658,7 +2682,7 @@ struct RAGTabView: View {
     switch controlId {
     case "repositories.rag.sync.push":
       guard let repoId,
-            let peer = swarm.connectedWorkers.first else {
+            let peer = SwarmPeerPreferences.defaultPeer(from: swarm.connectedWorkers) else {
         automationRAGSyncStatus = "no-lan-peer"
         if mcpServer.lastUIAction?.controlId == controlId {
           mcpServer.recordUIActionHandled(controlId)
@@ -2675,7 +2699,7 @@ struct RAGTabView: View {
 
     case "repositories.rag.sync.pull":
       guard let repoId,
-            let peer = swarm.connectedWorkers.first else {
+            let peer = SwarmPeerPreferences.defaultPeer(from: swarm.connectedWorkers) else {
         automationRAGSyncStatus = "no-lan-peer"
         if mcpServer.lastUIAction?.controlId == controlId {
           mcpServer.recordUIActionHandled(controlId)
@@ -2692,7 +2716,7 @@ struct RAGTabView: View {
 
     case "repositories.rag.sync.pullWan":
       guard let repoId,
-            let worker = swarm.onDemandWorkers.first else {
+            let worker = SwarmPeerPreferences.defaultWorker(from: swarm.onDemandWorkers) else {
         automationRAGSyncStatus = "no-wan-worker"
         if mcpServer.lastUIAction?.controlId == controlId {
           mcpServer.recordUIActionHandled(controlId)

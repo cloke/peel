@@ -960,7 +960,7 @@ public final class SwarmCoordinator {
       }
       targetWorker = worker
     } else {
-      guard let worker = connectedWorkers.first else {
+      guard let worker = SwarmPeerPreferences.defaultPeer(from: connectedWorkers) else {
         throw DistributedError.noWorkersAvailable
       }
       targetWorker = worker

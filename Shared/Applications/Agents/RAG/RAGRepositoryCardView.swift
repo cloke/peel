@@ -237,23 +237,52 @@ struct RAGRepositoryCardView: View {
     }
     .contextMenu {
       if let repoIdentifier = repo.repoIdentifier {
+        let peers = SwarmPeerPreferences.ordered(peers: SwarmCoordinator.shared.connectedWorkers)
         if SwarmCoordinator.shared.isActive && hasConnectedPeers {
-          Button {
-            Task { await syncRepoWithPeers(repoIdentifier: repoIdentifier, direction: .push) }
-          } label: {
-            Label("Push to Peer", systemImage: "arrow.up.circle")
-          }
-          .disabled(isSyncDisabled)
+          if peers.count == 1, let peer = peers.first {
+            Button {
+              Task { await syncRepoWithPeers(repoIdentifier: repoIdentifier, direction: .push, workerId: peer.id) }
+            } label: {
+              Label("Push to \(peer.displayName)", systemImage: "arrow.up.circle")
+            }
+            .disabled(isSyncDisabled)
 
-          Button {
-            Task { await syncRepoWithPeers(repoIdentifier: repoIdentifier, direction: .pull) }
-          } label: {
-            Label("Pull from Peer", systemImage: "arrow.down.circle")
+            Button {
+              Task { await syncRepoWithPeers(repoIdentifier: repoIdentifier, direction: .pull, workerId: peer.id) }
+            } label: {
+              Label("Pull from \(peer.displayName)", systemImage: "arrow.down.circle")
+            }
+            .disabled(isSyncDisabled)
+          } else {
+            Menu {
+              ForEach(peers) { peer in
+                Button {
+                  Task { await syncRepoWithPeers(repoIdentifier: repoIdentifier, direction: .push, workerId: peer.id) }
+                } label: {
+                  Label(peerMenuDisplayName(peer), systemImage: "desktopcomputer")
+                }
+              }
+            } label: {
+              Label(defaultPeerLabel(for: peers, direction: .push), systemImage: "arrow.up.circle")
+            }
+            .disabled(isSyncDisabled)
+
+            Menu {
+              ForEach(peers) { peer in
+                Button {
+                  Task { await syncRepoWithPeers(repoIdentifier: repoIdentifier, direction: .pull, workerId: peer.id) }
+                } label: {
+                  Label(peerMenuDisplayName(peer), systemImage: "desktopcomputer")
+                }
+              }
+            } label: {
+              Label(defaultPeerLabel(for: peers, direction: .pull), systemImage: "arrow.down.circle")
+            }
+            .disabled(isSyncDisabled)
           }
-          .disabled(isSyncDisabled)
         } else if SwarmCoordinator.shared.isActive && !SwarmCoordinator.shared.onDemandWorkers.isEmpty {
           // On-demand pull from Firestore workers (WAN)
-          let workers = SwarmCoordinator.shared.onDemandWorkers
+          let workers = SwarmPeerPreferences.ordered(workers: SwarmCoordinator.shared.onDemandWorkers)
           if workers.count == 1 {
             Button {
               Task { await syncRepoOnDemand(repoIdentifier: repoIdentifier, fromWorkerId: workers[0].id) }
@@ -267,11 +296,11 @@ struct RAGRepositoryCardView: View {
                 Button {
                   Task { await syncRepoOnDemand(repoIdentifier: repoIdentifier, fromWorkerId: worker.id) }
                 } label: {
-                  Label(worker.displayName, systemImage: "desktopcomputer")
+                  Label(workerMenuDisplayName(worker), systemImage: "desktopcomputer")
                 }
               }
             } label: {
-              Label("Pull (WAN)", systemImage: "arrow.down.circle")
+              Label(defaultWorkerLabel(for: workers), systemImage: "arrow.down.circle")
             }
             .disabled(isSyncDisabled)
           }
@@ -545,9 +574,9 @@ struct RAGRepositoryCardView: View {
 
       // Per-repo sync buttons
       if let repoIdentifier = repo.repoIdentifier {
-        let peers = SwarmCoordinator.shared.connectedWorkers
+        let peers = SwarmPeerPreferences.ordered(peers: SwarmCoordinator.shared.connectedWorkers)
         let hasPeers = !peers.isEmpty && SwarmCoordinator.shared.isActive
-        let onDemandWorkers = SwarmCoordinator.shared.onDemandWorkers
+        let onDemandWorkers = SwarmPeerPreferences.ordered(workers: SwarmCoordinator.shared.onDemandWorkers)
         let hasOnDemand = !onDemandWorkers.isEmpty && SwarmCoordinator.shared.isActive
         if hasPeers {
           // TCP peers available: show menus to pick which peer
@@ -803,7 +832,7 @@ struct RAGRepositoryCardView: View {
         Button {
           Task { await syncRepoOnDemand(repoIdentifier: repoIdentifier, fromWorkerId: worker.id) }
         } label: {
-          Label(worker.displayName, systemImage: "desktopcomputer")
+          Label(workerMenuDisplayName(worker), systemImage: "desktopcomputer")
         }
       }
     } label: {
@@ -814,7 +843,7 @@ struct RAGRepositoryCardView: View {
           Text("Pulling…")
         }
       } else {
-        Label("Pull (WAN)", systemImage: "arrow.down.circle")
+        Label(defaultWorkerLabel(for: workers), systemImage: "arrow.down.circle")
       }
     }
     .buttonStyle(.bordered)
@@ -993,7 +1022,7 @@ struct RAGRepositoryCardView: View {
   @ViewBuilder
   private func syncPeerMenu(peers: [ConnectedPeer], repoIdentifier: String, direction: RAGArtifactSyncDirection) -> some View {
     let isPush = direction == .push
-    let label = isPush ? "Push" : "Pull"
+    let label = defaultPeerLabel(for: peers, direction: direction)
     let icon = isPush ? "arrow.up.circle" : "arrow.down.circle"
     let isActive = isSyncing && syncDirection == direction
 
@@ -1002,7 +1031,7 @@ struct RAGRepositoryCardView: View {
         Button {
           Task { await syncRepoWithPeers(repoIdentifier: repoIdentifier, direction: direction, workerId: peer.id) }
         } label: {
-          Label(peer.displayName, systemImage: "desktopcomputer")
+          Label(peerMenuDisplayName(peer), systemImage: "desktopcomputer")
         }
       }
     } label: {
@@ -1019,6 +1048,30 @@ struct RAGRepositoryCardView: View {
     .buttonStyle(.bordered)
     .controlSize(.small)
     .disabled(isSyncDisabled)
+  }
+
+  private func defaultPeerLabel(for peers: [ConnectedPeer], direction: RAGArtifactSyncDirection) -> String {
+    guard let peer = SwarmPeerPreferences.defaultPeer(from: peers) else {
+      return direction == .push ? "Push" : "Pull"
+    }
+    return direction == .push ? "Push to \(peer.displayName)" : "Pull from \(peer.displayName)"
+  }
+
+  private func defaultWorkerLabel(for workers: [FirestoreWorker]) -> String {
+    guard let worker = SwarmPeerPreferences.defaultWorker(from: workers) else {
+      return "Pull (WAN)"
+    }
+    return "Pull from \(worker.displayName) (WAN)"
+  }
+
+  private func peerMenuDisplayName(_ peer: ConnectedPeer) -> String {
+    let preferredSuffix = SwarmPeerPreferences.isPreferred(peer) ? " (Preferred)" : ""
+    return "\(peer.displayName) · \(peer.capabilities.memoryGB)GB\(preferredSuffix)"
+  }
+
+  private func workerMenuDisplayName(_ worker: FirestoreWorker) -> String {
+    let preferredSuffix = SwarmPeerPreferences.isPreferred(worker) ? " (Preferred)" : ""
+    return "\(worker.displayName)\(preferredSuffix)"
   }
 
   private var hasConnectedPeers: Bool {

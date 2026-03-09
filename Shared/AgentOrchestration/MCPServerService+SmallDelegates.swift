@@ -128,7 +128,7 @@ extension MCPServerService: MCPToolHandlerDelegate {
       return ["controlId": controlId, "status": "no-repo"]
     }
 
-    guard let peer = SwarmCoordinator.shared.connectedWorkers.first else {
+    guard let peer = SwarmPeerPreferences.defaultPeer(from: SwarmCoordinator.shared.connectedWorkers) else {
       UserDefaults.standard.set("no-lan-peer", forKey: "repositories.rag.sync.status")
       persistRepositoryAutomationWorkerState()
       return ["controlId": controlId, "status": "no-lan-peer", "repoIdentifier": repoIdentifier]
@@ -202,7 +202,7 @@ extension MCPServerService: MCPToolHandlerDelegate {
       return ["controlId": controlId, "status": "no-repo"]
     }
 
-    guard let worker = SwarmCoordinator.shared.onDemandWorkers.first else {
+    guard let worker = SwarmPeerPreferences.defaultWorker(from: SwarmCoordinator.shared.onDemandWorkers) else {
       UserDefaults.standard.set("no-wan-worker", forKey: "repositories.rag.sync.status")
       persistRepositoryAutomationWorkerState()
       return ["controlId": controlId, "status": "no-wan-worker", "repoIdentifier": repoIdentifier]

@@ -38,6 +38,7 @@
 		0C2A4B622D000003000E55A8 /* UtilitiesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C2A4B612D000003000E55A8 /* UtilitiesTests.swift */; };
 		0C2A4B662D000005000E55A8 /* DoclingValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C2A4B652D000005000E55A8 /* DoclingValidationTests.swift */; };
 		0CVM000001000001000E55A8 /* VMIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CVM000001000002000E55A8 /* VMIntegrationTests.swift */; };
+		E1A1B2C32F800001000E55A8 /* RAGRepoSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A1B2C22F800001000E55A8 /* RAGRepoSyncTests.swift */; };
 		AA299ROUTE2F5A000100000001 /* ParallelRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA299ROUTE2F5A000100000002 /* ParallelRoutingTests.swift */; };
 		BB1TRACK2F6B000100000001 /* TrackedRemoteRepoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB1TRACK2F6B000100000002 /* TrackedRemoteRepoTests.swift */; };
 		DD3900B27EF856FDCE71847E /* ValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1EDC3CED1C274FD0649E03C /* ValidationTests.swift */; };
@@ -102,6 +103,7 @@
 		0C2A4B612D000003000E55A8 /* UtilitiesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UtilitiesTests.swift; sourceTree = "<group>"; };
 		0C2A4B652D000005000E55A8 /* DoclingValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoclingValidationTests.swift; sourceTree = "<group>"; };
 		0CVM000001000002000E55A8 /* VMIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VMIntegrationTests.swift; sourceTree = "<group>"; };
+		E1A1B2C22F800001000E55A8 /* RAGRepoSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RAGRepoSyncTests.swift; sourceTree = "<group>"; };
 		AA299ROUTE2F5A000100000002 /* ParallelRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParallelRoutingTests.swift; sourceTree = "<group>"; };
 		BB1TRACK2F6B000100000002 /* TrackedRemoteRepoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackedRemoteRepoTests.swift; sourceTree = "<group>"; };
 		D1EDC3CED1C274FD0649E03C /* ValidationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ValidationTests.swift; sourceTree = "<group>"; };
@@ -295,6 +297,7 @@
 				04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */,
 				0B1E3C9B2FABCDEF00112233 /* DataServiceTests.swift */,
 				0C2A4B5D2D000001000E55A8 /* RAGStoreTests.swift */,
+				E1A1B2C22F800001000E55A8 /* RAGRepoSyncTests.swift */,
 				0CVM000001000002000E55A8 /* VMIntegrationTests.swift */,
 				0C2A4B5F2D000002000E55A8 /* MCPRAGToolsTests.swift */,
 				0C2A4B612D000003000E55A8 /* UtilitiesTests.swift */,
@@ -583,6 +586,7 @@
 				0B1E3C9C2FABCDEF00112233 /* DataServiceTests.swift in Sources */,
 				DD3900B27EF856FDCE71847E /* ValidationTests.swift in Sources */,
 				0C2A4B5E2D000001000E55A8 /* RAGStoreTests.swift in Sources */,
+				E1A1B2C32F800001000E55A8 /* RAGRepoSyncTests.swift in Sources */,
 				0CVM000001000001000E55A8 /* VMIntegrationTests.swift in Sources */,
 				0C2A4B602D000002000E55A8 /* MCPRAGToolsTests.swift in Sources */,
 				0C2A4B622D000003000E55A8 /* UtilitiesTests.swift in Sources */,

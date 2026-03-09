@@ -335,6 +335,8 @@ struct RAGSettingsView: View {
         Section {
           let swarm = SwarmCoordinator.shared
           let firebase = FirebaseService.shared
+          let orderedLANPeers = SwarmPeerPreferences.ordered(peers: swarm.connectedWorkers)
+          let orderedWANWorkers = SwarmPeerPreferences.ordered(workers: swarm.onDemandWorkers)
           
           if swarm.isActive || firebase.activeSwarm != nil {
             if swarm.isActive {
@@ -367,23 +369,38 @@ struct RAGSettingsView: View {
             if swarm.isActive && !swarm.connectedWorkers.isEmpty &&
                (swarm.role == .brain || swarm.role == .hybrid) {
               HStack(spacing: 12) {
-                Button {
-                  Task { await performPeerSync(direction: .push) }
-                } label: {
-                  Label("Push to Peer", systemImage: "arrow.up.to.line")
-                }
-                .buttonStyle(.bordered)
-                .disabled(isSyncing)
-                
-                Button {
-                  Task { await performPeerSync(direction: .pull) }
-                } label: {
-                  Label("Pull from Peer", systemImage: "arrow.down.to.line")
-                }
-                .buttonStyle(.bordered)
-                .disabled(isSyncing)
+                peerSyncMenu(peers: orderedLANPeers, direction: .push)
+                peerSyncMenu(peers: orderedLANPeers, direction: .pull)
               }
               .padding(.vertical, 4)
+            }
+
+            if !orderedLANPeers.isEmpty || !orderedWANWorkers.isEmpty {
+              VStack(alignment: .leading, spacing: 10) {
+                if !orderedLANPeers.isEmpty {
+                  Picker("Preferred LAN Peer", selection: preferredLANPeerSelection) {
+                    Text("Auto strongest").tag("")
+                    ForEach(orderedLANPeers) { peer in
+                      Text(peerMenuDisplayName(peer)).tag(peer.id)
+                    }
+                  }
+                }
+
+                if !orderedWANWorkers.isEmpty {
+                  Picker("Preferred WAN Worker", selection: preferredWANWorkerSelection) {
+                    Text("First available").tag("")
+                    ForEach(orderedWANWorkers, id: \.id) { worker in
+                      Text(workerMenuDisplayName(worker)).tag(worker.id)
+                    }
+                  }
+                }
+
+                if !orderedLANPeers.isEmpty {
+                  Text("When unset, LAN pull menus prioritize higher-memory workers first.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+              }
             }
             
             if isSyncing {
@@ -676,8 +693,64 @@ struct RAGSettingsView: View {
   }
 
   // MARK: - Artifact Sync Actions
+
+  private var preferredLANPeerSelection: Binding<String> {
+    Binding(
+      get: { SwarmPeerPreferences.preferredLANPeerId ?? "" },
+      set: { SwarmPeerPreferences.preferredLANPeerId = $0.isEmpty ? nil : $0 }
+    )
+  }
+
+  private var preferredWANWorkerSelection: Binding<String> {
+    Binding(
+      get: { SwarmPeerPreferences.preferredWANWorkerId ?? "" },
+      set: { SwarmPeerPreferences.preferredWANWorkerId = $0.isEmpty ? nil : $0 }
+    )
+  }
+
+  private func peerMenuDisplayName(_ peer: ConnectedPeer) -> String {
+    let preferredSuffix = SwarmPeerPreferences.isPreferred(peer) ? " (Preferred)" : ""
+    return "\(peer.displayName) · \(peer.capabilities.memoryGB)GB\(preferredSuffix)"
+  }
+
+  private func workerMenuDisplayName(_ worker: FirestoreWorker) -> String {
+    let preferredSuffix = SwarmPeerPreferences.isPreferred(worker) ? " (Preferred)" : ""
+    return "\(worker.displayName)\(preferredSuffix)"
+  }
+
+  @ViewBuilder
+  private func peerSyncMenu(peers: [ConnectedPeer], direction: RAGArtifactSyncDirection) -> some View {
+    let isPush = direction == .push
+    let defaultPeer = SwarmPeerPreferences.defaultPeer(from: peers)
+    let title = isPush ? "Push" : "Pull"
+    let icon = isPush ? "arrow.up.to.line" : "arrow.down.to.line"
+
+    if peers.count == 1, let peer = peers.first {
+      Button {
+        Task { await performPeerSync(direction: direction, workerId: peer.id) }
+      } label: {
+        Label("\(title) \(peer.displayName)", systemImage: icon)
+      }
+      .buttonStyle(.bordered)
+      .disabled(isSyncing)
+    } else {
+      Menu {
+        ForEach(peers) { peer in
+          Button {
+            Task { await performPeerSync(direction: direction, workerId: peer.id) }
+          } label: {
+            Label(peer.displayName, systemImage: "desktopcomputer")
+          }
+        }
+      } label: {
+        Label(defaultPeer.map { "\(title) \($0.displayName)" } ?? "\(title) from Peer", systemImage: icon)
+      }
+      .buttonStyle(.bordered)
+      .disabled(isSyncing)
+    }
+  }
   
-  private func performPeerSync(direction: RAGArtifactSyncDirection) async {
+  private func performPeerSync(direction: RAGArtifactSyncDirection, workerId: String) async {
     isSyncing = true
     syncDirection = direction
     syncError = nil
@@ -685,7 +758,7 @@ struct RAGSettingsView: View {
     
     do {
       let coordinator = SwarmCoordinator.shared
-      _ = try await coordinator.requestRagArtifactSync(direction: direction)
+      _ = try await coordinator.requestRagArtifactSync(direction: direction, workerId: workerId)
       await mcpServer.refreshRagSummary()
     } catch {
       syncError = error.localizedDescription

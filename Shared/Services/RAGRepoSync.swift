@@ -60,6 +60,12 @@ struct ExportedRepo: Codable, Sendable {
   let embeddingDimensions: Int?
 }
 
+fileprivate struct MatchedRepoCandidate: Sendable {
+  let repo: ExportedRepo
+  let fileCount: Int
+  let chunkCount: Int
+}
+
 /// Exported file with its chunks and embeddings.
 struct ExportedFile: Codable, Sendable {
   let id: String
@@ -181,18 +187,24 @@ enum RAGRepoExporter {
     }
     defer { sqlite3_close(db) }
 
-    // Find the repo by identifier
-    guard let repo = queryRepo(db: db, repoIdentifier: repoIdentifier) else {
+    // Find the best matching repo for this identifier.
+    let candidates = queryRepoCandidates(db: db, repoIdentifier: repoIdentifier)
+    guard let candidate = selectBestRepoCandidate(candidates) else {
       return nil
     }
+    let repo = candidate.repo
 
     // Query all files for this repo
     let allFileHashes = queryFileHashes(db: db, repoId: repo.id)
 
     // Build manifest
     let headSHA = gitHeadSHA(for: repo.rootPath)
-    let effectiveEmbeddingModel = repo.embeddingModel ?? embeddingModel
-    let effectiveEmbeddingDimensions = repo.embeddingDimensions ?? embeddingDimensions
+    let (effectiveEmbeddingModel, effectiveEmbeddingDimensions) = resolveEmbeddingProfile(
+      for: candidate,
+      among: candidates,
+      defaultEmbeddingModel: embeddingModel,
+      defaultEmbeddingDimensions: embeddingDimensions
+    )
     let manifest = RAGRepoSyncManifest(
       repoIdentifier: repoIdentifier,
       repoName: repo.name,
@@ -240,15 +252,21 @@ enum RAGRepoExporter {
     }
     defer { sqlite3_close(db) }
 
-    guard let repo = queryRepo(db: db, repoIdentifier: repoIdentifier) else {
+    let candidates = queryRepoCandidates(db: db, repoIdentifier: repoIdentifier)
+    guard let candidate = selectBestRepoCandidate(candidates) else {
       return nil
     }
+    let repo = candidate.repo
 
     let fileHashes = queryFileHashes(db: db, repoId: repo.id)
     let headSHA = gitHeadSHA(for: repo.rootPath)
 
-    let effectiveEmbeddingModel = repo.embeddingModel ?? embeddingModel
-    let effectiveEmbeddingDimensions = repo.embeddingDimensions ?? embeddingDimensions
+    let (effectiveEmbeddingModel, effectiveEmbeddingDimensions) = resolveEmbeddingProfile(
+      for: candidate,
+      among: candidates,
+      defaultEmbeddingModel: embeddingModel,
+      defaultEmbeddingDimensions: embeddingDimensions
+    )
 
     return RAGRepoSyncManifest(
       repoIdentifier: repoIdentifier,
@@ -292,7 +310,7 @@ enum RAGRepoExporter {
 
   // MARK: - Private Queries
 
-  private static func queryRepo(db: OpaquePointer, repoIdentifier: String) -> ExportedRepo? {
+  fileprivate static func queryRepoCandidates(db: OpaquePointer, repoIdentifier: String) -> [MatchedRepoCandidate] {
     // repo_identifier added in v11, parent_repo_id in v12 — adapt query for older schemas
     let hasRepoIdentifier = columnExists(db, table: "repos", column: "repo_identifier")
     let hasParentRepoId = columnExists(db, table: "repos", column: "parent_repo_id")
@@ -300,48 +318,53 @@ enum RAGRepoExporter {
     let hasEmbeddingDimensions = columnExists(db, table: "repos", column: "embedding_dimensions")
 
     // If the source DB doesn't have repo_identifier column, we can't match by it
-    guard hasRepoIdentifier else { return nil }
+    guard hasRepoIdentifier else { return [] }
 
     var columns = "id, name, root_path, repo_identifier, last_indexed_at"
     if hasParentRepoId { columns += ", parent_repo_id" }
     if hasEmbeddingModel { columns += ", embedding_model" }
     if hasEmbeddingDimensions { columns += ", embedding_dimensions" }
+    columns += ", (SELECT COUNT(*) FROM files f WHERE f.repo_id = repos.id) AS file_count"
+    columns += ", (SELECT COUNT(*) FROM chunks c JOIN files f ON c.file_id = f.id WHERE f.repo_id = repos.id) AS chunk_count"
 
     // Strategy 1: Match by exact repo_identifier
-    if let result = execQueryRepo(db: db, columns: columns,
+    let exactMatches = execQueryRepos(db: db, columns: columns,
         whereClause: "repo_identifier = ?", bindValue: repoIdentifier,
         hasParentRepoId: hasParentRepoId, hasEmbeddingModel: hasEmbeddingModel,
-        hasEmbeddingDimensions: hasEmbeddingDimensions) {
-      return result
+        hasEmbeddingDimensions: hasEmbeddingDimensions)
+    if !exactMatches.isEmpty {
+      return exactMatches
     }
 
     // Strategy 2: Extract the last path component (repo name) from the identifier
     // e.g., "github.com/cloke/peel" → "peel", "/Users/me/code/kitchen-sink" → "kitchen-sink"
     let repoName = repoIdentifier.split(separator: "/").last.map(String.init) ?? repoIdentifier
     if !repoName.isEmpty && repoName != repoIdentifier {
-      if let result = execQueryRepo(db: db, columns: columns,
+      let nameMatches = execQueryRepos(db: db, columns: columns,
           whereClause: "name = ?", bindValue: repoName,
           hasParentRepoId: hasParentRepoId, hasEmbeddingModel: hasEmbeddingModel,
-          hasEmbeddingDimensions: hasEmbeddingDimensions) {
-        return result
+          hasEmbeddingDimensions: hasEmbeddingDimensions)
+      if !nameMatches.isEmpty {
+        return nameMatches
       }
     }
 
     // Strategy 3: Match root_path ending with the repo name (handles NULL repo_identifier)
     if !repoName.isEmpty {
-      if let result = execQueryRepo(db: db, columns: columns,
+      let pathMatches = execQueryRepos(db: db, columns: columns,
           whereClause: "root_path LIKE ?", bindValue: "%/\(repoName)",
           hasParentRepoId: hasParentRepoId, hasEmbeddingModel: hasEmbeddingModel,
-          hasEmbeddingDimensions: hasEmbeddingDimensions) {
-        return result
+          hasEmbeddingDimensions: hasEmbeddingDimensions)
+      if !pathMatches.isEmpty {
+        return pathMatches
       }
     }
 
-    return nil
+    return []
   }
 
-  /// Execute a single repo query with the given WHERE clause and bind value.
-  private static func execQueryRepo(
+  /// Execute a repo query with the given WHERE clause and bind value.
+  private static func execQueryRepos(
     db: OpaquePointer,
     columns: String,
     whereClause: String,
@@ -349,30 +372,88 @@ enum RAGRepoExporter {
     hasParentRepoId: Bool,
     hasEmbeddingModel: Bool,
     hasEmbeddingDimensions: Bool
-  ) -> ExportedRepo? {
-    let sql = "SELECT \(columns) FROM repos WHERE \(whereClause) LIMIT 1"
+  ) -> [MatchedRepoCandidate] {
+    let sql = "SELECT \(columns) FROM repos WHERE \(whereClause)"
     var stmt: OpaquePointer?
-    guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return nil }
+    guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return [] }
     defer { sqlite3_finalize(stmt) }
 
     sqlite3_bind_text(stmt, 1, bindValue, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
-
-    guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
 
     let parentIndex: Int32 = hasParentRepoId ? 5 : -1
     let embeddingModelIndex: Int32 = hasEmbeddingModel ? (hasParentRepoId ? 6 : 5) : -1
     let embeddingDimensionsIndex: Int32 = hasEmbeddingDimensions ? (embeddingModelIndex >= 0 ? embeddingModelIndex + 1 : (hasParentRepoId ? 6 : 5)) : -1
 
-    return ExportedRepo(
-      id: columnString(stmt, 0),
-      name: columnString(stmt, 1),
-      rootPath: columnString(stmt, 2),
-      repoIdentifier: columnString(stmt, 3),
-      lastIndexedAt: columnOptionalString(stmt, 4),
-      parentRepoId: parentIndex >= 0 ? columnOptionalString(stmt, parentIndex) : nil,
-      embeddingModel: embeddingModelIndex >= 0 ? columnOptionalString(stmt, embeddingModelIndex) : nil,
-      embeddingDimensions: embeddingDimensionsIndex >= 0 ? columnOptionalInt(stmt, embeddingDimensionsIndex) : nil
-    )
+    let fileCountIndex = embeddingDimensionsIndex >= 0
+      ? embeddingDimensionsIndex + 1
+      : (embeddingModelIndex >= 0 ? embeddingModelIndex + 1 : (hasParentRepoId ? 6 : 5))
+    let chunkCountIndex = fileCountIndex + 1
+
+    var results: [MatchedRepoCandidate] = []
+    while sqlite3_step(stmt) == SQLITE_ROW {
+      let repo = ExportedRepo(
+        id: columnString(stmt, 0),
+        name: columnString(stmt, 1),
+        rootPath: columnString(stmt, 2),
+        repoIdentifier: columnString(stmt, 3),
+        lastIndexedAt: columnOptionalString(stmt, 4),
+        parentRepoId: parentIndex >= 0 ? columnOptionalString(stmt, parentIndex) : nil,
+        embeddingModel: embeddingModelIndex >= 0 ? columnOptionalString(stmt, embeddingModelIndex) : nil,
+        embeddingDimensions: embeddingDimensionsIndex >= 0 ? columnOptionalInt(stmt, embeddingDimensionsIndex) : nil
+      )
+      results.append(MatchedRepoCandidate(
+        repo: repo,
+        fileCount: Int(sqlite3_column_int(stmt, fileCountIndex)),
+        chunkCount: Int(sqlite3_column_int(stmt, chunkCountIndex))
+      ))
+    }
+    return results
+  }
+
+  fileprivate static func selectBestRepoCandidate(_ candidates: [MatchedRepoCandidate]) -> MatchedRepoCandidate? {
+    candidates.max { lhs, rhs in
+      if lhs.fileCount != rhs.fileCount {
+        return lhs.fileCount < rhs.fileCount
+      }
+      if lhs.chunkCount != rhs.chunkCount {
+        return lhs.chunkCount < rhs.chunkCount
+      }
+      let lhsIsParent = lhs.repo.parentRepoId == nil
+      let rhsIsParent = rhs.repo.parentRepoId == nil
+      if lhsIsParent != rhsIsParent {
+        return !lhsIsParent && rhsIsParent
+      }
+      return lhs.repo.rootPath.count > rhs.repo.rootPath.count
+    }
+  }
+
+  private static func resolveEmbeddingProfile(
+    for candidate: MatchedRepoCandidate,
+    among candidates: [MatchedRepoCandidate],
+    defaultEmbeddingModel: String,
+    defaultEmbeddingDimensions: Int
+  ) -> (String, Int) {
+    if candidates.count > 1 {
+      let models = Set(candidates.compactMap {
+        let trimmed = $0.repo.embeddingModel?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (trimmed?.isEmpty == false) ? trimmed : nil
+      })
+      let dimensions = Set(candidates.compactMap(\.repo.embeddingDimensions))
+      let hasIncompleteMetadata = candidates.contains {
+        let model = $0.repo.embeddingModel?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return model == nil || model?.isEmpty == true || $0.repo.embeddingDimensions == nil
+      }
+      if hasIncompleteMetadata || models.count != 1 || dimensions.count != 1 {
+        return (defaultEmbeddingModel, defaultEmbeddingDimensions)
+      }
+    }
+
+    let repoModel = candidate.repo.embeddingModel?.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let repoModel, !repoModel.isEmpty,
+       let repoDimensions = candidate.repo.embeddingDimensions {
+      return (repoModel, repoDimensions)
+    }
+    return (defaultEmbeddingModel, defaultEmbeddingDimensions)
   }
 
   private static func queryFileHashes(db: OpaquePointer, repoId: String) -> [RAGRepoSyncManifest.FileHashEntry] {
@@ -614,15 +695,21 @@ enum RAGRepoExporter {
     }
     defer { sqlite3_close(db) }
 
-    guard let repo = queryRepo(db: db, repoIdentifier: repoIdentifier) else {
+    let candidates = queryRepoCandidates(db: db, repoIdentifier: repoIdentifier)
+    guard let candidate = selectBestRepoCandidate(candidates) else {
       return nil
     }
+    let repo = candidate.repo
 
     let allFileHashes = queryFileHashes(db: db, repoId: repo.id)
     let headSHA = gitHeadSHA(for: repo.rootPath)
 
-    let effectiveEmbeddingModel = repo.embeddingModel ?? embeddingModel
-    let effectiveEmbeddingDimensions = repo.embeddingDimensions ?? embeddingDimensions
+    let (effectiveEmbeddingModel, effectiveEmbeddingDimensions) = resolveEmbeddingProfile(
+      for: candidate,
+      among: candidates,
+      defaultEmbeddingModel: embeddingModel,
+      defaultEmbeddingDimensions: embeddingDimensions
+    )
 
     let manifest = RAGRepoOverlayManifest(
       repoIdentifier: repoIdentifier,
@@ -1354,16 +1441,9 @@ enum RAGRepoImporter {
   }
 
   private static func findRepoByIdentifier(db: OpaquePointer, identifier: String) -> String? {
-    let sql = "SELECT id FROM repos WHERE repo_identifier = ?"
-    var stmt: OpaquePointer?
-    guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK, let stmt else { return nil }
-    defer { sqlite3_finalize(stmt) }
-
-    sqlite3_bind_text(stmt, 1, identifier, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
-
-    guard sqlite3_step(stmt) == SQLITE_ROW,
-          let text = sqlite3_column_text(stmt, 0) else { return nil }
-    return String(cString: text)
+    RAGRepoExporter.selectBestRepoCandidate(
+      RAGRepoExporter.queryRepoCandidates(db: db, repoIdentifier: identifier)
+    )?.repo.id
   }
 
   private static func queryFileHash(db: OpaquePointer, repoId: String, path: String) -> String? {
