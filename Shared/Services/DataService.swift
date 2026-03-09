@@ -1081,6 +1081,8 @@ final class DataService {
       .filter { $0.isEnabled }
       .compactMap { repo -> (TrackedRemoteRepo, TrackedRepoDeviceState)? in
         let state = getOrCreateDeviceState(for: repo)
+        // Skip repos with no local path on this device
+        guard !state.localPath.isEmpty else { return nil }
         guard state.isPullDue(interval: repo.pullIntervalSeconds) else { return nil }
         return (repo, state)
       }

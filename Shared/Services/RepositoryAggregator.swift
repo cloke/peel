@@ -525,7 +525,9 @@ final class RepositoryAggregator {
       return .pulling
     }
 
-    if let lastErr = deviceState?.lastPullError, !lastErr.isEmpty {
+    // Don't show pull errors for repos with no local path on this device
+    if let state = deviceState, !state.localPath.isEmpty,
+       let lastErr = state.lastPullError, !lastErr.isEmpty {
       return .error(message: lastErr)
     }
 
