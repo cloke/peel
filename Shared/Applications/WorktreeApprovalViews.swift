@@ -39,7 +39,9 @@ struct WorktreeRunApprovalCard: View {
   @Bindable var run: ParallelWorktreeRun
   let runner: ParallelWorktreeRunner
   @Binding var expandedExecutions: Set<UUID>
+  var onDismiss: (() -> Void)? = nil
   @State private var mergeError: String?
+  @State private var showDismissConfirm = false
 
   var body: some View {
     GroupBox {
@@ -97,6 +99,26 @@ struct WorktreeRunApprovalCard: View {
         Text(started, style: .relative)
           .font(.caption2)
           .foregroundStyle(.tertiary)
+      }
+
+      Button {
+        showDismissConfirm = true
+      } label: {
+        Image(systemName: "xmark.circle")
+          .foregroundStyle(.secondary)
+      }
+      .buttonStyle(.plain)
+      .help("Dismiss this run")
+      .confirmationDialog("Dismiss \"\(run.name)\"?", isPresented: $showDismissConfirm) {
+        Button("Dismiss", role: .destructive) {
+          Task {
+            await runner.cancelRun(run)
+            await runner.removeRun(run)
+            onDismiss?()
+          }
+        }
+      } message: {
+        Text("This will cancel the run and clean up its worktrees. This cannot be undone.")
       }
     }
   }

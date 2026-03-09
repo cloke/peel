@@ -677,7 +677,8 @@ struct RepositoriesCommandCenter: View {
           WorktreeRunApprovalCard(
             run: run,
             runner: runner,
-            expandedExecutions: $expandedExecutions
+            expandedExecutions: $expandedExecutions,
+            onDismiss: { selectedRunForReview = nil }
           )
         }
         .padding(20)
