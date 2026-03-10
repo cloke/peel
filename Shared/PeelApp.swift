@@ -96,18 +96,33 @@ struct PeelApp: App {
           do {
             try SwarmCoordinator.shared.start(role: role, port: 8766)
 
-            // If signed into Firebase, register worker and start listeners so WAN peers are visible
+            // If signed into Firebase, register worker and start listeners so WAN peers are visible.
+            // memberSwarms is populated asynchronously by the auth state listener — wait for it.
             if FirebaseService.shared.isSignedIn {
               let wanAddress = await WANAddressResolver.resolve()
               SwarmCoordinator.shared.setResolvedWANAddress(wanAddress)
+
+              // Wait up to 10s for memberSwarms to be populated (loaded by auth listener)
+              var swarms = FirebaseService.shared.memberSwarms
+              if swarms.isEmpty {
+                for _ in 0..<20 {
+                  try? await Task.sleep(for: .milliseconds(500))
+                  swarms = FirebaseService.shared.memberSwarms
+                  if !swarms.isEmpty { break }
+                }
+              }
+
               let capabilities = WorkerCapabilities.current(
                 wanAddress: wanAddress,
                 wanPort: 8766
               )
-              for swarm in FirebaseService.shared.memberSwarms where swarm.role.canRegisterWorkers {
+              for swarm in swarms where swarm.role.canRegisterWorkers {
                 _ = try? await FirebaseService.shared.registerWorker(swarmId: swarm.id, capabilities: capabilities)
                 FirebaseService.shared.startWorkerListener(swarmId: swarm.id)
                 FirebaseService.shared.startMessageListener(swarmId: swarm.id)
+              }
+              if swarms.isEmpty {
+                print("Warning: No swarm memberships loaded after 10s — Firestore listeners not started")
               }
             }
           } catch {
