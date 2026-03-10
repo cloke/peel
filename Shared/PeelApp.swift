@@ -132,6 +132,10 @@ struct PeelApp: App {
               if swarms.isEmpty {
                 print("Warning: No swarm memberships loaded after 10s — Firestore listeners not started")
               }
+
+              // Reinitialize STUN responder and relay provider now that Firebase is
+              // signed in and memberSwarms are loaded (they were skipped in start()).
+              SwarmCoordinator.shared.reinitializeFirestoreServices(port: 8766)
             } else {
               print("Warning: Firebase auth not restored after 10s — Firestore listeners not started")
             }

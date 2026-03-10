@@ -370,6 +370,39 @@ extension SwarmToolsHandler {
         }
       }(),
       "ragTransfers": transfers,
+      "onDemandSyncs": {
+        let syncCoord = RAGSyncCoordinator.shared
+        let active = syncCoord.activeTransfers.values.map { t in
+          [
+            "id": t.id.uuidString,
+            "targetWorker": t.targetWorkerName,
+            "repo": t.repoIdentifier,
+            "status": t.status.rawValue,
+            "connectionMethod": t.connectionMethod?.rawValue as Any,
+            "transferredBytes": t.transferredBytes,
+            "totalBytes": t.totalBytes,
+            "elapsedSeconds": t.elapsedSeconds,
+            "error": t.error as Any,
+          ] as [String: Any]
+        }
+        let history = syncCoord.syncHistory.suffix(5).map { h in
+          [
+            "repo": h.repoIdentifier,
+            "from": h.fromWorkerName,
+            "method": h.connectionMethod,
+            "bytes": h.bytesTransferred,
+            "duration": h.duration,
+            "success": h.success,
+            "error": h.errorMessage as Any,
+            "timestamp": formatter.string(from: h.timestamp),
+          ] as [String: Any]
+        }
+        return [
+          "activeCount": active.count,
+          "active": active,
+          "recentHistory": history,
+        ] as [String: Any]
+      }(),
       "localRagArtifacts": localRagPayload,
       "natTraversal": natPayload,
       "messageListeners": FirebaseService.shared.messageListenerDiagnostics(),
@@ -816,32 +849,67 @@ extension SwarmToolsHandler {
     }
 
     let fromWorkerId = arguments["workerId"] as? String
-    let swarmId = arguments["swarmId"] as? String
+
+    // Resolve swarmId: explicit argument > active worker listener swarm > first member swarm > error
+    let resolvedSwarmId: String
+    if let explicit = arguments["swarmId"] as? String, !explicit.isEmpty {
+      resolvedSwarmId = explicit
+    } else {
+      let firebase = FirebaseService.shared
+      let activeSwarmIds = firebase.workerListenerDiagnostics.activeSwarmIds
+      if let firstActive = activeSwarmIds.first, !firstActive.isEmpty {
+        resolvedSwarmId = firstActive
+      } else if let firstMember = firebase.memberSwarms.first(where: { $0.role.canRegisterWorkers }) {
+        resolvedSwarmId = firstMember.id
+      } else {
+        return (200, makeResult(id: id, result: [
+          "success": false,
+          "repoIdentifier": repoIdentifier,
+          "error": "No swarmId provided and no active swarm. Start a swarm first with swarm.start.",
+        ]))
+      }
+    }
+
     let syncCoordinator = RAGSyncCoordinator.shared
 
-    do {
-      if let workerId = fromWorkerId {
-        try await syncCoordinator.syncIndex(
-          repoIdentifier: repoIdentifier,
-          fromWorkerId: workerId,
-          swarmId: swarmId ?? ""
-        )
-      } else {
-        try await syncCoordinator.syncIndex(repoIdentifier: repoIdentifier)
-      }
-
-      return (200, makeResult(id: id, result: [
-        "success": true,
-        "repoIdentifier": repoIdentifier,
-        "message": "RAG index synced successfully via P2P transfer.",
-      ]))
-    } catch {
+    // Validate delegate is configured before starting background work
+    guard syncCoordinator.ragSyncDelegate != nil else {
       return (200, makeResult(id: id, result: [
         "success": false,
         "repoIdentifier": repoIdentifier,
-        "error": String(describing: error),
+        "error": "RAG sync delegate not configured — MCPServerService may not be initialized.",
       ]))
     }
+
+    // Fire-and-forget: start the sync in the background and return immediately.
+    // P2P transfers can take minutes (300-600s internal timeouts). Blocking the
+    // MCP response would make the server appear hung.
+    // Callers can poll progress via swarm.diagnostics (ragTransfers) or
+    // swarm.rag-availability.
+    let swarmId = resolvedSwarmId
+    Task {
+      do {
+        if let workerId = fromWorkerId {
+          try await syncCoordinator.syncIndex(
+            repoIdentifier: repoIdentifier,
+            fromWorkerId: workerId,
+            swarmId: swarmId
+          )
+        } else {
+          try await syncCoordinator.syncIndex(repoIdentifier: repoIdentifier)
+        }
+      } catch {
+        // Logged internally by RAGSyncCoordinator — also recorded in syncHistory
+      }
+    }
+
+    return (200, makeResult(id: id, result: [
+      "success": true,
+      "repoIdentifier": repoIdentifier,
+      "swarmId": resolvedSwarmId,
+      "message": "RAG sync started in background. Monitor progress with swarm.diagnostics (check ragTransfers) or swarm.rag-availability.",
+      "async": true,
+    ]))
   }
 
 }

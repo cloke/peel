@@ -139,6 +139,10 @@ public final class RAGSyncCoordinator {
     fromWorkerId: String,
     swarmId: String
   ) async throws {
+    guard !swarmId.isEmpty else {
+      throw RAGSyncError.invalidSwarmId
+    }
+
     guard let ragSyncDelegate else {
       throw RAGSyncError.noDelegateConfigured
     }
@@ -287,6 +291,7 @@ public struct RemoteRepoInfo: Identifiable, Sendable {
 
 public enum RAGSyncError: LocalizedError {
   case noDelegateConfigured
+  case invalidSwarmId
   case workerNotFound(workerId: String)
   case noSourceAvailable(repoIdentifier: String)
 
@@ -294,6 +299,8 @@ public enum RAGSyncError: LocalizedError {
     switch self {
     case .noDelegateConfigured:
       return "RAG sync delegate not configured — MCPServerService may not be initialized"
+    case .invalidSwarmId:
+      return "Empty swarmId — provide a swarmId or start a swarm first"
     case .workerNotFound(let id):
       return "Worker \(id) not found in any swarm"
     case .noSourceAvailable(let repo):

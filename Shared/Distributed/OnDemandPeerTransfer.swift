@@ -156,6 +156,16 @@ public final class OnDemandPeerTransfer {
 
     // All direct connections failed — fall back to Firestore relay
     logger.info("[transfer] All direct connections failed to \(worker.displayName) (\(worker.workerId)), using Firestore relay")
+
+    // Check if the target worker has an active relay provider — if not, fail fast
+    // instead of waiting 300s for a response that will never come.
+    if !worker.relayProviderActive {
+      let msg = "All direct connections (LAN/WAN/STUN) failed and target worker '\(worker.displayName)' has no relay provider active. The worker may need to restart with the swarm enabled."
+      state.error = msg
+      logger.error("[transfer] \(msg)")
+      throw OnDemandTransferError.remoteError(message: msg)
+    }
+
     logger.info("[transfer] Relay context: swarmId=\(state.swarmId), repo=\(repoIdentifier)")
     state.connectionMethod = .firestoreRelay
     state.status = .connecting
@@ -333,12 +343,19 @@ public final class OnDemandPeerTransfer {
   }
 
   /// Perform STUN discovery and hole-punching via Firestore signaling.
+  /// Uses a consistent local port across STUN discovery, hole-punch probes,
+  /// and the TCP connection attempt so the NAT mapping is reusable.
   private func attemptSTUNConnection(
     worker: FirestoreWorker,
     swarmId: String
   ) async throws -> NWConnection {
-    // 1. Run STUN to discover our endpoint (on-demand, not at startup)
-    guard let myEndpoint = await STUNClient.discoverEndpoint(localPort: 0) else {
+    // 0. Pick a local port by creating a temporary listener, then tear it down.
+    //    This ensures the OS assigns us a port that we can reuse consistently.
+    let localPort = try allocateLocalPort()
+    logger.info("STUN initiator using local port \(localPort)")
+
+    // 1. Run STUN to discover our public endpoint bound to localPort
+    guard let myEndpoint = await STUNClient.discoverEndpoint(localPort: localPort) else {
       throw OnDemandTransferError.stunDiscoveryFailed
     }
     logger.info("STUN discovered our endpoint: \(myEndpoint)")
@@ -360,17 +377,21 @@ public final class OnDemandPeerTransfer {
       timeout: 30
     )
 
-    // 4. Attempt hole punch + TCP connection
+    // 4. Attempt hole punch + TCP connection from the SAME local port
     let peerHost = NWEndpoint.Host(peerEndpoint.address)
     let peerPort = NWEndpoint.Port(rawValue: peerEndpoint.port)!
     let endpoint = NWEndpoint.hostPort(host: peerHost, port: peerPort)
 
+    // Send UDP probes from our STUN port to punch the NAT
+    await sendHolePunchProbes(to: peerEndpoint, fromPort: localPort)
+
+    // TCP connection bound to the same local port for consistent NAT mapping
     let params = NWParameters.tcp
     params.includePeerToPeer = true
+    if let nwPort = NWEndpoint.Port(rawValue: localPort) {
+      params.requiredLocalEndpoint = NWEndpoint.hostPort(host: .ipv4(.any), port: nwPort)
+    }
     let connection = NWConnection(to: endpoint, using: params)
-
-    // Send UDP probes first (hole punch)
-    await sendHolePunchProbes(to: peerEndpoint)
 
     return try await withCheckedThrowingContinuation { continuation in
       let box = ContinuationBox()
@@ -402,6 +423,30 @@ public final class OnDemandPeerTransfer {
         }
       }
     }
+  }
+
+  /// Allocate a local port by briefly starting a TCP listener,
+  /// capturing its assigned port, then stopping it.
+  private nonisolated func allocateLocalPort() throws -> UInt16 {
+    let listener = try NWListener(using: .tcp, on: .any)
+    let portBox = PortBox()
+    let semaphore = DispatchSemaphore(value: 0)
+    listener.stateUpdateHandler = { state in
+      if case .ready = state {
+        portBox.port = listener.port?.rawValue ?? 0
+        semaphore.signal()
+      } else if case .failed = state {
+        semaphore.signal()
+      }
+    }
+    listener.start(queue: .global())
+    _ = semaphore.wait(timeout: .now() + 2)
+    listener.cancel()
+    let port = portBox.port
+    guard port > 0 else {
+      throw OnDemandTransferError.stunDiscoveryFailed
+    }
+    return port
   }
 
   // MARK: - Handshake
@@ -569,17 +614,21 @@ public final class OnDemandPeerTransfer {
     throw OnDemandTransferError.stunSignalingTimeout
   }
 
-  private func sendHolePunchProbes(to endpoint: STUNResult) async {
+  private func sendHolePunchProbes(to endpoint: STUNResult, fromPort: UInt16 = 0) async {
     let host = NWEndpoint.Host(endpoint.address)
     let port = NWEndpoint.Port(rawValue: endpoint.port)!
     let udpEndpoint = NWEndpoint.hostPort(host: host, port: port)
 
     let params = NWParameters.udp
+    // Bind to our STUN port so the NAT mapping matches
+    if fromPort > 0, let nwPort = NWEndpoint.Port(rawValue: fromPort) {
+      params.requiredLocalEndpoint = NWEndpoint.hostPort(host: .ipv4(.any), port: nwPort)
+    }
     let connection = NWConnection(to: udpEndpoint, using: params)
     connection.start(queue: .global())
 
-    // Send a few UDP probes to punch through NAT
-    for i in 0..<5 {
+    // Send UDP probes to punch through NAT
+    for i in 0..<8 {
       try? await Task.sleep(for: .milliseconds(200))
       let probe = "PEEL_PUNCH_\(i)".data(using: .utf8)!
       connection.send(content: probe, completion: .contentProcessed { _ in })
@@ -587,6 +636,11 @@ public final class OnDemandPeerTransfer {
 
     connection.cancel()
   }
+}
+
+/// Thread-safe box for passing port value out of NWListener callback.
+private final class PortBox: @unchecked Sendable {
+  var port: UInt16 = 0
 }
 
 // MARK: - Firestore Worker (extended)

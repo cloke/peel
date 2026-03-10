@@ -435,6 +435,20 @@ public final class SwarmCoordinator {
     cleanupStaleCheckpoints()
   }
 
+  /// Reinitialize Firestore-dependent subsystems (STUN responder and relay provider)
+  /// that require Firebase to be signed in. Call this after Firebase auth is ready
+  /// and memberSwarms have been populated — `start()` fires before Firebase is ready
+  /// so these subsystems skip initialization on first pass.
+  public func reinitializeFirestoreServices(port: UInt16 = 8766) {
+    guard isActive else { return }
+    if stunSignalingResponder == nil {
+      startSTUNSignalingResponder(port: port)
+    }
+    if firestoreRelayProvider == nil {
+      startFirestoreRelayProvider()
+    }
+  }
+
   /// Stop the swarm coordinator
   public func stop() {
     isActive = false
