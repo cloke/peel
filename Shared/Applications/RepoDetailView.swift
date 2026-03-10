@@ -544,6 +544,10 @@ struct BranchesTabView: View {
   @State private var showRemoteBranches = false
   @State private var fetchedPRs: [UnifiedRepository.PRSummary] = []
   @State private var isLoadingPRs = false
+  @State private var isPulling = false
+  @State private var isFetching = false
+  @State private var recentCommits: [Git.Model.LogEntry] = []
+  @State private var gitError: String?
 
   /// Parallel worktree runs associated with this repo that have pending reviews or active work.
   private var repoRuns: [ParallelWorktreeRun] {
@@ -620,9 +624,31 @@ struct BranchesTabView: View {
     // Active branch hero card
     activeBranchCard(gitRepo)
 
+    // Error banner
+    if let gitError {
+      HStack(spacing: 8) {
+        Image(systemName: "exclamationmark.triangle.fill")
+          .foregroundStyle(.yellow)
+        Text(gitError)
+          .font(.callout)
+          .foregroundStyle(.secondary)
+        Spacer()
+        Button("Dismiss") { self.gitError = nil }
+          .buttonStyle(.borderless)
+          .font(.caption)
+      }
+      .padding(10)
+      .background(RoundedRectangle(cornerRadius: 8).fill(.yellow.opacity(0.1)))
+    }
+
     // Local changes
     if !gitRepo.status.isEmpty {
       localChangesCard(gitRepo)
+    }
+
+    // Recent commits
+    if !recentCommits.isEmpty {
+      recentCommitsSection
     }
 
     // Pending approvals (from parallel worktree runner)
@@ -700,13 +726,43 @@ struct BranchesTabView: View {
 
         Spacer()
 
-        Button {
-          Task { await refreshGitRepo() }
-        } label: {
-          Image(systemName: "arrow.clockwise")
+        HStack(spacing: 6) {
+          Button {
+            Task { await pullCurrentBranch() }
+          } label: {
+            if isPulling {
+              ProgressView().controlSize(.small)
+            } else {
+              Image(systemName: "arrow.down.circle")
+            }
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
+          .disabled(isPulling || isFetching)
+          .help("Pull from remote")
+
+          Button {
+            Task { await fetchRemote() }
+          } label: {
+            if isFetching {
+              ProgressView().controlSize(.small)
+            } else {
+              Image(systemName: "arrow.triangle.2.circlepath")
+            }
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
+          .disabled(isPulling || isFetching)
+          .help("Fetch from remote")
+
+          Button {
+            Task { await refreshGitRepo() }
+          } label: {
+            Image(systemName: "arrow.clockwise")
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
         }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
       }
       .padding(4)
     }
@@ -761,7 +817,9 @@ struct BranchesTabView: View {
       // Local branches
       LazyVStack(spacing: 1) {
         ForEach(gitRepo.localBranches, id: \.name) { branch in
-          BranchRow(branch: branch)
+          BranchRow(branch: branch) {
+            Task { await checkoutBranch(branch.name, gitRepo: gitRepo) }
+          }
         }
       }
       .background(Color(nsColor: .controlBackgroundColor))
@@ -772,7 +830,13 @@ struct BranchesTabView: View {
         DisclosureGroup(isExpanded: $showRemoteBranches) {
           LazyVStack(spacing: 1) {
             ForEach(gitRepo.remoteBranches, id: \.name) { branch in
-              BranchRow(branch: branch, isRemote: true)
+              BranchRow(branch: branch, isRemote: true) {
+                // Strip remote prefix (e.g. "origin/feature" → "feature")
+                let localName = branch.name.replacingOccurrences(
+                  of: #"^[^/]+/"#, with: "", options: .regularExpression
+                )
+                Task { await checkoutBranch(localName, gitRepo: gitRepo) }
+              }
             }
           }
           .background(Color(nsColor: .controlBackgroundColor))
@@ -1059,6 +1123,7 @@ struct BranchesTabView: View {
       let repository = Git.Model.Repository(name: repo.displayName, path: localPath)
       await repository.load(includeRemote: true)
       gitRepository = repository
+      await loadRecentCommits(repository)
     } else {
       gitRepository = nil
     }
@@ -1069,9 +1134,99 @@ struct BranchesTabView: View {
     #if os(macOS)
     if let gitRepo = gitRepository {
       await gitRepo.load(includeRemote: true)
+      await loadRecentCommits(gitRepo)
     }
     #endif
   }
+
+  private func pullCurrentBranch() async {
+    #if os(macOS)
+    guard let gitRepo = gitRepository else { return }
+    isPulling = true
+    gitError = nil
+    defer { isPulling = false }
+    do {
+      let activeBranch = gitRepo.localBranches.first(where: \.isActive)?.name
+      try await Git.Commands.pull(branch: activeBranch, on: gitRepo)
+      await gitRepo.load(includeRemote: true)
+      await loadRecentCommits(gitRepo)
+    } catch {
+      gitError = "Pull failed: \(error.localizedDescription)"
+    }
+    #endif
+  }
+
+  private func fetchRemote() async {
+    #if os(macOS)
+    guard let gitRepo = gitRepository else { return }
+    isFetching = true
+    gitError = nil
+    defer { isFetching = false }
+    do {
+      try await Git.Commands.fetch(on: gitRepo)
+      await gitRepo.load(includeRemote: true)
+      await loadRecentCommits(gitRepo)
+    } catch {
+      gitError = "Fetch failed: \(error.localizedDescription)"
+    }
+    #endif
+  }
+
+  private func checkoutBranch(_ branchName: String, gitRepo: Git.Model.Repository) async {
+    #if os(macOS)
+    gitError = nil
+    do {
+      _ = try await Git.Commands.checkout(branch: branchName, from: gitRepo)
+      await gitRepo.load(includeRemote: true)
+      await loadRecentCommits(gitRepo)
+    } catch {
+      gitError = "Checkout failed: \(error.localizedDescription)"
+    }
+    #endif
+  }
+
+  private func loadRecentCommits(_ gitRepo: Git.Model.Repository) async {
+    #if os(macOS)
+    let activeBranch = gitRepo.localBranches.first(where: \.isActive)?.name ?? "HEAD"
+    recentCommits = Array(await Git.Commands.log(branch: activeBranch, on: gitRepo).prefix(10))
+    #endif
+  }
+
+  // MARK: Recent Commits UI
+
+  #if os(macOS)
+  private var recentCommitsSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      SectionHeader("Recent Commits")
+
+      LazyVStack(spacing: 1) {
+        ForEach(recentCommits) { entry in
+          HStack(spacing: 10) {
+            Text(entry.commit)
+              .font(.caption.monospaced())
+              .foregroundStyle(.secondary)
+              .frame(width: 60, alignment: .leading)
+
+            Text(entry.message)
+              .font(.callout)
+              .lineLimit(1)
+              .truncationMode(.tail)
+
+            Spacer()
+
+            Text(entry.date, style: .relative)
+              .font(.caption2)
+              .foregroundStyle(.tertiary)
+          }
+          .padding(.horizontal, 12)
+          .padding(.vertical, 6)
+        }
+      }
+      .background(Color(nsColor: .controlBackgroundColor))
+      .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+  }
+  #endif
 
   /// Fetch open PRs from the GitHub API for this repo.
   private func fetchOpenPRs() async {
@@ -1108,6 +1263,7 @@ struct BranchesTabView: View {
 private struct BranchRow: View {
   let branch: Git.Model.Branch
   var isRemote: Bool = false
+  var onCheckout: (() -> Void)?
 
   var body: some View {
     HStack(spacing: 10) {
@@ -1137,6 +1293,16 @@ private struct BranchRow: View {
     }
     .padding(.horizontal, 12)
     .padding(.vertical, 6)
+    .contentShape(Rectangle())
+    .contextMenu {
+      if !branch.isActive, let onCheckout {
+        Button {
+          onCheckout()
+        } label: {
+          Label("Checkout", systemImage: "arrow.right.arrow.left")
+        }
+      }
+    }
   }
 }
 

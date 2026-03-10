@@ -11,7 +11,7 @@
 #if os(macOS)
 extension Commands {
   // Would have preferred to name method switch, but that is a reserved word
-  static func checkout(branch: String, from repository: Model.Repository) async throws -> [String] {
+  public static func checkout(branch: String, from repository: Model.Repository) async throws -> [String] {
     try await Self.simple(arguments: ["switch", branch], in: repository)
   }
 }

@@ -12,6 +12,12 @@
 //  3. Run transfer (RAG sync, etc.)
 //  4. Disconnect
 //
+// ┌─────────────────────────────────────────────────────────────────────┐
+// │  THIS IS THE CORRECT USE OF P2P — large binary file transfers.      │
+// │  P2P with Firestore relay fallback is the right pattern here.       │
+// │  Do NOT add coordination/status/task messages to this path.         │
+// └─────────────────────────────────────────────────────────────────────┘
+//
 
 import Foundation
 import Network

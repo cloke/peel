@@ -25,8 +25,16 @@ struct MembersListView: View {
             .foregroundStyle(member.role == .owner ? .yellow : .secondary)
 
           VStack(alignment: .leading, spacing: 2) {
-            Text(member.displayName)
-              .fontWeight(.medium)
+            HStack(spacing: 4) {
+              Text(member.displayName)
+                .fontWeight(.medium)
+              if let version = member.codeVersion {
+                Text(version.prefix(7))
+                  .font(.caption2)
+                  .foregroundStyle(.tertiary)
+                  .monospaced()
+              }
+            }
             Text(member.email)
               .font(.caption)
               .foregroundStyle(.secondary)

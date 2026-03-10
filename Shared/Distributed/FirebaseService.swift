@@ -5,6 +5,19 @@
 //  Created for Firestore Swarm Integration
 //  See Plans/FIRESTORE_SWARM_DESIGN.md
 //
+// ┌─────────────────────────────────────────────────────────────────────┐
+// │  ARCHITECTURE INVARIANT — FIRESTORE IS THE COORDINATION BACKBONE    │
+// │                                                                     │
+// │  This service is the SINGLE SOURCE OF TRUTH for all swarm           │
+// │  coordination: task dispatch, worker status, heartbeats, member     │
+// │  management, direct commands, and task results.                      │
+// │                                                                     │
+// │  P2P TCP connections are ONLY for large file transfers (RAG).       │
+// │  All status and coordination flows through Firestore.               │
+// │                                                                     │
+// │  See SwarmCoordinator.swift header for the full invariant.          │
+// └─────────────────────────────────────────────────────────────────────┘
+//
 
 import Foundation
 import os.log
@@ -697,14 +710,16 @@ public final class FirebaseService {
     ], forDocument: swarmRef)
     
     // Create owner membership (include ownerId for collection group queries)
+    let capabilities = WorkerCapabilities.current()
     batch.setData([
       "userId": userId,
-      "displayName": currentUserDisplayName ?? WorkerCapabilities.current().displayName ?? ProcessInfo.processInfo.hostName,
+      "displayName": currentUserDisplayName ?? capabilities.displayName ?? ProcessInfo.processInfo.hostName,
       "email": currentUserEmail ?? "",
       "joinedAt": FieldValue.serverTimestamp(),
       "role": "owner",
       "roleLevel": 4,
-      "status": "active"
+      "status": "active",
+      "codeVersion": capabilities.gitCommitHash ?? "unknown"
     ], forDocument: membersCollection(swarmId: swarmId).document(userId))
     
     try await batch.commit()
@@ -939,9 +954,10 @@ public final class FirebaseService {
     let batch = db.batch()
     
     // Add user as pending member (include userId for collection group queries)
+    let capabilities = WorkerCapabilities.current()
     batch.setData([
       "userId": userId,
-      "displayName": currentUserDisplayName ?? WorkerCapabilities.current().displayName ?? ProcessInfo.processInfo.hostName,
+      "displayName": currentUserDisplayName ?? capabilities.displayName ?? ProcessInfo.processInfo.hostName,
       "email": currentUserEmail ?? "",
       "joinedAt": FieldValue.serverTimestamp(),
       "invitedBy": inviteData["createdBy"] as? String ?? "",
@@ -949,7 +965,8 @@ public final class FirebaseService {
       "roleLevel": 0,
       "status": "active",
       "approvedBy": NSNull(),
-      "approvedAt": NSNull()
+      "approvedAt": NSNull(),
+      "codeVersion": capabilities.gitCommitHash ?? "unknown"
     ], forDocument: membersCollection(swarmId: swarmId).document(userId))
     
     // Update invite usage
@@ -1054,7 +1071,8 @@ public final class FirebaseService {
         email: data["email"] as? String ?? "",
         role: role,
         joinedAt: (data["joinedAt"] as? Timestamp)?.dateValue() ?? Date(),
-        approvedBy: data["approvedBy"] as? String
+        approvedBy: data["approvedBy"] as? String,
+        codeVersion: data["codeVersion"] as? String
       )
     }
     
@@ -1080,7 +1098,8 @@ public final class FirebaseService {
         email: data["email"] as? String ?? "",
         role: role,
         joinedAt: (data["joinedAt"] as? Timestamp)?.dateValue() ?? Date(),
-        approvedBy: data["approvedBy"] as? String
+        approvedBy: data["approvedBy"] as? String,
+        codeVersion: data["codeVersion"] as? String
       )
     }.sorted { $0.role.level > $1.role.level } // Sort by role level (owner first)
     
@@ -1686,6 +1705,14 @@ public final class FirebaseService {
   public func startMembersListener(swarmId: String) {
     stopMembersListener()
     
+    // Update current user's code version
+    if let userId = currentUserId {
+      let version = WorkerCapabilities.current().gitCommitHash ?? "unknown"
+      membersCollection(swarmId: swarmId).document(userId).updateData([
+        "codeVersion": version
+      ]) { _ in }
+    }
+    
     logger.info("Starting members listener for swarm: \(swarmId)")
     
     membersListener = membersCollection(swarmId: swarmId)
@@ -1708,7 +1735,8 @@ public final class FirebaseService {
               email: data["email"] as? String ?? "",
               role: SwarmPermissionRole(rawValue: data["role"] as? String ?? "pending") ?? .pending,
               joinedAt: (data["joinedAt"] as? Timestamp)?.dateValue() ?? Date(),
-              approvedBy: data["approvedBy"] as? String
+              approvedBy: data["approvedBy"] as? String,
+              codeVersion: data["codeVersion"] as? String
             )
           }
           

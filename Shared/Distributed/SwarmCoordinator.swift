@@ -3,6 +3,31 @@
 //
 // Created by Copilot on 2026-01-27.
 // Coordinates the distributed swarm - manages workers and task dispatch.
+//
+// ┌─────────────────────────────────────────────────────────────────────┐
+// │  ARCHITECTURE INVARIANT — DO NOT CHANGE WITHOUT OWNER APPROVAL     │
+// │                                                                     │
+// │  Firestore is the SOLE coordination layer for:                      │
+// │    • Task dispatch (submitTask → task queue → worker claims)        │
+// │    • Worker status & heartbeats                                     │
+// │    • Member management & permissions                                │
+// │    • Task results & completion                                      │
+// │    • Direct commands & update-workers                               │
+// │    • All cross-network communication                                │
+// │                                                                     │
+// │  P2P TCP connections (LAN/WAN/STUN) are ONLY for:                   │
+// │    • Large file transfers (RAG artifacts/embeddings)                 │
+// │    • Nothing else. Zero. Nada.                                      │
+// │                                                                     │
+// │  If you are adding a feature that sends status, commands, tasks,    │
+// │  or coordination messages: USE FIRESTORE, not P2P TCP.              │
+// │  If you are transferring large binary data: USE P2P with Firestore  │
+// │  relay as fallback (see OnDemandPeerTransfer.swift).                │
+// │                                                                     │
+// │  connectedWorkers (TCP peers) must NEVER be a prerequisite for      │
+// │  task dispatch, direct commands, or worker updates.                  │
+// └─────────────────────────────────────────────────────────────────────┘
+//
 
 import Foundation
 import FirebaseFirestore

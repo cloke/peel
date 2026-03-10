@@ -133,13 +133,13 @@ extension Model {
    
    git log --abbrev-commit --graph --decorate --first-parent --date=iso8601-strict
    */
-  struct LogEntry: Identifiable {
-    var id: String { commit }
-    let commit: String
-    var merge = ""
-    var date = Date()
-    var author = ""
-    var message = ""
+  public struct LogEntry: Identifiable {
+    public var id: String { commit }
+    public let commit: String
+    public var merge = ""
+    public var date = Date()
+    public var author = ""
+    public var message = ""
   }
 }
 

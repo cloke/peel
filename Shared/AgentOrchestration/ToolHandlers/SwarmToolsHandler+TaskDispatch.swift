@@ -7,6 +7,13 @@
 //           swarm.pr-queue, swarm.create-pr, swarm.setup-labels
 //  Split from SwarmToolsHandler.swift as part of #301.
 //
+//  ┌─────────────────────────────────────────────────────────────────────┐
+//  │  ARCHITECTURE: All task dispatch and commands go through FIRESTORE.  │
+//  │  Never gate dispatch on connectedWorkers (P2P TCP).                  │
+//  │  Workers discover tasks via Firestore listeners, not TCP messages.  │
+//  │  See SwarmCoordinator.swift header for the full invariant.          │
+//  └─────────────────────────────────────────────────────────────────────┘
+//
 
 import Foundation
 import MCPCore

@@ -2,7 +2,12 @@
 // Peel
 //
 // Created by Copilot on 2026-01-27.
-// Bonjour service for discovering and advertising Peel workers on the LAN.
+// Bonjour service for discovering Peel workers on the LAN.
+//
+// NOTE: Bonjour discovery feeds into P2P file transfers ONLY.
+// Worker availability for task dispatch comes from Firestore, not Bonjour.
+// See SwarmCoordinator.swift header for the architecture invariant.
+//
 
 import Foundation
 import Network

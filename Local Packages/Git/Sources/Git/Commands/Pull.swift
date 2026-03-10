@@ -10,8 +10,21 @@
 
 #if os(macOS)
 extension Commands {
-  func pull(branch: String) {
-    
+  /// Pull from remote, optionally for a specific branch.
+  /// - Parameters:
+  ///   - remote: The remote to pull from (default: "origin")
+  ///   - branch: Optional branch name to pull
+  ///   - repository: The repository to pull in
+  public static func pull(
+    remote: String = "origin",
+    branch: String? = nil,
+    on repository: Model.Repository
+  ) async throws {
+    var args = ["pull", remote]
+    if let branch {
+      args.append(branch)
+    }
+    _ = try await simple(arguments: args, in: repository)
   }
 }
 #endif

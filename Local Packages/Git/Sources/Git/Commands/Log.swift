@@ -11,7 +11,7 @@ import Foundation
 /// https://git-scm.com/docs/git-log
 #if os(macOS)
 extension Commands {
-  static func log(branch: String, on repository: Model.Repository) async -> [Model.LogEntry] {
+  public static func log(branch: String, on repository: Model.Repository) async -> [Model.LogEntry] {
     // loot at --graph without parent
     var logs = [Model.LogEntry]()
     let cleanBranch = branch.replacingOccurrences(of: "*", with: "").trimmingCharacters(in: .whitespacesAndNewlines)

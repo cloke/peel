@@ -181,6 +181,38 @@ To pull submodules/local packages too: `command: "git pull origin main && cd 'Lo
 - Use `swarm.dispatch` for simple shell commands (it's for chain execution)
 - Use `terminal.run` — that runs locally, not on the remote worker
 
+### Swarm Architecture Invariant (CRITICAL — DO NOT VIOLATE)
+
+The swarm has TWO distinct communication layers with STRICT separation:
+
+**Firestore = ALL coordination** (the backbone):
+- Task dispatch (`FirebaseService.submitTask` → task queue → worker claims via listener)
+- Worker status & heartbeats (Firestore worker registration)
+- Member management & permissions
+- Task results & completion status
+- Direct commands & worker updates
+- Swarm chat & activity logging
+- ALL cross-network communication
+
+**P2P TCP (LAN/WAN/STUN) = ONLY large file transfers**:
+- RAG artifact sync (`OnDemandPeerTransfer` → `FirestoreRelayTransfer` fallback)
+- Nothing else. Literally nothing.
+
+**Rules agents MUST follow:**
+1. **NEVER gate task dispatch on `connectedWorkers`** (TCP peers). Workers discover tasks via Firestore listeners.
+2. **NEVER require a TCP connection** for `swarm.dispatch`, `swarm.direct-command`, or `swarm.update-workers`.
+3. **NEVER add coordination messages** (status, commands, heartbeats) to `PeerConnectionManager`.
+4. If adding a new swarm feature, ask: "Is this transferring large binary data?" If NO → use Firestore. If YES → use P2P with Firestore relay fallback.
+5. The `peers` array in `swarm.diagnostics` shows TCP connections (file transfer readiness). The `firestoreWorkers` array shows all registered workers (actual availability for task dispatch).
+
+**Key files with architecture banners** (read the header comments):
+- `Shared/Distributed/SwarmCoordinator.swift` — Main invariant definition
+- `Shared/Distributed/PeerConnectionManager.swift` — P2P scope restrictions
+- `Shared/Distributed/FirebaseService.swift` — Firestore as backbone
+- `Shared/AgentOrchestration/ToolHandlers/SwarmToolsHandler+TaskDispatch.swift` — Dispatch rules
+
+**If you're unsure**, check the file header banner before modifying any file in `Shared/Distributed/`.
+
 ### Agents MUST Always Work in Worktrees (CRITICAL)
 All agent/chain work **must** happen inside a git worktree, never in the main repository checkout.
 

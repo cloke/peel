@@ -10,6 +10,10 @@
 //    1. LAN (Bonjour/direct TCP) — fastest, zero config
 //    2. STUN hole punch → TCP  — works through most NATs
 //
+//  NOTE: NAT traversal exists ONLY to support P2P file transfers (RAG sync).
+//  All coordination/status/tasks use Firestore regardless of NAT state.
+//  See SwarmCoordinator.swift header for the architecture invariant.
+//
 
 import Foundation
 import Network

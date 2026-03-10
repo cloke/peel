@@ -63,6 +63,7 @@ public struct SwarmMember: Sendable, Identifiable, Hashable {
   public let role: SwarmPermissionRole
   public let joinedAt: Date
   public let approvedBy: String?
+  public let codeVersion: String?
 }
 
 /// Swarm invite

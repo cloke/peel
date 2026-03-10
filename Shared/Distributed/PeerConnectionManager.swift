@@ -2,7 +2,24 @@
 // Peel
 //
 // Created by Copilot on 2026-01-27.
-// Manages peer-to-peer connections using Network framework.
+// Manages peer-to-peer TCP connections using Network framework.
+//
+// ┌─────────────────────────────────────────────────────────────────────┐
+// │  ARCHITECTURE INVARIANT — P2P IS ONLY FOR FILE TRANSFERS            │
+// │                                                                     │
+// │  This TCP connection layer exists SOLELY for transferring large      │
+// │  binary data (RAG indexes, embedding files) between peers.          │
+// │                                                                     │
+// │  DO NOT use PeerConnectionManager for:                              │
+// │    • Task dispatch (use FirebaseService.submitTask)                  │
+// │    • Heartbeats or status (use Firestore worker registration)       │
+// │    • Direct commands (use Firestore messaging)                      │
+// │    • Any coordination message                                       │
+// │                                                                     │
+// │  A missing TCP connection must NEVER prevent task dispatch or        │
+// │  worker communication. Firestore handles all coordination.          │
+// └─────────────────────────────────────────────────────────────────────┘
+//
 
 import Foundation
 import Network

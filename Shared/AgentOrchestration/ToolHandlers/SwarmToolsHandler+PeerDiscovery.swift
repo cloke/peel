@@ -7,6 +7,10 @@
 //           swarm.discovered, swarm.register-repo, swarm.repos
 //  Split from SwarmToolsHandler.swift as part of #301.
 //
+//  NOTE: "peers" in diagnostics = TCP-connected (for file transfers only).
+//  "firestoreWorkers" = all registered workers (the source of truth for
+//  task dispatch and coordination). See SwarmCoordinator.swift header.
+//
 
 import Foundation
 import MCPCore
