@@ -630,7 +630,7 @@ struct RAGTabView: View {
             .disabled(isSyncing)
           }
         } else if totalCount == 1, let worker = allWAN.first {
-          let staleLabel = worker.isStale ? " (stale)" : ""
+          let staleLabel = worker.isStale ? " (offline)" : ""
           HStack(spacing: 8) {
             Label("Swarm", systemImage: "point.3.connected.trianglepath.dotted")
               .font(.caption)
@@ -965,7 +965,7 @@ struct RAGTabView: View {
 
   private func workerMenuDisplayName(_ worker: FirestoreWorker) -> String {
     let preferredSuffix = SwarmPeerPreferences.isPreferred(worker) ? " (Preferred)" : ""
-    let staleSuffix = worker.isStale ? " · stale" : ""
+    let staleSuffix = worker.isStale ? " · offline" : ""
     return "\(worker.displayName)\(preferredSuffix)\(staleSuffix)"
   }
 

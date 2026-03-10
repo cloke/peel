@@ -197,7 +197,7 @@ extension SwarmToolsHandler {
         "deviceName": worker.deviceName,
         "status": worker.status.rawValue,
         "lastHeartbeat": worker.lastHeartbeat.ISO8601Format(),
-        "isStale": worker.isStale,
+        "isOffline": worker.isStale,
         "version": worker.version as Any,
         "wanAddress": worker.wanAddress as Any,
         "wanPort": worker.wanPort.map { Int($0) } as Any,

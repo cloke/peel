@@ -262,12 +262,15 @@ public struct FirestoreWorker: Sendable, Identifiable, Hashable {
   /// Convenience alias
   public var workerId: String { id }
   
-  /// Whether the worker is considered stale (no heartbeat in 5 minutes).
+  /// Whether the worker is considered offline (no heartbeat in 5 minutes).
   /// Firestore heartbeats fire every 30s; 5 min accommodates clock drift and
   /// transient connectivity without false-flagging active workers.
   public var isStale: Bool {
     Date().timeIntervalSince(lastHeartbeat) > 300
   }
+
+  /// Convenience alias — `isStale` means the worker is offline.
+  public var isOffline: Bool { isStale }
   
   /// Whether this worker has valid WAN connection info
   public var hasWANEndpoint: Bool {

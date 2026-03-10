@@ -356,7 +356,7 @@ extension SwarmToolsHandler {
             "displayName": w.displayName,
             "deviceName": w.deviceName,
             "status": w.status.rawValue,
-            "isStale": w.isStale,
+            "isOffline": w.isStale,
             "lastHeartbeat": formatter.string(from: w.lastHeartbeat),
             "version": w.version as Any,
             "gitCommitHash": w.gitCommitHash as Any,
@@ -791,7 +791,7 @@ extension SwarmToolsHandler {
           "workerId": worker.id,
           "workerName": worker.displayName,
           "status": worker.status.rawValue,
-          "isStale": worker.isStale,
+          "isOffline": worker.isStale,
           "lastHeartbeat": Formatter.iso8601.string(from: worker.lastHeartbeat),
         ]
       }

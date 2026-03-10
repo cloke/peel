@@ -126,7 +126,7 @@ struct WorkersListView: View {
     return nil
   }
 
-  /// Count workers that are online: non-stale via Firestore OR TCP-connected.
+  /// Count workers that are online: not offline via Firestore OR TCP-connected.
   private var onlineWorkerCount: Int {
     firebaseService.swarmWorkers.filter { worker in
       !worker.isStale || tcpHeartbeat(for: worker) != nil
@@ -164,14 +164,14 @@ struct WorkerRow: View {
   let onMessage: () -> Void
 
   private var isLANConnected: Bool { tcpHeartbeat != nil }
-  private var effectiveStale: Bool { isLANConnected ? false : worker.isStale }
+  private var effectiveOffline: Bool { isLANConnected ? false : worker.isStale }
   private var effectiveLastSeen: Date { tcpHeartbeat ?? worker.lastHeartbeat }
 
   var body: some View {
     HStack {
       // Status indicator
       Circle()
-        .fill(effectiveStale ? .orange : .green)
+        .fill(effectiveOffline ? .orange : .green)
         .frame(width: 8, height: 8)
 
       VStack(alignment: .leading, spacing: 2) {
@@ -203,7 +203,7 @@ struct WorkerRow: View {
 
         Text("Last seen \(effectiveLastSeen.formatted(.relative(presentation: .named)))")
           .font(.caption2)
-          .foregroundStyle(effectiveStale ? Color.orange : Color.secondary)
+          .foregroundStyle(effectiveOffline ? Color.orange : Color.secondary)
       }
 
       Spacer()
@@ -214,8 +214,8 @@ struct WorkerRow: View {
         .fontWeight(.medium)
         .padding(.horizontal, 8)
         .padding(.vertical, 2)
-        .background(effectiveStale ? Color.orange.opacity(0.15) : Color.green.opacity(0.15))
-        .foregroundStyle(effectiveStale ? .orange : .green)
+        .background(effectiveOffline ? Color.orange.opacity(0.15) : Color.green.opacity(0.15))
+        .foregroundStyle(effectiveOffline ? .orange : .green)
         .clipShape(Capsule())
 
       if canMessage {

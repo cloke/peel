@@ -1376,7 +1376,7 @@ struct RepositoriesCommandCenter: View {
   }
 
   private func wanWorkerText(_ worker: FirestoreWorker) -> String {
-    worker.isStale ? "Stale heartbeat" : worker.status.rawValue.capitalized
+    worker.isStale ? "Offline" : worker.status.rawValue.capitalized
   }
 
   // MARK: - Recent Activity
