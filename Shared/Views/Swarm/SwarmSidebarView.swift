@@ -167,6 +167,7 @@ struct LocalWorkerStatusView: View {
         // Register with all member swarms via Firestore
         // Resolve WAN address so peers can connect across networks
         let wanAddress = await WANAddressResolver.resolve()
+        coordinator.setResolvedWANAddress(wanAddress)
         let capabilities = WorkerCapabilities.current(
           wanAddress: wanAddress,
           wanPort: 8766

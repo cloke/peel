@@ -384,6 +384,29 @@ extension Github {
     let bodyData = try JSONSerialization.data(withJSONObject: json, options: [])
     return try await load(url: url, method: "POST", body: bodyData)
   }
+
+  /// Create a GitHub issue using owner/repo strings (no Repository object needed).
+  public static func createIssue(
+    owner: String,
+    repository: String,
+    title: String,
+    body: String,
+    labels: [String] = []
+  ) async throws -> Issue {
+    guard let url = URL(string: "https://api.github.com/repos/\(owner)/\(repository)/issues") else {
+      throw GithubError.invalidURL("Invalid issues URL for \(owner)/\(repository)")
+    }
+
+    var json: [String: Any] = [
+      "title": title,
+      "body": body,
+    ]
+    if !labels.isEmpty {
+      json["labels"] = labels
+    }
+    let bodyData = try JSONSerialization.data(withJSONObject: json, options: [])
+    return try await load(url: url, method: "POST", body: bodyData)
+  }
   
   /// Used when the expected response will be a single of codable object.
   private static func load<T: Codable>(url: String) async throws -> T {

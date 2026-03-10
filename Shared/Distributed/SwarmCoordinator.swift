@@ -121,8 +121,15 @@ public final class SwarmCoordinator {
   /// LAN reconnect task — retries discovered-but-not-connected Bonjour peers
   private var lanReconnectTask: Task<Void, Never>?
 
-  /// Device IDs we've already attempted WAN connection to (avoid retrying failures)
-  private var wanConnectAttempted: Set<String> = []
+  /// Device IDs we've already attempted WAN connection to, with the time of the attempt.
+  /// Entries expire after `wanConnectRetryInterval` so we retry periodically.
+  private var wanConnectAttempted: [String: Date] = [:]
+
+  /// How long before a failed WAN connection attempt can be retried
+  private let wanConnectRetryInterval: TimeInterval = 120  // 2 minutes
+
+  /// Cached WAN address resolved at start — reused on reconnect
+  private var resolvedWANAddress: String?
 
   /// Swarm start time for uptime tracking
   private var startedAt: Date?
@@ -490,8 +497,13 @@ public final class SwarmCoordinator {
     let firebaseService = FirebaseService.shared
     if firebaseService.isSignedIn {
       Task {
-        // NOTE: STUN re-discovery removed from reconnect — now on-demand
-        let workerCaps = WorkerCapabilities.current()
+        // Re-resolve WAN address (may have changed after sleep/wake)
+        let freshWAN = await WANAddressResolver.resolve()
+        if let wan = freshWAN { self.resolvedWANAddress = wan }
+        let workerCaps = WorkerCapabilities.current(
+          wanAddress: self.resolvedWANAddress,
+          wanPort: 8766
+        )
         for swarm in firebaseService.memberSwarms where swarm.role.canRegisterWorkers {
           _ = try? await firebaseService.registerWorker(swarmId: swarm.id, capabilities: workerCaps)
           // Stop then restart to force fresh listeners
@@ -632,11 +644,15 @@ public final class SwarmCoordinator {
       logger.info("Manual WAN connect: trying direct TCP to \(worker.displayName) at \(address):\(port)")
       do {
         try await connectionManager.connect(to: address, port: port)
+        // Clear from auto-connect retry set on success
+        wanConnectAttempted.removeValue(forKey: worker.id)
         logger.info("Manual WAN connect: TCP connected to \(worker.displayName) via direct WAN")
         return
       } catch {
         logger.warning("Manual WAN connect: direct TCP failed — \(error.localizedDescription)")
       }
+    } else {
+      logger.info("Manual WAN connect: \(worker.displayName) has no WAN endpoint (wanAddress=\(worker.wanAddress ?? "nil"), wanPort=\(worker.wanPort.map(String.init) ?? "nil"))")
     }
 
     // Try STUN hole-punch
@@ -706,19 +722,26 @@ public final class SwarmCoordinator {
   // MARK: - WAN Auto-Connect
 
   /// Check Firestore workers for WAN/STUN endpoints and auto-connect.
-  /// Priority: STUN hole punch (no router config) → direct TCP
+  /// Priority: STUN hole punch (no router config) → direct TCP.
+  /// Failed attempts are retried after `wanConnectRetryInterval` (2 min).
   public func autoConnectWANPeers() {
     guard isActive else { return }
 
     let myDeviceId = capabilities.deviceId
     let alreadyConnected = Set(connectedWorkers.map(\.id))
     let firebaseService = FirebaseService.shared
+    let now = Date()
+
+    // Expire old attempts so we can retry
+    wanConnectAttempted = wanConnectAttempted.filter { _, attemptDate in
+      now.timeIntervalSince(attemptDate) < wanConnectRetryInterval
+    }
 
     for worker in firebaseService.swarmWorkers {
-      // Skip self, already-connected, already-attempted, stale
+      // Skip self, already-connected, recently-attempted, stale
       guard worker.id != myDeviceId,
             !alreadyConnected.contains(worker.id),
-            !wanConnectAttempted.contains(worker.id),
+            wanConnectAttempted[worker.id] == nil,
             worker.status == .online,
             !worker.isStale else {
         continue
@@ -727,7 +750,7 @@ public final class SwarmCoordinator {
       // Must have a WAN endpoint (STUN auto-connect removed — now on-demand)
       guard worker.hasWANEndpoint else { continue }
 
-      wanConnectAttempted.insert(worker.id)
+      wanConnectAttempted[worker.id] = now
 
       Task {
         // Direct TCP to WAN address (requires port forwarding / UPnP)
@@ -737,13 +760,15 @@ public final class SwarmCoordinator {
           do {
             try await connectionManager?.connect(to: address, port: port)
             logger.info("WAN auto-connect: TCP connected to \(worker.displayName) via direct WAN")
+            // Clear from attempted on success so we don't expire and retry a working connection
+            await MainActor.run { self.wanConnectAttempted.removeValue(forKey: worker.id) }
             return
           } catch {
             logger.warning("WAN auto-connect: direct TCP failed to \(worker.displayName) at \(address):\(port) — \(error.localizedDescription)")
           }
         }
 
-        logger.info("WAN auto-connect: all P2P methods failed for \(worker.displayName) — no direct connection available")
+        logger.info("WAN auto-connect: all P2P methods failed for \(worker.displayName) — will retry in \(Int(self.wanConnectRetryInterval))s")
       }
     }
   }
@@ -796,6 +821,11 @@ public final class SwarmCoordinator {
     wanAutoConnectTask?.cancel()
     wanAutoConnectTask = nil
     wanConnectAttempted.removeAll()
+  }
+
+  /// Store the resolved WAN address for reuse on reconnect.
+  public func setResolvedWANAddress(_ address: String?) {
+    resolvedWANAddress = address
   }
 
   // MARK: - LAN Reconnect

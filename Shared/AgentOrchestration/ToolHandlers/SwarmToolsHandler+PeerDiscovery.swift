@@ -74,6 +74,7 @@ extension SwarmToolsHandler {
       } else {
         wanAddress = await WANAddressResolver.resolve()
       }
+      coordinator.setResolvedWANAddress(wanAddress)
       
       if firebaseService.isSignedIn {
         let capabilities = WorkerCapabilities.current(

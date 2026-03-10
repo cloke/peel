@@ -1317,20 +1317,33 @@ public final class FirebaseService {
             )
           }
           
-          // Log worker changes — only log online, non-stale workers as "joined"
-          // to avoid misleading activity on initial snapshot load.
+          // Log worker changes — log online workers as "joined".
+          // Use a lenient staleness check: consider workers "fresh enough"
+          // if their heartbeat is within 10 minutes OR the heartbeat is
+          // Date.distantPast (Firestore serverTimestamp still pending).
+          let isInitialSnapshot = previousWorkers.isEmpty
           for worker in newWorkers {
-            if !previousWorkers.contains(worker.id) && worker.status == .online && !worker.isStale {
-              self.logActivity(.workerOnline, message: "\(worker.displayName) joined", details: [
-                "workerId": worker.id,
-                "device": worker.deviceName
-              ])
-              // Notify when a new worker connects (only when we are an active coordinator)
-              if self.activeSwarmPermission.canApproveMembers || self.activeSwarmPermission.canRegisterWorkers {
-                PeonPingService.shared.sendSwarmNotification(
-                  title: "Swarm Worker Connected",
-                  body: "\(worker.displayName) joined the swarm"
-                )
+            if !previousWorkers.contains(worker.id) && worker.status == .online {
+              // On initial snapshot, be lenient — the worker is in Firestore
+              // with status "online" so it should be announced. The isStale
+              // check uses 5 min which is too aggressive for server-timestamp
+              // races and WAN peers with slightly delayed heartbeats.
+              let heartbeatAge = Date().timeIntervalSince(worker.lastHeartbeat)
+              let isPending = worker.lastHeartbeat == Date.distantPast
+              let isFreshEnough = isPending || heartbeatAge < 600  // 10 min
+              
+              if isFreshEnough || isInitialSnapshot {
+                self.logActivity(.workerOnline, message: "\(worker.displayName) joined", details: [
+                  "workerId": worker.id,
+                  "device": worker.deviceName
+                ])
+                // Notify when a new worker connects (only when we are an active coordinator)
+                if self.activeSwarmPermission.canApproveMembers || self.activeSwarmPermission.canRegisterWorkers {
+                  PeonPingService.shared.sendSwarmNotification(
+                    title: "Swarm Worker Connected",
+                    body: "\(worker.displayName) joined the swarm"
+                  )
+                }
               }
             }
           }

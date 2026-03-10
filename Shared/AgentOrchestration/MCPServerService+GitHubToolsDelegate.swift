@@ -90,4 +90,14 @@ extension MCPServerService: GitHubToolsHandlerDelegate {
       owner: owner, repository: repo, number: number, labels: labels
     )
   }
+
+  // MARK: - Issue Write Delegates
+
+  func createGitHubIssue(
+    owner: String, repo: String, title: String, body: String, labels: [String]
+  ) async throws -> Github.Issue {
+    try await Github.createIssue(
+      owner: owner, repository: repo, title: title, body: body, labels: labels
+    )
+  }
 }

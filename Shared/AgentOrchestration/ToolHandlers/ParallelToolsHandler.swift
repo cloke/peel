@@ -1,5 +1,6 @@
 import Foundation
 import MCPCore
+import Github
 
 /// Protocol for parallel tools dependencies
 @MainActor
@@ -7,6 +8,9 @@ protocol ParallelToolsHandlerDelegate: AnyObject {
   var parallelWorktreeRunner: ParallelWorktreeRunner? { get }
   var parallelDataService: DataService? { get }
   var parallelTelemetryProvider: MCPTelemetryProviding { get }
+
+  /// Create a GitHub issue (used by parallel.approve-with-issue)
+  func createGitHubIssue(owner: String, repo: String, title: String, body: String, labels: [String]) async throws -> Github.Issue
 }
 
 /// Handles parallel.* MCP tools for parallel worktree execution.
@@ -24,6 +28,7 @@ final class ParallelToolsHandler {
       "parallel.list",
       "parallel.assignReviewer",
       "parallel.approve",
+      "parallel.approve-with-issue",
       "parallel.reject",
       "parallel.reviewed",
       "parallel.merge",
@@ -199,6 +204,8 @@ final class ParallelToolsHandler {
       return handleAssignReviewer(id: id, arguments: arguments)
     case "parallel.approve":
       return handleApprove(id: id, arguments: arguments)
+    case "parallel.approve-with-issue":
+      return await handleApproveWithIssue(id: id, arguments: arguments)
     case "parallel.reject":
       return handleReject(id: id, arguments: arguments)
     case "parallel.reviewed":
@@ -600,6 +607,153 @@ final class ParallelToolsHandler {
       "executionId": executionId.uuidString,
       "status": execution.status.displayName
     ]))
+  }
+
+  // MARK: - parallel.approve-with-issue
+
+  private func handleApproveWithIssue(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard case .success(let runner) = getRunner(id: id) else {
+      return runnerNotInitializedError(id: id)
+    }
+
+    guard case .success(let runId) = getUUID("runId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "runId")
+    }
+
+    guard case .success(let run) = getRun(runId: runId, from: runner, id: id) else {
+      return runNotFoundError(id: id, runId: runId.uuidString, runner: runner)
+    }
+
+    guard case .success(let executionId) = getUUID("executionId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "executionId")
+    }
+
+    guard case .success(let execution) = getExecution(executionId: executionId, from: run, id: id) else {
+      return (404, rpcError(
+        id: id,
+        code: JSONRPCResponseBuilder.ErrorCode.notFound,
+        message: "Execution not found"
+      ))
+    }
+
+    // Required: GitHub repo coords for the issue
+    guard let owner = arguments["owner"] as? String else {
+      return missingParamError(id: id, param: "owner")
+    }
+    guard let repo = arguments["repo"] as? String else {
+      return missingParamError(id: id, param: "repo")
+    }
+
+    // Optional overrides
+    let issueTitle = (arguments["issueTitle"] as? String)
+      ?? "Follow-up: \(execution.task.title)"
+    let issueFeedback = arguments["feedback"] as? String
+    let labels = (arguments["labels"] as? [String]) ?? ["follow-up"]
+    let reviewerExecutionId = optionalUUID("reviewerExecutionId", from: arguments)
+    let reviewerLabel = optionalString("reviewerLabel", from: arguments, default: nil)
+    let notes = optionalString("notes", from: arguments, default: nil)
+
+    // Build the issue body from agent review feedback
+    let issueBody = buildApproveWithIssueBody(
+      execution: execution,
+      run: run,
+      feedback: issueFeedback
+    )
+
+    // 1. Approve the execution
+    runner.approveExecution(
+      execution,
+      in: run,
+      reviewerExecutionId: reviewerExecutionId,
+      reviewerLabel: reviewerLabel,
+      notes: notes
+    )
+
+    // 2. Create the GitHub issue
+    guard let issueDelegate = delegate else {
+      return (200, toolResult(id: id, result: [
+        "runId": runId.uuidString,
+        "executionId": executionId.uuidString,
+        "status": execution.status.displayName,
+        "issueError": "Delegate not available — execution approved but issue not created",
+      ]))
+    }
+
+    do {
+      let issue = try await issueDelegate.createGitHubIssue(
+        owner: owner, repo: repo, title: issueTitle, body: issueBody, labels: labels
+      )
+      return (200, toolResult(id: id, result: [
+        "runId": runId.uuidString,
+        "executionId": executionId.uuidString,
+        "status": execution.status.displayName,
+        "issue": [
+          "number": issue.number,
+          "html_url": issue.html_url,
+          "title": issue.title,
+        ] as [String: Any],
+      ]))
+    } catch {
+      // Approval succeeded but issue creation failed — still return success with warning
+      return (200, toolResult(id: id, result: [
+        "runId": runId.uuidString,
+        "executionId": executionId.uuidString,
+        "status": execution.status.displayName,
+        "issueError": "Execution approved but issue creation failed: \(error.localizedDescription)",
+      ]))
+    }
+  }
+
+  /// Build a Markdown issue body from the execution's review feedback.
+  private func buildApproveWithIssueBody(
+    execution: ParallelWorktreeExecution,
+    run: ParallelWorktreeRun,
+    feedback: String?
+  ) -> String {
+    var parts: [String] = []
+
+    parts.append("## Context")
+    parts.append("This issue was created during review of agent execution **\(execution.task.title)** in run `\(run.name)`.")
+    if let branch = execution.branchName {
+      parts.append("- **Branch:** `\(branch)`")
+    }
+    parts.append("- **Run ID:** `\(run.id.uuidString)`")
+    parts.append("- **Execution ID:** `\(execution.id.uuidString)`")
+
+    // Include reviewer's feedback or notes
+    if let feedback, !feedback.isEmpty {
+      parts.append("")
+      parts.append("## Feedback")
+      parts.append(feedback)
+    }
+
+    // Include agent review output if available
+    let reviewSteps = execution.chainStepResults.filter { $0.reviewVerdict != nil }
+    if !reviewSteps.isEmpty {
+      parts.append("")
+      parts.append("## Agent Review Output")
+      for step in reviewSteps {
+        if !step.outputPreview.isEmpty {
+          parts.append(step.outputPreview)
+        }
+      }
+    } else if !execution.output.isEmpty {
+      // Fall back to the raw execution output (truncated)
+      let maxLen = 3000
+      let output = execution.output.count > maxLen
+        ? String(execution.output.prefix(maxLen)) + "\n\n_(truncated)_"
+        : execution.output
+      parts.append("")
+      parts.append("## Execution Output")
+      parts.append(output)
+    }
+
+    parts.append("")
+    parts.append("## Acceptance Criteria")
+    parts.append("- [ ] Address the feedback above")
+    parts.append("- [ ] Verify changes don't introduce regressions")
+
+    return parts.joined(separator: "\n")
   }
 
   private func handleAssignReviewer(id: Any?, arguments: [String: Any]) -> (Int, Data) {
@@ -1318,6 +1472,36 @@ extension ParallelToolsHandler {
             "notes": ["type": "string"]
           ],
           "required": ["runId"]
+        ],
+        category: .agentRuns,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "parallel.approve-with-issue",
+        description: """
+        Approve an execution AND create a GitHub issue for follow-up work.
+        Use when the agent review has good suggestions that aren't blocking but should be tracked.
+        The issue will reference the execution, include agent review feedback, and have acceptance criteria.
+        """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": ["type": "string", "description": "The parallel run ID"],
+            "executionId": ["type": "string", "description": "The execution to approve"],
+            "owner": ["type": "string", "description": "GitHub repository owner"],
+            "repo": ["type": "string", "description": "GitHub repository name"],
+            "issueTitle": ["type": "string", "description": "Custom issue title (default: 'Follow-up: <task title>')"],
+            "feedback": ["type": "string", "description": "Reviewer feedback to include in the issue body"],
+            "labels": [
+              "type": "array",
+              "items": ["type": "string"],
+              "description": "Labels to add to the issue (default: ['follow-up'])"
+            ],
+            "reviewerExecutionId": ["type": "string"],
+            "reviewerLabel": ["type": "string"],
+            "notes": ["type": "string", "description": "Internal notes for the approval record"]
+          ],
+          "required": ["runId", "executionId", "owner", "repo"]
         ],
         category: .agentRuns,
         isMutating: true

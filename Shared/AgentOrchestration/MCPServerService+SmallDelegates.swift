@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import Github
 
 // MARK: - MCPToolHandlerDelegate Conformance
 
@@ -248,6 +249,10 @@ extension MCPServerService: ParallelToolsHandlerDelegate {
   var parallelTelemetryProvider: MCPTelemetryProviding {
     telemetryProvider
   }
+
+  // createGitHubIssue(owner:repo:title:body:labels:) is implemented in
+  // MCPServerService+GitHubToolsDelegate.swift and satisfies both
+  // GitHubToolsHandlerDelegate and ParallelToolsHandlerDelegate.
 }
 
 // MARK: - RepoToolsHandlerDelegate

@@ -99,6 +99,7 @@ struct PeelApp: App {
             // If signed into Firebase, register worker and start listeners so WAN peers are visible
             if FirebaseService.shared.isSignedIn {
               let wanAddress = await WANAddressResolver.resolve()
+              SwarmCoordinator.shared.setResolvedWANAddress(wanAddress)
               let capabilities = WorkerCapabilities.current(
                 wanAddress: wanAddress,
                 wanPort: 8766

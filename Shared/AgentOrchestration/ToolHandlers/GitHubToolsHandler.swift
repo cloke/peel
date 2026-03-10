@@ -50,6 +50,11 @@ protocol GitHubToolsHandlerDelegate: MCPToolHandlerDelegate {
 
   /// Add labels to a pull request
   func addLabels(owner: String, repo: String, number: Int, labels: [String]) async throws -> [Github.Label]
+
+  // MARK: - Issue Write
+
+  /// Create a new issue in a repository
+  func createGitHubIssue(owner: String, repo: String, title: String, body: String, labels: [String]) async throws -> Github.Issue
 }
 
 // MARK: - GitHub Tools Handler
@@ -67,6 +72,7 @@ final class GitHubToolsHandler: MCPToolHandler {
   let supportedTools: Set<String> = [
     "github.issue.get",
     "github.issues.list",
+    "github.issue.create",
     "github.pr.get",
     "github.pr.files",
     "github.pr.diff",
@@ -90,6 +96,8 @@ final class GitHubToolsHandler: MCPToolHandler {
       return await handleIssueGet(id: id, arguments: arguments, delegate: githubDelegate)
     case "github.issues.list":
       return await handleIssuesList(id: id, arguments: arguments, delegate: githubDelegate)
+    case "github.issue.create":
+      return await handleIssueCreate(id: id, arguments: arguments, delegate: githubDelegate)
     case "github.pr.get":
       return await handlePRGet(id: id, arguments: arguments, delegate: githubDelegate)
     case "github.pr.files":
@@ -213,6 +221,53 @@ final class GitHubToolsHandler: MCPToolHandler {
     }
   }
   
+  // MARK: - Issue Write Handlers
+
+  private func handleIssueCreate(
+    id: Any?,
+    arguments: [String: Any],
+    delegate: GitHubToolsHandlerDelegate
+  ) async -> (Int, Data) {
+    let schema: [ToolArgSchemaField] = [
+      .required("owner", .string),
+      .required("repo", .string),
+      .required("title", .string),
+      .required("body", .string),
+    ]
+    let parsedResult = parseArguments(arguments, schema: schema, id: id)
+    guard case .success(let parsed) = parsedResult else {
+      if case .failure(let error) = parsedResult { return error.response }
+      return invalidParamError(id: id, param: "arguments")
+    }
+    guard let owner = parsed.string("owner"),
+          let repo = parsed.string("repo"),
+          let title = parsed.string("title"),
+          let body = parsed.string("body") else {
+      return invalidParamError(id: id, param: "arguments")
+    }
+    let labels = (arguments["labels"] as? [String]) ?? []
+
+    do {
+      let issue = try await delegate.createGitHubIssue(
+        owner: owner, repo: repo, title: title, body: body, labels: labels
+      )
+      return (200, makeResult(id: id, result: [
+        "number": issue.number,
+        "title": issue.title,
+        "html_url": issue.html_url,
+        "state": issue.state,
+        "created_at": issue.created_at,
+      ]))
+    } catch {
+      return (500, makeError(
+        id: id,
+        code: -32000,
+        message: "Failed to create issue",
+        data: ["error": error.localizedDescription]
+      ))
+    }
+  }
+
   // MARK: - PR Read Handlers
 
   private func handlePRGet(
@@ -720,6 +775,32 @@ extension GitHubToolsHandler {
         ],
         category: .github,
         isMutating: false
+      ),
+
+      MCPToolDefinition(
+        name: "github.issue.create",
+        description: """
+        Create a new GitHub issue in a repository.
+        Returns the created issue number, title, URL, and state.
+        Useful for tracking follow-up work, improvement suggestions, or deferred fixes.
+        """,
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "owner": ["type": "string", "description": "Repository owner (username or organization)"],
+            "repo": ["type": "string", "description": "Repository name"],
+            "title": ["type": "string", "description": "Issue title"],
+            "body": ["type": "string", "description": "Issue body (supports Markdown)"],
+            "labels": [
+              "type": "array",
+              "items": ["type": "string"],
+              "description": "Optional array of label names to add (labels must exist in the repo)"
+            ]
+          ],
+          "required": ["owner", "repo", "title", "body"]
+        ],
+        category: .github,
+        isMutating: true
       ),
 
       // MARK: PR Read Tools

@@ -571,6 +571,7 @@ public struct SwarmStatusView: View {
     Task {
       // Resolve WAN address so peers can connect to us across networks
       let wanAddress = await WANAddressResolver.resolve()
+      SwarmCoordinator.shared.setResolvedWANAddress(wanAddress)
       let capabilities = WorkerCapabilities.current(
         wanAddress: wanAddress,
         wanPort: 8766
