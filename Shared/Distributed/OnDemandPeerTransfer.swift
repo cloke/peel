@@ -667,10 +667,16 @@ public final class OnDemandPeerTransfer {
     endpoint: STUNResult
   ) async throws {
     let db = Firestore.firestore()
-    let docRef = db.collection("swarms/\(swarmId)/stunSignaling")
-      .document("\(myDeviceId)_to_\(targetWorkerId)")
+    let collection = db.collection("swarms/\(swarmId)/stunSignaling")
+    let offerDocRef = collection.document("\(myDeviceId)_to_\(targetWorkerId)")
+    let answerDocRef = collection.document("\(targetWorkerId)_to_\(myDeviceId)")
 
-    try await docRef.setData([
+    // Delete stale signaling docs from previous attempts so the responder
+    // sees a fresh .added event (not .modified, which was previously ignored).
+    try? await offerDocRef.delete()
+    try? await answerDocRef.delete()
+
+    try await offerDocRef.setData([
       "fromWorkerId": myDeviceId,
       "toWorkerId": targetWorkerId,
       "stunAddress": endpoint.address,

@@ -56,7 +56,7 @@ public final class STUNSignalingResponder {
           return
         }
 
-        for change in snapshot.documentChanges where change.type == .added {
+        for change in snapshot.documentChanges where change.type == .added || change.type == .modified {
           let data = change.document.data()
           // Don't respond to our own answers
           if data["isAnswer"] as? Bool == true { continue }
@@ -76,6 +76,10 @@ public final class STUNSignalingResponder {
           let docId = change.document.documentID
 
           Task { @MainActor in
+            // For modified documents, allow re-processing (the initiator retried)
+            if change.type == .modified {
+              self.respondedOffers.remove(docId)
+            }
             // Deduplicate
             guard !self.respondedOffers.contains(docId) else { return }
             self.respondedOffers.insert(docId)
