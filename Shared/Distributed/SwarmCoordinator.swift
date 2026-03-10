@@ -1832,6 +1832,11 @@ public final class SwarmCoordinator {
         errorMessage: "Working directory not found on worker: \(resolvedWorkingDirectory). Remote URL: \(request.repoRemoteURL ?? "none"). Register this repo with the worker."
       )
       try? await connectionManager?.send(.taskResult(result: result), to: peerId)
+      completedResults.insert(result, at: 0)
+      if completedResults.count > maxStoredResults {
+        completedResults.removeLast()
+      }
+      delegate?.swarmCoordinator(self, didEmit: .taskCompleted(result))
       tasksFailed += 1
       return
     }
@@ -1968,6 +1973,12 @@ public final class SwarmCoordinator {
     
     // Send result
     try? await connectionManager?.send(.taskResult(result: result), to: peerId)
+    
+    // Store result locally so worker UI and swarm.tasks can query it
+    completedResults.insert(result, at: 0)
+    if completedResults.count > maxStoredResults {
+      completedResults.removeLast()
+    }
     
     currentTask = nil
     delegate?.swarmCoordinator(self, didEmit: .taskCompleted(result))

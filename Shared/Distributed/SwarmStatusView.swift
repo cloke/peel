@@ -17,6 +17,7 @@ public struct SwarmStatusView: View {
   @State private var delegateWrapper = SwarmStatusCoordinatorWrapper()
   @State private var errorMessage: String?
   @State private var taskLog: [String] = []
+  @State private var selectedTask: ChainResult? = nil
   @State private var displayName: String = ""
   @State private var messageText: String = ""
   @State private var isSendingMessage = false
@@ -127,8 +128,11 @@ public struct SwarmStatusView: View {
       workersSection
         .frame(minWidth: 200)
 
-      // Swarm worktrees (brain/hybrid only)
-      if coordinator.role != .worker {
+      // Swarm worktrees (brain/hybrid only) or completed tasks (worker)
+      if coordinator.role == .worker {
+        completedTasksSection
+          .frame(minWidth: 180)
+      } else {
         worktreesSection
           .frame(minWidth: 180)
       }
@@ -289,6 +293,60 @@ public struct SwarmStatusView: View {
         .padding(.bottom, 4)
       }
       Spacer()
+    }
+  }
+
+  private var completedTasksSection: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      DisclosureGroup {
+        if coordinator.completedResults.isEmpty {
+          Text("No completed tasks yet")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal)
+            .padding(.vertical, 4)
+        } else {
+          List(coordinator.completedResults) { result in
+            HStack(spacing: 6) {
+              Image(systemName: result.status == .completed ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundStyle(result.status == .completed ? Color.green : .red)
+                .font(.caption)
+              VStack(alignment: .leading, spacing: 1) {
+                Text(result.requestId.uuidString.prefix(8))
+                  .font(.caption.monospaced())
+                Text(String(format: "%.1fs", result.duration))
+                  .font(.caption2)
+                  .foregroundStyle(.secondary)
+              }
+              Spacer()
+              Text(result.completedAt, format: .relative(presentation: .named))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { selectedTask = result }
+          }
+          .listStyle(.plain)
+        }
+      } label: {
+        HStack {
+          Text("Completed Tasks")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+          if !coordinator.completedResults.isEmpty {
+            Text("(\(coordinator.completedResults.count))")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
+        .padding(.horizontal)
+        .padding(.top, 8)
+        .padding(.bottom, 4)
+      }
+      Spacer()
+    }
+    .sheet(item: $selectedTask) { result in
+      SwarmTaskOutputSheet(result: result)
     }
   }
 
