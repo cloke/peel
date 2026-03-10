@@ -76,8 +76,9 @@ struct SwarmDetailView: View {
       Text(errorMessage ?? "")
     }
     .task {
-      // Start worker listener for this swarm so the Workers tab count is accurate immediately
+      // Start listeners for this swarm
       firebaseService.startWorkerListener(swarmId: swarm.id)
+      firebaseService.startMembersListener(swarmId: swarm.id)
       firebaseService.startMessageListener(swarmId: swarm.id)
       if swarm.role.canApproveMembers {
         try? await firebaseService.loadPendingMembers(swarmId: swarm.id)
@@ -85,6 +86,7 @@ struct SwarmDetailView: View {
     }
     .onDisappear {
       firebaseService.stopWorkerListener(swarmId: swarm.id)
+      firebaseService.stopMembersListener()
       firebaseService.stopMessageListener(swarmId: swarm.id)
     }
   }

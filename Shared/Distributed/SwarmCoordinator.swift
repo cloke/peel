@@ -1160,9 +1160,8 @@ public final class SwarmCoordinator {
     }
   }
 
-  /// All online Firestore workers not TCP-connected, including stale ones.
-  /// Use this for UIs that want to show stale workers with indicators
-  /// rather than hiding them entirely.
+  /// All Firestore workers not TCP-connected, for on-demand sync.
+  /// Includes offline workers so UIs can show them with status indicators.
   public var allOnDemandWorkers: [FirestoreWorker] {
     guard isActive else { return [] }
     let myDeviceId = capabilities.deviceId
@@ -1170,7 +1169,6 @@ public final class SwarmCoordinator {
     return FirebaseService.shared.swarmWorkers.filter { worker in
       worker.id != myDeviceId
         && !connectedIds.contains(worker.id)
-        && worker.status == .online
     }
   }
 

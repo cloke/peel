@@ -85,12 +85,10 @@ struct MembersListView: View {
       }
     }
     .onAppear {
-      // Start real-time listener
-      firebaseService.startMembersListener(swarmId: swarmId)
-    }
-    .onDisappear {
-      // Stop listener when view disappears
-      firebaseService.stopMembersListener()
+      // Refresh members listener if not already active
+      if firebaseService.swarmMembers.isEmpty {
+        firebaseService.startMembersListener(swarmId: swarmId)
+      }
     }
   }
 
