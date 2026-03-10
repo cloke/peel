@@ -147,13 +147,10 @@ struct DashboardActivityRow: View {
   var isExpanded: Bool = false
   var onTap: (() -> Void)? = nil
 
-  @Environment(MCPServerService.self) private var mcpServer
-  @Environment(RepositoryAggregator.self) private var aggregator
-  @Environment(\.openURL) private var openURL
-
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
-      // Main row
+      // Main row — no @Observable environment access here to avoid
+      // swift_getObjectType crashes during rapid SwiftUI layout passes.
       HStack(spacing: 12) {
         Image(systemName: item.kind.systemImage)
           .font(.callout)
@@ -198,17 +195,50 @@ struct DashboardActivityRow: View {
       .contentShape(Rectangle())
       .onTapGesture { onTap?() }
 
-      // Inline detail (expanded)
+      // Inline detail — deferred to a child view so @Observable
+      // environment objects are only resolved when actually expanded.
       if isExpanded {
         Divider()
           .padding(.horizontal, 12)
 
-        inlineDetail
+        DashboardActivityRowDetail(item: item)
           .padding(.horizontal, 12)
           .padding(.vertical, 8)
           .transition(.opacity.combined(with: .move(edge: .top)))
       }
     }
+  }
+
+  private func colorForTint(_ name: String) -> Color {
+    switch name {
+    case "green": return .green
+    case "red": return .red
+    case "blue": return .blue
+    case "orange": return .orange
+    case "purple": return .purple
+    case "teal": return .teal
+    case "gray": return .gray
+    default: return .secondary
+    }
+  }
+}
+
+// MARK: - Expanded Detail (own view to isolate @Observable access)
+
+/// Separated into its own view so `MCPServerService` / `RepositoryAggregator`
+/// are only pulled from the environment when the row is actually expanded.
+/// This avoids @Observable tracking registrations on every body evaluation
+/// of the collapsed row, which was causing a swift_getObjectType crash during
+/// main-actor isolation checks in rapid SwiftUI layout passes.
+private struct DashboardActivityRowDetail: View {
+  let item: ActivityItem
+
+  @Environment(MCPServerService.self) private var mcpServer
+  @Environment(RepositoryAggregator.self) private var aggregator
+  @Environment(\.openURL) private var openURL
+
+  var body: some View {
+    inlineDetail
   }
 
   // MARK: - Inline Detail Content
@@ -347,19 +377,6 @@ struct DashboardActivityRow: View {
         .foregroundStyle(.primary)
         .textSelection(.enabled)
       Spacer()
-    }
-  }
-
-  private func colorForTint(_ name: String) -> Color {
-    switch name {
-    case "green": return .green
-    case "red": return .red
-    case "blue": return .blue
-    case "orange": return .orange
-    case "purple": return .purple
-    case "teal": return .teal
-    case "gray": return .gray
-    default: return .secondary
     }
   }
 }
