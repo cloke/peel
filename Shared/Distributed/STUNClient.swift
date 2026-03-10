@@ -121,6 +121,12 @@ public enum STUNClient {
 
     let params = NWParameters.udp
     params.allowLocalEndpointReuse = true
+    // Force IPv4 — the P2P system uses IPv4 addresses, and STUN servers
+    // return IPv6 XOR-MAPPED-ADDRESS when queried over IPv6, which we
+    // can't use for NAT traversal coordination.
+    if let ipOptions = params.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options {
+      ipOptions.version = .v4
+    }
     // Bind to specific local port if requested (so the STUN response
     // tells us the mapping for the port we'll actually use)
     if localPort > 0, let nwPort = NWEndpoint.Port(rawValue: localPort) {
@@ -194,6 +200,7 @@ public enum STUNClient {
                   logger.info("STUN discovered: \(result)")
                   box.resume(with: result)
                 } else {
+                  logger.warning("STUN: failed to parse \(data.count)-byte response from \(host):\(port)")
                   box.resume(with: nil)
                 }
               }

@@ -136,7 +136,7 @@ peel_run_build_with_retry() {
   local config="${1:-Debug}"
   mkdir -p "${PROJECT_DIR}/tmp"
 
-  PEEL_LAST_BUILD_LOG=$(mktemp "${PROJECT_DIR}/tmp/peel-build.XXXXXX.log")
+  PEEL_LAST_BUILD_LOG=$(mktemp "${PROJECT_DIR}/tmp/peel-build.XXXXXX")
   export PEEL_LAST_BUILD_LOG
 
   local build_status

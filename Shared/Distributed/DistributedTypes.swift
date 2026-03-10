@@ -5,6 +5,7 @@
 // Shared types for distributed task execution between Peel instances.
 
 import Foundation
+import os.log
 
 // MARK: - Chain Request
 
@@ -325,34 +326,38 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
   
   /// Try to get git commit hash from the repository
   private static func getGitCommitFromRepo() -> String? {
+    let logger = Logger(subsystem: "com.peel.distributed", category: "GitCommitHash")
+
     // Find repo path from bundle location
     let bundlePath = Bundle.main.bundlePath
+    logger.info("[GitCommit] Bundle path: \(bundlePath)")
     let components = bundlePath.components(separatedBy: "/")
-    
+
     // Try multiple strategies to find the repo root
     var repoPath: String? = nil
-    
+
     // Strategy 1: Look for "build" folder (standard Xcode project structure)
     if let buildIndex = components.firstIndex(of: "build") {
       repoPath = components.prefix(buildIndex).joined(separator: "/")
+      logger.info("[GitCommit] Strategy 1 resolved repoPath: \(repoPath!)")
+    } else {
+      logger.info("[GitCommit] Strategy 1: 'build' component not found in path")
     }
-    
+
     // Strategy 2: Look for DerivedData and walk up to find .git
     if repoPath == nil, components.firstIndex(of: "DerivedData") != nil {
-      // DerivedData is typically in ~/Library/Developer/Xcode/DerivedData
-      // Try common code locations: ~/code/<reponame>
+      logger.info("[GitCommit] Strategy 2: trying DerivedData heuristic")
       if let userIndex = components.firstIndex(of: "Users"), userIndex + 1 < components.count {
         let username = components[userIndex + 1]
         let homeDir = "/Users/\(username)"
-        // Check common code locations
         for codeDir in ["code", "Code", "Developer", "Projects", "dev"] {
           let potentialPath = "\(homeDir)/\(codeDir)"
           if FileManager.default.fileExists(atPath: potentialPath) {
-            // Look for Peel repo (any historical name)
             for repoName in ["peel", "Peel", "KitchenSink", "kitchen-sink"] {
               let testPath = "\(potentialPath)/\(repoName)"
               if FileManager.default.fileExists(atPath: "\(testPath)/.git") {
                 repoPath = testPath
+                logger.info("[GitCommit] Strategy 2 resolved repoPath: \(testPath)")
                 break
               }
             }
@@ -361,25 +366,33 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
         }
       }
     }
-    
-    guard let repoPath = repoPath else { return nil }
-    
+
+    guard let repoPath = repoPath else {
+      logger.error("[GitCommit] Could not resolve repo path — returning nil")
+      return nil
+    }
+
+    let hasGit = FileManager.default.fileExists(atPath: "\(repoPath)/.git")
+    logger.info("[GitCommit] repoPath=\(repoPath) has .git=\(hasGit)")
+
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
     process.arguments = ["rev-parse", "--short", "HEAD"]
     process.currentDirectoryURL = URL(fileURLWithPath: repoPath)
-    
+
     let pipe = Pipe()
     process.standardOutput = pipe
     process.standardError = FileHandle.nullDevice
-    
+
     do {
       try process.run()
       process.waitUntilExit()
       let data = pipe.fileHandleForReading.readDataToEndOfFile()
       let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+      logger.info("[GitCommit] git exit code=\(process.terminationStatus) output='\(output ?? "<nil>")'")
       return output?.isEmpty == false ? output : nil
     } catch {
+      logger.error("[GitCommit] Process.run() threw: \(error)")
       return nil
     }
   }
