@@ -735,7 +735,7 @@ extension RAGToolsHandler {
       ),
       MCPToolDefinition(
         name: "rag.orphans",
-        description: "Find potentially orphaned/unused files in a repository. An orphan is a file that has no imports/requires pointing to it AND no type references from other files. Useful for finding dead code. By default the results suppress non-code files and entries listed in Docs/reference/RAG_ORPHAN_BASELINE.md so the report stays actionable. Note: May still show entry points, dynamically loaded files, or reflection-based usage.",
+        description: "Find potentially orphaned/unused files in a repository. An orphan is a file that has no imports/requires pointing to it AND no type references from other files. Useful for finding dead code. By default the results suppress non-code files, entries listed in Docs/reference/RAG_ORPHAN_BASELINE.md, and files in well-known framework convention paths. Framework-convention files (Ember, React, Vue, Rails) are automatically suppressed when the framework is detected from package.json or Gemfile, since those files are wired by convention rather than static imports. Note: May still show dynamically loaded files or reflection-based usage.",
         inputSchema: [
           "type": "object",
           "properties": [
@@ -745,6 +745,7 @@ extension RAGToolsHandler {
             "includeNonCode": ["type": "boolean", "description": "Include non-code files like Markdown, HTML, plist, and JSON in results (default: false)"],
             "respectBaseline": ["type": "boolean", "description": "Suppress files listed in the orphan baseline markdown file (default: true)"],
             "baselinePath": ["type": "string", "description": "Optional absolute or repo-relative path to a markdown baseline of known non-orphans. Defaults to Docs/reference/RAG_ORPHAN_BASELINE.md if present."],
+            "excludeFrameworkConventions": ["type": "boolean", "description": "When true, suppress files in well-known framework convention paths (Ember: app/components|routes|services|templates, React: src/components|pages|hooks, Vue: src/components|views, Rails: app/controllers|models|views). Framework is auto-detected from package.json or Gemfile. Default: true"],
             "limit": ["type": "integer", "description": "Maximum results to return (default: 50)"]
           ],
           "required": ["repoPath"]

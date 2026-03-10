@@ -382,6 +382,7 @@ extension RAGToolsHandler {
     let includeNonCode = optionalBool("includeNonCode", from: arguments, default: false)
     let respectBaseline = optionalBool("respectBaseline", from: arguments, default: true)
     let baselinePath = optionalString("baselinePath", from: arguments)
+    let excludeFrameworkConventions = optionalBool("excludeFrameworkConventions", from: arguments, default: true)
     let limit = optionalInt("limit", from: arguments) ?? 50
     let fetchLimit = max(limit * 4, 100)
     
@@ -398,7 +399,8 @@ extension RAGToolsHandler {
         requestedLimit: limit,
         includeNonCode: includeNonCode,
         respectBaseline: respectBaseline,
-        baselinePathOverride: baselinePath
+        baselinePathOverride: baselinePath,
+        excludeFrameworkConventions: excludeFrameworkConventions
       )
       
       let result: [String: Any] = [
@@ -410,12 +412,16 @@ extension RAGToolsHandler {
         "includeNonCode": includeNonCode,
         "respectBaseline": respectBaseline,
         "baselinePath": filtered.baselinePath as Any,
+        "excludeFrameworkConventions": excludeFrameworkConventions,
+        "detectedFramework": filtered.detectedFramework as Any,
         "suppressedNonCodeCount": filtered.suppressedNonCodePaths.count,
         "suppressedBaselineCount": filtered.suppressedBaselinePaths.count,
+        "suppressedFrameworkConventionCount": filtered.suppressedFrameworkConventionPaths.count,
         "suppressedNonCodePaths": filtered.suppressedNonCodePaths,
         "suppressedBaselinePaths": filtered.suppressedBaselinePaths,
+        "suppressedFrameworkConventionPaths": filtered.suppressedFrameworkConventionPaths,
         "preFilterFetchedCount": filtered.preFilterFetchedCount,
-        "note": "Files with no imports/requires pointing to them AND no type references from other files. Results are post-filtered to suppress known false positives from non-code files and the orphan baseline unless disabled. May still show dynamic loading, reflection, or framework-discovered usage."
+        "note": "Files with no imports/requires pointing to them AND no type references from other files. Results are post-filtered to suppress known false positives from non-code files and the orphan baseline unless disabled. May still show dynamic loading, reflection, or entry-point files."
       ]
       return (200, makeResult(id: id, result: result))
     } catch {
@@ -573,6 +579,8 @@ struct RAGOrphanAuditFilterResult {
   let baselinePath: String?
   let suppressedBaselinePaths: [String]
   let suppressedNonCodePaths: [String]
+  let suppressedFrameworkConventionPaths: [String]
+  let detectedFramework: String?
   let preFilterFetchedCount: Int
 }
 
@@ -606,13 +614,68 @@ enum RAGOrphanAuditSupport {
     "yml"
   ]
 
+  static func detectFramework(repoPath: String) -> String? {
+    let fm = FileManager.default
+    let packageJSONURL = URL(fileURLWithPath: repoPath).appendingPathComponent("package.json")
+    if fm.fileExists(atPath: packageJSONURL.path),
+       let data = try? Data(contentsOf: packageJSONURL),
+       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+      var deps = json["dependencies"] as? [String: Any] ?? [:]
+      let devDeps = json["devDependencies"] as? [String: Any] ?? [:]
+      devDeps.forEach { deps[$0.key] = $0.value }
+      if deps["ember-source"] != nil || deps["ember-cli"] != nil { return "ember" }
+      if deps["react"] != nil || deps["react-dom"] != nil { return "react" }
+      if deps["vue"] != nil { return "vue" }
+    }
+    let gemfileURL = URL(fileURLWithPath: repoPath).appendingPathComponent("Gemfile")
+    if fm.fileExists(atPath: gemfileURL.path),
+       let content = try? String(contentsOf: gemfileURL, encoding: .utf8),
+       content.contains("rails") {
+      return "rails"
+    }
+    return nil
+  }
+
+  static func isFrameworkConventionFile(_ filePath: String, framework: String) -> Bool {
+    let normalized = filePath.replacingOccurrences(of: "\\", with: "/")
+    switch framework {
+    case "ember":
+      return normalized.contains("/app/components/") ||
+             normalized.contains("/app/routes/") ||
+             normalized.contains("/app/services/") ||
+             normalized.contains("/app/templates/") ||
+             normalized.contains("/app/controllers/") ||
+             normalized.contains("/app/helpers/") ||
+             normalized.contains("/app/modifiers/")
+    case "react":
+      return normalized.contains("/src/components/") ||
+             normalized.contains("/src/pages/") ||
+             normalized.contains("/src/hooks/") ||
+             normalized.contains("/src/contexts/")
+    case "vue":
+      return normalized.contains("/src/components/") ||
+             normalized.contains("/src/views/") ||
+             normalized.contains("/src/composables/")
+    case "rails":
+      return normalized.contains("/app/controllers/") ||
+             normalized.contains("/app/models/") ||
+             normalized.contains("/app/views/") ||
+             normalized.contains("/app/helpers/") ||
+             normalized.contains("/app/mailers/") ||
+             normalized.contains("/app/jobs/")
+    default:
+      return false
+    }
+  }
+
   static func filter(
     _ orphans: [RAGToolOrphanResult],
     repoPath: String,
     requestedLimit: Int,
     includeNonCode: Bool,
     respectBaseline: Bool,
-    baselinePathOverride: String?
+    baselinePathOverride: String?,
+    excludeFrameworkConventions: Bool = true
   ) -> RAGOrphanAuditFilterResult {
     let baseline = loadBaseline(repoPath: repoPath, baselinePathOverride: baselinePathOverride, respectBaseline: respectBaseline)
 
@@ -632,11 +695,21 @@ enum RAGOrphanAuditSupport {
       filtered = partitions.unmatched
     }
 
+    var suppressedFrameworkConventionPaths: [String] = []
+    let detectedFramework: String? = excludeFrameworkConventions ? detectFramework(repoPath: repoPath) : nil
+    if let framework = detectedFramework {
+      let partitions = filtered.stablePartition { isFrameworkConventionFile($0.filePath, framework: framework) }
+      suppressedFrameworkConventionPaths = partitions.matched.map(\.filePath)
+      filtered = partitions.unmatched
+    }
+
     return RAGOrphanAuditFilterResult(
       orphans: Array(filtered.prefix(requestedLimit)),
       baselinePath: baseline.resolvedPath,
       suppressedBaselinePaths: suppressedBaselinePaths,
       suppressedNonCodePaths: suppressedNonCodePaths,
+      suppressedFrameworkConventionPaths: suppressedFrameworkConventionPaths,
+      detectedFramework: detectedFramework,
       preFilterFetchedCount: orphans.count
     )
   }
