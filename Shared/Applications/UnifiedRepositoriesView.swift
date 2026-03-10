@@ -620,6 +620,7 @@ struct RepositoriesCommandCenter: View {
   @State private var expandedActivityItems: Set<UUID> = []
   @State private var recentPage = 0
   private let recentPageSize = 50
+  @State private var displayName: String = ""
 
   // Swarm state (merged from ActivityDashboardView)
   private var swarm: SwarmCoordinator { .shared }
@@ -755,6 +756,7 @@ struct RepositoriesCommandCenter: View {
       }
       .task { await fetchAllOpenPRs() }
       .task { await ensureFirestoreListeners() }
+      .task { displayName = WorkerCapabilities.configuredDisplayName() ?? "" }
       .onChange(of: firebaseService.isSignedIn) { _, signedIn in
         if signedIn && swarm.isActive {
           Task { await ensureFirestoreListeners() }
@@ -1295,10 +1297,25 @@ struct RepositoriesCommandCenter: View {
       }
 
       if swarm.isActive || !lanWorkers.isEmpty || !activeWANWorkers.isEmpty {
+        HStack(spacing: 8) {
+          Text("Machine Name:")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          TextField("e.g. Mac Studio, Supreme Overlord", text: $displayName)
+            .textFieldStyle(.roundedBorder)
+            .frame(maxWidth: 200)
+            .onSubmit {
+              WorkerCapabilities.saveDisplayName(displayName.isEmpty ? nil : displayName)
+            }
+            .onChange(of: displayName) { _, newValue in
+              WorkerCapabilities.saveDisplayName(newValue.isEmpty ? nil : newValue)
+            }
+        }
+
         ScrollView(.horizontal, showsIndicators: false) {
           HStack(spacing: 10) {
             WorkerCard(
-              name: "This Mac",
+              name: displayName.isEmpty ? "This Mac" : displayName,
               role: swarm.role.rawValue,
               isOnline: swarm.isActive,
               statusColor: swarm.isActive ? .green : .secondary,

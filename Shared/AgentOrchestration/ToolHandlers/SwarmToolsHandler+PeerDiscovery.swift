@@ -348,23 +348,27 @@ extension SwarmToolsHandler {
       ],
       "peers": peers,
       "discovered": discovered,
-      "firestoreWorkers": FirebaseService.shared.swarmWorkers.map { w in
-        [
-          "id": w.id,
-          "displayName": w.displayName,
-          "deviceName": w.deviceName,
-          "status": w.status.rawValue,
-          "isStale": w.isStale,
-          "lastHeartbeat": formatter.string(from: w.lastHeartbeat),
-          "version": w.version as Any,
-          "gitCommitHash": w.gitCommitHash as Any,
-          "relayProviderActive": w.relayProviderActive,
-          "wanAddress": w.wanAddress as Any,
-          "wanPort": w.wanPort.map { Int($0) } as Any,
-          "lanAddress": w.lanAddress as Any,
-          "lanPort": w.lanPort.map { Int($0) } as Any
-        ] as [String: Any]
-      },
+      "firestoreWorkers": {
+        let tcpPeerIds = Set(coordinator.connectedWorkers.map(\.id))
+        return FirebaseService.shared.swarmWorkers.map { w in
+          [
+            "id": w.id,
+            "displayName": w.displayName,
+            "deviceName": w.deviceName,
+            "status": w.status.rawValue,
+            "isStale": w.isStale,
+            "lastHeartbeat": formatter.string(from: w.lastHeartbeat),
+            "version": w.version as Any,
+            "gitCommitHash": w.gitCommitHash as Any,
+            "relayProviderActive": w.relayProviderActive,
+            "wanAddress": w.wanAddress as Any,
+            "wanPort": w.wanPort.map { Int($0) } as Any,
+            "lanAddress": w.lanAddress as Any,
+            "lanPort": w.lanPort.map { Int($0) } as Any,
+            "tcpConnected": tcpPeerIds.contains(w.id)
+          ] as [String: Any]
+        }
+      }(),
       "ragTransfers": transfers,
       "localRagArtifacts": localRagPayload,
       "natTraversal": natPayload,
