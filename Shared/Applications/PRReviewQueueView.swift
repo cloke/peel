@@ -13,6 +13,7 @@ import Github
 
 struct PRReviewQueueSection: View {
   @Environment(MCPServerService.self) private var mcpServer
+  var onSelectPR: ((String, Int) -> Void)?
 
   private var queue: PRReviewQueue { mcpServer.prReviewQueue }
 
@@ -27,7 +28,7 @@ struct PRReviewQueueSection: View {
         if !active.isEmpty {
           LazyVStack(spacing: 1) {
             ForEach(active, id: \.id) { item in
-              PRReviewQueueRow(item: item)
+              PRReviewQueueRow(item: item, onSelectPR: onSelectPR)
             }
           }
           #if os(macOS)
@@ -42,7 +43,7 @@ struct PRReviewQueueSection: View {
           DisclosureGroup("Completed (\(completed.count))") {
             LazyVStack(spacing: 1) {
               ForEach(completed.prefix(10), id: \.id) { item in
-                PRReviewQueueRow(item: item)
+                PRReviewQueueRow(item: item, onSelectPR: onSelectPR)
               }
             }
             #if os(macOS)
@@ -64,6 +65,7 @@ struct PRReviewQueueSection: View {
 
 struct PRReviewQueueRow: View {
   let item: PRReviewQueueItem
+  var onSelectPR: ((String, Int) -> Void)?
   @Environment(MCPServerService.self) private var mcpServer
   @State private var isExpanded = false
 
@@ -112,6 +114,10 @@ struct PRReviewQueueRow: View {
       .padding(.horizontal, 12)
       .padding(.vertical, 8)
       .contentShape(Rectangle())
+      .onTapGesture {
+        let ownerRepo = "\(item.repoOwner)/\(item.repoName)"
+        onSelectPR?(ownerRepo, item.prNumber)
+      }
 
       // Expanded detail
       if isExpanded {
@@ -279,6 +285,16 @@ struct PRReviewQueueRow: View {
       default:
         EmptyView()
       }
+
+      // View full PR details
+      Button {
+        let ownerRepo = "\(item.repoOwner)/\(item.repoName)"
+        onSelectPR?(ownerRepo, item.prNumber)
+      } label: {
+        Label("View Details", systemImage: "doc.text.magnifyingglass")
+      }
+      .buttonStyle(.bordered)
+      .controlSize(.small)
 
       // Open in browser
       if !item.htmlURL.isEmpty, let url = URL(string: item.htmlURL) {
@@ -494,7 +510,9 @@ struct PRReviewQueueDetailView: View {
     ScrollView {
       VStack(alignment: .leading, spacing: 20) {
         // MCP review queue
-        PRReviewQueueSection()
+        PRReviewQueueSection(onSelectPR: { ownerRepo, prNumber in
+          selectedPRDetail = PRDetailIdentifier(ownerRepo: ownerRepo, prNumber: prNumber)
+        })
 
         // Open PRs from tracked repos
         openPRsSection
