@@ -679,21 +679,25 @@ extension SwarmToolsHandler {
       ),
       MCPToolDefinition(
         name: "swarm.rag-sync-index",
-        description: "Sync a RAG index from a remote peer via on-demand P2P transfer (LAN → WAN → STUN fallback). Specify a repoIdentifier and optionally a source workerId. If no workerId given, uses the best available source.",
+        description: "Sync a RAG index from a remote peer via on-demand P2P transfer (LAN → WAN → STUN → Firestore relay fallback). Specify a repoIdentifier and a target worker by name or ID.",
         inputSchema: [
           "type": "object",
           "properties": [
             "repoIdentifier": [
               "type": "string",
-              "description": "The repo identifier (git remote URL) to sync"
+              "description": "The repo identifier (path or git remote URL) to sync"
+            ],
+            "targetWorkerName": [
+              "type": "string",
+              "description": "Display name of the worker to sync from (e.g. 'coremore'). Case-insensitive."
             ],
             "workerId": [
               "type": "string",
-              "description": "Optional: specific worker ID to sync from. If omitted, uses the best available source."
+              "description": "Optional: specific worker ID to sync from. Alternative to targetWorkerName."
             ],
             "swarmId": [
               "type": "string",
-              "description": "Optional: specific swarm ID. If omitted, uses the first swarm with the repo available."
+              "description": "Optional: specific swarm ID. If omitted, auto-resolved from active swarms."
             ]
           ],
           "required": ["repoIdentifier"]

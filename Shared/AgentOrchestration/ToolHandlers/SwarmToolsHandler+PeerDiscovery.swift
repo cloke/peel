@@ -848,7 +848,22 @@ extension SwarmToolsHandler {
       return missingParamError(id: id, param: "repoIdentifier")
     }
 
-    let fromWorkerId = arguments["workerId"] as? String
+    // Resolve worker: explicit workerId > targetWorkerName lookup > nil (auto-pick)
+    var fromWorkerId = arguments["workerId"] as? String
+    if fromWorkerId == nil, let targetName = arguments["targetWorkerName"] as? String, !targetName.isEmpty {
+      let match = FirebaseService.shared.swarmWorkers.first(where: {
+        $0.displayName.localizedCaseInsensitiveCompare(targetName) == .orderedSame
+      })
+      if let match {
+        fromWorkerId = match.id
+      } else {
+        return (200, makeResult(id: id, result: [
+          "success": false,
+          "repoIdentifier": repoIdentifier,
+          "error": "Worker '\(targetName)' not found. Available workers: \(FirebaseService.shared.swarmWorkers.map(\.displayName).joined(separator: ", "))",
+        ]))
+      }
+    }
 
     // Resolve swarmId: explicit argument > active worker listener swarm > first member swarm > error
     let resolvedSwarmId: String
