@@ -405,6 +405,13 @@ extension SwarmToolsHandler {
       }(),
       "localRagArtifacts": localRagPayload,
       "natTraversal": natPayload,
+      "p2pConnectionLog": {
+        let log = P2PConnectionLog.shared
+        return [
+          "entryCount": log.entries.count,
+          "recentEntries": Array(log.toJSON().suffix(50)),
+        ] as [String: Any]
+      }(),
       "messageListeners": FirebaseService.shared.messageListenerDiagnostics(),
       "workerListeners": {
         let diag = FirebaseService.shared.workerListenerDiagnostics
@@ -609,6 +616,69 @@ extension SwarmToolsHandler {
         "localPath": $0.localPath
       ] }
     ]))
+  }
+
+  // MARK: - swarm.p2p-logs
+
+  func handleP2PLogs(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    let log = P2PConnectionLog.shared
+    let limit = arguments["limit"] as? Int ?? 100
+
+    let entries = Array(log.toJSON().suffix(limit))
+
+    return (200, makeResult(id: id, result: [
+      "entryCount": log.entries.count,
+      "showing": entries.count,
+      "entries": entries,
+    ]))
+  }
+
+  // MARK: - swarm.request-logs
+
+  func handleRequestLogs(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard coordinator.isActive else {
+      return serviceNotActiveError(id: id, service: "Swarm", hint: "Call swarm.start first")
+    }
+
+    // Resolve target worker
+    let targetWorkerName = arguments["targetWorkerName"] as? String
+    let targetWorkerId = arguments["targetWorkerId"] as? String
+
+    guard let workerId = resolveWorkerId(name: targetWorkerName, id: targetWorkerId) else {
+      return missingParamError(id: id, param: "targetWorkerName or targetWorkerId")
+    }
+
+    // Find swarm ID
+    guard let swarmId = FirebaseService.shared.memberSwarms.first(where: { $0.role.canRegisterWorkers })?.id else {
+      return internalError(id: id, message: "No active swarm found")
+    }
+
+    let timeout = TimeInterval(arguments["timeout"] as? Int ?? 30)
+
+    guard let result = await P2PLogRequestListener.requestLogs(
+      fromWorkerId: workerId,
+      swarmId: swarmId,
+      timeout: timeout
+    ) else {
+      return internalError(id: id, message: "Log request timed out after \(Int(timeout))s — worker may not be running or have the log request listener active")
+    }
+
+    return (200, makeResult(id: id, result: [
+      "success": true,
+      "responderName": result.responderName,
+      "entryCount": result.entryCount,
+      "logs": result.logs,
+    ]))
+  }
+
+  /// Resolve a worker ID from either a name or direct ID
+  private func resolveWorkerId(name: String?, id: String?) -> String? {
+    if let id, !id.isEmpty { return id }
+    guard let name, !name.isEmpty else { return nil }
+    let lowered = name.lowercased()
+    return FirebaseService.shared.swarmWorkers
+      .first(where: { $0.displayName.lowercased() == lowered || $0.deviceName.lowercased() == lowered })?
+      .workerId
   }
 
   // MARK: - swarm.stun-test

@@ -151,6 +151,16 @@ public final class OnDemandPeerTransfer {
     }
 
     // Try direct P2P connection (LAN → WAN → STUN)
+    let p2pLog = P2PConnectionLog.shared
+    p2pLog.log("transfer", "requestIndex started", details: [
+      "targetWorker": worker.displayName,
+      "targetWorkerId": worker.workerId,
+      "repo": repoIdentifier,
+      "swarmId": swarmId,
+      "targetLAN": "\(worker.lanAddress ?? "nil"):\(worker.lanPort.map { String($0) } ?? "nil")",
+      "targetWAN": "\(worker.wanAddress ?? "nil"):\(worker.wanPort.map { String($0) } ?? "nil")",
+      "relayProviderActive": String(worker.relayProviderActive),
+    ])
     if let connection = try? await connectToPeer(worker: worker, state: state) {
       // Direct path: handshake → transfer → disconnect
       try await directTransfer(
@@ -165,6 +175,10 @@ public final class OnDemandPeerTransfer {
     }
 
     // All direct connections failed — fall back to Firestore relay
+    p2pLog.log("transfer", "ALL direct connections failed, falling back to relay", details: [
+      "targetWorker": worker.displayName,
+      "relayProviderActive": String(worker.relayProviderActive),
+    ])
     logger.info("[transfer] All direct connections failed to \(worker.displayName) (\(worker.workerId)), using Firestore relay")
 
     // Check if the target worker has an active relay provider — if not, fail fast
@@ -269,34 +283,60 @@ public final class OnDemandPeerTransfer {
     worker: FirestoreWorker,
     state: OnDemandTransferState
   ) async throws -> NWConnection? {
+    let p2pLog = P2PConnectionLog.shared
+
     // Attempt 1: LAN (fastest, most reliable)
     if let lanAddress = worker.lanAddress, let lanPort = worker.lanPort {
+      p2pLog.log("transfer", "LAN attempt start", details: ["address": "\(lanAddress):\(lanPort)"])
       logger.info("Trying LAN connection to \(worker.displayName) at \(lanAddress):\(lanPort)")
       if let conn = try? await attemptTCPConnection(host: lanAddress, port: UInt16(lanPort)) {
         state.connectionMethod = .lan
+        p2pLog.log("transfer", "LAN CONNECTED", details: ["address": "\(lanAddress):\(lanPort)"])
         logger.info("Connected via LAN to \(worker.displayName)")
         return conn
       }
+      p2pLog.log("transfer", "LAN failed", details: ["address": "\(lanAddress):\(lanPort)"])
       logger.info("LAN connection failed, trying WAN")
+    } else {
+      p2pLog.log("transfer", "LAN skipped (no address)", details: [
+        "lanAddress": worker.lanAddress ?? "nil",
+        "lanPort": worker.lanPort.map { String($0) } ?? "nil",
+      ])
     }
 
     // Attempt 2: Direct WAN TCP (works with port forwarding / UPnP)
     if let wanAddress = worker.wanAddress, let wanPort = worker.wanPort {
+      p2pLog.log("transfer", "WAN direct attempt start", details: ["address": "\(wanAddress):\(wanPort)"])
       logger.info("Trying WAN direct to \(worker.displayName) at \(wanAddress):\(wanPort)")
       if let conn = try? await attemptTCPConnection(host: wanAddress, port: UInt16(wanPort)) {
         state.connectionMethod = .wanDirect
+        p2pLog.log("transfer", "WAN direct CONNECTED", details: ["address": "\(wanAddress):\(wanPort)"])
         logger.info("Connected via WAN direct to \(worker.displayName)")
         return conn
       }
+      p2pLog.log("transfer", "WAN direct failed", details: ["address": "\(wanAddress):\(wanPort)"])
       logger.info("WAN direct failed, trying STUN")
+    } else {
+      p2pLog.log("transfer", "WAN direct skipped (no address)", details: [
+        "wanAddress": worker.wanAddress ?? "nil",
+        "wanPort": worker.wanPort.map { String($0) } ?? "nil",
+      ])
     }
 
     // Attempt 3: STUN + hole punch
+    p2pLog.log("stun-initiator", "STUN attempt start", details: ["targetWorker": worker.displayName, "targetWorkerId": worker.workerId])
     logger.info("Trying STUN hole-punch to \(worker.displayName)")
-    if let conn = try? await attemptSTUNConnection(worker: worker, swarmId: state.swarmId) {
+    do {
+      let conn = try await attemptSTUNConnection(worker: worker, swarmId: state.swarmId)
       state.connectionMethod = .stunHolePunch
+      p2pLog.log("stun-initiator", "STUN hole-punch CONNECTED", details: ["targetWorker": worker.displayName])
       logger.info("Connected via STUN hole-punch to \(worker.displayName)")
       return conn
+    } catch {
+      p2pLog.log("stun-initiator", "STUN hole-punch FAILED", details: [
+        "error": "\(error)",
+        "targetWorker": worker.displayName,
+      ])
     }
 
     // All direct methods failed — return nil to trigger relay fallback
@@ -376,31 +416,62 @@ public final class OnDemandPeerTransfer {
     swarmId: String
   ) async throws -> NWConnection {
     let localPort = listeningPort
+    let p2pLog = P2PConnectionLog.shared
+    p2pLog.log("stun-initiator", "STUN discovery starting", details: ["localPort": String(localPort)])
     logger.info("[stun-initiator] Using local port \(localPort) (matches TCP listener)")
 
     // 1. Run STUN to discover our public endpoint bound to our listener port.
     //    This tells us what external IP:port the NAT assigned for port 8766.
     guard let myEndpoint = await STUNClient.discoverEndpoint(localPort: localPort) else {
+      p2pLog.log("stun-initiator", "STUN discovery FAILED — all servers unreachable", details: ["localPort": String(localPort)])
       throw OnDemandTransferError.stunDiscoveryFailed
     }
+    p2pLog.log("stun-initiator", "STUN discovery OK", details: [
+      "externalAddress": myEndpoint.address,
+      "externalPort": String(myEndpoint.port),
+      "server": myEndpoint.serverUsed,
+      "latencyMs": String(myEndpoint.latencyMs),
+    ])
     logger.info("[stun-initiator] Our external endpoint: \(myEndpoint)")
 
     // 2. Write our STUN offer to Firestore for the target peer
     let myDeviceId = WorkerCapabilities.current().deviceId
+    p2pLog.log("stun-initiator", "Writing STUN offer to Firestore", details: [
+      "myDeviceId": myDeviceId,
+      "targetWorkerId": worker.workerId,
+      "docId": "\(myDeviceId)_to_\(worker.workerId)",
+      "swarmId": swarmId,
+      "offerAddress": myEndpoint.address,
+      "offerPort": String(myEndpoint.port),
+    ])
     try await writeSTUNOffer(
       swarmId: swarmId,
       targetWorkerId: worker.workerId,
       myDeviceId: myDeviceId,
       endpoint: myEndpoint
     )
+    p2pLog.log("stun-initiator", "STUN offer written, waiting for answer", details: [
+      "answerDocId": "\(worker.workerId)_to_\(myDeviceId)",
+      "timeout": "30s",
+    ])
 
     // 3. Wait for the peer's STUN answer (they do the same STUN + write)
-    let peerEndpoint = try await waitForSTUNAnswer(
-      swarmId: swarmId,
-      myDeviceId: myDeviceId,
-      fromWorkerId: worker.workerId,
-      timeout: 30
-    )
+    let peerEndpoint: STUNResult
+    do {
+      peerEndpoint = try await waitForSTUNAnswer(
+        swarmId: swarmId,
+        myDeviceId: myDeviceId,
+        fromWorkerId: worker.workerId,
+        timeout: 30
+      )
+    } catch {
+      p2pLog.log("stun-initiator", "STUN answer wait FAILED", details: ["error": "\(error)"])
+      throw error
+    }
+    p2pLog.log("stun-initiator", "STUN answer received", details: [
+      "peerAddress": peerEndpoint.address,
+      "peerPort": String(peerEndpoint.port),
+    ])
     logger.info("[stun-initiator] Peer endpoint: \(peerEndpoint)")
 
     // 4. TCP simultaneous open — connect to peer's STUN endpoint
@@ -420,6 +491,11 @@ public final class OnDemandPeerTransfer {
     }
     let connection = NWConnection(to: endpoint, using: params)
 
+    p2pLog.log("stun-initiator", "TCP simultaneous open starting", details: [
+      "targetAddress": peerEndpoint.address,
+      "targetPort": String(peerEndpoint.port),
+      "localPort": String(localPort),
+    ])
     logger.info("[stun-initiator] Starting TCP simultaneous open to \(peerEndpoint)")
 
     return try await withCheckedThrowingContinuation { continuation in
@@ -430,16 +506,28 @@ public final class OnDemandPeerTransfer {
         case .ready:
           if box.tryResume() {
             connection.stateUpdateHandler = nil
+            Task { @MainActor in
+              P2PConnectionLog.shared.log("stun-initiator", "TCP simultaneous open SUCCEEDED", details: [
+                "peerAddress": peerEndpoint.address,
+                "peerPort": String(peerEndpoint.port),
+              ])
+            }
             logger.info("[stun-initiator] TCP simultaneous open SUCCEEDED to \(peerEndpoint)")
             continuation.resume(returning: connection)
           }
         case .failed(let error):
           if box.tryResume() {
             connection.stateUpdateHandler = nil
+            Task { @MainActor in
+              P2PConnectionLog.shared.log("stun-initiator", "TCP simultaneous open FAILED", details: ["error": "\(error)"])
+            }
             logger.error("[stun-initiator] TCP simultaneous open FAILED: \(error)")
             continuation.resume(throwing: error)
           }
         case .waiting(let error):
+          Task { @MainActor in
+            P2PConnectionLog.shared.log("stun-initiator", "TCP waiting", details: ["error": "\(error)"])
+          }
           logger.info("[stun-initiator] TCP waiting: \(error)")
         default:
           break
@@ -452,6 +540,7 @@ public final class OnDemandPeerTransfer {
         try? await Task.sleep(for: .seconds(20))
         if box.tryResume() {
           connection.cancel()
+          p2pLog.log("stun-initiator", "TCP simultaneous open TIMED OUT (20s)")
           logger.error("[stun-initiator] TCP simultaneous open timed out after 20s")
           continuation.resume(throwing: OnDemandTransferError.stunHolePunchFailed)
         }
@@ -620,24 +709,48 @@ public final class OnDemandPeerTransfer {
     return try await withCheckedThrowingContinuation { continuation in
       var listener: ListenerRegistration?
 
+      let p2pLog = P2PConnectionLog.shared
+      let answerDocPath = "\(fromWorkerId)_to_\(myDeviceId)"
+      p2pLog.log("stun-initiator", "Snapshot listener attached for answer", details: [
+        "docPath": "swarms/\(swarmId)/stunSignaling/\(answerDocPath)",
+        "timeout": "\(timeout)s",
+      ])
+
       // Timeout task
       let timeoutTask = Task {
         try await Task.sleep(for: .seconds(timeout))
         guard await state.tryResume() else { return }
         listener?.remove()
+        p2pLog.log("stun-initiator", "STUN answer TIMED OUT", details: ["timeout": "\(timeout)s"])
         continuation.resume(throwing: OnDemandTransferError.stunSignalingTimeout)
       }
 
       listener = docRef.addSnapshotListener { snapshot, error in
+        if let error {
+          P2PConnectionLog.shared.log("stun-initiator", "Snapshot listener error", details: ["error": "\(error)"])
+        }
         guard let data = snapshot?.data(),
           let address = data["stunAddress"] as? String,
           let port = data["stunPort"] as? Int
-        else { return }
+        else {
+          let exists = snapshot?.exists ?? false
+          let hasData = snapshot?.data() != nil
+          P2PConnectionLog.shared.log("stun-initiator", "Snapshot event (no valid answer yet)", details: [
+            "docExists": String(exists),
+            "hasData": String(hasData),
+          ])
+          return
+        }
 
         Task {
           guard await state.tryResume() else { return }
           timeoutTask.cancel()
           listener?.remove()
+
+          P2PConnectionLog.shared.log("stun-initiator", "STUN answer received from snapshot", details: [
+            "peerAddress": address,
+            "peerPort": String(port),
+          ])
 
           // Clean up the answer doc
           try? await docRef.delete()

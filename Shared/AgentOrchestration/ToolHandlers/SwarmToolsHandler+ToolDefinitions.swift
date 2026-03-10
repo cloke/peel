@@ -86,6 +86,46 @@ extension SwarmToolsHandler {
         isMutating: false
       ),
       MCPToolDefinition(
+        name: "swarm.p2p-logs",
+        description: "Get P2P connection logs from THIS machine. Shows every step of the LAN/WAN/STUN/relay pipeline with timestamps. Use 'limit' to control how many entries to return (default 100, max 500).",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "limit": [
+              "type": "integer",
+              "description": "Max number of log entries to return (default: 100)"
+            ]
+          ],
+          "required": []
+        ],
+        category: .swarm,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "swarm.request-logs",
+        description: "Request P2P connection logs from a REMOTE worker via Firestore. Works even without a direct TCP connection — uses Firestore as the transport. Returns the remote machine's P2P log entries for debugging connection issues.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "targetWorkerName": [
+              "type": "string",
+              "description": "Display name of the worker (e.g. 'coremore')"
+            ],
+            "targetWorkerId": [
+              "type": "string",
+              "description": "Device ID of the worker (alternative to targetWorkerName)"
+            ],
+            "timeout": [
+              "type": "integer",
+              "description": "Timeout in seconds waiting for response (default: 30)"
+            ]
+          ],
+          "required": []
+        ],
+        category: .swarm,
+        isMutating: false
+      ),
+      MCPToolDefinition(
         name: "swarm.rag.sync",
         description: "Request a Local RAG artifact sync to or from a peel. Direction is 'push' or 'pull'. Optionally scope to a single repo by repoIdentifier. Mode 'overlay' transfers only embeddings + analysis (no chunk text) — ideal when both peers have the repo indexed locally.",
         inputSchema: [

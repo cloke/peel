@@ -170,6 +170,15 @@ service cloud.firestore {
                         request.resource.data.senderId == request.auth.uid;
         allow delete: if isAdmin(swarmId);
       }
+
+      // Log requests — remote P2P log retrieval for cross-network debugging.
+      // A requester creates a "pending" doc; the target worker updates it with logs.
+      match /logRequests/{requestId} {
+        allow read: if isReader(swarmId);
+        allow create: if isContributor(swarmId);
+        allow update: if isContributor(swarmId);
+        allow delete: if isContributor(swarmId);
+      }
       
       // Audit log subcollection
       match /auditLog/{eventId} {

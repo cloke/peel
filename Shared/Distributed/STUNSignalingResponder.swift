@@ -79,7 +79,14 @@ public final class STUNSignalingResponder {
             // Deduplicate
             guard !self.respondedOffers.contains(docId) else { return }
             self.respondedOffers.insert(docId)
-
+            let p2pLog = P2PConnectionLog.shared
+            p2pLog.log("stun-responder", "Offer received", details: [
+              "fromWorkerId": fromWorkerId,
+              "peerAddress": stunAddress,
+              "peerPort": String(stunPort),
+              "docId": docId,
+              "swarmId": swarmId,
+            ])
             let peerEndpoint = STUNResult(
               address: stunAddress,
               port: UInt16(stunPort),
@@ -125,19 +132,38 @@ public final class STUNSignalingResponder {
   ) async {
     logger.info("[stun-responder] Offer received from \(fromWorkerId) at \(peerEndpoint)")
 
+    let p2pLog = P2PConnectionLog.shared
+
     // 1. Discover our own STUN endpoint (binding to our listening port
     //    so the NAT mapping is for the same port the TCP listener uses)
+    p2pLog.log("stun-responder", "STUN discovery starting", details: ["localPort": String(listeningPort)])
     guard let myEndpoint = await STUNClient.discoverEndpoint(localPort: listeningPort) else {
+      p2pLog.log("stun-responder", "STUN discovery FAILED", details: ["localPort": String(listeningPort)])
       logger.error("[stun-responder] Failed to discover STUN endpoint for answer")
       return
     }
 
+    p2pLog.log("stun-responder", "STUN discovery OK", details: [
+      "externalAddress": myEndpoint.address,
+      "externalPort": String(myEndpoint.port),
+      "server": myEndpoint.serverUsed,
+      "latencyMs": String(myEndpoint.latencyMs),
+    ])
     logger.info("[stun-responder] Our endpoint: \(myEndpoint)")
 
     // 2. Write our answer to Firestore
     let db = Firestore.firestore()
+    let answerDocId = "\(myDeviceId)_to_\(fromWorkerId)"
     let answerDocRef = db.collection("swarms/\(swarmId)/stunSignaling")
-      .document("\(myDeviceId)_to_\(fromWorkerId)")
+      .document(answerDocId)
+
+    p2pLog.log("stun-responder", "Writing STUN answer to Firestore", details: [
+      "answerDocId": answerDocId,
+      "myDeviceId": myDeviceId,
+      "targetWorkerId": fromWorkerId,
+      "answerAddress": myEndpoint.address,
+      "answerPort": String(myEndpoint.port),
+    ])
 
     do {
       try await answerDocRef.setData([
@@ -149,7 +175,9 @@ public final class STUNSignalingResponder {
         "expiresAt": Timestamp(date: Date().addingTimeInterval(60)),
         "isAnswer": true,
       ])
+      p2pLog.log("stun-responder", "STUN answer written OK")
     } catch {
+      p2pLog.log("stun-responder", "STUN answer write FAILED", details: ["error": "\(error)"])
       logger.error("[stun-responder] Failed to write STUN answer: \(error)")
       return
     }
@@ -161,6 +189,11 @@ public final class STUNSignalingResponder {
     //
     //    No UDP probes — UDP and TCP NAT mappings are independent on
     //    most routers, so UDP probes don't help TCP connections.
+    p2pLog.log("stun-responder", "TCP simultaneous open starting", details: [
+      "targetAddress": peerEndpoint.address,
+      "targetPort": String(peerEndpoint.port),
+      "localPort": String(listeningPort),
+    ])
     Task {
       _ = try? await attemptTCPConnect(to: peerEndpoint)
     }
@@ -206,20 +239,35 @@ public final class STUNSignalingResponder {
         case .ready:
           if box.tryResume() {
             connection.stateUpdateHandler = nil
+            Task { @MainActor in
+              P2PConnectionLog.shared.log("stun-responder", "TCP simultaneous open SUCCEEDED", details: [
+                "peerAddress": endpoint.address,
+                "peerPort": String(endpoint.port),
+              ])
+            }
             logger.info("[stun-responder] TCP simultaneous open SUCCEEDED to \(endpoint)")
             continuation.resume(returning: connection)
           }
         case .failed(let error):
           if box.tryResume() {
             connection.stateUpdateHandler = nil
+            Task { @MainActor in
+              P2PConnectionLog.shared.log("stun-responder", "TCP simultaneous open FAILED", details: ["error": "\(error)"])
+            }
             logger.info("[stun-responder] TCP simultaneous open failed: \(error)")
             continuation.resume(throwing: error)
           }
         case .waiting(let error):
+          Task { @MainActor in
+            P2PConnectionLog.shared.log("stun-responder", "TCP waiting", details: ["error": "\(error)"])
+          }
           logger.info("[stun-responder] TCP waiting: \(error)")
         case .cancelled:
           if box.tryResume() {
             connection.stateUpdateHandler = nil
+            Task { @MainActor in
+              P2PConnectionLog.shared.log("stun-responder", "TCP cancelled")
+            }
             continuation.resume(returning: nil)
           }
         default:
@@ -234,6 +282,7 @@ public final class STUNSignalingResponder {
         try? await Task.sleep(for: .seconds(20))
         if box.tryResume() {
           connection.cancel()
+          P2PConnectionLog.shared.log("stun-responder", "TCP simultaneous open TIMED OUT (20s)")
           logger.info("[stun-responder] TCP simultaneous open timed out")
           continuation.resume(returning: nil)
         }

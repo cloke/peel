@@ -295,6 +295,9 @@ public final class SwarmCoordinator {
   /// STUN signaling responder (answers incoming hole-punch offers via Firestore)
   private var stunSignalingResponder: STUNSignalingResponder?
 
+  /// P2P log request listener (responds to remote log requests via Firestore)
+  private var logRequestListener: P2PLogRequestListener?
+
   /// Firestore relay provider (serves RAG data through Firestore when direct P2P fails)
   private var firestoreRelayProvider: FirestoreRelayProvider?
 
@@ -423,6 +426,9 @@ public final class SwarmCoordinator {
     // hole-punch offers and writes answers so bilateral exchange works
     startSTUNSignalingResponder(port: port)
 
+    // Start P2P log request listener — responds to remote log requests
+    startLogRequestListener()
+
     // Start Firestore relay provider — serves RAG data through Firestore
     // when direct P2P connections (LAN/WAN/STUN) all fail
     startFirestoreRelayProvider()
@@ -444,6 +450,9 @@ public final class SwarmCoordinator {
     if stunSignalingResponder == nil {
       startSTUNSignalingResponder(port: port)
     }
+    if logRequestListener == nil {
+      startLogRequestListener()
+    }
     if firestoreRelayProvider == nil {
       startFirestoreRelayProvider()
     }
@@ -456,6 +465,8 @@ public final class SwarmCoordinator {
     RAGSyncCoordinator.shared.stop()
     stunSignalingResponder?.stop()
     stunSignalingResponder = nil
+    logRequestListener?.stop()
+    logRequestListener = nil
     firestoreRelayProvider?.stop()
     firestoreRelayProvider = nil
     FirebaseService.shared.heartbeatMetadata = nil
@@ -967,6 +978,28 @@ public final class SwarmCoordinator {
     let responder = STUNSignalingResponder(listeningPort: port)
     responder.start(swarmIds: swarmIds, myDeviceId: capabilities.deviceId)
     stunSignalingResponder = responder
+  }
+
+  /// Start the P2P log request listener for all member swarms.
+  private func startLogRequestListener() {
+    let firebaseService = FirebaseService.shared
+    guard firebaseService.isSignedIn else {
+      logger.info("Not signed in — skipping log request listener")
+      return
+    }
+
+    let swarmIds = firebaseService.memberSwarms
+      .filter { $0.role.canRegisterWorkers }
+      .map(\.id)
+
+    guard !swarmIds.isEmpty else {
+      logger.info("No swarms to listen for log requests")
+      return
+    }
+
+    let listener = P2PLogRequestListener()
+    listener.start(swarmIds: swarmIds, myDeviceId: capabilities.deviceId)
+    logRequestListener = listener
   }
 
   // MARK: - Firestore Relay Provider

@@ -65,16 +65,33 @@ public enum STUNClient {
     localPort: UInt16 = 0,
     timeout: TimeInterval = 3
   ) async -> STUNResult? {
+    let p2pLog = await P2PConnectionLog.shared
+    await p2pLog.log("stun-client", "discoverEndpoint starting", details: [
+      "localPort": String(localPort),
+      "timeout": "\(timeout)s",
+      "serverCount": String(stunServers.count),
+    ])
     // First pass: try with the requested local port
-    for server in stunServers {
+    for (index, server) in stunServers.enumerated() {
       if let result = await queryServer(
         host: server.host,
         port: server.port,
         localPort: localPort,
         timeout: timeout
       ) {
+        await p2pLog.log("stun-client", "discoverEndpoint OK", details: [
+          "server": "\(server.host):\(server.port)",
+          "externalAddress": result.address,
+          "externalPort": String(result.port),
+          "latencyMs": String(result.latencyMs),
+          "serverIndex": String(index),
+        ])
         return result
       }
+      await p2pLog.log("stun-client", "Server \(index) failed", details: [
+        "server": "\(server.host):\(server.port)",
+        "localPort": String(localPort),
+      ])
       logger.warning("STUN: \(server.host):\(server.port) failed (localPort=\(localPort)), trying next")
     }
 
@@ -82,6 +99,10 @@ public enum STUNClient {
     // local port that TCP simultaneous open will bind to (typically 8766). If we
     // discover an endpoint on a random ephemeral port, the NAT mapping won't match
     // the TCP source port, and hole-punching will silently fail.
+    await p2pLog.log("stun-client", "ALL servers failed", details: [
+      "localPort": String(localPort),
+      "timeout": "\(timeout)s",
+    ])
     logger.error("STUN: all \(stunServers.count) servers failed (timeout=\(timeout)s, localPort=\(localPort)). Ensure UDP port \(localPort) is not blocked by endpoint security software.")
     return nil
   }
