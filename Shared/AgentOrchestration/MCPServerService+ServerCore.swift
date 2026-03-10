@@ -1170,6 +1170,19 @@ extension MCPServerService {
     case "pii.scrub":
       return await handlePIIScrub(id: id, arguments: arguments)
 
+    // Chain learnings CRUD
+    case "learnings.list":
+      return await handleLearningsList(id: id, arguments: arguments)
+
+    case "learnings.add":
+      return await handleLearningsAdd(id: id, arguments: arguments)
+
+    case "learnings.rate":
+      return await handleLearningsRate(id: id, arguments: arguments)
+
+    case "learnings.delete":
+      return await handleLearningsDelete(id: id, arguments: arguments)
+
     // Parallel tools are now handled by ParallelToolsHandler
 
     default:
@@ -1486,6 +1499,114 @@ extension MCPServerService {
 
   // Parallel tool handlers moved to ParallelToolsHandler.swift (#162)
   // RAG tool handlers moved to RAGToolsHandler.swift
+
+  // MARK: - Chain Learnings Handlers
+
+  private func handleLearningsList(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let ds = dataService else {
+      return (500, JSONRPCResponseBuilder.makeError(id: id, code: -32001, message: "DataService unavailable"))
+    }
+    let repoPath = arguments["repoPath"] as? String
+    let repoRemoteURL = arguments["repoRemoteURL"] as? String
+    let category = arguments["category"] as? String
+    let activeOnly = arguments["activeOnly"] as? Bool ?? true
+    let limit = arguments["limit"] as? Int ?? 20
+
+    let learnings = ds.listChainLearnings(
+      repoPath: repoPath,
+      repoRemoteURL: repoRemoteURL,
+      category: category,
+      activeOnly: activeOnly,
+      limit: limit
+    )
+
+    let items: [[String: Any]] = learnings.map { l in
+      [
+        "id": l.id.uuidString,
+        "repoPath": l.repoPath,
+        "repoRemoteURL": l.repoRemoteURL,
+        "category": l.category,
+        "summary": l.summary,
+        "detail": l.detail,
+        "source": l.source,
+        "chainTemplateName": l.chainTemplateName,
+        "confidenceScore": l.confidenceScore,
+        "appliedCount": l.appliedCount,
+        "wasHelpful": l.wasHelpful,
+        "wasUnhelpful": l.wasUnhelpful,
+        "isActive": l.isActive,
+        "createdAt": ISO8601DateFormatter().string(from: l.createdAt),
+        "updatedAt": ISO8601DateFormatter().string(from: l.updatedAt)
+      ]
+    }
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["learnings": items, "count": items.count]))
+  }
+
+  private func handleLearningsAdd(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let ds = dataService else {
+      return (500, JSONRPCResponseBuilder.makeError(id: id, code: -32001, message: "DataService unavailable"))
+    }
+    guard let repoPath = arguments["repoPath"] as? String, !repoPath.isEmpty else {
+      return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Missing repoPath"))
+    }
+    guard let category = arguments["category"] as? String, !category.isEmpty else {
+      return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Missing category"))
+    }
+    guard let summary = arguments["summary"] as? String, !summary.isEmpty else {
+      return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Missing summary"))
+    }
+
+    if ds.hasExistingLearning(repoPath: repoPath, summary: summary) {
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["status": "duplicate", "message": "A similar learning already exists"]))
+    }
+
+    let learning = ds.addChainLearning(
+      repoPath: repoPath,
+      repoRemoteURL: arguments["repoRemoteURL"] as? String ?? "",
+      category: category,
+      summary: summary,
+      detail: arguments["detail"] as? String ?? "",
+      source: arguments["source"] as? String ?? "manual",
+      chainTemplateName: arguments["chainTemplateName"] as? String ?? "",
+      confidenceScore: arguments["confidenceScore"] as? Double ?? 0.5
+    )
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["status": "created", "id": learning.id.uuidString]))
+  }
+
+  private func handleLearningsRate(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let ds = dataService else {
+      return (500, JSONRPCResponseBuilder.makeError(id: id, code: -32001, message: "DataService unavailable"))
+    }
+    guard let idStr = arguments["id"] as? String, let learningID = UUID(uuidString: idStr) else {
+      return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Missing or invalid id (UUID)"))
+    }
+    guard let helpful = arguments["helpful"] as? Bool else {
+      return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Missing helpful (boolean)"))
+    }
+
+    let success = ds.rateChainLearning(id: learningID, helpful: helpful)
+    if success {
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["status": "rated", "helpful": helpful]))
+    } else {
+      return (404, JSONRPCResponseBuilder.makeError(id: id, code: -32001, message: "Learning not found"))
+    }
+  }
+
+  private func handleLearningsDelete(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard let ds = dataService else {
+      return (500, JSONRPCResponseBuilder.makeError(id: id, code: -32001, message: "DataService unavailable"))
+    }
+    guard let idStr = arguments["id"] as? String, let learningID = UUID(uuidString: idStr) else {
+      return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Missing or invalid id (UUID)"))
+    }
+
+    let success = ds.deleteChainLearning(id: learningID)
+    if success {
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["status": "deleted"]))
+    } else {
+      return (404, JSONRPCResponseBuilder.makeError(id: id, code: -32001, message: "Learning not found"))
+    }
+  }
 
   private func encodeJSON<T: Encodable>(_ value: T) -> [String: Any] {
     guard let data = try? JSONEncoder().encode(value),
