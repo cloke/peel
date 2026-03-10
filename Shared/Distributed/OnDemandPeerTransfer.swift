@@ -591,6 +591,9 @@ public final class OnDemandPeerTransfer {
     ])
   }
 
+  /// Wait for the responder's STUN answer using a Firestore snapshot listener.
+  /// This is faster than polling (reacts within ~100ms vs up to 1s polling jitter),
+  /// which tightens the TCP simultaneous open timing window.
   private func waitForSTUNAnswer(
     swarmId: String,
     myDeviceId: String,
@@ -601,27 +604,53 @@ public final class OnDemandPeerTransfer {
     let docRef = db.collection("swarms/\(swarmId)/stunSignaling")
       .document("\(fromWorkerId)_to_\(myDeviceId)")
 
-    let deadline = Date().addingTimeInterval(timeout)
-
-    while Date() < deadline {
-      let doc = try await docRef.getDocument()
-      if let data = doc.data(),
-        let address = data["stunAddress"] as? String,
-        let port = data["stunPort"] as? Int
-      {
-        // Clean up
-        try? await docRef.delete()
-        return STUNResult(
-          address: address,
-          port: UInt16(port),
-          serverUsed: "signaling",
-          latencyMs: 0
-        )
+    // Use an actor to safely coordinate between the snapshot listener callback
+    // and the timeout task (NSLock is unavailable in async contexts in Swift 6).
+    actor SignalingState {
+      var resumed = false
+      func tryResume() -> Bool {
+        guard !resumed else { return false }
+        resumed = true
+        return true
       }
-      try await Task.sleep(for: .seconds(1))
     }
 
-    throw OnDemandTransferError.stunSignalingTimeout
+    let state = SignalingState()
+
+    return try await withCheckedThrowingContinuation { continuation in
+      var listener: ListenerRegistration?
+
+      // Timeout task
+      let timeoutTask = Task {
+        try await Task.sleep(for: .seconds(timeout))
+        guard await state.tryResume() else { return }
+        listener?.remove()
+        continuation.resume(throwing: OnDemandTransferError.stunSignalingTimeout)
+      }
+
+      listener = docRef.addSnapshotListener { snapshot, error in
+        guard let data = snapshot?.data(),
+          let address = data["stunAddress"] as? String,
+          let port = data["stunPort"] as? Int
+        else { return }
+
+        Task {
+          guard await state.tryResume() else { return }
+          timeoutTask.cancel()
+          listener?.remove()
+
+          // Clean up the answer doc
+          try? await docRef.delete()
+
+          continuation.resume(returning: STUNResult(
+            address: address,
+            port: UInt16(port),
+            serverUsed: "signaling",
+            latencyMs: 0
+          ))
+        }
+      }
+    }
   }
 
 }

@@ -78,25 +78,11 @@ public enum STUNClient {
       logger.warning("STUN: \(server.host):\(server.port) failed (localPort=\(localPort)), trying next")
     }
 
-    // Second pass: if we were binding to a specific port, retry without binding.
-    // This works around environments where binding UDP to a port already held
-    // by a TCP listener (same process) is blocked by endpoint security software.
-    if localPort > 0 {
-      logger.warning("STUN: all servers failed with localPort=\(localPort), retrying with ephemeral port")
-      for server in stunServers {
-        if let result = await queryServer(
-          host: server.host,
-          port: server.port,
-          localPort: 0,
-          timeout: timeout
-        ) {
-          logger.info("STUN: discovered endpoint via ephemeral port (port binding to \(localPort) was blocked)")
-          return result
-        }
-      }
-    }
-
-    logger.error("STUN: all \(stunServers.count) servers failed to respond (timeout=\(timeout)s, localPort=\(localPort))")
+    // Do NOT fall back to an ephemeral port. STUN discovery must use the same
+    // local port that TCP simultaneous open will bind to (typically 8766). If we
+    // discover an endpoint on a random ephemeral port, the NAT mapping won't match
+    // the TCP source port, and hole-punching will silently fail.
+    logger.error("STUN: all \(stunServers.count) servers failed (timeout=\(timeout)s, localPort=\(localPort)). Ensure UDP port \(localPort) is not blocked by endpoint security software.")
     return nil
   }
 
@@ -386,6 +372,72 @@ public enum STUNClient {
     let address = "\(a).\(b).\(c).\(d)"
 
     return (address, port)
+  }
+}
+
+// MARK: - NAT Type Detection
+
+extension STUNClient {
+  /// Detected NAT behavior for hole-punching compatibility.
+  public enum NATType: String, Sendable {
+    /// Same external port for all destinations — hole-punching works
+    case endpointIndependent = "Endpoint-Independent Mapping (hole-punch friendly)"
+    /// Different external port per destination — hole-punching will fail
+    case symmetric = "Symmetric NAT (hole-punch hostile)"
+    /// Could only reach one STUN server — can't determine
+    case unknown = "Unknown (insufficient STUN responses)"
+    /// No STUN responses at all
+    case blocked = "Blocked (no STUN servers reachable)"
+  }
+
+  /// Result of NAT type detection
+  public struct NATTypeResult: Sendable {
+    public let natType: NATType
+    public let publicAddress: String?
+    public let mappings: [(server: String, address: String, port: UInt16)]
+  }
+
+  /// Detect NAT type by querying multiple STUN servers from the same local port.
+  /// If the external port is consistent across servers → endpoint-independent (good).
+  /// If the external port changes per server → symmetric NAT (bad for hole-punching).
+  public static func detectNATType(localPort: UInt16 = 8766) async -> NATTypeResult {
+    var results: [(server: String, address: String, port: UInt16)] = []
+
+    // Query at least 2 different STUN servers from the same port
+    for server in stunServers.prefix(3) {
+      if let result = await queryServer(
+        host: server.host,
+        port: server.port,
+        localPort: localPort,
+        timeout: 3
+      ) {
+        results.append((server: result.serverUsed, address: result.address, port: result.port))
+      }
+    }
+
+    guard !results.isEmpty else {
+      return NATTypeResult(natType: .blocked, publicAddress: nil, mappings: [])
+    }
+
+    guard results.count >= 2 else {
+      return NATTypeResult(
+        natType: .unknown,
+        publicAddress: results.first?.address,
+        mappings: results
+      )
+    }
+
+    // Check if external port is consistent across different servers
+    let ports = Set(results.map(\.port))
+    let natType: NATType = ports.count == 1 ? .endpointIndependent : .symmetric
+
+    logger.info("NAT type detected: \(natType.rawValue) — ports seen: \(ports.sorted())")
+
+    return NATTypeResult(
+      natType: natType,
+      publicAddress: results.first?.address,
+      mappings: results
+    )
   }
 }
 
