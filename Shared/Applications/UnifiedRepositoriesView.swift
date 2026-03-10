@@ -1541,8 +1541,7 @@ struct PRDetailInlineView: View {
   #if os(macOS)
   @Environment(MCPServerService.self) private var mcpServer
   @State private var reviewAgentCoordinator = PRReviewAgentCoordinator()
-  @State private var reviewTarget: PRReviewTarget?
-  @State private var reviewState = PRReviewState()
+  @State private var reviewTarget: AgentReviewTarget?
   @State private var reviewStatusBridge = PRReviewStatusBridge()
   #endif
 
@@ -1610,17 +1609,11 @@ struct PRDetailInlineView: View {
     .reviewWithAgentProvider(reviewAgentCoordinator)
     .prReviewStatusProvider(reviewStatusBridge)
     .sheet(item: $reviewTarget) { target in
-      PRReviewSheet(
-        pr: target.pr,
-        ownerRepo: target.ownerRepo,
-        repoPath: target.repoPath,
-        reviewState: reviewState
-      )
+      AgentReviewSheet(target: target)
     }
     .onAppear {
       reviewStatusBridge.queue = mcpServer.prReviewQueue
       reviewAgentCoordinator.onReview = { pr, repo in
-        reviewState.reset()
         reviewTarget = PRReviewAgentCoordinator.makeTarget(pr: pr, repo: repo, localRepoPath: nil)
       }
     }

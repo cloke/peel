@@ -30,8 +30,7 @@ struct Github_RootView: View {
   @State private var dataProvider: GitHubDataProvider?
   #if os(macOS)
   @State private var reviewAgentCoordinator = PRReviewAgentCoordinator()
-  @State private var reviewTarget: PRReviewTarget?
-  @State private var reviewState = PRReviewState()
+  @State private var reviewTarget: AgentReviewTarget?
   @State private var reviewStatusBridge = PRReviewStatusBridge()
   #endif
 
@@ -399,12 +398,7 @@ struct Github_RootView: View {
     .reviewWithAgentProvider(reviewAgentCoordinator)
     .prReviewStatusProvider(reviewStatusBridge)
     .sheet(item: $reviewTarget) { target in
-      PRReviewSheet(
-        pr: target.pr,
-        ownerRepo: target.ownerRepo,
-        repoPath: target.repoPath,
-        reviewState: reviewState
-      )
+      AgentReviewSheet(target: target)
     }
     #else
     .reviewWithAgentProvider(nil)
@@ -417,7 +411,6 @@ struct Github_RootView: View {
       reviewStatusBridge.queue = mcpServer.prReviewQueue
       reviewAgentCoordinator.onReview = { pr, repo in
         let localPath = dataProvider?.localPath(for: repo)
-        reviewState.reset()
         reviewTarget = PRReviewAgentCoordinator.makeTarget(pr: pr, repo: repo, localRepoPath: localPath)
       }
       #endif
@@ -788,32 +781,6 @@ struct RecentPRDestination: View {
 }
 
 // MARK: - GitHub Data Provider
-
-@MainActor
-final class PRReviewAgentCoordinator: PRReviewAgentProvider {
-  var onReview: ((Github.PullRequest, Github.Repository) -> Void)?
-
-  func reviewWithAgent(pr: Github.PullRequest, repo: Github.Repository) {
-    onReview?(pr, repo)
-  }
-
-  /// Build a `PRReviewTarget` from the GitHub API types + optional local repo path.
-  static func makeTarget(pr: Github.PullRequest, repo: Github.Repository, localRepoPath: String?) -> PRReviewTarget {
-    let summary = UnifiedRepository.PRSummary(
-      id: UUID(),
-      number: pr.number,
-      title: pr.title ?? "PR #\(pr.number)",
-      state: pr.state ?? "open",
-      htmlURL: pr.html_url,
-      headRef: pr.head.ref
-    )
-    return PRReviewTarget(
-      pr: summary,
-      ownerRepo: repo.full_name,
-      repoPath: localRepoPath
-    )
-  }
-}
 
 /// Bridges PRReviewQueue to the Github package’s PRReviewStatusProvider protocol.
 @MainActor
