@@ -65,6 +65,13 @@ public final class AgentChain: Identifiable {
   /// Current review iteration (0 = first pass)
   public var currentReviewIteration: Int = 0
 
+  /// When true, planner gate is overridden if the chain has implementer steps.
+  /// Prevents the "plan and quit" failure mode where agents write plans but don't implement.
+  public var requiresImplementation: Bool = false
+
+  /// Pre-populated learnings block injected into agent prompts (from ChainLearning SwiftData).
+  public var chainLearningsBlock: String?
+
   // MARK: - VM Execution
 
   /// Where this chain's deterministic/gate steps execute (default: host)

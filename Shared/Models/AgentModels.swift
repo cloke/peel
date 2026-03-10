@@ -139,3 +139,53 @@ final class CIFailureRecord {
     return guidance
   }
 }
+
+// MARK: - Chain Learnings (auto-captured institutional memory)
+
+/// Auto-captured learning from chain runs, scoped to a repository.
+/// Injected into future chain prompts so agents learn from past mistakes and successes.
+@Model
+final class ChainLearning {
+  var id: UUID = UUID()
+  var repoPath: String = ""
+  var repoRemoteURL: String = ""
+  var category: String = ""        // "mistake", "pattern", "tool-usage", "build-fix", "process"
+  var summary: String = ""         // One-line: "Always run `npm install` before build gate"
+  var detail: String = ""          // Full context
+  var source: String = "auto"      // "auto" (post-chain extraction) or "manual"
+  var chainTemplateName: String = ""
+  var confidenceScore: Double = 0.5
+  var appliedCount: Int = 0
+  var wasHelpful: Int = 0
+  var wasUnhelpful: Int = 0
+  var isActive: Bool = true
+  var createdAt: Date = Date()
+  var updatedAt: Date = Date()
+
+  init(
+    repoPath: String,
+    repoRemoteURL: String = "",
+    category: String,
+    summary: String,
+    detail: String = "",
+    source: String = "auto",
+    chainTemplateName: String = "",
+    confidenceScore: Double = 0.5
+  ) {
+    self.id = UUID()
+    self.repoPath = repoPath
+    self.repoRemoteURL = repoRemoteURL
+    self.category = category
+    self.summary = summary
+    self.detail = detail
+    self.source = source
+    self.chainTemplateName = chainTemplateName
+    self.confidenceScore = confidenceScore
+    self.appliedCount = 0
+    self.wasHelpful = 0
+    self.wasUnhelpful = 0
+    self.isActive = true
+    self.createdAt = Date()
+    self.updatedAt = Date()
+  }
+}

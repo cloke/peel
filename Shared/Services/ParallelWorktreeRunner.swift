@@ -1139,6 +1139,14 @@ final class ParallelWorktreeRunner {
       if let block = skillsBlock {
         sections.append(block)
       }
+
+      // Inject chain learnings from previous runs
+      let learningsBlock = await MainActor.run {
+        dataService.chainLearningsBlock(repoPath: repoPath, repoRemoteURL: repoRemoteURL)
+      }
+      if let block = learningsBlock {
+        sections.append(block)
+      }
     }
     guard let ragStore else {
       return sections.isEmpty ? nil : sections.joined(separator: "\n\n")

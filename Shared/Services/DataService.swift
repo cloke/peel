@@ -910,6 +910,141 @@ final class DataService {
     }
   }
 
+  // MARK: - Chain Learnings
+
+  @discardableResult
+  func addChainLearning(
+    repoPath: String,
+    repoRemoteURL: String = "",
+    category: String,
+    summary: String,
+    detail: String = "",
+    source: String = "auto",
+    chainTemplateName: String = "",
+    confidenceScore: Double = 0.5
+  ) -> ChainLearning {
+    let learning = ChainLearning(
+      repoPath: repoPath,
+      repoRemoteURL: repoRemoteURL,
+      category: category,
+      summary: summary,
+      detail: detail,
+      source: source,
+      chainTemplateName: chainTemplateName,
+      confidenceScore: confidenceScore
+    )
+    modelContext.insert(learning)
+    try? modelContext.save()
+    return learning
+  }
+
+  func listChainLearnings(
+    repoPath: String? = nil,
+    repoRemoteURL: String? = nil,
+    category: String? = nil,
+    activeOnly: Bool = true,
+    limit: Int = 20
+  ) -> [ChainLearning] {
+    var descriptor = FetchDescriptor<ChainLearning>(
+      sortBy: [SortDescriptor(\.appliedCount, order: .reverse), SortDescriptor(\.createdAt, order: .reverse)]
+    )
+    descriptor.fetchLimit = limit * 3 // Over-fetch for filtering
+
+    do {
+      let all = try modelContext.fetch(descriptor)
+      return all.filter { learning in
+        if activeOnly && !learning.isActive { return false }
+        if let category, learning.category != category { return false }
+        if let repoPath, !repoPath.isEmpty {
+          if learning.repoPath == repoPath || learning.repoPath == "*" { return true }
+          if let repoRemoteURL, !repoRemoteURL.isEmpty, !learning.repoRemoteURL.isEmpty {
+            return learning.repoRemoteURL == repoRemoteURL
+          }
+          return false
+        }
+        return true
+      }.prefix(limit).map { $0 }
+    } catch {
+      return []
+    }
+  }
+
+  func rateChainLearning(id: UUID, helpful: Bool) -> Bool {
+    var descriptor = FetchDescriptor<ChainLearning>()
+    descriptor.fetchLimit = 1
+    guard let learning = (try? modelContext.fetch(descriptor))?.first(where: { $0.id == id }) else {
+      return false
+    }
+    if helpful {
+      learning.wasHelpful += 1
+      learning.confidenceScore = min(1.0, learning.confidenceScore + 0.1)
+    } else {
+      learning.wasUnhelpful += 1
+      learning.confidenceScore = max(0.0, learning.confidenceScore - 0.15)
+      if learning.wasUnhelpful >= 3 && learning.wasHelpful == 0 {
+        learning.isActive = false
+      }
+    }
+    learning.updatedAt = Date()
+    try? modelContext.save()
+    return true
+  }
+
+  func deleteChainLearning(id: UUID) -> Bool {
+    var descriptor = FetchDescriptor<ChainLearning>()
+    descriptor.fetchLimit = 1
+    guard let learning = (try? modelContext.fetch(descriptor))?.first(where: { $0.id == id }) else {
+      return false
+    }
+    modelContext.delete(learning)
+    try? modelContext.save()
+    return true
+  }
+
+  /// Build a prompt block with relevant learnings for injection into chain prompts.
+  /// Returns nil if no learnings match.
+  func chainLearningsBlock(repoPath: String, repoRemoteURL: String? = nil, limit: Int = 8) -> String? {
+    let learnings = listChainLearnings(
+      repoPath: repoPath,
+      repoRemoteURL: repoRemoteURL,
+      limit: limit
+    )
+    guard !learnings.isEmpty else { return nil }
+
+    let entries = learnings.map { learning in
+      let prefix = learning.category.isEmpty ? "" : "[\(learning.category)] "
+      let detail = learning.detail.isEmpty ? "" : "\n  Detail: \(learning.detail)"
+      return "- \(prefix)\(learning.summary)\(detail)"
+    }.joined(separator: "\n")
+
+    // Mark as applied
+    for learning in learnings {
+      learning.appliedCount += 1
+    }
+    try? modelContext.save()
+
+    return """
+    ## Lessons Learned from Previous Runs
+
+    The following insights were automatically captured from previous agent chain runs on this repository. \
+    Apply these lessons to avoid repeating mistakes and follow proven patterns:
+
+    \(entries)
+    """
+  }
+
+  /// Check if a similar learning already exists (dedup by summary similarity)
+  func hasExistingLearning(repoPath: String, summary: String) -> Bool {
+    let existing = listChainLearnings(repoPath: repoPath, limit: 50)
+    let normalizedNew = summary.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+    return existing.contains { learning in
+      let normalizedExisting = learning.summary.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+      return normalizedExisting == normalizedNew ||
+        normalizedExisting.contains(normalizedNew) ||
+        normalizedNew.contains(normalizedExisting)
+    }
+  }
+
   // MARK: - MCP Run Results
 
   @discardableResult

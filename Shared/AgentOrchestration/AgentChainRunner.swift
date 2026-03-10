@@ -233,7 +233,7 @@ public final class AgentChainRunner {
         do {
           let prePlannerOutput = try await runPrePlanner(chain: chain, prompt: prompt)
           chain.prePlannerOutput = prePlannerOutput
-          enrichedPrompt = buildEnrichedPrompt(original: prompt, prePlannerOutput: prePlannerOutput)
+          enrichedPrompt = buildEnrichedPrompt(original: prompt, prePlannerOutput: prePlannerOutput, chain: chain)
           chain.addStatusMessage("Pre-planner complete: \(prePlannerOutput.relevantFiles.count) relevant files found", type: .complete)
         } catch {
           chain.addStatusMessage("Pre-planner failed, continuing without enrichment: \(error.localizedDescription)", type: .info)
@@ -256,6 +256,17 @@ public final class AgentChainRunner {
       )
 
       if case .complete = chain.state {
+        // Verify implementation produced file changes if required
+        if chain.requiresImplementation,
+           chain.agents.contains(where: { $0.role == .implementer }),
+           let workDir = chain.workingDirectory {
+          let hasChanges = await verifyFileChanges(in: workDir)
+          if !hasChanges {
+            chain.addStatusMessage("⚠ No files were modified. Chain may not have implemented anything.", type: .error)
+            chain.state = .failed(message: "No files modified — agent may have planned instead of implementing")
+            errorMessage = "No files modified — agent may have planned instead of implementing"
+          }
+        }
         telemetryProvider.recordChainRun(chain)
       } else {
         try checkCancellation(chain: chain)
@@ -350,10 +361,14 @@ public final class AgentChainRunner {
       if agent.role == .planner,
          let decision = result.plannerDecision,
          decision.shouldSkipWork {
-        let reason = decision.noWorkReason ?? "Planner determined no work is required."
-        chain.addStatusMessage("Planner gated implementers: \(reason)", type: .complete)
-        chain.state = .complete
-        return
+        if chain.requiresImplementation && chain.agents.contains(where: { $0.role == .implementer }) {
+          chain.addStatusMessage("⚠ Planner wanted to skip, but requiresImplementation is set. Continuing.", type: .info)
+        } else {
+          let reason = decision.noWorkReason ?? "Planner determined no work is required."
+          chain.addStatusMessage("Planner gated implementers: \(reason)", type: .complete)
+          chain.state = .complete
+          return
+        }
       }
     }
   }
@@ -561,10 +576,14 @@ public final class AgentChainRunner {
         if agent.role == .planner,
            let decision = result.plannerDecision,
            decision.shouldSkipWork {
-          let reason = decision.noWorkReason ?? "Planner determined no work is required."
-          chain.addStatusMessage("Planner gated implementers: \(reason)", type: .complete)
-          chain.state = .complete
-          return
+          if chain.requiresImplementation && chain.agents.contains(where: { $0.role == .implementer }) {
+            chain.addStatusMessage("⚠ Planner wanted to skip, but requiresImplementation is set. Continuing.", type: .info)
+          } else {
+            let reason = decision.noWorkReason ?? "Planner determined no work is required."
+            chain.addStatusMessage("Planner gated implementers: \(reason)", type: .complete)
+            chain.state = .complete
+            return
+          }
         }
       }
     }
@@ -1909,7 +1928,7 @@ public final class AgentChainRunner {
   }
   
   /// Build enriched prompt with pre-planner context
-  private func buildEnrichedPrompt(original: String, prePlannerOutput: PrePlannerOutput) -> String {
+  private func buildEnrichedPrompt(original: String, prePlannerOutput: PrePlannerOutput, chain: AgentChain) -> String {
     var enriched = ""
     
     // Add goals
@@ -1953,6 +1972,12 @@ public final class AgentChainRunner {
         }
         enriched += "- Confidence: \(Int(lesson.confidence * 100))%\n\n"
       }
+    }
+
+    // Add chain learnings from SwiftData (cross-device synced)
+    if let learningsBlock = chain.chainLearningsBlock {
+      enriched += learningsBlock
+      enriched += "\n"
     }
     
     // Add original prompt
@@ -2056,6 +2081,52 @@ public final class AgentChainRunner {
         fixCode: lesson.fixCode,
         confidence: lesson.confidence
       )
+    }
+  }
+
+  // MARK: - File Change Verification
+
+  /// Check if any files were modified in the working directory (git diff).
+  /// Returns true if there are uncommitted or committed-but-not-pushed changes.
+  private func verifyFileChanges(in workingDirectory: String) async -> Bool {
+    let process = Process()
+    process.currentDirectoryURL = URL(fileURLWithPath: workingDirectory)
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+    process.arguments = ["status", "--porcelain"]
+
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = pipe
+
+    do {
+      try process.run()
+      process.waitUntilExit()
+      let data = pipe.fileHandleForReading.readDataToEndOfFile()
+      let output = String(data: data, encoding: .utf8) ?? ""
+      if !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        return true
+      }
+    } catch {
+      return true
+    }
+
+    let logProcess = Process()
+    logProcess.currentDirectoryURL = URL(fileURLWithPath: workingDirectory)
+    logProcess.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+    logProcess.arguments = ["log", "--oneline", "HEAD", "--not", "--remotes", "-1"]
+
+    let logPipe = Pipe()
+    logProcess.standardOutput = logPipe
+    logProcess.standardError = logPipe
+
+    do {
+      try logProcess.run()
+      logProcess.waitUntilExit()
+      let data = logPipe.fileHandleForReading.readDataToEndOfFile()
+      let output = String(data: data, encoding: .utf8) ?? ""
+      return !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    } catch {
+      return true
     }
   }
 }

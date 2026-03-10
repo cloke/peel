@@ -414,6 +414,13 @@ extension MCPServerService {
        let guidance = await buildRepoGuidance(repoPath: repoPath) {
       chain.addOperatorGuidance(guidance)
     }
+
+    // Pre-populate chain learnings for enrichedPrompt injection
+    if let repoPath = chainWorkingDirectory, let dataService {
+      let repoRemoteURL = await RepoRegistry.shared.registerRepo(at: repoPath)
+      chain.chainLearningsBlock = dataService.chainLearningsBlock(repoPath: repoPath, repoRemoteURL: repoRemoteURL)
+    }
+
     if requireRagUsage {
       chain.addOperatorGuidance(
         "RAG tool usage is required for this run. Call a rag.* tool (e.g., rag.search) before planning; missing usage will emit a validation warning."
@@ -569,6 +576,16 @@ extension MCPServerService {
             reviewVerdict: res.reviewVerdict?.rawValue
           )
         }
+      }
+
+      // Auto-extract learnings from chain results
+      if let ds = self.dataService, let repoPath = chainWorkingDirectory {
+        await self.extractChainLearnings(
+          dataService: ds,
+          summary: summary,
+          repoPath: repoPath,
+          templateName: template.name
+        )
       }
 
       var completedPayload: [String: Any] = [
@@ -1071,6 +1088,91 @@ extension MCPServerService {
     }
 
     return (404, JSONRPCResponseBuilder.makeError(id: id, code: -32004, message: "Queued run not found"))
+  }
+
+  // MARK: - Chain Learning Extraction
+
+  /// Automatically extract learnings from a completed chain run.
+  /// Captures: failures (with error messages), "no work" gating, merge conflicts, and reviewer feedback.
+  private func extractChainLearnings(
+    dataService ds: DataService,
+    summary: AgentChainRunner.RunSummary,
+    repoPath: String,
+    templateName: String
+  ) async {
+    let repoRemoteURL = await RepoRegistry.shared.registerRepo(at: repoPath) ?? ""
+
+    // Learning: chain failed with an error
+    if let errorMessage = summary.errorMessage {
+      let learningSummary = "Chain '\(templateName)' failed: \(errorMessage.prefix(200))"
+      if !ds.hasExistingLearning(repoPath: repoPath, summary: learningSummary) {
+        ds.addChainLearning(
+          repoPath: repoPath,
+          repoRemoteURL: repoRemoteURL,
+          category: "mistake",
+          summary: learningSummary,
+          detail: "Full error: \(errorMessage)",
+          source: "auto",
+          chainTemplateName: templateName,
+          confidenceScore: 0.6
+        )
+      }
+    }
+
+    // Learning: planner gated (no work reason)
+    if let noWorkReason = summary.noWorkReason {
+      let learningSummary = "Planner on '\(templateName)' decided no work needed: \(noWorkReason.prefix(200))"
+      if !ds.hasExistingLearning(repoPath: repoPath, summary: learningSummary) {
+        ds.addChainLearning(
+          repoPath: repoPath,
+          repoRemoteURL: repoRemoteURL,
+          category: "process",
+          summary: learningSummary,
+          detail: "Consider if this gating is correct or if the prompt needs to be more specific.",
+          source: "auto",
+          chainTemplateName: templateName,
+          confidenceScore: 0.4
+        )
+      }
+    }
+
+    // Learning: merge conflicts occurred
+    if !summary.mergeConflicts.isEmpty {
+      let conflictFiles = summary.mergeConflicts.prefix(5).joined(separator: ", ")
+      let learningSummary = "Merge conflicts in '\(templateName)': \(conflictFiles)"
+      if !ds.hasExistingLearning(repoPath: repoPath, summary: learningSummary) {
+        ds.addChainLearning(
+          repoPath: repoPath,
+          repoRemoteURL: repoRemoteURL,
+          category: "mistake",
+          summary: learningSummary,
+          detail: "Files with conflicts: \(summary.mergeConflicts.joined(separator: "\n")). Consider splitting work to avoid overlapping file edits.",
+          source: "auto",
+          chainTemplateName: templateName,
+          confidenceScore: 0.5
+        )
+      }
+    }
+
+    // Learning: reviewer requested changes (indicates implementation quality issues)
+    for result in summary.results {
+      if result.reviewVerdict == .needsChanges || result.reviewVerdict == .rejected {
+        let outputExcerpt = String(result.output.prefix(500))
+        let learningSummary = "Reviewer requested changes on '\(result.agentName)' in '\(templateName)'"
+        if !ds.hasExistingLearning(repoPath: repoPath, summary: learningSummary) {
+          ds.addChainLearning(
+            repoPath: repoPath,
+            repoRemoteURL: repoRemoteURL,
+            category: "pattern",
+            summary: learningSummary,
+            detail: "Reviewer feedback excerpt: \(outputExcerpt)",
+            source: "auto",
+            chainTemplateName: templateName,
+            confidenceScore: 0.5
+          )
+        }
+      }
+    }
   }
 
 }

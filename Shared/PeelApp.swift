@@ -165,6 +165,7 @@ struct PeelApp: App {
       ParallelRunSnapshot.self,
       RepoGuidanceSkill.self,
       CIFailureRecord.self,
+      ChainLearning.self,
       FeatureDiscoveryChecklist.self,
       PRReviewQueueItem.self,
     ])
@@ -190,6 +191,7 @@ struct PeelApp: App {
       ParallelRunSnapshot.self,
       RepoGuidanceSkill.self,
       CIFailureRecord.self,
+      ChainLearning.self,
       FeatureDiscoveryChecklist.self,
       PRReviewQueueItem.self,
       TrackedRepoDeviceState.self,

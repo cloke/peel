@@ -193,6 +193,11 @@ public final class AgentManager {
       chain.addAgent(agent)
     }
     
+    // Auto-set requiresImplementation if the chain has implementer steps
+    if chain.agents.contains(where: { $0.role == .implementer }) {
+      chain.requiresImplementation = true
+    }
+    
     return chain
   }
   
