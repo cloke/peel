@@ -260,6 +260,9 @@ public final class SwarmCoordinator {
   /// Firestore relay provider (serves RAG data through Firestore when direct P2P fails)
   private var firestoreRelayProvider: FirestoreRelayProvider?
 
+  /// Whether the Firestore relay provider is currently active (for diagnostics)
+  public var isRelayProviderActive: Bool { firestoreRelayProvider != nil }
+
   /// Delegate
   public weak var delegate: SwarmCoordinatorDelegate?
 
@@ -386,6 +389,9 @@ public final class SwarmCoordinator {
     // when direct P2P connections (LAN/WAN/STUN) all fail
     startFirestoreRelayProvider()
 
+    // Feed version + relay status into Firestore heartbeats
+    configureFirestoreHeartbeatMetadata()
+
     // Start watchdog for stalled RAG transfers and clean up expired checkpoints
     startRagTransferWatchdog()
     cleanupStaleCheckpoints()
@@ -400,6 +406,7 @@ public final class SwarmCoordinator {
     stunSignalingResponder = nil
     firestoreRelayProvider?.stop()
     firestoreRelayProvider = nil
+    FirebaseService.shared.heartbeatMetadata = nil
     stopNetworkMonitor()
     stopWANAutoConnect()
     stopLANReconnect()
@@ -507,6 +514,20 @@ public final class SwarmCoordinator {
 
   // MARK: - Heartbeats
 
+  /// Configure a closure on FirebaseService so every Firestore heartbeat
+  /// includes current git commit hash and relay provider status.
+  private func configureFirestoreHeartbeatMetadata() {
+    FirebaseService.shared.heartbeatMetadata = { [weak self] in
+      var metadata: [String: Any] = [:]
+      if let hash = self?.capabilities.gitCommitHash {
+        metadata["version"] = hash
+        metadata["gitCommitHash"] = hash
+      }
+      metadata["relayProviderActive"] = self?.isRelayProviderActive ?? false
+      return metadata
+    }
+  }
+
   private func startHeartbeatLoop() {
     stopHeartbeatLoop()
     heartbeatTask = Task { [weak self] in
@@ -570,7 +591,9 @@ public final class SwarmCoordinator {
       uptimeSeconds: uptime,
       tasksCompleted: tasksCompleted,
       tasksFailed: tasksFailed,
-      ragArtifacts: localRagArtifactStatus
+      ragArtifacts: localRagArtifactStatus,
+      gitCommitHash: capabilities.gitCommitHash,
+      relayProviderActive: isRelayProviderActive
     )
   }
 

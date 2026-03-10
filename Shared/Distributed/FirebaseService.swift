@@ -1206,13 +1206,22 @@ public final class FirebaseService {
     logger.info("Unregistered worker \(workerId)")
   }
   
+  /// Extra metadata to include in every Firestore heartbeat.
+  /// Set by SwarmCoordinator so heartbeats report version and relay status.
+  public var heartbeatMetadata: (() -> [String: Any])?
+  
   /// Send heartbeat to update worker status
   private func sendHeartbeat(swarmId: String, workerId: String, status: String = "online") async {
     do {
-      try await workersCollection(swarmId: swarmId).document(workerId).updateData([
+      var data: [String: Any] = [
         "status": status,
         "lastHeartbeat": FieldValue.serverTimestamp()
-      ])
+      ]
+      // Merge extra metadata (version, relay status, etc.)
+      if let extra = heartbeatMetadata?() {
+        for (key, value) in extra { data[key] = value }
+      }
+      try await workersCollection(swarmId: swarmId).document(workerId).updateData(data)
     } catch {
       logger.error("Failed to send heartbeat: \(error)")
     }
@@ -1251,6 +1260,8 @@ public final class FirebaseService {
       status: FirestoreWorkerStatus(rawValue: data["status"] as? String ?? "offline") ?? .offline,
       lastHeartbeat: (data["lastHeartbeat"] as? Timestamp)?.dateValue() ?? Date.distantPast,
       version: data["version"] as? String,
+      gitCommitHash: data["gitCommitHash"] as? String,
+      relayProviderActive: data["relayProviderActive"] as? Bool ?? false,
       lanAddress: data["lanAddress"] as? String,
       lanPort: (data["lanPort"] as? Int).map { UInt16($0) },
       wanAddress: data["wanAddress"] as? String,
@@ -1295,6 +1306,8 @@ public final class FirebaseService {
               status: FirestoreWorkerStatus(rawValue: data["status"] as? String ?? "offline") ?? .offline,
               lastHeartbeat: (data["lastHeartbeat"] as? Timestamp)?.dateValue() ?? Date.distantPast,
               version: data["version"] as? String,
+              gitCommitHash: data["gitCommitHash"] as? String,
+              relayProviderActive: data["relayProviderActive"] as? Bool ?? false,
               lanAddress: data["lanAddress"] as? String,
               lanPort: (data["lanPort"] as? Int).map { UInt16($0) },
               wanAddress: data["wanAddress"] as? String,

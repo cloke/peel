@@ -664,6 +664,10 @@ public struct WorkerStatus: Codable, Sendable {
   public let tasksCompleted: Int
   public let tasksFailed: Int
   public let ragArtifacts: RAGArtifactStatus?
+  /// Git commit hash of the running build (for remote version checks)
+  public let gitCommitHash: String?
+  /// Whether the Firestore relay provider is active on this worker
+  public let relayProviderActive: Bool
   
   public enum WorkerState: String, Codable, Sendable {
     case idle
@@ -680,7 +684,9 @@ public struct WorkerStatus: Codable, Sendable {
     uptimeSeconds: TimeInterval = 0,
     tasksCompleted: Int = 0,
     tasksFailed: Int = 0,
-    ragArtifacts: RAGArtifactStatus? = nil
+    ragArtifacts: RAGArtifactStatus? = nil,
+    gitCommitHash: String? = nil,
+    relayProviderActive: Bool = false
   ) {
     self.deviceId = deviceId
     self.state = state
@@ -690,6 +696,8 @@ public struct WorkerStatus: Codable, Sendable {
     self.tasksCompleted = tasksCompleted
     self.tasksFailed = tasksFailed
     self.ragArtifacts = ragArtifacts
+    self.gitCommitHash = gitCommitHash
+    self.relayProviderActive = relayProviderActive
   }
 }
 

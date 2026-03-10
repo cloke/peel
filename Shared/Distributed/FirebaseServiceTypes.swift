@@ -241,6 +241,11 @@ public struct FirestoreWorker: Sendable, Identifiable, Hashable {
   public let lastHeartbeat: Date
   public let version: String?
 
+  /// Git commit hash of the running build (sent in heartbeats for version tracking)
+  public let gitCommitHash: String?
+  /// Whether the Firestore relay provider is active (sent in heartbeats)
+  public let relayProviderActive: Bool
+
   /// LAN connection info (same network)
   public let lanAddress: String?
   public let lanPort: UInt16?
