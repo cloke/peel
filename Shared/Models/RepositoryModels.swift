@@ -71,6 +71,9 @@ final class RecentPullRequest {
   var state: String = "unknown"
   var htmlURL: String?
   var viewedAt: Date = Date()
+  /// When non-nil the user (or auto-refresh) dismissed this PR from "Needs Attention".
+  /// CloudKit-safe: once set, should never be cleared by other devices.
+  var dismissedAt: Date?
   
   init(githubPRId: Int, prNumber: Int, title: String, repoFullName: String, state: String, htmlURL: String? = nil) {
     self.id = UUID()

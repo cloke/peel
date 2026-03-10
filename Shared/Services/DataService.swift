@@ -178,6 +178,10 @@ final class DataService {
     if let existing = try? modelContext.fetch(descriptor).first {
       existing.title = title
       existing.state = state
+      // If the PR is open again (re-opened), clear any dismissal
+      if state == "open" {
+        existing.dismissedAt = nil
+      }
       existing.markViewed()
       try? modelContext.save()
       return existing
@@ -199,12 +203,14 @@ final class DataService {
   func markMergedPRs(repoFullName: String, openNumbers: Set<Int>) {
     let lowerName = repoFullName.lowercased()
     let descriptor = FetchDescriptor<RecentPullRequest>(
-      predicate: #Predicate { $0.state == "open" }
+      predicate: #Predicate { $0.state == "open" && $0.dismissedAt == nil }
     )
     guard let openRecords = try? modelContext.fetch(descriptor) else { return }
+    let now = Date()
     for record in openRecords where record.repoFullName.lowercased() == lowerName {
       if !openNumbers.contains(record.prNumber) {
         record.state = "closed"
+        record.dismissedAt = now
       }
     }
     try? modelContext.save()
@@ -1164,6 +1170,12 @@ final class DataService {
     linkedPRRepo: String? = nil
   ) -> TrackedWorktree {
     if let existing = getTrackedWorktree(localPath: localPath) {
+      // Don't resurrect cleaned or orphaned worktrees — CloudKit may
+      // deliver an out-of-order update that would undo a dismissal.
+      if existing.taskStatus == TrackedWorktree.Status.cleaned
+          || existing.taskStatus == TrackedWorktree.Status.orphaned {
+        return existing
+      }
       existing.repositoryId = repositoryId ?? existing.repositoryId
       existing.branch = branch
       existing.source = source
@@ -1202,6 +1214,7 @@ final class DataService {
     )
     if let existing = try? modelContext.fetch(descriptor).first {
       existing.taskStatus = TrackedWorktree.Status.cleaned
+      existing.completedAt = Date()
       try? modelContext.save()
     }
   }

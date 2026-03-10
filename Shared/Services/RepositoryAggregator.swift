@@ -308,7 +308,7 @@ final class RepositoryAggregator {
         from: url, favorite: favorite, tracked: tracked
       )
       let prsForRepo = (ownerSlashRepo.flatMap { prsByFullName[$0.lowercased()] } ?? [])
-        .filter { $0.state == "open" }
+        .filter { $0.state == "open" && $0.dismissedAt == nil }
       let lastPull = lastPullByURL[url]
 
       // Choose the most stable id
