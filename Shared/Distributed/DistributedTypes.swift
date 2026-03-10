@@ -104,7 +104,8 @@ public struct RequiredCapabilities: Codable, Sendable {
 // MARK: - Chain Result
 
 /// The result of executing a chain on a worker
-public struct ChainResult: Codable, Sendable {
+public struct ChainResult: Codable, Sendable, Identifiable {
+  public var id: UUID { requestId }
   public let requestId: UUID
   public let status: ChainStatus
   public let outputs: [ChainOutput]
