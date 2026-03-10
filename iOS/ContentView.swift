@@ -3,7 +3,7 @@
 //  KitchenSync (iOS)
 //
 //  Created by Cory Loken on 6/10/22.
-//  Updated for 2-tab layout on 1/18/26
+//  Updated for unified repositories on iOS
 //
 
 import SwiftUI
@@ -42,76 +42,60 @@ struct ContentView: View {
 
 // MARK: - iOS Repositories View
 
-/// Repositories tab for iOS. Shows GitHub repos with remote-first scope.
+/// Repositories tab for iOS. NavigationSplitView with sidebar list + detail.
 struct iOSRepositoriesView: View {
+  @Environment(RepositoryAggregator.self) private var aggregator
+  @State private var selectedRepoId: UUID?
+  @State private var searchText = ""
+
+  private var filteredRepos: [UnifiedRepository] {
+    if searchText.isEmpty {
+      return aggregator.repositories
+    }
+    return aggregator.repositories.filter {
+      $0.displayName.localizedCaseInsensitiveContains(searchText)
+        || ($0.ownerSlashRepo?.localizedCaseInsensitiveContains(searchText) ?? false)
+    }
+  }
+
   var body: some View {
-    Repositories_RootView(initialScope: .remote)
+    NavigationSplitView {
+      List(filteredRepos, selection: $selectedRepoId) { repo in
+        RepoSidebarRow(repo: repo)
+          .tag(repo.id)
+      }
+      .searchable(text: $searchText, prompt: "Filter repositories")
+      .navigationTitle("Repositories")
+      .refreshable {
+        aggregator.rebuild()
+      }
+    } detail: {
+      if let repoId = selectedRepoId,
+         let repo = aggregator.repositoryById[repoId] {
+        RepoDetailView(repo: repo)
+      } else {
+        ContentUnavailableView {
+          Label("Select a Repository", systemImage: "tray.full")
+        } description: {
+          Text("Choose a repository from the sidebar to view details, pull requests, and branches.")
+        }
+      }
+    }
   }
 }
 
 // MARK: - iOS Activity View
 
-/// Activity tab for iOS. Shows swarm membership and worker status.
+/// Activity tab for iOS. Placeholder until Firebase is linked for iOS.
 struct iOSActivityView: View {
-  @State private var firebaseService = FirebaseService.shared
-
   var body: some View {
     NavigationStack {
-      Group {
-        if !firebaseService.isSignedIn {
-          SwarmAuthView()
-        } else {
-          List {
-            // Swarm section
-            if !firebaseService.memberSwarms.isEmpty {
-              Section("Swarm") {
-                ForEach(firebaseService.memberSwarms) { swarm in
-                  SwarmMembershipRow(swarm: swarm)
-                }
-              }
-
-              if !firebaseService.swarmWorkers.isEmpty {
-                Section("Connected Workers") {
-                  ForEach(firebaseService.swarmWorkers) { worker in
-                    FirestoreWorkerRow(worker: worker)
-                  }
-                }
-              }
-            } else {
-              ContentUnavailableView {
-                Label("No Activity", systemImage: "bolt.slash")
-              } description: {
-                Text("Agent activity and swarm monitoring will appear here. Start a swarm on your Mac to see connected workers.")
-              }
-            }
-          }
-        }
+      ContentUnavailableView {
+        Label("Activity", systemImage: "bolt.fill")
+      } description: {
+        Text("Agent activity, swarm monitoring, and chain status will appear here. Currently available on macOS.")
       }
       .navigationTitle("Activity")
-    }
-  }
-}
-
-/// Simple row displaying a swarm membership entry.
-private struct SwarmMembershipRow: View {
-  let swarm: SwarmMembership
-
-  var body: some View {
-    HStack {
-      VStack(alignment: .leading, spacing: 2) {
-        Text(swarm.swarmName)
-          .font(.subheadline)
-          .fontWeight(.medium)
-        Text(swarm.role.rawValue.capitalized)
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      }
-
-      Spacer()
-
-      Circle()
-        .fill(swarm.role == .pending ? Color.orange : Color.green)
-        .frame(width: 8, height: 8)
     }
   }
 }

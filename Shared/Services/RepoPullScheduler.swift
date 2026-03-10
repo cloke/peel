@@ -345,6 +345,7 @@ public final class RepoPullScheduler {
   }
 
   private func runGit(_ arguments: [String], at path: String) async -> GitResult {
+    #if os(macOS)
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
     process.arguments = arguments
@@ -370,6 +371,9 @@ public final class RepoPullScheduler {
     } catch {
       return GitResult(exitCode: -1, stdout: "", stderr: error.localizedDescription)
     }
+    #else
+    return GitResult(exitCode: -1, stdout: "", stderr: "Process not available on iOS")
+    #endif
   }
 }
 

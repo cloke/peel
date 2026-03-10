@@ -356,7 +356,11 @@ struct AddRepositorySheet: View {
           }
         }
       }
+      #if os(macOS)
       .listStyle(.bordered(alternatesRowBackgrounds: true))
+      #else
+      .listStyle(.plain)
+      #endif
       .frame(height: min(CGFloat(detectedRepos.count) * 36 + 40, 300))
 
       if let errorMessage {
@@ -527,6 +531,7 @@ struct AddRepositorySheet: View {
   }
 
   private func discoverRemoteURL(for path: String) -> String? {
+    #if os(macOS)
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
     process.arguments = ["-C", path, "remote", "get-url", "origin"]
@@ -539,6 +544,9 @@ struct AddRepositorySheet: View {
     let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
       .trimmingCharacters(in: .whitespacesAndNewlines)
     return output?.isEmpty == false ? output : nil
+    #else
+    return nil
+    #endif
   }
 
   private func trackRemote() {
@@ -586,6 +594,7 @@ struct AddOptionCard: View {
   }
 }
 
+#if os(macOS)
 // MARK: - Command Center (No-Selection View)
 
 /// Cross-repo dashboard shown when no repository is selected.
@@ -1515,6 +1524,7 @@ struct RepositoriesCommandCenter: View {
     }
   }
 }
+#endif
 
 // MARK: - PR Detail Support
 

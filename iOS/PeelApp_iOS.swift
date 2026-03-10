@@ -41,12 +41,6 @@ struct PeelApp_iOS: App {
           if url.scheme == "peel" && url.host == "oauth-callback" {
             OAuthSwift.handle(url: url)
           }
-          // Handle swarm invite deep links (peel://swarm/join?s=&i=&t=)
-          else if url.scheme == "peel" && url.host == "swarm" {
-            Task {
-              await FirebaseService.shared.handleDeepLink(url)
-            }
-          }
         }
     }
     .modelContainer(sharedModelContainer)

@@ -315,6 +315,7 @@ final class DataService {
 
   // MARK: - Parallel Run Snapshots
 
+  #if os(macOS)
   @discardableResult
   func recordParallelRunSnapshot(run: ParallelWorktreeRun) -> ParallelRunSnapshot {
     let snapshot = ParallelRunSnapshot(
@@ -346,6 +347,7 @@ final class DataService {
     try? modelContext.save()
     return snapshot
   }
+  #endif
 
   func getLatestParallelRunSnapshot(runId: String) -> ParallelRunSnapshot? {
     guard !runId.isEmpty else { return nil }
@@ -375,6 +377,7 @@ final class DataService {
     try? modelContext.save()
   }
 
+  #if os(macOS)
   private func encodeParallelExecutions(_ run: ParallelWorktreeRun) -> String {
     let formatter = Formatter.iso8601
     let payload = run.executions.map { execution in
@@ -489,6 +492,7 @@ final class DataService {
     }
     return json
   }
+  #endif
 
   /// Lightweight structure for displaying historical execution data
   struct HistoricalExecution: Identifiable, Sendable {

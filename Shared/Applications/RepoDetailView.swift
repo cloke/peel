@@ -156,11 +156,23 @@ struct RepoDetailView: View {
   private var tabContent: some View {
     switch selectedTab.wrappedValue {
     case .overview:
+      #if os(macOS)
       OverviewTabView(repo: repo)
+      #else
+      iOSOverviewTabView(repo: repo)
+      #endif
     case .branches:
+      #if os(macOS)
       BranchesTabView(repo: repo)
+      #else
+      iOSBranchesTabView(repo: repo)
+      #endif
     case .rag:
+      #if os(macOS)
       RAGTabView(repo: repo)
+      #else
+      ContentUnavailableView("RAG", systemImage: "magnifyingglass", description: Text("RAG indexing is available on macOS."))
+      #endif
     case .skills:
       SkillsTabView(repo: repo)
     }
@@ -199,6 +211,7 @@ struct RepoStatusPill: View {
   }
 }
 
+#if os(macOS)
 // MARK: - Overview Tab
 
 /// The default landing view for a repository. Surfaces actionable items:
@@ -1305,6 +1318,135 @@ private struct BranchRow: View {
     }
   }
 }
+#endif // os(macOS)
+
+// MARK: - iOS Tab Views
+
+#if os(iOS)
+/// Simplified overview tab for iOS — shows PRs and basic repo info.
+struct iOSOverviewTabView: View {
+  let repo: UnifiedRepository
+  @Environment(RepositoryAggregator.self) private var aggregator
+
+  var body: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 16) {
+        // PRs section
+        if !repo.recentPRs.isEmpty {
+          SectionHeader("Pull Requests")
+          LazyVStack(spacing: 1) {
+            ForEach(repo.recentPRs, id: \.id) { pr in
+              RepoPRRow(pr: pr)
+            }
+          }
+          .background(Color(.systemGroupedBackground))
+          .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+
+        // Worktrees section
+        if !repo.activeWorktrees.isEmpty {
+          SectionHeader("Active Worktrees")
+          LazyVStack(spacing: 1) {
+            ForEach(repo.activeWorktrees, id: \.id) { wt in
+              RepoWorktreeRow(worktree: wt)
+            }
+          }
+          .background(Color(.systemGroupedBackground))
+          .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+
+        // Chains section
+        if !repo.activeChains.isEmpty {
+          SectionHeader("Active Chains")
+          LazyVStack(spacing: 1) {
+            ForEach(repo.activeChains, id: \.id) { chain in
+              RepoChainRow(chain: chain)
+            }
+          }
+          .background(Color(.systemGroupedBackground))
+          .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+
+        if repo.recentPRs.isEmpty && repo.activeWorktrees.isEmpty && repo.activeChains.isEmpty {
+          ContentUnavailableView {
+            Label("No Activity", systemImage: "tray")
+          } description: {
+            Text("No recent pull requests, worktrees, or agent chains for this repository.")
+          }
+          .frame(maxWidth: .infinity)
+          .padding(.vertical, 40)
+        }
+      }
+      .padding(16)
+    }
+  }
+}
+
+/// Simplified branches tab for iOS — shows local and remote branches.
+struct iOSBranchesTabView: View {
+  let repo: UnifiedRepository
+  @State private var gitRepository: Git.Model.Repository?
+
+  var body: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 16) {
+        if let gitRepo = gitRepository {
+          if !gitRepo.localBranches.isEmpty {
+            SectionHeader("Branches")
+            LazyVStack(spacing: 1) {
+              ForEach(gitRepo.localBranches, id: \.name) { branch in
+                HStack(spacing: 10) {
+                  if branch.isActive {
+                    Image(systemName: "checkmark.circle.fill")
+                      .font(.caption)
+                      .foregroundStyle(.green)
+                  } else {
+                    Image(systemName: "arrow.triangle.branch")
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                  }
+                  Text(branch.name)
+                    .font(.callout)
+                    .fontWeight(branch.isActive ? .semibold : .regular)
+                    .lineLimit(1)
+                  Spacer()
+                  if branch.isActive {
+                    Text("current")
+                      .font(.caption2)
+                      .foregroundStyle(.green)
+                  }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+              }
+            }
+            .background(Color(.systemGroupedBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+          }
+        } else if repo.isClonedLocally {
+          ProgressView("Loading branches…")
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 40)
+        } else {
+          ContentUnavailableView {
+            Label("Not Cloned", systemImage: "externaldrive.badge.xmark")
+          } description: {
+            Text("Clone this repository locally to view branches.")
+          }
+          .frame(maxWidth: .infinity)
+          .padding(.vertical, 40)
+        }
+      }
+      .padding(16)
+    }
+    .task {
+      if let path = repo.localPath {
+        gitRepository = try? await Git.Model.Repository(name: repo.displayName, path: path)
+      }
+    }
+  }
+}
+#endif
 
 struct SkillsTabView: View {
   let repo: UnifiedRepository
