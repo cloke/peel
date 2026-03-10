@@ -11,7 +11,7 @@ import SwiftData
 /// Main swarm management view - shows swarms, members, invites
 @MainActor
 struct SwarmManagementView: View {
-  @State private var firebaseService = FirebaseService.shared
+  private var firebaseService: FirebaseService { .shared }
   @State private var selectedSwarm: SwarmMembership?
   @State private var showingCreateSwarm = false
   @State private var showingCreateInvite = false

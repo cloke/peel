@@ -1228,6 +1228,11 @@ public final class FirebaseService {
   /// Extra metadata to include in every Firestore heartbeat.
   /// Set by SwarmCoordinator so heartbeats report version and relay status.
   public var heartbeatMetadata: (() -> [String: Any])?
+
+  /// Called on @MainActor when the worker snapshot listener fires.
+  /// SwarmCoordinator uses this to bump an observable version counter
+  /// so SwiftUI views that read `allOnDemandWorkers` re-render.
+  public var onWorkersSnapshotChanged: (@MainActor () -> Void)?
   
   /// Send heartbeat to update worker status
   private func sendHeartbeat(swarmId: String, workerId: String, status: String = "online") async {
@@ -1376,6 +1381,7 @@ public final class FirebaseService {
           }
           
           self.swarmWorkersBySwarmId[swarmId] = newWorkers
+          self.onWorkersSnapshotChanged?()
         }
       }
     workerListeners[swarmId] = listener

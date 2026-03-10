@@ -17,7 +17,7 @@ struct Git_RootView: View {
   @Environment(\.modelContext) private var modelContext
   @Query(sort: \SyncedRepository.name) private var syncedRepos: [SyncedRepository]
   
-  @State private var viewModel: ViewModel = .shared
+  @Bindable private var viewModel: ViewModel = .shared
   @State private var repoNotFoundError = false
   @State private var isCloning = false
   @State private var hasLoadedFromSwiftData = false

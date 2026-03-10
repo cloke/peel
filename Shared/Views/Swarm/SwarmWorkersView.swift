@@ -13,8 +13,8 @@ import SwiftUI
 struct WorkersListView: View {
   let swarmId: String
   let myRole: SwarmPermissionRole
-  @State private var firebaseService = FirebaseService.shared
-  @State private var swarm = SwarmCoordinator.shared
+  private var firebaseService: FirebaseService { .shared }
+  private var swarm: SwarmCoordinator { .shared }
   @State private var showingMessageSheet = false
   @State private var selectedWorker: FirestoreWorker?
   @State private var messageText = ""

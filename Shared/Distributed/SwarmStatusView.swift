@@ -12,8 +12,8 @@ import os.log
 public struct SwarmStatusView: View {
   @Environment(MCPServerService.self) private var mcpServer
   @Environment(\.modelContext) private var modelContext
-  @State private var coordinator = SwarmCoordinator.shared
-  @State private var firebaseService = FirebaseService.shared
+  private var coordinator: SwarmCoordinator { .shared }
+  private var firebaseService: FirebaseService { .shared }
   @State private var delegateWrapper = SwarmStatusCoordinatorWrapper()
   @State private var errorMessage: String?
   @State private var taskLog: [String] = []

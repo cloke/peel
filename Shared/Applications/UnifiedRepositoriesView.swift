@@ -622,8 +622,8 @@ struct RepositoriesCommandCenter: View {
   private let recentPageSize = 50
 
   // Swarm state (merged from ActivityDashboardView)
-  @State private var swarm = SwarmCoordinator.shared
-  @State private var firebaseService = FirebaseService.shared
+  private var swarm: SwarmCoordinator { .shared }
+  private var firebaseService: FirebaseService { .shared }
 
   /// All non-terminal parallel runs across the workspace.
   private var allActiveRuns: [ParallelWorktreeRun] {
@@ -680,6 +680,8 @@ struct RepositoriesCommandCenter: View {
 
   /// WAN workers from Firestore, excluding self and LAN-connected peers.
   private var wanWorkers: [FirestoreWorker] {
+    // Access version counter to trigger re-render on Firestore snapshot changes
+    let _ = swarm.firestoreWorkerVersion
     let localDeviceId = swarm.capabilities.deviceId
     let lanPeerIds = Set(swarm.connectedWorkers.map(\.id))
     return firebaseService.swarmWorkers.filter { worker in

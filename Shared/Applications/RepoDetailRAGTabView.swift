@@ -36,7 +36,7 @@ struct RAGTabView: View {
   @State private var enrichBatchProgress: (current: Int, total: Int)?
 
   // Swarm sync state
-  @State private var swarm = SwarmCoordinator.shared
+  private var swarm: SwarmCoordinator { .shared }
   @State private var isSyncing = false
   @State private var isConnectingWAN = false
   @State private var syncDirection: RAGArtifactSyncDirection?
@@ -294,6 +294,7 @@ struct RAGTabView: View {
             if let li = lastIndexed {
               Text("\u{00B7}").foregroundStyle(.tertiary)
               Text(li, style: .relative)
+              Text("ago")
             }
           }
           .font(.callout)
@@ -534,6 +535,10 @@ struct RAGTabView: View {
   }
 
   private var swarmContent: some View {
+    // Access firestoreWorkerVersion so @Observable triggers re-render
+    // when the Firestore worker snapshot changes (FirebaseService is
+    // not itself @Observable).
+    let _ = swarm.firestoreWorkerVersion
     let peers = SwarmPeerPreferences.ordered(peers: swarm.connectedWorkers)
     let onDemandWorkers = SwarmPeerPreferences.ordered(workers: swarm.allOnDemandWorkers)
 

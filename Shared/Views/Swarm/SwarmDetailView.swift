@@ -12,7 +12,7 @@ import SwiftUI
 @MainActor
 struct SwarmDetailView: View {
   let swarm: SwarmMembership
-  @State private var firebaseService = FirebaseService.shared
+  private var firebaseService: FirebaseService { .shared }
   @State private var selectedTab = 0
   @State private var showingInviteSheet = false
   @State private var inviteURL: URL?

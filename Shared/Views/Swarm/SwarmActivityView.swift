@@ -15,7 +15,7 @@ struct SwarmMessagesView: View {
   let myRole: SwarmPermissionRole
   @Binding var selectedWorker: FirestoreWorker?
 
-  @State private var firebaseService = FirebaseService.shared
+  private var firebaseService: FirebaseService { .shared }
   @State private var messageText = ""
   @State private var isSending = false
   @State private var errorMessage: String?
@@ -162,7 +162,7 @@ private struct SwarmMessageRow: View {
 // MARK: - Activity Log View
 
 struct ActivityLogView: View {
-  @State private var firebaseService = FirebaseService.shared
+  private var firebaseService: FirebaseService { .shared }
   @State private var filterType: SwarmActivityType?
 
   var filteredEvents: [SwarmActivityEvent] {

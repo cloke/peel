@@ -90,6 +90,12 @@ public final class SwarmCoordinator {
   
   /// Connected workers (for brain mode)
   public private(set) var connectedWorkers: [ConnectedPeer] = []
+
+  /// Bumped each time the Firestore worker snapshot changes.
+  /// SwiftUI views access this to observe `allOnDemandWorkers` changes
+  /// (FirebaseService is not @Observable, so computed properties that read
+  /// from it won't trigger view updates on their own).
+  public private(set) var firestoreWorkerVersion: Int = 0
   
   /// Current task being executed (for worker mode)
   public private(set) var currentTask: ChainRequest?
@@ -562,6 +568,9 @@ public final class SwarmCoordinator {
       }
       metadata["relayProviderActive"] = self?.isRelayProviderActive ?? false
       return metadata
+    }
+    FirebaseService.shared.onWorkersSnapshotChanged = { [weak self] in
+      self?.firestoreWorkerVersion += 1
     }
   }
 

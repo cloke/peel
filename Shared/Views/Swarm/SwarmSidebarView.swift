@@ -35,8 +35,8 @@ struct SwarmRowView: View {
 
 @MainActor
 struct LocalWorkerStatusView: View {
-  @State private var coordinator = SwarmCoordinator.shared
-  @State private var firebaseService = FirebaseService.shared
+  private var coordinator: SwarmCoordinator { .shared }
+  private var firebaseService: FirebaseService { .shared }
   @State private var isStartingSwarm = false
   @Query private var deviceSettings: [DeviceSettings]
   @Environment(\.modelContext) private var modelContext

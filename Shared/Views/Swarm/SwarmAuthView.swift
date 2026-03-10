@@ -11,7 +11,7 @@ import AuthenticationServices
 /// View for signing in with Apple to access Firestore swarms
 @MainActor
 struct SwarmAuthView: View {
-  @State private var firebaseService = FirebaseService.shared
+  private var firebaseService: FirebaseService { .shared }
   @State private var isSigningIn = false
   @State private var errorMessage: String?
 

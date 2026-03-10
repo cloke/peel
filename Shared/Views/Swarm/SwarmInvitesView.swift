@@ -12,7 +12,7 @@ import SwiftUI
 
 struct InvitesListView: View {
   let swarmId: String
-  @State private var firebaseService = FirebaseService.shared
+  private var firebaseService: FirebaseService { .shared }
   @State private var invites: [InviteDetails] = []
   @State private var isLoading = false
   @State private var errorMessage: String?
