@@ -226,6 +226,10 @@ struct OverviewTabView: View {
   @State private var isLoadingPRs = false
   @State private var selectedPRDetail: PRDetailIdentifier?
   @State private var justTrackedId: UUID?
+  @State private var selectedChain: AgentChain?
+  @State private var selectedRunForReview: ParallelWorktreeRun?
+  @State private var expandedExecutions: Set<UUID> = []
+  @State private var refreshTimer: Timer?
 
   private var repoRuns: [ParallelWorktreeRun] {
     guard let runner = mcpServer.parallelWorktreeRunner,
@@ -262,6 +266,26 @@ struct OverviewTabView: View {
       ) {
         selectedPRDetail = nil
       }
+    } else if let run = selectedRunForReview,
+              let runner = mcpServer.parallelWorktreeRunner {
+      ScrollView {
+        VStack(alignment: .leading, spacing: 12) {
+          Button {
+            selectedRunForReview = nil
+          } label: {
+            Label("Back to Overview", systemImage: "chevron.left")
+          }
+          .buttonStyle(.plain)
+
+          WorktreeRunApprovalCard(
+            run: run,
+            runner: runner,
+            expandedExecutions: $expandedExecutions,
+            onDismiss: { selectedRunForReview = nil }
+          )
+        }
+        .padding(16)
+      }
     } else {
       ScrollView {
         VStack(alignment: .leading, spacing: 16) {
@@ -288,6 +312,33 @@ struct OverviewTabView: View {
       .task(id: repo.ownerSlashRepo) {
         await fetchOpenPRs()
       }
+      .onAppear {
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
+          Task { @MainActor in
+            await fetchOpenPRs()
+          }
+        }
+      }
+      .onDisappear {
+        refreshTimer?.invalidate()
+        refreshTimer = nil
+      }
+      .sheet(item: $selectedChain) { chain in
+        NavigationStack {
+          ChainDetailView(
+            chain: chain,
+            agentManager: mcpServer.agentManager,
+            cliService: mcpServer.cliService,
+            sessionTracker: mcpServer.sessionTracker
+          )
+          .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+              Button("Done") { selectedChain = nil }
+            }
+          }
+        }
+        .frame(minWidth: 700, minHeight: 500)
+      }
     }
   }
 
@@ -308,6 +359,10 @@ struct OverviewTabView: View {
             subtitle: "\(run.pendingReviewCount) task\(run.pendingReviewCount == 1 ? "" : "s") awaiting review",
             badge: "Review"
           )
+          .contentShape(Rectangle())
+          .onTapGesture {
+            selectedRunForReview = run
+          }
           .accessibilityIdentifier("parallel.run.\(run.id.uuidString).review")
         }
       }
@@ -421,6 +476,12 @@ struct OverviewTabView: View {
       // Active chains
       ForEach(repo.activeChains) { chain in
         RepoChainRow(chain: chain)
+          .contentShape(Rectangle())
+          .onTapGesture {
+            if let agentChain = mcpServer.agentManager.chains.first(where: { $0.id == chain.id }) {
+              selectedChain = agentChain
+            }
+          }
       }
 
       // Active worktrees (non-approval ones)
@@ -526,6 +587,7 @@ struct OverviewTabView: View {
 
     do {
       let prs = try await Github.pullRequests(owner: owner, repository: repoName, state: "open")
+      let openNumbers = Set(prs.map(\.number))
       fetchedPRs = prs.map { pr in
         UnifiedRepository.PRSummary(
           id: UUID(),
@@ -536,8 +598,11 @@ struct OverviewTabView: View {
           headRef: pr.head.ref
         )
       }
+      // Update SwiftData records that are no longer open
+      dataService.markMergedPRs(repoFullName: "\(owner)/\(repoName)", openNumbers: openNumbers)
+      aggregator.rebuild()
     } catch {
-      fetchedPRs = []
+      // keep existing data on failure
     }
   }
 

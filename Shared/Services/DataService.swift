@@ -195,6 +195,21 @@ final class DataService {
     return (try? modelContext.fetch(descriptor)) ?? []
   }
 
+  /// Mark PRs for a repo as closed/merged if they are no longer in the set of open PR numbers.
+  func markMergedPRs(repoFullName: String, openNumbers: Set<Int>) {
+    let lowerName = repoFullName.lowercased()
+    let descriptor = FetchDescriptor<RecentPullRequest>(
+      predicate: #Predicate { $0.state == "open" }
+    )
+    guard let openRecords = try? modelContext.fetch(descriptor) else { return }
+    for record in openRecords where record.repoFullName.lowercased() == lowerName {
+      if !openNumbers.contains(record.prNumber) {
+        record.state = "closed"
+      }
+    }
+    try? modelContext.save()
+  }
+
   // MARK: - MCP Run History
 
   @discardableResult
