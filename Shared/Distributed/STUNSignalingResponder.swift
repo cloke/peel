@@ -123,16 +123,16 @@ public final class STUNSignalingResponder {
     peerEndpoint: STUNResult,
     offerDocId: String
   ) async {
-    logger.info("STUN offer received from \(fromWorkerId) at \(peerEndpoint)")
+    logger.info("[stun-responder] Offer received from \(fromWorkerId) at \(peerEndpoint)")
 
     // 1. Discover our own STUN endpoint (binding to our listening port
     //    so the NAT mapping is for the same port the TCP listener uses)
     guard let myEndpoint = await STUNClient.discoverEndpoint(localPort: listeningPort) else {
-      logger.error("Failed to discover STUN endpoint for answer")
+      logger.error("[stun-responder] Failed to discover STUN endpoint for answer")
       return
     }
 
-    logger.info("STUN answer: our endpoint is \(myEndpoint)")
+    logger.info("[stun-responder] Our endpoint: \(myEndpoint)")
 
     // 2. Write our answer to Firestore
     let db = Firestore.firestore()
@@ -150,22 +150,22 @@ public final class STUNSignalingResponder {
         "isAnswer": true,
       ])
     } catch {
-      logger.error("Failed to write STUN answer: \(error)")
+      logger.error("[stun-responder] Failed to write STUN answer: \(error)")
       return
     }
 
-    // 3. Send UDP hole-punch probes to the peer's STUN endpoint.
-    //    Binding to our listening port creates a NAT mapping for that port,
-    //    which helps the initiator's TCP connect reach our listener.
-    await sendHolePunchProbes(to: peerEndpoint, fromPort: listeningPort)
-
-    // 4. Also attempt a TCP connect to the peer (simultaneous open).
-    //    If both sides TCP-connect at roughly the same time, one may succeed.
+    // 3. TCP simultaneous open — connect to the peer's STUN endpoint
+    //    from our listener port. The initiator is doing the same thing
+    //    at roughly the same time. When both SYNs cross, the connection
+    //    establishes through both NATs.
+    //
+    //    No UDP probes — UDP and TCP NAT mappings are independent on
+    //    most routers, so UDP probes don't help TCP connections.
     Task {
       _ = try? await attemptTCPConnect(to: peerEndpoint)
     }
 
-    // 5. Clean up signaling docs after 2 minutes
+    // 4. Clean up signaling docs after 2 minutes
     Task {
       try? await Task.sleep(for: .seconds(120))
       let db = Firestore.firestore()
@@ -174,37 +174,14 @@ public final class STUNSignalingResponder {
       try? await answerDocRef.delete()
     }
 
-    logger.info("STUN answer sent to \(fromWorkerId), hole punch probes sent")
+    logger.info("[stun-responder] Answer sent to \(fromWorkerId), TCP simultaneous open initiated")
   }
 
-  // MARK: - Hole Punching
-
-  private func sendHolePunchProbes(to endpoint: STUNResult, fromPort: UInt16) async {
-    let host = NWEndpoint.Host(endpoint.address)
-    let port = NWEndpoint.Port(rawValue: endpoint.port)!
-    let udpEndpoint = NWEndpoint.hostPort(host: host, port: port)
-
-    let params = NWParameters.udp
-    params.allowLocalEndpointReuse = true
-    // Bind to our listening port so the NAT creates a mapping for it
-    if let nwPort = NWEndpoint.Port(rawValue: fromPort) {
-      params.requiredLocalEndpoint = NWEndpoint.hostPort(host: .ipv4(.any), port: nwPort)
-    }
-
-    let connection = NWConnection(to: udpEndpoint, using: params)
-    connection.start(queue: .global())
-
-    // Send several probes spaced out to increase chance of punch-through
-    for i in 0..<8 {
-      try? await Task.sleep(for: .milliseconds(250))
-      let probe = "PEEL_PUNCH_\(i)".data(using: .utf8)!
-      connection.send(content: probe, completion: .contentProcessed { _ in })
-    }
-
-    connection.cancel()
-  }
+  // MARK: - TCP Simultaneous Open
 
   /// Attempt a TCP connection to the peer's STUN endpoint (simultaneous open).
+  /// Binds to our listener port with SO_REUSEADDR so the NAT mapping matches
+  /// what STUN discovered. The initiator does the same thing at the same time.
   private func attemptTCPConnect(to endpoint: STUNResult) async throws -> NWConnection? {
     let host = NWEndpoint.Host(endpoint.address)
     guard let port = NWEndpoint.Port(rawValue: endpoint.port) else { return nil }
@@ -212,29 +189,34 @@ public final class STUNSignalingResponder {
 
     let params = NWParameters.tcp
     params.includePeerToPeer = true
-    params.allowLocalEndpointReuse = true
+    params.allowLocalEndpointReuse = true  // Critical for TCP simultaneous open
     // Bind to our listening port for simultaneous TCP open
     if let nwPort = NWEndpoint.Port(rawValue: listeningPort) {
       params.requiredLocalEndpoint = NWEndpoint.hostPort(host: .ipv4(.any), port: nwPort)
     }
 
     let connection = NWConnection(to: nwEndpoint, using: params)
+    logger.info("[stun-responder] Starting TCP simultaneous open to \(endpoint)")
 
     return try await withCheckedThrowingContinuation { continuation in
       let box = ContinuationBox()
 
-      connection.stateUpdateHandler = { state in
+      connection.stateUpdateHandler = { [self] state in
         switch state {
         case .ready:
           if box.tryResume() {
             connection.stateUpdateHandler = nil
+            logger.info("[stun-responder] TCP simultaneous open SUCCEEDED to \(endpoint)")
             continuation.resume(returning: connection)
           }
         case .failed(let error):
           if box.tryResume() {
             connection.stateUpdateHandler = nil
+            logger.info("[stun-responder] TCP simultaneous open failed: \(error)")
             continuation.resume(throwing: error)
           }
+        case .waiting(let error):
+          logger.info("[stun-responder] TCP waiting: \(error)")
         case .cancelled:
           if box.tryResume() {
             connection.stateUpdateHandler = nil
@@ -247,11 +229,12 @@ public final class STUNSignalingResponder {
 
       connection.start(queue: .main)
 
-      // Timeout after 15 seconds
+      // Timeout after 20 seconds (matches initiator)
       Task { @MainActor in
-        try? await Task.sleep(for: .seconds(15))
+        try? await Task.sleep(for: .seconds(20))
         if box.tryResume() {
           connection.cancel()
+          logger.info("[stun-responder] TCP simultaneous open timed out")
           continuation.resume(returning: nil)
         }
       }
