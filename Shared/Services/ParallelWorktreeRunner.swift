@@ -370,6 +370,18 @@ final class ParallelWorktreeRun: Identifiable, @unchecked Sendable, Hashable {
   var mergedCount: Int {
     executions.filter { $0.status == .merged }.count
   }
+
+  var totalFilesChanged: Int {
+    executions.reduce(0) { $0 + $1.filesChanged }
+  }
+
+  var totalInsertions: Int {
+    executions.reduce(0) { $0 + $1.insertions }
+  }
+
+  var totalDeletions: Int {
+    executions.reduce(0) { $0 + $1.deletions }
+  }
 }
 
 // MARK: - Runner Service
@@ -2682,7 +2694,10 @@ final class ParallelWorktreeRunner {
     for execution in run.executions {
       try? await workspaceService.removeWorktreeForChain(chainId: execution.id)
     }
-    
+
+    // Delete persisted snapshots so CloudKit propagates the removal to other devices
+    dataService?.deleteParallelRunSnapshots(runId: run.id.uuidString)
+
     runs.removeAll { $0.id == run.id }
   }
   

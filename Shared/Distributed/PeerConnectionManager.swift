@@ -177,7 +177,17 @@ public final class PeerConnectionManager: @unchecked Sendable {
   /// the receive-loop can detect if it was replaced (dual-connect race).
   private var connectionGeneration: [String: UInt64] = [:]
   private var nextGeneration: UInt64 = 1
-  
+
+  /// Pending outbound NWConnections keyed by endpoint description.
+  /// Used to cancel a previous attempt before retrying the same endpoint.
+  private var pendingConnections: [String: NWConnection] = [:]
+
+  /// Dedicated queue for NWConnection callbacks (keeps main thread free).
+  private let connectionQueue = DispatchQueue(label: "com.peel.distributed.connections", qos: .utility)
+
+  /// How long to wait for a TCP connection before giving up.
+  private let connectionTimeout: Duration = .seconds(10)
+
   /// Whether we're running
   public private(set) var isRunning = false
   
@@ -228,6 +238,12 @@ public final class PeerConnectionManager: @unchecked Sendable {
     
     listener?.cancel()
     listener = nil
+
+    // Cancel any pending outbound connections
+    for (_, conn) in pendingConnections {
+      conn.cancel()
+    }
+    pendingConnections.removeAll()
     
     for (_, conn) in connections {
       Task {
@@ -239,6 +255,62 @@ public final class PeerConnectionManager: @unchecked Sendable {
     connectionGeneration.removeAll()
     
     logger.info("PeerConnectionManager stopped")
+  }
+
+  // MARK: - Connection Helpers
+
+  /// Wait for an NWConnection to become ready, with a timeout.
+  /// Cancels the connection if the timeout expires.
+  private func waitForConnection(_ connection: NWConnection, endpointKey: String) async throws {
+    let box = ContinuationBox()
+    let queue = connectionQueue
+    try await withThrowingTaskGroup(of: Void.self) { group in
+      // Timeout task
+      group.addTask {
+        try await Task.sleep(for: self.connectionTimeout)
+        if box.tryResume() {
+          // Timed out — cancel the connection so the state handler fires .cancelled
+          connection.cancel()
+        }
+      }
+
+      // Connection task
+      group.addTask {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+          connection.stateUpdateHandler = { [weak connection] state in
+            switch state {
+            case .ready:
+              if box.tryResume() {
+                connection?.stateUpdateHandler = nil
+                continuation.resume()
+              }
+            case .failed(let error):
+              if box.tryResume() {
+                connection?.stateUpdateHandler = nil
+                continuation.resume(throwing: error)
+              }
+            case .waiting(let error):
+              // Connection is waiting (e.g. SYN_SENT with no response).
+              // Let the timeout handle it rather than waiting indefinitely.
+              self.logger.debug("Connection to \(endpointKey) waiting: \(error)")
+            case .cancelled:
+              if box.tryResume() {
+                connection?.stateUpdateHandler = nil
+                continuation.resume(throwing: DistributedError.connectionFailed(
+                  deviceId: "unknown", reason: "Connection timed out or cancelled"))
+              }
+            default:
+              break
+            }
+          }
+          connection.start(queue: queue)
+        }
+      }
+
+      // Wait for the first task to complete, then cancel the other
+      _ = try await group.next()
+      group.cancelAll()
+    }
   }
   
   // MARK: - Connection Management
@@ -269,34 +341,25 @@ public final class PeerConnectionManager: @unchecked Sendable {
     let parameters = NWParameters.tcp
     parameters.includePeerToPeer = true
     
-    let connection = NWConnection(to: endpoint, using: parameters)
-    
-    // Wait for connection to be ready
-    let box = ContinuationBox()
-    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-      connection.stateUpdateHandler = { [weak connection] state in
-        switch state {
-        case .ready:
-          if box.tryResume() {
-            connection?.stateUpdateHandler = nil
-            continuation.resume()
-          }
-        case .failed(let error):
-          if box.tryResume() {
-            connection?.stateUpdateHandler = nil
-            continuation.resume(throwing: error)
-          }
-        case .cancelled:
-          if box.tryResume() {
-            connection?.stateUpdateHandler = nil
-            continuation.resume(throwing: DistributedError.connectionFailed(deviceId: "unknown", reason: "Cancelled"))
-          }
-        default:
-          break
-        }
-      }
-      connection.start(queue: .main)
+    let endpointKey = "\(address):\(port)"
+
+    // Cancel any pending connection attempt to the same endpoint
+    if let pending = pendingConnections.removeValue(forKey: endpointKey) {
+      pending.cancel()
+      logger.info("Cancelled pending connection to \(endpointKey)")
     }
+    
+    let connection = NWConnection(to: endpoint, using: parameters)
+    pendingConnections[endpointKey] = connection
+    
+    // Wait for connection to be ready, with a timeout
+    do {
+      try await waitForConnection(connection, endpointKey: endpointKey)
+    } catch {
+      pendingConnections.removeValue(forKey: endpointKey)
+      throw error
+    }
+    pendingConnections.removeValue(forKey: endpointKey)
     
     // Perform handshake
     let tempId = UUID().uuidString
@@ -340,34 +403,25 @@ public final class PeerConnectionManager: @unchecked Sendable {
     let parameters = NWParameters.tcp
     parameters.includePeerToPeer = true
 
-    let connection = NWConnection(to: endpoint, using: parameters)
+    let endpointKey = "\(endpoint)"
 
-    // Wait for connection to be ready
-    let box = ContinuationBox()
-    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-      connection.stateUpdateHandler = { [weak connection] state in
-        switch state {
-        case .ready:
-          if box.tryResume() {
-            connection?.stateUpdateHandler = nil
-            continuation.resume()
-          }
-        case .failed(let error):
-          if box.tryResume() {
-            connection?.stateUpdateHandler = nil
-            continuation.resume(throwing: error)
-          }
-        case .cancelled:
-          if box.tryResume() {
-            connection?.stateUpdateHandler = nil
-            continuation.resume(throwing: DistributedError.connectionFailed(deviceId: "unknown", reason: "Cancelled"))
-          }
-        default:
-          break
-        }
-      }
-      connection.start(queue: .main)
+    // Cancel any pending connection attempt to the same endpoint
+    if let pending = pendingConnections.removeValue(forKey: endpointKey) {
+      pending.cancel()
+      logger.info("Cancelled pending connection to \(endpointKey)")
     }
+
+    let connection = NWConnection(to: endpoint, using: parameters)
+    pendingConnections[endpointKey] = connection
+
+    // Wait for connection to be ready, with a timeout
+    do {
+      try await waitForConnection(connection, endpointKey: endpointKey)
+    } catch {
+      pendingConnections.removeValue(forKey: endpointKey)
+      throw error
+    }
+    pendingConnections.removeValue(forKey: endpointKey)
 
     // Perform handshake (same as address-based connect)
     let tempId = UUID().uuidString

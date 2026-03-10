@@ -233,6 +233,7 @@ struct InlineExecutionCard: View {
   @State private var assignedRejectReason = ""
   @State private var showingAssignedRejectDialog = false
   @State private var expandedSteps: Set<UUID> = []
+  @State private var showingDetail = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -592,6 +593,14 @@ struct InlineExecutionCard: View {
 
       Spacer()
 
+      Button {
+        showingDetail = true
+      } label: {
+        Label("Details", systemImage: "doc.text.magnifyingglass")
+      }
+      .buttonStyle(.bordered)
+      .controlSize(.mini)
+
       #if os(macOS)
       if let path = execution.worktreePath {
         Button {
@@ -603,6 +612,14 @@ struct InlineExecutionCard: View {
         .controlSize(.mini)
       }
       #endif
+    }
+    .sheet(isPresented: $showingDetail) {
+      ExecutionDetailView(
+        execution: execution,
+        run: run,
+        runner: runner,
+        onDismiss: { showingDetail = false }
+      )
     }
   }
 

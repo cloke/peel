@@ -603,6 +603,7 @@ struct RepositoriesCommandCenter: View {
   @Environment(RepositoryAggregator.self) private var aggregator
   @Environment(MCPServerService.self) private var mcpServer
   @Environment(ActivityFeed.self) private var activityFeed
+  @Environment(DataService.self) private var dataService
 
   @State private var fetchedOpenPRs: [(ownerRepo: String, pr: UnifiedRepository.PRSummary)] = []
   @State private var isLoadingPRs = false
@@ -910,6 +911,13 @@ struct RepositoriesCommandCenter: View {
         .onTapGesture {
           selectedRunForReview = run
         }
+        .contextMenu {
+          Button("Dismiss", systemImage: "xmark.circle") {
+            Task {
+              await mcpServer.parallelWorktreeRunner?.removeRun(run)
+            }
+          }
+        }
       }
 
       // Open PRs across repos — tap to view full detail
@@ -974,6 +982,13 @@ struct RepositoriesCommandCenter: View {
         .onTapGesture {
           if let ownerRepo = item.repo.ownerSlashRepo {
             selectedPRDetail = PRDetailIdentifier(ownerRepo: ownerRepo, prNumber: item.pr.number)
+          }
+        }
+        .contextMenu {
+          Button("Dismiss", systemImage: "xmark.circle") {
+            if let ownerRepo = item.repo.ownerSlashRepo {
+              dataService.dismissPR(prNumber: item.pr.number, repoFullName: ownerRepo)
+            }
           }
         }
       }

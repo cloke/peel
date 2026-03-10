@@ -178,10 +178,9 @@ final class DataService {
     if let existing = try? modelContext.fetch(descriptor).first {
       existing.title = title
       existing.state = state
-      // If the PR is open again (re-opened), clear any dismissal
-      if state == "open" {
-        existing.dismissedAt = nil
-      }
+      // Respect user dismissals: never clear dismissedAt automatically.
+      // If the user dismissed a PR, it stays dismissed until they explicitly
+      // re-open it. This prevents CloudKit sync from resurrecting dismissed items.
       existing.markViewed()
       try? modelContext.save()
       return existing
@@ -213,6 +212,17 @@ final class DataService {
         record.dismissedAt = now
       }
     }
+    try? modelContext.save()
+  }
+
+  /// Dismiss a PR from "Needs Your Attention" by setting dismissedAt.
+  /// CloudKit will propagate the dismissal to other devices.
+  func dismissPR(prNumber: Int, repoFullName: String) {
+    let descriptor = FetchDescriptor<RecentPullRequest>(
+      predicate: #Predicate { $0.prNumber == prNumber && $0.repoFullName == repoFullName }
+    )
+    guard let record = try? modelContext.fetch(descriptor).first else { return }
+    record.dismissedAt = Date()
     try? modelContext.save()
   }
 
@@ -339,34 +349,61 @@ final class DataService {
   #if os(macOS)
   @discardableResult
   func recordParallelRunSnapshot(run: ParallelWorktreeRun) -> ParallelRunSnapshot {
-    let snapshot = ParallelRunSnapshot(
-      runId: run.id.uuidString,
-      name: run.name,
-      projectPath: run.projectPath,
-      baseBranch: run.baseBranch,
-      targetBranch: run.targetBranch,
-      templateName: run.templateName,
-      status: run.status.displayName,
-      progress: run.progress,
-      executionCount: run.executions.count,
-      pendingReviewCount: run.pendingReviewCount,
-      readyToMergeCount: run.readyToMergeCount,
-      mergedCount: run.mergedCount,
-      rejectedCount: run.rejectedCount,
-      failedCount: run.failedCount,
-      hungCount: run.hungExecutionCount,
-      requireReviewGate: run.requireReviewGate,
-      autoMergeOnApproval: run.autoMergeOnApproval,
-      operatorGuidanceCount: run.operatorGuidance.count,
-      executionsJSON: encodeParallelExecutions(run),
-      createdAt: run.createdAt,
-      updatedAt: Date(),
-      lastUpdatedAt: run.lastUpdatedAt
-    )
-    modelContext.insert(snapshot)
+    // Upsert: update existing snapshot for this runId instead of inserting duplicates.
+    // This prevents stale snapshots from lingering in CloudKit and being auto-restored.
+    let runIdStr = run.id.uuidString
+    let existing = getLatestParallelRunSnapshot(runId: runIdStr)
+
+    let snapshot: ParallelRunSnapshot
+    if let existing {
+      snapshot = existing
+    } else {
+      snapshot = ParallelRunSnapshot(
+        runId: runIdStr,
+        name: run.name,
+        projectPath: run.projectPath,
+        baseBranch: run.baseBranch,
+        createdAt: run.createdAt
+      )
+      modelContext.insert(snapshot)
+    }
+
+    snapshot.name = run.name
+    snapshot.targetBranch = run.targetBranch
+    snapshot.templateName = run.templateName
+    snapshot.status = run.status.displayName
+    snapshot.progress = run.progress
+    snapshot.executionCount = run.executions.count
+    snapshot.pendingReviewCount = run.pendingReviewCount
+    snapshot.readyToMergeCount = run.readyToMergeCount
+    snapshot.mergedCount = run.mergedCount
+    snapshot.rejectedCount = run.rejectedCount
+    snapshot.failedCount = run.failedCount
+    snapshot.hungCount = run.hungExecutionCount
+    snapshot.requireReviewGate = run.requireReviewGate
+    snapshot.autoMergeOnApproval = run.autoMergeOnApproval
+    snapshot.operatorGuidanceCount = run.operatorGuidance.count
+    snapshot.executionsJSON = encodeParallelExecutions(run)
+    snapshot.updatedAt = Date()
+    snapshot.lastUpdatedAt = run.lastUpdatedAt
+
     cleanupOldParallelRunSnapshots()
     try? modelContext.save()
     return snapshot
+  }
+
+  /// Delete all snapshots for a given run ID.
+  /// CloudKit will propagate the deletion to other devices.
+  func deleteParallelRunSnapshots(runId: String) {
+    guard !runId.isEmpty else { return }
+    let descriptor = FetchDescriptor<ParallelRunSnapshot>(
+      predicate: #Predicate { $0.runId == runId }
+    )
+    guard let snapshots = try? modelContext.fetch(descriptor) else { return }
+    for snapshot in snapshots {
+      modelContext.delete(snapshot)
+    }
+    try? modelContext.save()
   }
   #endif
 

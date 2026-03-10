@@ -352,18 +352,12 @@ struct OverviewTabView: View {
 
       if !pendingApprovalRuns.isEmpty, let _ = mcpServer.parallelWorktreeRunner {
         ForEach(pendingApprovalRuns) { run in
-          attentionCard(
-            icon: "checkmark.shield",
-            color: .purple,
-            title: run.name,
-            subtitle: "\(run.pendingReviewCount) task\(run.pendingReviewCount == 1 ? "" : "s") awaiting review",
-            badge: "Review"
-          )
-          .contentShape(Rectangle())
-          .onTapGesture {
-            selectedRunForReview = run
-          }
-          .accessibilityIdentifier("parallel.run.\(run.id.uuidString).review")
+          runAttentionCard(run: run)
+            .contentShape(Rectangle())
+            .onTapGesture {
+              selectedRunForReview = run
+            }
+            .accessibilityIdentifier("parallel.run.\(run.id.uuidString).review")
         }
       }
 
@@ -382,6 +376,76 @@ struct OverviewTabView: View {
           }
         }
       }
+    }
+  }
+
+  private func runAttentionCard(run: ParallelWorktreeRun) -> some View {
+    GroupBox {
+      VStack(alignment: .leading, spacing: 6) {
+        HStack(spacing: 12) {
+          Image(systemName: "checkmark.shield")
+            .font(.title3)
+            .foregroundStyle(.purple)
+            .frame(width: 28)
+
+          VStack(alignment: .leading, spacing: 2) {
+            Text(run.name)
+              .fontWeight(.medium)
+              .lineLimit(1)
+            Text("\(run.pendingReviewCount) task\(run.pendingReviewCount == 1 ? "" : "s") awaiting review")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
+          }
+
+          Spacer()
+
+          Text("Review")
+            .font(.caption2)
+            .fontWeight(.bold)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(Color.purple.opacity(0.15)))
+            .foregroundStyle(.purple)
+        }
+
+        // Aggregate stats row
+        HStack(spacing: 12) {
+          let totalExecs = run.executions.count
+          let totalFiles = run.totalFilesChanged
+          let totalIns = run.totalInsertions
+          let totalDel = run.totalDeletions
+
+          if totalExecs > 0 {
+            Text("\(totalExecs) task\(totalExecs == 1 ? "" : "s")")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+
+          if totalFiles > 0 {
+            HStack(spacing: 3) {
+              Text("\(totalFiles) file\(totalFiles == 1 ? "" : "s")")
+              Text("+\(totalIns)")
+                .foregroundStyle(.green)
+              Text("-\(totalDel)")
+                .foregroundStyle(.red)
+            }
+            .font(.caption2.monospaced())
+          }
+
+          // Review progress
+          let reviewed = run.reviewedCount + run.mergedCount
+          if reviewed > 0 || run.pendingReviewCount > 0 {
+            Text("\(reviewed)/\(reviewed + run.pendingReviewCount) reviewed")
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+
+          Spacer()
+        }
+        .padding(.leading, 40) // align with title text
+      }
+      .padding(2)
     }
   }
 

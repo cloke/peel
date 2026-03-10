@@ -873,6 +873,9 @@ public final class SwarmCoordinator {
       // Wait before first check to let initial connections settle
       try? await Task.sleep(for: .seconds(10))
 
+      // Track consecutive failures per peer for exponential backoff
+      var failureCounts: [String: Int] = [:]
+
       while !Task.isCancelled {
         guard let self, self.isActive else { return }
 
@@ -884,18 +887,33 @@ public final class SwarmCoordinator {
 
         for (peerId, peer) in discovered {
           // Skip if already connected by ID
-          guard !connectedIds.contains(peerId) else { continue }
+          guard !connectedIds.contains(peerId) else {
+            failureCounts[peerId] = nil  // Reset on successful connect
+            continue
+          }
           // Skip ghost entries: the peer name matches a connected worker's
           // hostname but the discoveredPeers key is the service name, not the
           // hardware UUID. These get cleaned up when the next .changed event
           // delivers the TXT record.
           if connectedNames.contains(peer.name) { continue }
 
-          self.logger.info("LAN reconnect: retrying \(peer.name) (\(peerId))")
+          // Exponential backoff: skip this cycle if not enough time has passed
+          let failures = failureCounts[peerId, default: 0]
+          // backoff: 0, 1, 3, 7, 15 cycles (i.e. 0s, 15s, 45s, 105s, 225s)
+          // Cap at 8 cycles (~120s between retries)
+          let skipCycles = min(failures > 0 ? (1 << min(failures, 3)) - 1 : 0, 8)
+          if failures > 0 && failures % (skipCycles + 1) != 0 {
+            failureCounts[peerId] = failures + 1
+            continue
+          }
+
+          self.logger.info("LAN reconnect: retrying \(peer.name) (\(peerId)), attempt \(failures + 1)")
           Task {
             do {
               try await self.connectionManager?.connect(to: peer.endpoint)
+              failureCounts[peerId] = nil  // Reset on success
             } catch {
+              failureCounts[peerId] = (failureCounts[peerId] ?? 0) + 1
               self.logger.warning("LAN reconnect failed for \(peer.name): \(error.localizedDescription)")
             }
           }
