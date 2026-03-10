@@ -97,17 +97,25 @@ struct PeelApp: App {
             try SwarmCoordinator.shared.start(role: role, port: 8766)
 
             // If signed into Firebase, register worker and start listeners so WAN peers are visible.
-            // memberSwarms is populated asynchronously by the auth state listener — wait for it.
-            if FirebaseService.shared.isSignedIn {
+            // Firebase auth state is restored asynchronously — wait for it before checking isSignedIn.
+            let firebaseService = FirebaseService.shared
+            if !firebaseService.isSignedIn {
+              for _ in 0..<20 {
+                try? await Task.sleep(for: .milliseconds(500))
+                if firebaseService.isSignedIn { break }
+              }
+            }
+
+            if firebaseService.isSignedIn {
               let wanAddress = await WANAddressResolver.resolve()
               SwarmCoordinator.shared.setResolvedWANAddress(wanAddress)
 
-              // Wait up to 10s for memberSwarms to be populated (loaded by auth listener)
-              var swarms = FirebaseService.shared.memberSwarms
+              // memberSwarms is populated asynchronously by the auth listener — wait for it.
+              var swarms = firebaseService.memberSwarms
               if swarms.isEmpty {
                 for _ in 0..<20 {
                   try? await Task.sleep(for: .milliseconds(500))
-                  swarms = FirebaseService.shared.memberSwarms
+                  swarms = firebaseService.memberSwarms
                   if !swarms.isEmpty { break }
                 }
               }
@@ -117,13 +125,15 @@ struct PeelApp: App {
                 wanPort: 8766
               )
               for swarm in swarms where swarm.role.canRegisterWorkers {
-                _ = try? await FirebaseService.shared.registerWorker(swarmId: swarm.id, capabilities: capabilities)
-                FirebaseService.shared.startWorkerListener(swarmId: swarm.id)
-                FirebaseService.shared.startMessageListener(swarmId: swarm.id)
+                _ = try? await firebaseService.registerWorker(swarmId: swarm.id, capabilities: capabilities)
+                firebaseService.startWorkerListener(swarmId: swarm.id)
+                firebaseService.startMessageListener(swarmId: swarm.id)
               }
               if swarms.isEmpty {
                 print("Warning: No swarm memberships loaded after 10s — Firestore listeners not started")
               }
+            } else {
+              print("Warning: Firebase auth not restored after 10s — Firestore listeners not started")
             }
           } catch {
             print("Failed to auto-start swarm: \(error)")
