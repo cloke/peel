@@ -1541,7 +1541,8 @@ struct PRDetailInlineView: View {
   #if os(macOS)
   @Environment(MCPServerService.self) private var mcpServer
   @State private var reviewAgentCoordinator = PRReviewAgentCoordinator()
-  @State private var reviewAgentTarget: PRReviewAgentTarget?
+  @State private var reviewTarget: PRReviewTarget?
+  @State private var reviewState = PRReviewState()
   @State private var reviewStatusBridge = PRReviewStatusBridge()
   #endif
 
@@ -1608,13 +1609,19 @@ struct PRDetailInlineView: View {
     #if os(macOS)
     .reviewWithAgentProvider(reviewAgentCoordinator)
     .prReviewStatusProvider(reviewStatusBridge)
-    .sheet(item: $reviewAgentTarget) { target in
-      GithubReviewAgentSheet(target: target)
+    .sheet(item: $reviewTarget) { target in
+      PRReviewSheet(
+        pr: target.pr,
+        ownerRepo: target.ownerRepo,
+        repoPath: target.repoPath,
+        reviewState: reviewState
+      )
     }
     .onAppear {
       reviewStatusBridge.queue = mcpServer.prReviewQueue
       reviewAgentCoordinator.onReview = { pr, repo in
-        reviewAgentTarget = PRReviewAgentTarget.from(pullRequest: pr, repository: repo)
+        reviewState.reset()
+        reviewTarget = PRReviewAgentCoordinator.makeTarget(pr: pr, repo: repo, localRepoPath: nil)
       }
     }
     #endif

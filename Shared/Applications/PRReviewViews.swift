@@ -122,6 +122,16 @@ final class PRReviewState {
   }
 }
 
+// MARK: - PR Review Target
+
+/// Data needed to present a `PRReviewSheet` from any context.
+struct PRReviewTarget: Identifiable {
+  let id = UUID()
+  let pr: UnifiedRepository.PRSummary
+  let ownerRepo: String?
+  let repoPath: String?
+}
+
 // MARK: - PR Row with Review Action
 
 /// Enhanced PR row that includes an agent review button.
@@ -250,6 +260,7 @@ struct PRReviewSheet: View {
   @State private var selectedTemplate: ReviewTemplate = .standard
   @State private var isPostingReview = false
   @State private var postResult: String?
+  @State private var postError: String?
   @State private var isFixing = false
   @State private var fixChainId: String?
   @State private var fixModel: CopilotModel = .claudeSonnet46
@@ -341,8 +352,16 @@ struct PRReviewSheet: View {
           .lineLimit(1)
       }
       Spacer()
-      Button("Done") { dismiss() }
-        .keyboardShortcut(.cancelAction)
+      Button {
+        dismiss()
+      } label: {
+        Image(systemName: "xmark.circle.fill")
+          .font(.title2)
+          .symbolRenderingMode(.hierarchical)
+          .foregroundStyle(.secondary)
+      }
+      .buttonStyle(.plain)
+      .keyboardShortcut(.cancelAction)
     }
     .padding(16)
   }
@@ -614,37 +633,33 @@ struct PRReviewSheet: View {
 
         HStack(spacing: 8) {
           // Approve on GitHub
-          if result.verdict == .approve || result.verdict == .comment {
-            Button {
-              Task { await postGitHubReview(event: "APPROVE", body: result.summary) }
-            } label: {
-              Label("Approve on GitHub", systemImage: "checkmark.circle")
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.green)
-            .disabled(isPostingReview)
+          Button {
+            Task { await postGitHubReview(event: "APPROVE", body: result.summary) }
+          } label: {
+            Label("Approve", systemImage: "checkmark.circle")
           }
+          .buttonStyle(.borderedProminent)
+          .tint(.green)
+          .disabled(isPostingReview)
 
           // Post as comment
           Button {
             Task { await postGitHubReview(event: "COMMENT", body: result.rawOutput) }
           } label: {
-            Label("Post Review", systemImage: "text.bubble")
+            Label("Comment", systemImage: "text.bubble")
           }
           .buttonStyle(.bordered)
           .disabled(isPostingReview)
 
           // Request changes
-          if result.verdict == .requestChanges {
-            Button {
-              Task { await postGitHubReview(event: "REQUEST_CHANGES", body: result.rawOutput) }
-            } label: {
-              Label("Request Changes", systemImage: "exclamationmark.triangle")
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.red)
-            .disabled(isPostingReview)
+          Button {
+            Task { await postGitHubReview(event: "REQUEST_CHANGES", body: result.rawOutput) }
+          } label: {
+            Label("Request Changes", systemImage: "exclamationmark.triangle")
           }
+          .buttonStyle(.borderedProminent)
+          .tint(.red)
+          .disabled(isPostingReview)
 
           // Fix with agent
           if !result.issues.isEmpty {
@@ -683,6 +698,12 @@ struct PRReviewSheet: View {
           Label(postResult, systemImage: "checkmark.circle")
             .font(.caption)
             .foregroundStyle(.green)
+        }
+
+        if let postError {
+          Label(postError, systemImage: "xmark.circle")
+            .font(.caption)
+            .foregroundStyle(.red)
         }
 
         if isFixing {
@@ -1271,6 +1292,7 @@ struct PRReviewSheet: View {
 
     isPostingReview = true
     postResult = nil
+    postError = nil
 
     let arguments: [String: Any] = [
       "owner": String(parts[0]),
@@ -1281,7 +1303,7 @@ struct PRReviewSheet: View {
     ]
 
     if let handler = mcpServer.githubToolsHandler {
-      let (status, _) = await handler.handle(
+      let (status, data) = await handler.handle(
         name: "github.pr.review.create",
         id: nil,
         arguments: arguments
@@ -1289,8 +1311,17 @@ struct PRReviewSheet: View {
       if status == 200 {
         postResult = "\(event == "APPROVE" ? "Approved" : event == "REQUEST_CHANGES" ? "Changes requested" : "Review posted") on GitHub"
       } else {
-        postResult = "Failed to post review"
+        // Extract error message from response
+        var errorMsg = "Failed to post review (HTTP \(status))"
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let error = json["error"] as? [String: Any],
+           let message = error["message"] as? String {
+          errorMsg = message
+        }
+        postError = errorMsg
       }
+    } else {
+      postError = "GitHub tools not available — is the MCP server running?"
     }
 
     isPostingReview = false
