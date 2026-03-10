@@ -1230,6 +1230,11 @@ public final class SwarmCoordinator {
     logger.info("RAG sync preparing bundle for \(peer.name) (\(peer.id))\(repoIdentifier.map { ", repo: \($0)" } ?? ""), mode: \(transferMode.rawValue)\(isResume ? ", resume (skipping \(skipChunkIndices.count) chunks)" : "")")
 
     guard let ragSyncDelegate else {
+      logger.error("RAG sync delegate not configured — marking transfer \(transferId) as failed")
+      updateRagTransfer(transferId) { state in
+        state.status = .failed
+        state.errorMessage = "RAG sync delegate not configured"
+      }
       await sendRagArtifactError(transferId: transferId, to: peer.id, message: "RAG sync delegate not configured")
       return
     }
@@ -1297,9 +1302,20 @@ public final class SwarmCoordinator {
 
       // Per-repo sync: export only the requested repo as JSON
       if let repoIdentifier {
+        logger.notice("RAG sync [\(transferId)]: starting export for '\(repoIdentifier)'...")
+        let exportStart = ContinuousClock.now
+
         let repoBundle = try await ragSyncDelegate.createRepoSyncBundle(repoIdentifier: repoIdentifier, excludeFileHashes: [])
+
+        let exportElapsed = ContinuousClock.now - exportStart
+        logger.notice("RAG sync [\(transferId)]: export completed in \(exportElapsed), bundle: \(repoBundle == nil ? "nil" : "present")")
+
         guard let repoBundle else {
           await sendRagArtifactError(transferId: transferId, to: peer.id, message: "Repo '\(repoIdentifier)' not found in RAG store")
+          updateRagTransfer(transferId) { state in
+            state.status = .failed
+            state.errorMessage = "Repo '\(repoIdentifier)' not found in RAG store"
+          }
           return
         }
         let jsonData = try JSONEncoder().encode(repoBundle)
@@ -1682,6 +1698,20 @@ public final class SwarmCoordinator {
 
   private func checkForStalledTransfers() {
     let now = Date()
+
+    // Check outgoing transfers stuck in .preparing
+    for transfer in ragTransfers {
+      guard transfer.status == .preparing,
+            now.timeIntervalSince(transfer.startedAt) >= 120 else { continue }
+      let elapsed = Int(now.timeIntervalSince(transfer.startedAt))
+      logger.warning("RAG transfer \(transfer.id) stuck in preparing for \(elapsed)s — marking failed")
+      updateRagTransfer(transfer.id) { state in
+        state.status = .failed
+        state.errorMessage = "Export stuck in preparing for \(elapsed)s"
+        state.completedAt = now
+      }
+    }
+
     for (id, transfer) in incomingRagTransfers {
       let elapsed = now.timeIntervalSince(transfer.lastChunkReceivedAt)
       guard elapsed >= ragTransferStalledThreshold else { continue }

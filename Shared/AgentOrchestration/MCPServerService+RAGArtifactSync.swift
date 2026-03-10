@@ -85,12 +85,14 @@ extension MCPServerService: RAGArtifactSyncDelegate {
   // MARK: - Per-repo sync
 
   func createRepoSyncBundle(repoIdentifier: String, excludeFileHashes: Set<String>) async throws -> RAGRepoExportBundle? {
-    logger.info("RAG repo sync: exporting '\(repoIdentifier)', excluding \(excludeFileHashes.count) hashes")
+    logger.notice("RAG repo sync: exporting '\(repoIdentifier)', excluding \(excludeFileHashes.count) hashes")
+    let start = ContinuousClock.now
     let bundle = try await localRagStore.exportRepo(identifier: repoIdentifier, excludeFileHashes: excludeFileHashes)
+    let elapsed = ContinuousClock.now - start
     if let bundle {
-      logger.info("RAG repo sync: exported \(bundle.files.count) files, \(bundle.files.flatMap(\.chunks).count) chunks")
+      logger.notice("RAG repo sync: exported \(bundle.files.count) files, \(bundle.files.flatMap(\.chunks).count) chunks in \(elapsed)")
     } else {
-      logger.warning("RAG repo sync: repo '\(repoIdentifier)' not found")
+      logger.warning("RAG repo sync: repo '\(repoIdentifier)' not found (took \(elapsed))")
     }
     return bundle
   }

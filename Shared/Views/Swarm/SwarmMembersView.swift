@@ -13,7 +13,7 @@ import SwiftUI
 struct MembersListView: View {
   let swarmId: String
   let myRole: SwarmPermissionRole
-  @State private var firebaseService = FirebaseService.shared
+  var firebaseService = FirebaseService.shared
   @State private var isLoading = false
   @State private var memberToRemove: SwarmMember?
 
@@ -110,7 +110,7 @@ struct MembersListView: View {
 @MainActor
 struct PendingMembersView: View {
   let swarmId: String
-  @State private var firebaseService = FirebaseService.shared
+  private var firebaseService: FirebaseService { .shared }
   @State private var isLoading = false
   @State private var memberToReject: SwarmMember?
 
