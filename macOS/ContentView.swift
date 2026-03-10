@@ -258,9 +258,6 @@ struct ContentView: View {
       // Repositories — always visible
       repoSidebarSection
 
-      // Running chains (inline when present)
-      runningSidebarSection
-
       // Activity tools — always visible
       Section("Activity") {
         Label("PR Reviews", systemImage: "text.badge.checkmark")
@@ -268,8 +265,7 @@ struct ContentView: View {
           .tag(SidebarSelection.prReviews)
         Label("Templates", systemImage: "rectangle.stack")
           .tag(SidebarSelection.templates)
-        Label("Agent Runs", systemImage: "arrow.triangle.branch")
-          .tag(SidebarSelection.agentRuns)
+        agentRunsSidebarRow
         Label("Worktrees", systemImage: "externaldrive")
           .tag(SidebarSelection.worktrees)
         Label("Local Chat", systemImage: "bubble.left.and.bubble.right")
@@ -287,33 +283,25 @@ struct ContentView: View {
     .listStyle(.sidebar)
   }
 
-  // MARK: - Running Chains (inline sidebar)
+  // MARK: - Agent Runs Sidebar Row
 
   @ViewBuilder
-  private var runningSidebarSection: some View {
-    let runningChains = aggregator.allActiveChains
-    if !runningChains.isEmpty {
-      Section("Running") {
-        ForEach(runningChains) { chain in
-          HStack(spacing: 8) {
-            ProgressView()
-              .controlSize(.mini)
-            VStack(alignment: .leading, spacing: 2) {
-              Text(chain.name)
-                .font(.callout)
-                .lineLimit(1)
-              if let prompt = chain.initialPrompt {
-                Text(prompt.prefix(60))
-                  .font(.caption)
-                  .foregroundStyle(.secondary)
-                  .lineLimit(1)
-              }
-            }
-          }
-          .tag(SidebarSelection.chain(chain.id))
+  private var agentRunsSidebarRow: some View {
+    let runningCount = aggregator.allActiveChains.count
+    HStack(spacing: 6) {
+      Label("Agent Runs", systemImage: "arrow.triangle.branch")
+      Spacer()
+      if runningCount > 0 {
+        HStack(spacing: 4) {
+          ProgressView()
+            .controlSize(.mini)
+          Text("\(runningCount)")
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(.secondary)
         }
       }
     }
+    .tag(SidebarSelection.agentRuns)
   }
 
   // MARK: - Repo Sidebar Section
