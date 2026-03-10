@@ -1126,6 +1126,13 @@ public enum StepType: String, Codable, Hashable, Sendable, CaseIterable {
   public var requiresLLM: Bool {
     self == .agentic
   }
+
+  /// Whether this step type is an LLM-driven agent (agentic or vmAgentic).
+  /// Used to distinguish real coding agents from gate/deterministic post-steps
+  /// when deciding which steps to run in parallel.
+  public var isAgentic: Bool {
+    self == .agentic || self == .vmAgentic
+  }
 }
 
 /// Configuration for a VM-sandboxed LLM coding agent (e.g. copilot, claude, aider)

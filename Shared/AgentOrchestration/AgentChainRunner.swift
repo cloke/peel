@@ -395,7 +395,11 @@ public final class AgentChainRunner {
     let tasks = decision.tasks
     guard !tasks.isEmpty else { return }
 
-    let implementerIndices = chain.agents.indices.filter { chain.agents[$0].role == .implementer }
+    // Only scale agentic implementers — gate/deterministic steps (Build Check, Lint Fix)
+    // must remain as sequential post-steps, not be treated as parallelizable implementers.
+    let implementerIndices = chain.agents.indices.filter {
+      chain.agents[$0].role == .implementer && chain.agents[$0].stepType.isAgentic
+    }
     guard let firstImplementer = implementerIndices.first,
           let lastImplementer = implementerIndices.last else {
       return
@@ -516,7 +520,11 @@ public final class AgentChainRunner {
     runOptions: ChainRunOptions?
   ) async throws {
     try checkCancellation(chain: chain)
-    let initialImplementerIndices = chain.agents.indices.filter { chain.agents[$0].role == .implementer }
+    // Only agentic implementers participate in parallel execution; gate/deterministic
+    // steps (Build Check, Lint Fix) run sequentially after implementers complete.
+    let initialImplementerIndices = chain.agents.indices.filter {
+      chain.agents[$0].role == .implementer && chain.agents[$0].stepType.isAgentic
+    }
     guard let firstImplementer = initialImplementerIndices.first else {
       try await runAgentsSequentially(chain: chain, prompt: prompt)
       return
@@ -566,7 +574,11 @@ public final class AgentChainRunner {
       await applyPlannerOverrides(chain: chain, decision: decision, options: options)
     }
 
-    let implementerIndices = chain.agents.indices.filter { chain.agents[$0].role == .implementer }
+    // Re-filter after planner overrides — only agentic implementers participate in
+    // parallel execution. Gate/deterministic steps run sequentially afterwards.
+    let implementerIndices = chain.agents.indices.filter {
+      chain.agents[$0].role == .implementer && chain.agents[$0].stepType.isAgentic
+    }
     guard let updatedFirst = implementerIndices.first else {
       return
     }
@@ -608,7 +620,8 @@ public final class AgentChainRunner {
     }
 
     let hasGaps = (updatedFirst...updatedLast).contains { index in
-      chain.agents[index].role != .implementer
+      let agent = chain.agents[index]
+      return !(agent.role == .implementer && agent.stepType.isAgentic)
     }
     if hasGaps {
       try await runAgentsSequentially(chain: chain, prompt: prompt)
