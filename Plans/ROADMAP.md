@@ -25,8 +25,8 @@ audience:
 
 | Metric | Count |
 |--------|-------|
-| **Closed** | 316 ✅ |
-| **Open** | 27 |
+| **Closed** | 307 ✅ |
+| **Open** | 36 |
 | **Build** | ✅ Clean (0 warnings) |
 | **Tests** | ✅ 99 passing |
 
@@ -37,15 +37,18 @@ audience:
 | **Enterprise PR / Scale (P8)** | 5 | #347, #348, #349, #350, #351 |
 | **Enterprise PR Review (P9)** | 4 | #353, #354, #355, #356 |
 | **VM Isolation** | 6 | #310, #312, #313, #314, #315, #317 |
-| **RAG Enhancements** | 3 | #274, #276, #277 |
+| **RAG Enhancements** | 5 | #249, #274, #275, #276, #277 |
 | **Skills & Intelligence** | 2 | #335, #336 |
+| **Agent Infrastructure** | 3 | #23, #41, #205 |
+| **Hardware / Performance** | 2 | #107, #108 |
 | **Swarm / Distributed** | 1 | #193 |
-| **Vision & Voice** | 2 | #35, #36 |
+| **Vision, Voice & Docs** | 3 | #35, #36, #246 |
 | **PR Hardening** | 1 | #352 |
+| **MCP & Tooling** | 1 | #91 |
 | **Xcode MCP** | 3 | #363, #364, #365 |
 
 ### Recent Completions (since Jan 25)
-- ✅ **Issue triage (Mar 10)** — Closed 12 issues: premature optimization (#41, #107, #108), superseded (#23 XPC→VM, #43/#44 replay→gates, #109→#36), scope creep (#91, #205, #246, #249, #275)
+- ✅ **Issue triage (Mar 10)** — Closed 3 issues (#43 replay, #44 quorum, #109 voice notifications); reorganized remaining 36 into 7 tiers
 - ✅ **Swarm Console inline** — Activity > Open Console replaces modal, Chat tab with Firebase messaging
 - ✅ **Activity pagination** — Recent section paginated (50/page) with prev/next controls
 - ✅ **Onboarding refresh** — Feature Discovery checklist updated for 2-tab layout
@@ -74,11 +77,13 @@ audience:
 
 ---
 
-## Tier 2: VM Pipeline Completion
+## Tier 2: VM Pipeline + XPC Isolation
 
-**Goal**: Run AI coding agents inside sandboxed Linux VMs with full autonomy.
+**Goal**: Run AI coding agents inside sandboxed Linux VMs with full autonomy, with XPC as defense-in-depth for host-side tool execution.
 
 **Foundation done** — VMChainExecutor lifecycle, VirtioFS, MCP tools, templates all implemented.
+
+**Why XPC matters with VMs**: VMs isolate *agent execution*, but MCP tool calls from multiple concurrent VMs still hit the host process directly. XPC broker provides per-caller identity checks so VM1 can't invoke tools scoped to VM2. Critical as VM parallelism scales.
 
 | # | Title | Est | Status |
 |---|-------|-----|--------|
@@ -88,8 +93,9 @@ audience:
 | [#314](https://github.com/cloke/peel/issues/314) | Implement `runVMAgenticStep()` in AgentChainRunner | 4h | 🟠 Partial (depends on #312, #313) |
 | [#315](https://github.com/cloke/peel/issues/315) | VMChainExecutor: auto-register VM IP with MCP allowlist | 3h | 🟡 Ready (depends on #313) |
 | [#310](https://github.com/cloke/peel/issues/310) | VM validation pipeline: isolated build/test in sandboxed VMs | 6h | 🟡 Ready (depends on #314) |
+| [#23](https://github.com/cloke/peel/issues/23) | XPC tool broker — per-caller isolation for MCP tool execution | 6h | 🟡 Ready (do after VM pipeline works end-to-end) |
 
-**Dependency chain**: #312 → #313 → #315, and #314 → #310
+**Dependency chain**: #312 → #313 → #315, #314 → #310, then #23 after VM pipeline is proven
 
 ---
 
@@ -128,6 +134,8 @@ audience:
 |---|-------|-----|--------|
 | [#274](https://github.com/cloke/peel/issues/274) | Component API surface mapping and usage analysis | 6h | 🟡 Ready |
 | [#276](https://github.com/cloke/peel/issues/276) | Cross-repo API endpoint correlation and blast radius | 6h | 🟡 Ready |
+| [#249](https://github.com/cloke/peel/issues/249) | CSS redundancy detection for frontend projects | 4h | 🟡 Ready |
+| [#275](https://github.com/cloke/peel/issues/275) | Tailwind CSS consistency lint and deprecation detection | 4h | 🟡 Ready |
 
 ---
 
@@ -150,6 +158,12 @@ audience:
 | [#35](https://github.com/cloke/peel/issues/35) | Screen capture to Vision analysis pipeline | 6h | Multi-modal — agent watches its own effects |
 | [#36](https://github.com/cloke/peel/issues/36) | Voice commands via on-device Whisper | 6h | Local speech-to-text, no cloud |
 | [#193](https://github.com/cloke/peel/issues/193) | Secure Remote Node Control | 6h | Needed for real swarm deployment |
+| [#246](https://github.com/cloke/peel/issues/246) | Native document parsing with Heron layout model + Vision OCR | 6h | Loan docs, complex layouts |
+| [#205](https://github.com/cloke/peel/issues/205) | Code Intelligence System: Beyond RAG to Persistent Understanding | — | Tracking: Layers 1-2 done, Layer 3 future |
+| [#41](https://github.com/cloke/peel/issues/41) | Budget-aware agent scheduler | 6h | Resource scheduling for local models |
+| [#107](https://github.com/cloke/peel/issues/107) | GPU shared cache service | 6h | KV cache reuse across agent runs |
+| [#108](https://github.com/cloke/peel/issues/108) | ANE micro-services for fast local agent tasks | 6h | ANE-backed summaries, classification |
+| [#91](https://github.com/cloke/peel/issues/91) | VS Code extension for MCP tool discovery | 4h | Dedicated extension for MCP tools |
 
 ---
 
