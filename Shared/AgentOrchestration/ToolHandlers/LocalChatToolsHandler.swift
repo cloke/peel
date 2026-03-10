@@ -266,10 +266,11 @@ final class LocalChatToolsHandler: MCPToolHandler {
       context.instructions = directives
       print("[MCP Chat] Injected repo-local directives from .peel/directives.md for \(repoPath)")
     } else {
-      let isEmber = DefaultSkillsService.detectEmberProject(repoPath: repoPath)
-      if isEmber {
-        context.instructions = Self.emberDirectiveRules
-        print("[MCP Chat] Injected Ember directive rules for \(repoPath)")
+      let detection = FrameworkDetector.detect(repoPath: repoPath)
+      if detection.primary != .unknown {
+        let directives = detection.primary == .ember ? Self.emberDirectiveRules : detection.directiveContent
+        context.instructions = directives
+        print("[MCP Chat] Injected \(detection.primary.rawValue) directive rules for \(repoPath)")
       } else if let (block, _) = skillsBlock {
         context.skills = block
       }

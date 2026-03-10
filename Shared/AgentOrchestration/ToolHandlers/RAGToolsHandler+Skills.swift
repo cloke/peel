@@ -277,7 +277,10 @@ extension RAGToolsHandler {
       try FileManager.default.createDirectory(at: peelDir, withIntermediateDirectories: true)
 
       if force || !FileManager.default.fileExists(atPath: directivesURL.path) {
-        let directivesContent = LocalChatToolsHandler.emberDirectiveRules
+        let detection = FrameworkDetector.detect(repoPath: repoPath)
+        let directivesContent = detection.primary == .ember
+          ? LocalChatToolsHandler.emberDirectiveRules
+          : (detection.directiveContent.isEmpty ? LocalChatToolsHandler.emberDirectiveRules : detection.directiveContent)
         try directivesContent.write(to: directivesURL, atomically: true, encoding: .utf8)
         created.append("directives.md")
       } else {
