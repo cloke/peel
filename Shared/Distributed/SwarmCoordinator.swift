@@ -1160,8 +1160,8 @@ public final class SwarmCoordinator {
     }
   }
 
-  /// All Firestore workers not TCP-connected, for on-demand sync.
-  /// Includes offline workers so UIs can show them with status indicators.
+  /// All Firestore workers not TCP-connected, regardless of status.
+  /// UIs should show stale/offline indicators rather than hiding workers.
   public var allOnDemandWorkers: [FirestoreWorker] {
     guard isActive else { return [] }
     let myDeviceId = capabilities.deviceId
