@@ -1378,6 +1378,17 @@ final class ParallelWorktreeRunner {
     let diffStats = computeDiffStats(in: worktreePath)
     let gitStatus = runGit(args: ["status", "-sb"], at: worktreePath)
 
+    // Auto-commit any uncommitted changes so the branch has mergeable commits.
+    // Agents edit files but don't always `git commit` — without this,
+    // parallel.merge finds no commits on the branch and merges nothing.
+    if diffStats.filesChanged > 0 {
+      autoCommitChanges(in: worktreePath, taskTitle: task.title)
+      await mcpLog.info("Auto-committed agent changes", metadata: [
+        "taskTitle": task.title,
+        "filesChanged": "\(diffStats.filesChanged)"
+      ])
+    }
+
     if let runSummary = lastSummary {
       await mcpLog.info("Parallel worktree diff stats", metadata: [
         "chainId": runSummary.chainId.uuidString,
@@ -1948,6 +1959,21 @@ final class ParallelWorktreeRunner {
       sections.append("[\(result.agentName)]\n\(result.output)")
     }
     return sections.joined(separator: "\n\n")
+  }
+
+  /// Stage and commit all uncommitted changes in a worktree.
+  /// Called after the chain finishes so the branch has mergeable commits.
+  private func autoCommitChanges(in worktreePath: String, taskTitle: String) {
+    // Stage everything (new, modified, deleted)
+    _ = runGit(args: ["add", "-A"], at: worktreePath)
+
+    // Build a concise commit message from the task title
+    let sanitized = taskTitle
+      .replacingOccurrences(of: "\"", with: "'")
+      .prefix(120)
+    let message = "Agent implementation: \(sanitized)"
+
+    _ = runGit(args: ["commit", "-m", message, "--allow-empty"], at: worktreePath)
   }
 
   private func computeDiffStats(in worktreePath: String) -> (summary: String?, filesChanged: Int, insertions: Int, deletions: Int) {
