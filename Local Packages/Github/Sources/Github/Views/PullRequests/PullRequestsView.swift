@@ -25,10 +25,48 @@ public struct PullRequestDetailView: View {
   @State private var comments = [Github.IssueComment]()
   @State private var isLoadingComments = true
   @State private var expandedCommentIds = Set<Int>()
+  @State private var showingReviewSheet = false
+  @State private var reviewAction: ReviewAction = .approve
+  @State private var reviewBody = ""
+  @State private var isSubmittingReview = false
+  @State private var reviewSubmitError: String?
+  @State private var isMerging = false
+  @State private var mergeError: String?
+  @State private var showMergeConfirm = false
 
   #if os(macOS)
   @State private var showingReviewLocally = false
   #endif
+
+  enum ReviewAction: String, CaseIterable {
+    case approve = "APPROVE"
+    case requestChanges = "REQUEST_CHANGES"
+    case comment = "COMMENT"
+
+    var label: String {
+      switch self {
+      case .approve: "Approve"
+      case .requestChanges: "Request Changes"
+      case .comment: "Comment"
+      }
+    }
+
+    var icon: String {
+      switch self {
+      case .approve: "checkmark.circle"
+      case .requestChanges: "exclamationmark.triangle"
+      case .comment: "text.bubble"
+      }
+    }
+
+    var tint: Color {
+      switch self {
+      case .approve: .green
+      case .requestChanges: .orange
+      case .comment: .blue
+      }
+    }
+  }
 
   public init(organization: Github.User?, repository: Github.Repository, pullRequest: Github.PullRequest) {
     self.organization = organization
@@ -57,6 +95,13 @@ public struct PullRequestDetailView: View {
         changedFilesSection
         #endif
 
+        // MARK: - Review Actions
+        #if os(macOS)
+        if pullRequest.state == "open" {
+          reviewActionsSection
+        }
+        #endif
+
         // MARK: - Reviews
         reviewsSection
 
@@ -69,6 +114,15 @@ public struct PullRequestDetailView: View {
 
       }
       .padding()
+    }
+    .sheet(isPresented: $showingReviewSheet) {
+      reviewSheet
+    }
+    .alert("Merge Pull Request", isPresented: $showMergeConfirm) {
+      Button("Merge", role: .destructive) { Task { await mergePR() } }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text("Merge #\(pullRequest.number) into \(pullRequest.base.ref)?")
     }
     .task(id: initialPullRequest.id) {
       await Task.yield()
@@ -409,6 +463,178 @@ public struct PullRequestDetailView: View {
     return prReviewStatusProvider?.reviewStatus(
       owner: owner, repo: repository.name, prNumber: pullRequest.number
     )
+  }
+
+  // MARK: - Review Actions Section
+
+  #if os(macOS)
+  @ViewBuilder
+  private var reviewActionsSection: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text("Actions")
+        .font(.headline)
+
+      HStack(spacing: 8) {
+        Button {
+          reviewAction = .approve
+          reviewBody = ""
+          showingReviewSheet = true
+        } label: {
+          Label("Approve", systemImage: "checkmark.circle")
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(.green)
+        .controlSize(.small)
+
+        Button {
+          reviewAction = .requestChanges
+          reviewBody = ""
+          showingReviewSheet = true
+        } label: {
+          Label("Request Changes", systemImage: "exclamationmark.triangle")
+        }
+        .buttonStyle(.bordered)
+        .tint(.orange)
+        .controlSize(.small)
+
+        Button {
+          reviewAction = .comment
+          reviewBody = ""
+          showingReviewSheet = true
+        } label: {
+          Label("Comment", systemImage: "text.bubble")
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+
+        Spacer()
+
+        if pullRequest.merged_at == nil {
+          Button {
+            showMergeConfirm = true
+          } label: {
+            Label(isMerging ? "Merging\u{2026}" : "Merge", systemImage: "arrow.triangle.merge")
+          }
+          .buttonStyle(.borderedProminent)
+          .tint(.purple)
+          .controlSize(.small)
+          .disabled(isMerging)
+        }
+      }
+
+      if let error = reviewSubmitError {
+        Label(error, systemImage: "exclamationmark.triangle.fill")
+          .font(.caption)
+          .foregroundStyle(.red)
+      }
+      if let error = mergeError {
+        Label(error, systemImage: "exclamationmark.triangle.fill")
+          .font(.caption)
+          .foregroundStyle(.red)
+      }
+    }
+  }
+  #endif
+
+  // MARK: - Review Sheet
+
+  @ViewBuilder
+  private var reviewSheet: some View {
+    VStack(spacing: 16) {
+      HStack {
+        Image(systemName: reviewAction.icon)
+          .foregroundStyle(reviewAction.tint)
+        Text(reviewAction.label)
+          .font(.headline)
+        Spacer()
+        Button("Cancel") { showingReviewSheet = false }
+          .buttonStyle(.plain)
+      }
+
+      Text(verbatim: "\(repository.name) #\(pullRequest.number)")
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+
+      TextEditor(text: $reviewBody)
+        .font(.body)
+        .frame(minHeight: 120)
+        .overlay(
+          RoundedRectangle(cornerRadius: 6)
+            .stroke(.quaternary, lineWidth: 1)
+        )
+
+      if let error = reviewSubmitError {
+        Label(error, systemImage: "exclamationmark.triangle.fill")
+          .font(.caption)
+          .foregroundStyle(.red)
+      }
+
+      HStack {
+        Spacer()
+        Button {
+          Task { await submitReview() }
+        } label: {
+          if isSubmittingReview {
+            ProgressView()
+              .controlSize(.small)
+          } else {
+            Label("Submit \(reviewAction.label)", systemImage: reviewAction.icon)
+          }
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(reviewAction.tint)
+        .disabled(isSubmittingReview || (reviewAction == .requestChanges && reviewBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
+      }
+    }
+    .padding(20)
+    .frame(minWidth: 450, minHeight: 250)
+  }
+
+  // MARK: - Submit Review
+
+  private func submitReview() async {
+    guard let owner = organization?.login ?? repository.owner?.login else { return }
+    isSubmittingReview = true
+    reviewSubmitError = nil
+    defer { isSubmittingReview = false }
+
+    do {
+      _ = try await Github.createPullRequestReview(
+        owner: owner,
+        repository: repository.name,
+        number: pullRequest.number,
+        event: reviewAction.rawValue,
+        body: reviewBody
+      )
+      showingReviewSheet = false
+      await refreshPullRequest()
+    } catch {
+      reviewSubmitError = error.localizedDescription
+    }
+  }
+
+  // MARK: - Merge PR
+
+  private func mergePR() async {
+    guard let owner = organization?.login ?? repository.owner?.login else { return }
+    isMerging = true
+    mergeError = nil
+    defer { isMerging = false }
+
+    do {
+      let result = try await Github.mergePullRequest(
+        owner: owner,
+        repository: repository.name,
+        number: pullRequest.number
+      )
+      if result.merged == true {
+        await refreshPullRequest()
+      } else {
+        mergeError = result.message ?? "Merge failed"
+      }
+    } catch {
+      mergeError = error.localizedDescription
+    }
   }
 
   // MARK: - Helpers

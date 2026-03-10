@@ -254,6 +254,23 @@ extension Github {
     return try await load(url: URL(string: url)!, method: "POST", body: bodyData)
   }
 
+  /// Merge a pull request
+  public static func mergePullRequest(
+    owner: String,
+    repository: String,
+    number: Int,
+    mergeMethod: String = "merge",
+    commitTitle: String? = nil,
+    commitMessage: String? = nil
+  ) async throws -> Github.MergeResult {
+    let url = "https://api.github.com/repos/\(owner)/\(repository)/pulls/\(number)/merge"
+    var json: [String: String] = ["merge_method": mergeMethod]
+    if let commitTitle { json["commit_title"] = commitTitle }
+    if let commitMessage { json["commit_message"] = commitMessage }
+    let bodyData = try JSONSerialization.data(withJSONObject: json, options: [])
+    return try await load(url: URL(string: url)!, method: "PUT", body: bodyData)
+  }
+
   /// Add labels to a PR/issue
   public static func addLabels(
     owner: String,

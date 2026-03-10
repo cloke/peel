@@ -18,4 +18,10 @@ extension Github {
     public var submitted_at: String
     public var commit_id: String
   }
+
+  public struct MergeResult: Codable {
+    public var sha: String?
+    public var merged: Bool?
+    public var message: String?
+  }
 }
