@@ -637,6 +637,7 @@ public final class MCPServerService {
   var worktreeToolsHandler: WorktreeToolsHandler
   var githubToolsHandler: GitHubToolsHandler?
   var terminalToolsHandler: TerminalToolsHandler
+  var xcodeToolsHandler: XcodeToolHandler
   var gitToolsHandler: GitToolsHandler
   var codeQualityToolsHandler: CodeQualityToolsHandler
   var chromeToolsHandler: ChromeToolsHandler
@@ -716,6 +717,7 @@ public final class MCPServerService {
     self.worktreeToolsHandler = WorktreeToolsHandler()
     self.githubToolsHandler = GitHubToolsHandler()
     self.terminalToolsHandler = TerminalToolsHandler()
+    self.xcodeToolsHandler = XcodeToolHandler(adapter: XcodeMCPAdapter())
     self.gitToolsHandler = GitToolsHandler()
     self.codeQualityToolsHandler = CodeQualityToolsHandler()
     self.chromeToolsHandler = ChromeToolsHandler()
@@ -859,6 +861,7 @@ public final class MCPServerService {
     worktreeToolsHandler.delegate = self
     githubToolsHandler?.delegate = self
     terminalToolsHandler.delegate = self
+    xcodeToolsHandler.delegate = self
     codeQualityToolsHandler.delegate = self
     chromeToolsHandler.delegate = self
     repoProfileToolsHandler.delegate = self

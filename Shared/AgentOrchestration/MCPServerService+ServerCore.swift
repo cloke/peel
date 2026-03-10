@@ -1045,6 +1045,9 @@ extension MCPServerService {
     if terminalToolsHandler.supportedTools.contains(resolvedName) {
       return await terminalToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
     }
+    if xcodeToolsHandler.supportedTools.contains(resolvedName) {
+      return await xcodeToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
+    }
     if chromeToolsHandler.supportedTools.contains(resolvedName) {
       return await chromeToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
     }
