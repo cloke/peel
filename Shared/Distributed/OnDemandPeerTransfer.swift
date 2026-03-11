@@ -361,7 +361,7 @@ public final class OnDemandPeerTransfer {
         }
       }
 
-      connection.start(queue: .main)
+      connection.start(queue: DispatchQueue(label: "com.peel.transfer.connection", qos: .userInitiated))
 
       // Timeout
       Task { @MainActor in
@@ -533,7 +533,10 @@ public final class OnDemandPeerTransfer {
 
   /// Import a received repo bundle into the local RAG store.
   private func importRepoBundle(data: Data, ragSyncDelegate: RAGArtifactSyncDelegate) async throws {
-    let bundle = try JSONDecoder().decode(RAGRepoExportBundle.self, from: data)
+    // Decode off main actor to avoid blocking UI
+    let bundle = try await Task.detached(priority: .userInitiated) {
+      try JSONDecoder().decode(RAGRepoExportBundle.self, from: data)
+    }.value
     _ = try await ragSyncDelegate.applyRepoSyncBundle(bundle, localRepoPath: nil, forceImportEmbeddings: true)
   }
 

@@ -227,7 +227,7 @@ public final class PeerConnectionManager: @unchecked Sendable {
       }
     }
     
-    listener?.start(queue: .main)
+    listener?.start(queue: connectionQueue)
     isRunning = true
     
     logger.info("PeerConnectionManager started on port \(self.port)")
@@ -536,7 +536,7 @@ public final class PeerConnectionManager: @unchecked Sendable {
             break
           }
         }
-        connection.start(queue: .main)
+        connection.start(queue: connectionQueue)
       }
     } catch {
       logger.error("Incoming connection failed to become ready: \(error)")

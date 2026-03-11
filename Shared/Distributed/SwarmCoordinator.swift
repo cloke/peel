@@ -1248,7 +1248,10 @@ public final class SwarmCoordinator {
           await sendRagArtifactError(transferId: transferId, to: peer.id, message: "Repo '\(repoIdentifier)' not found in RAG store for overlay sync")
           return
         }
-        let jsonData = try JSONEncoder().encode(overlayBundle)
+        // Encode off main actor to avoid blocking UI
+        let jsonData = try await Task.detached(priority: .userInitiated) {
+          try JSONEncoder().encode(overlayBundle)
+        }.value
         let chunkSize = 256 * 1024
         let totalChunks = max(1, Int(ceil(Double(max(1, jsonData.count)) / Double(chunkSize))))
 
@@ -1279,7 +1282,10 @@ public final class SwarmCoordinator {
           let end = min(offset + chunkSize, jsonData.count)
           let chunkData = jsonData[offset..<end]
           if !skipChunkIndices.contains(chunkIndex) {
-            let base64 = chunkData.base64EncodedString()
+            // Base64 encode off main actor
+            let base64 = await Task.detached(priority: .userInitiated) {
+              chunkData.base64EncodedString()
+            }.value
             try await connectionManager?.send(
               .ragArtifactsChunk(id: transferId, index: chunkIndex, total: totalChunks, data: base64),
               to: peer.id
@@ -1319,7 +1325,10 @@ public final class SwarmCoordinator {
           }
           return
         }
-        let jsonData = try JSONEncoder().encode(repoBundle)
+        // Encode off main actor to avoid blocking UI
+        let jsonData = try await Task.detached(priority: .userInitiated) {
+          try JSONEncoder().encode(repoBundle)
+        }.value
         let chunkSize = 256 * 1024
         let totalChunks = max(1, Int(ceil(Double(max(1, jsonData.count)) / Double(chunkSize))))
 
@@ -1352,7 +1361,10 @@ public final class SwarmCoordinator {
           let end = min(offset + chunkSize, jsonData.count)
           let chunkData = jsonData[offset..<end]
           if !skipChunkIndices.contains(chunkIndex) {
-            let base64 = chunkData.base64EncodedString()
+            // Base64 encode off main actor
+            let base64 = await Task.detached(priority: .userInitiated) {
+              chunkData.base64EncodedString()
+            }.value
             try await connectionManager?.send(
               .ragArtifactsChunk(id: transferId, index: chunkIndex, total: totalChunks, data: base64),
               to: peer.id
@@ -1399,7 +1411,10 @@ public final class SwarmCoordinator {
         let data = try handle.read(upToCount: chunkSize) ?? Data()
         if data.isEmpty { break }
         if !skipChunkIndices.contains(chunkIndex) {
-          let base64 = data.base64EncodedString()
+          // Base64 encode off main actor
+          let base64 = await Task.detached(priority: .userInitiated) {
+            data.base64EncodedString()
+          }.value
           try await connectionManager?.send(
             .ragArtifactsChunk(id: transferId, index: chunkIndex, total: totalChunks, data: base64),
             to: peer.id
@@ -1526,8 +1541,12 @@ public final class SwarmCoordinator {
 
       // Per-repo sync bundles have version "repo-sync-<repoIdentifier>"
       if manifest.version.hasPrefix("repo-sync-") {
-        let jsonData = try Data(contentsOf: transfer.tempURL)
-        let repoBundle = try JSONDecoder().decode(RAGRepoExportBundle.self, from: jsonData)
+        // Read and decode off main actor to avoid blocking UI
+        let tempURL = transfer.tempURL
+        let repoBundle = try await Task.detached(priority: .userInitiated) {
+          let jsonData = try Data(contentsOf: tempURL)
+          return try JSONDecoder().decode(RAGRepoExportBundle.self, from: jsonData)
+        }.value
         // Always force-import remote embeddings — vectorSearchWithDimensionCheck
         // handles per-repo model/dimension switching at query time.
         let result = try await ragSyncDelegate.applyRepoSyncBundle(repoBundle, localRepoPath: nil, forceImportEmbeddings: true)
@@ -1555,8 +1574,11 @@ public final class SwarmCoordinator {
         }
       } else if manifest.version.hasPrefix("repo-overlay-") {
         // Overlay sync: embeddings + analysis only, matched against locally-indexed chunks
-        let jsonData = try Data(contentsOf: transfer.tempURL)
-        let overlayBundle = try JSONDecoder().decode(RAGRepoOverlayBundle.self, from: jsonData)
+        let tempURL = transfer.tempURL
+        let overlayBundle = try await Task.detached(priority: .userInitiated) {
+          let jsonData = try Data(contentsOf: tempURL)
+          return try JSONDecoder().decode(RAGRepoOverlayBundle.self, from: jsonData)
+        }.value
         let result = try await ragSyncDelegate.applyRepoOverlayBundle(overlayBundle)
 
         logger.info("RAG overlay sync applied \(id): \(result.filesMatched) files matched (\(result.filesUnmatched) unmatched), \(result.embeddingsApplied) embeddings applied (\(result.embeddingsReplaced) replaced), \(result.analysisApplied) analysis applied, \(result.chunksUnmatched) chunks unmatched, \(result.embeddingsSkippedModelMismatch) embeddings skipped (model mismatch)")
@@ -2725,6 +2747,9 @@ extension SwarmCoordinator: WebRTCTransferDataProvider {
     ) else {
       throw OnDemandTransferError.remoteError(message: "No bundle available for \(repoIdentifier)")
     }
-    return try JSONEncoder().encode(bundle)
+    // Encode off main actor to avoid blocking UI
+    return try await Task.detached(priority: .userInitiated) {
+      try JSONEncoder().encode(bundle)
+    }.value
   }
 }
