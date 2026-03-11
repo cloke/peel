@@ -19,6 +19,24 @@ extension MCPServerService {
 
     let formatter = Formatter.iso8601
 
+    // Primary: check RunManager (unified view of all parallel-routed runs)
+    if let mgr = runManager {
+      // Direct run ID match
+      if let run = mgr.findRun(id: runId) {
+        var result = mgr.runSummary(run)
+        result["runId"] = runIdString
+        return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: result))
+      }
+      // Source chain run ID match (backward compat)
+      if let run = mgr.findRunBySourceChainRunId(runId) {
+        var result = mgr.runSummary(run)
+        result["runId"] = runIdString
+        result["routedToParallel"] = true
+        return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: result))
+      }
+    }
+
+    // Legacy: VM-routed chains still tracked in activeRunsById
     if let runInfo = activeRunsById[runId] {
       let chain = activeRunChains[runId]
       let result: [String: Any] = [
@@ -284,16 +302,31 @@ extension MCPServerService {
         )
       }
 
-      let run = runner.createAndStartSingleTaskRun(
-        prompt: prompt,
-        projectPath: projectPath,
-        templateName: template.name,
-        baseBranch: baseBranch ?? "HEAD",
-        requireReviewGate: !template.skipReviewGate,
-        runOptions: runOptions,
-        sourceChainRunId: runId,
-        operatorGuidance: guidance
-      )
+      // Route through RunManager when available (unified path), fallback to direct runner
+      let run: ParallelWorktreeRun
+      if let mgr = runManager {
+        run = mgr.createCodeChangeRun(
+          prompt: prompt,
+          projectPath: projectPath,
+          templateName: template.name,
+          baseBranch: baseBranch ?? "HEAD",
+          requireReviewGate: !template.skipReviewGate,
+          runOptions: runOptions,
+          sourceChainRunId: runId,
+          operatorGuidance: guidance
+        )
+      } else {
+        run = runner.createAndStartSingleTaskRun(
+          prompt: prompt,
+          projectPath: projectPath,
+          templateName: template.name,
+          baseBranch: baseBranch ?? "HEAD",
+          requireReviewGate: !template.skipReviewGate,
+          runOptions: runOptions,
+          sourceChainRunId: runId,
+          operatorGuidance: guidance
+        )
+      }
 
       await telemetryProvider.info("Chain run routed to parallel worktree", metadata: [
         "runId": runId.uuidString,
@@ -774,30 +807,88 @@ extension MCPServerService {
     let cancelAll = arguments["all"] as? Bool ?? false
 
     if cancelAll {
-      let runIds = Array(activeChainTasks.keys)
-      runIds.forEach { activeChainTasks[$0]?.cancel() }
-      await telemetryProvider.warning("Chain cancellation requested", metadata: ["runIds": runIds.map { $0.uuidString }.joined(separator: ",")])
-      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["cancelled": runIds.map { $0.uuidString }]))
+      var cancelledIds = Array(activeChainTasks.keys)
+      cancelledIds.forEach { activeChainTasks[$0]?.cancel() }
+
+      // Cancel all running runs via RunManager (unified path)
+      if let mgr = runManager {
+        for run in mgr.runningRuns() {
+          await mgr.stopRun(run)
+          if let sid = run.sourceChainRunId {
+            cancelledIds.append(sid)
+          }
+        }
+      } else if let runner = parallelWorktreeRunner {
+        for run in runner.runs where run.sourceChainRunId != nil {
+          if case .running = run.status {
+            await runner.cancelRun(run)
+            cancelledIds.append(run.sourceChainRunId!)
+          }
+        }
+      }
+
+      await telemetryProvider.warning("Chain cancellation requested", metadata: ["runIds": cancelledIds.map { $0.uuidString }.joined(separator: ",")])
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["cancelled": cancelledIds.map { $0.uuidString }]))
     }
 
     guard let runIdString, let runId = UUID(uuidString: runIdString) else {
       return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Missing or invalid runId"))
     }
 
-    guard let task = activeChainTasks[runId] else {
-      return (404, JSONRPCResponseBuilder.makeError(id: id, code: -32004, message: "Run not found"))
+    if let task = activeChainTasks[runId] {
+      task.cancel()
+      await telemetryProvider.warning("Chain cancellation requested", metadata: ["runId": runId.uuidString])
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["cancelled": [runId.uuidString]]))
     }
 
-    task.cancel()
-    await telemetryProvider.warning("Chain cancellation requested", metadata: ["runId": runId.uuidString])
-    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["cancelled": [runId.uuidString]]))
+    // Check RunManager first, then fall back to direct parallel runner
+    if let mgr = runManager, let run = mgr.findRunBySourceChainRunId(runId) {
+      await mgr.stopRun(run)
+      if let qi = prReviewQueue.findByChainId(runId.uuidString),
+         qi.phase == PRReviewPhase.reviewing {
+        prReviewQueue.markFailed(qi, error: "Review cancelled via chains.stop")
+      }
+      await telemetryProvider.warning("Run cancellation requested via RunManager", metadata: [
+        "runId": runId.uuidString,
+        "parallelRunId": run.id.uuidString
+      ])
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["cancelled": [runId.uuidString]]))
+    }
+
+    // Check parallel-routed runs (PR reviews)
+    if let runner = parallelWorktreeRunner,
+       let run = runner.findRunBySourceChainRunId(runId) {
+      await runner.cancelRun(run)
+      if let qi = prReviewQueue.findByChainId(runId.uuidString),
+         qi.phase == PRReviewPhase.reviewing {
+        prReviewQueue.markFailed(qi, error: "Review cancelled via chains.stop")
+      }
+      await telemetryProvider.warning("Parallel-routed chain cancellation requested", metadata: [
+        "runId": runId.uuidString,
+        "parallelRunId": run.id.uuidString
+      ])
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["cancelled": [runId.uuidString]]))
+    }
+
+    return (404, JSONRPCResponseBuilder.makeError(id: id, code: -32004, message: "Run not found"))
   }
 
   private func handleChainPause(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
     guard let runIdString = arguments["runId"] as? String,
-          let runId = UUID(uuidString: runIdString),
-          let chain = activeRunChains[runId] else {
+          let runId = UUID(uuidString: runIdString) else {
       return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Missing or invalid runId"))
+    }
+
+    // Check RunManager first (parallel-routed runs)
+    if let mgr = runManager, let run = mgr.findRun(id: runId) ?? mgr.findRunBySourceChainRunId(runId) {
+      mgr.pauseRun(run)
+      await telemetryProvider.info("Run paused via RunManager", metadata: ["runId": runId.uuidString])
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["paused": runId.uuidString]))
+    }
+
+    // Legacy: VM-routed chains
+    guard let chain = activeRunChains[runId] else {
+      return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Run not found"))
     }
 
     await chainRunner.pause(chainId: chain.id)
@@ -807,9 +898,20 @@ extension MCPServerService {
 
   private func handleChainResume(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
     guard let runIdString = arguments["runId"] as? String,
-          let runId = UUID(uuidString: runIdString),
-          let chain = activeRunChains[runId] else {
+          let runId = UUID(uuidString: runIdString) else {
       return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Missing or invalid runId"))
+    }
+
+    // Check RunManager first (parallel-routed runs)
+    if let mgr = runManager, let run = mgr.findRun(id: runId) ?? mgr.findRunBySourceChainRunId(runId) {
+      try? await mgr.resumeRun(run)
+      await telemetryProvider.info("Run resumed via RunManager", metadata: ["runId": runId.uuidString])
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["resumed": runId.uuidString]))
+    }
+
+    // Legacy: VM-routed chains
+    guard let chain = activeRunChains[runId] else {
+      return (400, JSONRPCResponseBuilder.makeError(id: id, code: -32602, message: "Run not found"))
     }
 
     await chainRunner.resume(chainId: chain.id)

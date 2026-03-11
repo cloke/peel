@@ -317,11 +317,35 @@ final class PRReviewQueue {
       // Initial reconciliation after a short delay
       try? await Task.sleep(for: .seconds(10))
       while !Task.isCancelled {
+        self?.recoverStuckReviews()
         await self?.reconcileWithGitHub()
         // Prune terminal items older than 7 days from SwiftData/CloudKit
         self?.pruneOlderThan(7 * 24 * 60 * 60)
         try? await Task.sleep(for: .seconds(300)) // Every 5 minutes
       }
+    }
+  }
+
+  /// Recover items stuck in "reviewing" phase for too long (background monitor died).
+  /// The background monitor has a 900s (15 min) timeout, so if we're still "reviewing"
+  /// after 20 minutes, the monitor task is dead and we should fail the item.
+  private func recoverStuckReviews() {
+    let stuckThreshold: TimeInterval = 20 * 60 // 20 minutes
+    var recovered = 0
+    for item in items where item.phase == PRReviewPhase.reviewing {
+      guard let startedAt = item.reviewStartedAt,
+            Date().timeIntervalSince(startedAt) > stuckThreshold else { continue }
+      let minutes = Int(Date().timeIntervalSince(startedAt) / 60)
+      item.phase = PRReviewPhase.pending
+      item.reviewChainId = ""
+      item.lastError = "Recovery: review stuck for \(minutes)m (background monitor lost)"
+      item.lastUpdatedAt = Date()
+      recovered += 1
+      logger.warning("Recovered stuck reviewing item PR #\(item.prNumber) after \(minutes)m")
+    }
+    if recovered > 0 {
+      save()
+      logger.info("Recovered \(recovered) stuck reviewing item(s)")
     }
   }
 

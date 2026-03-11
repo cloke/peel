@@ -137,6 +137,12 @@ final class ParallelRunSnapshot {
   var updatedAt: Date = Date()
   var lastUpdatedAt: Date?
 
+  // Unified run model fields
+  var kind: String = "codeChange"
+  var prompt: String = ""
+  var prContextJSON: String?
+  var parentRunId: String?
+
   init(
     runId: String,
     name: String,

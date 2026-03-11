@@ -612,12 +612,20 @@ extension MCPServerService {
   }
 
   public func pauseRun(_ runId: UUID) async {
+    if let mgr = runManager, let run = mgr.findRun(id: runId) ?? mgr.findRunBySourceChainRunId(runId) {
+      mgr.pauseRun(run)
+      return
+    }
     if let chain = activeRunChains[runId] {
       await chainRunner.pause(chainId: chain.id)
     }
   }
 
   public func resumeRun(_ runId: UUID) async {
+    if let mgr = runManager, let run = mgr.findRun(id: runId) ?? mgr.findRunBySourceChainRunId(runId) {
+      try? await mgr.resumeRun(run)
+      return
+    }
     if let chain = activeRunChains[runId] {
       await chainRunner.resume(chainId: chain.id)
     }
@@ -630,6 +638,10 @@ extension MCPServerService {
   }
 
   public func stopRun(_ runId: UUID) async {
+    if let mgr = runManager, let run = mgr.findRun(id: runId) ?? mgr.findRunBySourceChainRunId(runId) {
+      await mgr.stopRun(run)
+      return
+    }
     if let task = activeChainTasks[runId] {
       task.cancel()
     }
@@ -1062,6 +1074,9 @@ extension MCPServerService {
     }
     if prReviewToolsHandler.supportedTools.contains(resolvedName) {
       return await prReviewToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
+    }
+    if runToolsHandler.supportedTools.contains(resolvedName) {
+      return await runToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
     }
     #if os(macOS)
     if localChatToolsHandler?.supportedTools.contains(resolvedName) == true {

@@ -257,6 +257,19 @@ final class ParallelWorktreeRun: Identifiable, @unchecked Sendable, Hashable {
   /// When this run was created by `chains.run`, stores the original chain run UUID
   /// so `chains.run.status` / `chains.run.results` can find it.
   var sourceChainRunId: UUID?
+
+  // MARK: Unified Run Fields
+
+  /// What type of work this run represents
+  var kind: RunKind = .codeChange
+  /// The original user prompt that created this run
+  var prompt: String = ""
+  /// PR-specific context (non-nil when kind == .prReview)
+  var prContext: PRRunContext?
+  /// Idea-specific context (non-nil for long-lived idea runs)
+  var ideaContext: IdeaRunContext?
+  /// Parent run ID for sub-runs spawned from an idea
+  var parentRunId: UUID?
   
   enum RunStatus: Sendable, Equatable {
     case pending
@@ -625,7 +638,9 @@ final class ParallelWorktreeRunner {
     requireReviewGate: Bool = true,
     runOptions: AgentChainRunner.ChainRunOptions? = nil,
     sourceChainRunId: UUID? = nil,
-    operatorGuidance: [String] = []
+    operatorGuidance: [String] = [],
+    kind: RunKind = .codeChange,
+    prContext: PRRunContext? = nil
   ) -> ParallelWorktreeRun {
     let taskTitle = templateName.map { "Chain: \($0)" } ?? "Chain Run"
     let task = WorktreeTask(
@@ -644,6 +659,9 @@ final class ParallelWorktreeRunner {
     )
     run.sourceChainRunId = sourceChainRunId
     run.operatorGuidance = operatorGuidance
+    run.kind = kind
+    run.prompt = prompt
+    run.prContext = prContext
 
     // Fire-and-forget start (same pattern as parallel.start handler)
     Task { @MainActor [weak self] in
@@ -2736,6 +2754,14 @@ final class ParallelWorktreeRunner {
     run.autoMergeOnApproval = snapshot.autoMergeOnApproval
     run.createdAt = snapshot.createdAt
 
+    // Restore unified run model fields
+    run.kind = RunKind(rawValue: snapshot.kind) ?? .codeChange
+    run.prompt = snapshot.prompt
+    run.parentRunId = snapshot.parentRunId.flatMap { UUID(uuidString: $0) }
+    if let json = snapshot.prContextJSON, let ctx = decodePRRunContext(json) {
+      run.prContext = ctx
+    }
+
     if let data = snapshot.executionsJSON.data(using: .utf8),
        let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
       for dict in array {
@@ -2842,6 +2868,30 @@ final class ParallelWorktreeRunner {
     case "Running":         return hasBranch ? .awaitingReview : .cancelled
     default:                return .cancelled
     }
+  }
+
+  private func decodePRRunContext(_ json: String) -> PRRunContext? {
+    guard let data = json.data(using: .utf8),
+          let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let repoOwner = dict["repoOwner"] as? String,
+          let repoName = dict["repoName"] as? String,
+          let prNumber = dict["prNumber"] as? Int,
+          let prTitle = dict["prTitle"] as? String,
+          let headRef = dict["headRef"] as? String else { return nil }
+    var ctx = PRRunContext(
+      repoOwner: repoOwner,
+      repoName: repoName,
+      prNumber: prNumber,
+      prTitle: prTitle,
+      headRef: headRef,
+      htmlURL: dict["htmlURL"] as? String ?? ""
+    )
+    ctx.reviewVerdict = dict["reviewVerdict"] as? String
+    ctx.reviewOutput = dict["reviewOutput"] as? String
+    ctx.phase = dict["phase"] as? String ?? PRReviewPhase.pending
+    ctx.pushBranch = dict["pushBranch"] as? String
+    ctx.pushResult = dict["pushResult"] as? String
+    return ctx
   }
 }
 

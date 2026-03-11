@@ -626,6 +626,8 @@ public final class MCPServerService {
     }
   }
   var parallelWorktreeRunner: ParallelWorktreeRunner?
+  /// Unified run coordinator — wraps worktreeRunner + prReviewQueue
+  var runManager: RunManager?
 
   // MARK: - Tool Handlers (extracted from this file for maintainability)
 
@@ -642,6 +644,7 @@ public final class MCPServerService {
   var terminalToolsHandler: TerminalToolsHandler
   var xcodeToolsHandler: XcodeToolHandler
   var gitToolsHandler: GitToolsHandler
+  var runToolsHandler: RunToolsHandler
   var codeQualityToolsHandler: CodeQualityToolsHandler
   var chromeToolsHandler: ChromeToolsHandler
   var repoProfileToolsHandler: RepoProfileToolsHandler
@@ -675,6 +678,10 @@ public final class MCPServerService {
     let continuation: CheckedContinuation<Bool, Never>
   }
 
+  // LEGACY: These dicts track VM-routed chains and queue management only.
+  // Parallel-routed runs are tracked by RunManager (the unified source of truth).
+  // All read paths check RunManager first, then fall back here for VM chains.
+  // Do NOT remove until VM routing is migrated to RunManager (Phase 5).
   var activeChainRuns: Int = 0
   var activeChainRunIds: Set<UUID> = []
   var activeChainTasks: [UUID: Task<AgentChainRunner.RunSummary, Never>] = [:]
@@ -722,6 +729,7 @@ public final class MCPServerService {
     self.terminalToolsHandler = TerminalToolsHandler()
     self.xcodeToolsHandler = XcodeToolHandler(adapter: XcodeMCPAdapter())
     self.gitToolsHandler = GitToolsHandler()
+    self.runToolsHandler = RunToolsHandler()
     self.codeQualityToolsHandler = CodeQualityToolsHandler()
     self.chromeToolsHandler = ChromeToolsHandler()
     self.repoProfileToolsHandler = RepoProfileToolsHandler()
@@ -820,6 +828,11 @@ public final class MCPServerService {
     self.parallelWorktreeRunner?.setUXTestOrchestrator(orchestrator)
     self.parallelWorktreeRunner?.setRepoProfileService(repoProfileService)
 
+    // Create unified run manager
+    if let runner = self.parallelWorktreeRunner {
+      self.runManager = RunManager(worktreeRunner: runner, prReviewQueue: prReviewQueue)
+    }
+
     wireToolHandlerDelegates()
 
     #if os(macOS)
@@ -871,6 +884,7 @@ public final class MCPServerService {
     repoProfileToolsHandler.profileService = repoProfileService
     prReviewToolsHandler.delegate = self
     prReviewToolsHandler.prReviewQueue = prReviewQueue
+    runToolsHandler.delegate = self
     #if os(macOS)
     localChatToolsHandler?.delegate = self
     localChatToolsHandler?.mcpServer = self

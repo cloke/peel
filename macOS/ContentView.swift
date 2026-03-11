@@ -469,7 +469,7 @@ struct ContentView: View {
       }
 
     case .agentRuns:
-      ParallelWorktreeDashboardView(mcpServer: mcpServer)
+      RunsListView(mcpServer: mcpServer)
 
     case .worktrees:
       WorktreesView()

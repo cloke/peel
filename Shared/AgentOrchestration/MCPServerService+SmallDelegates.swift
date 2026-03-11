@@ -255,6 +255,12 @@ extension MCPServerService: ParallelToolsHandlerDelegate {
   // GitHubToolsHandlerDelegate and ParallelToolsHandlerDelegate.
 }
 
+// MARK: - RunToolsHandlerDelegate
+
+extension MCPServerService: RunToolsHandlerDelegate {
+  // runManager is already exposed with internal visibility.
+}
+
 // MARK: - RepoToolsHandlerDelegate
 
 extension MCPServerService: RepoToolsHandlerDelegate {

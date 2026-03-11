@@ -387,6 +387,14 @@ final class DataService {
     snapshot.updatedAt = Date()
     snapshot.lastUpdatedAt = run.lastUpdatedAt
 
+    // Unified run model fields
+    snapshot.kind = run.kind.rawValue
+    snapshot.prompt = run.prompt
+    snapshot.parentRunId = run.parentRunId?.uuidString
+    if let ctx = run.prContext {
+      snapshot.prContextJSON = encodePRRunContext(ctx)
+    }
+
     cleanupOldParallelRunSnapshots()
     try? modelContext.save()
     return snapshot
@@ -547,6 +555,15 @@ final class DataService {
     guard let data = try? JSONSerialization.data(withJSONObject: payload, options: []),
           let json = String(data: data, encoding: .utf8) else {
       return ""
+    }
+    return json
+  }
+
+  private func encodePRRunContext(_ ctx: PRRunContext) -> String {
+    let dict = ctx.asDictionary
+    guard let data = try? JSONSerialization.data(withJSONObject: dict, options: []),
+          let json = String(data: data, encoding: .utf8) else {
+      return "{}"
     }
     return json
   }

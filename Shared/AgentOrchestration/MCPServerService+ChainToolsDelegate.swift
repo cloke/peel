@@ -88,7 +88,15 @@ extension MCPServerService: ChainToolsHandlerDelegate {
   
   func chainStatus(chainId: String) -> ChainToolStatus? {
     guard let runId = UUID(uuidString: chainId) else { return nil }
-    
+
+    // Primary: check RunManager (unified view)
+    if let mgr = runManager {
+      if let run = mgr.findRun(id: runId) ?? mgr.findRunBySourceChainRunId(runId) {
+        return parallelRunToChainStatus(run, chainId: chainId)
+      }
+    }
+
+    // Legacy: VM-routed chains
     if let runInfo = activeRunsById[runId] {
       let chain = activeRunChains[runId]
       return ChainToolStatus(
@@ -130,8 +138,8 @@ extension MCPServerService: ChainToolsHandlerDelegate {
       )
     }
 
-    // Check parallel-routed runs
-    if let run = parallelWorktreeRunner?.findRunBySourceChainRunId(runId) {
+    // Check parallel-routed runs (fallback when RunManager not available)
+    if runManager == nil, let run = parallelWorktreeRunner?.findRunBySourceChainRunId(runId) {
       return parallelRunToChainStatus(run, chainId: chainId)
     }
     
@@ -261,9 +269,35 @@ extension MCPServerService: ChainToolsHandlerDelegate {
       }
     }
 
-    // Add parallel-routed runs
-    if let runner = parallelWorktreeRunner {
-      let knownSourceIds = Set(runs.compactMap { UUID(uuidString: $0.chainId) })
+    // Add parallel-routed runs — prefer RunManager for the unified view
+    let knownSourceIds = Set(runs.compactMap { UUID(uuidString: $0.chainId) })
+    if let mgr = runManager {
+      for run in mgr.runs where run.sourceChainRunId != nil {
+        let sourceId = run.sourceChainRunId!
+        guard !knownSourceIds.contains(sourceId) else { continue }
+        let parallelStatus: String = {
+          switch run.status {
+          case .pending: return "queued"
+          case .running: return "running"
+          case .awaitingReview: return "awaiting_review"
+          case .completed: return "completed"
+          case .failed: return "failed"
+          case .cancelled: return "cancelled"
+          case .merging: return "merging"
+          }
+        }()
+        if status == nil || status == parallelStatus {
+          let taskPrompt = run.executions.first?.task.prompt ?? ""
+          runs.append(ChainToolRunSummary(
+            chainId: sourceId.uuidString,
+            status: parallelStatus,
+            prompt: taskPrompt,
+            startedAt: run.startedAt ?? run.createdAt,
+            completedAt: run.completedAt
+          ))
+        }
+      }
+    } else if let runner = parallelWorktreeRunner {
       for run in runner.runs where run.sourceChainRunId != nil {
         let sourceId = run.sourceChainRunId!
         guard !knownSourceIds.contains(sourceId) else { continue }
@@ -623,8 +657,22 @@ extension MCPServerService: ChainToolsHandlerDelegate {
     guard let runId = UUID(uuidString: chainId) else {
       throw ChainError.invalidChainId
     }
-    
-    // Cancel via task if running
+
+    // Primary: check RunManager for parallel-routed runs
+    if let mgr = runManager, let run = mgr.findRun(id: runId) ?? mgr.findRunBySourceChainRunId(runId) {
+      await mgr.stopRun(run)
+      if let qi = prReviewQueue.findByChainId(runId.uuidString),
+         qi.phase == PRReviewPhase.reviewing {
+        prReviewQueue.markFailed(qi, error: "Review cancelled via chains.stop")
+      }
+      await telemetryProvider.warning("Run cancelled via RunManager", metadata: [
+        "runId": runId.uuidString,
+        "parallelRunId": run.id.uuidString
+      ])
+      return
+    }
+
+    // Legacy: cancel VM-routed task
     if let task = activeChainTasks[runId] {
       task.cancel()
       await telemetryProvider.warning("Chain cancellation requested", metadata: ["runId": runId.uuidString])
@@ -663,21 +711,56 @@ extension MCPServerService: ChainToolsHandlerDelegate {
       activeRunChains[runId] = nil
       return
     }
+
+    // Fallback: direct parallel runner (RunManager not available)
+    if runManager == nil, let runner = parallelWorktreeRunner,
+       let run = runner.findRunBySourceChainRunId(runId) {
+      await runner.cancelRun(run)
+      if let qi = prReviewQueue.findByChainId(runId.uuidString),
+         qi.phase == PRReviewPhase.reviewing {
+        prReviewQueue.markFailed(qi, error: "Review cancelled via chains.stop")
+      }
+      await telemetryProvider.warning("Cancelling parallel-routed chain run", metadata: [
+        "runId": runId.uuidString,
+        "parallelRunId": run.id.uuidString
+      ])
+      return
+    }
     
     throw ChainError.notFound
   }
   
   func pauseChain(chainId: String) async throws {
-    guard let runId = UUID(uuidString: chainId),
-          let chain = activeRunChains[runId] else {
+    guard let runId = UUID(uuidString: chainId) else {
+      throw ChainError.notFound
+    }
+
+    // RunManager first
+    if let mgr = runManager, let run = mgr.findRun(id: runId) ?? mgr.findRunBySourceChainRunId(runId) {
+      mgr.pauseRun(run)
+      return
+    }
+
+    // Legacy: VM-routed chains
+    guard let chain = activeRunChains[runId] else {
       throw ChainError.notFound
     }
     await chainRunner.pause(chainId: chain.id)
   }
   
   func resumeChain(chainId: String) async throws {
-    guard let runId = UUID(uuidString: chainId),
-          let chain = activeRunChains[runId] else {
+    guard let runId = UUID(uuidString: chainId) else {
+      throw ChainError.notFound
+    }
+
+    // RunManager first
+    if let mgr = runManager, let run = mgr.findRun(id: runId) ?? mgr.findRunBySourceChainRunId(runId) {
+      try await mgr.resumeRun(run)
+      return
+    }
+
+    // Legacy: VM-routed chains
+    guard let chain = activeRunChains[runId] else {
       throw ChainError.notFound
     }
     await chainRunner.resume(chainId: chain.id)
