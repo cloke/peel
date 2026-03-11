@@ -208,41 +208,14 @@ public final class OnDemandPeerTransfer {
       logger.info("[transfer] STUN + UDP failed to \(worker.displayName): \(error)")
     }
 
-    // All direct connections failed — fall back to Firestore relay
-    p2pLog.log("transfer", "ALL direct connections failed, falling back to relay", details: [
+    // All direct connections failed — no relay fallback (disabled)
+    let msg = "All direct connections (LAN/WAN/STUN+UDP) failed to '\(worker.displayName)'. Relay fallback is disabled."
+    p2pLog.log("transfer", "ALL direct connections failed — no relay fallback", details: [
       "targetWorker": worker.displayName,
-      "relayProviderActive": String(worker.relayProviderActive),
     ])
-    logger.info("[transfer] All direct connections failed to \(worker.displayName) (\(worker.workerId)), using Firestore relay")
-
-    // Check if the target worker has an active relay provider — if not, fail fast
-    // instead of waiting 300s for a response that will never come.
-    if !worker.relayProviderActive {
-      let msg = "All direct connections (LAN/WAN/STUN) failed and target worker '\(worker.displayName)' has no relay provider active. The worker may need to restart with the swarm enabled."
-      state.error = msg
-      logger.error("[transfer] \(msg)")
-      throw OnDemandTransferError.remoteError(message: msg)
-    }
-
-    logger.info("[transfer] Relay context: swarmId=\(state.swarmId), repo=\(repoIdentifier)")
-    state.connectionMethod = .firestoreRelay
-    state.status = .connecting
-
-    do {
-      try await relayConsumer.requestIndex(
-        from: worker,
-        repoIdentifier: repoIdentifier,
-        swarmId: swarmId,
-        ragSyncDelegate: ragSyncDelegate,
-        state: state
-      )
-    } catch {
-      state.error = "Relay failed: \(error.localizedDescription)"
-      logger.error("[transfer] Firestore relay failed from \(worker.displayName): \(error)")
-      throw error
-    }
-
-    return state
+    state.error = msg
+    logger.error("[transfer] \(msg)")
+    throw OnDemandTransferError.remoteError(message: msg)
   }
 
   /// Perform a direct transfer over an established NWConnection.
@@ -441,11 +414,15 @@ public final class OnDemandPeerTransfer {
       "localPort": String(localPort),
     ])
 
-    // Cancel any active responder serve task to free port 8766.
-    // Without this, the STUN client can't bind the port and all servers fail.
-    stunResponder?.cancelActiveServe()
-    // Brief sleep to let the OS release the UDP socket
-    try? await Task.sleep(for: .milliseconds(100))
+    // If there's an active UDP serve task (responding to a peer-initiated
+    // transfer), skip STUN entirely. Sending STUN bind requests from port
+    // 8766 to new destinations can corrupt the NAT mapping that the active
+    // serve's hole punch established, causing the serve to fail (ACKs no
+    // longer reach us through the changed NAT mapping).
+    if stunResponder?.activeServeTask != nil {
+      p2pLog.log("stun-udp", "Skipping — active serve task in progress (would corrupt NAT mapping)")
+      throw OnDemandTransferError.stunDiscoveryFailed
+    }
 
     // 1. STUN discovery — creates/refreshes UDP NAT mapping for our port
     guard let myEndpoint = await STUNClient.discoverEndpoint(localPort: localPort) else {

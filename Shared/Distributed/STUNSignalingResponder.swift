@@ -33,7 +33,7 @@ public final class STUNSignalingResponder {
 
   /// Active UDP serve task — tracked so we can cancel it when port 8766
   /// is needed for a new transfer (either as initiator or new responder).
-  private var activeServeTask: Task<Void, Never>?
+  private(set) var activeServeTask: Task<Void, Never>?
 
   /// Data provider for UDP transfer responder (set by SwarmCoordinator)
   weak var dataProvider: UDPTransferDataProvider?
