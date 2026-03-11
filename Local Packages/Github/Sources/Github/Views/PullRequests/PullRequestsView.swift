@@ -105,6 +105,9 @@ public struct PullRequestDetailView: View {
         // MARK: - Reviews
         reviewsSection
 
+        // MARK: - Agent Review
+        agentReviewSection
+
         // MARK: - Comments
         commentsSection
 
@@ -431,6 +434,139 @@ public struct PullRequestDetailView: View {
       PullRequestReviewRowView(organization: organization, repository: repository, pullNumber: pullRequest.number)
         .padding(12)
         .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 10))
+    }
+  }
+
+  // MARK: - Agent Review Section
+
+  @ViewBuilder
+  private var agentReviewSection: some View {
+    if let status = agentReviewStatus, let result = status.reviewResult {
+      VStack(alignment: .leading, spacing: 8) {
+        Text("Agent Review")
+          .font(.headline)
+
+        VStack(alignment: .leading, spacing: 12) {
+          // Verdict banner
+          HStack(spacing: 10) {
+            Image(systemName: result.verdictSystemImage)
+              .font(.title2)
+              .foregroundStyle(result.verdictColor)
+            VStack(alignment: .leading, spacing: 2) {
+              Text(result.verdictDisplayName)
+                .font(.headline)
+              HStack(spacing: 8) {
+                Label("Local Agent Review", systemImage: "sparkles")
+                  .font(.caption)
+                  .foregroundStyle(.purple)
+                if !result.model.isEmpty {
+                  Text("·")
+                    .foregroundStyle(.tertiary)
+                  Text(result.model)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                if let completedAt = result.completedAt {
+                  Text("·")
+                    .foregroundStyle(.tertiary)
+                  Text(completedAt, style: .relative)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+              }
+            }
+            Spacer()
+            // Risk badge
+            Text("Risk: \(result.riskLevel.capitalized)")
+              .font(.caption2)
+              .fontWeight(.medium)
+              .padding(.horizontal, 6)
+              .padding(.vertical, 2)
+              .background(Capsule().fill(result.riskColor.opacity(0.15)))
+              .foregroundStyle(result.riskColor)
+          }
+          .padding(12)
+          .background(result.verdictColor.opacity(0.08))
+          .clipShape(RoundedRectangle(cornerRadius: 10))
+
+          // Summary
+          if !result.summary.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Summary")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+              Text(result.summary)
+                .font(.callout)
+                .textSelection(.enabled)
+            }
+          }
+
+          // Issues
+          if !result.issues.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+              Label("Issues (\(result.issues.count))", systemImage: "exclamationmark.triangle")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundStyle(.orange)
+              ForEach(Array(result.issues.enumerated()), id: \.offset) { _, issue in
+                HStack(alignment: .top, spacing: 6) {
+                  Image(systemName: "circle.fill")
+                    .font(.system(size: 5))
+                    .foregroundStyle(.orange)
+                    .padding(.top, 6)
+                  Text(issue)
+                    .font(.callout)
+                    .textSelection(.enabled)
+                }
+              }
+            }
+            .padding(12)
+            .background(.orange.opacity(0.05))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+          }
+
+          // Suggestions
+          if !result.suggestions.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+              Label("Suggestions (\(result.suggestions.count))", systemImage: "lightbulb")
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundStyle(.blue)
+              ForEach(Array(result.suggestions.enumerated()), id: \.offset) { _, suggestion in
+                HStack(alignment: .top, spacing: 6) {
+                  Image(systemName: "circle.fill")
+                    .font(.system(size: 5))
+                    .foregroundStyle(.blue)
+                    .padding(.top, 6)
+                  Text(suggestion)
+                    .font(.callout)
+                    .textSelection(.enabled)
+                }
+              }
+            }
+            .padding(12)
+            .background(.blue.opacity(0.05))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+          }
+
+          // Raw output disclosure
+          if !result.rawOutput.isEmpty {
+            DisclosureGroup("Raw Response") {
+              Text(result.rawOutput)
+                .font(.system(.caption, design: .monospaced))
+                .textSelection(.enabled)
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.quaternary.opacity(0.3))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+            .font(.subheadline)
+            .fontWeight(.medium)
+          }
+        }
+        .padding(12)
+        .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 10))
+      }
     }
   }
 

@@ -1098,7 +1098,7 @@ private struct ReviewJSONPayload: Decodable {
   let verdict: String?
 }
 
-private func parseReviewOutput(_ output: String) -> ParsedReview {
+func parseReviewOutput(_ output: String) -> ParsedReview {
   if let structured = parseStructuredJSON(output) { return structured }
   return parseFreeform(output)
 }

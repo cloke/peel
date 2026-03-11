@@ -793,11 +793,29 @@ final class PRReviewStatusBridge: PRReviewStatusProvider {
     }
     let phase = item.phase
     let activePh: Set<String> = [PRReviewPhase.reviewing, PRReviewPhase.fixing, PRReviewPhase.pushing]
+
+    // Build review result if output exists
+    var reviewResult: PRAgentReviewStatus.ReviewResult?
+    if !item.reviewOutput.isEmpty {
+      let parsed = parseReviewOutput(item.reviewOutput)
+      reviewResult = PRAgentReviewStatus.ReviewResult(
+        summary: parsed.summary,
+        verdict: parsed.verdict.rawValue,
+        riskLevel: parsed.riskLevel,
+        issues: parsed.issues,
+        suggestions: parsed.suggestions,
+        rawOutput: parsed.rawOutput,
+        model: item.reviewModel,
+        completedAt: item.reviewCompletedAt
+      )
+    }
+
     return PRAgentReviewStatus(
       phase: phase,
       displayName: PRReviewPhase.displayName[phase] ?? phase,
       systemImage: PRReviewPhase.systemImage[phase] ?? "questionmark.circle",
-      isActive: activePh.contains(phase)
+      isActive: activePh.contains(phase),
+      reviewResult: reviewResult
     )
   }
 }

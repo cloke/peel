@@ -35,12 +35,73 @@ public struct PRAgentReviewStatus: Sendable {
   public let displayName: String
   public let systemImage: String
   public let isActive: Bool
+  public let reviewResult: ReviewResult?
 
-  public init(phase: String, displayName: String, systemImage: String, isActive: Bool) {
+  /// Parsed agent review output for inline display.
+  public struct ReviewResult: Sendable {
+    public let summary: String
+    public let verdict: String  // "APPROVE", "REQUEST_CHANGES", "COMMENT", "UNKNOWN"
+    public let riskLevel: String
+    public let issues: [String]
+    public let suggestions: [String]
+    public let rawOutput: String
+    public let model: String
+    public let completedAt: Date?
+
+    public init(summary: String, verdict: String, riskLevel: String, issues: [String], suggestions: [String], rawOutput: String, model: String, completedAt: Date?) {
+      self.summary = summary
+      self.verdict = verdict
+      self.riskLevel = riskLevel
+      self.issues = issues
+      self.suggestions = suggestions
+      self.rawOutput = rawOutput
+      self.model = model
+      self.completedAt = completedAt
+    }
+
+    public var verdictDisplayName: String {
+      switch verdict {
+      case "APPROVE": return "Approved"
+      case "REQUEST_CHANGES": return "Changes Requested"
+      case "COMMENT": return "Comment"
+      default: return "Review Complete"
+      }
+    }
+
+    public var verdictSystemImage: String {
+      switch verdict {
+      case "APPROVE": return "checkmark.circle.fill"
+      case "REQUEST_CHANGES": return "exclamationmark.triangle.fill"
+      case "COMMENT": return "text.bubble.fill"
+      default: return "questionmark.circle"
+      }
+    }
+
+    public var verdictColor: Color {
+      switch verdict {
+      case "APPROVE": return .green
+      case "REQUEST_CHANGES": return .red
+      case "COMMENT": return .orange
+      default: return .secondary
+      }
+    }
+
+    public var riskColor: Color {
+      switch riskLevel.lowercased() {
+      case "low": return .green
+      case "medium": return .orange
+      case "high": return .red
+      default: return .secondary
+      }
+    }
+  }
+
+  public init(phase: String, displayName: String, systemImage: String, isActive: Bool, reviewResult: ReviewResult? = nil) {
     self.phase = phase
     self.displayName = displayName
     self.systemImage = systemImage
     self.isActive = isActive
+    self.reviewResult = reviewResult
   }
 
   public var badgeColor: Color {
