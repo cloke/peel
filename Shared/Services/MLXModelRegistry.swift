@@ -75,7 +75,8 @@ final class MLXModelRegistry: Sendable {
         state.withLock { $0.remoteDocument = remote }
         logger.info("Loaded MLX model registry from Firestore")
       } else {
-        logger.info("No mlx_models config in Firestore, using local defaults")
+        logger.info("No mlx_models config in Firestore, seeding with local defaults")
+        try? await seedFirestore()
       }
     } catch {
       logger.warning("Failed to fetch MLX model registry: \(error.localizedDescription)")

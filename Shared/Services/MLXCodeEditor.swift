@@ -100,13 +100,14 @@ struct MLXEditorModelConfig: Sendable {
       contextLength: 32768
     ),
 
-    // Medium tier - Qwen2.5-Coder-14B (moderate refactors)
+    // Medium tier - Qwen3.5-9B (hybrid linear+self attention, strong at code)
+    // OptiQ mixed-precision quantization, ~6GB disk, requires mlx-lm >= 0.30.7
     MLXEditorModelConfig(
-      name: "Qwen2.5-Coder-14B",
-      huggingFaceId: "lmstudio-community/Qwen2.5-Coder-14B-Instruct-MLX-4bit",
+      name: "Qwen3.5-9B",
+      huggingFaceId: "mlx-community/Qwen3.5-9B-OptiQ-4bit",
       tier: .medium,
       maxTokens: 8192,
-      contextLength: 65536
+      contextLength: 131072  // 128K context
     ),
 
     // Large tier - Qwen3-Coder-30B-A3B MoE (qwen3_moe architecture, ~3B active)
