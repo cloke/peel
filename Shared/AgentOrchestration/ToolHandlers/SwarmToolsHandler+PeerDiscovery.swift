@@ -951,9 +951,10 @@ extension SwarmToolsHandler {
       return missingParamError(id: id, param: "repoIdentifier")
     }
 
-    // Resolve worker: explicit workerId > targetWorkerName lookup > nil (auto-pick)
+    // Resolve worker: explicit workerId > targetWorkerName/worker lookup > nil (auto-pick)
     var fromWorkerId = arguments["workerId"] as? String
-    if fromWorkerId == nil, let targetName = arguments["targetWorkerName"] as? String, !targetName.isEmpty {
+    let targetName = (arguments["targetWorkerName"] as? String) ?? (arguments["worker"] as? String)
+    if fromWorkerId == nil, let targetName, !targetName.isEmpty {
       let match = FirebaseService.shared.swarmWorkers.first(where: {
         $0.displayName.localizedCaseInsensitiveCompare(targetName) == .orderedSame
       })
@@ -1017,7 +1018,11 @@ extension SwarmToolsHandler {
           try await syncCoordinator.syncIndex(repoIdentifier: repoIdentifier)
         }
       } catch {
-        // Logged internally by RAGSyncCoordinator — also recorded in syncHistory
+        // Log the error so background failures are visible in diagnostics
+        P2PConnectionLog.shared.log("rag-sync", "Background sync failed", details: [
+          "repoIdentifier": repoIdentifier,
+          "error": "\(error)",
+        ])
       }
     }
 

@@ -749,11 +749,15 @@ extension SwarmToolsHandler {
           "properties": [
             "repoIdentifier": [
               "type": "string",
-              "description": "The repo identifier (path or git remote URL) to sync"
+              "description": "The repo identifier to sync. Accepts: full identifier (github.com/org/repo), git remote URL, or short name (e.g. 'tio-api')."
             ],
             "targetWorkerName": [
               "type": "string",
               "description": "Display name of the worker to sync from (e.g. 'coremore'). Case-insensitive."
+            ],
+            "worker": [
+              "type": "string",
+              "description": "Alias for targetWorkerName. Display name of the worker to sync from."
             ],
             "workerId": [
               "type": "string",

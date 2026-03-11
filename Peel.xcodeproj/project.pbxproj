@@ -12,6 +12,9 @@
 		03MLXEMB2F2B000100000001 /* MLXEmbedders in Frameworks */ = {isa = PBXBuildFile; productRef = 03MLXEMB2F2B000100000002 /* MLXEmbedders */; };
 		03MLXLLM2F30000100000001 /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = 03MLXLLM2F30000100000002 /* MLXLLM */; };
 		03MLXLMC2F30000100000001 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 03MLXLMC2F30000100000002 /* MLXLMCommon */; };
+		03MLXAUD2F70000100000001 /* MLXAudioCore in Frameworks */ = {isa = PBXBuildFile; productRef = 03MLXAUD2F70000100000002 /* MLXAudioCore */; };
+		03MLXAUD2F70000200000001 /* MLXAudioTTS in Frameworks */ = {isa = PBXBuildFile; productRef = 03MLXAUD2F70000200000002 /* MLXAudioTTS */; };
+		03MLXAUD2F70000300000001 /* MLXAudioSTT in Frameworks */ = {isa = PBXBuildFile; productRef = 03MLXAUD2F70000300000002 /* MLXAudioSTT */; };
 		040AAB7E26CB385800DE1CBF /* Git in Frameworks */ = {isa = PBXBuildFile; productRef = 040AAB7D26CB385800DE1CBF /* Git */; };
 		04503C392F3FCA8400BA3223 /* MCPCore in Frameworks */ = {isa = PBXBuildFile; productRef = 04MCPCOR2F2E000100000004 /* MCPCore */; };
 		04503C3A2F3FCA8400BA3223 /* RAGCore in Frameworks */ = {isa = PBXBuildFile; productRef = 04RAGCOR2F3C000100000003 /* RAGCore */; };
@@ -318,6 +321,9 @@
 				03MLXEMB2F2B000100000001 /* MLXEmbedders in Frameworks */,
 				03MLXLLM2F30000100000001 /* MLXLLM in Frameworks */,
 				03MLXLMC2F30000100000001 /* MLXLMCommon in Frameworks */,
+				03MLXAUD2F70000100000001 /* MLXAudioCore in Frameworks */,
+				03MLXAUD2F70000200000001 /* MLXAudioTTS in Frameworks */,
+				03MLXAUD2F70000300000001 /* MLXAudioSTT in Frameworks */,
 				03BPETOK2F2A000100000001 /* SwiftBPETokenizer in Frameworks */,
 				04A2364C2F2E34510055F436 /* FirebaseFirestore in Frameworks */,
 				048086662A2D21E500536A3E /* Brew in Frameworks */,
@@ -505,6 +511,9 @@
 				03MLXEMB2F2B000100000002 /* MLXEmbedders */,
 				03MLXLLM2F30000100000002 /* MLXLLM */,
 				03MLXLMC2F30000100000002 /* MLXLMCommon */,
+				03MLXAUD2F70000100000002 /* MLXAudioCore */,
+				03MLXAUD2F70000200000002 /* MLXAudioTTS */,
+				03MLXAUD2F70000300000002 /* MLXAudioSTT */,
 				04PIISCR2F2E000100000003 /* PIIScrubber */,
 				04MCPCOR2F2E000100000004 /* MCPCore */,
 				04A236472F2E34510055F436 /* FirebaseAppCheck */,
@@ -595,6 +604,7 @@
 				046C6AAE2F1BE07D006CDAC7 /* XCRemoteSwiftPackageReference "TaskRunner" */,
 				03BPETOK2F2A000100000003 /* XCRemoteSwiftPackageReference "swift-bpe-tokenizer" */,
 				03MLXEMB2F2B000100000003 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
+				03MLXAUD2F70000100000003 /* XCRemoteSwiftPackageReference "mlx-audio-swift" */,
 				04REMPKG0002000000000001 /* XCRemoteSwiftPackageReference "MCPCore" */,
 				04REMPKG0003000000000001 /* XCRemoteSwiftPackageReference "RAGCore" */,
 				04LOCPKG0003000000000001 /* XCLocalSwiftPackageReference "Local Packages/PeelUI" */,
@@ -1344,6 +1354,14 @@
 				minimumVersion = 1.0.0;
 			};
 		};
+		03MLXAUD2F70000100000003 /* XCRemoteSwiftPackageReference "mlx-audio-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/Blaizzy/mlx-audio-swift";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
 		03MLXEMB2F2B000100000003 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/ml-explore/mlx-swift-lm";
@@ -1414,6 +1432,21 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 03MLXEMB2F2B000100000003 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
 			productName = MLXLMCommon;
+		};
+		03MLXAUD2F70000100000002 /* MLXAudioCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03MLXAUD2F70000100000003 /* XCRemoteSwiftPackageReference "mlx-audio-swift" */;
+			productName = MLXAudioCore;
+		};
+		03MLXAUD2F70000200000002 /* MLXAudioTTS */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03MLXAUD2F70000100000003 /* XCRemoteSwiftPackageReference "mlx-audio-swift" */;
+			productName = MLXAudioTTS;
+		};
+		03MLXAUD2F70000300000002 /* MLXAudioSTT */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 03MLXAUD2F70000100000003 /* XCRemoteSwiftPackageReference "mlx-audio-swift" */;
+			productName = MLXAudioSTT;
 		};
 		040AAB7D26CB385800DE1CBF /* Git */ = {
 			isa = XCSwiftPackageProductDependency;

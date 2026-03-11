@@ -154,6 +154,9 @@ public final class RAGSyncCoordinator {
       throw RAGSyncError.noDelegateConfigured
     }
 
+    // Normalize early so the identifier matches across machines
+    let normalizedIdentifier = RepoRegistry.shared.normalizeRemoteURL(repoIdentifier)
+
     // Find the worker — try cached list first, then fetch directly from Firestore
     let firebase = FirebaseService.shared
     var worker = firebase.swarmWorkers.first(where: { $0.id == fromWorkerId })
@@ -165,19 +168,19 @@ public final class RAGSyncCoordinator {
       throw RAGSyncError.workerNotFound(workerId: fromWorkerId)
     }
 
-    versionService.markSyncStarted(repoIdentifier: repoIdentifier)
-    logger.info("Starting sync of \(repoIdentifier) from \(worker.displayName)")
+    versionService.markSyncStarted(repoIdentifier: normalizedIdentifier)
+    logger.info("Starting sync of \(normalizedIdentifier) from \(worker.displayName)")
 
     do {
       let state = try await peerTransfer.requestIndex(
         from: worker,
-        repoIdentifier: repoIdentifier,
+        repoIdentifier: normalizedIdentifier,
         swarmId: swarmId,
         ragSyncDelegate: ragSyncDelegate
       )
 
       syncHistory.append(SyncHistoryEntry(
-        repoIdentifier: repoIdentifier,
+        repoIdentifier: normalizedIdentifier,
         fromWorkerName: worker.displayName,
         connectionMethod: state.connectionMethod?.rawValue ?? "unknown",
         bytesTransferred: state.transferredBytes,
@@ -185,10 +188,10 @@ public final class RAGSyncCoordinator {
         success: true
       ))
 
-      logger.info("Sync complete: \(repoIdentifier) from \(worker.displayName)")
+      logger.info("Sync complete: \(normalizedIdentifier) from \(worker.displayName)")
     } catch {
       syncHistory.append(SyncHistoryEntry(
-        repoIdentifier: repoIdentifier,
+        repoIdentifier: normalizedIdentifier,
         fromWorkerName: worker.displayName,
         connectionMethod: "failed",
         bytesTransferred: 0,
@@ -199,7 +202,7 @@ public final class RAGSyncCoordinator {
       throw error
     }
 
-    versionService.markSyncCompleted(repoIdentifier: repoIdentifier)
+    versionService.markSyncCompleted(repoIdentifier: normalizedIdentifier)
   }
 
   /// Sync from the best available source for a repo.

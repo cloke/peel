@@ -338,14 +338,26 @@ enum RAGRepoExporter {
 
     // Strategy 2: Extract the last path component (repo name) from the identifier
     // e.g., "github.com/cloke/peel" → "peel", "/Users/me/code/kitchen-sink" → "kitchen-sink"
+    // Also handles short names like "tio-api" (no slashes → repoName == repoIdentifier)
     let repoName = repoIdentifier.split(separator: "/").last.map(String.init) ?? repoIdentifier
-    if !repoName.isEmpty && repoName != repoIdentifier {
+    if !repoName.isEmpty {
+      // First try matching by name column
       let nameMatches = execQueryRepos(db: db, columns: columns,
           whereClause: "name = ?", bindValue: repoName,
           hasParentRepoId: hasParentRepoId, hasEmbeddingModel: hasEmbeddingModel,
           hasEmbeddingDimensions: hasEmbeddingDimensions)
       if !nameMatches.isEmpty {
         return nameMatches
+      }
+
+      // Also try matching the short name against the last component of stored repo_identifiers
+      // e.g., "tio-api" should match a row where repo_identifier = "github.com/tuitionio/tio-api"
+      let suffixMatches = execQueryRepos(db: db, columns: columns,
+          whereClause: "repo_identifier LIKE ?", bindValue: "%/\(repoName)",
+          hasParentRepoId: hasParentRepoId, hasEmbeddingModel: hasEmbeddingModel,
+          hasEmbeddingDimensions: hasEmbeddingDimensions)
+      if !suffixMatches.isEmpty {
+        return suffixMatches
       }
     }
 

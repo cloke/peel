@@ -21,6 +21,8 @@ struct ModelLabView: View {
   @State private var selectedModel: MLXModelEntry?
   @State private var showingChat = false
   @State private var viewModel = ModelLabViewModel()
+  @State private var ttsService = MLXTTSService()
+  @State private var sttService = MLXSTTService()
 
   var body: some View {
     NavigationSplitView {
@@ -30,7 +32,9 @@ struct ModelLabView: View {
         ModelDetailView(
           model: model,
           category: selectedCategory,
-          viewModel: viewModel
+          viewModel: viewModel,
+          ttsService: ttsService,
+          sttService: sttService
         )
       } else {
         ContentUnavailableView(
@@ -94,6 +98,8 @@ struct ModelDetailView: View {
   let model: MLXModelEntry
   let category: MLXModelCategory
   @Bindable var viewModel: ModelLabViewModel
+  @Bindable var ttsService: MLXTTSService
+  @Bindable var sttService: MLXSTTService
 
   var body: some View {
     ScrollView {
@@ -102,6 +108,10 @@ struct ModelDetailView: View {
         modelInfo
         if category.supportsChat {
           chatSection
+        } else if category == .tts {
+          ttsSection
+        } else if category == .stt {
+          sttSection
         } else {
           capabilityCallout
         }
@@ -313,14 +323,241 @@ struct ModelDetailView: View {
     switch category {
     case .imageGeneration:
       return "Image generation support is coming soon.\nModels use DiffusionKit and run locally on Apple Silicon."
-    case .tts:
-      return "Text-to-speech support is coming soon.\nModels use mlx-audio for real-time voice synthesis."
-    case .stt:
-      return "Speech-to-text support is coming soon.\nModels use mlx-audio for local transcription."
     case .embedding:
       return "Embedding models are used by the RAG system.\nConfigure embeddings in Settings > RAG."
     default:
       return "This model type is not yet interactive."
+    }
+  }
+
+  // MARK: - TTS Section
+
+  @State private var ttsInputText = ""
+  @State private var ttsVoice = ""
+
+  private var ttsSection: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Label("Text-to-Speech", systemImage: "speaker.wave.3")
+        .font(.headline)
+
+      TextField("Enter text to speak…", text: $ttsInputText, axis: .vertical)
+        .textFieldStyle(.plain)
+        .padding(8)
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+        .lineLimit(2...8)
+
+      HStack(spacing: 12) {
+        TextField("Voice (optional)", text: $ttsVoice)
+          .textFieldStyle(.plain)
+          .padding(8)
+          .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+          .frame(maxWidth: 200)
+
+        Spacer()
+
+        if ttsService.isGenerating {
+          Button("Stop") {
+            ttsService.stop()
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
+        }
+
+        Button {
+          Task {
+            await ttsService.generateAndPlay(
+              text: ttsInputText.trimmingCharacters(in: .whitespacesAndNewlines),
+              modelId: model.huggingFaceId,
+              voice: ttsVoice.isEmpty ? nil : ttsVoice
+            )
+          }
+        } label: {
+          if ttsService.isGenerating {
+            ProgressView()
+              .controlSize(.small)
+              .frame(width: 28, height: 28)
+          } else {
+            Label("Speak", systemImage: "play.fill")
+          }
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.regular)
+        .disabled(
+          ttsInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || ttsService.isGenerating
+        )
+      }
+
+      if ttsService.isGenerating || ttsService.isLoading {
+        HStack(spacing: 6) {
+          ProgressView()
+            .controlSize(.mini)
+          Text(ttsService.statusText)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+
+      if let error = ttsService.errorMessage {
+        Label(error, systemImage: "exclamationmark.triangle")
+          .font(.caption)
+          .foregroundStyle(.red)
+      }
+
+      // Playback controls
+      if ttsService.audioPlayer.isPlaying || ttsService.audioPlayer.duration > 0 {
+        HStack(spacing: 12) {
+          Button {
+            ttsService.audioPlayer.togglePlayPause()
+          } label: {
+            Image(
+              systemName: ttsService.audioPlayer.isPlaying ? "pause.circle.fill" : "play.circle.fill"
+            )
+            .font(.title2)
+          }
+          .buttonStyle(.plain)
+
+          if ttsService.audioPlayer.duration > 0 {
+            Text(
+              String(
+                format: "%.1fs / %.1fs",
+                ttsService.audioPlayer.currentTime,
+                ttsService.audioPlayer.duration
+              ))
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .monospacedDigit()
+          }
+
+          Spacer()
+
+          Button {
+            ttsService.audioPlayer.stop()
+          } label: {
+            Image(systemName: "stop.circle")
+              .font(.title3)
+          }
+          .buttonStyle(.plain)
+        }
+        .padding(.top, 4)
+      }
+
+      voiceHints
+    }
+  }
+
+  private var voiceHints: some View {
+    DisclosureGroup("Voice Options") {
+      VStack(alignment: .leading, spacing: 4) {
+        Text("Voice names depend on the model. Common options:")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+        Group {
+          Text("**Orpheus**: tara, leah, jess, leo, dan, mia, zac, zoe")
+          Text("**Soprano**: default (leave empty)")
+          Text("**Qwen3-TTS**: leave empty for default voice")
+        }
+        .font(.caption2)
+        .foregroundStyle(.tertiary)
+      }
+      .padding(.top, 4)
+    }
+    .font(.caption)
+    .foregroundStyle(.secondary)
+  }
+
+  // MARK: - STT Section
+
+  @State private var sttFileURL: URL?
+  @State private var sttTranscriptionResult: String?
+  @State private var showingFileImporter = false
+
+  private var sttSection: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Label("Speech-to-Text", systemImage: "mic")
+        .font(.headline)
+
+      HStack(spacing: 12) {
+        Button {
+          showingFileImporter = true
+        } label: {
+          Label(
+            sttFileURL?.lastPathComponent ?? "Choose Audio File…",
+            systemImage: "doc.badge.plus"
+          )
+        }
+        .buttonStyle(.bordered)
+
+        Spacer()
+
+        if sttService.isTranscribing {
+          Button("Stop") {
+            sttService.stop()
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
+        }
+
+        Button {
+          guard let url = sttFileURL else { return }
+          Task {
+            sttTranscriptionResult = await sttService.transcribe(
+              audioURL: url,
+              modelId: model.huggingFaceId
+            )
+          }
+        } label: {
+          if sttService.isTranscribing {
+            ProgressView()
+              .controlSize(.small)
+              .frame(width: 28, height: 28)
+          } else {
+            Label("Transcribe", systemImage: "text.bubble")
+          }
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.regular)
+        .disabled(sttFileURL == nil || sttService.isTranscribing)
+      }
+      .fileImporter(
+        isPresented: $showingFileImporter,
+        allowedContentTypes: [.audio, .wav, .mp3, .aiff],
+        allowsMultipleSelection: false
+      ) { result in
+        if case .success(let urls) = result, let url = urls.first {
+          sttFileURL = url
+        }
+      }
+
+      if sttService.isTranscribing || sttService.isLoading {
+        HStack(spacing: 6) {
+          ProgressView()
+            .controlSize(.mini)
+          Text(sttService.statusText)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+
+      if let error = sttService.errorMessage {
+        Label(error, systemImage: "exclamationmark.triangle")
+          .font(.caption)
+          .foregroundStyle(.red)
+      }
+
+      if let transcription = sttTranscriptionResult {
+        VStack(alignment: .leading, spacing: 6) {
+          Label("Transcription", systemImage: "text.quote")
+            .font(.subheadline.weight(.medium))
+          Text(transcription)
+            .font(.body)
+            .textSelection(.enabled)
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+        }
+        .padding(.top, 4)
+      }
     }
   }
 }

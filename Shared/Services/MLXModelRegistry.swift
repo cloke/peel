@@ -289,27 +289,72 @@ final class MLXModelRegistry: Sendable {
   /// Built-in TTS models
   static let builtinTTSModels: [MLXModelEntry] = [
     MLXModelEntry(
-      name: "Kokoro 82M",
-      huggingFaceId: "mlx-community/Kokoro-82M",
+      name: "Soprano 80M",
+      huggingFaceId: "mlx-community/Soprano-80M-bf16",
       tier: "small",
       maxTokens: nil, contextLength: nil,
       dimensions: nil, isCodeOptimized: nil,
-      description: "Ultra-lightweight TTS. 82M params, 8 voices, real-time on any Apple Silicon.",
-      estimatedSizeGB: 0.35, minimumRAMGB: 8
+      description: "Ultra-lightweight TTS. 80M params, fast generation, good quality for its size.",
+      estimatedSizeGB: 0.3, minimumRAMGB: 8
     ),
     MLXModelEntry(
       name: "Qwen3-TTS 0.6B",
-      huggingFaceId: "mlx-community/Qwen3-TTS-0.6B-4bit",
+      huggingFaceId: "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-8bit",
       tier: "medium",
       maxTokens: nil, contextLength: nil,
       dimensions: nil, isCodeOptimized: nil,
-      description: "Alibaba's TTS model with natural prosody and multi-language support.",
+      description: "Alibaba's TTS model with natural prosody and multi-language support. 8-bit quantized.",
       estimatedSizeGB: 0.4, minimumRAMGB: 8
+    ),
+    MLXModelEntry(
+      name: "Orpheus 3B",
+      huggingFaceId: "mlx-community/orpheus-3b-0.1-ft-bf16",
+      tier: "large",
+      maxTokens: nil, contextLength: nil,
+      dimensions: nil, isCodeOptimized: nil,
+      description: "High-quality multi-voice TTS. 3B params. Voices: tara, leah, jess, leo, dan, mia, zac, zoe.",
+      estimatedSizeGB: 6.0, minimumRAMGB: 16
+    ),
+    MLXModelEntry(
+      name: "VyvoTTS EN Beta",
+      huggingFaceId: "mlx-community/VyvoTTS-EN-Beta-4bit",
+      tier: "medium",
+      maxTokens: nil, contextLength: nil,
+      dimensions: nil, isCodeOptimized: nil,
+      description: "English TTS model. 4-bit quantized for efficient inference.",
+      estimatedSizeGB: 0.5, minimumRAMGB: 8
+    ),
+    MLXModelEntry(
+      name: "Pocket TTS",
+      huggingFaceId: "mlx-community/pocket-tts",
+      tier: "small",
+      maxTokens: nil, contextLength: nil,
+      dimensions: nil, isCodeOptimized: nil,
+      description: "Compact TTS model optimized for fast on-device generation.",
+      estimatedSizeGB: 0.2, minimumRAMGB: 8
     ),
   ]
 
   /// Built-in STT models
   static let builtinSTTModels: [MLXModelEntry] = [
+    MLXModelEntry(
+      name: "Qwen3-ASR 0.6B",
+      huggingFaceId: "mlx-community/Qwen3-ASR-0.6B-4bit",
+      tier: "small",
+      maxTokens: nil, contextLength: nil,
+      dimensions: nil, isCodeOptimized: nil,
+      description: "Alibaba's ASR model. 0.6B params, 4-bit quantized. Multi-language support with timestamps.",
+      estimatedSizeGB: 0.4, minimumRAMGB: 8
+    ),
+    MLXModelEntry(
+      name: "Qwen3-ASR 1.7B",
+      huggingFaceId: "mlx-community/Qwen3-ASR-1.7B-bf16",
+      tier: "medium",
+      maxTokens: nil, contextLength: nil,
+      dimensions: nil, isCodeOptimized: nil,
+      description: "Larger Qwen3 ASR model. Higher accuracy with timestamps and multi-language support.",
+      estimatedSizeGB: 3.4, minimumRAMGB: 12
+    ),
     MLXModelEntry(
       name: "Parakeet TDT 0.6B v3",
       huggingFaceId: "mlx-community/parakeet-tdt-0.6b-v3",
@@ -318,6 +363,24 @@ final class MLXModelRegistry: Sendable {
       dimensions: nil, isCodeOptimized: nil,
       description: "NVIDIA's fast ASR model. 0.6B params, English-optimized, high accuracy.",
       estimatedSizeGB: 1.2, minimumRAMGB: 8
+    ),
+    MLXModelEntry(
+      name: "GLM-ASR Nano",
+      huggingFaceId: "mlx-community/GLM-ASR-Nano-2512-4bit",
+      tier: "small",
+      maxTokens: nil, contextLength: nil,
+      dimensions: nil, isCodeOptimized: nil,
+      description: "Compact ASR model. Nano size with 4-bit quantization for fast transcription.",
+      estimatedSizeGB: 0.3, minimumRAMGB: 8
+    ),
+    MLXModelEntry(
+      name: "Voxtral Mini 4B",
+      huggingFaceId: "mlx-community/Voxtral-Mini-4B-Realtime-2602-fp16",
+      tier: "large",
+      maxTokens: nil, contextLength: nil,
+      dimensions: nil, isCodeOptimized: nil,
+      description: "Mistral's real-time ASR model. 4B params, high accuracy, fp16 precision.",
+      estimatedSizeGB: 8.0, minimumRAMGB: 18
     ),
   ]
 
