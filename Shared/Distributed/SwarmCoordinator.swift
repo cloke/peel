@@ -7,22 +7,27 @@
 // ┌─────────────────────────────────────────────────────────────────────┐
 // │  ARCHITECTURE INVARIANT — DO NOT CHANGE WITHOUT OWNER APPROVAL     │
 // │                                                                     │
-// │  Firestore is the SOLE coordination layer for:                      │
+// │  Firestore is the SOLE coordination & signaling layer for:          │
 // │    • Task dispatch (submitTask → task queue → worker claims)        │
 // │    • Worker status & heartbeats                                     │
 // │    • Member management & permissions                                │
 // │    • Task results & completion                                      │
 // │    • Direct commands & update-workers                               │
+// │    • WebRTC SDP signaling (offers, answers, ICE candidates)         │
 // │    • All cross-network communication                                │
 // │                                                                     │
-// │  P2P TCP connections (LAN/WAN/STUN) are ONLY for:                   │
+// │  P2P (TCP direct / WebRTC data channel) is ONLY for:               │
 // │    • Large file transfers (RAG artifacts/embeddings)                 │
 // │    • Nothing else. Zero. Nada.                                      │
 // │                                                                     │
+// │  🚫 NO DATA THROUGH FIRESTORE — EVER:                              │
+// │    • FirestoreRelayTransfer is DEPRECATED — do NOT use as fallback  │
+// │    • Transfer pipeline: TCP LAN → TCP WAN → WebRTC → FAIL          │
+// │    • If P2P fails, fix P2P — don't route data through Firestore    │
+// │                                                                     │
 // │  If you are adding a feature that sends status, commands, tasks,    │
-// │  or coordination messages: USE FIRESTORE, not P2P TCP.              │
-// │  If you are transferring large binary data: USE P2P with Firestore  │
-// │  relay as fallback (see OnDemandPeerTransfer.swift).                │
+// │  or coordination messages: USE FIRESTORE, not P2P.                  │
+// │  If you are transferring large binary data: USE P2P ONLY.           │
 // │                                                                     │
 // │  connectedWorkers (TCP peers) must NEVER be a prerequisite for      │
 // │  task dispatch, direct commands, or worker updates.                  │

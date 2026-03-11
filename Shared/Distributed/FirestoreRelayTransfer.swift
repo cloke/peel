@@ -2,19 +2,24 @@
 //  FirestoreRelayTransfer.swift
 //  Peel
 //
-//  Relays RAG data through Firestore documents when all direct P2P
-//  connections fail (LAN, WAN direct, STUN hole-punch).
+// ┌─────────────────────────────────────────────────────────────────────┐
+// │  ⚠️  DEPRECATED — DO NOT USE AS A FALLBACK IN OnDemandPeerTransfer  │
+// │                                                                     │
+// │  This file sends actual RAG data (~30MB+) as base64 chunks through  │
+// │  Firestore documents. This is expensive, slow, and violates the     │
+// │  architecture: Firestore is for coordination/signaling ONLY.        │
+// │                                                                     │
+// │  The correct transfer pipeline is P2P only:                         │
+// │    TCP LAN → TCP WAN → WebRTC data channel → FAIL                  │
+// │                                                                     │
+// │  If P2P fails, fix the P2P path — do NOT route data through here.   │
+// │  This code is retained for reference but must not be wired as a     │
+// │  fallback in the transfer pipeline.                                 │
+// └─────────────────────────────────────────────────────────────────────┘
 //
-//  This is the "always works" fallback — both peers already have
-//  authenticated Firestore access, so no NAT traversal is needed.
-//
-//  Flow:
-//  1. Consumer writes a relay request to Firestore
-//  2. Provider detects the request, exports RAG data, writes chunks
-//  3. Consumer reads the chunks and imports
-//
-//  Data is chunked into ~700KB base64-encoded documents to stay
-//  under Firestore's 1MB per-document limit.
+//  Original purpose (now deprecated):
+//  Relayed RAG data through Firestore documents when all direct P2P
+//  connections failed (LAN, WAN direct, STUN hole-punch).
 //
 
 import Foundation

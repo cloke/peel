@@ -185,30 +185,40 @@ To pull submodules/local packages too: `command: "git pull origin main && cd 'Lo
 
 The swarm has TWO distinct communication layers with STRICT separation:
 
-**Firestore = ALL coordination** (the backbone):
+**Firestore = coordination & signaling ONLY** (the backbone):
 - Task dispatch (`FirebaseService.submitTask` → task queue → worker claims via listener)
 - Worker status & heartbeats (Firestore worker registration)
 - Member management & permissions
 - Task results & completion status
 - Direct commands & worker updates
 - Swarm chat & activity logging
+- WebRTC SDP signaling (offers, answers, ICE candidates) — small JSON docs only
 - ALL cross-network communication
 
-**P2P TCP (LAN/WAN/STUN) = ONLY large file transfers**:
-- RAG artifact sync (`OnDemandPeerTransfer` → `FirestoreRelayTransfer` fallback)
+**P2P (TCP direct / WebRTC data channel) = ALL data transfer**:
+- RAG artifact sync via `OnDemandPeerTransfer`: TCP LAN → TCP WAN → WebRTC data channel
 - Nothing else. Literally nothing.
+
+**🚫 NO DATA THROUGH FIRESTORE — EVER:**
+- `FirestoreRelayTransfer.swift` exists but is **DEPRECATED and must NOT be used as a fallback**.
+- Firestore relay sends actual RAG data (~30MB+) as base64 chunks through Firestore documents. This is expensive, slow, and defeats the entire purpose of P2P.
+- Firestore's role is ONLY coordination and signaling (small JSON metadata). Never bulk data.
+- If all P2P connections fail (LAN/WAN/WebRTC), the transfer should **fail with an error**, not fall back to Firestore relay.
+- The correct fix when P2P fails is to debug WHY it fails (e.g., WebRTC signaling, NAT traversal, STUN/TURN), not to bypass P2P.
 
 **Rules agents MUST follow:**
 1. **NEVER gate task dispatch on `connectedWorkers`** (TCP peers). Workers discover tasks via Firestore listeners.
 2. **NEVER require a TCP connection** for `swarm.dispatch`, `swarm.direct-command`, or `swarm.update-workers`.
 3. **NEVER add coordination messages** (status, commands, heartbeats) to `PeerConnectionManager`.
-4. If adding a new swarm feature, ask: "Is this transferring large binary data?" If NO → use Firestore. If YES → use P2P with Firestore relay fallback.
-5. The `peers` array in `swarm.diagnostics` shows TCP connections (file transfer readiness). The `firestoreWorkers` array shows all registered workers (actual availability for task dispatch).
+4. **NEVER send bulk data through Firestore** — no `FirestoreRelayTransfer`, no base64 document chunks, no "relay fallback". If P2P fails, fail loudly.
+5. If adding a new swarm feature, ask: "Is this transferring large binary data?" If NO → use Firestore. If YES → use P2P only (TCP or WebRTC). No Firestore fallback.
+6. The `peers` array in `swarm.diagnostics` shows TCP connections (file transfer readiness). The `firestoreWorkers` array shows all registered workers (actual availability for task dispatch).
 
 **Key files with architecture banners** (read the header comments):
 - `Shared/Distributed/SwarmCoordinator.swift` — Main invariant definition
 - `Shared/Distributed/PeerConnectionManager.swift` — P2P scope restrictions
 - `Shared/Distributed/FirebaseService.swift` — Firestore as backbone
+- `Shared/Distributed/OnDemandPeerTransfer.swift` — P2P transfer pipeline (NO relay fallback)
 - `Shared/AgentOrchestration/ToolHandlers/SwarmToolsHandler+TaskDispatch.swift` — Dispatch rules
 
 **If you're unsure**, check the file header banner before modifying any file in `Shared/Distributed/`.

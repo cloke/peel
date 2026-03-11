@@ -13,8 +13,12 @@
 //  4. Disconnect
 //
 // ┌─────────────────────────────────────────────────────────────────────┐
-// │  THIS IS THE CORRECT USE OF P2P — large binary file transfers.      │
-// │  P2P with Firestore relay fallback is the right pattern here.       │
+// │  P2P ONLY — NO FIRESTORE DATA RELAY                                 │
+// │                                                                     │
+// │  Transfer pipeline: TCP LAN → TCP WAN → WebRTC data channel → FAIL  │
+// │  If all P2P methods fail, the transfer FAILS with an error.         │
+// │  Do NOT add FirestoreRelayTransfer as a fallback here.              │
+// │  Firestore is for signaling/coordination only, never bulk data.     │
 // │  Do NOT add coordination/status/task messages to this path.         │
 // └─────────────────────────────────────────────────────────────────────┘
 //
