@@ -6,6 +6,7 @@
 //  Updated for SwiftData on 1/7/26
 //
 
+import CloudKit
 import Foundation
 import SwiftUI
 import SwiftData
@@ -255,7 +256,37 @@ struct PeelApp: App {
   /// SwiftData model container with two stores:
   /// 1. CloudKit-synced store for shared tracking config (repos, favorites, PRs)
   /// 2. Device-local store for machine-specific state (pull results, local paths)
+  ///
+  /// CloudKit initialization can deadlock on a semaphore inside
+  /// `NSCloudKitMirroringDelegate._initializeCloudKitForObservedStore` when
+  /// iCloud is unavailable or slow, causing macOS to report "not responding".
+  /// To prevent this, we pre-check iCloud account status with a short timeout
+  /// and only enable `.automatic` when the account is confirmed available.
   static var sharedModelContainer: ModelContainer = {
+    // Pre-check iCloud availability with a 5-second timeout to avoid the
+    // CloudKit semaphore deadlock that causes the "not responding" hang.
+    let useCloudKit: Bool = {
+      let semaphore = DispatchSemaphore(value: 0)
+      let available = OSAllocatedUnfairLock(initialState: false)
+      CKContainer.default().accountStatus { status, error in
+        if let error {
+          print("⚠️ iCloud account check failed: \(error.localizedDescription)")
+        }
+        available.withLock { $0 = (status == .available) }
+        semaphore.signal()
+      }
+      let result = semaphore.wait(timeout: .now() + 5)
+      if result == .timedOut {
+        print("⚠️ iCloud account check timed out after 5s — starting without CloudKit sync")
+        return false
+      }
+      let isAvailable = available.withLock { $0 }
+      if !isAvailable {
+        print("ℹ️ iCloud account not available — starting without CloudKit sync")
+      }
+      return isAvailable
+    }()
+
     let syncedSchema = Schema([
       // Synced to iCloud — shared across devices
       SyncedRepository.self,
@@ -305,10 +336,11 @@ struct PeelApp: App {
     ])
 
     // Existing synced store (unnamed → "default.store", preserves existing data)
+    // Only enable CloudKit if iCloud is confirmed available (avoids semaphore deadlock)
     let syncedConfig = ModelConfiguration(
       schema: syncedSchema,
       isStoredInMemoryOnly: false,
-      cloudKitDatabase: .automatic
+      cloudKitDatabase: useCloudKit ? .automatic : .none
     )
 
     // New device-local store for machine-specific pull state

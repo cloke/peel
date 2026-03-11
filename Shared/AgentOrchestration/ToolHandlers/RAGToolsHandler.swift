@@ -60,6 +60,7 @@ final class RAGToolsHandler: MCPToolHandler {
     "rag.lessons.applied", // Issue #210: Learning loop - record lesson was applied (increases confidence)
     "rag.repos.list",
     "rag.repos.delete",
+    "rag.publish",
     "rag.stats",
     "rag.largeFiles",
     "rag.constructTypes",
