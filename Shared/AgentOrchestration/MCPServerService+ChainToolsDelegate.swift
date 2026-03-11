@@ -189,6 +189,38 @@ extension MCPServerService: ChainToolsHandlerDelegate {
   func listChainRuns(limit: Int?, status: String?) -> [ChainToolRunSummary] {
     var runs: [ChainToolRunSummary] = []
     
+    // Detect and clean up zombie runs (in activeRunsById but no task, running > 15 min)
+    let zombieThreshold: TimeInterval = 15 * 60
+    var zombieIds: [UUID] = []
+    for (runId, info) in activeRunsById {
+      if activeChainTasks[runId] == nil && Date().timeIntervalSince(info.startedAt) > zombieThreshold {
+        zombieIds.append(runId)
+      }
+    }
+    for runId in zombieIds {
+      if let info = activeRunsById[runId] {
+        if let dataService {
+          _ = dataService.recordMCPRun(
+            recordId: runId,
+            templateId: nil,
+            templateName: info.templateName,
+            prompt: info.prompt,
+            workingDirectory: info.workingDirectory,
+            success: false,
+            errorMessage: "Auto-recovered zombie run (task lost, exceeded \(Int(zombieThreshold/60))m)",
+            mergeConflictsCount: 0,
+            resultCount: 0
+          )
+        }
+        activeChainTasks[runId] = nil
+        activeChainRunIds.remove(runId)
+        activeChainTimeouts[runId]?.cancel()
+        activeChainTimeouts[runId] = nil
+        activeRunsById[runId] = nil
+        activeRunChains[runId] = nil
+      }
+    }
+    
     // Add active runs
     for (runId, info) in activeRunsById {
       if status == nil || status == "running" {
@@ -601,6 +633,34 @@ extension MCPServerService: ChainToolsHandlerDelegate {
     
     // Try to cancel from queue
     if cancelQueuedRunInternal(runId: runId) {
+      return
+    }
+    
+    // Force-cleanup zombie run (in activeRunsById but no task/queue entry)
+    if let info = activeRunsById[runId] {
+      await telemetryProvider.warning("Force-stopping zombie chain run", metadata: [
+        "runId": runId.uuidString,
+        "templateName": info.templateName
+      ])
+      if let dataService {
+        _ = dataService.recordMCPRun(
+          recordId: runId,
+          templateId: nil,
+          templateName: info.templateName,
+          prompt: info.prompt,
+          workingDirectory: info.workingDirectory,
+          success: false,
+          errorMessage: "Force-stopped: task lost (zombie run)",
+          mergeConflictsCount: 0,
+          resultCount: 0
+        )
+      }
+      activeChainTasks[runId] = nil
+      activeChainRunIds.remove(runId)
+      activeChainTimeouts[runId]?.cancel()
+      activeChainTimeouts[runId] = nil
+      activeRunsById[runId] = nil
+      activeRunChains[runId] = nil
       return
     }
     
