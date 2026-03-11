@@ -166,6 +166,44 @@ struct PeelApp: App {
         let role = SwarmRole(rawValue: settings.swarmRole) ?? .hybrid
         do {
           try WorkerMode.shared.start(role: role)
+
+          // Wait for Firebase auth (same pattern as auto-start path) so that
+          // STUN signaling responder and relay provider get initialized.
+          let firebaseService = FirebaseService.shared
+          if !firebaseService.isSignedIn {
+            for _ in 0..<20 {
+              try? await Task.sleep(for: .milliseconds(500))
+              if firebaseService.isSignedIn { break }
+            }
+          }
+
+          if firebaseService.isSignedIn {
+            let wanAddress = await WANAddressResolver.resolve()
+            SwarmCoordinator.shared.setResolvedWANAddress(wanAddress)
+
+            var swarms = firebaseService.memberSwarms
+            if swarms.isEmpty {
+              for _ in 0..<20 {
+                try? await Task.sleep(for: .milliseconds(500))
+                swarms = firebaseService.memberSwarms
+                if !swarms.isEmpty { break }
+              }
+            }
+
+            let capabilities = WorkerCapabilities.current(
+              wanAddress: wanAddress,
+              wanPort: 8766
+            )
+            for swarm in swarms where swarm.role.canRegisterWorkers {
+              _ = try? await firebaseService.registerWorker(swarmId: swarm.id, capabilities: capabilities)
+              firebaseService.startWorkerListener(swarmId: swarm.id)
+              firebaseService.startMessageListener(swarmId: swarm.id)
+            }
+
+            SwarmCoordinator.shared.reinitializeFirestoreServices(port: 8766)
+          } else {
+            print("Warning: Worker mode — Firebase auth not restored after 10s")
+          }
         } catch {
           print("Failed to start worker mode: \(error)")
         }
