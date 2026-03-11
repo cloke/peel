@@ -734,7 +734,9 @@ struct RepositoriesCommandCenter: View {
           }
 
           // PR Review Queue
-          PRReviewQueueSection()
+          PRReviewQueueSection { ownerRepo, prNumber in
+            selectedPRDetail = PRDetailIdentifier(ownerRepo: ownerRepo, prNumber: prNumber)
+          }
 
           // Agent Work (non-running items: queued runs, worktrees)
           if hasAgentWork {
