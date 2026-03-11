@@ -133,9 +133,9 @@ struct PeelApp: App {
                 print("Warning: No swarm memberships loaded after 10s — Firestore listeners not started")
               }
 
-              // Reinitialize STUN responder and relay provider now that Firebase is
+              // Reinitialize WebRTC responder and relay provider now that Firebase is
               // signed in and memberSwarms are loaded (they were skipped in start()).
-              SwarmCoordinator.shared.reinitializeFirestoreServices(port: 8766)
+              SwarmCoordinator.shared.reinitializeFirestoreServices()
             } else {
               print("Warning: Firebase auth not restored after 10s — Firestore listeners not started")
             }
@@ -168,7 +168,7 @@ struct PeelApp: App {
           try WorkerMode.shared.start(role: role)
 
           // Wait for Firebase auth (same pattern as auto-start path) so that
-          // STUN signaling responder and relay provider get initialized.
+          // WebRTC signaling responder and relay provider get initialized.
           let firebaseService = FirebaseService.shared
           if !firebaseService.isSignedIn {
             for _ in 0..<20 {
@@ -200,7 +200,7 @@ struct PeelApp: App {
               firebaseService.startMessageListener(swarmId: swarm.id)
             }
 
-            SwarmCoordinator.shared.reinitializeFirestoreServices(port: 8766)
+            SwarmCoordinator.shared.reinitializeFirestoreServices()
           } else {
             print("Warning: Worker mode — Firebase auth not restored after 10s")
           }

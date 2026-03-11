@@ -22,6 +22,7 @@
 import Foundation
 import Network
 import os.log
+import WebRTCTransfer
 
 // MARK: - Transfer State
 
@@ -105,28 +106,13 @@ public final class OnDemandPeerTransfer {
   /// this many seconds, cancel it. Prevents indefinite hangs.
   private let totalTransferTimeout: Duration = .seconds(600)  // 10 minutes
 
-  /// The local TCP listener port — must match PeerConnectionManager's port
-  /// so that STUN discovers the NAT mapping for our actual listening port.
-  /// Both sides (initiator + responder) must use the same port strategy
-  /// for TCP simultaneous open to work through NATs.
-  let listeningPort: UInt16
-
-  /// Reference to the STUN signaling responder so we can cancel any active
-  /// serve task before binding port 8766 for initiator-side STUN discovery.
-  weak var stunResponder: STUNSignalingResponder?
-
-  init(listeningPort: UInt16 = 8766) {
-    self.listeningPort = listeningPort
-  }
+  /// Reference to the WebRTC signaling responder for status tracking.
+  weak var webrtcResponder: WebRTCSignalingResponder?
 
   // MARK: - Public API
 
-  /// Firestore relay consumer (shared across transfers)
-  private let relayConsumer = FirestoreRelayConsumer()
-
   /// Connect to a peer, request a repo's RAG index, and import it.
-  /// Tries direct TCP first (LAN → WAN), then STUN + UDP hole punch,
-  /// then falls back to Firestore relay if all direct methods fail.
+  /// Tries direct TCP first (LAN → WAN), then WebRTC data channel,
   /// Returns the transfer state when complete.
   func requestIndex(
     from worker: FirestoreWorker,
@@ -179,11 +165,10 @@ public final class OnDemandPeerTransfer {
       return state
     }
 
-    // LAN/WAN direct failed — try STUN signaling + UDP hole punch transfer.
-    // STUN creates UDP NAT mappings; UDP hole punch uses those to establish
-    // bidirectional connectivity where TCP simultaneous open cannot.
+    // LAN/WAN direct failed — try WebRTC data channel transfer.
+    // WebRTC handles ICE (STUN/TURN), NAT traversal, and reliable SCTP delivery.
     do {
-      let bundleData = try await attemptSTUNUDPTransfer(
+      let bundleData = try await attemptWebRTCTransfer(
         worker: worker,
         repoIdentifier: repoIdentifier,
         state: state
@@ -193,24 +178,24 @@ public final class OnDemandPeerTransfer {
       try await importRepoBundle(data: bundleData, ragSyncDelegate: ragSyncDelegate)
       state.status = .complete
       state.completedAt = Date()
-      p2pLog.log("transfer", "STUN + UDP transfer complete", details: [
+      p2pLog.log("transfer", "WebRTC transfer complete", details: [
         "bytes": String(bundleData.count),
         "repo": repoIdentifier,
         "elapsed": String(format: "%.1f", state.elapsedSeconds),
       ])
-      logger.info("[transfer] UDP transfer complete: \(repoIdentifier) from \(worker.displayName) (\(bundleData.count) bytes in \(String(format: "%.1f", state.elapsedSeconds))s)")
+      logger.info("[transfer] WebRTC transfer complete: \(repoIdentifier) from \(worker.displayName) (\(bundleData.count) bytes in \(String(format: "%.1f", state.elapsedSeconds))s)")
       return state
     } catch {
-      p2pLog.log("transfer", "STUN + UDP transfer failed", details: [
+      p2pLog.log("transfer", "WebRTC transfer failed", details: [
         "error": "\(error)",
         "targetWorker": worker.displayName,
       ])
-      logger.info("[transfer] STUN + UDP failed to \(worker.displayName): \(error)")
+      logger.info("[transfer] WebRTC failed to \(worker.displayName): \(error)")
     }
 
-    // All direct connections failed — no relay fallback (disabled)
-    let msg = "All direct connections (LAN/WAN/STUN+UDP) failed to '\(worker.displayName)'. Relay fallback is disabled."
-    p2pLog.log("transfer", "ALL direct connections failed — no relay fallback", details: [
+    // All direct connections failed — no relay fallback
+    let msg = "All direct connections (LAN/WAN/WebRTC) failed to '\(worker.displayName)'."
+    p2pLog.log("transfer", "ALL direct connections failed", details: [
       "targetWorker": worker.displayName,
     ])
     state.error = msg
@@ -383,99 +368,54 @@ public final class OnDemandPeerTransfer {
     }
   }
 
-  /// Perform STUN discovery and UDP hole-punch data transfer via Firestore signaling.
+  /// Perform a WebRTC data channel transfer.
   ///
-  /// **Architecture (why UDP, not TCP):**
-  /// STUN discovers UDP NAT mappings (it sends UDP binding requests). TCP NAT
-  /// mappings are independent — the external port discovered via UDP STUN may
-  /// differ from what TCP would get. Additionally, TCP simultaneous open requires
-  /// both NATs to support it, which many consumer NATs don't.
-  ///
-  /// UDP hole punching works because:
-  /// 1. STUN already created the correct UDP NAT mapping for port 8766
-  /// 2. Both sides send UDP PUNCH packets to each other → creates bidirectional NAT entries
-  /// 3. Once punched, the initiator sends a REQUEST and receives DATA chunks
-  ///
-  /// On endpoint-independent mapping NATs (most home routers), the external
-  /// port stays the same regardless of destination, so STUN-discovered ports
-  /// correctly predict where UDP datagrams will appear.
-  private func attemptSTUNUDPTransfer(
+  /// WebRTC handles all NAT traversal (ICE/STUN) and reliable data delivery
+  /// (SCTP data channels) automatically. No manual hole-punching, keepalives,
+  /// or ACK management needed.
+  private func attemptWebRTCTransfer(
     worker: FirestoreWorker,
     repoIdentifier: String,
     state: OnDemandTransferState
   ) async throws -> Data {
     let p2pLog = P2PConnectionLog.shared
-    let localPort = listeningPort
+    let myDeviceId = WorkerCapabilities.current().deviceId
 
-    p2pLog.log("stun-udp", "Starting STUN + UDP transfer", details: [
+    p2pLog.log("webrtc", "Starting WebRTC transfer", details: [
       "targetWorker": worker.displayName,
       "targetWorkerId": worker.workerId,
       "repo": repoIdentifier,
-      "localPort": String(localPort),
     ])
 
-    // If there's an active UDP serve task (responding to a peer-initiated
-    // transfer), skip STUN entirely. Sending STUN bind requests from port
-    // 8766 to new destinations can corrupt the NAT mapping that the active
-    // serve's hole punch established, causing the serve to fail (ACKs no
-    // longer reach us through the changed NAT mapping).
-    if stunResponder?.activeServeTask != nil {
-      p2pLog.log("stun-udp", "Skipping — active serve task in progress (would corrupt NAT mapping)")
-      throw OnDemandTransferError.stunDiscoveryFailed
-    }
-
-    // 1. STUN discovery — creates/refreshes UDP NAT mapping for our port
-    guard let myEndpoint = await STUNClient.discoverEndpoint(localPort: localPort) else {
-      p2pLog.log("stun-udp", "STUN discovery FAILED")
-      throw OnDemandTransferError.stunDiscoveryFailed
-    }
-    p2pLog.log("stun-udp", "STUN discovery OK", details: [
-      "externalAddress": myEndpoint.address,
-      "externalPort": String(myEndpoint.port),
-      "server": myEndpoint.serverUsed,
-    ])
-
-    // 2. Write offer to Firestore for the target peer
-    let myDeviceId = WorkerCapabilities.current().deviceId
-    try await writeSTUNOffer(
-      swarmId: state.swarmId,
-      targetWorkerId: worker.workerId,
-      myDeviceId: myDeviceId,
-      endpoint: myEndpoint
-    )
-    p2pLog.log("stun-udp", "STUN offer written, waiting for answer")
-
-    // 3. Wait for peer's STUN answer (they do STUN + write answer + start UDP serve)
-    let peerEndpoint = try await waitForSTUNAnswer(
+    // Create Firestore signaling channel
+    let signaling = FirestoreWebRTCSignaling(
       swarmId: state.swarmId,
       myDeviceId: myDeviceId,
-      fromWorkerId: worker.workerId,
-      timeout: 30
+      remoteDeviceId: worker.workerId
     )
-    p2pLog.log("stun-udp", "STUN answer received", details: [
-      "peerAddress": peerEndpoint.address,
-      "peerPort": String(peerEndpoint.port),
-    ])
 
-    // 4. UDP hole punch + data transfer (with hard safety timeout)
+    // WebRTC transfer with safety timeout
     state.status = .transferring
     return try await withThrowingTaskGroup(of: Data.self) { group in
       group.addTask {
-        try await UDPPeerTransfer.requestData(
-          peerEndpoint: peerEndpoint,
-          localPort: localPort,
-          repoIdentifier: repoIdentifier
-        )
+        try await WebRTCPeerTransfer.requestData(
+          signaling: signaling,
+          repoIdentifier: repoIdentifier,
+          timeout: .seconds(300)
+        ) { bytesReceived, totalBytes in
+          Task { @MainActor in
+            state.transferredBytes = bytesReceived
+            state.totalBytes = totalBytes
+          }
+        }
       }
       group.addTask {
-        // Safety net: if requestData hangs beyond its own 180s timeout,
-        // force-fail after 200s so we fall back to Firestore relay.
-        try await Task.sleep(for: .seconds(200))
-        throw OnDemandTransferError.transferTimedOut(seconds: 200)
+        try await Task.sleep(for: .seconds(330))
+        throw OnDemandTransferError.transferTimedOut(seconds: 330)
       }
       defer { group.cancelAll() }
       guard let result = try await group.next() else {
-        throw OnDemandTransferError.transferTimedOut(seconds: 200)
+        throw OnDemandTransferError.transferTimedOut(seconds: 330)
       }
       return result
     }
@@ -591,121 +531,7 @@ public final class OnDemandPeerTransfer {
     _ = try await ragSyncDelegate.applyRepoSyncBundle(bundle, localRepoPath: nil, forceImportEmbeddings: true)
   }
 
-  // MARK: - STUN Signaling (via Firestore)
 
-  private func writeSTUNOffer(
-    swarmId: String,
-    targetWorkerId: String,
-    myDeviceId: String,
-    endpoint: STUNResult
-  ) async throws {
-    let db = Firestore.firestore()
-    let collection = db.collection("swarms/\(swarmId)/stunSignaling")
-    let answerDocRef = collection.document("\(targetWorkerId)_to_\(myDeviceId)")
-
-    // Delete stale answer doc from previous attempts so we can watch for a fresh one
-    try? await answerDocRef.delete()
-
-    // Use a unique offer doc ID per attempt so the responder's respondedOffers
-    // deduplication set doesn't block re-processing of retried signaling.
-    let uniqueOfferDocId = "\(myDeviceId)_to_\(targetWorkerId)_\(Int(Date().timeIntervalSince1970))"
-    let offerDocRef = collection.document(uniqueOfferDocId)
-
-    try await offerDocRef.setData([
-      "fromWorkerId": myDeviceId,
-      "toWorkerId": targetWorkerId,
-      "stunAddress": endpoint.address,
-      "stunPort": Int(endpoint.port),
-      "createdAt": FieldValue.serverTimestamp(),
-      "expiresAt": Timestamp(date: Date().addingTimeInterval(60)),
-    ])
-  }
-
-  /// Wait for the responder's STUN answer using a Firestore snapshot listener.
-  /// This is faster than polling (reacts within ~100ms vs up to 1s polling jitter),
-  /// which tightens the TCP simultaneous open timing window.
-  private func waitForSTUNAnswer(
-    swarmId: String,
-    myDeviceId: String,
-    fromWorkerId: String,
-    timeout: TimeInterval
-  ) async throws -> STUNResult {
-    let db = Firestore.firestore()
-    let docRef = db.collection("swarms/\(swarmId)/stunSignaling")
-      .document("\(fromWorkerId)_to_\(myDeviceId)")
-
-    // Use an actor to safely coordinate between the snapshot listener callback
-    // and the timeout task (NSLock is unavailable in async contexts in Swift 6).
-    actor SignalingState {
-      var resumed = false
-      func tryResume() -> Bool {
-        guard !resumed else { return false }
-        resumed = true
-        return true
-      }
-    }
-
-    let state = SignalingState()
-
-    return try await withCheckedThrowingContinuation { continuation in
-      var listener: ListenerRegistration?
-
-      let p2pLog = P2PConnectionLog.shared
-      let answerDocPath = "\(fromWorkerId)_to_\(myDeviceId)"
-      p2pLog.log("stun-initiator", "Snapshot listener attached for answer", details: [
-        "docPath": "swarms/\(swarmId)/stunSignaling/\(answerDocPath)",
-        "timeout": "\(timeout)s",
-      ])
-
-      // Timeout task
-      let timeoutTask = Task {
-        try await Task.sleep(for: .seconds(timeout))
-        guard await state.tryResume() else { return }
-        listener?.remove()
-        p2pLog.log("stun-initiator", "STUN answer TIMED OUT", details: ["timeout": "\(timeout)s"])
-        continuation.resume(throwing: OnDemandTransferError.stunSignalingTimeout)
-      }
-
-      listener = docRef.addSnapshotListener { snapshot, error in
-        if let error {
-          P2PConnectionLog.shared.log("stun-initiator", "Snapshot listener error", details: ["error": "\(error)"])
-        }
-        guard let data = snapshot?.data(),
-          let address = data["stunAddress"] as? String,
-          let port = data["stunPort"] as? Int
-        else {
-          let exists = snapshot?.exists ?? false
-          let hasData = snapshot?.data() != nil
-          P2PConnectionLog.shared.log("stun-initiator", "Snapshot event (no valid answer yet)", details: [
-            "docExists": String(exists),
-            "hasData": String(hasData),
-          ])
-          return
-        }
-
-        Task {
-          guard await state.tryResume() else { return }
-          timeoutTask.cancel()
-          listener?.remove()
-
-          P2PConnectionLog.shared.log("stun-initiator", "STUN answer received from snapshot", details: [
-            "peerAddress": address,
-            "peerPort": String(port),
-          ])
-
-          // Clean up the answer doc
-          try? await docRef.delete()
-
-          continuation.resume(returning: STUNResult(
-            address: address,
-            port: UInt16(port),
-            serverUsed: "signaling",
-            latencyMs: 0
-          ))
-        }
-      }
-    }
-  }
 
 }
 
@@ -722,9 +548,7 @@ public enum OnDemandTransferError: LocalizedError, Sendable {
   case allConnectionMethodsFailed(worker: String)
   case connectionTimeout(host: String, port: UInt16)
   case connectionCancelled
-  case stunDiscoveryFailed
-  case stunSignalingTimeout
-  case stunHolePunchFailed
+  case webrtcFailed(reason: String)
   case handshakeFailed(reason: String)
   case transferTimedOut(seconds: Int)
   case invalidChunkData(index: Int)
@@ -735,17 +559,13 @@ public enum OnDemandTransferError: LocalizedError, Sendable {
   public var errorDescription: String? {
     switch self {
     case .allConnectionMethodsFailed(let worker):
-      return "Could not connect to \(worker) via LAN, WAN, or STUN"
+      return "Could not connect to \(worker) via LAN, WAN, or WebRTC"
     case .connectionTimeout(let host, let port):
       return "Connection timed out to \(host):\(port)"
     case .connectionCancelled:
       return "Connection was cancelled"
-    case .stunDiscoveryFailed:
-      return "STUN endpoint discovery failed"
-    case .stunSignalingTimeout:
-      return "Timed out waiting for peer's STUN endpoint"
-    case .stunHolePunchFailed:
-      return "UDP hole-punching failed — peer may be behind symmetric NAT"
+    case .webrtcFailed(let reason):
+      return "WebRTC transfer failed: \(reason)"
     case .handshakeFailed(let reason):
       return "Handshake failed: \(reason)"
     case .transferTimedOut(let seconds):

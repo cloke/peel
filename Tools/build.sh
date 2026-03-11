@@ -18,6 +18,9 @@ CONFIG="${1:-Debug}"
 peel_acquire_build_lock --wait
 trap peel_release_build_lock EXIT
 
+# Patch WebRTC xcframework headers for macOS (idempotent, no-op if not present)
+"$(dirname "$0")/patch-webrtc-headers.sh" "$BUILD_DIR" 2>/dev/null || true
+
 if ! peel_run_build_with_retry "$CONFIG"; then
   peel_print_build_summary
   peel_print_failed_build_log 100

@@ -1,0 +1,308 @@
+//
+//  WebRTCPeerTransfer.swift
+//  WebRTCTransfer
+//
+//  High-level API for P2P data transfer using WebRTC data channels.
+//  Replaces the custom UDP hole-punch + PUNCH/REQUEST/DATA/ACK/FIN protocol
+//  with WebRTC's ICE (NAT traversal) + SCTP (reliable data channel).
+//
+//  WebRTC handles all of the following automatically:
+//  - STUN discovery and NAT mapping
+//  - ICE connectivity checks and candidate selection
+//  - NAT keepalives
+//  - Reliable, ordered data delivery (SCTP)
+//  - Congestion control
+//
+
+import Foundation
+import WebRTC
+import os.log
+
+/// Data provider protocol — the caller provides the data to serve.
+/// Replaces the previous `UDPTransferDataProvider`.
+public protocol WebRTCTransferDataProvider: AnyObject, Sendable {
+  func exportRepoBundle(repoIdentifier: String) async throws -> Data
+}
+
+/// High-level P2P transfer using WebRTC data channels.
+public enum WebRTCPeerTransfer {
+  private static let logger = Logger(subsystem: "com.peel.webrtc", category: "Transfer")
+
+  /// Max message size for a single RTCDataChannel send.
+  /// SCTP handles fragmentation, but keeping messages reasonably sized
+  /// improves flow control and allows progress tracking.
+  static let chunkSize = 64 * 1024  // 64KB
+
+  // MARK: - Transfer Protocol Messages
+
+  private enum MessageType: UInt8 {
+    case request = 1
+    case manifest = 2
+    case chunk = 3
+    case complete = 4
+    case error = 5
+  }
+
+  // MARK: - Initiator Side
+
+  /// Request data from a remote peer via WebRTC data channel.
+  ///
+  /// Flow:
+  /// 1. Create RTCPeerConnection + data channel
+  /// 2. Exchange SDP offer/answer via signaling
+  /// 3. Exchange ICE candidates via signaling
+  /// 4. Wait for data channel to open (ICE + DTLS complete)
+  /// 5. Send request, receive chunked data
+  ///
+  /// - Parameters:
+  ///   - signaling: Channel for exchanging SDP and ICE candidates (e.g., Firestore)
+  ///   - repoIdentifier: The repo to request data for
+  ///   - timeout: Total transfer timeout
+  ///   - progressHandler: Called with (bytesReceived, totalBytes)
+  /// - Returns: The received data
+  public static func requestData(
+    signaling: WebRTCSignalingChannel,
+    repoIdentifier: String,
+    timeout: Duration = .seconds(300),
+    progressHandler: (@Sendable (Int, Int) -> Void)? = nil
+  ) async throws -> Data {
+    let client = WebRTCClient()
+    defer { client.close(); Task { await signaling.cleanup() } }
+
+    logger.info("Starting WebRTC transfer (initiator) for \(repoIdentifier)")
+
+    // 1. Create data channel (must be before createOffer so it's in the SDP)
+    try await client.createDataChannel(label: "rag-transfer")
+
+    // 2. Set up ICE candidate forwarding to remote peer
+    let candidateTask = Task {
+      await client.onLocalICECandidate { candidate in
+        Task { try? await signaling.sendCandidate(candidate) }
+      }
+    }
+
+    // 3. Start receiving remote ICE candidates
+    let remoteCandidateTask = Task {
+      for await candidate in signaling.receiveCandidates() {
+        try? await client.addICECandidate(candidate)
+      }
+    }
+
+    // 4. Create and send SDP offer
+    let offerSDP = try await client.createOffer()
+    try await signaling.sendOffer(offerSDP)
+    logger.info("SDP offer sent, waiting for answer")
+
+    // 5. Wait for SDP answer
+    let answerSDP = try await signaling.waitForAnswer(timeout: .seconds(30))
+    try await client.setRemoteDescription(answerSDP, type: .answer)
+    logger.info("SDP answer received, waiting for data channel")
+
+    // 6. Wait for data channel to open (ICE negotiation + DTLS handshake)
+    try await client.waitForDataChannelOpen(timeout: .seconds(30))
+    logger.info("Data channel open, sending request")
+
+    // 7. Send request
+    let requestJSON = try JSONEncoder().encode(["repo": repoIdentifier])
+    var requestMsg = Data([MessageType.request.rawValue])
+    requestMsg.append(requestJSON)
+    try await client.send(requestMsg)
+
+    // 8. Receive data
+    let result = try await receiveChunkedData(
+      client: client,
+      timeout: timeout,
+      progressHandler: progressHandler
+    )
+
+    // Clean up
+    candidateTask.cancel()
+    remoteCandidateTask.cancel()
+
+    logger.info("Transfer complete: \(result.count) bytes for \(repoIdentifier)")
+    return result
+  }
+
+  // MARK: - Responder Side
+
+  /// Serve data to a remote peer via WebRTC data channel.
+  ///
+  /// Flow:
+  /// 1. Receive SDP offer from signaling
+  /// 2. Create RTCPeerConnection, set remote offer, create answer
+  /// 3. Exchange ICE candidates
+  /// 4. Wait for data channel from remote peer
+  /// 5. Wait for request, export data, send in chunks
+  ///
+  /// - Parameters:
+  ///   - signaling: Channel for exchanging SDP and ICE candidates
+  ///   - dataProvider: Provides the data to serve
+  ///   - timeout: Total serve timeout
+  public static func serveData(
+    signaling: WebRTCSignalingChannel,
+    dataProvider: WebRTCTransferDataProvider,
+    timeout: Duration = .seconds(300)
+  ) async throws {
+    let client = WebRTCClient()
+    defer { client.close(); Task { await signaling.cleanup() } }
+
+    logger.info("Starting WebRTC transfer (responder)")
+
+    // 1. Set up ICE candidate forwarding
+    await client.onLocalICECandidate { candidate in
+      Task { try? await signaling.sendCandidate(candidate) }
+    }
+
+    // 2. Start receiving remote ICE candidates
+    let remoteCandidateTask = Task {
+      for await candidate in signaling.receiveCandidates() {
+        try? await client.addICECandidate(candidate)
+      }
+    }
+
+    // 3. Wait for SDP offer
+    let offerSDP = try await signaling.waitForOffer(timeout: .seconds(30))
+    try await client.setRemoteDescription(offerSDP, type: .offer)
+    logger.info("SDP offer received, creating answer")
+
+    // 4. Create and send SDP answer
+    let answerSDP = try await client.createAnswer()
+    try await signaling.sendAnswer(answerSDP)
+    logger.info("SDP answer sent, waiting for data channel")
+
+    // 5. Wait for remote data channel
+    try await client.waitForRemoteDataChannel(timeout: .seconds(30))
+    logger.info("Data channel open, waiting for request")
+
+    // 6. Wait for request
+    let requestData = try await client.receive(timeout: .seconds(30))
+    guard requestData.first == MessageType.request.rawValue else {
+      throw WebRTCError.transferFailed(reason: "Expected request message, got type \(requestData.first ?? 0)")
+    }
+
+    let requestJSON = requestData.dropFirst()
+    guard let request = try? JSONDecoder().decode([String: String].self, from: Data(requestJSON)),
+      let repoIdentifier = request["repo"]
+    else {
+      throw WebRTCError.transferFailed(reason: "Invalid request format")
+    }
+
+    logger.info("Request received for \(repoIdentifier), exporting bundle")
+
+    // 7. Export data
+    let bundleData = try await dataProvider.exportRepoBundle(repoIdentifier: repoIdentifier)
+    logger.info("Bundle exported: \(bundleData.count) bytes, sending in chunks")
+
+    // 8. Send manifest
+    try await sendManifest(client: client, totalBytes: bundleData.count)
+
+    // 9. Send chunked data
+    try await sendChunkedData(client: client, data: bundleData)
+
+    // 10. Send complete
+    try await client.send(Data([MessageType.complete.rawValue]))
+    logger.info("Transfer served: \(bundleData.count) bytes for \(repoIdentifier)")
+
+    // Give the peer a moment to receive the complete message
+    try? await Task.sleep(for: .seconds(1))
+    remoteCandidateTask.cancel()
+  }
+
+  // MARK: - Chunked Transfer Helpers
+
+  private static func sendManifest(client: WebRTCClient, totalBytes: Int) async throws {
+    let totalChunks = (totalBytes + chunkSize - 1) / chunkSize
+    var msg = Data([MessageType.manifest.rawValue])
+    // 4 bytes totalBytes (big-endian) + 4 bytes totalChunks (big-endian)
+    var tb = UInt32(totalBytes).bigEndian
+    var tc = UInt32(totalChunks).bigEndian
+    msg.append(Data(bytes: &tb, count: 4))
+    msg.append(Data(bytes: &tc, count: 4))
+    try await client.send(msg)
+  }
+
+  private static func sendChunkedData(client: WebRTCClient, data: Data) async throws {
+    let totalChunks = (data.count + chunkSize - 1) / chunkSize
+    for i in 0..<totalChunks {
+      let start = i * chunkSize
+      let end = min(start + chunkSize, data.count)
+      let chunkData = data[start..<end]
+
+      var msg = Data([MessageType.chunk.rawValue])
+      // 4 bytes chunk index (big-endian)
+      var idx = UInt32(i).bigEndian
+      msg.append(Data(bytes: &idx, count: 4))
+      msg.append(chunkData)
+
+      try await client.send(msg)
+
+      // Brief yield every 16 chunks to let SCTP flush
+      if i % 16 == 15 {
+        try await Task.sleep(for: .milliseconds(1))
+      }
+    }
+  }
+
+  private static func receiveChunkedData(
+    client: WebRTCClient,
+    timeout: Duration,
+    progressHandler: (@Sendable (Int, Int) -> Void)?
+  ) async throws -> Data {
+    var totalBytes = 0
+    var totalChunks = 0
+    var receivedChunks = [UInt32: Data]()
+    var bytesReceived = 0
+
+    while true {
+      let msg = try await client.receive(timeout: timeout)
+      guard let type = msg.first.flatMap({ MessageType(rawValue: $0) }) else {
+        logger.warning("Unknown message type: \(msg.first ?? 0)")
+        continue
+      }
+
+      switch type {
+      case .manifest:
+        guard msg.count >= 9 else {
+          throw WebRTCError.transferFailed(reason: "Manifest too short")
+        }
+        let tbBytes = msg[1...4]
+        let tcBytes = msg[5...8]
+        totalBytes = Int(UInt32(bigEndian: tbBytes.withUnsafeBytes { $0.load(as: UInt32.self) }))
+        totalChunks = Int(UInt32(bigEndian: tcBytes.withUnsafeBytes { $0.load(as: UInt32.self) }))
+        logger.info("Manifest: \(totalBytes) bytes in \(totalChunks) chunks")
+
+      case .chunk:
+        guard msg.count >= 5 else {
+          throw WebRTCError.transferFailed(reason: "Chunk too short")
+        }
+        let idxBytes = msg[1...4]
+        let chunkIndex = UInt32(bigEndian: idxBytes.withUnsafeBytes { $0.load(as: UInt32.self) })
+        let chunkData = msg.dropFirst(5)
+        receivedChunks[chunkIndex] = Data(chunkData)
+        bytesReceived += chunkData.count
+        progressHandler?(bytesReceived, totalBytes)
+
+      case .complete:
+        // Reassemble chunks in order
+        guard totalChunks > 0 else {
+          throw WebRTCError.transferFailed(reason: "Complete received but no manifest")
+        }
+        var assembled = Data(capacity: totalBytes)
+        for i in 0..<UInt32(totalChunks) {
+          guard let chunk = receivedChunks[i] else {
+            throw WebRTCError.transferFailed(reason: "Missing chunk \(i) of \(totalChunks)")
+          }
+          assembled.append(chunk)
+        }
+        return assembled
+
+      case .error:
+        let errorMsg = String(data: Data(msg.dropFirst()), encoding: .utf8) ?? "Unknown error"
+        throw WebRTCError.transferFailed(reason: errorMsg)
+
+      case .request:
+        logger.warning("Unexpected request message on initiator side")
+      }
+    }
+  }
+}

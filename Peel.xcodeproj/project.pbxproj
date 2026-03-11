@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		04WEBRTC2F60000100000001 /* WebRTCTransfer in Frameworks */ = {isa = PBXBuildFile; productRef = 04WEBRTC2F60000100000002 /* WebRTCTransfer */; };
 		03BPETOK2F2A000100000001 /* SwiftBPETokenizer in Frameworks */ = {isa = PBXBuildFile; productRef = 03BPETOK2F2A000100000002 /* SwiftBPETokenizer */; };
 		03MLXEMB2F2B000100000001 /* MLXEmbedders in Frameworks */ = {isa = PBXBuildFile; productRef = 03MLXEMB2F2B000100000002 /* MLXEmbedders */; };
 		03MLXLLM2F30000100000001 /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = 03MLXLLM2F30000100000002 /* MLXLLM */; };
@@ -223,14 +224,12 @@
 				Distributed/FirebaseServiceTypes.swift,
 				Distributed/FirestoreRelayTransfer.swift,
 				Distributed/LocalNetworkActorSystem.swift,
-				Distributed/NATTraversalManager.swift,
 				Distributed/OnDemandPeerTransfer.swift,
 				Distributed/PRQueue.swift,
 				Distributed/PeelWorker.swift,
 				Distributed/PeerConnectionManager.swift,
 				Distributed/RAGArtifactSyncing.swift,
 				Distributed/STUNClient.swift,
-				Distributed/STUNSignalingResponder.swift,
 				Distributed/SwarmCoordinator.swift,
 				Distributed/SwarmPeerPreferences.swift,
 				Distributed/SwarmStatusView.swift,
@@ -328,6 +327,7 @@
 				046C6AB02F1BE07D006CDAC7 /* TaskRunner in Frameworks */,
 				04A236482F2E34510055F436 /* FirebaseAppCheck in Frameworks */,
 				04D09EFD26A85E8100072702 /* OAuthSwift in Frameworks */,
+				04WEBRTC2F60000100000001 /* WebRTCTransfer in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -512,6 +512,7 @@
 				04A2364D2F2E34510055F436 /* FirebaseFunctions */,
 				04RAGCOR2F3C000100000003 /* RAGCore */,
 				04MCPCOR2F2E000100000004 /* MCPCore */,
+				04WEBRTC2F60000100000002 /* WebRTCTransfer */,
 			);
 			productName = "Peel (macOS)";
 			productReference = 04A7BD72258E77D8000E55A8 /* Peel.app */;
@@ -600,6 +601,7 @@
 				04LOCPKG0005000000000001 /* XCLocalSwiftPackageReference "Local Packages/Github" */,
 				04LOCPKG0006000000000001 /* XCLocalSwiftPackageReference "Local Packages/Brew" */,
 				04LOCPKG0007000000000001 /* XCLocalSwiftPackageReference "Local Packages/PIIScrubber" */,
+				04LOCPKG0009000000000001 /* XCLocalSwiftPackageReference "Local Packages/WebRTCTransfer" */,
 				04A236462F2E34510055F436 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 			);
 			productRefGroup = 04A7BD6B258E77D8000E55A8 /* Products */;
@@ -1306,6 +1308,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = "Local Packages/PIIScrubber";
 		};
+		04LOCPKG0009000000000001 /* XCLocalSwiftPackageReference "Local Packages/WebRTCTransfer" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "Local Packages/WebRTCTransfer";
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -1457,6 +1463,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 04REMPKG0003000000000001 /* XCRemoteSwiftPackageReference "RAGCore" */;
 			productName = RAGCore;
+		};
+		04WEBRTC2F60000100000002 /* WebRTCTransfer */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 04LOCPKG0009000000000001 /* XCLocalSwiftPackageReference "Local Packages/WebRTCTransfer" */;
+			productName = WebRTCTransfer;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

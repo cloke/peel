@@ -317,26 +317,6 @@ extension SwarmToolsHandler {
       "staleReason": localRag?.staleReason as Any
     ]
 
-    // NAT traversal / STUN state
-    let natPayload: [String: Any]
-    if let natManager = coordinator.natTraversal {
-      var info: [String: Any] = [
-        "state": "\(natManager.state)",
-        "localPort": Int(natManager.localPort),
-      ]
-      if let ep = natManager.stunEndpoint {
-        info["stunEndpoint"] = [
-          "address": ep.address,
-          "port": Int(ep.port),
-          "server": ep.serverUsed,
-          "latencyMs": ep.latencyMs,
-        ]
-      }
-      natPayload = info
-    } else {
-      natPayload = ["state": "not started"]
-    }
-
     return (200, makeResult(id: id, result: [
       "active": coordinator.isActive,
       "role": coordinator.role.rawValue,
@@ -404,7 +384,6 @@ extension SwarmToolsHandler {
         ] as [String: Any]
       }(),
       "localRagArtifacts": localRagPayload,
-      "natTraversal": natPayload,
       "p2pConnectionLog": {
         let log = P2PConnectionLog.shared
         return [
@@ -738,22 +717,8 @@ extension SwarmToolsHandler {
       holePunchViable = false
     }
 
-    // Check current swarm STUN registration
-    let currentSTUN: [String: Any]
-    if let natManager = coordinator.natTraversal {
-      let endpoint = natManager.stunEndpoint
-      if let ep = endpoint {
-        currentSTUN = [
-          "registered": true,
-          "address": ep.address,
-          "port": Int(ep.port),
-        ]
-      } else {
-        currentSTUN = ["registered": false, "note": "NAT traversal manager active but no endpoint discovered yet"]
-      }
-    } else {
-      currentSTUN = ["registered": false, "note": "NAT traversal manager not started (swarm may not be running)"]
-    }
+    // NAT traversal now handled by WebRTC — STUN diagnostics still useful for NAT type detection
+    let currentSTUN: [String: Any] = ["note": "NAT traversal uses WebRTC (STUN/TURN handled automatically)"]
 
     // Check what Firestore knows about our STUN endpoint
     let service = FirebaseService.shared

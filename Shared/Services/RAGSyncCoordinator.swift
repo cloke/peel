@@ -5,12 +5,12 @@
 //  Orchestrates on-demand P2P RAG index sharing:
 //  1. Subscribes to Firestore for remote index version updates
 //  2. When a newer version is available, connects to the peer via
-//     OnDemandPeerTransfer (LAN → WAN → STUN fallback)
+//     OnDemandPeerTransfer (LAN → WAN → WebRTC fallback)
 //  3. Imports the received bundle via RAGArtifactSyncDelegate
 //  4. Publishes local index versions after indexing
 //
-//  This replaces the always-on STUN connection model. STUN is only
-//  attempted on-demand when a transfer is requested and LAN/WAN fail.
+//  WebRTC data channels are used when LAN/WAN direct TCP fails.
+//  ICE handles NAT traversal automatically.
 //
 
 import Foundation
@@ -43,11 +43,11 @@ public final class RAGSyncCoordinator {
   /// Set by MCPServerService when it initializes (it conforms to RAGArtifactSyncDelegate).
   weak var ragSyncDelegate: RAGArtifactSyncDelegate?
 
-  /// Set the STUN signaling responder so the initiator can cancel any active
-  /// serve task before attempting STUN discovery (avoids port 8766 contention).
-  var stunResponder: STUNSignalingResponder? {
-    get { peerTransfer.stunResponder }
-    set { peerTransfer.stunResponder = newValue }
+  /// Set the WebRTC signaling responder so the initiator can check whether
+  /// an active serve task is in progress before starting a new transfer.
+  var webrtcResponder: WebRTCSignalingResponder? {
+    get { peerTransfer.webrtcResponder }
+    set { peerTransfer.webrtcResponder = newValue }
   }
 
   // MARK: - State

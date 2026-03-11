@@ -362,6 +362,15 @@
         }
       },
       {
+        "package": "WebRTC",
+        "repositoryURL": "https://github.com/stasel/WebRTC.git",
+        "state": {
+          "branch": null,
+          "revision": "117d290e37742ea3a792a345f8ba1ec268eb7090",
+          "version": "141.0.0"
+        }
+      },
+      {
         "package": "xctest-dynamic-overlay",
         "repositoryURL": "https://github.com/pointfreeco/xctest-dynamic-overlay",
         "state": {

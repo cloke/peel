@@ -33,6 +33,7 @@ import Foundation
 import FirebaseFirestore
 import Network
 import SwiftData
+import WebRTCTransfer
 import os.log
 
 // MARK: - Swarm Mode
@@ -286,14 +287,8 @@ public final class SwarmCoordinator {
   /// Discovery service
   private var discoveryService: BonjourDiscoveryService?
   
-  /// NAT traversal manager for UDP hole punching across networks
-  private var natTraversalManager: NATTraversalManager?
-
-  /// Public read-only access to NAT traversal manager (for STUN diagnostics)
-  public var natTraversal: NATTraversalManager? { natTraversalManager }
-
-  /// STUN signaling responder (answers incoming hole-punch offers via Firestore)
-  private var stunSignalingResponder: STUNSignalingResponder?
+  /// WebRTC signaling responder (answers incoming transfer offers via Firestore)
+  private var webrtcSignalingResponder: WebRTCSignalingResponder?
 
   /// P2P log request listener (responds to remote log requests via Firestore)
   private var logRequestListener: P2PLogRequestListener?
@@ -422,9 +417,9 @@ public final class SwarmCoordinator {
     RAGSyncCoordinator.shared.ragSyncDelegate = ragSyncDelegate
     RAGSyncCoordinator.shared.start()
 
-    // Start STUN signaling responder — watches Firestore for incoming
-    // hole-punch offers and writes answers so bilateral exchange works
-    startSTUNSignalingResponder(port: port)
+    // Start WebRTC signaling responder — watches Firestore for incoming
+    // WebRTC SDP offers and completes data channel setup
+    startWebRTCSignalingResponder()
 
     // Start P2P log request listener — responds to remote log requests
     startLogRequestListener()
@@ -441,14 +436,14 @@ public final class SwarmCoordinator {
     cleanupStaleCheckpoints()
   }
 
-  /// Reinitialize Firestore-dependent subsystems (STUN responder and relay provider)
+  /// Reinitialize Firestore-dependent subsystems (WebRTC responder and relay provider)
   /// that require Firebase to be signed in. Call this after Firebase auth is ready
   /// and memberSwarms have been populated — `start()` fires before Firebase is ready
   /// so these subsystems skip initialization on first pass.
-  public func reinitializeFirestoreServices(port: UInt16 = 8766) {
+  public func reinitializeFirestoreServices() {
     guard isActive else { return }
-    if stunSignalingResponder == nil {
-      startSTUNSignalingResponder(port: port)
+    if webrtcSignalingResponder == nil {
+      startWebRTCSignalingResponder()
     }
     if logRequestListener == nil {
       startLogRequestListener()
@@ -463,8 +458,8 @@ public final class SwarmCoordinator {
     isActive = false
 
     RAGSyncCoordinator.shared.stop()
-    stunSignalingResponder?.stop()
-    stunSignalingResponder = nil
+    webrtcSignalingResponder?.stop()
+    webrtcSignalingResponder = nil
     logRequestListener?.stop()
     logRequestListener = nil
     firestoreRelayProvider?.stop()
@@ -474,8 +469,6 @@ public final class SwarmCoordinator {
     stopWANAutoConnect()
     stopLANReconnect()
     stopRagTransferWatchdog()
-    natTraversalManager?.stop()
-    natTraversalManager = nil
     connectedWorkers.removeAll()
     currentTask = nil
     workerStatuses.removeAll()
@@ -714,68 +707,9 @@ public final class SwarmCoordinator {
       logger.info("Manual WAN connect: \(worker.displayName) has no WAN endpoint (wanAddress=\(worker.wanAddress ?? "nil"), wanPort=\(worker.wanPort.map(String.init) ?? "nil"))")
     }
 
-    // Try STUN hole-punch
-    guard let swarmId = FirebaseService.shared.memberSwarms.first?.id else {
-      throw DistributedError.connectionFailed(deviceId: worker.id, reason: "No swarm membership for STUN signaling")
-    }
-
-    logger.info("Manual WAN connect: trying STUN hole-punch to \(worker.displayName)")
-    guard let myEndpoint = await STUNClient.discoverEndpoint(localPort: 0) else {
-      throw DistributedError.connectionFailed(deviceId: worker.id, reason: "STUN endpoint discovery failed")
-    }
-
-    // Write STUN offer
-    let myDeviceId = capabilities.deviceId
-    let db = Firestore.firestore()
-    let offerRef = db.collection("swarms/\(swarmId)/stunSignaling")
-      .document("\(myDeviceId)_to_\(worker.id)")
-    try await offerRef.setData([
-      "fromWorkerId": myDeviceId,
-      "toWorkerId": worker.id,
-      "stunAddress": myEndpoint.address,
-      "stunPort": Int(myEndpoint.port),
-      "createdAt": FieldValue.serverTimestamp(),
-      "expiresAt": Timestamp(date: Date().addingTimeInterval(60)),
-    ])
-
-    // Wait for STUN answer
-    let answerRef = db.collection("swarms/\(swarmId)/stunSignaling")
-      .document("\(worker.id)_to_\(myDeviceId)")
-    let deadline = Date().addingTimeInterval(30)
-    var peerEndpoint: (address: String, port: UInt16)?
-    while Date() < deadline {
-      let doc = try await answerRef.getDocument()
-      if let data = doc.data(),
-         let address = data["stunAddress"] as? String,
-         let port = data["stunPort"] as? Int {
-        try? await answerRef.delete()
-        peerEndpoint = (address, UInt16(port))
-        break
-      }
-      try await Task.sleep(for: .seconds(1))
-    }
-
-    guard let peer = peerEndpoint else {
-      throw DistributedError.connectionFailed(deviceId: worker.id, reason: "STUN signaling timed out — peer may be offline")
-    }
-
-    // Send UDP hole-punch probes
-    let udpEndpoint = NWEndpoint.hostPort(
-      host: NWEndpoint.Host(peer.address),
-      port: NWEndpoint.Port(rawValue: peer.port)!
-    )
-    let udpConn = NWConnection(to: udpEndpoint, using: .udp)
-    udpConn.start(queue: .global())
-    for i in 0..<5 {
-      try? await Task.sleep(for: .milliseconds(200))
-      let probe = "PEEL_PUNCH_\(i)".data(using: .utf8)!
-      udpConn.send(content: probe, completion: .contentProcessed { _ in })
-    }
-    udpConn.cancel()
-
-    // Connect TCP through the punched hole
-    try await connectionManager.connect(to: peer.address, port: peer.port)
-    logger.info("Manual WAN connect: STUN hole-punch connected to \(worker.displayName)")
+    // Direct TCP failed or no WAN endpoint — P2P data transfer uses WebRTC (via OnDemandPeerTransfer).
+    // TCP peer connections require direct reachability (port forwarding / UPnP).
+    throw DistributedError.connectionFailed(deviceId: worker.id, reason: "Direct TCP unreachable — use Firestore task dispatch for cross-network coordination")
   }
 
   // MARK: - WAN Auto-Connect
@@ -851,27 +785,6 @@ public final class SwarmCoordinator {
         try? await Task.sleep(for: .seconds(30))
         guard !Task.isCancelled else { return }
         self.autoConnectWANPeers()
-      }
-    }
-  }
-
-  /// Update all Firestore worker registrations with our STUN-discovered endpoint
-  private func updateFirestoreWithSTUNEndpoint(_ stunResult: STUNResult) async {
-    let firebaseService = FirebaseService.shared
-    guard firebaseService.isSignedIn else { return }
-
-    let workerId = capabilities.deviceId
-    for swarm in firebaseService.memberSwarms where swarm.role.canRegisterWorkers {
-      do {
-        try await firebaseService.updateWorkerSTUNEndpoint(
-          swarmId: swarm.id,
-          workerId: workerId,
-          stunAddress: stunResult.address,
-          stunPort: stunResult.port
-        )
-        logger.info("Updated STUN endpoint in swarm \(swarm.swarmName): \(stunResult.address):\(stunResult.port)")
-      } catch {
-        logger.warning("Failed to update STUN endpoint in swarm \(swarm.swarmName): \(error.localizedDescription)")
       }
     }
   }
@@ -956,13 +869,13 @@ public final class SwarmCoordinator {
 
   // MARK: - STUN Signaling Responder
 
-  /// Start the STUN signaling responder for all member swarms.
-  /// This watches Firestore for incoming STUN offers and writes answers,
-  /// completing the bilateral exchange needed for NAT hole-punching.
-  private func startSTUNSignalingResponder(port: UInt16) {
+  /// Start the WebRTC signaling responder for all member swarms.
+  /// This watches Firestore for incoming WebRTC SDP offers and completes
+  /// the signaling exchange needed for data channel transfers.
+  private func startWebRTCSignalingResponder() {
     let firebaseService = FirebaseService.shared
     guard firebaseService.isSignedIn else {
-      logger.info("Not signed in — skipping STUN signaling responder")
+      logger.info("Not signed in — skipping WebRTC signaling responder")
       return
     }
 
@@ -971,18 +884,18 @@ public final class SwarmCoordinator {
       .map(\.id)
 
     guard !swarmIds.isEmpty else {
-      logger.info("No swarms to listen for STUN offers")
+      logger.info("No swarms to listen for WebRTC offers")
       return
     }
 
-    let responder = STUNSignalingResponder(listeningPort: port)
+    let responder = WebRTCSignalingResponder()
     responder.dataProvider = self
     responder.start(swarmIds: swarmIds, myDeviceId: capabilities.deviceId)
-    stunSignalingResponder = responder
+    webrtcSignalingResponder = responder
 
-    // Wire up to RAGSyncCoordinator so initiator-side transfers can cancel
-    // any active serve task before binding port 8766 for STUN discovery.
-    RAGSyncCoordinator.shared.stunResponder = responder
+    // Wire up to RAGSyncCoordinator so initiator-side transfers can check
+    // whether an active serve task is in progress.
+    RAGSyncCoordinator.shared.webrtcResponder = responder
   }
 
   /// Start the P2P log request listener for all member swarms.
@@ -2762,31 +2675,9 @@ extension SwarmCoordinator: FirestoreTaskExecutionDelegate {
   }
 }
 
-// MARK: - NATTraversalDelegate
+// MARK: - LAN Address Discovery
 
-extension SwarmCoordinator: NATTraversalDelegate {
-  public func natTraversal(_ manager: NATTraversalManager, didChangeState state: NATTraversalState) {
-    logger.info("NAT traversal state: \(state)")
-  }
-
-  public func natTraversal(_ manager: NATTraversalManager, shouldConnectTCP address: String, port: UInt16) {
-    // This is called after a successful hole punch — try TCP through the opened NAT binding
-    Task {
-      do {
-        try await connectionManager?.connect(to: address, port: port)
-        logger.info("NAT traversal: TCP connected to \(address):\(port) via hole punch")
-      } catch {
-        logger.warning("NAT traversal: TCP connect failed after hole punch to \(address):\(port): \(error.localizedDescription)")
-      }
-    }
-  }
-
-  public func natTraversalShouldFallbackToRelay(_ manager: NATTraversalManager, peerId: String) {
-    logger.info("NAT traversal: hole punch failed for peer \(peerId) — no fallback available")
-  }
-
-  // MARK: - LAN Address Discovery
-
+extension SwarmCoordinator {
   /// Get the local LAN IP address (en0) for peer-to-peer connections.
   static func getLocalLANAddress() -> String? {
     #if os(macOS)
@@ -2810,10 +2701,10 @@ extension SwarmCoordinator: NATTraversalDelegate {
   }
 }
 
-// MARK: - UDPTransferDataProvider
+// MARK: - WebRTCTransferDataProvider
 
-extension SwarmCoordinator: UDPTransferDataProvider {
-  func exportRepoBundle(repoIdentifier: String) async throws -> Data {
+extension SwarmCoordinator: WebRTCTransferDataProvider {
+  public func exportRepoBundle(repoIdentifier: String) async throws -> Data {
     guard let delegate = ragSyncDelegate else {
       throw OnDemandTransferError.remoteError(message: "No RAG sync delegate available")
     }
