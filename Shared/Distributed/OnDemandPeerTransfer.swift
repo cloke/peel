@@ -111,6 +111,10 @@ public final class OnDemandPeerTransfer {
   /// for TCP simultaneous open to work through NATs.
   let listeningPort: UInt16
 
+  /// Reference to the STUN signaling responder so we can cancel any active
+  /// serve task before binding port 8766 for initiator-side STUN discovery.
+  weak var stunResponder: STUNSignalingResponder?
+
   init(listeningPort: UInt16 = 8766) {
     self.listeningPort = listeningPort
   }
@@ -436,6 +440,12 @@ public final class OnDemandPeerTransfer {
       "repo": repoIdentifier,
       "localPort": String(localPort),
     ])
+
+    // Cancel any active responder serve task to free port 8766.
+    // Without this, the STUN client can't bind the port and all servers fail.
+    stunResponder?.cancelActiveServe()
+    // Brief sleep to let the OS release the UDP socket
+    try? await Task.sleep(for: .milliseconds(100))
 
     // 1. STUN discovery — creates/refreshes UDP NAT mapping for our port
     guard let myEndpoint = await STUNClient.discoverEndpoint(localPort: localPort) else {

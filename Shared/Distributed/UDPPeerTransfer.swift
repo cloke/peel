@@ -133,8 +133,20 @@ final class UDPPeerTransfer {
       let request = try await waitForRequest(connection: conn, timeout: .seconds(30))
       p2pLog.log("udp-transfer", "Received REQUEST", details: ["repo": request.repo])
 
-      // Phase 3: Export and send data
+      // Phase 3: Export bundle with keepalive to prevent NAT timeout.
+      // Bundle export can take 30-60s; most NATs expire UDP mappings
+      // after 30s of idle. Send PUNCH keepalives every 5s during export.
+      let keepaliveTask = Task { @MainActor in
+        let punchData = Data([MsgType.punch.rawValue])
+        while !Task.isCancelled {
+          try? await Task.sleep(for: .seconds(5))
+          guard !Task.isCancelled else { break }
+          conn.send(content: punchData, completion: .contentProcessed { _ in })
+          p2pLog.log("udp-transfer", "Keepalive PUNCH sent during export")
+        }
+      }
       let data = try await dataProvider.exportRepoBundle(repoIdentifier: request.repo)
+      keepaliveTask.cancel()
       p2pLog.log("udp-transfer", "Exporting bundle", details: [
         "bytes": String(data.count),
         "repo": request.repo,
@@ -250,16 +262,31 @@ final class UDPPeerTransfer {
     var receivedChunks: [UInt32: Data] = [:]
     var totalChunks: UInt32 = 0
     var lastAckSent: UInt32 = 0
+    var receiveTimeouts = 0
     let startTime = ContinuousClock.now
 
     while ContinuousClock.now - startTime < timeout {
       let datagram: Data
       do {
         datagram = try await receiveDatagram(connection, timeout: .seconds(5))
+        receiveTimeouts = 0
       } catch {
+        receiveTimeouts += 1
         // Send ACK to trigger retransmits
         if totalChunks > 0 {
-          sendACK(connection: connection, receivedUpTo: cumulativeAck(receivedChunks, total: totalChunks))
+          let cumAck = cumulativeAck(receivedChunks, total: totalChunks)
+          sendACK(connection: connection, receivedUpTo: cumAck)
+          if receiveTimeouts % 3 == 1 {
+            p2pLog.log("udp-transfer", "Receive timeout, sent ACK", details: [
+              "cumAck": String(cumAck),
+              "received": "\(receivedChunks.count)/\(totalChunks)",
+              "timeouts": String(receiveTimeouts),
+            ])
+          }
+        } else if receiveTimeouts % 3 == 1 {
+          p2pLog.log("udp-transfer", "Waiting for first DATA chunk", details: [
+            "timeouts": String(receiveTimeouts),
+          ])
         }
         continue
       }
@@ -280,6 +307,11 @@ final class UDPPeerTransfer {
         let cumAck = cumulativeAck(receivedChunks, total: totalChunks)
         if cumAck > lastAckSent + UInt32(windowSize / 2) || cumAck == totalChunks {
           sendACK(connection: connection, receivedUpTo: cumAck)
+          p2pLog.log("udp-transfer", "Sent ACK", details: [
+            "ackValue": String(cumAck),
+            "received": "\(receivedChunks.count)/\(totalChunks)",
+            "progress": "\(Int(Double(cumAck) / Double(totalChunks) * 100))%",
+          ])
           lastAckSent = cumAck
 
           if chunkIndex % 100 == 0 || cumAck == totalChunks {
@@ -351,9 +383,15 @@ final class UDPPeerTransfer {
     let startTime = ContinuousClock.now
 
     p2pLog.log("udp-transfer", "Sending \(totalChunks) chunks (\(data.count) bytes)")
+    var retransmitCount = 0
 
     while ackedUpTo < totalChunks {
       guard ContinuousClock.now - startTime < timeout else {
+        p2pLog.log("udp-transfer", "Send TIMEOUT", details: [
+          "ackedUpTo": String(ackedUpTo),
+          "totalChunks": String(totalChunks),
+          "retransmits": String(retransmitCount),
+        ])
         throw TransferError.timeout
       }
 
@@ -372,20 +410,39 @@ final class UDPPeerTransfer {
         datagram.append(chunkData)
 
         connection.send(content: datagram, completion: .contentProcessed { _ in })
+        // Pace sends: 0.5ms between chunks prevents NAT/receiver buffer overflows
+        if chunkIndex % 8 == 7 {
+          try? await Task.sleep(for: .microseconds(500))
+        }
       }
 
-      if ackedUpTo % 200 == 0 {
-        p2pLog.log("udp-transfer", "Sent chunks \(ackedUpTo)-\(windowEnd-1)/\(totalChunks)")
+      if ackedUpTo % 200 == 0 || retransmitCount > 0 {
+        p2pLog.log("udp-transfer", "Sent chunks \(ackedUpTo)-\(windowEnd-1)/\(totalChunks)", details: [
+          "retransmits": String(retransmitCount),
+        ])
       }
 
       // Wait for ACK
-      let ack = try await waitForACK(connection: connection, timeout: retransmitTimeout)
+      let ack = try await waitForACK(connection: connection, timeout: retransmitTimeout, p2pLog: p2pLog)
       if let ack {
         if ack > ackedUpTo {
+          p2pLog.log("udp-transfer", "ACK received", details: [
+            "ackValue": String(ack),
+            "previousAck": String(ackedUpTo),
+            "progress": "\(Int(Double(ack) / Double(totalChunks) * 100))%",
+          ])
           ackedUpTo = ack
+          retransmitCount = 0
+        }
+      } else {
+        retransmitCount += 1
+        if retransmitCount % 5 == 1 {
+          p2pLog.log("udp-transfer", "ACK timeout, retransmitting", details: [
+            "window": "\(ackedUpTo)-\(windowEnd-1)",
+            "retransmitCount": String(retransmitCount),
+          ])
         }
       }
-      // If no ACK received (timeout), retransmit the window
     }
 
     // Send FIN
@@ -397,13 +454,22 @@ final class UDPPeerTransfer {
 
   private static func waitForACK(
     connection: NWConnection,
-    timeout: Duration
+    timeout: Duration,
+    p2pLog: P2PConnectionLog
   ) async throws -> UInt32? {
     let startTime = ContinuousClock.now
     while ContinuousClock.now - startTime < timeout {
       do {
         let datagram = try await receiveDatagram(connection, timeout: .seconds(1))
-        guard datagram.count >= 5 && datagram[0] == MsgType.ack.rawValue else { continue }
+        guard datagram.count >= 5 && datagram[0] == MsgType.ack.rawValue else {
+          if !datagram.isEmpty {
+            p2pLog.log("udp-transfer", "Unexpected msg while waiting for ACK", details: [
+              "type": String(format: "0x%02x", datagram[0]),
+              "size": String(datagram.count),
+            ])
+          }
+          continue
+        }
         let ackValue = datagram.subdata(in: 1..<5).withUnsafeBytes { $0.load(as: UInt32.self).bigEndian }
         return ackValue
       } catch {

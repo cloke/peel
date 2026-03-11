@@ -979,6 +979,10 @@ public final class SwarmCoordinator {
     responder.dataProvider = self
     responder.start(swarmIds: swarmIds, myDeviceId: capabilities.deviceId)
     stunSignalingResponder = responder
+
+    // Wire up to RAGSyncCoordinator so initiator-side transfers can cancel
+    // any active serve task before binding port 8766 for STUN discovery.
+    RAGSyncCoordinator.shared.stunResponder = responder
   }
 
   /// Start the P2P log request listener for all member swarms.

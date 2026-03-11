@@ -43,6 +43,13 @@ public final class RAGSyncCoordinator {
   /// Set by MCPServerService when it initializes (it conforms to RAGArtifactSyncDelegate).
   weak var ragSyncDelegate: RAGArtifactSyncDelegate?
 
+  /// Set the STUN signaling responder so the initiator can cancel any active
+  /// serve task before attempting STUN discovery (avoids port 8766 contention).
+  var stunResponder: STUNSignalingResponder? {
+    get { peerTransfer.stunResponder }
+    set { peerTransfer.stunResponder = newValue }
+  }
+
   // MARK: - State
 
   /// Current sync mode
