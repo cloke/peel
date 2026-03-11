@@ -106,6 +106,8 @@ final class RAGToolsHandler: MCPToolHandler {
       return await handleReposList(id: id, delegate: ragDelegate)
     case "rag.repos.delete":
       return await handleReposDelete(id: id, arguments: arguments, delegate: ragDelegate)
+    case "rag.publish":
+      return await handlePublish(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.skills.list":
       return handleSkillsList(id: id, arguments: arguments, delegate: ragDelegate)
     case "rag.skills.add":

@@ -654,6 +654,19 @@ extension RAGToolsHandler {
         isMutating: true
       ),
       MCPToolDefinition(
+        name: "rag.publish",
+        description: "Manually publish locally-indexed repos to Firestore so swarm peers can discover and sync them via P2P. Use when auto-publish after rag.index didn't fire (e.g., repo was indexed before joining a swarm, or publish silently failed due to permissions). If no arguments given, publishes all indexed repos that have a git remote identifier.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "repoPath": ["type": "string", "description": "Publish a specific repo by its local path"],
+            "repoIdentifier": ["type": "string", "description": "Publish a specific repo by its identifier (e.g., github.com/org/repo)"]
+          ]
+        ],
+        category: .rag,
+        isMutating: true
+      ),
+      MCPToolDefinition(
         name: "rag.stats",
         description: "Get index statistics: file count, chunk count, embedding count, total lines for a specific repository.",
         inputSchema: [
