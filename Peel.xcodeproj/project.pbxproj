@@ -480,6 +480,7 @@
 			buildConfigurationList = 04A7BD97258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "Peel (macOS)" */;
 			buildPhases = (
 				04ASTBLD2F3B000100000004 /* Build ast-chunker-cli */,
+				04WEBRTC2F7B000100000001 /* Patch WebRTC Headers */,
 				04A7BD6E258E77D8000E55A8 /* Sources */,
 				04A7BD6F258E77D8000E55A8 /* Frameworks */,
 				04A7BD70258E77D8000E55A8 /* Resources */,
@@ -648,6 +649,26 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		04WEBRTC2F7B000100000001 /* Patch WebRTC Headers */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(PROJECT_DIR)/Tools/patch-webrtc-headers.sh",
+			);
+			name = "Patch WebRTC Headers";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/zsh;
+			shellScript = "# Patch WebRTC xcframework macOS headers (stasel/WebRTC has broken macOS slice)\nDERIVED_DATA=\"${BUILD_DIR}/../..\"\n\"${PROJECT_DIR}/Tools/patch-webrtc-headers.sh\" \"${DERIVED_DATA}\"\n";
+		};
 		04ASTBLD2F3B000100000004 /* Build ast-chunker-cli */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
