@@ -22,6 +22,8 @@ public struct PullRequestDetailView: View {
   @State private var pullRequest: Github.PullRequest
   @State private var checkStatus: Github.AggregatedCheckStatus?
   @State private var isLoadingChecks = true
+  @State private var reviews = [Github.Review]()
+  @State private var currentUserLogin: String?
 
   @State private var showingReviewSheet = false
   @State private var reviewAction: ReviewAction = .approve
@@ -130,6 +132,10 @@ public struct PullRequestDetailView: View {
       // Refresh PR data to get current state (merged, closed, etc.)
       await refreshPullRequest()
       await loadCheckStatus()
+      await loadReviews()
+      if currentUserLogin == nil {
+        currentUserLogin = try? await Github.me().login
+      }
     }
     #if os(macOS)
     .sheet(isPresented: $showingReviewLocally) {
@@ -482,6 +488,8 @@ public struct PullRequestDetailView: View {
         .buttonStyle(.borderedProminent)
         .tint(.green)
         .controlSize(.small)
+        .disabled(currentUserApproved)
+        .help(currentUserApproved ? "You've already approved this PR" : "Approve this PR")
 
         Button {
           reviewAction = .requestChanges
@@ -605,6 +613,7 @@ public struct PullRequestDetailView: View {
       )
       showingReviewSheet = false
       await refreshPullRequest()
+      await loadReviews()
     } catch {
       reviewSubmitError = error.localizedDescription
     }
@@ -653,7 +662,16 @@ public struct PullRequestDetailView: View {
     checkStatus = try? await Github.aggregatedCheckStatus(owner: owner, repo: repository.name, ref: ref)
   }
 
+  private func loadReviews() async {
+    let owner = organization?.login ?? repository.owner?.login ?? ""
+    reviews = (try? await Github.loadReviews(organization: owner, repository: repository.name, pullNumber: pullRequest.number)) ?? []
+  }
 
+  private var currentUserApproved: Bool {
+    guard let login = currentUserLogin else { return false }
+    // Check the most recent review per user (same dedup logic as the row view)
+    return reviews.last { ($0.user.login ?? "") == login }?.state == "APPROVED"
+  }
 
   private func stateIcon(for state: String) -> String {
     switch state {
