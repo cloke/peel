@@ -15,9 +15,40 @@ struct PullRequestReviewRowView: View {
 
   @State private var reviews = [Github.Review]()
   @State private var expandedReviewIds = Set<Int>()
+  @State private var isLoading = true
+  @State private var error: String?
+
+  private var owner: String {
+    organization?.login ?? repository.owner?.login ?? ""
+  }
 
   var body: some View {
-    if !reviews.isEmpty {
+    if isLoading && reviews.isEmpty {
+      HStack(spacing: 8) {
+        ProgressView()
+          .controlSize(.small)
+        Text("Loading reviews...")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+      .task { await loadReviews() }
+    } else if let error, reviews.isEmpty {
+      HStack(spacing: 8) {
+        Image(systemName: "exclamationmark.triangle")
+          .foregroundStyle(.orange)
+        Text(error)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+    } else if reviews.isEmpty {
+      HStack(spacing: 6) {
+        Image(systemName: "person.badge.clock")
+          .foregroundStyle(.tertiary)
+        Text("No reviews yet")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+    } else {
       VStack(alignment: .leading, spacing: 10) {
         ForEach(deduplicatedReviews) { review in
           VStack(alignment: .leading, spacing: 6) {
@@ -72,19 +103,19 @@ struct PullRequestReviewRowView: View {
           }
         }
       }
-      .task {
-        do {
-          reviews = try await Github.loadReviews(organization: organization?.login ?? "", repository: repository.name, pullNumber: pullNumber)
-        } catch {}
+      .task { await loadReviews() }
+    }
+  }
+
+  private func loadReviews() async {
+    defer { isLoading = false }
+    do {
+      reviews = try await Github.loadReviews(organization: owner, repository: repository.name, pullNumber: pullNumber)
+      error = nil
+    } catch {
+      if reviews.isEmpty {
+        self.error = "Failed to load reviews: \(error.localizedDescription)"
       }
-    } else {
-      Color.clear
-        .frame(height: 0)
-        .task {
-          do {
-            reviews = try await Github.loadReviews(organization: organization?.login ?? "", repository: repository.name, pullNumber: pullNumber)
-          } catch {}
-        }
     }
   }
 

@@ -22,9 +22,7 @@ public struct PullRequestDetailView: View {
   @State private var pullRequest: Github.PullRequest
   @State private var checkStatus: Github.AggregatedCheckStatus?
   @State private var isLoadingChecks = true
-  @State private var comments = [Github.IssueComment]()
-  @State private var isLoadingComments = true
-  @State private var expandedCommentIds = Set<Int>()
+
   @State private var showingReviewSheet = false
   @State private var reviewAction: ReviewAction = .approve
   @State private var reviewBody = ""
@@ -132,7 +130,6 @@ public struct PullRequestDetailView: View {
       // Refresh PR data to get current state (merged, closed, etc.)
       await refreshPullRequest()
       await loadCheckStatus()
-      await loadComments()
     }
     #if os(macOS)
     .sheet(isPresented: $showingReviewLocally) {
@@ -656,13 +653,7 @@ public struct PullRequestDetailView: View {
     checkStatus = try? await Github.aggregatedCheckStatus(owner: owner, repo: repository.name, ref: ref)
   }
 
-  private func loadComments() async {
-    isLoadingComments = true
-    defer { isLoadingComments = false }
 
-    guard let owner = organization?.login ?? repository.owner?.login else { return }
-    comments = (try? await Github.loadComments(owner: owner, repository: repository.name, number: pullRequest.number)) ?? []
-  }
 
   private func stateIcon(for state: String) -> String {
     switch state {
