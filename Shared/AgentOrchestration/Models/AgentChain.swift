@@ -124,6 +124,7 @@ public final class AgentChain: Identifiable {
     case idle
     case running(agentIndex: Int)
     case reviewing(iteration: Int)
+    case awaitingConfirmation(stepIndex: Int)
     case complete
     case failed(message: String)
 
@@ -144,6 +145,7 @@ public final class AgentChain: Identifiable {
       case .idle: return "Idle"
       case .running(let idx): return "Running Agent \(idx + 1)"
       case .reviewing(let iter): return "Review Loop \(iter + 1)"
+      case .awaitingConfirmation(let idx): return "Awaiting Confirmation (Step \(idx + 1))"
       case .complete: return "Complete"
       case .failed: return "Failed"
       }

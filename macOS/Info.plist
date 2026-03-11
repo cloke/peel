@@ -54,5 +54,7 @@
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>PeelGitCommitHash</key>
+	<string>dev</string>
 </dict>
 </plist>

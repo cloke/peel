@@ -794,13 +794,13 @@ struct AgentReviewSheet: View {
       return
     }
 
-    let status = await runner.waitForRunCompletion(locatedRun, timeoutSeconds: 300)
+    let status = await runner.waitForRunCompletion(locatedRun, timeoutSeconds: 600)
 
     switch status {
     case .completed, .failed, .cancelled, .awaitingReview:
       break
     default:
-      phase = .failed("Review is still running. Check the Agent Runs dashboard for results when it finishes.")
+      phase = .failed("Review is still running after 10 minutes. Check the Agent Runs dashboard for results when it finishes.")
       return
     }
 

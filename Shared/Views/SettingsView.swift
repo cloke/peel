@@ -33,6 +33,8 @@ struct SettingsView: View {
   @State private var isRegisteringURLScheme = false
   @State private var showResetConfirmation = false
   @State private var isResetting = false
+  @AppStorage("peel.update.checkFrequency") private var updateCheckFrequency = AppUpdateService.CheckFrequency.daily.rawValue
+  @State private var isCheckingForUpdates = false
   @Environment(\.modelContext) private var modelContext
   
   var body: some View {
@@ -265,6 +267,18 @@ struct SettingsView: View {
       SettingsPage {
         SettingsSection("About") {
           VStack(alignment: .leading, spacing: 8) {
+            let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+            let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+            let commitHash = Bundle.main.object(forInfoDictionaryKey: "PeelGitCommitHash") as? String ?? "dev"
+
+            HStack(spacing: 8) {
+              Text("Peel")
+                .font(.headline)
+              Text("v\(version) (\(build)) · \(commitHash)")
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+            }
+
             Text("Peel is where you manage your repositories and the AI agents that work on them.")
               .font(.callout)
             Text("If this app saves you time, please consider supporting development.")
@@ -278,6 +292,42 @@ struct SettingsView: View {
               }
             }
             .font(.caption)
+          }
+        }
+
+        SettingsSection("Updates") {
+          VStack(alignment: .leading, spacing: 12) {
+            Picker("Check for updates", selection: $updateCheckFrequency) {
+              ForEach(AppUpdateService.CheckFrequency.allCases, id: \.rawValue) { freq in
+                Text(freq.label).tag(freq.rawValue)
+              }
+            }
+            .pickerStyle(.menu)
+            .frame(maxWidth: 300)
+
+            HStack {
+              Button(isCheckingForUpdates ? "Checking…" : "Check Now") {
+                isCheckingForUpdates = true
+                Task {
+                  let state = await AppUpdateService.shared.checkForUpdate(force: true)
+                  isCheckingForUpdates = false
+                  if case .available(let info) = state {
+                    if let url = URL(string: "https://github.com/cloke/peel/releases/tag/\(info.tagName)") {
+                      NSWorkspace.shared.open(url)
+                    }
+                  }
+                }
+              }
+              .buttonStyle(.bordered)
+              .controlSize(.small)
+              .disabled(isCheckingForUpdates)
+
+              if let lastCheck = UserDefaults.standard.object(forKey: "peel.update.lastCheck") as? Date {
+                Text("Last checked: \(lastCheck.formatted(.relative(presentation: .named)))")
+                  .font(.caption)
+                  .foregroundStyle(.tertiary)
+              }
+            }
           }
         }
 

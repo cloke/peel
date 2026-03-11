@@ -1005,6 +1005,8 @@ public final class AgentChainRunner {
         return try await runGateStepInVM(agent, chain: chain, command: command)
       }
       return try await runGateStep(agent, chain: chain)
+    case .confirmationGate:
+      return try await runConfirmationGateStep(agent, at: index, chain: chain)
     case .agentic:
       // LLM steps always run on host — they read/write the shared workspace via VirtioFS
       return try await runAgenticStep(agent, at: index, chain: chain, prompt: prompt, contextOverride: contextOverride)
@@ -1198,6 +1200,58 @@ public final class AgentChainRunner {
       throw ChainError.configurationError("Gate step '\(agent.name)' has no command")
     }
     return try await runShellBackedStep(agent, chain: chain, command: command, mode: .gate)
+  }
+
+  // MARK: - Confirmation Gate Step Execution
+
+  /// Pauses the chain and waits for user confirmation before continuing.
+  /// No LLM or shell command — just suspends until the user resumes the chain.
+  private func runConfirmationGateStep(
+    _ agent: Agent,
+    at index: Int,
+    chain: AgentChain
+  ) async throws -> AgentChainResult {
+    let startTime = Date()
+    let description = agent.customInstructions ?? "Waiting for user confirmation to proceed"
+
+    await telemetryProvider.info("Confirmation gate step start", metadata: [
+      "chainId": chain.id.uuidString,
+      "agentName": agent.name,
+      "stepIndex": "\(index)"
+    ])
+
+    agent.updateState(.blocked(reason: "Awaiting confirmation"))
+    chain.state = .awaitingConfirmation(stepIndex: index)
+    chain.addStatusMessage("⏸ \(agent.name): \(description)", type: .info)
+
+    // Pause via the ChainRunGate — user must call resume(chainId:) to continue
+    guard let gate = runGates[chain.id] else {
+      throw ChainError.configurationError("No run gate found for chain '\(chain.id)' — confirmation gate must run inside a chain")
+    }
+    await gate.pause()
+    await gate.waitIfPaused()
+
+    let duration = Date().timeIntervalSince(startTime)
+    let durationStr = String(format: "%.1fs", duration)
+
+    agent.updateState(.complete)
+    chain.addStatusMessage("✓ \(agent.name): Confirmed by user (\(durationStr))", type: .complete)
+
+    await telemetryProvider.info("Confirmation gate step complete", metadata: [
+      "chainId": chain.id.uuidString,
+      "agentName": agent.name,
+      "waitDuration": durationStr
+    ])
+
+    return AgentChainResult(
+      agentId: agent.id,
+      agentName: agent.name,
+      model: "confirmation-gate",
+      prompt: description,
+      output: "User confirmed — chain resumed after \(durationStr)",
+      duration: durationStr,
+      premiumCost: 0
+    )
   }
 
   /// Execute a shell command via /bin/zsh and return (exitCode, stdout, stderr).

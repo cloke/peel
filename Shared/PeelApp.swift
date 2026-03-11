@@ -296,6 +296,11 @@ struct PeelApp: App {
             skillUpdateAvailable = true
             print("[PeelApp] Ember skills update available")
           }
+          // Check for app updates on launch (non-blocking, respects frequency setting)
+          let updateState = await AppUpdateService.shared.checkForUpdate()
+          if case .available = updateState {
+            print("[PeelApp] App update available — user will see it via Check for Updates")
+          }
           // Populate RepoRegistry from SwiftData-backed local paths BEFORE rebuild
           // so unified repository aggregation has the local repo mappings it needs.
           let registry = RepoRegistry.shared
@@ -340,6 +345,9 @@ struct PeelApp: App {
       CommandGroup(replacing: .appInfo) {
         Button("About Peel") {
           showAboutPanel()
+        }
+        Button("Check for Updates…") {
+          Task { await checkForUpdates() }
         }
       }
       CommandGroup(replacing: .help) {
@@ -399,7 +407,11 @@ struct PeelApp: App {
   private func showAboutPanel() {
     let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
     let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
-    let versionText = build.isEmpty ? version : "\(version) (\(build))"
+    let commitHash = Bundle.main.object(forInfoDictionaryKey: "PeelGitCommitHash") as? String ?? "dev"
+    var versionText = build.isEmpty ? version : "\(version) (\(build))"
+    if commitHash != "dev" {
+      versionText += " · \(commitHash)"
+    }
 
     guard let donateURL = URL(string: "https://github.com/sponsors/crunchybananas") else { return }
     let credits = NSMutableAttributedString(
@@ -420,6 +432,100 @@ struct PeelApp: App {
       .credits: credits
     ])
     NSApp.activate(ignoringOtherApps: true)
+  }
+
+  private func checkForUpdates() async {
+    let state = await AppUpdateService.shared.checkForUpdate(force: true)
+    switch state {
+    case .available(let info):
+      let alert = NSAlert()
+      alert.messageText = "Update Available"
+      let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+      alert.informativeText = "Peel v\(info.version) is available (you have v\(currentVersion)).\n\n\(info.releaseNotes)"
+      alert.alertStyle = .informational
+      alert.addButton(withTitle: "Update Now")
+      alert.addButton(withTitle: "View Release")
+      alert.addButton(withTitle: "Skip This Version")
+      let response = alert.runModal()
+      if response == .alertFirstButtonReturn {
+        await performUpdate(info)
+      } else if response == .alertSecondButtonReturn {
+        if let url = URL(string: "https://github.com/cloke/peel/releases/tag/\(info.tagName)") {
+          NSWorkspace.shared.open(url)
+        }
+      } else {
+        await AppUpdateService.shared.skipVersion(info.version)
+      }
+    case .upToDate:
+      let alert = NSAlert()
+      alert.messageText = "You're Up to Date"
+      let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+      let commitHash = Bundle.main.object(forInfoDictionaryKey: "PeelGitCommitHash") as? String ?? "dev"
+      alert.informativeText = "Peel v\(version) (\(commitHash)) is the latest version."
+      alert.alertStyle = .informational
+      alert.runModal()
+    case .error(let message):
+      let alert = NSAlert()
+      alert.messageText = "Update Check Failed"
+      alert.informativeText = message
+      alert.alertStyle = .warning
+      alert.runModal()
+    default:
+      break
+    }
+  }
+
+  private func performUpdate(_ info: AppUpdateService.UpdateInfo) async {
+    // Show a progress panel
+    let progressPanel = NSPanel(
+      contentRect: NSRect(x: 0, y: 0, width: 340, height: 100),
+      styleMask: [.titled, .hudWindow],
+      backing: .buffered,
+      defer: false
+    )
+    progressPanel.title = "Updating Peel"
+    progressPanel.isFloatingPanel = true
+    progressPanel.center()
+
+    let progressIndicator = NSProgressIndicator(frame: NSRect(x: 20, y: 20, width: 300, height: 20))
+    progressIndicator.style = .bar
+    progressIndicator.minValue = 0
+    progressIndicator.maxValue = 1
+    progressIndicator.doubleValue = 0
+    progressIndicator.isIndeterminate = false
+
+    let label = NSTextField(labelWithString: "Downloading update…")
+    label.frame = NSRect(x: 20, y: 55, width: 300, height: 20)
+    label.font = .systemFont(ofSize: 13)
+
+    let contentView = NSView(frame: NSRect(x: 0, y: 0, width: 340, height: 100))
+    contentView.addSubview(progressIndicator)
+    contentView.addSubview(label)
+    progressPanel.contentView = contentView
+    progressPanel.orderFront(nil)
+
+    do {
+      let zipURL = try await AppUpdateService.shared.downloadUpdate(info) { progress in
+        Task { @MainActor in
+          progressIndicator.doubleValue = progress
+        }
+      }
+
+      await MainActor.run {
+        label.stringValue = "Installing update…"
+        progressIndicator.isIndeterminate = true
+        progressIndicator.startAnimation(nil)
+      }
+
+      try await AppUpdateService.shared.installUpdate(from: zipURL)
+    } catch {
+      progressPanel.close()
+      let alert = NSAlert()
+      alert.messageText = "Update Failed"
+      alert.informativeText = error.localizedDescription
+      alert.alertStyle = .critical
+      alert.runModal()
+    }
   }
   
   private func openHelpWindow() {

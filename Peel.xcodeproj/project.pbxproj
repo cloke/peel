@@ -455,6 +455,7 @@
 				04A7BD66258E77D8000E55A8 /* Sources */,
 				04A7BD67258E77D8000E55A8 /* Frameworks */,
 				04A7BD68258E77D8000E55A8 /* Resources */,
+				04GITSHA2F5A000100000001 /* Stamp Git Commit Hash */,
 				04FBPLIST2F4A000100000001 /* Copy Firebase Config */,
 			);
 			buildRules = (
@@ -483,6 +484,7 @@
 				04A7BD6F258E77D8000E55A8 /* Frameworks */,
 				04A7BD70258E77D8000E55A8 /* Resources */,
 				04ASTCLI2F3B000100000003 /* CopyFiles */,
+				04GITSHA2F5A000100000001 /* Stamp Git Commit Hash */,
 				04FBPLIST2F4A000100000001 /* Copy Firebase Config */,
 			);
 			buildRules = (
@@ -662,6 +664,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/zsh;
 			shellScript = "set -e\nBINARY=\"${PROJECT_DIR}/Tools/Binaries/ast-chunker-cli\"\nCACHE_DIR=\"${PROJECT_DIR}/.build/ast-chunker-checkout\"\nREPO_URL=\"https://github.com/crunchybananas/ast-chunker.git\"\n\nmkdir -p \"${PROJECT_DIR}/Tools/Binaries\"\n\n# Clone or update the repo\nif [ ! -d \"$CACHE_DIR/.git\" ]; then\n    echo \"Cloning ast-chunker...\"\n    git clone --depth 1 \"$REPO_URL\" \"$CACHE_DIR\"\nelse\n    echo \"Updating ast-chunker...\"\n    cd \"$CACHE_DIR\" && git pull --ff-only 2>/dev/null || true\nfi\n\ncd \"$CACHE_DIR\"\n\n# Check if rebuild needed\nif [ ! -f \"$BINARY\" ] || [ -n \"$(find Sources -newer \"$BINARY\" -type f -name '*.swift' 2>/dev/null)\" ]; then\n    echo \"Building ast-chunker-cli...\"\n    swift build -c release --product ast-chunker-cli\n    cp \".build/release/ast-chunker-cli\" \"$BINARY\"\n    echo \"ast-chunker-cli built successfully\"\nelse\n    echo \"ast-chunker-cli is up to date\"\nfi\n";
+		};
+		04GITSHA2F5A000100000001 /* Stamp Git Commit Hash */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Stamp Git Commit Hash";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/zsh;
+			shellScript = "# Stamp the git commit hash into the built Info.plist\nGIT_HASH=$(git -C \"${PROJECT_DIR}\" rev-parse --short HEAD 2>/dev/null || echo \"unknown\")\nINFO_PLIST=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\nif [ -f \"$INFO_PLIST\" ]; then\n  /usr/libexec/PlistBuddy -c \"Set :PeelGitCommitHash $GIT_HASH\" \"$INFO_PLIST\" 2>/dev/null || \\\n    /usr/libexec/PlistBuddy -c \"Add :PeelGitCommitHash string $GIT_HASH\" \"$INFO_PLIST\"\n  echo \"Stamped git hash: $GIT_HASH\"\nfi\n";
 		};
 		04FBPLIST2F4A000100000001 /* Copy Firebase Config */ = {
 			isa = PBXShellScriptBuildPhase;

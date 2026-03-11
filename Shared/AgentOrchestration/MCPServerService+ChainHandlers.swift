@@ -289,7 +289,7 @@ extension MCPServerService {
         projectPath: projectPath,
         templateName: template.name,
         baseBranch: baseBranch ?? "HEAD",
-        requireReviewGate: true,
+        requireReviewGate: !template.skipReviewGate,
         runOptions: runOptions,
         sourceChainRunId: runId,
         operatorGuidance: guidance

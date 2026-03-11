@@ -156,6 +156,10 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
 
   /// Extra directories to share between host and VM via VirtioFS
   public var directoryShares: [VMDirectoryShare]
+
+  /// When true, the parallel worktree run skips the review gate after chain completion.
+  /// Useful for review-only chains (e.g. PR Review) that don't produce code to merge.
+  public var skipReviewGate: Bool
   
   #if os(macOS)
   public var validationConfig: ValidationConfiguration
@@ -172,6 +176,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     case executionEnvironment
     case toolchain
     case directoryShares
+    case skipReviewGate
     #if os(macOS)
     case validationConfig
     #endif
@@ -188,6 +193,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     executionEnvironment: ExecutionEnvironment = .host,
     toolchain: VMToolchain = .minimal,
     directoryShares: [VMDirectoryShare] = [],
+    skipReviewGate: Bool = false,
     validationConfig: ValidationConfiguration? = nil
   ) {
     self.id = id
@@ -200,6 +206,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     self.executionEnvironment = executionEnvironment
     self.toolchain = toolchain
     self.directoryShares = directoryShares
+    self.skipReviewGate = skipReviewGate
     self.validationConfig = validationConfig ?? .default
   }
   #else
@@ -212,7 +219,8 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     category: TemplateCategory = .core,
     executionEnvironment: ExecutionEnvironment = .host,
     toolchain: VMToolchain = .minimal,
-    directoryShares: [VMDirectoryShare] = []
+    directoryShares: [VMDirectoryShare] = [],
+    skipReviewGate: Bool = false
   ) {
     self.id = id
     self.name = name
@@ -224,6 +232,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     self.executionEnvironment = executionEnvironment
     self.toolchain = toolchain
     self.directoryShares = directoryShares
+    self.skipReviewGate = skipReviewGate
   }
   #endif
 
@@ -239,6 +248,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     self.executionEnvironment = try container.decodeIfPresent(ExecutionEnvironment.self, forKey: .executionEnvironment) ?? .host
     self.toolchain = try container.decodeIfPresent(VMToolchain.self, forKey: .toolchain) ?? .minimal
     self.directoryShares = try container.decodeIfPresent([VMDirectoryShare].self, forKey: .directoryShares) ?? []
+    self.skipReviewGate = try container.decodeIfPresent(Bool.self, forKey: .skipReviewGate) ?? false
     #if os(macOS)
     self.validationConfig = try container.decodeIfPresent(ValidationConfiguration.self, forKey: .validationConfig) ?? .default
     #endif
@@ -262,6 +272,9 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     }
     if !directoryShares.isEmpty {
       try container.encode(directoryShares, forKey: .directoryShares)
+    }
+    if skipReviewGate {
+      try container.encode(skipReviewGate, forKey: .skipReviewGate)
     }
     #if os(macOS)
     try container.encode(validationConfig, forKey: .validationConfig)
@@ -533,7 +546,8 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
           )
         ],
         isBuiltIn: true,
-        category: .specialized
+        category: .specialized,
+        skipReviewGate: true
       ),
       
       // 7b. Deep PR Review: Multi-step review with codebase analysis for large PRs
@@ -599,6 +613,13 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
               """
           ),
           AgentStepTemplate(
+            role: .reviewer,
+            model: .bestFree,
+            name: "Review Confirmation",
+            customInstructions: "Pause for user to review the analysis and confirm the verdict before posting to GitHub",
+            stepType: .confirmationGate
+          ),
+          AgentStepTemplate(
             role: .implementer,
             model: .bestFree,
             name: "Review Poster",
@@ -633,12 +654,12 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
           )
         ],
         isBuiltIn: true,
-        category: .specialized
+        category: .specialized,
+        skipReviewGate: true
       ),
 
       // 8. Refactor: Deep analysis + careful implementation + thorough review
       ChainTemplate(
-        id: refactorId,
         name: "Refactor",
         description: "Deep refactoring with premium models for complex restructuring (Cost: Premium)",
         steps: [
@@ -1094,6 +1115,8 @@ public enum StepType: String, Codable, Hashable, Sendable, CaseIterable {
   case gate
   /// LLM coding agent running inside a VM sandbox (the VM agent CLI calls the LLM, not Peel)
   case vmAgentic
+  /// Pauses the chain for user confirmation before continuing — no LLM or shell involved
+  case confirmationGate
 
   public var displayName: String {
     switch self {
@@ -1101,6 +1124,7 @@ public enum StepType: String, Codable, Hashable, Sendable, CaseIterable {
     case .deterministic: "Deterministic"
     case .gate: "Gate"
     case .vmAgentic: "VM Agent"
+    case .confirmationGate: "Confirmation Gate"
     }
   }
 
@@ -1110,6 +1134,7 @@ public enum StepType: String, Codable, Hashable, Sendable, CaseIterable {
     case .deterministic: "Shell command (no LLM)"
     case .gate: "Quality gate — halts chain on failure"
     case .vmAgentic: "LLM agent running inside VM sandbox"
+    case .confirmationGate: "Pauses chain for user confirmation"
     }
   }
 
@@ -1119,6 +1144,7 @@ public enum StepType: String, Codable, Hashable, Sendable, CaseIterable {
     case .deterministic: "terminal"
     case .gate: "checkmark.shield"
     case .vmAgentic: "shield.checkmark"
+    case .confirmationGate: "hand.raised.circle"
     }
   }
 
