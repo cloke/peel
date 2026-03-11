@@ -131,7 +131,17 @@ struct MLXEditorModelConfig: Sendable {
       tier: .xlarge,
       maxTokens: 32768,
       contextLength: 262144  // 256K context
-    )
+    ),
+
+    // Alternative large tier - Devstral Small 2 24B (Mistral, Apache 2.0)
+    // Dense 24B model, strong agentic coding. ~14GB at 4-bit. 128K context.
+    MLXEditorModelConfig(
+      name: "Devstral-Small-2-24B",
+      huggingFaceId: "mlx-community/Devstral-Small-2-24B-Instruct-2512-4bit",
+      tier: .large,
+      maxTokens: 16384,
+      contextLength: 131072  // 128K context
+    ),
   ]
 
   /// Available models — uses Firestore registry if available, falls back to builtins

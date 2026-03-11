@@ -56,6 +56,13 @@ struct LabFeature: Identifiable {
       systemImage: "desktopcomputer",
       storageKey: "feature.showVMIsolation"
     ),
+    LabFeature(
+      id: "modelLab",
+      title: "Model Lab",
+      subtitle: "Browse and try out MLX models locally",
+      systemImage: "cpu",
+      storageKey: "feature.showModelLab"
+    ),
   ]
 }
 
@@ -69,6 +76,7 @@ struct LabsToolbarItem: ToolbarContent {
   @AppStorage("feature.showDoclingImport") private var showDoclingImport = false
   @AppStorage("feature.showTranslationValidation") private var showTranslationValidation = false
   @AppStorage("feature.showVMIsolation") private var showVMIsolation = false
+  @AppStorage("feature.showModelLab") private var showModelLab = false
 
   @Binding var activeLabFeature: LabFeature?
 
@@ -106,6 +114,7 @@ struct LabsToolbarItem: ToolbarContent {
     case "docling": return showDoclingImport
     case "translation": return showTranslationValidation
     case "vm": return showVMIsolation
+    case "modelLab": return showModelLab
     default: return false
     }
   }
@@ -145,6 +154,8 @@ struct LabFeatureSheetContent: View {
       TranslationValidationView()
     case "vm":
       VMIsolationDashboardView()
+    case "modelLab":
+      ModelLabView()
     #endif
     default:
       Text("Unknown feature")

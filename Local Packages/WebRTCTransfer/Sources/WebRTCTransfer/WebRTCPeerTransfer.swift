@@ -283,8 +283,8 @@ public enum WebRTCPeerTransfer {
         }
         let tbBytes = msg[1...4]
         let tcBytes = msg[5...8]
-        totalBytes = Int(UInt32(bigEndian: tbBytes.withUnsafeBytes { $0.load(as: UInt32.self) }))
-        totalChunks = Int(UInt32(bigEndian: tcBytes.withUnsafeBytes { $0.load(as: UInt32.self) }))
+        totalBytes = Int(UInt32(bigEndian: tbBytes.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }))
+        totalChunks = Int(UInt32(bigEndian: tcBytes.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }))
         logger.info("Manifest: \(totalBytes) bytes in \(totalChunks) chunks")
 
       case .chunk:
@@ -292,7 +292,7 @@ public enum WebRTCPeerTransfer {
           throw WebRTCError.transferFailed(reason: "Chunk too short")
         }
         let idxBytes = msg[1...4]
-        let chunkIndex = UInt32(bigEndian: idxBytes.withUnsafeBytes { $0.load(as: UInt32.self) })
+        let chunkIndex = UInt32(bigEndian: idxBytes.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) })
         let chunkData = msg.dropFirst(5)
         receivedChunks[chunkIndex] = Data(chunkData)
         bytesReceived += chunkData.count

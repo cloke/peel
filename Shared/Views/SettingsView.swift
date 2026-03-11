@@ -19,6 +19,7 @@ struct SettingsView: View {
   @AppStorage("feature.showDoclingImport") private var showDoclingImport = false
   @AppStorage("feature.showTranslationValidation") private var showTranslationValidation = false
   @AppStorage("feature.showVMIsolation") private var showVMIsolation = false
+  @AppStorage("feature.showModelLab") private var showModelLab = false
 
   @State private var vscodeServerName = "Peel"
   @State private var vscodeServerURL = "http://127.0.0.1:8765/rpc"
@@ -465,6 +466,7 @@ struct SettingsView: View {
     case "docling": return $showDoclingImport
     case "translation": return $showTranslationValidation
     case "vm": return $showVMIsolation
+    case "modelLab": return $showModelLab
     default: return .constant(false)
     }
   }
