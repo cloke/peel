@@ -14,6 +14,7 @@
 
 import Foundation
 import MCPCore
+import WebRTCTransfer
 
 extension SwarmToolsHandler {
   // MARK: - swarm.start
@@ -658,6 +659,73 @@ extension SwarmToolsHandler {
     return FirebaseService.shared.swarmWorkers
       .first(where: { $0.displayName.lowercased() == lowered || $0.deviceName.lowercased() == lowered })?
       .workerId
+  }
+
+  // MARK: - swarm.webrtc-ping
+
+  func handleWebRTCPing(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
+    guard coordinator.isActive else {
+      return serviceNotActiveError(id: id, service: "Swarm", hint: "Call swarm.start first")
+    }
+
+    // Resolve target worker
+    let targetWorkerName = arguments["targetWorkerName"] as? String
+    let targetWorkerId = arguments["targetWorkerId"] as? String
+
+    guard let workerId = resolveWorkerId(name: targetWorkerName, id: targetWorkerId) else {
+      return missingParamError(id: id, param: "targetWorkerName or targetWorkerId")
+    }
+
+    // Find swarm ID
+    guard let swarmId = FirebaseService.shared.memberSwarms.first(where: { $0.role.canRegisterWorkers })?.id else {
+      return internalError(id: id, message: "No active swarm found")
+    }
+
+    let timeout = arguments["timeout"] as? Int ?? 30
+    let workerDisplay = targetWorkerName ?? workerId
+
+    // Create signaling channel with purpose=ping
+    let signaling = FirestoreWebRTCSignaling(
+      swarmId: swarmId,
+      myDeviceId: coordinator.capabilities.deviceId,
+      remoteDeviceId: workerId
+    )
+    signaling.purpose = "ping"
+
+    do {
+      let result = try await WebRTCPeerTransfer.ping(
+        signaling: signaling,
+        timeout: .seconds(timeout)
+      )
+
+      let timing: [String: Any] = [
+        "signalingMs": round(result.signalingMs * 10) / 10,
+        "iceNegotiationMs": round(result.iceNegotiationMs * 10) / 10,
+        "roundTripMs": round(result.roundTripMs * 10) / 10,
+        "totalMs": round(result.totalMs * 10) / 10,
+      ]
+      let summary = String(
+        format: "WebRTC ping to %@: signaling=%.0fms ice=%.0fms rtt=%.1fms total=%.0fms",
+        workerDisplay, result.signalingMs, result.iceNegotiationMs, result.roundTripMs, result.totalMs
+      )
+      let body: [String: Any] = [
+        "success": true,
+        "target": workerDisplay,
+        "targetWorkerId": workerId,
+        "timing": timing,
+        "summary": summary,
+      ]
+      return (200, makeResult(id: id, result: body))
+    } catch {
+      let body: [String: Any] = [
+        "success": false,
+        "target": workerDisplay,
+        "targetWorkerId": workerId,
+        "error": String(describing: error),
+        "hint": "Ensure the target worker is running Peel with swarm active. Check swarm.diagnostics to verify the worker is registered.",
+      ]
+      return (200, makeResult(id: id, result: body))
+    }
   }
 
   // MARK: - swarm.stun-test

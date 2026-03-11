@@ -37,6 +37,10 @@ final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendabl
   private let myDeviceId: String
   private let remoteDeviceId: String
 
+  /// Purpose of this signaling session (e.g. "transfer", "ping").
+  /// Written to the offer doc so the responder can dispatch appropriately.
+  var purpose: String = "transfer"
+
   /// Firestore collection for this swarm's signaling
   private var signalingCollection: CollectionReference {
     db.collection("swarms/\(swarmId)/webrtcSignaling")
@@ -82,6 +86,7 @@ final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendabl
       "sdp": sdp,
       "fromWorkerId": myDeviceId,
       "toWorkerId": remoteDeviceId,
+      "purpose": purpose,
       "createdAt": FieldValue.serverTimestamp(),
       "expiresAt": Timestamp(date: Date().addingTimeInterval(60)),
     ])

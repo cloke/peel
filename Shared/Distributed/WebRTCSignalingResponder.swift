@@ -65,6 +65,8 @@ public final class WebRTCSignalingResponder {
             let sdp = data["sdp"] as? String
           else { continue }
 
+          let purpose = data["purpose"] as? String ?? "transfer"
+
           // Check expiry
           if let expiresAt = (data["expiresAt"] as? Timestamp)?.dateValue(),
             expiresAt < Date()
@@ -79,11 +81,12 @@ public final class WebRTCSignalingResponder {
             guard !self.respondedOffers.contains(docId) else { return }
             self.respondedOffers.insert(docId)
 
-            self.logger.info("WebRTC offer received from \(fromWorkerId)")
+            self.logger.info("WebRTC offer received from \(fromWorkerId) (purpose: \(purpose))")
             await self.respondToOffer(
               swarmId: swarmId,
               fromWorkerId: fromWorkerId,
-              offerSDP: sdp
+              offerSDP: sdp,
+              purpose: purpose
             )
           }
         }
@@ -112,13 +115,9 @@ public final class WebRTCSignalingResponder {
   private func respondToOffer(
     swarmId: String,
     fromWorkerId: String,
-    offerSDP: String
+    offerSDP: String,
+    purpose: String
   ) async {
-    guard let dataProvider else {
-      logger.warning("No data provider — cannot serve WebRTC transfer")
-      return
-    }
-
     // Create signaling channel for this session
     let signaling = FirestoreWebRTCSignaling(
       swarmId: swarmId,
@@ -128,15 +127,32 @@ public final class WebRTCSignalingResponder {
 
     // Cancel any previous serve task
     activeServeTask?.cancel()
+
+    if purpose == "ping" {
+      // Ping: lightweight connectivity test, no data provider needed
+      activeServeTask = Task {
+        do {
+          try await WebRTCPeerTransfer.respondToPing(signaling: signaling)
+          await MainActor.run {
+            self.logger.info("WebRTC ping response completed")
+          }
+        } catch {
+          await MainActor.run {
+            self.logger.error("WebRTC ping response failed: \(error)")
+          }
+        }
+      }
+      return
+    }
+
+    // Transfer: serve data to remote peer
+    guard let dataProvider else {
+      logger.warning("No data provider — cannot serve WebRTC transfer")
+      return
+    }
+
     activeServeTask = Task {
       do {
-        // The signaling channel already has the offer in Firestore.
-        // WebRTCPeerTransfer.serveData will:
-        // 1. Read the offer from signaling
-        // 2. Create answer and send via signaling
-        // 3. Exchange ICE candidates
-        // 4. Open data channel
-        // 5. Serve the requested data
         try await WebRTCPeerTransfer.serveData(
           signaling: signaling,
           dataProvider: dataProvider

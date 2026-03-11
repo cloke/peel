@@ -126,6 +126,30 @@ extension SwarmToolsHandler {
         isMutating: false
       ),
       MCPToolDefinition(
+        name: "swarm.webrtc-ping",
+        description: "Test full WebRTC connectivity to a remote swarm worker. Performs Firestore signaling (SDP offer/answer), ICE negotiation, data channel establishment, and a round-trip ping/pong message. Returns timing for each stage. The remote worker must be running Peel with the swarm active.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "targetWorkerName": [
+              "type": "string",
+              "description": "Display name of the worker (e.g. 'coremore')"
+            ],
+            "targetWorkerId": [
+              "type": "string",
+              "description": "Device ID of the worker (alternative to targetWorkerName)"
+            ],
+            "timeout": [
+              "type": "integer",
+              "description": "Total timeout in seconds (default: 30)"
+            ]
+          ],
+          "required": []
+        ],
+        category: .swarm,
+        isMutating: false
+      ),
+      MCPToolDefinition(
         name: "swarm.rag.sync",
         description: "Request a Local RAG artifact sync to or from a peel. Direction is 'push' or 'pull'. Optionally scope to a single repo by repoIdentifier. Mode 'overlay' transfers only embeddings + analysis (no chunk text) — ideal when both peers have the repo indexed locally.",
         inputSchema: [

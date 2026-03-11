@@ -61,6 +61,8 @@ public final class SwarmToolsHandler: MCPToolHandler {
     // P2P connection logging and remote log retrieval
     "swarm.p2p-logs",
     "swarm.request-logs",
+    // WebRTC connectivity testing
+    "swarm.webrtc-ping",
     // Firestore swarm tools
     "swarm.firestore.auth",
     "swarm.firestore.swarms",
@@ -113,6 +115,8 @@ public final class SwarmToolsHandler: MCPToolHandler {
       return handleP2PLogs(id: id, arguments: arguments)
     case "swarm.request-logs":
       return await handleRequestLogs(id: id, arguments: arguments)
+    case "swarm.webrtc-ping":
+      return await handleWebRTCPing(id: id, arguments: arguments)
     case "swarm.rag.sync":
       return await handleRagSync(id: id, arguments: arguments)
     case "swarm.workers":

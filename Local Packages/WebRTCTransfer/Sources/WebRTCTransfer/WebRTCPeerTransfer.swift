@@ -41,6 +41,22 @@ public enum WebRTCPeerTransfer {
     case chunk = 3
     case complete = 4
     case error = 5
+    case ping = 6
+    case pong = 7
+  }
+
+  // MARK: - Ping Result
+
+  /// Result of a WebRTC ping, with timing at each stage of the pipeline.
+  public struct PingResult: Sendable {
+    /// Time to exchange SDP offer/answer via signaling (Firestore)
+    public let signalingMs: Double
+    /// Time from SDP answer received to data channel open (ICE + DTLS)
+    public let iceNegotiationMs: Double
+    /// Round-trip time for ping/pong over the data channel
+    public let roundTripMs: Double
+    /// Total time from start to pong received
+    public let totalMs: Double
   }
 
   // MARK: - Initiator Side
@@ -302,7 +318,132 @@ public enum WebRTCPeerTransfer {
 
       case .request:
         logger.warning("Unexpected request message on initiator side")
+
+      case .ping, .pong:
+        logger.warning("Unexpected ping/pong message during transfer")
       }
     }
+  }
+
+  // MARK: - WebRTC Ping (Connectivity Test)
+
+  /// Ping a remote peer via WebRTC data channel.
+  /// Tests the full pipeline: Firestore signaling → ICE negotiation → data channel → round-trip.
+  ///
+  /// - Parameters:
+  ///   - signaling: Channel for exchanging SDP and ICE candidates
+  ///   - timeout: Total ping timeout
+  /// - Returns: Timing breakdown of each pipeline stage
+  public static func ping(
+    signaling: WebRTCSignalingChannel,
+    timeout: Duration = .seconds(30)
+  ) async throws -> PingResult {
+    let client = WebRTCClient()
+    defer { client.close(); Task { await signaling.cleanup() } }
+
+    let totalStart = ContinuousClock.now
+
+    logger.info("Starting WebRTC ping (initiator)")
+
+    // 1. Create data channel + ICE forwarding
+    try await client.createDataChannel(label: "ping")
+
+    let candidateTask = Task {
+      await client.onLocalICECandidate { candidate in
+        Task { try? await signaling.sendCandidate(candidate) }
+      }
+    }
+    let remoteCandidateTask = Task {
+      for await candidate in signaling.receiveCandidates() {
+        try? await client.addICECandidate(candidate)
+      }
+    }
+
+    // 2. SDP exchange (timed)
+    let signalingStart = ContinuousClock.now
+    let offerSDP = try await client.createOffer()
+    try await signaling.sendOffer(offerSDP)
+    let answerSDP = try await signaling.waitForAnswer(timeout: .seconds(15))
+    try await client.setRemoteDescription(answerSDP, type: .answer)
+    let signalingMs = Double((ContinuousClock.now - signalingStart).components.attoseconds) / 1e15
+
+    // 3. Wait for data channel open (ICE + DTLS, timed)
+    let iceStart = ContinuousClock.now
+    try await client.waitForDataChannelOpen(timeout: .seconds(15))
+    let iceMs = Double((ContinuousClock.now - iceStart).components.attoseconds) / 1e15
+
+    // 4. Send ping, receive pong (timed)
+    let pingStart = ContinuousClock.now
+    var pingMsg = Data([MessageType.ping.rawValue])
+    var nanos = UInt64(DispatchTime.now().uptimeNanoseconds).bigEndian
+    pingMsg.append(Data(bytes: &nanos, count: 8))
+    try await client.send(pingMsg)
+
+    let pongData = try await client.receive(timeout: .seconds(10))
+    guard pongData.first == MessageType.pong.rawValue else {
+      throw WebRTCError.transferFailed(reason: "Expected pong, got type \(pongData.first ?? 0)")
+    }
+    let roundTripMs = Double((ContinuousClock.now - pingStart).components.attoseconds) / 1e15
+    let totalMs = Double((ContinuousClock.now - totalStart).components.attoseconds) / 1e15
+
+    candidateTask.cancel()
+    remoteCandidateTask.cancel()
+
+    logger.info("WebRTC ping complete: signaling=\(signalingMs, format: .fixed(precision: 1))ms ice=\(iceMs, format: .fixed(precision: 1))ms rtt=\(roundTripMs, format: .fixed(precision: 1))ms total=\(totalMs, format: .fixed(precision: 1))ms")
+
+    return PingResult(
+      signalingMs: signalingMs,
+      iceNegotiationMs: iceMs,
+      roundTripMs: roundTripMs,
+      totalMs: totalMs
+    )
+  }
+
+  /// Respond to a ping from a remote peer.
+  /// Called by the signaling responder when it detects a ping-purpose offer.
+  public static func respondToPing(
+    signaling: WebRTCSignalingChannel,
+    timeout: Duration = .seconds(30)
+  ) async throws {
+    let client = WebRTCClient()
+    defer { client.close(); Task { await signaling.cleanup() } }
+
+    logger.info("Starting WebRTC ping (responder)")
+
+    // 1. ICE forwarding
+    await client.onLocalICECandidate { candidate in
+      Task { try? await signaling.sendCandidate(candidate) }
+    }
+    let remoteCandidateTask = Task {
+      for await candidate in signaling.receiveCandidates() {
+        try? await client.addICECandidate(candidate)
+      }
+    }
+
+    // 2. SDP exchange
+    let offerSDP = try await signaling.waitForOffer(timeout: .seconds(15))
+    try await client.setRemoteDescription(offerSDP, type: .offer)
+    let answerSDP = try await client.createAnswer()
+    try await signaling.sendAnswer(answerSDP)
+
+    // 3. Wait for remote data channel
+    try await client.waitForRemoteDataChannel(timeout: .seconds(15))
+
+    // 4. Receive ping, send pong
+    let pingData = try await client.receive(timeout: .seconds(10))
+    guard pingData.first == MessageType.ping.rawValue else {
+      throw WebRTCError.transferFailed(reason: "Expected ping, got type \(pingData.first ?? 0)")
+    }
+
+    // Echo the timestamp back as pong
+    var pongMsg = Data([MessageType.pong.rawValue])
+    pongMsg.append(pingData.dropFirst())
+    try await client.send(pongMsg)
+
+    // Brief delay to let SCTP flush the pong
+    try? await Task.sleep(for: .milliseconds(500))
+    remoteCandidateTask.cancel()
+
+    logger.info("WebRTC ping responded")
   }
 }
