@@ -5,8 +5,8 @@
 //  Implements WebRTCSignalingChannel using Firestore for exchanging
 //  SDP offers/answers and ICE candidates between peers.
 //
-//  Uses the same Firestore collection path as the previous STUN signaling:
-//    swarms/{swarmId}/stunSignaling/
+//  Uses the Firestore collection path:
+//    swarms/{swarmId}/webrtcSignaling/
 //
 //  Document structure for WebRTC signaling:
 //    {myDeviceId}_to_{targetDeviceId}:
@@ -112,25 +112,35 @@ final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendabl
     try await withThrowingTaskGroup(of: String.self) { group in
       group.addTask { [weak self] in
         guard let self else { throw WebRTCSignalingError.signalingClosed }
-        return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<String, Error>) in
-          var resumed = false
-          let listener = docRef.addSnapshotListener { snapshot, error in
-            guard !resumed else { return }
-            if let error {
-              resumed = true
-              cont.resume(throwing: error)
+        let box = SDPContinuationBox()
+
+        return try await withTaskCancellationHandler {
+          try await withCheckedThrowingContinuation { (cont: CheckedContinuation<String, Error>) in
+            if Task.isCancelled {
+              cont.resume(throwing: CancellationError())
               return
             }
-            guard let data = snapshot?.data(),
-              let type = data["type"] as? String,
-              type == expectedType,
-              let sdp = data["sdp"] as? String
-            else { return }
 
-            resumed = true
-            cont.resume(returning: sdp)
+            box.setContinuation(cont)
+
+            let listener = docRef.addSnapshotListener { snapshot, error in
+              if let error {
+                box.resume(throwing: error)
+                return
+              }
+              guard let data = snapshot?.data(),
+                let type = data["type"] as? String,
+                type == expectedType,
+                let sdp = data["sdp"] as? String
+              else { return }
+
+              box.resume(returning: sdp)
+            }
+            box.setListener(listener)
+            self.listeners.append(listener)
           }
-          self.listeners.append(listener)
+        } onCancel: {
+          box.cancel()
         }
       }
       group.addTask {
@@ -208,6 +218,59 @@ final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendabl
       }
       try? await self.remoteDocRef.delete()
     }
+  }
+}
+
+// MARK: - Thread-Safe Continuation Box
+
+/// Thread-safe wrapper to prevent continuation leaks when task cancellation
+/// races with Firestore snapshot callbacks. The `onCancel` handler from
+/// `withTaskCancellationHandler` can fire on any thread, so we need a lock.
+private final class SDPContinuationBox: @unchecked Sendable {
+  private let lock = NSLock()
+  private var continuation: CheckedContinuation<String, Error>?
+  private var listener: ListenerRegistration?
+  private var resumed = false
+
+  func setContinuation(_ cont: CheckedContinuation<String, Error>) {
+    lock.lock()
+    defer { lock.unlock() }
+    continuation = cont
+  }
+
+  func setListener(_ l: ListenerRegistration) {
+    lock.lock()
+    defer { lock.unlock() }
+    listener = l
+  }
+
+  func resume(returning value: String) {
+    lock.lock()
+    defer { lock.unlock() }
+    guard !resumed, let cont = continuation else { return }
+    resumed = true
+    continuation = nil
+    cont.resume(returning: value)
+  }
+
+  func resume(throwing error: Error) {
+    lock.lock()
+    defer { lock.unlock() }
+    guard !resumed, let cont = continuation else { return }
+    resumed = true
+    continuation = nil
+    cont.resume(throwing: error)
+  }
+
+  func cancel() {
+    lock.lock()
+    defer { lock.unlock() }
+    listener?.remove()
+    listener = nil
+    guard !resumed, let cont = continuation else { return }
+    resumed = true
+    continuation = nil
+    cont.resume(throwing: CancellationError())
   }
 }
 

@@ -71,13 +71,24 @@ public final class WebRTCClient: NSObject, Sendable {
 
     func waitForICEGathering() async {
       guard !iceGatheringComplete else { return }
-      await withCheckedContinuation { cont in
-        if iceGatheringComplete {
-          cont.resume()
-        } else {
-          iceGatheringContinuation = cont
+      await withTaskCancellationHandler {
+        await withCheckedContinuation { cont in
+          if iceGatheringComplete {
+            cont.resume()
+          } else if Task.isCancelled {
+            cont.resume()
+          } else {
+            iceGatheringContinuation = cont
+          }
         }
+      } onCancel: {
+        Task { await self.cancelICEGatheringWaiter() }
       }
+    }
+
+    func cancelICEGatheringWaiter() {
+      iceGatheringContinuation?.resume()
+      iceGatheringContinuation = nil
     }
 
     func setDataChannel(_ channel: RTCDataChannel) {
@@ -92,12 +103,18 @@ public final class WebRTCClient: NSObject, Sendable {
 
     func waitForRemoteDataChannel() async throws {
       if remoteDataChannel != nil { return }
-      try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
-        if remoteDataChannel != nil {
-          cont.resume()
-        } else {
-          dataChannelContinuation = cont
+      try await withTaskCancellationHandler {
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+          if remoteDataChannel != nil {
+            cont.resume()
+          } else if Task.isCancelled {
+            cont.resume(throwing: CancellationError())
+          } else {
+            dataChannelContinuation = cont
+          }
         }
+      } onCancel: {
+        Task { await self.cancelDataChannelWaiter() }
       }
     }
 
@@ -107,15 +124,21 @@ public final class WebRTCClient: NSObject, Sendable {
     }
 
     func waitForDataChannelOpen() async throws {
-      try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
-        // Check if already open
-        if let dc = dataChannel, dc.readyState == .open {
-          cont.resume()
-        } else if let dc = remoteDataChannel, dc.readyState == .open {
-          cont.resume()
-        } else {
-          dataChannelContinuation = cont
+      try await withTaskCancellationHandler {
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+          // Check if already open
+          if let dc = dataChannel, dc.readyState == .open {
+            cont.resume()
+          } else if let dc = remoteDataChannel, dc.readyState == .open {
+            cont.resume()
+          } else if Task.isCancelled {
+            cont.resume(throwing: CancellationError())
+          } else {
+            dataChannelContinuation = cont
+          }
         }
+      } onCancel: {
+        Task { await self.cancelDataChannelWaiter() }
       }
     }
 
@@ -141,19 +164,35 @@ public final class WebRTCClient: NSObject, Sendable {
       if !messageBuffer.isEmpty {
         return messageBuffer.removeFirst()
       }
-      return try await withCheckedThrowingContinuation { cont in
-        if !messageBuffer.isEmpty {
-          cont.resume(returning: messageBuffer.removeFirst())
-        } else if let error = channelClosedError {
-          cont.resume(throwing: error)
-        } else {
-          messageWaiter = cont
+      return try await withTaskCancellationHandler {
+        try await withCheckedThrowingContinuation { cont in
+          if !messageBuffer.isEmpty {
+            cont.resume(returning: messageBuffer.removeFirst())
+          } else if let error = channelClosedError {
+            cont.resume(throwing: error)
+          } else if Task.isCancelled {
+            cont.resume(throwing: CancellationError())
+          } else {
+            messageWaiter = cont
+          }
         }
+      } onCancel: {
+        Task { await self.cancelMessageWaiter() }
       }
     }
 
     func getActiveDataChannel() -> RTCDataChannel? {
       dataChannel ?? remoteDataChannel
+    }
+
+    func cancelDataChannelWaiter() {
+      dataChannelContinuation?.resume(throwing: CancellationError())
+      dataChannelContinuation = nil
+    }
+
+    func cancelMessageWaiter() {
+      messageWaiter?.resume(throwing: CancellationError())
+      messageWaiter = nil
     }
   }
 
