@@ -101,6 +101,7 @@ cat > "$MACOS_HEADERS/WebRTC.h" << 'UMBRELLA'
 #import <WebRTC/RTCRtpTransceiver.h>
 #import <WebRTC/RTCRtpReceiver.h>
 #import <WebRTC/RTCRtpSender.h>
+#import <WebRTC/RTCRtpSource.h>
 #import <WebRTC/RTCRtpParameters.h>
 #import <WebRTC/RTCRtpEncodingParameters.h>
 #import <WebRTC/RTCRtpCodecParameters.h>

@@ -754,7 +754,7 @@ public final class SwarmCoordinator {
             try await connectionManager?.connect(to: address, port: port)
             logger.info("WAN auto-connect: TCP connected to \(worker.displayName) via direct WAN")
             // Clear from attempted on success so we don't expire and retry a working connection
-            await MainActor.run { self.wanConnectAttempted.removeValue(forKey: worker.id) }
+            _ = await MainActor.run { self.wanConnectAttempted.removeValue(forKey: worker.id) }
             return
           } catch {
             logger.warning("WAN auto-connect: direct TCP failed to \(worker.displayName) at \(address):\(port) — \(error.localizedDescription)")
@@ -1676,7 +1676,7 @@ public final class SwarmCoordinator {
       while !Task.isCancelled {
         try? await Task.sleep(for: .seconds(15))
         guard !Task.isCancelled else { break }
-        await self?.checkForStalledTransfers()
+        self?.checkForStalledTransfers()
       }
     }
   }
