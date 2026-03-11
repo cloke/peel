@@ -137,6 +137,7 @@ public final class FirestoreRelayProvider {
 
       // Export the RAG bundle
       logger.info("[relay-provider] Creating sync bundle for \(repoIdentifier)...")
+      let bundleTimer = MainThreadBlockTimer(label: "relay-provider createRepoSyncBundle", logger: logger)
       guard let bundle = try await delegate.createRepoSyncBundle(
         repoIdentifier: repoIdentifier,
         excludeFileHashes: []
@@ -145,8 +146,11 @@ public final class FirestoreRelayProvider {
         try await requestRef.updateData(["status": "error", "error": "Repo not found: \(repoIdentifier)"])
         return
       }
+      bundleTimer.finish()
 
+      let encodeTimer = MainThreadBlockTimer(label: "relay-provider JSONEncoder.encode (\(repoIdentifier))", logger: logger)
       let data = try JSONEncoder().encode(bundle)
+      encodeTimer.finish()
       let totalChunks = (data.count + Self.chunkSize - 1) / Self.chunkSize
       let exportElapsed = Date().timeIntervalSince(startTime)
 
@@ -356,7 +360,9 @@ public final class FirestoreRelayConsumer {
         logger.info("[relay-consumer] Decoding bundle (\(assembled.count) bytes)...")
         let bundle: RAGRepoExportBundle
         do {
+          let decodeTimer = MainThreadBlockTimer(label: "relay-consumer JSONDecoder (\(assembled.count) bytes)", logger: logger)
           bundle = try JSONDecoder().decode(RAGRepoExportBundle.self, from: assembled)
+          decodeTimer.finish()
           logger.info("[relay-consumer] Bundle decoded successfully")
         } catch {
           logger.error("[relay-consumer] Bundle decode failed: \(error)")
@@ -365,9 +371,11 @@ public final class FirestoreRelayConsumer {
 
         logger.info("[relay-consumer] Importing bundle...")
         do {
+          let importTimer = MainThreadBlockTimer(label: "relay-consumer applyRepoSyncBundle", logger: logger)
           _ = try await ragSyncDelegate.applyRepoSyncBundle(
             bundle, localRepoPath: nil, forceImportEmbeddings: true
           )
+          importTimer.finish()
         } catch {
           logger.error("[relay-consumer] Import failed: \(error)")
           throw error

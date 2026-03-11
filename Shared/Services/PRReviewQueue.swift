@@ -264,9 +264,45 @@ final class PRReviewQueue {
       }
       items = persisted + orphaned
       logger.info("Loaded \(self.items.count) PR review queue items from persistence")
+      recoverStuckItems()
       startReconciliationTimer()
     } catch {
       logger.error("Failed to load PR review queue: \(error.localizedDescription)")
+    }
+  }
+
+  /// Reset items stuck in transient phases (reviewing/fixing) back to
+  /// actionable states. These phases require a live background monitor
+  /// task that does not survive app restart.
+  private func recoverStuckItems() {
+    let inFlightPhases: Set<String> = [
+      PRReviewPhase.reviewing, PRReviewPhase.fixing, PRReviewPhase.pushing
+    ]
+    var recovered = 0
+    for item in items where inFlightPhases.contains(item.phase) {
+      let oldPhase = item.phase
+      switch item.phase {
+      case PRReviewPhase.reviewing:
+        item.phase = PRReviewPhase.pending
+        item.reviewChainId = ""
+        item.lastError = "Recovery: review was interrupted (app restarted)"
+      case PRReviewPhase.fixing:
+        item.phase = PRReviewPhase.needsFix
+        item.fixChainId = ""
+        item.lastError = "Recovery: fix was interrupted (app restarted)"
+      case PRReviewPhase.pushing:
+        item.phase = PRReviewPhase.readyToPush
+        item.lastError = "Recovery: push was interrupted (app restarted)"
+      default:
+        continue
+      }
+      item.lastUpdatedAt = Date()
+      recovered += 1
+      logger.warning("Recovered stuck item PR #\(item.prNumber): \(oldPhase) → \(item.phase)")
+    }
+    if recovered > 0 {
+      save()
+      logger.info("Recovered \(recovered) stuck PR review queue item(s)")
     }
   }
 

@@ -805,14 +805,22 @@ struct AgentReviewSheet: View {
         sleepMs = min(2_000, sleepMs + 250)
       }
 
-      guard let runner = mcpRef.parallelWorktreeRunner, let locatedRun = run else { return }
-
-      let status = await runner.waitForRunCompletion(locatedRun, timeoutSeconds: 900)
-
       let parts = ownerRepo.split(separator: "/")
       guard parts.count == 2 else { return }
       let owner = String(parts[0])
       let repoName = String(parts[1])
+
+      guard let runner = mcpRef.parallelWorktreeRunner, let locatedRun = run else {
+        // Could not find the parallel run — mark as failed so it doesn't stay stuck
+        if let qi = mcpRef.prReviewQueue.find(repoOwner: owner, repoName: repoName, prNumber: prNumber),
+           qi.phase == PRReviewPhase.reviewing {
+          mcpRef.prReviewQueue.markFailed(qi, error: "Review run record not found — chain may not have started")
+        }
+        return
+      }
+
+      let status = await runner.waitForRunCompletion(locatedRun, timeoutSeconds: 900)
+
       guard let qi = mcpRef.prReviewQueue.find(repoOwner: owner, repoName: repoName, prNumber: prNumber) else { return }
 
       // Only transition if still in "reviewing" — the sheet's pollForResult may have already handled it

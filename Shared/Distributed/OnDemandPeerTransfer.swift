@@ -156,6 +156,8 @@ public final class OnDemandPeerTransfer {
       "targetWAN": "\(worker.wanAddress ?? "nil"):\(worker.wanPort.map { String($0) } ?? "nil")",
       "relayProviderActive": String(worker.relayProviderActive),
     ])
+    let transferTimer = MainThreadBlockTimer(label: "OnDemandPeerTransfer.requestIndex(\(worker.displayName))", logger: logger)
+    defer { transferTimer.finish() }
     if let connection = try? await connectToPeer(worker: worker, state: state) {
       // Direct path: handshake → transfer → disconnect
       try await directTransfer(

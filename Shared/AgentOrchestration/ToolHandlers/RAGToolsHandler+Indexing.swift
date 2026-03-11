@@ -9,6 +9,7 @@
 
 import Foundation
 import MCPCore
+import OSLog
 
 extension RAGToolsHandler {
   // MARK: - rag.status
@@ -73,6 +74,10 @@ extension RAGToolsHandler {
     
     do {
       // Delegate handles all state tracking
+      let indexTimer = MainThreadBlockTimer(
+        label: "rag.index indexRepository(\(repoPath))",
+        logger: Logger(subsystem: "com.peel.diagnostics", category: "MainThreadWatchdog")
+      )
       let report = try await delegate.indexRepository(
         path: repoPath,
         forceReindex: forceReindex,
@@ -80,6 +85,7 @@ extension RAGToolsHandler {
         excludeSubrepos: excludeSubrepos,
         progressHandler: nil
       )
+      indexTimer.finish()
       
       await delegate.refreshRagSummary()
 

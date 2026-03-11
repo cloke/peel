@@ -70,6 +70,11 @@ struct PeelApp: App {
   }
 
   init() {
+    // Start main-thread watchdog early to catch stalls during init
+    #if DEBUG
+    MainThreadWatchdog.shared.start()
+    #endif
+
     // Configure Firebase first (before other services)
     FirebaseService.shared.configure()
     
