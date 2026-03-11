@@ -337,6 +337,8 @@ struct PeelApp: App {
           if case .available = updateState {
             print("[PeelApp] App update available — user will see it via Check for Updates")
           }
+          // Fetch Firestore model registry so MLX model pickers show latest models
+          await MLXModelRegistry.shared.fetchIfNeeded()
           // Populate RepoRegistry from SwiftData-backed local paths BEFORE rebuild
           // so unified repository aggregation has the local repo mappings it needs.
           let registry = RepoRegistry.shared

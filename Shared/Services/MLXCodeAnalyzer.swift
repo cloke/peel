@@ -80,8 +80,8 @@ struct MLXAnalyzerModelConfig: Sendable {
   let maxTokens: Int
   let contextLength: Int
   
-  /// Available Qwen2.5-Coder models for code analysis
-  static let availableModels: [MLXAnalyzerModelConfig] = [
+  /// Built-in Qwen2.5-Coder models — local defaults before Firestore fetch
+  static let builtinModels: [MLXAnalyzerModelConfig] = [
     // Tiny tier - Qwen2.5-Coder-0.5B (fast, basic quality)
     MLXAnalyzerModelConfig(
       name: "Qwen2.5-Coder-0.5B",
@@ -118,7 +118,12 @@ struct MLXAnalyzerModelConfig: Sendable {
       contextLength: 32768
     )
   ]
-  
+
+  /// Available models — uses Firestore registry if available, falls back to builtins
+  static var availableModels: [MLXAnalyzerModelConfig] {
+    MLXModelRegistry.shared.analyzerModels
+  }
+
   /// Select the best model for the current machine's RAM
   static func recommendedModel() -> MLXAnalyzerModelConfig {
     let availableMemoryGB = getAvailableMemoryGB()

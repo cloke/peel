@@ -89,8 +89,8 @@ struct MLXEditorModelConfig: Sendable {
   let maxTokens: Int
   let contextLength: Int
 
-  /// Available models for code editing — larger than analyzer models
-  static let availableModels: [MLXEditorModelConfig] = [
+  /// Built-in models for code editing — local defaults before Firestore fetch
+  static let builtinModels: [MLXEditorModelConfig] = [
     // Small tier - Qwen2.5-Coder-7B (simple edits on smaller machines)
     MLXEditorModelConfig(
       name: "Qwen2.5-Coder-7B",
@@ -132,6 +132,11 @@ struct MLXEditorModelConfig: Sendable {
       contextLength: 262144  // 256K context
     )
   ]
+
+  /// Available models — uses Firestore registry if available, falls back to builtins
+  static var availableModels: [MLXEditorModelConfig] {
+    MLXModelRegistry.shared.editorModels
+  }
 
   /// Select the best model for the current machine's RAM
   static func recommendedModel() -> MLXEditorModelConfig {

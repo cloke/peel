@@ -53,8 +53,8 @@ struct MLXEmbeddingModelConfig: Sendable {
   let tier: MLXEmbeddingModelTier
   let isCodeOptimized: Bool
   
-  /// Available models in MLXEmbedders - these are known to work with the library
-  static let availableModels: [MLXEmbeddingModelConfig] = [
+  /// Built-in models — local defaults before Firestore fetch
+  static let builtinModels: [MLXEmbeddingModelConfig] = [
     // Small tier - MiniLM (very fast, good quality)
     MLXEmbeddingModelConfig(
       name: "all-MiniLM-L6-v2",
@@ -82,7 +82,12 @@ struct MLXEmbeddingModelConfig: Sendable {
       isCodeOptimized: true
     )
   ]
-  
+
+  /// Available models — uses Firestore registry if available, falls back to builtins
+  static var availableModels: [MLXEmbeddingModelConfig] {
+    MLXModelRegistry.shared.embeddingModels
+  }
+
   /// Select the best model for the current machine
   static func recommendedModel(forCodeSearch: Bool = true) -> MLXEmbeddingModelConfig {
     let availableMemoryGB = getAvailableMemoryGB()
