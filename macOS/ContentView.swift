@@ -308,20 +308,28 @@ struct ContentView: View {
 
   private var repoSidebarSection: some View {
     Section("Repositories") {
-      // Filter chips
+      // Filter chips — hide "Active" when count is 0
       ScrollView(.horizontal, showsIndicators: false) {
         HStack(spacing: 6) {
           ForEach(RepoFilterMode.allCases, id: \.self) { mode in
-            FilterChip(
-              title: mode.rawValue,
-              count: countForFilter(mode),
-              isSelected: repoFilterMode == mode
-            ) {
-              withAnimation(.easeInOut(duration: 0.15)) {
-                repoFilterMode = mode
+            let count = countForFilter(mode)
+            if mode != .active || count > 0 {
+              FilterChip(
+                title: mode.rawValue,
+                count: count,
+                isSelected: repoFilterMode == mode
+              ) {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                  repoFilterMode = mode
+                }
               }
             }
           }
+        }
+      }
+      .onChange(of: countForFilter(.active)) { _, newCount in
+        if newCount == 0 && repoFilterMode == .active {
+          repoFilterMode = .all
         }
       }
 
