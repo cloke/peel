@@ -206,6 +206,7 @@ public final class PeerConnectionManager: @unchecked Sendable {
     
     let parameters = NWParameters.tcp
     parameters.includePeerToPeer = true
+    parameters.allowLocalEndpointReuse = true  // Allow STUN TCP connections to share port
     
     // Allow local network access
     if let options = parameters.defaultProtocolStack.internetProtocol as? NWProtocolIP.Options {

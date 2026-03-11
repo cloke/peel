@@ -668,13 +668,15 @@ public final class OnDemandPeerTransfer {
   ) async throws {
     let db = Firestore.firestore()
     let collection = db.collection("swarms/\(swarmId)/stunSignaling")
-    let offerDocRef = collection.document("\(myDeviceId)_to_\(targetWorkerId)")
     let answerDocRef = collection.document("\(targetWorkerId)_to_\(myDeviceId)")
 
-    // Delete stale signaling docs from previous attempts so the responder
-    // sees a fresh .added event (not .modified, which was previously ignored).
-    try? await offerDocRef.delete()
+    // Delete stale answer doc from previous attempts so we can watch for a fresh one
     try? await answerDocRef.delete()
+
+    // Use a unique offer doc ID per attempt so the responder's respondedOffers
+    // deduplication set doesn't block re-processing of retried signaling.
+    let uniqueOfferDocId = "\(myDeviceId)_to_\(targetWorkerId)_\(Int(Date().timeIntervalSince1970))"
+    let offerDocRef = collection.document(uniqueOfferDocId)
 
     try await offerDocRef.setData([
       "fromWorkerId": myDeviceId,
