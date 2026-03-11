@@ -148,6 +148,20 @@ service cloud.firestore {
         allow delete: if isContributor(swarmId);
       }
 
+      // WebRTC signaling — ephemeral SDP offers/answers for P2P data channel setup.
+      match /webrtcSignaling/{signalingId} {
+        allow read: if isReader(swarmId);
+        allow create, update: if isContributor(swarmId);
+        allow delete: if isContributor(swarmId);
+
+        // ICE candidates subcollection
+        match /candidates/{candidateId} {
+          allow read: if isReader(swarmId);
+          allow create, update: if isContributor(swarmId);
+          allow delete: if isContributor(swarmId);
+        }
+      }
+
       // Relay requests — Firestore-mediated RAG index transfer when direct P2P fails.
       // A consumer creates a request; the provider writes chunks back through it.
       match /relayRequests/{requestId} {
