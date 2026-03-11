@@ -83,9 +83,10 @@ final class UDPPeerTransfer {
 
     try await startConnection(conn)
     p2pLog.log("udp-transfer", "UDP connection started (initiator)")
+    let channel = DatagramChannel(connection: conn)
 
     // Phase 1: Hole punch
-    let punched = try await holePunch(connection: conn, p2pLog: p2pLog, role: "initiator")
+    let punched = try await holePunch(channel: channel, connection: conn, p2pLog: p2pLog, role: "initiator")
     guard punched else { throw TransferError.holePunchFailed }
 
     // Phase 2: Send request
@@ -96,7 +97,7 @@ final class UDPPeerTransfer {
     p2pLog.log("udp-transfer", "Sent REQUEST", details: ["repo": repoIdentifier])
 
     // Phase 3: Receive chunked data
-    let data = try await receiveChunkedData(connection: conn, timeout: timeout, p2pLog: p2pLog)
+    let data = try await receiveChunkedData(channel: channel, connection: conn, timeout: timeout, p2pLog: p2pLog)
     p2pLog.log("udp-transfer", "Transfer complete", details: [
       "bytes": String(data.count),
       "repo": repoIdentifier,
@@ -121,16 +122,17 @@ final class UDPPeerTransfer {
     do {
       try await startConnection(conn)
       p2pLog.log("udp-transfer", "UDP connection started (responder)")
+      let channel = DatagramChannel(connection: conn)
 
       // Phase 1: Hole punch
-      let punched = try await holePunch(connection: conn, p2pLog: p2pLog, role: "responder")
+      let punched = try await holePunch(channel: channel, connection: conn, p2pLog: p2pLog, role: "responder")
       guard punched else {
         p2pLog.log("udp-transfer", "Responder hole punch failed")
         return
       }
 
       // Phase 2: Wait for REQUEST
-      let request = try await waitForRequest(connection: conn, timeout: .seconds(30))
+      let request = try await waitForRequest(channel: channel, timeout: .seconds(30))
       p2pLog.log("udp-transfer", "Received REQUEST", details: ["repo": request.repo])
 
       // Phase 3: Export bundle with keepalive to prevent NAT timeout.
@@ -152,7 +154,7 @@ final class UDPPeerTransfer {
         "repo": request.repo,
       ])
 
-      try await sendChunkedData(connection: conn, data: data, timeout: timeout, p2pLog: p2pLog)
+      try await sendChunkedData(channel: channel, connection: conn, data: data, timeout: timeout, p2pLog: p2pLog)
       p2pLog.log("udp-transfer", "Responder send complete", details: ["bytes": String(data.count)])
 
     } catch {
@@ -207,6 +209,7 @@ final class UDPPeerTransfer {
   /// Send PUNCH datagrams while also listening for incoming PUNCHes.
   /// Returns true if bidirectional connectivity is confirmed.
   private static func holePunch(
+    channel: DatagramChannel,
     connection: NWConnection,
     p2pLog: P2PConnectionLog,
     role: String
@@ -220,7 +223,7 @@ final class UDPPeerTransfer {
       for _ in 0..<(punchCount * 3) { // Listen longer than we send
         guard !Task.isCancelled else { return false }
         do {
-          let data = try await receiveDatagram(connection, timeout: .seconds(10))
+          let data = try await receiveDatagram(channel, timeout: .seconds(10))
           if !data.isEmpty && data[0] == MsgType.punch.rawValue {
             return true
           }
@@ -256,6 +259,7 @@ final class UDPPeerTransfer {
 
   /// Receive chunked DATA datagrams, send ACKs, reassemble into contiguous Data.
   private static func receiveChunkedData(
+    channel: DatagramChannel,
     connection: NWConnection,
     timeout: Duration,
     p2pLog: P2PConnectionLog
@@ -269,7 +273,7 @@ final class UDPPeerTransfer {
     while ContinuousClock.now - startTime < timeout {
       let datagram: Data
       do {
-        datagram = try await receiveDatagram(connection, timeout: .seconds(5))
+        datagram = try await receiveDatagram(channel, timeout: .seconds(5))
         receiveTimeouts = 0
       } catch {
         receiveTimeouts += 1
@@ -355,12 +359,12 @@ final class UDPPeerTransfer {
   // MARK: - Data Sending (Responder)
 
   private static func waitForRequest(
-    connection: NWConnection,
+    channel: DatagramChannel,
     timeout: Duration
   ) async throws -> TransferRequest {
     let startTime = ContinuousClock.now
     while ContinuousClock.now - startTime < timeout {
-      let datagram = try await receiveDatagram(connection, timeout: .seconds(5))
+      let datagram = try await receiveDatagram(channel, timeout: .seconds(5))
       guard !datagram.isEmpty else { continue }
 
       if datagram[0] == MsgType.request.rawValue {
@@ -374,6 +378,7 @@ final class UDPPeerTransfer {
 
   /// Send data in chunks with ACK-based flow control and retransmission.
   private static func sendChunkedData(
+    channel: DatagramChannel,
     connection: NWConnection,
     data: Data,
     timeout: Duration,
@@ -424,7 +429,7 @@ final class UDPPeerTransfer {
       }
 
       // Wait for ACK
-      let ack = try await waitForACK(connection: connection, timeout: retransmitTimeout, p2pLog: p2pLog)
+      let ack = try await waitForACK(channel: channel, timeout: retransmitTimeout, p2pLog: p2pLog)
       if let ack {
         if ack > ackedUpTo {
           p2pLog.log("udp-transfer", "ACK received", details: [
@@ -454,14 +459,14 @@ final class UDPPeerTransfer {
   }
 
   private static func waitForACK(
-    connection: NWConnection,
+    channel: DatagramChannel,
     timeout: Duration,
     p2pLog: P2PConnectionLog
   ) async throws -> UInt32? {
     let startTime = ContinuousClock.now
     while ContinuousClock.now - startTime < timeout {
       do {
-        let datagram = try await receiveDatagram(connection, timeout: .seconds(1))
+        let datagram = try await receiveDatagram(channel, timeout: .seconds(1))
         guard datagram.count >= 5 && datagram[0] == MsgType.ack.rawValue else {
           if !datagram.isEmpty {
             p2pLog.log("udp-transfer", "Unexpected msg while waiting for ACK", details: [
@@ -520,35 +525,98 @@ final class UDPPeerTransfer {
     }
   }
 
-  private static func receiveDatagram(_ connection: NWConnection, timeout: Duration) async throws -> Data {
-    // IMPORTANT: Do NOT use withThrowingTaskGroup here.
-    // Task groups wait for ALL child tasks before returning. If the timeout
-    // fires, the group cancels the receive task, but
-    // withCheckedThrowingContinuation doesn't auto-resume on cancellation
-    // (receiveMessage hasn't called back yet) → the group hangs forever.
+  private static func receiveDatagram(_ channel: DatagramChannel, timeout: Duration) async throws -> Data {
+    try await channel.receive(timeout: timeout)
+  }
+}
+
+// MARK: - DatagramChannel
+
+/// Wraps an NWConnection with a persistent receiveMessage loop to prevent
+/// datagram loss. The old approach registered a new receiveMessage callback
+/// per receiveDatagram call; on timeout, the stale callback would eat the
+/// next datagram that arrived (since NWConnection delivers each message to
+/// exactly one receiveMessage call). Over many timeouts (e.g. during a long
+/// export phase), stale callbacks accumulate and consume the first N chunks
+/// of every retransmit window, preventing cumulative ACK progress.
+///
+/// DatagramChannel starts one persistent receiveMessage loop when created.
+/// Datagrams that arrive when nobody is waiting are buffered. receive(timeout:)
+/// returns buffered data immediately or waits for the next delivery.
+private final class DatagramChannel: @unchecked Sendable {
+  private let lock = NSLock()
+  private var buffer: [Data] = []
+  private var waiter: DatagramReceiveState?
+  private let connection: NWConnection
+
+  init(connection: NWConnection) {
+    self.connection = connection
+    scheduleReceive()
+  }
+
+  private func scheduleReceive() {
+    connection.receiveMessage { [weak self] content, _, _, error in
+      guard let self else { return }
+      if error != nil { return }
+      let data = content ?? Data()
+
+      let w: DatagramReceiveState? = self.lock.withLock {
+        if let w = self.waiter {
+          self.waiter = nil
+          return w
+        } else {
+          self.buffer.append(data)
+          return nil
+        }
+      }
+      w?.tryResume(with: .success(data))
+
+      self.scheduleReceive()
+    }
+  }
+
+  func receive(timeout: Duration) async throws -> Data {
     let state = DatagramReceiveState()
+
     return try await withCheckedThrowingContinuation { continuation in
       state.setContinuation(continuation)
 
-      connection.receiveMessage { content, _, _, error in
-        if let error {
-          state.tryResume(with: .failure(error))
-        } else {
-          state.tryResume(with: .success(content ?? Data()))
+      // Atomically check buffer or register waiter — must be one lock scope
+      // to prevent a datagram arriving between the check and the registration.
+      let hadBuffered: Bool = lock.withLock {
+        if !buffer.isEmpty {
+          return true
         }
+        self.waiter = state
+        return false
       }
 
-      Task {
-        try? await Task.sleep(for: timeout)
-        state.tryResume(with: .failure(TransferError.timeout))
+      if hadBuffered {
+        // Resolve immediately with buffered data (under separate lock scope
+        // since the datagram we want is still in the buffer).
+        let data: Data = lock.withLock { buffer.removeFirst() }
+        state.tryResume(with: .success(data))
+      } else {
+        Task {
+          try? await Task.sleep(for: timeout)
+          let shouldTimeout: Bool = lock.withLock {
+            if self.waiter === state {
+              self.waiter = nil
+              return true
+            }
+            return false
+          }
+          if shouldTimeout {
+            state.tryResume(with: .failure(UDPPeerTransfer.TransferError.timeout))
+          }
+        }
       }
     }
   }
 }
 
 /// Thread-safe helper ensuring a CheckedContinuation is resumed exactly once.
-/// Used by receiveDatagram to race a receiveMessage callback against a timeout
-/// without relying on task groups (which would deadlock — see comment above).
+/// Used by DatagramChannel to race receiveMessage delivery against a timeout.
 private final class DatagramReceiveState: @unchecked Sendable {
   private let lock = NSLock()
   private var resumed = false
