@@ -418,6 +418,9 @@ public final class PRQueue {
         logger.info("Recovered \(createdRecords.count) created PR record(s) from SwiftData")
       }
     }
+
+    // Resume processing any recovered pending operations
+    processNextIfIdle()
   }
 
   private func persistQueuedOperation(_ queued: QueuedOperation) {

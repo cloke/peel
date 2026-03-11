@@ -175,7 +175,9 @@ final class PRReviewQueue {
 
   /// Remove an item from the queue entirely.
   func remove(_ item: PRReviewQueueItem) {
-    items.removeAll { $0.id == item.id }
+    if let idx = items.firstIndex(where: { $0.id == item.id }) {
+      items.remove(at: idx)
+    }
     modelContext?.delete(item)
     save()
   }
