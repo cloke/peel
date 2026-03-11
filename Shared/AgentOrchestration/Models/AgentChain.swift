@@ -69,6 +69,9 @@ public final class AgentChain: Identifiable {
   /// Prevents the "plan and quit" failure mode where agents write plans but don't implement.
   public var requiresImplementation: Bool = false
 
+  /// Post-completion validation: file patterns, forbidden outputs, build requirements.
+  public var completionCriteria: CompletionCriteria = .implementation
+
   /// Pre-populated learnings block injected into agent prompts (from ChainLearning SwiftData).
   public var chainLearningsBlock: String?
 

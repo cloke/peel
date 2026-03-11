@@ -1,11 +1,11 @@
 ---
 title: Agent Learning Loop & Execution Guardrails
-status: active
+status: phases-1-2-complete
 tags:
   - agent-orchestration
   - learning
   - quality
-updated: 2026-03-10
+updated: 2026-06-28
 ---
 
 # Agent Learning Loop & Execution Guardrails
@@ -112,17 +112,17 @@ This builds on the existing `ParallelWorktreeRunner` but adds the decomposition 
 
 ## Implementation Order
 
-### Phase 1: Learnings (this plan)
-1. `ChainLearning` SwiftData model
-2. Post-chain learning extraction in `AgentChainRunner.runChain()`
-3. Learning injection in prompt assembly
-4. MCP tools: `learnings.list`, `learnings.add`, `learnings.rate`
+### Phase 1: Learnings ✅ Complete
+1. ✅ `ChainLearning` SwiftData model — `Shared/Models/AgentModels.swift`
+2. ✅ Post-chain learning extraction — `MCPServerService+ChainHandlers.swift:extractChainLearnings()`
+3. ✅ Learning injection in prompt assembly — `ParallelWorktreeRunner` + `AgentChainRunner` (both paths)
+4. ✅ MCP tools: `learnings.list`, `learnings.add`, `learnings.rate`, `learnings.delete` — `MCPServerService+ServerCore.swift`
 
-### Phase 2: Guardrails (this plan)
-5. `requiresImplementation` flag on `AgentChain`
-6. Planner output validation override
-7. Post-implementation file change verification
-8. `CompletionCriteria` on templates
+### Phase 2: Guardrails ✅ Complete
+5. ✅ `requiresImplementation` flag on `AgentChain` — auto-set in `AgentManager.createChainFromTemplate()`
+6. ✅ Planner output validation override — both sequential & parallel paths in `AgentChainRunner`
+7. ✅ Post-implementation file change verification — `verifyFileChanges()` in `AgentChainRunner`
+8. ✅ `CompletionCriteria` on templates — struct with `requiresFileChanges`, `requiredFilePatterns`, `forbiddenFilePatterns`, `requiresBuildPass`; applied to all built-in templates
 
 ### Phase 3: Idea Decomposition (future plan, builds on above)
 9. Idea Analyzer chain template
@@ -130,14 +130,14 @@ This builds on the existing `ParallelWorktreeRunner` but adds the decomposition 
 11. Integration/merge step
 12. End-to-end Idea template
 
-## Files to Modify
+## Files Modified
 
-| File | Change |
-|------|--------|
-| `Shared/Models/AgentModels.swift` | Add `ChainLearning` model |
-| `Shared/Services/DataService.swift` | Add learning CRUD + query + injection block |
-| `Shared/AgentOrchestration/AgentChainRunner.swift` | Post-chain learning extraction, planner gate override, file change verification |
-| `Shared/AgentOrchestration/Models/AgentChain.swift` | Add `requiresImplementation` flag |
-| `Shared/AgentOrchestration/Models/ChainTemplate.swift` | Add `CompletionCriteria` |
-| `Shared/Services/ParallelWorktreeRunner.swift` | Inject learnings into pre-planner context |
-| `Shared/AgentOrchestration/ToolHandlers/` | MCP tools for learnings |
+| File | Change | Status |
+|------|--------|--------|
+| `Shared/Models/AgentModels.swift` | `ChainLearning` model | ✅ Done |
+| `Shared/Services/DataService.swift` | Learning CRUD + query + injection block | ✅ Done |
+| `Shared/AgentOrchestration/AgentChainRunner.swift` | Learning extraction, planner gate override, file change verification, `CompletionCriteria` enforcement | ✅ Done |
+| `Shared/AgentOrchestration/Models/AgentChain.swift` | `requiresImplementation` flag + `completionCriteria` property | ✅ Done |
+| `Shared/AgentOrchestration/Models/ChainTemplate.swift` | `CompletionCriteria` struct + per-template defaults | ✅ Done |
+| `Shared/Services/ParallelWorktreeRunner.swift` | Inject learnings into pre-planner context | ✅ Done |
+| `Shared/AgentOrchestration/MCPServerService+ServerCore.swift` | MCP tools: `learnings.list/add/rate/delete` | ✅ Done |

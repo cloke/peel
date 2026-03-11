@@ -1690,13 +1690,27 @@ public final class FirebaseService {
       logger.info("Membership changed: \(self.memberSwarms.count) -> \(swarms.count) swarms")
       // Detect newly approved memberships (role changed from .pending to non-pending)
       let previousPending = Set(memberSwarms.filter { $0.role == .pending }.map { $0.id })
+      var newlyApproved: [SwarmMembership] = []
       for swarm in swarms where swarm.role != .pending && previousPending.contains(swarm.id) {
+        newlyApproved.append(swarm)
         PeonPingService.shared.sendSwarmNotification(
           title: "Swarm Access Approved",
           body: "You've been approved to join \(swarm.swarmName)"
         )
       }
       memberSwarms = swarms
+
+      // Auto-register as worker + start listeners for newly approved swarms
+      if !newlyApproved.isEmpty {
+        let capabilities = WorkerCapabilities.current()
+        for swarm in newlyApproved where swarm.role.canRegisterWorkers {
+          logger.info("Auto-registering worker after approval for swarm: \(swarm.swarmName)")
+          _ = try? await registerWorker(swarmId: swarm.id, capabilities: capabilities)
+          startWorkerListener(swarmId: swarm.id)
+          startMessageListener(swarmId: swarm.id)
+        }
+        SwarmCoordinator.shared.reinitializeFirestoreServices()
+      }
     }
   }
   

@@ -1137,6 +1137,20 @@ extension MCPServerService {
       activateApp()
       return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["status": "activated"]))
 
+    case "app.daemon.status":
+      #if os(macOS)
+      return handleDaemonStatus(id: id)
+      #else
+      return (404, JSONRPCResponseBuilder.makeError(id: id, code: -32601, message: "Daemon mode is macOS only"))
+      #endif
+
+    case "app.daemon.configure":
+      #if os(macOS)
+      return handleDaemonConfigure(id: id, arguments: arguments)
+      #else
+      return (404, JSONRPCResponseBuilder.makeError(id: id, code: -32601, message: "Daemon mode is macOS only"))
+      #endif
+
     case "screenshot.capture":
       let label = arguments["label"] as? String
       let requestedOutputDir = arguments["outputDir"] as? String

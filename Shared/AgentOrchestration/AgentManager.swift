@@ -175,6 +175,7 @@ public final class AgentManager {
     chain.executionEnvironment = template.executionEnvironment
     chain.toolchain = template.toolchain
     chain.directoryShares = template.directoryShares
+    chain.completionCriteria = template.completionCriteria
     
     for step in template.steps {
       let agent = createAgent(

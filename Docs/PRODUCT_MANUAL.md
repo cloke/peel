@@ -32,6 +32,8 @@
    - [Translation Validation](#translation-validation)
    - [Docling Import](#docling-import)
    - [VM Isolation](#vm-isolation)
+   - [Background Mode (Daemon)](#background-mode-daemon)
+   - [Agent Memory (ChainLearning)](#agent-memory-chainlearning)
 5. [Integrations](#integrations)
    - [Repositories (Unified)](#repositories-unified)
    - [Git (Local)](#git-local)
@@ -985,6 +987,99 @@ Under Development — Basic VM lifecycle management available. Full agent-in-VM 
 
 ---
 
+### Background Mode (Daemon)
+
+**Location:** Settings > Background Mode (macOS only)
+
+Peel can run as an always-on background service, keeping the MCP server available even when the main window is closed.
+
+#### Settings
+
+| Toggle | Description |
+|--------|-------------|
+| **Run in Background** | Hides the dock icon and keeps Peel running when windows are closed. A menu bar icon appears with Open/Quit controls. |
+| **Start at Login** | Registers Peel as a login item via `SMAppService` so it launches automatically on boot. |
+
+#### How It Works
+
+- **Background mode** uses `NSApp.setActivationPolicy(.accessory)` to hide the dock icon. The app stays alive in the background with the MCP server running.
+- **Login item** uses Apple's `SMAppService.mainApp` — no launchd plist required.
+- A **menu bar icon** (visible when running in background) provides:
+  - **Open Peel** — brings the main window back and restores the dock icon
+  - **Quit** — fully exits the app
+- Closing the last window does **not** quit the app when background mode is enabled.
+- `applicationShouldHandleReopen` restores windows when clicking the dock icon.
+
+#### MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `app.daemon.status` | Returns current background mode and login item state |
+| `app.daemon.configure` | Set `runInBackground` and/or `startAtLogin` programmatically |
+
+#### Login Item Status
+
+The Settings UI shows a live status indicator for the login item:
+- **Enabled** (green checkmark) — login item is active
+- **Requires Approval** — user must approve in System Settings > Login Items
+- **Not Registered** — toggle is off
+
+---
+
+### Agent Memory (ChainLearning)
+
+**Location:** Automatic (no dedicated UI — operates within chain execution)
+
+Peel remembers what works and what fails across chain executions, building institutional knowledge over time.
+
+#### How It Works
+
+1. **Auto-capture** — When a chain completes (success or failure), `AgentChainRunner` extracts key learnings: what worked, what failed, error patterns, and successful strategies.
+2. **Storage** — Learnings are persisted as `ChainLearning` SwiftData models, synced across devices via iCloud/CloudKit.
+3. **Retrieval** — Before planning a new chain, relevant past learnings are queried and injected into the agent's context.
+4. **MCP access** — Learnings can be searched, listed, rated, and removed via MCP tools.
+
+#### ChainLearning Fields
+
+| Field | Description |
+|-------|-------------|
+| `repoIdentifier` | Which repository the learning applies to |
+| `templateName` | Which chain template produced it |
+| `category` | Classification (e.g., "build-fix", "pattern", "failure") |
+| `content` | The actual insight or lesson |
+| `confidence` | Confidence score (adjusted by rating) |
+| `successCount` / `failureCount` | Track record of the learning |
+
+#### Completion Criteria
+
+Each chain template has a `CompletionCriteria` struct that defines what counts as "done":
+
+| Criteria | Description |
+|----------|-------------|
+| `requiresFileChanges` | Chain must produce actual file modifications |
+| `requiredFilePatterns` | Glob patterns for files that must be changed (e.g., `"*.swift"`) |
+| `forbiddenFilePatterns` | Glob patterns for files that must **not** be changed (e.g., `"*.lock"`) |
+| `requiresBuildPass` | Chain must pass a build verification step |
+
+Built-in presets: `.implementation` (requires Swift file changes + build pass) and `.noValidation` (no checks).
+
+#### Execution Guardrails
+
+- **Plan-and-quit detection** — Rejects chains that only produce a plan file without implementation
+- **Empty-work rejection** — Fails chains that make no meaningful file changes when `requiresFileChanges` is set
+- **Forbidden file detection** — Fails chains that modify files matching `forbiddenFilePatterns`
+
+#### MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `memory.search` | Search learnings by query, repo, or template |
+| `memory.list` | List all learnings (with optional filters) |
+| `memory.rate` | Upvote or downvote a learning to adjust confidence |
+| `memory.forget` | Remove a specific learning |
+
+---
+
 ## Integrations
 
 ### Repositories (Unified)
@@ -1303,6 +1398,8 @@ The MCP server exposes 120+ tools via JSON-RPC at `http://127.0.0.1:8765/rpc`.
 |------|-------------|
 | `app.activate` | Bring the app to the foreground |
 | `app.quit` | Quit the app |
+| `app.daemon.status` | Get background mode and login item state |
+| `app.daemon.configure` | Set background mode / login item settings |
 | `screenshot.capture` | Capture a screenshot |
 
 ### Server Management
@@ -1323,6 +1420,15 @@ The MCP server exposes 120+ tools via JSON-RPC at `http://127.0.0.1:8765/rpc`.
 |------|-------------|
 | `pii.scrub` | Scrub PII from files |
 | `translations.validate` | Validate translation files |
+
+### Agent Memory
+
+| Tool | Description |
+|------|-------------|
+| `memory.search` | Search chain learnings by query, repo, or template |
+| `memory.list` | List all stored learnings |
+| `memory.rate` | Upvote/downvote a learning |
+| `memory.forget` | Remove a specific learning |
 
 ### Example Request
 
@@ -1365,6 +1471,8 @@ Access via **Peel > Settings** (Cmd+Comma)
 | Show Translation Validation | Show Translation Validation tool | false |
 | PeonPing Sounds | Play notification sounds | configurable |
 | Swarm Auto-Start | Auto-start swarm on launch | true |
+| Run in Background | Keep app running when windows are closed (macOS) | false |
+| Start at Login | Auto-launch Peel at login (macOS) | false |
 
 ### CLI Tools
 
@@ -1525,7 +1633,11 @@ xcodebuild -scheme "Peel (macOS)" -destination 'platform=macOS' build
 | **Bunch** | The full swarm of connected devices |
 | **Skill** | Repo-scoped guidance rule injected into agent prompts |
 | **Lesson** | Learned error-to-fix pattern for future agent runs |
+| **ChainLearning** | Persistent memory from chain executions — what worked, what failed |
+| **Completion Criteria** | Per-template rules defining what counts as a successful chain |
+| **Background Mode** | App runs without dock icon, kept alive by menu bar item |
+| **Login Item** | macOS feature to auto-launch Peel at system startup |
 
 ---
 
-*Last Updated: March 3, 2026*
+*Last Updated: March 11, 2026*

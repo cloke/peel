@@ -247,6 +247,29 @@ extension MCPServerService {
         requiresForeground: true
       ),
       MCPToolDefinition(
+        name: "app.daemon.status",
+        description: "Get daemon mode status: background mode, login item, and settings",
+        inputSchema: [
+          "type": "object",
+          "properties": [:]
+        ],
+        category: .app,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "app.daemon.configure",
+        description: "Configure daemon mode settings: runInBackground and startAtLogin",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runInBackground": ["type": "boolean", "description": "Keep MCP server running when window is closed"],
+            "startAtLogin": ["type": "boolean", "description": "Launch Peel automatically at login"]
+          ]
+        ],
+        category: .app,
+        isMutating: true
+      ),
+      MCPToolDefinition(
         name: "screenshot.capture",
         description: "Capture screenshot of current screen state",
         inputSchema: [

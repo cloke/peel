@@ -603,6 +603,9 @@ public final class MCPServerService {
   let chainRunner: AgentChainRunner
   let uiAutomationProvider: MCPUIAutomationProviding
   var dataService: DataService?
+  #if os(macOS)
+  var daemonModeService: DaemonModeService?
+  #endif
   let screenshotService = ScreenshotService()
   let translationValidatorService = TranslationValidatorService()
   let piiScrubberService = PIIScrubberService()
@@ -1226,6 +1229,37 @@ public final class MCPServerService {
   func activateApp() {
     NSApp.activate(ignoringOtherApps: true)
   }
+
+  // MARK: - Daemon Mode Tool Handlers
+
+  #if os(macOS)
+  func handleDaemonStatus(id: Any?) -> (Int, Data) {
+    let service = daemonModeService
+    let result: [String: Any] = [
+      "isBackgroundMode": service?.isBackgroundMode ?? false,
+      "runInBackground": service?.runInBackground ?? false,
+      "startAtLogin": service?.startAtLogin ?? false,
+    ]
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: result))
+  }
+
+  func handleDaemonConfigure(id: Any?, arguments: [String: Any]) -> (Int, Data) {
+    guard let service = daemonModeService else {
+      return (500, JSONRPCResponseBuilder.makeError(
+        id: id, code: -32001, message: "Daemon mode service not available"))
+    }
+    if let runInBackground = arguments["runInBackground"] as? Bool {
+      service.runInBackground = runInBackground
+    }
+    if let startAtLogin = arguments["startAtLogin"] as? Bool {
+      service.startAtLogin = startAtLogin
+    }
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
+      "runInBackground": service.runInBackground,
+      "startAtLogin": service.startAtLogin,
+    ]))
+  }
+  #endif
 
   func templateList() -> [[String: Any]] {
     return agentManager.allTemplates.map { template in

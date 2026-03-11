@@ -256,15 +256,26 @@ public final class AgentChainRunner {
       )
 
       if case .complete = chain.state {
-        // Verify implementation produced file changes if required
-        if chain.requiresImplementation,
-           chain.agents.contains(where: { $0.role == .implementer }),
-           let workDir = chain.workingDirectory {
-          let hasChanges = await verifyFileChanges(in: workDir)
-          if !hasChanges {
-            chain.addStatusMessage("⚠ No files were modified. Chain may not have implemented anything.", type: .error)
-            chain.state = .failed(message: "No files modified — agent may have planned instead of implementing")
-            errorMessage = "No files modified — agent may have planned instead of implementing"
+        // Verify completion criteria (file changes, forbidden patterns, etc.)
+        if let workDir = chain.workingDirectory {
+          let criteria = chain.completionCriteria
+          if criteria.requiresFileChanges,
+             chain.agents.contains(where: { $0.role == .implementer }) {
+            let hasChanges = await verifyFileChanges(in: workDir)
+            if !hasChanges {
+              chain.addStatusMessage("⚠ No files were modified. Chain may not have implemented anything.", type: .error)
+              chain.state = .failed(message: "No files modified — agent may have planned instead of implementing")
+              errorMessage = "No files modified — agent may have planned instead of implementing"
+            }
+          }
+          if case .complete = chain.state, !criteria.forbiddenFilePatterns.isEmpty {
+            let violations = await checkForbiddenFiles(in: workDir, patterns: criteria.forbiddenFilePatterns)
+            if !violations.isEmpty {
+              let fileList = violations.joined(separator: ", ")
+              chain.addStatusMessage("⚠ Forbidden file patterns matched: \(fileList)", type: .error)
+              chain.state = .failed(message: "Chain modified forbidden files: \(fileList)")
+              errorMessage = "Chain modified forbidden files: \(fileList)"
+            }
           }
         }
         telemetryProvider.recordChainRun(chain)
@@ -2182,6 +2193,73 @@ public final class AgentChainRunner {
     } catch {
       return true
     }
+  }
+
+  /// Check if any changed files match forbidden glob patterns (e.g. "Plans/*.md").
+  /// Returns the list of violating file paths.
+  private func checkForbiddenFiles(in workingDirectory: String, patterns: [String]) async -> [String] {
+    let process = Process()
+    process.currentDirectoryURL = URL(fileURLWithPath: workingDirectory)
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+    process.arguments = ["diff", "--name-only", "HEAD~1", "HEAD"]
+
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    process.standardError = Pipe()
+
+    var changedFiles: [String] = []
+    do {
+      try process.run()
+      process.waitUntilExit()
+      let data = pipe.fileHandleForReading.readDataToEndOfFile()
+      let output = String(data: data, encoding: .utf8) ?? ""
+      changedFiles = output.split(separator: "\n").map(String.init)
+    } catch {
+      return []
+    }
+
+    // Also check uncommitted changes
+    let statusProcess = Process()
+    statusProcess.currentDirectoryURL = URL(fileURLWithPath: workingDirectory)
+    statusProcess.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+    statusProcess.arguments = ["diff", "--name-only"]
+
+    let statusPipe = Pipe()
+    statusProcess.standardOutput = statusPipe
+    statusProcess.standardError = Pipe()
+
+    do {
+      try statusProcess.run()
+      statusProcess.waitUntilExit()
+      let data = statusPipe.fileHandleForReading.readDataToEndOfFile()
+      let output = String(data: data, encoding: .utf8) ?? ""
+      changedFiles += output.split(separator: "\n").map(String.init)
+    } catch {
+      // Continue with what we have
+    }
+
+    guard !changedFiles.isEmpty else { return [] }
+
+    var violations: [String] = []
+    for file in changedFiles {
+      for pattern in patterns {
+        if matchesGlob(file, pattern: pattern) {
+          violations.append(file)
+          break
+        }
+      }
+    }
+    return violations
+  }
+
+  /// Simple glob matcher supporting * and ** wildcards.
+  private func matchesGlob(_ path: String, pattern: String) -> Bool {
+    let regexPattern = "^" + NSRegularExpression.escapedPattern(for: pattern)
+      .replacingOccurrences(of: "\\*\\*", with: "##DOUBLESTAR##")
+      .replacingOccurrences(of: "\\*", with: "[^/]*")
+      .replacingOccurrences(of: "##DOUBLESTAR##", with: ".*")
+      + "$"
+    return path.range(of: regexPattern, options: .regularExpression, range: nil, locale: nil) != nil
   }
 }
 

@@ -13,6 +13,7 @@ import UniformTypeIdentifiers
 struct SettingsView: View {
   #if os(macOS)
   @Environment(MCPServerService.self) private var mcpServer
+  @Environment(DaemonModeService.self) private var daemonModeService
   #endif
   @AppStorage("feature.showBrew") private var showBrew = false
   @AppStorage("feature.showPIIScrubber") private var showPIIScrubber = false
@@ -108,6 +109,54 @@ struct SettingsView: View {
           HStack(spacing: 4) {
             Text("MCP Server")
             HelpButton(topic: .mcpServer)
+          }
+        }
+
+        SettingsSection("Background Mode") {
+          VStack(alignment: .leading, spacing: 12) {
+            Toggle(
+              "Keep MCP Server Running in Background",
+              isOn: Binding(
+                get: { daemonModeService.runInBackground },
+                set: { daemonModeService.runInBackground = $0 }
+              )
+            )
+
+            Text("When enabled, closing the window keeps the MCP server running. A menu bar icon lets you reopen the window or quit.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+
+            Divider()
+
+            Toggle(
+              "Start at Login",
+              isOn: Binding(
+                get: { daemonModeService.startAtLogin },
+                set: { daemonModeService.startAtLogin = $0 }
+              )
+            )
+
+            HStack(spacing: 6) {
+              let status = daemonModeService.loginItemStatus
+              Image(systemName: daemonModeService.startAtLogin ? "checkmark.circle.fill" : "circle")
+                .foregroundStyle(daemonModeService.startAtLogin ? .green : .secondary)
+                .font(.caption)
+              Text("Login item: \(status)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
+            if daemonModeService.isBackgroundMode {
+              Divider()
+              HStack(spacing: 6) {
+                Image(systemName: "server.rack")
+                  .foregroundStyle(.blue)
+                  .font(.caption)
+                Text("Currently running in background")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+              }
+            }
           }
         }
 

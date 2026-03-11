@@ -138,6 +138,40 @@ public struct VMDirectoryShare: Codable, Hashable, Sendable {
   }
 }
 
+/// Criteria for validating chain completion beyond simple file-change detection.
+/// Attached to templates to enforce that implementation chains produce real code, not plans.
+public struct CompletionCriteria: Codable, Hashable, Sendable {
+  /// Require at least one file to be modified (default true for implementation chains)
+  public var requiresFileChanges: Bool
+  /// Glob patterns that changed files must match (e.g., ["*.swift", "*.ts"]). Empty = no restriction.
+  public var requiredFilePatterns: [String]
+  /// Glob patterns that changed files must NOT match (e.g., ["Plans/*.md"]). Empty = no restriction.
+  public var forbiddenFilePatterns: [String]
+  /// Require the build gate to pass before marking complete
+  public var requiresBuildPass: Bool
+
+  public init(
+    requiresFileChanges: Bool = true,
+    requiredFilePatterns: [String] = [],
+    forbiddenFilePatterns: [String] = [],
+    requiresBuildPass: Bool = false
+  ) {
+    self.requiresFileChanges = requiresFileChanges
+    self.requiredFilePatterns = requiredFilePatterns
+    self.forbiddenFilePatterns = forbiddenFilePatterns
+    self.requiresBuildPass = requiresBuildPass
+  }
+
+  /// Default for implementation chains: require file changes, forbid plan-only output
+  public static let implementation = CompletionCriteria(
+    requiresFileChanges: true,
+    forbiddenFilePatterns: ["Plans/*.md", "plans/*.md"]
+  )
+
+  /// No validation — for analysis/review-only chains
+  public static let noValidation = CompletionCriteria(requiresFileChanges: false)
+}
+
 /// A reusable template for creating agent chains
 public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
   public let id: UUID
@@ -160,6 +194,9 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
   /// When true, the parallel worktree run skips the review gate after chain completion.
   /// Useful for review-only chains (e.g. PR Review) that don't produce code to merge.
   public var skipReviewGate: Bool
+
+  /// Post-completion validation criteria (file change requirements, forbidden patterns, etc.)
+  public var completionCriteria: CompletionCriteria
   
   #if os(macOS)
   public var validationConfig: ValidationConfiguration
@@ -177,6 +214,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     case toolchain
     case directoryShares
     case skipReviewGate
+    case completionCriteria
     #if os(macOS)
     case validationConfig
     #endif
@@ -194,6 +232,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     toolchain: VMToolchain = .minimal,
     directoryShares: [VMDirectoryShare] = [],
     skipReviewGate: Bool = false,
+    completionCriteria: CompletionCriteria? = nil,
     validationConfig: ValidationConfiguration? = nil
   ) {
     self.id = id
@@ -207,6 +246,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     self.toolchain = toolchain
     self.directoryShares = directoryShares
     self.skipReviewGate = skipReviewGate
+    self.completionCriteria = completionCriteria ?? .implementation
     self.validationConfig = validationConfig ?? .default
   }
   #else
@@ -220,7 +260,8 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     executionEnvironment: ExecutionEnvironment = .host,
     toolchain: VMToolchain = .minimal,
     directoryShares: [VMDirectoryShare] = [],
-    skipReviewGate: Bool = false
+    skipReviewGate: Bool = false,
+    completionCriteria: CompletionCriteria? = nil
   ) {
     self.id = id
     self.name = name
@@ -233,6 +274,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     self.toolchain = toolchain
     self.directoryShares = directoryShares
     self.skipReviewGate = skipReviewGate
+    self.completionCriteria = completionCriteria ?? .implementation
   }
   #endif
 
@@ -249,6 +291,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     self.toolchain = try container.decodeIfPresent(VMToolchain.self, forKey: .toolchain) ?? .minimal
     self.directoryShares = try container.decodeIfPresent([VMDirectoryShare].self, forKey: .directoryShares) ?? []
     self.skipReviewGate = try container.decodeIfPresent(Bool.self, forKey: .skipReviewGate) ?? false
+    self.completionCriteria = try container.decodeIfPresent(CompletionCriteria.self, forKey: .completionCriteria) ?? .implementation
     #if os(macOS)
     self.validationConfig = try container.decodeIfPresent(ValidationConfiguration.self, forKey: .validationConfig) ?? .default
     #endif
@@ -275,6 +318,9 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     }
     if skipReviewGate {
       try container.encode(skipReviewGate, forKey: .skipReviewGate)
+    }
+    if completionCriteria != .implementation {
+      try container.encode(completionCriteria, forKey: .completionCriteria)
     }
     #if os(macOS)
     try container.encode(validationConfig, forKey: .validationConfig)
@@ -365,7 +411,8 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
           AgentStepTemplate(role: .planner, model: .bestStandard, name: "Planner")
         ],
         isBuiltIn: true,
-        category: .core
+        category: .core,
+        completionCriteria: .noValidation
       ),
       
       // 3. Full Implementation: Planner + Implementer + Build Gate + Reviewer
@@ -444,7 +491,8 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
           )
         ],
         isBuiltIn: true,
-        category: .specialized
+        category: .specialized,
+        completionCriteria: .noValidation
       ),
       
       // 6. Issue Analysis: Keep existing Issue Analyzer template
@@ -493,7 +541,8 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
           )
         ],
         isBuiltIn: true,
-        category: .specialized
+        category: .specialized,
+        completionCriteria: .noValidation
       ),
       
       // 7. PR Review: Review PR diff, suggest fixes, check for issues
@@ -547,7 +596,8 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         ],
         isBuiltIn: true,
         category: .specialized,
-        skipReviewGate: true
+        skipReviewGate: true,
+        completionCriteria: .noValidation
       ),
       
       // 7b. Deep PR Review: Multi-step review with codebase analysis for large PRs
@@ -655,7 +705,8 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
         ],
         isBuiltIn: true,
         category: .specialized,
-        skipReviewGate: true
+        skipReviewGate: true,
+        completionCriteria: .noValidation
       ),
 
       // 8. Refactor: Deep analysis + careful implementation + thorough review
@@ -992,7 +1043,8 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
           )
         ],
         isBuiltIn: true,
-        category: .specialized
+        category: .specialized,
+        completionCriteria: .noValidation
       ),
 
       // 18. UX Regression: Before/after visual regression using screenshot diffing
@@ -1045,7 +1097,8 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
           )
         ],
         isBuiltIn: true,
-        category: .specialized
+        category: .specialized,
+        completionCriteria: .noValidation
       ),
 
       // 19. UX Flow Test: Multi-step UX validation for critical user journeys
@@ -1097,7 +1150,8 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
           )
         ],
         isBuiltIn: true,
-        category: .specialized
+        category: .specialized,
+        completionCriteria: .noValidation
       )
     ]
 

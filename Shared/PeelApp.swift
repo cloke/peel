@@ -14,6 +14,9 @@ import AppKit
 import OSLog
 import Git
 import Github
+#if os(macOS)
+import ServiceManagement
+#endif
 
 // MARK: - Notification Names
 
@@ -23,8 +26,33 @@ extension Notification.Name {
   static let navigateToSwarmConsole = Notification.Name("navigateToSwarmConsole")
 }
 
+// MARK: - App Delegate (macOS)
+
+#if os(macOS)
+/// Handles app lifecycle events for daemon mode. When "Run in Background" is enabled,
+/// closing the last window enters background mode instead of quitting the app.
+final class PeelAppDelegate: NSObject, NSApplicationDelegate {
+  var daemonModeService: DaemonModeService?
+
+  func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+    return daemonModeService?.shouldTerminateAfterLastWindowClosed() ?? true
+  }
+
+  func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+    if let service = daemonModeService, service.isBackgroundMode {
+      service.bringToForeground()
+    }
+    // Return true so Cocoa's default behavior creates a new window if none exist
+    return true
+  }
+}
+#endif
+
 @main
 struct PeelApp: App {
+  #if os(macOS)
+  @NSApplicationDelegateAdaptor(PeelAppDelegate.self) var appDelegate
+  #endif
   @Environment(\.openURL) var openURL
   @State private var vmIsolationService = VMIsolationService()
   @State private var mcpServer: MCPServerService
@@ -33,6 +61,9 @@ struct PeelApp: App {
   @State private var activityFeed = ActivityFeed()
   @State private var workerModeActive = false
   @State private var skillUpdateAvailable = false
+  #if os(macOS)
+  @State private var daemonModeService = DaemonModeService()
+  #endif
 
   private static var isRunningTests: Bool {
     ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
@@ -63,6 +94,11 @@ struct PeelApp: App {
     // SwiftData-backed services) have persistence from launch — not only after the
     // user navigates to the Agents or Workspaces tab.
     mcpServerInstance.configure(modelContext: context)
+
+    // Wire daemon mode service into MCP server for tool access
+    #if os(macOS)
+    mcpServerInstance.daemonModeService = _daemonModeService.wrappedValue
+    #endif
 
     // Wire RepoPullScheduler with DataService so tracked repos auto-pull
     RepoPullScheduler.shared.dataService = dataService
@@ -309,6 +345,11 @@ struct PeelApp: App {
   var body: some Scene {
     WindowGroup {
       ContentView()
+        #if os(macOS)
+        .onAppear {
+          appDelegate.daemonModeService = daemonModeService
+        }
+        #endif
         .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
         .onOpenURL { url in
           // Handle OAuth callbacks (GitHub auth)
@@ -377,6 +418,9 @@ struct PeelApp: App {
         .environment(dataService)
         .environment(repositoryAggregator)
         .environment(activityFeed)
+        #if os(macOS)
+        .environment(daemonModeService)
+        #endif
     }
     .modelContainer(Self.sharedModelContainer)
     .commands {
@@ -421,6 +465,9 @@ struct PeelApp: App {
         .environment(dataService)
         .environment(repositoryAggregator)
         .environment(activityFeed)
+        #if os(macOS)
+        .environment(daemonModeService)
+        #endif
     }
     .modelContainer(Self.sharedModelContainer)
   }
