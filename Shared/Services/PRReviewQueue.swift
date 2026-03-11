@@ -280,6 +280,8 @@ final class PRReviewQueue {
       try? await Task.sleep(for: .seconds(10))
       while !Task.isCancelled {
         await self?.reconcileWithGitHub()
+        // Prune terminal items older than 7 days from SwiftData/CloudKit
+        self?.pruneOlderThan(7 * 24 * 60 * 60)
         try? await Task.sleep(for: .seconds(300)) // Every 5 minutes
       }
     }
