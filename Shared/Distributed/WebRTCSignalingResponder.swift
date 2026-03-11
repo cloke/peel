@@ -82,6 +82,12 @@ public final class WebRTCSignalingResponder {
             self.respondedOffers.insert(docId)
 
             self.logger.info("WebRTC offer received from \(fromWorkerId) (purpose: \(purpose))")
+            P2PConnectionLog.shared.log("webrtc-responder", "Offer received", details: [
+              "fromWorkerId": fromWorkerId,
+              "purpose": purpose,
+              "docId": docId,
+              "hasDataProvider": String(self.dataProvider != nil),
+            ])
             await self.respondToOffer(
               swarmId: swarmId,
               fromWorkerId: fromWorkerId,
@@ -96,6 +102,11 @@ public final class WebRTCSignalingResponder {
     }
 
     logger.info("WebRTC signaling responder started for \(swarmIds.count) swarm(s)")
+    P2PConnectionLog.shared.log("webrtc-responder", "Signaling responder started", details: [
+      "swarmCount": String(swarmIds.count),
+      "deviceId": myDeviceId,
+      "hasDataProvider": String(dataProvider != nil),
+    ])
   }
 
   func stop() {
@@ -148,8 +159,16 @@ public final class WebRTCSignalingResponder {
     // Transfer: serve data to remote peer
     guard let dataProvider else {
       logger.warning("No data provider — cannot serve WebRTC transfer")
+      P2PConnectionLog.shared.log("webrtc-responder", "No data provider – cannot respond", details: [
+        "fromWorkerId": fromWorkerId,
+        "purpose": purpose,
+      ])
       return
     }
+
+    P2PConnectionLog.shared.log("webrtc-responder", "Starting serveData", details: [
+      "fromWorkerId": fromWorkerId,
+    ])
 
     activeServeTask = Task {
       do {
@@ -159,10 +178,17 @@ public final class WebRTCSignalingResponder {
         )
         await MainActor.run {
           self.logger.info("WebRTC serve completed successfully")
+          P2PConnectionLog.shared.log("webrtc-responder", "Serve completed", details: [
+            "fromWorkerId": fromWorkerId,
+          ])
         }
       } catch {
         await MainActor.run {
           self.logger.error("WebRTC serve failed: \(error)")
+          P2PConnectionLog.shared.log("webrtc-responder", "Serve failed", details: [
+            "error": "\(error)",
+            "fromWorkerId": fromWorkerId,
+          ])
         }
       }
     }

@@ -193,9 +193,9 @@ public final class OnDemandPeerTransfer {
       logger.info("[transfer] WebRTC failed to \(worker.displayName): \(error)")
     }
 
-    // All direct connections failed — no relay fallback
+    // All direct P2P connections exhausted
     let msg = "All direct connections (LAN/WAN/WebRTC) failed to '\(worker.displayName)'."
-    p2pLog.log("transfer", "ALL direct connections failed", details: [
+    p2pLog.log("transfer", "ALL connections failed", details: [
       "targetWorker": worker.displayName,
     ])
     state.error = msg

@@ -443,6 +443,7 @@ public final class SwarmCoordinator {
   public func reinitializeFirestoreServices() {
     guard isActive else { return }
     if webrtcSignalingResponder == nil {
+      P2PConnectionLog.shared.log("webrtc-responder", "Reinitializing (deferred from start)")
       startWebRTCSignalingResponder()
     }
     if logRequestListener == nil {
@@ -876,15 +877,20 @@ public final class SwarmCoordinator {
     let firebaseService = FirebaseService.shared
     guard firebaseService.isSignedIn else {
       logger.info("Not signed in — skipping WebRTC signaling responder")
+      P2PConnectionLog.shared.log("webrtc-responder", "Skipped: not signed in")
       return
     }
 
-    let swarmIds = firebaseService.memberSwarms
-      .filter { $0.role.canRegisterWorkers }
-      .map(\.id)
+    let allSwarms = firebaseService.memberSwarms
+    let eligibleSwarms = allSwarms.filter { $0.role.canRegisterWorkers }
+    let swarmIds = eligibleSwarms.map(\.id)
 
     guard !swarmIds.isEmpty else {
       logger.info("No swarms to listen for WebRTC offers")
+      P2PConnectionLog.shared.log("webrtc-responder", "Skipped: no eligible swarms", details: [
+        "totalSwarms": String(allSwarms.count),
+        "roles": allSwarms.map { "\($0.swarmName):\($0.role.rawValue)" }.joined(separator: ", "),
+      ])
       return
     }
 
