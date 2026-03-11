@@ -13,7 +13,6 @@
 //
 
 import Foundation
-import Network
 import os.log
 import FirebaseFirestore
 
@@ -31,6 +30,9 @@ public final class STUNSignalingResponder {
 
   /// Track offers we've already responded to (avoid duplicate answers)
   private var respondedOffers: Set<String> = []
+
+  /// Data provider for UDP transfer responder (set by SwarmCoordinator)
+  weak var dataProvider: UDPTransferDataProvider?
 
   init(listeningPort: UInt16 = 8766) {
     self.listeningPort = listeningPort
@@ -186,20 +188,27 @@ public final class STUNSignalingResponder {
       return
     }
 
-    // 3. TCP simultaneous open — connect to the peer's STUN endpoint
-    //    from our listener port. The initiator is doing the same thing
-    //    at roughly the same time. When both SYNs cross, the connection
-    //    establishes through both NATs.
-    //
-    //    No UDP probes — UDP and TCP NAT mappings are independent on
-    //    most routers, so UDP probes don't help TCP connections.
-    p2pLog.log("stun-responder", "TCP simultaneous open starting", details: [
-      "targetAddress": peerEndpoint.address,
-      "targetPort": String(peerEndpoint.port),
-      "localPort": String(listeningPort),
-    ])
-    Task {
-      _ = try? await attemptTCPConnect(to: peerEndpoint)
+    // 3. Start UDP serve — the initiator will connect via UDP hole punch
+    //    and request data after receiving our STUN answer.
+    //    TCP simultaneous open was tried previously but doesn't work through
+    //    consumer NATs — UDP hole punch succeeds because STUN creates the
+    //    correct UDP NAT mappings directly.
+    if let dataProvider {
+      p2pLog.log("stun-responder", "Starting UDP serve for initiator", details: [
+        "peerAddress": peerEndpoint.address,
+        "peerPort": String(peerEndpoint.port),
+        "localPort": String(listeningPort),
+      ])
+      Task {
+        await UDPPeerTransfer.serveData(
+          peerEndpoint: peerEndpoint,
+          localPort: listeningPort,
+          dataProvider: dataProvider
+        )
+      }
+    } else {
+      p2pLog.log("stun-responder", "No data provider — cannot serve UDP transfer")
+      logger.warning("[stun-responder] No dataProvider set — UDP serve skipped")
     }
 
     // 4. Clean up signaling docs after 2 minutes
@@ -211,86 +220,6 @@ public final class STUNSignalingResponder {
       try? await answerDocRef.delete()
     }
 
-    logger.info("[stun-responder] Answer sent to \(fromWorkerId), TCP simultaneous open initiated")
-  }
-
-  // MARK: - TCP Simultaneous Open
-
-  /// Attempt a TCP connection to the peer's STUN endpoint (simultaneous open).
-  /// Binds to our listener port with SO_REUSEADDR so the NAT mapping matches
-  /// what STUN discovered. The initiator does the same thing at the same time.
-  private func attemptTCPConnect(to endpoint: STUNResult) async throws -> NWConnection? {
-    let host = NWEndpoint.Host(endpoint.address)
-    guard let port = NWEndpoint.Port(rawValue: endpoint.port) else { return nil }
-    let nwEndpoint = NWEndpoint.hostPort(host: host, port: port)
-
-    let params = NWParameters.tcp
-    params.includePeerToPeer = true
-    params.allowLocalEndpointReuse = true  // Critical for TCP simultaneous open
-    // Bind to our listening port for simultaneous TCP open
-    if let nwPort = NWEndpoint.Port(rawValue: listeningPort) {
-      params.requiredLocalEndpoint = NWEndpoint.hostPort(host: .ipv4(.any), port: nwPort)
-    }
-
-    let connection = NWConnection(to: nwEndpoint, using: params)
-    logger.info("[stun-responder] Starting TCP simultaneous open to \(endpoint)")
-
-    return try await withCheckedThrowingContinuation { continuation in
-      let box = ContinuationBox()
-
-      connection.stateUpdateHandler = { [self] state in
-        switch state {
-        case .ready:
-          if box.tryResume() {
-            connection.stateUpdateHandler = nil
-            Task { @MainActor in
-              P2PConnectionLog.shared.log("stun-responder", "TCP simultaneous open SUCCEEDED", details: [
-                "peerAddress": endpoint.address,
-                "peerPort": String(endpoint.port),
-              ])
-            }
-            logger.info("[stun-responder] TCP simultaneous open SUCCEEDED to \(endpoint)")
-            continuation.resume(returning: connection)
-          }
-        case .failed(let error):
-          if box.tryResume() {
-            connection.stateUpdateHandler = nil
-            Task { @MainActor in
-              P2PConnectionLog.shared.log("stun-responder", "TCP simultaneous open FAILED", details: ["error": "\(error)"])
-            }
-            logger.info("[stun-responder] TCP simultaneous open failed: \(error)")
-            continuation.resume(throwing: error)
-          }
-        case .waiting(let error):
-          Task { @MainActor in
-            P2PConnectionLog.shared.log("stun-responder", "TCP waiting", details: ["error": "\(error)"])
-          }
-          logger.info("[stun-responder] TCP waiting: \(error)")
-        case .cancelled:
-          if box.tryResume() {
-            connection.stateUpdateHandler = nil
-            Task { @MainActor in
-              P2PConnectionLog.shared.log("stun-responder", "TCP cancelled")
-            }
-            continuation.resume(returning: nil)
-          }
-        default:
-          break
-        }
-      }
-
-      connection.start(queue: .main)
-
-      // Timeout after 20 seconds (matches initiator)
-      Task { @MainActor in
-        try? await Task.sleep(for: .seconds(20))
-        if box.tryResume() {
-          connection.cancel()
-          P2PConnectionLog.shared.log("stun-responder", "TCP simultaneous open TIMED OUT (20s)")
-          logger.info("[stun-responder] TCP simultaneous open timed out")
-          continuation.resume(returning: nil)
-        }
-      }
-    }
+    logger.info("[stun-responder] Answer sent to \(fromWorkerId), UDP serve initiated")
   }
 }

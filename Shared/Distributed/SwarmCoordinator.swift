@@ -976,6 +976,7 @@ public final class SwarmCoordinator {
     }
 
     let responder = STUNSignalingResponder(listeningPort: port)
+    responder.dataProvider = self
     responder.start(swarmIds: swarmIds, myDeviceId: capabilities.deviceId)
     stunSignalingResponder = responder
   }
@@ -2802,5 +2803,22 @@ extension SwarmCoordinator: NATTraversalDelegate {
     #else
     return nil  // iOS doesn't support Process
     #endif
+  }
+}
+
+// MARK: - UDPTransferDataProvider
+
+extension SwarmCoordinator: UDPTransferDataProvider {
+  func exportRepoBundle(repoIdentifier: String) async throws -> Data {
+    guard let delegate = ragSyncDelegate else {
+      throw OnDemandTransferError.remoteError(message: "No RAG sync delegate available")
+    }
+    guard let bundle = try await delegate.createRepoSyncBundle(
+      repoIdentifier: repoIdentifier,
+      excludeFileHashes: []
+    ) else {
+      throw OnDemandTransferError.remoteError(message: "No bundle available for \(repoIdentifier)")
+    }
+    return try JSONEncoder().encode(bundle)
   }
 }

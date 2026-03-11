@@ -8,7 +8,7 @@
 //
 //  This replaces the always-on STUN model with on-demand connections:
 //  1. Look up peer address from Firestore worker document
-//  2. Try LAN address → WAN address → STUN hole-punch
+//  2. Try LAN address → WAN address → STUN + UDP hole-punch
 //  3. Run transfer (RAG sync, etc.)
 //  4. Disconnect
 //
@@ -56,6 +56,7 @@ public final class OnDemandTransferState {
     case lan
     case wanDirect
     case stunHolePunch
+    case udpHolePunch
     case firestoreRelay
   }
 
@@ -120,8 +121,8 @@ public final class OnDemandPeerTransfer {
   private let relayConsumer = FirestoreRelayConsumer()
 
   /// Connect to a peer, request a repo's RAG index, and import it.
-  /// Tries direct connection first (LAN → WAN → STUN), then falls back
-  /// to Firestore relay if all direct methods fail.
+  /// Tries direct TCP first (LAN → WAN), then STUN + UDP hole punch,
+  /// then falls back to Firestore relay if all direct methods fail.
   /// Returns the transfer state when complete.
   func requestIndex(
     from worker: FirestoreWorker,
@@ -172,6 +173,35 @@ public final class OnDemandPeerTransfer {
         state: state
       )
       return state
+    }
+
+    // LAN/WAN direct failed — try STUN signaling + UDP hole punch transfer.
+    // STUN creates UDP NAT mappings; UDP hole punch uses those to establish
+    // bidirectional connectivity where TCP simultaneous open cannot.
+    do {
+      let bundleData = try await attemptSTUNUDPTransfer(
+        worker: worker,
+        repoIdentifier: repoIdentifier,
+        state: state
+      )
+      state.connectionMethod = .udpHolePunch
+      state.status = .importing
+      try await importRepoBundle(data: bundleData, ragSyncDelegate: ragSyncDelegate)
+      state.status = .complete
+      state.completedAt = Date()
+      p2pLog.log("transfer", "STUN + UDP transfer complete", details: [
+        "bytes": String(bundleData.count),
+        "repo": repoIdentifier,
+        "elapsed": String(format: "%.1f", state.elapsedSeconds),
+      ])
+      logger.info("[transfer] UDP transfer complete: \(repoIdentifier) from \(worker.displayName) (\(bundleData.count) bytes in \(String(format: "%.1f", state.elapsedSeconds))s)")
+      return state
+    } catch {
+      p2pLog.log("transfer", "STUN + UDP transfer failed", details: [
+        "error": "\(error)",
+        "targetWorker": worker.displayName,
+      ])
+      logger.info("[transfer] STUN + UDP failed to \(worker.displayName): \(error)")
     }
 
     // All direct connections failed — fall back to Firestore relay
@@ -315,7 +345,7 @@ public final class OnDemandPeerTransfer {
         return conn
       }
       p2pLog.log("transfer", "WAN direct failed", details: ["address": "\(wanAddress):\(wanPort)"])
-      logger.info("WAN direct failed, trying STUN")
+      logger.info("WAN direct failed")
     } else {
       p2pLog.log("transfer", "WAN direct skipped (no address)", details: [
         "wanAddress": worker.wanAddress ?? "nil",
@@ -323,24 +353,8 @@ public final class OnDemandPeerTransfer {
       ])
     }
 
-    // Attempt 3: STUN + hole punch
-    p2pLog.log("stun-initiator", "STUN attempt start", details: ["targetWorker": worker.displayName, "targetWorkerId": worker.workerId])
-    logger.info("Trying STUN hole-punch to \(worker.displayName)")
-    do {
-      let conn = try await attemptSTUNConnection(worker: worker, swarmId: state.swarmId)
-      state.connectionMethod = .stunHolePunch
-      p2pLog.log("stun-initiator", "STUN hole-punch CONNECTED", details: ["targetWorker": worker.displayName])
-      logger.info("Connected via STUN hole-punch to \(worker.displayName)")
-      return conn
-    } catch {
-      p2pLog.log("stun-initiator", "STUN hole-punch FAILED", details: [
-        "error": "\(error)",
-        "targetWorker": worker.displayName,
-      ])
-    }
-
-    // All direct methods failed — return nil to trigger relay fallback
-    logger.info("All direct connection methods failed to \(worker.displayName)")
+    // All direct TCP methods failed — return nil to trigger STUN+UDP / relay fallback
+    logger.info("All direct TCP methods failed to \(worker.displayName)")
     return nil
   }
 
@@ -392,160 +406,77 @@ public final class OnDemandPeerTransfer {
     }
   }
 
-  /// Perform STUN discovery and TCP simultaneous open via Firestore signaling.
+  /// Perform STUN discovery and UDP hole-punch data transfer via Firestore signaling.
   ///
-  /// **Architecture (why this works):**
-  /// Both sides (initiator here + STUNSignalingResponder) use the same local
-  /// port (the PeerConnectionManager listener port, typically 8766) for:
-  ///   1. STUN discovery — so the NAT mapping is for our real listening port
-  ///   2. TCP simultaneous open — both sides connect() at roughly the same time
+  /// **Architecture (why UDP, not TCP):**
+  /// STUN discovers UDP NAT mappings (it sends UDP binding requests). TCP NAT
+  /// mappings are independent — the external port discovered via UDP STUN may
+  /// differ from what TCP would get. Additionally, TCP simultaneous open requires
+  /// both NATs to support it, which many consumer NATs don't.
+  ///
+  /// UDP hole punching works because:
+  /// 1. STUN already created the correct UDP NAT mapping for port 8766
+  /// 2. Both sides send UDP PUNCH packets to each other → creates bidirectional NAT entries
+  /// 3. Once punched, the initiator sends a REQUEST and receives DATA chunks
   ///
   /// On endpoint-independent mapping NATs (most home routers), the external
   /// port stays the same regardless of destination, so STUN-discovered ports
-  /// correctly predict where TCP SYNs will appear.
-  ///
-  /// On symmetric NATs (carrier-grade NAT), each destination gets a different
-  /// external port — STUN discovery is useless and this will fail. Those
-  /// require a TURN relay (future work).
-  ///
-  /// **Why TCP, not UDP+TCP:**
-  /// UDP and TCP NAT mappings are independent on most routers. Sending UDP
-  /// probes does NOT open a path for TCP connections. We do TCP-only.
-  private func attemptSTUNConnection(
+  /// correctly predict where UDP datagrams will appear.
+  private func attemptSTUNUDPTransfer(
     worker: FirestoreWorker,
-    swarmId: String
-  ) async throws -> NWConnection {
-    let localPort = listeningPort
+    repoIdentifier: String,
+    state: OnDemandTransferState
+  ) async throws -> Data {
     let p2pLog = P2PConnectionLog.shared
-    p2pLog.log("stun-initiator", "STUN discovery starting", details: ["localPort": String(localPort)])
-    logger.info("[stun-initiator] Using local port \(localPort) (matches TCP listener)")
+    let localPort = listeningPort
 
-    // 1. Run STUN to discover our public endpoint bound to our listener port.
-    //    This tells us what external IP:port the NAT assigned for port 8766.
+    p2pLog.log("stun-udp", "Starting STUN + UDP transfer", details: [
+      "targetWorker": worker.displayName,
+      "targetWorkerId": worker.workerId,
+      "repo": repoIdentifier,
+      "localPort": String(localPort),
+    ])
+
+    // 1. STUN discovery — creates/refreshes UDP NAT mapping for our port
     guard let myEndpoint = await STUNClient.discoverEndpoint(localPort: localPort) else {
-      p2pLog.log("stun-initiator", "STUN discovery FAILED — all servers unreachable", details: ["localPort": String(localPort)])
+      p2pLog.log("stun-udp", "STUN discovery FAILED")
       throw OnDemandTransferError.stunDiscoveryFailed
     }
-    p2pLog.log("stun-initiator", "STUN discovery OK", details: [
+    p2pLog.log("stun-udp", "STUN discovery OK", details: [
       "externalAddress": myEndpoint.address,
       "externalPort": String(myEndpoint.port),
       "server": myEndpoint.serverUsed,
-      "latencyMs": String(myEndpoint.latencyMs),
     ])
-    logger.info("[stun-initiator] Our external endpoint: \(myEndpoint)")
 
-    // 2. Write our STUN offer to Firestore for the target peer
+    // 2. Write offer to Firestore for the target peer
     let myDeviceId = WorkerCapabilities.current().deviceId
-    p2pLog.log("stun-initiator", "Writing STUN offer to Firestore", details: [
-      "myDeviceId": myDeviceId,
-      "targetWorkerId": worker.workerId,
-      "docId": "\(myDeviceId)_to_\(worker.workerId)",
-      "swarmId": swarmId,
-      "offerAddress": myEndpoint.address,
-      "offerPort": String(myEndpoint.port),
-    ])
     try await writeSTUNOffer(
-      swarmId: swarmId,
+      swarmId: state.swarmId,
       targetWorkerId: worker.workerId,
       myDeviceId: myDeviceId,
       endpoint: myEndpoint
     )
-    p2pLog.log("stun-initiator", "STUN offer written, waiting for answer", details: [
-      "answerDocId": "\(worker.workerId)_to_\(myDeviceId)",
-      "timeout": "30s",
-    ])
+    p2pLog.log("stun-udp", "STUN offer written, waiting for answer")
 
-    // 3. Wait for the peer's STUN answer (they do the same STUN + write)
-    let peerEndpoint: STUNResult
-    do {
-      peerEndpoint = try await waitForSTUNAnswer(
-        swarmId: swarmId,
-        myDeviceId: myDeviceId,
-        fromWorkerId: worker.workerId,
-        timeout: 30
-      )
-    } catch {
-      p2pLog.log("stun-initiator", "STUN answer wait FAILED", details: ["error": "\(error)"])
-      throw error
-    }
-    p2pLog.log("stun-initiator", "STUN answer received", details: [
+    // 3. Wait for peer's STUN answer (they do STUN + write answer + start UDP serve)
+    let peerEndpoint = try await waitForSTUNAnswer(
+      swarmId: state.swarmId,
+      myDeviceId: myDeviceId,
+      fromWorkerId: worker.workerId,
+      timeout: 30
+    )
+    p2pLog.log("stun-udp", "STUN answer received", details: [
       "peerAddress": peerEndpoint.address,
       "peerPort": String(peerEndpoint.port),
     ])
-    logger.info("[stun-initiator] Peer endpoint: \(peerEndpoint)")
 
-    // 4. TCP simultaneous open — connect to peer's STUN endpoint
-    //    from our listener port with SO_REUSEADDR. The responder is
-    //    doing the same thing to our endpoint at roughly the same time.
-    //    When both SYNs cross in the network, both NATs create mappings
-    //    and the connection establishes.
-    let peerHost = NWEndpoint.Host(peerEndpoint.address)
-    let peerPort = NWEndpoint.Port(rawValue: peerEndpoint.port)!
-    let endpoint = NWEndpoint.hostPort(host: peerHost, port: peerPort)
-
-    let params = NWParameters.tcp
-    params.includePeerToPeer = true
-    params.allowLocalEndpointReuse = true  // Critical for TCP simultaneous open
-    if let nwPort = NWEndpoint.Port(rawValue: localPort) {
-      params.requiredLocalEndpoint = NWEndpoint.hostPort(host: .ipv4(.any), port: nwPort)
-    }
-    let connection = NWConnection(to: endpoint, using: params)
-
-    p2pLog.log("stun-initiator", "TCP simultaneous open starting", details: [
-      "targetAddress": peerEndpoint.address,
-      "targetPort": String(peerEndpoint.port),
-      "localPort": String(localPort),
-    ])
-    logger.info("[stun-initiator] Starting TCP simultaneous open to \(peerEndpoint)")
-
-    return try await withCheckedThrowingContinuation { continuation in
-      let box = ContinuationBox()
-
-      connection.stateUpdateHandler = { [self] state in
-        switch state {
-        case .ready:
-          if box.tryResume() {
-            connection.stateUpdateHandler = nil
-            Task { @MainActor in
-              P2PConnectionLog.shared.log("stun-initiator", "TCP simultaneous open SUCCEEDED", details: [
-                "peerAddress": peerEndpoint.address,
-                "peerPort": String(peerEndpoint.port),
-              ])
-            }
-            logger.info("[stun-initiator] TCP simultaneous open SUCCEEDED to \(peerEndpoint)")
-            continuation.resume(returning: connection)
-          }
-        case .failed(let error):
-          if box.tryResume() {
-            connection.stateUpdateHandler = nil
-            Task { @MainActor in
-              P2PConnectionLog.shared.log("stun-initiator", "TCP simultaneous open FAILED", details: ["error": "\(error)"])
-            }
-            logger.error("[stun-initiator] TCP simultaneous open FAILED: \(error)")
-            continuation.resume(throwing: error)
-          }
-        case .waiting(let error):
-          Task { @MainActor in
-            P2PConnectionLog.shared.log("stun-initiator", "TCP waiting", details: ["error": "\(error)"])
-          }
-          logger.info("[stun-initiator] TCP waiting: \(error)")
-        default:
-          break
-        }
-      }
-
-      connection.start(queue: .main)
-
-      Task { @MainActor in
-        try? await Task.sleep(for: .seconds(20))
-        if box.tryResume() {
-          connection.cancel()
-          p2pLog.log("stun-initiator", "TCP simultaneous open TIMED OUT (20s)")
-          logger.error("[stun-initiator] TCP simultaneous open timed out after 20s")
-          continuation.resume(throwing: OnDemandTransferError.stunHolePunchFailed)
-        }
-      }
-    }
+    // 4. UDP hole punch + data transfer
+    state.status = .transferring
+    return try await UDPPeerTransfer.requestData(
+      peerEndpoint: peerEndpoint,
+      localPort: localPort,
+      repoIdentifier: repoIdentifier
+    )
   }
 
   // MARK: - Handshake
