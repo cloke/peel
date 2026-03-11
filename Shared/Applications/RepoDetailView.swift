@@ -659,7 +659,8 @@ struct OverviewTabView: View {
           title: pr.title ?? "Untitled",
           state: pr.state ?? "open",
           htmlURL: pr.html_url,
-          headRef: pr.head.ref
+          headRef: pr.head.ref,
+          updatedAt: pr.updated_at
         )
       }
       // Update SwiftData records that are no longer open
@@ -1390,7 +1391,8 @@ struct BranchesTabView: View {
           title: pr.title ?? "Untitled",
           state: pr.state ?? "open",
           htmlURL: pr.html_url,
-          headRef: pr.head.ref
+          headRef: pr.head.ref,
+          updatedAt: pr.updated_at
         )
       }
     } catch {

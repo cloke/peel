@@ -185,8 +185,23 @@ struct PRReviewQueueDetailView: View {
   @State private var fetchedOpenPRs: [(ownerRepo: String, pr: UnifiedRepository.PRSummary)] = []
   @State private var isLoadingPRs = false
   @State private var selectedPRDetail: PRDetailIdentifier?
+  @State private var sortOrder: PRSortOrder = .updatedDesc
+  @State private var repoFilter: String = "all"
 
-  private var allOpenPRs: [(repo: UnifiedRepository, pr: UnifiedRepository.PRSummary)] {
+  enum PRSortOrder: String, CaseIterable {
+    case updatedDesc = "Recently Updated"
+    case updatedAsc = "Least Recently Updated"
+    case newestFirst = "Newest First"
+    case oldestFirst = "Oldest First"
+    case repoName = "Repository"
+  }
+
+  private var availableRepos: [String] {
+    let names = Set(allOpenPRsRaw.map { $0.repo.displayName })
+    return names.sorted()
+  }
+
+  private var allOpenPRsRaw: [(repo: UnifiedRepository, pr: UnifiedRepository.PRSummary)] {
     if !fetchedOpenPRs.isEmpty {
       return fetchedOpenPRs.compactMap { item in
         guard let repo = aggregator.repositories.first(where: { $0.ownerSlashRepo == item.ownerRepo })
@@ -197,6 +212,35 @@ struct PRReviewQueueDetailView: View {
     return aggregator.repositories.flatMap { repo in
       repo.recentPRs.filter { $0.state == "open" }.map { (repo, $0) }
     }
+  }
+
+  private var allOpenPRs: [(repo: UnifiedRepository, pr: UnifiedRepository.PRSummary)] {
+    var items = allOpenPRsRaw
+
+    // Apply repo filter
+    if repoFilter != "all" {
+      items = items.filter { $0.repo.displayName == repoFilter }
+    }
+
+    // Apply sort
+    items.sort { a, b in
+      switch sortOrder {
+      case .updatedDesc:
+        return (a.pr.updatedAt ?? "") > (b.pr.updatedAt ?? "")
+      case .updatedAsc:
+        return (a.pr.updatedAt ?? "") < (b.pr.updatedAt ?? "")
+      case .newestFirst:
+        return a.pr.number > b.pr.number
+      case .oldestFirst:
+        return a.pr.number < b.pr.number
+      case .repoName:
+        if a.repo.displayName != b.repo.displayName {
+          return a.repo.displayName < b.repo.displayName
+        }
+        return a.pr.number > b.pr.number
+      }
+    }
+    return items
   }
 
   var body: some View {
@@ -250,21 +294,75 @@ struct PRReviewQueueDetailView: View {
         }
         .padding(.leading, 4)
       }
-    } else if !allOpenPRs.isEmpty {
+    } else if !allOpenPRsRaw.isEmpty {
       VStack(alignment: .leading, spacing: 12) {
-        SectionHeader("Open Pull Requests (\(allOpenPRs.count))")
+        // Header with sort & filter controls
+        HStack {
+          SectionHeader("Open Pull Requests (\(allOpenPRs.count))")
+          Spacer()
 
-        LazyVStack(spacing: 1) {
-          ForEach(allOpenPRs, id: \.pr.id) { item in
-            openPRRow(item)
+          if availableRepos.count > 1 {
+            Menu {
+              Button { repoFilter = "all" } label: {
+                HStack {
+                  Text("All Repos")
+                  if repoFilter == "all" { Image(systemName: "checkmark") }
+                }
+              }
+              Divider()
+              ForEach(availableRepos, id: \.self) { repo in
+                Button { repoFilter = repo } label: {
+                  HStack {
+                    Text(repo)
+                    if repoFilter == repo { Image(systemName: "checkmark") }
+                  }
+                }
+              }
+            } label: {
+              Label(repoFilter == "all" ? "All Repos" : repoFilter, systemImage: "line.3.horizontal.decrease.circle")
+                .font(.caption)
+                .foregroundStyle(repoFilter == "all" ? Color.secondary : Color.blue)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
           }
+
+          Menu {
+            ForEach(PRSortOrder.allCases, id: \.self) { order in
+              Button { sortOrder = order } label: {
+                HStack {
+                  Text(order.rawValue)
+                  if sortOrder == order { Image(systemName: "checkmark") }
+                }
+              }
+            }
+          } label: {
+            Label("Sort", systemImage: "arrow.up.arrow.down")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          .menuStyle(.borderlessButton)
+          .fixedSize()
         }
-        #if os(macOS)
-        .background(Color(nsColor: .controlBackgroundColor))
-        #else
-        .background(Color(.systemGroupedBackground))
-        #endif
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+
+        if allOpenPRs.isEmpty {
+          Text("No PRs matching filter")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.leading, 4)
+        } else {
+          LazyVStack(spacing: 1) {
+            ForEach(allOpenPRs, id: \.pr.id) { item in
+              openPRRow(item)
+            }
+          }
+          #if os(macOS)
+          .background(Color(nsColor: .controlBackgroundColor))
+          #else
+          .background(Color(.systemGroupedBackground))
+          #endif
+          .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
       }
     }
   }
@@ -295,6 +393,14 @@ struct PRReviewQueueDetailView: View {
       }
 
       Spacer()
+
+      if let updatedAt = item.pr.updatedAt,
+         let date = ISO8601DateFormatter().date(from: updatedAt) {
+        Text(date, style: .relative)
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+      }
 
       Text("Open")
         .font(.caption2)
@@ -343,7 +449,8 @@ struct PRReviewQueueDetailView: View {
                 title: pr.title ?? "Untitled",
                 state: pr.state ?? "open",
                 htmlURL: pr.html_url,
-                headRef: pr.head.ref
+                headRef: pr.head.ref,
+                updatedAt: pr.updated_at
               ))
             }
           } catch {

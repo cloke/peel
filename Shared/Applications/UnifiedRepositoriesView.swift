@@ -1241,7 +1241,8 @@ struct RepositoriesCommandCenter: View {
                 title: pr.title ?? "Untitled",
                 state: pr.state ?? "open",
                 htmlURL: pr.html_url,
-                headRef: pr.head.ref
+                headRef: pr.head.ref,
+                updatedAt: pr.updated_at
               ))
             }
           } catch {
