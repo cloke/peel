@@ -72,7 +72,6 @@ enum AppResetService {
       ParallelRunSnapshot.self,
       RepoGuidanceSkill.self,
       CIFailureRecord.self,
-      FeatureDiscoveryChecklist.self,
       PRReviewQueueItem.self,
       TrackedRepoDeviceState.self,
     ]

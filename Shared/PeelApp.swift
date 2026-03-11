@@ -196,7 +196,6 @@ struct PeelApp: App {
       RepoGuidanceSkill.self,
       CIFailureRecord.self,
       ChainLearning.self,
-      FeatureDiscoveryChecklist.self,
       PRReviewQueueItem.self,
     ])
 
@@ -222,7 +221,6 @@ struct PeelApp: App {
       RepoGuidanceSkill.self,
       CIFailureRecord.self,
       ChainLearning.self,
-      FeatureDiscoveryChecklist.self,
       PRReviewQueueItem.self,
       TrackedRepoDeviceState.self,
     ])

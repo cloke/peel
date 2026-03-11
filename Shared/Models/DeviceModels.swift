@@ -53,28 +53,4 @@ final class DeviceSettings {
   }
 }
 
-/// Tracks feature discovery checklist state (device-local, not synced to iCloud)
-@Model
-final class FeatureDiscoveryChecklist {
-  var id: UUID = UUID()
-  var isDismissed: Bool = false
-  var didAddRepo: Bool = false
-  var didRunChain: Bool = false
-  var didIndexRAG: Bool = false
-  var didConnectMCP: Bool = false
-  var didJoinSwarm: Bool = false
-  /// Bumped when new features are added; triggers checklist re-show for returning users
-  var lastSeenFeatureVersion: Int = 0
-  var createdAt: Date = Date()
-  var updatedAt: Date = Date()
 
-  init() {
-    self.id = UUID()
-    self.createdAt = Date()
-    self.updatedAt = Date()
-  }
-
-  func touch() {
-    updatedAt = Date()
-  }
-}
