@@ -168,6 +168,7 @@
 				AgentOrchestration/ToolHandlers/RAGToolsHandlerDelegate.swift,
 				AgentOrchestration/ToolHandlers/RepoProfileToolsHandler.swift,
 				AgentOrchestration/ToolHandlers/RepoToolsHandler.swift,
+				AgentOrchestration/ToolHandlers/RunToolsHandler.swift,
 				"AgentOrchestration/ToolHandlers/SwarmToolsHandler+Firebase.swift",
 				"AgentOrchestration/ToolHandlers/SwarmToolsHandler+Firestore.swift",
 				"AgentOrchestration/ToolHandlers/SwarmToolsHandler+PeerDiscovery.swift",
@@ -264,6 +265,7 @@
 				Services/RAGRepoSync.swift,
 				Services/RAGStoreApp.swift,
 				Services/RAGSyncCoordinator.swift,
+				Services/RunManager.swift,
 				Services/SharedChatSession.swift,
 				Services/TranslationValidatorService.swift,
 				Services/UXTestOrchestrator.swift,
@@ -928,7 +930,7 @@
 				CODE_SIGN_ENTITLEMENTS = Peel.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 14;
+				CURRENT_PROJECT_VERSION = 15;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
@@ -1020,7 +1022,7 @@
 				CODE_SIGN_ENTITLEMENTS = Peel.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 14;
+				CURRENT_PROJECT_VERSION = 15;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
@@ -1115,7 +1117,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 14;
+				CURRENT_PROJECT_VERSION = 15;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = UNX9FJDDXV;
 				ENABLE_APP_SANDBOX = NO;
@@ -1152,7 +1154,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 14;
+				CURRENT_PROJECT_VERSION = 15;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = UNX9FJDDXV;
 				ENABLE_APP_SANDBOX = NO;
