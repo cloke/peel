@@ -96,8 +96,27 @@ final class UDPPeerTransfer {
     try await sendDatagram(conn, data: msg)
     p2pLog.log("udp-transfer", "Sent REQUEST", details: ["repo": repoIdentifier])
 
-    // Phase 3: Receive chunked data
-    let data = try await receiveChunkedData(channel: channel, connection: conn, timeout: timeout, p2pLog: p2pLog)
+    // Phase 3: Receive chunked data.
+    // Keep sending PUNCH keepalives to prevent our own NAT mapping from
+    // expiring. The responder may take minutes to export the bundle, during
+    // which we receive PUNCHes (keeping the responder's NAT alive) but send
+    // nothing — causing OUR NAT to drop the UDP mapping after 30-60s.
+    let keepaliveTask = Task {
+      let punchData = Data([MsgType.punch.rawValue])
+      while !Task.isCancelled {
+        try? await Task.sleep(for: .seconds(5))
+        guard !Task.isCancelled else { break }
+        conn.send(content: punchData, completion: .contentProcessed { _ in })
+      }
+    }
+    let data: Data
+    do {
+      data = try await receiveChunkedData(channel: channel, connection: conn, timeout: timeout, p2pLog: p2pLog)
+    } catch {
+      keepaliveTask.cancel()
+      throw error
+    }
+    keepaliveTask.cancel()
     p2pLog.log("udp-transfer", "Transfer complete", details: [
       "bytes": String(data.count),
       "repo": repoIdentifier,
