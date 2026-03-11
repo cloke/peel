@@ -127,7 +127,17 @@ public final class RAGIndexVersionService {
     )
 
     // Write to each swarm we belong to
-    for swarm in firebase.memberSwarms where swarm.role.canRegisterWorkers {
+    let eligibleSwarms = firebase.memberSwarms.filter { $0.role.canRegisterWorkers }
+    if eligibleSwarms.isEmpty {
+      if firebase.memberSwarms.isEmpty {
+        logger.warning("No swarm memberships found — cannot publish index version for \(repoName)")
+      } else {
+        let roles = firebase.memberSwarms.map { "\($0.swarmName):\($0.role.rawValue)" }.joined(separator: ", ")
+        logger.warning("No eligible swarms (need contributor+) for \(repoName). Memberships: \(roles)")
+      }
+      return
+    }
+    for swarm in eligibleSwarms {
       do {
         let docRef = ragIndexesCollection(swarmId: swarm.id)
           .document(indexVersion.documentKey)

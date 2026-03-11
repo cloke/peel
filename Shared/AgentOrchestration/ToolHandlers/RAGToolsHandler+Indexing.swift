@@ -252,18 +252,27 @@ extension RAGToolsHandler {
 
   /// Publish index version to Firestore after a successful rag.index.
   /// This enables other swarm members to discover and request the index via P2P.
+  private static let publishLogger = Logger(subsystem: "com.peel.rag", category: "IndexPublish")
+
   private func publishIndexVersionAfterIndex(
     report: RAGToolIndexReport,
     delegate: RAGToolsHandlerDelegate
   ) async {
     // Only publish if there's something meaningful
-    guard report.chunksIndexed > 0 || report.embeddingCount > 0 else { return }
+    guard report.chunksIndexed > 0 || report.embeddingCount > 0 else {
+      Self.publishLogger.debug("Skipping publish: no chunks or embeddings in report")
+      return
+    }
 
     do {
       // Look up the repo to get its identifier (git remote URL)
       let repos = try await delegate.listRagRepos()
-      guard let repo = repos.first(where: { $0.rootPath == report.repoPath || $0.id == report.repoId }),
-            let repoIdentifier = repo.repoIdentifier else {
+      guard let repo = repos.first(where: { $0.rootPath == report.repoPath || $0.id == report.repoId }) else {
+        Self.publishLogger.warning("Skipping publish: no matching repo found for path=\(report.repoPath) id=\(report.repoId)")
+        return
+      }
+      guard let repoIdentifier = repo.repoIdentifier else {
+        Self.publishLogger.warning("Skipping publish: repo \(repo.name) has no repoIdentifier (no git remote?)")
         return
       }
 
@@ -273,6 +282,7 @@ extension RAGToolsHandler {
       // Resolve HEAD SHA from the repo path
       let headSHA = await resolveHeadSHA(at: report.repoPath)
 
+      Self.publishLogger.info("Publishing index version for \(repo.name) (\(repoIdentifier))")
       await RAGSyncCoordinator.shared.publishVersion(
         repoIdentifier: repoIdentifier,
         repoName: repo.name,
@@ -284,7 +294,83 @@ extension RAGToolsHandler {
         sizeEstimateBytes: report.bytesScanned
       )
     } catch {
-      // Non-critical — don't fail the index operation
+      Self.publishLogger.warning("Failed to publish index version: \(error.localizedDescription)")
+    }
+  }
+
+  // MARK: - rag.publish
+
+  /// Manually publish a locally-indexed repo's version to Firestore for swarm discovery.
+  /// Use when auto-publish after rag.index didn't fire (e.g., repo was indexed before joining a swarm).
+  func handlePublish(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
+    let repoPath = optionalString("repoPath", from: arguments)
+    let repoIdentifierArg = optionalString("repoIdentifier", from: arguments)
+
+    do {
+      let repos = try await delegate.listRagRepos()
+
+      // Find matching repo(s)
+      let matchingRepos: [RAGToolRepoInfo]
+      if let repoPath {
+        matchingRepos = repos.filter { $0.rootPath == repoPath }
+      } else if let repoIdentifierArg {
+        matchingRepos = repos.filter { $0.repoIdentifier == repoIdentifierArg }
+      } else {
+        // Publish all repos that have a repoIdentifier
+        matchingRepos = repos.filter { $0.repoIdentifier != nil }
+      }
+
+      guard !matchingRepos.isEmpty else {
+        return (404, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "No indexed repos found matching the criteria. Use rag.repos.list to see available repos."))
+      }
+
+      let firebase = FirebaseService.shared
+      guard firebase.isSignedIn else {
+        return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Not signed in to Firebase. Sign in first to publish index versions."))
+      }
+
+      let eligibleSwarms = firebase.memberSwarms.filter { $0.role.canRegisterWorkers }
+      guard !eligibleSwarms.isEmpty else {
+        let roles = firebase.memberSwarms.map { "\($0.swarmName): \($0.role.rawValue)" }.joined(separator: ", ")
+        let msg = firebase.memberSwarms.isEmpty
+          ? "Not a member of any swarm. Join a swarm first."
+          : "No swarm membership with publish permission (need contributor+). Current: \(roles)"
+        return (403, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: msg))
+      }
+
+      let status = await delegate.ragStatus()
+      var published: [[String: Any]] = []
+
+      for repo in matchingRepos {
+        guard let repoIdentifier = repo.repoIdentifier else { continue }
+        let headSHA = await resolveHeadSHA(at: repo.rootPath)
+
+        await RAGSyncCoordinator.shared.publishVersion(
+          repoIdentifier: repoIdentifier,
+          repoName: repo.name,
+          headSHA: headSHA,
+          fileCount: repo.fileCount,
+          chunkCount: repo.chunkCount,
+          embeddingModel: status.embeddingModelName,
+          embeddingDimensions: status.embeddingDimensions,
+          sizeEstimateBytes: 0
+        )
+        published.append([
+          "repoIdentifier": repoIdentifier,
+          "repoName": repo.name,
+          "fileCount": repo.fileCount,
+          "chunkCount": repo.chunkCount,
+          "swarms": eligibleSwarms.map { $0.swarmName },
+        ])
+      }
+
+      return (200, makeResult(id: id, result: [
+        "published": published.count,
+        "repos": published,
+        "swarms": eligibleSwarms.map { ["id": $0.id, "name": $0.swarmName, "role": $0.role.rawValue] },
+      ]))
+    } catch {
+      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Failed to publish: \(error.localizedDescription)"))
     }
   }
 
