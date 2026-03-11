@@ -8,6 +8,7 @@
 //
 
 import Foundation
+import Github
 import SwiftData
 import os
 
@@ -233,7 +234,7 @@ final class PRReviewQueue {
     save()
   }
 
-  private func save() {
+  func save() {
     do {
       try modelContext?.save()
     } catch {
@@ -261,8 +262,74 @@ final class PRReviewQueue {
       }
       items = persisted + orphaned
       logger.info("Loaded \(self.items.count) PR review queue items from persistence")
+      startReconciliationTimer()
     } catch {
       logger.error("Failed to load PR review queue: \(error.localizedDescription)")
+    }
+  }
+
+  // MARK: - GitHub Reconciliation
+
+  private var reconciliationTask: Task<Void, Never>?
+
+  /// Start a background timer that periodically checks GitHub for PR state changes.
+  private func startReconciliationTimer() {
+    reconciliationTask?.cancel()
+    reconciliationTask = Task { [weak self] in
+      // Initial reconciliation after a short delay
+      try? await Task.sleep(for: .seconds(10))
+      while !Task.isCancelled {
+        await self?.reconcileWithGitHub()
+        try? await Task.sleep(for: .seconds(300)) // Every 5 minutes
+      }
+    }
+  }
+
+  /// Check GitHub API for each non-terminal queue item and update phase if the PR
+  /// has been merged or closed since we last checked.
+  func reconcileWithGitHub() async {
+    let terminalPhases: Set<String> = [PRReviewPhase.pushed, PRReviewPhase.approved]
+    let toCheck = items.filter { !terminalPhases.contains($0.phase) }
+    guard !toCheck.isEmpty else { return }
+
+    logger.info("Reconciling \(toCheck.count) queue items with GitHub")
+    var changed = false
+
+    for item in toCheck {
+      do {
+        let pr = try await Github.pullRequest(
+          owner: item.repoOwner, repository: item.repoName, number: item.prNumber
+        )
+
+        if pr.merged_at != nil {
+          // PR was merged — mark as pushed
+          item.phase = PRReviewPhase.pushed
+          item.pushResult = "Merged on GitHub"
+          item.pushedAt = Date()
+          item.lastUpdatedAt = Date()
+          item.lastError = nil
+          changed = true
+          logger.info("PR #\(item.prNumber) was merged — updated to pushed")
+        } else if pr.state == "closed" {
+          // PR was closed without merge — remove from queue
+          items.removeAll { $0.id == item.id }
+          modelContext?.delete(item)
+          changed = true
+          logger.info("PR #\(item.prNumber) was closed — removed from queue")
+        } else if let title = pr.title, title != item.prTitle {
+          // Title updated on GitHub
+          item.prTitle = title
+          item.lastUpdatedAt = Date()
+          changed = true
+        }
+      } catch {
+        // Don't fail the whole reconciliation for one PR
+        logger.debug("Failed to check PR #\(item.prNumber): \(error.localizedDescription)")
+      }
+    }
+
+    if changed {
+      save()
     }
   }
 }

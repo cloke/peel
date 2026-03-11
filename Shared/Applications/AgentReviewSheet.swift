@@ -765,12 +765,75 @@ struct AgentReviewSheet: View {
          let rid = chainData["runId"] as? String
           ?? (chainData["queue"] as? [String: Any])?["runId"] as? String {
         runId = rid
+
+        // Update queue item with the actual chain ID
+        if let qi = findQueueItem() {
+          qi.reviewChainId = rid
+          qi.lastUpdatedAt = Date()
+          mcp.prReviewQueue.save()
+        }
+
+        // Monitor in the background so the queue phase transitions
+        // even if this sheet is dismissed.
+        startBackgroundMonitor(chainId: rid)
+
         await pollForResult(rid)
         return
       }
     }
 
     phase = .failed("Failed to start review chain")
+  }
+
+  /// Monitors chain completion in a detached task so the queue phase
+  /// transitions even if the user dismisses the review sheet.
+  private func startBackgroundMonitor(chainId: String) {
+    let mcpRef = mcp
+    let ownerRepo = target.ownerRepo
+    let prNumber = target.prNumber
+
+    Task { @MainActor in
+      guard let uuid = UUID(uuidString: chainId) else { return }
+
+      // Wait for the parallel run record to appear
+      let deadline = Date().addingTimeInterval(30)
+      var run = mcpRef.parallelWorktreeRunner?.findRunBySourceChainRunId(uuid)
+      var sleepMs = 250
+      while run == nil && Date() < deadline {
+        try? await Task.sleep(for: .milliseconds(sleepMs))
+        run = mcpRef.parallelWorktreeRunner?.findRunBySourceChainRunId(uuid)
+        sleepMs = min(2_000, sleepMs + 250)
+      }
+
+      guard let runner = mcpRef.parallelWorktreeRunner, let locatedRun = run else { return }
+
+      let status = await runner.waitForRunCompletion(locatedRun, timeoutSeconds: 900)
+
+      let parts = ownerRepo.split(separator: "/")
+      guard parts.count == 2 else { return }
+      let owner = String(parts[0])
+      let repoName = String(parts[1])
+      guard let qi = mcpRef.prReviewQueue.find(repoOwner: owner, repoName: repoName, prNumber: prNumber) else { return }
+
+      // Only transition if still in "reviewing" — the sheet's pollForResult may have already handled it
+      guard qi.phase == PRReviewPhase.reviewing else { return }
+
+      switch status {
+      case .completed, .awaitingReview:
+        let output = locatedRun.executions.reversed().first(where: { !$0.output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })?.output ?? ""
+        if output.isEmpty {
+          mcpRef.prReviewQueue.markFailed(qi, error: "No output from review chain")
+        } else {
+          let verdict = parseReviewOutput(output).verdict.rawValue.lowercased()
+          let mapped = verdict == "approve" ? "approved" : verdict == "request_changes" ? "changes_requested" : verdict
+          mcpRef.prReviewQueue.markReviewed(qi, output: output, verdict: mapped)
+        }
+      case .failed, .cancelled:
+        mcpRef.prReviewQueue.markFailed(qi, error: "Review chain \(status)")
+      default:
+        mcpRef.prReviewQueue.markFailed(qi, error: "Review timed out")
+      }
+    }
   }
 
   private func pollForResult(_ chainId: String) async {
