@@ -136,7 +136,7 @@ final class UDPPeerTransfer {
       // Phase 3: Export bundle with keepalive to prevent NAT timeout.
       // Bundle export can take 30-60s; most NATs expire UDP mappings
       // after 30s of idle. Send PUNCH keepalives every 5s during export.
-      let keepaliveTask = Task { @MainActor in
+      let keepaliveTask = Task {
         let punchData = Data([MsgType.punch.rawValue])
         while !Task.isCancelled {
           try? await Task.sleep(for: .seconds(5))
@@ -214,8 +214,9 @@ final class UDPPeerTransfer {
     let punchData = Data([MsgType.punch.rawValue])
     var receivedPunch = false
 
-    // Start a receiver task
-    let receiveTask = Task { @MainActor () -> Bool in
+    // Start a receiver task (no @MainActor — runs on global executor
+    // to avoid contention with receiveMessage callbacks on main queue)
+    let receiveTask = Task { () -> Bool in
       for _ in 0..<(punchCount * 3) { // Listen longer than we send
         guard !Task.isCancelled else { return false }
         do {
@@ -520,29 +521,50 @@ final class UDPPeerTransfer {
   }
 
   private static func receiveDatagram(_ connection: NWConnection, timeout: Duration) async throws -> Data {
-    try await withThrowingTaskGroup(of: Data.self) { group in
-      group.addTask {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
-          connection.receiveMessage { content, _, _, error in
-            if let error {
-              continuation.resume(throwing: error)
-            } else if let content {
-              continuation.resume(returning: content)
-            } else {
-              continuation.resume(returning: Data())
-            }
-          }
+    // IMPORTANT: Do NOT use withThrowingTaskGroup here.
+    // Task groups wait for ALL child tasks before returning. If the timeout
+    // fires, the group cancels the receive task, but
+    // withCheckedThrowingContinuation doesn't auto-resume on cancellation
+    // (receiveMessage hasn't called back yet) → the group hangs forever.
+    let state = DatagramReceiveState()
+    return try await withCheckedThrowingContinuation { continuation in
+      state.setContinuation(continuation)
+
+      connection.receiveMessage { content, _, _, error in
+        if let error {
+          state.tryResume(with: .failure(error))
+        } else {
+          state.tryResume(with: .success(content ?? Data()))
         }
       }
-      group.addTask {
-        try await Task.sleep(for: timeout)
-        throw TransferError.timeout
+
+      Task {
+        try? await Task.sleep(for: timeout)
+        state.tryResume(with: .failure(TransferError.timeout))
       }
-      defer { group.cancelAll() }
-      guard let result = try await group.next() else {
-        throw TransferError.timeout
-      }
-      return result
     }
+  }
+}
+
+/// Thread-safe helper ensuring a CheckedContinuation is resumed exactly once.
+/// Used by receiveDatagram to race a receiveMessage callback against a timeout
+/// without relying on task groups (which would deadlock — see comment above).
+private final class DatagramReceiveState: @unchecked Sendable {
+  private let lock = NSLock()
+  private var resumed = false
+  private var continuation: CheckedContinuation<Data, Error>?
+
+  func setContinuation(_ cont: CheckedContinuation<Data, Error>) {
+    lock.lock()
+    continuation = cont
+    lock.unlock()
+  }
+
+  func tryResume(with result: Result<Data, Error>) {
+    lock.lock()
+    defer { lock.unlock() }
+    guard !resumed, let cont = continuation else { return }
+    resumed = true
+    cont.resume(with: result)
   }
 }

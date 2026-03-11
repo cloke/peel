@@ -480,13 +480,28 @@ public final class OnDemandPeerTransfer {
       "peerPort": String(peerEndpoint.port),
     ])
 
-    // 4. UDP hole punch + data transfer
+    // 4. UDP hole punch + data transfer (with hard safety timeout)
     state.status = .transferring
-    return try await UDPPeerTransfer.requestData(
-      peerEndpoint: peerEndpoint,
-      localPort: localPort,
-      repoIdentifier: repoIdentifier
-    )
+    return try await withThrowingTaskGroup(of: Data.self) { group in
+      group.addTask {
+        try await UDPPeerTransfer.requestData(
+          peerEndpoint: peerEndpoint,
+          localPort: localPort,
+          repoIdentifier: repoIdentifier
+        )
+      }
+      group.addTask {
+        // Safety net: if requestData hangs beyond its own 180s timeout,
+        // force-fail after 200s so we fall back to Firestore relay.
+        try await Task.sleep(for: .seconds(200))
+        throw OnDemandTransferError.transferTimedOut(seconds: 200)
+      }
+      defer { group.cancelAll() }
+      guard let result = try await group.next() else {
+        throw OnDemandTransferError.transferTimedOut(seconds: 200)
+      }
+      return result
+    }
   }
 
   // MARK: - Handshake
