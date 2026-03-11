@@ -80,45 +80,51 @@ struct MLXAnalyzerModelConfig: Sendable {
   let maxTokens: Int
   let contextLength: Int
   
-  /// Available Qwen2.5-Coder models for code analysis
-  static let availableModels: [MLXAnalyzerModelConfig] = [
-    // Tiny tier - Qwen2.5-Coder-0.5B (fast, basic quality)
+  /// Built-in Qwen3.5 models — local defaults before Firestore fetch
+  /// OptiQ mixed-precision quantization, hybrid linear+self attention arch
+  static let builtinModels: [MLXAnalyzerModelConfig] = [
+    // Tiny tier - Qwen3.5-0.8B (fast, basic quality, ~0.5GB)
     MLXAnalyzerModelConfig(
-      name: "Qwen2.5-Coder-0.5B",
-      huggingFaceId: "mlx-community/Qwen2.5-Coder-0.5B-Instruct-4bit",
+      name: "Qwen3.5-0.8B",
+      huggingFaceId: "mlx-community/Qwen3.5-0.8B-OptiQ-4bit",
       tier: .tiny,
       maxTokens: 256,
       contextLength: 4096
     ),
-    
-    // Small tier - Qwen2.5-Coder-1.5B (default for 18GB M3)
+
+    // Small tier - Qwen3.5-2B (default for 18GB M3, ~1.2GB)
     MLXAnalyzerModelConfig(
-      name: "Qwen2.5-Coder-1.5B",
-      huggingFaceId: "mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit",
+      name: "Qwen3.5-2B",
+      huggingFaceId: "mlx-community/Qwen3.5-2B-OptiQ-4bit",
       tier: .small,
-      maxTokens: 256,
-      contextLength: 8192
-    ),
-    
-    // Medium tier - Qwen2.5-Coder-3B (better quality)
-    MLXAnalyzerModelConfig(
-      name: "Qwen2.5-Coder-3B",
-      huggingFaceId: "mlx-community/Qwen2.5-Coder-3B-Instruct-4bit",
-      tier: .medium,
       maxTokens: 256,
       contextLength: 16384
     ),
-    
-    // Large tier - Qwen2.5-Coder-7B (best quality for Mac Studio)
+
+    // Medium tier - Qwen3.5-4B (better quality, ~2.5GB)
     MLXAnalyzerModelConfig(
-      name: "Qwen2.5-Coder-7B",
-      huggingFaceId: "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
-      tier: .large,
+      name: "Qwen3.5-4B",
+      huggingFaceId: "mlx-community/Qwen3.5-4B-OptiQ-4bit",
+      tier: .medium,
       maxTokens: 256,
       contextLength: 32768
+    ),
+
+    // Large tier - Qwen3.5-9B (best quality for Mac Studio, ~6GB)
+    MLXAnalyzerModelConfig(
+      name: "Qwen3.5-9B",
+      huggingFaceId: "mlx-community/Qwen3.5-9B-OptiQ-4bit",
+      tier: .large,
+      maxTokens: 256,
+      contextLength: 131072  // 128K context
     )
   ]
-  
+
+  /// Available models — uses Firestore registry if available, falls back to builtins
+  static var availableModels: [MLXAnalyzerModelConfig] {
+    MLXModelRegistry.shared.analyzerModels
+  }
+
   /// Select the best model for the current machine's RAM
   static func recommendedModel() -> MLXAnalyzerModelConfig {
     let availableMemoryGB = getAvailableMemoryGB()

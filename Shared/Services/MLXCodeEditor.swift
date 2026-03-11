@@ -89,8 +89,8 @@ struct MLXEditorModelConfig: Sendable {
   let maxTokens: Int
   let contextLength: Int
 
-  /// Available models for code editing — larger than analyzer models
-  static let availableModels: [MLXEditorModelConfig] = [
+  /// Built-in models for code editing — local defaults before Firestore fetch
+  static let builtinModels: [MLXEditorModelConfig] = [
     // Small tier - Qwen2.5-Coder-7B (simple edits on smaller machines)
     MLXEditorModelConfig(
       name: "Qwen2.5-Coder-7B",
@@ -100,13 +100,14 @@ struct MLXEditorModelConfig: Sendable {
       contextLength: 32768
     ),
 
-    // Medium tier - Qwen2.5-Coder-14B (moderate refactors)
+    // Medium tier - Qwen3.5-9B (hybrid linear+self attention, strong at code)
+    // OptiQ mixed-precision quantization, ~6GB disk, requires mlx-lm >= 0.30.7
     MLXEditorModelConfig(
-      name: "Qwen2.5-Coder-14B",
-      huggingFaceId: "lmstudio-community/Qwen2.5-Coder-14B-Instruct-MLX-4bit",
+      name: "Qwen3.5-9B",
+      huggingFaceId: "mlx-community/Qwen3.5-9B-OptiQ-4bit",
       tier: .medium,
       maxTokens: 8192,
-      contextLength: 65536
+      contextLength: 131072  // 128K context
     ),
 
     // Large tier - Qwen3-Coder-30B-A3B MoE (qwen3_moe architecture, ~3B active)
@@ -132,6 +133,11 @@ struct MLXEditorModelConfig: Sendable {
       contextLength: 262144  // 256K context
     )
   ]
+
+  /// Available models — uses Firestore registry if available, falls back to builtins
+  static var availableModels: [MLXEditorModelConfig] {
+    MLXModelRegistry.shared.editorModels
+  }
 
   /// Select the best model for the current machine's RAM
   static func recommendedModel() -> MLXEditorModelConfig {
