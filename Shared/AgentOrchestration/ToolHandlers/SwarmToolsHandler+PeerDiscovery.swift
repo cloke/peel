@@ -381,6 +381,16 @@ extension SwarmToolsHandler {
         ] as [String: Any]
       }(),
       "localRagArtifacts": localRagPayload,
+      "webrtcSessions": {
+        let psm = coordinator.peerSessionManager
+        return psm.peerStates.map { (peerId, state) in
+          [
+            "peerId": peerId,
+            "state": String(describing: state),
+            "rttMs": psm.peerRTT[peerId] as Any
+          ] as [String: Any]
+        }
+      }(),
       "messageListeners": FirebaseService.shared.messageListenerDiagnostics(),
       "workerListeners": {
         let diag = FirebaseService.shared.workerListenerDiagnostics

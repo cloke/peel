@@ -975,8 +975,16 @@ public final class SwarmCoordinator {
         } catch is CancellationError {
           break
         } catch {
-          logger.warning("WebRTC mcp receive from \(peerId) failed: \(error)")
-          break
+          // Only break on fatal channel errors (closed/disconnected).
+          // Timeouts are expected during idle periods — keep listening.
+          let isFatal = !channel.isOpen
+          if isFatal {
+            logger.warning("WebRTC mcp channel closed for \(peerId): \(error)")
+            break
+          } else {
+            logger.debug("WebRTC mcp receive timeout for \(peerId), continuing listen loop")
+            continue
+          }
         }
       }
       logger.info("WebRTC mcp listener ended for peer \(peerId)")
@@ -996,14 +1004,21 @@ public final class SwarmCoordinator {
     // Prefer WebRTC mcp channel if session is connected
     if let channel = await peerSessionManager.mcpChannel(for: workerId) {
       let data = try JSONEncoder().encode(message)
-      try await channel.send(data)
-      return
+      do {
+        logger.info("sendMessage to \(workerId): using WebRTC (\(String(describing: message).prefix(80)))")
+        try await channel.send(data)
+        return
+      } catch {
+        logger.warning("WebRTC send to \(workerId) failed (\(error)), falling back to TCP")
+        // Fall through to TCP
+      }
     }
 
     // Fallback to TCP connection manager
     guard let cm = connectionManager else {
       throw DistributedError.actorSystemNotReady
     }
+    logger.info("sendMessage to \(workerId): using TCP (\(String(describing: message).prefix(80)))")
     try await cm.send(message, to: workerId)
   }
 
