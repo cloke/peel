@@ -109,8 +109,11 @@ public actor PeerSession {
       let answerSDP = try await signaling.waitForAnswer(timeout: .seconds(30))
       try await newClient.setRemoteAnswer(answerSDP)
 
-      // Wait for MCP channel to open (others follow quickly)
+      // Wait for control and bulk-transfer channels to open before treating the
+      // persistent session as ready. The first RAG chunk can otherwise race the
+      // transfer channel coming fully online.
       try await mcp.waitForOpen(timeout: .seconds(30))
+      try await transfer.waitForOpen(timeout: .seconds(30))
 
       mcpChannel = mcp
       transferChannel = transfer
@@ -178,9 +181,11 @@ public actor PeerSession {
       let heartbeat = try await newClient.waitForRemoteChannel(label: Self.heartbeatLabel, timeout: .seconds(30))
       let chat = try await newClient.waitForRemoteChannel(label: Self.chatLabel, timeout: .seconds(30))
 
-      // Keep ICE candidate exchange alive until the primary channel is fully open.
-      // Remote channel discovery can happen before SCTP/data-channel readiness.
+      // Keep ICE candidate exchange alive until the control and transfer channels
+      // are fully open. Remote channel discovery can happen before SCTP/data-channel
+      // readiness, and the first RAG chunk depends on the transfer channel.
       try await mcp.waitForOpen(timeout: .seconds(30))
+      try await transfer.waitForOpen(timeout: .seconds(30))
 
       mcpChannel = mcp
       transferChannel = transfer
