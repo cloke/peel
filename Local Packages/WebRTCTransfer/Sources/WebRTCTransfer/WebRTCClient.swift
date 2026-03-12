@@ -224,6 +224,67 @@ public final class WebRTCClient: NSObject, Sendable {
       bufferDrainContinuation?.resume(throwing: CancellationError())
       bufferDrainContinuation = nil
     }
+
+    // MARK: - Named Channel Support
+
+    var usingNamedChannels = false
+    var pendingRemoteChannels: [String: CheckedContinuation<DataChannelHandle, Error>] = [:]
+    var receivedRemoteChannels: [String: DataChannelHandle] = [:]
+    var iceStateHandler: ((RTCIceConnectionState) -> Void)?
+
+    func setUsingNamedChannels() {
+      usingNamedChannels = true
+    }
+
+    /// Routes a remote data channel to a named handle. Returns true if handled.
+    func handleRemoteNamedChannel(_ channel: RTCDataChannel) -> Bool {
+      guard usingNamedChannels else { return false }
+
+      let handle = DataChannelHandle(channel: channel)
+      let label = channel.label
+
+      if let continuation = pendingRemoteChannels[label] {
+        pendingRemoteChannels.removeValue(forKey: label)
+        receivedRemoteChannels[label] = handle
+        continuation.resume(returning: handle)
+      } else {
+        receivedRemoteChannels[label] = handle
+      }
+
+      return true
+    }
+
+    func waitForRemoteNamedChannel(_ label: String) async throws -> DataChannelHandle {
+      if let existing = receivedRemoteChannels[label] {
+        return existing
+      }
+      return try await withTaskCancellationHandler {
+        try await withCheckedThrowingContinuation { cont in
+          if let existing = receivedRemoteChannels[label] {
+            cont.resume(returning: existing)
+          } else if Task.isCancelled {
+            cont.resume(throwing: CancellationError())
+          } else {
+            pendingRemoteChannels[label] = cont
+          }
+        }
+      } onCancel: {
+        Task { [weak self] in await self?.cancelRemoteChannelWaiter(label) }
+      }
+    }
+
+    func cancelRemoteChannelWaiter(_ label: String) {
+      pendingRemoteChannels[label]?.resume(throwing: CancellationError())
+      pendingRemoteChannels.removeValue(forKey: label)
+    }
+
+    func setICEStateHandler(_ handler: @escaping (RTCIceConnectionState) -> Void) {
+      iceStateHandler = handler
+    }
+
+    func notifyICEState(_ newState: RTCIceConnectionState) {
+      iceStateHandler?(newState)
+    }
   }
 
   // MARK: - Init
@@ -452,6 +513,95 @@ public final class WebRTCClient: NSObject, Sendable {
   public func close() {
     peerConnection.close()
   }
+
+  // MARK: - Named Data Channels
+
+  /// Enable named channel routing for responder side.
+  /// Call before receiving remote channels to ensure they're routed to DataChannelHandle instances.
+  public func enableNamedChannels() async {
+    await state.setUsingNamedChannels()
+  }
+
+  /// Create a named data channel (initiator side). Must be called before createOffer().
+  /// Returns a DataChannelHandle that manages this channel's send/receive independently.
+  public func openChannel(label: String, config: DataChannelConfig = .reliable) async throws -> DataChannelHandle {
+    await state.setUsingNamedChannels()
+
+    let rtcConfig = RTCDataChannelConfiguration()
+    rtcConfig.isOrdered = config.ordered
+    if let maxRetransmits = config.maxRetransmits {
+      rtcConfig.maxRetransmits = Int32(maxRetransmits)
+    }
+
+    guard let channel = peerConnection.dataChannel(forLabel: label, configuration: rtcConfig) else {
+      throw WebRTCError.dataChannelCreationFailed
+    }
+
+    let handle = DataChannelHandle(channel: channel)
+    logger.info("Named data channel '\(label)' created (ordered=\(config.ordered))")
+    return handle
+  }
+
+  /// Wait for a named remote data channel (responder side).
+  public func waitForRemoteChannel(label: String, timeout: Duration = .seconds(30)) async throws -> DataChannelHandle {
+    await state.setUsingNamedChannels()
+    return try await withThrowingTaskGroup(of: DataChannelHandle.self) { group in
+      group.addTask { try await self.state.waitForRemoteNamedChannel(label) }
+      group.addTask {
+        try await Task.sleep(for: timeout)
+        throw WebRTCError.dataChannelTimeout
+      }
+      defer { group.cancelAll() }
+      guard let handle = try await group.next() else {
+        throw WebRTCError.dataChannelTimeout
+      }
+      return handle
+    }
+  }
+
+  // MARK: - ICE Restart
+
+  /// Restart ICE to recover a dropped connection. Returns a new SDP offer.
+  public func restartICE() async throws -> String {
+    let constraints = RTCMediaConstraints(
+      mandatoryConstraints: [
+        "IceRestart": "true",
+        "OfferToReceiveAudio": "false",
+        "OfferToReceiveVideo": "false",
+      ],
+      optionalConstraints: nil
+    )
+
+    let sdp = try await withCheckedThrowingContinuation { (cont: CheckedContinuation<RTCSessionDescription, Error>) in
+      peerConnection.offer(for: constraints) { sdp, error in
+        if let error { cont.resume(throwing: error); return }
+        guard let sdp else { cont.resume(throwing: WebRTCError.sdpCreationFailed); return }
+        cont.resume(returning: sdp)
+      }
+    }
+
+    try await setLocalDescription(sdp)
+    return sdp.sdp
+  }
+
+  // MARK: - ICE State Observation
+
+  /// Register a handler for ICE connection state changes.
+  public func onICEStateChange(_ handler: @escaping @Sendable (RTCIceConnectionState) -> Void) async {
+    await state.setICEStateHandler(handler)
+  }
+
+  // MARK: - Convenience (avoids importing WebRTC for RTCSdpType)
+
+  /// Set a remote SDP offer.
+  public func setRemoteOffer(_ sdp: String) async throws {
+    try await setRemoteDescription(sdp, type: .offer)
+  }
+
+  /// Set a remote SDP answer.
+  public func setRemoteAnswer(_ sdp: String) async throws {
+    try await setRemoteDescription(sdp, type: .answer)
+  }
 }
 
 // MARK: - RTCPeerConnectionDelegate
@@ -469,6 +619,7 @@ extension WebRTCClient: RTCPeerConnectionDelegate {
 
   public func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
     logger.notice("ICE connection state: \(String(describing: newState)) (thread: \(Thread.isMainThread ? "main" : "bg"))")
+    Task { await state.notifyICEState(newState) }
     // Only fail on terminal states. `.disconnected` is transient — ICE will
     // attempt to recover via candidate pair switching. Treating it as fatal
     // was killing transfers after the first 64KB chunk.
@@ -495,8 +646,14 @@ extension WebRTCClient: RTCPeerConnectionDelegate {
 
   public func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {
     logger.info("Remote data channel opened: \(dataChannel.label)")
-    dataChannel.delegate = self
-    Task { await state.onRemoteDataChannel(dataChannel) }
+    Task {
+      let handled = await state.handleRemoteNamedChannel(dataChannel)
+      if !handled {
+        // Legacy single-channel path
+        dataChannel.delegate = self
+        await state.onRemoteDataChannel(dataChannel)
+      }
+    }
   }
 }
 

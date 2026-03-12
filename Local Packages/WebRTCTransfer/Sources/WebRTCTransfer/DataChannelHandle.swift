@@ -1,0 +1,241 @@
+//
+//  DataChannelHandle.swift
+//  WebRTCTransfer
+//
+//  Self-contained wrapper for a single RTCDataChannel with async send/receive
+//  and backpressure. Each handle manages its own message buffer independently,
+//  enabling multiple named channels on one RTCPeerConnection.
+//
+
+import Foundation
+import WebRTC
+import os.log
+
+// MARK: - Channel Configuration
+
+/// Configuration for creating a data channel.
+public struct DataChannelConfig: Sendable {
+  public var ordered: Bool
+  public var maxRetransmits: Int?
+
+  /// Reliable, ordered delivery (default for MCP, transfer, chat).
+  public static let reliable = DataChannelConfig(ordered: true, maxRetransmits: nil)
+  /// Unreliable, unordered delivery (heartbeats, pings).
+  public static let unreliable = DataChannelConfig(ordered: false, maxRetransmits: 0)
+
+  public init(ordered: Bool = true, maxRetransmits: Int? = nil) {
+    self.ordered = ordered
+    self.maxRetransmits = maxRetransmits
+  }
+}
+
+// MARK: - DataChannelHandle
+
+/// Wraps a single RTCDataChannel with async send/receive and backpressure.
+public final class DataChannelHandle: NSObject, @unchecked Sendable {
+  private let logger = Logger(subsystem: "com.peel.webrtc", category: "ChannelHandle")
+
+  public let label: String
+
+  /// The underlying RTCDataChannel.
+  public let channel: RTCDataChannel
+
+  private let state = HandleState()
+
+  // MARK: - State Actor
+
+  private actor HandleState {
+    var messageBuffer: [Data] = []
+    var messageWaiter: CheckedContinuation<Data, Error>?
+    var closedError: Error?
+    var openContinuation: CheckedContinuation<Void, Error>?
+    var bufferDrainContinuation: CheckedContinuation<Void, Error>?
+
+    func onOpen() {
+      openContinuation?.resume()
+      openContinuation = nil
+    }
+
+    func waitForOpen() async throws {
+      try await withTaskCancellationHandler {
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+          if Task.isCancelled {
+            cont.resume(throwing: CancellationError())
+          } else {
+            openContinuation = cont
+          }
+        }
+      } onCancel: {
+        Task { [weak self] in await self?.cancelOpenWaiter() }
+      }
+    }
+
+    func cancelOpenWaiter() {
+      openContinuation?.resume(throwing: CancellationError())
+      openContinuation = nil
+    }
+
+    func onMessage(_ data: Data) {
+      if let waiter = messageWaiter {
+        messageWaiter = nil
+        waiter.resume(returning: data)
+      } else {
+        messageBuffer.append(data)
+      }
+    }
+
+    func onClosed(_ error: Error) {
+      closedError = error
+      messageWaiter?.resume(throwing: error)
+      messageWaiter = nil
+      openContinuation?.resume(throwing: error)
+      openContinuation = nil
+      bufferDrainContinuation?.resume(throwing: error)
+      bufferDrainContinuation = nil
+    }
+
+    func receiveMessage() async throws -> Data {
+      if let error = closedError { throw error }
+      if !messageBuffer.isEmpty {
+        return messageBuffer.removeFirst()
+      }
+      return try await withTaskCancellationHandler {
+        try await withCheckedThrowingContinuation { cont in
+          if !messageBuffer.isEmpty {
+            cont.resume(returning: messageBuffer.removeFirst())
+          } else if let error = closedError {
+            cont.resume(throwing: error)
+          } else if Task.isCancelled {
+            cont.resume(throwing: CancellationError())
+          } else {
+            messageWaiter = cont
+          }
+        }
+      } onCancel: {
+        Task { [weak self] in await self?.cancelMessageWaiter() }
+      }
+    }
+
+    func cancelMessageWaiter() {
+      messageWaiter?.resume(throwing: CancellationError())
+      messageWaiter = nil
+    }
+
+    func onBufferDrained() {
+      bufferDrainContinuation?.resume()
+      bufferDrainContinuation = nil
+    }
+
+    func waitForBufferDrain() async throws {
+      if let error = closedError { throw error }
+      try await withTaskCancellationHandler {
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+          if let error = closedError {
+            cont.resume(throwing: error)
+          } else if Task.isCancelled {
+            cont.resume(throwing: CancellationError())
+          } else {
+            bufferDrainContinuation = cont
+          }
+        }
+      } onCancel: {
+        Task { [weak self] in await self?.cancelBufferDrainWaiter() }
+      }
+    }
+
+    func cancelBufferDrainWaiter() {
+      bufferDrainContinuation?.resume(throwing: CancellationError())
+      bufferDrainContinuation = nil
+    }
+  }
+
+  // MARK: - Init
+
+  public init(channel: RTCDataChannel) {
+    self.label = channel.label
+    self.channel = channel
+    super.init()
+    channel.delegate = self
+  }
+
+  // MARK: - Properties
+
+  public var isOpen: Bool {
+    channel.readyState == .open
+  }
+
+  // MARK: - Send
+
+  private static let bufferHighWaterMark: UInt64 = 256 * 1024
+  private static let bufferLowWaterMark: UInt64 = 64 * 1024
+
+  /// Send binary data with backpressure.
+  public func send(_ data: Data) async throws {
+    guard channel.readyState == .open else {
+      throw WebRTCError.dataChannelNotOpen
+    }
+
+    if channel.bufferedAmount > Self.bufferHighWaterMark {
+      try await state.waitForBufferDrain()
+    }
+
+    let buffer = RTCDataBuffer(data: data, isBinary: true)
+    guard channel.sendData(buffer) else {
+      throw WebRTCError.sendFailed
+    }
+  }
+
+  // MARK: - Receive
+
+  /// Receive one message with timeout.
+  public func receive(timeout: Duration = .seconds(30)) async throws -> Data {
+    try await withThrowingTaskGroup(of: Data.self) { group in
+      group.addTask { try await self.state.receiveMessage() }
+      group.addTask {
+        try await Task.sleep(for: timeout)
+        throw WebRTCError.receiveTimeout
+      }
+      defer { group.cancelAll() }
+      guard let data = try await group.next() else {
+        throw WebRTCError.receiveTimeout
+      }
+      return data
+    }
+  }
+
+  /// Wait for the channel to reach the open state.
+  public func waitForOpen(timeout: Duration = .seconds(30)) async throws {
+    if channel.readyState == .open { return }
+    try await withThrowingTaskGroup(of: Void.self) { group in
+      group.addTask { try await self.state.waitForOpen() }
+      group.addTask {
+        try await Task.sleep(for: timeout)
+        throw WebRTCError.dataChannelTimeout
+      }
+      defer { group.cancelAll() }
+      try await group.next()
+    }
+  }
+}
+
+// MARK: - RTCDataChannelDelegate
+
+extension DataChannelHandle: RTCDataChannelDelegate {
+  public func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {
+    if dataChannel.readyState == .open {
+      Task { await state.onOpen() }
+    } else if dataChannel.readyState == .closed {
+      Task { await state.onClosed(WebRTCError.dataChannelClosed) }
+    }
+  }
+
+  public func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {
+    Task { await state.onMessage(buffer.data) }
+  }
+
+  public func dataChannel(_ dataChannel: RTCDataChannel, didChangeBufferedAmount amount: UInt64) {
+    if amount <= Self.bufferLowWaterMark {
+      Task { await state.onBufferDrained() }
+    }
+  }
+}
