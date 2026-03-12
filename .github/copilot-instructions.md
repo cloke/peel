@@ -57,6 +57,7 @@ Peel is a macOS/iOS SwiftUI application for managing GitHub, Git repositories, a
 | Doc | Path |
 |-----|------|
 | MCP usage guide | `Docs/guides/MCP_AGENT_WORKFLOW.md` |
+| Networking standard | `Docs/reference/NETWORKING_STANDARD.md` |
 | Project roadmap | `Plans/ROADMAP.md` |
 | Code patterns | `Docs/reference/CODE_AUDIT_INDEX.md` |
 
@@ -183,36 +184,21 @@ To pull submodules/local packages too: `command: "git pull origin main && cd 'Lo
 
 ### Swarm Architecture Invariant (CRITICAL — DO NOT VIOLATE)
 
-The swarm has TWO distinct communication layers with STRICT separation:
+> **Full specification:** `Docs/reference/NETWORKING_STANDARD.md` — READ IT before modifying any file in `Shared/Distributed/`.
 
-**Firestore = coordination & signaling ONLY** (the backbone):
-- Task dispatch (`FirebaseService.submitTask` → task queue → worker claims via listener)
-- Worker status & heartbeats (Firestore worker registration)
-- Member management & permissions
-- Task results & completion status
-- Direct commands & worker updates
-- Swarm chat & activity logging
-- WebRTC SDP signaling (offers, answers, ICE candidates) — small JSON docs only
-- ALL cross-network communication
+**TL;DR — Two layers, strict separation:**
 
-**P2P (TCP direct / WebRTC data channel) = ALL data transfer**:
-- RAG artifact sync via `OnDemandPeerTransfer`: TCP LAN → TCP WAN → WebRTC data channel
-- Nothing else. Literally nothing.
+| Layer | Carries | Examples |
+|-------|---------|----------|
+| **Firestore** | Small JSON coordination that must survive offline | Auth, worker registry, WebRTC signaling, offline task queue, task archival |
+| **WebRTC** | Everything real-time, all bulk data | MCP messages (`mcp` channel), RAG transfers (`transfer` channel), heartbeats (`heartbeat` channel) |
 
-**🚫 NO DATA THROUGH FIRESTORE — EVER:**
-- `FirestoreRelayTransfer.swift` exists but is **DEPRECATED and must NOT be used as a fallback**.
-- Firestore relay sends actual RAG data (~30MB+) as base64 chunks through Firestore documents. This is expensive, slow, and defeats the entire purpose of P2P.
-- Firestore's role is ONLY coordination and signaling (small JSON metadata). Never bulk data.
-- If all P2P connections fail (LAN/WAN/WebRTC), the transfer should **fail with an error**, not fall back to Firestore relay.
-- The correct fix when P2P fails is to debug WHY it fails (e.g., WebRTC signaling, NAT traversal, STUN/TURN), not to bypass P2P.
-
-**Rules agents MUST follow:**
-1. **NEVER gate task dispatch on `connectedWorkers`** (TCP peers). Workers discover tasks via Firestore listeners.
-2. **NEVER require a TCP connection** for `swarm.dispatch`, `swarm.direct-command`, or `swarm.update-workers`.
-3. **NEVER add coordination messages** (status, commands, heartbeats) to `PeerConnectionManager`.
-4. **NEVER send bulk data through Firestore** — no `FirestoreRelayTransfer`, no base64 document chunks, no "relay fallback". If P2P fails, fail loudly.
-5. If adding a new swarm feature, ask: "Is this transferring large binary data?" If NO → use Firestore. If YES → use P2P only (TCP or WebRTC). No Firestore fallback.
-6. The `peers` array in `swarm.diagnostics` shows TCP connections (file transfer readiness). The `firestoreWorkers` array shows all registered workers (actual availability for task dispatch).
+**Hard rules (summary — see full doc for details):**
+1. **No bulk data through Firestore** — ever. `FirestoreRelayTransfer` is deprecated. If P2P fails, fix P2P.
+2. **No gating on `connectedWorkers`** — workers discover tasks via Firestore listeners or WebRTC `mcp` channel.
+3. **No coordination through `PeerConnectionManager`** — it's legacy TCP, slated for removal.
+4. **Fail loudly** — never silently drop transfers or leave them stuck at `queued`.
+5. **One persistent `RTCPeerConnection` per peer** — reuse it, don't create per-transfer connections.
 
 **Key files with architecture banners** (read the header comments):
 - `Shared/Distributed/SwarmCoordinator.swift` — Main invariant definition
@@ -221,7 +207,7 @@ The swarm has TWO distinct communication layers with STRICT separation:
 - `Shared/Distributed/OnDemandPeerTransfer.swift` — P2P transfer pipeline (NO relay fallback)
 - `Shared/AgentOrchestration/ToolHandlers/SwarmToolsHandler+TaskDispatch.swift` — Dispatch rules
 
-**If you're unsure**, check the file header banner before modifying any file in `Shared/Distributed/`.
+**If you're unsure**, read `Docs/reference/NETWORKING_STANDARD.md` first, then check the file header banner.
 
 ### Agents MUST Always Work in Worktrees (CRITICAL)
 All agent/chain work **must** happen inside a git worktree, never in the main repository checkout.

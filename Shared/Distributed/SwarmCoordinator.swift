@@ -661,14 +661,26 @@ public final class SwarmCoordinator {
     heartbeatMonitorTask = nil
   }
 
-  /// Check for workers with stale heartbeats and disconnect them
+  /// Check for workers with stale heartbeats and disconnect them.
+  /// Skips peers with active RAG transfers to prevent mid-transfer disconnects.
   private func checkWorkerHeartbeats() async {
     let now = Date()
     var staleWorkers: [String] = []
 
+    // Collect peers with active transfers (incoming or outgoing, any non-terminal status)
+    let activeTransferPeers = Set(
+      ragTransfers
+        .filter { $0.status == .queued || $0.status == .preparing || $0.status == .transferring }
+        .map(\.peerId)
+    )
+
     for (peerId, status) in workerStatuses {
       let age = now.timeIntervalSince(status.lastHeartbeat)
       if age > heartbeatStaleThreshold {
+        if activeTransferPeers.contains(peerId) {
+          logger.warning("Worker \(peerId) heartbeat stale by \(Int(age))s but has active RAG transfer — deferring disconnect")
+          continue
+        }
         logger.warning("Worker \(peerId) heartbeat stale by \(Int(age))s, disconnecting")
         staleWorkers.append(peerId)
       }
@@ -2364,8 +2376,11 @@ extension SwarmCoordinator: PeerConnectionDelegate {
   }
   
   public func connectionManager(_ manager: PeerConnectionManager, didDisconnect peerId: String) {
+    let workerName = connectedWorkers.first(where: { $0.id == peerId })?.name ?? peerId
     connectedWorkers.removeAll { $0.id == peerId }
     if let existing = workerStatuses[peerId] {
+      let heartbeatAge = Date().timeIntervalSince(existing.lastHeartbeat)
+      logger.warning("Peer \(workerName) disconnected — last heartbeat \(Int(heartbeatAge))s ago, state: \(existing.state.rawValue)")
       workerStatuses[peerId] = WorkerStatus(
         deviceId: existing.deviceId,
         state: .offline,
@@ -2380,6 +2395,9 @@ extension SwarmCoordinator: PeerConnectionDelegate {
 
     // Save checkpoints and fail any in-progress RAG transfers from this peer
     let affectedTransfers = incomingRagTransfers.filter { $0.value.peerId == peerId }
+    if !affectedTransfers.isEmpty {
+      logger.error("Peer \(workerName) disconnect affects \(affectedTransfers.count) active RAG transfer(s)")
+    }
     for (id, transfer) in affectedTransfers {
       // Only checkpoint transfers that have actually received some data
       if transfer.receivedChunks > 0 {
@@ -2389,8 +2407,23 @@ extension SwarmCoordinator: PeerConnectionDelegate {
       failTransfer(id: id, message: "Peer disconnected\(transfer.receivedChunks > 0 ? " (checkpoint saved, will auto-resume on reconnect)" : "")")
     }
 
+    // Also check outgoing ragTransfers (we were sending to this peer)
+    let affectedOutgoing = ragTransfers.filter {
+      $0.peerId == peerId && ($0.status == .queued || $0.status == .preparing || $0.status == .transferring)
+    }
+    if !affectedOutgoing.isEmpty {
+      logger.error("Peer \(workerName) disconnect affects \(affectedOutgoing.count) outgoing RAG transfer(s)")
+      for transfer in affectedOutgoing {
+        updateRagTransfer(transfer.id) { state in
+          state.status = .failed
+          state.errorMessage = "Peer disconnected during outgoing transfer"
+          state.completedAt = Date()
+        }
+      }
+    }
+
     delegate?.swarmCoordinator(self, didEmit: .workerDisconnected(peerId))
-    logger.info("Peel disconnected: \(peerId)")
+    logger.info("Peel disconnected: \(workerName) (\(peerId))")
   }
   
   public func connectionManager(_ manager: PeerConnectionManager, didReceive message: PeerMessage, from peerId: String) {
