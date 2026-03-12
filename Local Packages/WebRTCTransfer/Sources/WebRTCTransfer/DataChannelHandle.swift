@@ -42,6 +42,12 @@ public final class DataChannelHandle: NSObject, @unchecked Sendable {
 
   private let state = HandleState()
 
+  /// Ordered message stream from delegate callbacks.
+  /// AsyncStream.yield() is thread-safe and preserves insertion order,
+  /// ensuring messages reach the actor in the same order WebRTC delivered them.
+  private var messageContinuation: AsyncStream<Data>.Continuation?
+  private var messageForwardingTask: Task<Void, Never>?
+
   // MARK: - State Actor
 
   private actor HandleState {
@@ -155,6 +161,19 @@ public final class DataChannelHandle: NSObject, @unchecked Sendable {
     self.label = channel.label
     self.channel = channel
     super.init()
+
+    // Set up an ordered message forwarding pipeline.
+    // The delegate callback yields to the AsyncStream (thread-safe, preserves order),
+    // and a single forwarding task drains the stream into the actor sequentially.
+    let (stream, continuation) = AsyncStream.makeStream(of: Data.self)
+    self.messageContinuation = continuation
+    let state = self.state
+    self.messageForwardingTask = Task {
+      for await data in stream {
+        await state.onMessage(data)
+      }
+    }
+
     channel.delegate = self
   }
 
@@ -225,12 +244,14 @@ extension DataChannelHandle: RTCDataChannelDelegate {
     if dataChannel.readyState == .open {
       Task { await state.onOpen() }
     } else if dataChannel.readyState == .closed {
+      messageContinuation?.finish()
+      messageForwardingTask?.cancel()
       Task { await state.onClosed(WebRTCError.dataChannelClosed) }
     }
   }
 
   public func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {
-    Task { await state.onMessage(buffer.data) }
+    messageContinuation?.yield(buffer.data)
   }
 
   public func dataChannel(_ dataChannel: RTCDataChannel, didChangeBufferedAmount amount: UInt64) {

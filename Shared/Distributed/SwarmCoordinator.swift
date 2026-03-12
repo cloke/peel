@@ -1579,7 +1579,10 @@ public final class SwarmCoordinator {
   }
 
   private func handleRagArtifactsChunk(id: UUID, index: Int, total: Int, data: String) {
-    guard let transfer = incomingRagTransfers[id] else { return }
+    guard let transfer = incomingRagTransfers[id] else {
+      logger.error("RAG chunk \(index)/\(total) for \(id) dropped — no transfer state (manifest not yet processed?)")
+      return
+    }
     guard let decoded = Data(base64Encoded: data) else {
       updateRagTransfer(id) { state in
         state.status = .failed
