@@ -268,6 +268,21 @@ struct InlineExecutionCard: View {
             .font(.caption2.monospaced())
           }
 
+          // Compact verdict badge
+          if let verdict = executionVerdict {
+            HStack(spacing: 3) {
+              Image(systemName: verdict.systemImage)
+                .font(.caption2)
+              Text(verdict.displayName)
+                .font(.caption2)
+                .fontWeight(.medium)
+            }
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(verdict.color.opacity(0.15)))
+            .foregroundStyle(verdict.color)
+          }
+
           if let duration = execution.duration {
             Text(formatDuration(duration))
               .font(.caption2)
@@ -296,6 +311,9 @@ struct InlineExecutionCard: View {
               .foregroundStyle(.secondary)
               .lineLimit(4)
           }
+
+          // Parsed review findings
+          reviewFindingsSection
 
           // Chain step results
           if !execution.chainStepResults.isEmpty {
@@ -723,6 +741,122 @@ struct InlineExecutionCard: View {
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
             }
+          }
+        }
+      }
+    }
+  }
+
+  /// The parsed review verdict for this execution, derived from chain step results or output.
+  private var executionVerdict: ParsedReview.Verdict? {
+    // Check chain step reviewVerdict first
+    if let verdictStr = execution.chainStepResults.compactMap({ $0.reviewVerdict }).last {
+      let lowered = verdictStr.lowercased()
+      if lowered.contains("approve") { return .approve }
+      if lowered.contains("request_changes") || lowered.contains("reject") { return .requestChanges }
+      if lowered.contains("comment") { return .comment }
+    }
+    // Fall back to parsing the full output
+    if !execution.output.isEmpty {
+      let parsed = parseReviewOutput(execution.output)
+      if parsed.verdict != .unknown { return parsed.verdict }
+    }
+    return nil
+  }
+
+  @ViewBuilder
+  private var reviewFindingsSection: some View {
+    if !execution.output.isEmpty {
+      let parsed = parseReviewOutput(execution.output)
+      if parsed.verdict != .unknown || !parsed.summary.isEmpty {
+        VStack(alignment: .leading, spacing: 6) {
+          // Verdict banner
+          HStack(spacing: 6) {
+            Image(systemName: parsed.verdict.systemImage)
+              .font(.callout)
+              .foregroundStyle(parsed.verdict.color)
+            Text(parsed.verdict.displayName)
+              .font(.caption)
+              .fontWeight(.semibold)
+              .foregroundStyle(parsed.verdict.color)
+            if !parsed.riskLevel.isEmpty {
+              Text(parsed.riskLevel)
+                .font(.caption2)
+                .fontWeight(.medium)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1)
+                .background(Capsule().fill(parsed.verdict.color.opacity(0.1)))
+                .foregroundStyle(parsed.verdict.color)
+            }
+          }
+
+          // Summary
+          if !parsed.summary.isEmpty {
+            Text(parsed.summary)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+              .lineLimit(4)
+              .textSelection(.enabled)
+          }
+
+          // Issues
+          if !parsed.issues.isEmpty {
+            VStack(alignment: .leading, spacing: 3) {
+              Label("Issues (\(parsed.issues.count))", systemImage: "exclamationmark.triangle")
+                .font(.caption2)
+                .fontWeight(.medium)
+                .foregroundStyle(.orange)
+              ForEach(Array(parsed.issues.prefix(5).enumerated()), id: \.offset) { _, issue in
+                HStack(alignment: .top, spacing: 4) {
+                  Image(systemName: "circle.fill")
+                    .font(.system(size: 4))
+                    .foregroundStyle(.orange)
+                    .padding(.top, 4)
+                  Text(issue)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                }
+              }
+              if parsed.issues.count > 5 {
+                Text("+\(parsed.issues.count - 5) more")
+                  .font(.caption2)
+                  .foregroundStyle(.tertiary)
+              }
+            }
+            .padding(6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 4).fill(.orange.opacity(0.05)))
+          }
+
+          // Suggestions
+          if !parsed.suggestions.isEmpty {
+            VStack(alignment: .leading, spacing: 3) {
+              Label("Suggestions (\(parsed.suggestions.count))", systemImage: "lightbulb")
+                .font(.caption2)
+                .fontWeight(.medium)
+                .foregroundStyle(.blue)
+              ForEach(Array(parsed.suggestions.prefix(5).enumerated()), id: \.offset) { _, suggestion in
+                HStack(alignment: .top, spacing: 4) {
+                  Image(systemName: "circle.fill")
+                    .font(.system(size: 4))
+                    .foregroundStyle(.blue)
+                    .padding(.top, 4)
+                  Text(suggestion)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                }
+              }
+              if parsed.suggestions.count > 5 {
+                Text("+\(parsed.suggestions.count - 5) more")
+                  .font(.caption2)
+                  .foregroundStyle(.tertiary)
+              }
+            }
+            .padding(6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 4).fill(.blue.opacity(0.05)))
           }
         }
       }

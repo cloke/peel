@@ -13,6 +13,10 @@ struct RunDetailView: View {
   @State private var prActionInProgress: String?
   @State private var prActionResult: String?
   @State private var prActionError: String?
+  @State private var fixRunId: String?
+  @State private var isPushing = false
+  @State private var pushResult: String?
+  @State private var pushError: String?
 
   var body: some View {
     ScrollView {
@@ -339,6 +343,51 @@ struct RunDetailView: View {
         .clipShape(RoundedRectangle(cornerRadius: 10))
       }
 
+      // Fix / Push actions
+      if !parsed.issues.isEmpty, isPRReview {
+        VStack(alignment: .leading, spacing: 8) {
+          if let chain = fixChain {
+            HStack(spacing: 6) {
+              ProgressView().controlSize(.small)
+              Text("Fix chain: \(chain.state.displayName)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+          } else if fixRunId == nil {
+            Button {
+              Task { await dispatchFix(issues: parsed.issues) }
+            } label: {
+              Label("Fix Issues", systemImage: "wrench.fill")
+            }
+            .buttonStyle(.bordered)
+            .tint(.orange)
+          }
+
+          if let fwr = fixWorktreeRun,
+             (fwr.status == .completed || fwr.status == .awaitingReview),
+             run.prContext?.headRef != nil {
+            Button {
+              Task { await pushFix() }
+            } label: {
+              Label(isPushing ? "Pushing…" : "Push Fix", systemImage: "arrow.up.circle.fill")
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(isPushing)
+          }
+
+          if let result = pushResult {
+            Label(result, systemImage: "checkmark.circle.fill")
+              .font(.caption)
+              .foregroundStyle(.green)
+          }
+          if let error = pushError {
+            Label(error, systemImage: "xmark.circle.fill")
+              .font(.caption)
+              .foregroundStyle(.red)
+          }
+        }
+      }
+
       // Raw output toggle
       DisclosureGroup("Raw Output", isExpanded: $showRawOutput) {
         Text(output)
@@ -375,6 +424,19 @@ struct RunDetailView: View {
   // MARK: - Progress
 
   private var isPRReview: Bool { run.kind == .prReview }
+
+  private var fixChain: AgentChain? {
+    guard let rid = fixRunId, let uuid = UUID(uuidString: rid),
+          let run = runner?.findRunBySourceChainRunId(uuid),
+          let cid = run.executions.first?.chainId
+    else { return nil }
+    return mcpServer?.agentManager.chains.first { $0.id == cid }
+  }
+
+  private var fixWorktreeRun: ParallelWorktreeRun? {
+    guard let rid = fixRunId, let uuid = UUID(uuidString: rid) else { return nil }
+    return runner?.findRunBySourceChainRunId(uuid)
+  }
 
   @ViewBuilder
   private var progressOverview: some View {
@@ -617,6 +679,108 @@ struct RunDetailView: View {
     guard let output = bestOutput else { return "Review comment via Peel." }
     let parsed = parseReviewOutput(output)
     return parsed.summary.isEmpty ? "Review comment via Peel." : parsed.summary
+  }
+
+  // MARK: - Fix / Push Workflow
+
+  private func dispatchFix(issues: [String]) async {
+    guard let ctx = run.prContext else { return }
+    let workDir = run.projectPath
+
+    let issuesList = issues.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
+    let rawContext = bestOutput ?? ""
+
+    let prompt = """
+    Fix the issues found in PR #\(ctx.prNumber) for \(ctx.repoOwner)/\(ctx.repoName).
+    Repository owner: \(ctx.repoOwner)
+    Repository name: \(ctx.repoName)
+    PR number: \(ctx.prNumber)
+    IMPORTANT: Before making any changes, use `github.pr.files` with \
+    owner="\(ctx.repoOwner)", repo="\(ctx.repoName)", pull_number=\(ctx.prNumber) to get \
+    the actual list of changed files and their patches from the PR. Only \
+    modify files that are part of the PR — do NOT grep for similar code elsewhere.
+
+    Issues to fix:
+    \(issuesList)
+
+    Full review context:
+    \(rawContext)
+
+    Instructions:
+    - Fix each issue in the file where it was found.
+    - Create a new commit that addresses these issues.
+    - Focus on code quality and correctness.
+    """
+
+    var arguments: [String: Any] = [
+      "prompt": prompt,
+      "workingDirectory": workDir,
+      "returnImmediately": true,
+      "chainSpec": [
+        "name": "Fix PR Issues",
+        "description": "Fix issues found during PR review",
+        "steps": [["role": "implementer", "model": "claude-sonnet-4.6", "name": "Fix Issues"]],
+      ] as [String: Any],
+    ]
+    arguments["baseBranch"] = ctx.headRef
+
+    guard let mcpServer else { return }
+    let (_, data) = await mcpServer.handleChainRun(id: nil, arguments: arguments)
+
+    if let resultDict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+      let chainData = resultDict["chainData"] as? [String: Any]
+      let queueData = chainData?["queue"] as? [String: Any]
+      let runId = (chainData?["runId"] as? String) ?? (queueData?["runId"] as? String)
+      if let runId {
+        fixRunId = runId
+        if let qi = mcpServer.prReviewQueue.find(
+          repoOwner: ctx.repoOwner, repoName: ctx.repoName, prNumber: ctx.prNumber
+        ) {
+          mcpServer.prReviewQueue.markFixing(qi, chainId: runId)
+        }
+      }
+    }
+  }
+
+  private func pushFix() async {
+    guard let ctx = run.prContext,
+          let runner,
+          let fwr = fixWorktreeRun,
+          let execution = fwr.executions.first
+    else {
+      pushError = "Cannot push — missing worktree run or PR head ref"
+      return
+    }
+
+    isPushing = true
+    pushError = nil
+    pushResult = nil
+
+    if let qi = mcpServer?.prReviewQueue.find(
+      repoOwner: ctx.repoOwner, repoName: ctx.repoName, prNumber: ctx.prNumber
+    ) {
+      mcpServer?.prReviewQueue.markPushing(qi)
+    }
+
+    let (output, exitCode) = await runner.pushExecutionBranch(execution, toRemoteRef: ctx.headRef, in: fwr)
+
+    if exitCode == 0 {
+      pushResult = "Pushed to origin/\(ctx.headRef)"
+      if let qi = mcpServer?.prReviewQueue.find(
+        repoOwner: ctx.repoOwner, repoName: ctx.repoName, prNumber: ctx.prNumber
+      ) {
+        mcpServer?.prReviewQueue.markPushed(qi, result: pushResult!)
+      }
+    } else {
+      pushError = "Push failed: \(output.trimmingCharacters(in: .whitespacesAndNewlines))"
+      if let qi = mcpServer?.prReviewQueue.find(
+        repoOwner: ctx.repoOwner, repoName: ctx.repoName, prNumber: ctx.prNumber
+      ) {
+        mcpServer?.prReviewQueue.markFailed(qi, error: pushError!)
+      }
+    }
+
+    isPushing = false
   }
 
   // MARK: - Child Runs (Manager)
