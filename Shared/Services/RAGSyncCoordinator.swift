@@ -4,13 +4,10 @@
 //
 //  Orchestrates on-demand P2P RAG index sharing:
 //  1. Subscribes to Firestore for remote index version updates
-//  2. When a newer version is available, connects to the peer via
-//     OnDemandPeerTransfer (LAN → WAN → WebRTC fallback)
+//  2. When a newer version is available, requests a pull via
+//     SwarmCoordinator's persistent WebRTC/TCP sessions
 //  3. Imports the received bundle via RAGArtifactSyncDelegate
 //  4. Publishes local index versions after indexing
-//
-//  WebRTC data channels are used when LAN/WAN direct TCP fails.
-//  ICE handles NAT traversal automatically.
 //
 
 import Foundation
@@ -37,18 +34,10 @@ public final class RAGSyncCoordinator {
   // MARK: - Dependencies
 
   private let versionService = RAGIndexVersionService.shared
-  private let peerTransfer = OnDemandPeerTransfer()
 
   /// The delegate that provides import/export of RAG bundles.
   /// Set by MCPServerService when it initializes (it conforms to RAGArtifactSyncDelegate).
   weak var ragSyncDelegate: RAGArtifactSyncDelegate?
-
-  /// Set the WebRTC signaling responder so the initiator can check whether
-  /// an active serve task is in progress before starting a new transfer.
-  var webrtcResponder: WebRTCSignalingResponder? {
-    get { peerTransfer.webrtcResponder }
-    set { peerTransfer.webrtcResponder = newValue }
-  }
 
   // MARK: - State
 
@@ -68,9 +57,11 @@ public final class RAGSyncCoordinator {
   /// History of completed syncs
   public private(set) var syncHistory: [SyncHistoryEntry] = []
 
-  /// Active transfer states (from OnDemandPeerTransfer)
-  public var activeTransfers: [UUID: OnDemandTransferState] {
-    peerTransfer.tracker.activeTransfers
+  /// Active transfer states (from SwarmCoordinator)
+  public var activeTransfers: [RAGArtifactTransferState] {
+    SwarmCoordinator.shared.ragTransfers.filter {
+      $0.status != .complete && $0.status != .failed
+    }
   }
 
   /// Available updates from remote peers
@@ -150,52 +141,41 @@ public final class RAGSyncCoordinator {
       throw RAGSyncError.invalidSwarmId
     }
 
-    guard let ragSyncDelegate else {
-      throw RAGSyncError.noDelegateConfigured
-    }
-
     // Normalize early so the identifier matches across machines
     let normalizedIdentifier = RepoRegistry.shared.normalizeRemoteURL(repoIdentifier)
 
-    // Find the worker — try cached list first, then fetch directly from Firestore
-    let firebase = FirebaseService.shared
-    var worker = firebase.swarmWorkers.first(where: { $0.id == fromWorkerId })
-    if worker == nil {
-      logger.info("Worker \(fromWorkerId) not in cached list (\(firebase.swarmWorkers.count) workers cached), fetching from Firestore...")
-      worker = try await firebase.fetchWorker(swarmId: swarmId, workerId: fromWorkerId)
-    }
-    guard let worker else {
-      throw RAGSyncError.workerNotFound(workerId: fromWorkerId)
-    }
-
     versionService.markSyncStarted(repoIdentifier: normalizedIdentifier)
-    logger.info("Starting sync of \(normalizedIdentifier) from \(worker.displayName)")
+    let workerName = FirebaseService.shared.swarmWorkers
+      .first(where: { $0.id == fromWorkerId })?.displayName ?? fromWorkerId
+    logger.info("Starting sync of \(normalizedIdentifier) from \(workerName)")
 
+    let startTime = Date()
     do {
-      let state = try await peerTransfer.requestIndex(
-        from: worker,
-        repoIdentifier: normalizedIdentifier,
-        swarmId: swarmId,
-        ragSyncDelegate: ragSyncDelegate
+      let transferId = try await SwarmCoordinator.shared.requestRagArtifactSync(
+        direction: .pull,
+        workerId: fromWorkerId,
+        repoIdentifier: normalizedIdentifier
       )
+
+      let state = try await SwarmCoordinator.shared.waitForTransferCompletion(transferId)
 
       syncHistory.append(SyncHistoryEntry(
         repoIdentifier: normalizedIdentifier,
-        fromWorkerName: worker.displayName,
-        connectionMethod: state.connectionMethod?.rawValue ?? "unknown",
+        fromWorkerName: workerName,
+        connectionMethod: "persistent-session",
         bytesTransferred: state.transferredBytes,
-        duration: state.elapsedSeconds,
+        duration: Date().timeIntervalSince(startTime),
         success: true
       ))
 
-      logger.info("Sync complete: \(normalizedIdentifier) from \(worker.displayName)")
+      logger.info("Sync complete: \(normalizedIdentifier) from \(workerName)")
     } catch {
       syncHistory.append(SyncHistoryEntry(
         repoIdentifier: normalizedIdentifier,
-        fromWorkerName: worker.displayName,
+        fromWorkerName: workerName,
         connectionMethod: "failed",
         bytesTransferred: 0,
-        duration: 0,
+        duration: Date().timeIntervalSince(startTime),
         success: false,
         errorMessage: error.localizedDescription
       ))

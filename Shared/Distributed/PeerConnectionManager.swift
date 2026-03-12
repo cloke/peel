@@ -62,9 +62,7 @@ public struct ConnectedPeer: Identifiable, Sendable {
 
 // MARK: - Continuation Box
 
-/// Thread-safe helper for ensuring continuation is resumed exactly once
-/// Thread-safe guard for continuation resumption.
-/// Internal access so OnDemandPeerTransfer can also use it.
+/// Thread-safe helper for ensuring continuation is resumed exactly once.
 final class ContinuationBox: @unchecked Sendable {
   private var _hasResumed = false
   private let lock = NSLock()
@@ -87,7 +85,6 @@ final class ContinuationBox: @unchecked Sendable {
 // MARK: - Peer Connection
 
 /// Wraps an NWConnection with framing for our protocol.
-/// Internal access so OnDemandPeerTransfer can also use it.
 actor PeerConnectionActor {
   let connection: NWConnection
   let peerId: String

@@ -1,6 +1,6 @@
 ---
 title: "Networking Replan: WebRTC-First Swarm Communication"
-status: draft
+status: in-progress
 tags:
   - networking
   - webrtc
@@ -257,31 +257,36 @@ enum PersistableEvent {
 
 ## Migration Plan
 
-### Phase 1: Foundation (do first)
+### Phase 1: Foundation ✅ COMPLETE
 
 **Goal:** Persistent WebRTC connections with multi-channel support.
 
-| Step | Description | Files |
-|------|-------------|-------|
-| 1.1 | Extend `WebRTCClient` to support multiple named data channels | `WebRTCClient.swift` |
-| 1.2 | Add `connect()` / `reconnect()` / keep-alive to `WebRTCClient` | `WebRTCClient.swift` |
-| 1.3 | Create `PeerSession` — wraps `WebRTCClient` with typed channel accessors | New: `PeerSession.swift` |
-| 1.4 | Create `PeerSessionManager` — manages session lifecycle | New: `PeerSessionManager.swift` |
-| 1.5 | Adapt `FirestoreWebRTCSignaling` for persistent connections (reconnect offers) | `FirestoreWebRTCSignaling.swift` |
-| 1.6 | Adapt `WebRTCSignalingResponder` to accept reconnect offers | `WebRTCSignalingResponder.swift` |
-| 1.7 | Wire `PeerSessionManager` into `SwarmCoordinator.start()` — on swarm join, establish persistent connections to all known workers | `SwarmCoordinator.swift` |
+| Step | Status | Description | Files |
+|------|--------|-------------|-------|
+| 1.1 | ✅ | Extend `WebRTCClient` to support multiple named data channels | `WebRTCClient.swift` |
+| 1.2 | ✅ | Add `connect()` / `reconnect()` / keep-alive to `WebRTCClient` | `WebRTCClient.swift` |
+| 1.3 | ✅ | Create `PeerSession` — wraps `WebRTCClient` with typed channel accessors | New: `PeerSession.swift` |
+| 1.4 | ✅ | Create `PeerSessionManager` — manages session lifecycle | New: `PeerSessionManager.swift` |
+| 1.5 | ✅ | Adapt `WebRTCSignalingResponder` for persistent sessions (routes `purpose="session"` to PeerSessionManager) | `WebRTCSignalingResponder.swift` |
+| 1.6 | ✅ | Wire `PeerSessionManager` into `SwarmCoordinator.start()` — on swarm join, establish persistent connections to all known workers | `SwarmCoordinator.swift` |
 
-### Phase 2: MCP Over WebRTC
+**Commits:** b491e8b (foundation files), edbeadd (signaling + coordinator wiring)
+
+### Phase 2: MCP Over WebRTC ✅ COMPLETE
 
 **Goal:** Task dispatch and tool calls flow over the `mcp` data channel.
 
-| Step | Description | Files |
-|------|-------------|-------|
-| 2.1 | Create `WebRTCMCPTransport` — JSON-RPC framing over data channel | New: `WebRTCMCPTransport.swift` |
-| 2.2 | Update `SwarmToolsHandler+TaskDispatch` — if peer session is connected, dispatch via WebRTC `mcp` channel; else fall back to Firestore | `SwarmToolsHandler+TaskDispatch.swift` |
-| 2.3 | Update worker-side task listener — accept tasks from both `mcp` channel and Firestore listener | `SwarmCoordinator.swift` (worker path) |
-| 2.4 | Route `swarm.direct-command` through `mcp` channel when connected | `SwarmToolsHandler+TaskDispatch.swift` |
-| 2.5 | Move heartbeats to `heartbeat` channel (unreliable) — Firestore heartbeat becomes periodic snapshot only | `SwarmCoordinator.swift` |
+| Step | Status | Description | Files |
+|------|--------|-------------|-------|
+| 2.1 | ✅ | Create `WebRTCMCPTransport` — JSON-RPC framing over data channel | New: `WebRTCMCPTransport.swift` |
+| 2.2 | ✅ | `SwarmCoordinator.sendMessage()` — checks WebRTC mcp channel first, falls back to TCP | `SwarmCoordinator.swift` |
+| 2.3 | ✅ | Worker-side WebRTC listener — `startListeningOnPeerSession()` reads PeerMessages from mcp channel, routes through existing handler | `SwarmCoordinator.swift` |
+| 2.4 | ✅ | `dispatchChain`, `dispatchToWorker`, `sendDirectCommand`, `sendDirectCommandAndWait` all use `sendMessage()` abstraction | `SwarmCoordinator.swift` |
+| 2.5 | ⏳ | Move heartbeats to `heartbeat` channel (unreliable) — Firestore heartbeat becomes periodic snapshot only | `SwarmCoordinator.swift` |
+
+**Note:** Step 2.2 changed from plan — transport abstraction lives in SwarmCoordinator.sendMessage() instead of SwarmToolsHandler, which is cleaner since dispatch methods are already in SwarmCoordinator.
+
+**Commits:** b491e8b (WebRTCMCPTransport), edbeadd (transport abstraction + listener)
 
 ### Phase 3: Transfer Channel Migration
 

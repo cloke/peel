@@ -986,39 +986,42 @@ struct RAGTabView: View {
     var syncFinished = false
 
     let syncTask = Task { @MainActor in
-      try await SwarmCoordinator.shared.requestRagSyncOnDemand(
-        repoIdentifier: repoIdentifier,
-        fromWorkerId: fromWorkerId
+      let transferId = try await SwarmCoordinator.shared.requestRagArtifactSync(
+        direction: .pull,
+        workerId: fromWorkerId,
+        repoIdentifier: repoIdentifier
       )
+      return transferId
     }
 
-    let coordinator = RAGSyncCoordinator.shared
+    // Wait briefly for the transfer to be recorded
+    try? await Task.sleep(for: .seconds(0.3))
+
+    let swarm = SwarmCoordinator.shared
     while !syncFinished && !Task.isCancelled {
-      if let transfer = coordinator.activeTransfers.values.first(where: {
-        $0.repoIdentifier == repoIdentifier && $0.targetWorkerId == fromWorkerId
+      if let transfer = swarm.ragTransfers.first(where: {
+        $0.repoIdentifier == repoIdentifier && $0.peerId == fromWorkerId
       }) {
-        let method = transfer.connectionMethod?.rawValue ?? "connecting"
         switch transfer.status {
-        case .connecting:
-          onDemandProgress = "Connecting (\(method))…"
-        case .handshaking:
-          onDemandProgress = "Handshaking via \(method)…"
+        case .queued:
+          onDemandProgress = "Queued…"
+        case .preparing:
+          onDemandProgress = "Preparing…"
         case .transferring:
-          let elapsed = Int(transfer.elapsedSeconds)
           if transfer.totalBytes > 0 && transfer.transferredBytes > 0 {
-            let pct = Int(transfer.progressFraction * 100)
-            onDemandProgress = "Downloading via \(method): \(pct)% [\(elapsed)s]"
-          } else if transfer.totalChunks > 0 {
-            onDemandProgress = "Uploading via \(method): \(transfer.chunksReceived)/\(transfer.totalChunks) chunks [\(elapsed)s]"
+            let pct = Int(transfer.progress * 100)
+            let elapsed = Int(Date().timeIntervalSince(transfer.startedAt))
+            onDemandProgress = "Downloading: \(pct)% [\(elapsed)s]"
           } else {
-            onDemandProgress = "Waiting for remote export via \(method)… [\(elapsed)s]"
+            let elapsed = Int(Date().timeIntervalSince(transfer.startedAt))
+            onDemandProgress = "Transferring… [\(elapsed)s]"
           }
-        case .importing:
+        case .applying:
           let byteStr = formatBytes(transfer.transferredBytes)
           onDemandProgress = "Importing \(byteStr)…"
         case .complete:
           syncFinished = true
-        case .failed:
+        case .failed, .stalled:
           syncFinished = true
         }
         persistRAGSyncAutomationState()
@@ -1028,8 +1031,8 @@ struct RAGTabView: View {
     }
 
     // Read final state
-    if let transfer = coordinator.activeTransfers.values.first(where: {
-      $0.repoIdentifier == repoIdentifier && $0.targetWorkerId == fromWorkerId
+    if let transfer = swarm.ragTransfers.first(where: {
+      $0.repoIdentifier == repoIdentifier && $0.peerId == fromWorkerId
     }) {
       switch transfer.status {
       case .complete:
@@ -1043,8 +1046,8 @@ struct RAGTabView: View {
           try? await Task.sleep(for: .seconds(8))
           if syncResultMessage != nil { syncResultMessage = nil }
         }
-      case .failed:
-        syncError = transfer.error ?? "On-demand sync failed"
+      case .failed, .stalled:
+        syncError = transfer.errorMessage ?? "On-demand sync failed"
         repoDetailAutomationLogger.error("RAG on-demand sync failed repo=\(self.repo.displayName, privacy: .public) worker=\(workerName, privacy: .public) error=\(self.syncError ?? "unknown", privacy: .public)")
       default:
         break
@@ -1052,7 +1055,7 @@ struct RAGTabView: View {
     } else {
       // If we can't find the transfer, check the task result
       do {
-        try await syncTask.value
+        _ = try await syncTask.value
         syncResultMessage = "Pulled from \(workerName)"
         repoDetailAutomationLogger.info("RAG on-demand sync finished without retained transfer state repo=\(self.repo.displayName, privacy: .public) worker=\(workerName, privacy: .public)")
         await mcpServer.refreshRagSummary()
@@ -1168,33 +1171,30 @@ struct RAGTabView: View {
   }
 
   private func pollExternalTransfers() async {
-    let coordinator = RAGSyncCoordinator.shared
+    let swarm = SwarmCoordinator.shared
     while !Task.isCancelled {
       if !isSyncing,
          let repoId = ragRepoIdentifier,
-         let transfer = coordinator.activeTransfers.values.first(where: {
+         let transfer = swarm.ragTransfers.first(where: {
            $0.repoIdentifier == repoId && $0.status != .complete && $0.status != .failed
          }) {
-        let method = transfer.connectionMethod?.rawValue ?? "connecting"
-        let worker = transfer.targetWorkerName
+        let worker = transfer.peerName
         switch transfer.status {
-        case .connecting:
-          externalOnDemandProgress = "MCP pull from \(worker): Connecting (\(method))…"
-        case .handshaking:
-          externalOnDemandProgress = "MCP pull from \(worker): Handshaking via \(method)…"
+        case .queued:
+          externalOnDemandProgress = "MCP pull from \(worker): Queued…"
+        case .preparing:
+          externalOnDemandProgress = "MCP pull from \(worker): Preparing…"
         case .transferring:
-          let elapsed = Int(transfer.elapsedSeconds)
+          let elapsed = Int(Date().timeIntervalSince(transfer.startedAt))
           if transfer.totalBytes > 0 && transfer.transferredBytes > 0 {
-            let pct = Int(transfer.progressFraction * 100)
-            externalOnDemandProgress = "MCP pull from \(worker): \(pct)% via \(method) [\(elapsed)s]"
-          } else if transfer.totalChunks > 0 {
-            externalOnDemandProgress = "MCP pull from \(worker): \(transfer.chunksReceived)/\(transfer.totalChunks) chunks via \(method) [\(elapsed)s]"
+            let pct = Int(transfer.progress * 100)
+            externalOnDemandProgress = "MCP pull from \(worker): \(pct)% [\(elapsed)s]"
           } else {
-            externalOnDemandProgress = "MCP pull from \(worker): Waiting for export via \(method)… [\(elapsed)s]"
+            externalOnDemandProgress = "MCP pull from \(worker): Transferring… [\(elapsed)s]"
           }
-        case .importing:
+        case .applying:
           externalOnDemandProgress = "MCP pull from \(worker): Importing \(formatBytes(transfer.transferredBytes))…"
-        case .complete, .failed:
+        case .complete, .failed, .stalled:
           externalOnDemandProgress = nil
         }
       } else if externalOnDemandProgress != nil {

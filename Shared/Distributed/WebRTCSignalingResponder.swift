@@ -87,12 +87,6 @@ public final class WebRTCSignalingResponder {
             self.respondedOffers.insert(docId)
 
             self.logger.info("WebRTC offer received from \(fromWorkerId) (purpose: \(purpose))")
-            P2PConnectionLog.shared.log("webrtc-responder", "Offer received", details: [
-              "fromWorkerId": fromWorkerId,
-              "purpose": purpose,
-              "docId": docId,
-              "hasDataProvider": String(self.dataProvider != nil),
-            ])
             await self.respondToOffer(
               swarmId: swarmId,
               fromWorkerId: fromWorkerId,
@@ -107,11 +101,6 @@ public final class WebRTCSignalingResponder {
     }
 
     logger.info("WebRTC signaling responder started for \(swarmIds.count) swarm(s)")
-    P2PConnectionLog.shared.log("webrtc-responder", "Signaling responder started", details: [
-      "swarmCount": String(swarmIds.count),
-      "deviceId": myDeviceId,
-      "hasDataProvider": String(dataProvider != nil),
-    ])
   }
 
   func stop() {
@@ -147,10 +136,7 @@ public final class WebRTCSignalingResponder {
     if purpose == "ping" || activeServeTask == nil {
       activeServeTask?.cancel()
     } else if let existing = activeServeTask, !existing.isCancelled {
-      logger.info("Skipping new offer — active transfer in progress")
-      P2PConnectionLog.shared.log("webrtc-responder", "Skipped offer, transfer in progress", details: [
-        "fromWorkerId": fromWorkerId,
-      ])
+      logger.info("Skipping new offer — active transfer in progress from \(fromWorkerId)")
       return
     }
 
@@ -195,17 +181,11 @@ public final class WebRTCSignalingResponder {
 
     // Transfer: serve data to remote peer
     guard let dataProvider else {
-      logger.warning("No data provider — cannot serve WebRTC transfer")
-      P2PConnectionLog.shared.log("webrtc-responder", "No data provider – cannot respond", details: [
-        "fromWorkerId": fromWorkerId,
-        "purpose": purpose,
-      ])
+      logger.warning("No data provider — cannot serve WebRTC transfer from \(fromWorkerId)")
       return
     }
 
-    P2PConnectionLog.shared.log("webrtc-responder", "Starting serveData", details: [
-      "fromWorkerId": fromWorkerId,
-    ])
+    logger.info("Starting serveData for \(fromWorkerId)")
 
     activeServeTask = Task {
       let taskStart = ContinuousClock.now
@@ -216,19 +196,10 @@ public final class WebRTCSignalingResponder {
         )
         await MainActor.run {
           self.logger.notice("[responder] serve completed in \(ContinuousClock.now - taskStart)")
-          P2PConnectionLog.shared.log("webrtc-responder", "Serve completed", details: [
-            "fromWorkerId": fromWorkerId,
-            "elapsed": "\(ContinuousClock.now - taskStart)",
-          ])
         }
       } catch {
         await MainActor.run {
           self.logger.error("[responder] serve failed after \(ContinuousClock.now - taskStart): \(error)")
-          P2PConnectionLog.shared.log("webrtc-responder", "Serve failed", details: [
-            "error": "\(error)",
-            "fromWorkerId": fromWorkerId,
-            "elapsed": "\(ContinuousClock.now - taskStart)",
-          ])
         }
       }
     }

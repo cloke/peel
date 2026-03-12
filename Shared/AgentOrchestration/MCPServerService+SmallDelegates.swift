@@ -216,9 +216,10 @@ extension MCPServerService: MCPToolHandlerDelegate {
 
     Task { @MainActor in
       do {
-        try await SwarmCoordinator.shared.requestRagSyncOnDemand(
-          repoIdentifier: repoIdentifier,
-          fromWorkerId: worker.id
+        _ = try await SwarmCoordinator.shared.requestRagArtifactSync(
+          direction: .pull,
+          workerId: worker.id,
+          repoIdentifier: repoIdentifier
         )
         UserDefaults.standard.set("pulled-wan", forKey: "repositories.rag.sync.status")
         await refreshRagSummary()

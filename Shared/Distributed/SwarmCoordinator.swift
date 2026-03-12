@@ -301,15 +301,6 @@ public final class SwarmCoordinator {
   /// Active WebRTC mcp channel listen tasks, keyed by peerId
   private var webrtcListenTasks: [String: Task<Void, Never>] = [:]
 
-  /// P2P log request listener (responds to remote log requests via Firestore)
-  private var logRequestListener: P2PLogRequestListener?
-
-  /// Firestore relay provider (serves RAG data through Firestore when direct P2P fails)
-  private var firestoreRelayProvider: FirestoreRelayProvider?
-
-  /// Whether the Firestore relay provider is currently active (for diagnostics)
-  public var isRelayProviderActive: Bool { firestoreRelayProvider != nil }
-
   /// Delegate
   public weak var delegate: SwarmCoordinatorDelegate?
 
@@ -418,7 +409,6 @@ public final class SwarmCoordinator {
     startNetworkMonitor()
     
     // Start auto-connecting to WAN peers discovered via Firestore
-    // NOTE: Always-on STUN removed — STUN is now on-demand via OnDemandPeerTransfer
     startWANAutoConnect()
 
     // Periodically retry LAN peers that were discovered but not connected
@@ -431,13 +421,6 @@ public final class SwarmCoordinator {
     // Start WebRTC signaling responder — watches Firestore for incoming
     // WebRTC SDP offers and completes data channel setup
     startWebRTCSignalingResponder()
-
-    // Start P2P log request listener — responds to remote log requests
-    startLogRequestListener()
-
-    // Start Firestore relay provider — serves RAG data through Firestore
-    // when direct P2P connections (LAN/WAN/STUN) all fail
-    startFirestoreRelayProvider()
 
     // Feed version + relay status into Firestore heartbeats
     configureFirestoreHeartbeatMetadata()
@@ -454,14 +437,8 @@ public final class SwarmCoordinator {
   public func reinitializeFirestoreServices() {
     guard isActive else { return }
     if webrtcSignalingResponder == nil {
-      P2PConnectionLog.shared.log("webrtc-responder", "Reinitializing (deferred from start)")
+      logger.info("WebRTC signaling responder: reinitializing (deferred from start)")
       startWebRTCSignalingResponder()
-    }
-    if logRequestListener == nil {
-      startLogRequestListener()
-    }
-    if firestoreRelayProvider == nil {
-      startFirestoreRelayProvider()
     }
 
     // Establish persistent WebRTC sessions to known workers
@@ -524,10 +501,6 @@ public final class SwarmCoordinator {
     for (_, task) in webrtcListenTasks { task.cancel() }
     webrtcListenTasks.removeAll()
     Task { await peerSessionManager.disconnectAll() }
-    logRequestListener?.stop()
-    logRequestListener = nil
-    firestoreRelayProvider?.stop()
-    firestoreRelayProvider = nil
     FirebaseService.shared.heartbeatMetadata = nil
     stopNetworkMonitor()
     stopWANAutoConnect()
@@ -648,7 +621,6 @@ public final class SwarmCoordinator {
         metadata["version"] = hash
         metadata["gitCommitHash"] = hash
       }
-      metadata["relayProviderActive"] = self?.isRelayProviderActive ?? false
       return metadata
     }
     FirebaseService.shared.onWorkersSnapshotChanged = { [weak self] in
@@ -720,17 +692,23 @@ public final class SwarmCoordinator {
       tasksCompleted: tasksCompleted,
       tasksFailed: tasksFailed,
       ragArtifacts: localRagArtifactStatus,
-      gitCommitHash: capabilities.gitCommitHash,
-      relayProviderActive: isRelayProviderActive
+      gitCommitHash: capabilities.gitCommitHash
     )
   }
 
   private func sendHeartbeat() async {
     guard role == .worker || role == .hybrid else { return }
     let status = currentWorkerStatus()
-    let peers = connectionManager?.getConnectedPeers() ?? []
-    for peer in peers {
-      try? await connectionManager?.send(.heartbeat(status: status), to: peer.id)
+    // Send to both TCP and WebRTC connected peers
+    var sentTo = Set<String>()
+    let webrtcPeers = await peerSessionManager.connectedPeers
+    for peerId in webrtcPeers {
+      try? await sendMessage(.heartbeat(status: status), to: peerId)
+      sentTo.insert(peerId)
+    }
+    let tcpPeers = connectionManager?.getConnectedPeers() ?? []
+    for peer in tcpPeers where !sentTo.contains(peer.id) {
+      try? await sendMessage(.heartbeat(status: status), to: peer.id)
     }
   }
   
@@ -771,7 +749,7 @@ public final class SwarmCoordinator {
       logger.info("Manual WAN connect: \(worker.displayName) has no WAN endpoint (wanAddress=\(worker.wanAddress ?? "nil"), wanPort=\(worker.wanPort.map(String.init) ?? "nil"))")
     }
 
-    // Direct TCP failed or no WAN endpoint — P2P data transfer uses WebRTC (via OnDemandPeerTransfer).
+    // Direct TCP failed or no WAN endpoint.
     // TCP peer connections require direct reachability (port forwarding / UPnP).
     throw DistributedError.connectionFailed(deviceId: worker.id, reason: "Direct TCP unreachable — use Firestore task dispatch for cross-network coordination")
   }
@@ -836,8 +814,7 @@ public final class SwarmCoordinator {
     wanAutoConnectTask = Task { [weak self] in
       guard let self else { return }
 
-      // NOTE: STUN discovery removed from startup — now on-demand via OnDemandPeerTransfer
-      // We still auto-connect to WAN peers that have direct addresses (port forwarding/UPnP)
+      // Auto-connect to WAN peers that have direct addresses (port forwarding/UPnP)
 
       // Initial attempt after a short delay (let listeners populate)
       try? await Task.sleep(for: .seconds(3))
@@ -940,7 +917,6 @@ public final class SwarmCoordinator {
     let firebaseService = FirebaseService.shared
     guard firebaseService.isSignedIn else {
       logger.info("Not signed in — skipping WebRTC signaling responder")
-      P2PConnectionLog.shared.log("webrtc-responder", "Skipped: not signed in")
       return
     }
 
@@ -949,11 +925,7 @@ public final class SwarmCoordinator {
     let swarmIds = eligibleSwarms.map(\.id)
 
     guard !swarmIds.isEmpty else {
-      logger.info("No swarms to listen for WebRTC offers")
-      P2PConnectionLog.shared.log("webrtc-responder", "Skipped: no eligible swarms", details: [
-        "totalSwarms": String(allSwarms.count),
-        "roles": allSwarms.map { "\($0.swarmName):\($0.role.rawValue)" }.joined(separator: ", "),
-      ])
+      logger.info("No eligible swarms for WebRTC offers (total: \(allSwarms.count))")
       return
     }
 
@@ -965,10 +937,6 @@ public final class SwarmCoordinator {
     }
     responder.start(swarmIds: swarmIds, myDeviceId: capabilities.deviceId)
     webrtcSignalingResponder = responder
-
-    // Wire up to RAGSyncCoordinator so initiator-side transfers can check
-    // whether an active serve task is in progress.
-    RAGSyncCoordinator.shared.webrtcResponder = responder
   }
 
   /// Start listening for PeerMessages on a peer session's mcp channel.
@@ -1005,61 +973,7 @@ public final class SwarmCoordinator {
 
   /// Handle a PeerMessage received over WebRTC. Routes to the same logic as TCP.
   private func handleWebRTCPeerMessage(_ message: PeerMessage, from peerId: String) {
-    guard let connectionManager else {
-      logger.warning("No connectionManager to route WebRTC message from \(peerId)")
-      return
-    }
-    // Delegate to the TCP message handler — same routing for all message types
-    self.connectionManager(connectionManager, didReceive: message, from: peerId)
-  }
-
-  /// Start the P2P log request listener for all member swarms.
-  private func startLogRequestListener() {
-    let firebaseService = FirebaseService.shared
-    guard firebaseService.isSignedIn else {
-      logger.info("Not signed in — skipping log request listener")
-      return
-    }
-
-    let swarmIds = firebaseService.memberSwarms
-      .filter { $0.role.canRegisterWorkers }
-      .map(\.id)
-
-    guard !swarmIds.isEmpty else {
-      logger.info("No swarms to listen for log requests")
-      return
-    }
-
-    let listener = P2PLogRequestListener()
-    listener.start(swarmIds: swarmIds, myDeviceId: capabilities.deviceId)
-    logRequestListener = listener
-  }
-
-  // MARK: - Firestore Relay Provider
-
-  /// Start the Firestore relay provider for all member swarms.
-  /// This watches for relay requests and serves RAG data through Firestore
-  /// when direct P2P connections are impossible.
-  private func startFirestoreRelayProvider() {
-    let firebaseService = FirebaseService.shared
-    guard firebaseService.isSignedIn else {
-      logger.info("Not signed in — skipping Firestore relay provider")
-      return
-    }
-
-    let swarmIds = firebaseService.memberSwarms
-      .filter { $0.role.canRegisterWorkers }
-      .map(\.id)
-
-    guard !swarmIds.isEmpty else {
-      logger.info("No swarms to listen for relay requests")
-      return
-    }
-
-    let provider = FirestoreRelayProvider()
-    provider.ragSyncDelegate = ragSyncDelegate
-    provider.start(swarmIds: swarmIds, myDeviceId: capabilities.deviceId)
-    firestoreRelayProvider = provider
+    handlePeerMessage(message, from: peerId)
   }
 
   // MARK: - Transport Abstraction
@@ -1253,29 +1167,6 @@ public final class SwarmCoordinator {
     localRagArtifactStatus = status
   }
 
-  /// Request an on-demand RAG index pull from a Firestore worker via OnDemandPeerTransfer.
-  /// This is used when no TCP-connected peers are available (WAN scenario).
-  /// Only supports pull direction — push requires an established TCP connection.
-  public func requestRagSyncOnDemand(
-    repoIdentifier: String,
-    fromWorkerId: String
-  ) async throws {
-    guard isActive else {
-      throw DistributedError.actorSystemNotReady
-    }
-
-    let firebaseService = FirebaseService.shared
-    guard let swarmId = firebaseService.memberSwarms.first?.id else {
-      throw DistributedError.connectionFailed(deviceId: fromWorkerId, reason: "No swarm membership found")
-    }
-
-    try await RAGSyncCoordinator.shared.syncIndex(
-      repoIdentifier: repoIdentifier,
-      fromWorkerId: fromWorkerId,
-      swarmId: swarmId
-    )
-  }
-
   /// Firestore workers that are online but not TCP-connected (available for on-demand pull).
   public var onDemandWorkers: [FirestoreWorker] {
     guard isActive else { return [] }
@@ -1313,10 +1204,15 @@ public final class SwarmCoordinator {
 
     let targetWorker: ConnectedPeer
     if let workerId {
-      guard let worker = connectedWorkers.first(where: { $0.id == workerId }) else {
+      if let worker = connectedWorkers.first(where: { $0.id == workerId }) {
+        targetWorker = worker
+      } else if await peerSessionManager.connectedPeers.contains(workerId) {
+        // WebRTC-only peer — construct a ConnectedPeer from Firestore metadata
+        let name = FirebaseService.shared.swarmWorkers.first(where: { $0.id == workerId })?.displayName ?? workerId
+        targetWorker = ConnectedPeer(id: workerId, name: name, capabilities: .current(), isIncoming: false)
+      } else {
         throw DistributedError.workerNotFound(deviceId: workerId)
       }
-      targetWorker = worker
     } else {
       guard let worker = SwarmPeerPreferences.defaultPeer(from: connectedWorkers) else {
         throw DistributedError.noWorkersAvailable
@@ -1345,7 +1241,7 @@ public final class SwarmCoordinator {
       )
     )
 
-    try await connectionManager?.send(
+    try await sendMessage(
       .ragArtifactsRequest(id: transferId, direction: direction, repoIdentifier: repoIdentifier, transferMode: transferMode),
       to: targetWorker.id
     )
@@ -1409,7 +1305,7 @@ public final class SwarmCoordinator {
           files: [RAGArtifactFileInfo(relativePath: "repo-overlay.json", sizeBytes: jsonData.count, sha256: "", modifiedAt: Date())],
           repos: []
         )
-        try await connectionManager?.send(.ragArtifactsManifest(id: transferId, manifest: manifest), to: peer.id)
+        try await sendMessage(.ragArtifactsManifest(id: transferId, manifest: manifest), to: peer.id)
 
         var offset = 0
         var chunkIndex = 0
@@ -1421,7 +1317,7 @@ public final class SwarmCoordinator {
             let base64 = await Task.detached(priority: .userInitiated) {
               chunkData.base64EncodedString()
             }.value
-            try await connectionManager?.send(
+            try await sendMessage(
               .ragArtifactsChunk(id: transferId, index: chunkIndex, total: totalChunks, data: base64),
               to: peer.id
             )
@@ -1433,7 +1329,7 @@ public final class SwarmCoordinator {
           chunkIndex += 1
         }
 
-        try await connectionManager?.send(.ragArtifactsComplete(id: transferId), to: peer.id)
+        try await sendMessage(.ragArtifactsComplete(id: transferId), to: peer.id)
         updateRagTransfer(transferId) { state in
           state.status = .complete
           state.completedAt = Date()
@@ -1487,7 +1383,7 @@ public final class SwarmCoordinator {
           files: [RAGArtifactFileInfo(relativePath: "repo-bundle.json", sizeBytes: jsonData.count, sha256: "", modifiedAt: Date())],
           repos: []
         )
-        try await connectionManager?.send(.ragArtifactsManifest(id: transferId, manifest: manifest), to: peer.id)
+        try await sendMessage(.ragArtifactsManifest(id: transferId, manifest: manifest), to: peer.id)
 
         // Send in chunks
         var offset = 0
@@ -1500,7 +1396,7 @@ public final class SwarmCoordinator {
             let base64 = await Task.detached(priority: .userInitiated) {
               chunkData.base64EncodedString()
             }.value
-            try await connectionManager?.send(
+            try await sendMessage(
               .ragArtifactsChunk(id: transferId, index: chunkIndex, total: totalChunks, data: base64),
               to: peer.id
             )
@@ -1512,7 +1408,7 @@ public final class SwarmCoordinator {
           chunkIndex += 1
         }
 
-        try await connectionManager?.send(.ragArtifactsComplete(id: transferId), to: peer.id)
+        try await sendMessage(.ragArtifactsComplete(id: transferId), to: peer.id)
         updateRagTransfer(transferId) { state in
           state.status = .complete
           state.completedAt = Date()
@@ -1536,7 +1432,7 @@ public final class SwarmCoordinator {
         state.manifestVersion = bundle.manifest.version
       }
 
-      try await connectionManager?.send(.ragArtifactsManifest(id: transferId, manifest: bundle.manifest), to: peer.id)
+      try await sendMessage(.ragArtifactsManifest(id: transferId, manifest: bundle.manifest), to: peer.id)
 
       let handle = try FileHandle(forReadingFrom: bundle.bundleURL)
       defer { try? handle.close() }
@@ -1550,7 +1446,7 @@ public final class SwarmCoordinator {
           let base64 = await Task.detached(priority: .userInitiated) {
             data.base64EncodedString()
           }.value
-          try await connectionManager?.send(
+          try await sendMessage(
             .ragArtifactsChunk(id: transferId, index: chunkIndex, total: totalChunks, data: base64),
             to: peer.id
           )
@@ -1561,7 +1457,7 @@ public final class SwarmCoordinator {
         chunkIndex += 1
       }
 
-      try await connectionManager?.send(.ragArtifactsComplete(id: transferId), to: peer.id)
+      try await sendMessage(.ragArtifactsComplete(id: transferId), to: peer.id)
       updateRagTransfer(transferId) { state in
         state.status = .complete
         state.completedAt = Date()
@@ -1767,7 +1663,7 @@ public final class SwarmCoordinator {
 
   private func sendRagArtifactError(transferId: UUID, to peerId: String, message: String) async {
     logger.error("RAG sync error \(transferId) to \(peerId): \(message)")
-    try? await connectionManager?.send(.ragArtifactsError(id: transferId, message: message), to: peerId)
+    try? await sendMessage(.ragArtifactsError(id: transferId, message: message), to: peerId)
   }
 
   private func updateRagTransfer(_ id: UUID, update: (inout RAGArtifactTransferState) -> Void) {
@@ -1782,6 +1678,22 @@ public final class SwarmCoordinator {
     if ragTransfers.count > 50 {
       ragTransfers.removeLast()
     }
+  }
+
+  /// Wait for a RAG transfer to reach a terminal state (.complete or .failed).
+  public func waitForTransferCompletion(_ id: UUID, timeout: Duration = .seconds(300)) async throws -> RAGArtifactTransferState {
+    let deadline = ContinuousClock.now + timeout
+    while ContinuousClock.now < deadline {
+      if let state = ragTransfers.first(where: { $0.id == id }) {
+        switch state.status {
+        case .complete: return state
+        case .failed: throw SwarmTransferError(message: state.errorMessage ?? "Transfer failed")
+        default: break
+        }
+      }
+      try await Task.sleep(for: .milliseconds(500))
+    }
+    throw SwarmTransferError(message: "Transfer \(id) timed out after \(timeout)")
   }
 
   // MARK: - RAG Transfer Checkpoint Persistence
@@ -1894,7 +1806,7 @@ public final class SwarmCoordinator {
           transfer.retryCount += 1
           logger.info("RAG transfer \(id) requesting resume (attempt \(transfer.retryCount)/\(self.ragTransferMaxRetries))")
           Task {
-            try? await connectionManager?.send(
+            try? await sendMessage(
               .ragArtifactsResumeRequest(
                 id: id,
                 receivedChunkIndices: transfer.receivedChunkIndices,
@@ -1993,7 +1905,7 @@ public final class SwarmCoordinator {
 
       // Send resume request to the peer
       Task {
-        try? await connectionManager?.send(
+        try? await sendMessage(
           .ragArtifactsResumeRequest(
             id: newId,
             receivedChunkIndices: cp.receivedChunkIndices,
@@ -2097,7 +2009,7 @@ public final class SwarmCoordinator {
         workerDeviceName: capabilities.deviceName,
         errorMessage: "Working directory not found on worker: \(resolvedWorkingDirectory). Remote URL: \(request.repoRemoteURL ?? "none"). Register this repo with the worker."
       )
-      try? await connectionManager?.send(.taskResult(result: result), to: peerId)
+      try? await sendMessage(.taskResult(result: result), to: peerId)
       completedResults.insert(result, at: 0)
       if completedResults.count > maxStoredResults {
         completedResults.removeLast()
@@ -2110,7 +2022,7 @@ public final class SwarmCoordinator {
     // Check with delegate if we should execute
     if let delegate = delegate, !delegate.swarmCoordinator(self, shouldExecute: request) {
       // Reject task
-      try? await connectionManager?.send(
+      try? await sendMessage(
         .taskRejected(taskId: request.id, reason: "Peel declined"),
         to: peerId
       )
@@ -2123,7 +2035,7 @@ public final class SwarmCoordinator {
     await sendHeartbeat()
     
     // Accept task
-    try? await connectionManager?.send(.taskAccepted(taskId: request.id), to: peerId)
+    try? await sendMessage(.taskAccepted(taskId: request.id), to: peerId)
     
     // Execute
     let startTime = Date()
@@ -2238,7 +2150,7 @@ public final class SwarmCoordinator {
     }
     
     // Send result
-    try? await connectionManager?.send(.taskResult(result: result), to: peerId)
+    try? await sendMessage(.taskResult(result: result), to: peerId)
     
     // Store result locally so worker UI and swarm.tasks can query it
     completedResults.insert(result, at: 0)
@@ -2267,7 +2179,7 @@ public final class SwarmCoordinator {
     guard role == .worker || role == .hybrid else {
       logger.warning("handleDirectCommand: Not in worker mode, ignoring")
       // Send error result back
-      try? await connectionManager?.send(
+      try? await sendMessage(
         .directCommandResult(id: id, exitCode: -1, output: "", error: "Not in worker mode"),
         to: peerId
       )
@@ -2353,7 +2265,7 @@ public final class SwarmCoordinator {
     }.value
     
     // Send result back (hops back to MainActor for the send)
-    try? await connectionManager?.send(
+    try? await sendMessage(
       .directCommandResult(id: id, exitCode: exitCode, output: output, error: errorOutput),
       to: peerId
     )
@@ -2450,6 +2362,19 @@ extension SwarmCoordinator: PeerConnectionDelegate {
   }
   
   public func connectionManager(_ manager: PeerConnectionManager, didReceive message: PeerMessage, from peerId: String) {
+    handlePeerMessage(message, from: peerId)
+  }
+  
+  public func connectionManager(_ manager: PeerConnectionManager, didFailWithError error: Error) {
+    logger.error("Connection error: \(error)")
+  }
+}
+
+// MARK: - Peer Message Handling (shared by WebRTC + TCP)
+
+extension SwarmCoordinator {
+  /// Unified handler for PeerMessages from any transport (WebRTC or TCP).
+  func handlePeerMessage(_ message: PeerMessage, from peerId: String) {
     switch message {
     case .taskRequest(let request):
       Task {
@@ -2460,19 +2385,14 @@ extension SwarmCoordinator: PeerConnectionDelegate {
       logger.debug("Task \(taskId) progress: \(progress) - \(message ?? "")")
       
     case .taskResult(let result):
-      // Resume the waiting continuation
       if let continuation = pendingTasks.removeValue(forKey: result.requestId) {
         continuation.resume(returning: result)
       }
-      // Update counters and store result
       if result.status == .completed {
         tasksCompleted += 1
-        // Mark branch as completed successfully
         branchQueue.completeBranch(taskId: result.requestId, status: .success)
         
-        // Auto-create PR if enabled and branch info is available
         if autoCreatePRs, let branchName = result.branchName, let repoPath = result.repoPath {
-          // Find the original prompt from outputs or use generic
           let prompt = result.outputs.first { $0.name.contains("summary") }?.content ?? "Swarm task completed"
           let agentOutput = result.outputs.first { $0.name.contains("agent") }?.content
           prQueue.createPRFromTask(
@@ -2485,10 +2405,8 @@ extension SwarmCoordinator: PeerConnectionDelegate {
         }
       } else {
         tasksFailed += 1
-        // Mark branch as needing review
         branchQueue.completeBranch(taskId: result.requestId, status: .needsReview)
       }
-      // Store result (most recent first, capped)
       completedResults.insert(result, at: 0)
       if completedResults.count > maxStoredResults {
         completedResults.removeLast()
@@ -2497,7 +2415,7 @@ extension SwarmCoordinator: PeerConnectionDelegate {
 
     case .heartbeat(let status):
       workerStatuses[peerId] = status
-      Task { try? await connectionManager?.send(.heartbeatAck, to: peerId) }
+      Task { try? await sendMessage(.heartbeatAck, to: peerId) }
       
     case .directCommand(let id, let command, let args, let workingDirectory):
       logger.info("Received directCommand: \(command) from \(peerId)")
@@ -2513,7 +2431,6 @@ extension SwarmCoordinator: PeerConnectionDelegate {
       if !output.isEmpty {
         logger.debug("Direct command output: \(output.prefix(500))")
       }
-      // Resume any pending continuation waiting for this result
       if let continuation = pendingDirectCommands.removeValue(forKey: id) {
         continuation.resume(returning: DirectCommandResult(exitCode: exitCode, output: output, error: error))
       }
@@ -2581,7 +2498,6 @@ extension SwarmCoordinator: PeerConnectionDelegate {
 
     case .ragArtifactsAck(let id, let receivedChunks, let receivedBytes):
       logger.debug("RAG ack for \(id): \(receivedChunks) chunks, \(receivedBytes) bytes")
-      // Update sender-side transfer progress tracking if needed
       updateRagTransfer(id) { state in
         state.transferredBytes = receivedBytes
       }
@@ -2600,10 +2516,6 @@ extension SwarmCoordinator: PeerConnectionDelegate {
     default:
       logger.debug("Received message: \(message.messageType) from \(peerId)")
     }
-  }
-  
-  public func connectionManager(_ manager: PeerConnectionManager, didFailWithError error: Error) {
-    logger.error("Connection error: \(error)")
   }
 }
 
@@ -2869,14 +2781,14 @@ extension SwarmCoordinator: WebRTCTransferDataProvider {
     let start = ContinuousClock.now
     log.notice("[exportRepoBundle] ENTER for \(repoIdentifier) (on MainActor: \(Thread.isMainThread))")
     guard let delegate = await ragSyncDelegate else {
-      throw OnDemandTransferError.remoteError(message: "No RAG sync delegate available")
+      throw SwarmTransferError(message: "No RAG sync delegate available")
     }
     let bundleStart = ContinuousClock.now
     guard let bundle = try await delegate.createRepoSyncBundle(
       repoIdentifier: repoIdentifier,
       excludeFileHashes: []
     ) else {
-      throw OnDemandTransferError.remoteError(message: "No bundle available for \(repoIdentifier)")
+      throw SwarmTransferError(message: "No bundle available for \(repoIdentifier)")
     }
     log.notice("[exportRepoBundle] createRepoSyncBundle: \(ContinuousClock.now - bundleStart) (on MainActor: \(Thread.isMainThread))")
     // Encode off main actor to avoid blocking UI
@@ -2887,4 +2799,11 @@ extension SwarmCoordinator: WebRTCTransferDataProvider {
     log.notice("[exportRepoBundle] encode: \(ContinuousClock.now - encodeStart), total: \(ContinuousClock.now - start), size: \(data.count) bytes")
     return data
   }
+}
+
+// MARK: - Error Types
+
+struct SwarmTransferError: LocalizedError {
+  let message: String
+  var errorDescription: String? { message }
 }
