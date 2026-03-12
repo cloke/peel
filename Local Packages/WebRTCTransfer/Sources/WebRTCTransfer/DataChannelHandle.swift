@@ -59,6 +59,9 @@ public final class DataChannelHandle: NSObject, @unchecked Sendable {
     var closedError: Error?
     var openContinuation: CheckedContinuation<Void, Error>?
     var bufferDrainContinuation: CheckedContinuation<Void, Error>?
+    /// Monotonic generation counter for messageWaiter. Prevents stale cancel
+    /// tasks from resuming a newer continuation after a receive timeout.
+    var waiterGeneration: UInt64 = 0
 
     func onOpen() {
       openContinuation?.resume()
@@ -108,6 +111,8 @@ public final class DataChannelHandle: NSObject, @unchecked Sendable {
       if !messageBuffer.isEmpty {
         return messageBuffer.removeFirst()
       }
+      waiterGeneration &+= 1
+      let myGeneration = waiterGeneration
       return try await withTaskCancellationHandler {
         try await withCheckedThrowingContinuation { cont in
           if !messageBuffer.isEmpty {
@@ -121,11 +126,16 @@ public final class DataChannelHandle: NSObject, @unchecked Sendable {
           }
         }
       } onCancel: {
-        Task { [weak self] in await self?.cancelMessageWaiter() }
+        Task { [weak self] in await self?.cancelMessageWaiter(generation: myGeneration) }
       }
     }
 
-    func cancelMessageWaiter() {
+    func cancelMessageWaiter(generation: UInt64) {
+      guard generation == waiterGeneration else {
+        // Stale cancel from a previous receive() — ignore to avoid killing
+        // the current waiter.
+        return
+      }
       messageWaiter?.resume(throwing: CancellationError())
       messageWaiter = nil
     }

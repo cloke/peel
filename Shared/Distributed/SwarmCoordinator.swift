@@ -144,6 +144,10 @@ public final class SwarmCoordinator {
   /// Pending incoming RAG artifact transfers
   private var incomingRagTransfers: [UUID: RAGIncomingTransfer] = [:]
 
+  /// Continuations waiting for a manifest ack from the receiver before sending chunks.
+  /// Keyed by transfer ID. Resumed with `true` when ack arrives, `false` on timeout.
+  private var manifestAckWaiters: [UUID: CheckedContinuation<Bool, Never>] = [:]
+
   /// Heartbeat loop task (worker/hybrid)
   private var heartbeatTask: Task<Void, Never>?
 
@@ -1090,6 +1094,12 @@ public final class SwarmCoordinator {
       nil
     }
 
+    if prefersTransferChannel && primaryChannel == nil {
+      let sessionExists = peerSessionManager.sessions[workerId] != nil
+      logger.warning("sendMessage: transfer channel NIL for \(workerId) (session exists: \(sessionExists)), falling to MCP")
+      traceMessage(direction: "OUT-WARN", peerId: workerId, type: "transfer-nil", detail: "session=\(sessionExists) msg=\(msgType)")
+    }
+
     if let channel = primaryChannel ?? fallbackWebRTCChannel {
       let data = try JSONEncoder().encode(message)
       do {
@@ -1542,10 +1552,7 @@ public final class SwarmCoordinator {
         try await sendMessage(.ragArtifactsManifest(id: transferId, manifest: manifest), to: peer.id)
         traceMessage(direction: "OUT", peerId: peer.id, type: "ragManifest-sent", detail: "id=\(transferId) bytes=\(jsonData.count) chunks=\(totalChunks)")
         if usesWebRTC {
-          // The first large SCTP message sent immediately after a small manifest can be
-          // dropped on the persistent WebRTC mcp channel. Give the receiver a brief
-          // scheduling window before chunk 0 so ordered delivery starts cleanly.
-          try await Task.sleep(for: .milliseconds(150))
+          await waitForManifestAck(transferId: transferId)
         }
 
         // Send in chunks
@@ -1602,10 +1609,7 @@ public final class SwarmCoordinator {
 
       try await sendMessage(.ragArtifactsManifest(id: transferId, manifest: bundle.manifest), to: peer.id)
       if usesWebRTC {
-        // The first large SCTP message sent immediately after a small manifest can be
-        // dropped on the persistent WebRTC mcp channel. Give the receiver a brief
-        // scheduling window before chunk 0 so ordered delivery starts cleanly.
-        try await Task.sleep(for: .milliseconds(150))
+        await waitForManifestAck(transferId: transferId)
       }
 
       let handle = try FileHandle(forReadingFrom: bundle.bundleURL)
@@ -1687,6 +1691,13 @@ public final class SwarmCoordinator {
       state.totalBytes = manifest.totalBytes
       state.manifestVersion = manifest.version
       state.transferredBytes = transfer.receivedBytes
+    }
+
+    // Ack the manifest so the sender knows we're ready for chunks.
+    // This replaces the unreliable 150ms sleep that failed to prevent
+    // chunk 0 from being silently dropped by the SCTP layer.
+    Task {
+      try? await sendMessage(.ragArtifactsAck(id: id, receivedChunks: 0, receivedBytes: 0), to: peerId)
     }
   }
 
@@ -1850,6 +1861,33 @@ public final class SwarmCoordinator {
     }
 
     incomingRagTransfers.removeValue(forKey: id)
+  }
+
+  /// Wait for the receiver to ack the manifest (confirming it's ready for chunks).
+  /// Falls back to a 500ms delay if the ack doesn't arrive within 2 seconds,
+  /// which handles receivers running older code without the ack.
+  private func waitForManifestAck(transferId: UUID) async {
+    let timeoutTask = Task { @MainActor [weak self] in
+      try await Task.sleep(for: .seconds(2))
+      if let waiter = self?.manifestAckWaiters.removeValue(forKey: transferId) {
+        waiter.resume(returning: false)
+      }
+    }
+
+    let gotAck = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+      manifestAckWaiters[transferId] = cont
+    }
+
+    timeoutTask.cancel()
+
+    if gotAck {
+      logger.info("Manifest ack received for \(transferId), proceeding with chunks")
+    } else {
+      // Receiver may be running older code without the ack, or ack was lost.
+      // Apply a longer fallback delay than the old 150ms.
+      try? await Task.sleep(for: .milliseconds(500))
+      logger.info("Manifest ack timeout for \(transferId), proceeding with 500ms fallback delay")
+    }
   }
 
   private func sendRagArtifactError(transferId: UUID, to peerId: String, message: String) async {
@@ -2870,6 +2908,9 @@ extension SwarmCoordinator {
 
     case .ragArtifactsAck(let id, let receivedChunks, let receivedBytes):
       logger.debug("RAG ack for \(id): \(receivedChunks) chunks, \(receivedBytes) bytes")
+      if receivedChunks == 0, let waiter = manifestAckWaiters.removeValue(forKey: id) {
+        waiter.resume(returning: true)
+      }
       updateRagTransfer(id) { state in
         state.transferredBytes = receivedBytes
       }
