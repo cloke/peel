@@ -129,6 +129,7 @@ public final class WebRTCSignalingResponder {
     offerSDP: String,
     purpose: String
   ) async {
+    logger.notice("[responder] respondToOffer: from=\(fromWorkerId) purpose=\(purpose) (on MainActor: \(Thread.isMainThread))")
     // Create signaling channel for this session
     let signaling = FirestoreWebRTCSignaling(
       swarmId: swarmId,
@@ -180,23 +181,26 @@ public final class WebRTCSignalingResponder {
     ])
 
     activeServeTask = Task {
+      let taskStart = ContinuousClock.now
       do {
         try await WebRTCPeerTransfer.serveData(
           signaling: signaling,
           dataProvider: dataProvider
         )
         await MainActor.run {
-          self.logger.info("WebRTC serve completed successfully")
+          self.logger.notice("[responder] serve completed in \(ContinuousClock.now - taskStart)")
           P2PConnectionLog.shared.log("webrtc-responder", "Serve completed", details: [
             "fromWorkerId": fromWorkerId,
+            "elapsed": "\(ContinuousClock.now - taskStart)",
           ])
         }
       } catch {
         await MainActor.run {
-          self.logger.error("WebRTC serve failed: \(error)")
+          self.logger.error("[responder] serve failed after \(ContinuousClock.now - taskStart): \(error)")
           P2PConnectionLog.shared.log("webrtc-responder", "Serve failed", details: [
             "error": "\(error)",
             "fromWorkerId": fromWorkerId,
+            "elapsed": "\(ContinuousClock.now - taskStart)",
           ])
         }
       }

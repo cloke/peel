@@ -2738,18 +2738,25 @@ extension SwarmCoordinator {
 
 extension SwarmCoordinator: WebRTCTransferDataProvider {
   public func exportRepoBundle(repoIdentifier: String) async throws -> Data {
+    let start = ContinuousClock.now
+    logger.notice("[exportRepoBundle] ENTER for \(repoIdentifier) (on MainActor: \(Thread.isMainThread))")
     guard let delegate = ragSyncDelegate else {
       throw OnDemandTransferError.remoteError(message: "No RAG sync delegate available")
     }
+    let bundleStart = ContinuousClock.now
     guard let bundle = try await delegate.createRepoSyncBundle(
       repoIdentifier: repoIdentifier,
       excludeFileHashes: []
     ) else {
       throw OnDemandTransferError.remoteError(message: "No bundle available for \(repoIdentifier)")
     }
+    logger.notice("[exportRepoBundle] createRepoSyncBundle: \(ContinuousClock.now - bundleStart) (on MainActor: \(Thread.isMainThread))")
     // Encode off main actor to avoid blocking UI
-    return try await Task.detached(priority: .userInitiated) {
+    let encodeStart = ContinuousClock.now
+    let data = try await Task.detached(priority: .userInitiated) {
       try JSONEncoder().encode(bundle)
     }.value
+    logger.notice("[exportRepoBundle] encode: \(ContinuousClock.now - encodeStart), total: \(ContinuousClock.now - start), size: \(data.count) bytes")
+    return data
   }
 }

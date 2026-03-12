@@ -93,43 +93,57 @@ public enum WebRTCPeerTransfer {
     }
 
     logger.info("Starting WebRTC transfer (initiator) for \(repoIdentifier)")
+    let transferStart = ContinuousClock.now
 
     // 1. Create data channel (must be before createOffer so it's in the SDP)
     try await client.createDataChannel(label: "rag-transfer")
 
     // 2. Set up ICE candidate forwarding to remote peer
+    var iceCandidatesSent = 0
     candidateTask = Task {
       await client.onLocalICECandidate { candidate in
-        Task { try? await signaling.sendCandidate(candidate) }
+        Task {
+          try? await signaling.sendCandidate(candidate)
+          iceCandidatesSent += 1
+        }
       }
     }
 
     // 3. Start receiving remote ICE candidates
+    var iceCandidatesReceived = 0
     remoteCandidateTask = Task {
       for await candidate in signaling.receiveCandidates() {
         try? await client.addICECandidate(candidate)
+        iceCandidatesReceived += 1
       }
     }
 
     // 4. Create and send SDP offer
+    var stageStart = ContinuousClock.now
     let offerSDP = try await client.createOffer()
+    logger.notice("[initiator] createOffer: \(ContinuousClock.now - stageStart)")
+    stageStart = ContinuousClock.now
     try await signaling.sendOffer(offerSDP)
-    logger.info("SDP offer sent, waiting for answer")
+    logger.notice("[initiator] sendOffer (Firestore write): \(ContinuousClock.now - stageStart)")
 
     // 5. Wait for SDP answer
+    stageStart = ContinuousClock.now
     let answerSDP = try await signaling.waitForAnswer(timeout: .seconds(30))
+    logger.notice("[initiator] waitForAnswer: \(ContinuousClock.now - stageStart)")
     try await client.setRemoteDescription(answerSDP, type: .answer)
-    logger.info("SDP answer received, waiting for data channel")
+    logger.notice("[initiator] ICE candidates so far: sent=\(iceCandidatesSent) received=\(iceCandidatesReceived)")
 
     // 6. Wait for data channel to open (ICE negotiation + DTLS handshake)
+    stageStart = ContinuousClock.now
     try await client.waitForDataChannelOpen(timeout: .seconds(30))
-    logger.info("Data channel open, sending request")
+    logger.notice("[initiator] data channel open: \(ContinuousClock.now - stageStart) (ICE: sent=\(iceCandidatesSent) recv=\(iceCandidatesReceived))")
 
     // 7. Send request
     let requestJSON = try JSONEncoder().encode(["repo": repoIdentifier])
     var requestMsg = Data([MessageType.request.rawValue])
     requestMsg.append(requestJSON)
     try await client.send(requestMsg)
+    logger.notice("[initiator] request sent, waiting for data")
 
     // 8. Receive data
     let result = try await receiveChunkedData(
@@ -139,7 +153,8 @@ public enum WebRTCPeerTransfer {
     )
 
     // Clean up — tasks cancelled by defer
-    logger.info("Transfer complete: \(result.count) bytes for \(repoIdentifier)")
+    let totalElapsed = ContinuousClock.now - transferStart
+    logger.notice("[initiator] transfer complete: \(result.count) bytes in \(totalElapsed) for \(repoIdentifier)")
     return result
   }
 
@@ -172,34 +187,45 @@ public enum WebRTCPeerTransfer {
     }
 
     logger.info("Starting WebRTC transfer (responder)")
+    let transferStart = ContinuousClock.now
 
     // 1. Set up ICE candidate forwarding
+    var iceCandidatesSent = 0
     await client.onLocalICECandidate { candidate in
-      Task { try? await signaling.sendCandidate(candidate) }
+      Task {
+        try? await signaling.sendCandidate(candidate)
+        iceCandidatesSent += 1
+      }
     }
 
     // 2. Start receiving remote ICE candidates
+    var iceCandidatesReceived = 0
     remoteCandidateTask = Task {
       for await candidate in signaling.receiveCandidates() {
         try? await client.addICECandidate(candidate)
+        iceCandidatesReceived += 1
       }
     }
 
     // 3. Wait for SDP offer
+    var stageStart = ContinuousClock.now
     let offerSDP = try await signaling.waitForOffer(timeout: .seconds(30))
     try await client.setRemoteDescription(offerSDP, type: .offer)
-    logger.info("SDP offer received, creating answer")
+    logger.notice("[responder] offer received: \(ContinuousClock.now - stageStart)")
 
     // 4. Create and send SDP answer
+    stageStart = ContinuousClock.now
     let answerSDP = try await client.createAnswer()
     try await signaling.sendAnswer(answerSDP)
-    logger.info("SDP answer sent, waiting for data channel")
+    logger.notice("[responder] answer sent (Firestore write): \(ContinuousClock.now - stageStart)")
 
     // 5. Wait for remote data channel
+    stageStart = ContinuousClock.now
     try await client.waitForRemoteDataChannel(timeout: .seconds(30))
-    logger.info("Data channel open, waiting for request")
+    logger.notice("[responder] data channel open: \(ContinuousClock.now - stageStart) (ICE: sent=\(iceCandidatesSent) recv=\(iceCandidatesReceived))")
 
     // 6. Wait for request
+    stageStart = ContinuousClock.now
     let requestData = try await client.receive(timeout: .seconds(30))
     guard requestData.first == MessageType.request.rawValue else {
       throw WebRTCError.transferFailed(reason: "Expected request message, got type \(requestData.first ?? 0)")
@@ -212,21 +238,27 @@ public enum WebRTCPeerTransfer {
       throw WebRTCError.transferFailed(reason: "Invalid request format")
     }
 
-    logger.info("Request received for \(repoIdentifier), exporting bundle")
+    logger.notice("[responder] request received for \(repoIdentifier): \(ContinuousClock.now - stageStart)")
 
     // 7. Export data
+    stageStart = ContinuousClock.now
+    logger.notice("[responder] calling exportRepoBundle (will hop to MainActor)...")
     let bundleData = try await dataProvider.exportRepoBundle(repoIdentifier: repoIdentifier)
-    logger.info("Bundle exported: \(bundleData.count) bytes, sending in chunks")
+    logger.notice("[responder] exportRepoBundle complete: \(bundleData.count) bytes in \(ContinuousClock.now - stageStart)")
 
     // 8. Send manifest
     try await sendManifest(client: client, totalBytes: bundleData.count)
+    logger.notice("[responder] manifest sent")
 
     // 9. Send chunked data
+    stageStart = ContinuousClock.now
     try await sendChunkedData(client: client, data: bundleData)
+    logger.notice("[responder] all chunks sent: \(ContinuousClock.now - stageStart)")
 
     // 10. Send complete
     try await client.send(Data([MessageType.complete.rawValue]))
-    logger.info("Transfer served: \(bundleData.count) bytes for \(repoIdentifier)")
+    let totalElapsed = ContinuousClock.now - transferStart
+    logger.notice("[responder] transfer served: \(bundleData.count) bytes for \(repoIdentifier) in \(totalElapsed)")
 
     // Give the peer a moment to receive the complete message
     try? await Task.sleep(for: .seconds(1))
@@ -248,6 +280,7 @@ public enum WebRTCPeerTransfer {
 
   private static func sendChunkedData(client: WebRTCClient, data: Data) async throws {
     let totalChunks = (data.count + chunkSize - 1) / chunkSize
+    logger.notice("[responder] sending \(totalChunks) chunks (\(data.count) bytes)")
     for i in 0..<totalChunks {
       let start = i * chunkSize
       let end = min(start + chunkSize, data.count)
@@ -261,6 +294,11 @@ public enum WebRTCPeerTransfer {
 
       // send() applies backpressure via bufferedAmount checking
       try await client.send(msg)
+
+      // Log progress every 50 chunks or on first/last
+      if i == 0 || i == totalChunks - 1 || (i + 1) % 50 == 0 {
+        logger.info("[responder] chunk \(i + 1)/\(totalChunks) sent")
+      }
     }
   }
 
@@ -290,7 +328,7 @@ public enum WebRTCPeerTransfer {
         let tcBytes = msg[5...8]
         totalBytes = Int(UInt32(bigEndian: tbBytes.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }))
         totalChunks = Int(UInt32(bigEndian: tcBytes.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }))
-        logger.info("Manifest: \(totalBytes) bytes in \(totalChunks) chunks")
+        logger.notice("[initiator] manifest: \(totalBytes) bytes in \(totalChunks) chunks")
 
       case .chunk:
         guard msg.count >= 5 else {
@@ -302,6 +340,12 @@ public enum WebRTCPeerTransfer {
         receivedChunks[chunkIndex] = Data(chunkData)
         bytesReceived += chunkData.count
         progressHandler?(bytesReceived, totalBytes)
+
+        // Log progress every 50 chunks or first/last
+        let chunkNum = Int(chunkIndex) + 1
+        if chunkNum == 1 || chunkNum == totalChunks || chunkNum % 50 == 0 {
+          logger.info("[initiator] chunk \(chunkNum)/\(totalChunks) (\(bytesReceived)/\(totalBytes) bytes)")
+        }
 
       case .complete:
         // Reassemble chunks in order

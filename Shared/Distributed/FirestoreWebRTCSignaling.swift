@@ -81,6 +81,7 @@ final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendabl
     // Delete any stale remote answer doc so we can detect a fresh one
     try? await remoteDocRef.delete()
 
+    let start = ContinuousClock.now
     try await myDocRef.setData([
       "type": "offer",
       "sdp": sdp,
@@ -90,10 +91,11 @@ final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendabl
       "createdAt": FieldValue.serverTimestamp(),
       "expiresAt": Timestamp(date: Date().addingTimeInterval(60)),
     ])
-    logger.info("SDP offer written to Firestore")
+    logger.notice("[signaling] SDP offer written: \(ContinuousClock.now - start)")
   }
 
   func sendAnswer(_ sdp: String) async throws {
+    let start = ContinuousClock.now
     try await myDocRef.setData([
       "type": "answer",
       "sdp": sdp,
@@ -102,7 +104,7 @@ final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendabl
       "createdAt": FieldValue.serverTimestamp(),
       "expiresAt": Timestamp(date: Date().addingTimeInterval(60)),
     ])
-    logger.info("SDP answer written to Firestore")
+    logger.notice("[signaling] SDP answer written: \(ContinuousClock.now - start)")
   }
 
   func waitForOffer(timeout: Duration) async throws -> String {
@@ -114,7 +116,9 @@ final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendabl
   }
 
   private func waitForSDP(docRef: DocumentReference, expectedType: String, timeout: Duration) async throws -> String {
-    try await withThrowingTaskGroup(of: String.self) { group in
+    logger.notice("[signaling] waiting for \(expectedType) (timeout: \(timeout))")
+    let waitStart = ContinuousClock.now
+    let result = try await withThrowingTaskGroup(of: String.self) { group in
       group.addTask { [weak self] in
         guard let self else { throw WebRTCSignalingError.signalingClosed }
         let box = SDPContinuationBox()
@@ -128,8 +132,9 @@ final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendabl
 
             box.setContinuation(cont)
 
-            let listener = docRef.addSnapshotListener { snapshot, error in
+            let listener = docRef.addSnapshotListener { [weak self] snapshot, error in
               if let error {
+                self?.logger.warning("[signaling] listener error for \(expectedType): \(error)")
                 box.resume(throwing: error)
                 return
               }
@@ -137,8 +142,12 @@ final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendabl
                 let type = data["type"] as? String,
                 type == expectedType,
                 let sdp = data["sdp"] as? String
-              else { return }
+              else {
+                self?.logger.debug("[signaling] listener fired for \(expectedType) but no match yet")
+                return
+              }
 
+              self?.logger.notice("[signaling] \(expectedType) received from Firestore")
               box.resume(returning: sdp)
             }
             box.setListener(listener)
@@ -158,6 +167,8 @@ final class FirestoreWebRTCSignaling: WebRTCSignalingChannel, @unchecked Sendabl
       }
       return result
     }
+    logger.notice("[signaling] \(expectedType) resolved in \(ContinuousClock.now - waitStart)")
+    return result
   }
 
   // MARK: - ICE Candidates

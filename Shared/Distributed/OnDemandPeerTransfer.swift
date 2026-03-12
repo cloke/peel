@@ -533,11 +533,17 @@ public final class OnDemandPeerTransfer {
 
   /// Import a received repo bundle into the local RAG store.
   private func importRepoBundle(data: Data, ragSyncDelegate: RAGArtifactSyncDelegate) async throws {
+    let start = ContinuousClock.now
+    logger.notice("[import] decoding \(data.count) bytes...")
     // Decode off main actor to avoid blocking UI
     let bundle = try await Task.detached(priority: .userInitiated) {
       try JSONDecoder().decode(RAGRepoExportBundle.self, from: data)
     }.value
+    logger.notice("[import] decode complete: \(ContinuousClock.now - start)")
+    let applyStart = ContinuousClock.now
+    logger.notice("[import] applying bundle (will hop to MainActor)...")
     _ = try await ragSyncDelegate.applyRepoSyncBundle(bundle, localRepoPath: nil, forceImportEmbeddings: true)
+    logger.notice("[import] apply complete: \(ContinuousClock.now - applyStart), total import: \(ContinuousClock.now - start)")
   }
 
 

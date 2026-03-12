@@ -420,7 +420,10 @@ public final class WebRTCClient: NSObject, Sendable {
 
     // Wait for buffer to drain if above high water mark
     if channel.bufferedAmount > Self.bufferHighWaterMark {
+      logger.debug("Backpressure: buffered=\(channel.bufferedAmount) > \(Self.bufferHighWaterMark), waiting for drain")
+      let drainStart = ContinuousClock.now
       try await state.waitForBufferDrain()
+      logger.debug("Backpressure: drained in \(ContinuousClock.now - drainStart)")
     }
 
     let buffer = RTCDataBuffer(data: data, isBinary: true)
@@ -465,7 +468,7 @@ extension WebRTCClient: RTCPeerConnectionDelegate {
   public func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {}
 
   public func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
-    logger.info("ICE connection state: \(String(describing: newState))")
+    logger.notice("ICE connection state: \(String(describing: newState)) (thread: \(Thread.isMainThread ? "main" : "bg"))")
     // Only fail on terminal states. `.disconnected` is transient — ICE will
     // attempt to recover via candidate pair switching. Treating it as fatal
     // was killing transfers after the first 64KB chunk.
@@ -501,7 +504,7 @@ extension WebRTCClient: RTCPeerConnectionDelegate {
 
 extension WebRTCClient: RTCDataChannelDelegate {
   public func dataChannelDidChangeState(_ dataChannel: RTCDataChannel) {
-    logger.info("Data channel state: \(String(describing: dataChannel.readyState))")
+    logger.notice("Data channel state: \(String(describing: dataChannel.readyState)) (thread: \(Thread.isMainThread ? "main" : "bg"))")
     if dataChannel.readyState == .open {
       Task { await state.onDataChannelOpen() }
     } else if dataChannel.readyState == .closed {
