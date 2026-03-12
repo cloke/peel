@@ -166,7 +166,13 @@ final class ChainToolsHandler: MCPToolHandler {
       requireRag: optionalBool("requireRag", from: arguments, default: false),
       skipReview: optionalBool("skipReview", from: arguments, default: false),
       dryRun: optionalBool("dryRun", from: arguments, default: false),
-      returnImmediately: optionalBool("returnImmediately", from: arguments, default: false)
+      returnImmediately: optionalBool("returnImmediately", from: arguments, default: false),
+      prNumber: arguments["prNumber"] as? Int,
+      prTitle: arguments["prTitle"] as? String,
+      prRepoOwner: arguments["prRepoOwner"] as? String,
+      prRepoName: arguments["prRepoName"] as? String,
+      prHeadRef: arguments["prHeadRef"] as? String,
+      prHtmlURL: arguments["prHtmlURL"] as? String
     )
     
     do {
@@ -436,6 +442,14 @@ struct ChainToolRunOptions {
   let skipReview: Bool
   let dryRun: Bool
   var returnImmediately: Bool = false
+
+  // PR review context (optional)
+  var prNumber: Int?
+  var prTitle: String?
+  var prRepoOwner: String?
+  var prRepoName: String?
+  var prHeadRef: String?
+  var prHtmlURL: String?
 }
 
 /// Result of starting a chain run

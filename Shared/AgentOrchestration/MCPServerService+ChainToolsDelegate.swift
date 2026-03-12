@@ -45,6 +45,25 @@ extension MCPServerService: ChainToolsHandlerDelegate {
     if options.dryRun || options.returnImmediately {
       arguments["returnImmediately"] = true
     }
+    // Pass through PR context
+    if let prNumber = options.prNumber {
+      arguments["prNumber"] = prNumber
+    }
+    if let prTitle = options.prTitle {
+      arguments["prTitle"] = prTitle
+    }
+    if let prRepoOwner = options.prRepoOwner {
+      arguments["prRepoOwner"] = prRepoOwner
+    }
+    if let prRepoName = options.prRepoName {
+      arguments["prRepoName"] = prRepoName
+    }
+    if let prHeadRef = options.prHeadRef {
+      arguments["prHeadRef"] = prHeadRef
+    }
+    if let prHtmlURL = options.prHtmlURL {
+      arguments["prHtmlURL"] = prHtmlURL
+    }
     
     let (status, data) = await handleChainRun(id: nil, arguments: arguments)
     

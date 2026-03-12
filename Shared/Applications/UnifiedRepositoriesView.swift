@@ -1266,7 +1266,7 @@ struct RepositoriesCommandCenter: View {
     let runningChains = aggregator.allActiveChains
     let pullsInProgress = aggregator.repositories.filter { $0.pullStatus == .pulling }
     let activeWorktrees = mcpServer.agentManager.workspaceManager.workspaces
-      .filter { $0.status == .active || $0.status == .ready }
+      .filter { $0.status == .active || $0.status == .creating }
 
     if !runningChains.isEmpty || !pullsInProgress.isEmpty || !activeWorktrees.isEmpty {
       VStack(alignment: .leading, spacing: 12) {

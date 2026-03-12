@@ -239,6 +239,14 @@ extension MCPServerService {
     let keepWorkspace = arguments["keepWorkspace"] as? Bool ?? false
     let requireRagUsage = arguments["requireRagUsage"] as? Bool ?? promptRules.requireRagByDefault
 
+    // PR review context (optional)
+    let prNumber = arguments["prNumber"] as? Int
+    let prTitle = arguments["prTitle"] as? String
+    let prRepoOwner = arguments["prRepoOwner"] as? String
+    let prRepoName = arguments["prRepoName"] as? String
+    let prHeadRef = arguments["prHeadRef"] as? String
+    let prHtmlURL = arguments["prHtmlURL"] as? String
+
     let (enqueuedAt, wasCancelled, queuePosition) = await acquireChainRunSlot(runId: runId, priority: priority)
     if wasCancelled {
       await telemetryProvider.warning("Queued chain cancelled", metadata: ["runId": runId.uuidString])
@@ -304,7 +312,24 @@ extension MCPServerService {
 
       // Route through RunManager when available (unified path), fallback to direct runner
       let run: ParallelWorktreeRun
-      if let mgr = runManager {
+      let isPRReview = prNumber != nil && prTitle != nil && prRepoOwner != nil && prRepoName != nil
+      if isPRReview, let mgr = runManager {
+        run = mgr.createPRReviewRun(
+          repoOwner: prRepoOwner!,
+          repoName: prRepoName!,
+          prNumber: prNumber!,
+          prTitle: prTitle!,
+          headRef: prHeadRef ?? baseBranch ?? "HEAD",
+          htmlURL: prHtmlURL ?? "",
+          prompt: prompt,
+          projectPath: projectPath,
+          templateName: template.name,
+          baseBranch: baseBranch ?? "HEAD",
+          runOptions: runOptions,
+          sourceChainRunId: runId,
+          operatorGuidance: guidance
+        )
+      } else if let mgr = runManager {
         run = mgr.createCodeChangeRun(
           prompt: prompt,
           projectPath: projectPath,

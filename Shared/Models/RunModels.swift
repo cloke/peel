@@ -60,7 +60,7 @@ struct PRRunContext: Sendable {
     ]
     if !htmlURL.isEmpty { d["htmlURL"] = htmlURL }
     if let v = reviewVerdict { d["reviewVerdict"] = v }
-    if let v = reviewOutput { d["reviewOutput"] = String(v.prefix(500)) }
+    if let v = reviewOutput { d["reviewOutput"] = String(v.prefix(2000)) }
     if let v = reviewModel { d["reviewModel"] = v }
     if let v = pushBranch { d["pushBranch"] = v }
     if let v = pushResult { d["pushResult"] = v }

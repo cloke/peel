@@ -633,6 +633,18 @@ struct ExecutionCard: View {
                 .font(.callout)
             }
           }
+
+          // Agent Output
+          if !execution.output.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Agent Output")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              Text(execution.output)
+                .font(.callout)
+                .textSelection(.enabled)
+            }
+          }
           
           // RAG Snippets
           if !execution.ragSnippets.isEmpty {

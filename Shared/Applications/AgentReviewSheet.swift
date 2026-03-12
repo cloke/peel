@@ -801,9 +801,17 @@ struct AgentReviewSheet: View {
       "templateId": selectedTemplate.templateId,
       "returnImmediately": true,
       "requireRagUsage": false,
+      "prNumber": target.prNumber,
+      "prTitle": target.prTitle,
+      "prRepoOwner": owner,
+      "prRepoName": repoName,
     ]
     if let headRef = target.headRef {
       arguments["baseBranch"] = headRef
+      arguments["prHeadRef"] = headRef
+    }
+    if let htmlURL = target.htmlURL {
+      arguments["prHtmlURL"] = htmlURL
     }
 
     let (_, data) = await mcp.handleChainRun(id: nil, arguments: arguments)

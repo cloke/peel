@@ -666,7 +666,12 @@ final class ParallelWorktreeRunner {
     kind: RunKind = .codeChange,
     prContext: PRRunContext? = nil
   ) -> ParallelWorktreeRun {
-    let taskTitle = templateName.map { "Chain: \($0)" } ?? "Chain Run"
+    let taskTitle: String
+    if let pr = prContext {
+      taskTitle = "PR #\(pr.prNumber): \(pr.prTitle)"
+    } else {
+      taskTitle = templateName.map { "Chain: \($0)" } ?? "Chain Run"
+    }
     let task = WorktreeTask(
       title: taskTitle,
       description: prompt,
@@ -1068,6 +1073,13 @@ final class ParallelWorktreeRunner {
       }
       
       execution.completedAt = Date()
+
+      // Propagate review output to PR context when this is a PR review run
+      if run.kind == .prReview {
+        run.prContext?.reviewOutput = result.output
+        run.prContext?.reviewVerdict = result.reviewVerdict?.rawValue
+        run.prContext?.phase = PRReviewPhase.reviewed
+      }
 
       do {
         execution.artifacts = try writeExecutionHandoffArtifacts(

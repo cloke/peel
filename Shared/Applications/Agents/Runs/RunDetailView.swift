@@ -22,6 +22,10 @@ struct RunDetailView: View {
           promptSection
           Divider()
         }
+        if let output = bestOutput, !output.isEmpty {
+          outputSection(output)
+          Divider()
+        }
         progressOverview
         if run.kind == .managerRun {
           Divider()
@@ -223,6 +227,28 @@ struct RunDetailView: View {
       Text("Prompt")
         .font(.headline)
       Text(run.prompt)
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .textSelection(.enabled)
+    }
+  }
+
+  // MARK: - Output
+
+  /// Prefer PR review output (the actual review) over raw execution output (tool call log)
+  private var bestOutput: String? {
+    if let reviewOutput = run.prContext?.reviewOutput, !reviewOutput.isEmpty {
+      return reviewOutput
+    }
+    return run.executions.first?.output
+  }
+
+  @ViewBuilder
+  private func outputSection(_ output: String) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text("Agent Output")
+        .font(.headline)
+      Text(output)
         .font(.callout)
         .foregroundStyle(.secondary)
         .textSelection(.enabled)
