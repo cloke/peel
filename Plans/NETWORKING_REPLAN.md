@@ -1,13 +1,13 @@
 ---
 title: "Networking Replan: WebRTC-First Swarm Communication"
-status: draft
+status: in-progress
 tags:
   - networking
   - webrtc
   - swarm
   - distributed
   - cleanup
-updated: 2026-03-11
+updated: 2026-06-09
 ---
 
 # Networking Replan: WebRTC-First Swarm Communication
@@ -140,7 +140,7 @@ These files are replaced by WebRTC's native capabilities or are already dead cod
 | `RepoRegistry.swift` | Path mapping, unrelated to transport |
 | `SwarmWorktreeManager.swift` | Git worktree management, unrelated to transport |
 | `WorkerMode.swift` | Worker CLI mode, unrelated to transport |
-| `PeelWorker.swift` | Worker representation, unrelated to transport |
+| `PeelWorker.swift` | Deleted in Phase 3 — `ChainExecutorProtocol` extracted to `ChainExecutor.swift` |
 | `SwarmPeerPreferences.swift` | Peer ordering preferences — adapt labels from "LAN/WAN" to connection quality |
 | `SwarmStatusView.swift` | UI — update to show WebRTC connection state instead of TCP |
 | `SwarmTaskOutputSheet.swift` | UI — unchanged |
@@ -257,48 +257,61 @@ enum PersistableEvent {
 
 ## Migration Plan
 
-### Phase 1: Foundation (do first)
+### Phase 1: Foundation ✅ COMPLETE
 
 **Goal:** Persistent WebRTC connections with multi-channel support.
 
-| Step | Description | Files |
-|------|-------------|-------|
-| 1.1 | Extend `WebRTCClient` to support multiple named data channels | `WebRTCClient.swift` |
-| 1.2 | Add `connect()` / `reconnect()` / keep-alive to `WebRTCClient` | `WebRTCClient.swift` |
-| 1.3 | Create `PeerSession` — wraps `WebRTCClient` with typed channel accessors | New: `PeerSession.swift` |
-| 1.4 | Create `PeerSessionManager` — manages session lifecycle | New: `PeerSessionManager.swift` |
-| 1.5 | Adapt `FirestoreWebRTCSignaling` for persistent connections (reconnect offers) | `FirestoreWebRTCSignaling.swift` |
-| 1.6 | Adapt `WebRTCSignalingResponder` to accept reconnect offers | `WebRTCSignalingResponder.swift` |
-| 1.7 | Wire `PeerSessionManager` into `SwarmCoordinator.start()` — on swarm join, establish persistent connections to all known workers | `SwarmCoordinator.swift` |
+| Step | Status | Description | Files |
+|------|--------|-------------|-------|
+| 1.1 | ✅ | Extend `WebRTCClient` to support multiple named data channels | `WebRTCClient.swift` |
+| 1.2 | ✅ | Add `connect()` / `reconnect()` / keep-alive to `WebRTCClient` | `WebRTCClient.swift` |
+| 1.3 | ✅ | Create `PeerSession` — wraps `WebRTCClient` with typed channel accessors | New: `PeerSession.swift` |
+| 1.4 | ✅ | Create `PeerSessionManager` — manages session lifecycle | New: `PeerSessionManager.swift` |
+| 1.5 | ✅ | Adapt `WebRTCSignalingResponder` for persistent sessions (routes `purpose="session"` to PeerSessionManager) | `WebRTCSignalingResponder.swift` |
+| 1.6 | ✅ | Wire `PeerSessionManager` into `SwarmCoordinator.start()` — on swarm join, establish persistent connections to all known workers | `SwarmCoordinator.swift` |
 
-### Phase 2: MCP Over WebRTC
+**Commits:** b491e8b (foundation files), edbeadd (signaling + coordinator wiring)
+
+### Phase 2: MCP Over WebRTC ✅ COMPLETE
 
 **Goal:** Task dispatch and tool calls flow over the `mcp` data channel.
 
-| Step | Description | Files |
-|------|-------------|-------|
-| 2.1 | Create `WebRTCMCPTransport` — JSON-RPC framing over data channel | New: `WebRTCMCPTransport.swift` |
-| 2.2 | Update `SwarmToolsHandler+TaskDispatch` — if peer session is connected, dispatch via WebRTC `mcp` channel; else fall back to Firestore | `SwarmToolsHandler+TaskDispatch.swift` |
-| 2.3 | Update worker-side task listener — accept tasks from both `mcp` channel and Firestore listener | `SwarmCoordinator.swift` (worker path) |
-| 2.4 | Route `swarm.direct-command` through `mcp` channel when connected | `SwarmToolsHandler+TaskDispatch.swift` |
-| 2.5 | Move heartbeats to `heartbeat` channel (unreliable) — Firestore heartbeat becomes periodic snapshot only | `SwarmCoordinator.swift` |
+| Step | Status | Description | Files |
+|------|--------|-------------|-------|
+| 2.1 | ✅ | Create `WebRTCMCPTransport` — JSON-RPC framing over data channel | New: `WebRTCMCPTransport.swift` |
+| 2.2 | ✅ | `SwarmCoordinator.sendMessage()` — checks WebRTC mcp channel first, falls back to TCP | `SwarmCoordinator.swift` |
+| 2.3 | ✅ | Worker-side WebRTC listener — `startListeningOnPeerSession()` reads PeerMessages from mcp channel, routes through existing handler | `SwarmCoordinator.swift` |
+| 2.4 | ✅ | `dispatchChain`, `dispatchToWorker`, `sendDirectCommand`, `sendDirectCommandAndWait` all use `sendMessage()` abstraction | `SwarmCoordinator.swift` |
+| 2.5 | ⏳ | Move heartbeats to `heartbeat` channel (unreliable) — Firestore heartbeat becomes periodic snapshot only | `SwarmCoordinator.swift` |
 
-### Phase 3: Transfer Channel Migration
+**Note:** Step 2.2 changed from plan — transport abstraction lives in SwarmCoordinator.sendMessage() instead of SwarmToolsHandler, which is cleaner since dispatch methods are already in SwarmCoordinator.
 
-**Goal:** RAG transfers use the persistent `transfer` data channel instead of on-demand connections.
+**Commits:** b491e8b (WebRTCMCPTransport), edbeadd (transport abstraction + listener)
 
-| Step | Description | Files |
-|------|-------------|-------|
-| 3.1 | Update `RAGArtifactSyncing` to use `PeerSession.transferChannel` | `RAGArtifactSyncing.swift` |
-| 3.2 | Existing chunked transfer protocol moves to the `transfer` channel (no protocol changes, just different lifecycle) | `WebRTCPeerTransfer.swift` |
-| 3.3 | Delete `OnDemandPeerTransfer.swift` | Delete |
-| 3.4 | Delete `PeerConnectionManager.swift` | Delete |
-| 3.5 | Delete `STUNClient.swift` | Delete |
-| 3.6 | Delete `WANAddressResolver.swift` | Delete |
-| 3.7 | Delete `FirestoreRelayTransfer.swift` | Delete |
-| 3.8 | Delete `LocalNetworkActorSystem.swift` | Delete |
-| 3.9 | Delete `P2PConnectionLog.swift` and `P2PLogRequestListener.swift` | Delete |
-| 3.10 | Fold diagnostics into `PeerSession` (connection events, RTT, ICE state) | `PeerSession.swift` |
+### Phase 3: Transfer Channel Migration & Legacy Cleanup ✅ COMPLETE
+
+**Goal:** RAG transfers use persistent sessions; delete all legacy transport code.
+
+| Step | Status | Description | Files |
+|------|--------|-------------|-------|
+| 3.1 | ✅ | Refactor `RAGSyncCoordinator` to delegate to `SwarmCoordinator.requestRagArtifactSync()` — removes `OnDemandPeerTransfer` dependency | `RAGSyncCoordinator.swift` |
+| 3.2 | ✅ | Add `waitForTransferCompletion()` to SwarmCoordinator for async transfer monitoring | `SwarmCoordinator.swift` |
+| 3.3 | ✅ | Broaden `requestRagArtifactSync()` to find WebRTC-only peers (not just TCP `connectedWorkers`) | `SwarmCoordinator.swift` |
+| 3.4 | ✅ | Delete `OnDemandPeerTransfer.swift` (~650 LOC) | Delete |
+| 3.5 | ✅ | Delete `STUNClient.swift` (~300 LOC) | Delete |
+| 3.6 | ✅ | Delete `FirestoreRelayTransfer.swift` (~150 LOC) | Delete |
+| 3.7 | ✅ | Delete `LocalNetworkActorSystem.swift` (~350 LOC) | Delete |
+| 3.8 | ✅ | Delete `PeelWorker.swift` (~100 LOC) — extract `ChainExecutorProtocol` to new `ChainExecutor.swift` | Delete + New |
+| 3.9 | ✅ | Delete `P2PConnectionLog.swift` (~55 LOC) and `P2PLogRequestListener.swift` (~90 LOC) | Delete |
+| 3.10 | ✅ | Replace all `P2PConnectionLog.shared.log()` with `Logger` in SwarmCoordinator and WebRTCSignalingResponder | Modified |
+| 3.11 | ✅ | Remove `requestRagSyncOnDemand()` bridge, `webrtcResponder` passthrough, `firestoreRelayProvider`, `logRequestListener` from SwarmCoordinator | Modified |
+| 3.12 | ✅ | Deprecate MCP tools: `swarm.p2p-logs`, `swarm.request-logs`, `swarm.stun-test` | `SwarmToolsHandler+PeerDiscovery.swift` |
+| 3.13 | ✅ | Update `RepoDetailRAGTabView` and `MCPServerService+SmallDelegates` to use new APIs | Modified |
+| — | ⏳ | Delete `PeerConnectionManager.swift` — still used as TCP fallback in `sendMessage()`. Deferred to Phase 5. | Deferred |
+| — | ⏳ | Delete `WANAddressResolver.swift` — still useful for diagnostics. Deferred to Phase 5. | Deferred |
+
+**Net LOC:** ~3,080 deleted, ~348 added (including ChainExecutor extraction)
+**Commits:** 384b9dc
 
 ### Phase 4: Persistence & Chat
 

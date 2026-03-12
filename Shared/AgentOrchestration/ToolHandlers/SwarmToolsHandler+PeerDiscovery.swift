@@ -13,6 +13,7 @@
 //
 
 import Foundation
+import os.log
 import MCPCore
 import WebRTCTransfer
 
@@ -254,8 +255,7 @@ extension SwarmToolsHandler {
           "uptimeSeconds": status?.uptimeSeconds as Any,
           "tasksCompleted": status?.tasksCompleted as Any,
           "tasksFailed": status?.tasksFailed as Any,
-          "gitCommitHash": status?.gitCommitHash as Any,
-          "relayProviderActive": status?.relayProviderActive as Any
+          "gitCommitHash": status?.gitCommitHash as Any
         ],
         "ragArtifacts": [
           "manifestVersion": rag?.manifestVersion as Any,
@@ -325,7 +325,6 @@ extension SwarmToolsHandler {
         "deviceName": coordinator.capabilities.deviceName,
         "deviceId": coordinator.capabilities.deviceId,
         "gitCommitHash": coordinator.capabilities.gitCommitHash as Any,
-        "relayProviderActive": coordinator.isRelayProviderActive
       ],
       "peers": peers,
       "discovered": discovered,
@@ -341,7 +340,6 @@ extension SwarmToolsHandler {
             "lastHeartbeat": formatter.string(from: w.lastHeartbeat),
             "version": w.version as Any,
             "gitCommitHash": w.gitCommitHash as Any,
-            "relayProviderActive": w.relayProviderActive,
             "wanAddress": w.wanAddress as Any,
             "wanPort": w.wanPort.map { Int($0) } as Any,
             "lanAddress": w.lanAddress as Any,
@@ -353,17 +351,15 @@ extension SwarmToolsHandler {
       "ragTransfers": transfers,
       "onDemandSyncs": {
         let syncCoord = RAGSyncCoordinator.shared
-        let active = syncCoord.activeTransfers.values.map { t in
+        let active = syncCoord.activeTransfers.map { t in
           [
             "id": t.id.uuidString,
-            "targetWorker": t.targetWorkerName,
-            "repo": t.repoIdentifier,
+            "peerName": t.peerName,
+            "repo": t.repoIdentifier as Any,
             "status": t.status.rawValue,
-            "connectionMethod": t.connectionMethod?.rawValue as Any,
             "transferredBytes": t.transferredBytes,
             "totalBytes": t.totalBytes,
-            "elapsedSeconds": t.elapsedSeconds,
-            "error": t.error as Any,
+            "error": t.errorMessage as Any,
           ] as [String: Any]
         }
         let history = syncCoord.syncHistory.suffix(5).map { h in
@@ -385,13 +381,6 @@ extension SwarmToolsHandler {
         ] as [String: Any]
       }(),
       "localRagArtifacts": localRagPayload,
-      "p2pConnectionLog": {
-        let log = P2PConnectionLog.shared
-        return [
-          "entryCount": log.entries.count,
-          "recentEntries": Array(log.toJSON().suffix(50)),
-        ] as [String: Any]
-      }(),
       "messageListeners": FirebaseService.shared.messageListenerDiagnostics(),
       "workerListeners": {
         let diag = FirebaseService.shared.workerListenerDiagnostics
@@ -598,56 +587,21 @@ extension SwarmToolsHandler {
     ]))
   }
 
-  // MARK: - swarm.p2p-logs
+  // MARK: - swarm.p2p-logs (deprecated)
 
   func handleP2PLogs(id: Any?, arguments: [String: Any]) -> (Int, Data) {
-    let log = P2PConnectionLog.shared
-    let limit = arguments["limit"] as? Int ?? 100
-
-    let entries = Array(log.toJSON().suffix(limit))
-
     return (200, makeResult(id: id, result: [
-      "entryCount": log.entries.count,
-      "showing": entries.count,
-      "entries": entries,
+      "deprecated": true,
+      "message": "P2P connection logs have been replaced by WebRTC session diagnostics. Use swarm.diagnostics instead.",
     ]))
   }
 
-  // MARK: - swarm.request-logs
+  // MARK: - swarm.request-logs (deprecated)
 
   func handleRequestLogs(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    guard coordinator.isActive else {
-      return serviceNotActiveError(id: id, service: "Swarm", hint: "Call swarm.start first")
-    }
-
-    // Resolve target worker
-    let targetWorkerName = arguments["targetWorkerName"] as? String
-    let targetWorkerId = arguments["targetWorkerId"] as? String
-
-    guard let workerId = resolveWorkerId(name: targetWorkerName, id: targetWorkerId) else {
-      return missingParamError(id: id, param: "targetWorkerName or targetWorkerId")
-    }
-
-    // Find swarm ID
-    guard let swarmId = FirebaseService.shared.memberSwarms.first(where: { $0.role.canRegisterWorkers })?.id else {
-      return internalError(id: id, message: "No active swarm found")
-    }
-
-    let timeout = TimeInterval(arguments["timeout"] as? Int ?? 30)
-
-    guard let result = await P2PLogRequestListener.requestLogs(
-      fromWorkerId: workerId,
-      swarmId: swarmId,
-      timeout: timeout
-    ) else {
-      return internalError(id: id, message: "Log request timed out after \(Int(timeout))s — worker may not be running or have the log request listener active")
-    }
-
     return (200, makeResult(id: id, result: [
-      "success": true,
-      "responderName": result.responderName,
-      "entryCount": result.entryCount,
-      "logs": result.logs,
+      "deprecated": true,
+      "message": "Remote log requests have been replaced by WebRTC session diagnostics. Use swarm.diagnostics instead.",
     ]))
   }
 
@@ -728,98 +682,12 @@ extension SwarmToolsHandler {
     }
   }
 
-  // MARK: - swarm.stun-test
+  // MARK: - swarm.stun-test (deprecated)
 
   func handleStunTest(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    let localPort = UInt16(arguments["localPort"] as? Int ?? 8766)
-
-    // Query multiple STUN servers to detect NAT type
-    let servers: [(host: String, port: UInt16)] = [
-      ("stun.l.google.com", 19302),
-      ("stun1.l.google.com", 19302),
-      ("stun.cloudflare.com", 3478),
-      ("stun2.l.google.com", 19302),
-    ]
-
-    var results: [[String: Any]] = []
-    var discoveredPorts: Set<UInt16> = []
-    var discoveredAddresses: Set<String> = []
-
-    for server in servers {
-      if let result = await STUNClient.queryServer(
-        host: server.host,
-        port: server.port,
-        localPort: localPort,
-        timeout: 5
-      ) {
-        results.append([
-          "server": "\(server.host):\(server.port)",
-          "externalAddress": result.address,
-          "externalPort": Int(result.port),
-          "latencyMs": result.latencyMs,
-        ])
-        discoveredPorts.insert(result.port)
-        discoveredAddresses.insert(result.address)
-      } else {
-        results.append([
-          "server": "\(server.host):\(server.port)",
-          "error": "No response (timeout or blocked)",
-        ])
-      }
-    }
-
-    // Analyze NAT type based on port consistency
-    let natType: String
-    let holePunchViable: Bool
-    if results.isEmpty || discoveredPorts.isEmpty {
-      natType = "unknown (all servers failed)"
-      holePunchViable = false
-    } else if discoveredPorts.count == 1 {
-      natType = "Endpoint Independent Mapping (cone NAT)"
-      holePunchViable = true
-    } else if discoveredPorts.count <= 2 {
-      natType = "Address Dependent Mapping (restricted cone)"
-      holePunchViable = true  // Usually works with coordination
-    } else {
-      natType = "Endpoint Dependent Mapping (symmetric NAT)"
-      holePunchViable = false
-    }
-
-    // NAT traversal now handled by WebRTC — STUN diagnostics still useful for NAT type detection
-    let currentSTUN: [String: Any] = ["note": "NAT traversal uses WebRTC (STUN/TURN handled automatically)"]
-
-    // Check what Firestore knows about our STUN endpoint
-    let service = FirebaseService.shared
-    let firestoreEndpoint: [String: Any]
-    if let myWorker = service.swarmWorkers.first(where: { $0.id == coordinator.capabilities.deviceId }) {
-      firestoreEndpoint = [
-        "stunAddress": myWorker.stunAddress as Any,
-        "stunPort": myWorker.stunPort.map { Int($0) } as Any,
-        "wanAddress": myWorker.wanAddress as Any,
-        "wanPort": myWorker.wanPort.map { Int($0) } as Any,
-        "hasSTUNEndpoint": myWorker.hasSTUNEndpoint,
-        "hasWANEndpoint": myWorker.hasWANEndpoint,
-      ]
-    } else {
-      firestoreEndpoint = ["note": "Not registered as Firestore worker"]
-    }
-
     return (200, makeResult(id: id, result: [
-      "localPort": Int(localPort),
-      "serverResults": results,
-      "analysis": [
-        "natType": natType,
-        "holePunchViable": holePunchViable,
-        "uniqueExternalPorts": discoveredPorts.sorted().map { Int($0) },
-        "uniqueExternalAddresses": Array(discoveredAddresses),
-        "serversResponded": results.filter { $0["error"] == nil }.count,
-        "serversFailed": results.filter { $0["error"] != nil }.count,
-      ],
-      "currentSwarmSTUN": currentSTUN,
-      "firestoreEndpoint": firestoreEndpoint,
-      "recommendations": holePunchViable
-        ? ["NAT type supports hole punching. Ensure both peers have STUN endpoints in Firestore and both are online simultaneously."]
-        : ["Symmetric NAT detected — STUN hole punching will NOT work. Use Firestore relay (forceRelay: true) or configure port forwarding on your router."],
+      "deprecated": true,
+      "message": "STUN test is no longer needed. NAT traversal is now handled automatically by WebRTC ICE. Use swarm.webrtc-ping to test connectivity.",
     ]))
   }
 
@@ -1018,11 +886,8 @@ extension SwarmToolsHandler {
           try await syncCoordinator.syncIndex(repoIdentifier: repoIdentifier)
         }
       } catch {
-        // Log the error so background failures are visible in diagnostics
-        P2PConnectionLog.shared.log("rag-sync", "Background sync failed", details: [
-          "repoIdentifier": repoIdentifier,
-          "error": "\(error)",
-        ])
+        Logger(subsystem: "com.peel.swarm", category: "RAGSync")
+          .error("Background sync failed for \(repoIdentifier): \(error)")
       }
     }
 
