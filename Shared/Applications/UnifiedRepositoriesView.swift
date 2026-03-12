@@ -610,6 +610,7 @@ struct RepositoriesCommandCenter: View {
   @State private var selectedPRDetail: PRDetailIdentifier?
   @State private var selectedRunForReview: ParallelWorktreeRun?
   @State private var expandedExecutions: Set<UUID> = []
+  @State private var selectedExecution: ParallelWorktreeExecution?
   @State private var showAllPRs = false
 
   // Activity feed state (merged from ActivityDashboardView)
@@ -700,24 +701,27 @@ struct RepositoriesCommandCenter: View {
         selectedPRDetail = nil
       }
     } else if let run = selectedRunForReview,
-              let runner = mcpServer.parallelWorktreeRunner {
-      ScrollView {
-        VStack(alignment: .leading, spacing: 12) {
+              let mgr = mcpServer.runManager {
+      VStack(alignment: .leading, spacing: 0) {
+        HStack {
           Button {
             selectedRunForReview = nil
           } label: {
             Label("Back to Command Center", systemImage: "chevron.left")
           }
           .buttonStyle(.plain)
-
-          WorktreeRunApprovalCard(
-            run: run,
-            runner: runner,
-            expandedExecutions: $expandedExecutions,
-            onDismiss: { selectedRunForReview = nil }
-          )
+          Spacer()
         }
-        .padding(20)
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+
+        RunDetailView(
+          run: run,
+          runManager: mgr,
+          runner: mcpServer.parallelWorktreeRunner,
+          mcpServer: mcpServer,
+          selectedExecution: $selectedExecution
+        )
       }
     } else {
       ScrollView {

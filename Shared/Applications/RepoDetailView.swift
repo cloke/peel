@@ -229,6 +229,7 @@ struct OverviewTabView: View {
   @State private var selectedChain: AgentChain?
   @State private var selectedRunForReview: ParallelWorktreeRun?
   @State private var expandedExecutions: Set<UUID> = []
+  @State private var selectedExecution: ParallelWorktreeExecution?
   @State private var refreshTimer: Timer?
 
   private var repoRuns: [ParallelWorktreeRun] {
@@ -267,24 +268,27 @@ struct OverviewTabView: View {
         selectedPRDetail = nil
       }
     } else if let run = selectedRunForReview,
-              let runner = mcpServer.parallelWorktreeRunner {
-      ScrollView {
-        VStack(alignment: .leading, spacing: 12) {
+              let mgr = mcpServer.runManager {
+      VStack(alignment: .leading, spacing: 0) {
+        HStack {
           Button {
             selectedRunForReview = nil
           } label: {
             Label("Back to Overview", systemImage: "chevron.left")
           }
           .buttonStyle(.plain)
-
-          WorktreeRunApprovalCard(
-            run: run,
-            runner: runner,
-            expandedExecutions: $expandedExecutions,
-            onDismiss: { selectedRunForReview = nil }
-          )
+          Spacer()
         }
-        .padding(16)
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+
+        RunDetailView(
+          run: run,
+          runManager: mgr,
+          runner: mcpServer.parallelWorktreeRunner,
+          mcpServer: mcpServer,
+          selectedExecution: $selectedExecution
+        )
       }
     } else {
       ScrollView {
