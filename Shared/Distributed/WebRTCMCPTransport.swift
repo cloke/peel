@@ -60,6 +60,8 @@ public actor WebRTCMCPTransport {
   // MARK: - Send Request
 
   /// Send a JSON-RPC request and wait for the correlated response.
+  /// Uses a task-group race between the response and a timeout to avoid
+  /// the continuation double-resume race from the old timeout-task approach.
   public func sendRequest(_ json: Data, timeout: Duration = .seconds(30)) async throws -> Data {
     guard let parsed = try? JSONSerialization.jsonObject(with: json) as? [String: Any],
       let id = parsed["id"]
@@ -68,19 +70,25 @@ public actor WebRTCMCPTransport {
     }
     let idString = "\(id)"
 
-    // Send the request
+    // Send the request before setting up the response waiter
     try await channel.send(json)
 
-    // Set up timeout task
-    let timeoutTask = Task { [weak self] in
-      try? await Task.sleep(for: timeout)
-      await self?.timeoutRequest(idString)
-    }
-    defer { timeoutTask.cancel() }
-
-    // Wait for the correlated response
-    return try await withCheckedThrowingContinuation { cont in
-      pendingRequests[idString] = cont
+    return try await withThrowingTaskGroup(of: Data.self) { group in
+      let transportRef = self
+      group.addTask {
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Data, Error>) in
+          Task { await transportRef.registerPendingRequest(idString, continuation: cont) }
+        }
+      }
+      group.addTask {
+        try await Task.sleep(for: timeout)
+        throw MCPTransportError.responseTimeout
+      }
+      defer { group.cancelAll() }
+      // First to finish wins: response data or timeout error
+      let result = try await group.next()!
+      pendingRequests.removeValue(forKey: idString)
+      return result
     }
   }
 
@@ -99,10 +107,8 @@ public actor WebRTCMCPTransport {
 
   // MARK: - Timeout
 
-  private func timeoutRequest(_ idString: String) {
-    if let cont = pendingRequests.removeValue(forKey: idString) {
-      cont.resume(throwing: MCPTransportError.responseTimeout)
-    }
+  private func registerPendingRequest(_ idString: String, continuation: CheckedContinuation<Data, Error>) {
+    pendingRequests[idString] = continuation
   }
 
   // MARK: - Message Routing

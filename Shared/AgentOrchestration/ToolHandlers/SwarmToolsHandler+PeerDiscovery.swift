@@ -7,15 +7,13 @@
 //           swarm.discovered, swarm.register-repo, swarm.repos
 //  Split from SwarmToolsHandler.swift as part of #301.
 //
-//  NOTE: "peers" in diagnostics = TCP-connected (for file transfers only).
-//  "firestoreWorkers" = all registered workers (the source of truth for
+//  NOTE: "firestoreWorkers" = all registered workers (the source of truth for
 //  task dispatch and coordination). See SwarmCoordinator.swift header.
 //
 
 import Foundation
 import os.log
 import MCPCore
-import WebRTCTransfer
 
 extension SwarmToolsHandler {
   // MARK: - swarm.start
@@ -478,17 +476,15 @@ extension SwarmToolsHandler {
       return serviceNotActiveError(id: id, service: "Swarm", hint: "Call swarm.start with role 'brain', 'worker', or 'hybrid' first")
     }
     
-    guard case .success(let address) = requireString("address", from: arguments, id: id) else {
-      return missingParamError(id: id, param: "address")
+    guard case .success(let peerId) = requireString("peerId", from: arguments, id: id) else {
+      return missingParamError(id: id, param: "peerId")
     }
     
-    let port = UInt16(arguments["port"] as? Int ?? 8766)
-    
     do {
-      try await coordinator.connectToWorker(address: address, port: port)
+      try await coordinator.connectToWorker(peerId: peerId)
       return (200, makeResult(id: id, result: [
         "success": true,
-        "message": "Connection initiated to \(address):\(port)"
+        "message": "WebRTC session established with \(peerId)"
       ]))
     } catch {
       return internalError(id: id, message: "Failed to connect: \(error.localizedDescription)")
@@ -649,55 +645,54 @@ extension SwarmToolsHandler {
       return missingParamError(id: id, param: "targetWorkerName or targetWorkerId")
     }
 
-    // Find swarm ID
-    guard let swarmId = FirebaseService.shared.memberSwarms.first(where: { $0.role.canRegisterWorkers })?.id else {
-      return internalError(id: id, message: "No active swarm found")
-    }
-
-    let timeout = arguments["timeout"] as? Int ?? 30
     let workerDisplay = targetWorkerName ?? workerId
 
-    // Create signaling channel with purpose=ping
-    let signaling = FirestoreWebRTCSignaling(
-      swarmId: swarmId,
-      myDeviceId: coordinator.capabilities.deviceId,
-      remoteDeviceId: workerId
-    )
-    signaling.purpose = "ping"
+    // Check if we have an active PeerSession with RTT data
+    let rtt = coordinator.peerSessionManager.peerRTT[workerId]
+    let state = coordinator.peerSessionManager.peerStates[workerId]
 
-    do {
-      let result = try await WebRTCPeerTransfer.ping(
-        signaling: signaling,
-        timeout: .seconds(timeout)
-      )
-
-      let timing: [String: Any] = [
-        "signalingMs": round(result.signalingMs * 10) / 10,
-        "iceNegotiationMs": round(result.iceNegotiationMs * 10) / 10,
-        "roundTripMs": round(result.roundTripMs * 10) / 10,
-        "totalMs": round(result.totalMs * 10) / 10,
-      ]
-      let summary = String(
-        format: "WebRTC ping to %@: signaling=%.0fms ice=%.0fms rtt=%.1fms total=%.0fms",
-        workerDisplay, result.signalingMs, result.iceNegotiationMs, result.roundTripMs, result.totalMs
-      )
+    if state == .connected, let rtt {
       let body: [String: Any] = [
         "success": true,
         "target": workerDisplay,
         "targetWorkerId": workerId,
-        "timing": timing,
-        "summary": summary,
+        "connected": true,
+        "roundTripMs": round(rtt * 10) / 10,
+        "summary": "Peer \(workerDisplay) connected via WebRTC session (RTT: \(String(format: "%.1f", rtt))ms)",
       ]
       return (200, makeResult(id: id, result: body))
-    } catch {
+    } else if state == .connected {
       let body: [String: Any] = [
-        "success": false,
+        "success": true,
         "target": workerDisplay,
         "targetWorkerId": workerId,
-        "error": String(describing: error),
-        "hint": "Ensure the target worker is running Peel with swarm active. Check swarm.diagnostics to verify the worker is registered.",
+        "connected": true,
+        "summary": "Peer \(workerDisplay) connected via WebRTC session (RTT not yet measured)",
       ]
       return (200, makeResult(id: id, result: body))
+    } else {
+      // Try establishing a session first
+      do {
+        try await coordinator.connectToWorker(peerId: workerId)
+        let body: [String: Any] = [
+          "success": true,
+          "target": workerDisplay,
+          "targetWorkerId": workerId,
+          "connected": true,
+          "summary": "WebRTC session established with \(workerDisplay) (RTT will be available after heartbeat)",
+        ]
+        return (200, makeResult(id: id, result: body))
+      } catch {
+        let body: [String: Any] = [
+          "success": false,
+          "target": workerDisplay,
+          "targetWorkerId": workerId,
+          "connected": false,
+          "error": String(describing: error),
+          "hint": "Ensure the target worker is running Peel with swarm active. Check swarm.diagnostics to verify the worker is registered.",
+        ]
+        return (200, makeResult(id: id, result: body))
+      }
     }
   }
 

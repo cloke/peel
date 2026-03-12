@@ -138,9 +138,8 @@ public final class BonjourDiscoveryService: @unchecked Sendable {
   
   // MARK: - Advertising
   
-  /// Start advertising this device as a Peel worker
-  /// Note: This only registers with Bonjour/mDNS. The actual TCP listener
-  /// is managed by PeerConnectionManager.
+  /// Start advertising this device as a Peel worker via Bonjour/mDNS.
+  /// Peer connections are established via WebRTC signaling through Firestore.
   public func startAdvertising(
     capabilities: WorkerCapabilities,
     port: UInt16 = BonjourDiscoveryService.defaultPort
