@@ -979,9 +979,17 @@ public final class SwarmCoordinator {
       while !Task.isCancelled {
         do {
           let data = try await channel.receive(timeout: .seconds(300))
-          let message = try JSONDecoder().decode(PeerMessage.self, from: data)
-          await MainActor.run { [weak self] in
-            self?.handleWebRTCPeerMessage(message, from: peerId)
+          do {
+            let message = try JSONDecoder().decode(PeerMessage.self, from: data)
+            await MainActor.run { [weak self] in
+              self?.handleWebRTCPeerMessage(message, from: peerId)
+            }
+          } catch {
+            // JSON decode failure — log the actual error and data size so we can debug.
+            // Do NOT silently drop: this likely means a corrupt/truncated message.
+            logger.error("WebRTC decode error from \(peerId): \(error) (data size: \(data.count) bytes)")
+            traceMessage(direction: "IN-ERR", peerId: peerId, type: "decode-err", detail: "size=\(data.count) \(error)")
+            continue
           }
         } catch is CancellationError {
           break
@@ -993,7 +1001,7 @@ public final class SwarmCoordinator {
             logger.warning("WebRTC mcp channel closed for \(peerId): \(error)")
             break
           } else {
-            logger.debug("WebRTC mcp receive timeout for \(peerId), continuing listen loop")
+            logger.debug("WebRTC mcp receive non-fatal: \(peerId), \(error)")
             continue
           }
         }
@@ -1377,6 +1385,8 @@ public final class SwarmCoordinator {
               .ragArtifactsChunk(id: transferId, index: chunkIndex, total: totalChunks, data: base64),
               to: peer.id
             )
+            // Yield between chunks to avoid overwhelming the receiver
+            await Task.yield()
           }
           updateRagTransfer(transferId) { state in
             state.transferredBytes += chunkData.count
@@ -1456,6 +1466,8 @@ public final class SwarmCoordinator {
               .ragArtifactsChunk(id: transferId, index: chunkIndex, total: totalChunks, data: base64),
               to: peer.id
             )
+            // Yield between chunks to avoid overwhelming the receiver
+            await Task.yield()
           }
           updateRagTransfer(transferId) { state in
             state.transferredBytes += chunkData.count
@@ -1506,6 +1518,8 @@ public final class SwarmCoordinator {
             .ragArtifactsChunk(id: transferId, index: chunkIndex, total: totalChunks, data: base64),
             to: peer.id
           )
+          // Yield between chunks to avoid overwhelming the receiver
+          await Task.yield()
         }
         updateRagTransfer(transferId) { state in
           state.transferredBytes += data.count
@@ -1599,9 +1613,12 @@ public final class SwarmCoordinator {
     transfer.fileHandle = nil
 
     if let expected = transfer.expectedChunks, transfer.receivedChunks < expected {
+      let allExpected = Set(0..<expected)
+      let missing = allExpected.subtracting(transfer.receivedChunkIndices).sorted()
+      logger.error("RAG transfer incomplete: \(transfer.receivedChunks)/\(expected) chunks, missing indices: \(missing)")
       updateRagTransfer(id) { state in
         state.status = .failed
-        state.errorMessage = "Incomplete transfer (\(transfer.receivedChunks)/\(expected) chunks)"
+        state.errorMessage = "Incomplete transfer (\(transfer.receivedChunks)/\(expected) chunks, missing: \(missing))"
         state.completedAt = Date()
       }
       await sendRagArtifactError(transferId: id, to: peerId, message: "Incomplete transfer")
