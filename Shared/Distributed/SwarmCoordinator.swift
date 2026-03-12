@@ -130,6 +130,17 @@ public final class SwarmCoordinator {
   /// Pending direct command continuations (for awaiting results)
   private var pendingDirectCommands: [UUID: CheckedContinuation<DirectCommandResult, Never>] = [:]
 
+  /// Recent message trace for diagnostics (newest first)
+  public private(set) var messageTrace: [(date: Date, direction: String, peerId: String, type: String, detail: String)] = []
+  private let maxTraceEntries = 30
+
+  private func traceMessage(direction: String, peerId: String, type: String, detail: String = "") {
+    messageTrace.insert((date: Date(), direction: direction, peerId: peerId, type: type, detail: detail), at: 0)
+    if messageTrace.count > maxTraceEntries {
+      messageTrace.removeLast()
+    }
+  }
+
   /// Pending incoming RAG artifact transfers
   private var incomingRagTransfers: [UUID: RAGIncomingTransfer] = [:]
 
@@ -1001,15 +1012,19 @@ public final class SwarmCoordinator {
   /// Send a PeerMessage to a specific worker, preferring WebRTC when connected.
   /// Falls back to TCP PeerConnectionManager if no WebRTC session is available.
   private func sendMessage(_ message: PeerMessage, to workerId: String) async throws {
+    let msgType = String(describing: message).prefix(60)
+    
     // Prefer WebRTC mcp channel if session is connected
     if let channel = await peerSessionManager.mcpChannel(for: workerId) {
       let data = try JSONEncoder().encode(message)
       do {
-        logger.info("sendMessage to \(workerId): using WebRTC (\(String(describing: message).prefix(80)))")
+        logger.info("sendMessage to \(workerId): using WebRTC (\(msgType))")
+        traceMessage(direction: "OUT", peerId: workerId, type: "webrtc", detail: String(msgType))
         try await channel.send(data)
         return
       } catch {
         logger.warning("WebRTC send to \(workerId) failed (\(error)), falling back to TCP")
+        traceMessage(direction: "OUT-FAIL", peerId: workerId, type: "webrtc-fail", detail: "\(error)")
         // Fall through to TCP
       }
     }
@@ -1018,7 +1033,8 @@ public final class SwarmCoordinator {
     guard let cm = connectionManager else {
       throw DistributedError.actorSystemNotReady
     }
-    logger.info("sendMessage to \(workerId): using TCP (\(String(describing: message).prefix(80)))")
+    logger.info("sendMessage to \(workerId): using TCP (\(msgType))")
+    traceMessage(direction: "OUT", peerId: workerId, type: "tcp", detail: String(msgType))
     try await cm.send(message, to: workerId)
   }
 
@@ -2324,10 +2340,14 @@ public final class SwarmCoordinator {
     }.value
     
     // Send result back (hops back to MainActor for the send)
-    try? await sendMessage(
-      .directCommandResult(id: id, exitCode: exitCode, output: output, error: errorOutput),
-      to: peerId
-    )
+    do {
+      try await sendMessage(
+        .directCommandResult(id: id, exitCode: exitCode, output: output, error: errorOutput),
+        to: peerId
+      )
+    } catch {
+      logger.error("Failed to send directCommandResult id=\(id) to \(peerId): \(error)")
+    }
     
     logger.info("Direct command \(id) finished with exit code \(exitCode)")
     
@@ -2617,17 +2637,20 @@ extension SwarmCoordinator {
     case .heartbeat(var status):
       // Use local receive time to avoid clock-skew between machines
       // causing spurious stale-heartbeat disconnects.
+      traceMessage(direction: "IN", peerId: peerId, type: "heartbeat")
       status.lastHeartbeat = Date()
       workerStatuses[peerId] = status
       Task { try? await sendMessage(.heartbeatAck, to: peerId) }
       
     case .directCommand(let id, let command, let args, let workingDirectory):
+      traceMessage(direction: "IN", peerId: peerId, type: "directCommand", detail: "id=\(id) cmd=\(command)")
       logger.info("Received directCommand: \(command) from \(peerId)")
       Task {
         await handleDirectCommand(id: id, command: command, args: args, workingDirectory: workingDirectory, from: peerId)
       }
       
     case .directCommandResult(let id, let exitCode, let output, let error):
+      traceMessage(direction: "IN", peerId: peerId, type: "directCommandResult", detail: "id=\(id) exit=\(exitCode)")
       logger.info("Direct command \(id) completed with exit code \(exitCode)")
       if let error = error, !error.isEmpty {
         logger.warning("Direct command stderr: \(error)")
@@ -2637,6 +2660,8 @@ extension SwarmCoordinator {
       }
       if let continuation = pendingDirectCommands.removeValue(forKey: id) {
         continuation.resume(returning: DirectCommandResult(exitCode: exitCode, output: output, error: error))
+      } else {
+        logger.warning("No pending continuation for directCommandResult id=\(id) — already timed out or fire-and-forget?")
       }
 
     case .ragArtifactsRequest(let id, let direction, let repoIdentifier, let transferMode):

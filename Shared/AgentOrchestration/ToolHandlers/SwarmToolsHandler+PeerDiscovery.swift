@@ -391,6 +391,15 @@ extension SwarmToolsHandler {
           ] as [String: Any]
         }
       }(),
+      "messageTrace": coordinator.messageTrace.prefix(20).map { entry in
+        [
+          "time": Formatter.iso8601.string(from: entry.date),
+          "dir": entry.direction,
+          "peer": String(entry.peerId.prefix(8)),
+          "type": entry.type,
+          "detail": entry.detail
+        ] as [String: Any]
+      },
       "messageListeners": FirebaseService.shared.messageListenerDiagnostics(),
       "workerListeners": {
         let diag = FirebaseService.shared.workerListenerDiagnostics
