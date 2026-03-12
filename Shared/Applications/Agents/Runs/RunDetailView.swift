@@ -8,33 +8,37 @@ struct RunDetailView: View {
   @State private var expandedExecutions = Set<UUID>()
   @State private var showingCancelConfirmation = false
   @State private var mergeError: String?
+  @State private var showRawOutput = false
 
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 20) {
         runHeader
-        Divider()
         if let ctx = run.prContext {
+          Divider()
           prContextSection(ctx)
-          Divider()
         }
-        if !run.prompt.isEmpty {
-          promptSection
-          Divider()
-        }
-        if let output = bestOutput, !output.isEmpty {
-          outputSection(output)
-          Divider()
-        }
+        Divider()
         progressOverview
-        if run.kind == .managerRun {
-          Divider()
-          childRunsSection
-        }
         Divider()
         actionButtons
         Divider()
         executionsList
+        if run.kind == .managerRun {
+          Divider()
+          childRunsSection
+        }
+        if run.kind == .prReview, let output = bestOutput, !output.isEmpty {
+          Divider()
+          parsedReviewSection(output)
+        } else if let output = bestOutput, !output.isEmpty {
+          Divider()
+          rawOutputSection(output)
+        }
+        if !run.prompt.isEmpty {
+          Divider()
+          promptSection
+        }
       }
       .padding()
     }
@@ -244,7 +248,107 @@ struct RunDetailView: View {
   }
 
   @ViewBuilder
-  private func outputSection(_ output: String) -> some View {
+  private func parsedReviewSection(_ output: String) -> some View {
+    let parsed = parseReviewOutput(output)
+    VStack(alignment: .leading, spacing: 16) {
+      Text("Agent Review")
+        .font(.headline)
+
+      // Verdict banner
+      HStack(spacing: 10) {
+        Image(systemName: parsed.verdict.systemImage)
+          .font(.title2)
+          .foregroundStyle(parsed.verdict.color)
+        VStack(alignment: .leading, spacing: 2) {
+          Text(parsed.verdict.displayName)
+            .font(.headline)
+          if let ci = parsed.ciStatus {
+            Text("CI: \(ci)")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
+        Spacer()
+        Text(parsed.riskLevel.capitalized)
+          .font(.caption.weight(.semibold))
+          .padding(.horizontal, 8)
+          .padding(.vertical, 4)
+          .background(riskColor(parsed.riskLevel).opacity(0.15), in: Capsule())
+          .foregroundStyle(riskColor(parsed.riskLevel))
+      }
+      .padding(12)
+      .background(parsed.verdict.color.opacity(0.08))
+      .clipShape(RoundedRectangle(cornerRadius: 10))
+
+      // Summary
+      VStack(alignment: .leading, spacing: 4) {
+        Text("Summary")
+          .font(.subheadline.weight(.semibold))
+        Text(parsed.summary)
+          .font(.callout)
+          .textSelection(.enabled)
+      }
+
+      // Issues
+      if !parsed.issues.isEmpty {
+        VStack(alignment: .leading, spacing: 6) {
+          Label("Issues (\(parsed.issues.count))", systemImage: "exclamationmark.triangle")
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.orange)
+          ForEach(Array(parsed.issues.enumerated()), id: \.offset) { _, issue in
+            HStack(alignment: .top, spacing: 6) {
+              Image(systemName: "circle.fill")
+                .font(.system(size: 5))
+                .foregroundStyle(.orange)
+                .padding(.top, 6)
+              Text(issue)
+                .font(.callout)
+                .textSelection(.enabled)
+            }
+          }
+        }
+        .padding(12)
+        .background(.orange.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+      }
+
+      // Suggestions
+      if !parsed.suggestions.isEmpty {
+        VStack(alignment: .leading, spacing: 6) {
+          Label("Suggestions (\(parsed.suggestions.count))", systemImage: "lightbulb")
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.blue)
+          ForEach(Array(parsed.suggestions.enumerated()), id: \.offset) { _, suggestion in
+            HStack(alignment: .top, spacing: 6) {
+              Image(systemName: "circle.fill")
+                .font(.system(size: 5))
+                .foregroundStyle(.blue)
+                .padding(.top, 6)
+              Text(suggestion)
+                .font(.callout)
+                .textSelection(.enabled)
+            }
+          }
+        }
+        .padding(12)
+        .background(.blue.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+      }
+
+      // Raw output toggle
+      DisclosureGroup("Raw Output", isExpanded: $showRawOutput) {
+        Text(output)
+          .font(.caption.monospaced())
+          .foregroundStyle(.secondary)
+          .textSelection(.enabled)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      .font(.caption)
+    }
+  }
+
+  @ViewBuilder
+  private func rawOutputSection(_ output: String) -> some View {
     VStack(alignment: .leading, spacing: 4) {
       Text("Agent Output")
         .font(.headline)
@@ -252,6 +356,15 @@ struct RunDetailView: View {
         .font(.callout)
         .foregroundStyle(.secondary)
         .textSelection(.enabled)
+    }
+  }
+
+  private func riskColor(_ level: String) -> Color {
+    switch level.lowercased() {
+    case "high": .red
+    case "medium": .orange
+    case "low": .green
+    default: .secondary
     }
   }
 
