@@ -976,9 +976,18 @@ public final class SwarmCoordinator {
       }
 
       logger.info("Started WebRTC mcp listener for peer \(peerId)")
+      var msgSeq = 0
       while !Task.isCancelled {
         do {
           let data = try await channel.receive(timeout: .seconds(300))
+          msgSeq += 1
+
+          // Trace first 5 raw messages and every large message in the first 120 receives,
+          // so we can spot if chunk 0 data arrives but fails to decode.
+          if msgSeq <= 5 || (msgSeq <= 120 && data.count > 100_000) {
+            traceMessage(direction: "IN-RAW", peerId: peerId, type: "raw-recv", detail: "seq=\(msgSeq) size=\(data.count)")
+          }
+
           do {
             let message = try JSONDecoder().decode(PeerMessage.self, from: data)
             await MainActor.run { [weak self] in
@@ -988,7 +997,7 @@ public final class SwarmCoordinator {
             // JSON decode failure — log the actual error and data size so we can debug.
             // Do NOT silently drop: this likely means a corrupt/truncated message.
             logger.error("WebRTC decode error from \(peerId): \(error) (data size: \(data.count) bytes)")
-            traceMessage(direction: "IN-ERR", peerId: peerId, type: "decode-err", detail: "size=\(data.count) \(error)")
+            traceMessage(direction: "IN-ERR", peerId: peerId, type: "decode-err", detail: "seq=\(msgSeq) size=\(data.count) \(error)")
             continue
           }
         } catch is CancellationError {

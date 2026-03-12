@@ -42,6 +42,9 @@ public final class DataChannelHandle: NSObject, @unchecked Sendable {
 
   private let state = HandleState()
 
+  /// Counter for delegate receive callbacks (incremented on WebRTC's signaling thread).
+  private var _delegateRecvCount: Int = 0
+
   /// Ordered message stream from delegate callbacks.
   /// AsyncStream.yield() is thread-safe and preserves insertion order,
   /// ensuring messages reach the actor in the same order WebRTC delivered them.
@@ -251,8 +254,17 @@ extension DataChannelHandle: RTCDataChannelDelegate {
   }
 
   public func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {
+    let size = buffer.data.count
+    _delegateRecvCount += 1
+    let seq = _delegateRecvCount
+    // Log the first 5 delegate callbacks and any large message in the first 120
+    if seq <= 5 || (seq <= 120 && size > 100_000) {
+      logger.info("[DCH-\(self.label)] delegate recv seq=\(seq) size=\(size)")
+    }
     messageContinuation?.yield(buffer.data)
   }
+
+
 
   public func dataChannel(_ dataChannel: RTCDataChannel, didChangeBufferedAmount amount: UInt64) {
     if amount <= Self.bufferLowWaterMark {
