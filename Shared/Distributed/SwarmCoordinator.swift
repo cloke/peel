@@ -169,6 +169,9 @@ public final class SwarmCoordinator {
   /// LAN reconnect task — retries discovered-but-not-connected Bonjour peers
   private var lanReconnectTask: Task<Void, Never>?
 
+  /// Debounced retry for persistent WebRTC session establishment after Firestore worker updates.
+  private var peerSessionRefreshTask: Task<Void, Never>?
+
   /// Device IDs we've already attempted WAN connection to, with the time of the attempt.
   /// Entries expire after `wanConnectRetryInterval` so we retry periodically.
   private var wanConnectAttempted: [String: Date] = [:]
@@ -511,6 +514,8 @@ public final class SwarmCoordinator {
     webrtcSignalingResponder = nil
     for (_, task) in webrtcListenTasks { task.cancel() }
     webrtcListenTasks.removeAll()
+    peerSessionRefreshTask?.cancel()
+    peerSessionRefreshTask = nil
     Task { await peerSessionManager.disconnectAll() }
     FirebaseService.shared.heartbeatMetadata = nil
     stopNetworkMonitor()
@@ -636,6 +641,16 @@ public final class SwarmCoordinator {
     }
     FirebaseService.shared.onWorkersSnapshotChanged = { [weak self] in
       self?.firestoreWorkerVersion += 1
+      self?.schedulePeerSessionRefresh()
+    }
+  }
+
+  private func schedulePeerSessionRefresh(after delay: Duration = .seconds(2)) {
+    peerSessionRefreshTask?.cancel()
+    peerSessionRefreshTask = Task { [weak self] in
+      try? await Task.sleep(for: delay)
+      guard let self, !Task.isCancelled, self.isActive else { return }
+      self.establishPeerSessions()
     }
   }
 

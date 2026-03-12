@@ -178,6 +178,10 @@ public actor PeerSession {
       let heartbeat = try await newClient.waitForRemoteChannel(label: Self.heartbeatLabel, timeout: .seconds(30))
       let chat = try await newClient.waitForRemoteChannel(label: Self.chatLabel, timeout: .seconds(30))
 
+      // Keep ICE candidate exchange alive until the primary channel is fully open.
+      // Remote channel discovery can happen before SCTP/data-channel readiness.
+      try await mcp.waitForOpen(timeout: .seconds(30))
+
       mcpChannel = mcp
       transferChannel = transfer
       heartbeatChannel = heartbeat

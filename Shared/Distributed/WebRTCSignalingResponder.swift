@@ -24,8 +24,9 @@ public final class WebRTCSignalingResponder {
   private var listeners: [String: ListenerRegistration] = [:]
   private var isActive = false
 
-  /// Track offers we've already responded to
-  private var respondedOffers: Set<String> = []
+  /// Track offer fingerprints we've already responded to.
+  /// Retries reuse the same Firestore document ID, so doc ID alone is not enough.
+  private var respondedOfferFingerprints: Set<String> = []
 
   /// Active serve task — tracked to prevent concurrent transfers
   private(set) var activeServeTask: Task<Void, Never>?
@@ -47,7 +48,7 @@ public final class WebRTCSignalingResponder {
     guard !isActive else { return }
     isActive = true
     self.myDeviceId = myDeviceId
-    respondedOffers.removeAll()
+    respondedOfferFingerprints.removeAll()
 
     let db = Firestore.firestore()
 
@@ -63,10 +64,11 @@ public final class WebRTCSignalingResponder {
           return
         }
 
-        // Only process newly added offers. `.modified` events (e.g. ICE candidate
-        // updates on the same document) must NOT re-trigger offer handling — that was
-        // cancelling in-flight transfers after the first chunk.
-        for change in snapshot.documentChanges where change.type == .added {
+        // Process new offers and meaningful offer retries. Retry attempts reuse the
+        // same document ID with a new SDP, so dedupe by document ID + SDP instead of
+        // document ID alone. Candidate updates arrive in a subcollection, not as offer
+        // document modifications, so this will not re-trigger on normal ICE traffic.
+        for change in snapshot.documentChanges where change.type == .added || change.type == .modified {
           let data = change.document.data()
 
           guard let fromWorkerId = data["fromWorkerId"] as? String,
@@ -81,10 +83,11 @@ public final class WebRTCSignalingResponder {
           { continue }
 
           let docId = change.document.documentID
+          let offerFingerprint = "\(docId):\(sdp)"
 
           Task { @MainActor in
-            guard !self.respondedOffers.contains(docId) else { return }
-            self.respondedOffers.insert(docId)
+            guard !self.respondedOfferFingerprints.contains(offerFingerprint) else { return }
+            self.respondedOfferFingerprints.insert(offerFingerprint)
 
             self.logger.info("WebRTC offer received from \(fromWorkerId) (purpose: \(purpose))")
             await self.respondToOffer(
@@ -108,7 +111,7 @@ public final class WebRTCSignalingResponder {
       listener.remove()
     }
     listeners.removeAll()
-    respondedOffers.removeAll()
+    respondedOfferFingerprints.removeAll()
     activeServeTask?.cancel()
     activeServeTask = nil
     isActive = false
