@@ -313,7 +313,10 @@ public final class SwarmCoordinator {
   public private(set) var peerSessionManager = PeerSessionManager()
 
   /// Active WebRTC mcp channel listen tasks, keyed by peerId
-  private var webrtcListenTasks: [String: Task<Void, Never>] = [:]
+  private var webrtcMCPListenTasks: [String: Task<Void, Never>] = [:]
+
+  /// Active WebRTC transfer channel listen tasks, keyed by peerId
+  private var webrtcTransferListenTasks: [String: Task<Void, Never>] = [:]
 
   /// Delegate
   public weak var delegate: SwarmCoordinatorDelegate?
@@ -512,8 +515,10 @@ public final class SwarmCoordinator {
     RAGSyncCoordinator.shared.stop()
     webrtcSignalingResponder?.stop()
     webrtcSignalingResponder = nil
-    for (_, task) in webrtcListenTasks { task.cancel() }
-    webrtcListenTasks.removeAll()
+    for (_, task) in webrtcMCPListenTasks { task.cancel() }
+    webrtcMCPListenTasks.removeAll()
+    for (_, task) in webrtcTransferListenTasks { task.cancel() }
+    webrtcTransferListenTasks.removeAll()
     peerSessionRefreshTask?.cancel()
     peerSessionRefreshTask = nil
     Task { await peerSessionManager.disconnectAll() }
@@ -739,7 +744,7 @@ public final class SwarmCoordinator {
     let status = currentWorkerStatus()
     // Send to both TCP and WebRTC connected peers
     var sentTo = Set<String>()
-    let webrtcPeers = await peerSessionManager.connectedPeers
+    let webrtcPeers = peerSessionManager.connectedPeers
     for peerId in webrtcPeers {
       try? await sendMessage(.heartbeat(status: status), to: peerId)
       sentTo.insert(peerId)
@@ -980,27 +985,52 @@ public final class SwarmCoordinator {
   /// Start listening for PeerMessages on a peer session's mcp channel.
   /// Routes received messages through the same handler as TCP PeerConnectionManager.
   func startListeningOnPeerSession(_ peerId: String) {
-    // Cancel any existing listen task for this peer
-    webrtcListenTasks[peerId]?.cancel()
+    webrtcMCPListenTasks[peerId]?.cancel()
+    webrtcTransferListenTasks[peerId]?.cancel()
 
-    webrtcListenTasks[peerId] = Task { [weak self] in
+    webrtcMCPListenTasks[peerId] = makeWebRTCListenTask(
+      peerId: peerId,
+      label: "mcp",
+      rawType: "raw-recv",
+      channelProvider: { [weak self] in
+        guard let self else { return nil }
+        return await self.peerSessionManager.mcpChannel(for: peerId)
+      }
+    )
+
+    webrtcTransferListenTasks[peerId] = makeWebRTCListenTask(
+      peerId: peerId,
+      label: "transfer",
+      rawType: "raw-transfer-recv",
+      channelProvider: { [weak self] in
+        guard let self else { return nil }
+        return await self.peerSessionManager.transferChannel(for: peerId)
+      }
+    )
+  }
+
+  private func makeWebRTCListenTask(
+    peerId: String,
+    label: String,
+    rawType: String,
+    channelProvider: @escaping @Sendable () async -> DataChannelHandle?
+  ) -> Task<Void, Never> {
+    Task { [weak self] in
       guard let self else { return }
-      guard let channel = await peerSessionManager.mcpChannel(for: peerId) else {
-        logger.info("No mcp channel for \(peerId), skipping WebRTC listen")
+      guard let channel = await channelProvider() else {
+        logger.info("No \(label) channel for \(peerId), skipping WebRTC listen")
         return
       }
 
-      logger.info("Started WebRTC mcp listener for peer \(peerId)")
+      logger.info("Started WebRTC \(label) listener for peer \(peerId)")
       var msgSeq = 0
       while !Task.isCancelled {
         do {
           let data = try await channel.receive(timeout: .seconds(300))
           msgSeq += 1
 
-          // Trace first 5 raw messages and every large message in the first 120 receives,
-          // so we can spot if chunk 0 data arrives but fails to decode.
           if msgSeq <= 5 || (msgSeq <= 120 && data.count > 100_000) {
-            traceMessage(direction: "IN-RAW", peerId: peerId, type: "raw-recv", detail: "seq=\(msgSeq) size=\(data.count)")
+            traceMessage(direction: "IN-RAW", peerId: peerId, type: rawType, detail: "channel=\(label) seq=\(msgSeq) size=\(data.count)")
           }
 
           do {
@@ -1009,28 +1039,24 @@ public final class SwarmCoordinator {
               self?.handleWebRTCPeerMessage(message, from: peerId)
             }
           } catch {
-            // JSON decode failure — log the actual error and data size so we can debug.
-            // Do NOT silently drop: this likely means a corrupt/truncated message.
-            logger.error("WebRTC decode error from \(peerId): \(error) (data size: \(data.count) bytes)")
-            traceMessage(direction: "IN-ERR", peerId: peerId, type: "decode-err", detail: "seq=\(msgSeq) size=\(data.count) \(error)")
+            logger.error("WebRTC decode error from \(peerId) on \(label): \(error) (data size: \(data.count) bytes)")
+            traceMessage(direction: "IN-ERR", peerId: peerId, type: "decode-err", detail: "channel=\(label) seq=\(msgSeq) size=\(data.count) \(error)")
             continue
           }
         } catch is CancellationError {
           break
         } catch {
-          // Only break on fatal channel errors (closed/disconnected).
-          // Timeouts are expected during idle periods — keep listening.
           let isFatal = !channel.isOpen
           if isFatal {
-            logger.warning("WebRTC mcp channel closed for \(peerId): \(error)")
+            logger.warning("WebRTC \(label) channel closed for \(peerId): \(error)")
             break
           } else {
-            logger.debug("WebRTC mcp receive non-fatal: \(peerId), \(error)")
+            logger.debug("WebRTC \(label) receive non-fatal: \(peerId), \(error)")
             continue
           }
         }
       }
-      logger.info("WebRTC mcp listener ended for peer \(peerId)")
+      logger.info("WebRTC \(label) listener ended for peer \(peerId)")
     }
   }
 
@@ -1045,18 +1071,37 @@ public final class SwarmCoordinator {
   /// Falls back to TCP PeerConnectionManager if no WebRTC session is available.
   private func sendMessage(_ message: PeerMessage, to workerId: String) async throws {
     let msgType = String(describing: message).prefix(60)
+    let prefersTransferChannel: Bool
+    switch message {
+    case .ragArtifactsChunk, .ragArtifactsComplete, .ragArtifactsError:
+      prefersTransferChannel = true
+    default:
+      prefersTransferChannel = false
+    }
     
-    // Prefer WebRTC mcp channel if session is connected
-    if let channel = await peerSessionManager.mcpChannel(for: workerId) {
+    let primaryChannel = if prefersTransferChannel {
+      await peerSessionManager.transferChannel(for: workerId)
+    } else {
+      await peerSessionManager.mcpChannel(for: workerId)
+    }
+    let fallbackWebRTCChannel: DataChannelHandle? = if prefersTransferChannel {
+      await peerSessionManager.mcpChannel(for: workerId)
+    } else {
+      nil
+    }
+
+    if let channel = primaryChannel ?? fallbackWebRTCChannel {
       let data = try JSONEncoder().encode(message)
       do {
-        logger.info("sendMessage to \(workerId): using WebRTC (\(msgType))")
-        traceMessage(direction: "OUT", peerId: workerId, type: "webrtc", detail: String(msgType))
+        let channelLabel = prefersTransferChannel && primaryChannel != nil ? "webrtc-transfer" : "webrtc"
+        logger.info("sendMessage to \(workerId): using \(channelLabel) (\(msgType))")
+        traceMessage(direction: "OUT", peerId: workerId, type: channelLabel, detail: String(msgType))
         try await channel.send(data)
         return
       } catch {
-        logger.warning("WebRTC send to \(workerId) failed (\(error)), falling back to TCP")
-        traceMessage(direction: "OUT-FAIL", peerId: workerId, type: "webrtc-fail", detail: "\(error)")
+        let channelLabel = prefersTransferChannel && primaryChannel != nil ? "webrtc-transfer" : "webrtc"
+        logger.warning("\(channelLabel) send to \(workerId) failed (\(error)), falling back to TCP")
+        traceMessage(direction: "OUT-FAIL", peerId: workerId, type: "\(channelLabel)-fail", detail: "\(error)")
         // Fall through to TCP
       }
     }
@@ -1284,7 +1329,7 @@ public final class SwarmCoordinator {
     if let workerId {
       if let worker = connectedWorkers.first(where: { $0.id == workerId }) {
         targetWorker = worker
-      } else if await peerSessionManager.connectedPeers.contains(workerId) {
+      } else if peerSessionManager.connectedPeers.contains(workerId) {
         // WebRTC-only peer — construct a ConnectedPeer from Firestore metadata
         let name = FirebaseService.shared.swarmWorkers.first(where: { $0.id == workerId })?.displayName ?? workerId
         targetWorker = ConnectedPeer(id: workerId, name: name, capabilities: .current(), isIncoming: false)
@@ -1319,12 +1364,26 @@ public final class SwarmCoordinator {
       )
     )
 
+    if direction == .pull {
+      prepareIncomingRagTransfer(
+        id: transferId,
+        from: targetWorker.id,
+        direction: direction,
+        repoIdentifier: repoIdentifier,
+        transferMode: transferMode
+      )
+    }
+
     do {
       try await sendMessage(
         .ragArtifactsRequest(id: transferId, direction: direction, repoIdentifier: repoIdentifier, transferMode: transferMode),
         to: targetWorker.id
       )
     } catch {
+      if direction == .pull {
+        incomingRagTransfers[transferId]?.fileHandle?.closeFile()
+        incomingRagTransfers.removeValue(forKey: transferId)
+      }
       // Clean up the orphaned transfer if the message couldn't be sent
       updateRagTransfer(transferId) { state in
         state.status = .failed
@@ -1596,6 +1655,11 @@ public final class SwarmCoordinator {
     let transfer = RAGIncomingTransfer(id: id, peerId: peerId, direction: direction, tempURL: tempURL)
     transfer.repoIdentifier = repoIdentifier
     transfer.transferMode = transferMode
+    if FileManager.default.fileExists(atPath: transfer.tempURL.path) {
+      try? FileManager.default.removeItem(at: transfer.tempURL)
+    }
+    FileManager.default.createFile(atPath: transfer.tempURL.path, contents: Data())
+    transfer.fileHandle = try? FileHandle(forWritingTo: transfer.tempURL)
     incomingRagTransfers[id] = transfer
   }
 
@@ -1608,20 +1672,21 @@ public final class SwarmCoordinator {
       tempURL: FileManager.default.temporaryDirectory.appendingPathComponent("rag-artifacts-\(id).zip")
     )
     transfer.manifest = manifest
-    transfer.receivedBytes = 0
-    transfer.receivedChunks = 0
     incomingRagTransfers[id] = transfer
 
-    if FileManager.default.fileExists(atPath: transfer.tempURL.path) {
-      try? FileManager.default.removeItem(at: transfer.tempURL)
+    if transfer.fileHandle == nil {
+      if FileManager.default.fileExists(atPath: transfer.tempURL.path) {
+        try? FileManager.default.removeItem(at: transfer.tempURL)
+      }
+      FileManager.default.createFile(atPath: transfer.tempURL.path, contents: Data())
+      transfer.fileHandle = try? FileHandle(forWritingTo: transfer.tempURL)
     }
-    FileManager.default.createFile(atPath: transfer.tempURL.path, contents: Data())
-    transfer.fileHandle = try? FileHandle(forWritingTo: transfer.tempURL)
 
     updateRagTransfer(id) { state in
       state.status = .transferring
       state.totalBytes = manifest.totalBytes
       state.manifestVersion = manifest.version
+      state.transferredBytes = transfer.receivedBytes
     }
   }
 
