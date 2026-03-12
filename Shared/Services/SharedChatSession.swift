@@ -715,24 +715,16 @@ final class SharedChatSession {
       return "{\"error\": \"Missing required parameter: chainId\"}"
     }
 
-    guard let status = mcpServer.chainStatus(chainId: chainId) else {
+    guard let mgr = mcpServer.runManager, let run = mgr.runs.first(where: { $0.id.uuidString == chainId || $0.sourceChainRunId?.uuidString == chainId }) else {
       return "{\"error\": \"Chain not found: \(chainId)\"}"
     }
 
     var payload: [String: Any] = [
-      "chainId": status.chainId,
-      "status": status.status,
-      "progress": status.progress,
-      "currentStep": status.currentStep,
-      "totalSteps": status.totalSteps,
+      "chainId": run.id.uuidString,
+      "status": run.status.displayName,
+      "progress": run.progress,
     ]
-    if let error = status.error {
-      payload["error"] = error
-    }
-    if let reviewGate = status.reviewGate {
-      payload["reviewGate"] = reviewGate
-    }
-    if let startedAt = status.startedAt {
+    if let startedAt = run.startedAt {
       payload["startedAt"] = ISO8601DateFormatter().string(from: startedAt)
     }
 
@@ -740,7 +732,7 @@ final class SharedChatSession {
        let json = String(data: data, encoding: .utf8) {
       return json
     }
-    return "{\"chainId\": \"\(chainId)\", \"status\": \"\(status.status)\"}"
+    return "{\"chainId\": \"\(chainId)\", \"status\": \"\(run.status.displayName)\"}"
   }
 }
 

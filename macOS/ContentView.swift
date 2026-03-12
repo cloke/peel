@@ -461,7 +461,7 @@ struct ContentView: View {
       RepositoriesCommandCenter()
 
     case .prReviews:
-      PRReviewQueueDetailView()
+      RunsListView(mcpServer: mcpServer)
 
     case .templates:
       TemplateBrowserDetailView { chainId in

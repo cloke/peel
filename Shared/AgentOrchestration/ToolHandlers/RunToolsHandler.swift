@@ -24,6 +24,7 @@ final class RunToolsHandler {
     "runs.status",
     "runs.pause",
     "runs.resume",
+    "runs.cancel",
   ]
 
   func handle(
@@ -46,6 +47,8 @@ final class RunToolsHandler {
       return handlePause(id: id, arguments: arguments, mgr: mgr)
     case "runs.resume":
       return await handleResume(id: id, arguments: arguments, mgr: mgr)
+    case "runs.cancel":
+      return await handleCancel(id: id, arguments: arguments, mgr: mgr)
     default:
       return (400, JSONRPCResponseBuilder.makeError(
         id: id,
@@ -171,6 +174,30 @@ final class RunToolsHandler {
     }
   }
 
+  // MARK: - runs.cancel
+
+  private func handleCancel(id: Any?, arguments: [String: Any], mgr: RunManager) async -> (Int, Data) {
+    guard let runIdString = arguments["runId"] as? String,
+          let runId = UUID(uuidString: runIdString) else {
+      return (400, JSONRPCResponseBuilder.makeError(
+        id: id, code: -32602, message: "Missing or invalid runId"
+      ))
+    }
+
+    guard let run = mgr.findRun(id: runId) ?? mgr.findRunBySourceChainRunId(runId) else {
+      return (404, JSONRPCResponseBuilder.makeError(
+        id: id, code: -32004, message: "Run not found"
+      ))
+    }
+
+    await mgr.stopRun(run)
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
+      "runId": run.id.uuidString,
+      "status": "cancelled",
+      "message": "Run cancelled.",
+    ]))
+  }
+
   // MARK: - Tool Definitions
 
   var toolDefinitions: [MCPToolDefinition] {
@@ -240,6 +267,22 @@ final class RunToolsHandler {
             "runId": [
               "type": "string",
               "description": "Run UUID to resume",
+            ],
+          ],
+          "required": ["runId"],
+        ],
+        category: .agentRuns,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "runs.cancel",
+        description: "Cancel a running or paused run.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": [
+              "type": "string",
+              "description": "Run UUID to cancel (either the run ID or the source chain run ID)",
             ],
           ],
           "required": ["runId"],

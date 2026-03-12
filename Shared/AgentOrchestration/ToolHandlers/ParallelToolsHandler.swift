@@ -24,18 +24,13 @@ final class ParallelToolsHandler {
     [
       "parallel.create",
       "parallel.start",
-      "parallel.status",
-      "parallel.list",
       "parallel.assignReviewer",
       "parallel.approve",
       "parallel.approve-with-issue",
       "parallel.reject",
       "parallel.reviewed",
       "parallel.merge",
-      "parallel.pause",
-      "parallel.resume",
       "parallel.instruct",
-      "parallel.cancel",
       "parallel.diff",
       "parallel.retry",
       "parallel.append"
@@ -196,10 +191,6 @@ final class ParallelToolsHandler {
       return await handleCreate(id: id, arguments: arguments)
     case "parallel.start":
       return await handleStart(id: id, arguments: arguments)
-    case "parallel.status":
-      return handleStatus(id: id, arguments: arguments)
-    case "parallel.list":
-      return handleList(id: id, arguments: arguments)
     case "parallel.assignReviewer":
       return handleAssignReviewer(id: id, arguments: arguments)
     case "parallel.approve":
@@ -212,14 +203,8 @@ final class ParallelToolsHandler {
       return handleReviewed(id: id, arguments: arguments)
     case "parallel.merge":
       return await handleMerge(id: id, arguments: arguments)
-    case "parallel.pause":
-      return await handlePause(id: id, arguments: arguments)
-    case "parallel.resume":
-      return await handleResume(id: id, arguments: arguments)
     case "parallel.instruct":
       return handleInstruct(id: id, arguments: arguments)
-    case "parallel.cancel":
-      return await handleCancel(id: id, arguments: arguments)
     case "parallel.diff":
       return await handleDiff(id: id, arguments: arguments)
     case "parallel.retry":
@@ -410,122 +395,6 @@ final class ParallelToolsHandler {
     return (200, toolResult(id: id, result: [
       "runId": runId.uuidString,
       "status": "starting"
-    ]))
-  }
-
-  private func handleStatus(id: Any?, arguments: [String: Any]) -> (Int, Data) {
-    guard case .success(let runner) = getRunner(id: id) else {
-      return runnerNotInitializedError(id: id)
-    }
-
-    guard case .success(let runId) = getUUID("runId", from: arguments, id: id) else {
-      return missingParamError(id: id, param: "runId")
-    }
-
-    // First try in-memory
-    if let run = runner.getRun(id: runId) {
-      return (200, toolResult(id: id, result: encodeParallelRun(run, includeDetails: true)))
-    }
-
-    // Fall back to SwiftData snapshot
-    if let snapshot = delegate?.parallelDataService?.getLatestParallelRunSnapshot(runId: runId.uuidString) {
-      let snapshotPayload: [String: Any] = [
-        "runId": snapshot.runId,
-        "name": snapshot.name,
-        "projectPath": snapshot.projectPath,
-        "baseBranch": snapshot.baseBranch,
-        "targetBranch": snapshot.targetBranch as Any,
-        "templateName": snapshot.templateName as Any,
-        "status": snapshot.status,
-        "progress": snapshot.progress,
-        "executionCount": snapshot.executionCount,
-        "pendingReviewCount": snapshot.pendingReviewCount,
-        "readyToMergeCount": snapshot.readyToMergeCount,
-        "mergedCount": snapshot.mergedCount,
-        "rejectedCount": snapshot.rejectedCount,
-        "failedCount": snapshot.failedCount,
-        "hungCount": snapshot.hungCount,
-        "requireReviewGate": snapshot.requireReviewGate,
-        "autoMergeOnApproval": snapshot.autoMergeOnApproval,
-        "guidanceCount": snapshot.operatorGuidanceCount,
-        "createdAt": snapshot.createdAt.iso8601,
-        "updatedAt": snapshot.updatedAt.iso8601,
-        "lastUpdatedAt": snapshot.lastUpdatedAt?.iso8601 as Any,
-        "executions": snapshot.executionsJSON,
-        "source": "snapshot"
-      ]
-      return (200, toolResult(id: id, result: snapshotPayload))
-    }
-
-    return (404, rpcError(
-      id: id,
-      code: JSONRPCResponseBuilder.ErrorCode.notFound,
-      message: "Run not found"
-    ))
-  }
-
-  private func handleList(id: Any?, arguments: [String: Any]) -> (Int, Data) {
-    guard let runner = delegate?.parallelWorktreeRunner else {
-      return (500, rpcError(
-        id: id,
-        code: JSONRPCResponseBuilder.ErrorCode.internalError,
-        message: "Parallel worktree runner not initialized"
-      ))
-    }
-
-    let includeCompleted = arguments["includeCompleted"] as? Bool ?? true
-    let includeDetails = arguments["includeDetails"] as? Bool ?? false
-
-    var runs = runner.runs
-    if !includeCompleted {
-      runs = runs.filter { run in
-        switch run.status {
-        case .completed, .cancelled, .failed:
-          return false
-        default:
-          return true
-        }
-      }
-    }
-
-    let runPayloads = runs.map { encodeParallelRun($0, includeDetails: includeDetails) }
-
-    // Also include recent snapshots if no in-memory runs
-    var snapshots: [[String: Any]] = []
-    if runPayloads.isEmpty, let dataService = delegate?.parallelDataService {
-      let recentSnapshots = dataService.getRecentParallelRunSnapshots(limit: 10)
-      snapshots = recentSnapshots.map { record in
-        [
-          "runId": record.runId,
-          "name": record.name,
-          "projectPath": record.projectPath,
-          "baseBranch": record.baseBranch,
-          "targetBranch": record.targetBranch as Any,
-          "templateName": record.templateName as Any,
-          "status": record.status,
-          "progress": record.progress,
-          "executionCount": record.executionCount,
-          "pendingReviewCount": record.pendingReviewCount,
-          "readyToMergeCount": record.readyToMergeCount,
-          "mergedCount": record.mergedCount,
-          "rejectedCount": record.rejectedCount,
-          "failedCount": record.failedCount,
-          "hungCount": record.hungCount,
-          "requireReviewGate": record.requireReviewGate,
-          "autoMergeOnApproval": record.autoMergeOnApproval,
-          "guidanceCount": record.operatorGuidanceCount,
-          "createdAt": record.createdAt.iso8601,
-          "updatedAt": record.updatedAt.iso8601,
-          "lastUpdatedAt": record.lastUpdatedAt?.iso8601 as Any,
-          "source": "snapshot"
-        ]
-      }
-    }
-
-    return (200, toolResult(id: id, result: [
-      "runs": runPayloads,
-      "snapshots": snapshots,
-      "totalCount": runPayloads.count
     ]))
   }
 
@@ -974,42 +843,6 @@ final class ParallelToolsHandler {
     }
   }
 
-  private func handlePause(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    guard case .success(let runner) = getRunner(id: id) else {
-      return runnerNotInitializedError(id: id)
-    }
-
-    guard case .success(let runId) = getUUID("runId", from: arguments, id: id) else {
-      return missingParamError(id: id, param: "runId")
-    }
-
-    guard case .success(let run) = getRun(runId: runId, from: runner, id: id) else {
-      return runNotFoundError(id: id, runId: runId.uuidString, runner: runner)
-    }
-
-    await runner.pauseRun(run)
-    await delegate?.parallelTelemetryProvider.info("Parallel run paused", metadata: ["runId": runId.uuidString])
-    return (200, toolResult(id: id, result: ["runId": runId.uuidString, "paused": true]))
-  }
-
-  private func handleResume(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    guard case .success(let runner) = getRunner(id: id) else {
-      return runnerNotInitializedError(id: id)
-    }
-
-    guard case .success(let runId) = getUUID("runId", from: arguments, id: id) else {
-      return missingParamError(id: id, param: "runId")
-    }
-
-    guard case .success(let run) = getRun(runId: runId, from: runner, id: id) else {
-      return runNotFoundError(id: id, runId: runId.uuidString, runner: runner)
-    }
-
-    await runner.resumeRun(run)
-    await delegate?.parallelTelemetryProvider.info("Parallel run resumed", metadata: ["runId": runId.uuidString])
-    return (200, toolResult(id: id, result: ["runId": runId.uuidString, "paused": false]))
-  }
-
   private func handleInstruct(id: Any?, arguments: [String: Any]) -> (Int, Data) {
     guard case .success(let runner) = getRunner(id: id) else {
       return runnerNotInitializedError(id: id)
@@ -1034,29 +867,6 @@ final class ParallelToolsHandler {
       "runId": runId.uuidString,
       "executionId": executionId?.uuidString as Any,
       "guidanceCount": run.operatorGuidance.count
-    ]))
-  }
-
-  private func handleCancel(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    guard case .success(let runner) = getRunner(id: id) else {
-      return runnerNotInitializedError(id: id)
-    }
-
-    guard case .success(let runId) = getUUID("runId", from: arguments, id: id) else {
-      return missingParamError(id: id, param: "runId")
-    }
-
-    guard case .success(let run) = getRun(runId: runId, from: runner, id: id) else {
-      return runNotFoundError(id: id, runId: runId.uuidString, runner: runner)
-    }
-
-    await runner.cancelRun(run)
-
-    await delegate?.parallelTelemetryProvider.info("Parallel run cancelled", metadata: ["runId": runId.uuidString])
-
-    return (200, toolResult(id: id, result: [
-      "runId": runId.uuidString,
-      "status": "cancelled"
     ]))
   }
 
@@ -1417,31 +1227,6 @@ extension ParallelToolsHandler {
         isMutating: true
       ),
       MCPToolDefinition(
-        name: "parallel.status",
-        description: "Get status of a parallel worktree run",
-        inputSchema: [
-          "type": "object",
-          "properties": [
-            "runId": ["type": "string"]
-          ],
-          "required": ["runId"]
-        ],
-        category: .agentRuns,
-        isMutating: false
-      ),
-      MCPToolDefinition(
-        name: "parallel.list",
-        description: "List all parallel worktree runs",
-        inputSchema: [
-          "type": "object",
-          "properties": [
-            "includeCompleted": ["type": "boolean"]
-          ]
-        ],
-        category: .agentRuns,
-        isMutating: false
-      ),
-      MCPToolDefinition(
         name: "parallel.assignReviewer",
         description: "Assign one execution to review another execution in the same parallel run",
         inputSchema: [
@@ -1558,32 +1343,6 @@ extension ParallelToolsHandler {
         isMutating: true
       ),
       MCPToolDefinition(
-        name: "parallel.pause",
-        description: "Pause a parallel run (halts new executions and pauses active chains)",
-        inputSchema: [
-          "type": "object",
-          "properties": [
-            "runId": ["type": "string"]
-          ],
-          "required": ["runId"]
-        ],
-        category: .agentRuns,
-        isMutating: true
-      ),
-      MCPToolDefinition(
-        name: "parallel.resume",
-        description: "Resume a paused parallel run",
-        inputSchema: [
-          "type": "object",
-          "properties": [
-            "runId": ["type": "string"]
-          ],
-          "required": ["runId"]
-        ],
-        category: .agentRuns,
-        isMutating: true
-      ),
-      MCPToolDefinition(
         name: "parallel.instruct",
         description: "Inject operator guidance into a parallel run or execution",
         inputSchema: [
@@ -1594,19 +1353,6 @@ extension ParallelToolsHandler {
             "guidance": ["type": "string"]
           ],
           "required": ["runId", "guidance"]
-        ],
-        category: .agentRuns,
-        isMutating: true
-      ),
-      MCPToolDefinition(
-        name: "parallel.cancel",
-        description: "Cancel a parallel worktree run",
-        inputSchema: [
-          "type": "object",
-          "properties": [
-            "runId": ["type": "string"]
-          ],
-          "required": ["runId"]
         ],
         category: .agentRuns,
         isMutating: true

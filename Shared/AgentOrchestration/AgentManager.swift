@@ -104,52 +104,6 @@ public final class AgentManager {
     }
   }
   
-  /// Assign a task to an agent and optionally create a workspace
-  public func assignTask(
-    _ task: AgentTask,
-    to agent: Agent,
-    repository: Model.Repository? = nil
-  ) async throws {
-    agent.assignTask(task)
-    
-    // Create workspace if repository provided
-    if let repo = repository {
-      let workspace = try await workspaceManager.createWorkspace(
-        for: repo,
-        task: task,
-        agentId: agent.id
-      )
-      agent.workspace = workspace
-    }
-  }
-  
-  /// Start an agent working on its current task
-  public func startAgent(_ agent: Agent) {
-    guard agent.currentTask != nil else { return }
-    agent.updateState(.working)
-    agent.currentTask?.start()
-  }
-  
-  /// Mark an agent as complete
-  public func completeAgent(_ agent: Agent, result: String? = nil) {
-    agent.currentTask?.complete(result: result)
-    agent.updateState(.complete)
-  }
-  
-  /// Mark an agent as blocked
-  public func blockAgent(_ agent: Agent, reason: String) {
-    agent.updateState(.blocked(reason: reason))
-  }
-  
-  /// Reset an agent to idle state
-  public func resetAgent(_ agent: Agent) async {
-    if let workspace = agent.workspace {
-      try? await workspaceManager.cleanupWorkspace(workspace)
-      agent.workspace = nil
-    }
-    agent.clearTask()
-  }
-  
   // MARK: - Chain Management
   
   /// Create a new agent chain
@@ -202,26 +156,6 @@ public final class AgentManager {
     return chain
   }
   
-  // MARK: - Background Chain Execution
-
-  /// Run a chain in the background. The chain is already tracked in `chains`
-  /// and will appear in the sidebar. The caller can dismiss its UI immediately.
-  public func runChainInBackground(
-    _ chain: AgentChain,
-    prompt: String,
-    cliService: CLIService,
-    sessionTracker: SessionTracker
-  ) {
-    Task { @MainActor in
-      let runner = AgentChainRunner(
-        agentManager: self,
-        cliService: cliService,
-        telemetryProvider: MCPTelemetryAdapter(sessionTracker: sessionTracker)
-      )
-      _ = await runner.runChain(chain, prompt: prompt)
-    }
-  }
-
   // MARK: - Template Management
   
   /// Save a chain as a new template
@@ -248,19 +182,6 @@ public final class AgentManager {
     )
     
     savedTemplates.append(template)
-    persistTemplates()
-  }
-  
-  /// Delete a saved template (cannot delete built-in)
-  public func deleteTemplate(_ template: ChainTemplate) {
-    guard !template.isBuiltIn else { return }
-    savedTemplates.removeAll { $0.id == template.id }
-    persistTemplates()
-  }
-  
-  /// Reset to default templates (removes all saved templates)
-  public func resetTemplatesToDefaults() {
-    savedTemplates.removeAll()
     persistTemplates()
   }
   
@@ -298,16 +219,6 @@ public final class AgentManager {
     agents.filter { $0.state == state }
   }
   
-  /// Get active agents (planning, working, or testing)
-  public var activeAgents: [Agent] {
-    agents.filter { $0.state.isActive }
-  }
-  
-  /// Get idle agents
-  public var idleAgents: [Agent] {
-    agents.filter { $0.state == .idle }
-  }
-
   /// Check if we should show premium warning for a chain
   public func shouldShowPremiumWarning(for chain: AgentChain) -> Bool {
     guard warnBeforePremiumChains else { return false }

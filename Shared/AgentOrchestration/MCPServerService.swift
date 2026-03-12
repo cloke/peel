@@ -650,7 +650,6 @@ public final class MCPServerService {
   var repoProfileToolsHandler: RepoProfileToolsHandler
   var repoProfileService: RepoProfileService
   var prReviewQueue = PRReviewQueue()
-  var prReviewToolsHandler: PRReviewToolsHandler
   var schedulingToolsHandler: SchedulingToolsHandler
   var uxTestOrchestrator: UXTestOrchestrator?
   #if os(macOS)
@@ -735,7 +734,6 @@ public final class MCPServerService {
     self.chromeToolsHandler = ChromeToolsHandler()
     self.repoProfileToolsHandler = RepoProfileToolsHandler()
     self.repoProfileService = RepoProfileService()
-    self.prReviewToolsHandler = PRReviewToolsHandler()
     self.schedulingToolsHandler = SchedulingToolsHandler()
     #if os(macOS)
     self.localChatToolsHandler = LocalChatToolsHandler()
@@ -884,8 +882,6 @@ public final class MCPServerService {
     chromeToolsHandler.delegate = self
     repoProfileToolsHandler.delegate = self
     repoProfileToolsHandler.profileService = repoProfileService
-    prReviewToolsHandler.delegate = self
-    prReviewToolsHandler.prReviewQueue = prReviewQueue
     runToolsHandler.delegate = self
     schedulingToolsHandler.delegate = self
     #if os(macOS)

@@ -156,7 +156,6 @@
 				AgentOrchestration/ToolHandlers/GitToolsHandler.swift,
 				AgentOrchestration/ToolHandlers/LocalChatToolsHandler.swift,
 				AgentOrchestration/ToolHandlers/MCPToolHandler.swift,
-				AgentOrchestration/ToolHandlers/PRReviewToolsHandler.swift,
 				AgentOrchestration/ToolHandlers/ParallelToolsHandler.swift,
 				"AgentOrchestration/ToolHandlers/RAGToolsHandler+Analysis.swift",
 				"AgentOrchestration/ToolHandlers/RAGToolsHandler+Indexing.swift",
@@ -933,7 +932,7 @@
 				CODE_SIGN_ENTITLEMENTS = Peel.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 19;
+				CURRENT_PROJECT_VERSION = 20;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
@@ -1025,7 +1024,7 @@
 				CODE_SIGN_ENTITLEMENTS = Peel.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 19;
+				CURRENT_PROJECT_VERSION = 20;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
@@ -1120,7 +1119,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 19;
+				CURRENT_PROJECT_VERSION = 20;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = UNX9FJDDXV;
 				ENABLE_APP_SANDBOX = NO;
@@ -1157,7 +1156,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 19;
+				CURRENT_PROJECT_VERSION = 20;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = UNX9FJDDXV;
 				ENABLE_APP_SANDBOX = NO;

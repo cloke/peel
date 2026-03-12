@@ -49,7 +49,6 @@ extension MCPServerService {
     defs += repoToolsHandler.toolDefinitions        // repo.* (~7)
     defs += worktreeToolsHandler.toolDefinitions    // worktree.* (~8)
     defs += parallelToolsHandler.toolDefinitions    // parallel.* (~16)
-    defs += prReviewToolsHandler.toolDefinitions    // pr.review.* (~5)
     defs += runToolsHandler.toolDefinitions         // runs.* (~4)
     defs += repoProfileToolsHandler.toolDefinitions // repo.profile.* (~3)
     defs += schedulingToolsHandler.toolDefinitions  // scheduling.* (~6)

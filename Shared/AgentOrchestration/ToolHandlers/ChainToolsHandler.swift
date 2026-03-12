@@ -23,27 +23,12 @@ protocol ChainToolsHandlerDelegate: MCPToolHandlerDelegate {
     templateName: String?,
     options: ChainToolRunOptions
   ) async throws -> ChainToolRunResult
-  
-  /// Get the status of a chain run
-  func chainStatus(chainId: String) -> ChainToolStatus?
-  
-  /// List all chain runs
-  func listChainRuns(limit: Int?, status: String?) -> [ChainToolRunSummary]
 
   /// Get persisted run details including per-agent outputs
   func chainRunResults(runId: String?, chainId: String?, includeOutputs: Bool) -> [[String: Any]]
 
   /// Aggregate optimization audit findings from recent persisted runs
   func aggregateAuditFindings(limit: Int, top: Int, promptContains: String?) -> [String: Any]
-  
-  /// Stop a chain run
-  func stopChain(chainId: String) async throws
-  
-  /// Pause a chain run
-  func pauseChain(chainId: String) async throws
-  
-  /// Resume a paused chain run
-  func resumeChain(chainId: String) async throws
   
   /// Send instruction to a chain (review/approve/reject)
   func instructChain(chainId: String, action: String, feedback: String?) async throws
@@ -104,13 +89,8 @@ final class ChainToolsHandler: MCPToolHandler {
   let supportedTools: Set<String> = [
     "chains.run",
     "chains.runBatch",
-    "chains.run.status",
-    "chains.run.list",
     "chains.run.results",
     "chains.audit.aggregate",
-    "chains.stop",
-    "chains.pause",
-    "chains.resume",
     "chains.instruct",
     "chains.step",
     "chains.queue.status",
@@ -135,20 +115,10 @@ final class ChainToolsHandler: MCPToolHandler {
       return await handleChainRun(id: id, arguments: arguments, delegate: chainDelegate)
     case "chains.runBatch":
       return await handleChainRunBatch(id: id, arguments: arguments, delegate: chainDelegate)
-    case "chains.run.status":
-      return handleChainRunStatus(id: id, arguments: arguments, delegate: chainDelegate)
-    case "chains.run.list":
-      return handleChainRunList(id: id, arguments: arguments, delegate: chainDelegate)
     case "chains.run.results":
       return handleChainRunResults(id: id, arguments: arguments, delegate: chainDelegate)
     case "chains.audit.aggregate":
       return handleChainsAuditAggregate(id: id, arguments: arguments, delegate: chainDelegate)
-    case "chains.stop":
-      return await handleChainStop(id: id, arguments: arguments, delegate: chainDelegate)
-    case "chains.pause":
-      return await handleChainPause(id: id, arguments: arguments, delegate: chainDelegate)
-    case "chains.resume":
-      return await handleChainResume(id: id, arguments: arguments, delegate: chainDelegate)
     case "chains.instruct":
       return await handleChainInstruct(id: id, arguments: arguments, delegate: chainDelegate)
     case "chains.step":
@@ -259,31 +229,6 @@ final class ChainToolsHandler: MCPToolHandler {
     }
   }
   
-  // MARK: - chains.run.status
-  
-  private func handleChainRunStatus(id: Any?, arguments: [String: Any], delegate: ChainToolsHandlerDelegate) -> (Int, Data) {
-    guard case .success(let chainId) = requireString("chainId", from: arguments, id: id) else {
-      return missingParamError(id: id, param: "chainId")
-    }
-    
-    guard let status = delegate.chainStatus(chainId: chainId) else {
-      return notFoundError(id: id, what: "Chain")
-    }
-    
-    return (200, makeResult(id: id, result: encodeStatus(status)))
-  }
-  
-  // MARK: - chains.run.list
-  
-  private func handleChainRunList(id: Any?, arguments: [String: Any], delegate: ChainToolsHandlerDelegate) -> (Int, Data) {
-    let limit = optionalInt("limit", from: arguments)
-    let statusFilter = optionalString("status", from: arguments)
-    
-    let runs = delegate.listChainRuns(limit: limit, status: statusFilter)
-    let payload = runs.map { encodeSummary($0) }
-    return (200, makeResult(id: id, result: ["runs": payload]))
-  }
-
   // MARK: - chains.run.results
 
   private func handleChainRunResults(id: Any?, arguments: [String: Any], delegate: ChainToolsHandlerDelegate) -> (Int, Data) {
@@ -311,54 +256,6 @@ final class ChainToolsHandler: MCPToolHandler {
 
     let payload = delegate.aggregateAuditFindings(limit: limit, top: top, promptContains: promptContains)
     return (200, makeResult(id: id, result: payload))
-  }
-  
-  // MARK: - chains.stop
-  
-  private func handleChainStop(id: Any?, arguments: [String: Any], delegate: ChainToolsHandlerDelegate) async -> (Int, Data) {
-    guard case .success(let chainId) = requireString("chainId", from: arguments, id: id) else {
-      return missingParamError(id: id, param: "chainId")
-    }
-    
-    do {
-      try await delegate.stopChain(chainId: chainId)
-      return (200, makeResult(id: id, result: ["status": "stopped", "chainId": chainId]))
-    } catch {
-      await delegate.logWarning("Chain stop failed", metadata: ["error": error.localizedDescription])
-      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
-    }
-  }
-  
-  // MARK: - chains.pause
-  
-  private func handleChainPause(id: Any?, arguments: [String: Any], delegate: ChainToolsHandlerDelegate) async -> (Int, Data) {
-    guard case .success(let chainId) = requireString("chainId", from: arguments, id: id) else {
-      return missingParamError(id: id, param: "chainId")
-    }
-    
-    do {
-      try await delegate.pauseChain(chainId: chainId)
-      return (200, makeResult(id: id, result: ["status": "paused", "chainId": chainId]))
-    } catch {
-      await delegate.logWarning("Chain pause failed", metadata: ["error": error.localizedDescription])
-      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
-    }
-  }
-  
-  // MARK: - chains.resume
-  
-  private func handleChainResume(id: Any?, arguments: [String: Any], delegate: ChainToolsHandlerDelegate) async -> (Int, Data) {
-    guard case .success(let chainId) = requireString("chainId", from: arguments, id: id) else {
-      return missingParamError(id: id, param: "chainId")
-    }
-    
-    do {
-      try await delegate.resumeChain(chainId: chainId)
-      return (200, makeResult(id: id, result: ["status": "resumed", "chainId": chainId]))
-    } catch {
-      await delegate.logWarning("Chain resume failed", metadata: ["error": error.localizedDescription])
-      return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: error.localizedDescription))
-    }
   }
   
   // MARK: - chains.instruct
@@ -494,41 +391,6 @@ final class ChainToolsHandler: MCPToolHandler {
     ]
   }
   
-  private func encodeStatus(_ status: ChainToolStatus) -> [String: Any] {
-    var dict: [String: Any] = [
-      "chainId": status.chainId,
-      "status": status.status,
-      "progress": status.progress,
-      "currentStep": status.currentStep,
-      "totalSteps": status.totalSteps
-    ]
-    if let error = status.error {
-      dict["error"] = error
-    }
-    if let reviewGate = status.reviewGate {
-      dict["reviewGate"] = reviewGate
-    }
-    if let startedAt = status.startedAt {
-      dict["startedAt"] = startedAt.iso8601
-    }
-    return dict
-  }
-  
-  private func encodeSummary(_ summary: ChainToolRunSummary) -> [String: Any] {
-    var dict: [String: Any] = [
-      "chainId": summary.chainId,
-      "status": summary.status,
-      "prompt": summary.prompt
-    ]
-    if let startedAt = summary.startedAt {
-      dict["startedAt"] = startedAt.iso8601
-    }
-    if let completedAt = summary.completedAt {
-      dict["completedAt"] = completedAt.iso8601
-    }
-    return dict
-  }
-  
   private func encodeQueueStatus(_ status: ChainToolQueueStatus) -> [String: Any] {
     [
       "running": status.running,
@@ -581,27 +443,6 @@ struct ChainToolRunResult {
   let chainId: String
   let status: String
   let message: String
-}
-
-/// Status of a chain run
-struct ChainToolStatus {
-  let chainId: String
-  let status: String
-  let progress: Double
-  let currentStep: Int
-  let totalSteps: Int
-  let error: String?
-  let reviewGate: String?
-  let startedAt: Date?
-}
-
-/// Summary of a chain run for listing
-struct ChainToolRunSummary {
-  let chainId: String
-  let status: String
-  let prompt: String
-  let startedAt: Date?
-  let completedAt: Date?
 }
 
 /// Template info
@@ -708,35 +549,6 @@ extension ChainToolsHandler {
         isMutating: true
       ),
       MCPToolDefinition(
-        name: "chains.run.status",
-        description: "Get status for a running or queued chain by runId",
-        inputSchema: [
-          "type": "object",
-          "properties": [
-            "runId": ["type": "string"]
-          ],
-          "required": ["runId"]
-        ],
-        category: .chains,
-        isMutating: false
-      ),
-      MCPToolDefinition(
-        name: "chains.run.list",
-        description: "List recent chain runs and optional logs",
-        inputSchema: [
-          "type": "object",
-          "properties": [
-            "limit": ["type": "integer"],
-            "chainId": ["type": "string"],
-            "runId": ["type": "string"],
-            "includeResults": ["type": "boolean"],
-            "includeOutputs": ["type": "boolean"]
-          ]
-        ],
-        category: .chains,
-        isMutating: false
-      ),
-      MCPToolDefinition(
         name: "chains.run.results",
         description: "Get persisted chain run details including per-agent results and optional outputs",
         inputSchema: [
@@ -818,45 +630,6 @@ extension ChainToolsHandler {
             "parallel": ["type": "boolean"]
           ],
           "required": ["runs"]
-        ],
-        category: .chains,
-        isMutating: true
-      ),
-      MCPToolDefinition(
-        name: "chains.stop",
-        description: "Cancel a running chain by runId (or all running chains)",
-        inputSchema: [
-          "type": "object",
-          "properties": [
-            "runId": ["type": "string"],
-            "all": ["type": "boolean"]
-          ]
-        ],
-        category: .chains,
-        isMutating: true
-      ),
-      MCPToolDefinition(
-        name: "chains.pause",
-        description: "Pause a running chain by runId",
-        inputSchema: [
-          "type": "object",
-          "properties": [
-            "runId": ["type": "string"]
-          ],
-          "required": ["runId"]
-        ],
-        category: .chains,
-        isMutating: true
-      ),
-      MCPToolDefinition(
-        name: "chains.resume",
-        description: "Resume a paused chain by runId",
-        inputSchema: [
-          "type": "object",
-          "properties": [
-            "runId": ["type": "string"]
-          ],
-          "required": ["runId"]
         ],
         category: .chains,
         isMutating: true
