@@ -651,6 +651,7 @@ public final class MCPServerService {
   var repoProfileService: RepoProfileService
   var prReviewQueue = PRReviewQueue()
   var prReviewToolsHandler: PRReviewToolsHandler
+  var schedulingToolsHandler: SchedulingToolsHandler
   var uxTestOrchestrator: UXTestOrchestrator?
   #if os(macOS)
   var localChatToolsHandler: LocalChatToolsHandler?
@@ -735,6 +736,7 @@ public final class MCPServerService {
     self.repoProfileToolsHandler = RepoProfileToolsHandler()
     self.repoProfileService = RepoProfileService()
     self.prReviewToolsHandler = PRReviewToolsHandler()
+    self.schedulingToolsHandler = SchedulingToolsHandler()
     #if os(macOS)
     self.localChatToolsHandler = LocalChatToolsHandler()
     #endif
@@ -885,6 +887,7 @@ public final class MCPServerService {
     prReviewToolsHandler.delegate = self
     prReviewToolsHandler.prReviewQueue = prReviewQueue
     runToolsHandler.delegate = self
+    schedulingToolsHandler.delegate = self
     #if os(macOS)
     localChatToolsHandler?.delegate = self
     localChatToolsHandler?.mcpServer = self

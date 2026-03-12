@@ -52,6 +52,7 @@ extension MCPServerService {
     defs += prReviewToolsHandler.toolDefinitions    // pr.review.* (~5)
     defs += runToolsHandler.toolDefinitions         // runs.* (~4)
     defs += repoProfileToolsHandler.toolDefinitions // repo.profile.* (~3)
+    defs += schedulingToolsHandler.toolDefinitions  // scheduling.* (~6)
 
     // --- Tier 3: Specialized / infrastructure ---
     defs += swarmToolsHandler.toolDefinitions       // swarm.* (~39)

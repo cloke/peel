@@ -129,6 +129,7 @@
 				"AgentOrchestration/MCPServerService+GitHubToolsDelegate.swift",
 				"AgentOrchestration/MCPServerService+RAGArtifactSync.swift",
 				"AgentOrchestration/MCPServerService+RAGToolsDelegate.swift",
+				"AgentOrchestration/MCPServerService+SchedulerDelegate.swift",
 				"AgentOrchestration/MCPServerService+ServerCore.swift",
 				"AgentOrchestration/MCPServerService+SmallDelegates.swift",
 				"AgentOrchestration/MCPServerService+ToolDefinitions.swift",
@@ -169,6 +170,7 @@
 				AgentOrchestration/ToolHandlers/RepoProfileToolsHandler.swift,
 				AgentOrchestration/ToolHandlers/RepoToolsHandler.swift,
 				AgentOrchestration/ToolHandlers/RunToolsHandler.swift,
+				AgentOrchestration/ToolHandlers/SchedulingToolsHandler.swift,
 				"AgentOrchestration/ToolHandlers/SwarmToolsHandler+Firebase.swift",
 				"AgentOrchestration/ToolHandlers/SwarmToolsHandler+Firestore.swift",
 				"AgentOrchestration/ToolHandlers/SwarmToolsHandler+PeerDiscovery.swift",
@@ -244,6 +246,7 @@
 				MCPCoreTypeAliases.swift,
 				PeelApp.swift,
 				Services/ActivityFeed.swift,
+				Services/ChainSchedulerService.swift,
 				Services/AppResetService.swift,
 				Services/BranchIndexService.swift,
 				Services/ChromeSessionManager.swift,
@@ -930,7 +933,7 @@
 				CODE_SIGN_ENTITLEMENTS = Peel.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
@@ -1022,7 +1025,7 @@
 				CODE_SIGN_ENTITLEMENTS = Peel.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
@@ -1117,7 +1120,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = UNX9FJDDXV;
 				ENABLE_APP_SANDBOX = NO;
@@ -1154,7 +1157,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 18;
+				CURRENT_PROJECT_VERSION = 19;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = UNX9FJDDXV;
 				ENABLE_APP_SANDBOX = NO;

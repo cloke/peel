@@ -1078,6 +1078,9 @@ extension MCPServerService {
     if runToolsHandler.supportedTools.contains(resolvedName) {
       return await runToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
     }
+    if schedulingToolsHandler.supportedTools.contains(resolvedName) {
+      return await schedulingToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
+    }
     #if os(macOS)
     if localChatToolsHandler?.supportedTools.contains(resolvedName) == true {
       return await localChatToolsHandler!.handle(name: resolvedName, id: id, arguments: arguments)

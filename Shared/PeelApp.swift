@@ -65,6 +65,7 @@ struct PeelApp: App {
   #if os(macOS)
   @State private var daemonModeService = DaemonModeService()
   #endif
+  @State private var chainScheduler = ChainSchedulerService()
 
   private static var isRunningTests: Bool {
     ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
@@ -196,6 +197,17 @@ struct PeelApp: App {
       }
     }
 
+    // Start the chain scheduler (cron-like scheduled chain execution, #369)
+    if !Self.isRunningTests {
+      let scheduler = _chainScheduler.wrappedValue
+      scheduler.configure(modelContext: context)
+      scheduler.delegate = mcpServerInstance
+      mcpServerInstance.schedulingToolsHandler.scheduler = scheduler
+      Task { @MainActor in
+        scheduler.start()
+      }
+    }
+
     // Note: Ember skills update check is performed in ContentView.task (Issue #263)
     
     // Check for worker mode (--worker flag)
@@ -307,6 +319,8 @@ struct PeelApp: App {
       CIFailureRecord.self,
       ChainLearning.self,
       PRReviewQueueItem.self,
+      ScheduledChain.self,
+      ScheduledChainRun.self,
     ])
 
     let localSchema = Schema([
@@ -332,6 +346,8 @@ struct PeelApp: App {
       CIFailureRecord.self,
       ChainLearning.self,
       PRReviewQueueItem.self,
+      ScheduledChain.self,
+      ScheduledChainRun.self,
       TrackedRepoDeviceState.self,
     ])
 
