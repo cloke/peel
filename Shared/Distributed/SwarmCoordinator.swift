@@ -989,7 +989,10 @@ public final class SwarmCoordinator {
     }
 
     // Fallback to TCP connection manager
-    try await connectionManager?.send(message, to: workerId)
+    guard let cm = connectionManager else {
+      throw DistributedError.actorSystemNotReady
+    }
+    try await cm.send(message, to: workerId)
   }
 
   /// Receive the next PeerMessage from a specific worker's WebRTC mcp channel.
@@ -1241,10 +1244,20 @@ public final class SwarmCoordinator {
       )
     )
 
-    try await sendMessage(
-      .ragArtifactsRequest(id: transferId, direction: direction, repoIdentifier: repoIdentifier, transferMode: transferMode),
-      to: targetWorker.id
-    )
+    do {
+      try await sendMessage(
+        .ragArtifactsRequest(id: transferId, direction: direction, repoIdentifier: repoIdentifier, transferMode: transferMode),
+        to: targetWorker.id
+      )
+    } catch {
+      // Clean up the orphaned transfer if the message couldn't be sent
+      updateRagTransfer(transferId) { state in
+        state.status = .failed
+        state.errorMessage = "Failed to send request: \(error.localizedDescription)"
+        state.completedAt = Date()
+      }
+      throw error
+    }
 
     if direction == .push {
       Task { await sendRagArtifactBundle(transferId: transferId, to: targetWorker, repoIdentifier: repoIdentifier, transferMode: transferMode) }
@@ -1693,6 +1706,12 @@ public final class SwarmCoordinator {
       }
       try await Task.sleep(for: .milliseconds(500))
     }
+    // Mark the transfer as failed so it doesn't stay orphaned in ragTransfers
+    updateRagTransfer(id) { state in
+      state.status = .failed
+      state.errorMessage = "Transfer timed out after \(timeout)"
+      state.completedAt = Date()
+    }
     throw SwarmTransferError(message: "Transfer \(id) timed out after \(timeout)")
   }
 
@@ -1768,6 +1787,19 @@ public final class SwarmCoordinator {
 
   private func checkForStalledTransfers() {
     let now = Date()
+
+    // Check transfers stuck in .queued (message never delivered or response never received)
+    for transfer in ragTransfers {
+      guard transfer.status == .queued,
+            now.timeIntervalSince(transfer.startedAt) >= 60 else { continue }
+      let elapsed = Int(now.timeIntervalSince(transfer.startedAt))
+      logger.warning("RAG transfer \(transfer.id) stuck in queued for \(elapsed)s — marking failed")
+      updateRagTransfer(transfer.id) { state in
+        state.status = .failed
+        state.errorMessage = "Transfer stuck in queued for \(elapsed)s — peer may be unreachable"
+        state.completedAt = now
+      }
+    }
 
     // Check outgoing transfers stuck in .preparing
     for transfer in ragTransfers {
