@@ -59,6 +59,7 @@ struct AgentReviewSheet: View {
     case running
     case completed
     case failed(String)
+    case runningInBackground
   }
 
   enum ReviewTemplate: String, CaseIterable, Identifiable {
@@ -124,6 +125,8 @@ struct AgentReviewSheet: View {
             completedSection
           case .failed(let msg):
             failedSection(msg)
+          case .runningInBackground:
+            runningInBackgroundSection
           }
         }
         .padding(20)
@@ -589,6 +592,61 @@ struct AgentReviewSheet: View {
 
   // MARK: - Failed
 
+  private var runningInBackgroundSection: some View {
+    VStack(spacing: 16) {
+      Image(systemName: "hourglass")
+        .font(.largeTitle)
+        .foregroundStyle(.orange)
+        .symbolEffect(.pulse)
+      Text("Review Still Running")
+        .font(.headline)
+      Text("This review is taking longer than usual. It will continue in the background — you can close this sheet and check the Agent Runs dashboard for results.")
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+      HStack(spacing: 12) {
+        Button {
+          dismiss()
+        } label: {
+          Label("Close & Wait", systemImage: "xmark")
+        }
+        .buttonStyle(.bordered)
+        Button {
+          phase = .running
+          Task {
+            guard let runId, let uuid = UUID(uuidString: runId) else { return }
+            if let runner = mcp.parallelWorktreeRunner,
+               let run = runner.findRunBySourceChainRunId(uuid) {
+              let status = await runner.waitForRunCompletion(run, timeoutSeconds: 600)
+              switch status {
+              case .completed, .failed, .cancelled, .awaitingReview:
+                let output = extractOutput(from: run)
+                rawOutput = output
+                if output.isEmpty {
+                  phase = .failed("Review completed but produced no output.")
+                } else {
+                  let parsed = parseReviewOutput(output)
+                  result = parsed
+                  phase = .completed
+                  if let qi = findQueueItem() {
+                    mcp.prReviewQueue.markReviewed(qi, output: output, verdict: parsed.verdict.rawValue)
+                  }
+                }
+              default:
+                phase = .runningInBackground
+              }
+            }
+          }
+        } label: {
+          Label("Keep Waiting", systemImage: "clock.arrow.circlepath")
+        }
+        .buttonStyle(.borderedProminent)
+      }
+    }
+    .frame(maxWidth: .infinity)
+    .padding(.vertical, 40)
+  }
+
   private func failedSection(_ message: String) -> some View {
     VStack(spacing: 16) {
       Image(systemName: "exclamationmark.triangle.fill")
@@ -871,7 +929,7 @@ struct AgentReviewSheet: View {
     case .completed, .failed, .cancelled, .awaitingReview:
       break
     default:
-      phase = .failed("Review is still running after 10 minutes. Check the Agent Runs dashboard for results when it finishes.")
+      phase = .runningInBackground
       return
     }
 
