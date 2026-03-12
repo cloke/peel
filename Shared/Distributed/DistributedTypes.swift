@@ -672,7 +672,7 @@ public struct WorkerStatus: Codable, Sendable {
   public let deviceId: String
   public let state: WorkerState
   public let currentTaskId: UUID?
-  public let lastHeartbeat: Date
+  public var lastHeartbeat: Date
   public let uptimeSeconds: TimeInterval
   public let tasksCompleted: Int
   public let tasksFailed: Int
