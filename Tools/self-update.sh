@@ -39,7 +39,7 @@ echo "Directory: $REPO_DIR"
 echo "Host: $(hostname)"
 echo "Branch: $(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'unknown')"
 echo "Commit: $(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
-echo "Self-update script version: 5"
+echo "Self-update script version: 6"
 echo ""
 
 # Check for uncommitted changes
@@ -92,6 +92,14 @@ fi
 
 echo ""
 echo "🔄 Restarting Peel..."
+
+# == Detach from parent process pipes ==
+# This script runs as a child of Peel (via direct-command) with stdout/stderr
+# piped back to the parent. When we kill Peel, those pipes break and subsequent
+# writes cause SIGPIPE → script dies before the restart section executes.
+# Fix: redirect output to log file only and ignore SIGPIPE.
+trap '' PIPE
+exec >> "$LOG_FILE" 2>&1
 
 # Find the built app in our known build directory
 APP_PATH=$(find "$BUILD_DIR" -name "Peel.app" -type d | head -1)
