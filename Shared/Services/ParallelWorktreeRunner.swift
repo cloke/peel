@@ -527,6 +527,7 @@ final class ParallelWorktreeRunner {
     // Load historical runs and auto-restore actionable ones
     loadHistoricalRuns()
     autoRestoreActionableRuns()
+    cleanupStaleRuns()
   }
 
   /// Load historical runs from persistence
@@ -574,6 +575,29 @@ final class ParallelWorktreeRunner {
     if !candidates.isEmpty {
       let activeRunIds = Set(runs.map { $0.id.uuidString })
       historicalRuns = historicalRuns.filter { !activeRunIds.contains($0.runId) }
+    }
+  }
+
+  /// Mark executions stuck in non-terminal states as failed.
+  /// This catches runs orphaned by app restarts or hung chains.
+  private func cleanupStaleRuns() {
+    let staleThreshold: TimeInterval = 45 * 60 // 45 minutes
+    let now = Date()
+    for run in runs {
+      var changed = false
+      for execution in run.executions {
+        let isActive = execution.status == .running || execution.status == .creatingWorktree
+        guard isActive else { continue }
+        let elapsed = now.timeIntervalSince(execution.startedAt ?? run.createdAt)
+        if elapsed > staleThreshold {
+          execution.status = .failed("Interrupted — execution was stale for \(Int(elapsed / 60)) min")
+          execution.completedAt = now
+          changed = true
+        }
+      }
+      if changed {
+        updateRunStatus(run)
+      }
     }
   }
   

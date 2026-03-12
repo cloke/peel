@@ -897,7 +897,9 @@ struct AgentReviewSheet: View {
       case .failed, .cancelled:
         mcpRef.prReviewQueue.markFailed(qi, error: "Review chain \(status)")
       default:
-        mcpRef.prReviewQueue.markFailed(qi, error: "Review timed out")
+        // Timed out — cancel the actual run so it doesn't stay "Running" forever
+        await runner.cancelRun(locatedRun)
+        mcpRef.prReviewQueue.markFailed(qi, error: "Review timed out after 15 min — run cancelled")
       }
     }
   }
