@@ -2168,64 +2168,56 @@ public final class SwarmCoordinator {
       resolvedCommand = command
     }
     
-    // Resolve the command - use /bin/sh -c for shell commands to get PATH resolution
-    // If command is absolute path, use it directly; otherwise use shell
-    let useShell = !resolvedCommand.hasPrefix("/")
-    
-    let process = Process()
-    if useShell {
-      // Use shell to resolve command via PATH
-      process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-      // If args is empty, pass command directly to shell (it may contain pipes, etc.)
-      // If args is provided, escape them and append
-      let fullCommand: String
-      if args.isEmpty {
-        fullCommand = resolvedCommand
+    // Run the process off MainActor to avoid blocking the UI.
+    // Commands like `curl http://127.0.0.1:8765/rpc` call back into the MCP server
+    // which needs MainActor — running waitUntilExit() on MainActor would deadlock.
+    let (output, errorOutput, exitCode) = await Task.detached { [resolvedCommand, effectiveWorkingDir, args] () -> (String, String?, Int32) in
+      let useShell = !resolvedCommand.hasPrefix("/")
+      
+      let process = Process()
+      if useShell {
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        let fullCommand: String
+        if args.isEmpty {
+          fullCommand = resolvedCommand
+        } else {
+          let escapedArgs = args.map { arg in
+            arg.contains(" ") || arg.contains("\"") || arg.contains("'")
+              ? "'\(arg.replacingOccurrences(of: "'", with: "'\\''"))'"
+              : arg
+          }.joined(separator: " ")
+          fullCommand = "\(resolvedCommand) \(escapedArgs)"
+        }
+        process.arguments = ["-c", fullCommand]
       } else {
-        let escapedArgs = args.map { arg in
-          arg.contains(" ") || arg.contains("\"") || arg.contains("'") 
-            ? "'\(arg.replacingOccurrences(of: "'", with: "'\\''"))'" 
-            : arg
-        }.joined(separator: " ")
-        fullCommand = "\(resolvedCommand) \(escapedArgs)"
+        process.executableURL = URL(fileURLWithPath: resolvedCommand)
+        process.arguments = args
       }
-      process.arguments = ["-c", fullCommand]
-      logger.info("Executing via shell: /bin/zsh -c '\(fullCommand)' in \(effectiveWorkingDir)")
-    } else {
-      process.executableURL = URL(fileURLWithPath: resolvedCommand)
-      process.arguments = args
-      logger.info("Executing direct: \(resolvedCommand) \(args.joined(separator: " ")) in \(effectiveWorkingDir)")
-    }
-    process.currentDirectoryURL = URL(fileURLWithPath: effectiveWorkingDir)
-    
-    let stdout = Pipe()
-    let stderr = Pipe()
-    process.standardOutput = stdout
-    process.standardError = stderr
-    
-    var output = ""
-    var errorOutput: String? = nil
-    var exitCode: Int32 = -1
-    
-    do {
-      try process.run()
-      process.waitUntilExit()
-      exitCode = process.terminationStatus
+      process.currentDirectoryURL = URL(fileURLWithPath: effectiveWorkingDir)
       
-      let outData = stdout.fileHandleForReading.readDataToEndOfFile()
-      output = String(data: outData, encoding: .utf8) ?? ""
+      let stdout = Pipe()
+      let stderr = Pipe()
+      process.standardOutput = stdout
+      process.standardError = stderr
       
-      let errData = stderr.fileHandleForReading.readDataToEndOfFile()
-      let errStr = String(data: errData, encoding: .utf8) ?? ""
-      if !errStr.isEmpty {
-        errorOutput = errStr
+      do {
+        try process.run()
+        process.waitUntilExit()
+        let exitCode = process.terminationStatus
+        
+        let outData = stdout.fileHandleForReading.readDataToEndOfFile()
+        let output = String(data: outData, encoding: .utf8) ?? ""
+        
+        let errData = stderr.fileHandleForReading.readDataToEndOfFile()
+        let errStr = String(data: errData, encoding: .utf8) ?? ""
+        
+        return (output, errStr.isEmpty ? nil : errStr, exitCode)
+      } catch {
+        return ("", error.localizedDescription, -1)
       }
-      
-    } catch {
-      errorOutput = error.localizedDescription
-    }
+    }.value
     
-    // Send result back
+    // Send result back (hops back to MainActor for the send)
     try? await connectionManager?.send(
       .directCommandResult(id: id, exitCode: exitCode, output: output, error: errorOutput),
       to: peerId
