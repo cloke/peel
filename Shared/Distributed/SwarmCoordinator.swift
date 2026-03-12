@@ -2478,7 +2478,10 @@ extension SwarmCoordinator {
       }
       delegate?.swarmCoordinator(self, didEmit: .taskCompleted(result))
 
-    case .heartbeat(let status):
+    case .heartbeat(var status):
+      // Use local receive time to avoid clock-skew between machines
+      // causing spurious stale-heartbeat disconnects.
+      status.lastHeartbeat = Date()
       workerStatuses[peerId] = status
       Task { try? await sendMessage(.heartbeatAck, to: peerId) }
       
