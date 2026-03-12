@@ -315,12 +315,21 @@ public final class PeerConnectionManager: @unchecked Sendable {
   
   /// Store a new connection for a peer, closing any previous connection.
   /// Returns a generation token the receive loop uses to detect replacement.
+  /// Old connections are closed after a grace period to allow in-flight
+  /// transfers to drain rather than being killed immediately.
   private func storeConnection(_ conn: PeerConnectionActor, peer: ConnectedPeer) -> UInt64 {
     let peerId = peer.id
     // Close previous connection for this peer (dual-connect race protection)
     if let old = connections.removeValue(forKey: peerId) {
-      logger.info("Replacing existing connection for peer \(peerId)")
-      Task { await old.close() }
+      logger.info("Replacing existing connection for peer \(peerId) — deferring old connection close")
+      // Defer close to let the old receive loop drain any in-flight data
+      // (e.g. RAG chunks). The old receive loop will exit cleanly via the
+      // generation check, and the deferred close ensures the NWConnection
+      // is eventually released even if the remote side doesn't close it.
+      Task {
+        try? await Task.sleep(for: .seconds(60))
+        await old.close()
+      }
     }
     connections[peerId] = conn
     connectedPeers[peerId] = peer
