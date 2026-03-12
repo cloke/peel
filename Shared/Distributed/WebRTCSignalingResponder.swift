@@ -33,7 +33,12 @@ public final class WebRTCSignalingResponder {
   /// Data provider for serving transfer data
   weak var dataProvider: WebRTCTransferDataProvider?
 
-  /// My device ID
+  /// Peer session manager — handles persistent session offers
+  var peerSessionManager: PeerSessionManager?
+  /// Called on MainActor after a persistent session is accepted from a peer.
+  var onSessionAccepted: (@MainActor (String) -> Void)?
+
+  /// Swarm ID → my device ID mapping (for creating signaling channels)
   private var myDeviceId: String = ""
 
   // MARK: - Lifecycle
@@ -160,6 +165,28 @@ public final class WebRTCSignalingResponder {
         } catch {
           await MainActor.run {
             self.logger.error("WebRTC ping response failed: \(error)")
+          }
+        }
+      }
+      return
+    }
+
+    if purpose == "session" {
+      // Persistent session: accept via PeerSessionManager
+      guard let peerSessionManager else {
+        logger.warning("No PeerSessionManager — cannot accept session from \(fromWorkerId)")
+        return
+      }
+      Task {
+        do {
+          try await peerSessionManager.acceptFromPeer(fromWorkerId, signaling: signaling)
+          await MainActor.run {
+            self.logger.notice("Persistent session accepted from \(fromWorkerId)")
+            self.onSessionAccepted?(fromWorkerId)
+          }
+        } catch {
+          await MainActor.run {
+            self.logger.error("Failed to accept session from \(fromWorkerId): \(error)")
           }
         }
       }
