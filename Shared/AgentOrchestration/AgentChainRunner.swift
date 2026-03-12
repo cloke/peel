@@ -1024,6 +1024,9 @@ public final class AgentChainRunner {
     case .vmAgentic:
       // VM-sandboxed agent: invoke the configured CLI agent inside the VM
       return try await runAgenticStep(agent, at: index, chain: chain, prompt: prompt, contextOverride: contextOverride)
+    case .manager:
+      // Manager/supervisor step — runs as an LLM agent that can monitor and intervene on child runs
+      return try await runAgenticStep(agent, at: index, chain: chain, prompt: prompt, contextOverride: contextOverride)
     }
   }
 

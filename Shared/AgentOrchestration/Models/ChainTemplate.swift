@@ -1171,6 +1171,8 @@ public enum StepType: String, Codable, Hashable, Sendable, CaseIterable {
   case vmAgentic
   /// Pauses the chain for user confirmation before continuing — no LLM or shell involved
   case confirmationGate
+  /// Supervisor step that monitors child runs and can intervene (re-prompt, cancel, adjust)
+  case manager
 
   public var displayName: String {
     switch self {
@@ -1179,6 +1181,7 @@ public enum StepType: String, Codable, Hashable, Sendable, CaseIterable {
     case .gate: "Gate"
     case .vmAgentic: "VM Agent"
     case .confirmationGate: "Confirmation Gate"
+    case .manager: "Manager"
     }
   }
 
@@ -1189,6 +1192,7 @@ public enum StepType: String, Codable, Hashable, Sendable, CaseIterable {
     case .gate: "Quality gate — halts chain on failure"
     case .vmAgentic: "LLM agent running inside VM sandbox"
     case .confirmationGate: "Pauses chain for user confirmation"
+    case .manager: "Supervisor that monitors and manages child runs"
     }
   }
 
@@ -1199,19 +1203,20 @@ public enum StepType: String, Codable, Hashable, Sendable, CaseIterable {
     case .gate: "checkmark.shield"
     case .vmAgentic: "shield.checkmark"
     case .confirmationGate: "hand.raised.circle"
+    case .manager: "person.badge.shield.checkmark"
     }
   }
 
   /// Whether this step type requires an LLM call from Peel
   public var requiresLLM: Bool {
-    self == .agentic
+    self == .agentic || self == .manager
   }
 
   /// Whether this step type is an LLM-driven agent (agentic or vmAgentic).
   /// Used to distinguish real coding agents from gate/deterministic post-steps
   /// when deciding which steps to run in parallel.
   public var isAgentic: Bool {
-    self == .agentic || self == .vmAgentic
+    self == .agentic || self == .vmAgentic || self == .manager
   }
 }
 

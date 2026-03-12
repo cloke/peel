@@ -169,15 +169,19 @@ struct RunsListView: View {
   @ViewBuilder
   private func runList(mgr: RunManager) -> some View {
     let all = viewModel.filtered(mgr.runs)
+    // Separate top-level from child runs
+    let topLevel = all.filter { $0.parentRunId == nil }
+    let childRunIds = Set(all.filter { $0.parentRunId != nil }.map(\.id))
 
-    let needsReview = viewModel.sorted(all.filter { $0.status == .awaitingReview })
-    let running     = viewModel.sorted(all.filter { $0.status == .running || $0.status == .merging })
-    let ready       = viewModel.sorted(all.filter { $0.readyToMergeCount > 0 && $0.status != .awaitingReview })
-    let ideas       = viewModel.sorted(all.filter { $0.kind == .investigation && $0.isPaused })
-    let pending     = viewModel.sorted(all.filter {
-      $0.status == .pending && !($0.kind == .investigation && $0.isPaused)
+    let needsReview = viewModel.sorted(topLevel.filter { $0.status == .awaitingReview })
+    let managing    = viewModel.sorted(topLevel.filter { $0.kind == .managerRun && $0.status == .running })
+    let running     = viewModel.sorted(topLevel.filter { ($0.status == .running || $0.status == .merging) && $0.kind != .managerRun })
+    let ready       = viewModel.sorted(topLevel.filter { $0.readyToMergeCount > 0 && $0.status != .awaitingReview })
+    let ideas       = viewModel.sorted(topLevel.filter { $0.kind == .investigation && $0.isPaused })
+    let pending     = viewModel.sorted(topLevel.filter {
+      $0.status == .pending && !($0.kind == .investigation && $0.isPaused) && $0.kind != .managerRun
     })
-    let completed   = viewModel.sorted(all.filter {
+    let completed   = viewModel.sorted(topLevel.filter {
       switch $0.status {
       case .completed, .cancelled, .failed: return true
       default: return false
@@ -206,7 +210,7 @@ struct RunsListView: View {
         if !needsReview.isEmpty {
           Section {
             ForEach(needsReview) { run in
-              UnifiedRunRow(run: run).tag(run.id)
+              UnifiedRunRow(run: run, childCount: mgr.childRuns(of: run.id).count).tag(run.id)
             }
           } header: {
             HStack {
@@ -222,10 +226,33 @@ struct RunsListView: View {
           }
         }
 
+        if !managing.isEmpty {
+          Section {
+            ForEach(managing) { run in
+              let children = mgr.childRuns(of: run.id)
+              UnifiedRunRow(run: run, childCount: children.count).tag(run.id)
+              ForEach(children) { child in
+                UnifiedRunRow(run: child, isChild: true).tag(child.id)
+              }
+            }
+          } header: {
+            HStack {
+              Label("Managing", systemImage: "person.badge.shield.checkmark")
+              Spacer()
+              Text("\(managing.count)")
+                .font(.caption2)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.indigo.opacity(0.15), in: Capsule())
+                .foregroundStyle(.indigo)
+            }
+          }
+        }
+
         if !running.isEmpty {
           Section("Running") {
             ForEach(running) { run in
-              UnifiedRunRow(run: run).tag(run.id)
+              UnifiedRunRow(run: run, childCount: mgr.childRuns(of: run.id).count).tag(run.id)
             }
           }
         }
@@ -300,7 +327,7 @@ struct RunsListView: View {
       .listStyle(.sidebar)
       .onAppear {
         if viewModel.selectedRunId == nil {
-          viewModel.selectedRunId = (needsReview.first ?? running.first ?? ready.first ?? pending.first)?.id
+          viewModel.selectedRunId = (needsReview.first ?? managing.first ?? running.first ?? ready.first ?? pending.first)?.id
         }
       }
       .onChange(of: mgr.runs.map(\.id)) { _, newIds in
@@ -364,20 +391,42 @@ struct RunsListView: View {
 
 struct UnifiedRunRow: View {
   @Bindable var run: ParallelWorktreeRun
+  var childCount: Int = 0
+  var isChild: Bool = false
 
   var body: some View {
     VStack(alignment: .leading, spacing: 4) {
       HStack(spacing: 6) {
+        if isChild {
+          Image(systemName: "arrow.turn.down.right")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
         statusIcon
         kindBadge
         Text(run.name)
           .fontWeight(.medium)
           .lineLimit(1)
         Spacer()
-        executionCountBadge
+        if run.kind == .managerRun && childCount > 0 {
+          HStack(spacing: 2) {
+            Image(systemName: "rectangle.stack")
+            Text("\(childCount)")
+          }
+          .font(.caption2)
+          .foregroundStyle(.indigo)
+        } else {
+          executionCountBadge
+        }
       }
 
       progressRow
+
+      // Manager-specific: child run summary
+      if run.kind == .managerRun && childCount > 0 {
+        Text("\(childCount) child run\(childCount == 1 ? "" : "s")")
+          .font(.caption2).foregroundStyle(.indigo)
+      }
 
       if run.pendingReviewCount > 0 {
         Text("\(run.pendingReviewCount) awaiting review")
@@ -403,6 +452,7 @@ struct UnifiedRunRow: View {
       }
     }
     .padding(.vertical, 4)
+    .padding(.leading, isChild ? 12 : 0)
   }
 
   @ViewBuilder
@@ -505,6 +555,7 @@ extension RunKind {
     case .prReview:      return "PR Review"
     case .investigation: return "Research"
     case .custom:        return "Custom"
+    case .managerRun:    return "Manager"
     }
   }
 
@@ -514,6 +565,7 @@ extension RunKind {
     case .prReview:      return "PR"
     case .investigation: return "RES"
     case .custom:        return "CUST"
+    case .managerRun:    return "MGR"
     }
   }
 
@@ -523,6 +575,7 @@ extension RunKind {
     case .prReview:      return .purple
     case .investigation: return .teal
     case .custom:        return .orange
+    case .managerRun:    return .indigo
     }
   }
 }

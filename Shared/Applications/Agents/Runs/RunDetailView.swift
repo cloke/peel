@@ -23,6 +23,10 @@ struct RunDetailView: View {
           Divider()
         }
         progressOverview
+        if run.kind == .managerRun {
+          Divider()
+          childRunsSection
+        }
         Divider()
         actionButtons
         Divider()
@@ -342,6 +346,143 @@ struct RunDetailView: View {
         set: { run.autoMergeOnApproval = $0 }
       ))
       .toggleStyle(.switch)
+    }
+  }
+
+  // MARK: - Child Runs (Manager)
+
+  @ViewBuilder
+  private var childRunsSection: some View {
+    let children = runManager.childRuns(of: run.id)
+    let stats = runManager.childRunStats(of: run.id)
+
+    VStack(alignment: .leading, spacing: 12) {
+      HStack {
+        Label("Child Runs", systemImage: "rectangle.stack")
+          .font(.headline)
+        Spacer()
+        if stats.total > 0 {
+          HStack(spacing: 8) {
+            if stats.running > 0 {
+              Label("\(stats.running)", systemImage: "circle.dotted")
+                .foregroundStyle(.blue)
+            }
+            if stats.needsReview > 0 {
+              Label("\(stats.needsReview)", systemImage: "eye.circle.fill")
+                .foregroundStyle(.orange)
+            }
+            if stats.completed > 0 {
+              Label("\(stats.completed)", systemImage: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+            }
+            if stats.failed > 0 {
+              Label("\(stats.failed)", systemImage: "xmark.circle.fill")
+                .foregroundStyle(.red)
+            }
+          }
+          .font(.caption)
+        }
+      }
+
+      if children.isEmpty {
+        Text("No child runs spawned yet.")
+          .font(.callout)
+          .foregroundStyle(.secondary)
+      } else {
+        ForEach(children) { child in
+          childRunCard(child)
+        }
+      }
+
+      // Overall child progress
+      if stats.total > 0 {
+        let progress = Double(stats.completed) / Double(stats.total)
+        HStack(spacing: 8) {
+          ProgressView(value: progress)
+            .progressViewStyle(.linear)
+          Text("\(stats.completed)/\(stats.total) complete")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func childRunCard(_ child: ParallelWorktreeRun) -> some View {
+    HStack(spacing: 8) {
+      childStatusIcon(child.status)
+      VStack(alignment: .leading, spacing: 2) {
+        HStack(spacing: 4) {
+          Text(child.kind.shortLabel)
+            .font(.caption2.weight(.bold))
+            .padding(.horizontal, 4)
+            .padding(.vertical, 1)
+            .background(child.kind.badgeColor.opacity(0.15), in: Capsule())
+            .foregroundStyle(child.kind.badgeColor)
+          Text(child.name)
+            .fontWeight(.medium)
+            .lineLimit(1)
+        }
+        if !child.prompt.isEmpty {
+          Text(child.prompt)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+        }
+        HStack(spacing: 12) {
+          Text(child.status.displayName)
+            .font(.caption)
+            .foregroundStyle(childStatusColor(child.status))
+          if child.totalFilesChanged > 0 {
+            Text("\(child.totalFilesChanged) files")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          if child.executions.count > 0 {
+            Text("\(child.executions.count) exec\(child.executions.count == 1 ? "" : "s")")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
+      }
+      Spacer()
+      ProgressView(value: child.progress)
+        .progressViewStyle(.linear)
+        .frame(maxWidth: 60)
+    }
+    .padding(8)
+    .background(Color(nsColor: .controlBackgroundColor))
+    .clipShape(RoundedRectangle(cornerRadius: 8))
+  }
+
+  @ViewBuilder
+  private func childStatusIcon(_ status: ParallelWorktreeRun.RunStatus) -> some View {
+    switch status {
+    case .pending:
+      Image(systemName: "clock").foregroundStyle(.secondary)
+    case .running:
+      ProgressView().controlSize(.small)
+    case .awaitingReview:
+      Image(systemName: "eye.circle.fill").foregroundStyle(.orange)
+    case .merging:
+      Image(systemName: "arrow.triangle.merge").foregroundStyle(.blue)
+    case .completed:
+      Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+    case .failed:
+      Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+    case .cancelled:
+      Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
+    }
+  }
+
+  private func childStatusColor(_ status: ParallelWorktreeRun.RunStatus) -> Color {
+    switch status {
+    case .completed: .green
+    case .awaitingReview: .orange
+    case .failed: .red
+    case .cancelled: .secondary
+    default: .primary
     }
   }
 

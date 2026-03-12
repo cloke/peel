@@ -73,6 +73,41 @@ final class RunManager {
     worktreeRunner.findRunBySourceChainRunId(chainRunId)
   }
 
+  // MARK: - Hierarchy Queries
+
+  /// Child runs spawned by a parent (manager) run.
+  func childRuns(of parentId: UUID) -> [ParallelWorktreeRun] {
+    runs.filter { $0.parentRunId == parentId }
+  }
+
+  /// The parent run, if this run was spawned as a child.
+  func parentRun(of run: ParallelWorktreeRun) -> ParallelWorktreeRun? {
+    guard let pid = run.parentRunId else { return nil }
+    return findRun(id: pid)
+  }
+
+  /// Top-level runs (no parent). These are the roots of the hierarchy.
+  func topLevelRuns() -> [ParallelWorktreeRun] {
+    runs.filter { $0.parentRunId == nil }
+  }
+
+  /// Whether a run is a manager run with active children.
+  func isActiveManager(_ run: ParallelWorktreeRun) -> Bool {
+    run.kind == .managerRun && !childRuns(of: run.id).isEmpty
+  }
+
+  /// Summary stats for a manager run's children.
+  func childRunStats(of parentId: UUID) -> (total: Int, running: Int, completed: Int, failed: Int, needsReview: Int) {
+    let children = childRuns(of: parentId)
+    return (
+      total: children.count,
+      running: children.filter { $0.status == .running }.count,
+      completed: children.filter { $0.status == .completed }.count,
+      failed: children.filter { if case .failed = $0.status { return true }; return false }.count,
+      needsReview: children.filter { $0.status == .awaitingReview }.count
+    )
+  }
+
   // MARK: - Create Runs
 
   /// Create and start a code change run (the common path for `chains.run`).
@@ -167,6 +202,56 @@ final class RunManager {
     run.ideaContext = IdeaRunContext()
     run.parentRunId = parentRunId
     run.isPaused = true
+    return run
+  }
+
+  /// Create a manager run that supervises child runs.
+  @discardableResult
+  func createManagerRun(
+    name: String,
+    prompt: String,
+    projectPath: String,
+    baseBranch: String = "HEAD"
+  ) -> ParallelWorktreeRun {
+    let task = WorktreeTask(
+      title: name,
+      description: prompt,
+      prompt: prompt
+    )
+    let run = worktreeRunner.createRun(
+      name: name,
+      projectPath: projectPath,
+      tasks: [task],
+      baseBranch: baseBranch,
+      requireReviewGate: true
+    )
+    run.kind = .managerRun
+    run.prompt = prompt
+    return run
+  }
+
+  /// Spawn a child run under a parent manager run.
+  @discardableResult
+  func spawnChildRun(
+    parentRunId: UUID,
+    prompt: String,
+    projectPath: String,
+    templateName: String? = nil,
+    baseBranch: String = "HEAD",
+    runOptions: AgentChainRunner.ChainRunOptions? = nil,
+    operatorGuidance: [String] = []
+  ) -> ParallelWorktreeRun {
+    let run = worktreeRunner.createAndStartSingleTaskRun(
+      prompt: prompt,
+      projectPath: projectPath,
+      templateName: templateName,
+      baseBranch: baseBranch,
+      requireReviewGate: true,
+      runOptions: runOptions,
+      operatorGuidance: operatorGuidance,
+      kind: .codeChange
+    )
+    run.parentRunId = parentRunId
     return run
   }
 

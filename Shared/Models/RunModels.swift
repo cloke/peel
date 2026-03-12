@@ -16,6 +16,7 @@ enum RunKind: String, Sendable, CaseIterable {
   case prReview       // Reviewing (and optionally fixing) a PR
   case investigation  // Research / analysis with no merge target
   case custom         // User-defined / template-driven
+  case managerRun     // Parent run that supervises child runs
 }
 
 // MARK: - Run Context (kind-specific metadata)
