@@ -132,7 +132,7 @@ public final class SwarmCoordinator {
 
   /// Recent message trace for diagnostics (newest first)
   public private(set) var messageTrace: [(date: Date, direction: String, peerId: String, type: String, detail: String)] = []
-  private let maxTraceEntries = 30
+  private let maxTraceEntries = 80
 
   private func traceMessage(direction: String, peerId: String, type: String, detail: String = "") {
     messageTrace.insert((date: Date(), direction: direction, peerId: peerId, type: type, detail: detail), at: 0)
@@ -1450,6 +1450,7 @@ public final class SwarmCoordinator {
           repos: []
         )
         try await sendMessage(.ragArtifactsManifest(id: transferId, manifest: manifest), to: peer.id)
+        traceMessage(direction: "OUT", peerId: peer.id, type: "ragManifest-sent", detail: "id=\(transferId) bytes=\(jsonData.count) chunks=\(totalChunks)")
 
         // Send in chunks
         var offset = 0
@@ -1466,6 +1467,9 @@ public final class SwarmCoordinator {
               .ragArtifactsChunk(id: transferId, index: chunkIndex, total: totalChunks, data: base64),
               to: peer.id
             )
+            if chunkIndex == 0 || chunkIndex == totalChunks - 1 {
+              traceMessage(direction: "OUT", peerId: peer.id, type: "ragChunk-sent", detail: "id=\(transferId) chunk=\(chunkIndex)/\(totalChunks) b64len=\(base64.count)")
+            }
             // Yield between chunks to avoid overwhelming the receiver
             await Task.yield()
           }
@@ -1581,9 +1585,12 @@ public final class SwarmCoordinator {
   private func handleRagArtifactsChunk(id: UUID, index: Int, total: Int, data: String) {
     guard let transfer = incomingRagTransfers[id] else {
       logger.error("RAG chunk \(index)/\(total) for \(id) dropped — no transfer state (manifest not yet processed?)")
+      traceMessage(direction: "IN-DROP", peerId: "?", type: "ragChunk-noState", detail: "chunk=\(index)/\(total) id=\(id)")
       return
     }
     guard let decoded = Data(base64Encoded: data) else {
+      logger.error("RAG chunk \(index)/\(total) for \(id) failed base64 decode (data.count=\(data.count))")
+      traceMessage(direction: "IN-ERR", peerId: transfer.peerId, type: "ragChunk-b64fail", detail: "chunk=\(index)/\(total) len=\(data.count)")
       updateRagTransfer(id) { state in
         state.status = .failed
         state.errorMessage = "Failed to decode artifact chunk"
@@ -2687,6 +2694,7 @@ extension SwarmCoordinator {
     case .ragArtifactsRequest(let id, let direction, let repoIdentifier, let transferMode):
       let peer = connectedWorkers.first(where: { $0.id == peerId })
       let peerName = peer?.name ?? "Peer"
+      traceMessage(direction: "IN", peerId: peerId, type: "ragRequest", detail: "id=\(id) dir=\(direction.rawValue) peer=\(peer != nil ? "found" : "NIL") repo=\(repoIdentifier ?? "all")")
       if direction == .pull {
         let transfer = RAGArtifactTransferState(
           id: id,
@@ -2730,15 +2738,22 @@ extension SwarmCoordinator {
       }
 
     case .ragArtifactsManifest(let id, let manifest):
+      traceMessage(direction: "IN", peerId: peerId, type: "ragManifest", detail: "id=\(id) ver=\(manifest.version) bytes=\(manifest.totalBytes)")
       handleRagArtifactsManifest(id: id, manifest: manifest, from: peerId)
 
     case .ragArtifactsChunk(let id, let index, let total, let data):
+      // Trace first, last, and every 25th chunk to avoid flooding trace buffer
+      if index == 0 || index == total - 1 || index % 25 == 0 {
+        traceMessage(direction: "IN", peerId: peerId, type: "ragChunk", detail: "id=\(id) chunk=\(index)/\(total) len=\(data.count)")
+      }
       handleRagArtifactsChunk(id: id, index: index, total: total, data: data)
 
     case .ragArtifactsComplete(let id):
+      traceMessage(direction: "IN", peerId: peerId, type: "ragComplete", detail: "id=\(id)")
       Task { await handleRagArtifactsComplete(id: id, from: peerId) }
 
     case .ragArtifactsError(let id, let message):
+      traceMessage(direction: "IN", peerId: peerId, type: "ragError", detail: "id=\(id) msg=\(message)")
       updateRagTransfer(id) { state in
         state.status = .failed
         state.errorMessage = message
