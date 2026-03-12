@@ -242,7 +242,7 @@ public enum WebRTCPeerTransfer {
 
     // 7. Export data
     stageStart = ContinuousClock.now
-    logger.notice("[responder] calling exportRepoBundle (will hop to MainActor)...")
+    logger.notice("[responder] calling exportRepoBundle (nonisolated)...")
     let bundleData = try await dataProvider.exportRepoBundle(repoIdentifier: repoIdentifier)
     logger.notice("[responder] exportRepoBundle complete: \(bundleData.count) bytes in \(ContinuousClock.now - stageStart)")
 

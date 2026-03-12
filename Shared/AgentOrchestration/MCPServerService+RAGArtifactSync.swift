@@ -84,29 +84,31 @@ extension MCPServerService: RAGArtifactSyncDelegate {
 
   // MARK: - Per-repo sync
 
-  func createRepoSyncBundle(repoIdentifier: String, excludeFileHashes: Set<String>) async throws -> RAGRepoExportBundle? {
-    logger.notice("RAG repo sync: exporting '\(repoIdentifier)', excluding \(excludeFileHashes.count) hashes")
+  nonisolated func createRepoSyncBundle(repoIdentifier: String, excludeFileHashes: Set<String>) async throws -> RAGRepoExportBundle? {
+    let log = Logger(subsystem: "com.peel.mcp", category: "RAGSync")
+    log.notice("RAG repo sync: exporting '\(repoIdentifier)', excluding \(excludeFileHashes.count) hashes")
+    let store = await localRagStore
     let start = ContinuousClock.now
-    let bundle = try await localRagStore.exportRepo(identifier: repoIdentifier, excludeFileHashes: excludeFileHashes)
+    let bundle = try await store.exportRepo(identifier: repoIdentifier, excludeFileHashes: excludeFileHashes)
     let elapsed = ContinuousClock.now - start
     if let bundle {
-      logger.notice("RAG repo sync: exported \(bundle.files.count) files, \(bundle.files.flatMap(\.chunks).count) chunks in \(elapsed)")
+      log.notice("RAG repo sync: exported \(bundle.files.count) files, \(bundle.files.flatMap(\.chunks).count) chunks in \(elapsed)")
     } else {
-      logger.warning("RAG repo sync: repo '\(repoIdentifier)' not found (took \(elapsed))")
+      log.warning("RAG repo sync: repo '\(repoIdentifier)' not found (took \(elapsed))")
     }
     return bundle
   }
 
-  func createRepoSyncManifest(repoIdentifier: String) async throws -> RAGRepoSyncManifest? {
-    logger.info("RAG repo sync: building manifest for '\(repoIdentifier)'")
-    let manifest = try await localRagStore.repoSyncManifest(identifier: repoIdentifier)
-    if manifest == nil {
-      logger.warning("RAG repo sync: no manifest for '\(repoIdentifier)' (repo not found)")
-    }
+  nonisolated func createRepoSyncManifest(repoIdentifier: String) async throws -> RAGRepoSyncManifest? {
+    let store = await localRagStore
+    let manifest = try await store.repoSyncManifest(identifier: repoIdentifier)
     return manifest
   }
 
-  func applyRepoSyncBundle(_ bundle: RAGRepoExportBundle, localRepoPath: String?, forceImportEmbeddings: Bool) async throws -> RAGRepoImporter.ImportResult {
+  nonisolated func applyRepoSyncBundle(_ bundle: RAGRepoExportBundle, localRepoPath: String?, forceImportEmbeddings: Bool) async throws -> RAGRepoImporter.ImportResult {
+    let log = Logger(subsystem: "com.peel.mcp", category: "RAGSync")
+    let store = await localRagStore
+
     // Resolve local repo path: use provided path, or look up via RepoRegistry, or discover
     let resolvedPath: String?
     if let localRepoPath {
@@ -114,74 +116,75 @@ extension MCPServerService: RAGArtifactSyncDelegate {
     } else if !bundle.manifest.repoIdentifier.isEmpty {
       let identifier = bundle.manifest.repoIdentifier
       // Try RepoRegistry first
-      if let registryPath = RepoRegistry.shared.getLocalPath(for: identifier),
+      if let registryPath = await RepoRegistry.shared.getLocalPath(for: identifier),
          FileManager.default.fileExists(atPath: registryPath) {
         resolvedPath = registryPath
-        logger.info("RAG repo sync: resolved '\(identifier)' to '\(registryPath)' via RepoRegistry")
+        log.info("RAG repo sync: resolved '\(identifier)' to '\(registryPath)' via RepoRegistry")
       } else {
         // Fall back to filesystem discovery
-        resolvedPath = await localRagStore.discoverRepoPathPublic(for: identifier)
+        resolvedPath = await store.discoverRepoPathPublic(for: identifier)
         if let discovered = resolvedPath {
-          logger.info("RAG repo sync: discovered '\(identifier)' at '\(discovered)' via filesystem scan")
+          log.info("RAG repo sync: discovered '\(identifier)' at '\(discovered)' via filesystem scan")
           await RepoRegistry.shared.registerRepo(at: discovered)
         } else {
-          logger.warning("RAG repo sync: could not resolve local path for '\(identifier)' — using remote path")
+          log.warning("RAG repo sync: could not resolve local path for '\(identifier)' — using remote path")
         }
       }
     } else {
       resolvedPath = nil
     }
 
-    logger.info("RAG repo sync: importing '\(bundle.manifest.repoIdentifier)', \(bundle.files.count) files, localPath: \(resolvedPath ?? "nil"), forceEmbeddings: \(forceImportEmbeddings)")
-    let result = try await localRagStore.importRepoBundle(bundle, localRepoPath: resolvedPath, forceImportEmbeddings: forceImportEmbeddings)
-
-    // Record the synced embedding model for UX display
-    if let remoteModel = result.remoteEmbeddingModel, result.embeddingsImported > 0 {
-      let identifier = bundle.manifest.repoIdentifier
-      self.ragSyncedEmbeddingModels[identifier] = remoteModel
-    }
+    log.info("RAG repo sync: importing '\(bundle.manifest.repoIdentifier)', \(bundle.files.count) files, localPath: \(resolvedPath ?? "nil"), forceEmbeddings: \(forceImportEmbeddings)")
+    let result = try await store.importRepoBundle(bundle, localRepoPath: resolvedPath, forceImportEmbeddings: forceImportEmbeddings)
 
     if result.needsLocalReembedding {
       let remoteModel = result.remoteEmbeddingModel ?? "unknown"
       let skipped = result.embeddingsSkippedModelMismatch
-      logger.warning("RAG repo sync: imported text/analysis only — embedding model mismatch (remote: \(remoteModel), local model differs). Skipped \(skipped) embeddings. Re-index to generate local embeddings.")
+      log.warning("RAG repo sync: imported text/analysis only — embedding model mismatch (remote: \(remoteModel), local model differs). Skipped \(skipped) embeddings. Re-index to generate local embeddings.")
     }
-    logger.info("RAG repo sync: imported — files \(result.filesImported), skipped \(result.filesSkipped), chunks \(result.chunksImported), embeddings \(result.embeddingsImported), analysisUpdated \(result.chunksAnalysisUpdated), embeddingsBackfilled \(result.embeddingsBackfilled), pruned \(result.filesPruned)")
+    log.info("RAG repo sync: imported — files \(result.filesImported), skipped \(result.filesSkipped), chunks \(result.chunksImported), embeddings \(result.embeddingsImported), analysisUpdated \(result.chunksAnalysisUpdated), embeddingsBackfilled \(result.embeddingsBackfilled), pruned \(result.filesPruned)")
+
+    // Update UI state on MainActor (quick writes only)
+    await MainActor.run {
+      if let remoteModel = result.remoteEmbeddingModel, result.embeddingsImported > 0 {
+        self.ragSyncedEmbeddingModels[bundle.manifest.repoIdentifier] = remoteModel
+      }
+    }
     await refreshRagSummary()
     return result
   }
 
-  func localRepoFileHashes(repoIdentifier: String) async throws -> Set<String> {
-    try await localRagStore.localFileHashes(identifier: repoIdentifier)
+  nonisolated func localRepoFileHashes(repoIdentifier: String) async throws -> Set<String> {
+    let store = await localRagStore
+    return try await store.localFileHashes(identifier: repoIdentifier)
   }
 
   // MARK: - Overlay sync
 
-  func createRepoOverlayBundle(repoIdentifier: String, excludeFileHashes: Set<String>) async throws -> RAGRepoOverlayBundle? {
-    logger.info("RAG overlay export: '\(repoIdentifier)', excluding \(excludeFileHashes.count) hashes")
-    let bundle = try await localRagStore.exportRepoOverlay(identifier: repoIdentifier, excludeFileHashes: excludeFileHashes)
-    if let bundle {
-      logger.info("RAG overlay export: \(bundle.files.count) files, \(bundle.totalEmbeddings) embeddings, \(bundle.totalAnalysis) analysis entries")
-    } else {
-      logger.warning("RAG overlay export: repo '\(repoIdentifier)' not found")
-    }
+  nonisolated func createRepoOverlayBundle(repoIdentifier: String, excludeFileHashes: Set<String>) async throws -> RAGRepoOverlayBundle? {
+    let store = await localRagStore
+    let bundle = try await store.exportRepoOverlay(identifier: repoIdentifier, excludeFileHashes: excludeFileHashes)
     return bundle
   }
 
-  func applyRepoOverlayBundle(_ bundle: RAGRepoOverlayBundle) async throws -> RAGRepoImporter.OverlayImportResult {
-    logger.info("RAG overlay import: '\(bundle.manifest.repoIdentifier)', \(bundle.files.count) files, model: \(bundle.manifest.embeddingModel) (\(bundle.manifest.embeddingDimensions)d)")
-    let result = try await localRagStore.importRepoOverlay(bundle)
+  nonisolated func applyRepoOverlayBundle(_ bundle: RAGRepoOverlayBundle) async throws -> RAGRepoImporter.OverlayImportResult {
+    let log = Logger(subsystem: "com.peel.mcp", category: "RAGSync")
+    let store = await localRagStore
+    log.info("RAG overlay import: '\(bundle.manifest.repoIdentifier)', \(bundle.files.count) files, model: \(bundle.manifest.embeddingModel) (\(bundle.manifest.embeddingDimensions)d)")
+    let result = try await store.importRepoOverlay(bundle)
 
     if result.isSuccess {
-      // Record the overlay embedding model for UX display
-      if result.embeddingsApplied > 0, let remoteModel = result.remoteEmbeddingModel {
-        self.ragSyncedEmbeddingModels[bundle.manifest.repoIdentifier] = remoteModel
-      }
-      logger.info("RAG overlay import: matched \(result.filesMatched) files, \(result.embeddingsApplied) embeddings (\(result.embeddingsReplaced) replaced), \(result.analysisApplied) analysis updates, \(result.chunksUnmatched) chunks unmatched")
+      log.info("RAG overlay import: matched \(result.filesMatched) files, \(result.embeddingsApplied) embeddings (\(result.embeddingsReplaced) replaced), \(result.analysisApplied) analysis updates, \(result.chunksUnmatched) chunks unmatched")
     } else {
-      logger.error("RAG overlay import failed: \(result.error ?? "unknown")")
+      log.error("RAG overlay import failed: \(result.error ?? "unknown")")
     }
 
+    // Update UI state on MainActor (quick writes only)
+    await MainActor.run {
+      if result.isSuccess, result.embeddingsApplied > 0, let remoteModel = result.remoteEmbeddingModel {
+        self.ragSyncedEmbeddingModels[bundle.manifest.repoIdentifier] = remoteModel
+      }
+    }
     await refreshRagSummary()
     return result
   }

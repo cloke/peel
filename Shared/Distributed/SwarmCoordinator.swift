@@ -2737,10 +2737,11 @@ extension SwarmCoordinator {
 // MARK: - WebRTCTransferDataProvider
 
 extension SwarmCoordinator: WebRTCTransferDataProvider {
-  public func exportRepoBundle(repoIdentifier: String) async throws -> Data {
+  nonisolated public func exportRepoBundle(repoIdentifier: String) async throws -> Data {
+    let log = Logger(subsystem: "com.peel.webrtc", category: "SwarmCoordinator")
     let start = ContinuousClock.now
-    logger.notice("[exportRepoBundle] ENTER for \(repoIdentifier) (on MainActor: \(Thread.isMainThread))")
-    guard let delegate = ragSyncDelegate else {
+    log.notice("[exportRepoBundle] ENTER for \(repoIdentifier) (on MainActor: \(Thread.isMainThread))")
+    guard let delegate = await ragSyncDelegate else {
       throw OnDemandTransferError.remoteError(message: "No RAG sync delegate available")
     }
     let bundleStart = ContinuousClock.now
@@ -2750,13 +2751,13 @@ extension SwarmCoordinator: WebRTCTransferDataProvider {
     ) else {
       throw OnDemandTransferError.remoteError(message: "No bundle available for \(repoIdentifier)")
     }
-    logger.notice("[exportRepoBundle] createRepoSyncBundle: \(ContinuousClock.now - bundleStart) (on MainActor: \(Thread.isMainThread))")
+    log.notice("[exportRepoBundle] createRepoSyncBundle: \(ContinuousClock.now - bundleStart) (on MainActor: \(Thread.isMainThread))")
     // Encode off main actor to avoid blocking UI
     let encodeStart = ContinuousClock.now
     let data = try await Task.detached(priority: .userInitiated) {
       try JSONEncoder().encode(bundle)
     }.value
-    logger.notice("[exportRepoBundle] encode: \(ContinuousClock.now - encodeStart), total: \(ContinuousClock.now - start), size: \(data.count) bytes")
+    log.notice("[exportRepoBundle] encode: \(ContinuousClock.now - encodeStart), total: \(ContinuousClock.now - start), size: \(data.count) bytes")
     return data
   }
 }

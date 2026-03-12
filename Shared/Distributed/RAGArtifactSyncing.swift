@@ -7,8 +7,10 @@
 
 import Foundation
 
-@MainActor
-protocol RAGArtifactSyncDelegate: AnyObject {
+/// RAG artifact sync delegate.
+/// Methods are NOT @MainActor — heavy DB operations must run off the main thread
+/// to prevent UI lockups during WebRTC transfers.
+protocol RAGArtifactSyncDelegate: AnyObject, Sendable {
   func createRagArtifactBundle() async throws -> LocalRAGArtifactBundle
   func applyRagArtifactBundle(at url: URL, manifest: RAGArtifactManifest, from peerId: String, direction: RAGArtifactSyncDirection) async throws
 

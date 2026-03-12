@@ -541,7 +541,7 @@ public final class OnDemandPeerTransfer {
     }.value
     logger.notice("[import] decode complete: \(ContinuousClock.now - start)")
     let applyStart = ContinuousClock.now
-    logger.notice("[import] applying bundle (will hop to MainActor)...")
+    logger.notice("[import] applying bundle (nonisolated — no MainActor hop)...")
     _ = try await ragSyncDelegate.applyRepoSyncBundle(bundle, localRepoPath: nil, forceImportEmbeddings: true)
     logger.notice("[import] apply complete: \(ContinuousClock.now - applyStart), total import: \(ContinuousClock.now - start)")
   }
