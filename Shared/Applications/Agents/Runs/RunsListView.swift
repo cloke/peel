@@ -348,6 +348,7 @@ struct RunsListView: View {
           run: run,
           runManager: mgr,
           runner: mgr.worktreeRunner,
+          mcpServer: mcpServer,
           selectedExecution: $selectedExecution
         )
       } else if let snap = mgr.historicalRuns.first(where: { $0.id == selectedId }),

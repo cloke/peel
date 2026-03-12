@@ -4,11 +4,15 @@ struct RunDetailView: View {
   @Bindable var run: ParallelWorktreeRun
   let runManager: RunManager
   let runner: ParallelWorktreeRunner?
+  var mcpServer: MCPServerService?
   @Binding var selectedExecution: ParallelWorktreeExecution?
   @State private var expandedExecutions = Set<UUID>()
   @State private var showingCancelConfirmation = false
   @State private var mergeError: String?
   @State private var showRawOutput = false
+  @State private var prActionInProgress: String?
+  @State private var prActionResult: String?
+  @State private var prActionError: String?
 
   var body: some View {
     ScrollView {
@@ -370,6 +374,8 @@ struct RunDetailView: View {
 
   // MARK: - Progress
 
+  private var isPRReview: Bool { run.kind == .prReview }
+
   @ViewBuilder
   private var progressOverview: some View {
     VStack(alignment: .leading, spacing: 12) {
@@ -379,10 +385,12 @@ struct RunDetailView: View {
       LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 16)], spacing: 12) {
         statBox(title: "Total", value: "\(run.executions.count)", color: .primary)
         statBox(title: "Running", value: "\(run.activeCount)", color: .primary)
-        statBox(title: "Pending Review", value: "\(run.pendingReviewCount)", color: .orange)
+        statBox(title: isPRReview ? "Pending" : "Pending Review", value: "\(run.pendingReviewCount)", color: .orange)
         statBox(title: "Reviewed", value: "\(run.reviewedCount)", color: .purple)
-        statBox(title: "Ready to Merge", value: "\(run.readyToMergeCount)", color: .green)
-        statBox(title: "Merged", value: "\(run.mergedCount)", color: .blue)
+        statBox(title: isPRReview ? "Ready to Approve" : "Ready to Merge", value: "\(run.readyToMergeCount)", color: .green)
+        if !isPRReview {
+          statBox(title: "Merged", value: "\(run.mergedCount)", color: .blue)
+        }
         statBox(title: "Rejected", value: "\(run.rejectedCount)", color: .red)
         statBox(title: "Failed", value: "\(run.failedCount)", color: .red)
         if run.hungExecutionCount > 0 {
@@ -423,6 +431,79 @@ struct RunDetailView: View {
 
   @ViewBuilder
   private var actionButtons: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      if isPRReview {
+        prReviewActions
+      } else {
+        codeChangeActions
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var prReviewActions: some View {
+    HStack(spacing: 12) {
+      if run.isPaused {
+        Button {
+          Task { try? await runManager.resumeRun(run) }
+        } label: {
+          Label("Resume", systemImage: "play.fill")
+        }
+        .buttonStyle(.borderedProminent)
+      } else if run.status == .running {
+        Button {
+          runManager.pauseRun(run)
+        } label: {
+          Label("Pause", systemImage: "pause.fill")
+        }
+        .buttonStyle(.bordered)
+      }
+
+      if let ctx = run.prContext, run.readyToMergeCount > 0 {
+        Button {
+          Task { await postGitHubReview(ctx: ctx, event: "APPROVE", body: "Approved via Peel agent review.") }
+        } label: {
+          Label(prActionInProgress == "APPROVE" ? "Approving..." : "Approve PR", systemImage: "checkmark.seal.fill")
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(.green)
+        .disabled(prActionInProgress != nil)
+
+        Button {
+          Task { await postGitHubReview(ctx: ctx, event: "REQUEST_CHANGES", body: reviewBodyForRequestChanges()) }
+        } label: {
+          Label(prActionInProgress == "REQUEST_CHANGES" ? "Posting..." : "Request Changes", systemImage: "exclamationmark.bubble")
+        }
+        .buttonStyle(.bordered)
+        .disabled(prActionInProgress != nil)
+
+        Button {
+          Task { await postGitHubReview(ctx: ctx, event: "COMMENT", body: reviewBodyForComment()) }
+        } label: {
+          Label(prActionInProgress == "COMMENT" ? "Posting..." : "Comment", systemImage: "text.bubble")
+        }
+        .buttonStyle(.bordered)
+        .disabled(prActionInProgress != nil)
+      }
+
+      Spacer()
+
+      if let result = prActionResult {
+        Label(result, systemImage: "checkmark.circle.fill")
+          .font(.caption)
+          .foregroundStyle(.green)
+      }
+      if let error = prActionError {
+        Label(error, systemImage: "exclamationmark.triangle")
+          .font(.caption)
+          .foregroundStyle(.red)
+          .lineLimit(3)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private var codeChangeActions: some View {
     HStack(spacing: 12) {
       if run.isPaused {
         Button {
@@ -486,6 +567,56 @@ struct RunDetailView: View {
       ))
       .toggleStyle(.switch)
     }
+  }
+
+  // MARK: - GitHub PR Actions
+
+  private func postGitHubReview(ctx: PRRunContext, event: String, body: String) async {
+    guard let handler = mcpServer?.githubToolsHandler else {
+      prActionError = "GitHub handler unavailable"
+      return
+    }
+
+    prActionInProgress = event
+    prActionResult = nil
+    prActionError = nil
+
+    let arguments: [String: Any] = [
+      "owner": ctx.repoOwner,
+      "repo": ctx.repoName,
+      "pull_number": ctx.prNumber,
+      "event": event,
+      "body": body,
+    ]
+
+    let (_, data) = await handler.handle(name: "github.pr.review.create", id: nil, arguments: arguments)
+    if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+       let errorObj = json["error"] as? [String: Any],
+       let msg = errorObj["message"] as? String {
+      prActionError = msg
+    } else {
+      switch event {
+      case "APPROVE": prActionResult = "PR Approved"
+      case "REQUEST_CHANGES": prActionResult = "Changes Requested"
+      default: prActionResult = "Comment Posted"
+      }
+    }
+    prActionInProgress = nil
+  }
+
+  private func reviewBodyForRequestChanges() -> String {
+    guard let output = bestOutput else { return "Changes requested via Peel agent review." }
+    let parsed = parseReviewOutput(output)
+    if !parsed.issues.isEmpty {
+      return "Issues found by agent review:\n\n" + parsed.issues.map { "- \($0)" }.joined(separator: "\n")
+    }
+    return parsed.summary.isEmpty ? "Changes requested via Peel agent review." : parsed.summary
+  }
+
+  private func reviewBodyForComment() -> String {
+    guard let output = bestOutput else { return "Review comment via Peel." }
+    let parsed = parseReviewOutput(output)
+    return parsed.summary.isEmpty ? "Review comment via Peel." : parsed.summary
   }
 
   // MARK: - Child Runs (Manager)
