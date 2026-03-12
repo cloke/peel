@@ -1413,14 +1413,14 @@ final class ParallelWorktreeRunner {
       ])
     }
 
-    let diffStats = computeDiffStats(in: worktreePath)
-    let gitStatus = runGit(args: ["status", "-sb"], at: worktreePath)
+    let diffStats = await computeDiffStats(in: worktreePath)
+    let gitStatus = await runGit(args: ["status", "-sb"], at: worktreePath)
 
     // Auto-commit any uncommitted changes so the branch has mergeable commits.
     // Agents edit files but don't always `git commit` — without this,
     // parallel.merge finds no commits on the branch and merges nothing.
     if diffStats.filesChanged > 0 {
-      autoCommitChanges(in: worktreePath, taskTitle: task.title)
+      await autoCommitChanges(in: worktreePath, taskTitle: task.title)
       await mcpLog.info("Auto-committed agent changes", metadata: [
         "taskTitle": task.title,
         "filesChanged": "\(diffStats.filesChanged)"
@@ -2001,9 +2001,9 @@ final class ParallelWorktreeRunner {
 
   /// Stage and commit all uncommitted changes in a worktree.
   /// Called after the chain finishes so the branch has mergeable commits.
-  private func autoCommitChanges(in worktreePath: String, taskTitle: String) {
+  private func autoCommitChanges(in worktreePath: String, taskTitle: String) async {
     // Stage everything (new, modified, deleted)
-    _ = runGit(args: ["add", "-A"], at: worktreePath)
+    _ = await runGit(args: ["add", "-A"], at: worktreePath)
 
     // Build a concise commit message from the task title
     let sanitized = taskTitle
@@ -2011,11 +2011,11 @@ final class ParallelWorktreeRunner {
       .prefix(120)
     let message = "Agent implementation: \(sanitized)"
 
-    _ = runGit(args: ["commit", "-m", message, "--allow-empty"], at: worktreePath)
+    _ = await runGit(args: ["commit", "-m", message, "--allow-empty"], at: worktreePath)
   }
 
-  private func computeDiffStats(in worktreePath: String) -> (summary: String?, filesChanged: Int, insertions: Int, deletions: Int) {
-    let numstat = runGit(args: ["diff", "--numstat"], at: worktreePath)
+  private func computeDiffStats(in worktreePath: String) async -> (summary: String?, filesChanged: Int, insertions: Int, deletions: Int) {
+    let numstat = await runGit(args: ["diff", "--numstat"], at: worktreePath)
     let lines = numstat.split(separator: "\n")
     var filesChanged = 0
     var insertions = 0
@@ -2031,22 +2031,13 @@ final class ParallelWorktreeRunner {
         deletions += del
       }
     }
-    let summary = filesChanged > 0 ? runGit(args: ["diff", "--stat"], at: worktreePath) : nil
+    let summary = filesChanged > 0 ? await runGit(args: ["diff", "--stat"], at: worktreePath) : nil
     return (summary?.isEmpty == false ? summary : nil, filesChanged, insertions, deletions)
   }
 
-  private func runGit(args: [String], at path: String) -> String {
-    let process = Process()
-    process.currentDirectoryURL = URL(fileURLWithPath: path)
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-    process.arguments = args
-    let pipe = Pipe()
-    process.standardOutput = pipe
-    process.standardError = pipe
-    try? process.run()
-    process.waitUntilExit()
-    let data = pipe.fileHandleForReading.readDataToEndOfFile()
-    return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+  private func runGit(args: [String], at path: String) async -> String {
+    let (output, _) = await runGit(args, in: path)
+    return output.trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
   private func cleanupChain(_ chain: AgentChain) async {
