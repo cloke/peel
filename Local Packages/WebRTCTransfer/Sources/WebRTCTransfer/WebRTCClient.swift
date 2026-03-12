@@ -194,6 +194,36 @@ public final class WebRTCClient: NSObject, Sendable {
       messageWaiter?.resume(throwing: CancellationError())
       messageWaiter = nil
     }
+
+    // Buffer drain waiting for backpressure
+    var bufferDrainContinuation: CheckedContinuation<Void, Error>?
+
+    func onBufferDrained() {
+      bufferDrainContinuation?.resume()
+      bufferDrainContinuation = nil
+    }
+
+    func waitForBufferDrain() async throws {
+      if let error = channelClosedError { throw error }
+      try await withTaskCancellationHandler {
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+          if let error = channelClosedError {
+            cont.resume(throwing: error)
+          } else if Task.isCancelled {
+            cont.resume(throwing: CancellationError())
+          } else {
+            bufferDrainContinuation = cont
+          }
+        }
+      } onCancel: {
+        Task { await self.cancelBufferDrainWaiter() }
+      }
+    }
+
+    func cancelBufferDrainWaiter() {
+      bufferDrainContinuation?.resume(throwing: CancellationError())
+      bufferDrainContinuation = nil
+    }
   }
 
   // MARK: - Init
@@ -373,7 +403,13 @@ public final class WebRTCClient: NSObject, Sendable {
 
   // MARK: - Data Transfer
 
-  /// Send binary data over the data channel.
+  /// Max buffered bytes before pausing sends (256KB).
+  private static let bufferHighWaterMark: UInt64 = 256 * 1024
+  /// Resume threshold (64KB).
+  private static let bufferLowWaterMark: UInt64 = 64 * 1024
+
+  /// Send binary data over the data channel with backpressure.
+  /// Waits if the channel's buffer exceeds the high water mark.
   public func send(_ data: Data) async throws {
     guard let channel = await state.getActiveDataChannel() else {
       throw WebRTCError.noDataChannel
@@ -381,6 +417,12 @@ public final class WebRTCClient: NSObject, Sendable {
     guard channel.readyState == .open else {
       throw WebRTCError.dataChannelNotOpen
     }
+
+    // Wait for buffer to drain if above high water mark
+    if channel.bufferedAmount > Self.bufferHighWaterMark {
+      try await state.waitForBufferDrain()
+    }
+
     let buffer = RTCDataBuffer(data: data, isBinary: true)
     guard channel.sendData(buffer) else {
       throw WebRTCError.sendFailed
@@ -424,7 +466,10 @@ extension WebRTCClient: RTCPeerConnectionDelegate {
 
   public func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
     logger.info("ICE connection state: \(String(describing: newState))")
-    if newState == .failed || newState == .disconnected || newState == .closed {
+    // Only fail on terminal states. `.disconnected` is transient — ICE will
+    // attempt to recover via candidate pair switching. Treating it as fatal
+    // was killing transfers after the first 64KB chunk.
+    if newState == .failed || newState == .closed {
       Task {
         await state.onChannelClosed(WebRTCError.iceConnectionFailed(state: newState))
       }
@@ -466,6 +511,12 @@ extension WebRTCClient: RTCDataChannelDelegate {
 
   public func dataChannel(_ dataChannel: RTCDataChannel, didReceiveMessageWith buffer: RTCDataBuffer) {
     Task { await state.onMessage(buffer.data) }
+  }
+
+  public func dataChannel(_ dataChannel: RTCDataChannel, didChangeBufferedAmount amount: UInt64) {
+    if amount <= Self.bufferLowWaterMark {
+      Task { await state.onBufferDrained() }
+    }
   }
 }
 

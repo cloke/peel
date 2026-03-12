@@ -58,7 +58,10 @@ public final class WebRTCSignalingResponder {
           return
         }
 
-        for change in snapshot.documentChanges where change.type == .added || change.type == .modified {
+        // Only process newly added offers. `.modified` events (e.g. ICE candidate
+        // updates on the same document) must NOT re-trigger offer handling — that was
+        // cancelling in-flight transfers after the first chunk.
+        for change in snapshot.documentChanges where change.type == .added {
           let data = change.document.data()
 
           guard let fromWorkerId = data["fromWorkerId"] as? String,
@@ -75,9 +78,6 @@ public final class WebRTCSignalingResponder {
           let docId = change.document.documentID
 
           Task { @MainActor in
-            if change.type == .modified {
-              self.respondedOffers.remove(docId)
-            }
             guard !self.respondedOffers.contains(docId) else { return }
             self.respondedOffers.insert(docId)
 
@@ -136,8 +136,17 @@ public final class WebRTCSignalingResponder {
       remoteDeviceId: fromWorkerId
     )
 
-    // Cancel any previous serve task
-    activeServeTask?.cancel()
+    // Only cancel previous task for ping (lightweight). For transfers, let them finish.
+    // Blindly cancelling was killing multi-chunk transfers when Firestore re-fired.
+    if purpose == "ping" || activeServeTask == nil {
+      activeServeTask?.cancel()
+    } else if let existing = activeServeTask, !existing.isCancelled {
+      logger.info("Skipping new offer — active transfer in progress")
+      P2PConnectionLog.shared.log("webrtc-responder", "Skipped offer, transfer in progress", details: [
+        "fromWorkerId": fromWorkerId,
+      ])
+      return
+    }
 
     if purpose == "ping" {
       // Ping: lightweight connectivity test, no data provider needed

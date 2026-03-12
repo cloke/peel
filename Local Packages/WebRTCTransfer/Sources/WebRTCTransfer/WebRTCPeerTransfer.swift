@@ -83,7 +83,14 @@ public enum WebRTCPeerTransfer {
     progressHandler: (@Sendable (Int, Int) -> Void)? = nil
   ) async throws -> Data {
     let client = WebRTCClient()
-    defer { client.close(); Task { await signaling.cleanup() } }
+    var remoteCandidateTask: Task<Void, Never>?
+    var candidateTask: Task<Void, Never>?
+    defer {
+      candidateTask?.cancel()
+      remoteCandidateTask?.cancel()
+      client.close()
+      Task { await signaling.cleanup() }
+    }
 
     logger.info("Starting WebRTC transfer (initiator) for \(repoIdentifier)")
 
@@ -91,14 +98,14 @@ public enum WebRTCPeerTransfer {
     try await client.createDataChannel(label: "rag-transfer")
 
     // 2. Set up ICE candidate forwarding to remote peer
-    let candidateTask = Task {
+    candidateTask = Task {
       await client.onLocalICECandidate { candidate in
         Task { try? await signaling.sendCandidate(candidate) }
       }
     }
 
     // 3. Start receiving remote ICE candidates
-    let remoteCandidateTask = Task {
+    remoteCandidateTask = Task {
       for await candidate in signaling.receiveCandidates() {
         try? await client.addICECandidate(candidate)
       }
@@ -131,10 +138,7 @@ public enum WebRTCPeerTransfer {
       progressHandler: progressHandler
     )
 
-    // Clean up
-    candidateTask.cancel()
-    remoteCandidateTask.cancel()
-
+    // Clean up — tasks cancelled by defer
     logger.info("Transfer complete: \(result.count) bytes for \(repoIdentifier)")
     return result
   }
@@ -160,7 +164,12 @@ public enum WebRTCPeerTransfer {
     timeout: Duration = .seconds(300)
   ) async throws {
     let client = WebRTCClient()
-    defer { client.close(); Task { await signaling.cleanup() } }
+    var remoteCandidateTask: Task<Void, Never>?
+    defer {
+      remoteCandidateTask?.cancel()
+      client.close()
+      Task { await signaling.cleanup() }
+    }
 
     logger.info("Starting WebRTC transfer (responder)")
 
@@ -170,7 +179,7 @@ public enum WebRTCPeerTransfer {
     }
 
     // 2. Start receiving remote ICE candidates
-    let remoteCandidateTask = Task {
+    remoteCandidateTask = Task {
       for await candidate in signaling.receiveCandidates() {
         try? await client.addICECandidate(candidate)
       }
@@ -221,7 +230,7 @@ public enum WebRTCPeerTransfer {
 
     // Give the peer a moment to receive the complete message
     try? await Task.sleep(for: .seconds(1))
-    remoteCandidateTask.cancel()
+    // remoteCandidateTask cancelled by defer
   }
 
   // MARK: - Chunked Transfer Helpers
@@ -250,12 +259,8 @@ public enum WebRTCPeerTransfer {
       msg.append(Data(bytes: &idx, count: 4))
       msg.append(chunkData)
 
+      // send() applies backpressure via bufferedAmount checking
       try await client.send(msg)
-
-      // Brief yield every 16 chunks to let SCTP flush
-      if i % 16 == 15 {
-        try await Task.sleep(for: .milliseconds(1))
-      }
     }
   }
 
