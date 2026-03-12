@@ -73,7 +73,7 @@ struct RunDetailView: View {
     VStack(alignment: .leading, spacing: 8) {
       HStack(spacing: 8) {
         kindBadge
-        Text(run.status.displayName)
+        Text(run.status.displayName(kind: run.kind, prContext: run.prContext))
           .font(.callout.weight(.medium))
           .foregroundStyle(statusColor)
         if run.isPaused {
@@ -570,7 +570,7 @@ struct RunDetailView: View {
             .lineLimit(2)
         }
         HStack(spacing: 12) {
-          Text(child.status.displayName)
+          Text(child.status.displayName(kind: child.kind, prContext: child.prContext))
             .font(.caption)
             .foregroundStyle(childStatusColor(child.status))
           if child.totalFilesChanged > 0 {

@@ -496,7 +496,7 @@ struct UnifiedRunRow: View {
         .tint(progressColor)
         .frame(maxWidth: 100)
 
-      Text(run.status.displayName)
+      Text(run.status.displayName(kind: run.kind, prContext: run.prContext))
         .font(.caption)
         .foregroundStyle(statusTextColor)
     }

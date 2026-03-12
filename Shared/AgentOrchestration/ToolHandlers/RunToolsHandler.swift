@@ -177,7 +177,7 @@ final class RunToolsHandler {
       try await mgr.resumeRun(run)
       return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
         "runId": run.id.uuidString,
-        "status": run.status.displayName,
+        "status": run.status.displayName(kind: run.kind, prContext: run.prContext),
         "message": "Run resumed.",
       ]))
     } catch {
@@ -239,7 +239,7 @@ final class RunToolsHandler {
       "runId": run.id.uuidString,
       "name": run.name,
       "kind": run.kind.rawValue,
-      "status": run.status.displayName,
+      "status": run.status.displayName(kind: run.kind, prContext: run.prContext),
       "message": "Manager run created. Use runs.spawnChild to add child tasks.",
     ]))
   }
@@ -356,7 +356,7 @@ final class RunToolsHandler {
       return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
         "runId": run.id.uuidString,
         "name": run.name,
-        "status": run.status.displayName,
+        "status": run.status.displayName(kind: run.kind, prContext: run.prContext),
         "childCount": stats.total,
         "message": "Manager run started with \(stats.total) child tasks. Use runs.children to monitor progress.",
       ]))

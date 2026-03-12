@@ -229,7 +229,7 @@ extension MCPServerService: ChainToolsHandlerDelegate {
         if case .failed(let msg) = run.status { return msg as Any }
         return NSNull()
       }(),
-      "status": run.status.displayName,
+      "status": run.status.displayName(kind: run.kind, prContext: run.prContext),
       "filesChanged": execution?.filesChanged ?? 0,
       "insertions": execution?.insertions ?? 0,
       "deletions": execution?.deletions ?? 0,

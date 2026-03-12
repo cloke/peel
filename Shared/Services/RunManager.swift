@@ -380,7 +380,7 @@ final class RunManager {
       "runId": run.id.uuidString,
       "name": run.name,
       "kind": run.kind.rawValue,
-      "status": run.status.displayName,
+      "status": run.status.displayName(kind: run.kind, prContext: run.prContext),
       "projectPath": run.projectPath,
       "baseBranch": run.baseBranch,
       "executionCount": run.executions.count,

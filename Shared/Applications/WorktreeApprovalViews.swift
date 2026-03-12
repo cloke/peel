@@ -88,7 +88,7 @@ struct WorktreeRunApprovalCard: View {
         Text(run.name)
           .fontWeight(.semibold)
 
-        Text(run.status.displayName)
+        Text(run.status.displayName(kind: run.kind, prContext: run.prContext))
           .font(.caption)
           .foregroundStyle(.secondary)
       }

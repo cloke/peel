@@ -291,6 +291,20 @@ final class ParallelWorktreeRun: Identifiable, @unchecked Sendable, Hashable {
       case .cancelled: return "Cancelled"
       }
     }
+
+    /// Context-aware display name for PR review runs.
+    /// "Awaiting Review" doesn't make sense when the chain *is* the review.
+    func displayName(kind: RunKind, prContext: PRRunContext?) -> String {
+      guard self == .awaitingReview, kind == .prReview else { return displayName }
+      if let verdict = prContext?.reviewVerdict?.lowercased() {
+        switch verdict {
+        case "approve": return "Awaiting Approval"
+        case "request_changes", "requestchanges": return "Awaiting Fix"
+        default: return "Review Complete"
+        }
+      }
+      return "Review Complete"
+    }
   }
   
   init(
@@ -581,16 +595,27 @@ final class ParallelWorktreeRunner {
   /// Mark executions stuck in non-terminal states as failed.
   /// This catches runs orphaned by app restarts or hung chains.
   private func cleanupStaleRuns() {
-    let staleThreshold: TimeInterval = 45 * 60 // 45 minutes
+    let runningThreshold: TimeInterval = 45 * 60 // 45 minutes for running
+    let reviewingThreshold: TimeInterval = 30 * 60 // 30 minutes for reviewing (PR review chains take ~5 min)
     let now = Date()
     for run in runs {
       var changed = false
       for execution in run.executions {
-        let isActive = execution.status == .running || execution.status == .creatingWorktree
-        guard isActive else { continue }
-        let elapsed = now.timeIntervalSince(execution.startedAt ?? run.createdAt)
-        if elapsed > staleThreshold {
-          execution.status = .failed("Interrupted — execution was stale for \(Int(elapsed / 60)) min")
+        let isRunning = execution.status == .running || execution.status == .creatingWorktree
+        let isStaleReview = execution.status == .awaitingReview
+          && run.kind == .prReview
+          && now.timeIntervalSince(execution.lastStatusChangeAt) > reviewingThreshold
+
+        if isRunning {
+          let elapsed = now.timeIntervalSince(execution.startedAt ?? run.createdAt)
+          if elapsed > runningThreshold {
+            execution.status = .failed("Interrupted — execution was stale for \(Int(elapsed / 60)) min")
+            execution.completedAt = now
+            changed = true
+          }
+        } else if isStaleReview {
+          let elapsed = now.timeIntervalSince(execution.lastStatusChangeAt)
+          execution.status = .failed("Stale — stuck in reviewing for \(Int(elapsed / 60)) min")
           execution.completedAt = now
           changed = true
         }

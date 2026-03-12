@@ -570,7 +570,7 @@ struct OverviewTabView: View {
               Text(run.name)
                 .fontWeight(.medium)
               HStack(spacing: 8) {
-                Text(run.status.displayName)
+                Text(run.status.displayName(kind: run.kind, prContext: run.prContext))
                   .font(.caption)
                   .foregroundStyle(.secondary)
                 if run.executions.count > 0 {
@@ -1058,7 +1058,7 @@ struct BranchesTabView: View {
               Text(run.name)
                 .fontWeight(.semibold)
               HStack(spacing: 8) {
-                Text(run.status.displayName)
+                Text(run.status.displayName(kind: run.kind, prContext: run.prContext))
                   .font(.caption)
                   .foregroundStyle(.secondary)
                 if run.executions.count > 0 {

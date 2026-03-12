@@ -1068,7 +1068,7 @@ struct RepositoriesCommandCenter: View {
             VStack(alignment: .leading, spacing: 2) {
               Text(run.name)
                 .fontWeight(.medium)
-              Text(run.status.displayName)
+              Text(run.status.displayName(kind: run.kind, prContext: run.prContext))
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }

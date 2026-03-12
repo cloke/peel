@@ -371,7 +371,7 @@ final class DataService {
     snapshot.name = run.name
     snapshot.targetBranch = run.targetBranch
     snapshot.templateName = run.templateName
-    snapshot.status = run.status.displayName
+    snapshot.status = run.status.displayName(kind: run.kind, prContext: run.prContext)
     snapshot.progress = run.progress
     snapshot.executionCount = run.executions.count
     snapshot.pendingReviewCount = run.pendingReviewCount
