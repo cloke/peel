@@ -13,6 +13,7 @@ import MCPCore
 @MainActor
 protocol RunToolsHandlerDelegate: AnyObject {
   var runManager: RunManager? { get }
+  var managerOrchestrator: ManagerOrchestrator? { get }
 }
 
 @MainActor
@@ -25,6 +26,10 @@ final class RunToolsHandler {
     "runs.pause",
     "runs.resume",
     "runs.cancel",
+    "runs.createManager",
+    "runs.spawnChild",
+    "runs.children",
+    "runs.startManager",
   ]
 
   func handle(
@@ -49,6 +54,14 @@ final class RunToolsHandler {
       return await handleResume(id: id, arguments: arguments, mgr: mgr)
     case "runs.cancel":
       return await handleCancel(id: id, arguments: arguments, mgr: mgr)
+    case "runs.createManager":
+      return handleCreateManager(id: id, arguments: arguments, mgr: mgr)
+    case "runs.spawnChild":
+      return handleSpawnChild(id: id, arguments: arguments, mgr: mgr)
+    case "runs.children":
+      return handleChildren(id: id, arguments: arguments, mgr: mgr)
+    case "runs.startManager":
+      return await handleStartManager(id: id, arguments: arguments, mgr: mgr)
     default:
       return (400, JSONRPCResponseBuilder.makeError(
         id: id,
@@ -198,6 +211,162 @@ final class RunToolsHandler {
     ]))
   }
 
+  // MARK: - runs.createManager
+
+  private func handleCreateManager(id: Any?, arguments: [String: Any], mgr: RunManager) -> (Int, Data) {
+    guard let prompt = arguments["prompt"] as? String, !prompt.isEmpty else {
+      return (400, JSONRPCResponseBuilder.makeError(
+        id: id, code: -32602, message: "Missing or empty 'prompt'"
+      ))
+    }
+    guard let projectPath = arguments["projectPath"] as? String, !projectPath.isEmpty else {
+      return (400, JSONRPCResponseBuilder.makeError(
+        id: id, code: -32602, message: "Missing or empty 'projectPath'"
+      ))
+    }
+
+    let name = arguments["name"] as? String ?? "Manager: \(String(prompt.prefix(60)))"
+    let baseBranch = arguments["baseBranch"] as? String ?? "HEAD"
+
+    let run = mgr.createManagerRun(
+      name: name,
+      prompt: prompt,
+      projectPath: projectPath,
+      baseBranch: baseBranch
+    )
+
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
+      "runId": run.id.uuidString,
+      "name": run.name,
+      "kind": run.kind.rawValue,
+      "status": run.status.displayName,
+      "message": "Manager run created. Use runs.spawnChild to add child tasks.",
+    ]))
+  }
+
+  // MARK: - runs.spawnChild
+
+  private func handleSpawnChild(id: Any?, arguments: [String: Any], mgr: RunManager) -> (Int, Data) {
+    guard let parentIdString = arguments["parentRunId"] as? String,
+          let parentRunId = UUID(uuidString: parentIdString) else {
+      return (400, JSONRPCResponseBuilder.makeError(
+        id: id, code: -32602, message: "Missing or invalid 'parentRunId'"
+      ))
+    }
+    guard let prompt = arguments["prompt"] as? String, !prompt.isEmpty else {
+      return (400, JSONRPCResponseBuilder.makeError(
+        id: id, code: -32602, message: "Missing or empty 'prompt'"
+      ))
+    }
+
+    guard let parentRun = mgr.findRun(id: parentRunId) else {
+      return (404, JSONRPCResponseBuilder.makeError(
+        id: id, code: -32004, message: "Parent run not found"
+      ))
+    }
+    guard parentRun.kind == .managerRun else {
+      return (400, JSONRPCResponseBuilder.makeError(
+        id: id, code: -32602, message: "Parent run is not a manager run (kind: \(parentRun.kind.rawValue))"
+      ))
+    }
+
+    let projectPath = arguments["projectPath"] as? String ?? parentRun.projectPath
+    let templateName = arguments["templateName"] as? String
+    let baseBranch = arguments["baseBranch"] as? String ?? parentRun.baseBranch
+
+    let child = mgr.spawnChildRun(
+      parentRunId: parentRunId,
+      prompt: prompt,
+      projectPath: projectPath,
+      templateName: templateName,
+      baseBranch: baseBranch
+    )
+
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
+      "childRunId": child.id.uuidString,
+      "parentRunId": parentRunId.uuidString,
+      "status": child.status.displayName,
+      "message": "Child run spawned and started.",
+    ]))
+  }
+
+  // MARK: - runs.children
+
+  private func handleChildren(id: Any?, arguments: [String: Any], mgr: RunManager) -> (Int, Data) {
+    guard let parentIdString = arguments["parentRunId"] as? String,
+          let parentRunId = UUID(uuidString: parentIdString) else {
+      return (400, JSONRPCResponseBuilder.makeError(
+        id: id, code: -32602, message: "Missing or invalid 'parentRunId'"
+      ))
+    }
+
+    guard let parentRun = mgr.findRun(id: parentRunId) else {
+      return (404, JSONRPCResponseBuilder.makeError(
+        id: id, code: -32004, message: "Parent run not found"
+      ))
+    }
+
+    let children = mgr.childRuns(of: parentRunId)
+    let stats = mgr.childRunStats(of: parentRunId)
+
+    let result: [String: Any] = [
+      "parentRunId": parentRunId.uuidString,
+      "parentName": parentRun.name,
+      "stats": [
+        "total": stats.total,
+        "running": stats.running,
+        "completed": stats.completed,
+        "failed": stats.failed,
+        "needsReview": stats.needsReview,
+      ],
+      "children": children.map { mgr.runSummary($0) },
+    ]
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: result))
+  }
+
+  // MARK: - runs.startManager
+
+  private func handleStartManager(id: Any?, arguments: [String: Any], mgr: RunManager) async -> (Int, Data) {
+    guard let orchestrator = delegate?.managerOrchestrator else {
+      return (503, JSONRPCResponseBuilder.makeError(
+        id: id, code: -32001, message: "ManagerOrchestrator not available"
+      ))
+    }
+    guard let prompt = arguments["prompt"] as? String, !prompt.isEmpty else {
+      return (400, JSONRPCResponseBuilder.makeError(
+        id: id, code: -32602, message: "Missing or empty 'prompt'"
+      ))
+    }
+    guard let projectPath = arguments["projectPath"] as? String, !projectPath.isEmpty else {
+      return (400, JSONRPCResponseBuilder.makeError(
+        id: id, code: -32602, message: "Missing or empty 'projectPath'"
+      ))
+    }
+
+    let baseBranch = arguments["baseBranch"] as? String ?? "HEAD"
+
+    do {
+      let run = try await orchestrator.startManagerRun(
+        prompt: prompt,
+        projectPath: projectPath,
+        baseBranch: baseBranch
+      )
+
+      let stats = mgr.childRunStats(of: run.id)
+      return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: [
+        "runId": run.id.uuidString,
+        "name": run.name,
+        "status": run.status.displayName,
+        "childCount": stats.total,
+        "message": "Manager run started with \(stats.total) child tasks. Use runs.children to monitor progress.",
+      ]))
+    } catch {
+      return (500, JSONRPCResponseBuilder.makeError(
+        id: id, code: -32000, message: "Manager run failed: \(error.localizedDescription)"
+      ))
+    }
+  }
+
   // MARK: - Tool Definitions
 
   var toolDefinitions: [MCPToolDefinition] {
@@ -286,6 +455,106 @@ final class RunToolsHandler {
             ],
           ],
           "required": ["runId"],
+        ],
+        category: .agentRuns,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "runs.createManager",
+        description: "Create a manager run that supervises child runs. Use runs.spawnChild to add tasks after creation.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "prompt": [
+              "type": "string",
+              "description": "The high-level goal or idea to decompose into child tasks",
+            ],
+            "projectPath": [
+              "type": "string",
+              "description": "Absolute path to the project repository",
+            ],
+            "name": [
+              "type": "string",
+              "description": "Optional display name for the manager run",
+            ],
+            "baseBranch": [
+              "type": "string",
+              "description": "Base branch for child runs (default: HEAD)",
+            ],
+          ],
+          "required": ["prompt", "projectPath"],
+        ],
+        category: .agentRuns,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "runs.spawnChild",
+        description: "Spawn a child run under a manager run. The child starts immediately in its own worktree.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "parentRunId": [
+              "type": "string",
+              "description": "UUID of the parent manager run",
+            ],
+            "prompt": [
+              "type": "string",
+              "description": "Task prompt for the child run",
+            ],
+            "projectPath": [
+              "type": "string",
+              "description": "Project path (defaults to parent's project path)",
+            ],
+            "templateName": [
+              "type": "string",
+              "description": "Optional chain template name for the child",
+            ],
+            "baseBranch": [
+              "type": "string",
+              "description": "Base branch (defaults to parent's base branch)",
+            ],
+          ],
+          "required": ["parentRunId", "prompt"],
+        ],
+        category: .agentRuns,
+        isMutating: true
+      ),
+      MCPToolDefinition(
+        name: "runs.children",
+        description: "List child runs of a manager run with aggregated stats (running, completed, failed, needs review).",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "parentRunId": [
+              "type": "string",
+              "description": "UUID of the parent manager run",
+            ],
+          ],
+          "required": ["parentRunId"],
+        ],
+        category: .agentRuns,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "runs.startManager",
+        description: "Decompose a high-level goal into sub-tasks via LLM, create a manager run, and spawn child runs automatically. Returns immediately while children execute in parallel.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "prompt": [
+              "type": "string",
+              "description": "The high-level goal to decompose and execute",
+            ],
+            "projectPath": [
+              "type": "string",
+              "description": "Absolute path to the project repository",
+            ],
+            "baseBranch": [
+              "type": "string",
+              "description": "Base branch for child runs (default: HEAD)",
+            ],
+          ],
+          "required": ["prompt", "projectPath"],
         ],
         category: .agentRuns,
         isMutating: true

@@ -629,6 +629,9 @@ public final class MCPServerService {
   /// Unified run coordinator — wraps worktreeRunner + prReviewQueue
   var runManager: RunManager?
 
+  /// Manager agent orchestrator — decomposes goals, spawns child runs
+  var managerOrchestrator: ManagerOrchestrator?
+
   // MARK: - Tool Handlers (extracted from this file for maintainability)
 
   var uiToolsHandler: UIToolsHandler
@@ -831,6 +834,11 @@ public final class MCPServerService {
     // Create unified run manager
     if let runner = self.parallelWorktreeRunner {
       self.runManager = RunManager(worktreeRunner: runner, prReviewQueue: prReviewQueue)
+    }
+
+    // Create manager orchestrator for decompose→spawn→monitor workflow
+    if let rm = self.runManager {
+      self.managerOrchestrator = ManagerOrchestrator(cliService: self.cliService, runManager: rm)
     }
 
     wireToolHandlerDelegates()

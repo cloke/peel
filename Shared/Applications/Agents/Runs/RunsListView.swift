@@ -171,7 +171,6 @@ struct RunsListView: View {
     let all = viewModel.filtered(mgr.runs)
     // Separate top-level from child runs
     let topLevel = all.filter { $0.parentRunId == nil }
-    let childRunIds = Set(all.filter { $0.parentRunId != nil }.map(\.id))
 
     let needsReview = viewModel.sorted(topLevel.filter { $0.status == .awaitingReview })
     let managing    = viewModel.sorted(topLevel.filter { $0.kind == .managerRun && $0.status == .running })

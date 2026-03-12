@@ -258,7 +258,7 @@ extension MCPServerService: ParallelToolsHandlerDelegate {
 // MARK: - RunToolsHandlerDelegate
 
 extension MCPServerService: RunToolsHandlerDelegate {
-  // runManager is already exposed with internal visibility.
+  // runManager and managerOrchestrator are already exposed with internal visibility.
 }
 
 // MARK: - RepoToolsHandlerDelegate
