@@ -1343,6 +1343,7 @@ public final class SwarmCoordinator {
 
   private func sendRagArtifactBundle(transferId: UUID, to peer: ConnectedPeer, repoIdentifier: String? = nil, transferMode: RAGTransferMode = .full, skipChunkIndices: Set<Int> = []) async {
     let isResume = !skipChunkIndices.isEmpty
+    let usesWebRTC = await peerSessionManager.mcpChannel(for: peer.id) != nil
     updateRagTransfer(transferId) { state in
       state.status = .preparing
     }
@@ -1394,6 +1395,12 @@ public final class SwarmCoordinator {
           repos: []
         )
         try await sendMessage(.ragArtifactsManifest(id: transferId, manifest: manifest), to: peer.id)
+        if usesWebRTC {
+          // The first large SCTP message sent immediately after a small manifest can be
+          // dropped on the persistent WebRTC mcp channel. Give the receiver a brief
+          // scheduling window before chunk 0 so ordered delivery starts cleanly.
+          try await Task.sleep(for: .milliseconds(150))
+        }
 
         var offset = 0
         var chunkIndex = 0
@@ -1475,6 +1482,12 @@ public final class SwarmCoordinator {
         )
         try await sendMessage(.ragArtifactsManifest(id: transferId, manifest: manifest), to: peer.id)
         traceMessage(direction: "OUT", peerId: peer.id, type: "ragManifest-sent", detail: "id=\(transferId) bytes=\(jsonData.count) chunks=\(totalChunks)")
+        if usesWebRTC {
+          // The first large SCTP message sent immediately after a small manifest can be
+          // dropped on the persistent WebRTC mcp channel. Give the receiver a brief
+          // scheduling window before chunk 0 so ordered delivery starts cleanly.
+          try await Task.sleep(for: .milliseconds(150))
+        }
 
         // Send in chunks
         var offset = 0
@@ -1529,6 +1542,12 @@ public final class SwarmCoordinator {
       }
 
       try await sendMessage(.ragArtifactsManifest(id: transferId, manifest: bundle.manifest), to: peer.id)
+      if usesWebRTC {
+        // The first large SCTP message sent immediately after a small manifest can be
+        // dropped on the persistent WebRTC mcp channel. Give the receiver a brief
+        // scheduling window before chunk 0 so ordered delivery starts cleanly.
+        try await Task.sleep(for: .milliseconds(150))
+      }
 
       let handle = try FileHandle(forReadingFrom: bundle.bundleURL)
       defer { try? handle.close() }
