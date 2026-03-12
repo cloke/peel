@@ -430,7 +430,7 @@ public final class SwarmCoordinator {
     cleanupStaleCheckpoints()
   }
 
-  /// Reinitialize Firestore-dependent subsystems (WebRTC responder and relay provider)
+  /// Reinitialize Firestore-dependent subsystems (WebRTC signaling responder)
   /// that require Firebase to be signed in. Call this after Firebase auth is ready
   /// and memberSwarms have been populated — `start()` fires before Firebase is ready
   /// so these subsystems skip initialization on first pass.

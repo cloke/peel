@@ -255,8 +255,7 @@ extension SwarmToolsHandler {
           "uptimeSeconds": status?.uptimeSeconds as Any,
           "tasksCompleted": status?.tasksCompleted as Any,
           "tasksFailed": status?.tasksFailed as Any,
-          "gitCommitHash": status?.gitCommitHash as Any,
-          "relayProviderActive": status?.relayProviderActive as Any
+          "gitCommitHash": status?.gitCommitHash as Any
         ],
         "ragArtifacts": [
           "manifestVersion": rag?.manifestVersion as Any,
@@ -341,7 +340,6 @@ extension SwarmToolsHandler {
             "lastHeartbeat": formatter.string(from: w.lastHeartbeat),
             "version": w.version as Any,
             "gitCommitHash": w.gitCommitHash as Any,
-            "relayProviderActive": w.relayProviderActive,
             "wanAddress": w.wanAddress as Any,
             "wanPort": w.wanPort.map { Int($0) } as Any,
             "lanAddress": w.lanAddress as Any,

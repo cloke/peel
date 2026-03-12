@@ -743,7 +743,7 @@ extension SwarmToolsHandler {
       ),
       MCPToolDefinition(
         name: "swarm.rag-sync-index",
-        description: "Sync a RAG index from a remote peer via on-demand P2P transfer (LAN → WAN → STUN → Firestore relay fallback). Specify a repoIdentifier and a target worker by name or ID.",
+        description: "Sync a RAG index from a remote peer via P2P transfer (WebRTC or TCP). Specify a repoIdentifier and a target worker by name or ID.",
         inputSchema: [
           "type": "object",
           "properties": [
