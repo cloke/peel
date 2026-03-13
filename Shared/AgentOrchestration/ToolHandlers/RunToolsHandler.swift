@@ -23,6 +23,7 @@ final class RunToolsHandler {
   let supportedTools: Set<String> = [
     "runs.list",
     "runs.status",
+    "runs.output",
     "runs.pause",
     "runs.resume",
     "runs.cancel",
@@ -48,6 +49,8 @@ final class RunToolsHandler {
       return handleList(id: id, arguments: arguments, mgr: mgr)
     case "runs.status":
       return handleStatus(id: id, arguments: arguments, mgr: mgr)
+    case "runs.output":
+      return handleOutput(id: id, arguments: arguments, mgr: mgr)
     case "runs.pause":
       return handlePause(id: id, arguments: arguments, mgr: mgr)
     case "runs.resume":
@@ -131,6 +134,64 @@ final class RunToolsHandler {
     }
 
     return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: mgr.runSummary(run)))
+  }
+
+  // MARK: - runs.output
+
+  private func handleOutput(id: Any?, arguments: [String: Any], mgr: RunManager) -> (Int, Data) {
+    guard let runIdString = arguments["runId"] as? String,
+          let runId = UUID(uuidString: runIdString) else {
+      return (400, JSONRPCResponseBuilder.makeError(
+        id: id, code: -32602, message: "Missing or invalid runId"
+      ))
+    }
+
+    let run = mgr.findRun(id: runId) ?? mgr.findRunBySourceChainRunId(runId)
+    guard let run else {
+      return (404, JSONRPCResponseBuilder.makeError(
+        id: id, code: -32004, message: "Run not found"
+      ))
+    }
+
+    let executionIdFilter = arguments["executionId"] as? String
+
+    var result: [String: Any] = [
+      "runId": run.id.uuidString,
+      "name": run.name,
+      "status": run.status.displayName(kind: run.kind, prContext: run.prContext),
+    ]
+
+    // Include full prContext.reviewOutput if available
+    if let reviewOutput = run.prContext?.reviewOutput, !reviewOutput.isEmpty {
+      result["reviewOutput"] = reviewOutput
+    }
+
+    // Include full execution outputs (no truncation)
+    if let executionIdFilter, let execUUID = UUID(uuidString: executionIdFilter) {
+      if let exec = run.executions.first(where: { $0.id == execUUID }) {
+        result["executionId"] = exec.id.uuidString
+        result["executionOutput"] = exec.output
+        result["executionStatus"] = exec.status.displayName
+        result["executionTask"] = exec.task.title
+      } else {
+        return (404, JSONRPCResponseBuilder.makeError(
+          id: id, code: -32004, message: "Execution not found"
+        ))
+      }
+    } else {
+      // Return all execution outputs
+      result["executions"] = run.executions.map { exec -> [String: Any] in
+        var e: [String: Any] = [
+          "executionId": exec.id.uuidString,
+          "status": exec.status.displayName,
+          "task": exec.task.title,
+        ]
+        if !exec.output.isEmpty { e["output"] = exec.output }
+        return e
+      }
+    }
+
+    return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: result))
   }
 
   // MARK: - runs.pause
@@ -404,6 +465,26 @@ final class RunToolsHandler {
             "runId": [
               "type": "string",
               "description": "Run UUID (either the run ID or the source chain run ID)",
+            ],
+          ],
+          "required": ["runId"],
+        ],
+        category: .agentRuns,
+        isMutating: false
+      ),
+      MCPToolDefinition(
+        name: "runs.output",
+        description: "Get full untruncated output for a run. Returns execution output and prContext.reviewOutput without any truncation. Optionally filter to a single execution.",
+        inputSchema: [
+          "type": "object",
+          "properties": [
+            "runId": [
+              "type": "string",
+              "description": "Run UUID (either the run ID or the source chain run ID)",
+            ],
+            "executionId": [
+              "type": "string",
+              "description": "Optional execution UUID to get output for a single execution",
             ],
           ],
           "required": ["runId"],

@@ -60,6 +60,8 @@ final class RunsListViewModel {
 struct RunsListView: View {
   var mcpServer: MCPServerService
 
+  @AppStorage("activity.automationSelectedChain") private var automationSelectedChain = ""
+
   @State private var viewModel = RunsListViewModel()
   @State private var showingNewRunSheet = false
   @State private var selectedExecution: ParallelWorktreeExecution?
@@ -334,6 +336,11 @@ struct RunsListView: View {
         if !newIds.contains(sel) && !history.contains(where: { $0.id == sel }) {
           viewModel.selectedRunId = newIds.first
         }
+      }
+      .onChange(of: automationSelectedChain) { _, newValue in
+        guard !newValue.isEmpty, let uuid = UUID(uuidString: newValue) else { return }
+        viewModel.selectedRunId = uuid
+        automationSelectedChain = ""
       }
     }
   }

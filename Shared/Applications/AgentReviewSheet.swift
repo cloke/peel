@@ -336,10 +336,7 @@ struct AgentReviewSheet: View {
   private var completedSection: some View {
     VStack(alignment: .leading, spacing: 16) {
       if let result {
-        verdictBanner(result)
-        summarySection(result)
-        if !result.issues.isEmpty { issuesSection(result.issues) }
-        if !result.suggestions.isEmpty { suggestionsSection(result.suggestions) }
+        ReviewOutputView(parsed: result, compact: false)
         Divider()
         actionButtons(result)
 
@@ -381,85 +378,6 @@ struct AgentReviewSheet: View {
       // Prompt disclosure
       promptDisclosure
     }
-  }
-
-  private func verdictBanner(_ r: ParsedReview) -> some View {
-    HStack(spacing: 10) {
-      Image(systemName: r.verdict.systemImage)
-        .font(.title2)
-        .foregroundStyle(r.verdict.color)
-      VStack(alignment: .leading, spacing: 2) {
-        Text(r.verdict.displayName)
-          .font(.headline)
-        if let ci = r.ciStatus {
-          Text("CI: \(ci)")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-      }
-      Spacer()
-      riskBadge(r.riskLevel)
-    }
-    .padding(12)
-    .background(r.verdict.color.opacity(0.08))
-    .clipShape(RoundedRectangle(cornerRadius: 10))
-  }
-
-  private func summarySection(_ r: ParsedReview) -> some View {
-    VStack(alignment: .leading, spacing: 4) {
-      Text("Summary")
-        .font(.subheadline)
-        .fontWeight(.semibold)
-      Text(r.summary)
-        .font(.callout)
-        .textSelection(.enabled)
-    }
-  }
-
-  private func issuesSection(_ issues: [String]) -> some View {
-    VStack(alignment: .leading, spacing: 6) {
-      Label("Issues (\(issues.count))", systemImage: "exclamationmark.triangle")
-        .font(.subheadline)
-        .fontWeight(.semibold)
-        .foregroundStyle(.orange)
-      ForEach(Array(issues.enumerated()), id: \.offset) { _, issue in
-        HStack(alignment: .top, spacing: 6) {
-          Image(systemName: "circle.fill")
-            .font(.system(size: 5))
-            .foregroundStyle(.orange)
-            .padding(.top, 6)
-          Text(issue)
-            .font(.callout)
-            .textSelection(.enabled)
-        }
-      }
-    }
-    .padding(12)
-    .background(.orange.opacity(0.05))
-    .clipShape(RoundedRectangle(cornerRadius: 10))
-  }
-
-  private func suggestionsSection(_ suggestions: [String]) -> some View {
-    VStack(alignment: .leading, spacing: 6) {
-      Label("Suggestions (\(suggestions.count))", systemImage: "lightbulb")
-        .font(.subheadline)
-        .fontWeight(.semibold)
-        .foregroundStyle(.blue)
-      ForEach(Array(suggestions.enumerated()), id: \.offset) { _, suggestion in
-        HStack(alignment: .top, spacing: 6) {
-          Image(systemName: "circle.fill")
-            .font(.system(size: 5))
-            .foregroundStyle(.blue)
-            .padding(.top, 6)
-          Text(suggestion)
-            .font(.callout)
-            .textSelection(.enabled)
-        }
-      }
-    }
-    .padding(12)
-    .background(.blue.opacity(0.05))
-    .clipShape(RoundedRectangle(cornerRadius: 10))
   }
 
   // MARK: - Action Buttons
@@ -671,24 +589,6 @@ struct AgentReviewSheet: View {
   }
 
   // MARK: - Helpers
-
-  private func riskBadge(_ risk: String) -> some View {
-    let color: Color = {
-      switch risk.lowercased() {
-      case "low": return .green
-      case "medium": return .orange
-      case "high": return .red
-      default: return .secondary
-      }
-    }()
-    return Text("Risk: \(risk.capitalized)")
-      .font(.caption2)
-      .fontWeight(.medium)
-      .padding(.horizontal, 6)
-      .padding(.vertical, 2)
-      .background(Capsule().fill(color.opacity(0.15)))
-      .foregroundStyle(color)
-  }
 
   private func elapsedString(from start: Date) -> String {
     let secs = Int(Date().timeIntervalSince(start))
@@ -1105,166 +1005,6 @@ struct AgentReviewSheet: View {
     }
     return ""
   }
-}
-
-// MARK: - Parsed Review
-
-struct ParsedReview {
-  let summary: String
-  let riskLevel: String
-  let issues: [String]
-  let suggestions: [String]
-  let ciStatus: String?
-  let verdict: Verdict
-  let rawOutput: String
-
-  enum Verdict: String {
-    case approve = "APPROVE"
-    case requestChanges = "REQUEST_CHANGES"
-    case comment = "COMMENT"
-    case unknown = "UNKNOWN"
-
-    var displayName: String {
-      switch self {
-      case .approve: return "Approved"
-      case .requestChanges: return "Changes Requested"
-      case .comment: return "Comment"
-      case .unknown: return "Pending Review"
-      }
-    }
-
-    var systemImage: String {
-      switch self {
-      case .approve: return "checkmark.circle.fill"
-      case .requestChanges: return "exclamationmark.triangle.fill"
-      case .comment: return "text.bubble.fill"
-      case .unknown: return "questionmark.circle"
-      }
-    }
-
-    var color: Color {
-      switch self {
-      case .approve: return .green
-      case .requestChanges: return .red
-      case .comment: return .orange
-      case .unknown: return .secondary
-      }
-    }
-  }
-}
-
-// MARK: - JSON parsing
-
-private struct ReviewJSONPayload: Decodable {
-  let summary: String?
-  let riskLevel: String?
-  let issues: [String]?
-  let suggestions: [String]?
-  let ciStatus: String?
-  let verdict: String?
-}
-
-func parseReviewOutput(_ output: String) -> ParsedReview {
-  if let structured = parseStructuredJSON(output) { return structured }
-  return parseFreeform(output)
-}
-
-private func parseStructuredJSON(_ output: String) -> ParsedReview? {
-  let candidates = jsonCandidates(from: output)
-  let decoder = JSONDecoder()
-  for candidate in candidates {
-    guard let data = candidate.data(using: .utf8),
-          let payload = try? decoder.decode(ReviewJSONPayload.self, from: data)
-    else { continue }
-
-    let verdict: ParsedReview.Verdict = {
-      switch payload.verdict?.uppercased() {
-      case "APPROVE": return .approve
-      case "REQUEST_CHANGES": return .requestChanges
-      case "COMMENT": return .comment
-      default: return .unknown
-      }
-    }()
-
-    return ParsedReview(
-      summary: (payload.summary?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 } ?? String(output.prefix(500)),
-      riskLevel: (payload.riskLevel?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 } ?? "unknown",
-      issues: payload.issues ?? [],
-      suggestions: payload.suggestions ?? [],
-      ciStatus: payload.ciStatus,
-      verdict: verdict,
-      rawOutput: output
-    )
-  }
-  return nil
-}
-
-private func parseFreeform(_ output: String) -> ParsedReview {
-  var summary = ""
-  var riskLevel = "unknown"
-  var issues: [String] = []
-  var suggestions: [String] = []
-  var ciStatus: String?
-  var verdict: ParsedReview.Verdict = .unknown
-  var currentSection = ""
-
-  for line in output.components(separatedBy: "\n") {
-    let trimmed = line.trimmingCharacters(in: .whitespaces)
-    let lowered = trimmed.lowercased()
-
-    if lowered.contains("verdict:") || lowered.contains("decision:") {
-      if lowered.contains("approve") && !lowered.contains("request") { verdict = .approve }
-      else if lowered.contains("request_changes") || lowered.contains("request changes") { verdict = .requestChanges }
-      else if lowered.contains("comment") { verdict = .comment }
-    }
-    if lowered.contains("risk:") || lowered.contains("risk level:") {
-      if lowered.contains("high") { riskLevel = "high" }
-      else if lowered.contains("medium") { riskLevel = "medium" }
-      else if lowered.contains("low") { riskLevel = "low" }
-    }
-    if lowered.contains("ci status:") || lowered.contains("ci:") || lowered.contains("checks:") {
-      ciStatus = String(trimmed.split(separator: ":", maxSplits: 1).last ?? "").trimmingCharacters(in: .whitespaces)
-    }
-    if lowered.contains("summary") && (trimmed.hasPrefix("#") || trimmed.hasSuffix(":")) { currentSection = "summary"; continue }
-    if lowered.contains("issue") && (trimmed.hasPrefix("#") || trimmed.hasSuffix(":")) { currentSection = "issues"; continue }
-    if lowered.contains("suggestion") && (trimmed.hasPrefix("#") || trimmed.hasSuffix(":")) { currentSection = "suggestions"; continue }
-
-    if !trimmed.isEmpty {
-      let clean = trimmed.replacingOccurrences(of: "^[-*•]\\s*", with: "", options: .regularExpression).trimmingCharacters(in: .whitespaces)
-      switch currentSection {
-      case "summary": summary = summary.isEmpty ? clean : summary + " " + clean
-      case "issues": if clean.count > 3 { issues.append(clean) }
-      case "suggestions": if clean.count > 3 { suggestions.append(clean) }
-      default: break
-      }
-    }
-  }
-
-  if summary.isEmpty { summary = String(output.prefix(500)) }
-  return ParsedReview(summary: summary, riskLevel: riskLevel, issues: issues, suggestions: suggestions, ciStatus: ciStatus, verdict: verdict, rawOutput: output)
-}
-
-private func jsonCandidates(from output: String) -> [String] {
-  var candidates: [String] = []
-  // Fenced code blocks
-  if let regex = try? NSRegularExpression(pattern: "```(?:json)?\\s*([\\s\\S]*?)\\s*```") {
-    let nsRange = NSRange(output.startIndex..<output.endIndex, in: output)
-    regex.enumerateMatches(in: output, range: nsRange) { match, _, _ in
-      if let match, let range = Range(match.range(at: 1), in: output) {
-        candidates.append(String(output[range]))
-      }
-    }
-  }
-  // Top-level JSON objects
-  if let regex = try? NSRegularExpression(pattern: "\\{[\\s\\S]*?\"summary\"[\\s\\S]*?\\}") {
-    let nsRange = NSRange(output.startIndex..<output.endIndex, in: output)
-    regex.enumerateMatches(in: output, range: nsRange) { match, _, _ in
-      if let match, let range = Range(match.range, in: output) {
-        candidates.append(String(output[range]))
-      }
-    }
-  }
-  return candidates
 }
 
 // MARK: - Agent Review Badge

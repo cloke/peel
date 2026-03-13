@@ -141,7 +141,13 @@ struct ContentView: View {
       }
     }
     .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
-      // Sync navigation first — MCP writes current-tool via UserDefaults.
+      // Sync granular sidebar navigation first (MCP writes sidebar-navigation key)
+      if let sidebarTarget = UserDefaults.standard.string(forKey: "sidebar-navigation"),
+         !sidebarTarget.isEmpty {
+        UserDefaults.standard.removeObject(forKey: "sidebar-navigation")
+        applySidebarNavigation(sidebarTarget)
+      }
+      // Sync navigation — MCP writes current-tool via UserDefaults.
       // Must run before syncRepoSelectionFromAutomation which can override it.
       if let raw = UserDefaults.standard.string(forKey: "current-tool"),
          let tool = CurrentTool(rawValue: raw),
@@ -633,6 +639,32 @@ struct ContentView: View {
     case .git, .github: currentSection = .repositories
     case .brew: if !showBrew { currentSection = .repositories }
     case .repositories, .activity: break
+    }
+  }
+
+  /// Map MCP sidebar-navigation viewId to a SidebarSelection.
+  private func applySidebarNavigation(_ viewId: String) {
+    switch viewId {
+    case "home", "repositories":
+      sidebarSelection = .repoCommandCenter
+    case "prReviews":
+      sidebarSelection = .prReviews
+    case "templates":
+      sidebarSelection = .templates
+    case "agentRuns":
+      sidebarSelection = .agentRuns
+    case "worktrees":
+      sidebarSelection = .worktrees
+    case "chat":
+      sidebarSelection = .chat
+    case "swarm":
+      sidebarSelection = .swarmConsole
+    case "brew":
+      sidebarSelection = .brew
+    case "activity":
+      sidebarSelection = .activityDashboard
+    default:
+      break
     }
   }
 

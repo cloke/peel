@@ -6,6 +6,7 @@ struct RunDetailView: View {
   let runner: ParallelWorktreeRunner?
   var mcpServer: MCPServerService?
   @Binding var selectedExecution: ParallelWorktreeExecution?
+  @AppStorage("activity.automationExpandExecution") private var automationExpandExecution = ""
   @State private var expandedExecutions = Set<UUID>()
   @State private var showingCancelConfirmation = false
   @State private var mergeError: String?
@@ -17,6 +18,10 @@ struct RunDetailView: View {
   @State private var isPushing = false
   @State private var pushResult: String?
   @State private var pushError: String?
+  @State private var followUpPrompt = ""
+  @State private var followUpRunId: String?
+  @State private var isDispatchingFollowUp = false
+  @State private var followUpError: String?
 
   var body: some View {
     ScrollView {
@@ -26,8 +31,8 @@ struct RunDetailView: View {
           Divider()
           prContextSection(ctx)
         }
-        // For PR reviews: show agent findings + actions prominently before progress/executions
-        if isPRReview, let output = bestOutput, !output.isEmpty {
+        // Show parsed review whenever output has structured content (JSON with summary/issues)
+        if let output = bestOutput, !output.isEmpty, outputHasStructuredContent(output) {
           Divider()
           parsedReviewSection(output)
           Divider()
@@ -76,6 +81,21 @@ struct RunDetailView: View {
       }
     } message: {
       Text("This will cancel all pending tasks and cleanup worktrees.")
+    }
+    .onChange(of: automationExpandExecution) { _, newValue in
+      guard !newValue.isEmpty else { return }
+      defer { automationExpandExecution = "" }
+      if newValue == "all" {
+        expandedExecutions = Set(run.executions.map(\.id))
+      } else if newValue == "none" {
+        expandedExecutions.removeAll()
+      } else if let uuid = UUID(uuidString: newValue) {
+        if expandedExecutions.contains(uuid) {
+          expandedExecutions.remove(uuid)
+        } else {
+          expandedExecutions.insert(uuid)
+        }
+      }
     }
   }
 
@@ -267,163 +287,54 @@ struct RunDetailView: View {
       Text("Agent Review")
         .font(.headline)
 
-      // Verdict banner
-      HStack(spacing: 10) {
-        Image(systemName: parsed.verdict.systemImage)
-          .font(.title2)
-          .foregroundStyle(parsed.verdict.color)
-        VStack(alignment: .leading, spacing: 2) {
-          Text(parsed.verdict.displayName)
-            .font(.headline)
-          if let ci = parsed.ciStatus {
-            Text("CI: \(ci)")
-              .font(.caption)
-              .foregroundStyle(.secondary)
-          }
-        }
-        Spacer()
-        Text(parsed.riskLevel.capitalized)
-          .font(.caption.weight(.semibold))
-          .padding(.horizontal, 8)
-          .padding(.vertical, 4)
-          .background(riskColor(parsed.riskLevel).opacity(0.15), in: Capsule())
-          .foregroundStyle(riskColor(parsed.riskLevel))
-      }
-      .padding(12)
-      .background(parsed.verdict.color.opacity(0.08))
-      .clipShape(RoundedRectangle(cornerRadius: 10))
+      ReviewOutputView(parsed: parsed)
 
-      // Summary
-      VStack(alignment: .leading, spacing: 4) {
-        Text("Summary")
-          .font(.subheadline.weight(.semibold))
-        Text(parsed.summary)
-          .font(.callout)
-          .textSelection(.enabled)
-      }
-
-      // Issues
-      if !parsed.issues.isEmpty {
-        VStack(alignment: .leading, spacing: 6) {
-          Label("Issues (\(parsed.issues.count))", systemImage: "exclamationmark.triangle")
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(.orange)
-          ForEach(Array(parsed.issues.enumerated()), id: \.offset) { _, issue in
-            HStack(alignment: .top, spacing: 6) {
-              Image(systemName: "circle.fill")
-                .font(.system(size: 5))
-                .foregroundStyle(.orange)
-                .padding(.top, 6)
-              Text(issue)
-                .font(.callout)
-                .textSelection(.enabled)
-            }
-          }
-        }
-        .padding(12)
-        .background(.orange.opacity(0.05))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-      }
-
-      // Suggestions
-      if !parsed.suggestions.isEmpty {
-        VStack(alignment: .leading, spacing: 6) {
-          Label("Suggestions (\(parsed.suggestions.count))", systemImage: "lightbulb")
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(.blue)
-          ForEach(Array(parsed.suggestions.enumerated()), id: \.offset) { _, suggestion in
-            HStack(alignment: .top, spacing: 6) {
-              Image(systemName: "circle.fill")
-                .font(.system(size: 5))
-                .foregroundStyle(.blue)
-                .padding(.top, 6)
-              Text(suggestion)
-                .font(.callout)
-                .textSelection(.enabled)
-            }
-          }
-        }
-        .padding(12)
-        .background(.blue.opacity(0.05))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-      }
-
-      // Fix / Push actions
-      if !parsed.issues.isEmpty, isPRReview {
-        VStack(alignment: .leading, spacing: 8) {
-          if let chain = fixChain {
-            HStack(spacing: 6) {
-              ProgressView().controlSize(.small)
-              Text("Fix chain: \(chain.state.displayName)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-          } else if fixRunId == nil {
-            Button {
-              Task { await dispatchFix(issues: parsed.issues) }
-            } label: {
-              Label("Fix Issues", systemImage: "wrench.fill")
-            }
-            .buttonStyle(.bordered)
-            .tint(.orange)
-          }
-
-          if let fwr = fixWorktreeRun,
-             (fwr.status == .completed || fwr.status == .awaitingReview),
-             run.prContext?.headRef != nil {
-            Button {
-              Task { await pushFix() }
-            } label: {
-              Label(isPushing ? "Pushing…" : "Push Fix", systemImage: "arrow.up.circle.fill")
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(isPushing)
-          }
-
-          if let result = pushResult {
-            Label(result, systemImage: "checkmark.circle.fill")
-              .font(.caption)
-              .foregroundStyle(.green)
-          }
-          if let error = pushError {
-            Label(error, systemImage: "xmark.circle.fill")
-              .font(.caption)
-              .foregroundStyle(.red)
-          }
-        }
-      }
-
-      // Raw output toggle
-      DisclosureGroup("Raw Output", isExpanded: $showRawOutput) {
-        Text(output)
-          .font(.caption.monospaced())
-          .foregroundStyle(.secondary)
-          .textSelection(.enabled)
-          .frame(maxWidth: .infinity, alignment: .leading)
-      }
-      .font(.caption)
+      // Follow-up Actions
+      followUpActionsSection(parsed: parsed)
     }
   }
 
   @ViewBuilder
   private func rawOutputSection(_ output: String) -> some View {
-    VStack(alignment: .leading, spacing: 4) {
+    let parsed = parseReviewOutput(output)
+    VStack(alignment: .leading, spacing: 12) {
       Text("Agent Output")
         .font(.headline)
-      Text(output)
-        .font(.callout)
-        .foregroundStyle(.secondary)
-        .textSelection(.enabled)
+
+      if parsed.hasStructuredContent {
+        ReviewOutputView(parsed: parsed)
+      } else {
+        Text(output)
+          .font(.callout)
+          .foregroundStyle(.secondary)
+          .textSelection(.enabled)
+      }
     }
   }
 
-  private func riskColor(_ level: String) -> Color {
-    switch level.lowercased() {
-    case "high": .red
-    case "medium": .orange
-    case "low": .green
-    default: .secondary
+  // MARK: - Output Helpers
+
+  private func outputHasStructuredContent(_ output: String) -> Bool {
+    parseReviewOutput(output).hasStructuredContent
+  }
+
+  private func extractContentAfterSteps(from output: String) -> String {
+    let lines = output.components(separatedBy: "\n")
+    var lastStepIndex = -1
+    for (i, line) in lines.enumerated() {
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+      if trimmed.hasPrefix("●") || trimmed.hasPrefix("•") || trimmed.hasPrefix("└") {
+        lastStepIndex = i
+      }
     }
+    if lastStepIndex >= 0, lastStepIndex + 1 < lines.count {
+      let remaining = lines[(lastStepIndex + 1)...].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+      return remaining
+        .replacingOccurrences(of: "```json", with: "")
+        .replacingOccurrences(of: "```", with: "")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    return ""
   }
 
   // MARK: - Progress
@@ -786,6 +697,211 @@ struct RunDetailView: View {
     }
 
     isPushing = false
+  }
+
+  // MARK: - Follow-up Actions
+
+  private var followUpChain: AgentChain? {
+    guard let rid = followUpRunId, let uuid = UUID(uuidString: rid),
+          let run = runner?.findRunBySourceChainRunId(uuid),
+          let cid = run.executions.first?.chainId
+    else { return nil }
+    return mcpServer?.agentManager.chains.first { $0.id == cid }
+  }
+
+  private var followUpWorktreeRun: ParallelWorktreeRun? {
+    guard let rid = followUpRunId, let uuid = UUID(uuidString: rid) else { return nil }
+    return runner?.findRunBySourceChainRunId(uuid)
+  }
+
+  @ViewBuilder
+  private func followUpActionsSection(parsed: ParsedReview) -> some View {
+    VStack(alignment: .leading, spacing: 10) {
+      // Active fix/follow-up chain status
+      if let chain = fixChain {
+        HStack(spacing: 6) {
+          ProgressView().controlSize(.small)
+          Text("Fix chain: \(chain.state.displayName)")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      } else if let chain = followUpChain {
+        HStack(spacing: 6) {
+          ProgressView().controlSize(.small)
+          Text("Follow-up chain: \(chain.state.displayName)")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+
+      // Push button for completed fix/follow-up
+      let completedRun = fixWorktreeRun ?? followUpWorktreeRun
+      if let fwr = completedRun,
+         (fwr.status == .completed || fwr.status == .awaitingReview),
+         isPRReview, run.prContext?.headRef != nil {
+        Button {
+          Task { await pushFix() }
+        } label: {
+          Label(isPushing ? "Pushing…" : "Push Fix", systemImage: "arrow.up.circle.fill")
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(isPushing)
+      }
+
+      if let result = pushResult {
+        Label(result, systemImage: "checkmark.circle.fill")
+          .font(.caption)
+          .foregroundStyle(.green)
+      }
+      if let error = pushError {
+        Label(error, systemImage: "xmark.circle.fill")
+          .font(.caption)
+          .foregroundStyle(.red)
+      }
+
+      // Quick action buttons (only when no chain is running)
+      if fixRunId == nil, followUpRunId == nil {
+        HStack(spacing: 8) {
+          if !parsed.issues.isEmpty, isPRReview {
+            Button {
+              Task { await dispatchFix(issues: parsed.issues) }
+            } label: {
+              Label("Fix Issues", systemImage: "wrench.fill")
+            }
+            .buttonStyle(.bordered)
+            .tint(.orange)
+          }
+
+          if !parsed.suggestions.isEmpty {
+            Button {
+              let items = parsed.suggestions.enumerated()
+                .map { "\($0.offset + 1). \($0.element)" }
+                .joined(separator: "\n")
+              followUpPrompt = "Implement these suggestions:\n\(items)"
+            } label: {
+              Label("Implement Suggestions", systemImage: "lightbulb.fill")
+            }
+            .buttonStyle(.bordered)
+            .tint(.blue)
+          }
+        }
+
+        // Custom follow-up prompt
+        VStack(alignment: .leading, spacing: 6) {
+          Text("Follow-up Instructions")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          TextEditor(text: $followUpPrompt)
+            .font(.callout)
+            .frame(minHeight: 60, maxHeight: 120)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(
+              RoundedRectangle(cornerRadius: 8)
+                .stroke(.quaternary, lineWidth: 1)
+            )
+          HStack {
+            Button {
+              guard !followUpPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+              Task { await dispatchFollowUp(prompt: followUpPrompt) }
+            } label: {
+              Label(isDispatchingFollowUp ? "Dispatching…" : "Run Follow-up", systemImage: "play.fill")
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(followUpPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isDispatchingFollowUp)
+
+            Spacer()
+          }
+        }
+      }
+
+      if let error = followUpError {
+        Label(error, systemImage: "exclamationmark.triangle")
+          .font(.caption)
+          .foregroundStyle(.red)
+      }
+    }
+  }
+
+  private func dispatchFollowUp(prompt userPrompt: String) async {
+    isDispatchingFollowUp = true
+    followUpError = nil
+
+    let workDir = run.projectPath
+    let rawContext = bestOutput ?? ""
+
+    var prompt: String
+    if let ctx = run.prContext {
+      prompt = """
+      Follow-up work for PR #\(ctx.prNumber) in \(ctx.repoOwner)/\(ctx.repoName).
+      Repository owner: \(ctx.repoOwner)
+      Repository name: \(ctx.repoName)
+      PR number: \(ctx.prNumber)
+      IMPORTANT: Before making any changes, use `github.pr.files` with \
+      owner="\(ctx.repoOwner)", repo="\(ctx.repoName)", pull_number=\(ctx.prNumber) to get \
+      the actual list of changed files and their patches from the PR. Only \
+      modify files that are part of the PR — do NOT grep for similar code elsewhere.
+
+      Original review context:
+      \(rawContext)
+
+      Follow-up instructions:
+      \(userPrompt)
+      """
+    } else {
+      prompt = """
+      Follow-up work for agent run in \(workDir).
+
+      Original output:
+      \(rawContext)
+
+      Follow-up instructions:
+      \(userPrompt)
+      """
+    }
+
+    var arguments: [String: Any] = [
+      "prompt": prompt,
+      "workingDirectory": workDir,
+      "returnImmediately": true,
+      "chainSpec": [
+        "name": "Follow-up",
+        "description": "Implement follow-up changes from review",
+        "steps": [["role": "implementer", "model": "claude-sonnet-4.6", "name": "Implement Changes"]],
+      ] as [String: Any],
+    ]
+    if let ctx = run.prContext {
+      arguments["baseBranch"] = ctx.headRef
+    }
+
+    guard let mcpServer else {
+      followUpError = "MCP server unavailable"
+      isDispatchingFollowUp = false
+      return
+    }
+
+    let (_, data) = await mcpServer.handleChainRun(id: nil, arguments: arguments)
+
+    if let resultDict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+      let chainData = resultDict["chainData"] as? [String: Any]
+      let queueData = chainData?["queue"] as? [String: Any]
+      let runId = (chainData?["runId"] as? String) ?? (queueData?["runId"] as? String)
+      if let runId {
+        followUpRunId = runId
+        followUpPrompt = ""
+        if isPRReview, let ctx = run.prContext,
+           let qi = mcpServer.prReviewQueue.find(
+             repoOwner: ctx.repoOwner, repoName: ctx.repoName, prNumber: ctx.prNumber
+           ) {
+          mcpServer.prReviewQueue.markFixing(qi, chainId: runId)
+        }
+      } else {
+        followUpError = "Failed to start follow-up chain"
+      }
+    } else {
+      followUpError = "Failed to parse chain response"
+    }
+
+    isDispatchingFollowUp = false
   }
 
   // MARK: - Child Runs (Manager)

@@ -67,6 +67,9 @@ public protocol MCPToolHandlerDelegate: AnyObject {
   /// Set current tool/view ID
   func setCurrentToolId(_ viewId: String)
 
+  /// Navigate to a specific sidebar section (granular navigation)
+  func navigateToSidebar(_ viewId: String)
+
   /// Worktree name map from defaults
   func worktreeNameMapFromDefaults() -> [String: String]
 

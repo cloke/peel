@@ -36,6 +36,10 @@ extension MCPServerService: MCPToolHandlerDelegate {
     uiAutomationProvider.setCurrentToolId(viewId)
   }
 
+  public func navigateToSidebar(_ viewId: String) {
+    uiAutomationProvider.navigateToSidebar(viewId)
+  }
+
   public func worktreeNameMapFromDefaults() -> [String: String] {
     uiAutomationProvider.worktreeNameMapFromDefaults()
   }

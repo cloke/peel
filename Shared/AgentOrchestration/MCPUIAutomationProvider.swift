@@ -72,6 +72,7 @@ public protocol MCPUIAutomationProviding: AnyObject {
   func controlValues(for viewId: String?) -> [String: Any]
   func currentToolId() -> String?
   func setCurrentToolId(_ toolId: String)
+  func navigateToSidebar(_ viewId: String)
   func worktreeNameMapFromDefaults() -> [String: String]
   func recordUIActionHandled(_ controlId: String)
   func recordUIActionRequested(_ controlId: String)
@@ -126,14 +127,23 @@ public final class MCPUIAutomationStore: MCPUIAutomationProviding {
   }
 
   public func availableViewIds() -> [String] {
-    ["repositories", "activity", "swarm"]
+    [
+      "repositories", "activity", "swarm",
+      // Granular sidebar sections
+      "home", "prReviews", "templates", "agentRuns", "worktrees", "chat", "brew",
+    ]
   }
 
   public func viewTitle(for viewId: String) -> String {
     switch viewId {
-    case "repositories": return "Repositories"
+    case "repositories", "home": return "Repositories"
     case "activity": return "Activity"
     case "swarm": return "Swarm Console"
+    case "prReviews": return "PR Reviews"
+    case "templates": return "Templates"
+    case "agentRuns": return "Agent Runs"
+    case "worktrees": return "Worktrees"
+    case "chat": return "Local Chat"
     // Legacy view IDs — map to new equivalents
     case "agents", "workspaces": return "Activity"
     case "brew": return "Homebrew"
@@ -175,6 +185,7 @@ public final class MCPUIAutomationStore: MCPUIAutomationProviding {
         "activity.filterRepo",
         "activity.runTask",
         "activity.selectChain",
+        "activity.expandExecution",
         "activity.startSwarm",
         // Legacy agent controls (kept for backward compat)
         "activity.agents.newChain",
@@ -246,6 +257,27 @@ public final class MCPUIAutomationStore: MCPUIAutomationProviding {
 
   public func setCurrentToolId(_ toolId: String) {
     UserDefaults.standard.set(toolId, forKey: "current-tool")
+  }
+
+  /// Navigate to a specific sidebar section (granular navigation beyond top-level tool).
+  public func navigateToSidebar(_ viewId: String) {
+    // Map to parent tool section + write sidebar target
+    let parentTool: String
+    switch viewId {
+    case "home", "repositories":
+      parentTool = "repositories"
+    case "prReviews", "templates", "agentRuns", "worktrees", "chat", "activity":
+      parentTool = "activity"
+    case "swarm":
+      parentTool = "activity"
+    case "brew":
+      parentTool = "brew"
+    default:
+      parentTool = viewId
+    }
+    // Write sidebar target first, then tool — ContentView observes both
+    UserDefaults.standard.set(viewId, forKey: "sidebar-navigation")
+    UserDefaults.standard.set(parentTool, forKey: "current-tool")
   }
 
   public func worktreeNameMapFromDefaults() -> [String: String] {

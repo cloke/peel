@@ -57,12 +57,22 @@ public final class UIToolsHandler: MCPToolHandler {
       return missingParamError(id: id, param: "viewId")
     }
 
+    // Also accept repo:<key> for direct repo navigation
+    if viewId.hasPrefix("repo:") {
+      let repoKey = String(viewId.dropFirst(5))
+      delegate.recordUIActionRequested("ui.navigate:\(viewId)")
+      UserDefaults.standard.set(repoKey, forKey: "repositories.selectedRepoKey")
+      delegate.navigateToSidebar("repositories")
+      delegate.recordUIActionHandled("ui.navigate:\(viewId)")
+      return (200, makeResult(id: id, result: ["viewId": viewId, "status": "navigated"]))
+    }
+
     guard delegate.availableViewIds().contains(viewId) else {
-      return (404, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.unknownViewId, message: "Unknown viewId"))
+      return (404, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.unknownViewId, message: "Unknown viewId '\(viewId)'. Available: \(delegate.availableViewIds().joined(separator: ", "))"))
     }
 
     delegate.recordUIActionRequested("ui.navigate:\(viewId)")
-    delegate.setCurrentToolId(viewId)
+    delegate.navigateToSidebar(viewId)
     delegate.recordUIActionHandled("ui.navigate:\(viewId)")
     return (200, makeResult(id: id, result: ["viewId": viewId, "status": "navigated"]))
   }
@@ -358,6 +368,12 @@ public final class UIToolsHandler: MCPToolHandler {
     case "activity.selectChain":
       UserDefaults.standard.set(value, forKey: "activity.automationSelectedChain")
       UserDefaults.standard.set("activity", forKey: "current-tool")
+      delegate.recordUIActionRequested(controlId)
+      delegate.recordUIActionHandled(controlId)
+      return (200, makeResult(id: id, result: ["controlId": controlId, "value": value]))
+
+    case "activity.expandExecution":
+      UserDefaults.standard.set(value, forKey: "activity.automationExpandExecution")
       delegate.recordUIActionRequested(controlId)
       delegate.recordUIActionHandled(controlId)
       return (200, makeResult(id: id, result: ["controlId": controlId, "value": value]))
