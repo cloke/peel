@@ -46,6 +46,13 @@ public actor PeerSession {
   private var reconnectTask: Task<Void, Never>?
   private var stateChangeHandler: (@Sendable (PeerSessionState) -> Void)?
 
+  // ICE candidate forwarding tasks — kept alive for the connection lifetime
+  // so that late-arriving candidates (TURN relay, network changes) are still
+  // exchanged. Matches the Firebase RTC codelab pattern where candidate
+  // listeners persist until disconnect.
+  private var localCandidateTask: Task<Void, Never>?
+  private var remoteCandidateTask: Task<Void, Never>?
+
   // Channel labels
   static let mcpLabel = "mcp"
   static let transferLabel = "transfer"
@@ -84,15 +91,12 @@ public actor PeerSession {
     do {
       // Create named channels (must be before createOffer)
       let mcp = try await newClient.openChannel(label: Self.mcpLabel)
-      let transfer = try await newClient.openChannel(label: Self.transferLabel)
+      let transfer = try await newClient.openChannel(label: Self.transferLabel, config: .bulkTransfer)
       let heartbeat = try await newClient.openChannel(label: Self.heartbeatLabel, config: .unreliable)
       let chat = try await newClient.openChannel(label: Self.chatLabel)
 
-      // ICE candidate forwarding
-      var candidateTask: Task<Void, Never>?
-      var remoteCandidateTask: Task<Void, Never>?
-
-      candidateTask = Task {
+      // ICE candidate forwarding — kept alive for connection lifetime
+      localCandidateTask = Task {
         await newClient.onLocalICECandidate { candidate in
           Task { try? await signaling.sendCandidate(candidate) }
         }
@@ -120,9 +124,6 @@ public actor PeerSession {
       heartbeatChannel = heartbeat
       chatChannel = chat
       updateState(.connected)
-
-      candidateTask?.cancel()
-      remoteCandidateTask?.cancel()
 
       // Monitor ICE state for disconnection
       setupICEMonitoring(newClient)
@@ -154,11 +155,8 @@ public actor PeerSession {
       // Tell the client we're using named channels (so didOpen routes to handles)
       await newClient.enableNamedChannels()
 
-      // ICE candidate forwarding
-      var candidateTask: Task<Void, Never>?
-      var remoteCandidateTask: Task<Void, Never>?
-
-      candidateTask = Task {
+      // ICE candidate forwarding — kept alive for connection lifetime
+      localCandidateTask = Task {
         await newClient.onLocalICECandidate { candidate in
           Task { try? await signaling.sendCandidate(candidate) }
         }
@@ -193,9 +191,6 @@ public actor PeerSession {
       chatChannel = chat
       updateState(.connected)
 
-      candidateTask?.cancel()
-      remoteCandidateTask?.cancel()
-
       setupICEMonitoring(newClient)
       startHeartbeat()
 
@@ -215,6 +210,10 @@ public actor PeerSession {
     heartbeatTask = nil
     reconnectTask?.cancel()
     reconnectTask = nil
+    localCandidateTask?.cancel()
+    localCandidateTask = nil
+    remoteCandidateTask?.cancel()
+    remoteCandidateTask = nil
     client?.close()
     client = nil
     mcpChannel = nil

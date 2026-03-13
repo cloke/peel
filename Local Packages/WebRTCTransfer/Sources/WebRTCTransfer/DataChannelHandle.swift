@@ -18,8 +18,13 @@ public struct DataChannelConfig: Sendable {
   public var ordered: Bool
   public var maxRetransmits: Int?
 
-  /// Reliable, ordered delivery (default for MCP, transfer, chat).
+  /// Reliable, ordered delivery (default for MCP, chat).
   public static let reliable = DataChannelConfig(ordered: true, maxRetransmits: nil)
+  /// Reliable, UNORDERED delivery for bulk transfers.
+  /// Avoids SCTP head-of-line blocking: a single lost packet won't stall
+  /// all subsequent messages. Chunks are numbered at the application level
+  /// and reassembled by index, so transport ordering is unnecessary.
+  public static let bulkTransfer = DataChannelConfig(ordered: false, maxRetransmits: nil)
   /// Unreliable, unordered delivery (heartbeats, pings).
   public static let unreliable = DataChannelConfig(ordered: false, maxRetransmits: 0)
 

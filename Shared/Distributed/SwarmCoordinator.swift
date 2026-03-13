@@ -166,18 +166,13 @@ public final class SwarmCoordinator {
   /// Watchdog task that detects stalled RAG transfers
   private var ragTransferWatchdogTask: Task<Void, Never>?
 
-  /// How long to wait for a chunk before declaring a transfer stalled (seconds)
-  private let ragTransferStalledThreshold: TimeInterval = 60
+  /// How long to wait for progress before failing a transfer (seconds).
+  /// SCTP handles retransmission at the transport level, so if we see no
+  /// progress for this long the connection is genuinely dead.
+  private let ragTransferTimeoutSeconds: TimeInterval = 120
 
-  /// WAN transfers can pause while SCTP buffers drain, but long idle windows hurt reliability.
-  /// Keep this higher than LAN while still recovering quickly.
-  private let ragTransferStalledThresholdWAN: TimeInterval = 75
-
-  /// How long a transfer can stay queued before watchdog retries/fails it.
-  private let ragTransferQueuedThreshold: TimeInterval = 20
-
-  /// Maximum number of automatic resume attempts per transfer
-  private let ragTransferMaxRetries = 8
+  /// How long a transfer can stay queued before being failed.
+  private let ragTransferQueuedTimeout: TimeInterval = 30
 
   /// Network path monitor for sleep/wake reconnection
   private var pathMonitor: NWPathMonitor?
@@ -228,16 +223,11 @@ public final class SwarmCoordinator {
     var receivedChunks = 0
     var receivedBytes = 0
     var fileHandle: FileHandle?
-    /// Track which chunk indices have been received (for resume)
+    /// Track which chunk indices have been received (for dedup)
     var receivedChunkIndices: Set<Int> = []
-    /// Timestamp of last chunk received (for watchdog)
+    /// Timestamp of last chunk received (for timeout detection)
     var lastChunkReceivedAt: Date = Date()
-    /// Number of times this transfer has been retried
-    var retryCount: Int = 0
-    /// The repo and mode that were originally requested (for resume)
-    var repoIdentifier: String?
-    var transferMode: RAGTransferMode?
-    /// Inferred non-final chunk size, used to place out-of-order/resumed chunks at stable offsets.
+    /// Inferred non-final chunk size, used to place out-of-order chunks at stable offsets.
     var chunkSizeHint: Int?
 
     init(id: UUID, peerId: String, direction: RAGArtifactSyncDirection, tempURL: URL) {
@@ -245,26 +235,6 @@ public final class SwarmCoordinator {
       self.peerId = peerId
       self.direction = direction
       self.tempURL = tempURL
-    }
-
-    /// Create a checkpoint that can be persisted to disk for resume after disconnect/restart.
-    func makeCheckpoint(peerName: String) -> RAGTransferCheckpoint {
-      RAGTransferCheckpoint(
-        transferId: id,
-        peerId: peerId,
-        peerName: peerName,
-        direction: direction,
-        repoIdentifier: repoIdentifier,
-        transferMode: transferMode,
-        manifest: manifest,
-        receivedChunkIndices: receivedChunkIndices,
-        receivedBytes: receivedBytes,
-        totalBytes: manifest?.totalBytes ?? 0,
-        totalChunks: expectedChunks ?? 0,
-        tempFilePath: tempURL.path,
-        createdAt: Date(),
-        lastChunkReceivedAt: lastChunkReceivedAt
-      )
     }
   }
   
@@ -465,9 +435,8 @@ public final class SwarmCoordinator {
     // Feed version + relay status into Firestore heartbeats
     configureFirestoreHeartbeatMetadata()
 
-    // Start watchdog for stalled RAG transfers and clean up expired checkpoints
+    // Start watchdog for timed-out RAG transfers
     startRagTransferWatchdog()
-    cleanupStaleCheckpoints()
   }
 
   /// Reinitialize Firestore-dependent subsystems (WebRTC signaling responder)
@@ -1053,6 +1022,83 @@ public final class SwarmCoordinator {
               }
             }
 
+            // Binary chunk fast path for transfer channel — no JSON decode
+            if label == "transfer",
+               data.count >= BinaryChunkHeader.headerSize,
+               let parsed = BinaryChunkHeader.decode(from: data) {
+              let header = parsed.header
+              let payload = parsed.payload
+              let transferId = header.transferId
+              let index = Int(header.chunkIndex)
+              let total = Int(header.totalChunks)
+
+              // Grab transfer state references on MainActor (quick)
+              let transferInfo: (fileHandle: FileHandle, chunkSizeHint: Int?, manifestBytes: Int?, receivedBytes: Int, alreadyHas: Bool, peerId: String)? = await MainActor.run { [weak self] in
+                guard let self, let transfer = self.incomingRagTransfers[transferId] else { return nil }
+                if transfer.receivedChunkIndices.contains(index) { return nil }
+                return (
+                  fileHandle: transfer.fileHandle!,
+                  chunkSizeHint: transfer.chunkSizeHint,
+                  manifestBytes: transfer.manifest?.totalBytes,
+                  receivedBytes: transfer.receivedBytes,
+                  alreadyHas: false,
+                  peerId: transfer.peerId
+                )
+              }
+
+              guard let info = transferInfo else { continue }
+
+              // File I/O off MainActor
+              let byteOffset: Int
+              if let hint = info.chunkSizeHint {
+                byteOffset = index * hint
+              } else if let manifestBytes = info.manifestBytes, total > 0 {
+                byteOffset = index * Int(ceil(Double(manifestBytes) / Double(total)))
+              } else {
+                byteOffset = info.receivedBytes
+              }
+
+              var writeError: String?
+              do {
+                try info.fileHandle.seek(toOffset: UInt64(max(0, byteOffset)))
+                try info.fileHandle.write(contentsOf: payload)
+              } catch {
+                writeError = error.localizedDescription
+              }
+
+              // Update state on MainActor (quick)
+              await MainActor.run { [weak self] in
+                guard let self, let transfer = self.incomingRagTransfers[transferId] else { return }
+                if let writeError {
+                  self.logger.error("Binary chunk \(index)/\(total) write failed: \(writeError)")
+                  self.updateRagTransfer(transferId) { state in
+                    state.status = .failed
+                    state.errorMessage = "Failed writing chunk: \(writeError)"
+                    state.completedAt = Date()
+                  }
+                  self.incomingRagTransfers.removeValue(forKey: transferId)
+                  return
+                }
+                if transfer.chunkSizeHint == nil, index < max(0, total - 1) {
+                  transfer.chunkSizeHint = payload.count
+                }
+                transfer.expectedChunks = total
+                transfer.receivedChunkIndices.insert(index)
+                transfer.receivedChunks = transfer.receivedChunkIndices.count
+                transfer.receivedBytes += payload.count
+                transfer.lastChunkReceivedAt = Date()
+                self.updateRagTransfer(transferId) { state in
+                  state.status = .transferring
+                  state.errorMessage = nil
+                  state.transferredBytes = transfer.receivedBytes
+                }
+                if index == 0 || transfer.receivedChunks == total || (transfer.receivedChunks % 64 == 0) {
+                  self.logger.debug("Binary chunk \(transfer.receivedChunks)/\(total) for \(transferId) (\(transfer.receivedBytes) bytes)")
+                }
+              }
+              continue
+            }
+
             do {
               let message = try JSONDecoder().decode(PeerMessage.self, from: data)
               await MainActor.run { [weak self] in
@@ -1134,13 +1180,9 @@ public final class SwarmCoordinator {
   /// Prefers the dedicated transfer channel for bulk data, falling back to the MCP channel.
   private func sendMessage(_ message: PeerMessage, to workerId: String) async throws {
     let msgType = String(describing: message).prefix(60)
-    let prefersTransferChannel: Bool
-    switch message {
-    case .ragArtifactsChunk:
-      prefersTransferChannel = true
-    default:
-      prefersTransferChannel = false
-    }
+    // All PeerMessage JSON goes over the MCP channel.
+    // Binary chunk data goes directly via sendBinaryChunk() on the transfer channel.
+    let prefersTransferChannel = false
     
     func resolveChannels() async -> (primary: DataChannelHandle?, fallback: DataChannelHandle?) {
       let primary = if prefersTransferChannel {
@@ -1192,6 +1234,38 @@ public final class SwarmCoordinator {
     let sessionExists = peerSessionManager.sessions[workerId] != nil
     logger.error("sendMessage failed: no channel for \(workerId) (state=\(state), session=\(sessionExists)) msg=\(msgType)")
     throw DistributedError.actorSystemNotReady
+  }
+
+  /// Send a binary chunk directly on the transfer data channel — no JSON, no base64.
+  /// This bypasses PeerMessage encoding entirely for maximum throughput.
+  private func sendBinaryChunk(transferId: UUID, chunkIndex: Int, totalChunks: Int, payload: Data, to workerId: String) async throws {
+    guard let channel = await peerSessionManager.transferChannel(for: workerId) else {
+      // Brief grace period — session may still be establishing channels
+      var resolved: DataChannelHandle?
+      for _ in 0..<10 {
+        try? await Task.sleep(for: .milliseconds(100))
+        resolved = await peerSessionManager.transferChannel(for: workerId)
+        if resolved != nil { break }
+      }
+      guard let channel = resolved else {
+        throw DistributedError.actorSystemNotReady
+      }
+      let header = BinaryChunkHeader(
+        transferId: transferId,
+        chunkIndex: UInt32(chunkIndex),
+        totalChunks: UInt32(totalChunks),
+        payloadSize: UInt32(payload.count)
+      )
+      try await channel.send(header.encode(payload: payload))
+      return
+    }
+    let header = BinaryChunkHeader(
+      transferId: transferId,
+      chunkIndex: UInt32(chunkIndex),
+      totalChunks: UInt32(totalChunks),
+      payloadSize: UInt32(payload.count)
+    )
+    try await channel.send(header.encode(payload: payload))
   }
 
   /// Receive the next PeerMessage from a specific worker's WebRTC mcp channel.
@@ -1528,8 +1602,7 @@ public final class SwarmCoordinator {
     return transferId
   }
 
-  private func sendRagArtifactBundle(transferId: UUID, to peer: ConnectedPeer, repoIdentifier: String? = nil, transferMode: RAGTransferMode = .full, skipChunkIndices: Set<Int> = []) async {
-    let isResume = !skipChunkIndices.isEmpty
+  private func sendRagArtifactBundle(transferId: UUID, to peer: ConnectedPeer, repoIdentifier: String? = nil, transferMode: RAGTransferMode = .full) async {
     let senderKey = SenderTransferKey(id: transferId, peerId: peer.id)
     guard !activeSenderTransfers.contains(senderKey) else {
       logger.info("RAG sender already active for \(transferId) -> \(peer.id); skipping duplicate send pipeline")
@@ -1540,13 +1613,20 @@ public final class SwarmCoordinator {
 
     let hasTransferChannel = await peerSessionManager.transferChannel(for: peer.id) != nil
     let hasMCPChannel = await peerSessionManager.mcpChannel(for: peer.id) != nil
-    let usesWebRTC = hasTransferChannel || hasMCPChannel
+    guard hasTransferChannel || hasMCPChannel else {
+      logger.error("RAG sync: no WebRTC channels for \(peer.id) — cannot transfer")
+      updateRagTransfer(transferId) { state in
+        state.status = .failed
+        state.errorMessage = "No WebRTC channels available"
+        state.completedAt = Date()
+      }
+      return
+    }
     updateRagTransfer(transferId) { state in
       state.status = .preparing
     }
 
-    logger.info("RAG sync preparing bundle for \(peer.name) (\(peer.id))\(repoIdentifier.map { ", repo: \($0)" } ?? ""), mode: \(transferMode.rawValue)\(isResume ? ", resume (skipping \(skipChunkIndices.count) chunks)" : "")")
-    logger.debug("RAG sync channels for \(peer.id): transfer=\(hasTransferChannel), mcp=\(hasMCPChannel), usesWebRTC=\(usesWebRTC)")
+    logger.info("RAG sync preparing bundle for \(peer.name) (\(peer.id))\(repoIdentifier.map { ", repo: \($0)" } ?? ""), mode: \(transferMode.rawValue)")
 
     guard let ragSyncDelegate else {
       logger.error("RAG sync delegate not configured — marking transfer \(transferId) as failed")
@@ -1570,7 +1650,7 @@ public final class SwarmCoordinator {
         let jsonData = try await Task.detached(priority: .userInitiated) {
           try JSONEncoder().encode(overlayBundle)
         }.value
-        let chunkSize = ragChunkSize(for: peer, usesWebRTC: usesWebRTC)
+        let chunkSize = ragChunkSize(for: peer)
         let totalChunks = max(1, Int(ceil(Double(max(1, jsonData.count)) / Double(chunkSize))))
 
         logger.info("RAG overlay sync bundle: \(overlayBundle.manifest.repoIdentifier), \(jsonData.count) bytes (\(overlayBundle.totalEntries) entries, \(overlayBundle.totalEmbeddings) embeddings, \(overlayBundle.totalAnalysis) analysis), \(totalChunks) chunks")
@@ -1594,42 +1674,23 @@ public final class SwarmCoordinator {
         )
         try await sendMessage(.ragArtifactsManifest(id: transferId, manifest: manifest), to: peer.id)
         traceMessage(direction: "OUT", peerId: peer.id, type: "ragManifest-sent", detail: "id=\(transferId) bytes=\(jsonData.count) chunks=\(totalChunks)")
-        if usesWebRTC {
-          await waitForManifestAck(transferId: transferId)
-        }
+        await waitForManifestAck(transferId: transferId)
 
         var offset = 0
         var chunkIndex = 0
         while offset < jsonData.count {
           let end = min(offset + chunkSize, jsonData.count)
-          let chunkData = jsonData[offset..<end]
-          if !skipChunkIndices.contains(chunkIndex) {
-            // Base64 encode off main actor
-            let base64 = await Task.detached(priority: .userInitiated) {
-              chunkData.base64EncodedString()
-            }.value
-            let sendStarted = ContinuousClock.now
-            try await sendMessage(
-              .ragArtifactsChunk(id: transferId, index: chunkIndex, total: totalChunks, data: base64),
-              to: peer.id
-            )
-            let sendElapsed = ContinuousClock.now - sendStarted
-            if chunkIndex == 0 || chunkIndex == totalChunks - 1 {
-              traceMessage(direction: "OUT", peerId: peer.id, type: "ragChunk-sent", detail: "id=\(transferId) chunk=\(chunkIndex)/\(totalChunks) b64len=\(base64.count)")
-            }
-            if chunkIndex == 0 || chunkIndex == totalChunks - 1 || (chunkIndex % 128 == 0) {
-              logger.debug(
-                "RAG chunk send [\(transferId)] overlay chunk \(chunkIndex)/\(totalChunks) bytes=\(chunkData.count) elapsed=\(sendElapsed)"
-              )
-            }
-            if sendElapsed > .seconds(2) {
-              logger.warning(
-                "RAG chunk send slow [\(transferId)] overlay chunk \(chunkIndex)/\(totalChunks) elapsed=\(sendElapsed)"
-              )
-            }
-            // Yield between chunks to avoid overwhelming the receiver
-            await Task.yield()
+          let chunkData = Data(jsonData[offset..<end])
+          let sendStarted = ContinuousClock.now
+          try await sendBinaryChunk(transferId: transferId, chunkIndex: chunkIndex, totalChunks: totalChunks, payload: chunkData, to: peer.id)
+          let sendElapsed = ContinuousClock.now - sendStarted
+          if chunkIndex == 0 || chunkIndex == totalChunks - 1 || (chunkIndex % 128 == 0) {
+            logger.debug("RAG chunk send [\(transferId)] overlay chunk \(chunkIndex)/\(totalChunks) bytes=\(chunkData.count) elapsed=\(sendElapsed)")
           }
+          if sendElapsed > .seconds(2) {
+            logger.warning("RAG chunk send slow [\(transferId)] overlay chunk \(chunkIndex)/\(totalChunks) elapsed=\(sendElapsed)")
+          }
+          await Task.yield()
           updateRagTransfer(transferId) { state in
             state.transferredBytes += chunkData.count
           }
@@ -1668,7 +1729,7 @@ public final class SwarmCoordinator {
         let jsonData = try await Task.detached(priority: .userInitiated) {
           try JSONEncoder().encode(repoBundle)
         }.value
-        let chunkSize = ragChunkSize(for: peer, usesWebRTC: usesWebRTC)
+        let chunkSize = ragChunkSize(for: peer)
         let totalChunks = max(1, Int(ceil(Double(max(1, jsonData.count)) / Double(chunkSize))))
 
         logger.info("RAG repo sync bundle: \(repoBundle.manifest.repoIdentifier), \(jsonData.count) bytes, \(totalChunks) chunks")
@@ -1679,7 +1740,6 @@ public final class SwarmCoordinator {
           state.manifestVersion = "v\(repoBundle.manifest.schemaVersion)"
         }
 
-        // Send as a manifest with repo info
         let manifest = RAGArtifactManifest(
           formatVersion: 1,
           version: "repo-sync-\(repoBundle.manifest.repoIdentifier)",
@@ -1693,43 +1753,23 @@ public final class SwarmCoordinator {
         )
         try await sendMessage(.ragArtifactsManifest(id: transferId, manifest: manifest), to: peer.id)
         traceMessage(direction: "OUT", peerId: peer.id, type: "ragManifest-sent", detail: "id=\(transferId) bytes=\(jsonData.count) chunks=\(totalChunks)")
-        if usesWebRTC {
-          await waitForManifestAck(transferId: transferId)
-        }
+        await waitForManifestAck(transferId: transferId)
 
-        // Send in chunks
         var offset = 0
         var chunkIndex = 0
         while offset < jsonData.count {
           let end = min(offset + chunkSize, jsonData.count)
-          let chunkData = jsonData[offset..<end]
-          if !skipChunkIndices.contains(chunkIndex) {
-            // Base64 encode off main actor
-            let base64 = await Task.detached(priority: .userInitiated) {
-              chunkData.base64EncodedString()
-            }.value
-            let sendStarted = ContinuousClock.now
-            try await sendMessage(
-              .ragArtifactsChunk(id: transferId, index: chunkIndex, total: totalChunks, data: base64),
-              to: peer.id
-            )
-            let sendElapsed = ContinuousClock.now - sendStarted
-            if chunkIndex == 0 || chunkIndex == totalChunks - 1 {
-              traceMessage(direction: "OUT", peerId: peer.id, type: "ragChunk-sent", detail: "id=\(transferId) chunk=\(chunkIndex)/\(totalChunks) b64len=\(base64.count)")
-            }
-            if chunkIndex == 0 || chunkIndex == totalChunks - 1 || (chunkIndex % 128 == 0) {
-              logger.debug(
-                "RAG chunk send [\(transferId)] repo chunk \(chunkIndex)/\(totalChunks) bytes=\(chunkData.count) elapsed=\(sendElapsed)"
-              )
-            }
-            if sendElapsed > .seconds(2) {
-              logger.warning(
-                "RAG chunk send slow [\(transferId)] repo chunk \(chunkIndex)/\(totalChunks) elapsed=\(sendElapsed)"
-              )
-            }
-            // Yield between chunks to avoid overwhelming the receiver
-            await Task.yield()
+          let chunkData = Data(jsonData[offset..<end])
+          let sendStarted = ContinuousClock.now
+          try await sendBinaryChunk(transferId: transferId, chunkIndex: chunkIndex, totalChunks: totalChunks, payload: chunkData, to: peer.id)
+          let sendElapsed = ContinuousClock.now - sendStarted
+          if chunkIndex == 0 || chunkIndex == totalChunks - 1 || (chunkIndex % 128 == 0) {
+            logger.debug("RAG chunk send [\(transferId)] repo chunk \(chunkIndex)/\(totalChunks) bytes=\(chunkData.count) elapsed=\(sendElapsed)")
           }
+          if sendElapsed > .seconds(2) {
+            logger.warning("RAG chunk send slow [\(transferId)] repo chunk \(chunkIndex)/\(totalChunks) elapsed=\(sendElapsed)")
+          }
+          await Task.yield()
           updateRagTransfer(transferId) { state in
             state.transferredBytes += chunkData.count
           }
@@ -1750,7 +1790,7 @@ public final class SwarmCoordinator {
       let bundle = try await ragSyncDelegate.createRagArtifactBundle()
       let fileAttributes = try FileManager.default.attributesOfItem(atPath: bundle.bundleURL.path)
       let fileSize = (fileAttributes[.size] as? NSNumber)?.intValue ?? bundle.bundleSizeBytes
-      let chunkSize = ragChunkSize(for: peer, usesWebRTC: usesWebRTC)
+      let chunkSize = ragChunkSize(for: peer)
       let totalChunks = max(1, Int(ceil(Double(max(1, fileSize)) / Double(chunkSize))))
 
       logger.info("RAG sync bundle created: \(bundle.manifest.version), \(fileSize) bytes, \(totalChunks) chunks")
@@ -1762,9 +1802,7 @@ public final class SwarmCoordinator {
       }
 
       try await sendMessage(.ragArtifactsManifest(id: transferId, manifest: bundle.manifest), to: peer.id)
-      if usesWebRTC {
-        await waitForManifestAck(transferId: transferId)
-      }
+      await waitForManifestAck(transferId: transferId)
 
       let handle = try FileHandle(forReadingFrom: bundle.bundleURL)
       defer { try? handle.close() }
@@ -1773,30 +1811,16 @@ public final class SwarmCoordinator {
       while true {
         let data = try handle.read(upToCount: chunkSize) ?? Data()
         if data.isEmpty { break }
-        if !skipChunkIndices.contains(chunkIndex) {
-          // Base64 encode off main actor
-          let base64 = await Task.detached(priority: .userInitiated) {
-            data.base64EncodedString()
-          }.value
-          let sendStarted = ContinuousClock.now
-          try await sendMessage(
-            .ragArtifactsChunk(id: transferId, index: chunkIndex, total: totalChunks, data: base64),
-            to: peer.id
-          )
-          let sendElapsed = ContinuousClock.now - sendStarted
-          if chunkIndex == 0 || chunkIndex == totalChunks - 1 || (chunkIndex % 128 == 0) {
-            logger.debug(
-              "RAG chunk send [\(transferId)] full chunk \(chunkIndex)/\(totalChunks) bytes=\(data.count) elapsed=\(sendElapsed)"
-            )
-          }
-          if sendElapsed > .seconds(2) {
-            logger.warning(
-              "RAG chunk send slow [\(transferId)] full chunk \(chunkIndex)/\(totalChunks) elapsed=\(sendElapsed)"
-            )
-          }
-          // Yield between chunks to avoid overwhelming the receiver
-          await Task.yield()
+        let sendStarted = ContinuousClock.now
+        try await sendBinaryChunk(transferId: transferId, chunkIndex: chunkIndex, totalChunks: totalChunks, payload: data, to: peer.id)
+        let sendElapsed = ContinuousClock.now - sendStarted
+        if chunkIndex == 0 || chunkIndex == totalChunks - 1 || (chunkIndex % 128 == 0) {
+          logger.debug("RAG chunk send [\(transferId)] full chunk \(chunkIndex)/\(totalChunks) bytes=\(data.count) elapsed=\(sendElapsed)")
         }
+        if sendElapsed > .seconds(2) {
+          logger.warning("RAG chunk send slow [\(transferId)] full chunk \(chunkIndex)/\(totalChunks) elapsed=\(sendElapsed)")
+        }
+        await Task.yield()
         updateRagTransfer(transferId) { state in
           state.transferredBytes += data.count
         }
@@ -1823,8 +1847,6 @@ public final class SwarmCoordinator {
   private func prepareIncomingRagTransfer(id: UUID, from peerId: String, direction: RAGArtifactSyncDirection, repoIdentifier: String? = nil, transferMode: RAGTransferMode? = nil) {
     let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("rag-artifacts-\(id).zip")
     let transfer = RAGIncomingTransfer(id: id, peerId: peerId, direction: direction, tempURL: tempURL)
-    transfer.repoIdentifier = repoIdentifier
-    transfer.transferMode = transferMode
     if FileManager.default.fileExists(atPath: transfer.tempURL.path) {
       try? FileManager.default.removeItem(at: transfer.tempURL)
     }
@@ -1833,12 +1855,9 @@ public final class SwarmCoordinator {
     incomingRagTransfers[id] = transfer
   }
 
-  /// Choose a conservative chunk size for WAN WebRTC sessions to reduce SCTP backpressure stalls.
-  private func ragChunkSize(for peer: ConnectedPeer, usesWebRTC: Bool) -> Int {
-    guard usesWebRTC else { return 256 * 1024 }
-
-    // Prefer live Firestore worker topology first (LAN address often absent for WAN-only peers),
-    // since ConnectedPeer capabilities can lag or be stale across reconnects.
+  /// Choose chunk size based on peer topology. WAN peers get smaller chunks
+  /// to reduce per-message SCTP retransmission cost.
+  private func ragChunkSize(for peer: ConnectedPeer) -> Int {
     if let worker = FirebaseService.shared.swarmWorkers.first(where: { $0.id == peer.id }) {
       let hasLAN = worker.lanAddress != nil
       let hasWAN = worker.wanAddress != nil
@@ -1886,85 +1905,6 @@ public final class SwarmCoordinator {
     // chunk 0 from being silently dropped by the SCTP layer.
     Task {
       try? await sendMessage(.ragArtifactsAck(id: id, receivedChunks: 0, receivedBytes: 0), to: peerId)
-    }
-  }
-
-  private func handleRagArtifactsChunk(id: UUID, index: Int, total: Int, data: String) {
-    guard let transfer = incomingRagTransfers[id] else {
-      logger.error("RAG chunk \(index)/\(total) for \(id) dropped — no transfer state (manifest not yet processed?)")
-      traceMessage(direction: "IN-DROP", peerId: "?", type: "ragChunk-noState", detail: "chunk=\(index)/\(total) id=\(id)")
-      return
-    }
-    guard let decoded = Data(base64Encoded: data) else {
-      logger.error("RAG chunk \(index)/\(total) for \(id) failed base64 decode (data.count=\(data.count))")
-      traceMessage(direction: "IN-ERR", peerId: transfer.peerId, type: "ragChunk-b64fail", detail: "chunk=\(index)/\(total) len=\(data.count)")
-      updateRagTransfer(id) { state in
-        state.status = .failed
-        state.errorMessage = "Failed to decode artifact chunk"
-        state.completedAt = Date()
-      }
-      Task { await sendRagArtifactError(transferId: id, to: transfer.peerId, message: "Failed to decode artifact chunk") }
-      incomingRagTransfers.removeValue(forKey: id)
-      return
-    }
-
-    if transfer.receivedChunkIndices.contains(index) {
-      logger.debug("RAG chunk \(index)/\(total) for \(id) ignored — duplicate index")
-      return
-    }
-
-    transfer.expectedChunks = total
-    if index < max(0, total - 1), transfer.chunkSizeHint == nil {
-      transfer.chunkSizeHint = decoded.count
-    }
-
-    if let handle = transfer.fileHandle {
-      let byteOffset: Int
-      if let chunkSizeHint = transfer.chunkSizeHint {
-        byteOffset = index * chunkSizeHint
-      } else if let manifestBytes = transfer.manifest?.totalBytes, total > 0 {
-        let inferredChunk = Int(ceil(Double(manifestBytes) / Double(total)))
-        byteOffset = index * inferredChunk
-      } else {
-        // Last-resort fallback when metadata is incomplete.
-        byteOffset = transfer.receivedBytes
-      }
-
-      do {
-        try handle.seek(toOffset: UInt64(max(0, byteOffset)))
-        try handle.write(contentsOf: decoded)
-      } catch {
-        logger.error("RAG chunk \(index)/\(total) for \(id) write failed: \(error.localizedDescription)")
-        updateRagTransfer(id) { state in
-          state.status = .failed
-          state.errorMessage = "Failed writing artifact chunk: \(error.localizedDescription)"
-          state.completedAt = Date()
-        }
-        Task { await sendRagArtifactError(transferId: id, to: transfer.peerId, message: "Failed writing artifact chunk") }
-        incomingRagTransfers.removeValue(forKey: id)
-        return
-      }
-    } else {
-      logger.error("RAG chunk \(index)/\(total) for \(id) dropped — missing file handle")
-      return
-    }
-
-    transfer.receivedChunkIndices.insert(index)
-    transfer.receivedChunks = transfer.receivedChunkIndices.count
-    transfer.receivedBytes += decoded.count
-    transfer.lastChunkReceivedAt = Date()
-    // Any forward progress proves the sender is alive; reset retry budget so
-    // intermittent WAN jitter doesn't permanently cap long transfers.
-    transfer.retryCount = 0
-
-    updateRagTransfer(id) { state in
-      state.status = .transferring
-      state.errorMessage = nil
-      state.transferredBytes = transfer.receivedBytes
-    }
-
-    if index == 0 || transfer.receivedChunks == total {
-      logger.debug("RAG sync chunk \(index + 1)/\(total) received for \(id)")
     }
   }
 
@@ -2179,67 +2119,18 @@ public final class SwarmCoordinator {
     throw SwarmTransferError(message: "Transfer \(id) timed out after \(timeout)")
   }
 
-  // MARK: - RAG Transfer Checkpoint Persistence
-
-  private static var checkpointDirectory: URL {
-    let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-    return appSupport.appendingPathComponent("Peel/rag-transfer-checkpoints")
-  }
-
-  private func saveCheckpoint(for transfer: RAGIncomingTransfer) {
-    let peerName = connectedWorkers.first(where: { $0.id == transfer.peerId })?.name ?? "Peer"
-    let checkpoint = transfer.makeCheckpoint(peerName: peerName)
-    let dir = Self.checkpointDirectory
-    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    let url = dir.appendingPathComponent("\(checkpoint.transferId.uuidString).json")
-    if let data = try? JSONEncoder().encode(checkpoint) {
-      try? data.write(to: url, options: .atomic)
-      logger.debug("RAG transfer checkpoint saved: \(checkpoint.transferId)")
-    }
-  }
-
-  private func removeCheckpoint(for transferId: UUID) {
-    let url = Self.checkpointDirectory.appendingPathComponent("\(transferId.uuidString).json")
-    try? FileManager.default.removeItem(at: url)
-  }
-
-  private func loadCheckpoints() -> [RAGTransferCheckpoint] {
-    let dir = Self.checkpointDirectory
-    guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else {
-      return []
-    }
-    return files.compactMap { url -> RAGTransferCheckpoint? in
-      guard url.pathExtension == "json",
-            let data = try? Data(contentsOf: url),
-            let checkpoint = try? JSONDecoder().decode(RAGTransferCheckpoint.self, from: data) else {
-        return nil
-      }
-      return checkpoint
-    }
-  }
-
-  /// Remove expired checkpoints and temp files on app launch.
-  func cleanupStaleCheckpoints() {
-    let checkpoints = loadCheckpoints()
-    for cp in checkpoints {
-      if cp.isExpired {
-        logger.info("RAG transfer checkpoint expired, cleaning up: \(cp.transferId)")
-        removeCheckpoint(for: cp.transferId)
-        try? FileManager.default.removeItem(atPath: cp.tempFilePath)
-      }
-    }
-  }
-
   // MARK: - RAG Transfer Watchdog
 
-  /// Start the watchdog timer that scans for stalled transfers every 15 seconds.
+  /// Simple timeout watchdog — fails transfers that make no progress.
+  /// SCTP handles retransmission at the transport level, so if we see no
+  /// progress for `ragTransferTimeoutSeconds` the connection is genuinely dead.
   private func startRagTransferWatchdog() {
     ragTransferWatchdogTask?.cancel()
     ragTransferWatchdogTask = Task { [weak self] in
       while !Task.isCancelled {
         try? await Task.sleep(for: .seconds(15))
         guard !Task.isCancelled else { break }
-        self?.checkForStalledTransfers()
+        self?.checkForTimedOutTransfers()
       }
     }
   }
@@ -2249,84 +2140,24 @@ public final class SwarmCoordinator {
     ragTransferWatchdogTask = nil
   }
 
-  private func checkForStalledTransfers() {
+  private func checkForTimedOutTransfers() {
     let now = Date()
 
-    // Check transfers stuck in .queued (message never delivered or response never received)
+    // Fail transfers stuck in .queued too long
     for transfer in ragTransfers {
       guard transfer.status == .queued,
-            now.timeIntervalSince(transfer.startedAt) >= ragTransferQueuedThreshold else { continue }
+            now.timeIntervalSince(transfer.startedAt) >= ragTransferQueuedTimeout else { continue }
       let elapsed = Int(now.timeIntervalSince(transfer.startedAt))
-      let peerConnected =
-        connectedWorkers.contains(where: { $0.id == transfer.peerId })
-        || peerSessionManager.connectedPeers.contains(transfer.peerId)
-        || peerSessionManager.peerStates[transfer.peerId] == .connecting
-
-      if transfer.direction == .pull,
-         transfer.role == .receiver,
-         peerConnected,
-         let incoming = incomingRagTransfers[transfer.id],
-         incoming.retryCount < self.ragTransferMaxRetries {
-        incoming.retryCount += 1
-        let retryAttempt = incoming.retryCount
-        logger.warning(
-          "RAG transfer \(transfer.id) stuck in queued for \(elapsed)s — retrying request (\(retryAttempt)/\(self.ragTransferMaxRetries))"
-        )
-        updateRagTransfer(transfer.id) { state in
-          state.startedAt = now
-          state.errorMessage = "Queued retry \(retryAttempt)/\(self.ragTransferMaxRetries) after \(elapsed)s"
-        }
-
-        let request = PeerMessage.ragArtifactsRequest(
-          id: transfer.id,
-          direction: transfer.direction,
-          repoIdentifier: transfer.repoIdentifier,
-          transferMode: incoming.transferMode ?? .full
-        )
-        Task {
-          do {
-            try await sendMessage(request, to: transfer.peerId)
-            logger.info("RAG transfer \(transfer.id): queued retry request sent to \(transfer.peerId)")
-          } catch {
-            if let distributedError = error as? DistributedError, case .actorSystemNotReady = distributedError {
-              logger.warning(
-                "RAG transfer \(transfer.id): queued retry channel not ready for \(transfer.peerId), reconnecting"
-              )
-              do {
-                try await connectToWorker(peerId: transfer.peerId)
-                try await sendMessage(request, to: transfer.peerId)
-                logger.info("RAG transfer \(transfer.id): queued retry resend succeeded after reconnect")
-              } catch {
-                logger.error(
-                  "RAG transfer \(transfer.id): queued retry resend failed after reconnect: \(error.localizedDescription)"
-                )
-              }
-            } else {
-              logger.error("RAG transfer \(transfer.id): queued retry send failed: \(error.localizedDescription)")
-            }
-          }
-        }
-        continue
-      }
-
-      logger.warning("RAG transfer \(transfer.id) stuck in queued for \(elapsed)s — marking failed")
-      updateRagTransfer(transfer.id) { state in
-        state.status = .failed
-        state.errorMessage = "Transfer stuck in queued for \(elapsed)s — peer may be unreachable"
-        state.completedAt = now
-      }
-      if transfer.direction == .pull {
-        incomingRagTransfers[transfer.id]?.fileHandle?.closeFile()
-        incomingRagTransfers.removeValue(forKey: transfer.id)
-      }
+      logger.warning("RAG transfer \(transfer.id) stuck in queued for \(elapsed)s — failing")
+      failTransfer(id: transfer.id, message: "Transfer stuck in queued for \(elapsed)s — peer may be unreachable")
     }
 
-    // Check outgoing transfers stuck in .preparing
+    // Fail transfers stuck in .preparing too long
     for transfer in ragTransfers {
       guard transfer.status == .preparing,
             now.timeIntervalSince(transfer.startedAt) >= 120 else { continue }
       let elapsed = Int(now.timeIntervalSince(transfer.startedAt))
-      logger.warning("RAG transfer \(transfer.id) stuck in preparing for \(elapsed)s — marking failed")
+      logger.warning("RAG transfer \(transfer.id) stuck in preparing for \(elapsed)s — failing")
       updateRagTransfer(transfer.id) { state in
         state.status = .failed
         state.errorMessage = "Export stuck in preparing for \(elapsed)s"
@@ -2334,93 +2165,17 @@ public final class SwarmCoordinator {
       }
     }
 
+    // Fail incoming transfers with no chunk progress
     for (id, transfer) in incomingRagTransfers {
       let elapsed = now.timeIntervalSince(transfer.lastChunkReceivedAt)
-      let stalledThreshold = ragStalledThreshold(forPeerId: transfer.peerId)
-      guard elapsed >= stalledThreshold else { continue }
+      guard elapsed >= ragTransferTimeoutSeconds else { continue }
 
-      // Only act on transfers that are actively receiving
       guard let status = ragTransfers.first(where: { $0.id == id })?.status,
             status == .transferring else { continue }
 
-      logger.warning("RAG transfer \(id) stalled (\(Int(elapsed))s since last chunk, \(transfer.receivedChunks)/\(transfer.expectedChunks ?? 0) chunks)")
-
-      // Check if the peer is still connected. The `connectedWorkers` mirror can lag
-      // behind `peerSessionManager` during reconnects, so consult both.
-      let peerConnected =
-        connectedWorkers.contains(where: { $0.id == transfer.peerId })
-        || peerSessionManager.connectedPeers.contains(transfer.peerId)
-        || peerSessionManager.peerStates[transfer.peerId] == .connecting
-
-      if peerConnected {
-        // Peer is connected but sender may have crashed/stalled — mark as stalled
-        updateRagTransfer(id) { state in
-          state.status = .stalled
-          state.errorMessage = "No data received for \(Int(elapsed))s"
-        }
-        // Try requesting resume from the connected peer
-        if transfer.retryCount < ragTransferMaxRetries {
-          transfer.retryCount += 1
-          logger.info("RAG transfer \(id) requesting resume (attempt \(transfer.retryCount)/\(self.ragTransferMaxRetries))")
-          Task {
-            do {
-              try await sendMessage(
-                .ragArtifactsResumeRequest(
-                  id: id,
-                  receivedChunkIndices: transfer.receivedChunkIndices,
-                  repoIdentifier: transfer.repoIdentifier,
-                  transferMode: transfer.transferMode
-                ),
-                to: transfer.peerId
-              )
-            } catch {
-              logger.error("RAG transfer \(id) resume request failed: \(error.localizedDescription)")
-            }
-          }
-        } else {
-          // Exhausted retries — fail the transfer
-          failTransfer(id: id, message: "Transfer stalled after \(ragTransferMaxRetries) resume attempts")
-        }
-      } else {
-        // Peer disconnected — checkpoint and keep transfer resumable.
-        pauseTransferForReconnect(id: id, transfer: transfer, message: "Peer disconnected during transfer (checkpoint saved, waiting for reconnect)")
-      }
+      logger.warning("RAG transfer \(id) timed out (\(Int(elapsed))s since last chunk, \(transfer.receivedChunks)/\(transfer.expectedChunks ?? 0) chunks)")
+      failTransfer(id: id, message: "No data received for \(Int(elapsed))s — connection may be dead")
     }
-  }
-
-  private func ragStalledThreshold(forPeerId peerId: String) -> TimeInterval {
-    if let peer = connectedWorkers.first(where: { $0.id == peerId }) {
-      let hasLAN = peer.capabilities.lanAddress != nil
-      let hasWAN = peer.capabilities.wanAddress != nil
-      if !hasLAN && hasWAN {
-        return ragTransferStalledThresholdWAN
-      }
-      return ragTransferStalledThreshold
-    }
-
-    if let worker = FirebaseService.shared.swarmWorkers.first(where: { $0.id == peerId }) {
-      let hasLAN = worker.lanAddress != nil
-      let hasWAN = worker.wanAddress != nil
-      if !hasLAN && hasWAN {
-        return ragTransferStalledThresholdWAN
-      }
-    }
-
-    return ragTransferStalledThreshold
-  }
-
-  /// Pause a transfer on disconnect so it can be resumed when the peer reconnects.
-  private func pauseTransferForReconnect(id: UUID, transfer: RAGIncomingTransfer, message: String) {
-    saveCheckpoint(for: transfer)
-    transfer.fileHandle?.closeFile()
-    transfer.fileHandle = nil
-    incomingRagTransfers.removeValue(forKey: id)
-    updateRagTransfer(id) { state in
-      state.status = .stalled
-      state.errorMessage = message
-      state.completedAt = nil
-    }
-    logger.warning("RAG transfer \(id) paused: \(message)")
   }
 
   /// Fail a transfer, clean up handles, remove from incoming map.
@@ -2438,129 +2193,6 @@ public final class SwarmCoordinator {
     logger.error("RAG transfer \(id) failed: \(message)")
   }
 
-  // MARK: - RAG Transfer Resume on Reconnect
-
-  /// Called when a peer (re)connects. Checks for saved checkpoints that can be resumed with this peer.
-  private func attemptResumeTransfers(with peerId: String) {
-    let checkpoints = loadCheckpoints().filter { $0.peerId == peerId && !$0.isExpired }
-    guard !checkpoints.isEmpty else { return }
-
-    logger.info("Found \(checkpoints.count) resumable RAG transfer(s) for reconnected peer \(peerId)")
-    for cp in checkpoints {
-      // Remove the old checkpoint — we'll create a fresh transfer
-      removeCheckpoint(for: cp.transferId)
-
-      // Reuse the original transfer ID so callers waiting on `transferId`
-      // observe the resumed transfer instead of a detached new ID.
-      let resumedId = cp.transferId
-      let peerName = cp.peerName
-      let transfer = RAGArtifactTransferState(
-        id: resumedId,
-        peerId: peerId,
-        peerName: peerName,
-        direction: cp.direction,
-        role: .receiver,
-        status: .transferring,
-        totalBytes: cp.totalBytes,
-        transferredBytes: cp.receivedBytes,
-        startedAt: Date(),
-        completedAt: nil,
-        errorMessage: nil,
-        manifestVersion: nil,
-        repoIdentifier: cp.repoIdentifier,
-        resultSummary: "Resuming from \(cp.receivedChunkIndices.count)/\(cp.totalChunks) chunks"
-      )
-      recordRagTransfer(transfer)
-
-      // Prepare a new incoming transfer from the checkpoint
-      let tempURL: URL
-      if FileManager.default.fileExists(atPath: cp.tempFilePath) {
-        // Reuse the existing temp file
-        tempURL = URL(fileURLWithPath: cp.tempFilePath)
-      } else {
-        tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("rag-artifacts-\(resumedId).zip")
-      }
-      let incoming = RAGIncomingTransfer(id: resumedId, peerId: peerId, direction: cp.direction, tempURL: tempURL)
-      incoming.manifest = cp.manifest
-      incoming.expectedChunks = cp.totalChunks
-      incoming.receivedChunks = cp.receivedChunkIndices.count
-      incoming.receivedBytes = cp.receivedBytes
-      incoming.receivedChunkIndices = cp.receivedChunkIndices
-      incoming.repoIdentifier = cp.repoIdentifier
-      incoming.transferMode = cp.transferMode
-      incomingRagTransfers[resumedId] = incoming
-
-      // Reopen file handle for appending
-      if !FileManager.default.fileExists(atPath: tempURL.path) {
-        FileManager.default.createFile(atPath: tempURL.path, contents: Data())
-      }
-      incoming.fileHandle = try? FileHandle(forWritingTo: tempURL)
-      incoming.fileHandle?.seekToEndOfFile()
-
-      logger.info("RAG transfer resume: requesting re-send for \(resumedId), skipping \(cp.receivedChunkIndices.count) chunks")
-
-      // Send resume request to the peer
-      Task {
-        do {
-          try await sendMessage(
-              .ragArtifactsResumeRequest(
-                id: resumedId,
-                receivedChunkIndices: cp.receivedChunkIndices,
-                repoIdentifier: cp.repoIdentifier,
-                transferMode: cp.transferMode
-            ),
-            to: peerId
-          )
-        } catch {
-          logger.error("RAG transfer \(resumedId) resume request send failed: \(error.localizedDescription)")
-        }
-      }
-    }
-  }
-
-  // MARK: - RAG Transfer Resume Handler (Sender Side)
-
-  /// Handle an incoming resume request — re-send only the missing chunks.
-  private func handleRagArtifactsResumeRequest(
-    id: UUID,
-    receivedChunkIndices: Set<Int>,
-    repoIdentifier: String?,
-    transferMode: RAGTransferMode?,
-    from peerId: String
-  ) async {
-    let peer = connectedWorkers.first(where: { $0.id == peerId }) ?? makeConnectedPeerView(for: peerId, isIncoming: true)
-    let peerName = peer.name
-    logger.info("RAG resume request from \(peerName): \(id), has \(receivedChunkIndices.count) chunks, repo: \(repoIdentifier ?? "all"), mode: \(transferMode?.rawValue ?? "full")")
-
-    // Record a new sender-side transfer for this resume
-    let transfer = RAGArtifactTransferState(
-      id: id,
-      peerId: peerId,
-      peerName: peerName,
-      direction: .pull,
-      role: .sender,
-      status: .preparing,
-      totalBytes: 0,
-      transferredBytes: 0,
-      startedAt: Date(),
-      completedAt: nil,
-      errorMessage: nil,
-      manifestVersion: nil,
-      repoIdentifier: repoIdentifier,
-      resultSummary: "Resume (skipping \(receivedChunkIndices.count) chunks)"
-    )
-    recordRagTransfer(transfer)
-
-    // Delegate to sendRagArtifactBundle with skip set
-    await sendRagArtifactBundle(
-      transferId: id,
-      to: peer,
-      repoIdentifier: repoIdentifier,
-      transferMode: transferMode ?? .full,
-      skipChunkIndices: receivedChunkIndices
-    )
-  }
-  
   /// Select the best worker for a request
   private func selectWorker(for request: ChainRequest) -> ConnectedPeer? {
     let candidates = connectedWorkers.filter { peer in
@@ -3083,9 +2715,6 @@ extension SwarmCoordinator {
     if role == .worker || role == .hybrid {
       Task { await sendHeartbeat() }
     }
-
-    // Check for resumable RAG transfers from this peer
-    attemptResumeTransfers(with: peer.id)
   }
   
   /// Handle a peer disconnecting (called from WebRTC session teardown).
@@ -3107,14 +2736,13 @@ extension SwarmCoordinator {
       )
     }
 
-    // Save checkpoints and pause any in-progress RAG transfers from this peer
+    // Fail any in-progress incoming RAG transfers from this peer
     let affectedTransfers = incomingRagTransfers.filter { $0.value.peerId == peerId }
     if !affectedTransfers.isEmpty {
       logger.error("Peer \(workerName) disconnect affects \(affectedTransfers.count) active RAG transfer(s)")
     }
-    for (id, transfer) in affectedTransfers {
-      logger.info("RAG transfer \(id) checkpointing on disconnect (\(transfer.receivedChunks)/\(transfer.expectedChunks ?? 0) chunks)")
-      pauseTransferForReconnect(id: id, transfer: transfer, message: "Peer disconnected (checkpoint saved, will auto-resume on reconnect)")
+    for (id, _) in affectedTransfers {
+      failTransfer(id: id, message: "Peer disconnected during transfer")
     }
 
     // Also check outgoing ragTransfers (we were sending to this peer)
@@ -3258,12 +2886,10 @@ extension SwarmCoordinator {
       traceMessage(direction: "IN", peerId: peerId, type: "ragManifest", detail: "id=\(id) ver=\(manifest.version) bytes=\(manifest.totalBytes)")
       handleRagArtifactsManifest(id: id, manifest: manifest, from: peerId)
 
-    case .ragArtifactsChunk(let id, let index, let total, let data):
-      // Trace first, last, and every 25th chunk to avoid flooding trace buffer
-      if index == 0 || index == total - 1 || index % 25 == 0 {
-        traceMessage(direction: "IN", peerId: peerId, type: "ragChunk", detail: "id=\(id) chunk=\(index)/\(total) len=\(data.count)")
-      }
-      handleRagArtifactsChunk(id: id, index: index, total: total, data: data)
+    case .ragArtifactsChunk:
+      // Chunks now arrive as binary on the transfer channel, not as JSON PeerMessages.
+      // This case should not be reached in normal operation.
+      logger.warning("Received legacy JSON ragArtifactsChunk from \(peerId) — ignoring (binary transfer expected)")
 
     case .ragArtifactsComplete(let id):
       traceMessage(direction: "IN", peerId: peerId, type: "ragComplete", detail: "id=\(id)")
@@ -3287,16 +2913,9 @@ extension SwarmCoordinator {
         state.transferredBytes = receivedBytes
       }
 
-    case .ragArtifactsResumeRequest(let id, let receivedChunkIndices, let repoIdentifier, let transferMode):
-      Task {
-        await handleRagArtifactsResumeRequest(
-          id: id,
-          receivedChunkIndices: receivedChunkIndices,
-          repoIdentifier: repoIdentifier,
-          transferMode: transferMode,
-          from: peerId
-        )
-      }
+    case .ragArtifactsResumeRequest:
+      // Resume protocol removed — transfers are retried from scratch if they fail.
+      logger.warning("Received ragArtifactsResumeRequest from \(peerId) — ignoring (resume protocol removed)")
       
     default:
       logger.debug("Received message: \(message.messageType) from \(peerId)")

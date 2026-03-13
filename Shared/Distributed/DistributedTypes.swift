@@ -626,29 +626,6 @@ public struct RAGArtifactTransferState: Identifiable, Sendable {
   }
 }
 
-/// Persisted checkpoint for resuming a partially-completed RAG transfer after disconnection or restart.
-public struct RAGTransferCheckpoint: Codable, Sendable {
-  public let transferId: UUID
-  public let peerId: String
-  public let peerName: String
-  public let direction: RAGArtifactSyncDirection
-  public let repoIdentifier: String?
-  public let transferMode: RAGTransferMode?
-  public let manifest: RAGArtifactManifest?
-  public let receivedChunkIndices: Set<Int>
-  public let receivedBytes: Int
-  public let totalBytes: Int
-  public let totalChunks: Int
-  public let tempFilePath: String
-  public let createdAt: Date
-  public let lastChunkReceivedAt: Date
-  /// Maximum age before this checkpoint is discarded on launch (seconds)
-  public static let maxAge: TimeInterval = 3600  // 1 hour
-
-  public var age: TimeInterval { Date().timeIntervalSince(createdAt) }
-  public var isExpired: Bool { age > Self.maxAge }
-}
-
 /// Current status of a worker node
 public struct WorkerStatus: Codable, Sendable {
   public let deviceId: String
@@ -794,6 +771,79 @@ public enum PeerMessage: Codable, Sendable {
     case .ragArtifactsResumeRequest: return "ragArtifactsResumeRequest"
     case .goodbye: return "goodbye"
     }
+  }
+}
+
+// MARK: - Binary Transfer Protocol
+
+/// Binary chunk header for the transfer data channel.
+/// Replaces JSON+base64 encoding for bulk data — sends raw bytes with a minimal fixed header.
+/// Layout: [magic 2B][version 1B][reserved 1B][transferId 16B][chunkIndex 4B][totalChunks 4B][payloadSize 4B] = 32 bytes
+/// Followed immediately by `payloadSize` bytes of raw chunk data.
+public struct BinaryChunkHeader: Sendable {
+  public static let magic: UInt16 = 0xDA7A  // "DATA"
+  public static let version: UInt8 = 1
+  public static let headerSize = 32
+
+  public let transferId: UUID
+  public let chunkIndex: UInt32
+  public let totalChunks: UInt32
+  public let payloadSize: UInt32
+
+  public init(transferId: UUID, chunkIndex: UInt32, totalChunks: UInt32, payloadSize: UInt32) {
+    self.transferId = transferId
+    self.chunkIndex = chunkIndex
+    self.totalChunks = totalChunks
+    self.payloadSize = payloadSize
+  }
+
+  /// Encode header + payload into a single Data for sending.
+  public func encode(payload: Data) -> Data {
+    var data = Data(capacity: Self.headerSize + Int(payloadSize))
+    // Magic (2 bytes, big-endian)
+    var magic = Self.magic.bigEndian
+    data.append(Data(bytes: &magic, count: 2))
+    // Version (1 byte)
+    data.append(Self.version)
+    // Reserved (1 byte)
+    data.append(0)
+    // Transfer ID (16 bytes, UUID bytes)
+    let uuid = transferId.uuid
+    withUnsafeBytes(of: uuid) { data.append(contentsOf: $0) }
+    // Chunk index (4 bytes, big-endian)
+    var idx = chunkIndex.bigEndian
+    data.append(Data(bytes: &idx, count: 4))
+    // Total chunks (4 bytes, big-endian)
+    var total = totalChunks.bigEndian
+    data.append(Data(bytes: &total, count: 4))
+    // Payload size (4 bytes, big-endian)
+    var size = payloadSize.bigEndian
+    data.append(Data(bytes: &size, count: 4))
+    // Payload
+    data.append(payload)
+    return data
+  }
+
+  /// Decode header from raw data. Returns header + payload slice, or nil if invalid.
+  public static func decode(from data: Data) -> (header: BinaryChunkHeader, payload: Data)? {
+    guard data.count >= headerSize else { return nil }
+    let magic = UInt16(bigEndian: data.subdata(in: 0..<2).withUnsafeBytes { $0.load(as: UInt16.self) })
+    guard magic == Self.magic else { return nil }
+    let version = data[2]
+    guard version == Self.version else { return nil }
+    // Skip reserved byte [3]
+    let uuidBytes = data.subdata(in: 4..<20)
+    let uuid = uuidBytes.withUnsafeBytes { buf -> uuid_t in
+      buf.load(as: uuid_t.self)
+    }
+    let transferId = UUID(uuid: uuid)
+    let chunkIndex = UInt32(bigEndian: data.subdata(in: 20..<24).withUnsafeBytes { $0.load(as: UInt32.self) })
+    let totalChunks = UInt32(bigEndian: data.subdata(in: 24..<28).withUnsafeBytes { $0.load(as: UInt32.self) })
+    let payloadSize = UInt32(bigEndian: data.subdata(in: 28..<32).withUnsafeBytes { $0.load(as: UInt32.self) })
+    guard data.count >= headerSize + Int(payloadSize) else { return nil }
+    let payload = data.subdata(in: headerSize..<(headerSize + Int(payloadSize)))
+    let header = BinaryChunkHeader(transferId: transferId, chunkIndex: chunkIndex, totalChunks: totalChunks, payloadSize: payloadSize)
+    return (header, payload)
   }
 }
 
