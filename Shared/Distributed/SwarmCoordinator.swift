@@ -2182,11 +2182,24 @@ public final class SwarmCoordinator {
           failTransfer(id: id, message: "Transfer stalled after \(ragTransferMaxRetries) resume attempts")
         }
       } else {
-        // Peer disconnected — save checkpoint and fail with "resumable" marker
-        saveCheckpoint(for: transfer)
-        failTransfer(id: id, message: "Peer disconnected during transfer (checkpoint saved)")
+        // Peer disconnected — checkpoint and keep transfer resumable.
+        pauseTransferForReconnect(id: id, transfer: transfer, message: "Peer disconnected during transfer (checkpoint saved, waiting for reconnect)")
       }
     }
+  }
+
+  /// Pause a transfer on disconnect so it can be resumed when the peer reconnects.
+  private func pauseTransferForReconnect(id: UUID, transfer: RAGIncomingTransfer, message: String) {
+    saveCheckpoint(for: transfer)
+    transfer.fileHandle?.closeFile()
+    transfer.fileHandle = nil
+    incomingRagTransfers.removeValue(forKey: id)
+    updateRagTransfer(id) { state in
+      state.status = .stalled
+      state.errorMessage = message
+      state.completedAt = nil
+    }
+    logger.warning("RAG transfer \(id) paused: \(message)")
   }
 
   /// Fail a transfer, clean up handles, remove from incoming map.
@@ -2874,15 +2887,14 @@ extension SwarmCoordinator {
       )
     }
 
-    // Save checkpoints and fail any in-progress RAG transfers from this peer
+    // Save checkpoints and pause any in-progress RAG transfers from this peer
     let affectedTransfers = incomingRagTransfers.filter { $0.value.peerId == peerId }
     if !affectedTransfers.isEmpty {
       logger.error("Peer \(workerName) disconnect affects \(affectedTransfers.count) active RAG transfer(s)")
     }
     for (id, transfer) in affectedTransfers {
-      saveCheckpoint(for: transfer)
-      logger.info("RAG transfer \(id) checkpointed on disconnect (\(transfer.receivedChunks)/\(transfer.expectedChunks ?? 0) chunks)")
-      failTransfer(id: id, message: "Peer disconnected (checkpoint saved, will auto-resume on reconnect)")
+      logger.info("RAG transfer \(id) checkpointing on disconnect (\(transfer.receivedChunks)/\(transfer.expectedChunks ?? 0) chunks)")
+      pauseTransferForReconnect(id: id, transfer: transfer, message: "Peer disconnected (checkpoint saved, will auto-resume on reconnect)")
     }
 
     // Also check outgoing ragTransfers (we were sending to this peer)
