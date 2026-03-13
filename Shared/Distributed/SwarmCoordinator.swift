@@ -358,8 +358,8 @@ public final class SwarmCoordinator {
   /// Whether to auto-create PRs for successful swarm tasks
   public var autoCreatePRs: Bool = false
   
-  /// Pending task continuations (for async result delivery)
-  private var pendingTasks: [UUID: CheckedContinuation<ChainResult, Error>] = [:]
+  /// Pending task waiters (for async result delivery)
+  private var pendingTasks: [UUID: AsyncThrowingStream<ChainResult, Error>.Continuation] = [:]
   
   // MARK: - Initialization
   
@@ -1148,33 +1148,51 @@ public final class SwarmCoordinator {
     
     logger.info("Dispatching task \(request.id) to worker \(worker.name) with branch \(reservedBranch)")
     
-    // Send task and wait for result using continuation
-    let result: ChainResult = try await withCheckedThrowingContinuation { continuation in
-      // Store continuation for when result arrives
+    let resultStream = AsyncThrowingStream<ChainResult, Error>(bufferingPolicy: .bufferingNewest(1)) { continuation in
       pendingTasks[request.id] = continuation
-      
-      // Send task to worker
-      Task {
-        do {
-          try await self.sendMessage(.taskRequest(request: request), to: worker.id)
-        } catch {
-          pendingTasks.removeValue(forKey: request.id)
-          branchQueue.releaseBranch(taskId: request.id)
-          continuation.resume(throwing: error)
-        }
-      }
-      
-      // Setup timeout
-      Task {
-        try? await Task.sleep(for: .seconds(Double(request.timeoutSeconds)))
-        if let cont = pendingTasks.removeValue(forKey: request.id) {
-          branchQueue.releaseBranch(taskId: request.id)
-          cont.resume(throwing: DistributedError.taskTimeout(taskId: request.id))
-        }
+    }
+
+    defer {
+      if let waiter = pendingTasks.removeValue(forKey: request.id) {
+        waiter.finish()
       }
     }
-    
-    return result
+
+    do {
+      try await sendMessage(.taskRequest(request: request), to: worker.id)
+    } catch {
+      branchQueue.releaseBranch(taskId: request.id)
+      throw error
+    }
+
+    do {
+      return try await withThrowingTaskGroup(of: ChainResult.self) { group in
+        group.addTask {
+          var iterator = resultStream.makeAsyncIterator()
+          guard let result = try await iterator.next() else {
+            throw CancellationError()
+          }
+          return result
+        }
+        group.addTask {
+          try await Task.sleep(for: .seconds(Double(request.timeoutSeconds)))
+          throw DistributedError.taskTimeout(taskId: request.id)
+        }
+        defer { group.cancelAll() }
+        guard let first = try await group.next() else {
+          throw CancellationError()
+        }
+        return first
+      }
+    } catch is CancellationError {
+      branchQueue.releaseBranch(taskId: request.id)
+      throw CancellationError()
+    } catch {
+      if let distributedError = error as? DistributedError, case .taskTimeout = distributedError {
+        branchQueue.releaseBranch(taskId: request.id)
+      }
+      throw error
+    }
   }
   
   /// Extract a short hint from the prompt for branch naming
@@ -1189,11 +1207,7 @@ public final class SwarmCoordinator {
     guard role == .brain || role == .hybrid else {
       throw DistributedError.actorSystemNotReady
     }
-    
-    guard connectedWorkers.contains(where: { $0.id == workerId }) else {
-      throw DistributedError.noWorkersAvailable
-    }
-    
+
     logger.info("Dispatching task \(request.id) to specific worker \(workerId)")
     
     // Fire and forget - don't wait for result (worker will restart)
@@ -1211,11 +1225,7 @@ public final class SwarmCoordinator {
     guard role == .brain || role == .hybrid else {
       throw DistributedError.actorSystemNotReady
     }
-    
-    guard connectedWorkers.contains(where: { $0.id == workerId }) else {
-      throw DistributedError.noWorkersAvailable
-    }
-    
+
     let id = UUID()
     logger.info("Sending direct command to \(workerId): \(command)")
     
@@ -1241,11 +1251,7 @@ public final class SwarmCoordinator {
     guard role == .brain || role == .hybrid else {
       throw DistributedError.actorSystemNotReady
     }
-    
-    guard connectedWorkers.contains(where: { $0.id == workerId }) else {
-      throw DistributedError.noWorkersAvailable
-    }
-    
+
     let id = UUID()
     logger.info("Sending direct command (waiting): \(command) to \(workerId)")
     
@@ -2808,8 +2814,9 @@ extension SwarmCoordinator {
       logger.debug("Task \(taskId) progress: \(progress) - \(message ?? "")")
       
     case .taskResult(let result):
-      if let continuation = pendingTasks.removeValue(forKey: result.requestId) {
-        continuation.resume(returning: result)
+      if let waiter = pendingTasks.removeValue(forKey: result.requestId) {
+        waiter.yield(result)
+        waiter.finish()
       }
       if result.status == .completed {
         tasksCompleted += 1
