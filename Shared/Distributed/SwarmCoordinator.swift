@@ -2009,6 +2009,9 @@ public final class SwarmCoordinator {
   }
 
   private func recordRagTransfer(_ transfer: RAGArtifactTransferState) {
+    if let existingIndex = ragTransfers.firstIndex(where: { $0.id == transfer.id }) {
+      ragTransfers.remove(at: existingIndex)
+    }
     ragTransfers.insert(transfer, at: 0)
     if ragTransfers.count > 50 {
       ragTransfers.removeLast()
@@ -2213,11 +2216,12 @@ public final class SwarmCoordinator {
       // Remove the old checkpoint — we'll create a fresh transfer
       removeCheckpoint(for: cp.transferId)
 
-      // Create a new transfer with a new ID to avoid collisions
-      let newId = UUID()
+      // Reuse the original transfer ID so callers waiting on `transferId`
+      // observe the resumed transfer instead of a detached new ID.
+      let resumedId = cp.transferId
       let peerName = cp.peerName
       let transfer = RAGArtifactTransferState(
-        id: newId,
+        id: resumedId,
         peerId: peerId,
         peerName: peerName,
         direction: cp.direction,
@@ -2240,9 +2244,9 @@ public final class SwarmCoordinator {
         // Reuse the existing temp file
         tempURL = URL(fileURLWithPath: cp.tempFilePath)
       } else {
-        tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("rag-artifacts-\(newId).zip")
+        tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("rag-artifacts-\(resumedId).zip")
       }
-      let incoming = RAGIncomingTransfer(id: newId, peerId: peerId, direction: cp.direction, tempURL: tempURL)
+      let incoming = RAGIncomingTransfer(id: resumedId, peerId: peerId, direction: cp.direction, tempURL: tempURL)
       incoming.manifest = cp.manifest
       incoming.expectedChunks = cp.totalChunks
       incoming.receivedChunks = cp.receivedChunkIndices.count
@@ -2250,7 +2254,7 @@ public final class SwarmCoordinator {
       incoming.receivedChunkIndices = cp.receivedChunkIndices
       incoming.repoIdentifier = cp.repoIdentifier
       incoming.transferMode = cp.transferMode
-      incomingRagTransfers[newId] = incoming
+      incomingRagTransfers[resumedId] = incoming
 
       // Reopen file handle for appending
       if !FileManager.default.fileExists(atPath: tempURL.path) {
@@ -2259,16 +2263,16 @@ public final class SwarmCoordinator {
       incoming.fileHandle = try? FileHandle(forWritingTo: tempURL)
       incoming.fileHandle?.seekToEndOfFile()
 
-      logger.info("RAG transfer resume: requesting re-send for \(newId) (was \(cp.transferId)), skipping \(cp.receivedChunkIndices.count) chunks")
+      logger.info("RAG transfer resume: requesting re-send for \(resumedId), skipping \(cp.receivedChunkIndices.count) chunks")
 
       // Send resume request to the peer
       Task {
         try? await sendMessage(
-          .ragArtifactsResumeRequest(
-            id: newId,
-            receivedChunkIndices: cp.receivedChunkIndices,
-            repoIdentifier: cp.repoIdentifier,
-            transferMode: cp.transferMode
+            .ragArtifactsResumeRequest(
+              id: resumedId,
+              receivedChunkIndices: cp.receivedChunkIndices,
+              repoIdentifier: cp.repoIdentifier,
+              transferMode: cp.transferMode
           ),
           to: peerId
         )
