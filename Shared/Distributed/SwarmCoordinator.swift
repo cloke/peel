@@ -1499,12 +1499,15 @@ public final class SwarmCoordinator {
 
   private func sendRagArtifactBundle(transferId: UUID, to peer: ConnectedPeer, repoIdentifier: String? = nil, transferMode: RAGTransferMode = .full, skipChunkIndices: Set<Int> = []) async {
     let isResume = !skipChunkIndices.isEmpty
-    let usesWebRTC = await peerSessionManager.mcpChannel(for: peer.id) != nil
+    let hasTransferChannel = await peerSessionManager.transferChannel(for: peer.id) != nil
+    let hasMCPChannel = await peerSessionManager.mcpChannel(for: peer.id) != nil
+    let usesWebRTC = hasTransferChannel || hasMCPChannel
     updateRagTransfer(transferId) { state in
       state.status = .preparing
     }
 
     logger.info("RAG sync preparing bundle for \(peer.name) (\(peer.id))\(repoIdentifier.map { ", repo: \($0)" } ?? ""), mode: \(transferMode.rawValue)\(isResume ? ", resume (skipping \(skipChunkIndices.count) chunks)" : "")")
+    logger.debug("RAG sync channels for \(peer.id): transfer=\(hasTransferChannel), mcp=\(hasMCPChannel), usesWebRTC=\(usesWebRTC)")
 
     guard let ragSyncDelegate else {
       logger.error("RAG sync delegate not configured — marking transfer \(transferId) as failed")
@@ -2303,8 +2306,8 @@ public final class SwarmCoordinator {
     transferMode: RAGTransferMode?,
     from peerId: String
   ) async {
-    let peer = connectedWorkers.first(where: { $0.id == peerId })
-    let peerName = peer?.name ?? "Peer"
+    let peer = connectedWorkers.first(where: { $0.id == peerId }) ?? makeConnectedPeerView(for: peerId, isIncoming: true)
+    let peerName = peer.name
     logger.info("RAG resume request from \(peerName): \(id), has \(receivedChunkIndices.count) chunks, repo: \(repoIdentifier ?? "all"), mode: \(transferMode?.rawValue ?? "full")")
 
     // Record a new sender-side transfer for this resume
@@ -2326,15 +2329,10 @@ public final class SwarmCoordinator {
     )
     recordRagTransfer(transfer)
 
-    guard let actualPeer = peer else {
-      await sendRagArtifactError(transferId: id, to: peerId, message: "Peer not found for resume")
-      return
-    }
-
     // Delegate to sendRagArtifactBundle with skip set
     await sendRagArtifactBundle(
       transferId: id,
-      to: actualPeer,
+      to: peer,
       repoIdentifier: repoIdentifier,
       transferMode: transferMode ?? .full,
       skipChunkIndices: receivedChunkIndices
