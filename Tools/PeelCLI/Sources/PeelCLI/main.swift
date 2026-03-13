@@ -36,6 +36,13 @@ struct CLIOptions {
   var pollBackoff: Double = 1.5
   var pollMaxInterval: Double = 30.0
   var pollLogPath: String?
+  // RTC probe options
+  var workerId: String?
+  var repoIdentifier: String?
+  var attempts: Int = 3
+  var syncTimeoutSeconds: Double = 900.0
+  var pingTimeoutSeconds: Double = 15.0
+  var transferMode: String = "overlay"
 }
 
 enum CLIError: LocalizedError {
@@ -168,6 +175,30 @@ private func parseArguments() throws -> CLIOptions {
       options.diffOnly = true
     case "--output", "-o":
       options.outputPath = iterator.next()
+    case "--worker-id":
+      options.workerId = iterator.next()
+    case "--repo-identifier":
+      options.repoIdentifier = iterator.next()
+    case "--attempts":
+      guard let value = iterator.next(), let attempts = Int(value), attempts > 0 else {
+        throw CLIError.message("--attempts requires an integer > 0")
+      }
+      options.attempts = attempts
+    case "--sync-timeout":
+      guard let value = iterator.next(), let timeout = Double(value), timeout > 0 else {
+        throw CLIError.message("--sync-timeout requires a number > 0")
+      }
+      options.syncTimeoutSeconds = timeout
+    case "--ping-timeout":
+      guard let value = iterator.next(), let timeout = Double(value), timeout > 0 else {
+        throw CLIError.message("--ping-timeout requires a number > 0")
+      }
+      options.pingTimeoutSeconds = timeout
+    case "--transfer-mode":
+      guard let value = iterator.next(), !value.isEmpty else {
+        throw CLIError.message("--transfer-mode requires a value (overlay|full)")
+      }
+      options.transferMode = value
     case "-h", "--help":
       print(usageText())
       exit(EXIT_SUCCESS)
@@ -333,6 +364,8 @@ private func run(options: CLIOptions) async throws {
     try await runRagPatternCheck(options: options)
   case "rag-audit":
     try await runRagAudit(options: options)
+  case "swarm-rtc-probe":
+    try await runSwarmRTCProbe(options: options)
   case "server-stop":
     try await printRPCResult(method: "tools/call", params: [
       "name": "server.stop",
@@ -386,6 +419,8 @@ private func usageText() -> String {
     workspaces-agent-cleanup-status
     rag-pattern-check [--repo-path <path>] [--limit <int>] [--diff-only]
     rag-audit --repo-path <path> [--output <path>] [--limit <int>]
+    swarm-rtc-probe --worker-id <id> --repo-identifier <repo> [--attempts <int>] [--transfer-mode <overlay|full>]
+      [--ping-timeout <sec>] [--sync-timeout <sec>] [--poll-interval <sec>]
     server-stop
     app-quit
 
@@ -821,6 +856,356 @@ private func extractResultCount(from response: [String: Any]) -> Int {
     }
   }
   return 0
+}
+
+private struct RTCProbeAttemptResult {
+  let attempt: Int
+  let transferId: String?
+  let success: Bool
+  let finalStatus: String
+  let transferredBytes: Int
+  let totalBytes: Int
+  let stallEvents: Int
+  let durationSeconds: Double
+  let errorMessage: String?
+}
+
+private struct RTCProbeTransferOutcome {
+  let success: Bool
+  let finalStatus: String
+  let transferredBytes: Int
+  let totalBytes: Int
+  let stallEvents: Int
+  let durationSeconds: Double
+  let errorMessage: String?
+}
+
+private func runSwarmRTCProbe(options: CLIOptions) async throws {
+  guard let workerId = options.workerId, !workerId.isEmpty else {
+    throw CLIError.message("swarm-rtc-probe requires --worker-id")
+  }
+  guard let repoIdentifier = options.repoIdentifier, !repoIdentifier.isEmpty else {
+    throw CLIError.message("swarm-rtc-probe requires --repo-identifier")
+  }
+
+  let mode = options.transferMode.lowercased()
+  guard mode == "overlay" || mode == "full" else {
+    throw CLIError.message("--transfer-mode must be 'overlay' or 'full'")
+  }
+
+  let pollIntervalSeconds = max(0.5, options.pollInterval)
+  let pingTimeout = max(1, Int(options.pingTimeoutSeconds.rounded()))
+  let syncTimeout = max(1.0, options.syncTimeoutSeconds)
+  let client = MCPClient(port: options.port)
+
+  print("🔎 RTC probe starting")
+  print("  worker: \(workerId)")
+  print("  repo: \(repoIdentifier)")
+  print("  attempts: \(options.attempts)")
+  print("  mode: \(mode)")
+  print("  ping-timeout: \(pingTimeout)s | sync-timeout: \(Int(syncTimeout))s | poll-interval: \(pollIntervalSeconds)s")
+  print("")
+
+  var results: [RTCProbeAttemptResult] = []
+
+  for attempt in 1...options.attempts {
+    print("=== Attempt \(attempt)/\(options.attempts) ===")
+    do {
+      let ping = try await ensureWebRTCPingConnected(
+        client: client,
+        workerId: workerId,
+        timeoutSeconds: pingTimeout
+      )
+      let connected = (ping["connected"] as? Bool) ?? false
+      if !connected {
+        let summary = (ping["summary"] as? String) ?? "WebRTC ping did not report connected=true"
+        print("❌ Ping failed: \(summary)")
+        results.append(
+          RTCProbeAttemptResult(
+            attempt: attempt,
+            transferId: nil,
+            success: false,
+            finalStatus: "ping_failed",
+            transferredBytes: 0,
+            totalBytes: 0,
+            stallEvents: 0,
+            durationSeconds: 0,
+            errorMessage: summary
+          )
+        )
+        continue
+      }
+      print("✅ Ping connected")
+
+      let transferId: String
+      do {
+        let sync = try await callToolResultPayload(
+          client: client,
+          name: "swarm.rag.sync",
+          arguments: [
+            "direction": "pull",
+            "workerId": workerId,
+            "repoIdentifier": repoIdentifier,
+            "mode": mode
+          ]
+        )
+        guard let id = sync["transferId"] as? String, !id.isEmpty else {
+          throw CLIError.message("swarm.rag.sync returned no transferId")
+        }
+        transferId = id
+        print("📦 Transfer started: \(transferId)")
+      } catch {
+        let errorText = error.localizedDescription
+        if let existingTransferId = extractUUID(in: errorText),
+           errorText.contains("already has active transfer") {
+          transferId = existingTransferId
+          print("↪ Reusing active transfer: \(transferId)")
+        } else {
+          throw error
+        }
+      }
+
+      let outcome = try await monitorRAGTransfer(
+        client: client,
+        transferId: transferId,
+        timeoutSeconds: syncTimeout,
+        pollIntervalSeconds: pollIntervalSeconds
+      )
+      let statusIcon = outcome.success ? "✅" : "❌"
+      print("\(statusIcon) Transfer \(outcome.finalStatus) \(outcome.transferredBytes)/\(outcome.totalBytes) stalls=\(outcome.stallEvents)")
+
+      results.append(
+        RTCProbeAttemptResult(
+          attempt: attempt,
+          transferId: transferId,
+          success: outcome.success,
+          finalStatus: outcome.finalStatus,
+          transferredBytes: outcome.transferredBytes,
+          totalBytes: outcome.totalBytes,
+          stallEvents: outcome.stallEvents,
+          durationSeconds: outcome.durationSeconds,
+          errorMessage: outcome.errorMessage
+        )
+      )
+    } catch {
+      print("❌ Attempt failed: \(error.localizedDescription)")
+      results.append(
+        RTCProbeAttemptResult(
+          attempt: attempt,
+          transferId: nil,
+          success: false,
+          finalStatus: "error",
+          transferredBytes: 0,
+          totalBytes: 0,
+          stallEvents: 0,
+          durationSeconds: 0,
+          errorMessage: error.localizedDescription
+        )
+      )
+    }
+
+    if attempt < options.attempts {
+      try? await Task.sleep(for: .seconds(1))
+    }
+    print("")
+  }
+
+  let successCount = results.filter(\.success).count
+  print("=== RTC probe summary ===")
+  for result in results {
+    let icon = result.success ? "✅" : "❌"
+    let transferId = result.transferId ?? "-"
+    let duration = String(format: "%.1f", result.durationSeconds)
+    print(
+      "\(icon) #\(result.attempt) status=\(result.finalStatus) bytes=\(result.transferredBytes)/\(result.totalBytes) stalls=\(result.stallEvents) duration=\(duration)s transfer=\(transferId)"
+    )
+    if let errorMessage = result.errorMessage, !errorMessage.isEmpty {
+      print("   error: \(errorMessage)")
+    }
+  }
+  print("Result: \(successCount)/\(results.count) successful transfers")
+
+  if successCount != results.count {
+    throw CLIError.message("RTC probe failed: \(results.count - successCount) of \(results.count) attempts did not complete")
+  }
+}
+
+private func monitorRAGTransfer(
+  client: MCPClient,
+  transferId: String,
+  timeoutSeconds: Double,
+  pollIntervalSeconds: Double
+) async throws -> RTCProbeTransferOutcome {
+  let transferIdUpper = transferId.uppercased()
+  let startedAt = Date()
+  var lastStatus = ""
+  var lastBytes = -1
+  var lastTotal = 0
+  var stallEvents = 0
+
+  while true {
+    let elapsed = Date().timeIntervalSince(startedAt)
+    if elapsed >= timeoutSeconds {
+      return RTCProbeTransferOutcome(
+        success: false,
+        finalStatus: "timeout",
+        transferredBytes: max(0, lastBytes),
+        totalBytes: lastTotal,
+        stallEvents: stallEvents,
+        durationSeconds: elapsed,
+        errorMessage: "Timed out after \(Int(timeoutSeconds))s"
+      )
+    }
+
+    let diagnostics = try await callToolResultPayload(
+      client: client,
+      name: "swarm.diagnostics",
+      arguments: [:]
+    )
+    let transfers = diagnostics["ragTransfers"] as? [[String: Any]] ?? []
+    let transfer = transfers.first {
+      (($0["id"] as? String)?.uppercased() == transferIdUpper)
+    }
+
+    if let transfer {
+      let status = (transfer["status"] as? String) ?? "unknown"
+      let transferredBytes = intValue(transfer["transferredBytes"])
+      let totalBytes = intValue(transfer["totalBytes"])
+      let errorMessage = transfer["errorMessage"] as? String
+      lastTotal = totalBytes
+
+      if status == "stalled" && lastStatus != "stalled" {
+        stallEvents += 1
+      }
+
+      if status != lastStatus || transferredBytes != lastBytes {
+        print("  ↳ status=\(status) bytes=\(transferredBytes)/\(totalBytes)")
+      }
+      lastStatus = status
+      lastBytes = transferredBytes
+
+      if status == "complete" || status == "completed" {
+        return RTCProbeTransferOutcome(
+          success: true,
+          finalStatus: status,
+          transferredBytes: transferredBytes,
+          totalBytes: totalBytes,
+          stallEvents: stallEvents,
+          durationSeconds: elapsed,
+          errorMessage: nil
+        )
+      }
+
+      if status == "failed" || status == "cancelled" {
+        return RTCProbeTransferOutcome(
+          success: false,
+          finalStatus: status,
+          transferredBytes: transferredBytes,
+          totalBytes: totalBytes,
+          stallEvents: stallEvents,
+          durationSeconds: elapsed,
+          errorMessage: errorMessage
+        )
+      }
+    } else {
+      print("  ↳ waiting: transfer \(transferId) not yet in diagnostics")
+    }
+
+    try await Task.sleep(for: .seconds(pollIntervalSeconds))
+  }
+}
+
+private func ensureWebRTCPingConnected(
+  client: MCPClient,
+  workerId: String,
+  timeoutSeconds: Int
+) async throws -> [String: Any] {
+  var lastPayload: [String: Any] = [:]
+  for attempt in 1...4 {
+    let payload = try await callToolResultPayload(
+      client: client,
+      name: "swarm.webrtc-ping",
+      arguments: [
+        "targetWorkerId": workerId,
+        "timeout": timeoutSeconds
+      ]
+    )
+    lastPayload = payload
+    if (payload["connected"] as? Bool) == true {
+      return payload
+    }
+    let summary = (payload["summary"] as? String) ?? "connected=false"
+    print("  ↳ ping retry \(attempt)/4: \(summary)")
+    if attempt < 4 {
+      try await Task.sleep(for: .seconds(2))
+    }
+  }
+  return lastPayload
+}
+
+private func callToolResultPayload(
+  client: MCPClient,
+  name: String,
+  arguments: [String: Any]
+) async throws -> [String: Any] {
+  let response = try await client.call(method: "tools/call", params: [
+    "name": name,
+    "arguments": arguments
+  ])
+
+  if let error = response["error"] as? [String: Any] {
+    let code = intValue(error["code"])
+    let message = (error["message"] as? String) ?? "Unknown RPC error"
+    throw CLIError.message("\(name) RPC error (\(code)): \(message)")
+  }
+
+  guard let result = response["result"] as? [String: Any] else {
+    throw CLIError.message("\(name) missing result payload")
+  }
+  if (result["isError"] as? Bool) == true {
+    let message = (extractToolText(result) ?? "Tool returned isError=true")
+    throw CLIError.message("\(name) tool error: \(message)")
+  }
+
+  guard let contentText = extractToolText(result) else {
+    throw CLIError.message("\(name) response has no text content")
+  }
+  guard let contentData = contentText.data(using: .utf8) else {
+    throw CLIError.message("\(name) response text is not UTF-8")
+  }
+  let jsonObject = try JSONSerialization.jsonObject(with: contentData, options: [])
+  guard let payload = jsonObject as? [String: Any] else {
+    throw CLIError.message("\(name) response content is not a JSON object")
+  }
+  return payload
+}
+
+private func extractToolText(_ result: [String: Any]) -> String? {
+  guard let content = result["content"] as? [[String: Any]], let first = content.first else {
+    return nil
+  }
+  if let text = first["text"] as? String {
+    return text
+  }
+  return nil
+}
+
+private func intValue(_ value: Any?) -> Int {
+  if let int = value as? Int { return int }
+  if let number = value as? NSNumber { return number.intValue }
+  if let string = value as? String, let int = Int(string) { return int }
+  return 0
+}
+
+private func extractUUID(in text: String) -> String? {
+  let pattern = #"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"#
+  guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+  let nsRange = NSRange(text.startIndex..<text.endIndex, in: text)
+  guard let match = regex.firstMatch(in: text, range: nsRange),
+        let range = Range(match.range, in: text) else {
+    return nil
+  }
+  return String(text[range]).uppercased()
 }
 
 private func loadArgumentsJSON(_ path: String?) throws -> [String: Any] {
