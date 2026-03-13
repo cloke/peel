@@ -624,7 +624,7 @@ public final class WebRTCClient: NSObject, Sendable {
 
 extension WebRTCClient: RTCPeerConnectionDelegate {
   public func peerConnection(_ peerConnection: RTCPeerConnection, didChange stateChanged: RTCSignalingState) {
-    logger.debug("Signaling state: \(String(describing: stateChanged))")
+    logger.info("Signaling state: \(String(describing: stateChanged), privacy: .public)")
   }
 
   public func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {}
@@ -634,7 +634,7 @@ extension WebRTCClient: RTCPeerConnectionDelegate {
   public func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {}
 
   public func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
-    logger.notice("ICE connection state: \(String(describing: newState)) (thread: \(Thread.isMainThread ? "main" : "bg"))")
+    logger.notice("ICE connection state: \(String(describing: newState), privacy: .public)")
     Task { await state.notifyICEState(newState) }
     // Only fail on terminal states. `.disconnected` is transient — ICE will
     // attempt to recover via candidate pair switching. Treating it as fatal
@@ -647,21 +647,33 @@ extension WebRTCClient: RTCPeerConnectionDelegate {
   }
 
   public func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {
-    logger.debug("ICE gathering state: \(String(describing: newState))")
+    logger.info("ICE gathering state: \(String(describing: newState), privacy: .public)")
     if newState == .complete {
       Task { await state.completeICEGathering() }
     }
   }
 
   public func peerConnection(_ peerConnection: RTCPeerConnection, didGenerate candidate: RTCIceCandidate) {
-    logger.debug("ICE candidate: \(candidate.sdp.prefix(80))")
+    // Log candidate type (host/srflx/relay) for debugging connectivity
+    let sdp = candidate.sdp
+    let candidateType: String
+    if sdp.contains("relay") || sdp.contains("typ relay") {
+      candidateType = "relay (TURN)"
+    } else if sdp.contains("srflx") {
+      candidateType = "srflx (STUN)"
+    } else if sdp.contains("host") {
+      candidateType = "host (local)"
+    } else {
+      candidateType = "unknown"
+    }
+    logger.info("ICE candidate generated: \(candidateType, privacy: .public) — \(String(sdp.prefix(100)), privacy: .public)")
     Task { await state.addICECandidate(candidate) }
   }
 
   public func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
 
   public func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {
-    logger.info("Remote data channel opened: \(dataChannel.label)")
+    logger.notice("Remote data channel opened: \(dataChannel.label, privacy: .public)")
     Task {
       let handled = await state.handleRemoteNamedChannel(dataChannel)
       if !handled {
