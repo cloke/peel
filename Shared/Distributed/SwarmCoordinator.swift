@@ -160,6 +160,12 @@ public final class SwarmCoordinator {
   /// How long to wait for a chunk before declaring a transfer stalled (seconds)
   private let ragTransferStalledThreshold: TimeInterval = 60
 
+  /// WAN transfers can legitimately pause while SCTP buffers drain; allow longer before resume.
+  private let ragTransferStalledThresholdWAN: TimeInterval = 180
+
+  /// How long a transfer can stay queued before watchdog retries/fails it.
+  private let ragTransferQueuedThreshold: TimeInterval = 20
+
   /// Maximum number of automatic resume attempts per transfer
   private let ragTransferMaxRetries = 3
 
@@ -1421,6 +1427,19 @@ public final class SwarmCoordinator {
       targetWorker = worker
     }
 
+    // Basic reliability guard: do not overlap multiple active RAG transfers for
+    // the same peer. Concurrent transfers on one WebRTC session can starve each
+    // other and amplify WAN stall behavior.
+    if let activeTransfer = ragTransfers.first(where: { transfer in
+      transfer.peerId == targetWorker.id
+        && transfer.status != .complete
+        && transfer.status != .failed
+    }) {
+      throw SwarmTransferError(
+        message: "Peer \(targetWorker.name) already has active transfer \(activeTransfer.id.uuidString) (\(activeTransfer.status.rawValue)). Wait for it to finish before starting another."
+      )
+    }
+
     let transferId = UUID()
     logger.info("RAG sync requested: \(direction.rawValue) mode=\(transferMode.rawValue) to \(targetWorker.name) (\(targetWorker.id))")
     let role: RAGArtifactTransferRole = direction == .push ? .sender : .receiver
@@ -1531,7 +1550,7 @@ public final class SwarmCoordinator {
         let jsonData = try await Task.detached(priority: .userInitiated) {
           try JSONEncoder().encode(overlayBundle)
         }.value
-        let chunkSize = usesWebRTC ? 64 * 1024 : 256 * 1024
+        let chunkSize = ragChunkSize(for: peer, usesWebRTC: usesWebRTC)
         let totalChunks = max(1, Int(ceil(Double(max(1, jsonData.count)) / Double(chunkSize))))
 
         logger.info("RAG overlay sync bundle: \(overlayBundle.manifest.repoIdentifier), \(jsonData.count) bytes (\(overlayBundle.totalEntries) entries, \(overlayBundle.totalEmbeddings) embeddings, \(overlayBundle.totalAnalysis) analysis), \(totalChunks) chunks")
@@ -1617,7 +1636,7 @@ public final class SwarmCoordinator {
         let jsonData = try await Task.detached(priority: .userInitiated) {
           try JSONEncoder().encode(repoBundle)
         }.value
-        let chunkSize = usesWebRTC ? 64 * 1024 : 256 * 1024
+        let chunkSize = ragChunkSize(for: peer, usesWebRTC: usesWebRTC)
         let totalChunks = max(1, Int(ceil(Double(max(1, jsonData.count)) / Double(chunkSize))))
 
         logger.info("RAG repo sync bundle: \(repoBundle.manifest.repoIdentifier), \(jsonData.count) bytes, \(totalChunks) chunks")
@@ -1687,7 +1706,7 @@ public final class SwarmCoordinator {
       let bundle = try await ragSyncDelegate.createRagArtifactBundle()
       let fileAttributes = try FileManager.default.attributesOfItem(atPath: bundle.bundleURL.path)
       let fileSize = (fileAttributes[.size] as? NSNumber)?.intValue ?? bundle.bundleSizeBytes
-      let chunkSize = usesWebRTC ? 64 * 1024 : 256 * 1024
+      let chunkSize = ragChunkSize(for: peer, usesWebRTC: usesWebRTC)
       let totalChunks = max(1, Int(ceil(Double(max(1, fileSize)) / Double(chunkSize))))
 
       logger.info("RAG sync bundle created: \(bundle.manifest.version), \(fileSize) bytes, \(totalChunks) chunks")
@@ -1756,6 +1775,17 @@ public final class SwarmCoordinator {
     FileManager.default.createFile(atPath: transfer.tempURL.path, contents: Data())
     transfer.fileHandle = try? FileHandle(forWritingTo: transfer.tempURL)
     incomingRagTransfers[id] = transfer
+  }
+
+  /// Choose a conservative chunk size for WAN WebRTC sessions to reduce SCTP backpressure stalls.
+  private func ragChunkSize(for peer: ConnectedPeer, usesWebRTC: Bool) -> Int {
+    guard usesWebRTC else { return 256 * 1024 }
+    let hasLAN = peer.capabilities.lanAddress != nil
+    let hasWAN = peer.capabilities.wanAddress != nil
+    if !hasLAN && hasWAN {
+      return 16 * 1024
+    }
+    return 64 * 1024
   }
 
   private func handleRagArtifactsManifest(id: UUID, manifest: RAGArtifactManifest, from peerId: String) {
@@ -2119,7 +2149,7 @@ public final class SwarmCoordinator {
     // Check transfers stuck in .queued (message never delivered or response never received)
     for transfer in ragTransfers {
       guard transfer.status == .queued,
-            now.timeIntervalSince(transfer.startedAt) >= 60 else { continue }
+            now.timeIntervalSince(transfer.startedAt) >= ragTransferQueuedThreshold else { continue }
       let elapsed = Int(now.timeIntervalSince(transfer.startedAt))
       let peerConnected =
         connectedWorkers.contains(where: { $0.id == transfer.peerId })
@@ -2200,7 +2230,8 @@ public final class SwarmCoordinator {
 
     for (id, transfer) in incomingRagTransfers {
       let elapsed = now.timeIntervalSince(transfer.lastChunkReceivedAt)
-      guard elapsed >= ragTransferStalledThreshold else { continue }
+      let stalledThreshold = ragStalledThreshold(forPeerId: transfer.peerId)
+      guard elapsed >= stalledThreshold else { continue }
 
       // Only act on transfers that are actively receiving
       guard let status = ragTransfers.first(where: { $0.id == id })?.status,
@@ -2245,6 +2276,27 @@ public final class SwarmCoordinator {
         pauseTransferForReconnect(id: id, transfer: transfer, message: "Peer disconnected during transfer (checkpoint saved, waiting for reconnect)")
       }
     }
+  }
+
+  private func ragStalledThreshold(forPeerId peerId: String) -> TimeInterval {
+    if let peer = connectedWorkers.first(where: { $0.id == peerId }) {
+      let hasLAN = peer.capabilities.lanAddress != nil
+      let hasWAN = peer.capabilities.wanAddress != nil
+      if !hasLAN && hasWAN {
+        return ragTransferStalledThresholdWAN
+      }
+      return ragTransferStalledThreshold
+    }
+
+    if let worker = FirebaseService.shared.swarmWorkers.first(where: { $0.id == peerId }) {
+      let hasLAN = worker.lanAddress != nil
+      let hasWAN = worker.wanAddress != nil
+      if !hasLAN && hasWAN {
+        return ragTransferStalledThresholdWAN
+      }
+    }
+
+    return ragTransferStalledThreshold
   }
 
   /// Pause a transfer on disconnect so it can be resumed when the peer reconnects.

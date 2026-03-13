@@ -200,6 +200,8 @@ public final class DataChannelHandle: NSObject, @unchecked Sendable {
 
   private static let bufferHighWaterMark: UInt64 = 256 * 1024
   private static let bufferLowWaterMark: UInt64 = 64 * 1024
+  private static let bufferDrainTimeout: Duration = .seconds(10)
+  private static let maxBufferDrainWaits = 3
 
   /// Send binary data with backpressure.
   public func send(_ data: Data) async throws {
@@ -207,8 +209,43 @@ public final class DataChannelHandle: NSObject, @unchecked Sendable {
       throw WebRTCError.dataChannelNotOpen
     }
 
-    if channel.bufferedAmount > Self.bufferHighWaterMark {
-      try await state.waitForBufferDrain()
+    var drainWaits = 0
+    while channel.bufferedAmount > Self.bufferHighWaterMark {
+      drainWaits += 1
+      let buffered = channel.bufferedAmount
+
+      logger.debug("[DCH-\(self.label)] send backpressure wait \(drainWaits) buffered=\(buffered)")
+
+      let drained = (try? await withThrowingTaskGroup(of: Bool.self) { group in
+        group.addTask {
+          try await self.state.waitForBufferDrain()
+          return true
+        }
+        group.addTask {
+          try await Task.sleep(for: Self.bufferDrainTimeout)
+          return false
+        }
+        defer { group.cancelAll() }
+        return try await group.next() ?? false
+      }) ?? false
+
+      guard drained else {
+        let stillBuffered = channel.bufferedAmount
+        let state = String(describing: channel.readyState)
+        logger.error(
+          "[DCH-\(self.label)] buffer drain timeout buffered=\(stillBuffered) readyState=\(state), failing send"
+        )
+        if channel.readyState == .closed {
+          throw WebRTCError.dataChannelClosed
+        }
+        throw WebRTCError.transferFailed(reason: "Data channel backpressure timeout on '\(label)'")
+      }
+
+      guard drainWaits < Self.maxBufferDrainWaits else {
+        let stillBuffered = channel.bufferedAmount
+        logger.error("[DCH-\(self.label)] excessive backpressure waits buffered=\(stillBuffered), failing send")
+        throw WebRTCError.transferFailed(reason: "Data channel remained backpressured on '\(label)'")
+      }
     }
 
     let buffer = RTCDataBuffer(data: data, isBinary: true)
