@@ -495,7 +495,10 @@ public final class SwarmCoordinator {
         signaling.purpose = "session"
         do {
           try await peerSessionManager.connectToPeer(workerId, signaling: signaling)
-          await MainActor.run { self.startListeningOnPeerSession(workerId) }
+          await MainActor.run {
+            self.startListeningOnPeerSession(workerId)
+            self.registerWebRTCPeerAsConnected(workerId)
+          }
           logger.notice("Persistent session established with \(workerId)")
         } catch {
           logger.warning("Failed to establish session with \(workerId): \(error)")
@@ -758,6 +761,7 @@ public final class SwarmCoordinator {
     
     try await peerSessionManager.connectToPeer(peerId, signaling: signaling)
     startListeningOnPeerSession(peerId)
+    registerWebRTCPeerAsConnected(peerId)
     logger.info("WebRTC session established with \(peerId)")
   }
 
@@ -938,6 +942,7 @@ public final class SwarmCoordinator {
     responder.peerSessionManager = peerSessionManager
     responder.onSessionAccepted = { [weak self] peerId in
       self?.startListeningOnPeerSession(peerId)
+      self?.registerWebRTCPeerAsConnected(peerId)
     }
     responder.start(swarmIds: swarmIds, myDeviceId: capabilities.deviceId)
     webrtcSignalingResponder = responder
@@ -1017,6 +1022,12 @@ public final class SwarmCoordinator {
         }
       }
       logger.info("WebRTC \(label) listener ended for peer \(peerId)")
+      // When the primary (mcp) channel closes, treat the peer as disconnected
+      if label == "mcp" {
+        await MainActor.run { [weak self] in
+          self?.handlePeerDisconnected(peerId)
+        }
+      }
     }
   }
 
@@ -2627,6 +2638,36 @@ public final class SwarmCoordinator {
 // MARK: - Peer Connection Lifecycle
 
 extension SwarmCoordinator {
+  /// Build a ConnectedPeer from Firestore worker data and register it.
+  /// Called after a WebRTC session is successfully established (either as initiator or responder).
+  private func registerWebRTCPeerAsConnected(_ peerId: String) {
+    let worker = FirebaseService.shared.swarmWorkers.first(where: { $0.id == peerId })
+    let caps = WorkerCapabilities(
+      deviceId: peerId,
+      deviceName: worker?.deviceName ?? peerId,
+      displayName: worker?.displayName,
+      platform: .macOS,
+      gpuCores: 0,
+      neuralEngineCores: 0,
+      memoryGB: 0,
+      storageAvailableGB: 0,
+      gitCommitHash: worker?.gitCommitHash,
+      lanAddress: worker?.lanAddress,
+      lanPort: worker?.lanPort,
+      wanAddress: worker?.wanAddress,
+      wanPort: worker?.wanPort,
+      stunAddress: worker?.stunAddress,
+      stunPort: worker?.stunPort
+    )
+    let peer = ConnectedPeer(
+      id: peerId,
+      name: worker?.deviceName ?? peerId,
+      capabilities: caps,
+      isIncoming: false
+    )
+    handlePeerConnected(peer)
+  }
+
   /// Handle a peer connecting (called from WebRTC session establishment).
   func handlePeerConnected(_ peer: ConnectedPeer) {
     // Check if this is a reconnection (same deviceId, possibly new capabilities)
