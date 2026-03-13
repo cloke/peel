@@ -28,12 +28,6 @@ struct Github_RootView: View {
   @Query(sort: \TrackedRemoteRepo.name) private var trackedRepos: [TrackedRemoteRepo]
   @State public var viewModel = Github.ViewModel()
   @State private var dataProvider: GitHubDataProvider?
-  #if os(macOS)
-  @State private var reviewAgentCoordinator = PRReviewAgentCoordinator()
-  @State private var reviewTarget: AgentReviewTarget?
-  @State private var reviewStatusBridge = PRReviewStatusBridge()
-  #endif
-
   private let scheduler = RepoPullScheduler.shared
   @State private var pullInProgressIds: Set<UUID> = []
   @State private var pullAlertItem: PullAlertItem?
@@ -394,26 +388,11 @@ struct Github_RootView: View {
     .favoritesProvider(dataProvider)
     .recentPRsProvider(dataProvider)
     .localRepoResolver(dataProvider)
-    #if os(macOS)
-    .reviewWithAgentProvider(reviewAgentCoordinator)
-    .prReviewStatusProvider(reviewStatusBridge)
-    .sheet(item: $reviewTarget) { target in
-      AgentReviewSheet(target: target)
-    }
-    #else
-    .reviewWithAgentProvider(nil)
-    #endif
+    .prReviewEnvironment(localRepoResolver: dataProvider)
     .onAppear {
       dataProvider = GitHubDataProvider(modelContext: modelContext)
       persistAutomationTargets()
       syncAutomationSelection()
-      #if os(macOS)
-      reviewStatusBridge.queue = mcpServer.prReviewQueue
-      reviewAgentCoordinator.onReview = { pr, repo in
-        let localPath = dataProvider?.localPath(for: repo)
-        reviewTarget = PRReviewAgentCoordinator.makeTarget(pr: pr, repo: repo, localRepoPath: localPath)
-      }
-      #endif
     }
     .onChange(of: favoriteRecords) { _, _ in
       persistAutomationTargets()
@@ -781,44 +760,6 @@ struct RecentPRDestination: View {
 }
 
 // MARK: - GitHub Data Provider
-
-/// Bridges PRReviewQueue to the Github package’s PRReviewStatusProvider protocol.
-@MainActor
-final class PRReviewStatusBridge: PRReviewStatusProvider {
-  weak var queue: PRReviewQueue?
-
-  func reviewStatus(owner: String, repo: String, prNumber: Int) -> PRAgentReviewStatus? {
-    guard let item = queue?.find(repoOwner: owner, repoName: repo, prNumber: prNumber) else {
-      return nil
-    }
-    let phase = item.phase
-    let activePh: Set<String> = [PRReviewPhase.reviewing, PRReviewPhase.fixing, PRReviewPhase.pushing]
-
-    // Build review result if output exists
-    var reviewResult: PRAgentReviewStatus.ReviewResult?
-    if !item.reviewOutput.isEmpty {
-      let parsed = parseReviewOutput(item.reviewOutput)
-      reviewResult = PRAgentReviewStatus.ReviewResult(
-        summary: parsed.summary,
-        verdict: parsed.verdict.rawValue,
-        riskLevel: parsed.riskLevel,
-        issues: parsed.issues,
-        suggestions: parsed.suggestions,
-        rawOutput: parsed.rawOutput,
-        model: item.reviewModel,
-        completedAt: item.reviewCompletedAt
-      )
-    }
-
-    return PRAgentReviewStatus(
-      phase: phase,
-      displayName: PRReviewPhase.displayName[phase] ?? phase,
-      systemImage: PRReviewPhase.systemImage[phase] ?? "questionmark.circle",
-      isActive: activePh.contains(phase),
-      reviewResult: reviewResult
-    )
-  }
-}
 
 /// Provides GitHub favorites and recent PRs backed by SwiftData
 @MainActor

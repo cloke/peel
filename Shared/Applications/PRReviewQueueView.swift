@@ -182,8 +182,7 @@ struct PRReviewQueueDetailView: View {
 
   private var queue: PRReviewQueue { mcpServer.prReviewQueue }
 
-  @State private var fetchedOpenPRs: [(ownerRepo: String, pr: UnifiedRepository.PRSummary)] = []
-  @State private var isLoadingPRs = false
+  @State private var prsFetcher = OpenPRsFetcher()
   @State private var selectedPRDetail: PRDetailIdentifier?
   @State private var sortOrder: PRSortOrder = .updatedDesc
   @State private var repoFilter: String = "all"
@@ -202,16 +201,7 @@ struct PRReviewQueueDetailView: View {
   }
 
   private var allOpenPRsRaw: [(repo: UnifiedRepository, pr: UnifiedRepository.PRSummary)] {
-    if !fetchedOpenPRs.isEmpty {
-      return fetchedOpenPRs.compactMap { item in
-        guard let repo = aggregator.repositories.first(where: { $0.ownerSlashRepo == item.ownerRepo })
-        else { return nil }
-        return (repo, item.pr)
-      }
-    }
-    return aggregator.repositories.flatMap { repo in
-      repo.recentPRs.filter { $0.state == "open" }.map { (repo, $0) }
-    }
+    prsFetcher.resolvedOpenPRs(from: aggregator.repositories)
   }
 
   private var allOpenPRs: [(repo: UnifiedRepository, pr: UnifiedRepository.PRSummary)] {
@@ -267,7 +257,7 @@ struct PRReviewQueueDetailView: View {
         // Open PRs from tracked repos
         openPRsSection
 
-        if queue.activeItems.isEmpty && queue.completedItems.isEmpty && allOpenPRs.isEmpty && !isLoadingPRs {
+        if queue.activeItems.isEmpty && queue.completedItems.isEmpty && allOpenPRs.isEmpty && !prsFetcher.isLoading {
           ContentUnavailableView {
             Label("No Pull Requests", systemImage: "arrow.triangle.pull")
           } description: {
@@ -277,12 +267,12 @@ struct PRReviewQueueDetailView: View {
       }
       .padding(20)
     }
-    .task { await fetchAllOpenPRs() }
+    .task { await prsFetcher.fetch(repositories: aggregator.repositories) }
   }
 
   @ViewBuilder
   private var openPRsSection: some View {
-    if isLoadingPRs && allOpenPRs.isEmpty {
+    if prsFetcher.isLoading && allOpenPRs.isEmpty {
       VStack(alignment: .leading, spacing: 12) {
         SectionHeader("Open Pull Requests")
         HStack(spacing: 8) {
@@ -424,46 +414,5 @@ struct PRReviewQueueDetailView: View {
     }
   }
 
-  private func fetchAllOpenPRs() async {
-    isLoadingPRs = true
-    defer { isLoadingPRs = false }
-
-    let repos = aggregator.repositories.compactMap { repo -> (String, String, String)? in
-      guard let ownerRepo = repo.ownerSlashRepo else { return nil }
-      let parts = ownerRepo.split(separator: "/")
-      guard parts.count == 2 else { return nil }
-      return (ownerRepo, String(parts[0]), String(parts[1]))
-    }
-
-    var results: [(ownerRepo: String, pr: UnifiedRepository.PRSummary)] = []
-
-    await withTaskGroup(of: [(String, UnifiedRepository.PRSummary)].self) { group in
-      for (ownerRepo, owner, repoName) in repos {
-        group.addTask {
-          do {
-            let prs = try await Github.pullRequests(owner: owner, repository: repoName, state: "open")
-            return prs.map { pr in
-              (ownerRepo, UnifiedRepository.PRSummary(
-                id: UUID(),
-                number: pr.number,
-                title: pr.title ?? "Untitled",
-                state: pr.state ?? "open",
-                htmlURL: pr.html_url,
-                headRef: pr.head.ref,
-                updatedAt: pr.updated_at
-              ))
-            }
-          } catch {
-            return []
-          }
-        }
-      }
-
-      for await batch in group {
-        results.append(contentsOf: batch)
-      }
-    }
-
-    fetchedOpenPRs = results
-  }
 }
+

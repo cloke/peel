@@ -259,6 +259,22 @@ struct OverviewTabView: View {
     displayPRs.filter { $0.state == "open" }
   }
 
+  /// PRs in the review queue that need human action (not just "open").
+  private var actionablePRReviews: [PRReviewQueueItem] {
+    guard let ownerRepo = repo.ownerSlashRepo else { return [] }
+    let parts = ownerRepo.split(separator: "/")
+    guard parts.count == 2 else { return [] }
+    let owner = String(parts[0])
+    let name = String(parts[1])
+    let actionablePhases: Set<String> = [
+      PRReviewPhase.reviewed, PRReviewPhase.needsFix,
+      PRReviewPhase.fixed, PRReviewPhase.readyToPush, PRReviewPhase.failed
+    ]
+    return mcpServer.prReviewQueue.items.filter {
+      $0.repoOwner == owner && $0.repoName == name && actionablePhases.contains($0.phase)
+    }
+  }
+
   var body: some View {
     if let detail = selectedPRDetail {
       PRDetailInlineView(
@@ -294,7 +310,7 @@ struct OverviewTabView: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 16) {
           // 1. Needs Attention — action items that need human input
-          if !pendingApprovalRuns.isEmpty || !openPRs.isEmpty {
+          if !pendingApprovalRuns.isEmpty || !actionablePRReviews.isEmpty {
             needsAttentionSection
           }
 
@@ -365,18 +381,18 @@ struct OverviewTabView: View {
         }
       }
 
-      ForEach(openPRs.prefix(3)) { pr in
+      ForEach(actionablePRReviews, id: \.id) { item in
         attentionCard(
-          icon: "arrow.triangle.pull",
-          color: .green,
-          title: "#\(pr.number) \(pr.title)",
-          subtitle: pr.headRef ?? "open",
-          badge: "Open"
+          icon: item.phase == PRReviewPhase.failed ? "xmark.circle" : "checkmark.shield",
+          color: item.phase == PRReviewPhase.failed ? .red : .purple,
+          title: "#\(item.prNumber) \(item.prTitle)",
+          subtitle: PRReviewPhase.displayName[item.phase] ?? item.phase,
+          badge: actionableBadge(for: item.phase)
         )
         .contentShape(Rectangle())
         .onTapGesture {
           if let ownerRepo = repo.ownerSlashRepo {
-            selectedPRDetail = PRDetailIdentifier(ownerRepo: ownerRepo, prNumber: pr.number)
+            selectedPRDetail = PRDetailIdentifier(ownerRepo: ownerRepo, prNumber: item.prNumber)
           }
         }
       }
@@ -482,6 +498,16 @@ struct OverviewTabView: View {
           .foregroundStyle(color)
       }
       .padding(2)
+    }
+  }
+
+  private func actionableBadge(for phase: String) -> String {
+    switch phase {
+    case PRReviewPhase.reviewed: return "Needs Decision"
+    case PRReviewPhase.needsFix: return "Needs Fix"
+    case PRReviewPhase.fixed, PRReviewPhase.readyToPush: return "Ready to Push"
+    case PRReviewPhase.failed: return "Failed"
+    default: return PRReviewPhase.displayName[phase] ?? phase
     }
   }
 

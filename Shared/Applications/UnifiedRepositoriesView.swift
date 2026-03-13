@@ -605,8 +605,7 @@ struct RepositoriesCommandCenter: View {
   @Environment(ActivityFeed.self) private var activityFeed
   @Environment(DataService.self) private var dataService
 
-  @State private var fetchedOpenPRs: [(ownerRepo: String, pr: UnifiedRepository.PRSummary)] = []
-  @State private var isLoadingPRs = false
+  @State private var prsFetcher = OpenPRsFetcher()
   @State private var selectedPRDetail: PRDetailIdentifier?
   @State private var selectedRunForReview: ParallelWorktreeRun?
   @State private var expandedExecutions: Set<UUID> = []
@@ -647,16 +646,7 @@ struct RepositoriesCommandCenter: View {
   /// All open PRs — uses live GitHub API data when available,
   /// falls back to aggregator cache otherwise.
   private var allOpenPRs: [(repo: UnifiedRepository, pr: UnifiedRepository.PRSummary)] {
-    if !fetchedOpenPRs.isEmpty {
-      return fetchedOpenPRs.compactMap { item in
-        guard let repo = aggregator.repositories.first(where: { $0.ownerSlashRepo == item.ownerRepo })
-        else { return nil }
-        return (repo, item.pr)
-      }
-    }
-    return aggregator.repositories.flatMap { repo in
-      repo.recentPRs.filter { $0.state == "open" }.map { (repo, $0) }
-    }
+    prsFetcher.resolvedOpenPRs(from: aggregator.repositories)
   }
 
   /// All active chains across repos.
@@ -761,7 +751,7 @@ struct RepositoriesCommandCenter: View {
         }
         .padding(20)
       }
-      .task { await fetchAllOpenPRs() }
+      .task { await prsFetcher.fetch(repositories: aggregator.repositories) }
       .task { await ensureFirestoreListeners() }
       .task { displayName = WorkerCapabilities.configuredDisplayName() ?? "" }
       .onChange(of: firebaseService.isSignedIn) { _, signedIn in
@@ -927,7 +917,7 @@ struct RepositoriesCommandCenter: View {
       }
 
       // Open PRs across repos — tap to view full detail
-      if isLoadingPRs && fetchedOpenPRs.isEmpty {
+      if prsFetcher.isLoading && prsFetcher.fetchedOpenPRs.isEmpty {
         HStack(spacing: 8) {
           ProgressView()
             .controlSize(.small)
@@ -938,7 +928,7 @@ struct RepositoriesCommandCenter: View {
         .padding(.leading, 4)
       }
 
-      if allOpenPRs.isEmpty && !isLoadingPRs {
+      if allOpenPRs.isEmpty && !prsFetcher.isLoading {
         ContentUnavailableView("No Open Pull Requests", systemImage: "arrow.triangle.pull")
           .frame(maxWidth: .infinity)
       }
@@ -1220,48 +1210,7 @@ struct RepositoriesCommandCenter: View {
 
   // MARK: - Data Loading
 
-  private func fetchAllOpenPRs() async {
-    isLoadingPRs = true
-    defer { isLoadingPRs = false }
 
-    let repos = aggregator.repositories.compactMap { repo -> (String, String, String)? in
-      guard let ownerRepo = repo.ownerSlashRepo else { return nil }
-      let parts = ownerRepo.split(separator: "/")
-      guard parts.count == 2 else { return nil }
-      return (ownerRepo, String(parts[0]), String(parts[1]))
-    }
-
-    var results: [(ownerRepo: String, pr: UnifiedRepository.PRSummary)] = []
-
-    await withTaskGroup(of: [(String, UnifiedRepository.PRSummary)].self) { group in
-      for (ownerRepo, owner, repoName) in repos {
-        group.addTask {
-          do {
-            let prs = try await Github.pullRequests(owner: owner, repository: repoName, state: "open")
-            return prs.map { pr in
-              (ownerRepo, UnifiedRepository.PRSummary(
-                id: UUID(),
-                number: pr.number,
-                title: pr.title ?? "Untitled",
-                state: pr.state ?? "open",
-                htmlURL: pr.html_url,
-                headRef: pr.head.ref,
-                updatedAt: pr.updated_at
-              ))
-            }
-          } catch {
-            return []
-          }
-        }
-      }
-
-      for await batch in group {
-        results.append(contentsOf: batch)
-      }
-    }
-
-    fetchedOpenPRs = results
-  }
 
   // MARK: - Running Now
 
@@ -1589,12 +1538,6 @@ struct PRDetailInlineView: View {
   }
 
   @State private var state: LoadState = .loading
-  #if os(macOS)
-  @Environment(MCPServerService.self) private var mcpServer
-  @State private var reviewAgentCoordinator = PRReviewAgentCoordinator()
-  @State private var reviewTarget: AgentReviewTarget?
-  @State private var reviewStatusBridge = PRReviewStatusBridge()
-  #endif
 
   var body: some View {
     VStack(spacing: 0) {
@@ -1656,19 +1599,7 @@ struct PRDetailInlineView: View {
         PullRequestDetailView(organization: nil, repository: repo, pullRequest: pr)
       }
     }
-    #if os(macOS)
-    .reviewWithAgentProvider(reviewAgentCoordinator)
-    .prReviewStatusProvider(reviewStatusBridge)
-    .sheet(item: $reviewTarget) { target in
-      AgentReviewSheet(target: target)
-    }
-    .onAppear {
-      reviewStatusBridge.queue = mcpServer.prReviewQueue
-      reviewAgentCoordinator.onReview = { pr, repo in
-        reviewTarget = PRReviewAgentCoordinator.makeTarget(pr: pr, repo: repo, localRepoPath: nil)
-      }
-    }
-    #endif
+    .prReviewEnvironment()
     .task { await loadData() }
   }
 

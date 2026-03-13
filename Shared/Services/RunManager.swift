@@ -8,7 +8,11 @@
 //
 
 import Foundation
+import Github
 import Observation
+import os
+
+private let logger = Logger(subsystem: "com.peel", category: "RunManager")
 
 @MainActor
 @Observable
@@ -21,6 +25,9 @@ final class RunManager {
 
   /// Legacy PR review queue — kept during migration, will be removed.
   let prReviewQueue: PRReviewQueue
+
+  /// Periodic reconciliation task for PR runs.
+  private var reconciliationTask: Task<Void, Never>?
 
   // MARK: - Init
 
@@ -411,5 +418,63 @@ final class RunManager {
       return e
     }
     return d
+  }
+
+  // MARK: - PR GitHub Reconciliation
+
+  /// Start periodic reconciliation of PR review runs with GitHub.
+  func startPRReconciliation() {
+    reconciliationTask?.cancel()
+    reconciliationTask = Task { [weak self] in
+      try? await Task.sleep(for: .seconds(10))
+      while !Task.isCancelled {
+        await self?.reconcilePRRunsWithGitHub()
+        try? await Task.sleep(for: .seconds(300))
+      }
+    }
+  }
+
+  /// Stop the reconciliation timer.
+  func stopPRReconciliation() {
+    reconciliationTask?.cancel()
+    reconciliationTask = nil
+  }
+
+  /// Check GitHub for merged/closed PRs and update run state accordingly.
+  func reconcilePRRunsWithGitHub() async {
+    let terminalPhases: Set<String> = [
+      PRReviewPhase.pushed, PRReviewPhase.approved,
+    ]
+    let toCheck = prReviewRuns.filter { run in
+      guard let ctx = run.prContext else { return false }
+      return !terminalPhases.contains(ctx.phase)
+    }
+    guard !toCheck.isEmpty else { return }
+
+    logger.info("Reconciling \(toCheck.count) PR review runs with GitHub")
+
+    for run in toCheck {
+      guard let ctx = run.prContext else { continue }
+      do {
+        let pr = try await Github.pullRequest(
+          owner: ctx.repoOwner, repository: ctx.repoName, number: ctx.prNumber
+        )
+
+        if pr.merged_at != nil {
+          run.prContext?.phase = PRReviewPhase.pushed
+          run.prContext?.pushResult = "Merged on GitHub"
+          run.prContext?.pushedAt = Date()
+          run.status = .completed
+          logger.info("PR #\(ctx.prNumber) was merged on GitHub — marked as pushed/completed")
+        } else if pr.state == "closed" {
+          run.prContext?.phase = PRReviewPhase.pushed
+          run.prContext?.pushResult = "Closed on GitHub"
+          run.status = .completed
+          logger.info("PR #\(ctx.prNumber) was closed on GitHub — marked completed")
+        }
+      } catch {
+        logger.debug("Failed to check PR #\(ctx.prNumber): \(error.localizedDescription)")
+      }
+    }
   }
 }

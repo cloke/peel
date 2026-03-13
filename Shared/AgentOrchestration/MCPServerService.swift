@@ -1027,6 +1027,8 @@ public final class MCPServerService {
       parallelWorktreeRunner?.setDataService(dataService)
       localChatToolsHandler?.dataService = dataService
     }
+    // Start PR reconciliation after historical runs are loaded
+    runManager?.startPRReconciliation()
     if prReviewQueue.modelContext == nil {
       prReviewQueue.modelContext = modelContext
     }

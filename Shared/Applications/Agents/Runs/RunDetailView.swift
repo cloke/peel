@@ -26,24 +26,29 @@ struct RunDetailView: View {
           Divider()
           prContextSection(ctx)
         }
+        // For PR reviews: show agent findings + actions prominently before progress/executions
+        if isPRReview, let output = bestOutput, !output.isEmpty {
+          Divider()
+          parsedReviewSection(output)
+          Divider()
+          actionButtons
+        } else {
+          Divider()
+          actionButtons
+          if let output = bestOutput, !output.isEmpty {
+            Divider()
+            rawOutputSection(output)
+          }
+        }
         Divider()
         progressOverview
-        Divider()
-        actionButtons
         Divider()
         executionsList
         if run.kind == .managerRun {
           Divider()
           childRunsSection
         }
-        if run.kind == .prReview, let output = bestOutput, !output.isEmpty {
-          Divider()
-          parsedReviewSection(output)
-        } else if let output = bestOutput, !output.isEmpty {
-          Divider()
-          rawOutputSection(output)
-        }
-        if !run.prompt.isEmpty {
+        if !isPRReview, !run.prompt.isEmpty {
           Divider()
           promptSection
         }
