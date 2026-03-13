@@ -22,10 +22,24 @@ public final class WebRTCClient: NSObject, Sendable {
   private let state = ClientState()
 
   /// STUN/TURN servers for ICE candidate gathering.
-  public static let defaultICEServers = [
-    "stun:stun.l.google.com:19302",
-    "stun:stun1.l.google.com:19302",
-    "stun:stun2.l.google.com:19302",
+  /// Includes STUN for direct connectivity discovery and TURN for relay fallback.
+  public static let defaultICEServers: [RTCIceServer] = [
+    // Google STUN servers (free, for NAT discovery only)
+    RTCIceServer(urlStrings: [
+      "stun:stun.l.google.com:19302",
+      "stun:stun1.l.google.com:19302",
+    ]),
+    // Metered.ca Open Relay TURN servers (free tier, 20GB/month)
+    // Provides relay fallback when direct/STUN paths fail (symmetric NAT, firewalls)
+    RTCIceServer(
+      urlStrings: [
+        "turn:openrelay.metered.ca:80",
+        "turn:openrelay.metered.ca:443",
+        "turns:openrelay.metered.ca:443",
+      ],
+      username: "openrelayproject",
+      credential: "openrelayproject"
+    ),
   ]
 
   // MARK: - State Actor
@@ -289,7 +303,7 @@ public final class WebRTCClient: NSObject, Sendable {
 
   // MARK: - Init
 
-  public init(iceServers: [String] = WebRTCClient.defaultICEServers) {
+  public init(iceServers: [RTCIceServer] = WebRTCClient.defaultICEServers) {
     RTCInitializeSSL()
 
     let encoderFactory = RTCDefaultVideoEncoderFactory()
@@ -300,9 +314,11 @@ public final class WebRTCClient: NSObject, Sendable {
     )
 
     let config = RTCConfiguration()
-    config.iceServers = [RTCIceServer(urlStrings: iceServers)]
+    config.iceServers = iceServers
     config.sdpSemantics = .unifiedPlan
     config.continualGatheringPolicy = .gatherContinually
+    // Allow relay candidates through TURN even when direct path exists
+    config.iceTransportPolicy = .all
     // Needed for data-only connections
     config.bundlePolicy = .maxBundle
     config.rtcpMuxPolicy = .require
