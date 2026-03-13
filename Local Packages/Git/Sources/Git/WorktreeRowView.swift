@@ -8,7 +8,6 @@
 import SwiftUI
 import PeelUI
 
-#if os(macOS)
 import AppKit
 
 struct WorktreeRowView: View {
@@ -147,4 +146,3 @@ struct WorktreeRowView: View {
     }
   }
 }
-#endif

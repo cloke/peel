@@ -8,7 +8,6 @@
 //  Created on 1/25/26.
 //
 
-#if os(macOS)
 import Foundation
 import Hub
 import MLX
@@ -462,4 +461,3 @@ extension LocalRAGEmbeddingProviderFactory {
   }
 }
 
-#endif

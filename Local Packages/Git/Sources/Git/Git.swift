@@ -1,6 +1,5 @@
 import SwiftUI
 
-#if os(macOS)
 import AppKit
 enum GitDestination: Hashable {
   case localChanges
@@ -190,4 +189,3 @@ public struct GitRootView: View {
     URL(fileURLWithPath: path).lastPathComponent
   }
 }
-#endif

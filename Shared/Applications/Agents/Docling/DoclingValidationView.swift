@@ -5,7 +5,6 @@
 
 import SwiftUI
 
-#if os(macOS)
 import AppKit
 import SwiftData
 
@@ -355,4 +354,3 @@ struct DoclingValidationView: View {
     return nil
   }
 }
-#endif

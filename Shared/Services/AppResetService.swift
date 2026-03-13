@@ -9,9 +9,7 @@ import Foundation
 import Github
 import OSLog
 import SwiftData
-#if os(macOS)
 import AppKit
-#endif
 
 @MainActor
 enum AppResetService {
@@ -46,11 +44,7 @@ enum AppResetService {
     logger.warning("Full app reset complete — terminating")
 
     // Terminate so the app launches fresh
-    #if os(macOS)
     NSApplication.shared.terminate(nil)
-    #else
-    exit(0)
-    #endif
   }
 
   // MARK: - SwiftData

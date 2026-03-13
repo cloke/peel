@@ -3193,7 +3193,6 @@ extension SwarmCoordinator: FirestoreTaskExecutionDelegate {
 extension SwarmCoordinator {
   /// Get the local LAN IP address (en0) for peer-to-peer connections.
   static func getLocalLANAddress() -> String? {
-    #if os(macOS)
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/sbin/ipconfig")
     process.arguments = ["getifaddr", "en0"]
@@ -3208,9 +3207,6 @@ extension SwarmCoordinator {
     } catch {
       return nil
     }
-    #else
-    return nil  // iOS doesn't support Process
-    #endif
   }
 }
 

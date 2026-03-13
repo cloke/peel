@@ -11,10 +11,8 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
-  #if os(macOS)
   @Environment(MCPServerService.self) private var mcpServer
   @Environment(DaemonModeService.self) private var daemonModeService
-  #endif
   @AppStorage("feature.showBrew") private var showBrew = false
   @AppStorage("feature.showPIIScrubber") private var showPIIScrubber = false
   @AppStorage("feature.showDoclingImport") private var showDoclingImport = false
@@ -41,7 +39,6 @@ struct SettingsView: View {
   
   var body: some View {
     TabView {
-      #if os(macOS)
       SettingsPage {
         SettingsSection {
           HStack(spacing: 16) {
@@ -280,7 +277,6 @@ struct SettingsView: View {
       SwarmManagementView()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
       .tabItem { Label("Swarm", systemImage: "person.3.fill") }
-      #endif
 
       SettingsPage {
         SettingsSection("Experimental Features") {
@@ -428,9 +424,7 @@ struct SettingsView: View {
     }
     .task {
       if vscodeWorkspacePath.isEmpty {
-        #if os(macOS)
         vscodeWorkspacePath = mcpServer.agentManager.lastUsedWorkingDirectory ?? ""
-        #endif
       }
     }
   }
@@ -468,7 +462,6 @@ struct SettingsView: View {
     }
   }
 
-  #if os(macOS)
   private func registerURLScheme() async {
     urlSchemeStatus = nil
     isRegisteringURLScheme = true
@@ -506,7 +499,6 @@ struct SettingsView: View {
       urlSchemeStatus = "Error: \(error.localizedDescription)"
     }
   }
-  #endif
 
   private func bindingForFeature(_ feature: LabFeature) -> Binding<Bool> {
     switch feature.id {
@@ -542,7 +534,6 @@ private struct SettingsPage<Content: View>: View {
 // SettingsSection is now a typealias for SectionCard from PeelUI
 private typealias SettingsSection = SectionCard
 
-#if os(macOS)
 private struct MCPToolSettingsSection: View {
   private enum ToolPreset: String, CaseIterable, Identifiable {
     case yolo
@@ -990,7 +981,6 @@ private struct PromptRulesSettingsSection: View {
   }
 }
 
-#endif
 
 #Preview {
   SettingsView()

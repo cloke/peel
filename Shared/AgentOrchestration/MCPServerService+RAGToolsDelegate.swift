@@ -396,7 +396,6 @@ extension MCPServerService: RAGToolsHandlerDelegate {
   
   // MARK: - AI Analysis (#198)
   
-  #if os(macOS)
 
   /// Validate that the MLX analysis model can load before starting a batch.
   /// Creates a temporary analyzer with the requested tier, tries to preload it,
@@ -459,7 +458,6 @@ extension MCPServerService: RAGToolsHandlerDelegate {
     let resolvedPath = await resolveRepoPathForTool(repoPath)
     try await localRagStore.clearAnalysis(repoPath: resolvedPath)
   }
-  #endif
   
   // MARK: - Repo Path Resolution Helper
   

@@ -190,7 +190,6 @@ protocol RAGToolsHandlerDelegate: MCPToolHandlerDelegate {
   
   // MARK: - AI Analysis (#198)
   
-  #if os(macOS)
   /// Analyze un-analyzed chunks using MLX LLM
   func analyzeRagChunks(repoPath: String?, limit: Int, modelTier: MLXAnalyzerModelTier, progress: (@Sendable (Int, Int) -> Void)?) async throws -> Int
   
@@ -217,6 +216,5 @@ protocol RAGToolsHandlerDelegate: MCPToolHandlerDelegate {
   
   /// Find complexity hotspots (god components)
   func findRagHotspots(repoPath: String?, constructType: String?, minTokens: Int, limit: Int) async throws -> [LocalRAGStore.Hotspot]
-  #endif
 }
 

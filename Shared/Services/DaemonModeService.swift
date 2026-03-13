@@ -9,7 +9,6 @@
 //  the MCP server running in the background instead of quitting the app.
 //
 
-#if os(macOS)
 import AppKit
 import Foundation
 import OSLog
@@ -205,4 +204,3 @@ private final class StatusBarDelegate: NSObject {
   @objc func handleOpen() { onOpen() }
   @objc func handleQuit() { onQuit() }
 }
-#endif

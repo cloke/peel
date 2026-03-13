@@ -98,7 +98,6 @@ public final class RepoRegistry: Sendable {
   /// - Parameter path: Path to the git repository
   /// - Returns: The remote URL or nil if not found
   private func discoverRemoteURL(for path: String) async -> String? {
-    #if os(macOS)
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
     process.arguments = ["remote", "get-url", "origin"]
@@ -127,9 +126,6 @@ public final class RepoRegistry: Sendable {
       logger.error("Failed to get remote URL for \(path): \(error.localizedDescription)")
       return nil
     }
-    #else
-    return nil
-    #endif
   }
   
   // MARK: - URL Normalization
@@ -202,7 +198,6 @@ public final class RepoRegistry: Sendable {
 
   // MARK: - Convenience
   
-  #if os(macOS)
   /// Resolve a ChainRequest's working directory for this machine.
   /// If the request has a repoRemoteURL, uses that to find the local path.
   /// Otherwise falls back to the workingDirectory (which may fail on remote machines).
@@ -225,5 +220,4 @@ public final class RepoRegistry: Sendable {
     logger.warning("Could not resolve working directory for request \(request.id)")
     return request.workingDirectory
   }
-  #endif
 }

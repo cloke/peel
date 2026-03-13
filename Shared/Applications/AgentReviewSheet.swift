@@ -538,9 +538,7 @@ struct AgentReviewSheet: View {
       // Open in browser
       if let urlStr = target.htmlURL, let url = URL(string: urlStr) {
         Button {
-          #if os(macOS)
           NSWorkspace.shared.open(url)
-          #endif
         } label: {
           Label("Open in Browser", systemImage: "arrow.up.right.square")
         }
@@ -1383,9 +1381,7 @@ struct PRRowWithReview: View {
 
       if let url = pr.htmlURL, let nsurl = URL(string: url) {
         Button {
-          #if os(macOS)
           NSWorkspace.shared.open(nsurl)
-          #endif
         } label: {
           Image(systemName: "arrow.up.right.square")
             .font(.caption)

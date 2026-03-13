@@ -7,7 +7,6 @@
 
 import SwiftUI
 
-#if os(macOS)
 import AppKit
 import SwiftData
 
@@ -258,11 +257,3 @@ struct DoclingImportView: View {
     )
   }
 }
-#else
-struct DoclingImportView: View {
-  var body: some View {
-    Text("Docling import is available on macOS.")
-      .foregroundStyle(.secondary)
-  }
-}
-#endif

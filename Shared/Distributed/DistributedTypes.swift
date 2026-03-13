@@ -277,15 +277,7 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
   ) -> WorkerCapabilities {
     let processInfo = ProcessInfo.processInfo
     
-    #if os(macOS)
     let platform = Platform.macOS
-    #elseif os(iOS)
-    let platform = Platform.iOS
-    #elseif os(visionOS)
-    let platform = Platform.visionOS
-    #else
-    let platform = Platform.macOS
-    #endif
     
     // Get device ID (persistent across launches)
     let deviceId = Self.getDeviceId()
@@ -412,13 +404,8 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
   
   /// Get the config file path
   private static var configFilePath: URL {
-    #if os(macOS)
     return FileManager.default.homeDirectoryForCurrentUser
       .appendingPathComponent("Library/Application Support/Peel/worker-config.json")
-    #else
-    let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-    return appSupport.appendingPathComponent("Peel/worker-config.json")
-    #endif
   }
   
   /// Save the display name to config file. Pass nil or empty string to clear.
@@ -455,7 +442,6 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
   }
 
   private static func getDeviceId() -> String {
-    #if os(macOS)
     // Use hardware UUID on macOS
     let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPlatformExpertDevice"))
     defer { IOObjectRelease(service) }
@@ -464,10 +450,6 @@ public struct WorkerCapabilities: Codable, Sendable, Identifiable {
       return uuidData.takeRetainedValue() as? String ?? UUID().uuidString
     }
     return UUID().uuidString
-    #else
-    // Use identifierForVendor on iOS
-    return UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
-    #endif
   }
   
   private static func getGPUCores() -> Int {
@@ -815,12 +797,6 @@ public enum PeerMessage: Codable, Sendable {
   }
 }
 
-// MARK: - IOKit Import for macOS
+// MARK: - IOKit Import
 
-#if os(macOS)
 import IOKit
-#endif
-
-#if os(iOS)
-import UIKit
-#endif

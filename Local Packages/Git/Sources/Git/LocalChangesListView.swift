@@ -7,7 +7,6 @@
 
 import SwiftUI
 
-#if os(macOS)
 public struct LocalChangesListView: View {
   @Environment(Model.Repository.self) var repository
 
@@ -42,4 +41,3 @@ public struct LocalChangesListView: View {
   LocalChangesListView()
     .environment(Model.Repository(name: "blah", path: "."))
 }
-#endif

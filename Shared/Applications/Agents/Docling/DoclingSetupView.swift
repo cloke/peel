@@ -5,7 +5,6 @@
 
 import SwiftUI
 
-#if os(macOS)
 import AppKit
 
 struct DoclingSetupView: View {
@@ -115,4 +114,3 @@ struct DoclingSetupView: View {
     }
   }
 }
-#endif

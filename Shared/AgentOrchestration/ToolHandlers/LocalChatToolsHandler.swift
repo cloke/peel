@@ -8,7 +8,6 @@
 //  Created on 2/24/26.
 //
 
-#if os(macOS)
 import Foundation
 import MCPCore
 
@@ -402,4 +401,3 @@ final class LocalChatToolsHandler: MCPToolHandler {
   }
 }
 
-#endif

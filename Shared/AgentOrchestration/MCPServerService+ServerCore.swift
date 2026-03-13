@@ -356,7 +356,6 @@ extension MCPServerService {
     limit: Int,
     modulePath: String?
   ) async throws -> [LocalRAGSearchResult] {
-    #if os(macOS)
     let status = await localRagStore.status()
     let providerDims = status.embeddingDimensions
     let providerModel = status.embeddingModelName.lowercased()
@@ -466,10 +465,6 @@ extension MCPServerService {
       .sorted { ($0.score ?? -1) > ($1.score ?? -1) }
       .prefix(limit)
       .map { $0 }
-    #else
-    // iOS: no MLX, use default provider directly
-    return try await localRagStore.searchVector(query: query, repoPath: repoPath, limit: limit, modulePath: modulePath)
-    #endif
   }
 
   private func refreshRagQueryHints(query: String?, repoPath: String?, mode: RAGSearchMode?, resultCount: Int?) async {
@@ -1078,11 +1073,9 @@ extension MCPServerService {
     if schedulingToolsHandler.supportedTools.contains(resolvedName) {
       return await schedulingToolsHandler.handle(name: resolvedName, id: id, arguments: arguments)
     }
-    #if os(macOS)
     if localChatToolsHandler?.supportedTools.contains(resolvedName) == true {
       return await localChatToolsHandler!.handle(name: resolvedName, id: id, arguments: arguments)
     }
-    #endif
 
     // Fall through to inline handlers (to be extracted in future)
     switch resolvedName {
@@ -1153,18 +1146,10 @@ extension MCPServerService {
       return (200, JSONRPCResponseBuilder.makeToolResult(id: id, result: ["status": "activated"]))
 
     case "app.daemon.status":
-      #if os(macOS)
       return handleDaemonStatus(id: id)
-      #else
-      return (404, JSONRPCResponseBuilder.makeError(id: id, code: -32601, message: "Daemon mode is macOS only"))
-      #endif
 
     case "app.daemon.configure":
-      #if os(macOS)
       return handleDaemonConfigure(id: id, arguments: arguments)
-      #else
-      return (404, JSONRPCResponseBuilder.makeError(id: id, code: -32601, message: "Daemon mode is macOS only"))
-      #endif
 
     case "screenshot.capture":
       let label = arguments["label"] as? String

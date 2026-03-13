@@ -15,27 +15,21 @@
 		03MLXAUD2F70000100000001 /* MLXAudioCore in Frameworks */ = {isa = PBXBuildFile; productRef = 03MLXAUD2F70000100000002 /* MLXAudioCore */; };
 		03MLXAUD2F70000200000001 /* MLXAudioTTS in Frameworks */ = {isa = PBXBuildFile; productRef = 03MLXAUD2F70000200000002 /* MLXAudioTTS */; };
 		03MLXAUD2F70000300000001 /* MLXAudioSTT in Frameworks */ = {isa = PBXBuildFile; productRef = 03MLXAUD2F70000300000002 /* MLXAudioSTT */; };
-		040AAB7E26CB385800DE1CBF /* Git in Frameworks */ = {isa = PBXBuildFile; productRef = 040AAB7D26CB385800DE1CBF /* Git */; };
 		04503C392F3FCA8400BA3223 /* MCPCore in Frameworks */ = {isa = PBXBuildFile; productRef = 04MCPCOR2F2E000100000004 /* MCPCore */; };
 		04503C3A2F3FCA8400BA3223 /* RAGCore in Frameworks */ = {isa = PBXBuildFile; productRef = 04RAGCOR2F3C000100000003 /* RAGCore */; };
 		04503C3B2F3FCA8400BA3223 /* MCPCore in Frameworks */ = {isa = PBXBuildFile; productRef = 04MCPCOR2F2E000100000004 /* MCPCore */; };
 		04510A582A2D200C001DEF5B /* Github in Frameworks */ = {isa = PBXBuildFile; productRef = 04510A572A2D200C001DEF5B /* Github */; };
 		046C6AB02F1BE07D006CDAC7 /* TaskRunner in Frameworks */ = {isa = PBXBuildFile; productRef = 046C6AAF2F1BE07D006CDAC7 /* TaskRunner */; };
-		046D40E426C56BBB003715AF /* OAuthSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 046D40E326C56BBB003715AF /* OAuthSwift */; };
-		046D40E726C56C5B003715AF /* Github in Frameworks */ = {isa = PBXBuildFile; productRef = 046D40E626C56C5B003715AF /* Github */; };
 		048086662A2D21E500536A3E /* Brew in Frameworks */ = {isa = PBXBuildFile; productRef = 048086652A2D21E500536A3E /* Brew */; };
-		048F40F82853ED470007A9A4 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 048F40F72853ED060007A9A4 /* ContentView.swift */; };
 		04A236482F2E34510055F436 /* FirebaseAppCheck in Frameworks */ = {isa = PBXBuildFile; productRef = 04A236472F2E34510055F436 /* FirebaseAppCheck */; };
 		04A2364A2F2E34510055F436 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 04A236492F2E34510055F436 /* FirebaseAuth */; };
 		04A2364C2F2E34510055F436 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 04A2364B2F2E34510055F436 /* FirebaseFirestore */; };
 		04A2364E2F2E34510055F436 /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = 04A2364D2F2E34510055F436 /* FirebaseFunctions */; };
-		04A7BD7F258E77D8000E55A8 /* Tests_iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD7E258E77D8000E55A8 /* Tests_iOS.swift */; };
 		04A7BD8A258E77D8000E55A8 /* Tests_macOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */; };
 		04A7BD8F258E77D8000E55A8 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04A7BD64258E77D7000E55A8 /* ContentView.swift */; };
 		04ASTCLI2F3B000100000001 /* ast-chunker-cli in CopyFiles */ = {isa = PBXBuildFile; fileRef = 04ASTCLI2F3B000100000002 /* ast-chunker-cli */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		04D09EFD26A85E8100072702 /* OAuthSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 04D09EFC26A85E8100072702 /* OAuthSwift */; };
 		04PIISCR2F2E000100000002 /* PIIScrubber in Frameworks */ = {isa = PBXBuildFile; productRef = 04PIISCR2F2E000100000003 /* PIIScrubber */; };
-		0A11B6D12F1234567890ABCD /* PeelApp_iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A11B6D02F1234567890ABCD /* PeelApp_iOS.swift */; };
 		0B1E3C9C2FABCDEF00112233 /* DataServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B1E3C9B2FABCDEF00112233 /* DataServiceTests.swift */; };
 		0C2A4B5E2D000001000E55A8 /* RAGStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C2A4B5D2D000001000E55A8 /* RAGStoreTests.swift */; };
 		0C2A4B602D000002000E55A8 /* MCPRAGToolsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C2A4B5F2D000002000E55A8 /* MCPRAGToolsTests.swift */; };
@@ -49,13 +43,6 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		04A7BD7B258E77D8000E55A8 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 04A7BD5E258E77D7000E55A8 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 04A7BD69258E77D8000E55A8;
-			remoteInfo = "KitchenSink (iOS)";
-		};
 		04A7BD86258E77D8000E55A8 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 04A7BD5E258E77D7000E55A8 /* Project object */;
@@ -82,16 +69,10 @@
 		043A532125998D1E00980BE2 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		04510A5E2A2D20F1001DEF5B /* Git */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Git; path = "Local Packages/Git"; sourceTree = "<group>"; };
 		048086642A2D21A300536A3E /* Brew */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Brew; path = "Local Packages/Brew"; sourceTree = "<group>"; };
-		048F40F72853ED060007A9A4 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		04A7BD64258E77D7000E55A8 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		04A7BD6A258E77D8000E55A8 /* Peel.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Peel.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		04A7BD6D258E77D8000E55A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		04A7BD72258E77D8000E55A8 /* Peel.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Peel.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		04A7BD74258E77D8000E55A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		04A7BD75258E77D8000E55A8 /* macOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = macOS.entitlements; sourceTree = "<group>"; };
-		04A7BD7A258E77D8000E55A8 /* Tests iOS.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Tests iOS.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		04A7BD7E258E77D8000E55A8 /* Tests_iOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests_iOS.swift; sourceTree = "<group>"; };
-		04A7BD80258E77D8000E55A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		04A7BD85258E77D8000E55A8 /* Tests macOS.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Tests macOS.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		04A7BD89258E77D8000E55A8 /* Tests_macOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests_macOS.swift; sourceTree = "<group>"; };
 		04A7BD8B258E77D8000E55A8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -100,7 +81,6 @@
 		04F582A6269FD388003A8403 /* Github */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = Github; path = "Local Packages/Github"; sourceTree = "<group>"; };
 		04PEELUI2F2E000100000001 /* PeelUI */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = PeelUI; path = "Local Packages/PeelUI"; sourceTree = "<group>"; };
 		04PIISCR2F2E000100000001 /* PIIScrubber */ = {isa = PBXFileReference; lastKnownFileType = wrapper; name = PIIScrubber; path = "Local Packages/PIIScrubber"; sourceTree = "<group>"; };
-		0A11B6D02F1234567890ABCD /* PeelApp_iOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeelApp_iOS.swift; sourceTree = "<group>"; };
 		0B1E3C9B2FABCDEF00112233 /* DataServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataServiceTests.swift; sourceTree = "<group>"; };
 		0C2A4B5D2D000001000E55A8 /* RAGStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RAGStoreTests.swift; sourceTree = "<group>"; };
 		0C2A4B5F2D000002000E55A8 /* MCPRAGToolsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPRAGToolsTests.swift; sourceTree = "<group>"; };
@@ -113,208 +93,13 @@
 		E1A1B2C22F800001000E55A8 /* RAGRepoSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RAGRepoSyncTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		04913BD12F0F4ED7001EF810 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				AgentOrchestration/AgentChainRunner.swift,
-				AgentOrchestration/AgentManager.swift,
-				AgentOrchestration/AppleAIService.swift,
-				AgentOrchestration/CLIService.swift,
-				AgentOrchestration/ChainErrors.swift,
-				AgentOrchestration/MCPServerConfig.swift,
-				"AgentOrchestration/MCPServerService+ChainHandlers.swift",
-				"AgentOrchestration/MCPServerService+ChainToolsDelegate.swift",
-				"AgentOrchestration/MCPServerService+DependencyGraph.swift",
-				"AgentOrchestration/MCPServerService+GitHubToolsDelegate.swift",
-				"AgentOrchestration/MCPServerService+RAGArtifactSync.swift",
-				"AgentOrchestration/MCPServerService+RAGToolsDelegate.swift",
-				"AgentOrchestration/MCPServerService+SchedulerDelegate.swift",
-				"AgentOrchestration/MCPServerService+ServerCore.swift",
-				"AgentOrchestration/MCPServerService+SmallDelegates.swift",
-				"AgentOrchestration/MCPServerService+ToolDefinitions.swift",
-				"AgentOrchestration/MCPServerService+WorktreeToolsDelegate.swift",
-				AgentOrchestration/MCPServerService.swift,
-				AgentOrchestration/MCPTelemetryProviding.swift,
-				AgentOrchestration/MCPToolPermissions.swift,
-				AgentOrchestration/MCPUIAutomationProvider.swift,
-				AgentOrchestration/ManagerOrchestrator.swift,
-				AgentOrchestration/Models/Agent.swift,
-				AgentOrchestration/Models/AgentChain.swift,
-				AgentOrchestration/Models/AgentTask.swift,
-				AgentOrchestration/Models/AgentWorkspace.swift,
-				AgentOrchestration/Models/ChainTemplate.swift,
-				AgentOrchestration/Models/SessionTracker.swift,
-				AgentOrchestration/ScreenshotService.swift,
-				AgentOrchestration/Terminal/CommandSanitizer.swift,
-				AgentOrchestration/Terminal/ShellAdapter.swift,
-				AgentOrchestration/Terminal/XcodeBuildQueue.swift,
-				AgentOrchestration/ToolHandlers/ChainToolsHandler.swift,
-				AgentOrchestration/ToolHandlers/ChromeToolsHandler.swift,
-				AgentOrchestration/ToolHandlers/CodeEditToolsHandler.swift,
-				AgentOrchestration/ToolHandlers/CodeQualityToolsHandler.swift,
-				AgentOrchestration/ToolHandlers/GitHubToolsHandler.swift,
-				AgentOrchestration/ToolHandlers/GitToolsHandler.swift,
-				AgentOrchestration/ToolHandlers/LocalChatToolsHandler.swift,
-				AgentOrchestration/ToolHandlers/MCPToolHandler.swift,
-				AgentOrchestration/ToolHandlers/ParallelToolsHandler.swift,
-				"AgentOrchestration/ToolHandlers/RAGToolsHandler+Analysis.swift",
-				"AgentOrchestration/ToolHandlers/RAGToolsHandler+Indexing.swift",
-				"AgentOrchestration/ToolHandlers/RAGToolsHandler+Lessons.swift",
-				"AgentOrchestration/ToolHandlers/RAGToolsHandler+Search.swift",
-				"AgentOrchestration/ToolHandlers/RAGToolsHandler+Skills.swift",
-				"AgentOrchestration/ToolHandlers/RAGToolsHandler+ToolDefinitions.swift",
-				"AgentOrchestration/ToolHandlers/RAGToolsHandler+Types.swift",
-				AgentOrchestration/ToolHandlers/RAGToolsHandler.swift,
-				AgentOrchestration/ToolHandlers/RAGToolsHandlerDelegate.swift,
-				AgentOrchestration/ToolHandlers/RepoProfileToolsHandler.swift,
-				AgentOrchestration/ToolHandlers/RepoToolsHandler.swift,
-				AgentOrchestration/ToolHandlers/RunToolsHandler.swift,
-				AgentOrchestration/ToolHandlers/SchedulingToolsHandler.swift,
-				"AgentOrchestration/ToolHandlers/SwarmToolsHandler+Firebase.swift",
-				"AgentOrchestration/ToolHandlers/SwarmToolsHandler+Firestore.swift",
-				"AgentOrchestration/ToolHandlers/SwarmToolsHandler+PeerDiscovery.swift",
-				"AgentOrchestration/ToolHandlers/SwarmToolsHandler+TaskDispatch.swift",
-				"AgentOrchestration/ToolHandlers/SwarmToolsHandler+ToolDefinitions.swift",
-				AgentOrchestration/ToolHandlers/SwarmToolsHandler.swift,
-				AgentOrchestration/ToolHandlers/TerminalToolsHandler.swift,
-				AgentOrchestration/ToolHandlers/UIToolsHandler.swift,
-				AgentOrchestration/ToolHandlers/VMToolsHandler.swift,
-				"AgentOrchestration/ToolHandlers/WorktreeToolsHandler+ToolDefinitions.swift",
-				AgentOrchestration/ToolHandlers/WorktreeToolsHandler.swift,
-				AgentOrchestration/ToolHandlers/XcodeToolHandler.swift,
-				AgentOrchestration/VMChainExecutor.swift,
-				AgentOrchestration/VMIsolationComponents.swift,
-				AgentOrchestration/VMIsolationConsoleView.swift,
-				AgentOrchestration/VMIsolationLinuxView.swift,
-				AgentOrchestration/VMIsolationMacOSView.swift,
-				AgentOrchestration/VMIsolationService.swift,
-				AgentOrchestration/VMIsolationSetupView.swift,
-				AgentOrchestration/VMIsolationTypes.swift,
-				AgentOrchestration/VMIsolationView.swift,
-				AgentOrchestration/Validation/ValidationConfiguration.swift,
-				AgentOrchestration/Validation/ValidationResult.swift,
-				AgentOrchestration/Validation/ValidationRule.swift,
-				AgentOrchestration/Validation/ValidationRunner.swift,
-				AgentOrchestration/WorkspaceManager.swift,
-				Applications/ActivityDashboardView.swift,
-				Applications/AgentReviewSheet.swift,
-				Applications/Agents/Chains/ChainDetailView.swift,
-				Applications/Agents/Chains/ConflictResolutionView.swift,
-				Applications/Agents/Chains/SaveTemplateSheet.swift,
-				Applications/Agents/Chat/LocalChatView.swift,
-				Applications/Agents/Docling/DoclingImportFormView.swift,
-				Applications/Agents/Docling/DoclingImportView.swift,
-				Applications/Agents/Docling/DoclingSetupView.swift,
-				Applications/Agents/Docling/DoclingValidationView.swift,
-				Applications/Agents/LiveStatusPanel.swift,
-				Applications/Agents/PIIScrubberView.swift,
-				Applications/Agents/Policy/PolicyDiffView.swift,
-				Applications/Agents/Policy/PolicyImportPreviewSheet.swift,
-				Applications/Agents/Policy/TranslationValidationView.swift,
-				Applications/Agents/Worktrees/ParallelWorktreeDashboardView.swift,
-				Applications/Agents/Worktrees/WorktreesView.swift,
-				Applications/Brew_RootView.swift,
-				Applications/Git_RootView.swift,
-				Applications/Github_RootView.swift,
-				Applications/PRReviewQueueView.swift,
-				Applications/RepoDetailRAGTabView.swift,
-				Applications/Repositories_RootView.swift,
-				Applications/TrackedReposView.swift,
-				Applications/WorktreeApprovalViews.swift,
-				CommonToolbarItems.swift,
-				Distributed/BonjourDiscoveryService.swift,
-				Distributed/BranchQueue.swift,
-				Distributed/DistributedTypes.swift,
-				Distributed/FirebaseService.swift,
-				Distributed/FirebaseServiceTypes.swift,
-				Distributed/PRQueue.swift,
-				Distributed/PeerConnectionManager.swift,
-				Distributed/PeerSession.swift,
-				Distributed/PeerSessionManager.swift,
-				Distributed/PersistenceWriter.swift,
-				Distributed/RAGArtifactSyncing.swift,
-
-				Distributed/SwarmCoordinator.swift,
-				Distributed/SwarmPeerPreferences.swift,
-				Distributed/SwarmStatusView.swift,
-				Distributed/SwarmTaskOutputSheet.swift,
-				Distributed/SwarmWorktreeManager.swift,
-				Distributed/WANAddressResolver.swift,
-				Distributed/WebRTCMCPTransport.swift,
-				Distributed/WorkerMode.swift,
-				MCPCoreTypeAliases.swift,
-				PeelApp.swift,
-				Services/ActivityFeed.swift,
-				Services/ChainSchedulerService.swift,
-				Services/AppResetService.swift,
-				Services/BranchIndexService.swift,
-				Services/ChromeSessionManager.swift,
-				Services/DevServerManager.swift,
-				Services/DoclingService.swift,
-				Services/GateAgent.swift,
-				Services/HFReranker.swift,
-				Services/LocalRAGEmbeddings.swift,
-				Services/LocalRRFMerger.swift,
-				Services/MCPLogService.swift,
-				Services/MLXChatService.swift,
-				Services/MLXCodeAnalyzer.swift,
-				Services/MLXCodeEditor.swift,
-				Services/MLXEmbeddingProvider.swift,
-				Services/PIIScrubberService.swift,
-				Services/ParallelWorktreeRunner.swift,
-				Services/PeonPingService.swift,
-				Services/RAGIndexVersionService.swift,
-				Services/RAGRepoSync.swift,
-				Services/RAGStoreApp.swift,
-				Services/RAGSyncCoordinator.swift,
-				Services/RunManager.swift,
-				Services/SharedChatSession.swift,
-				Services/TranslationValidatorService.swift,
-				Services/UXTestOrchestrator.swift,
-				Services/VSCodeService.swift,
-				Services/WorkspaceDashboardService.swift,
-				Services/WorktreeErrors.swift,
-				Services/WorktreePool.swift,
-				Services/XcodeMCPAdapter.swift,
-				Utilities/FolderPicker.swift,
-				Views/CommandPaletteView.swift,
-				Views/LabsToolbarItem.swift,
-				Views/ModelLabelView.swift,
-				Views/PeonPingSettingsTab.swift,
-				Views/SettingsView.swift,
-				Views/Swarm/InvitePreviewSheet.swift,
-				Views/Swarm/SwarmActivityView.swift,
-				Views/Swarm/SwarmAuthView.swift,
-				Views/Swarm/SwarmDetailView.swift,
-				Views/Swarm/SwarmInvitesView.swift,
-				Views/Swarm/SwarmManagementView.swift,
-				Views/Swarm/SwarmMembersView.swift,
-				Views/Swarm/SwarmSidebarView.swift,
-				Views/Swarm/SwarmWorkersView.swift,
-				Views/TemplateBrowserSheet.swift,
-			);
-			target = 04A7BD69258E77D8000E55A8 /* Peel (iOS) */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		0422A2DE2F2AD1E500186BBF /* Tools */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Tools; sourceTree = "<group>"; };
 		042793A42F0DEAE7002A5499 /* Plans */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = Plans; sourceTree = "<group>"; };
-		04913BB52F0F4ED7001EF810 /* Shared */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (04913BD12F0F4ED7001EF810 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (Resources/Sounds, ); path = Shared; sourceTree = "<group>"; };
+		04913BB52F0F4ED7001EF810 /* Shared */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (Resources/Sounds, ); path = Shared; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		04A7BD67258E77D8000E55A8 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				046D40E426C56BBB003715AF /* OAuthSwift in Frameworks */,
-				046D40E726C56C5B003715AF /* Github in Frameworks */,
-				040AAB7E26CB385800DE1CBF /* Git in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		04A7BD6F258E77D8000E55A8 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -339,13 +124,6 @@
 				04A236482F2E34510055F436 /* FirebaseAppCheck in Frameworks */,
 				04D09EFD26A85E8100072702 /* OAuthSwift in Frameworks */,
 				04WEBRTC2F60000100000001 /* WebRTCTransfer in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		04A7BD77258E77D8000E55A8 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -387,9 +165,7 @@
 				043A532125998D1E00980BE2 /* README.md */,
 				04913BB52F0F4ED7001EF810 /* Shared */,
 				04F4F9772596AAD7005B30B4 /* Peel.entitlements */,
-				04A7BD6C258E77D8000E55A8 /* iOS */,
 				04A7BD73258E77D8000E55A8 /* macOS */,
-				04A7BD7D258E77D8000E55A8 /* Tests iOS */,
 				04A7BD88258E77D8000E55A8 /* Tests macOS */,
 				04A7BD6B258E77D8000E55A8 /* Products */,
 				0467868025A0DBE400D5E87F /* Frameworks */,
@@ -400,22 +176,10 @@
 		04A7BD6B258E77D8000E55A8 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				04A7BD6A258E77D8000E55A8 /* Peel.app */,
 				04A7BD72258E77D8000E55A8 /* Peel.app */,
-				04A7BD7A258E77D8000E55A8 /* Tests iOS.xctest */,
 				04A7BD85258E77D8000E55A8 /* Tests macOS.xctest */,
 			);
 			name = Products;
-			sourceTree = "<group>";
-		};
-		04A7BD6C258E77D8000E55A8 /* iOS */ = {
-			isa = PBXGroup;
-			children = (
-				04A7BD6D258E77D8000E55A8 /* Info.plist */,
-				0A11B6D02F1234567890ABCD /* PeelApp_iOS.swift */,
-				048F40F72853ED060007A9A4 /* ContentView.swift */,
-			);
-			path = iOS;
 			sourceTree = "<group>";
 		};
 		04A7BD73258E77D8000E55A8 /* macOS */ = {
@@ -426,15 +190,6 @@
 				04A7BD75258E77D8000E55A8 /* macOS.entitlements */,
 			);
 			path = macOS;
-			sourceTree = "<group>";
-		};
-		04A7BD7D258E77D8000E55A8 /* Tests iOS */ = {
-			isa = PBXGroup;
-			children = (
-				04A7BD7E258E77D8000E55A8 /* Tests_iOS.swift */,
-				04A7BD80258E77D8000E55A8 /* Info.plist */,
-			);
-			path = "Tests iOS";
 			sourceTree = "<group>";
 		};
 		04A7BD88258E77D8000E55A8 /* Tests macOS */ = {
@@ -459,33 +214,6 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		04A7BD69258E77D8000E55A8 /* Peel (iOS) */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 04A7BD94258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "Peel (iOS)" */;
-			buildPhases = (
-				04A7BD66258E77D8000E55A8 /* Sources */,
-				04A7BD67258E77D8000E55A8 /* Frameworks */,
-				04A7BD68258E77D8000E55A8 /* Resources */,
-				04GITSHA2F5A000100000001 /* Stamp Git Commit Hash */,
-				04FBPLIST2F4A000100000001 /* Copy Firebase Config */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
-				04913BB52F0F4ED7001EF810 /* Shared */,
-			);
-			name = "Peel (iOS)";
-			packageProductDependencies = (
-				046D40E326C56BBB003715AF /* OAuthSwift */,
-				046D40E626C56C5B003715AF /* Github */,
-				040AAB7D26CB385800DE1CBF /* Git */,
-			);
-			productName = "Peel (iOS)";
-			productReference = 04A7BD6A258E77D8000E55A8 /* Peel.app */;
-			productType = "com.apple.product-type.application";
-		};
 		04A7BD71258E77D8000E55A8 /* Peel (macOS) */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 04A7BD97258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "Peel (macOS)" */;
@@ -533,24 +261,6 @@
 			productReference = 04A7BD72258E77D8000E55A8 /* Peel.app */;
 			productType = "com.apple.product-type.application";
 		};
-		04A7BD79258E77D8000E55A8 /* Tests iOS */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 04A7BD9A258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "Tests iOS" */;
-			buildPhases = (
-				04A7BD76258E77D8000E55A8 /* Sources */,
-				04A7BD77258E77D8000E55A8 /* Frameworks */,
-				04A7BD78258E77D8000E55A8 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				04A7BD7C258E77D8000E55A8 /* PBXTargetDependency */,
-			);
-			name = "Tests iOS";
-			productName = "Tests iOS";
-			productReference = 04A7BD7A258E77D8000E55A8 /* Tests iOS.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
-		};
 		04A7BD84258E77D8000E55A8 /* Tests macOS */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 04A7BD9D258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "Tests macOS" */;
@@ -579,15 +289,8 @@
 				LastSwiftUpdateCheck = 1230;
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
-					04A7BD69258E77D8000E55A8 = {
-						CreatedOnToolsVersion = 12.3;
-					};
 					04A7BD71258E77D8000E55A8 = {
 						CreatedOnToolsVersion = 12.3;
-					};
-					04A7BD79258E77D8000E55A8 = {
-						CreatedOnToolsVersion = 12.3;
-						TestTargetID = 04A7BD69258E77D8000E55A8;
 					};
 					04A7BD84258E77D8000E55A8 = {
 						CreatedOnToolsVersion = 12.3;
@@ -625,29 +328,13 @@
 			projectRoot = "";
 			targets = (
 				04A7BD71258E77D8000E55A8 /* Peel (macOS) */,
-				04A7BD69258E77D8000E55A8 /* Peel (iOS) */,
-				04A7BD79258E77D8000E55A8 /* Tests iOS */,
 				04A7BD84258E77D8000E55A8 /* Tests macOS */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		04A7BD68258E77D8000E55A8 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		04A7BD70258E77D8000E55A8 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		04A7BD78258E77D8000E55A8 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -747,28 +434,11 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		04A7BD66258E77D8000E55A8 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				0A11B6D12F1234567890ABCD /* PeelApp_iOS.swift in Sources */,
-				048F40F82853ED470007A9A4 /* ContentView.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		04A7BD6E258E77D8000E55A8 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				04A7BD8F258E77D8000E55A8 /* ContentView.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		04A7BD76258E77D8000E55A8 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				04A7BD7F258E77D8000E55A8 /* Tests_iOS.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -793,11 +463,6 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		04A7BD7C258E77D8000E55A8 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 04A7BD69258E77D8000E55A8 /* Peel (iOS) */;
-			targetProxy = 04A7BD7B258E77D8000E55A8 /* PBXContainerItemProxy */;
-		};
 		04A7BD87258E77D8000E55A8 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 04A7BD71258E77D8000E55A8 /* Peel (macOS) */;
@@ -925,191 +590,6 @@
 			};
 			name = Release;
 		};
-		04A7BD95258E77D8000E55A8 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = Peel.entitlements;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 31;
-				ENABLE_APP_SANDBOX = YES;
-				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
-				ENABLE_PREVIEWS = YES;
-				EXCLUDED_SOURCE_FILE_NAMES = (
-					"$(inherited)",
-					Shared/AgentOrchestration/AgentManager.swift,
-					Shared/AgentOrchestration/AppleAIService.swift,
-					Shared/AgentOrchestration/CLIService.swift,
-					Shared/AgentOrchestration/MCPTelemetryProviding.swift,
-					Shared/AgentOrchestration/MCPTemplateExecutor.swift,
-					Shared/AgentOrchestration/ScreenshotService.swift,
-					Shared/AgentOrchestration/VMIsolationComponents.swift,
-					Shared/AgentOrchestration/VMIsolationConsoleView.swift,
-					Shared/AgentOrchestration/VMIsolationLinuxView.swift,
-					Shared/AgentOrchestration/VMIsolationMacOSView.swift,
-					Shared/AgentOrchestration/VMIsolationService.swift,
-					Shared/AgentOrchestration/VMIsolationSetupView.swift,
-					Shared/AgentOrchestration/VMIsolationView.swift,
-					Shared/AgentOrchestration/Validation/ValidationConfiguration.swift,
-					Shared/AgentOrchestration/Validation/ValidationRule.swift,
-					Shared/AgentOrchestration/Validation/ValidationRunner.swift,
-					Shared/AgentOrchestration/WorkspaceManager.swift,
-					Shared/CommonToolbarItems.swift,
-					Shared/Applications/Agents/AgentDetailView.swift,
-					Shared/Applications/Agents/AgentRowView.swift,
-					Shared/Applications/Agents/AgentSheets.swift,
-					Shared/Applications/Agents/AgentsSidebarView.swift,
-					Shared/Applications/Agents/ChainDetailView.swift,
-					Shared/Applications/Agents/ChainRowViews.swift,
-					Shared/Applications/Agents/DependencyGraphView.swift,
-					Applications/Agents/ChainTemplateGalleryView.swift,
-					Shared/Applications/Agents/LiveStatusPanel.swift,
-					Shared/Applications/Agents/LocalRAGDashboardView.swift,
-					Shared/Applications/Agents/LocalRAGDashboardWorkspaceSheet.swift,
-					Shared/Applications/Agents/MCPDashboardView.swift,
-					Shared/Applications/Agents/MCPRunDetailView.swift,
-					Shared/Applications/Agents/NewChainSheet.swift,
-					Shared/Applications/Agents/PIIScrubberView.swift,
-					Shared/Applications/Agents/ParallelWorktreeDashboardView.swift,
-					Shared/Applications/Agents/SaveTemplateSheet.swift,
-					Shared/Applications/Agents/SessionSummarySheet.swift,
-					Shared/Applications/Agents/TranslationValidationView.swift,
-					Shared/Applications/Agents_RootView.swift,
-					Shared/Applications/Brew_RootView.swift,
-					Shared/Applications/Git_RootView.swift,
-					Shared/Extensions/Color.swift,
-					"Shared/Extensions/Int64+FormatBytes.swift",
-					Shared/PeelApp.swift,
-					Shared/Services/LocalRAGEmbeddings.swift,
-					Shared/Services/LocalRAGIndexing.swift,
-					Shared/Services/LocalRAGStore.swift,
-					Shared/Services/MCPLogService.swift,
-					Shared/Services/ParallelWorktreeRunner.swift,
-					Shared/Services/PIIScrubberService.swift,
-					Shared/Services/TranslationValidatorService.swift,
-					Shared/Services/VSCodeService.swift,
-					Shared/Services/WorktreeErrors.swift,
-					Shared/Services/WorkspaceDashboardService.swift,
-				);
-				INFOPLIST_FILE = iOS/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				LIBRARY_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(PROJECT_DIR)/Shared/Resources/sqlite-extensions",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.Peel";
-				PRODUCT_NAME = Peel;
-				PROVISIONING_PROFILE_SPECIFIER = "";
-				SDKROOT = iphoneos;
-				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SWIFT_STRICT_CONCURRENCY = complete;
-				SWIFT_VERSION = 6.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TVOS_DEPLOYMENT_TARGET = 26.0;
-			};
-			name = Debug;
-		};
-		04A7BD96258E77D8000E55A8 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = Peel.entitlements;
-				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 31;
-				ENABLE_APP_SANDBOX = YES;
-				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
-				ENABLE_PREVIEWS = YES;
-				EXCLUDED_SOURCE_FILE_NAMES = (
-					"$(inherited)",
-					Shared/AgentOrchestration/AgentManager.swift,
-					Shared/AgentOrchestration/AppleAIService.swift,
-					Shared/AgentOrchestration/CLIService.swift,
-					Shared/AgentOrchestration/MCPTelemetryProviding.swift,
-					Shared/AgentOrchestration/MCPTemplateExecutor.swift,
-					Shared/AgentOrchestration/ScreenshotService.swift,
-					Shared/AgentOrchestration/VMIsolationComponents.swift,
-					Shared/AgentOrchestration/VMIsolationConsoleView.swift,
-					Shared/AgentOrchestration/VMIsolationLinuxView.swift,
-					Shared/AgentOrchestration/VMIsolationMacOSView.swift,
-					Shared/AgentOrchestration/VMIsolationService.swift,
-					Shared/AgentOrchestration/VMIsolationSetupView.swift,
-					Shared/AgentOrchestration/VMIsolationView.swift,
-					Shared/AgentOrchestration/Validation/ValidationConfiguration.swift,
-					Shared/AgentOrchestration/Validation/ValidationRule.swift,
-					Shared/AgentOrchestration/Validation/ValidationRunner.swift,
-					Shared/AgentOrchestration/WorkspaceManager.swift,
-					Shared/CommonToolbarItems.swift,
-					Shared/Applications/Agents/AgentDetailView.swift,
-					Shared/Applications/Agents/AgentRowView.swift,
-					Shared/Applications/Agents/AgentSheets.swift,
-					Shared/Applications/Agents/AgentsSidebarView.swift,
-					Shared/Applications/Agents/ChainDetailView.swift,
-					Shared/Applications/Agents/ChainRowViews.swift,
-					Shared/Applications/Agents/DependencyGraphView.swift,
-					Applications/Agents/ChainTemplateGalleryView.swift,
-					Shared/Applications/Agents/LiveStatusPanel.swift,
-					Shared/Applications/Agents/LocalRAGDashboardView.swift,
-					Shared/Applications/Agents/LocalRAGDashboardWorkspaceSheet.swift,
-					Shared/Applications/Agents/MCPDashboardView.swift,
-					Shared/Applications/Agents/MCPRunDetailView.swift,
-					Shared/Applications/Agents/NewChainSheet.swift,
-					Shared/Applications/Agents/PIIScrubberView.swift,
-					Shared/Applications/Agents/ParallelWorktreeDashboardView.swift,
-					Shared/Applications/Agents/SaveTemplateSheet.swift,
-					Shared/Applications/Agents/SessionSummarySheet.swift,
-					Shared/Applications/Agents/TranslationValidationView.swift,
-					Shared/Applications/Agents_RootView.swift,
-					Shared/Applications/Brew_RootView.swift,
-					Shared/Applications/Git_RootView.swift,
-					Shared/Extensions/Color.swift,
-					"Shared/Extensions/Int64+FormatBytes.swift",
-					Shared/PeelApp.swift,
-					Shared/Services/LocalRAGEmbeddings.swift,
-					Shared/Services/LocalRAGIndexing.swift,
-					Shared/Services/LocalRAGStore.swift,
-					Shared/Services/MCPLogService.swift,
-					Shared/Services/ParallelWorktreeRunner.swift,
-					Shared/Services/PIIScrubberService.swift,
-					Shared/Services/TranslationValidatorService.swift,
-					Shared/Services/VSCodeService.swift,
-					Shared/Services/WorktreeErrors.swift,
-					Shared/Services/WorkspaceDashboardService.swift,
-				);
-				INFOPLIST_FILE = iOS/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				LIBRARY_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(PROJECT_DIR)/Shared/Resources/sqlite-extensions",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.Peel";
-				PRODUCT_NAME = Peel;
-				PROVISIONING_PROFILE_SPECIFIER = "";
-				SDKROOT = iphoneos;
-				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SWIFT_STRICT_CONCURRENCY = complete;
-				SWIFT_VERSION = 6.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TVOS_DEPLOYMENT_TARGET = 26.0;
-				VALIDATE_PRODUCT = YES;
-			};
-			name = Release;
-		};
 		04A7BD98258E77D8000E55A8 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1120,7 +600,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = UNX9FJDDXV;
 				ENABLE_APP_SANDBOX = NO;
@@ -1157,7 +637,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 31;
+				CURRENT_PROJECT_VERSION = 32;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = UNX9FJDDXV;
 				ENABLE_APP_SANDBOX = NO;
@@ -1181,47 +661,6 @@
 				SDKROOT = macosx;
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
-			};
-			name = Release;
-		};
-		04A7BD9B258E77D8000E55A8 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				INFOPLIST_FILE = "Tests iOS/Info.plist";
-				IPHONEOS_DEPLOYMENT_TARGET = 14.3;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.Tests-iOS";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = "KitchenSink (iOS)";
-			};
-			name = Debug;
-		};
-		04A7BD9C258E77D8000E55A8 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				INFOPLIST_FILE = "Tests iOS/Info.plist";
-				IPHONEOS_DEPLOYMENT_TARGET = 14.3;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = "crunchy-bananas.Tests-iOS";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = "KitchenSink (iOS)";
-				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
 		};
@@ -1285,29 +724,11 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		04A7BD94258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "Peel (iOS)" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				04A7BD95258E77D8000E55A8 /* Debug */,
-				04A7BD96258E77D8000E55A8 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		04A7BD97258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "Peel (macOS)" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				04A7BD98258E77D8000E55A8 /* Debug */,
 				04A7BD99258E77D8000E55A8 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		04A7BD9A258E77D8000E55A8 /* Build configuration list for PBXNativeTarget "Tests iOS" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				04A7BD9B258E77D8000E55A8 /* Debug */,
-				04A7BD9C258E77D8000E55A8 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -1453,11 +874,6 @@
 			package = 03MLXAUD2F70000100000003 /* XCRemoteSwiftPackageReference "mlx-audio-swift" */;
 			productName = MLXAudioSTT;
 		};
-		040AAB7D26CB385800DE1CBF /* Git */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 04LOCPKG0004000000000001 /* XCLocalSwiftPackageReference "Local Packages/Git" */;
-			productName = Git;
-		};
 		04510A572A2D200C001DEF5B /* Github */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 04LOCPKG0005000000000001 /* XCLocalSwiftPackageReference "Local Packages/Github" */;
@@ -1467,16 +883,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 046C6AAE2F1BE07D006CDAC7 /* XCRemoteSwiftPackageReference "TaskRunner" */;
 			productName = TaskRunner;
-		};
-		046D40E326C56BBB003715AF /* OAuthSwift */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 04DD2F49269E6AED000994E1 /* XCRemoteSwiftPackageReference "OAuthSwift" */;
-			productName = OAuthSwift;
-		};
-		046D40E626C56C5B003715AF /* Github */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 04LOCPKG0005000000000001 /* XCLocalSwiftPackageReference "Local Packages/Github" */;
-			productName = Github;
 		};
 		048086652A2D21E500536A3E /* Brew */ = {
 			isa = XCSwiftPackageProductDependency;

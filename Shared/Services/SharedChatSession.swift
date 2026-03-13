@@ -10,7 +10,6 @@
 //  Created on 2/26/26.
 //
 
-#if os(macOS)
 import Foundation
 import SwiftUI
 
@@ -750,4 +749,3 @@ enum SharedChatError: LocalizedError {
   }
 }
 
-#endif

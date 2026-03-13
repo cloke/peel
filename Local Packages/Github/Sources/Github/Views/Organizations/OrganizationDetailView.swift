@@ -73,9 +73,6 @@ struct OrganizationDetailView: View {
         }
       }
       .onAppear {
-#if os(iOS)
-        UITabBar.appearance().barTintColor = .white
-#endif
       }
     }
     .task {

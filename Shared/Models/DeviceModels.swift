@@ -8,9 +8,6 @@
 
 import Foundation
 import SwiftData
-#if os(iOS)
-import UIKit
-#endif
 
 /// App settings for THIS device only.
 @Model
@@ -39,11 +36,7 @@ final class DeviceSettings {
   @MainActor
   init() {
     self.id = UUID()
-    #if os(macOS)
     self.deviceName = Host.current().localizedName ?? "Mac"
-    #else
-    self.deviceName = UIDevice.current.name
-    #endif
     self.currentTool = "github"
     self.lastUsedAt = Date()
   }

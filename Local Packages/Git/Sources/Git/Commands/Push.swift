@@ -8,11 +8,9 @@
 /// Functions that are defined in the git reference
 /// https://git-scm.com/docs/git-push
 
-#if os(macOS)
 extension Commands {
   static func push(branch: Model.Branch, to repository: Model.Repository) async throws -> [String] {
     try await Self.simple(arguments: ["push", "origin", branch.name], in: repository)
   }
 }
-#endif
 

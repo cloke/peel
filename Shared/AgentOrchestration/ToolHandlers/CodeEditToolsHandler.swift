@@ -8,7 +8,6 @@
 //  Created on 2/10/26.
 //
 
-#if os(macOS)
 import Foundation
 import MCPCore
 
@@ -265,7 +264,6 @@ final class CodeEditToolsHandler: MCPToolHandler {
   }
 }
 
-#endif
 
 // MARK: - Tool Definitions
 

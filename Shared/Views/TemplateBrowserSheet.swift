@@ -221,14 +221,12 @@ struct TemplateBrowserDetailView: View {
 
       Spacer()
 
-      #if os(macOS)
       Button("Other…") {
         if let path = FolderPicker.selectFolder(message: "Select a project folder") {
           selectedRepoPath = path
         }
       }
       .controlSize(.small)
-      #endif
     }
   }
 
@@ -396,10 +394,6 @@ private struct TemplateCard: View {
 
 private extension Color {
   static var separator: Color {
-    #if os(macOS)
     Color(nsColor: .separatorColor)
-    #else
-    Color(uiColor: .separator)
-    #endif
   }
 }

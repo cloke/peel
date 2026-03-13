@@ -58,9 +58,7 @@ extension MCPServerService {
     defs += vmToolsHandler.toolDefinitions          // vm.* (~11)
     defs += chromeToolsHandler.toolDefinitions      // chrome.* (~16)
     defs += uiToolsHandler.toolDefinitions          // ui.navigate, ui.tap, etc. (~7)
-    #if os(macOS)
     if let chat = localChatToolsHandler { defs += chat.toolDefinitions }  // chat.* (~3)
-    #endif
 
     return defs
   }

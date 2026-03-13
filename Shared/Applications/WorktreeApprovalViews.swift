@@ -382,11 +382,7 @@ struct InlineExecutionCard: View {
                       .textSelection(.enabled)
                       .padding(8)
                       .frame(maxWidth: .infinity, alignment: .leading)
-                      #if os(macOS)
                       .background(Color(nsColor: .textBackgroundColor).opacity(0.5))
-                      #else
-                      .background(Color(.secondarySystemBackground))
-                      #endif
                       .clipShape(RoundedRectangle(cornerRadius: 4))
                   }
                 }
@@ -462,11 +458,7 @@ struct InlineExecutionCard: View {
         .padding(.vertical, 8)
       }
     }
-    #if os(macOS)
     .background(Color(nsColor: .controlBackgroundColor))
-    #else
-    .background(Color(.systemGroupedBackground))
-    #endif
     .clipShape(RoundedRectangle(cornerRadius: 6))
     .alert("Reject Execution", isPresented: $showingRejectDialog) {
       TextField("Reason", text: $rejectReason)
@@ -597,9 +589,7 @@ struct InlineExecutionCard: View {
         Button {
           // Open in Finder for manual conflict resolution
           if let path = execution.worktreePath {
-            #if os(macOS)
             NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
-            #endif
           }
         } label: {
           Label("Resolve", systemImage: "exclamationmark.triangle")
@@ -619,7 +609,6 @@ struct InlineExecutionCard: View {
       .buttonStyle(.bordered)
       .controlSize(.mini)
 
-      #if os(macOS)
       if let path = execution.worktreePath {
         Button {
           NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
@@ -629,7 +618,6 @@ struct InlineExecutionCard: View {
         .buttonStyle(.bordered)
         .controlSize(.mini)
       }
-      #endif
     }
     .sheet(isPresented: $showingDetail) {
       ExecutionDetailView(

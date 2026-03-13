@@ -5,7 +5,6 @@
 
 import SwiftUI
 
-#if os(macOS)
 import AppKit
 
 struct DoclingImportFormView: View {
@@ -203,4 +202,3 @@ struct DoclingImportFormView: View {
     return "\(Int(seconds / 60))m \(Int(seconds.truncatingRemainder(dividingBy: 60)))s"
   }
 }
-#endif

@@ -198,9 +198,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
   /// Post-completion validation criteria (file change requirements, forbidden patterns, etc.)
   public var completionCriteria: CompletionCriteria
   
-  #if os(macOS)
   public var validationConfig: ValidationConfiguration
-  #endif
   
   private enum CodingKeys: String, CodingKey {
     case id
@@ -215,12 +213,9 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     case directoryShares
     case skipReviewGate
     case completionCriteria
-    #if os(macOS)
     case validationConfig
-    #endif
   }
   
-  #if os(macOS)
   public init(
     id: UUID = UUID(),
     name: String,
@@ -249,34 +244,6 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     self.completionCriteria = completionCriteria ?? .implementation
     self.validationConfig = validationConfig ?? .default
   }
-  #else
-  public init(
-    id: UUID = UUID(),
-    name: String,
-    description: String = "",
-    steps: [AgentStepTemplate] = [],
-    isBuiltIn: Bool = false,
-    category: TemplateCategory = .core,
-    executionEnvironment: ExecutionEnvironment = .host,
-    toolchain: VMToolchain = .minimal,
-    directoryShares: [VMDirectoryShare] = [],
-    skipReviewGate: Bool = false,
-    completionCriteria: CompletionCriteria? = nil
-  ) {
-    self.id = id
-    self.name = name
-    self.description = description
-    self.steps = steps
-    self.createdAt = Date()
-    self.isBuiltIn = isBuiltIn
-    self.category = category
-    self.executionEnvironment = executionEnvironment
-    self.toolchain = toolchain
-    self.directoryShares = directoryShares
-    self.skipReviewGate = skipReviewGate
-    self.completionCriteria = completionCriteria ?? .implementation
-  }
-  #endif
 
   public init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -292,9 +259,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     self.directoryShares = try container.decodeIfPresent([VMDirectoryShare].self, forKey: .directoryShares) ?? []
     self.skipReviewGate = try container.decodeIfPresent(Bool.self, forKey: .skipReviewGate) ?? false
     self.completionCriteria = try container.decodeIfPresent(CompletionCriteria.self, forKey: .completionCriteria) ?? .implementation
-    #if os(macOS)
     self.validationConfig = try container.decodeIfPresent(ValidationConfiguration.self, forKey: .validationConfig) ?? .default
-    #endif
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -322,9 +287,7 @@ public struct ChainTemplate: Identifiable, Codable, Hashable, Sendable {
     if completionCriteria != .implementation {
       try container.encode(completionCriteria, forKey: .completionCriteria)
     }
-    #if os(macOS)
     try container.encode(validationConfig, forKey: .validationConfig)
-    #endif
   }
   
   // MARK: - Stable Built-in Template IDs
@@ -1389,7 +1352,6 @@ extension ChainTemplate {
     }
   }
 
-  #if os(macOS)
   public var validationSummaryLabel: String? {
     if validationConfig.enabledRules.isEmpty {
       return nil
@@ -1405,11 +1367,6 @@ extension ChainTemplate {
     }
     return "Validation: Custom"
   }
-  #else
-  public var validationSummaryLabel: String? {
-    nil
-  }
-  #endif
 
   /// All providers required by this template's steps
   /// Note: This returns .copilot for GPT/Gemini only, since Copilot can run ALL models

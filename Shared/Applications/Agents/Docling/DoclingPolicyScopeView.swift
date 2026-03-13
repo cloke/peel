@@ -5,7 +5,6 @@
 
 import SwiftUI
 
-#if os(macOS)
 import SwiftData
 
 struct DoclingPolicyScopeView: View {
@@ -156,4 +155,3 @@ struct DoclingPolicyScopeView: View {
     return collapsed.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
   }
 }
-#endif

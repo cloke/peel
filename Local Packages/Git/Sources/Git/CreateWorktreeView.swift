@@ -8,7 +8,6 @@
 import SwiftUI
 import PeelUI
 
-#if os(macOS)
 public struct CreateWorktreeView: View {
   @Environment(\.dismiss) private var dismiss
   
@@ -197,4 +196,3 @@ public struct CreateWorktreeView: View {
     onCreated: {}
   )
 }
-#endif

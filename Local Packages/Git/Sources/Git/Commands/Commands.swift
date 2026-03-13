@@ -7,7 +7,6 @@
 
 import Foundation
 
-#if os(macOS)
 import TaskRunner
 
 /// Git command executor using modern ProcessExecutor actor.
@@ -72,4 +71,3 @@ public struct Commands {
     return result.lines
   }
 }
-#endif

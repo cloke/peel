@@ -11,9 +11,7 @@ import Foundation
 import OSLog
 import SwiftData
 import UserNotifications
-#if os(macOS)
 import IOKit.ps
-#endif
 
 // MARK: - Delegate
 
@@ -289,24 +287,20 @@ final class ChainSchedulerService {
   // MARK: - Power Awareness
 
   private func powerSkipReason(for schedule: ScheduledChain) -> String? {
-    #if os(macOS)
     if schedule.skipOnBattery && isOnBattery() {
       return "on battery"
     }
     if schedule.skipOnLowPower && ProcessInfo.processInfo.isLowPowerModeEnabled {
       return "low power mode"
     }
-    #endif
     return nil
   }
 
-  #if os(macOS)
   private func isOnBattery() -> Bool {
     let snapshot = IOPSCopyPowerSourcesInfo().takeRetainedValue()
     let type = IOPSGetProvidingPowerSourceType(snapshot).takeRetainedValue() as String
     return type == kIOPSBatteryPowerValue as String
   }
-  #endif
 
   // MARK: - Execution
 

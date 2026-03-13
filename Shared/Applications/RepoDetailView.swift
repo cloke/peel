@@ -156,23 +156,11 @@ struct RepoDetailView: View {
   private var tabContent: some View {
     switch selectedTab.wrappedValue {
     case .overview:
-      #if os(macOS)
       OverviewTabView(repo: repo)
-      #else
-      iOSOverviewTabView(repo: repo)
-      #endif
     case .branches:
-      #if os(macOS)
       BranchesTabView(repo: repo)
-      #else
-      iOSBranchesTabView(repo: repo)
-      #endif
     case .rag:
-      #if os(macOS)
       RAGTabView(repo: repo)
-      #else
-      ContentUnavailableView("RAG", systemImage: "magnifyingglass", description: Text("RAG indexing is available on macOS."))
-      #endif
     case .skills:
       SkillsTabView(repo: repo)
     }
@@ -211,7 +199,6 @@ struct RepoStatusPill: View {
   }
 }
 
-#if os(macOS)
 // MARK: - Overview Tab
 
 /// The default landing view for a repository. Surfaces actionable items:
@@ -551,11 +538,7 @@ struct OverviewTabView: View {
             )
           }
         }
-        #if os(macOS)
         .background(Color(nsColor: .controlBackgroundColor))
-        #else
-        .background(Color(.systemGroupedBackground))
-        #endif
         .clipShape(RoundedRectangle(cornerRadius: 8))
       }
     }
@@ -764,7 +747,6 @@ struct BranchesTabView: View {
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 16) {
-        #if os(macOS)
         if repo.isClonedLocally {
           if let gitRepo = gitRepository {
             clonedRepoContent(gitRepo)
@@ -775,9 +757,6 @@ struct BranchesTabView: View {
         } else {
           remoteRepoContent
         }
-        #else
-        notClonedPlaceholder
-        #endif
       }
       .padding(16)
     }
@@ -789,7 +768,6 @@ struct BranchesTabView: View {
     }
   }
 
-  #if os(macOS)
   // MARK: Cloned Repo Content
 
   @ViewBuilder
@@ -1278,7 +1256,6 @@ struct BranchesTabView: View {
       }
     }
   }
-  #endif
 
   private var notClonedPlaceholder: some View {
     ContentUnavailableView {
@@ -1291,7 +1268,6 @@ struct BranchesTabView: View {
   // MARK: Data Loading
 
   private func loadGitRepo() async {
-    #if os(macOS)
     if let localPath = repo.localPath, repo.isClonedLocally {
       let repository = Git.Model.Repository(name: repo.displayName, path: localPath)
       await repository.load(includeRemote: true)
@@ -1300,20 +1276,16 @@ struct BranchesTabView: View {
     } else {
       gitRepository = nil
     }
-    #endif
   }
 
   private func refreshGitRepo() async {
-    #if os(macOS)
     if let gitRepo = gitRepository {
       await gitRepo.load(includeRemote: true)
       await loadRecentCommits(gitRepo)
     }
-    #endif
   }
 
   private func pullCurrentBranch() async {
-    #if os(macOS)
     guard let gitRepo = gitRepository else { return }
     isPulling = true
     gitError = nil
@@ -1326,11 +1298,9 @@ struct BranchesTabView: View {
     } catch {
       gitError = "Pull failed: \(error.localizedDescription)"
     }
-    #endif
   }
 
   private func fetchRemote() async {
-    #if os(macOS)
     guard let gitRepo = gitRepository else { return }
     isFetching = true
     gitError = nil
@@ -1342,11 +1312,9 @@ struct BranchesTabView: View {
     } catch {
       gitError = "Fetch failed: \(error.localizedDescription)"
     }
-    #endif
   }
 
   private func checkoutBranch(_ branchName: String, gitRepo: Git.Model.Repository) async {
-    #if os(macOS)
     gitError = nil
     do {
       _ = try await Git.Commands.checkout(branch: branchName, from: gitRepo)
@@ -1355,19 +1323,15 @@ struct BranchesTabView: View {
     } catch {
       gitError = "Checkout failed: \(error.localizedDescription)"
     }
-    #endif
   }
 
   private func loadRecentCommits(_ gitRepo: Git.Model.Repository) async {
-    #if os(macOS)
     let activeBranch = gitRepo.localBranches.first(where: \.isActive)?.name ?? "HEAD"
     recentCommits = Array(await Git.Commands.log(branch: activeBranch, on: gitRepo).prefix(10))
-    #endif
   }
 
   // MARK: Recent Commits UI
 
-  #if os(macOS)
   private var recentCommitsSection: some View {
     VStack(alignment: .leading, spacing: 8) {
       SectionHeader("Recent Commits")
@@ -1399,7 +1363,6 @@ struct BranchesTabView: View {
       .clipShape(RoundedRectangle(cornerRadius: 8))
     }
   }
-  #endif
 
   /// Fetch open PRs from the GitHub API for this repo.
   private func fetchOpenPRs() async {
@@ -1479,135 +1442,6 @@ private struct BranchRow: View {
     }
   }
 }
-#endif // os(macOS)
-
-// MARK: - iOS Tab Views
-
-#if os(iOS)
-/// Simplified overview tab for iOS — shows PRs and basic repo info.
-struct iOSOverviewTabView: View {
-  let repo: UnifiedRepository
-  @Environment(RepositoryAggregator.self) private var aggregator
-
-  var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 16) {
-        // PRs section
-        if !repo.recentPRs.isEmpty {
-          SectionHeader("Pull Requests")
-          LazyVStack(spacing: 1) {
-            ForEach(repo.recentPRs, id: \.id) { pr in
-              RepoPRRow(pr: pr)
-            }
-          }
-          .background(Color(.systemGroupedBackground))
-          .clipShape(RoundedRectangle(cornerRadius: 8))
-        }
-
-        // Worktrees section
-        if !repo.activeWorktrees.isEmpty {
-          SectionHeader("Active Worktrees")
-          LazyVStack(spacing: 1) {
-            ForEach(repo.activeWorktrees, id: \.id) { wt in
-              RepoWorktreeRow(worktree: wt)
-            }
-          }
-          .background(Color(.systemGroupedBackground))
-          .clipShape(RoundedRectangle(cornerRadius: 8))
-        }
-
-        // Chains section
-        if !repo.activeChains.isEmpty {
-          SectionHeader("Active Chains")
-          LazyVStack(spacing: 1) {
-            ForEach(repo.activeChains, id: \.id) { chain in
-              RepoChainRow(chain: chain)
-            }
-          }
-          .background(Color(.systemGroupedBackground))
-          .clipShape(RoundedRectangle(cornerRadius: 8))
-        }
-
-        if repo.recentPRs.isEmpty && repo.activeWorktrees.isEmpty && repo.activeChains.isEmpty {
-          ContentUnavailableView {
-            Label("No Activity", systemImage: "tray")
-          } description: {
-            Text("No recent pull requests, worktrees, or agent chains for this repository.")
-          }
-          .frame(maxWidth: .infinity)
-          .padding(.vertical, 40)
-        }
-      }
-      .padding(16)
-    }
-  }
-}
-
-/// Simplified branches tab for iOS — shows local and remote branches.
-struct iOSBranchesTabView: View {
-  let repo: UnifiedRepository
-  @State private var gitRepository: Git.Model.Repository?
-
-  var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 16) {
-        if let gitRepo = gitRepository {
-          if !gitRepo.localBranches.isEmpty {
-            SectionHeader("Branches")
-            LazyVStack(spacing: 1) {
-              ForEach(gitRepo.localBranches, id: \.name) { branch in
-                HStack(spacing: 10) {
-                  if branch.isActive {
-                    Image(systemName: "checkmark.circle.fill")
-                      .font(.caption)
-                      .foregroundStyle(.green)
-                  } else {
-                    Image(systemName: "arrow.triangle.branch")
-                      .font(.caption)
-                      .foregroundStyle(.secondary)
-                  }
-                  Text(branch.name)
-                    .font(.callout)
-                    .fontWeight(branch.isActive ? .semibold : .regular)
-                    .lineLimit(1)
-                  Spacer()
-                  if branch.isActive {
-                    Text("current")
-                      .font(.caption2)
-                      .foregroundStyle(.green)
-                  }
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-              }
-            }
-            .background(Color(.systemGroupedBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-          }
-        } else if repo.isClonedLocally {
-          ProgressView("Loading branches…")
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 40)
-        } else {
-          ContentUnavailableView {
-            Label("Not Cloned", systemImage: "externaldrive.badge.xmark")
-          } description: {
-            Text("Clone this repository locally to view branches.")
-          }
-          .frame(maxWidth: .infinity)
-          .padding(.vertical, 40)
-        }
-      }
-      .padding(16)
-    }
-    .task {
-      if let path = repo.localPath {
-        gitRepository = try? await Git.Model.Repository(name: repo.displayName, path: path)
-      }
-    }
-  }
-}
-#endif
 
 struct SkillsTabView: View {
   let repo: UnifiedRepository
@@ -1648,11 +1482,7 @@ struct SkillsTabView: View {
               SkillRow(skill: skill)
             }
           }
-          #if os(macOS)
           .background(Color(nsColor: .controlBackgroundColor))
-          #else
-          .background(Color(.systemGroupedBackground))
-          #endif
           .clipShape(RoundedRectangle(cornerRadius: 8))
         }
       }

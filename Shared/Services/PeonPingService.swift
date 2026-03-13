@@ -8,9 +8,7 @@
 //  Sound files are property of Blizzard Entertainment.
 //
 
-#if os(macOS)
 import AppKit
-#endif
 import AVFoundation
 import Foundation
 import Observation
@@ -287,9 +285,7 @@ final class PeonPingService {
 
   private func sendNotification(title: String, body: String) {
     guard desktopNotificationsEnabled else { return }
-    #if os(macOS)
     guard !NSApp.isActive else { return } // Only notify when app is in background
-    #endif
 
     // Lazily request permission on first actual notification attempt
     requestNotificationPermission()

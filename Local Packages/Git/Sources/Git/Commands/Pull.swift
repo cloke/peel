@@ -8,7 +8,6 @@
 /// Functions that are defined in the git reference
 /// https://git-scm.com/docs/git-pull
 
-#if os(macOS)
 extension Commands {
   /// Pull from remote, optionally for a specific branch.
   /// - Parameters:
@@ -27,5 +26,4 @@ extension Commands {
     _ = try await simple(arguments: args, in: repository)
   }
 }
-#endif
 

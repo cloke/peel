@@ -232,7 +232,6 @@ struct AddRepositorySheet: View {
         .foregroundStyle(.secondary)
 
       HStack(spacing: 16) {
-        #if os(macOS)
         Button {
           openLocalRepository()
         } label: {
@@ -243,7 +242,6 @@ struct AddRepositorySheet: View {
           )
         }
         .buttonStyle(.plain)
-        #endif
 
         Button {
           mode = .trackRemote
@@ -356,11 +354,7 @@ struct AddRepositorySheet: View {
           }
         }
       }
-      #if os(macOS)
       .listStyle(.bordered(alternatesRowBackgrounds: true))
-      #else
-      .listStyle(.plain)
-      #endif
       .frame(height: min(CGFloat(detectedRepos.count) * 36 + 40, 300))
 
       if let errorMessage {
@@ -399,7 +393,6 @@ struct AddRepositorySheet: View {
 
   // MARK: - Actions
 
-  #if os(macOS)
   private func openLocalRepository() {
     let panel = NSOpenPanel()
     panel.title = "Choose a git repository or workspace"
@@ -442,7 +435,6 @@ struct AddRepositorySheet: View {
 
     errorMessage = "No git repositories found in this folder."
   }
-  #endif
 
   private func deriveRepoName() {
     guard repoName.isEmpty else { return }
@@ -531,7 +523,6 @@ struct AddRepositorySheet: View {
   }
 
   private func discoverRemoteURL(for path: String) -> String? {
-    #if os(macOS)
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
     process.arguments = ["-C", path, "remote", "get-url", "origin"]
@@ -544,9 +535,6 @@ struct AddRepositorySheet: View {
     let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
       .trimmingCharacters(in: .whitespacesAndNewlines)
     return output?.isEmpty == false ? output : nil
-    #else
-    return nil
-    #endif
   }
 
   private func trackRemote() {
@@ -594,7 +582,6 @@ struct AddOptionCard: View {
   }
 }
 
-#if os(macOS)
 // MARK: - Command Center (No-Selection View)
 
 /// Cross-repo dashboard shown when no repository is selected.
@@ -776,7 +763,6 @@ struct RepositoriesCommandCenter: View {
         if resolved != activityFilterRepo { activityFilterRepo = resolved }
         automationFilterRepo = ""
       }
-      #if os(macOS)
       .sheet(item: $selectedChain) { chain in
         NavigationStack {
           ChainDetailView(
@@ -793,7 +779,6 @@ struct RepositoriesCommandCenter: View {
         }
         .frame(minWidth: 700, minHeight: 500)
       }
-      #endif
     }
   }
 
@@ -1172,11 +1157,7 @@ struct RepositoriesCommandCenter: View {
           .padding(.vertical, 8)
         }
       }
-      #if os(macOS)
       .background(Color(nsColor: .controlBackgroundColor))
-      #else
-      .background(Color(.systemGroupedBackground))
-      #endif
       .clipShape(RoundedRectangle(cornerRadius: 8))
     }
   }
@@ -1209,7 +1190,6 @@ struct RepositoriesCommandCenter: View {
   }
 
   // MARK: - Data Loading
-
 
 
   // MARK: - Running Now
@@ -1256,7 +1236,6 @@ struct RepositoriesCommandCenter: View {
         Text(totalOnline > 0 ? "\(totalOnline) online" : "Inactive")
           .font(.caption)
           .foregroundStyle(.secondary)
-        #if os(macOS)
         Button {
           NotificationCenter.default.post(name: .navigateToSwarmConsole, object: nil)
         } label: {
@@ -1264,7 +1243,6 @@ struct RepositoriesCommandCenter: View {
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
-        #endif
       }
 
       if swarm.isActive || !lanWorkers.isEmpty || !activeWANWorkers.isEmpty {
@@ -1405,11 +1383,7 @@ struct RepositoriesCommandCenter: View {
             }
           }
         }
-        #if os(macOS)
         .background(Color(nsColor: .controlBackgroundColor))
-        #else
-        .background(Color(.systemGroupedBackground))
-        #endif
         .clipShape(RoundedRectangle(cornerRadius: 8))
       }
     }
@@ -1514,7 +1488,6 @@ struct RepositoriesCommandCenter: View {
     }
   }
 }
-#endif
 
 // MARK: - PR Detail Support
 
@@ -1563,9 +1536,7 @@ struct PRDetailInlineView: View {
 
         if let url = prURL {
           Button {
-            #if os(macOS)
             NSWorkspace.shared.open(url)
-            #endif
           } label: {
             Label("Open in GitHub", systemImage: "arrow.up.right.square")
               .font(.caption)

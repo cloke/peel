@@ -5,7 +5,6 @@
 //  Created on 1/30/26.
 //
 
-#if os(macOS)
 import AppKit
 
 /// Shared folder picker utility to eliminate duplication across views
@@ -33,4 +32,3 @@ public enum FolderPicker {
     return nil
   }
 }
-#endif

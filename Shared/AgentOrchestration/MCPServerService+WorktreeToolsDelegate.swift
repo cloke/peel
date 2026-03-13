@@ -18,7 +18,6 @@ extension MCPServerService: WorktreeToolsHandlerDelegate {
   }
 
   func listAllWorktrees() async throws -> [WorktreeToolInfo] {
-    #if os(macOS)
     var allWorktrees: [WorktreeToolInfo] = []
     let fileManager = FileManager.default
     let start = Date()
@@ -141,13 +140,9 @@ extension MCPServerService: WorktreeToolsHandlerDelegate {
     logger.debug("listAllWorktrees done count=\(allWorktrees.count) elapsed=\(elapsed, format: .fixed(precision: 2))s")
 
     return allWorktrees
-    #else
-    return []
-    #endif
   }
 
   func removeWorktree(path: String, force: Bool) async throws {
-    #if os(macOS)
     let fileManager = FileManager.default
     let resolvedPath = (path as NSString).expandingTildeInPath
     let gitFilePath = "\(resolvedPath)/.git"
@@ -215,11 +210,9 @@ extension MCPServerService: WorktreeToolsHandlerDelegate {
     } else {
       throw WorktreeError.worktreeRemovalFailed("Cannot find parent repository for worktree")
     }
-    #endif
   }
 
   func createWorktree(repoPath: String, branchName: String, baseBranch: String) async throws -> String {
-    #if os(macOS)
     let baseDir = worktreeBaseDir()
     let sanitizedName = branchName.replacingOccurrences(of: "/", with: "-")
     let worktreePath = "\(baseDir)/\(sanitizedName)"
@@ -262,9 +255,6 @@ extension MCPServerService: WorktreeToolsHandlerDelegate {
     }
 
     return worktreePath
-    #else
-    throw WorktreeError.worktreeCreationFailed("Worktree creation is only available on macOS")
-    #endif
   }
 
   private func checkBranchExists(_ branchName: String, in repoPath: String) async -> Bool {

@@ -7,7 +7,6 @@
 //  running locally on Apple Silicon via MLX.
 //
 
-#if os(macOS)
 import AVFoundation
 import Foundation
 import MLX
@@ -252,4 +251,3 @@ final class MLXSTTService {
   }
 }
 
-#endif

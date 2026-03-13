@@ -8,7 +8,6 @@
 //  Created on 2/10/26.
 //
 
-#if os(macOS)
 import Foundation
 import Hub
 import MLX
@@ -506,4 +505,3 @@ enum MLXChatError: LocalizedError {
   }
 }
 
-#endif

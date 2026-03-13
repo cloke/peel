@@ -145,7 +145,6 @@ struct LabFeatureSheetContent: View {
     switch feature.id {
     case "brew":
       Brew_RootView()
-    #if os(macOS)
     case "pii":
       PIIScrubberView()
     case "docling":
@@ -156,7 +155,6 @@ struct LabFeatureSheetContent: View {
       VMIsolationDashboardView()
     case "modelLab":
       ModelLabView()
-    #endif
     default:
       Text("Unknown feature")
     }

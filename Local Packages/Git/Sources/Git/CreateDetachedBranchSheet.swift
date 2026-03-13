@@ -7,7 +7,6 @@
 
 import SwiftUI
 
-#if os(macOS)
 struct CreateDetachedBranchSheet: View {
   @Environment(\.dismiss) private var dismiss
   @State private var branchName: String = ""
@@ -36,4 +35,3 @@ struct CreateDetachedBranchSheet: View {
     .frame(minWidth: 420)
   }
 }
-#endif

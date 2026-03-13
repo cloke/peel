@@ -9,7 +9,6 @@ import SwiftUI
 import Foundation
 import Git
 
-#if os(macOS)
 struct CommitDetailView: View {
   let commit: Github.Commit
   @State private var commitDetail: Github.CommitDetail?
@@ -45,7 +44,6 @@ struct CommitDetailView: View {
     }
   }
 }
-#endif
 
 // Note: Color.gitGreen is defined in PeelUI package (PeelUI/Color+Extensions.swift)
 
@@ -60,13 +58,8 @@ internal extension NSTextCheckingResult {
   }
 }
 
-#if os(macOS)
 #Preview {
   DiffView(diff: Diff())
 }
-#endif
-
-
-
 
 

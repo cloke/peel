@@ -11,7 +11,6 @@
 import SwiftUI
 import PeelUI
 
-#if os(macOS)
 import AppKit
 
 public struct WorktreeListView: View {
@@ -168,4 +167,3 @@ public struct WorktreeListView: View {
   }
   .environment(Model.Repository(name: "test-repo", path: "/tmp/test-repo"))
 }
-#endif

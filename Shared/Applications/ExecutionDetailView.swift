@@ -95,7 +95,6 @@ struct ExecutionDetailView: View {
 
         Spacer()
 
-        #if os(macOS)
         if let path = execution.worktreePath {
           Button {
             NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
@@ -105,7 +104,6 @@ struct ExecutionDetailView: View {
           .buttonStyle(.bordered)
           .controlSize(.small)
         }
-        #endif
       }
 
       Text(execution.task.title)
@@ -409,11 +407,7 @@ struct ExecutionDetailView: View {
       .lineLimit(4)
       .padding(8)
       .frame(maxWidth: .infinity, alignment: .leading)
-      #if os(macOS)
       .background(Color(nsColor: .textBackgroundColor).opacity(0.5))
-      #else
-      .background(Color(.secondarySystemBackground))
-      #endif
       .clipShape(RoundedRectangle(cornerRadius: 4))
   }
 
@@ -452,7 +446,6 @@ struct ExecutionDetailView: View {
         .font(.caption2)
         .foregroundStyle(.secondary)
 
-      #if os(macOS)
       Button {
         NSWorkspace.shared.selectFile(artifact.filePath, inFileViewerRootedAtPath: "")
       } label: {
@@ -461,7 +454,6 @@ struct ExecutionDetailView: View {
       }
       .buttonStyle(.plain)
       .foregroundStyle(.blue)
-      #endif
     }
     .padding(10)
     .frame(maxWidth: .infinity)
@@ -723,12 +715,8 @@ struct FullStepOutputSheet: View {
         }
         ToolbarItem(placement: .primaryAction) {
           Button {
-            #if os(macOS)
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(step.outputPreview, forType: .string)
-            #else
-            UIPasteboard.general.string = step.outputPreview
-            #endif
           } label: {
             Label("Copy", systemImage: "doc.on.doc")
           }

@@ -9,7 +9,6 @@
 //  Created on 2/10/26.
 //
 
-#if os(macOS)
 import SwiftUI
 import SwiftData
 
@@ -511,4 +510,3 @@ private struct SuggestionButton: View {
 //     .frame(width: 700, height: 600)
 // }
 
-#endif

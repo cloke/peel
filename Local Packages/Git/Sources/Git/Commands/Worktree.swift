@@ -11,7 +11,6 @@
 
 import Foundation
 
-#if os(macOS)
 
 /// Represents a git worktree
 public struct Worktree: Identifiable, Equatable {
@@ -254,4 +253,3 @@ extension Commands {
     }
   }
 }
-#endif

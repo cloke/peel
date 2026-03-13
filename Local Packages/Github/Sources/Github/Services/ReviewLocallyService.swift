@@ -8,7 +8,6 @@
 import Foundation
 import Git
 
-#if os(macOS)
 import AppKit
 
 /// Service for reviewing GitHub PRs locally using git worktrees
@@ -299,4 +298,3 @@ public final class ReviewLocallyService {
   }
 }
 
-#endif

@@ -8,7 +8,6 @@
 //  Created on 1/30/26.
 //
 
-#if os(macOS)
 import Foundation
 import Hub
 import MLX
@@ -480,4 +479,3 @@ enum MLXCodeAnalyzerFactory {
   }
 }
 
-#endif

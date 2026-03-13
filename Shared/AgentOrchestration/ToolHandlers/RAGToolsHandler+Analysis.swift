@@ -149,7 +149,6 @@ extension RAGToolsHandler {
   
   // MARK: - AI Analysis (#198)
   
-  #if os(macOS)
   func handleAnalyze(id: Any?, arguments: [String: Any], delegate: RAGToolsHandlerDelegate) async -> (Int, Data) {
     let repoPath = optionalString("repoPath", from: arguments)
     let limit = arguments["limit"] as? Int ?? 100
@@ -486,6 +485,5 @@ extension RAGToolsHandler {
     }
   }
 
-  #endif
   
 }

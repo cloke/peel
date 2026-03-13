@@ -7,11 +7,8 @@
 //
 
 import SwiftUI
-#if os(macOS)
 import WebKit
-#endif
 
-#if os(macOS)
 /// A WebView wrapper for rendering markdown as HTML
 struct MarkdownWebView: NSViewRepresentable {
   let markdown: String
@@ -293,7 +290,6 @@ struct MarkdownWebView: NSViewRepresentable {
     return html
   }
 }
-#endif
 
 /// A view that displays the product manual with markdown rendering
 public struct HelpView: View {
@@ -326,7 +322,6 @@ public struct HelpView: View {
   }
   
   public var body: some View {
-    #if os(macOS)
     NavigationSplitView {
       // Sidebar with table of contents
       List(selection: $selectedSection) {
@@ -367,9 +362,6 @@ public struct HelpView: View {
     .task {
       loadMarkdownContent()
     }
-    #else
-    Text("Help is available on macOS")
-    #endif
   }
   
   private func loadMarkdownContent() {
@@ -427,13 +419,11 @@ public struct HelpView: View {
     return result.isEmpty ? "# No Results\n\nNo matches found for \"\(search)\"" : result.joined(separator: "\n")
   }
   
-  #if os(macOS)
   private func openInFinder() {
     if let url = resourcesURL {
       NSWorkspace.shared.selectFile(url.appendingPathComponent("PRODUCT_MANUAL.md").path, inFileViewerRootedAtPath: url.path)
     }
   }
-  #endif
 }
 
 #Preview {

@@ -8,9 +8,7 @@
 
 import Foundation
 import MCPCore
-#if os(macOS)
 import Git
-#endif
 
 // MARK: - Worktree Tools Handler Delegate Extension
 
@@ -188,7 +186,6 @@ public final class WorktreeToolsHandler: MCPToolHandler {
 
   /// List all worktrees across registered repositories and the peel-worktrees directory
   private func handleList(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    #if os(macOS)
     guard let worktreeDelegate else {
       return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Worktree delegate not configured"))
     }
@@ -234,16 +231,12 @@ public final class WorktreeToolsHandler: MCPToolHandler {
     } catch {
       return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Failed to list worktrees: \(error.localizedDescription)"))
     }
-    #else
-    return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "worktree.list is only available on macOS"))
-    #endif
   }
 
   // MARK: - worktree.remove
 
   /// Remove a worktree by path
   private func handleRemove(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    #if os(macOS)
     guard let worktreeDelegate else {
       return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Worktree delegate not configured"))
     }
@@ -274,16 +267,12 @@ public final class WorktreeToolsHandler: MCPToolHandler {
     } catch {
       return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Failed to remove worktree: \(error.localizedDescription)"))
     }
-    #else
-    return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "worktree.remove is only available on macOS"))
-    #endif
   }
 
   // MARK: - worktree.stats
 
   /// Get aggregate statistics about worktrees
   private func handleStats(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    #if os(macOS)
     guard let worktreeDelegate else {
       return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Worktree delegate not configured"))
     }
@@ -318,16 +307,12 @@ public final class WorktreeToolsHandler: MCPToolHandler {
     } catch {
       return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Failed to get worktree stats: \(error.localizedDescription)"))
     }
-    #else
-    return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "worktree.stats is only available on macOS"))
-    #endif
   }
 
   // MARK: - worktree.create
 
   /// Create a new worktree for ad-hoc work, PR review, or experiments
   private func handleCreate(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    #if os(macOS)
     guard let worktreeDelegate else {
       return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Worktree delegate not configured"))
     }
@@ -375,9 +360,6 @@ public final class WorktreeToolsHandler: MCPToolHandler {
     } catch {
       return (500, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.internalError, message: "Failed to create worktree: \(error.localizedDescription)"))
     }
-    #else
-    return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "worktree.create is only available on macOS"))
-    #endif
   }
 
   /// Sanitize a branch name for git

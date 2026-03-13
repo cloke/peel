@@ -9,7 +9,6 @@
 
 import SwiftUI
 
-#if os(macOS)
 import MLX
 import MLXLLM
 import MLXLMCommon
@@ -695,4 +694,3 @@ class ModelLabViewModel {
   }
 }
 
-#endif

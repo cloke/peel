@@ -44,7 +44,6 @@ struct WorktreesView: View {
     .refreshable {
       await loadWorktrees()
     }
-    #if os(macOS)
     .toolbar {
       ToolbarItem(placement: .primaryAction) {
         Button {
@@ -67,7 +66,6 @@ struct WorktreesView: View {
         Task { await loadWorktrees() }
       }
     }
-    #endif
   }
   
   // MARK: - Stats Header
@@ -188,11 +186,9 @@ struct WorktreesView: View {
   }
   
   private func openInVSCode(_ worktree: WorktreeItem) {
-    #if os(macOS)
     Task {
       try? await VSCodeService.shared.open(path: worktree.path)
     }
-    #endif
   }
   
   // MARK: - Helpers
@@ -294,7 +290,6 @@ private struct WorktreeRow: View {
       
       Spacer()
       
-      #if os(macOS)
       Button {
         onOpen()
       } label: {
@@ -311,7 +306,6 @@ private struct WorktreeRow: View {
       .buttonStyle(.borderless)
       .foregroundStyle(.red)
       .help("Delete worktree")
-      #endif
     }
     .padding(.vertical, 4)
   }
@@ -446,9 +440,7 @@ struct NewWorktreeSheet: View {
       )
       
       if openInVSCode {
-        #if os(macOS)
         try? await VSCodeService.shared.open(path: worktreePath)
-        #endif
       }
       
       onCreated()

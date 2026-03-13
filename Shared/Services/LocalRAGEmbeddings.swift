@@ -337,23 +337,17 @@ struct MLXMemoryPressureMonitor: MemoryPressureMonitor {
   }
 
   func clearCaches() async {
-    #if os(macOS)
     if LocalRAGEmbeddingProviderFactory.mlxClearCacheAfterBatch {
       await MainActor.run {
         MLX.Memory.clearCache()
       }
     }
-    #endif
   }
 
   func memoryDescription() -> String {
-    #if os(macOS)
     let snapshot = MLX.Memory.snapshot()
     let peakMB = Double(snapshot.peakMemory) / 1_048_576
     let currentMB = Double(snapshot.activeMemory) / 1_048_576
     return String(format: "MLX active=%.1f MB, peak=%.1f MB", currentMB, peakMB)
-    #else
-    return "no MLX on iOS"
-    #endif
   }
 }

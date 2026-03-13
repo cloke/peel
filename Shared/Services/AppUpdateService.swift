@@ -1,8 +1,6 @@
 import Foundation
 import os
-#if os(macOS)
 import AppKit
-#endif
 
 /// Checks for new Peel releases on GitHub and coordinates download + install.
 /// macOS only — iOS updates go through TestFlight / App Store.
@@ -223,7 +221,6 @@ actor AppUpdateService {
   // MARK: - Install
 
   /// Unzip the update, replace the running app, and relaunch.
-  #if os(macOS)
   func installUpdate(from zipURL: URL) async throws {
     let fm = FileManager.default
     let currentAppURL = Bundle.main.bundleURL
@@ -301,7 +298,6 @@ actor AppUpdateService {
       NSApp.terminate(nil)
     }
   }
-  #endif
 
   // MARK: - Version Comparison
 

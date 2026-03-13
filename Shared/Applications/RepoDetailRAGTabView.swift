@@ -158,11 +158,7 @@ struct RAGTabView: View {
         .padding(10)
         .background(
           RoundedRectangle(cornerRadius: 8)
-            #if os(macOS)
             .fill(Color(nsColor: .controlBackgroundColor))
-            #else
-            .fill(Color(.systemGroupedBackground))
-            #endif
         )
 
         if let error = searchError {
@@ -184,11 +180,7 @@ struct RAGTabView: View {
               RepoSearchResultRow(result: result)
             }
           }
-          #if os(macOS)
           .background(Color(nsColor: .controlBackgroundColor))
-          #else
-          .background(Color(.systemGroupedBackground))
-          #endif
           .clipShape(RoundedRectangle(cornerRadius: 8))
         }
       }
@@ -251,7 +243,6 @@ struct RAGTabView: View {
               Button("Force Full Re-Index") {
                 Task { await indexRepo(force: true) }
               }
-              #if os(macOS)
               Divider()
               Button(isAnalyzing ? "Analyzing…" : "Analyze Chunks") {
                 Task { await analyzeChunks() }
@@ -261,7 +252,6 @@ struct RAGTabView: View {
                 Task { await enrichEmbeddings() }
               }
               .disabled(isEnriching)
-              #endif
             } label: {
               Image(systemName: "ellipsis.circle")
                 .font(.title3)
@@ -509,11 +499,7 @@ struct RAGTabView: View {
           .padding(.vertical, 8)
         }
       }
-      #if os(macOS)
       .background(Color(nsColor: .controlBackgroundColor))
-      #else
-      .background(Color(.systemGroupedBackground))
-      #endif
       .clipShape(RoundedRectangle(cornerRadius: 8))
 
       if lessons.count > 10 {

@@ -15,9 +15,7 @@ import AppKit
 import OSLog
 import Git
 import Github
-#if os(macOS)
 import ServiceManagement
-#endif
 
 // MARK: - Notification Names
 
@@ -29,7 +27,6 @@ extension Notification.Name {
 
 // MARK: - App Delegate (macOS)
 
-#if os(macOS)
 /// Handles app lifecycle events for daemon mode. When "Run in Background" is enabled,
 /// closing the last window enters background mode instead of quitting the app.
 final class PeelAppDelegate: NSObject, NSApplicationDelegate {
@@ -47,13 +44,10 @@ final class PeelAppDelegate: NSObject, NSApplicationDelegate {
     return true
   }
 }
-#endif
 
 @main
 struct PeelApp: App {
-  #if os(macOS)
   @NSApplicationDelegateAdaptor(PeelAppDelegate.self) var appDelegate
-  #endif
   @Environment(\.openURL) var openURL
   @State private var vmIsolationService = VMIsolationService()
   @State private var mcpServer: MCPServerService
@@ -62,9 +56,7 @@ struct PeelApp: App {
   @State private var activityFeed = ActivityFeed()
   @State private var workerModeActive = false
   @State private var skillUpdateAvailable = false
-  #if os(macOS)
   @State private var daemonModeService = DaemonModeService()
-  #endif
   @State private var chainScheduler = ChainSchedulerService()
 
   private static var isRunningTests: Bool {
@@ -103,9 +95,7 @@ struct PeelApp: App {
     mcpServerInstance.configure(modelContext: context)
 
     // Wire daemon mode service into MCP server for tool access
-    #if os(macOS)
     mcpServerInstance.daemonModeService = _daemonModeService.wrappedValue
-    #endif
 
     // Wire RepoPullScheduler with DataService so tracked repos auto-pull
     RepoPullScheduler.shared.dataService = dataService
@@ -398,11 +388,9 @@ struct PeelApp: App {
   var body: some Scene {
     WindowGroup {
       ContentView()
-        #if os(macOS)
         .onAppear {
           appDelegate.daemonModeService = daemonModeService
         }
-        #endif
         .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
         .onOpenURL { url in
           // Handle OAuth callbacks (GitHub auth)
@@ -471,9 +459,7 @@ struct PeelApp: App {
         .environment(dataService)
         .environment(repositoryAggregator)
         .environment(activityFeed)
-        #if os(macOS)
         .environment(daemonModeService)
-        #endif
     }
     .modelContainer(Self.sharedModelContainer)
     .commands {
@@ -518,9 +504,7 @@ struct PeelApp: App {
         .environment(dataService)
         .environment(repositoryAggregator)
         .environment(activityFeed)
-        #if os(macOS)
         .environment(daemonModeService)
-        #endif
     }
     .modelContainer(Self.sharedModelContainer)
   }

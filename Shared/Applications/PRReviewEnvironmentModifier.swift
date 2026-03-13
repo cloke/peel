@@ -56,7 +56,6 @@ final class PRReviewStatusBridge: PRReviewStatusProvider {
 
 // MARK: - Shared View Modifier
 
-#if os(macOS)
 /// ViewModifier that injects the PR review agent coordinator, status bridge,
 /// and review sheet into the environment. Use `.prReviewEnvironment()` on any
 /// view that hosts PullRequestDetailView or similar PR surfaces.
@@ -86,7 +85,6 @@ struct PRReviewEnvironmentModifier: ViewModifier {
       }
   }
 }
-#endif
 
 // MARK: - View Extension
 
@@ -98,11 +96,7 @@ extension View {
   ///   local clone paths. Pass `nil` when no local repo information is available.
   @ViewBuilder
   func prReviewEnvironment(localRepoResolver: LocalRepoResolver? = nil) -> some View {
-    #if os(macOS)
     self.modifier(PRReviewEnvironmentModifier(localRepoResolver: localRepoResolver))
-    #else
-    self.reviewWithAgentProvider(nil)
-    #endif
   }
 }
 

@@ -261,9 +261,7 @@ struct TrackedRepoDetailSheet: View {
       }
       .formStyle(.grouped)
       .navigationTitle("Tracked Repo Details")
-      #if os(macOS)
       .frame(minWidth: 450, minHeight: 400)
-      #endif
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
           Button("Cancel") { dismiss() }
@@ -469,9 +467,7 @@ struct AddTrackedRepoSheet: View {
       }
       .formStyle(.grouped)
       .navigationTitle("Track Repository")
-      #if os(macOS)
       .frame(minWidth: 450, minHeight: 450)
-      #endif
       .task { await loadAvailableRepos() }
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
@@ -491,11 +487,9 @@ struct AddTrackedRepoSheet: View {
     Section("Repository") {
       HStack {
         TextField("Local Path", text: $localPath)
-        #if os(macOS)
         Button("Browse…") { browseForRepo() }
           .buttonStyle(.bordered)
           .controlSize(.small)
-        #endif
       }
 
       if !localPath.isEmpty {
@@ -549,7 +543,6 @@ struct AddTrackedRepoSheet: View {
     detectRemote()
   }
 
-  #if os(macOS)
   private func browseForRepo() {
     let panel = NSOpenPanel()
     panel.canChooseDirectories = true
@@ -564,7 +557,6 @@ struct AddTrackedRepoSheet: View {
       detectRemote()
     }
   }
-  #endif
 
   private func detectRemote() {
     guard !localPath.isEmpty else { return }

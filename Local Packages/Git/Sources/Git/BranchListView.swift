@@ -9,7 +9,6 @@ import SwiftUI
 import OSLog
 import PeelUI
 
-#if os(macOS)
 struct ListItem: Identifiable {
     let id: Int
     var isChecked: Bool
@@ -221,4 +220,3 @@ struct BranchRepositoryView: View {
     label: "Test"
   )
 }
-#endif

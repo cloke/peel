@@ -5,7 +5,6 @@
 
 import SwiftUI
 
-#if os(macOS)
 import AppKit
 
 struct PolicyDiffView: View {
@@ -182,4 +181,3 @@ private struct DiffLine: Identifiable {
     }
   }
 }
-#endif

@@ -9,9 +9,7 @@
 
 import Foundation
 import MCPCore
-#if os(macOS)
 import Git
-#endif
 
 // MARK: - GitToolsHandler
 
@@ -46,7 +44,6 @@ final class GitToolsHandler: MCPToolHandler {
 
   // MARK: - Private helpers
 
-#if os(macOS)
   /// Build a Git.Model.Repository from the required `path` argument.
   private func repoFromArguments(_ arguments: [String: Any], id: Any?) -> Result<Git.Model.Repository, ParamError> {
     switch requireString("path", from: arguments, id: id) {
@@ -56,12 +53,10 @@ final class GitToolsHandler: MCPToolHandler {
       return .success(Git.Model.Repository(name: name, path: path))
     }
   }
-#endif
 
   // MARK: - git.status
 
   private func handleStatus(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-#if os(macOS)
     switch repoFromArguments(arguments, id: id) {
     case .failure(let err): return err.response
     case .success(let repo):
@@ -78,15 +73,11 @@ final class GitToolsHandler: MCPToolHandler {
         return internalError(id: id, message: "git status failed: \(error.localizedDescription)")
       }
     }
-#else
-    return internalError(id: id, message: "git.status is only supported on macOS")
-#endif
   }
 
   // MARK: - git.add
 
   private func handleAdd(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-#if os(macOS)
     switch repoFromArguments(arguments, id: id) {
     case .failure(let err): return err.response
     case .success(let repo):
@@ -101,15 +92,11 @@ final class GitToolsHandler: MCPToolHandler {
         return internalError(id: id, message: "git add failed: \(error.localizedDescription)")
       }
     }
-#else
-    return internalError(id: id, message: "git.add is only supported on macOS")
-#endif
   }
 
   // MARK: - git.commit
 
   private func handleCommit(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-#if os(macOS)
     switch repoFromArguments(arguments, id: id) {
     case .failure(let err): return err.response
     case .success(let repo):
@@ -133,15 +120,11 @@ final class GitToolsHandler: MCPToolHandler {
         }
       }
     }
-#else
-    return internalError(id: id, message: "git.commit is only supported on macOS")
-#endif
   }
 
   // MARK: - git.push
 
   private func handlePush(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-#if os(macOS)
     switch repoFromArguments(arguments, id: id) {
     case .failure(let err): return err.response
     case .success(let repo):
@@ -159,15 +142,11 @@ final class GitToolsHandler: MCPToolHandler {
         return internalError(id: id, message: "git push failed: \(error.localizedDescription)")
       }
     }
-#else
-    return internalError(id: id, message: "git.push is only supported on macOS")
-#endif
   }
 
   // MARK: - git.log
 
   private func handleLog(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-#if os(macOS)
     switch repoFromArguments(arguments, id: id) {
     case .failure(let err): return err.response
     case .success(let repo):
@@ -185,9 +164,6 @@ final class GitToolsHandler: MCPToolHandler {
         return internalError(id: id, message: "git log failed: \(error.localizedDescription)")
       }
     }
-#else
-    return internalError(id: id, message: "git.log is only supported on macOS")
-#endif
   }
 }
 

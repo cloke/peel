@@ -159,7 +159,6 @@ internal extension NSTextCheckingResult {
   }
 }
 
-#if os(macOS)
 /// Manages the list of open Git repositories and the currently selected repository.
 ///
 /// This class uses a singleton pattern (`ViewModel.shared`) because:
@@ -247,4 +246,3 @@ public class ViewModel {
     }
   }
 }
-#endif

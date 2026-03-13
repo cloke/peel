@@ -8,7 +8,6 @@
 
 import Foundation
 
-#if os(macOS)
 extension Commands {
   
   /// Apply a patch to the index (stage changes)
@@ -108,4 +107,3 @@ enum GitApplyError: LocalizedError {
     }
   }
 }
-#endif

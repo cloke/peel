@@ -31,11 +31,7 @@ struct PRReviewQueueSection: View {
               PRReviewQueueRow(item: item, onSelectPR: onSelectPR)
             }
           }
-          #if os(macOS)
           .background(Color(nsColor: .controlBackgroundColor))
-          #else
-          .background(Color(.systemGroupedBackground))
-          #endif
           .clipShape(RoundedRectangle(cornerRadius: 8))
         }
 
@@ -46,11 +42,7 @@ struct PRReviewQueueSection: View {
                 PRReviewQueueRow(item: item, onSelectPR: onSelectPR)
               }
             }
-            #if os(macOS)
             .background(Color(nsColor: .controlBackgroundColor))
-            #else
-            .background(Color(.systemGroupedBackground))
-            #endif
             .clipShape(RoundedRectangle(cornerRadius: 8))
           }
           .font(.caption)
@@ -346,11 +338,7 @@ struct PRReviewQueueDetailView: View {
               openPRRow(item)
             }
           }
-          #if os(macOS)
           .background(Color(nsColor: .controlBackgroundColor))
-          #else
-          .background(Color(.systemGroupedBackground))
-          #endif
           .clipShape(RoundedRectangle(cornerRadius: 8))
         }
       }

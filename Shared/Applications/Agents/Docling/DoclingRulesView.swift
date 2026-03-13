@@ -5,7 +5,6 @@
 
 import SwiftUI
 
-#if os(macOS)
 import SwiftData
 
 struct DoclingRulesView: View {
@@ -97,4 +96,3 @@ struct DoclingRulesView: View {
     newRulePattern = ""
   }
 }
-#endif

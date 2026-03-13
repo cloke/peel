@@ -10,7 +10,6 @@ import Git
 import PeelUI
 import SwiftUI
 
-#if os(macOS)
 struct PRChangedFilesView: View {
   let owner: String
   let repo: String
@@ -265,4 +264,3 @@ private struct FileRow: View {
     }
   }
 }
-#endif

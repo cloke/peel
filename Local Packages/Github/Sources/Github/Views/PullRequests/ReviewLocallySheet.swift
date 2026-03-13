@@ -8,7 +8,6 @@
 import SwiftUI
 import Git
 
-#if os(macOS)
 /// Sheet for setting up local PR review with worktrees
 public struct ReviewLocallySheet: View {
   @Environment(\.dismiss) private var dismiss
@@ -379,4 +378,3 @@ public struct ReviewLocallySheet: View {
   }
 }
 
-#endif

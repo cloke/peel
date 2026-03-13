@@ -7,7 +7,6 @@
 
 import SwiftUI
 
-#if os(macOS)
 struct HistoryListView: View {
   @Environment(Model.Repository.self) var repository
   
@@ -72,4 +71,3 @@ struct HistoryListView: View {
   HistoryListView(branch: "main")
     .environment(Model.Repository(name: "test", path: "."))
 }
-#endif

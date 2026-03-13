@@ -7,7 +7,6 @@
 
 import SwiftUI
 
-#if os(macOS)
 import AppKit
 import SwiftData
 
@@ -185,4 +184,3 @@ struct PolicyImportPreviewSheet: View {
       ?? URL(fileURLWithPath: NSTemporaryDirectory())
   }
 }
-#endif

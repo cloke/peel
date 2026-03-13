@@ -7,7 +7,6 @@
 
 import Foundation
 
-#if os(macOS)
 
 public enum VSCodeLauncherError: LocalizedError {
   case notInstalled
@@ -54,4 +53,3 @@ public enum VSCodeLauncher {
     try process.run()
   }
 }
-#endif

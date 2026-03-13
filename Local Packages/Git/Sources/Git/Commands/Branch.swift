@@ -13,7 +13,6 @@ import OSLog
 
 private let branchLogger = Logger(subsystem: "Peel", category: "Git.Branch")
 
-#if os(macOS)
 extension Commands {
   struct Branch {
     // TODO: This should allow the root branch to be specified.
@@ -47,4 +46,3 @@ extension Commands {
     }
   }
 }
-#endif

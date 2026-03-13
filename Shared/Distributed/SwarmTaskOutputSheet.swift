@@ -72,9 +72,7 @@ struct SwarmTaskOutputSheet: View {
         }
       }
       .navigationTitle("Task \(result.requestId.uuidString.prefix(8))")
-      #if os(macOS)
       .frame(minWidth: 480, minHeight: 400)
-      #endif
       .toolbar {
         ToolbarItem(placement: .confirmationAction) {
           Button("Done") { dismiss() }

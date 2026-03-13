@@ -82,11 +82,7 @@ struct SwarmManagementView: View {
       }
     }
     .background {
-      #if os(macOS)
       Color(nsColor: .windowBackgroundColor)
-      #else
-      Color(.systemBackground)
-      #endif
     }
     .sheet(isPresented: $showingCreateSwarm) {
       createSwarmSheet

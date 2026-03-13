@@ -272,9 +272,7 @@ extension MCPServerService: RepoToolsHandlerDelegate {
 
 // MARK: - CodeEditToolsHandlerDelegate
 
-#if os(macOS)
 extension MCPServerService: CodeEditToolsHandlerDelegate {}
-#endif
 
 // MARK: - RepoPullSchedulerDelegate
 

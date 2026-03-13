@@ -162,47 +162,19 @@ final class RAGToolsHandler: MCPToolHandler {
     case "rag.reranker.config":
       return handleRerankerConfig(id: id, arguments: arguments)
     case "rag.analyze":
-      #if os(macOS)
       return await handleAnalyze(id: id, arguments: arguments, delegate: ragDelegate)
-      #else
-      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "rag.analyze is only available on macOS"))
-      #endif
     case "rag.analyze.status":
-      #if os(macOS)
       return await handleAnalyzeStatus(id: id, arguments: arguments, delegate: ragDelegate)
-      #else
-      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "rag.analyze.status is only available on macOS"))
-      #endif
     case "rag.enrich":
-      #if os(macOS)
       return await handleEnrich(id: id, arguments: arguments, delegate: ragDelegate)
-      #else
-      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "rag.enrich is only available on macOS"))
-      #endif
     case "rag.enrich.status":
-      #if os(macOS)
       return await handleEnrichStatus(id: id, arguments: arguments, delegate: ragDelegate)
-      #else
-      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "rag.enrich.status is only available on macOS"))
-      #endif
     case "rag.duplicates":
-      #if os(macOS)
       return await handleDuplicates(id: id, arguments: arguments, delegate: ragDelegate)
-      #else
-      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "rag.duplicates is only available on macOS"))
-      #endif
     case "rag.patterns":
-      #if os(macOS)
       return await handlePatterns(id: id, arguments: arguments, delegate: ragDelegate)
-      #else
-      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "rag.patterns is only available on macOS"))
-      #endif
     case "rag.hotspots":
-      #if os(macOS)
       return await handleHotspots(id: id, arguments: arguments, delegate: ragDelegate)
-      #else
-      return (400, makeError(id: id, code: JSONRPCResponseBuilder.ErrorCode.invalidParams, message: "rag.hotspots is only available on macOS"))
-      #endif
     case "rag.cache.clear":
       return handleCacheClear(id: id, arguments: arguments)
     case "rag.scratch":

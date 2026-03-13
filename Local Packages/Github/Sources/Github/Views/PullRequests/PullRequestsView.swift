@@ -34,9 +34,7 @@ public struct PullRequestDetailView: View {
   @State private var mergeError: String?
   @State private var showMergeConfirm = false
 
-  #if os(macOS)
   @State private var showingReviewLocally = false
-  #endif
 
   enum ReviewAction: String, CaseIterable {
     case approve = "APPROVE"
@@ -91,16 +89,12 @@ public struct PullRequestDetailView: View {
         checksSection
 
         // MARK: - Changed Files
-        #if os(macOS)
         changedFilesSection
-        #endif
 
         // MARK: - Review Actions
-        #if os(macOS)
         if pullRequest.state == "open" {
           reviewActionsSection
         }
-        #endif
 
         // MARK: - Reviews
         reviewsSection
@@ -140,11 +134,9 @@ public struct PullRequestDetailView: View {
         currentUserLogin = try? await Github.me().login
       }
     }
-    #if os(macOS)
     .sheet(isPresented: $showingReviewLocally) {
       ReviewLocallySheet(pullRequest: pullRequest, repository: repository)
     }
-    #endif
   }
 
   // MARK: - Header
@@ -168,7 +160,6 @@ public struct PullRequestDetailView: View {
             .controlSize(.small)
           }
 
-          #if os(macOS)
           Button {
             showingReviewLocally = true
           } label: {
@@ -189,7 +180,6 @@ public struct PullRequestDetailView: View {
           .disabled(reviewWithAgentProvider == nil)
           .accessibilityIdentifier("github.pullRequest.reviewWithAgent")
           .help("Create a worktree and run an agent review")
-          #endif
         }
       }
 
@@ -415,13 +405,11 @@ public struct PullRequestDetailView: View {
 
   // MARK: - Changed Files
 
-  #if os(macOS)
   @ViewBuilder
   private var changedFilesSection: some View {
     let owner = organization?.login ?? repository.owner?.login ?? ""
     PRChangedFilesView(owner: owner, repo: repository.name, pullNumber: pullRequest.number)
   }
-  #endif
 
   // MARK: - Reviews Section
 
@@ -606,7 +594,6 @@ public struct PullRequestDetailView: View {
 
   // MARK: - Review Actions Section
 
-  #if os(macOS)
   @ViewBuilder
   private var reviewActionsSection: some View {
     VStack(alignment: .leading, spacing: 8) {
@@ -675,7 +662,6 @@ public struct PullRequestDetailView: View {
       }
     }
   }
-  #endif
 
   // MARK: - Review Sheet
 

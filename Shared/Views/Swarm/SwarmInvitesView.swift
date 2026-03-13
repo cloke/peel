@@ -204,12 +204,8 @@ struct InviteShareSheet: View {
         // Action buttons
         HStack(spacing: 12) {
           Button {
-            #if os(macOS)
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(url?.absoluteString ?? "", forType: .string)
-            #else
-            UIPasteboard.general.string = url?.absoluteString
-            #endif
             copied = true
 
             // Reset after 2 seconds
@@ -224,7 +220,6 @@ struct InviteShareSheet: View {
           .buttonStyle(.borderedProminent)
           .disabled(url == nil)
 
-          #if os(macOS)
           if let url = url {
             ShareLink(item: url) {
               Label("Share", systemImage: "square.and.arrow.up")
@@ -232,7 +227,6 @@ struct InviteShareSheet: View {
             }
             .buttonStyle(.bordered)
           }
-          #endif
         }
         .padding(.horizontal)
 
@@ -270,17 +264,10 @@ struct QRCodeView: View {
 
   var body: some View {
     if let image = generateQRCode(from: url.absoluteString) {
-      #if os(macOS)
       Image(nsImage: image)
         .interpolation(.none)
         .resizable()
         .scaledToFit()
-      #else
-      Image(uiImage: image)
-        .interpolation(.none)
-        .resizable()
-        .scaledToFit()
-      #endif
     } else {
       Image(systemName: "qrcode")
         .font(.system(size: 100))
@@ -288,7 +275,6 @@ struct QRCodeView: View {
     }
   }
 
-  #if os(macOS)
   private func generateQRCode(from string: String) -> NSImage? {
     guard let data = string.data(using: .utf8),
           let filter = CIFilter(name: "CIQRCodeGenerator") else {
@@ -311,29 +297,4 @@ struct QRCodeView: View {
 
     return nsImage
   }
-  #else
-  private func generateQRCode(from string: String) -> UIImage? {
-    guard let data = string.data(using: .utf8),
-          let filter = CIFilter(name: "CIQRCodeGenerator") else {
-      return nil
-    }
-
-    filter.setValue(data, forKey: "inputMessage")
-    filter.setValue("H", forKey: "inputCorrectionLevel") // High error correction
-
-    guard let ciImage = filter.outputImage else { return nil }
-
-    // Scale up for crisp rendering
-    let scale = 10.0
-    let transform = CGAffineTransform(scaleX: scale, y: scale)
-    let scaledImage = ciImage.transformed(by: transform)
-
-    let context = CIContext()
-    guard let cgImage = context.createCGImage(scaledImage, from: scaledImage.extent) else {
-      return nil
-    }
-
-    return UIImage(cgImage: cgImage)
-  }
-  #endif
 }

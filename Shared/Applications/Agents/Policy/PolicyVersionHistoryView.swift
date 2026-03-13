@@ -5,7 +5,6 @@
 
 import SwiftUI
 
-#if os(macOS)
 import SwiftData
 
 struct PolicyVersionHistoryView: View {
@@ -146,4 +145,3 @@ struct PolicyVersionHistoryView: View {
     try? modelContext.save()
   }
 }
-#endif

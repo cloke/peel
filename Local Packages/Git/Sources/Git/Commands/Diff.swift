@@ -17,7 +17,6 @@ import OSLog
 
 private let diffLogger = Logger(subsystem: "Peel", category: "Git.Diff")
 
-#if os(macOS)
 /// Functions that are defined in the git reference
 /// https://git-scm.com/docs/git-add
 extension Commands {
@@ -171,4 +170,3 @@ extension Commands {
     return diff
   }
 }
-#endif

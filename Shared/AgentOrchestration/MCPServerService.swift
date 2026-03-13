@@ -603,9 +603,7 @@ public final class MCPServerService {
   let chainRunner: AgentChainRunner
   let uiAutomationProvider: MCPUIAutomationProviding
   var dataService: DataService?
-  #if os(macOS)
   var daemonModeService: DaemonModeService?
-  #endif
   let screenshotService = ScreenshotService()
   let translationValidatorService = TranslationValidatorService()
   let piiScrubberService = PIIScrubberService()
@@ -655,10 +653,8 @@ public final class MCPServerService {
   var prReviewQueue = PRReviewQueue()
   var schedulingToolsHandler: SchedulingToolsHandler
   var uxTestOrchestrator: UXTestOrchestrator?
-  #if os(macOS)
   var localChatToolsHandler: LocalChatToolsHandler?
   var chatSession = SharedChatSession()
-  #endif
 
   public struct ActiveRunInfo: Identifiable {
     public let id: UUID
@@ -722,9 +718,7 @@ public final class MCPServerService {
     self.vmToolsHandler = VMToolsHandler(vmIsolationService: vmIsolationService, telemetryProvider: telemetryProvider ?? MCPTelemetryAdapter(sessionTracker: sessionTracker))
     self.parallelToolsHandler = ParallelToolsHandler()
     self.ragToolsHandler = RAGToolsHandler()
-    #if os(macOS)
     self.codeEditToolsHandler = CodeEditToolsHandler()
-    #endif
     self.chainToolsHandler = ChainToolsHandler()
     self.repoToolsHandler = RepoToolsHandler()
     self.worktreeToolsHandler = WorktreeToolsHandler()
@@ -738,9 +732,7 @@ public final class MCPServerService {
     self.repoProfileToolsHandler = RepoProfileToolsHandler()
     self.repoProfileService = RepoProfileService()
     self.schedulingToolsHandler = SchedulingToolsHandler()
-    #if os(macOS)
     self.localChatToolsHandler = LocalChatToolsHandler()
-    #endif
 
     self.agentManager = agentManager
     self.sessionTracker = sessionTracker
@@ -843,9 +835,7 @@ public final class MCPServerService {
 
     wireToolHandlerDelegates()
 
-    #if os(macOS)
     self.localChatToolsHandler?.chatSession = self.chatSession
-    #endif
 
     // If running in worker mode, inject the chain executor into the already-running SwarmCoordinator
     // This enables workers to actually execute chains instead of returning mock results
@@ -892,10 +882,8 @@ public final class MCPServerService {
     repoProfileToolsHandler.profileService = repoProfileService
     runToolsHandler.delegate = self
     schedulingToolsHandler.delegate = self
-    #if os(macOS)
     localChatToolsHandler?.delegate = self
     localChatToolsHandler?.mcpServer = self
-    #endif
     SwarmCoordinator.shared.ragSyncDelegate = self
     RAGSyncCoordinator.shared.ragSyncDelegate = self
   }
@@ -1255,7 +1243,6 @@ public final class MCPServerService {
 
   // MARK: - Daemon Mode Tool Handlers
 
-  #if os(macOS)
   func handleDaemonStatus(id: Any?) -> (Int, Data) {
     let service = daemonModeService
     let result: [String: Any] = [
@@ -1282,7 +1269,6 @@ public final class MCPServerService {
       "startAtLogin": service.startAtLogin,
     ]))
   }
-  #endif
 
   func templateList() -> [[String: Any]] {
     return agentManager.allTemplates.map { template in

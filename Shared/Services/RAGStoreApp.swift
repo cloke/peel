@@ -48,16 +48,12 @@ func makeDefaultRAGStore(
   dbURL: URL? = nil,
   chunkAnalyzer: ChunkAnalyzer? = nil
 ) -> RAGStore {
-  #if os(macOS)
   // Default to enabled when key has never been explicitly set (nil object = first run or cleared prefs).
   // This prevents analysis from silently doing nothing for users who never toggled the setting.
   let analysisEnabled = UserDefaults.standard.ragAnalyzerEnabled
   let tierRaw = UserDefaults.standard.string(forKey: "rag.analyzer.tier")
   let tier = tierRaw.flatMap { MLXAnalyzerModelTier(rawValue: $0) } ?? .auto
   let analyzer: ChunkAnalyzer? = chunkAnalyzer ?? (analysisEnabled ? MLXCodeAnalyzerFactory.makeAnalyzer(tier: tier) : nil)
-  #else
-  let analyzer = chunkAnalyzer
-  #endif
   
   return RAGStore(
     dbURL: dbURL,

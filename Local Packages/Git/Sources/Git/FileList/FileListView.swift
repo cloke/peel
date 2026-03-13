@@ -9,7 +9,6 @@ import PeelUI
 import SwiftUI
 import OSLog
 
-#if os(macOS)
 struct FileListView: View {
   @Bindable var repository: Model.Repository
   @State private var commitMessage: String = ""
@@ -189,7 +188,6 @@ struct FileListView: View {
     }
   }
 }
-#endif
 
 //struct FileListView_Previews: PreviewProvider {
 //  static var previews: some View {

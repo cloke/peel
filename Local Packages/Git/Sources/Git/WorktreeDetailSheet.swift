@@ -8,7 +8,6 @@
 import SwiftUI
 import PeelUI
 
-#if os(macOS)
 import AppKit
 
 /// Model for worktree detail identification
@@ -309,4 +308,3 @@ struct WorktreeDetailSheet: View {
     return nil
   }
 }
-#endif

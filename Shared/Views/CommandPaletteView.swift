@@ -80,9 +80,7 @@ struct CommandPaletteView: View {
         systemImage: "gear",
         keywords: ["settings", "preferences", "config"],
         action: {
-          #if os(macOS)
           NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-          #endif
           isPresented = false
         }
       ),

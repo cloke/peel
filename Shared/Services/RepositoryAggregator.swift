@@ -48,24 +48,20 @@ final class RepositoryAggregator {
   private(set) var lastRebuiltAt: Date?
 
   /// All currently-running agent chains across all repos (convenience for Activity dashboard).
-  #if os(macOS)
   var allActiveChains: [AgentChain] {
     agentManager?.chains.filter { !$0.state.isTerminal } ?? []
   }
-  #endif
 
   // MARK: - Dependencies
 
   /// Set before calling `rebuild()`.
   weak var dataService: DataService?
 
-  #if os(macOS)
   /// MCPServerService — provides ragRepos.
   weak var mcpServerService: MCPServerService?
 
   /// AgentManager — provides chains.
   weak var agentManager: AgentManager?
-  #endif
 
   /// RepoPullScheduler — provides pull status.
   weak var pullScheduler: RepoPullScheduler?
@@ -136,10 +132,8 @@ final class RepositoryAggregator {
     let worktrees = dataService.getTrackedWorktrees()
     let recentPRs = dataService.getRecentPRs(limit: 100)
 
-    #if os(macOS)
     let ragRepos = mcpServerService?.ragRepos ?? []
     let chains = agentManager?.chains ?? []
-    #endif
     let pullHistory = pullScheduler?.pullHistory ?? []
     let isPulling = pullScheduler?.isPulling ?? false
 
@@ -189,7 +183,6 @@ final class RepositoryAggregator {
     )
 
     // normalized URL → [MCPServerService.RAGRepoInfo]
-    #if os(macOS)
     // Sub-packages (parentRepoId != nil) get their own sidebar entries so the user
     // can see every indexed package individually. Top-level repos without a parent
     // use the normalized remote URL so they merge with SyncedRepository entries.
@@ -274,7 +267,6 @@ final class RepositoryAggregator {
         }
       }
     }
-    #endif
 
     // normalized URL → [TrackedWorktree]
     var worktreesByURL: [String: [TrackedWorktree]] = [:]
@@ -320,10 +312,8 @@ final class RepositoryAggregator {
     allURLs.formUnion(syncedByURL.keys)
     allURLs.formUnion(favoriteByURL.keys)
     allURLs.formUnion(trackedByURL.keys)
-    #if os(macOS)
     allURLs.formUnion(ragByURL.keys)
     allURLs.formUnion(chainsByURL.keys)
-    #endif
     allURLs.formUnion(worktreesByURL.keys)
     allURLs.formUnion(registeredPathByURL.keys)
 
@@ -335,10 +325,8 @@ final class RepositoryAggregator {
       let synced = syncedByURL[url]
       let favorite = favoriteByURL[url]
       let tracked = trackedByURL[url]
-      #if os(macOS)
       let rag = ragByURL[url]
       let chainsForRepo = chainsByURL[url] ?? []
-      #endif
       let wtForRepo = worktreesByURL[url] ?? []
 
       // Derive owner/repo for PR lookup
@@ -367,11 +355,9 @@ final class RepositoryAggregator {
       var localPath = synced?.path?.localPath
         ?? deviceState?.localPath.nilIfEmpty
         ?? registeredPathByURL[url]
-      #if os(macOS)
       if localPath == nil {
         localPath = rag?.rootPath.nilIfEmpty
       }
-      #endif
 
       // Remote URL (original format)
       let originalRemoteURL = synced?.repo.remoteURL
@@ -379,11 +365,7 @@ final class RepositoryAggregator {
         ?? favorite?.htmlURL
 
       // RAG status mapping
-      #if os(macOS)
       let ragStatus = mapRAGStatus(rag: rag)
-      #else
-      let ragStatus: UnifiedRepository.RAGStatus? = nil
-      #endif
 
       // Pull status mapping
       let pullStatus = mapPullStatus(
@@ -408,9 +390,7 @@ final class RepositoryAggregator {
           wtForRepo.map(\.createdAt).max(),
           prsForRepo.map(\.viewedAt).max(),
         ]
-        #if os(macOS)
         candidates.append(chainsForRepo.compactMap(\.runStartTime).max())
-        #endif
         return candidates.compactMap { $0 }.max()
       }()
 
@@ -420,7 +400,6 @@ final class RepositoryAggregator {
       }
 
       // macOS-only fields (RAG + chains)
-      #if os(macOS)
       let isSubPackage = rag?.parentRepoId != nil
       let ragFileCount = rag?.fileCount
       let ragChunkCount = rag?.chunkCount
@@ -435,15 +414,6 @@ final class RepositoryAggregator {
           isTerminal: chain.state.isTerminal
         )
       }
-      #else
-      let isSubPackage = false
-      let ragFileCount: Int? = nil
-      let ragChunkCount: Int? = nil
-      let ragEmbeddingModel: String? = nil
-      let ragLastIndexedAt: Date? = nil
-      let activeChainCount = 0
-      let activeChains: [UnifiedRepository.ChainSummary] = []
-      #endif
 
       let unified = UnifiedRepository(
         id: stableId,
@@ -525,11 +495,7 @@ final class RepositoryAggregator {
       uniquingKeysWith: { first, _ in first }
     )
 
-    #if os(macOS)
     logger.info("Rebuilt unified repos: \(result.count) entries from \(syncedRepos.count) synced, \(favorites.count) favorites, \(trackedRepos.count) tracked, \(ragRepos.count) RAG, \(chains.count) chains, \(worktrees.count) worktrees, \(registeredRepos.count) registered")
-    #else
-    logger.info("Rebuilt unified repos: \(result.count) entries from \(syncedRepos.count) synced, \(favorites.count) favorites, \(trackedRepos.count) tracked, \(worktrees.count) worktrees, \(registeredRepos.count) registered")
-    #endif
   }
 
   // MARK: - Convenience
@@ -582,7 +548,6 @@ final class RepositoryAggregator {
   }
 
   /// Map RAGRepoInfo → UnifiedRepository.RAGStatus
-  #if os(macOS)
   private func mapRAGStatus(rag: MCPServerService.RAGRepoInfo?) -> UnifiedRepository.RAGStatus? {
     guard let rag else { return nil }
     // If there are embeddings, it's at least indexed
@@ -599,7 +564,6 @@ final class RepositoryAggregator {
     }
     return .notIndexed
   }
-  #endif
 
   /// Map TrackedRemoteRepo + pull state → UnifiedRepository.PullStatus
   private func mapPullStatus(

@@ -9,7 +9,6 @@ import Foundation
 
 /// Functions that are defined in the git reference
 /// https://git-scm.com/docs/git-clone
-#if os(macOS)
 extension Commands {
   static func clone(with url: String, to destination: URL) async throws -> Model.Repository {
     // TODO: Refactor most of these to use a state on the callback
@@ -23,4 +22,3 @@ extension Commands {
     return Model.Repository(name: repositoryName, path: destination.path)
   }
 }
-#endif
