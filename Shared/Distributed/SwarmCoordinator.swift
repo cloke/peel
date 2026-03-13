@@ -2121,11 +2121,67 @@ public final class SwarmCoordinator {
       guard transfer.status == .queued,
             now.timeIntervalSince(transfer.startedAt) >= 60 else { continue }
       let elapsed = Int(now.timeIntervalSince(transfer.startedAt))
+      let peerConnected =
+        connectedWorkers.contains(where: { $0.id == transfer.peerId })
+        || peerSessionManager.connectedPeers.contains(transfer.peerId)
+        || peerSessionManager.peerStates[transfer.peerId] == .connecting
+
+      if transfer.direction == .pull,
+         transfer.role == .receiver,
+         peerConnected,
+         let incoming = incomingRagTransfers[transfer.id],
+         incoming.retryCount < self.ragTransferMaxRetries {
+        incoming.retryCount += 1
+        let retryAttempt = incoming.retryCount
+        logger.warning(
+          "RAG transfer \(transfer.id) stuck in queued for \(elapsed)s — retrying request (\(retryAttempt)/\(self.ragTransferMaxRetries))"
+        )
+        updateRagTransfer(transfer.id) { state in
+          state.startedAt = now
+          state.errorMessage = "Queued retry \(retryAttempt)/\(self.ragTransferMaxRetries) after \(elapsed)s"
+        }
+
+        let request = PeerMessage.ragArtifactsRequest(
+          id: transfer.id,
+          direction: transfer.direction,
+          repoIdentifier: transfer.repoIdentifier,
+          transferMode: incoming.transferMode ?? .full
+        )
+        Task {
+          do {
+            try await sendMessage(request, to: transfer.peerId)
+            logger.info("RAG transfer \(transfer.id): queued retry request sent to \(transfer.peerId)")
+          } catch {
+            if let distributedError = error as? DistributedError, case .actorSystemNotReady = distributedError {
+              logger.warning(
+                "RAG transfer \(transfer.id): queued retry channel not ready for \(transfer.peerId), reconnecting"
+              )
+              do {
+                try await connectToWorker(peerId: transfer.peerId)
+                try await sendMessage(request, to: transfer.peerId)
+                logger.info("RAG transfer \(transfer.id): queued retry resend succeeded after reconnect")
+              } catch {
+                logger.error(
+                  "RAG transfer \(transfer.id): queued retry resend failed after reconnect: \(error.localizedDescription)"
+                )
+              }
+            } else {
+              logger.error("RAG transfer \(transfer.id): queued retry send failed: \(error.localizedDescription)")
+            }
+          }
+        }
+        continue
+      }
+
       logger.warning("RAG transfer \(transfer.id) stuck in queued for \(elapsed)s — marking failed")
       updateRagTransfer(transfer.id) { state in
         state.status = .failed
         state.errorMessage = "Transfer stuck in queued for \(elapsed)s — peer may be unreachable"
         state.completedAt = now
+      }
+      if transfer.direction == .pull {
+        incomingRagTransfers[transfer.id]?.fileHandle?.closeFile()
+        incomingRagTransfers.removeValue(forKey: transfer.id)
       }
     }
 
