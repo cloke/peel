@@ -304,9 +304,6 @@ public final class SwarmCoordinator {
   
   // MARK: - Private State
   
-  /// Connection manager
-  private var connectionManager: PeerConnectionManager?
-  
   /// Discovery service
   private var discoveryService: BonjourDiscoveryService?
   
@@ -399,11 +396,6 @@ public final class SwarmCoordinator {
       lanPort: port
     )
     self.startedAt = Date()
-    
-    // Create connection manager
-    connectionManager = PeerConnectionManager(capabilities: capabilities, port: port)
-    connectionManager?.delegate = self
-    try connectionManager?.start()
     
     // Create and start discovery
     discoveryService = BonjourDiscoveryService()
@@ -503,7 +495,10 @@ public final class SwarmCoordinator {
         signaling.purpose = "session"
         do {
           try await peerSessionManager.connectToPeer(workerId, signaling: signaling)
-          await MainActor.run { self.startListeningOnPeerSession(workerId) }
+          await MainActor.run {
+            self.startListeningOnPeerSession(workerId)
+            self.registerWebRTCPeerAsConnected(workerId)
+          }
           logger.notice("Persistent session established with \(workerId)")
         } catch {
           logger.warning("Failed to establish session with \(workerId): \(error)")
@@ -578,7 +573,7 @@ public final class SwarmCoordinator {
   /// Reconnect all swarm services after a network disruption (e.g. sleep/wake)
   private func reconnect() {
     guard isActive else { return }
-    let port = connectionManager?.port ?? 8766
+    let port = capabilities.lanPort ?? 8766
 
     // 1. Restart Bonjour discovery + advertising
     discoveryService?.stopAdvertising()
@@ -587,14 +582,10 @@ public final class SwarmCoordinator {
     discoveryService?.startDiscovery()
     logger.info("Bonjour restarted after network restore")
 
-    // 2. Restart TCP listener (connections are gone after sleep)
-    connectionManager?.stop()
-    connectionManager = PeerConnectionManager(capabilities: capabilities, port: port)
-    connectionManager?.delegate = self
-    try? connectionManager?.start()
+    // 2. Clear stale connection state (WebRTC sessions will re-establish via signaling)
     connectedWorkers.removeAll()
     workerStatuses.removeAll()
-    logger.info("TCP listener restarted after network restore")
+    logger.info("Connection state cleared after network restore")
 
     // 3. Restart heartbeats
     if role == .worker || role == .hybrid {
@@ -721,9 +712,9 @@ public final class SwarmCoordinator {
       }
     }
 
-    // Disconnect stale workers - this will trigger didDisconnect and allow reconnection
+    // Disconnect stale workers
     for peerId in staleWorkers {
-      await connectionManager?.disconnect(from: peerId)
+      await peerSessionManager.disconnectPeer(peerId)
     }
   }
 
@@ -746,71 +737,53 @@ public final class SwarmCoordinator {
   private func sendHeartbeat() async {
     guard role == .worker || role == .hybrid else { return }
     let status = currentWorkerStatus()
-    // Send to both TCP and WebRTC connected peers
-    var sentTo = Set<String>()
     let webrtcPeers = peerSessionManager.connectedPeers
     for peerId in webrtcPeers {
       try? await sendMessage(.heartbeat(status: status), to: peerId)
-      sentTo.insert(peerId)
-    }
-    let tcpPeers = connectionManager?.getConnectedPeers() ?? []
-    for peer in tcpPeers where !sentTo.contains(peer.id) {
-      try? await sendMessage(.heartbeat(status: status), to: peer.id)
     }
   }
   
   // MARK: - Crown Methods
   
-  /// Connect to a worker at the given address
-  public func connectToWorker(address: String, port: UInt16 = 8766) async throws {
+  /// Connect to a worker via WebRTC session establishment.
+  /// Uses Firestore signaling to set up a persistent WebRTC session.
+  public func connectToWorker(peerId: String, swarmId: String? = nil) async throws {
     guard isActive else {
       throw DistributedError.actorSystemNotReady
     }
     
-    try await connectionManager?.connect(to: address, port: port)
+    let effectiveSwarmId = swarmId ?? FirebaseService.shared.memberSwarms.first(where: { $0.role.canRegisterWorkers })?.id ?? capabilities.deviceId
+    let signaling = FirestoreWebRTCSignaling(
+      swarmId: effectiveSwarmId,
+      myDeviceId: capabilities.deviceId,
+      remoteDeviceId: peerId
+    )
+    
+    try await peerSessionManager.connectToPeer(peerId, signaling: signaling)
+    startListeningOnPeerSession(peerId)
+    registerWebRTCPeerAsConnected(peerId)
+    logger.info("WebRTC session established with \(peerId)")
   }
 
-  /// Manually connect to a Firestore-discovered WAN worker.
-  /// Tries WAN direct TCP → STUN hole-punch, promoting to a persistent peer connection on success.
+  /// Manually connect to a Firestore-discovered WAN worker via WebRTC.
   public func connectToWANWorker(_ worker: FirestoreWorker) async throws {
     guard isActive else {
       throw DistributedError.actorSystemNotReady
     }
-    guard let connectionManager else {
-      throw DistributedError.actorSystemNotReady
-    }
-
-    // Try WAN direct TCP first
-    if let address = worker.wanAddress, let port = worker.wanPort {
-      logger.info("Manual WAN connect: trying direct TCP to \(worker.displayName) at \(address):\(port)")
-      do {
-        try await connectionManager.connect(to: address, port: port)
-        // Clear from auto-connect retry set on success
-        wanConnectAttempted.removeValue(forKey: worker.id)
-        logger.info("Manual WAN connect: TCP connected to \(worker.displayName) via direct WAN")
-        return
-      } catch {
-        logger.warning("Manual WAN connect: direct TCP failed — \(error.localizedDescription)")
-      }
-    } else {
-      logger.info("Manual WAN connect: \(worker.displayName) has no WAN endpoint (wanAddress=\(worker.wanAddress ?? "nil"), wanPort=\(worker.wanPort.map(String.init) ?? "nil"))")
-    }
-
-    // Direct TCP failed or no WAN endpoint.
-    // TCP peer connections require direct reachability (port forwarding / UPnP).
-    throw DistributedError.connectionFailed(deviceId: worker.id, reason: "Direct TCP unreachable — use Firestore task dispatch for cross-network coordination")
+    
+    try await connectToWorker(peerId: worker.id)
   }
 
   // MARK: - WAN Auto-Connect
 
-  /// Check Firestore workers for WAN/STUN endpoints and auto-connect.
-  /// Priority: STUN hole punch (no router config) → direct TCP.
+  /// Check Firestore workers and auto-connect via WebRTC signaling.
   /// Failed attempts are retried after `wanConnectRetryInterval` (2 min).
   public func autoConnectWANPeers() {
     guard isActive else { return }
 
     let myDeviceId = capabilities.deviceId
     let alreadyConnected = Set(connectedWorkers.map(\.id))
+    let webrtcConnected = Set(peerSessionManager.connectedPeers)
     let firebaseService = FirebaseService.shared
     let now = Date()
 
@@ -820,37 +793,26 @@ public final class SwarmCoordinator {
     }
 
     for worker in firebaseService.swarmWorkers {
-      // Skip self, already-connected, recently-attempted, stale
       guard worker.id != myDeviceId,
             !alreadyConnected.contains(worker.id),
+            !webrtcConnected.contains(worker.id),
             wanConnectAttempted[worker.id] == nil,
             worker.status == .online,
             !worker.isStale else {
         continue
       }
 
-      // Must have a WAN endpoint (STUN auto-connect removed — now on-demand)
-      guard worker.hasWANEndpoint else { continue }
-
       wanConnectAttempted[worker.id] = now
 
       Task {
-        // Direct TCP to WAN address (requires port forwarding / UPnP)
-        if let address = worker.wanAddress,
-           let port = worker.wanPort {
-          logger.info("WAN auto-connect: attempting direct TCP to \(worker.displayName) at \(address):\(port)")
-          do {
-            try await connectionManager?.connect(to: address, port: port)
-            logger.info("WAN auto-connect: TCP connected to \(worker.displayName) via direct WAN")
-            // Clear from attempted on success so we don't expire and retry a working connection
-            _ = await MainActor.run { self.wanConnectAttempted.removeValue(forKey: worker.id) }
-            return
-          } catch {
-            logger.warning("WAN auto-connect: direct TCP failed to \(worker.displayName) at \(address):\(port) — \(error.localizedDescription)")
-          }
+        logger.info("WAN auto-connect: attempting WebRTC session to \(worker.displayName)")
+        do {
+          try await self.connectToWorker(peerId: worker.id)
+          logger.info("WAN auto-connect: WebRTC connected to \(worker.displayName)")
+          self.wanConnectAttempted.removeValue(forKey: worker.id)
+        } catch {
+          logger.warning("WAN auto-connect: WebRTC failed for \(worker.displayName) — \(error.localizedDescription), will retry in \(Int(self.wanConnectRetryInterval))s")
         }
-
-        logger.info("WAN auto-connect: all P2P methods failed for \(worker.displayName) — will retry in \(Int(self.wanConnectRetryInterval))s")
       }
     }
   }
@@ -936,7 +898,7 @@ public final class SwarmCoordinator {
           self.logger.info("LAN reconnect: retrying \(peer.name) (\(peerId)), attempt \(failures + 1)")
           Task {
             do {
-              try await self.connectionManager?.connect(to: peer.endpoint)
+              try await self.connectToWorker(peerId: peerId)
               failureCounts[peerId] = nil  // Reset on success
             } catch {
               failureCounts[peerId] = (failureCounts[peerId] ?? 0) + 1
@@ -977,17 +939,16 @@ public final class SwarmCoordinator {
     }
 
     let responder = WebRTCSignalingResponder()
-    responder.dataProvider = self
     responder.peerSessionManager = peerSessionManager
     responder.onSessionAccepted = { [weak self] peerId in
       self?.startListeningOnPeerSession(peerId)
+      self?.registerWebRTCPeerAsConnected(peerId)
     }
     responder.start(swarmIds: swarmIds, myDeviceId: capabilities.deviceId)
     webrtcSignalingResponder = responder
   }
 
   /// Start listening for PeerMessages on a peer session's mcp channel.
-  /// Routes received messages through the same handler as TCP PeerConnectionManager.
   func startListeningOnPeerSession(_ peerId: String) {
     webrtcMCPListenTasks[peerId]?.cancel()
     webrtcTransferListenTasks[peerId]?.cancel()
@@ -1061,6 +1022,12 @@ public final class SwarmCoordinator {
         }
       }
       logger.info("WebRTC \(label) listener ended for peer \(peerId)")
+      // When the primary (mcp) channel closes, treat the peer as disconnected
+      if label == "mcp" {
+        await MainActor.run { [weak self] in
+          self?.handlePeerDisconnected(peerId)
+        }
+      }
     }
   }
 
@@ -1071,8 +1038,8 @@ public final class SwarmCoordinator {
 
   // MARK: - Transport Abstraction
 
-  /// Send a PeerMessage to a specific worker, preferring WebRTC when connected.
-  /// Falls back to TCP PeerConnectionManager if no WebRTC session is available.
+  /// Send a PeerMessage to a specific worker via WebRTC data channel.
+  /// Prefers the dedicated transfer channel for bulk data, falling back to the MCP channel.
   private func sendMessage(_ message: PeerMessage, to workerId: String) async throws {
     let msgType = String(describing: message).prefix(60)
     let prefersTransferChannel: Bool
@@ -1102,27 +1069,15 @@ public final class SwarmCoordinator {
 
     if let channel = primaryChannel ?? fallbackWebRTCChannel {
       let data = try JSONEncoder().encode(message)
-      do {
-        let channelLabel = prefersTransferChannel && primaryChannel != nil ? "webrtc-transfer" : "webrtc"
-        logger.info("sendMessage to \(workerId): using \(channelLabel) (\(msgType))")
-        traceMessage(direction: "OUT", peerId: workerId, type: channelLabel, detail: String(msgType))
-        try await channel.send(data)
-        return
-      } catch {
-        let channelLabel = prefersTransferChannel && primaryChannel != nil ? "webrtc-transfer" : "webrtc"
-        logger.warning("\(channelLabel) send to \(workerId) failed (\(error)), falling back to TCP")
-        traceMessage(direction: "OUT-FAIL", peerId: workerId, type: "\(channelLabel)-fail", detail: "\(error)")
-        // Fall through to TCP
-      }
+      let channelLabel = prefersTransferChannel && primaryChannel != nil ? "webrtc-transfer" : "webrtc"
+      logger.info("sendMessage to \(workerId): using \(channelLabel) (\(msgType))")
+      traceMessage(direction: "OUT", peerId: workerId, type: channelLabel, detail: String(msgType))
+      try await channel.send(data)
+      return
     }
 
-    // Fallback to TCP connection manager
-    guard let cm = connectionManager else {
-      throw DistributedError.actorSystemNotReady
-    }
-    logger.info("sendMessage to \(workerId): using TCP (\(msgType))")
-    traceMessage(direction: "OUT", peerId: workerId, type: "tcp", detail: String(msgType))
-    try await cm.send(message, to: workerId)
+    // No WebRTC channel available
+    throw DistributedError.actorSystemNotReady
   }
 
   /// Receive the next PeerMessage from a specific worker's WebRTC mcp channel.
@@ -1267,28 +1222,45 @@ public final class SwarmCoordinator {
     let id = UUID()
     logger.info("Sending direct command (waiting): \(command) to \(workerId)")
     
-    // Set up continuation to receive result
-    let result: DirectCommandResult = await withCheckedContinuation { continuation in
-      pendingDirectCommands[id] = continuation
-      
-      Task {
+    // Use a task-group race: command response vs timeout.
+    // This avoids the continuation double-resume race from the old approach.
+    let result: DirectCommandResult
+    do {
+      result = try await withThrowingTaskGroup(of: DirectCommandResult.self) { group in
+        let pendingRef = self
+        group.addTask {
+          await withCheckedContinuation { (cont: CheckedContinuation<DirectCommandResult, Never>) in
+            Task { @MainActor in
+              pendingRef.pendingDirectCommands[id] = cont
+            }
+          }
+        }
+        
+        // Send the message (outside the continuation setup)
         let message = PeerMessage.directCommand(id: id, command: command, args: args, workingDirectory: workingDirectory)
         do {
           try await self.sendMessage(message, to: workerId)
         } catch {
-          // If send fails, resume with error result
           pendingDirectCommands.removeValue(forKey: id)
-          continuation.resume(returning: DirectCommandResult(exitCode: -1, output: "", error: error.localizedDescription))
+          return DirectCommandResult(exitCode: -1, output: "", error: error.localizedDescription)
         }
-      }
-      
-      // Set up timeout
-      Task {
-        try? await Task.sleep(for: timeout)
-        if let cont = pendingDirectCommands.removeValue(forKey: id) {
-          cont.resume(returning: DirectCommandResult(exitCode: -1, output: "", error: "Timeout waiting for command result"))
+        
+        // Timeout task
+        group.addTask {
+          try await Task.sleep(for: timeout)
+          return DirectCommandResult(exitCode: -1, output: "", error: "Timeout waiting for command result")
         }
+        
+        defer { group.cancelAll() }
+        guard let first = try await group.next() else {
+          return DirectCommandResult(exitCode: -1, output: "", error: "No result")
+        }
+        pendingDirectCommands.removeValue(forKey: id)
+        return first
       }
+    } catch {
+      pendingDirectCommands.removeValue(forKey: id)
+      result = DirectCommandResult(exitCode: -1, output: "", error: "Cancelled")
     }
     
     return result
@@ -1866,19 +1838,35 @@ public final class SwarmCoordinator {
   /// Wait for the receiver to ack the manifest (confirming it's ready for chunks).
   /// Falls back to a 500ms delay if the ack doesn't arrive within 2 seconds,
   /// which handles receivers running older code without the ack.
+  ///
+  /// Uses a task-group race to avoid the continuation double-resume race that
+  /// existed with the previous timeout-task approach.
   private func waitForManifestAck(transferId: UUID) async {
-    let timeoutTask = Task { @MainActor [weak self] in
-      try await Task.sleep(for: .seconds(2))
-      if let waiter = self?.manifestAckWaiters.removeValue(forKey: transferId) {
-        waiter.resume(returning: false)
+    let gotAck: Bool
+    do {
+      gotAck = try await withThrowingTaskGroup(of: Bool.self) { group in
+        let ackRef = self
+        group.addTask {
+          await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+            Task { @MainActor in
+              ackRef.manifestAckWaiters[transferId] = cont
+            }
+          }
+        }
+        group.addTask {
+          try await Task.sleep(for: .seconds(2))
+          return false
+        }
+        defer { group.cancelAll() }
+        guard let result = try await group.next() else { return false }
+        // Clean up the waiter if timeout won the race
+        manifestAckWaiters.removeValue(forKey: transferId)
+        return result
       }
+    } catch {
+      manifestAckWaiters.removeValue(forKey: transferId)
+      gotAck = false
     }
-
-    let gotAck = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
-      manifestAckWaiters[transferId] = cont
-    }
-
-    timeoutTask.cancel()
 
     if gotAck {
       logger.info("Manifest ack received for \(transferId), proceeding with chunks")
@@ -2647,10 +2635,41 @@ public final class SwarmCoordinator {
   }
 }
 
-// MARK: - PeerConnectionDelegate
+// MARK: - Peer Connection Lifecycle
 
-extension SwarmCoordinator: PeerConnectionDelegate {
-  public func connectionManager(_ manager: PeerConnectionManager, didConnect peer: ConnectedPeer) {
+extension SwarmCoordinator {
+  /// Build a ConnectedPeer from Firestore worker data and register it.
+  /// Called after a WebRTC session is successfully established (either as initiator or responder).
+  private func registerWebRTCPeerAsConnected(_ peerId: String) {
+    let worker = FirebaseService.shared.swarmWorkers.first(where: { $0.id == peerId })
+    let caps = WorkerCapabilities(
+      deviceId: peerId,
+      deviceName: worker?.deviceName ?? peerId,
+      displayName: worker?.displayName,
+      platform: .macOS,
+      gpuCores: 0,
+      neuralEngineCores: 0,
+      memoryGB: 0,
+      storageAvailableGB: 0,
+      gitCommitHash: worker?.gitCommitHash,
+      lanAddress: worker?.lanAddress,
+      lanPort: worker?.lanPort,
+      wanAddress: worker?.wanAddress,
+      wanPort: worker?.wanPort,
+      stunAddress: worker?.stunAddress,
+      stunPort: worker?.stunPort
+    )
+    let peer = ConnectedPeer(
+      id: peerId,
+      name: worker?.deviceName ?? peerId,
+      capabilities: caps,
+      isIncoming: false
+    )
+    handlePeerConnected(peer)
+  }
+
+  /// Handle a peer connecting (called from WebRTC session establishment).
+  func handlePeerConnected(_ peer: ConnectedPeer) {
     // Check if this is a reconnection (same deviceId, possibly new capabilities)
     if let existingIndex = connectedWorkers.firstIndex(where: { $0.id == peer.id }) {
       let existing = connectedWorkers[existingIndex]
@@ -2704,7 +2723,8 @@ extension SwarmCoordinator: PeerConnectionDelegate {
     attemptResumeTransfers(with: peer.id)
   }
   
-  public func connectionManager(_ manager: PeerConnectionManager, didDisconnect peerId: String) {
+  /// Handle a peer disconnecting (called from WebRTC session teardown).
+  func handlePeerDisconnected(_ peerId: String) {
     let workerName = connectedWorkers.first(where: { $0.id == peerId })?.name ?? peerId
     connectedWorkers.removeAll { $0.id == peerId }
     if let existing = workerStatuses[peerId] {
@@ -2728,7 +2748,6 @@ extension SwarmCoordinator: PeerConnectionDelegate {
       logger.error("Peer \(workerName) disconnect affects \(affectedTransfers.count) active RAG transfer(s)")
     }
     for (id, transfer) in affectedTransfers {
-      // Only checkpoint transfers that have actually received some data
       if transfer.receivedChunks > 0 {
         saveCheckpoint(for: transfer)
         logger.info("RAG transfer \(id) checkpointed on disconnect (\(transfer.receivedChunks)/\(transfer.expectedChunks ?? 0) chunks)")
@@ -2753,14 +2772,6 @@ extension SwarmCoordinator: PeerConnectionDelegate {
 
     delegate?.swarmCoordinator(self, didEmit: .workerDisconnected(peerId))
     logger.info("Peel disconnected: \(workerName) (\(peerId))")
-  }
-  
-  public func connectionManager(_ manager: PeerConnectionManager, didReceive message: PeerMessage, from peerId: String) {
-    handlePeerMessage(message, from: peerId)
-  }
-  
-  public func connectionManager(_ manager: PeerConnectionManager, didFailWithError error: Error) {
-    logger.error("Connection error: \(error)")
   }
 }
 
@@ -2957,14 +2968,11 @@ extension SwarmCoordinator: BonjourDiscoveryDelegate {
       }
     }
     
-    logger.info("Discovered peer: \(peer.name), connecting via endpoint...")
+    logger.info("Discovered peer: \(peer.name), initiating WebRTC session...")
     
-    // Connect directly via the Bonjour endpoint — avoids the old resolvePeer()
-    // which created throwaway TCP connections (spurious handshake failures on
-    // the remote) and could leak continuations or lose IPv6 scope IDs.
     Task {
       do {
-        try await connectionManager?.connect(to: peer.endpoint)
+        try await self.connectToWorker(peerId: peer.id)
       } catch {
         logger.error("Failed to connect to discovered peer \(peer.name): \(error)")
       }
@@ -3183,34 +3191,6 @@ extension SwarmCoordinator {
     #else
     return nil  // iOS doesn't support Process
     #endif
-  }
-}
-
-// MARK: - WebRTCTransferDataProvider
-
-extension SwarmCoordinator: WebRTCTransferDataProvider {
-  nonisolated public func exportRepoBundle(repoIdentifier: String) async throws -> Data {
-    let log = Logger(subsystem: "com.peel.webrtc", category: "SwarmCoordinator")
-    let start = ContinuousClock.now
-    log.notice("[exportRepoBundle] ENTER for \(repoIdentifier) (on MainActor: \(Thread.isMainThread))")
-    guard let delegate = await ragSyncDelegate else {
-      throw SwarmTransferError(message: "No RAG sync delegate available")
-    }
-    let bundleStart = ContinuousClock.now
-    guard let bundle = try await delegate.createRepoSyncBundle(
-      repoIdentifier: repoIdentifier,
-      excludeFileHashes: []
-    ) else {
-      throw SwarmTransferError(message: "No bundle available for \(repoIdentifier)")
-    }
-    log.notice("[exportRepoBundle] createRepoSyncBundle: \(ContinuousClock.now - bundleStart) (on MainActor: \(Thread.isMainThread))")
-    // Encode off main actor to avoid blocking UI
-    let encodeStart = ContinuousClock.now
-    let data = try await Task.detached(priority: .userInitiated) {
-      try JSONEncoder().encode(bundle)
-    }.value
-    log.notice("[exportRepoBundle] encode: \(ContinuousClock.now - encodeStart), total: \(ContinuousClock.now - start), size: \(data.count) bytes")
-    return data
   }
 }
 
