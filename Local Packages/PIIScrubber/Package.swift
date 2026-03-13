@@ -6,7 +6,6 @@ let package = Package(
   name: "PIIScrubber",
   platforms: [
     .macOS(.v15),
-    .iOS(.v18),
   ],
   products: [
     .library(

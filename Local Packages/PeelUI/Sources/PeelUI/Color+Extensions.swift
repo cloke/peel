@@ -8,11 +8,7 @@
 
 import SwiftUI
 
-#if canImport(UIKit)
-import UIKit
-#elseif canImport(AppKit)
 import AppKit
-#endif
 
 extension Color {
   /// Initialize a Color from a hex string
@@ -85,11 +81,7 @@ extension Color {
     var r, g, b, a: CGFloat
     (r, g, b, a) = (0, 0, 0, 0)
     
-    #if canImport(UIKit)
-    typealias NativeColor = UIColor
-    #elseif canImport(AppKit)
     typealias NativeColor = NSColor
-    #endif
     
     // On macOS, use NSColor with color space conversion
     NativeColor(self).usingColorSpace(.extendedSRGB)?.getRed(&r, green: &g, blue: &b, alpha: &a)

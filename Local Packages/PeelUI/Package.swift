@@ -5,7 +5,7 @@ import PackageDescription
 
 let package = Package(
   name: "PeelUI",
-  platforms: [.macOS("26"), .iOS("26")],
+  platforms: [.macOS("26")],
   products: [
     .library(
       name: "PeelUI",

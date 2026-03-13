@@ -51,6 +51,7 @@ extension MCPServerService {
     defs += parallelToolsHandler.toolDefinitions    // parallel.* (~16)
     defs += runToolsHandler.toolDefinitions         // runs.* (~4)
     defs += repoProfileToolsHandler.toolDefinitions // repo.profile.* (~3)
+    defs += missionToolsHandler.toolDefinitions     // mission.* (~2)
     defs += schedulingToolsHandler.toolDefinitions  // scheduling.* (~6)
 
     // --- Tier 3: Specialized / infrastructure ---

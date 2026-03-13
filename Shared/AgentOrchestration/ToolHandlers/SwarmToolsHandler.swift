@@ -57,10 +57,6 @@ public final class SwarmToolsHandler: MCPToolHandler {
     "swarm.setup-labels",
     "swarm.register-repo",
     "swarm.repos",
-    "swarm.stun-test",
-    // P2P connection logging and remote log retrieval
-    "swarm.p2p-logs",
-    "swarm.request-logs",
     // WebRTC connectivity testing
     "swarm.webrtc-ping",
     // Firestore swarm tools
@@ -109,12 +105,6 @@ public final class SwarmToolsHandler: MCPToolHandler {
       return handleStatus(id: id)
     case "swarm.diagnostics":
       return handleDiagnostics(id: id)
-    case "swarm.stun-test":
-      return await handleStunTest(id: id, arguments: arguments)
-    case "swarm.p2p-logs":
-      return handleP2PLogs(id: id, arguments: arguments)
-    case "swarm.request-logs":
-      return await handleRequestLogs(id: id, arguments: arguments)
     case "swarm.webrtc-ping":
       return await handleWebRTCPing(id: id, arguments: arguments)
     case "swarm.rag.sync":

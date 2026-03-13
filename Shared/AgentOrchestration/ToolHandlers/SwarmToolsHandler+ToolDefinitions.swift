@@ -70,62 +70,6 @@ extension SwarmToolsHandler {
         isMutating: false
       ),
       MCPToolDefinition(
-        name: "swarm.stun-test",
-        description: "Test STUN NAT traversal. Queries public STUN servers to discover this machine's external IP:port and NAT type. Useful for diagnosing WAN peer connectivity. Queries multiple servers to detect if NAT port mapping is consistent (cone NAT) or changes per destination (symmetric NAT — hole punching won't work).",
-        inputSchema: [
-          "type": "object",
-          "properties": [
-            "localPort": [
-              "type": "integer",
-              "description": "Local UDP port to bind for discovery (default: 8766, the swarm port). Use the same port you'd use for hole punching."
-            ]
-          ],
-          "required": []
-        ],
-        category: .swarm,
-        isMutating: false
-      ),
-      MCPToolDefinition(
-        name: "swarm.p2p-logs",
-        description: "Get P2P connection logs from THIS machine. Shows every step of the LAN/WAN/STUN/relay pipeline with timestamps. Use 'limit' to control how many entries to return (default 100, max 500).",
-        inputSchema: [
-          "type": "object",
-          "properties": [
-            "limit": [
-              "type": "integer",
-              "description": "Max number of log entries to return (default: 100)"
-            ]
-          ],
-          "required": []
-        ],
-        category: .swarm,
-        isMutating: false
-      ),
-      MCPToolDefinition(
-        name: "swarm.request-logs",
-        description: "Request P2P connection logs from a REMOTE worker via Firestore. Works even without a direct TCP connection — uses Firestore as the transport. Returns the remote machine's P2P log entries for debugging connection issues.",
-        inputSchema: [
-          "type": "object",
-          "properties": [
-            "targetWorkerName": [
-              "type": "string",
-              "description": "Display name of the worker (e.g. 'coremore')"
-            ],
-            "targetWorkerId": [
-              "type": "string",
-              "description": "Device ID of the worker (alternative to targetWorkerName)"
-            ],
-            "timeout": [
-              "type": "integer",
-              "description": "Timeout in seconds waiting for response (default: 30)"
-            ]
-          ],
-          "required": []
-        ],
-        category: .swarm,
-        isMutating: false
-      ),
-      MCPToolDefinition(
         name: "swarm.webrtc-ping",
         description: "Test full WebRTC connectivity to a remote swarm worker. Performs Firestore signaling (SDP offer/answer), ICE negotiation, data channel establishment, and a round-trip ping/pong message. Returns timing for each stage. The remote worker must be running Peel with the swarm active.",
         inputSchema: [

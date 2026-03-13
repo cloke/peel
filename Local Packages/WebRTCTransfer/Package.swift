@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
   name: "WebRTCTransfer",
-  platforms: [.macOS("26"), .iOS("26")],
+  platforms: [.macOS("26")],
   products: [
     .library(
       name: "WebRTCTransfer",

@@ -1998,7 +1998,14 @@ public final class AgentChainRunner {
   /// Build enriched prompt with pre-planner context
   private func buildEnrichedPrompt(original: String, prePlannerOutput: PrePlannerOutput, chain: AgentChain) -> String {
     var enriched = ""
-    
+
+    // Inject mission statement if available
+    let repoPath = chain.workingDirectory ?? ""
+    if let missionBlock = MissionService.shared.missionPromptBlock(for: repoPath) {
+      enriched += missionBlock
+      enriched += "\n"
+    }
+
     // Add goals
     if !prePlannerOutput.goals.isEmpty {
       enriched += "## Inferred Goals\n"

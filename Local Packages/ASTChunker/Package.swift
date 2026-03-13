@@ -6,7 +6,6 @@ let package = Package(
   name: "astchunker",
   platforms: [
     .macOS(.v15),
-    .iOS(.v18),
   ],
   products: [
     .library(

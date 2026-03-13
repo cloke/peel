@@ -602,24 +602,6 @@ extension SwarmToolsHandler {
     ]))
   }
 
-  // MARK: - swarm.p2p-logs (deprecated)
-
-  func handleP2PLogs(id: Any?, arguments: [String: Any]) -> (Int, Data) {
-    return (200, makeResult(id: id, result: [
-      "deprecated": true,
-      "message": "P2P connection logs have been replaced by WebRTC session diagnostics. Use swarm.diagnostics instead.",
-    ]))
-  }
-
-  // MARK: - swarm.request-logs (deprecated)
-
-  func handleRequestLogs(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    return (200, makeResult(id: id, result: [
-      "deprecated": true,
-      "message": "Remote log requests have been replaced by WebRTC session diagnostics. Use swarm.diagnostics instead.",
-    ]))
-  }
-
   /// Resolve a worker ID from either a name or direct ID
   private func resolveWorkerId(name: String?, id: String?) -> String? {
     if let id, !id.isEmpty { return id }
@@ -694,15 +676,6 @@ extension SwarmToolsHandler {
         return (200, makeResult(id: id, result: body))
       }
     }
-  }
-
-  // MARK: - swarm.stun-test (deprecated)
-
-  func handleStunTest(id: Any?, arguments: [String: Any]) async -> (Int, Data) {
-    return (200, makeResult(id: id, result: [
-      "deprecated": true,
-      "message": "STUN test is no longer needed. NAT traversal is now handled automatically by WebRTC ICE. Use swarm.webrtc-ping to test connectivity.",
-    ]))
   }
 
   // MARK: - swarm.rag-versions (on-demand P2P)
