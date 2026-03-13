@@ -1076,12 +1076,24 @@ public final class SwarmCoordinator {
         if Task.isCancelled { break }
 
         if channelClosed && label == "mcp" {
-          await MainActor.run { [weak self] in
+          Task { @MainActor [weak self] in
             guard let self else { return }
+            // mcp can flap briefly while the session/transfer channel remains alive.
+            try? await Task.sleep(for: .seconds(2))
+
             guard self.webrtcListenGeneration[peerId] == generation else {
               self.logger.info("Ignoring stale WebRTC mcp listener completion for \(peerId) (generation \(generation))")
               return
             }
+
+            let state = self.peerSessionManager.peerStates[peerId]
+            let mcp = await self.peerSessionManager.mcpChannel(for: peerId)
+            let transfer = await self.peerSessionManager.transferChannel(for: peerId)
+            if state == .connected && (mcp != nil || transfer != nil) {
+              self.logger.info("Suppressing transient mcp disconnect for \(peerId) — session still connected")
+              return
+            }
+
             self.handlePeerDisconnected(peerId)
           }
         }
@@ -1106,7 +1118,7 @@ public final class SwarmCoordinator {
     let msgType = String(describing: message).prefix(60)
     let prefersTransferChannel: Bool
     switch message {
-    case .ragArtifactsChunk, .ragArtifactsComplete, .ragArtifactsError:
+    case .ragArtifactsRequest, .ragArtifactsManifest, .ragArtifactsChunk, .ragArtifactsComplete, .ragArtifactsError, .ragArtifactsAck, .ragArtifactsResumeRequest:
       prefersTransferChannel = true
     default:
       prefersTransferChannel = false
@@ -1802,8 +1814,13 @@ public final class SwarmCoordinator {
     transfer.expectedChunks = total
     transfer.receivedChunkIndices.insert(index)
     transfer.lastChunkReceivedAt = Date()
+    // Any forward progress proves the sender is alive; reset retry budget so
+    // intermittent WAN jitter doesn't permanently cap long transfers.
+    transfer.retryCount = 0
 
     updateRagTransfer(id) { state in
+      state.status = .transferring
+      state.errorMessage = nil
       state.transferredBytes = transfer.receivedBytes
     }
 
@@ -2859,11 +2876,9 @@ extension SwarmCoordinator {
       logger.error("Peer \(workerName) disconnect affects \(affectedTransfers.count) active RAG transfer(s)")
     }
     for (id, transfer) in affectedTransfers {
-      if transfer.receivedChunks > 0 {
-        saveCheckpoint(for: transfer)
-        logger.info("RAG transfer \(id) checkpointed on disconnect (\(transfer.receivedChunks)/\(transfer.expectedChunks ?? 0) chunks)")
-      }
-      failTransfer(id: id, message: "Peer disconnected\(transfer.receivedChunks > 0 ? " (checkpoint saved, will auto-resume on reconnect)" : "")")
+      saveCheckpoint(for: transfer)
+      logger.info("RAG transfer \(id) checkpointed on disconnect (\(transfer.receivedChunks)/\(transfer.expectedChunks ?? 0) chunks)")
+      failTransfer(id: id, message: "Peer disconnected (checkpoint saved, will auto-resume on reconnect)")
     }
 
     // Also check outgoing ragTransfers (we were sending to this peer)
