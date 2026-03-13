@@ -319,6 +319,10 @@ public final class SwarmCoordinator {
   /// Active WebRTC transfer channel listen tasks, keyed by peerId
   private var webrtcTransferListenTasks: [String: Task<Void, Never>] = [:]
 
+  /// Monotonically increasing listen-task generation per peer.
+  /// Prevents stale listeners from old sessions from tearing down a newly reconnected peer.
+  private var webrtcListenGeneration: [String: Int] = [:]
+
   /// Delegate
   public weak var delegate: SwarmCoordinatorDelegate?
 
@@ -956,11 +960,14 @@ public final class SwarmCoordinator {
 
   /// Start listening for PeerMessages on a peer session's mcp channel.
   func startListeningOnPeerSession(_ peerId: String) {
+    let generation = (webrtcListenGeneration[peerId] ?? 0) + 1
+    webrtcListenGeneration[peerId] = generation
     webrtcMCPListenTasks[peerId]?.cancel()
     webrtcTransferListenTasks[peerId]?.cancel()
 
     webrtcMCPListenTasks[peerId] = makeWebRTCListenTask(
       peerId: peerId,
+      generation: generation,
       label: "mcp",
       rawType: "raw-recv",
       channelProvider: { [weak self] in
@@ -971,6 +978,7 @@ public final class SwarmCoordinator {
 
     webrtcTransferListenTasks[peerId] = makeWebRTCListenTask(
       peerId: peerId,
+      generation: generation,
       label: "transfer",
       rawType: "raw-transfer-recv",
       channelProvider: { [weak self] in
@@ -982,6 +990,7 @@ public final class SwarmCoordinator {
 
   private func makeWebRTCListenTask(
     peerId: String,
+    generation: Int,
     label: String,
     rawType: String,
     channelProvider: @escaping @Sendable () async -> DataChannelHandle?
@@ -989,72 +998,98 @@ public final class SwarmCoordinator {
     Task.detached { [weak self] in
       guard let self else { return }
       let logger = await MainActor.run { self.logger }
-      guard let channel = await channelProvider() else {
-        logger.info("No \(label, privacy: .public) channel for \(peerId, privacy: .public), skipping WebRTC listen")
-        return
-      }
-
-      logger.info("Started WebRTC \(label, privacy: .public) listener for peer \(peerId, privacy: .public)")
       var msgSeq = 0
+      var hasLoggedWaitingForChannel = false
+
       while !Task.isCancelled {
-        do {
-          let data = try await channel.receive(timeout: .seconds(300))
-          msgSeq += 1
-
-          if msgSeq <= 5 || (msgSeq <= 120 && data.count > 100_000) {
-            await MainActor.run { [weak self] in
-              self?.traceMessage(
-                direction: "IN-RAW",
-                peerId: peerId,
-                type: rawType,
-                detail: "channel=\(label) seq=\(msgSeq) size=\(data.count)"
-              )
-            }
+        guard let channel = await channelProvider() else {
+          if !hasLoggedWaitingForChannel {
+            logger.info("Waiting for WebRTC \(label, privacy: .public) channel for \(peerId, privacy: .public)")
+            hasLoggedWaitingForChannel = true
           }
+          try? await Task.sleep(for: .milliseconds(250))
+          continue
+        }
 
+        if hasLoggedWaitingForChannel {
+          logger.info("Acquired WebRTC \(label, privacy: .public) channel for \(peerId, privacy: .public)")
+          hasLoggedWaitingForChannel = false
+        } else {
+          logger.info("Started WebRTC \(label, privacy: .public) listener for peer \(peerId, privacy: .public)")
+        }
+
+        var channelClosed = false
+        while !Task.isCancelled {
           do {
-            let message = try JSONDecoder().decode(PeerMessage.self, from: data)
-            await MainActor.run { [weak self] in
-              self?.handleWebRTCPeerMessage(message, from: peerId)
+            let data = try await channel.receive(timeout: .seconds(300))
+            msgSeq += 1
+
+            if msgSeq <= 5 || (msgSeq <= 120 && data.count > 100_000) {
+              await MainActor.run { [weak self] in
+                self?.traceMessage(
+                  direction: "IN-RAW",
+                  peerId: peerId,
+                  type: rawType,
+                  detail: "channel=\(label) seq=\(msgSeq) size=\(data.count)"
+                )
+              }
             }
-          } catch {
-            logger.error(
-              "WebRTC decode error from \(peerId, privacy: .public) on \(label, privacy: .public): \(String(describing: error), privacy: .public) (data size: \(data.count) bytes)"
-            )
-            await MainActor.run { [weak self] in
-              self?.traceMessage(
-                direction: "IN-ERR",
-                peerId: peerId,
-                type: "decode-err",
-                detail: "channel=\(label) seq=\(msgSeq) size=\(data.count) \(error)"
+
+            do {
+              let message = try JSONDecoder().decode(PeerMessage.self, from: data)
+              await MainActor.run { [weak self] in
+                self?.handleWebRTCPeerMessage(message, from: peerId)
+              }
+            } catch {
+              logger.error(
+                "WebRTC decode error from \(peerId, privacy: .public) on \(label, privacy: .public): \(String(describing: error), privacy: .public) (data size: \(data.count) bytes)"
               )
+              await MainActor.run { [weak self] in
+                self?.traceMessage(
+                  direction: "IN-ERR",
+                  peerId: peerId,
+                  type: "decode-err",
+                  detail: "channel=\(label) seq=\(msgSeq) size=\(data.count) \(error)"
+                )
+              }
+              continue
             }
-            continue
-          }
-        } catch is CancellationError {
-          break
-        } catch {
-          let isFatal = !channel.isOpen
-          if isFatal {
-            logger.warning(
-              "WebRTC \(label, privacy: .public) channel closed for \(peerId, privacy: .public): \(String(describing: error), privacy: .public)"
-            )
+          } catch is CancellationError {
             break
-          } else {
-            logger.debug(
-              "WebRTC \(label, privacy: .public) receive non-fatal: \(peerId, privacy: .public), \(String(describing: error), privacy: .public)"
-            )
-            continue
+          } catch {
+            let isFatal = !channel.isOpen
+            if isFatal {
+              logger.warning(
+                "WebRTC \(label, privacy: .public) channel closed for \(peerId, privacy: .public): \(String(describing: error), privacy: .public)"
+              )
+              channelClosed = true
+              break
+            } else {
+              logger.debug(
+                "WebRTC \(label, privacy: .public) receive non-fatal: \(peerId, privacy: .public), \(String(describing: error), privacy: .public)"
+              )
+              continue
+            }
           }
         }
+
+        if Task.isCancelled { break }
+
+        if channelClosed && label == "mcp" {
+          await MainActor.run { [weak self] in
+            guard let self else { return }
+            guard self.webrtcListenGeneration[peerId] == generation else {
+              self.logger.info("Ignoring stale WebRTC mcp listener completion for \(peerId) (generation \(generation))")
+              return
+            }
+            self.handlePeerDisconnected(peerId)
+          }
+        }
+
+        // Channel closed or rotated: re-resolve and continue listening.
+        try? await Task.sleep(for: .milliseconds(100))
       }
       logger.info("WebRTC \(label, privacy: .public) listener ended for peer \(peerId, privacy: .public)")
-      // When the primary (mcp) channel closes, treat the peer as disconnected
-      if label == "mcp" {
-        await MainActor.run { [weak self] in
-          self?.handlePeerDisconnected(peerId)
-        }
-      }
     }
   }
 
@@ -1077,26 +1112,45 @@ public final class SwarmCoordinator {
       prefersTransferChannel = false
     }
     
-    let primaryChannel = if prefersTransferChannel {
-      await peerSessionManager.transferChannel(for: workerId)
-    } else {
-      await peerSessionManager.mcpChannel(for: workerId)
+    func resolveChannels() async -> (primary: DataChannelHandle?, fallback: DataChannelHandle?) {
+      let primary = if prefersTransferChannel {
+        await peerSessionManager.transferChannel(for: workerId)
+      } else {
+        await peerSessionManager.mcpChannel(for: workerId)
+      }
+      let fallback: DataChannelHandle? = if prefersTransferChannel {
+        await peerSessionManager.mcpChannel(for: workerId)
+      } else {
+        nil
+      }
+      return (primary, fallback)
     }
-    let fallbackWebRTCChannel: DataChannelHandle? = if prefersTransferChannel {
-      await peerSessionManager.mcpChannel(for: workerId)
-    } else {
-      nil
+    
+    var channels = await resolveChannels()
+    if channels.primary == nil && channels.fallback == nil {
+      // Session can report connected slightly before the data channel becomes readable.
+      // Give a short grace period to avoid false "actor system not ready" failures.
+      let state = peerSessionManager.peerStates[workerId]
+      if state == .connecting || state == .connected {
+        for _ in 0..<20 {
+          try? await Task.sleep(for: .milliseconds(100))
+          channels = await resolveChannels()
+          if channels.primary != nil || channels.fallback != nil {
+            break
+          }
+        }
+      }
     }
 
-    if prefersTransferChannel && primaryChannel == nil {
+    if prefersTransferChannel && channels.primary == nil {
       let sessionExists = peerSessionManager.sessions[workerId] != nil
       logger.warning("sendMessage: transfer channel NIL for \(workerId) (session exists: \(sessionExists)), falling to MCP")
       traceMessage(direction: "OUT-WARN", peerId: workerId, type: "transfer-nil", detail: "session=\(sessionExists) msg=\(msgType)")
     }
 
-    if let channel = primaryChannel ?? fallbackWebRTCChannel {
+    if let channel = channels.primary ?? channels.fallback {
       let data = try JSONEncoder().encode(message)
-      let channelLabel = prefersTransferChannel && primaryChannel != nil ? "webrtc-transfer" : "webrtc"
+      let channelLabel = prefersTransferChannel && channels.primary != nil ? "webrtc-transfer" : "webrtc"
       logger.info("sendMessage to \(workerId): using \(channelLabel) (\(msgType))")
       traceMessage(direction: "OUT", peerId: workerId, type: channelLabel, detail: String(msgType))
       try await channel.send(data)
@@ -1104,6 +1158,9 @@ public final class SwarmCoordinator {
     }
 
     // No WebRTC channel available
+    let state = peerSessionManager.peerStates[workerId]?.rawValue ?? "unknown"
+    let sessionExists = peerSessionManager.sessions[workerId] != nil
+    logger.error("sendMessage failed: no channel for \(workerId) (state=\(state), session=\(sessionExists)) msg=\(msgType)")
     throw DistributedError.actorSystemNotReady
   }
 
@@ -1383,23 +1440,42 @@ public final class SwarmCoordinator {
       )
     }
 
+    let requestMessage = PeerMessage.ragArtifactsRequest(
+      id: transferId,
+      direction: direction,
+      repoIdentifier: repoIdentifier,
+      transferMode: transferMode
+    )
+    var requestSent = false
     do {
-      try await sendMessage(
-        .ragArtifactsRequest(id: transferId, direction: direction, repoIdentifier: repoIdentifier, transferMode: transferMode),
-        to: targetWorker.id
-      )
+      try await sendMessage(requestMessage, to: targetWorker.id)
+      requestSent = true
     } catch {
-      if direction == .pull {
-        incomingRagTransfers[transferId]?.fileHandle?.closeFile()
-        incomingRagTransfers.removeValue(forKey: transferId)
+      // Channel state can lag right after relay start/reconnect. Try one reconnect + resend.
+      if let distributedError = error as? DistributedError, case .actorSystemNotReady = distributedError {
+        logger.warning("RAG sync request \(transferId): channel not ready for \(targetWorker.id), retrying after reconnect")
+        do {
+          try await connectToWorker(peerId: targetWorker.id)
+          try await sendMessage(requestMessage, to: targetWorker.id)
+          logger.info("RAG sync request \(transferId): resend succeeded after reconnect to \(targetWorker.id)")
+          requestSent = true
+        } catch {
+          logger.error("RAG sync request \(transferId): resend failed after reconnect: \(error.localizedDescription)")
+        }
       }
-      // Clean up the orphaned transfer if the message couldn't be sent
-      updateRagTransfer(transferId) { state in
-        state.status = .failed
-        state.errorMessage = "Failed to send request: \(error.localizedDescription)"
-        state.completedAt = Date()
+      if !requestSent {
+        if direction == .pull {
+          incomingRagTransfers[transferId]?.fileHandle?.closeFile()
+          incomingRagTransfers.removeValue(forKey: transferId)
+        }
+        // Clean up the orphaned transfer if the message couldn't be sent
+        updateRagTransfer(transferId) { state in
+          state.status = .failed
+          state.errorMessage = "Failed to send request: \(error.localizedDescription)"
+          state.completedAt = Date()
+        }
+        throw error
       }
-      throw error
     }
 
     if direction == .push {
@@ -1440,7 +1516,7 @@ public final class SwarmCoordinator {
         let jsonData = try await Task.detached(priority: .userInitiated) {
           try JSONEncoder().encode(overlayBundle)
         }.value
-        let chunkSize = 256 * 1024
+        let chunkSize = usesWebRTC ? 64 * 1024 : 256 * 1024
         let totalChunks = max(1, Int(ceil(Double(max(1, jsonData.count)) / Double(chunkSize))))
 
         logger.info("RAG overlay sync bundle: \(overlayBundle.manifest.repoIdentifier), \(jsonData.count) bytes (\(overlayBundle.totalEntries) entries, \(overlayBundle.totalEmbeddings) embeddings, \(overlayBundle.totalAnalysis) analysis), \(totalChunks) chunks")
@@ -1463,11 +1539,9 @@ public final class SwarmCoordinator {
           repos: []
         )
         try await sendMessage(.ragArtifactsManifest(id: transferId, manifest: manifest), to: peer.id)
+        traceMessage(direction: "OUT", peerId: peer.id, type: "ragManifest-sent", detail: "id=\(transferId) bytes=\(jsonData.count) chunks=\(totalChunks)")
         if usesWebRTC {
-          // The first large SCTP message sent immediately after a small manifest can be
-          // dropped on the persistent WebRTC mcp channel. Give the receiver a brief
-          // scheduling window before chunk 0 so ordered delivery starts cleanly.
-          try await Task.sleep(for: .milliseconds(150))
+          await waitForManifestAck(transferId: transferId)
         }
 
         var offset = 0
@@ -1484,6 +1558,9 @@ public final class SwarmCoordinator {
               .ragArtifactsChunk(id: transferId, index: chunkIndex, total: totalChunks, data: base64),
               to: peer.id
             )
+            if chunkIndex == 0 || chunkIndex == totalChunks - 1 {
+              traceMessage(direction: "OUT", peerId: peer.id, type: "ragChunk-sent", detail: "id=\(transferId) chunk=\(chunkIndex)/\(totalChunks) b64len=\(base64.count)")
+            }
             // Yield between chunks to avoid overwhelming the receiver
             await Task.yield()
           }
@@ -1525,7 +1602,7 @@ public final class SwarmCoordinator {
         let jsonData = try await Task.detached(priority: .userInitiated) {
           try JSONEncoder().encode(repoBundle)
         }.value
-        let chunkSize = 256 * 1024
+        let chunkSize = usesWebRTC ? 64 * 1024 : 256 * 1024
         let totalChunks = max(1, Int(ceil(Double(max(1, jsonData.count)) / Double(chunkSize))))
 
         logger.info("RAG repo sync bundle: \(repoBundle.manifest.repoIdentifier), \(jsonData.count) bytes, \(totalChunks) chunks")
@@ -1595,7 +1672,7 @@ public final class SwarmCoordinator {
       let bundle = try await ragSyncDelegate.createRagArtifactBundle()
       let fileAttributes = try FileManager.default.attributesOfItem(atPath: bundle.bundleURL.path)
       let fileSize = (fileAttributes[.size] as? NSNumber)?.intValue ?? bundle.bundleSizeBytes
-      let chunkSize = 256 * 1024
+      let chunkSize = usesWebRTC ? 64 * 1024 : 256 * 1024
       let totalChunks = max(1, Int(ceil(Double(max(1, fileSize)) / Double(chunkSize))))
 
       logger.info("RAG sync bundle created: \(bundle.manifest.version), \(fileSize) bytes, \(totalChunks) chunks")
@@ -2052,8 +2129,12 @@ public final class SwarmCoordinator {
 
       logger.warning("RAG transfer \(id) stalled (\(Int(elapsed))s since last chunk, \(transfer.receivedChunks)/\(transfer.expectedChunks ?? 0) chunks)")
 
-      // Check if the peer is still connected
-      let peerConnected = connectedWorkers.contains(where: { $0.id == transfer.peerId })
+      // Check if the peer is still connected. The `connectedWorkers` mirror can lag
+      // behind `peerSessionManager` during reconnects, so consult both.
+      let peerConnected =
+        connectedWorkers.contains(where: { $0.id == transfer.peerId })
+        || peerSessionManager.connectedPeers.contains(transfer.peerId)
+        || peerSessionManager.peerStates[transfer.peerId] == .connecting
 
       if peerConnected {
         // Peer is connected but sender may have crashed/stalled — mark as stalled
@@ -2662,9 +2743,9 @@ public final class SwarmCoordinator {
 // MARK: - Peer Connection Lifecycle
 
 extension SwarmCoordinator {
-  /// Build a ConnectedPeer from Firestore worker data and register it.
-  /// Called after a WebRTC session is successfully established (either as initiator or responder).
-  private func registerWebRTCPeerAsConnected(_ peerId: String) {
+  /// Build a best-effort ConnectedPeer view for a worker ID.
+  /// Uses Firestore metadata when available, otherwise falls back to the ID.
+  private func makeConnectedPeerView(for peerId: String, isIncoming: Bool = false) -> ConnectedPeer {
     let worker = FirebaseService.shared.swarmWorkers.first(where: { $0.id == peerId })
     let caps = WorkerCapabilities(
       deviceId: peerId,
@@ -2683,12 +2764,18 @@ extension SwarmCoordinator {
       stunAddress: worker?.stunAddress,
       stunPort: worker?.stunPort
     )
-    let peer = ConnectedPeer(
+    return ConnectedPeer(
       id: peerId,
       name: worker?.deviceName ?? peerId,
       capabilities: caps,
-      isIncoming: false
+      isIncoming: isIncoming
     )
+  }
+
+  /// Build a ConnectedPeer from Firestore worker data and register it.
+  /// Called after a WebRTC session is successfully established (either as initiator or responder).
+  private func registerWebRTCPeerAsConnected(_ peerId: String) {
+    let peer = makeConnectedPeerView(for: peerId)
     handlePeerConnected(peer)
   }
 
@@ -2875,9 +2962,9 @@ extension SwarmCoordinator {
       }
 
     case .ragArtifactsRequest(let id, let direction, let repoIdentifier, let transferMode):
-      let peer = connectedWorkers.first(where: { $0.id == peerId })
-      let peerName = peer?.name ?? "Peer"
-      traceMessage(direction: "IN", peerId: peerId, type: "ragRequest", detail: "id=\(id) dir=\(direction.rawValue) peer=\(peer != nil ? "found" : "NIL") repo=\(repoIdentifier ?? "all")")
+      let peer = connectedWorkers.first(where: { $0.id == peerId }) ?? makeConnectedPeerView(for: peerId, isIncoming: true)
+      let peerName = peer.name
+      traceMessage(direction: "IN", peerId: peerId, type: "ragRequest", detail: "id=\(id) dir=\(direction.rawValue) peer=\(peer.name) repo=\(repoIdentifier ?? "all")")
       if direction == .pull {
         let transfer = RAGArtifactTransferState(
           id: id,
@@ -2895,11 +2982,7 @@ extension SwarmCoordinator {
           repoIdentifier: repoIdentifier
         )
         recordRagTransfer(transfer)
-        if let peer {
-          Task { await sendRagArtifactBundle(transferId: id, to: peer, repoIdentifier: repoIdentifier, transferMode: transferMode ?? .full) }
-        } else {
-          Task { await sendRagArtifactError(transferId: id, to: peerId, message: "Peer not found") }
-        }
+        Task { await sendRagArtifactBundle(transferId: id, to: peer, repoIdentifier: repoIdentifier, transferMode: transferMode ?? .full) }
       } else {
         let transfer = RAGArtifactTransferState(
           id: id,
