@@ -38,6 +38,12 @@ final class RepositoryAggregator {
   /// Whether a rebuild is currently in progress.
   private(set) var isRebuilding = false
 
+  /// Tracks whether another rebuild should run immediately after the current one completes.
+  private var pendingRebuildAfterCurrent = false
+
+  /// Debounces bursty rebuild triggers from multiple UI/data sources.
+  private var rebuildDebounceTask: Task<Void, Never>?
+
   /// Timestamp of the last successful rebuild.
   private(set) var lastRebuiltAt: Date?
 
@@ -74,11 +80,39 @@ final class RepositoryAggregator {
 
   // MARK: - Rebuild
 
+  /// Request a rebuild while coalescing bursty triggers.
+  /// - Parameters:
+  ///   - immediate: Bypass debounce and rebuild right away.
+  ///   - debounceMilliseconds: Delay for non-immediate requests.
+  func requestRebuild(immediate: Bool = false, debounceMilliseconds: UInt64 = 250) {
+    if immediate {
+      rebuildDebounceTask?.cancel()
+      rebuildDebounceTask = nil
+      rebuild()
+      return
+    }
+
+    rebuildDebounceTask?.cancel()
+    rebuildDebounceTask = Task { [weak self] in
+      let delay = debounceMilliseconds * 1_000_000
+      try? await Task.sleep(nanoseconds: delay)
+      guard !Task.isCancelled else { return }
+      await MainActor.run {
+        self?.rebuild()
+      }
+    }
+  }
+
   /// Re-aggregate all data sources into the unified list.
   /// Call this whenever underlying data changes (SwiftData save, chain status change, etc.)
   /// The method is idempotent and safe to call frequently; it builds a fresh snapshot.
   @MainActor
   func rebuild() {
+    guard !isRebuilding else {
+      pendingRebuildAfterCurrent = true
+      return
+    }
+
     guard let dataService else {
       logger.warning("Cannot rebuild: dataService not set")
       return
@@ -87,6 +121,10 @@ final class RepositoryAggregator {
     defer {
       isRebuilding = false
       lastRebuiltAt = Date()
+      if pendingRebuildAfterCurrent {
+        pendingRebuildAfterCurrent = false
+        requestRebuild(immediate: true)
+      }
     }
 
     // ---- 1. Fetch all data sources ----

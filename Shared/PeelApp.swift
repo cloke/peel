@@ -442,7 +442,7 @@ struct PeelApp: App {
           await registry.registerAllPaths(recentPaths)
           // Initial rebuild of unified repository data and activity feed.
           // Do this BEFORE RAG operations so the UI is usable quickly.
-          repositoryAggregator.rebuild()
+          repositoryAggregator.requestRebuild(immediate: true)
           await Task.yield()
           activityFeed.rebuild()
           await Task.yield()
@@ -452,7 +452,7 @@ struct PeelApp: App {
           // Refresh RAG repo list so rebuild() has current data
           await mcpServer.refreshRagSummary()
           // Re-rebuild with RAG data now available
-          repositoryAggregator.rebuild()
+          repositoryAggregator.requestRebuild(immediate: true)
         }
         .alert("Ember Best Practices Updated", isPresented: $skillUpdateAvailable) {
           Button("Update Skills") {

@@ -464,7 +464,7 @@ struct AddRepositorySheet: View {
       localPath: path,
       branch: "main"
     )
-    aggregator.rebuild()
+    aggregator.requestRebuild()
     dismiss()
   }
 
@@ -479,7 +479,7 @@ struct AddRepositorySheet: View {
         branch: "main"
       )
     }
-    aggregator.rebuild()
+    aggregator.requestRebuild()
     dismiss()
   }
 
@@ -562,7 +562,7 @@ struct AddRepositorySheet: View {
       localPath: "",
       branch: "main"
     )
-    aggregator.rebuild()
+    aggregator.requestRebuild()
     dismiss()
   }
 }

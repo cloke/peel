@@ -18,7 +18,7 @@ public actor WebRTCMCPTransport {
   private let logger = Logger(subsystem: "com.peel.distributed", category: "MCPTransport")
 
   private let channel: DataChannelHandle
-  private var pendingRequests: [String: CheckedContinuation<Data, Error>] = [:]
+  private var pendingRequests: [String: AsyncThrowingStream<Data, Error>.Continuation] = [:]
   private var incomingRequestHandler: (@Sendable (Data) async -> Data?)?
   private var listenTask: Task<Void, Never>?
 
@@ -50,8 +50,8 @@ public actor WebRTCMCPTransport {
   public func stop() {
     listenTask?.cancel()
     listenTask = nil
-    for (_, cont) in pendingRequests {
-      cont.resume(throwing: CancellationError())
+    for (_, waiter) in pendingRequests {
+      waiter.finish(throwing: CancellationError())
     }
     pendingRequests.removeAll()
     logger.info("MCP transport stopped")
@@ -70,15 +70,26 @@ public actor WebRTCMCPTransport {
     }
     let idString = "\(id)"
 
-    // Send the request before setting up the response waiter
+    let responseStream = AsyncThrowingStream<Data, Error>(bufferingPolicy: .bufferingNewest(1)) { continuation in
+      pendingRequests[idString] = continuation
+    }
+
+    defer {
+      if let waiter = pendingRequests.removeValue(forKey: idString) {
+        waiter.finish()
+      }
+    }
+
+    // Register waiter before sending so fast responses cannot race ahead.
     try await channel.send(json)
 
     return try await withThrowingTaskGroup(of: Data.self) { group in
-      let transportRef = self
       group.addTask {
-        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Data, Error>) in
-          Task { await transportRef.registerPendingRequest(idString, continuation: cont) }
+        var iterator = responseStream.makeAsyncIterator()
+        guard let response = try await iterator.next() else {
+          throw CancellationError()
         }
+        return response
       }
       group.addTask {
         try await Task.sleep(for: timeout)
@@ -87,7 +98,6 @@ public actor WebRTCMCPTransport {
       defer { group.cancelAll() }
       // First to finish wins: response data or timeout error
       let result = try await group.next()!
-      pendingRequests.removeValue(forKey: idString)
       return result
     }
   }
@@ -105,12 +115,6 @@ public actor WebRTCMCPTransport {
     incomingRequestHandler = handler
   }
 
-  // MARK: - Timeout
-
-  private func registerPendingRequest(_ idString: String, continuation: CheckedContinuation<Data, Error>) {
-    pendingRequests[idString] = continuation
-  }
-
   // MARK: - Message Routing
 
   private func routeIncoming(_ data: Data) async {
@@ -122,8 +126,9 @@ public actor WebRTCMCPTransport {
     if let id = parsed["id"], (parsed["result"] != nil || parsed["error"] != nil) {
       // It's a response — route to pending request
       let idString = "\(id)"
-      if let cont = pendingRequests.removeValue(forKey: idString) {
-        cont.resume(returning: data)
+      if let waiter = pendingRequests.removeValue(forKey: idString) {
+        waiter.yield(data)
+        waiter.finish()
       } else {
         logger.warning("MCP transport: response for unknown id \(idString)")
       }

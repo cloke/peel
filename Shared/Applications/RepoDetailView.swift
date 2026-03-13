@@ -664,7 +664,7 @@ struct OverviewTabView: View {
       localPath: localPath
     )
     justTrackedId = tracked.id
-    aggregator.rebuild()
+    aggregator.requestRebuild()
   }
 
   // MARK: - Data Loading
@@ -695,7 +695,7 @@ struct OverviewTabView: View {
       }
       // Update SwiftData records that are no longer open
       dataService.markMergedPRs(repoFullName: "\(owner)/\(repoName)", openNumbers: openNumbers)
-      aggregator.rebuild()
+      aggregator.requestRebuild()
     } catch {
       // keep existing data on failure
     }
@@ -703,7 +703,7 @@ struct OverviewTabView: View {
 
   private func dismissWorktree(_ wt: UnifiedRepository.WorktreeSummary) {
     dataService.markWorktreeCleaned(id: wt.id)
-    aggregator.rebuild()
+    aggregator.requestRebuild()
   }
 }
 

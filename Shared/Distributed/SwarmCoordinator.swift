@@ -127,8 +127,8 @@ public final class SwarmCoordinator {
   /// Maximum number of results to keep
   private let maxStoredResults = 50
   
-  /// Pending direct command continuations (for awaiting results)
-  private var pendingDirectCommands: [UUID: CheckedContinuation<DirectCommandResult, Never>] = [:]
+  /// Pending direct command waiters (for awaiting results)
+  private var pendingDirectCommands: [UUID: AsyncStream<DirectCommandResult>.Continuation] = [:]
 
   /// Recent message trace for diagnostics (newest first)
   public private(set) var messageTrace: [(date: Date, direction: String, peerId: String, type: String, detail: String)] = []
@@ -144,9 +144,9 @@ public final class SwarmCoordinator {
   /// Pending incoming RAG artifact transfers
   private var incomingRagTransfers: [UUID: RAGIncomingTransfer] = [:]
 
-  /// Continuations waiting for a manifest ack from the receiver before sending chunks.
-  /// Keyed by transfer ID. Resumed with `true` when ack arrives, `false` on timeout.
-  private var manifestAckWaiters: [UUID: CheckedContinuation<Bool, Never>] = [:]
+  /// Waiters waiting for a manifest ack from the receiver before sending chunks.
+  /// Keyed by transfer ID. Yields `true` when ack arrives, `false` on timeout fallback.
+  private var manifestAckWaiters: [UUID: AsyncStream<Bool>.Continuation] = [:]
 
   /// Heartbeat loop task (worker/hybrid)
   private var heartbeatTask: Task<Void, Never>?
@@ -986,14 +986,15 @@ public final class SwarmCoordinator {
     rawType: String,
     channelProvider: @escaping @Sendable () async -> DataChannelHandle?
   ) -> Task<Void, Never> {
-    Task { [weak self] in
+    Task.detached { [weak self] in
       guard let self else { return }
+      let logger = await MainActor.run { self.logger }
       guard let channel = await channelProvider() else {
-        logger.info("No \(label) channel for \(peerId), skipping WebRTC listen")
+        logger.info("No \(label, privacy: .public) channel for \(peerId, privacy: .public), skipping WebRTC listen")
         return
       }
 
-      logger.info("Started WebRTC \(label) listener for peer \(peerId)")
+      logger.info("Started WebRTC \(label, privacy: .public) listener for peer \(peerId, privacy: .public)")
       var msgSeq = 0
       while !Task.isCancelled {
         do {
@@ -1001,7 +1002,14 @@ public final class SwarmCoordinator {
           msgSeq += 1
 
           if msgSeq <= 5 || (msgSeq <= 120 && data.count > 100_000) {
-            traceMessage(direction: "IN-RAW", peerId: peerId, type: rawType, detail: "channel=\(label) seq=\(msgSeq) size=\(data.count)")
+            await MainActor.run { [weak self] in
+              self?.traceMessage(
+                direction: "IN-RAW",
+                peerId: peerId,
+                type: rawType,
+                detail: "channel=\(label) seq=\(msgSeq) size=\(data.count)"
+              )
+            }
           }
 
           do {
@@ -1010,8 +1018,17 @@ public final class SwarmCoordinator {
               self?.handleWebRTCPeerMessage(message, from: peerId)
             }
           } catch {
-            logger.error("WebRTC decode error from \(peerId) on \(label): \(error) (data size: \(data.count) bytes)")
-            traceMessage(direction: "IN-ERR", peerId: peerId, type: "decode-err", detail: "channel=\(label) seq=\(msgSeq) size=\(data.count) \(error)")
+            logger.error(
+              "WebRTC decode error from \(peerId, privacy: .public) on \(label, privacy: .public): \(String(describing: error), privacy: .public) (data size: \(data.count) bytes)"
+            )
+            await MainActor.run { [weak self] in
+              self?.traceMessage(
+                direction: "IN-ERR",
+                peerId: peerId,
+                type: "decode-err",
+                detail: "channel=\(label) seq=\(msgSeq) size=\(data.count) \(error)"
+              )
+            }
             continue
           }
         } catch is CancellationError {
@@ -1019,15 +1036,19 @@ public final class SwarmCoordinator {
         } catch {
           let isFatal = !channel.isOpen
           if isFatal {
-            logger.warning("WebRTC \(label) channel closed for \(peerId): \(error)")
+            logger.warning(
+              "WebRTC \(label, privacy: .public) channel closed for \(peerId, privacy: .public): \(String(describing: error), privacy: .public)"
+            )
             break
           } else {
-            logger.debug("WebRTC \(label) receive non-fatal: \(peerId), \(error)")
+            logger.debug(
+              "WebRTC \(label, privacy: .public) receive non-fatal: \(peerId, privacy: .public), \(String(describing: error), privacy: .public)"
+            )
             continue
           }
         }
       }
-      logger.info("WebRTC \(label) listener ended for peer \(peerId)")
+      logger.info("WebRTC \(label, privacy: .public) listener ended for peer \(peerId, privacy: .public)")
       // When the primary (mcp) channel closes, treat the peer as disconnected
       if label == "mcp" {
         await MainActor.run { [weak self] in
@@ -1228,48 +1249,42 @@ public final class SwarmCoordinator {
     let id = UUID()
     logger.info("Sending direct command (waiting): \(command) to \(workerId)")
     
-    // Use a task-group race: command response vs timeout.
-    // This avoids the continuation double-resume race from the old approach.
-    let result: DirectCommandResult
+    let responseStream = AsyncStream<DirectCommandResult>(bufferingPolicy: .bufferingNewest(1)) { continuation in
+      pendingDirectCommands[id] = continuation
+    }
+
+    defer {
+      if let waiter = pendingDirectCommands.removeValue(forKey: id) {
+        waiter.finish()
+      }
+    }
+
+    let message = PeerMessage.directCommand(id: id, command: command, args: args, workingDirectory: workingDirectory)
     do {
-      result = try await withThrowingTaskGroup(of: DirectCommandResult.self) { group in
-        let pendingRef = self
+      try await sendMessage(message, to: workerId)
+    } catch {
+      return DirectCommandResult(exitCode: -1, output: "", error: error.localizedDescription)
+    }
+
+    do {
+      return try await withThrowingTaskGroup(of: DirectCommandResult.self) { group in
         group.addTask {
-          await withCheckedContinuation { (cont: CheckedContinuation<DirectCommandResult, Never>) in
-            Task { @MainActor in
-              pendingRef.pendingDirectCommands[id] = cont
-            }
+          var iterator = responseStream.makeAsyncIterator()
+          guard let result = await iterator.next() else {
+            return DirectCommandResult(exitCode: -1, output: "", error: "Cancelled")
           }
+          return result
         }
-        
-        // Send the message (outside the continuation setup)
-        let message = PeerMessage.directCommand(id: id, command: command, args: args, workingDirectory: workingDirectory)
-        do {
-          try await self.sendMessage(message, to: workerId)
-        } catch {
-          pendingDirectCommands.removeValue(forKey: id)
-          return DirectCommandResult(exitCode: -1, output: "", error: error.localizedDescription)
-        }
-        
-        // Timeout task
         group.addTask {
           try await Task.sleep(for: timeout)
           return DirectCommandResult(exitCode: -1, output: "", error: "Timeout waiting for command result")
         }
-        
         defer { group.cancelAll() }
-        guard let first = try await group.next() else {
-          return DirectCommandResult(exitCode: -1, output: "", error: "No result")
-        }
-        pendingDirectCommands.removeValue(forKey: id)
-        return first
+        return try await group.next() ?? DirectCommandResult(exitCode: -1, output: "", error: "No result")
       }
     } catch {
-      pendingDirectCommands.removeValue(forKey: id)
-      result = DirectCommandResult(exitCode: -1, output: "", error: "Cancelled")
+      return DirectCommandResult(exitCode: -1, output: "", error: "Cancelled")
     }
-    
-    return result
   }
 
   // MARK: - RAG Artifact Sync
@@ -1848,31 +1863,28 @@ public final class SwarmCoordinator {
   /// Uses a task-group race to avoid the continuation double-resume race that
   /// existed with the previous timeout-task approach.
   private func waitForManifestAck(transferId: UUID) async {
-    let gotAck: Bool
-    do {
-      gotAck = try await withThrowingTaskGroup(of: Bool.self) { group in
-        let ackRef = self
-        group.addTask {
-          await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
-            Task { @MainActor in
-              ackRef.manifestAckWaiters[transferId] = cont
-            }
-          }
-        }
-        group.addTask {
-          try await Task.sleep(for: .seconds(2))
-          return false
-        }
-        defer { group.cancelAll() }
-        guard let result = try await group.next() else { return false }
-        // Clean up the waiter if timeout won the race
-        manifestAckWaiters.removeValue(forKey: transferId)
-        return result
-      }
-    } catch {
-      manifestAckWaiters.removeValue(forKey: transferId)
-      gotAck = false
+    let ackStream = AsyncStream<Bool>(bufferingPolicy: .bufferingNewest(1)) { continuation in
+      manifestAckWaiters[transferId] = continuation
     }
+
+    defer {
+      if let waiter = manifestAckWaiters.removeValue(forKey: transferId) {
+        waiter.finish()
+      }
+    }
+
+    let gotAck = (try? await withThrowingTaskGroup(of: Bool.self) { group in
+      group.addTask {
+        var iterator = ackStream.makeAsyncIterator()
+        return await iterator.next() ?? false
+      }
+      group.addTask {
+        try await Task.sleep(for: .seconds(2))
+        return false
+      }
+      defer { group.cancelAll() }
+      return try await group.next() ?? false
+    }) ?? false
 
     if gotAck {
       logger.info("Manifest ack received for \(transferId), proceeding with chunks")
@@ -2848,8 +2860,9 @@ extension SwarmCoordinator {
       if !output.isEmpty {
         logger.debug("Direct command output: \(output.prefix(500))")
       }
-      if let continuation = pendingDirectCommands.removeValue(forKey: id) {
-        continuation.resume(returning: DirectCommandResult(exitCode: exitCode, output: output, error: error))
+      if let waiter = pendingDirectCommands.removeValue(forKey: id) {
+        waiter.yield(DirectCommandResult(exitCode: exitCode, output: output, error: error))
+        waiter.finish()
       } else {
         logger.warning("No pending continuation for directCommandResult id=\(id) — already timed out or fire-and-forget?")
       }
@@ -2926,7 +2939,8 @@ extension SwarmCoordinator {
     case .ragArtifactsAck(let id, let receivedChunks, let receivedBytes):
       logger.debug("RAG ack for \(id): \(receivedChunks) chunks, \(receivedBytes) bytes")
       if receivedChunks == 0, let waiter = manifestAckWaiters.removeValue(forKey: id) {
-        waiter.resume(returning: true)
+        waiter.yield(true)
+        waiter.finish()
       }
       updateRagTransfer(id) { state in
         state.transferredBytes = receivedBytes

@@ -853,7 +853,7 @@ struct RAGTabView: View {
         persistRAGSyncAutomationState()
         if direction == .pull {
           await mcpServer.refreshRagSummary()
-          aggregator.rebuild()
+          aggregator.requestRebuild()
           await refreshAnalysisStatus()
         }
         Task { @MainActor in
@@ -914,7 +914,7 @@ struct RAGTabView: View {
             persistRAGSyncAutomationState()
             if direction == .pull {
               await mcpServer.refreshRagSummary()
-              aggregator.rebuild()
+              aggregator.requestRebuild()
               await refreshAnalysisStatus()
             }
             Task { @MainActor in
@@ -1040,7 +1040,7 @@ struct RAGTabView: View {
         syncResultMessage = "Pulled from \(workerName): \(byteStr)"
         repoDetailAutomationLogger.info("RAG on-demand sync completed repo=\(self.repo.displayName, privacy: .public) worker=\(workerName, privacy: .public) bytes=\(byteStr, privacy: .public)")
         await mcpServer.refreshRagSummary()
-        aggregator.rebuild()
+        aggregator.requestRebuild()
         await refreshAnalysisStatus()
         Task { @MainActor in
           try? await Task.sleep(for: .seconds(8))
@@ -1059,7 +1059,7 @@ struct RAGTabView: View {
         syncResultMessage = "Pulled from \(workerName)"
         repoDetailAutomationLogger.info("RAG on-demand sync finished without retained transfer state repo=\(self.repo.displayName, privacy: .public) worker=\(workerName, privacy: .public)")
         await mcpServer.refreshRagSummary()
-        aggregator.rebuild()
+        aggregator.requestRebuild()
         await refreshAnalysisStatus()
         Task { @MainActor in
           try? await Task.sleep(for: .seconds(8))
@@ -1224,7 +1224,7 @@ struct RAGTabView: View {
     do {
       try await mcpServer.indexRagRepo(path: path, forceReindex: force)
       await mcpServer.refreshRagSummary()
-      aggregator.rebuild()
+      aggregator.requestRebuild()
       if let report = mcpServer.lastRagIndexReport {
         let newChunks = report.chunksIndexed
         let totalFiles = report.filesIndexed + report.filesSkipped
